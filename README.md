@@ -70,7 +70,7 @@ The board shows what the repository says, not only what someone wrote. For each 
 - whether the main branch contains it, and the version it shipped in (`collector.versionPattern`);
 - whether a successful deploy run (`collector.deployWorkflow`) contains it.
 
-From those it works out the card's phase: build, then each review not yet signed, then ship, then live. It writes everything to one document, `derived/all`. The page shows "Repository: <phase> <version>" on each card, in red when the card says otherwise, and the gate checks phase moves, one card per role and phase, and done-only-when-closed against it.
+From those it works out the card's phase: build, then each review not yet signed, then ship, then live. A head is READY when it carries the card's `Board-Id`, or, until every team does, when any reviewer has signed it. A card given up closes as `"dropped"` with a `dropReason`. It writes everything to one document, `derived/all`. The page shows "Repository: <phase> <version>" on each card, in red when the card says otherwise, and the gate checks phase moves, one card per role and phase, and done-only-when-closed against it.
 
 Sign-off notes are fetched into `refs/notes/flight-board/`, so the team's own notes refs are never overwritten. Point `collector.repoPath` at a clone of its own, not at a checkout someone works in.
 

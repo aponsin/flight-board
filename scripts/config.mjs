@@ -17,9 +17,9 @@ export const DEFAULTS = {
   gate: { managerRole: "Manager", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 30 },
   // The collector (collector/): the team's repository and how its work shows there. notes: each review phase and the git
   // notes ref its sign-off is written to. deployWorkflow: the CI workflow whose successful run on the main branch means
-  // live. versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
+  // live. lanePhases: the phases where one owner holds one card at a time (reviews and shipping queue). versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
   // how such a subject names each branch it shipped and its commit (groups: branch, sha), for branches deleted since.
-  collector: { repoPath: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "" },
+  collector: { repoPath: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "" },
 };
 
 const KEYS = Object.keys(DEFAULTS);
@@ -77,6 +77,7 @@ export function checkConfig(c) {
         }
       }
       for (const f of ["buildPhase", "shipPhase", "livePhase"]) if (k[f] !== undefined && !phaseKeys2.includes(k[f])) out.push(`collector.${f}: one of the phases`);
+      if (k.lanePhases !== undefined && !(Array.isArray(k.lanePhases) && k.lanePhases.every((p) => phaseKeys2.includes(p)))) out.push("collector.lanePhases: a list of phases");
       for (const f of ["versionPattern", "shippedPattern"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
     }
   }

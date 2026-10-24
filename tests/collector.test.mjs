@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
 import { boardIdOf, headFor, reviewsFor, derivePhase, conflict, staleLive } from "../collector/derive.mjs";
 import { remoteHeads, signedPhases, versionFor, mainLine, factsFor, shippedHeads } from "../collector/facts.mjs";
-import { collect, localNotes, prepareMirror } from "../collector/collect.mjs";
+import { collect, localNotes, prepareMirror, swapMirror } from "../collector/collect.mjs";
 import { mirrorErrors, checkWrites } from "../gate/rules.mjs";
 
 const config = fullConfig({ owner: "Sam", collector: { repoPath: "/x", notes: { language: "refs/notes/linguist", checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
@@ -186,7 +186,7 @@ test("the live-but-open list leaves out cards already done; notes are read from 
   } finally { rmSync(s.dir, { recursive: true, force: true }); }
 });
 
-test("Security: a subject's sha reaches git only as plain hex; the mirror is cleared only at <stateDir>/<board id>/mirror", async () => {
+test("Security, Checker: a subject's sha reaches git only as plain hex; the export goes to mirror.next and swaps in whole, only under <stateDir>/<board id>", async () => {
   const { mkdirSync, existsSync, writeFileSync: write } = await import("node:fs");
   const calls = [];
   const git = (args) => { calls.push(args); return "abc1234def\n"; };
@@ -198,10 +198,44 @@ test("Security: a subject's sha reaches git only as plain hex; the mirror is cle
     const boardDir = join(dir, "Board01");
     mkdirSync(join(boardDir, "mirror", "initiatives"), { recursive: true });
     write(join(boardDir, "mirror", "initiatives", "old.json"), "{}");
-    assert.equal(prepareMirror(boardDir, "Board01"), join(boardDir, "mirror"));
-    assert.equal(existsSync(join(boardDir, "mirror", "initiatives")), false, "emptied");
+    assert.equal(prepareMirror(boardDir, "Board01"), join(boardDir, "mirror.next"));
+    assert.equal(existsSync(join(boardDir, "mirror", "initiatives", "old.json")), true, "the gate's mirror stays whole while the export runs");
+    mkdirSync(join(boardDir, "mirror.next", "initiatives"));
+    write(join(boardDir, "mirror.next", "initiatives", "new.json"), "{}");
+    assert.equal(swapMirror(boardDir, "Board01"), true);
+    assert.equal(existsSync(join(boardDir, "mirror", "initiatives", "new.json")), true, "swapped into place");
+    assert.equal(existsSync(join(boardDir, "mirror", "initiatives", "old.json")), false);
+    assert.equal(existsSync(join(boardDir, "mirror.next")), false);
+    assert.equal(swapMirror(boardDir, "Board01"), false, "nothing new: the mirror is left as it is");
     assert.throws(() => prepareMirror(dir, "Board01"), /refusing to clear/);
-    assert.throws(() => prepareMirror(boardDir, ""), /refusing to clear/);
+    assert.throws(() => swapMirror(boardDir, ""), /refusing to clear/);
     assert.equal(existsSync(dir), true);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("Checker 1: until heads carry a Board-Id, a sign-off note on a branch named for the card means READY; missing evidence is no conflict", () => {
+  const head = { branch: "build/own-visits", sha: "bbbbbbbb22", message: "fix: tests" };
+  const c = card({ id: "own-visits", level: "Full", customerText: false });
+  assert.equal(derivePhase(c, facts({ head, signed: new Set(["checker"]) }), config).phase, "security", "checker signed: READY, waiting for security");
+  const noNote = derivePhase(c, facts({ head }), config);
+  assert.equal(noNote.phase, "build");
+  assert.equal(noNote.firm, false);
+  assert.equal(conflict(card({ id: "own-visits", phase: "checker" }), noNote, config), null, "a card in review whose head has no note yet: not a conflict");
+  assert.match(conflict(card({ id: "own-visits", phase: "plan" }), noNote, config), /says plan, the repository says build/, "behind the evidence still is");
+});
+
+test("Manager: one card per owner in build and test only; reviews and shipping queue many", () => {
+  const two = { initiatives: [{ id: "a", status: "active", phase: "checker", who: "Checker" }, { id: "t", status: "active", phase: "test", who: "Builder" }, { id: "b", status: "active", phase: "language" }] };
+  assert.deepEqual(mirrorErrors(upd({ phase: "checker", who: "Checker" }, "b"), { config, mirror: mirror(two) }), [], "a second card in checker queues");
+  assert.match(mirrorErrors(upd({ phase: "test", who: "Builder", phaseReason: "back for a fix" }, "b"), { config, mirror: mirror(two) }).join(), /t is on test for Builder/);
+  const c = { id: "c", status: "active", phase: "build", who: "Builder" };
+  assert.match(mirrorErrors(upd({ phase: "test" }, "c"), { config, mirror: mirror({ initiatives: [two.initiatives[1], c] }) }).join(), /t is on test for Builder/);
+  assert.deepEqual(mirrorErrors(upd({ phase: "test" }, "c"), { config, mirror: mirror({ initiatives: [{ ...two.initiatives[1], status: "dropped" }, c] }) }), [], "a dropped card holds no lane");
+});
+
+test("Manager: a card given up closes as dropped with a reason, needing no live evidence", () => {
+  assert.match(mirrorErrors(upd({ status: "dropped" }), { config, mirror: mirror() }).join(), /needs dropReason/);
+  assert.deepEqual(mirrorErrors(upd({ status: "dropped", dropReason: "the owner chose another way" }), { config, mirror: mirror() }), [], "the repository says security: no matter");
+  assert.match(mirrorErrors(upd({ status: "dropped", dropReason: "x" }), { config, mirror: mirror({ messages: [{ thread: "tabs", from: "Sam", text: "?", at: 1 }] }) }).join(), /unanswered/);
+  assert.deepEqual(staleLive([card({ id: "a", status: "dropped" })], { a: { phase: "live" } }, config), [], "a dropped card isn't listed as live but open");
 });

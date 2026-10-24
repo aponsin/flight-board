@@ -676,7 +676,7 @@ function initRow(i){
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   if(i.status!=="done"&&i.plannedVersion) etaHtml+=`<div class="pv">Planned in <b>${esc(i.plannedVersion)}</b></div>`;
   const st=stalled(i);
-  const statusTxt=stuck?"Blocked":queued?"Queued":i.status==="done"?"Done":i.status==="paused"?"Paused":st?"Stalled":"In flight";
+  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.status==="paused"?"Paused":st?"Stalled":"In flight";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
   const nAt=num(i.nextNoteAt),stale=nAt!=null&&num(i.lastStepAt)!=null&&i.lastStepAt>nAt;
   const next=i.nextNote?`<span${stale?' style="opacity:.6"':""}>Next: <b>${esc(i.nextNote)}</b>${num(i.nextAt)?` <span data-next="${i.nextAt}">${i.nextAt>Date.now()?"in "+dur(i.nextAt-Date.now()):"due now"}</span>`:""}${nAt!=null?` <span data-ago="${nAt}">(written ${dur(Date.now()-nAt)} ago${stale?"; an agent has moved since":""})</span>`:" (not dated)"}</span>`:"";
@@ -881,7 +881,9 @@ function gates(i){
     if(end==null){out.who=OWNER;out.status="active";out.waitingOn=out.waitingOn||OWNER+": "+(w.text||"a question")}});
   return out;
 }
-function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(i)));renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderBoard();renderFeed();renderUsage()}
+// A card given up ("dropped", with dropReason) is closed like a done one, and says so.
+const asShown=i=>i&&i.status==="dropped"?{...i,status:"done",dropped:true}:i;
+function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderBoard();renderFeed();renderUsage()}
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});

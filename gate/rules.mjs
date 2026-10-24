@@ -160,8 +160,9 @@ export function refusalText(errors, stuckNow, now) {
 // doesn't know the card (a new one).
 
 // Rule 3: a card's phase only moves forward; a jump past a phase needs it skipped, the evidence past it, or a reason.
-// Rule 4: one card per role per build or review phase.
-// Rule 5 (case 1): done only with no owner message waiting in its thread, no open ask tied to it, and live by the evidence.
+// Rule 4: one card per owner in the lane phases (config collector.lanePhases: build, test).
+// Rule 5 (case 1): done only with no owner message waiting in its thread, no open ask tied to it, and live by the evidence;
+// a card given up closes as "dropped" with a dropReason, with the same first two checks and no evidence needed.
 export function mirrorErrors(w, { config, mirror }) {
   const { op, collection, doc_id: id, data } = w;
   if (collection !== "initiatives" || op === "delete" || !data || typeof data !== "object" || !mirror) return [];
@@ -181,17 +182,21 @@ export function mirrorErrors(w, { config, mirror }) {
       if (jumped.length) e.push(`${was.phase} → ${data.phase} skips ${jumped.join(", ")}: add it to skip, or give phaseReason`);
     }
   }
-  const lanes = new Set([config.collector.buildPhase, ...Object.keys(config.collector.notes)]);
-  if (now.status !== "done" && now.who && lanes.has(now.phase) && ("phase" in data || "who" in data)) {
-    const other = cards.find((k) => k.id !== id && k.status !== "done" && k.who === now.who && k.phase === now.phase);
+  // Rule 4: one card per owner in the lane phases (build, test); reviews and shipping queue many.
+  const lanes = new Set(config.collector.lanePhases ?? []);
+  const shut = (k) => k.status === "done" || k.status === "dropped";
+  if (!shut(now) && now.who && lanes.has(now.phase) && ("phase" in data || "who" in data)) {
+    const other = cards.find((k) => k.id !== id && !shut(k) && k.who === now.who && k.phase === now.phase);
     if (other) e.push(`${other.id} is on ${now.phase} for ${now.who}: has it moved on? Update ${other.id} first`);
   }
-  if (data.status === "done" && was?.status !== "done") {
+  // A card given up closes as "dropped" with its reason; it needs no live evidence.
+  if (data.status === "dropped" && !String(data.dropReason ?? was?.dropReason ?? "").trim()) e.push('a dropped card needs dropReason (why it was given up)');
+  if ((data.status === "done" || data.status === "dropped") && !shut(was ?? {})) {
     const thread = (mirror.docs.messages ?? []).filter((m) => m.thread === id && typeof m.at === "number").sort((a, b) => a.at - b.at);
     if (thread.length && thread[thread.length - 1].from === config.owner) e.push(`${config.owner}'s last message in its thread is unanswered`);
     const asks = (mirror.docs.waiting ?? []).filter((x) => x.initiative === id && !x.done && !x.response);
     if (asks.length) e.push(`an ask tied to it is still open (${asks.map((x) => x.id).join(", ")})`);
-    if (derived?.phase && derived.phase !== config.collector.livePhase) e.push(`the repository says ${derived.phase}, not ${config.collector.livePhase} (${derived.evidence})`);
+    if (data.status === "done" && derived?.phase && derived.phase !== config.collector.livePhase) e.push(`the repository says ${derived.phase}, not ${config.collector.livePhase} (${derived.evidence})`);
   }
   return e;
 }

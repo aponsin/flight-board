@@ -166,3 +166,10 @@ test("a card shows what the repository says, and a conflict mark when it says ot
   assert.equal(b.evidence({ id: "y", phase: "build" }), "", "nothing known, nothing shown");
   assert.equal(b.evidence({ id: "z", phase: "build" }), "");
 });
+
+test("a dropped card is shown closed, as Dropped", () => {
+  const b = loadNames(["initRow", "enrich", "gates", "asShown"]);
+  Object.assign(b.state, { steps: [], waiting: [] });
+  const html = b.initRow(b.gates(b.enrich(b.asShown({ id: "x", name: "X", status: "dropped", dropReason: "r", level: "Quick", skip: ["plan"] }))));
+  assert.match(html, /<span class="state done">Dropped<\/span>/);
+});
