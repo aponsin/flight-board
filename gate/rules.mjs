@@ -17,6 +17,8 @@ function pageRules() {
   return (page = ctx.__b);
 }
 
+// The scheduled collector's fixed session title (collector/TASK.md).
+export const COLLECTOR_ROLE = "Collector";
 const TIME_FIELDS = ["at", "since", "nextNoteAt"];
 // A step written as plain text that holds a command: the owner can't copy it. Commands go in {text, cmd}.
 const COMMAND = /`[^`]+`|(^|[\s:])(npm|npx|git|gh|node|python3?|cd|curl|brew|sudo|wrangler|bash|zsh)\s+[^\s]/;
@@ -40,6 +42,11 @@ export function writeErrors(w, { config, who, now }) {
   const phases = config.phases.map((p) => p[0]);
   // An edit in place (ArtifactData str_replace) leaves the gate blind to the field's new value: write the whole field.
   if (op === "str_replace") return [`a text edit in place can't be checked: write the whole field with update instead`];
+  // The scheduled collector (its session titled "Collector", collector/TASK.md) writes derived/all and nothing else
+  // (Security): whatever its run reads, it can't change a card, an ask, a message or a tile.
+  if (who.role === COLLECTOR_ROLE && !(collection === "derived" && id === "all" && (op === "set" || op === "update"))) {
+    return [`the ${COLLECTOR_ROLE} writes only derived/all (set or update)`];
+  }
   // Rule 6: each role's memory tile is its own; Manager may also set every role's entry in meta/context (the keeper).
   if (collection === "ctx") {
     if (!who.role) e.push("no role for this session: give it its role as its title");

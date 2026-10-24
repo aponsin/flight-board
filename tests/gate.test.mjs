@@ -369,3 +369,31 @@ test("withJournal: set, update (with __delete__) and delete laid over the mirror
   assert.deepEqual(m.docs.initiatives[0].who, "B", "the mirror itself untouched");
   assert.deepEqual(withJournal(m, [{ op: "delete", collection: "initiatives", doc_id: "a", at: 120 }]).docs.initiatives, []);
 });
+
+test("Security: the Collector writes only derived/all; every other write from it is refused", () => {
+  const collector = { role: "Collector", manager: false };
+  assert.deepEqual(writeErrors({ op: "set", collection: "derived", doc_id: "all", data: { cards: {} } }, { config, who: collector, now }), []);
+  assert.deepEqual(writeErrors({ op: "update", collection: "derived", doc_id: "all", data: { cards: {} } }, { config, who: collector, now }), []);
+  for (const w of [
+    { op: "delete", collection: "derived", doc_id: "all" },
+    { op: "set", collection: "derived", doc_id: "other", data: {} },
+    { op: "update", collection: "initiatives", doc_id: "x-y", data: { status: "done" } },
+    { op: "set", collection: "messages", doc_id: "m1", data: { thread: "x-y", from: "Collector", text: "hi", at: now } },
+    { op: "update", collection: "waiting", doc_id: "w", data: { done: true } },
+    { op: "set", collection: "ctx", doc_id: "Collector", data: { pct: 1, at: now } },
+    { op: "update", collection: "meta", doc_id: "stuck", data: {} },
+  ]) assert.match(writeErrors(w, { config, who: collector, now })[0] ?? "", /writes only derived\/all/, `${w.op} ${w.collection}/${w.doc_id}`);
+});
+
+test("Security: a journaled write's __proto__, constructor or prototype key is skipped when laid over the mirror", async () => {
+  const { withJournal } = await import("../gate/gate.mjs");
+  const mirror = { at: 1, docs: { initiatives: [{ id: "x-y", status: "active" }] } };
+  const data = JSON.parse('{"__proto__": {"polluted": true}, "constructor": "c", "prototype": "p", "status": "done"}');
+  const out = withJournal(mirror, [{ op: "update", collection: "initiatives", doc_id: "x-y", data, at: 2 }]);
+  const card = out.docs.initiatives[0];
+  assert.equal(card.status, "done");
+  assert.equal(Object.hasOwn(card, "constructor"), false);
+  assert.equal(Object.hasOwn(card, "prototype"), false);
+  assert.equal(card.polluted, undefined);
+  assert.equal({}.polluted, undefined);
+});
