@@ -332,9 +332,15 @@ function dur(ms){if(ms==null)return"";const m=Math.round(Math.abs(ms)/60000);if(
 function hhmm(t){const d=new Date(t);return d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}
 function dayLabel(t){const d=new Date(t),n=new Date();if(d.toDateString()===n.toDateString())return hhmm(t);return d.toLocaleDateString([], {month:"short",day:"numeric"})+" "+hhmm(t)}
 
+// Whether an ask is in the owner's Waiting list: open, and not answered more than 2.5 s ago.
+function waitingShown(w,now){return !w.done&&!(w.response&&w.response.at&&now-w.response.at>2500)}
+// Whether an item is drawn with its thread under it: an ask in Waiting, or an initiative in flight. Its thread then stays
+// there, out of the Threads panel (a reply under an item once showed as a second card, titled with the item's text).
+function itemShown(id,now){const it=itemOf(id);if(!it)return false;
+  return it.coll==="waiting"?waitingShown(it.doc,now):it.coll==="initiatives"?it.doc.status!=="done":false}
 function renderWaiting(){
   // An item the owner has answered leaves his list at once (a 2-second "sent" moment first); Manager closes it after acting.
-  const list=state.waiting.filter(w=>!w.done&&!(w.response&&w.response.at&&Date.now()-w.response.at>2500)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
+  const list=state.waiting.filter(w=>waitingShown(w,Date.now())).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
   const el=$("waiting");
   if(!list.length){el.innerHTML='<div class="empty">Nothing waiting on you. Manager adds decisions, clicks and resets here.</div>';return}
   const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id));
@@ -598,7 +604,7 @@ function threadHtml(id,where,{box=true}={}){const t=threadOf(id),key="th:"+id,ti
   return `<div class="thread" data-thread="${esc(id)}">${t.map(msgHtml).join("")}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button>${t.length&&!threadResolved(id)?`<button type="button" data-tclose="${esc(id)}" data-where="${esc(where)}">Close</button>`:""}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}</div>`}
 // The Threads panel: open ones (Manager owes an answer) first, then answered ones, then resolved ones of the last 7 days,
 // folded. Older resolved threads stay saved, just out of view.
-function threadsHtml(now){const ids=threadIds(),last=id=>{const t=threadOf(id);return t[t.length-1].at};
+function threadsHtml(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now)),last=id=>{const t=threadOf(id);return t[t.length-1].at};
   const open=ids.filter(threadOpen).sort((a,b)=>last(a)-last(b)),res=ids.filter(id=>!threadOpen(id)&&threadResolved(id)&&now-last(id)<WEEK).sort((a,b)=>last(b)-last(a));
   const answered=ids.filter(id=>!threadOpen(id)&&!threadResolved(id)).sort((a,b)=>last(b)-last(a));
   const row=(id,cls)=>`<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span><div class="w-text">${esc(threadTitle(id))}<span class="t-badge ${cls}">${cls==="open"?"waiting on Manager":cls==="res"?"resolved":"answered"}</span></div><span class="age">${dur(now-last(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"panel")}</details>`;

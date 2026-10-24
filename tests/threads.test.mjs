@@ -86,6 +86,18 @@ test("the Threads panel: waiting on Manager first, then answered, then resolved 
   assert.doesNotMatch(html, /Old ask/);
 });
 
+test("the reply-card bug: a thread whose item is on screen stays under the item, not as a second card in the panel", () => {
+  const b = board({ waiting: [{ id: "ask-open", text: "Run the install", since: T }, { id: "ask-answered", text: "Send the pictures", since: T, response: { status: "done", note: "here", at: T } }],
+    initRaw: [{ id: "card-live", name: "Tabs", status: "active" }, { id: "card-done", name: "Menu", status: "done" }],
+    messages: [msg("ask-open", "Owner", "which folder?", T + 1), msg("ask-answered", "Owner", "here", T), msg("card-live", "Owner", "how far?", T + 1),
+      msg("card-done", "Owner", "thanks", T + 1), msg("t-5", "Owner", "New question", T + 1, { kind: "question" })] });
+  const html = b.threadsHtml(T + 10_000);
+  assert.doesNotMatch(html, /Run the install|Tabs/, "the ask in Waiting and the card in flight keep their threads under them");
+  assert.match(html, /New question/);
+  assert.match(html, /Send the pictures/, "an answered ask has left Waiting: its thread is in the panel");
+  assert.match(html, /Menu/, "a done card's thread is in the panel");
+});
+
 test("case 6: a bare Ack on an answer closes it; an Ack with a follow-up keeps it open and puts the question in its thread", () => {
   const b = board();
   const [bare] = b.replyWrites({ id: "ans-x", kind: "answer" }, "ack", "", [], T, null, "r");
