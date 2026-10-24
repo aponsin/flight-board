@@ -10,6 +10,7 @@
 //   ship   - every review it needs has signed the head, and the head isn't on the main branch yet;
 //   live   - the head is on the main branch and a successful deploy run contains it (with the version it shipped in).
 // Anything the facts can't show (plan, a card with no branch) is left as declared: derived is null.
+import { idText, lineText } from "./text.mjs";
 
 // The id a commit's message names in its "Board-Id:" trailer, or null.
 export function boardIdOf(message) {
@@ -65,7 +66,7 @@ export function conflict(card, derived, config) {
   const order = config.phases.map((p) => p[0]);
   const behind = order.indexOf(card.phase) < order.indexOf(derived.phase);
   if (!behind && derived.firm === false) return null;
-  return `${card.id}: the card says ${card.phase}, the repository says ${derived.phase} (${derived.evidence})${behind ? "" : "; the card is ahead of its evidence"}`;
+  return `${idText(card.id)}: the card says ${idText(card.phase)}, the repository says ${idText(derived.phase)} (${lineText(derived.evidence)})${behind ? "" : "; the card is ahead of its evidence"}`;
 }
 
 // The first pass's close-out: every card still marked active whose work is live by the evidence.

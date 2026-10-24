@@ -7,7 +7,10 @@
 //   3. a working role's memory reading (ctx/<Role>) older than ctxMaxHours: only roles with an open step (an idle role is
 //      the context keeper's, Manager 2026-10-24);
 //   4. a card unchanged for staleHours, unless parked (its status in config.nudges.parked).
-// The CONFLICT lines are the collector's own (collector/derive.mjs).
+// The CONFLICT lines are the collector's own (collector/derive.mjs). Every board value a line names goes through idText
+// (collector/text.mjs): the lines reach a session that can write the board and message the team.
+
+import { idText as q } from "./text.mjs";
 
 const MIN = 60e3, HOUR = 36e5;
 const closed = (k) => k.status === "done" || k.status === "dropped";
@@ -28,14 +31,14 @@ export function nudges({ config, docs, now, state = {} }) {
   // 1. The owner waits.
   for (const [id, list] of byThread) {
     const last = list.reduce((a, b) => (b.at > a.at ? b : a));
-    if (last.from === owner && !last.resolved && now - last.at >= n.ownerWaitMin * MIN) firing.push({ key: `thread:${id}`, text: `thread ${id}: ${owner} has waited ${mins(now - last.at)} min for an answer` });
+    if (last.from === owner && !last.resolved && now - last.at >= n.ownerWaitMin * MIN) firing.push({ key: `thread:${id}`, text: `thread ${q(id)}: ${owner} has waited ${mins(now - last.at)} min for an answer` });
   }
   for (const w of docs.waiting ?? []) {
     const at = w?.response?.at;
     if (!w || w.done || typeof at !== "number" || now - at < n.ownerWaitMin * MIN) continue;
     if ((byThread.get(w.id) ?? []).some((m) => m.from !== owner && m.at > at)) continue;
     if (firing.some((f) => f.key === `thread:${w.id}`)) continue;
-    firing.push({ key: `ask:${w.id}`, text: `ask ${w.id}: ${owner} answered ${mins(now - at)} min ago; act on it and close it` });
+    firing.push({ key: `ask:${w.id}`, text: `ask ${q(w.id)}: ${owner} answered ${mins(now - at)} min ago; act on it and close it` });
   }
 
   // 2. A step open too long, by its card's size.
@@ -48,13 +51,13 @@ export function nudges({ config, docs, now, state = {} }) {
   for (const [key, s] of runs) {
     const card = cards.get(s.init), median = n.etaHours[card?.size];
     if (!card || closed(card) || typeof median !== "number") continue;
-    if (now - s.at > n.stepFactor * median * HOUR) firing.push({ key: `step:${key}`, text: `${s.who} on ${s.init} (${s.phase}): open ${hours(now - s.at)} h, over ${n.stepFactor}× the ${card.size} median of ${median} h` });
+    if (now - s.at > n.stepFactor * median * HOUR) firing.push({ key: `step:${key}`, text: `${q(s.who)} on ${q(s.init)} (${q(s.phase)}): open ${hours(now - s.at)} h, over ${n.stepFactor}× the ${q(card.size)} median of ${median} h` });
   }
 
   // 3. A working role's memory reading too old.
   const working = new Set([...runs.values()].filter((s) => cards.has(s.init) && !closed(cards.get(s.init))).map((s) => s.who));
   for (const c of docs.ctx ?? []) {
-    if (c && working.has(c.id) && typeof c.at === "number" && now - c.at > n.ctxMaxHours * HOUR) firing.push({ key: `ctx:${c.id}`, text: `${c.id}'s memory reading is ${hours(now - c.at)} h old` });
+    if (c && working.has(c.id) && typeof c.at === "number" && now - c.at > n.ctxMaxHours * HOUR) firing.push({ key: `ctx:${c.id}`, text: `${q(c.id)}'s memory reading is ${hours(now - c.at)} h old` });
   }
 
   // 4. A card unchanged too long, unless parked.
@@ -65,7 +68,7 @@ export function nudges({ config, docs, now, state = {} }) {
     const fp = fingerprint(card), before = Object.hasOwn(state.seen ?? {}, card.id) ? state.seen[card.id] : undefined;
     seen[card.id] = before && before.fp === fp ? before : { fp, since: now };
     if (n.parked.includes(card.status)) continue;
-    if (now - seen[card.id].since >= n.staleHours * HOUR) firing.push({ key: `stale:${card.id}`, text: `${card.id}: unchanged for ${hours(now - seen[card.id].since)} h; update it or park it` });
+    if (now - seen[card.id].since >= n.staleHours * HOUR) firing.push({ key: `stale:${card.id}`, text: `${q(card.id)}: unchanged for ${hours(now - seen[card.id].since)} h; update it or park it` });
   }
 
   // Once, then again only after the quiet period; forgotten when it stops holding.
