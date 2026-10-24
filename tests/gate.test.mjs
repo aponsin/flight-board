@@ -233,3 +233,8 @@ test("the hook entries: the gate on board writes and hand-offs, the Stop check; 
   assert.deepEqual(s.hooks.PreToolUse, [other, e.PreToolUse]);
   assert.deepEqual(s.hooks.Stop, [e.Stop]);
 });
+
+test("case 11: an existing id written with if_version passes the gate; the board's server refuses one without it", () => {
+  const r = checkWrites([{ op: "set", collection: "waiting", doc_id: "ans-board-link", data: { kind: "answer", text: "x", question: "q", since: now, done: false } }], { config, who: lead, now, state: {} });
+  assert.deepEqual(r.errors, []);
+});
