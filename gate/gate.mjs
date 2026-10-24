@@ -48,6 +48,7 @@ export function readMirror(dir) {
 
 // The writes the gate let through since the mirror was exported, laid over it: the mirror then shows each card as it is
 // now (a card closed after the export is closed here too). journal: [{ op, collection, doc_id, data, at }].
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const OVERLAY = new Set(["initiatives", "waiting", "ideas", "messages", "derived"]);
 export function withJournal(mirror, journal) {
   if (!mirror) return null;
@@ -59,7 +60,8 @@ export function withJournal(mirror, journal) {
     if (w.op === "delete") { if (i >= 0) list.splice(i, 1); continue; }
     const base = w.op === "update" && i >= 0 ? list[i] : { id: w.doc_id };
     const next = { ...base };
-    for (const [k, v] of Object.entries(w.data ?? {})) { if (v && typeof v === "object" && v.__delete__) delete next[k]; else next[k] = v; }
+    // A journaled write's keys are the writer's: one named like an object's own machinery is skipped (Security).
+    for (const [k, v] of Object.entries(w.data ?? {})) { if (UNSAFE_KEYS.has(k)) continue; if (v && typeof v === "object" && v.__delete__) delete next[k]; else next[k] = v; }
     if (i >= 0) list[i] = next; else list.push(next);
   }
   return { ...mirror, docs };
