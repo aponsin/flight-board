@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 
 const MARK = "flight-board/gate/";
 export function hookEntries(repo, configPath, node = process.execPath) {
-  const cmd = (file) => `${node} ${resolve(repo, "gate", file)} --config ${resolve(configPath)}`;
+  // Each path quoted: a folder with a space ("Application Support") or a crafted name never splits or runs as shell.
+  const q = (s) => JSON.stringify(String(s));
+  const cmd = (file) => `${q(node)} ${q(resolve(repo, "gate", file))} --config ${q(resolve(configPath))}`;
   return {
     PreToolUse: { matcher: "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message", hooks: [{ type: "command", command: cmd("gate.mjs") }] },
     Stop: { hooks: [{ type: "command", command: cmd("stop.mjs") }] },

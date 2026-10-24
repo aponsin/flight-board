@@ -49,11 +49,13 @@ Every write to the board goes through `gate/gate.mjs` first, and is refused with
 
 - the board's own checks (an item's ETA, next step, level and version; an ask's steps, question and time; real clock times);
 - a decision has two options or more and its context, and a look decision a screenshot per option; a command in a step is written `{text, cmd}`;
-- `ctx/<Role>` is written only by that role's session, and `meta/context` `agents.<Role>` too, except by the lead role; a session's role is its title in the app (or `FLIGHT_BOARD_ROLE`, which must agree);
+- `ctx/<Role>` is written only by that role's session, and `meta/context` `agents.<Role>` too, except by the lead role; a session's role is its title in the app (or `FLIGHT_BOARD_ROLE`, which must agree). This is an integrity check against mistakes (a session that thinks it is another role), not access control: any session can rename itself, so nothing that needs protecting may depend on it;
 - an id listed in `gate.transientPrefixes` is a passing agent state and never becomes an item;
 - after three refusals in a row for one item, the gate asks for the stuck line (`meta/stuck`), which the page shows until a write for that item passes and clears it;
 - a message from the lead that hands out work names its card ("board id <id>"), and the card exists.
 
 `gate/stop.mjs` keeps the lead from ending a turn that states a verdict (`gate.verdictWords`) without a board write, or that answers the owner's thread message without writing in that thread.
 
-Install the hooks with `node scripts/hooks.mjs <board.config.json>` (prints them) or `--write` (adds them to `~/.claude/settings.json`, keeping a copy).
+Install the hooks with `node scripts/hooks.mjs <board.config.json>` (prints them) or `--write` (adds them to `~/.claude/settings.json`, keeping a copy). It changes Claude Code's settings: the owner runs it, or says yes to it themselves; no agent approves it for them.
+
+The gate is a process guard: on its own error (a config it can't read, a call it can't parse) it lets the write through with a note; a rule it applies refuses.

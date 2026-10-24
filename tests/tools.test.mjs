@@ -94,7 +94,7 @@ test("the pre-push scan reads what is pushed: a word committed then removed, or 
   const dir = mkdtempSync(join(tmpdir(), "fb-scan-"));
   try {
     const repo = join(dir, "repo"), bare = join(dir, "bare.git"), words = join(dir, "words.txt");
-    writeFileSync(words, "# private\nzebracorp\n");
+    writeFileSync(words, "# private\nquillwhistle\n");
     const git = (args, cwd = repo) => execFileSync("git", args, { cwd, encoding: "utf8" });
     execFileSync("git", ["init", "-q", "--bare", bare]);
     execFileSync("git", ["init", "-q", "-b", "main", repo]);
@@ -103,9 +103,9 @@ test("the pre-push scan reads what is pushed: a word committed then removed, or 
     writeFileSync(join(repo, "a.md"), "clean\n"); git(["add", "-A"]); git(["commit", "-qm", "one"]);
     git(["push", "-q", "origin", "main"]);
     const base = git(["rev-parse", "HEAD"]).trim();
-    writeFileSync(join(repo, "notes.md"), "secret zebracorp plan\n"); git(["add", "-A"]); git(["commit", "-qm", "two"]);
+    writeFileSync(join(repo, "notes.md"), "secret quillwhistle plan\n"); git(["add", "-A"]); git(["commit", "-qm", "two"]);
     git(["rm", "-q", "notes.md"]); git(["commit", "-qm", "three"]);
-    writeFileSync(join(repo, "b.md"), "word zebracorp\n"); git(["add", "-A"]); git(["commit", "-qm", "four"]);
+    writeFileSync(join(repo, "b.md"), "word quillwhistle\n"); git(["add", "-A"]); git(["commit", "-qm", "four"]);
     writeFileSync(join(repo, "b.md"), "edited out on disk\n");
     const head = git(["rev-parse", "HEAD"]).trim();
     const scan = new URL("../scripts/scan.mjs", import.meta.url).pathname;
@@ -117,7 +117,7 @@ test("the pre-push scan reads what is pushed: a word committed then removed, or 
     const shell = (args) => git(args);
     assert.equal(pushedCommits(`refs/heads/main ${head} refs/heads/main ${base}`, shell).length, 3);
     assert.equal(pushedCommits(`refs/heads/x ${"0".repeat(40)} refs/heads/x ${base}`, shell).length, 0, "a deleted ref sends nothing");
-    assert.equal(scanCommit(base, ["zebracorp"], shell).length, 0);
+    assert.equal(scanCommit(base, ["quillwhistle"], shell).length, 0);
     assert.equal(run(`refs/heads/main ${base} refs/heads/main ${base}\n`).status, 0, "nothing new: clean");
     writeFileSync(words, "# only comments\n");
     assert.match(run("").stderr, /has no words/, "an empty list refuses");
@@ -132,7 +132,7 @@ test("the pre-push scan also reads merges, a first push to a second remote, anno
   const dir = mkdtempSync(join(tmpdir(), "fb-scan2-"));
   try {
     const repo = join(dir, "repo"), words = join(dir, "words.txt");
-    writeFileSync(words, "zebracorp\n");
+    writeFileSync(words, "quillwhistle\n");
     const git = (args, env = {}) => execFileSync("git", args, { cwd: repo, encoding: "utf8", env: { ...process.env, ...env } });
     for (const b of ["private.git", "public.git"]) execFileSync("git", ["init", "-q", "--bare", join(dir, b)]);
     execFileSync("git", ["init", "-q", "-b", "main", repo]);
@@ -146,7 +146,7 @@ test("the pre-push scan also reads merges, a first push to a second remote, anno
     // A merge whose own resolution adds the word.
     git(["checkout", "-qb", "side"]); writeFileSync(join(repo, "s.md"), "side\n"); git(["add", "-A"]); git(["commit", "-qm", "side"]);
     git(["checkout", "-q", "main"]); writeFileSync(join(repo, "m.md"), "main\n"); git(["add", "-A"]); git(["commit", "-qm", "main"]);
-    git(["merge", "-q", "--no-ff", "--no-commit", "side"]); writeFileSync(join(repo, "evil.md"), "zebracorp\n"); git(["add", "-A"]); git(["commit", "-qm", "merge"]);
+    git(["merge", "-q", "--no-ff", "--no-commit", "side"]); writeFileSync(join(repo, "evil.md"), "quillwhistle\n"); git(["add", "-A"]); git(["commit", "-qm", "merge"]);
     const merged = hook("origin", `refs/heads/main ${sha("HEAD")} refs/heads/main ${Z}\n`);
     assert.equal(merged.status, 1); assert.match(merged.stderr, /evil\.md:1: a listed word/);
     git(["rm", "-q", "evil.md"]); git(["commit", "-qm", "clean again"]);
@@ -156,7 +156,7 @@ test("the pre-push scan also reads merges, a first push to a second remote, anno
     assert.equal(pub.status, 1, "the old merge goes to the public remote too"); assert.match(pub.stdout + pub.stderr, /evil\.md/);
     assert.equal(hook("origin", `refs/heads/main ${sha("HEAD")} refs/heads/main ${sha("HEAD")}\n`).status, 0);
     // An annotated tag's message.
-    git(["tag", "-a", "v9", "-m", "the zebracorp release"]);
+    git(["tag", "-a", "v9", "-m", "the quillwhistle release"]);
     const tag = hook("origin", `refs/tags/v9 ${sha("v9")} refs/tags/v9 ${Z}\n`);
     assert.equal(tag.status, 1); assert.match(tag.stderr, /tag [0-9a-f]{8}:\d+: a listed word/);
     git(["tag", "-a", "v10", "-m", "a clean release"]);
