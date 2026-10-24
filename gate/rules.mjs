@@ -121,6 +121,11 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
   const next = { refusals: { ...(state?.refusals ?? {}) }, stuck: { ...(state?.stuck ?? {}) } };
   // A session with no role (no title, no FLIGHT_BOARD_ROLE) writes nothing, the stuck line included (Security).
   if (!who?.role) return { errors: ["no role for this session: give it its role as its title (or FLIGHT_BOARD_ROLE), then write"], state: next, stuckNow: null };
+  // The Collector's one write is checked here too, before the stuck line's shortcut below skips writeErrors (Checker).
+  if (who.role === COLLECTOR_ROLE) {
+    const other = writes.filter((w) => !(w.collection === "derived" && w.doc_id === "all" && w.op === "set"));
+    if (other.length) return { errors: other.map((w) => `${w.collection}/${w.doc_id}: the ${COLLECTOR_ROLE} only sets derived/all`), state: next, stuckNow: null };
+  }
   const errors = [];
   // Rule 8: the stuck line is always writable; it is how the owner sees Manager stuck.
   const stuckWrite = writes.find((w) => w.collection === "meta" && w.doc_id === "stuck");

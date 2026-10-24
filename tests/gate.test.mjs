@@ -386,6 +386,11 @@ test("Security: the Collector only sets derived/all; only it or the lead writes 
     { op: "set", collection: "ctx", doc_id: "Collector", data: { pct: 1, at: now } },
     { op: "update", collection: "meta", doc_id: "stuck", data: {} },
   ]) assert.match(writeErrors(w, { config, who: collector, now })[0] ?? "", /only sets derived\/all/, `${w.op} ${w.collection}/${w.doc_id}`);
+  for (const op of ["update", "set", "delete"]) {
+    const stuck = checkWrites([{ op, collection: "meta", doc_id: "stuck", data: { "initiatives:x": { reason: "r", at: now } } }], { config, who: collector, now, state: {} });
+    assert.match(stuck.errors[0] ?? "", /meta\/stuck: the Collector only sets derived\/all/, `${op} meta/stuck: the stuck line's shortcut doesn't let the Collector through (Checker)`);
+  }
+  assert.deepEqual(checkWrites([{ op: "set", collection: "derived", doc_id: "all", data: { cards: {} } }], { config, who: collector, now, state: {} }).errors, []);
   const derived = { op: "set", collection: "derived", doc_id: "all", data: { cards: {} } };
   assert.match(writeErrors(derived, { config, who: { role: "Builder", manager: false }, now })[0] ?? "", /derived\/all is written by the Collector \(or Manager\), not Builder/);
   assert.deepEqual(writeErrors(derived, { config, who: lead, now }), [], "the lead may repair it");
