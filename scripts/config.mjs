@@ -20,6 +20,10 @@ export const DEFAULTS = {
   // live. lanePhases: the phases where one owner holds one card at a time (reviews and shipping queue). versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
   // how such a subject names each branch it shipped and its commit (groups: branch, sha), for branches deleted since.
   collector: { repoPath: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "" },
+  // The nudges (collector/nudges.mjs): minutes the owner may wait for an answer; how far past its size's median a step may
+  // run (etaHours: the median hours a step takes, by card size); how old a memory reading may get; how long a card may
+  // stay unchanged unless its status is one of parked; and the quiet minutes before a nudge is sent again.
+  nudges: { ownerWaitMin: 15, stepFactor: 1.5, etaHours: { XS: 1, S: 1.5, M: 3.5, L: 6 }, ctxMaxHours: 2, staleHours: 24, parked: ["paused"], quietMin: 120 },
 };
 
 const KEYS = Object.keys(DEFAULTS);
@@ -81,12 +85,22 @@ export function checkConfig(c) {
       for (const f of ["versionPattern", "shippedPattern"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
     }
   }
+  if (c.nudges !== undefined) {
+    const k = c.nudges;
+    if (!k || typeof k !== "object" || Array.isArray(k)) out.push("nudges: an object");
+    else {
+      for (const f of Object.keys(k)) if (!Object.hasOwn(DEFAULTS.nudges, f)) out.push(`nudges: unknown field "${f}" (known: ${Object.keys(DEFAULTS.nudges).join(", ")})`);
+      for (const f of ["ownerWaitMin", "stepFactor", "ctxMaxHours", "staleHours", "quietMin"]) if (k[f] !== undefined && !(typeof k[f] === "number" && k[f] > 0 && k[f] < 1e4)) out.push(`nudges.${f}: a positive number`);
+      if (k.etaHours !== undefined && !(k.etaHours && typeof k.etaHours === "object" && !Array.isArray(k.etaHours) && Object.entries(k.etaHours).every(([s, h]) => /^[A-Za-z]{1,4}$/.test(s) && typeof h === "number" && h > 0))) out.push("nudges.etaHours: { size: hours }");
+      if (k.parked !== undefined && !(Array.isArray(k.parked) && k.parked.every((x) => typeof x === "string" && KEY.test(x)))) out.push("nudges.parked: a list of statuses");
+    }
+  }
   return out;
 }
 
 // The defaults with the team's values on top.
 export function fullConfig(c) {
-  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}) } };
+  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}) }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) } };
 }
 
 // The board's id, from its link: what the gate matches a write's url against.

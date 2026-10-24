@@ -2,8 +2,8 @@
 // Reads the board's mirror (<stateDir>/<board>/mirror, exported just before by the scheduled task), fetches the team's
 // repository and its sign-off notes, works out each open card's phase (collector/derive.mjs), and writes
 // <stateDir>/<board>/out/derived-all.json: the one document the task then writes to the board as derived/all.
-// It prints one line per conflict (a card's declared phase against its evidence) and the cards live by the evidence but
-// still open, for the lead. It never writes the board itself: only a Claude session can (collector/TASK.md).
+// It prints one line per conflict (a card's declared phase against its evidence), the cards live by the evidence but
+// still open, and the nudges (collector/nudges.mjs), for the lead. It never writes the board itself: only a Claude session can (collector/TASK.md).
 import { realpathSync } from "node:fs";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync } from "node:fs";
 import { sep } from "node:path";
@@ -14,6 +14,10 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
 import { headFor, derivePhase, conflict, staleLive, closed } from "./derive.mjs";
 import { remoteHeads, mainLine, deployedSha, factsFor, shippedHeads } from "./facts.mjs";
+import { nudges } from "./nudges.mjs";
+
+// The steps the export takes: the last 7 days' (older ones can't hold an open step worth a nudge, and there are many).
+export const STEPS_DAYS = 7;
 
 // Sign-off notes are fetched into a namespace of our own (refs/notes/flight-board/, where git notes can read them), so a
 // local notes ref the team is writing is never overwritten.
@@ -44,6 +48,17 @@ export function swapMirror(dir, id) {
   return true;
 }
 
+// The nudges, with the last run's state next to the mirror (<dir>/nudges.json: what was sent when, and since when each
+// card is unchanged). Returns the NUDGE lines to print.
+export function runNudges(dir, config, docs, now) {
+  const path = join(dir, "nudges.json");
+  let before = {};
+  try { before = JSON.parse(readFileSync(path, "utf8")); } catch { /* first run, or a broken file: start afresh */ }
+  const { lines, state } = nudges({ config, docs, now, state: before && typeof before === "object" ? before : {} });
+  writeFileSync(path, JSON.stringify(state));
+  return lines;
+}
+
 export function collect({ config, cards, git, gh, now }) {
   const c = config.collector;
   const cfg = { ...config, collector: { ...c, notes: localNotes(c.notes) } };
@@ -72,7 +87,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const gh = (args) => execFileSync("gh", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const dir = join(home(config.gate.stateDir), boardId(config) ?? "no-board");
   if (process.argv.includes("--prepare")) {
-    try { console.log(`Export the board into: ${prepareMirror(dir, boardId(config))}`); process.exit(0); } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
+    try {
+      console.log(`Export the board into: ${prepareMirror(dir, boardId(config))}`);
+      console.log(`Steps since: ${Date.now() - STEPS_DAYS * 864e5}`);
+      process.exit(0);
+    } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
   }
   try { swapMirror(dir, boardId(config)); } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
   const mirror = readMirror(join(dir, "mirror"));
@@ -81,11 +100,14 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     git(["fetch", "-q", config.collector.remote]);
     git(["fetch", "-q", config.collector.remote, "+refs/notes/*:refs/notes/flight-board/*"]);
   }
-  const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now: Date.now() });
+  const now = Date.now();
+  const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now });
+  const nudged = { lines: runNudges(dir, config, mirror.docs, now) };
   mkdirSync(join(dir, "out"), { recursive: true });
   const out = join(dir, "out", "derived-all.json");
   writeFileSync(out, JSON.stringify(doc, null, 2));
   console.log(`Derived ${Object.keys(doc.cards).length} open card(s) into ${out}.`);
   for (const line of conflicts) console.log(`CONFLICT ${line}`);
   if (doc.liveButOpen.length) console.log(`LIVE BUT OPEN (${doc.liveButOpen.length}): ${doc.liveButOpen.join(", ")}`);
+  for (const line of nudged.lines) console.log(line);
 }

@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
 import { boardIdOf, headFor, reviewsFor, derivePhase, conflict, staleLive } from "../collector/derive.mjs";
 import { remoteHeads, signedPhases, versionFor, mainLine, factsFor, shippedHeads } from "../collector/facts.mjs";
-import { collect, localNotes, prepareMirror, swapMirror } from "../collector/collect.mjs";
+import { collect, localNotes, prepareMirror, swapMirror, runNudges } from "../collector/collect.mjs";
 import { mirrorErrors, checkWrites } from "../gate/rules.mjs";
 
 const config = fullConfig({ owner: "Sam", collector: { repoPath: "/x", notes: { language: "refs/notes/linguist", checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
@@ -256,4 +256,18 @@ test("rule 10: a reply names an item or a thread with messages; a made-up thread
   assert.deepEqual(checkWrites(batch, { config, who: { role: "Lead", manager: true }, now: 5, state: {}, mirror: m }).errors.filter((e) => e.startsWith("messages/")), [], "an ask made in the same call");
   assert.deepEqual(mirrorErrors(msg("anything"), { config, mirror: mirror() }), [], "an export without ideas skips the rule");
   assert.deepEqual(mirrorErrors(msg("anything"), { config, mirror: null }), [], "no mirror: fail open");
+});
+
+test("the run's nudges keep their state next to the mirror: sent once, quiet on the next run, fine with a broken state file", async () => {
+  const { writeFileSync: write, readFileSync: read } = await import("node:fs");
+  const dir = mkdtempSync(join(tmpdir(), "fb-nudge-"));
+  try {
+    const cfg = fullConfig({ owner: "Sam" }), T = 1_800_000_000_000;
+    const docs = { messages: [{ id: "m1", thread: "t-1", from: "Sam", text: "x", at: T - 20 * 60e3 }] };
+    assert.deepEqual(runNudges(dir, cfg, docs, T), ["NUDGE thread t-1: Sam has waited 20 min for an answer"]);
+    assert.equal(typeof JSON.parse(read(join(dir, "nudges.json"), "utf8")).sent["thread:t-1"], "number");
+    assert.deepEqual(runNudges(dir, cfg, docs, T + 30 * 60e3), [], "the next run, inside the quiet period");
+    write(join(dir, "nudges.json"), "not json");
+    assert.equal(runNudges(dir, cfg, docs, T + 31 * 60e3).length, 1, "a broken state file starts afresh");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
