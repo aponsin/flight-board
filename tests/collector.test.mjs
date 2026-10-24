@@ -1,0 +1,187 @@
+// The collector: each card's phase from the repository (branches, Board-Id trailers, sign-off notes, the main branch,
+// the deploy run), its conflicts with what the card says, and the gate's rules that read the mirror. Fictional repo.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { fullConfig } from "../scripts/config.mjs";
+import { boardIdOf, headFor, reviewsFor, derivePhase, conflict, staleLive } from "../collector/derive.mjs";
+import { remoteHeads, signedPhases, versionFor, mainLine, factsFor, shippedHeads } from "../collector/facts.mjs";
+import { collect, localNotes } from "../collector/collect.mjs";
+import { mirrorErrors, checkWrites } from "../gate/rules.mjs";
+
+const config = fullConfig({ owner: "Sam", collector: { repoPath: "/x", notes: { language: "refs/notes/linguist", checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
+const facts = (over = {}) => ({ head: { branch: "build/tabs", sha: "aaaaaaaa11", message: "x\n\nBoard-Id: tabs" }, signed: new Set(), onMain: false, deployed: false, version: null, ...over });
+const card = (over = {}) => ({ id: "tabs", status: "active", level: "Full", customerText: true, ...over });
+
+test("Board-Id trailers, and a card's head: the trailer wins, then a branch named for the card, newest first", () => {
+  assert.equal(boardIdOf("Fix tabs\n\nBoard-Id: tab-fix\nCo-Authored-By: x"), "tab-fix");
+  assert.equal(boardIdOf("mentions Board-Id: inline only"), null);
+  const heads = [{ branch: "build/tabs", sha: "1", at: 2, message: "" }, { branch: "admin/other", sha: "2", at: 1, message: "Board-Id: tabs" }, { branch: "old/tabs", sha: "3", at: 1, message: "" }];
+  assert.equal(headFor("tabs", heads).sha, "2");
+  assert.equal(headFor("tabs", heads.slice(0, 1).concat(heads[2])).sha, "1", "newest of the named branches");
+  assert.equal(headFor("none", heads), null);
+});
+
+test("the reviews a card needs follow its level and fields, and its skips", () => {
+  assert.deepEqual(reviewsFor(card(), config), ["language", "checker", "security"]);
+  assert.deepEqual(reviewsFor(card({ level: "Quick", customerText: false }), config), ["checker"]);
+  assert.deepEqual(reviewsFor(card({ skip: ["checker"] }), config), ["language", "security"]);
+});
+
+test("the derived phase: build, then each review not yet signed in order, then ship, then live with its version", () => {
+  assert.equal(derivePhase(card(), { head: null }, config).phase, null);
+  assert.equal(derivePhase(card(), facts({ head: { branch: "build/tabs", sha: "a", message: "wip" } }), config).phase, "build");
+  assert.equal(derivePhase(card(), facts(), config).phase, "language");
+  assert.equal(derivePhase(card(), facts({ signed: new Set(["language"]) }), config).phase, "checker");
+  assert.equal(derivePhase(card(), facts({ signed: new Set(["language", "checker"]) }), config).phase, "security");
+  assert.equal(derivePhase(card(), facts({ signed: new Set(["language", "checker", "security"]) }), config).phase, "ship");
+  assert.equal(derivePhase(card(), facts({ onMain: true }), config).phase, "ship");
+  assert.deepEqual(derivePhase(card(), facts({ onMain: true, deployed: true, version: "1.2.0" }), config).version, "1.2.0");
+  assert.match(derivePhase(card(), facts({ onMain: true, deployed: true, version: "1.2.0" }), config).evidence, /deployed in 1\.2\.0/);
+});
+
+test("case 2: a card still on build while its head carries every sign-off is a conflict, with the evidence", () => {
+  const d = derivePhase(card({ level: "Full", customerText: false }), facts({ signed: new Set(["checker", "security"]) }), config);
+  assert.equal(d.phase, "ship");
+  assert.match(conflict(card({ phase: "build" }), d, config), /^tabs: the card says build, the repository says ship \(READY at aaaaaaaa; every review signed\)$/);
+  assert.equal(conflict(card({ phase: "ship" }), d, config), null);
+  assert.match(conflict(card({ phase: "live" }), d, config), /ahead of its evidence/);
+});
+
+test("case 1: open cards that are live by the evidence are listed for the close-out", () => {
+  const derived = { a: { phase: "live" }, b: { phase: "ship" } };
+  assert.deepEqual(staleLive([card({ id: "a" }), card({ id: "b" }), card({ id: "c" })], derived, config), ["a"]);
+});
+
+// A scratch repository with a remote: a branch READY with notes, one merged and released, one still in build.
+function scratch() {
+  const dir = mkdtempSync(join(tmpdir(), "fb-coll-"));
+  const repo = join(dir, "repo"), bare = join(dir, "origin.git");
+  const g = (args, cwd = repo) => execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  execFileSync("git", ["init", "-q", "--bare", bare]);
+  execFileSync("git", ["init", "-q", "-b", "main", repo]);
+  g(["config", "user.email", "t@example.com"]); g(["config", "user.name", "T"]); g(["remote", "add", "origin", bare]);
+  const commit = (file, msg) => { writeFileSync(join(repo, file), msg + "\n"); g(["add", "-A"]); g(["commit", "-qm", msg]); return g(["rev-parse", "HEAD"]).trim(); };
+  commit("a.md", "start");
+  g(["checkout", "-qb", "build/shipped-one"]); const shipped = commit("s.md", "shipped work\n\nBoard-Id: shipped-one");
+  g(["checkout", "-q", "main"]); g(["merge", "-q", "--no-ff", "-m", "Merge shipped-one", "build/shipped-one"]);
+  commit("v.md", "v1.4.0: build/shipped-one@" + shipped.slice(0, 8));
+  g(["checkout", "-qb", "build/ready-one"]); const ready = commit("r.md", "ready work\n\nBoard-Id: ready-one");
+  g(["notes", "--ref=refs/notes/checker", "add", "-m", "PASS", ready]);
+  g(["checkout", "-qb", "build/wip-one", "main"]); commit("w.md", "wip");
+  g(["checkout", "-q", "main"]);
+  g(["push", "-q", "origin", "main", "build/shipped-one", "build/ready-one", "build/wip-one", "refs/notes/checker"]);
+  g(["fetch", "-q", "origin", "+refs/notes/*:refs/notes/flight-board/*"]);
+  g(["fetch", "-q", "origin"]);
+  return { dir, repo, git: (args) => g(args), shipped, ready, main: g(["rev-parse", "main"]).trim() };
+}
+
+test("the facts from a real repository: heads with messages, notes signed, the version a commit shipped in", () => {
+  const s = scratch();
+  try {
+    const heads = remoteHeads(s.git, "origin");
+    assert.deepEqual(heads.map((h) => h.branch).sort(), ["build/ready-one", "build/shipped-one", "build/wip-one", "main"]);
+    assert.match(heads.find((h) => h.branch === "build/ready-one").message, /Board-Id: ready-one/);
+    assert.deepEqual([...signedPhases(s.git, s.ready, localNotes({ checker: "refs/notes/checker", security: "refs/notes/security" }))], ["checker"]);
+    const line = mainLine(s.git, "origin", "main");
+    assert.equal(versionFor(s.git, s.shipped, line, config.collector.versionPattern), "1.4.0");
+    assert.equal(versionFor(s.git, s.ready, line, config.collector.versionPattern), null);
+  } finally { rmSync(s.dir, { recursive: true, force: true }); }
+});
+
+test("a whole run: each open card's phase, its conflicts, the live-but-open list; the deploy run decides live", () => {
+  const s = scratch();
+  try {
+    const cfg = fullConfig({ owner: "Sam", collector: { repoPath: s.repo, notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
+    const cards = [
+      { id: "shipped-one", status: "active", phase: "build", level: "Quick" },
+      { id: "ready-one", status: "active", phase: "build", level: "Full" },
+      { id: "wip-one", status: "active", phase: "build", level: "Quick" },
+      { id: "plan-only", status: "active", phase: "plan" },
+      { id: "old", status: "done", phase: "live" },
+    ];
+    const gh = (args) => (args.includes("--workflow") ? JSON.stringify([{ headSha: s.main }]) : "[]");
+    const { doc, conflicts } = collect({ config: cfg, cards, git: s.git, gh, now: 5 });
+    assert.equal(doc.cards["shipped-one"].phase, "live");
+    assert.equal(doc.cards["shipped-one"].version, "1.4.0");
+    assert.equal(doc.cards["ready-one"].phase, "security", "checker signed, security not yet");
+    assert.equal(doc.cards["wip-one"].phase, "build");
+    assert.equal(doc.cards["plan-only"].phase, null);
+    assert.equal(doc.cards.old, undefined, "done cards aren't read");
+    assert.deepEqual(doc.liveButOpen, ["shipped-one"]);
+    assert.equal(conflicts.length, 2);
+    const noDeploy = collect({ config: cfg, cards, git: s.git, gh: () => "[]", now: 5 }).doc;
+    assert.equal(noDeploy.cards["shipped-one"].phase, "ship", "on main but no successful deploy run: not live");
+  } finally { rmSync(s.dir, { recursive: true, force: true }); }
+});
+
+// ---- The gate's rules on the mirror ----
+const mirror = (over = {}) => ({ docs: {
+  initiatives: [{ id: "tabs", status: "active", phase: "checker", who: "Checker" }, { id: "menu", status: "active", phase: "build", who: "Builder" }],
+  waiting: [], messages: [], derived: [{ id: "all", cards: { tabs: { phase: "security", evidence: "e" } } }], ...over } });
+const upd = (data, id = "tabs") => ({ op: "update", collection: "initiatives", doc_id: id, data });
+
+test("rule 3: a card's phase moves forward only; a jump past a phase needs it skipped, the evidence past it, or a reason", () => {
+  assert.match(mirrorErrors(upd({ phase: "build" }), { config, mirror: mirror() })[0], /only move forward: checker → build/);
+  assert.deepEqual(mirrorErrors(upd({ phase: "security" }), { config, mirror: mirror() }), []);
+  assert.match(mirrorErrors(upd({ phase: "live" }), { config, mirror: mirror() })[0], /skips security, ship/);
+  assert.deepEqual(mirrorErrors(upd({ phase: "live", phaseReason: "shipped by hand" }), { config, mirror: mirror() }), []);
+  assert.deepEqual(mirrorErrors(upd({ phase: "live" }), { config, mirror: mirror({ derived: [{ id: "all", cards: { tabs: { phase: "live" } } }] }) }), [], "the evidence is already live");
+  assert.deepEqual(mirrorErrors(upd({ phase: "build" }, "new-card"), { config, mirror: mirror() }), [], "a card the mirror doesn't know");
+});
+
+test("rule 4: one card per role per build or review phase", () => {
+  assert.match(mirrorErrors(upd({ phase: "build", who: "Builder" }, "other"), { config, mirror: mirror({ initiatives: [...mirror().docs.initiatives, { id: "other", status: "active", phase: "plan" }] }) })[0], /menu is on build for Builder: has it moved on\? Update menu first/);
+  assert.deepEqual(mirrorErrors(upd({ phase: "ship", who: "Release" }, "other"), { config, mirror: mirror() }), [], "ship isn't a lane");
+  assert.deepEqual(mirrorErrors(upd({ phase: "build", who: "Builder" }, "menu"), { config, mirror: mirror() }), [], "the same card");
+});
+
+test("rule 5, case 1: done only with the owner answered, no open ask tied to it, and live by the evidence", () => {
+  const done = upd({ status: "done", doneAt: 1 });
+  assert.match(mirrorErrors(done, { config, mirror: mirror() }).join(), /repository says security, not live/);
+  const live = { derived: [{ id: "all", cards: { tabs: { phase: "live" } } }] };
+  assert.deepEqual(mirrorErrors(done, { config, mirror: mirror(live) }), []);
+  assert.match(mirrorErrors(done, { config, mirror: mirror({ ...live, messages: [{ thread: "tabs", from: "Sam", text: "Still on?", at: 1 }] }) }).join(), /Sam's last message in its thread is unanswered/);
+  assert.match(mirrorErrors(done, { config, mirror: mirror({ ...live, waiting: [{ id: "ask-1", initiative: "tabs", done: false }] }) }).join(), /ask tied to it is still open \(ask-1\)/);
+  assert.deepEqual(mirrorErrors(done, { config, mirror: mirror({ ...live, waiting: [{ id: "ask-1", initiative: "tabs", done: false, response: { status: "ok" } }] }) }), []);
+  assert.deepEqual(mirrorErrors(upd({ status: "done" }, "unknown"), { config, mirror: mirror() }), [], "no evidence for this card: it passes");
+});
+
+test("the gate runs rules 3-5 only with a mirror; without one they pass", () => {
+  const w = upd({ phase: "build" });
+  assert.equal(checkWrites([w], { config, who: { role: "Manager", manager: true }, now: Date.now() - 1234, state: {}, mirror: null }).errors.length, 0);
+  assert.equal(checkWrites([w], { config, who: { role: "Manager", manager: true }, now: Date.now() - 1234, state: {}, mirror: mirror() }).errors.length, 1);
+});
+
+test("a branch deleted after it shipped is still found, from the release commit that names it (shippedPattern)", () => {
+  const s = scratch();
+  try {
+    s.git(["push", "-q", "origin", "--delete", "build/shipped-one"]); s.git(["fetch", "-q", "--prune", "origin"]);
+    const line = mainLine(s.git, "origin", "main");
+    const pattern = "([A-Za-z0-9._/-]+)@([0-9a-f]{7,40})";
+    assert.deepEqual(shippedHeads(s.git, line, pattern).map((h) => [h.branch, h.sha]), [["build/shipped-one", s.shipped]]);
+    assert.deepEqual(shippedHeads(s.git, line, ""), [], "no pattern, no guess");
+    const cfg = fullConfig({ collector: { repoPath: s.repo, notes: { checker: "refs/notes/checker" }, deployWorkflow: "CI", shippedPattern: pattern } });
+    const gh = () => JSON.stringify([{ headSha: s.main }]);
+    const { doc } = collect({ config: cfg, cards: [{ id: "shipped-one", status: "active", phase: "ship" }], git: s.git, gh, now: 1 });
+    assert.equal(doc.cards["shipped-one"].phase, "live");
+    assert.equal(doc.cards["shipped-one"].version, "1.4.0");
+    assert.equal(collect({ config: fullConfig({ collector: { ...cfg.collector, shippedPattern: "" } }), cards: [{ id: "shipped-one", status: "active" }], git: s.git, gh, now: 1 }).doc.cards["shipped-one"].phase, null);
+  } finally { rmSync(s.dir, { recursive: true, force: true }); }
+});
+
+test("the live-but-open list leaves out cards already done; notes are read from the collector's own namespace only", () => {
+  assert.deepEqual(staleLive([card({ id: "a", status: "done" }), card({ id: "b" })], { a: { phase: "live" }, b: { phase: "live" } }, config), ["b"]);
+  assert.deepEqual(localNotes({ checker: "refs/notes/checker" }), { checker: "refs/notes/flight-board/checker" });
+  const s = scratch();
+  try {
+    // The team's own ref says nothing (deleted here); the fetched copy is what counts.
+    s.git(["update-ref", "-d", "refs/notes/checker"]);
+    const cfg = fullConfig({ collector: { repoPath: s.repo, notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
+    const { doc } = collect({ config: cfg, cards: [{ id: "ready-one", status: "active", level: "Full" }], git: s.git, gh: () => "[]", now: 1 });
+    assert.equal(doc.cards["ready-one"].phase, "security", "checker's note found in refs/notes/flight-board/checker");
+  } finally { rmSync(s.dir, { recursive: true, force: true }); }
+});

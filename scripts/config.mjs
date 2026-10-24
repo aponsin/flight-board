@@ -15,6 +15,11 @@ export const DEFAULTS = {
   // The write gate (gate/): the lead role, item ids that are passing agent states (never items), the words that make a
   // reply a verdict, where the gate keeps its state and the board's mirror, and how old a mirror may be.
   gate: { managerRole: "Manager", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 30 },
+  // The collector (collector/): the team's repository and how its work shows there. notes: each review phase and the git
+  // notes ref its sign-off is written to. deployWorkflow: the CI workflow whose successful run on the main branch means
+  // live. versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
+  // how such a subject names each branch it shipped and its commit (groups: branch, sha), for branches deleted since.
+  collector: { repoPath: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "" },
 };
 
 const KEYS = Object.keys(DEFAULTS);
@@ -57,12 +62,30 @@ export function checkConfig(c) {
       if (g.mirrorMaxAgeMin !== undefined && !(Number.isInteger(g.mirrorMaxAgeMin) && g.mirrorMaxAgeMin > 0)) out.push("gate.mirrorMaxAgeMin: whole minutes");
     }
   }
+  if (c.collector !== undefined) {
+    const k = c.collector, phaseKeys2 = (c.phases ?? DEFAULTS.phases).map((p) => p?.[0]);
+    if (!k || typeof k !== "object" || Array.isArray(k)) out.push("collector: an object");
+    else {
+      for (const f of Object.keys(k)) if (!Object.hasOwn(DEFAULTS.collector, f)) out.push(`collector: unknown field "${f}" (known: ${Object.keys(DEFAULTS.collector).join(", ")})`);
+      for (const f of ["repoPath", "remote", "mainBranch", "deployWorkflow"]) if (k[f] !== undefined && !(typeof k[f] === "string" && !/[\n\0]/.test(k[f]) && k[f].length <= 300)) out.push(`collector.${f}: a short string`);
+      for (const f of ["remote", "mainBranch"]) if (k[f] !== undefined && !/^[A-Za-z0-9._\/-]{1,100}$/.test(String(k[f]))) out.push(`collector.${f}: a git name`);
+      if (k.notes !== undefined) {
+        if (!k.notes || typeof k.notes !== "object" || Array.isArray(k.notes)) out.push("collector.notes: { phase: notes ref }");
+        else for (const [p, ref] of Object.entries(k.notes)) {
+          if (!phaseKeys2.includes(p)) out.push(`collector.notes.${p}: not one of the phases`);
+          if (!/^refs\/notes\/[A-Za-z0-9._-]{1,60}$/.test(String(ref))) out.push(`collector.notes.${p}: a refs/notes/<name> ref`);
+        }
+      }
+      for (const f of ["buildPhase", "shipPhase", "livePhase"]) if (k[f] !== undefined && !phaseKeys2.includes(k[f])) out.push(`collector.${f}: one of the phases`);
+      for (const f of ["versionPattern", "shippedPattern"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
+    }
+  }
   return out;
 }
 
 // The defaults with the team's values on top.
 export function fullConfig(c) {
-  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) } };
+  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}) } };
 }
 
 // The board's id, from its link: what the gate matches a write's url against.

@@ -21,7 +21,9 @@ Everything particular to one team lives in its own `board.config.json`, outside 
 | `gate/` | The write gate: a PreToolUse hook on board writes and hand-off messages, and a Stop hook on the lead's replies. |
 | `scripts/hooks.mjs` | The gate's entries for Claude Code's settings: printed, or written with `--write`. |
 
-Coming next: the collector (each item's phase worked out from the repository and its review notes) and the nudges (timers that remind the lead agent).
+| `collector/` | The collector: each card's phase worked out from the repository (`collect.mjs`), and the scheduled task that runs it (`TASK.md`). |
+
+Coming next: the nudges (timers that remind the lead agent).
 
 ## Set up a team
 
@@ -59,3 +61,19 @@ Every write to the board goes through `gate/gate.mjs` first, and is refused with
 Install the hooks with `node scripts/hooks.mjs <board.config.json>` (prints them) or `--write` (adds them to `~/.claude/settings.json`, keeping a copy). It changes Claude Code's settings: the owner runs it, or says yes to it themselves; no agent approves it for them.
 
 The gate is a process guard: on its own error (a config it can't read, a call it can't parse) it lets the write through with a note; a rule it applies refuses.
+
+## The collector
+
+The board shows what the repository says, not only what someone wrote. For each open card, `collector/collect.mjs` finds its commit: a branch head carrying a `Board-Id: <id>` trailer, a branch named for the card, or a release commit on the main branch that names the branch it shipped (`collector.shippedPattern`). It then reads:
+
+- the sign-off notes on that commit (`collector.notes`: a review phase and its notes ref);
+- whether the main branch contains it, and the version it shipped in (`collector.versionPattern`);
+- whether a successful deploy run (`collector.deployWorkflow`) contains it.
+
+From those it works out the card's phase: build, then each review not yet signed, then ship, then live. It writes everything to one document, `derived/all`. The page shows "Repository: <phase> <version>" on each card, in red when the card says otherwise, and the gate checks phase moves, one card per role and phase, and done-only-when-closed against it.
+
+Sign-off notes are fetched into `refs/notes/flight-board/`, so the team's own notes refs are never overwritten. Point `collector.repoPath` at a clone of its own, not at a checkout someone works in.
+
+Each run is a scheduled Claude session following `collector/TASK.md`; only a Claude session can write the board.
+
+**Every READY commit carries a `Board-Id: <card id>` trailer** from now on, so the collector finds the work even when the branch has another name.

@@ -132,7 +132,8 @@ test("a new thread box with Question and Idea sits at the top of the board, befo
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   assert.match(html, /<form class="newthread" id="newthread">[\s\S]*<option value="question">Question<\/option><option value="idea">Idea<\/option>/);
   assert.ok(html.indexOf('id="newthread"') < html.indexOf('id="h-wait"'));
-  assert.match(html, /"messages"\]\.forEach\(sub\)/, "the board listens to messages");
+  assert.match(html, /"messages"[,\]][^\n]*\.forEach\(sub\)/, "the board listens to messages");
+  assert.match(html, /"derived"\]\.forEach\(sub\)/, "and to the collector's derived phases");
 });
 
 test("a re-draw keeps what Owner is typing and which folds are open", () => {
@@ -155,4 +156,13 @@ test("the stuck line: \"Manager stuck on <item>: <reason>\" for each item the ga
   assert.deepEqual([...b.stuckLines()], ["Manager stuck on Tabs: no ETA", "Manager stuck on Pick a colour: no steps"]);
   b.state.meta[0] = { id: "stuck" };
   assert.deepEqual([...b.stuckLines()], []);
+});
+
+test("a card shows what the repository says, and a conflict mark when it says otherwise", () => {
+  const b = loadNames(["evidence"]);
+  b.state.derived.push({ id: "all", cards: { x: { phase: "live", version: "1.4.0", evidence: "abc is on main" }, y: { phase: null } } });
+  assert.equal(b.evidence({ id: "x", phase: "build", status: "active" }), '<span class="evidence clash" title="abc is on main">Repository says Live 1.4.0</span>');
+  assert.equal(b.evidence({ id: "x", phase: "live", status: "active" }), '<span class="evidence" title="abc is on main">Repository: Live 1.4.0</span>');
+  assert.equal(b.evidence({ id: "y", phase: "build" }), "", "nothing known, nothing shown");
+  assert.equal(b.evidence({ id: "z", phase: "build" }), "");
 });

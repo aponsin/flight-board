@@ -106,7 +106,7 @@ const STUCK_AFTER = 3;
 
 // A whole tool call to the board. state: { refusals: { item: n }, stuck: { item: { reason, at } } }.
 // Returns { errors, state, stuckNow }: stuckNow names an item refused STUCK_AFTER times in a row, for the stuck line.
-export function checkWrites(writes, { config, who, now, state }) {
+export function checkWrites(writes, { config, who, now, state, mirror = null }) {
   const next = { refusals: { ...(state?.refusals ?? {}) }, stuck: { ...(state?.stuck ?? {}) } };
   const errors = [];
   // Rule 8: the stuck line is always writable; it is how the owner sees Manager stuck.
@@ -116,7 +116,7 @@ export function checkWrites(writes, { config, who, now, state }) {
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
-    const errs = writeErrors(w, { config, who, now });
+    const errs = [...writeErrors(w, { config, who, now }), ...mirrorErrors(w, { config, mirror })];
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
@@ -153,4 +153,45 @@ export function refusalText(errors, stuckNow, now) {
   let t = `Flight board refused this write. Fix and resend:\n- ${errors.join("\n- ")}\n`;
   if (stuckNow) t += `\nThird refusal in a row for ${stuckNow.item}. Show it on the board now (this write always passes):\n  ArtifactData update meta/stuck {"${stuckNow.item}": {"reason": ${JSON.stringify(stuckNow.reason)}, "at": ${now}}}\n`;
   return t;
+}
+
+// ---- Rules that need the board's state, from the mirror the collector keeps (rules 3-5) ----
+// mirror: { docs: { initiatives, waiting, messages, derived } } as gate/gate.mjs reads it. Each rule passes when the mirror
+// doesn't know the card (a new one).
+
+// Rule 3: a card's phase only moves forward; a jump past a phase needs it skipped, the evidence past it, or a reason.
+// Rule 4: one card per role per build or review phase.
+// Rule 5 (case 1): done only with no owner message waiting in its thread, no open ask tied to it, and live by the evidence.
+export function mirrorErrors(w, { config, mirror }) {
+  const { op, collection, doc_id: id, data } = w;
+  if (collection !== "initiatives" || op === "delete" || !data || typeof data !== "object" || !mirror) return [];
+  const e = [];
+  const order = config.phases.map((p) => p[0]);
+  const cards = mirror.docs.initiatives ?? [];
+  const was = cards.find((k) => k.id === id);
+  const now = { ...(op === "update" ? was : {}), ...data };
+  const derived = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards?.[id];
+  if (was?.phase && "phase" in data && data.phase !== was.phase) {
+    const from = order.indexOf(was.phase), to = order.indexOf(data.phase);
+    if (to >= 0 && from >= 0 && to < from) e.push(`phases only move forward: ${was.phase} → ${data.phase}`);
+    if (to > from + 1 && !data.phaseReason) {
+      const skip = new Set([...(Array.isArray(was.skip) ? was.skip : []), ...(Array.isArray(data.skip) ? data.skip : [])]);
+      const past = derived?.phase ? order.indexOf(derived.phase) : -1;
+      const jumped = order.slice(from + 1, to).filter((p) => !skip.has(p) && past < to);
+      if (jumped.length) e.push(`${was.phase} → ${data.phase} skips ${jumped.join(", ")}: add it to skip, or give phaseReason`);
+    }
+  }
+  const lanes = new Set([config.collector.buildPhase, ...Object.keys(config.collector.notes)]);
+  if (now.status !== "done" && now.who && lanes.has(now.phase) && ("phase" in data || "who" in data)) {
+    const other = cards.find((k) => k.id !== id && k.status !== "done" && k.who === now.who && k.phase === now.phase);
+    if (other) e.push(`${other.id} is on ${now.phase} for ${now.who}: has it moved on? Update ${other.id} first`);
+  }
+  if (data.status === "done" && was?.status !== "done") {
+    const thread = (mirror.docs.messages ?? []).filter((m) => m.thread === id && typeof m.at === "number").sort((a, b) => a.at - b.at);
+    if (thread.length && thread[thread.length - 1].from === config.owner) e.push(`${config.owner}'s last message in its thread is unanswered`);
+    const asks = (mirror.docs.waiting ?? []).filter((x) => x.initiative === id && !x.done && !x.response);
+    if (asks.length) e.push(`an ask tied to it is still open (${asks.map((x) => x.id).join(", ")})`);
+    if (derived?.phase && derived.phase !== config.collector.livePhase) e.push(`the repository says ${derived.phase}, not ${config.collector.livePhase} (${derived.evidence})`);
+  }
+  return e;
 }

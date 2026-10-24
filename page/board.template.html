@@ -123,6 +123,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .reply label{font-size:.82rem;color:var(--muted)}
 .reply textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
+.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.clash{border-color:var(--bad);color:var(--bad)}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
 .t-msg{margin:6px 0}.t-msg .t-from{font-weight:600}.t-msg .t-at{font-size:.8rem;color:var(--muted)}
@@ -323,7 +324,7 @@ const CONFIG=/*BOARD_CONFIG*/{"title":"Flight Board","owner":"Owner","phases":[[
 const OWNER=String(CONFIG.owner||"Owner");
 const PHASES=CONFIG.phases;
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -536,6 +537,13 @@ function replyWrites(w,act,note,files,now,choice,rid){
   if(response.note)out.push({op:"set",path:`messages/m${now}-${rid}`,data:{thread:w.id,from:OWNER,text:response.note,at:now,...(files.length?{assets:files}:{})}});
   return out}
 
+// What the repository says about a card (the collector's derived/all, board v2): its phase and version, and a conflict mark
+// when the card says otherwise. The page only shows it; the collector works it out.
+function derivedOf(id){const all=state.derived.find(d=>d.id==="all");return all&&all.cards&&all.cards[id]||null}
+function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const label=(PHASES.find(p=>p[0]===d.phase)||[d.phase,d.phase])[1];
+  const clash=i.status!=="done"&&i.phase&&i.phase!==d.phase;
+  return `<span class="evidence${clash?" clash":""}" title="${esc(d.evidence||"")}">${clash?"Repository says ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}</span>`}
+
 // The gate's stuck line: after three refusals in a row for one item, the lead writes meta/stuck {"<collection>:<id>":
 // {reason, at}}, and the line stays until a write for that item passes (the gate makes that write clear it).
 function stuckLines(){const m=state.meta.find(d=>d.id==="stuck")||{},lead=(CONFIG.gate&&CONFIG.gate.managerRole)||"Manager";
@@ -676,7 +684,7 @@ function initRow(i){
   const started=num(i.createdAt)?`<span>Started ${dayLabel(i.createdAt)} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-i.createdAt)} so far</span>`:"";
   const tn=threadOf(i.id).length,topen=threadOpen(i.id);
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:"Start a thread"}${topen?'<span class="t-badge open">waiting on Manager</span>':""}</summary>${threadHtml(i.id,"init")}</details>`;
-  return `<div class="i-row"><div><div class="i-name"><strong>${esc(i.name)}</strong><span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span></div>
+  return `<div class="i-row"><div><div class="i-name"><strong>${esc(i.name)}</strong><span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}</div>
    ${i.summary?`<div class="w-sub">${esc(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
@@ -888,6 +896,6 @@ setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()
   window.claude.use("assets").then(a=>{if(a){assetsRef=a;renderWaiting()}}).catch(()=>{});
   const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderAll();$("synced").textContent="live, updated "+hhmm(Date.now())},
     ()=>{$("dot").classList.remove("on");$("synced").textContent="connection lost, reload"});
-  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages"].forEach(sub);
+  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived"].forEach(sub);
 })();
 </script>

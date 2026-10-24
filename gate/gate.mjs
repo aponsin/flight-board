@@ -77,7 +77,10 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
   if (input?.tool_name === "ArtifactData" && id && String(t.url ?? "").includes(id) && WRITES.has(t.action)) {
     if (roleError) return { block: `Flight board refused this write: ${roleError}\n` };
     const writes = writesOf(t);
-    const out = checkWrites(writes, { config, who, now, state });
+    // Rules 3-5 read the mirror the collector keeps; a stale one skips them (fail open) with a note.
+    const m = readMirror(join(dir, "mirror"));
+    const mirror = m && now - m.at < config.gate.mirrorMaxAgeMin * 60e3 ? m : null;
+    const out = checkWrites(writes, { config, who, now, state, mirror });
     const known = new Set(state.known ?? []);
     if (!out.errors.length) for (const w of writes) if (w.collection === "initiatives" && w.op !== "delete") known.add(w.doc_id);
     save({ ...out.state, known: [...known] });
