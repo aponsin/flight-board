@@ -12,6 +12,9 @@ export const DEFAULTS = {
   usageNote: "Runner and automation minutes come from the job-run times the scheduler reports.",
   runnerLabel: "Runners",
   automationLabel: "Automation",
+  // The write gate (gate/): the lead role, item ids that are passing agent states (never items), the words that make a
+  // reply a verdict, where the gate keeps its state and the board's mirror, and how old a mirror may be.
+  gate: { managerRole: "Manager", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 30 },
 };
 
 const KEYS = Object.keys(DEFAULTS);
@@ -43,10 +46,26 @@ export function checkConfig(c) {
   }
   if (c.boardStart !== undefined && c.boardStart !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(String(c.boardStart))) out.push("boardStart: YYYY-MM-DD, or empty");
   for (const k of ["usageNote", "runnerLabel", "automationLabel"]) if (c[k] !== undefined && !(typeof c[k] === "string" && c[k].length <= 300 && !/[<>{}]/.test(c[k]))) out.push(`${k}: plain text, at most 300 characters`);
+  if (c.gate !== undefined) {
+    const g = c.gate;
+    if (!g || typeof g !== "object" || Array.isArray(g)) out.push("gate: an object");
+    else {
+      for (const k of Object.keys(g)) if (!Object.hasOwn(DEFAULTS.gate, k)) out.push(`gate: unknown field "${k}" (known: ${Object.keys(DEFAULTS.gate).join(", ")})`);
+      if (g.managerRole !== undefined && !(typeof g.managerRole === "string" && NAME.test(g.managerRole))) out.push("gate.managerRole: a role name");
+      for (const k of ["transientPrefixes", "verdictWords"]) if (g[k] !== undefined && !(Array.isArray(g[k]) && g[k].every((w) => typeof w === "string" && w.trim().length >= 2 && w.length <= 60))) out.push(`gate.${k}: a list of short strings`);
+      if (g.stateDir !== undefined && !(typeof g.stateDir === "string" && g.stateDir.length > 0)) out.push("gate.stateDir: a folder path");
+      if (g.mirrorMaxAgeMin !== undefined && !(Number.isInteger(g.mirrorMaxAgeMin) && g.mirrorMaxAgeMin > 0)) out.push("gate.mirrorMaxAgeMin: whole minutes");
+    }
+  }
   return out;
 }
 
 // The defaults with the team's values on top.
 export function fullConfig(c) {
-  return { ...DEFAULTS, ...c };
+  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) } };
+}
+
+// The board's id, from its link: what the gate matches a write's url against.
+export function boardId(c) {
+  return /artifact\/([A-Za-z0-9-]+)$/.exec(String(c?.artifactUrl ?? ""))?.[1] ?? null;
 }

@@ -123,6 +123,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .reply label{font-size:.82rem;color:var(--muted)}
 .reply textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
+.stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
 .t-msg{margin:6px 0}.t-msg .t-from{font-weight:600}.t-msg .t-at{font-size:.8rem;color:var(--muted)}
 .t-msg.t-owner .t-from{color:var(--accent)}.t-text{white-space:pre-wrap;overflow-wrap:anywhere}
@@ -248,6 +249,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
     <h1>{{TITLE}}<span class="livever" id="livever"></span></h1>
     <div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div>
   </header>
+  <div class="stuckline" id="stuck" hidden></div>
 
   <section aria-labelledby="h-ctx">
     <div class="ctx-head"><h2 id="h-ctx" style="margin:0">Agents' memory</h2><span class="w-sub" id="ctxnote"></span></div>
@@ -533,6 +535,14 @@ function replyWrites(w,act,note,files,now,choice,rid){
   const out=[{op:"update",path:"waiting/"+w.id,data:bare&&w.kind==="answer"?{response,done:true,doneAt:now}:{response}}];
   if(response.note)out.push({op:"set",path:`messages/m${now}-${rid}`,data:{thread:w.id,from:OWNER,text:response.note,at:now,...(files.length?{assets:files}:{})}});
   return out}
+
+// The gate's stuck line: after three refusals in a row for one item, the lead writes meta/stuck {"<collection>:<id>":
+// {reason, at}}, and the line stays until a write for that item passes (the gate makes that write clear it).
+function stuckLines(){const m=state.meta.find(d=>d.id==="stuck")||{},lead=(CONFIG.gate&&CONFIG.gate.managerRole)||"Manager";
+  return Object.entries(m).filter(([k,v])=>k!=="id"&&v&&typeof v==="object"&&!v.__delete__).sort((a,b)=>(num(a[1].at)??0)-(num(b[1].at)??0))
+    .map(([k,v])=>{const id=k.includes(":")?k.slice(k.indexOf(":")+1):k,it=itemOf(id);
+      return `${lead} stuck on ${it?(it.coll==="initiatives"?it.doc.name:it.doc.text)||id:id}: ${v.reason||"refused three times"}`})}
+function renderStuck(){const el=$("stuck"),l=stuckLines();el.hidden=!l.length;el.innerHTML=l.map(t=>`<div>${esc(t)}</div>`).join("")}
 
 // ---- Threads (board v2) ----
 // Every item is a thread: messages {thread, from: "<owner>" | "<Role>", text, at, assets?, kind?, resolved?}, oldest first.
@@ -863,7 +873,7 @@ function gates(i){
     if(end==null){out.who=OWNER;out.status="active";out.waitingOn=out.waitingOn||OWNER+": "+(w.text||"a question")}});
   return out;
 }
-function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(i)));renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderBoard();renderFeed();renderUsage()}
+function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(i)));renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderBoard();renderFeed();renderUsage()}
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});

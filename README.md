@@ -18,7 +18,10 @@ Everything particular to one team lives in its own `board.config.json`, outside 
 | `tests/` | The page's rules, the config check, the build and the scan. `npm test`. |
 | `board.config.example.json` | An example config, fictional. |
 
-Coming next, one step at a time: the write gate (rules checked before a write reaches the board), the collector (each item's phase worked out from the repository and its review notes), and the nudges (timers that remind the lead agent).
+| `gate/` | The write gate: a PreToolUse hook on board writes and hand-off messages, and a Stop hook on the lead's replies. |
+| `scripts/hooks.mjs` | The gate's entries for Claude Code's settings: printed, or written with `--write`. |
+
+Coming next: the collector (each item's phase worked out from the repository and its review notes) and the nudges (timers that remind the lead agent).
 
 ## Set up a team
 
@@ -39,3 +42,18 @@ Each message from the owner pings the lead agent as a comment that reads exactly
 ## Tests
 
 `npm test` runs every rule's test. Each rule also had a mutation check: break the rule on purpose, a test must fail, restore.
+
+## The write gate
+
+Every write to the board goes through `gate/gate.mjs` first, and is refused with its reasons when it breaks a rule, so the writer fixes it and sends again:
+
+- the board's own checks (an item's ETA, next step, level and version; an ask's steps, question and time; real clock times);
+- a decision has two options or more and its context, and a look decision a screenshot per option; a command in a step is written `{text, cmd}`;
+- `ctx/<Role>` is written only by that role's session, and `meta/context` `agents.<Role>` too, except by the lead role; a session's role is its title in the app (or `FLIGHT_BOARD_ROLE`, which must agree);
+- an id listed in `gate.transientPrefixes` is a passing agent state and never becomes an item;
+- after three refusals in a row for one item, the gate asks for the stuck line (`meta/stuck`), which the page shows until a write for that item passes and clears it;
+- a message from the lead that hands out work names its card ("board id <id>"), and the card exists.
+
+`gate/stop.mjs` keeps the lead from ending a turn that states a verdict (`gate.verdictWords`) without a board write, or that answers the owner's thread message without writing in that thread.
+
+Install the hooks with `node scripts/hooks.mjs <board.config.json>` (prints them) or `--write` (adds them to `~/.claude/settings.json`, keeping a copy).

@@ -147,3 +147,12 @@ test("a re-draw keeps what Owner is typing and which folds are open", () => {
   assert.equal(fresh.value, "half a sentence");
   assert.equal(freshDet.open, true);
 });
+
+test("the stuck line: \"Manager stuck on <item>: <reason>\" for each item the gate stuck on, oldest first; none when cleared", () => {
+  const b = loadNames(["stuckLines"]);
+  Object.assign(b.state, { waiting: [{ id: "w1", text: "Pick a colour" }], initRaw: [{ id: "x-y", name: "Tabs" }] });
+  b.state.meta.push({ id: "stuck", "waiting:w1": { reason: "no steps", at: 2 }, "initiatives:x-y": { reason: "no ETA", at: 1 }, "steps:s9": { __delete__: true } });
+  assert.deepEqual([...b.stuckLines()], ["Manager stuck on Tabs: no ETA", "Manager stuck on Pick a colour: no steps"]);
+  b.state.meta[0] = { id: "stuck" };
+  assert.deepEqual([...b.stuckLines()], []);
+});

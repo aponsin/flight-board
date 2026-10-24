@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0 - Unreleased
+
+### Added
+- The write gate (`gate/`): the board's rules on every write; decisions with two options or more, context and per-option screenshots for a look; commands as `{text, cmd}`; each role's own memory tile (the lead keeps the keeper's writes); passing agent states never become items; the stuck line after three refusals in a row, shown on the page and cleared by the item's next good write; hand-offs name an existing card; the Stop hook for verdicts and thread answers.
+- `scripts/hooks.mjs`: the gate's settings entries, printed or written.
+
 ## 0.1.0 - Unreleased
 
 ### Added
