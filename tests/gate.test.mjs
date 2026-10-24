@@ -244,8 +244,10 @@ test("case 11: an existing id written with if_version passes the gate; the board
 });
 
 test("Checker: an edit in place (str_replace) can't slip a field past the rules; it is refused on the board", () => {
-  const r = run({ tool_name: "ArtifactData", tool_input: { action: "str_replace", url: URL_, collection: "waiting", doc_id: "d1", field: "text", old_str: "x", new_str: "" } }, { config: fullConfig({ artifactUrl: URL_, gate: { stateDir: mkdtempSync(join(tmpdir(), "fb-sr-")) } }), env: {} });
+  const r = run({ tool_name: "ArtifactData", tool_input: { action: "str_replace", url: URL_, collection: "waiting", doc_id: "d1", field: "text", old_str: "x", new_str: "" } }, { config: fullConfig({ artifactUrl: URL_, gate: { stateDir: mkdtempSync(join(tmpdir(), "fb-sr-")) } }), env: { FLIGHT_BOARD_ROLE: "Manager" } });
   assert.match(r.block, /edit in place can't be checked/);
+  const none = run({ tool_name: "ArtifactData", tool_input: { action: "set", url: URL_, collection: "waiting", doc_id: "d1", data: { kind: "action" } } }, { config: fullConfig({ artifactUrl: URL_, gate: { stateDir: mkdtempSync(join(tmpdir(), "fb-sr-")) } }), env: {} });
+  assert.match(none.block, /no role for this session/, "the hook itself: no title, no FLIGHT_BOARD_ROLE, no write (Security)");
   has(one({ op: "str_replace", collection: "messages", doc_id: "m", data: { text: "y" } }), "edit in place");
 });
 
@@ -370,19 +372,28 @@ test("withJournal: set, update (with __delete__) and delete laid over the mirror
   assert.deepEqual(withJournal(m, [{ op: "delete", collection: "initiatives", doc_id: "a", at: 120 }]).docs.initiatives, []);
 });
 
-test("Security: the Collector writes only derived/all; every other write from it is refused", () => {
+test("Security: the Collector only sets derived/all; only it or the lead writes derived/*; a session with no role writes nothing", () => {
   const collector = { role: "Collector", manager: false };
   assert.deepEqual(writeErrors({ op: "set", collection: "derived", doc_id: "all", data: { cards: {} } }, { config, who: collector, now }), []);
-  assert.deepEqual(writeErrors({ op: "update", collection: "derived", doc_id: "all", data: { cards: {} } }, { config, who: collector, now }), []);
   for (const w of [
+    { op: "update", collection: "derived", doc_id: "all", data: { cards: {} } },
     { op: "delete", collection: "derived", doc_id: "all" },
     { op: "set", collection: "derived", doc_id: "other", data: {} },
     { op: "update", collection: "initiatives", doc_id: "x-y", data: { status: "done" } },
     { op: "set", collection: "messages", doc_id: "m1", data: { thread: "x-y", from: "Collector", text: "hi", at: now } },
     { op: "update", collection: "waiting", doc_id: "w", data: { done: true } },
+    { op: "set", collection: "steps", doc_id: "s1", data: { init: "x-y", phase: "build", who: "Collector", kind: "start", at: now } },
     { op: "set", collection: "ctx", doc_id: "Collector", data: { pct: 1, at: now } },
     { op: "update", collection: "meta", doc_id: "stuck", data: {} },
-  ]) assert.match(writeErrors(w, { config, who: collector, now })[0] ?? "", /writes only derived\/all/, `${w.op} ${w.collection}/${w.doc_id}`);
+  ]) assert.match(writeErrors(w, { config, who: collector, now })[0] ?? "", /only sets derived\/all/, `${w.op} ${w.collection}/${w.doc_id}`);
+  const derived = { op: "set", collection: "derived", doc_id: "all", data: { cards: {} } };
+  assert.match(writeErrors(derived, { config, who: { role: "Builder", manager: false }, now })[0] ?? "", /derived\/all is written by the Collector \(or Manager\), not Builder/);
+  assert.deepEqual(writeErrors(derived, { config, who: lead, now }), [], "the lead may repair it");
+  for (const who of [{ role: null, manager: false }, { role: "", manager: false }]) {
+    const out = checkWrites([{ op: "update", collection: "meta", doc_id: "stuck", data: { "initiatives:x": { reason: "r", at: now } } }], { config, who, now, state: {} });
+    assert.match(out.errors[0], /no role for this session/, "even the stuck line");
+    assert.match(checkWrites([{ op: "set", collection: "waiting", doc_id: "w", data: {} }], { config, who, now, state: {} }).errors[0], /no role/);
+  }
 });
 
 test("Security: a journaled write's __proto__, constructor or prototype key is skipped when laid over the mirror", async () => {
