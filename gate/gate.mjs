@@ -48,7 +48,7 @@ export function readMirror(dir) {
 
 // The writes the gate let through since the mirror was exported, laid over it: the mirror then shows each card as it is
 // now (a card closed after the export is closed here too). journal: [{ op, collection, doc_id, data, at }].
-const OVERLAY = new Set(["initiatives", "waiting", "messages", "derived"]);
+const OVERLAY = new Set(["initiatives", "waiting", "ideas", "messages", "derived"]);
 export function withJournal(mirror, journal) {
   if (!mirror) return null;
   const docs = Object.fromEntries(Object.entries(mirror.docs).map(([c, list]) => [c, list.map((d) => ({ ...d }))]));

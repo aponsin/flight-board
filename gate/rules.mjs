@@ -116,7 +116,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
-    const errs = [...writeErrors(w, { config, who, now }), ...mirrorErrors(w, { config, mirror })];
+    const errs = [...writeErrors(w, { config, who, now }), ...mirrorErrors(w, { config, mirror, batch: writes })];
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
@@ -156,15 +156,30 @@ export function refusalText(errors, stuckNow, now) {
 }
 
 // ---- Rules that need the board's state, from the mirror the collector keeps (rules 3-5) ----
-// mirror: { docs: { initiatives, waiting, messages, derived } } as gate/gate.mjs reads it. Each rule passes when the mirror
+// mirror: { docs: { initiatives, waiting, ideas, messages, derived } } as gate/gate.mjs reads it. Each rule passes when the mirror
 // doesn't know the card (a new one).
 
 // Rule 3: a card's phase only moves forward; a jump past a phase needs it skipped, the evidence past it, or a reason.
 // Rule 4: one card per owner in the lane phases (config collector.lanePhases: build, test).
 // Rule 5 (case 1): done only with no owner message waiting in its thread, no open ask tied to it, and live by the evidence;
 // a card given up closes as "dropped" with a dropReason, with the same first two checks and no evidence needed.
-export function mirrorErrors(w, { config, mirror }) {
+// Rule 10: a message belongs to a thread the board has: an item (a card, an ask, an idea, one made in the same call too),
+// a thread that already has messages, or a "t-…" thread from the owner's New thread box. A reply to an item names the
+// item's id; a thread id made up for it shows the owner a card of its own. An export without ideas skips the rule.
+export function threadErrors(w, { mirror, batch = [] }) {
+  const { op, collection, data } = w;
+  if (collection !== "messages" || op === "delete" || !data || typeof data !== "object" || !mirror?.docs.ideas) return [];
+  const t = data.thread;
+  if (typeof t !== "string" || !t) return op === "set" ? ["a message names its thread (thread: the item's id, or a t-… thread)"] : [];
+  if (t.startsWith("t-")) return [];
+  const has = (c) => (mirror.docs[c] ?? []).some((d) => d.id === t) || batch.some((b) => b.collection === c && b.doc_id === t && b.op !== "delete");
+  if (["initiatives", "waiting", "ideas"].some(has) || (mirror.docs.messages ?? []).some((m) => m.thread === t)) return [];
+  return [`thread ${t} is no item on the board and no t-… thread: reply under the item with its id as the thread`];
+}
+
+export function mirrorErrors(w, { config, mirror, batch = [] }) {
   const { op, collection, doc_id: id, data } = w;
+  if (collection === "messages") return threadErrors(w, { mirror, batch });
   if (collection !== "initiatives" || op === "delete" || !data || typeof data !== "object" || !mirror) return [];
   const e = [];
   const order = config.phases.map((p) => p[0]);

@@ -22,7 +22,7 @@ so each run is these steps, in order. `<config>` is the team's `board.config.jso
 
 1. **Export the board**: run `node collector/collect.mjs --config <config> --prepare` (it makes an empty folder and prints
    its path; never remove a folder yourself), then one ArtifactData `list` per collection, with `query.limit` 1000 and
-   `out_dir` the printed path: `initiatives`, `waiting`, `messages`, `derived`. Step 2 swaps it into place as the
+   `out_dir` the printed path: `initiatives`, `waiting`, `ideas`, `messages`, `derived`. Step 2 swaps it into place as the
    mirror the gate reads.
 2. **Work it out**: `node collector/collect.mjs --config <config>` from this repository. It prints one `CONFLICT` line per
    card whose phase disagrees with the repository, and a `LIVE BUT OPEN` line.
