@@ -19,23 +19,51 @@ export function hookEntries(repo, configPath, node = process.execPath) {
   };
 }
 
-// settings with the gate's entries in: an older flight-board entry is replaced, everything else kept as it was.
-export function withHooks(settings, entries) {
+// settings with the gate's entries in. Every hook whose command holds one of `retire` (an older board gate) goes, and an
+// older flight-board entry is replaced; everything else is kept as it was. Returns { settings, added, replaced, retired }.
+export function withHooks(settings, entries, retire = []) {
   const out = { ...settings, hooks: { ...(settings.hooks ?? {}) } };
-  for (const [event, entry] of Object.entries(entries)) {
-    const kept = (out.hooks[event] ?? []).filter((e) => !(e.hooks ?? []).some((h) => String(h.command ?? "").includes(MARK)));
-    out.hooks[event] = [...kept, entry];
+  const replaced = [], retired = [];
+  for (const event of Object.keys(out.hooks)) {
+    out.hooks[event] = (out.hooks[event] ?? []).map((e) => {
+      const hooks = (e.hooks ?? []).filter((h) => {
+        const c = String(h.command ?? "");
+        if (c.includes(MARK)) { replaced.push(`${event}: ${c}`); return false; }
+        if (retire.some((r) => r && c.includes(r))) { retired.push(`${event}: ${c}`); return false; }
+        return true;
+      });
+      return hooks.length === (e.hooks ?? []).length ? e : { ...e, hooks };
+    }).filter((e) => (e.hooks ?? []).length);
   }
-  return out;
+  for (const [event, entry] of Object.entries(entries)) out.hooks[event] = [...(out.hooks[event] ?? []), entry];
+  return { settings: out, added: Object.keys(entries), replaced, retired };
+}
+
+// "Added …; replaced …; retired …" in one line, for the person who ran it.
+export function summary({ added, replaced, retired }, backup) {
+  const parts = [`added the gate to ${added.join(" and ")}`];
+  if (replaced.length) parts.push(`replaced ${replaced.length} older flight-board entr${replaced.length > 1 ? "ies" : "y"}`);
+  parts.push(retired.length ? `retired ${retired.length}: ${retired.join("; ")}` : "retired nothing");
+  return `Changed: ${parts.join("; ")}.${backup ? ` Backup: ${backup}` : ""}`;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [configPath, flag, target = resolve(homedir(), ".claude/settings.json")] = process.argv.slice(2);
-  if (!configPath) { console.error("Usage: node scripts/hooks.mjs <board.config.json> [--write [settings.json]]"); process.exit(2); }
+  const args = process.argv.slice(2);
+  const configPath = args[0];
+  const opt = (name) => { const n = args.indexOf(name); return n > 0 ? args[n + 1] : undefined; };
+  const retire = args.flatMap((a, n) => (args[n - 1] === "--retire" ? [a] : []));
+  const target = resolve(opt("--settings") ?? resolve(homedir(), ".claude/settings.json"));
+  if (!configPath || configPath.startsWith("--")) { console.error("Usage: node scripts/hooks.mjs <board.config.json> [--write] [--retire <text in an old hook's command>]... [--settings <file>]"); process.exit(2); }
   const entries = hookEntries(fileURLToPath(new URL("..", import.meta.url)), configPath);
-  if (flag !== "--write") { console.log(JSON.stringify({ hooks: Object.fromEntries(Object.entries(entries).map(([k, v]) => [k, [v]])) }, null, 2)); console.log("\nAdd these to your settings, or run again with --write."); process.exit(0); }
   const settings = existsSync(target) ? JSON.parse(readFileSync(target, "utf8")) : {};
-  if (existsSync(target)) copyFileSync(target, `${target}.before-flight-board`);
-  writeFileSync(target, JSON.stringify(withHooks(settings, entries), null, 2) + "\n");
-  console.log(`Wrote the gate's hooks into ${target} (the old file is kept as ${target}.before-flight-board). Retire any older board gate entry by hand.`);
+  const result = withHooks(settings, entries, retire);
+  if (!args.includes("--write")) {
+    console.log(JSON.stringify({ hooks: Object.fromEntries(Object.entries(entries).map(([k, v]) => [k, [v]])) }, null, 2));
+    console.log(`\n${summary(result, null).replace(/^Changed:/, "Dry run, nothing written. With --write it would change this:")} File: ${target}`);
+    process.exit(0);
+  }
+  const backup = existsSync(target) ? `${target}.before-flight-board-${Date.now()}` : null;
+  if (backup) copyFileSync(target, backup);
+  writeFileSync(target, JSON.stringify(result.settings, null, 2) + "\n");
+  console.log(summary(result, backup));
 }

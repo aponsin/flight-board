@@ -228,10 +228,11 @@ test("the hook entries: the gate on board writes and hand-offs, the Stop check; 
   assert.equal(e.Stop.hooks[0].command, "'/bin/node' '/r/flight-board/gate/stop.mjs' --config '/cfg/board.config.json'");
   const other = { matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }] };
   const old = { matcher: "ArtifactData", hooks: [{ type: "command", command: "node /old/flight-board/gate/gate.mjs --config x" }] };
-  const s = withHooks({ model: "x", hooks: { PreToolUse: [other, old] } }, e);
+  const { settings: s, replaced } = withHooks({ model: "x", hooks: { PreToolUse: [other, old] } }, e);
   assert.equal(s.model, "x");
   assert.deepEqual(s.hooks.PreToolUse, [other, e.PreToolUse]);
   assert.deepEqual(s.hooks.Stop, [e.Stop]);
+  assert.equal(replaced.length, 1);
 });
 
 test("case 11: an existing id written with if_version passes the gate; the board's server refuses one without it", () => {
@@ -265,4 +266,39 @@ test("Security: a hook's paths reach the command unchanged through sh, whatever 
     const cmd = hookEntries("/r/flight-board", path, "/bin/node").Stop.hooks[0].command;
     assert.equal(execFileSync("sh", ["-c", `printf '%s|' ${cmd}`], { encoding: "utf8" }), `/bin/node|/r/flight-board/gate/stop.mjs|--config|${path}|`, path);
   }
+});
+
+test("hooks --write retires an older gate in the same write, keeps every other hook, and says what it changed", async () => {
+  const { hookEntries, withHooks, summary } = await import("../scripts/hooks.mjs");
+  const e = hookEntries("/r/flight-board", "/cfg/c.json", "/bin/node");
+  const oldGate = { matcher: "ArtifactData", hooks: [{ type: "command", command: "/bin/node /home/x/board-tests/write-gate.mjs" }] };
+  const mixed = { matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }, { type: "command", command: "node /x/board-tests/write-gate.mjs" }] };
+  const otherStop = { hooks: [{ type: "command", command: "python3 ~/.claude/hooks/other-stop.py" }] };
+  const r = withHooks({ hooks: { PreToolUse: [oldGate, mixed], Stop: [otherStop] } }, e, ["board-tests/write-gate.mjs"]);
+  assert.deepEqual(r.settings.hooks.PreToolUse, [{ matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }] }, e.PreToolUse], "the old gate's entry gone, the shared entry kept without it");
+  assert.deepEqual(r.settings.hooks.Stop, [otherStop, e.Stop], "another Stop hook stays beside the gate's");
+  assert.equal(r.retired.length, 2);
+  assert.match(summary(r, "/s.json.before-flight-board-1"), /^Changed: added the gate to PreToolUse and Stop; retired 2: PreToolUse: \/bin\/node \/home\/x\/board-tests\/write-gate\.mjs; .* Backup: \/s\.json\.before-flight-board-1$/);
+  assert.match(summary(withHooks({}, e), null), /retired nothing\.$/);
+});
+
+test("hooks --write end to end on a scratch settings file: the change, the backup, the one-line summary", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "fb-hooks-"));
+  try {
+    const settings = join(dir, "settings.json"), cfg = join(dir, "board.config.json");
+    writeFileSync(cfg, JSON.stringify({ artifactUrl: URL_ }));
+    writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "ArtifactData", hooks: [{ type: "command", command: "node /a/board-tests/write-gate.mjs" }] }] } }));
+    const script = new URL("../scripts/hooks.mjs", import.meta.url).pathname;
+    const dry = spawnSync(process.execPath, [script, cfg, "--retire", "board-tests/write-gate.mjs", "--settings", settings], { encoding: "utf8" });
+    assert.match(dry.stdout, /Dry run, nothing written\. With --write it would change this: added the gate to PreToolUse and Stop; retired 1/);
+    assert.equal(JSON.parse(readFileSync(settings, "utf8")).hooks.PreToolUse[0].matcher, "ArtifactData", "a dry run changes nothing");
+    const run = spawnSync(process.execPath, [script, cfg, "--write", "--retire", "board-tests/write-gate.mjs", "--settings", settings], { encoding: "utf8" });
+    assert.match(run.stdout, /^Changed: added the gate to PreToolUse and Stop; retired 1: .*write-gate\.mjs\. Backup: .*settings\.json\.before-flight-board-\d+\n$/);
+    const after = JSON.parse(readFileSync(settings, "utf8"));
+    assert.equal(after.hooks.PreToolUse.length, 1);
+    assert.match(after.hooks.PreToolUse[0].hooks[0].command, /gate\/gate\.mjs' --config /);
+    const backup = run.stdout.match(/Backup: (.*)\n/)[1];
+    assert.match(readFileSync(backup, "utf8"), /board-tests\/write-gate\.mjs/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
