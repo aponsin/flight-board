@@ -282,23 +282,48 @@ test("hooks --write retires an older gate in the same write, keeps every other h
   assert.match(summary(withHooks({}, e), null), /retired nothing\.$/);
 });
 
-test("hooks --write end to end on a scratch settings file: the change, the backup, the one-line summary", async () => {
-  const { spawnSync } = await import("node:child_process");
+test("hooks --write end to end on a scratch settings file: a pinned copy of the commit, the change, the backup, the one-line summary", async () => {
+  const { spawnSync, execFileSync: ex } = await import("node:child_process");
   const dir = mkdtempSync(join(tmpdir(), "fb-hooks-"));
   try {
-    const settings = join(dir, "settings.json"), cfg = join(dir, "board.config.json");
+    const settings = join(dir, "settings.json"), cfg = join(dir, "board.config.json"), root = join(dir, "install");
     writeFileSync(cfg, JSON.stringify({ artifactUrl: URL_ }));
     writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "ArtifactData", hooks: [{ type: "command", command: "node /a/board-tests/write-gate.mjs" }] }] } }));
     const script = new URL("../scripts/hooks.mjs", import.meta.url).pathname;
-    const dry = spawnSync(process.execPath, [script, cfg, "--retire", "board-tests/write-gate.mjs", "--settings", settings], { encoding: "utf8" });
+    const head = ex("git", ["rev-parse", "HEAD"], { cwd: new URL("..", import.meta.url), encoding: "utf8" }).trim();
+    const args = [script, cfg, "--pin", "HEAD", "--retire", "board-tests/write-gate.mjs", "--settings", settings, "--install-root", root];
+    assert.match(spawnSync(process.execPath, [script, cfg, "--settings", settings]).stderr.toString(), /--pin <signed commit>/, "no pin, no install");
+    const dry = spawnSync(process.execPath, args, { encoding: "utf8" });
     assert.match(dry.stdout, /Dry run, nothing written\. With --write it would change this: added the gate to PreToolUse and Stop; retired 1/);
+    assert.match(dry.stdout, new RegExp(`run the copy of ${head.slice(0, 12)} at ${root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/${head}`));
     assert.equal(JSON.parse(readFileSync(settings, "utf8")).hooks.PreToolUse[0].matcher, "ArtifactData", "a dry run changes nothing");
-    const run = spawnSync(process.execPath, [script, cfg, "--write", "--retire", "board-tests/write-gate.mjs", "--settings", settings], { encoding: "utf8" });
-    assert.match(run.stdout, /^Changed: added the gate to PreToolUse and Stop; retired 1: .*write-gate\.mjs\. Backup: .*settings\.json\.before-flight-board-\d+\n$/);
+    const run = spawnSync(process.execPath, [...args, "--write"], { encoding: "utf8" });
+    assert.match(run.stdout, /^Changed: added the gate to PreToolUse and Stop; retired 1: .*write-gate\.mjs\. Backup: .*settings\.json\.before-flight-board-\d+ Hooks run the copy of [0-9a-f]{12} at /);
     const after = JSON.parse(readFileSync(settings, "utf8"));
     assert.equal(after.hooks.PreToolUse.length, 1);
-    assert.match(after.hooks.PreToolUse[0].hooks[0].command, /gate\/gate\.mjs' --config /);
-    const backup = run.stdout.match(/Backup: (.*)\n/)[1];
+    assert.equal(after.hooks.PreToolUse[0].hooks[0].command.includes(`'${join(root, head, "gate", "gate.mjs")}'`), true, "the hook runs the pinned copy");
+    assert.equal(readFileSync(join(root, head, "gate", "gate.mjs"), "utf8"), ex("git", ["show", `${head}:gate/gate.mjs`], { cwd: new URL("..", import.meta.url), encoding: "utf8" }), "exactly the committed file, not the working tree");
+    const backup = run.stdout.match(/Backup: (\S*)/)[1];
     assert.match(readFileSync(backup, "utf8"), /board-tests\/write-gate\.mjs/);
+    const again = spawnSync(process.execPath, [...args, "--write"], { encoding: "utf8" });
+    assert.match(again.stdout, /replaced 2 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries: " + again.stdout + again.stderr);
+    assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "nope-not-a-commit", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the pinned copy is the commit itself, never the checkout's uncommitted edits", async () => {
+  const { execFileSync: ex, spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "fb-pin-"));
+  try {
+    const clone = join(dir, "clone");
+    ex("git", ["clone", "-q", new URL("..", import.meta.url).pathname, clone]);
+    writeFileSync(join(clone, "gate", "gate.mjs"), "// work in progress\n");
+    const cfg = join(dir, "c.json"), settings = join(dir, "s.json"), root = join(dir, "install");
+    writeFileSync(cfg, JSON.stringify({ artifactUrl: URL_ })); writeFileSync(settings, "{}");
+    const r = spawnSync(process.execPath, [join(clone, "scripts", "hooks.mjs"), cfg, "--pin", "HEAD", "--settings", settings, "--install-root", root, "--write"], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const sha = ex("git", ["rev-parse", "HEAD"], { cwd: clone, encoding: "utf8" }).trim();
+    assert.notEqual(readFileSync(join(root, sha, "gate", "gate.mjs"), "utf8"), "// work in progress\n");
+    assert.equal(readFileSync(join(root, sha, "gate", "gate.mjs"), "utf8"), ex("git", ["show", "HEAD:gate/gate.mjs"], { cwd: clone, encoding: "utf8" }));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

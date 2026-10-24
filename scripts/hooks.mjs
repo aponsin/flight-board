@@ -1,12 +1,14 @@
 // The gate's hook entries for Claude Code's settings (~/.claude/settings.json): PreToolUse on board writes and
 // hand-off messages, Stop on the lead's replies. Printed by default; written only with --write, which keeps every other
 // entry and replaces an older flight-board one. Usage: node scripts/hooks.mjs <board.config.json> [--write [settings.json]]
-import { readFileSync, writeFileSync, existsSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-const MARK = "flight-board/gate/";
+// A flight-board hook, from this checkout or a pinned copy: replaced on every install.
+const MARK = /(?:flight-board|\/[0-9a-f]{40})\/gate\/(?:gate|stop)\.mjs/;
 // A path as one shell word, in single quotes (a ' inside written '\''): sh expands nothing in it, so a folder with a
 // space ("Application Support") or a crafted name with $( ) or backticks stays a plain path.
 export const shellQuote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
@@ -28,7 +30,7 @@ export function withHooks(settings, entries, retire = []) {
     out.hooks[event] = (out.hooks[event] ?? []).map((e) => {
       const hooks = (e.hooks ?? []).filter((h) => {
         const c = String(h.command ?? "");
-        if (c.includes(MARK)) { replaced.push(`${event}: ${c}`); return false; }
+        if (MARK.test(c)) { replaced.push(`${event}: ${c}`); return false; }
         if (retire.some((r) => r && c.includes(r))) { retired.push(`${event}: ${c}`); return false; }
         return true;
       });
@@ -37,6 +39,25 @@ export function withHooks(settings, entries, retire = []) {
   }
   for (const [event, entry] of Object.entries(entries)) out.hooks[event] = [...(out.hooks[event] ?? []), entry];
   return { settings: out, added: Object.keys(entries), replaced, retired };
+}
+
+// The hooks run a pinned copy of one signed commit, never a checkout someone is editing: <root>/<full sha>, exported
+// with git archive (made once; reused by a later install of the same commit). Upgrading = installing a newer signed sha.
+export function pinnedDir(repo, commit, root) {
+  let sha = "";
+  try { sha = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${commit}^{commit}`], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* not found */ }
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`not a commit: ${commit}`);
+  return { sha, dir: resolve(root, sha) };
+}
+export function pinCopy(repo, commit, root) {
+  const { sha, dir } = pinnedDir(repo, commit, root);
+  if (existsSync(resolve(dir, "gate", "gate.mjs"))) return dir;
+  const tmp = `${dir}.part`;
+  rmSync(tmp, { recursive: true, force: true });
+  mkdirSync(tmp, { recursive: true });
+  execFileSync("tar", ["-x", "-C", tmp], { input: execFileSync("git", ["archive", "--format=tar", sha], { cwd: repo, maxBuffer: 64 * 1024 * 1024 }) });
+  renameSync(tmp, dir);
+  return dir;
 }
 
 // "Added …; replaced …; retired …" in one line, for the person who ran it.
@@ -53,17 +74,23 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const opt = (name) => { const n = args.indexOf(name); return n > 0 ? args[n + 1] : undefined; };
   const retire = args.flatMap((a, n) => (args[n - 1] === "--retire" ? [a] : []));
   const target = resolve(opt("--settings") ?? resolve(homedir(), ".claude/settings.json"));
-  if (!configPath || configPath.startsWith("--")) { console.error("Usage: node scripts/hooks.mjs <board.config.json> [--write] [--retire <text in an old hook's command>]... [--settings <file>]"); process.exit(2); }
-  const entries = hookEntries(fileURLToPath(new URL("..", import.meta.url)), configPath);
+  const pin = opt("--pin");
+  if (!configPath || configPath.startsWith("--") || !pin) { console.error("Usage: node scripts/hooks.mjs <board.config.json> --pin <signed commit> [--write] [--retire <text in an old hook's command>]... [--settings <file>] [--install-root <folder>]"); process.exit(2); }
+  const repo = fileURLToPath(new URL("..", import.meta.url));
+  const root = resolve(opt("--install-root") ?? resolve(homedir(), ".flight-board", "install"));
+  let pinned;
+  try { pinned = pinnedDir(repo, pin, root); } catch (e) { console.error(e.message); process.exit(1); }
+  const entries = hookEntries(pinned.dir, configPath);
   const settings = existsSync(target) ? JSON.parse(readFileSync(target, "utf8")) : {};
   const result = withHooks(settings, entries, retire);
   if (!args.includes("--write")) {
     console.log(JSON.stringify({ hooks: Object.fromEntries(Object.entries(entries).map(([k, v]) => [k, [v]])) }, null, 2));
-    console.log(`\n${summary(result, null).replace(/^Changed:/, "Dry run, nothing written. With --write it would change this:")} File: ${target}`);
+    console.log(`\n${summary(result, null).replace(/^Changed:/, "Dry run, nothing written. With --write it would change this:")} File: ${target}. Hooks would run the copy of ${pinned.sha.slice(0, 12)} at ${pinned.dir}.`);
     process.exit(0);
   }
+  pinCopy(repo, pinned.sha, root);
   const backup = existsSync(target) ? `${target}.before-flight-board-${Date.now()}` : null;
   if (backup) copyFileSync(target, backup);
   writeFileSync(target, JSON.stringify(result.settings, null, 2) + "\n");
-  console.log(summary(result, backup));
+  console.log(`${summary(result, backup)} Hooks run the copy of ${pinned.sha.slice(0, 12)} at ${pinned.dir}.`);
 }
