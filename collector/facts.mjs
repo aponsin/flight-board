@@ -49,7 +49,8 @@ export function shippedHeads(git, line, pattern) {
   const re = new RegExp(pattern, "g");
   const out = [];
   for (const c of line) for (const m of c.subject.matchAll(re)) {
-    if (!m[1] || !m[2]) continue;
+    // Only a plain hex sha reaches git: subject text must never look like an option.
+    if (!m[1] || !/^[0-9a-f]{7,40}$/.test(m[2])) continue;
     let sha = m[2];
     try { sha = git(["rev-parse", "--verify", "--quiet", `${m[2]}^{commit}`]).trim(); } catch { continue; }
     out.push({ branch: m[1], sha, at: c.at, message: "" });

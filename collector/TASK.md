@@ -4,8 +4,9 @@ A short Claude session that keeps the board true to the repository. Only a Claud
 so each run is these steps, in order. `<config>` is the team's `board.config.json`; `<dir>` is
 `<gate.stateDir>/<board id>` (the board id is the last part of `artifactUrl`).
 
-1. **Export the board** into `<dir>/mirror`: remove the old mirror folder, then one ArtifactData `list` per collection,
-   with `query.limit` 1000 and `out_dir` `<dir>/mirror`: `initiatives`, `waiting`, `messages`, `derived`. (The gate reads
+1. **Export the board** into `<dir>/mirror`: run `node collector/collect.mjs --config <config> --prepare` (it empties the
+   mirror folder and prints its path; never remove a folder yourself), then one ArtifactData `list` per collection,
+   with `query.limit` 1000 and `out_dir` the printed path: `initiatives`, `waiting`, `messages`, `derived`. (The gate reads
    this mirror too.)
 2. **Work it out**: `node collector/collect.mjs --config <config>` from this repository. It prints one `CONFLICT` line per
    card whose phase disagrees with the repository, and a `LIVE BUT OPEN` line.

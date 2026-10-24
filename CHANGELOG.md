@@ -6,6 +6,7 @@
 - The collector (`collector/`): each open card's phase from the repository (Board-Id trailers, branches, release commits that name shipped branches, sign-off notes, the main branch, the deploy run), with its version; conflicts with the card's own phase and the cards live but still open; `derived/all` for the page and the gate; `TASK.md` for the scheduled run.
 - The gate's rules that need the board's state, against the collector's mirror: phases only move forward, one card per role per build or review phase, done only with the owner answered, no open ask and live by the evidence.
 - The page shows "Repository: <phase> <version>" on each card, marked when the card disagrees.
+- Hardening (Security): a sha from a commit subject reaches git only as plain hex; `collect.mjs --prepare` empties the mirror folder, and only at `<stateDir>/<board id>/mirror`.
 
 ## 0.2.0 - Unreleased
 

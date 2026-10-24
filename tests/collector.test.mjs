@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
 import { boardIdOf, headFor, reviewsFor, derivePhase, conflict, staleLive } from "../collector/derive.mjs";
 import { remoteHeads, signedPhases, versionFor, mainLine, factsFor, shippedHeads } from "../collector/facts.mjs";
-import { collect, localNotes } from "../collector/collect.mjs";
+import { collect, localNotes, prepareMirror } from "../collector/collect.mjs";
 import { mirrorErrors, checkWrites } from "../gate/rules.mjs";
 
 const config = fullConfig({ owner: "Sam", collector: { repoPath: "/x", notes: { language: "refs/notes/linguist", checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
@@ -184,4 +184,24 @@ test("the live-but-open list leaves out cards already done; notes are read from 
     const { doc } = collect({ config: cfg, cards: [{ id: "ready-one", status: "active", level: "Full" }], git: s.git, gh: () => "[]", now: 1 });
     assert.equal(doc.cards["ready-one"].phase, "security", "checker's note found in refs/notes/flight-board/checker");
   } finally { rmSync(s.dir, { recursive: true, force: true }); }
+});
+
+test("Security: a subject's sha reaches git only as plain hex; the mirror is cleared only at <stateDir>/<board id>/mirror", async () => {
+  const { mkdirSync, existsSync, writeFileSync: write } = await import("node:fs");
+  const calls = [];
+  const git = (args) => { calls.push(args); return "abc1234def\n"; };
+  const line = [{ sha: "m1", at: 1, subject: "v1.0.0: build/a@--upload-pack=x build/b@ABCDEF1 build/c@abc1234" }];
+  assert.deepEqual(shippedHeads(git, line, "([A-Za-z0-9._/-]+)@([^\\s]+)").map((h) => h.branch), ["build/c"]);
+  assert.ok(calls.every((a) => a.every((x) => !String(x).startsWith("--upload"))), "no subject text as an option");
+  const dir = mkdtempSync(join(tmpdir(), "fb-prep-"));
+  try {
+    const boardDir = join(dir, "Board01");
+    mkdirSync(join(boardDir, "mirror", "initiatives"), { recursive: true });
+    write(join(boardDir, "mirror", "initiatives", "old.json"), "{}");
+    assert.equal(prepareMirror(boardDir, "Board01"), join(boardDir, "mirror"));
+    assert.equal(existsSync(join(boardDir, "mirror", "initiatives")), false, "emptied");
+    assert.throws(() => prepareMirror(dir, "Board01"), /refusing to clear/);
+    assert.throws(() => prepareMirror(boardDir, ""), /refusing to clear/);
+    assert.equal(existsSync(dir), true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
