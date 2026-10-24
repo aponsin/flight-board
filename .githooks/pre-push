@@ -1,0 +1,3 @@
+#!/bin/sh
+# Nothing about the team that uses this board leaves this machine: the content scan runs before every push.
+node scripts/scan.mjs || exit 1

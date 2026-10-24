@@ -1,0 +1,12 @@
+{
+  "title": "Flight Board",
+  "owner": "Sam",
+  "artifactUrl": "",
+  "phases": [["plan", "Plan"], ["build", "Build"], ["test", "Test"], ["language", "Language"], ["checker", "Checker"], ["security", "Security"], ["ship", "Ship"], ["live", "Live"]],
+  "roster": ["Manager", "Builder", "Checker", "Security", "Release"],
+  "order": ["Manager", "Builder", "Checker", "Security", "Release"],
+  "skips": [{ "phase": "security", "unlessLevel": "Full" }, { "phase": "language", "whenFalse": "customerText" }],
+  "boardStart": "",
+  "runnerLabel": "Runners",
+  "automationLabel": "Automation"
+}
