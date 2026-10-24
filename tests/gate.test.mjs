@@ -221,13 +221,11 @@ test("writeErrors is the per-write rule list the batch uses", () => {
 });
 
 test("the hook entries: the gate on board writes and hand-offs, the Stop check; writing them keeps every other hook and replaces an older one", async () => {
-  const { hookEntries, withHooks } = await import("../scripts/hooks.mjs");
+  const { hookEntries, withHooks, shellQuote } = await import("../scripts/hooks.mjs");
   const e = hookEntries("/r/flight-board", "/cfg/board.config.json", "/bin/node");
   assert.equal(e.PreToolUse.matcher, "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message");
-  assert.equal(e.PreToolUse.hooks[0].command, '"/bin/node" "/r/flight-board/gate/gate.mjs" --config "/cfg/board.config.json"');
-  assert.equal(e.Stop.hooks[0].command, '"/bin/node" "/r/flight-board/gate/stop.mjs" --config "/cfg/board.config.json"');
-  assert.equal(hookEntries("/r/flight-board", "/Library/Application Support/x.json", "/bin/node").Stop.hooks[0].command, '"/bin/node" "/r/flight-board/gate/stop.mjs" --config "/Library/Application Support/x.json"', "a space stays inside its quotes");
-  assert.match(hookEntries("/r/flight-board", '/tmp/a"; rm -rf ~; "b.json', "/bin/node").Stop.hooks[0].command, /--config "\/tmp\/a\\"; rm -rf ~; \\"b\.json"$/, "a quote in a name is escaped");
+  assert.equal(e.PreToolUse.hooks[0].command, "'/bin/node' '/r/flight-board/gate/gate.mjs' --config '/cfg/board.config.json'");
+  assert.equal(e.Stop.hooks[0].command, "'/bin/node' '/r/flight-board/gate/stop.mjs' --config '/cfg/board.config.json'");
   const other = { matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }] };
   const old = { matcher: "ArtifactData", hooks: [{ type: "command", command: "node /old/flight-board/gate/gate.mjs --config x" }] };
   const s = withHooks({ model: "x", hooks: { PreToolUse: [other, old] } }, e);
@@ -257,4 +255,14 @@ test("Checker: only the lead may set or delete the whole of meta/context or meta
   has(checkWrites([{ op: "set", collection: "meta", doc_id: "stuck", data: {} }], { config, who: checker, now, state: {} }).errors, "only Manager may set");
   assert.deepEqual(checkWrites([{ op: "update", collection: "meta", doc_id: "stuck", data: { "waiting:w": { reason: "r", at: now } } }], { config, who: checker, now, state: {} }).errors, []);
   assert.deepEqual(checkWrites([{ op: "delete", collection: "meta", doc_id: "stuck" }], { config, who: lead, now, state: {} }).errors, []);
+});
+
+test("Security: a hook's paths reach the command unchanged through sh, whatever they hold ($( ), backticks, quotes, spaces)", async () => {
+  const { shellQuote, hookEntries } = await import("../scripts/hooks.mjs");
+  const { execFileSync } = await import("node:child_process");
+  for (const path of ["/Library/Application Support/x.json", '/tmp/x"$(echo INJECTED).json', "/tmp/a'b`echo INJECTED`$HOME.json", "/tmp/plain.json"]) {
+    assert.equal(execFileSync("sh", ["-c", `printf %s ${shellQuote(path)}`], { encoding: "utf8" }), path, path);
+    const cmd = hookEntries("/r/flight-board", path, "/bin/node").Stop.hooks[0].command;
+    assert.equal(execFileSync("sh", ["-c", `printf '%s|' ${cmd}`], { encoding: "utf8" }), `/bin/node|/r/flight-board/gate/stop.mjs|--config|${path}|`, path);
+  }
 });

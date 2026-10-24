@@ -7,9 +7,11 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const MARK = "flight-board/gate/";
+// A path as one shell word, in single quotes (a ' inside written '\''): sh expands nothing in it, so a folder with a
+// space ("Application Support") or a crafted name with $( ) or backticks stays a plain path.
+export const shellQuote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+const q = shellQuote;
 export function hookEntries(repo, configPath, node = process.execPath) {
-  // Each path quoted: a folder with a space ("Application Support") or a crafted name never splits or runs as shell.
-  const q = (s) => JSON.stringify(String(s));
   const cmd = (file) => `${q(node)} ${q(resolve(repo, "gate", file))} --config ${q(resolve(configPath))}`;
   return {
     PreToolUse: { matcher: "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message", hooks: [{ type: "command", command: cmd("gate.mjs") }] },
