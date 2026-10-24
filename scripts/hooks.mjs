@@ -46,7 +46,7 @@ export function withHooks(settings, entries, retire = []) {
 // with git archive (made once; reused by a later install of the same commit). Upgrading = installing a newer signed sha.
 export function pinnedDir(repo, commit, root) {
   let sha = "";
-  try { sha = execFileSync("git", ["rev-parse", "--verify", "--quiet", `${commit}^{commit}`], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* not found */ }
+  try { sha = execFileSync("git", ["rev-parse", "--verify", "--quiet", "--end-of-options", `${commit}^{commit}`], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* not found */ }
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`not a commit: ${commit}`);
   return { sha, dir: resolve(root, sha) };
 }
