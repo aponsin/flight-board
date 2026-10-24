@@ -66,8 +66,12 @@ export function withJournal(mirror, journal) {
 }
 
 // Rule 9 (case 3): the card ids a hand-off names ("board id x-y", "card x-y", "task x-y"), and whether it hands out work.
+// A one-word id ("board id menu") counts after "board id", "board card" or "card id", or in backticks; after a bare "card"
+// or "task" it needs a hyphen, so "task for you" names no card "for".
 export function handOff(text) {
-  const ids = [...String(text).matchAll(/\b(?:board (?:id|card)|card(?: id)?|task)[:\s]+`?([a-z0-9]+(?:-[a-z0-9]+)+)`?/gi)].map((m) => m[1].toLowerCase());
+  const s = String(text);
+  const ids = [...s.matchAll(/\b(?:board (?:id|card)|card id)[:\s]+`?([a-z0-9]+(?:-[a-z0-9]+)*)`?/gi),
+    ...s.matchAll(/\b(?:card|task)[:\s]+(?:`([a-z0-9]+(?:-[a-z0-9]+)*)`|([a-z0-9]+(?:-[a-z0-9]+)+))/gi)].map((m) => (m[1] ?? m[2]).toLowerCase());
   const work = /\btask\b|\bREADY\b|\bbuild\b/i.test(String(text)) || ids.length > 0;
   return { ids: [...new Set(ids)], work };
 }
