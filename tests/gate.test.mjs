@@ -330,19 +330,39 @@ test("the pinned copy is the commit itself, never the checkout's uncommitted edi
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("Manager's find: rules 3-5 skip a mirror exported before the gate's last accepted write (a card closed since)", () => {
+test("Manager's find, Checker's probe: the writes the gate let through since the export are laid over the mirror", () => {
   const dir = mkdtempSync(join(tmpdir(), "fb-stale-"));
   try {
     const cfg = fullConfig({ artifactUrl: URL_, gate: { stateDir: dir } });
     const transcript = join(dir, "t.jsonl");
     writeFileSync(transcript, JSON.stringify({ type: "custom-title", customTitle: "Manager" }) + "\n");
-    const call = (tool_input, at) => run({ tool_name: "ArtifactData", tool_input: { url: URL_, ...tool_input }, transcript_path: transcript }, { config: cfg, env: {}, now: at });
+    let clock = Date.now() + 1000;
+    const call = (tool_input) => run({ tool_name: "ArtifactData", tool_input: { url: URL_, ...tool_input }, transcript_path: transcript }, { config: cfg, env: {}, now: (clock += 1000) });
     mkdirSync(join(dir, "TestBoard01", "mirror", "initiatives"), { recursive: true });
     writeFileSync(join(dir, "TestBoard01", "mirror", "initiatives", "old-card.json"), JSON.stringify({ status: "active", phase: "build", who: "Builder" }));
     writeFileSync(join(dir, "TestBoard01", "mirror", "initiatives", "new-card.json"), JSON.stringify({ status: "active", phase: "plan" }));
-    const t0 = Date.now() - 5000;
-    assert.match(call({ action: "update", collection: "initiatives", doc_id: "new-card", data: { phase: "build", who: "Builder" } }, t0).block ?? "", /old-card is on build for Builder/, "a fresh mirror: the rule applies");
-    assert.deepEqual(call({ action: "update", collection: "initiatives", doc_id: "old-card", data: { status: "done", doneAt: t0 + 1000, phaseReason: "closed" } }, Date.now() + 2000), {}, "the card is closed (the mirror is now older than this write)");
-    assert.deepEqual(call({ action: "update", collection: "initiatives", doc_id: "new-card", data: { phase: "build", who: "Builder" } }, Date.now() + 3000), {}, "the stale mirror is set aside");
+    assert.match(call({ action: "update", collection: "initiatives", doc_id: "new-card", data: { phase: "build", who: "Builder" } }).block ?? "", /old-card is on build for Builder/);
+    // An unrelated write in between leaves the rules on (Checker's probe).
+    assert.deepEqual(call({ action: "set", collection: "steps", doc_id: "s1", data: { init: "x", phase: "build", who: "A", kind: "start", at: Date.now() - 1234 } }), {});
+    assert.match(call({ action: "update", collection: "initiatives", doc_id: "old-card", data: { phase: "plan" } }).block ?? "", /only move forward/, "rules still apply after an unrelated write");
+    assert.match(call({ action: "update", collection: "initiatives", doc_id: "new-card", data: { phase: "build", who: "Builder" } }).block ?? "", /old-card is on build/, "a refused write never reaches the overlay");
+    // The card closes after the export: the overlay knows, so the other card may take the lane.
+    assert.deepEqual(call({ action: "update", collection: "initiatives", doc_id: "old-card", data: { status: "done", doneAt: Date.now() - 1234 } }), {});
+    assert.deepEqual(call({ action: "update", collection: "initiatives", doc_id: "new-card", data: { phase: "build", who: "Builder" } }), {}, "old-card is done in the overlay");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("withJournal: set, update (with __delete__) and delete laid over the mirror, only those after its export", async () => {
+  const { withJournal } = await import("../gate/gate.mjs");
+  const m = { at: 100, docs: { initiatives: [{ id: "a", status: "active", phase: "build", who: "B" }] } };
+  const out = withJournal(m, [
+    { op: "update", collection: "initiatives", doc_id: "a", data: { status: "done", who: { __delete__: true } }, at: 150 },
+    { op: "set", collection: "initiatives", doc_id: "b", data: { status: "active" }, at: 160 },
+    { op: "set", collection: "initiatives", doc_id: "c", data: {}, at: 90 },
+    { op: "set", collection: "steps", doc_id: "s", data: {}, at: 170 },
+  ]);
+  assert.deepEqual(out.docs.initiatives, [{ id: "a", status: "done", phase: "build" }, { id: "b", status: "active" }]);
+  assert.equal(out.docs.steps, undefined, "only the board-state collections");
+  assert.deepEqual(m.docs.initiatives[0].who, "B", "the mirror itself untouched");
+  assert.deepEqual(withJournal(m, [{ op: "delete", collection: "initiatives", doc_id: "a", at: 120 }]).docs.initiatives, []);
 });

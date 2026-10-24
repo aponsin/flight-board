@@ -46,6 +46,25 @@ export function readMirror(dir) {
   return { docs, at };
 }
 
+// The writes the gate let through since the mirror was exported, laid over it: the mirror then shows each card as it is
+// now (a card closed after the export is closed here too). journal: [{ op, collection, doc_id, data, at }].
+const OVERLAY = new Set(["initiatives", "waiting", "messages", "derived"]);
+export function withJournal(mirror, journal) {
+  if (!mirror) return null;
+  const docs = Object.fromEntries(Object.entries(mirror.docs).map(([c, list]) => [c, list.map((d) => ({ ...d }))]));
+  for (const w of journal ?? []) {
+    if (!OVERLAY.has(w.collection) || !(w.at > mirror.at)) continue;
+    const list = (docs[w.collection] ||= []);
+    const i = list.findIndex((d) => d.id === w.doc_id);
+    if (w.op === "delete") { if (i >= 0) list.splice(i, 1); continue; }
+    const base = w.op === "update" && i >= 0 ? list[i] : { id: w.doc_id };
+    const next = { ...base };
+    for (const [k, v] of Object.entries(w.data ?? {})) { if (v && typeof v === "object" && v.__delete__) delete next[k]; else next[k] = v; }
+    if (i >= 0) list[i] = next; else list.push(next);
+  }
+  return { ...mirror, docs };
+}
+
 // Rule 9 (case 3): the card ids a hand-off names ("board id x-y", "card x-y", "task x-y"), and whether it hands out work.
 export function handOff(text) {
   const ids = [...String(text).matchAll(/\b(?:board (?:id|card)|card(?: id)?|task)[:\s]+`?([a-z0-9]+(?:-[a-z0-9]+)+)`?/gi)].map((m) => m[1].toLowerCase());
@@ -80,12 +99,14 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
     const writes = writesOf(t);
     // Rules 3-5 read the mirror the collector keeps; a stale one skips them (fail open) with a note.
     const m = readMirror(join(dir, "mirror"));
-    // ...and only when it was exported after the last write the gate let through: an older one misses that write.
-    const mirror = m && now - m.at < config.gate.mirrorMaxAgeMin * 60e3 && m.at >= (state.lastWriteAt ?? 0) ? m : null;
+    // ...with every write the gate let through since its export laid over it.
+    const mirror = m && now - m.at < config.gate.mirrorMaxAgeMin * 60e3 ? withJournal(m, state.journal) : null;
     const out = checkWrites(writes, { config, who, now, state, mirror });
     const known = new Set(state.known ?? []);
     if (!out.errors.length) for (const w of writes) if (w.collection === "initiatives" && w.op !== "delete") known.add(w.doc_id);
-    save({ ...out.state, known: [...known], lastWriteAt: out.errors.length ? state.lastWriteAt : now });
+    // The journal keeps the accepted writes of the board-state collections, newest 500, for the overlay.
+    const journal = out.errors.length ? (state.journal ?? []) : [...(state.journal ?? []), ...writes.filter((w) => OVERLAY.has(w.collection)).map((w) => ({ op: w.op, collection: w.collection, doc_id: w.doc_id, data: w.data, at: now }))].slice(-500);
+    save({ ...out.state, known: [...known], journal });
     return out.errors.length ? { block: refusalText(out.errors, out.stuckNow, now) } : {};
   }
   if (SEND_TOOLS.has(input?.tool_name) && who.manager) {

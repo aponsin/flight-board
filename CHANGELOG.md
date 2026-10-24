@@ -8,7 +8,7 @@
 
 ### Fixed
 - Send takes the text out of the box at once: no kept draft after sending, no second send of the same text; a failed save puts it back.
-- The gate's board-state rules skip a mirror exported before its last accepted write (a card closed since showed as still on build).
+- The gate lays every write it let through since the mirror's export over the mirror, so a card closed since shows closed and the board-state rules keep running (a card closed earlier showed as still on build).
 
 ## 0.3.0 - Unreleased
 
