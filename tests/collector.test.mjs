@@ -246,6 +246,11 @@ test("rule 10: a reply names an item or a thread with messages; a made-up thread
   for (const t of ["tabs", "ask-one", "idea-one", "old-thread", "t-1700000000000"]) assert.deepEqual(mirrorErrors(msg(t), { config, mirror: m }), [], t);
   assert.match(mirrorErrors(msg("ask-one-reply"), { config, mirror: m })[0], /thread ask-one-reply is no item/);
   assert.match(mirrorErrors(msg("t-made-up"), { config, mirror: m })[0], /thread t-made-up is no item/, "an agent never starts a t- thread (Checker)");
+  const now = 1_800_000_000_000;
+  assert.deepEqual(mirrorErrors(msg(`t-${now - 60_000}`), { config, mirror: m, now }), [], "the owner's new thread, not yet in the mirror, is answerable (Checker)");
+  assert.match(mirrorErrors(msg(`t-${now - 8 * 864e5}`), { config, mirror: m, now })[0], /no new thread of the owner's/, "older than 7 days and unknown");
+  assert.match(mirrorErrors(msg(`t-${now + 3_600_000}`), { config, mirror: m, now })[0], /is no item/, "a time in the future");
+  assert.match(mirrorErrors(msg("t-17000000000001"), { config, mirror: m, now })[0], /is no item/, "14 digits is not the box's shape");
   assert.match(mirrorErrors({ op: "set", collection: "messages", doc_id: "m3", data: { text: "x" } }, { config, mirror: m })[0], /names its thread/);
   const batch = [{ op: "set", collection: "waiting", doc_id: "new-ask", data: {} }, msg("new-ask")];
   assert.deepEqual(checkWrites(batch, { config, who: { role: "Lead", manager: true }, now: 5, state: {}, mirror: m }).errors.filter((e) => e.startsWith("messages/")), [], "an ask made in the same call");

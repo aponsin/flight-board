@@ -116,7 +116,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
-    const errs = [...writeErrors(w, { config, who, now }), ...mirrorErrors(w, { config, mirror, batch: writes })];
+    const errs = [...writeErrors(w, { config, who, now }), ...mirrorErrors(w, { config, mirror, batch: writes, now })];
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
@@ -164,22 +164,27 @@ export function refusalText(errors, stuckNow, now) {
 // Rule 5 (case 1): done only with no owner message waiting in its thread, no open ask tied to it, and live by the evidence;
 // a card given up closes as "dropped" with a dropReason, with the same first two checks and no evidence needed.
 // Rule 10: a message belongs to a thread the board has: an item (a card, an ask, an idea, one made in the same call too),
-// or a thread that already has messages ("t-…" threads come only from the owner's New thread box, so an agent never starts
-// one). A reply to an item names the item's id; a thread id made up for it shows the owner a card of its own. An export
-// without ideas skips the rule.
-export function threadErrors(w, { mirror, batch = [] }) {
+// a thread that already has messages, or one the owner's New thread box just started: "t-" and its 13-digit time, at most
+// 7 days old (the page writes it, so it reaches the mirror only at the next export; Checker). An agent never starts a t-
+// thread. A reply to an item names the item's id; a thread id made up for it shows the owner a card of its own. An
+// export without ideas skips the rule.
+const OWNER_THREAD = /^t-(\d{13})$/;
+const OWNER_THREAD_DAYS = 7;
+export function threadErrors(w, { mirror, batch = [], now = Date.now() }) {
   const { op, collection, data } = w;
   if (collection !== "messages" || op === "delete" || !data || typeof data !== "object" || !mirror?.docs.ideas) return [];
   const t = data.thread;
   if (typeof t !== "string" || !t) return op === "set" ? ["a message names its thread (thread: the item's id, or a t-… thread)"] : [];
+  const box = OWNER_THREAD.exec(t);
+  if (box && Number(box[1]) <= now + 60e3 && now - Number(box[1]) <= OWNER_THREAD_DAYS * 864e5) return [];
   const has = (c) => (mirror.docs[c] ?? []).some((d) => d.id === t) || batch.some((b) => b.collection === c && b.doc_id === t && b.op !== "delete");
   if (["initiatives", "waiting", "ideas"].some(has) || (mirror.docs.messages ?? []).some((m) => m.thread === t)) return [];
-  return [`thread ${t} is no item on the board and no thread with messages: reply under the item with its id as the thread`];
+  return [`thread ${t} is no item on the board, no thread with messages and no new thread of the owner's: reply under the item with its id as the thread`];
 }
 
-export function mirrorErrors(w, { config, mirror, batch = [] }) {
+export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now() }) {
   const { op, collection, doc_id: id, data } = w;
-  if (collection === "messages") return threadErrors(w, { mirror, batch });
+  if (collection === "messages") return threadErrors(w, { mirror, batch, now: at });
   if (collection !== "initiatives" || op === "delete" || !data || typeof data !== "object" || !mirror) return [];
   const e = [];
   const order = config.phases.map((p) => p[0]);
