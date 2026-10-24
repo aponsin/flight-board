@@ -391,6 +391,11 @@ test("Security: the Collector only sets derived/all; only it or the lead writes 
     assert.match(stuck.errors[0] ?? "", /meta\/stuck: the Collector only sets derived\/all/, `${op} meta/stuck: the stuck line's shortcut doesn't let the Collector through (Checker)`);
   }
   assert.deepEqual(checkWrites([{ op: "set", collection: "derived", doc_id: "all", data: { cards: {} } }], { config, who: collector, now, state: {} }).errors, []);
+  const clear = checkWrites([{ op: "update", collection: "meta", doc_id: "stuck", data: { "initiatives:x": { __delete__: true } } }], { config, who: collector, now, state: { stuck: { "initiatives:x": { reason: "r", at: 1 } } } });
+  assert.match(clear.errors[0] ?? "", /meta\/stuck: the Collector only sets derived\/all/, "clearing a stuck item too (Security)");
+  assert.equal(clear.state.stuck["initiatives:x"]?.reason, "r", "and the stuck line stays as it was");
+  const mixed = checkWrites([{ op: "set", collection: "derived", doc_id: "all", data: { cards: {} } }, { op: "update", collection: "meta", doc_id: "stuck", data: { "initiatives:x": { reason: "r", at: now } } }], { config, who: collector, now, state: {} });
+  assert.equal(mixed.errors.length, 1, "a batch with its one allowed write and a stuck write is refused whole (Security)");
   const derived = { op: "set", collection: "derived", doc_id: "all", data: { cards: {} } };
   assert.match(writeErrors(derived, { config, who: { role: "Builder", manager: false }, now })[0] ?? "", /derived\/all is written by the Collector \(or Manager\), not Builder/);
   assert.deepEqual(writeErrors(derived, { config, who: lead, now }), [], "the lead may repair it");
