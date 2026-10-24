@@ -1,3 +1,4 @@
 #!/bin/sh
-# Nothing about the team that uses this board leaves this machine: every pushed commit is scanned (refs on stdin).
-node scripts/scan.mjs --pre-push || exit 1
+# Nothing about the team that uses this board leaves this machine: every pushed commit and tag is scanned, against what
+# this remote ($1) already has (refs on stdin).
+node scripts/scan.mjs --pre-push "$1" || exit 1

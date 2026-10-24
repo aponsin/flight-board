@@ -20,3 +20,4 @@
 - The pre-push scan reads what the push sends: every file each pushed commit adds or changes, and each commit's message, not the working tree. `--all` scans every commit ever made, for the check before going public.
 - The scan also catches phone numbers written as digits (+13035550100 style), Stripe, webhook, Resend and fine-grained GitHub keys; it refuses a word list with no words; no-reply addresses pass.
 - `install.mjs` keeps the config and word list outside the repository from any folder in it.
+- The scan reads a merge's own changes, ranges a push against that remote only (a first push to a new remote scans everything), and scans pushed annotated tags and every commit's author and committer.

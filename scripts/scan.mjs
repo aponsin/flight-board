@@ -4,8 +4,8 @@
 //     path in `git config flightboard.scanwords` or $FLIGHT_BOARD_SCAN_WORDS; without one the scan refuses, fail closed);
 //   - an artifact link, an email address not at example.com/.org/.net (no-reply ones pass), a phone number not on 555 (also written as
 //     +13035550100 digits), a token-like secret.
-// What is scanned is what leaves: in the pre-push hook (--pre-push, the refs on stdin), every file each pushed commit adds
-// or changes, and each commit's message, so a word committed and removed in the same push is still caught. Run by hand
+// What is scanned is what leaves: in the pre-push hook (--pre-push <remote>, the refs on stdin), every file each pushed
+// commit adds or changes (merges too), each commit's message, author and committer, and each pushed tag's message, so a word committed and removed in the same push is still caught. Run by hand
 // (no flag), it scans HEAD's files and every commit no remote has yet. A hook can be skipped (git push --no-verify):
 // the scan is a guard, not a guarantee.
 // --all scans every commit the repository has ever had (run it before making the repository public).
@@ -38,30 +38,41 @@ export function readWords(path) {
   return readFileSync(path, "utf8").split("\n").map((w) => w.trim().toLowerCase()).filter((w) => w && !w.startsWith("#"));
 }
 
-// What a push sends: the commits each pushed ref adds ("<local ref> <local sha> <remote ref> <remote sha>" lines on stdin).
-export function pushedCommits(stdin, git) {
+// What a push to one remote sends ("<local ref> <local sha> <remote ref> <remote sha>" lines on stdin): the commits each
+// pushed ref adds, ranged against that remote only (a first push to a new, public remote sends everything, even what the
+// private one already has), and the annotated tags it pushes. { commits, tags }
+export function pushed(stdin, git, remoteName) {
   const zero = /^0+$/;
-  const out = new Set();
+  const commits = new Set(), tags = new Set();
   for (const line of String(stdin).split("\n")) {
     const [, local, , remote] = line.trim().split(/\s+/);
     if (!local || zero.test(local)) continue; // a deleted ref sends nothing
-    const range = !remote || zero.test(remote) ? [local, "--not", "--remotes"] : [`${remote}..${local}`];
-    for (const c of git(["rev-list", ...range]).split("\n").filter(Boolean)) out.add(c);
+    if (git(["cat-file", "-t", local]).trim() === "tag") tags.add(local);
+    const not = remoteName ? [`--remotes=${remoteName}`] : ["--remotes"];
+    const range = !remote || zero.test(remote) ? [local, "--not", ...not] : [`${remote}..${local}`];
+    for (const c of git(["rev-list", ...range]).split("\n").filter(Boolean)) commits.add(c);
   }
-  return [...out];
+  return { commits: [...commits], tags: [...tags] };
 }
+export const pushedCommits = (stdin, git, remoteName) => pushed(stdin, git, remoteName).commits;
 
-// Hits in one commit: every file it adds or changes (text only), and its message. [{ where, line, what }]
+// Hits in one commit: every file it adds or changes (text only; a merge's changes against each parent too), its message,
+// and its author and committer. [{ where, line, what }]
 export function scanCommit(commit, words, git) {
   const hits = [];
-  const paths = git(["diff-tree", "-r", "--root", "--no-commit-id", "--name-only", "--diff-filter=ACMRT", "-z", commit]).split("\0").filter(Boolean);
+  const paths = [...new Set(git(["diff-tree", "-r", "-m", "--root", "--no-commit-id", "--name-only", "--diff-filter=ACMRT", "-z", commit]).split("\0").filter(Boolean))];
   for (const path of paths) {
     const text = git(["cat-file", "blob", `${commit}:${path}`]);
     if (text.includes("\0")) continue;
     for (const h of scanText(text, words)) hits.push({ where: `${commit.slice(0, 8)}:${path}`, ...h });
   }
-  for (const h of scanText(git(["log", "-1", "--format=%B", commit]), words)) hits.push({ where: `${commit.slice(0, 8)} (message)`, ...h });
+  for (const h of scanText(git(["log", "-1", "--format=%B%n%an <%ae>%n%cn <%ce>", commit]), words)) hits.push({ where: `${commit.slice(0, 8)} (message, author)`, ...h });
   return hits;
+}
+
+// Hits in an annotated tag: its message and tagger.
+export function scanTag(tag, words, git) {
+  return scanText(git(["cat-file", "tag", tag]), words).map((h) => ({ where: `tag ${tag.slice(0, 8)}`, ...h }));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -77,14 +88,19 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const hits = [];
   let what;
   if (process.argv.includes("--pre-push")) {
-    const commits = pushedCommits(readFileSync(0, "utf8"), git);
+    // git gives the hook the remote's name first; the range is against that remote's refs only.
+    const remote = process.argv[process.argv.indexOf("--pre-push") + 1];
+    const { commits, tags } = pushed(readFileSync(0, "utf8"), git, remote && !remote.startsWith("-") ? remote : null);
     for (const c of commits) hits.push(...scanCommit(c, words, git));
-    what = `${commits.length} pushed commit(s)`;
+    for (const t of tags) hits.push(...scanTag(t, words, git));
+    what = `${commits.length} pushed commit(s) and ${tags.length} tag(s)`;
   } else if (process.argv.includes("--all")) {
     // Before the repository goes public: every commit it has ever had.
     const commits = git(["rev-list", "--all"]).split("\n").filter(Boolean);
+    const tags = git(["for-each-ref", "--format=%(objectname) %(objecttype)", "refs/tags"]).split("\n").filter((l) => l.endsWith(" tag")).map((l) => l.split(" ")[0]);
     for (const c of commits) hits.push(...scanCommit(c, words, git));
-    what = `all ${commits.length} commit(s)`;
+    for (const t of tags) hits.push(...scanTag(t, words, git));
+    what = `all ${commits.length} commit(s) and ${tags.length} tag(s)`;
   } else {
     const files = git(["ls-tree", "-r", "-z", "--name-only", "HEAD"]).split("\0").filter(Boolean);
     for (const f of files) {

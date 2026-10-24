@@ -123,3 +123,46 @@ test("the pre-push scan reads what is pushed: a word committed then removed, or 
     assert.match(run("").stderr, /has no words/, "an empty list refuses");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("the pre-push scan also reads merges, a first push to a second remote, annotated tags, and authors", async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "fb-scan2-"));
+  try {
+    const repo = join(dir, "repo"), words = join(dir, "words.txt");
+    writeFileSync(words, "zebracorp\n");
+    const git = (args, env = {}) => execFileSync("git", args, { cwd: repo, encoding: "utf8", env: { ...process.env, ...env } });
+    for (const b of ["private.git", "public.git"]) execFileSync("git", ["init", "-q", "--bare", join(dir, b)]);
+    execFileSync("git", ["init", "-q", "-b", "main", repo]);
+    git(["config", "user.email", "t@example.com"]); git(["config", "user.name", "T"]);
+    git(["remote", "add", "origin", join(dir, "private.git")]); git(["remote", "add", "public", join(dir, "public.git")]);
+    const scan = new URL("../scripts/scan.mjs", import.meta.url).pathname;
+    const hook = (remote, stdin) => spawnSync(process.execPath, [scan, "--pre-push", remote], { cwd: repo, input: stdin, encoding: "utf8", env: { ...process.env, FLIGHT_BOARD_SCAN_WORDS: words } });
+    const sha = (ref) => git(["rev-parse", ref]).trim();
+    const Z = "0".repeat(40);
+    writeFileSync(join(repo, "a.md"), "clean\n"); git(["add", "-A"]); git(["commit", "-qm", "one"]);
+    // A merge whose own resolution adds the word.
+    git(["checkout", "-qb", "side"]); writeFileSync(join(repo, "s.md"), "side\n"); git(["add", "-A"]); git(["commit", "-qm", "side"]);
+    git(["checkout", "-q", "main"]); writeFileSync(join(repo, "m.md"), "main\n"); git(["add", "-A"]); git(["commit", "-qm", "main"]);
+    git(["merge", "-q", "--no-ff", "--no-commit", "side"]); writeFileSync(join(repo, "evil.md"), "zebracorp\n"); git(["add", "-A"]); git(["commit", "-qm", "merge"]);
+    const merged = hook("origin", `refs/heads/main ${sha("HEAD")} refs/heads/main ${Z}\n`);
+    assert.equal(merged.status, 1); assert.match(merged.stderr, /evil\.md:1: a listed word/);
+    git(["rm", "-q", "evil.md"]); git(["commit", "-qm", "clean again"]);
+    // The private remote has it all; a first push to the public one still sends (and scans) every commit.
+    git(["push", "-q", "--no-verify", "origin", "main"]);
+    const pub = hook("public", `refs/heads/main ${sha("HEAD")} refs/heads/main ${Z}\n`);
+    assert.equal(pub.status, 1, "the old merge goes to the public remote too"); assert.match(pub.stdout + pub.stderr, /evil\.md/);
+    assert.equal(hook("origin", `refs/heads/main ${sha("HEAD")} refs/heads/main ${sha("HEAD")}\n`).status, 0);
+    // An annotated tag's message.
+    git(["tag", "-a", "v9", "-m", "the zebracorp release"]);
+    const tag = hook("origin", `refs/tags/v9 ${sha("v9")} refs/tags/v9 ${Z}\n`);
+    assert.equal(tag.status, 1); assert.match(tag.stderr, /tag [0-9a-f]{8}:\d+: a listed word/);
+    // A personal address in a commit's author.
+    writeFileSync(join(repo, "b.md"), "b\n"); git(["add", "-A"]);
+    git(["commit", "-qm", "b"], { GIT_AUTHOR_EMAIL: "sam@" + "realshop.io", GIT_AUTHOR_NAME: "Sam" });
+    const author = hook("origin", `refs/heads/main ${sha("HEAD")} refs/heads/main ${sha("HEAD~1")}\n`);
+    assert.equal(author.status, 1); assert.match(author.stderr, /\(message, author\):\d+: an email address/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
