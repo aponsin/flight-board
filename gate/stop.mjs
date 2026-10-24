@@ -11,7 +11,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readLines, sessionRole, currentTurn, turnCalls, turnText, lastReply } from "./session.mjs";
 import { writesOf } from "./gate.mjs";
 
-const WRITES = new Set(["set", "update", "delete", "batch"]);
+const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 
 export function stopCheck(lines, { config, env = {} }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);

@@ -240,3 +240,21 @@ test("case 11: an existing id written with if_version passes the gate; the board
   const r = checkWrites([{ op: "set", collection: "waiting", doc_id: "ans-board-link", data: { kind: "answer", text: "x", question: "q", since: now, done: false } }], { config, who: lead, now, state: {} });
   assert.deepEqual(r.errors, []);
 });
+
+test("Checker: an edit in place (str_replace) can't slip a field past the rules; it is refused on the board", () => {
+  const r = run({ tool_name: "ArtifactData", tool_input: { action: "str_replace", url: URL_, collection: "waiting", doc_id: "d1", field: "text", old_str: "x", new_str: "" } }, { config: fullConfig({ artifactUrl: URL_, gate: { stateDir: mkdtempSync(join(tmpdir(), "fb-sr-")) } }), env: {} });
+  assert.match(r.block, /edit in place can't be checked/);
+  has(one({ op: "str_replace", collection: "messages", doc_id: "m", data: { text: "y" } }), "edit in place");
+});
+
+test("Checker: only the lead may set or delete the whole of meta/context or meta/stuck; others update their entries", () => {
+  const checker = { role: "Checker", manager: false };
+  has(one({ op: "set", collection: "meta", doc_id: "context", data: { agents: { Checker: { pct: 10 } } } }, checker), "only Manager may set");
+  has(one({ op: "delete", collection: "meta", doc_id: "context" }, checker), "only Manager may delete");
+  ok(one({ op: "update", collection: "meta", doc_id: "context", data: { agents: { Checker: { pct: 10 } } } }, checker));
+  ok(one({ op: "set", collection: "meta", doc_id: "context", data: { at: now, agents: {} } }, lead));
+  has(checkWrites([{ op: "delete", collection: "meta", doc_id: "stuck" }], { config, who: checker, now, state: {} }).errors, "only Manager may delete the whole stuck line");
+  has(checkWrites([{ op: "set", collection: "meta", doc_id: "stuck", data: {} }], { config, who: checker, now, state: {} }).errors, "only Manager may set");
+  assert.deepEqual(checkWrites([{ op: "update", collection: "meta", doc_id: "stuck", data: { "waiting:w": { reason: "r", at: now } } }], { config, who: checker, now, state: {} }).errors, []);
+  assert.deepEqual(checkWrites([{ op: "delete", collection: "meta", doc_id: "stuck" }], { config, who: lead, now, state: {} }).errors, []);
+});

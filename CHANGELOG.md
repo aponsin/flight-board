@@ -5,6 +5,7 @@
 ### Added
 - The write gate (`gate/`): the board's rules on every write; decisions with two options or more, context and per-option screenshots for a look; commands as `{text, cmd}`; each role's own memory tile (the lead keeps the keeper's writes); passing agent states never become items; the stuck line after three refusals in a row, shown on the page and cleared by the item's next good write; hand-offs name an existing card; the Stop hook for verdicts and thread answers.
 - `scripts/hooks.mjs`: the gate's settings entries, printed or written, every path quoted.
+- The gate refuses an edit in place (str_replace) on the board, and lets only the lead set or delete the whole of meta/context or meta/stuck (Checker).
 - `DECISIONS.md`: the role check is an integrity check, never access control; the gate fails open on its own errors.
 - Not in the gate: a reused id (the board's server refuses a set without if_version); phase order, one item per role and phase, and done-only-when-closed come with the collector, which keeps the board's mirror.
 

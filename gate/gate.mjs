@@ -13,13 +13,15 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { checkWrites, refusalText } from "./rules.mjs";
 import { readLines, sessionRole } from "./session.mjs";
 
-const WRITES = new Set(["set", "update", "delete", "batch"]);
+const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"]);
 export const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
 
 // The writes in one ArtifactData call, each with its data (read from file_path when given).
 export function writesOf(t) {
   const load = (w) => (w.data ?? (w.file_path ? JSON.parse(readFileSync(w.file_path, "utf8")) : null));
+  // A text edit in place can't be checked (the gate never sees the field's whole new value): refused below.
+  if (t.action === "str_replace") return [{ op: "str_replace", collection: t.collection, doc_id: t.doc_id, data: { [t.field]: t.new_str } }];
   if (t.action === "batch") return (t.writes ?? []).map((w) => ({ op: w.op, collection: w.collection, doc_id: w.doc_id, data: load(w) }));
   return [{ op: t.action, collection: t.collection, doc_id: t.doc_id, data: load(t) }];
 }

@@ -38,12 +38,16 @@ export function writeErrors(w, { config, who, now }) {
   const { op, collection, doc_id: id, data } = w;
   const e = [];
   const phases = config.phases.map((p) => p[0]);
+  // An edit in place (ArtifactData str_replace) leaves the gate blind to the field's new value: write the whole field.
+  if (op === "str_replace") return [`a text edit in place can't be checked: write the whole field with update instead`];
   // Rule 6: each role's memory tile is its own; Manager may also set every role's entry in meta/context (the keeper).
   if (collection === "ctx") {
     if (!who.role) e.push("no role for this session: give it its role as its title");
     else if (id !== who.role) e.push(`ctx/${id} is ${id}'s own tile; this session is ${who.role}`);
   }
-  if (collection === "meta" && id === "context" && op !== "delete" && !who.manager) {
+  // A set or delete would replace or remove every role's entry: only the lead may.
+  if (collection === "meta" && id === "context" && (op === "set" || op === "delete") && !who.manager) e.push(`meta/context: only ${config.gate.managerRole} may ${op} the whole document; update agents.${who.role ?? "<you>"} instead`);
+  if (collection === "meta" && id === "context" && op === "update" && !who.manager) {
     const agents = data && typeof data === "object" ? Object.keys(data.agents ?? {}) : [];
     const others = Object.keys(data ?? {}).filter((k) => k !== "agents" && k !== "at");
     if (!who.role) e.push("no role for this session: give it its role as its title");
@@ -107,6 +111,8 @@ export function checkWrites(writes, { config, who, now, state }) {
   const errors = [];
   // Rule 8: the stuck line is always writable; it is how the owner sees Manager stuck.
   const stuckWrite = writes.find((w) => w.collection === "meta" && w.doc_id === "stuck");
+  // The stuck line can't be wiped wholesale: only the lead may set or delete the whole document; others update entries.
+  if (stuckWrite && stuckWrite.op !== "update" && !who.manager) errors.push(`meta/stuck: only ${config.gate.managerRole} may ${stuckWrite.op} the whole stuck line; update one item's entry instead`);
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
