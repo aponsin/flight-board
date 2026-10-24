@@ -51,7 +51,7 @@ Every write to the board goes through `gate/gate.mjs` first, and is refused with
 
 - the board's own checks (an item's ETA, next step, level and version; an ask's steps, question and time; real clock times);
 - a decision has two options or more and its context, and a look decision a screenshot per option; a command in a step is written `{text, cmd}`;
-- `ctx/<Role>` is written only by that role's session, and `meta/context` `agents.<Role>` too, except by the lead role; a session's role is its title in the app (or `FLIGHT_BOARD_ROLE`, which must agree). This is an integrity check against mistakes (a session that thinks it is another role), not access control: any session can rename itself, so nothing that needs protecting may depend on it;
+- `ctx/<Role>` is written only by that role's session, and `meta/context` `agents.<Role>` too, except by the lead role; a session's role is its title in the app (or `FLIGHT_BOARD_ROLE`, which must agree). This is an integrity check against mistakes (a session that thinks it is another role), not access control: any session can rename itself, so nothing that needs protecting may depend on it; a session with no role at all (no title, no `FLIGHT_BOARD_ROLE`) writes nothing to the board, its own steps and the stuck line included, so give every session that logs to the board a title, check-in and keeper sessions too;
 - an id listed in `gate.transientPrefixes` is a passing agent state and never becomes an item;
 - after three refusals in a row for one item, the gate asks for the stuck line (`meta/stuck`), which the page shows until a write for that item passes and clears it;
 - a message from the lead that hands out work names its card ("board id <id>"), and the card exists.
