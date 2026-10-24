@@ -70,9 +70,14 @@ export function scanCommit(commit, words, git) {
   return hits;
 }
 
-// Hits in an annotated tag: its message and tagger.
+// Hits in an annotated tag: its tagger (name and email; not the time, whose seconds look like a phone number) and message.
+export function tagText(raw) {
+  const [head, ...body] = String(raw).split("\n\n");
+  const tagger = /^tagger (.*?>)/m.exec(head)?.[1] ?? "";
+  return `${tagger}\n${body.join("\n\n")}`;
+}
 export function scanTag(tag, words, git) {
-  return scanText(git(["cat-file", "tag", tag]), words).map((h) => ({ where: `tag ${tag.slice(0, 8)}`, ...h }));
+  return scanText(tagText(git(["cat-file", "tag", tag])), words).map((h) => ({ where: `tag ${tag.slice(0, 8)}`, ...h }));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

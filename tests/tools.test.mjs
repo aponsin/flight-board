@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { checkConfig, fullConfig, DEFAULTS } from "../scripts/config.mjs";
 import { buildPage, scriptJson } from "../scripts/build-page.mjs";
-import { scanText, pushedCommits, scanCommit } from "../scripts/scan.mjs";
+import { scanText, pushedCommits, scanCommit, tagText } from "../scripts/scan.mjs";
 
 const template = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 const scriptOf = (html) => html.match(/<script>([\s\S]*?)<\/script>/)[1];
@@ -159,10 +159,19 @@ test("the pre-push scan also reads merges, a first push to a second remote, anno
     git(["tag", "-a", "v9", "-m", "the zebracorp release"]);
     const tag = hook("origin", `refs/tags/v9 ${sha("v9")} refs/tags/v9 ${Z}\n`);
     assert.equal(tag.status, 1); assert.match(tag.stderr, /tag [0-9a-f]{8}:\d+: a listed word/);
+    git(["tag", "-a", "v10", "-m", "a clean release"]);
+    const clean = hook("origin", `refs/tags/v10 ${sha("v10")} refs/tags/v10 ${Z}\n`);
+    assert.equal(clean.status, 0, "a clean tag passes: " + clean.stderr);
     // A personal address in a commit's author.
     writeFileSync(join(repo, "b.md"), "b\n"); git(["add", "-A"]);
     git(["commit", "-qm", "b"], { GIT_AUTHOR_EMAIL: "sam@" + "realshop.io", GIT_AUTHOR_NAME: "Sam" });
     const author = hook("origin", `refs/heads/main ${sha("HEAD")} refs/heads/main ${sha("HEAD~1")}\n`);
     assert.equal(author.status, 1); assert.match(author.stderr, /\(message, author\):\d+: an email address/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a tag is scanned by its tagger's name and email and its message, never its time", () => {
+  const raw = "object 0123abcd\ntype commit\ntag v1\ntagger Sam Lee <sam@example.com> " + "17928" + "77170 -0700\n\nRelease notes\n\nmore";
+  assert.equal(tagText(raw), "Sam Lee <sam@example.com>\nRelease notes\n\nmore");
+  assert.deepEqual(scanText(tagText(raw), []), []);
 });
