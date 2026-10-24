@@ -173,3 +173,43 @@ test("a dropped card is shown closed, as Dropped", () => {
   const html = b.initRow(b.gates(b.enrich(b.asShown({ id: "x", name: "X", status: "dropped", dropReason: "r", level: "Quick", skip: ["plan"] }))));
   assert.match(html, /<span class="state done">Dropped<\/span>/);
 });
+
+test("Close: the owner's Close marks the thread resolved (and closes an ask or idea), with no ping; the box offers it while open", () => {
+  const b = loadNames(["closeWrites", "threadOpen", "threadResolved", "threadHtml"]);
+  Object.assign(b.state, { waiting: [{ id: "w1", done: false }], ideas: [{ id: "i1", done: false }], initRaw: [{ id: "x", status: "active" }] });
+  const T = 1_800_000_000_000;
+  assert.deepEqual(plain(b.closeWrites("t-5", T, "r")), [{ op: "set", path: `messages/m${T}-r`, data: { thread: "t-5", from: "Owner", text: "Closed.", at: T, resolved: true } }]);
+  assert.deepEqual(plain(b.closeWrites("w1", T, "r"))[1], { op: "update", path: "waiting/w1", data: { done: true, doneAt: T } });
+  assert.deepEqual(plain(b.closeWrites("i1", T, "r"))[1], { op: "update", path: "ideas/i1", data: { done: true, doneAt: T } });
+  assert.equal(b.closeWrites("x", T, "r").length, 1, "an initiative's phase stays the collector's");
+  b.state.messages.push({ id: "m1", thread: "t-5", from: "Owner", text: "q", at: T });
+  assert.match(b.threadHtml("t-5", "panel"), /data-tclose="t-5"/);
+  b.state.messages.push({ id: "m2", ...plain(b.closeWrites("t-5", T + 1, "r"))[0].data });
+  assert.equal(b.threadOpen("t-5"), false, "the owner's own Close isn't waiting on the lead");
+  assert.equal(b.threadResolved("t-5"), true);
+  assert.doesNotMatch(b.threadHtml("t-5", "panel"), /data-tclose/, "no Close on a closed thread");
+});
+
+test("a message that names the one it answers comes after it, whatever the clocks said: the lead's resolve wins", () => {
+  const b = loadNames(["threadOf", "threadOpen", "threadResolved"]);
+  b.state.messages.push({ id: "a", thread: "t", from: "Owner", text: "one more?", at: 200 }, { id: "b", thread: "t", from: "Manager", text: "Done.", at: 150, resolved: true, after: "a" });
+  assert.deepEqual([...b.threadOf("t")].map((m) => m.id), ["a", "b"]);
+  assert.equal(b.threadOpen("t"), false);
+  assert.equal(b.threadResolved("t"), true);
+  b.state.messages.push({ id: "c", thread: "t", from: "Owner", text: "loop", at: 100, after: "c" });
+  assert.equal(b.threadOf("t").length, 3, "a message naming itself doesn't hang");
+});
+
+test("Send takes the text out of the box at once (no kept draft, no double send); a failed save puts it back", () => {
+  const b = loadNames(["takeDraft"]);
+  const ta = { id: "tnote-panel-t-1", value: "  hello  " };
+  b.els[ta.id] = ta;
+  const d = b.takeDraft(ta);
+  assert.equal(d.text, "hello");
+  assert.equal(ta.value, "", "cleared before anything is saved or re-drawn");
+  assert.equal(b.takeDraft(ta).text, "", "a second press finds nothing to send");
+  d.restore();
+  assert.equal(ta.value, "hello");
+  ta.value = "new typing"; d.restore();
+  assert.equal(ta.value, "new typing", "never over what the owner typed since");
+});

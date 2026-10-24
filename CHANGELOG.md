@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1 - Unreleased
+
+### Added
+- A Close button on every open thread: the owner's message marks it resolved (and closes an ask or idea), with no ping; it folds into Resolved.
+- A message may name the one it answers (`after: <message id>`); it then always comes after it, whatever the clocks said.
+
+### Fixed
+- Send takes the text out of the box at once: no kept draft after sending, no second send of the same text; a failed save puts it back.
+- The gate's board-state rules skip a mirror exported before its last accepted write (a card closed since showed as still on build).
+
 ## 0.3.0 - Unreleased
 
 ### Added

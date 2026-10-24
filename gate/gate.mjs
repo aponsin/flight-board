@@ -80,11 +80,12 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
     const writes = writesOf(t);
     // Rules 3-5 read the mirror the collector keeps; a stale one skips them (fail open) with a note.
     const m = readMirror(join(dir, "mirror"));
-    const mirror = m && now - m.at < config.gate.mirrorMaxAgeMin * 60e3 ? m : null;
+    // ...and only when it was exported after the last write the gate let through: an older one misses that write.
+    const mirror = m && now - m.at < config.gate.mirrorMaxAgeMin * 60e3 && m.at >= (state.lastWriteAt ?? 0) ? m : null;
     const out = checkWrites(writes, { config, who, now, state, mirror });
     const known = new Set(state.known ?? []);
     if (!out.errors.length) for (const w of writes) if (w.collection === "initiatives" && w.op !== "delete") known.add(w.doc_id);
-    save({ ...out.state, known: [...known] });
+    save({ ...out.state, known: [...known], lastWriteAt: out.errors.length ? state.lastWriteAt : now });
     return out.errors.length ? { block: refusalText(out.errors, out.stuckNow, now) } : {};
   }
   if (SEND_TOOLS.has(input?.tool_name) && who.manager) {

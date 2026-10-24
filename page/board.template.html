@@ -557,9 +557,14 @@ function renderStuck(){const el=$("stuck"),l=stuckLines();el.hidden=!l.length;el
 // thread is the item's id (an ask, an initiative, an idea) or "t-<time>" for one the owner started. A thread is open while its
 // newest message is the owner's: Manager owes the answer. Manager answers with a message, never a new item.
 const MAXT=2000, WEEK=7*864e5;
-function threadOf(id){return state.messages.filter(m=>m&&m.thread===id&&num(m.at)!=null).sort((a,b)=>a.at-b.at)}
+// Oldest first by time; a message that names the one it answers (after: <message id>) always comes after it, whatever
+// the two clocks said (the lead's answer stamped a little before the owner's message still follows it).
+function threadOf(id){const t=state.messages.filter(m=>m&&m.thread===id&&num(m.at)!=null),by=new Map(t.map(m=>[m.id,m]));
+  const key=new Map();const k=(m,seen=new Set())=>{if(key.has(m))return key.get(m);let v=m.at;const p=m.after&&by.get(m.after);
+    if(p&&!seen.has(p)){seen.add(m);v=Math.max(v,k(p,seen)+1)}key.set(m,v);return v};
+  return t.sort((a,b)=>k(a)-k(b)||a.at-b.at)}
 function threadIds(){return [...new Set(state.messages.filter(m=>m&&typeof m.thread==="string"&&num(m.at)!=null).map(m=>m.thread))]}
-function threadOpen(id){const t=threadOf(id),last=t[t.length-1];return !!last&&last.from===OWNER}
+function threadOpen(id){const t=threadOf(id),last=t[t.length-1];return !!last&&last.from===OWNER&&!last.resolved}
 function openThreads(){return threadIds().filter(threadOpen)}
 function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"waiting",doc:w};
   const i=state.initRaw.find(x=>x.id===id);if(i)return {coll:"initiatives",doc:i};
@@ -578,11 +583,19 @@ function threadWrites(id,text,files,now,kind,rid){
   const out=[{op:"set",path:`messages/m${now}-${rid}`,data:{thread:id,from:OWNER,text:String(text).slice(0,MAXT),at:now,...(files.length?{assets:files}:{}),...(kind?{kind}:{})}}];
   const it=itemOf(id);if(it&&it.coll!=="initiatives"&&it.doc.done)out.push({op:"update",path:`${it.coll}/${id}`,data:{done:false,reopenedAt:now}});
   return out}
+// The owner's Close: a message marking the thread resolved, and for an ask or an idea the item closed too. No ping.
+function closeWrites(id,now,rid){const out=[{op:"set",path:`messages/m${now}-${rid}`,data:{thread:id,from:OWNER,text:"Closed.",at:now,resolved:true}}];
+  const it=itemOf(id);if(it&&it.coll!=="initiatives"&&!it.doc.done)out.push({op:"update",path:`${it.coll}/${id}`,data:{done:true,doneAt:now}});
+  return out}
+// The text in a reply box, taken out of it at once: a re-draw while the message is saving can't put it back, and a
+// second press can't send it twice. Returns the text and a way to put it back if saving fails.
+function takeDraft(ta){const text=(ta&&ta.value||"").trim();if(ta)ta.value="";
+  return {text,restore:()=>{const t=ta&&ta.id?document.getElementById(ta.id):ta;if(t&&!t.value)t.value=text}}}
 function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&blobId(f.id));
   return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${linkify(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fs.map(f=>`<a href="/_blob/${f.id}" target="_blank" rel="noopener">${esc(f.name||"file")}</a>`).join(", ")}</div>`:""}</div>`}
 // A thread and its reply box. where: the place it is drawn (the same thread can show in two places), for unique ids.
 function threadHtml(id,where,{box=true}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`;
-  return `<div class="thread" data-thread="${esc(id)}">${t.map(msgHtml).join("")}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button></div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}</div>`}
+  return `<div class="thread" data-thread="${esc(id)}">${t.map(msgHtml).join("")}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button>${t.length&&!threadResolved(id)?`<button type="button" data-tclose="${esc(id)}" data-where="${esc(where)}">Close</button>`:""}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}</div>`}
 // The Threads panel: open ones (Manager owes an answer) first, then answered ones, then resolved ones of the last 7 days,
 // folded. Older resolved threads stay saved, just out of view.
 function threadsHtml(now){const ids=threadIds(),last=id=>{const t=threadOf(id);return t[t.length-1].at};
@@ -600,23 +613,28 @@ function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]
   Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t)t.value=v});
   if(focus){const t=document.getElementById(focus);if(t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}}
 function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())})}
-async function sendThread(btn,id,text,msg,kind,done){
-  if(!dbRef){msg.textContent="Can't save from here. Tell Manager in chat instead.";return}
+async function sendThread(btn,id,text,msg,kind,restore){
+  if(!dbRef){restore();msg.textContent="Can't save from here. Tell Manager in chat instead.";return}
   const key="th:"+id;if(!text&&!(pendingFiles.get(key)||[]).length){msg.textContent="Write your message first.";return}
   btn.disabled=true;lastPing="";const anchor=await prepAnchor(btn);
-  let stored;try{stored=await storeFiles(key,msg)}catch(err){btn.disabled=false;msg.textContent=err.message;return}
+  let stored;try{stored=await storeFiles(key,msg)}catch(err){btn.disabled=false;restore();msg.textContent=err.message;return}
   const now=Date.now();
-  try{await applyWrites(threadWrites(id,text,stored,now,kind,Math.random().toString(36).slice(2,8)));(pendingFiles.get(key)||[]).forEach(dropPreview);pendingFiles.delete(key);done()}
-  catch(err){btn.disabled=false;msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead.";return}
+  try{await applyWrites(threadWrites(id,text,stored,now,kind,Math.random().toString(36).slice(2,8)));(pendingFiles.get(key)||[]).forEach(dropPreview);pendingFiles.delete(key)}
+  catch(err){btn.disabled=false;restore();msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead.";return}
   if(wakeMode()==="batch"){msg.textContent="Saved. Manager reads it at its next check (within 5 minutes).";btn.disabled=false;return}
   const pinged=await sendPing(anchor,threadPing(id,text||"(files)",kind));
   msg.textContent=pinged?"Sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.";btn.disabled=false}
-document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-tsend]");if(!b)return;
+document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-tsend]");if(!b||b.disabled)return;
   const id=b.dataset.tsend,w=b.dataset.where,ta=document.getElementById(`tnote-${w}-${id}`),msg=document.getElementById(`tmsg-${w}-${id}`);
-  sendThread(b,id,(ta&&ta.value||"").trim(),msg,null,()=>{if(ta)ta.value=""})});
+  const d=takeDraft(ta);sendThread(b,id,d.text,msg,null,d.restore)});
+document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tclose]");if(!b||b.disabled)return;
+  const id=b.dataset.tclose,msg=document.getElementById(`tmsg-${b.dataset.where}-${id}`);
+  if(!dbRef){if(msg)msg.textContent="Can't save from here.";return}
+  b.disabled=true;try{await applyWrites(closeWrites(id,Date.now(),Math.random().toString(36).slice(2,8)));if(msg)msg.textContent="Closed."}
+  catch(err){b.disabled=false;if(msg)msg.textContent="Not closed ("+(err&&err.code||"error")+")."}});
 document.addEventListener("submit",e=>{if(!e.target||e.target.id!=="newthread")return;e.preventDefault();
-  const ta=$("nttext"),kind=$("ntkind").value==="idea"?"idea":"question";
-  sendThread(e.target.querySelector("button[type=submit]"),"t-"+Date.now(),(ta.value||"").trim(),$("ntmsg"),kind,()=>{ta.value=""})});
+  const kind=$("ntkind").value==="idea"?"idea":"question",d=takeDraft($("nttext"));
+  sendThread(e.target.querySelector("button[type=submit]"),"t-"+Date.now(),d.text,$("ntmsg"),kind,d.restore)});
 const DAY=864e5;
 function phaseIndex(p){return PHASES.findIndex(x=>x[0]===p)}
 function phaseTimes(log,doneAt){const t={};const l=(Array.isArray(log)?log:[]).filter(e=>e&&e.phase&&num(e.start)!=null).sort((a,b)=>a.start-b.start);

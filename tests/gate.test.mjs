@@ -329,3 +329,20 @@ test("the pinned copy is the commit itself, never the checkout's uncommitted edi
     assert.equal(readFileSync(join(root, sha, "gate", "gate.mjs"), "utf8"), ex("git", ["show", "HEAD:gate/gate.mjs"], { cwd: clone, encoding: "utf8" }));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("Manager's find: rules 3-5 skip a mirror exported before the gate's last accepted write (a card closed since)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fb-stale-"));
+  try {
+    const cfg = fullConfig({ artifactUrl: URL_, gate: { stateDir: dir } });
+    const transcript = join(dir, "t.jsonl");
+    writeFileSync(transcript, JSON.stringify({ type: "custom-title", customTitle: "Manager" }) + "\n");
+    const call = (tool_input, at) => run({ tool_name: "ArtifactData", tool_input: { url: URL_, ...tool_input }, transcript_path: transcript }, { config: cfg, env: {}, now: at });
+    mkdirSync(join(dir, "TestBoard01", "mirror", "initiatives"), { recursive: true });
+    writeFileSync(join(dir, "TestBoard01", "mirror", "initiatives", "old-card.json"), JSON.stringify({ status: "active", phase: "build", who: "Builder" }));
+    writeFileSync(join(dir, "TestBoard01", "mirror", "initiatives", "new-card.json"), JSON.stringify({ status: "active", phase: "plan" }));
+    const t0 = Date.now() - 5000;
+    assert.match(call({ action: "update", collection: "initiatives", doc_id: "new-card", data: { phase: "build", who: "Builder" } }, t0).block ?? "", /old-card is on build for Builder/, "a fresh mirror: the rule applies");
+    assert.deepEqual(call({ action: "update", collection: "initiatives", doc_id: "old-card", data: { status: "done", doneAt: t0 + 1000, phaseReason: "closed" } }, Date.now() + 2000), {}, "the card is closed (the mirror is now older than this write)");
+    assert.deepEqual(call({ action: "update", collection: "initiatives", doc_id: "new-card", data: { phase: "build", who: "Builder" } }, Date.now() + 3000), {}, "the stale mirror is set aside");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
