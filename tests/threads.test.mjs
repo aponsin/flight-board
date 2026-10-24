@@ -24,6 +24,18 @@ test("case 5: Manager's answer shows in the thread under the ask, not only in a 
   assert.match(html, /data-tsend="w1"/, "a reply box in the thread");
 });
 
+test("option A: an ask answered with a note stays in Waiting, badged, with the reply under it, until Manager answers", () => {
+  const ask = { id: "ask-pics", kind: "action", text: "Send the pictures", since: T, response: { status: "done", note: "here they are", at: 1000 }, ping: "sent" }; // answered long ago, on the real clock
+  const owner = msg("ask-pics", "Owner", "here they are", T);
+  const html = renderWaitingHtml([ask], { messages: [owner] });
+  assert.match(html, /Send the pictures/);
+  assert.match(html, /sent, waiting on Manager/);
+  assert.match(html, /class="thread" data-thread="ask-pics"/, "the reply sits under the ask");
+  assert.doesNotMatch(html, /<details class="w-item" data-id="ask-pics" open/, "folded");
+  assert.doesNotMatch(renderWaitingHtml([ask], { messages: [owner, msg("ask-pics", "Manager", "Got them", T + 1)] }), /Send the pictures/, "Manager answered: it leaves");
+  assert.doesNotMatch(renderWaitingHtml([{ ...ask, response: { status: "done", note: "", at: 1000 } }]), /Send the pictures/, "no note, no thread: it leaves as before");
+});
+
 test("a message is shown as text: markup escaped, links made safe, files only from the board's own store", () => {
   const b = board({ messages: [msg("a", "<b>Manager</b>", "<img src=x onerror=alert(1)> see https://example.com/x", T, { assets: [{ id: "abcdefgh12", name: "<s>.png" }, { id: "javascript:alert(1)", name: "bad" }] })] });
   const html = b.threadHtml("a", "panel");
@@ -94,7 +106,9 @@ test("the reply-card bug: a thread whose item is on screen stays under the item,
   const html = b.threadsHtml(T + 10_000);
   assert.doesNotMatch(html, /Run the install|Tabs/, "the ask in Waiting and the card in flight keep their threads under them");
   assert.match(html, /New question/);
-  assert.match(html, /Send the pictures/, "an answered ask has left Waiting: its thread is in the panel");
+  assert.doesNotMatch(html, /Send the pictures/, "an answered ask whose note waits on Manager stays in Waiting, with the reply under it");
+  b.state.messages.push(msg("ask-answered", "Manager", "Got them", T + 2));
+  assert.match(b.threadsHtml(T + 10_000), /Reply to: Send the pictures/, "once Manager answers, it leaves Waiting and its thread is in the panel, named as a reply");
   assert.match(html, /Menu/, "a done card's thread is in the panel");
 });
 
