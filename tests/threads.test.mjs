@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { loadNames, renderWaitingHtml } from "./harness.mjs";
 
 const T = 1_800_000_000_000;
-const NAMES = ["threadOf", "threadOpen", "openThreads", "threadResolved", "threadTitle", "wakeMode", "threadPing", "threadWrites", "replyWrites", "threadHtml", "threadsHtml", "initRow", "enrich", "gates", "keep"];
+const NAMES = ["threadOf", "threadOpen", "openThreads", "threadResolved", "threadTitle", "wakeMode", "threadPing", "threadWrites", "replyWrites", "threadHtml", "threadsHtml", "threadRows", "initRow", "enrich", "gates", "keep"];
 // Objects made inside the board's sandbox, as plain ones for deepEqual.
 const plain = (x) => JSON.parse(JSON.stringify(x));
 const board = (st = {}) => { const b = loadNames(NAMES); Object.assign(b.state, st); return b; };
@@ -24,16 +24,21 @@ test("case 5: Manager's answer shows in the thread under the ask, not only in a 
   assert.match(html, /data-tsend="w1"/, "a reply box in the thread");
 });
 
-test("option A: an ask answered with a note stays in Waiting, badged, with the reply under it, until Manager answers", () => {
+test("an answered ask moves from Needs you to Waiting on Manager, with its reply and thread, until Manager closes it", () => {
   const ask = { id: "ask-pics", kind: "action", text: "Send the pictures", since: T, response: { status: "done", note: "here they are", at: 1000 }, ping: "sent" }; // answered long ago, on the real clock
   const owner = msg("ask-pics", "Owner", "here they are", T);
-  const html = renderWaitingHtml([ask], { messages: [owner] });
-  assert.match(html, /Send the pictures/);
-  assert.match(html, /sent, waiting on Manager/);
+  assert.doesNotMatch(renderWaitingHtml([ask], { messages: [owner] }), /Send the pictures/, "no longer under Needs you");
+  assert.match(renderWaitingHtml([{ ...ask, response: undefined }]), /Send the pictures/, "unanswered: under Needs you");
+  const b = board({ waiting: [ask], messages: [owner] });
+  const html = b.threadsHtml(T);
+  assert.match(html, /<details class="w-item" data-id="ask-pics">/);
+  assert.match(html, /You marked this done/);
   assert.match(html, /class="thread" data-thread="ask-pics"/, "the reply sits under the ask");
-  assert.doesNotMatch(html, /<details class="w-item" data-id="ask-pics" open/, "folded");
-  assert.doesNotMatch(renderWaitingHtml([ask], { messages: [owner, msg("ask-pics", "Manager", "Got them", T + 1)] }), /Send the pictures/, "Manager answered: it leaves");
-  assert.doesNotMatch(renderWaitingHtml([{ ...ask, response: { status: "done", note: "", at: 1000 } }]), /Send the pictures/, "no note, no thread: it leaves as before");
+  b.state.messages.push(msg("ask-pics", "Manager", "Got them", T + 1));
+  assert.match(b.threadsHtml(T), /data-id="ask-pics"/, "Manager answered but hasn't closed it: still waiting on Manager");
+  b.state.waiting[0] = { ...ask, done: true };
+  assert.doesNotMatch(b.threadsHtml(T), /data-id="ask-pics"/, "closed: gone from the section");
+  assert.match(b.threadsHtml(T), /Resolved threads, last 7 days \(1\)[\s\S]*Reply to: Send the pictures/, "closed with Manager's word last: resolved, folded");
 });
 
 test("a message is shown as text: markup escaped, links made safe, files only from the board's own store", () => {
@@ -84,32 +89,35 @@ test("open while Owner has the last word; answered once Manager replies; resolve
   assert.equal(b.threadResolved("t-9"), false);
 });
 
-test("the Threads panel: waiting on Manager first, then answered, then resolved of the last 7 days folded; older resolved out of view", () => {
+test("Waiting on Manager: answered asks, then threads whose last word is the owner's, then the resolved of 7 days folded; Manager's answers go to Needs you", () => {
   const DAY = 864e5;
   const b = board({ waiting: [{ id: "old", done: true, text: "Old ask" }, { id: "new", done: true, text: "New ask" }], messages: [
     msg("t-1", "Owner", "Question one", T, { kind: "question" }), msg("t-2", "Owner", "Idea two", T, { kind: "idea" }), msg("t-2", "Manager", "Noted", T + 1),
-    msg("new", "Owner", "q", T), msg("new", "Manager", "a", T + 1), msg("old", "Owner", "q", T - 9 * DAY), msg("old", "Manager", "a", T - 9 * DAY + 1)] });
+    msg("new", "Owner", "q", T), msg("new", "Manager", "a", T + 1), msg("old", "Owner", "q", T - 9 * DAY), msg("old", "Manager", "a", T - 9 * DAY + 1),
+    msg("t-3", "Owner", "Done one", T), msg("t-3", "Manager", "Closed.", T + 1, { resolved: true })] });
   const html = b.threadsHtml(T + 10);
-  const at = (s) => html.indexOf(s);
-  assert.ok(at("Question one") > -1 && at("Question one") < at("Idea two") && at("Idea two") < at("Resolved threads"), html);
+  assert.ok(html.indexOf("Question one") > -1 && html.indexOf("Question one") < html.indexOf("Resolved threads"), html);
   assert.match(html, /Question one<span class="t-badge open">waiting on Manager/);
-  assert.match(html, /Resolved threads, last 7 days \(1\)/);
-  assert.match(html, /New ask/);
-  assert.doesNotMatch(html, /Old ask/);
+  assert.match(html, /Resolved threads, last 7 days \(2\)[\s\S]*Reply to: New ask[\s\S]*Done one/);
+  assert.doesNotMatch(html, /Idea two|Old ask/, "answered threads are the owner's to read, and older resolved ones are out of view");
+  const answered = b.threadRows(T + 10).answered;
+  assert.match(answered, /Idea two/, "Manager answered an open thread: under Needs you");
+  assert.doesNotMatch(answered, /New ask|Old ask/);
 });
 
-test("the reply-card bug: a thread whose item is on screen stays under the item, not as a second card in the panel", () => {
+test("the reply-card bug: a thread whose item is on the board stays under the item, never as a second row", () => {
   const b = board({ waiting: [{ id: "ask-open", text: "Run the install", since: T }, { id: "ask-answered", text: "Send the pictures", since: T, response: { status: "done", note: "here", at: T } }],
     initRaw: [{ id: "card-live", name: "Tabs", status: "active" }, { id: "card-done", name: "Menu", status: "done" }],
     messages: [msg("ask-open", "Owner", "which folder?", T + 1), msg("ask-answered", "Owner", "here", T), msg("card-live", "Owner", "how far?", T + 1),
       msg("card-done", "Owner", "thanks", T + 1), msg("t-5", "Owner", "New question", T + 1, { kind: "question" })] });
   const html = b.threadsHtml(T + 10_000);
-  assert.doesNotMatch(html, /Run the install|Tabs/, "the ask in Waiting and the card in flight keep their threads under them");
+  assert.doesNotMatch(html, /Run the install|Tabs/, "the ask under Needs you and the card in flight keep their threads under them");
   assert.match(html, /New question/);
-  assert.doesNotMatch(html, /Send the pictures/, "an answered ask whose note waits on Manager stays in Waiting, with the reply under it");
+  assert.equal((html.match(/Send the pictures/g) ?? []).length, 1, "the answered ask once, its thread under it");
+  assert.doesNotMatch(html, /Reply to: Send the pictures/);
   b.state.messages.push(msg("ask-answered", "Manager", "Got them", T + 2));
-  assert.match(b.threadsHtml(T + 10_000), /Reply to: Send the pictures/, "once Manager answers, it leaves Waiting and its thread is in the panel, named as a reply");
-  assert.match(html, /Menu/, "a done card's thread is in the panel");
+  assert.doesNotMatch(b.threadsHtml(T + 10_000) + b.threadRows(T + 10_000).answered, /Reply to: Send the pictures/, "still on the board until Manager closes it");
+  assert.match(html, /Reply to: Menu/, "a done card's thread is a row of its own");
 });
 
 test("case 6: a bare Ack on an answer closes it; an Ack with a follow-up keeps it open and puts the question in its thread", () => {
@@ -154,10 +162,16 @@ test("an initiative carries its thread, folded, marked when Manager owes an answ
   assert.match(html, /Is this still on\?/);
 });
 
-test("a new thread box with Question and Idea sits at the top of the board, before Waiting on Owner", () => {
+test("one Threads panel: the new thread box (no kind to pick), then Needs you, then Waiting on Manager", () => {
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-  assert.match(html, /<form class="newthread" id="newthread">[\s\S]*<option value="question">Question<\/option><option value="idea">Idea<\/option>/);
-  assert.ok(html.indexOf('id="newthread"') < html.indexOf('id="h-wait"'));
+  const section = html.slice(html.indexOf('<section aria-labelledby="h-threads">'), html.indexOf("</section>", html.indexOf('<section aria-labelledby="h-threads">')));
+  assert.match(section, /<form class="newthread" id="newthread"><label for="nttext">Start a thread<\/label><textarea id="nttext"/);
+  assert.doesNotMatch(html, /<select id="ntkind"|<option value="idea">/, "no Question or Idea to pick");
+  assert.ok(section.indexOf('id="newthread"') < section.indexOf('id="h-wait">Needs you') && section.indexOf('id="h-wait">Needs you') < section.indexOf('id="h-onlead">Waiting on Manager'));
+  assert.match(section, /id="waiting"/);
+  assert.match(section, /id="threads"/);
+  assert.equal((html.match(/<section aria-labelledby="h-wait">/g) ?? []).length, 0, "no second panel");
+  assert.match(html, /const kind="question",d=takeDraft\(\$\("nttext"\)\)/, "a new thread is a question in the data");
   assert.match(html, /"messages"[,\]][^\n]*\.forEach\(sub\)/, "the board listens to messages");
   assert.match(html, /"derived"\]\.forEach\(sub\)/, "and to the collector's derived phases");
 });
@@ -238,4 +252,12 @@ test("Send takes the text out of the box at once (no kept draft, no double send)
   assert.equal(ta.value, "hello");
   ta.value = "new typing"; d.restore();
   assert.equal(ta.value, "new typing", "never over what the owner typed since");
+});
+
+test("Needs you: the open asks, then the threads Manager answered; empty, it says so", () => {
+  const html = renderWaitingHtml([{ id: "w1", kind: "action", text: "Click it", since: T }], { messages: [msg("t-9", "Owner", "Can you check?", T), msg("t-9", "Manager", "Checked: fine.", T + 1)] });
+  assert.ok(html.indexOf("Click it") > -1 && html.indexOf("Click it") < html.indexOf("Can you check?"), html);
+  assert.match(renderWaitingHtml([], { messages: [msg("t-9", "Owner", "Can you check?", T), msg("t-9", "Manager", "Checked: fine.", T + 1)] }), /Can you check\?/);
+  assert.match(renderWaitingHtml([]), /Nothing needs you\./);
+  assert.doesNotMatch(renderWaitingHtml([], { messages: [msg("t-9", "Owner", "Waiting", T)] }), /Waiting/, "the owner's own last word waits on Manager, not here");
 });

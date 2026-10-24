@@ -131,7 +131,8 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .thread .reply{margin:6px 0 4px 0}
 .t-badge{font-size:.75rem;border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin-left:6px;color:var(--muted)}.t-badge.open{color:var(--bad);border-color:var(--bad)}
 .newthread{display:flex;flex-direction:column;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)}
-.newthread label{font-size:.82rem;color:var(--muted)}.newthread select{align-self:flex-start;font:inherit}
+.newthread label{font-size:.82rem;color:var(--muted)}
+.t-sec{margin:0;padding:10px 16px 6px;border-top:1px solid var(--line);font:600 .8rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .newthread textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .i-thread{grid-column:1/-1}.i-thread>summary{cursor:pointer;font-size:.85rem;color:var(--muted);margin:4px 0 0}.i-thread .thread{margin-left:0}
 .btns button{font:600 .9rem var(--body);border-radius:6px;padding:7px 14px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
@@ -271,14 +272,12 @@ svg text{fill:var(--muted);font:10px var(--mono)}
   <section aria-labelledby="h-threads">
     <h2 id="h-threads">Threads</h2>
     <div class="panel">
-      <form class="newthread" id="newthread"><label for="ntkind">Start a thread</label><select id="ntkind"><option value="question">Question</option><option value="idea">Idea</option></select><label class="sr" for="nttext">Your message</label><textarea id="nttext" rows="2" placeholder="Ask Manager something, or share an idea"></textarea><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
-      <div id="threads"><div class="empty">No threads yet.</div></div>
+      <form class="newthread" id="newthread"><label for="nttext">Start a thread</label><textarea id="nttext" rows="2" placeholder="Ask Manager something, or share an idea"></textarea><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
+      <h3 class="t-sec" id="h-wait">Needs you</h3>
+      <div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div>
+      <h3 class="t-sec" id="h-onlead">Waiting on Manager</h3>
+      <div class="waiting" id="threads"><div class="empty">Nothing waiting on Manager.</div></div>
     </div>
-  </section>
-
-  <section aria-labelledby="h-wait">
-    <h2 id="h-wait">Waiting on {{OWNER}}</h2>
-    <div class="panel waiting" id="waiting"><div class="empty">Nothing waiting on you. Manager adds decisions, clicks and resets here.</div></div>
   </section>
 
   <section aria-labelledby="h-init">
@@ -332,35 +331,41 @@ function dur(ms){if(ms==null)return"";const m=Math.round(Math.abs(ms)/60000);if(
 function hhmm(t){const d=new Date(t);return d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}
 function dayLabel(t){const d=new Date(t),n=new Date();if(d.toDateString()===n.toDateString())return hhmm(t);return d.toLocaleDateString([], {month:"short",day:"numeric"})+" "+hhmm(t)}
 
-// Whether an ask is in the owner's Waiting list: open, and not answered more than 2.5 s ago, or answered with his note
-// still waiting on Manager in its thread (the reply then shows under the ask, folded, until Manager answers or closes it).
-function waitingShown(w,now){return !w.done&&(!(w.response&&w.response.at&&now-w.response.at>2500)||threadOpen(w.id))}
-// Whether an item is drawn with its thread under it: an ask in Waiting, or an initiative in flight. Its thread then stays
-// there, out of the Threads panel (a reply under an item once showed as a second card, titled with the item's text).
+// Where an ask shows in the Threads panel: under "Needs you" while it is open and unanswered (or answered under 2.5 s
+// ago, the "sent" moment), then under "Waiting on Manager" until Manager closes it, with the reply and its thread.
+const SENT_MS=2500;
+const answered=(w,now)=>!!(w.response&&w.response.at&&now-w.response.at>SENT_MS);
+function needsYou(w,now){return !w.done&&!answered(w,now)}
+function onLead(w,now){return !w.done&&answered(w,now)}
+// Whether an item is drawn with its thread under it: an open ask (either section), or an initiative in flight. Its
+// thread then stays there, never as a second row (a reply under an item once showed as a card of its own).
 function itemShown(id,now){const it=itemOf(id);if(!it)return false;
-  return it.coll==="waiting"?waitingShown(it.doc,now):it.coll==="initiatives"?it.doc.status!=="done":false}
-function renderWaiting(){
-  // An item the owner has answered leaves his list at once (a 2-second "sent" moment first); Manager closes it after acting.
-  const list=state.waiting.filter(w=>waitingShown(w,Date.now())).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
-  const el=$("waiting");
-  if(!list.length){el.innerHTML='<div class="empty">Nothing waiting on you. Manager adds decisions, clicks and resets here.</div>';return}
-  const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id));
-  // Keep what the owner is typing: a live update re-draws the list, which would otherwise wipe the note boxes.
-  const drafts={};el.querySelectorAll("textarea[id^='note-'],textarea[id^='tnote-']").forEach(t=>{if(t.value)drafts[t.id]=t.value});
-  const focusId=document.activeElement&&document.activeElement.id&&/^t?note-/.test(document.activeElement.id)?document.activeElement.id:null;
-  queueMicrotask(()=>{Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t)t.value=v});if(focusId){const t=document.getElementById(focusId);if(t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}});
-  const item=w=>{const steps=Array.isArray(w.steps)?w.steps:[];
+  return it.coll==="waiting"?!it.doc.done:it.coll==="initiatives"?it.doc.status!=="done":false}
+// An ask as a row that opens to its steps, its reply buttons (or the sent line) and its thread.
+function askHtml(w,open){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
    <div class="w-text">${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:askText(w.text||"")}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
-   ${w.response&&threadOpen(w.id)?'<span class="t-badge open">sent, waiting on Manager</span>':""}<span class="age">${num(w.since)?dur(Date.now()-w.since)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
+   <span class="age">${num(w.since)?dur(Date.now()-w.since)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
    return `<details class="w-item" data-id="${esc(w.id)}"${open.has(w.id)?" open":""}><summary class="w-row">${head}</summary>
-   <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}</li>`:`<li>${linkify(s&&s.text||"")}${s&&s.cmd?`<div class="cmd"><code>${esc(s.cmd)}</code><button type="button" class="copy" data-copy="${esc(s.cmd)}">Copy</button></div>`:""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length?threadHtml(w.id,"wait"):""}</details>`};
+   <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}</li>`:`<li>${linkify(s&&s.text||"")}${s&&s.cmd?`<div class="cmd"><code>${esc(s.cmd)}</code><button type="button" class="copy" data-copy="${esc(s.cmd)}">Copy</button></div>`:""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length?threadHtml(w.id,"wait"):""}</details>`}
+// "Needs you": the open asks, Later folded at their end, then the threads where Manager answered and the owner has not
+// closed or replied (their item is no longer on the board).
+function renderWaiting(){
+  const t=Date.now(),list=state.waiting.filter(w=>needsYou(w,t)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
+  const el=$("waiting"),answeredRows=threadRows(t).answered;
+  if(!list.length&&!answeredRows){el.innerHTML='<div class="empty">Nothing needs you.</div>';return}
+  const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id));
+  // Keep what the owner is typing: a live update re-draws the list, which would otherwise wipe the note boxes.
+  const drafts={};el.querySelectorAll("textarea[id^='note-'],textarea[id^='tnote-']").forEach(x=>{if(x.value)drafts[x.id]=x.value});
+  const focusId=document.activeElement&&document.activeElement.id&&/^t?note-/.test(document.activeElement.id)?document.activeElement.id:null;
+  queueMicrotask(()=>{Object.entries(drafts).forEach(([id,v])=>{const x=document.getElementById(id);if(x)x.value=v});if(focusId){const x=document.getElementById(focusId);if(x){x.focus();x.selectionStart=x.selectionEnd=x.value.length}}});
+  const item=w=>askHtml(w,open);
   // "Later" items sit folded in one row at the bottom, so today's asks stay on the first screen.
   const now=list.filter(w=>w.kind!=="later"), later=list.filter(w=>w.kind==="later");
-  el.innerHTML=(now.length?now.map(item).join(""):'<div class="empty">Nothing to do now.</div>')
-    +(later.length?`<details class="w-item w-later" data-id="__later"${open.has("__later")?" open":""}><summary class="later-sum">Later (${later.length}) <span class="caret" aria-hidden="true">▸</span></summary>${later.map(item).join("")}</details>`:"");
+  el.innerHTML=(now.length?now.map(item).join(""):answeredRows?"":'<div class="empty">Nothing to do now.</div>')
+    +answeredRows+(later.length?`<details class="w-item w-later" data-id="__later"${open.has("__later")?" open":""}><summary class="later-sum">Later (${later.length}) <span class="caret" aria-hidden="true">▸</span></summary>${later.map(item).join("")}</details>`:"");
   el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply));
   el.querySelectorAll("details.w-item").forEach(d=>d.addEventListener("toggle",()=>{if(d.open)closedAnswers.delete(d.dataset.id);else closedAnswers.add(d.dataset.id)}));
 }
@@ -605,13 +610,20 @@ function threadHtml(id,where,{box=true}={}){const t=threadOf(id),key="th:"+id,ti
   return `<div class="thread" data-thread="${esc(id)}">${t.map(msgHtml).join("")}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button>${t.length&&!threadResolved(id)?`<button type="button" data-tclose="${esc(id)}" data-where="${esc(where)}">Close</button>`:""}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}</div>`}
 // The Threads panel: open ones (Manager owes an answer) first, then answered ones, then resolved ones of the last 7 days,
 // folded. Older resolved threads stay saved, just out of view.
-function threadsHtml(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now)),last=id=>{const t=threadOf(id);return t[t.length-1].at};
+// The thread rows whose item is not on the board (a New thread, or an item since closed), in three groups: open (the
+// owner's word is the last: waiting on Manager), answered (Manager's is: the owner reads, replies or closes it), and
+// resolved in the last 7 days. Older resolved threads stay saved, just out of view.
+function threadRows(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now)),last=id=>{const t=threadOf(id);return t[t.length-1].at};
   const open=ids.filter(threadOpen).sort((a,b)=>last(a)-last(b)),res=ids.filter(id=>!threadOpen(id)&&threadResolved(id)&&now-last(id)<WEEK).sort((a,b)=>last(b)-last(a));
   const answered=ids.filter(id=>!threadOpen(id)&&!threadResolved(id)).sort((a,b)=>last(b)-last(a));
   const row=(id,cls)=>`<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span><div class="w-text">${id.startsWith("t-")?"":"Reply to: "}${esc(threadTitle(id))}<span class="t-badge ${cls}">${cls==="open"?"waiting on Manager":cls==="res"?"resolved":"answered"}</span></div><span class="age">${dur(now-last(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"panel")}</details>`;
-  if(!open.length&&!answered.length&&!res.length)return '<div class="empty">No threads yet. Start one above, or reply under any item.</div>';
-  return open.map(id=>row(id,"open")).join("")+answered.map(id=>row(id,"")).join("")
-    +(res.length?`<details class="w-item w-later" data-id="__resolved"><summary class="later-sum">Resolved threads, last 7 days (${res.length}) <span class="caret" aria-hidden="true">▸</span></summary>${res.map(id=>row(id,"res")).join("")}</details>`:"")}
+  return {open:open.map(id=>row(id,"open")).join(""),answered:answered.map(id=>row(id,"")).join(""),
+    resolved:(res.length?`<details class="w-item w-later" data-id="__resolved"><summary class="later-sum">Resolved threads, last 7 days (${res.length}) <span class="caret" aria-hidden="true">▸</span></summary>${res.map(id=>row(id,"res")).join("")}</details>`:"")}}
+// "Waiting on Manager": the asks the owner answered that Manager has not closed (the reply and its thread under each),
+// the threads whose last word is the owner's, and the resolved ones folded at the end.
+function threadsHtml(now){const r=threadRows(now),asks=state.waiting.filter(w=>onLead(w,now)).sort((a,b)=>(num(a.response.at)??0)-(num(b.response.at)??0));
+  if(!asks.length&&!r.open&&!r.resolved)return '<div class="empty">Nothing waiting on Manager.</div>';
+  return asks.map(w=>askHtml(w,new Set())).join("")+r.open+r.resolved}
 // Re-draws a part of the page without losing what the owner is typing or which folds are open.
 function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id)),drafts={};
   el.querySelectorAll("textarea[id]").forEach(t=>{if(t.value)drafts[t.id]=t.value});
@@ -640,7 +652,7 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
   b.disabled=true;try{await applyWrites(closeWrites(id,Date.now(),Math.random().toString(36).slice(2,8)));if(msg)msg.textContent="Closed."}
   catch(err){b.disabled=false;if(msg)msg.textContent="Not closed ("+(err&&err.code||"error")+")."}});
 document.addEventListener("submit",e=>{if(!e.target||e.target.id!=="newthread")return;e.preventDefault();
-  const kind=$("ntkind").value==="idea"?"idea":"question",d=takeDraft($("nttext"));
+  const kind="question",d=takeDraft($("nttext"));
   sendThread(e.target.querySelector("button[type=submit]"),"t-"+Date.now(),d.text,$("ntmsg"),kind,d.restore)});
 const DAY=864e5;
 function phaseIndex(p){return PHASES.findIndex(x=>x[0]===p)}
