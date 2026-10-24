@@ -240,11 +240,12 @@ test("Manager: a card given up closes as dropped with a reason, needing no live 
   assert.deepEqual(staleLive([card({ id: "a", status: "dropped" })], { a: { phase: "live" } }, config), [], "a dropped card isn't listed as live but open");
 });
 
-test("rule 10: a reply names an item or a t-… thread; a made-up thread id is refused (the reply-card bug)", () => {
-  const m = mirror({ waiting: [{ id: "ask-one" }], ideas: [{ id: "idea-one" }], messages: [{ id: "m1", thread: "old-thread", at: 1 }] });
+test("rule 10: a reply names an item or a thread with messages; a made-up thread id is refused (the reply-card bug)", () => {
+  const m = mirror({ waiting: [{ id: "ask-one" }], ideas: [{ id: "idea-one" }], messages: [{ id: "m1", thread: "old-thread", at: 1 }, { id: "m0", thread: "t-1700000000000", at: 1 }] });
   const msg = (thread, op = "set") => ({ op, collection: "messages", doc_id: "m2", data: { thread, from: "Lead", text: "x", at: 2 } });
   for (const t of ["tabs", "ask-one", "idea-one", "old-thread", "t-1700000000000"]) assert.deepEqual(mirrorErrors(msg(t), { config, mirror: m }), [], t);
   assert.match(mirrorErrors(msg("ask-one-reply"), { config, mirror: m })[0], /thread ask-one-reply is no item/);
+  assert.match(mirrorErrors(msg("t-made-up"), { config, mirror: m })[0], /thread t-made-up is no item/, "an agent never starts a t- thread (Checker)");
   assert.match(mirrorErrors({ op: "set", collection: "messages", doc_id: "m3", data: { text: "x" } }, { config, mirror: m })[0], /names its thread/);
   const batch = [{ op: "set", collection: "waiting", doc_id: "new-ask", data: {} }, msg("new-ask")];
   assert.deepEqual(checkWrites(batch, { config, who: { role: "Lead", manager: true }, now: 5, state: {}, mirror: m }).errors.filter((e) => e.startsWith("messages/")), [], "an ask made in the same call");

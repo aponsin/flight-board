@@ -164,17 +164,17 @@ export function refusalText(errors, stuckNow, now) {
 // Rule 5 (case 1): done only with no owner message waiting in its thread, no open ask tied to it, and live by the evidence;
 // a card given up closes as "dropped" with a dropReason, with the same first two checks and no evidence needed.
 // Rule 10: a message belongs to a thread the board has: an item (a card, an ask, an idea, one made in the same call too),
-// a thread that already has messages, or a "t-…" thread from the owner's New thread box. A reply to an item names the
-// item's id; a thread id made up for it shows the owner a card of its own. An export without ideas skips the rule.
+// or a thread that already has messages ("t-…" threads come only from the owner's New thread box, so an agent never starts
+// one). A reply to an item names the item's id; a thread id made up for it shows the owner a card of its own. An export
+// without ideas skips the rule.
 export function threadErrors(w, { mirror, batch = [] }) {
   const { op, collection, data } = w;
   if (collection !== "messages" || op === "delete" || !data || typeof data !== "object" || !mirror?.docs.ideas) return [];
   const t = data.thread;
   if (typeof t !== "string" || !t) return op === "set" ? ["a message names its thread (thread: the item's id, or a t-… thread)"] : [];
-  if (t.startsWith("t-")) return [];
   const has = (c) => (mirror.docs[c] ?? []).some((d) => d.id === t) || batch.some((b) => b.collection === c && b.doc_id === t && b.op !== "delete");
   if (["initiatives", "waiting", "ideas"].some(has) || (mirror.docs.messages ?? []).some((m) => m.thread === t)) return [];
-  return [`thread ${t} is no item on the board and no t-… thread: reply under the item with its id as the thread`];
+  return [`thread ${t} is no item on the board and no thread with messages: reply under the item with its id as the thread`];
 }
 
 export function mirrorErrors(w, { config, mirror, batch = [] }) {
