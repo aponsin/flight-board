@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { checkConfig, fullConfig, DEFAULTS } from "../scripts/config.mjs";
 import { buildPage, scriptJson } from "../scripts/build-page.mjs";
-import { scanText } from "../scripts/scan.mjs";
+import { scanText, pushedCommits, scanCommit } from "../scripts/scan.mjs";
 
 const template = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 const scriptOf = (html) => html.match(/<script>([\s\S]*?)<\/script>/)[1];
@@ -55,6 +55,8 @@ test("the scan: the private words, artifact links, real emails and phones, token
   assert.deepEqual(hits("see https://claude.ai/" + "artifact/AbC123xyz"), ["an artifact link"]);
   assert.deepEqual(hits("mail sam@" + "realshop.io"), ["an email address"]);
   assert.deepEqual(hits("mail sam@example.com or team@example.org"), []);
+  assert.deepEqual(hits("Co-Authored-By: Bot <noreply@" + "bots.dev> and 123+sam@" + "users.noreply.github.com"), [], "no-reply addresses pass");
+  assert.deepEqual(hits("mail realnoreply@" + "shop.io"), ["an email address"]);
   assert.deepEqual(hits("call (303) 444" + "-1234"), ["a phone number"]);
   assert.deepEqual(hits("call (303) 555-0100"), []);
   assert.deepEqual(hits("key ghp" + "_abcdefghijklmnopqrstuvwxyz0123"), ["a token"]);
@@ -71,4 +73,53 @@ test("this repository holds no artifact link, real email or phone, or token", as
     for (const h of scanText(text, [])) found.push(`${f}:${h.line} ${h.what}`);
   }
   assert.deepEqual(found, []);
+});
+
+test("the scan's shapes: phones as digits (E.164 too), Stripe, webhook, Resend and fine-grained GitHub keys; 555 and long times pass", () => {
+  const hits = (t) => scanText(t, []).map((h) => h.what);
+  assert.deepEqual(hits("phone +1303" + "4431079"), ["a phone number"]);
+  assert.deepEqual(hits("phone 303" + "4431079"), ["a phone number"]);
+  assert.deepEqual(hits("phone +13035550100 and 3035550199"), []);
+  assert.deepEqual(hits("at 1800000000000 and 1792876174813, sha b0c42f77"), []);
+  for (const t of ["sk" + "_live_abcdefghijklmnop1234", "rk" + "_live_abcdefghijklmnop1234", "whsec" + "_abcdefghijklmnop1234", "re" + "_abcdefghijklmnopqrstu_123", "github" + "_pat_" + "a".repeat(40)]) {
+    assert.deepEqual(hits(`key ${t}`), ["a token"], t);
+  }
+});
+
+test("the pre-push scan reads what is pushed: a word committed then removed, or edited out on disk, is still refused", async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "fb-scan-"));
+  try {
+    const repo = join(dir, "repo"), bare = join(dir, "bare.git"), words = join(dir, "words.txt");
+    writeFileSync(words, "# private\nzebracorp\n");
+    const git = (args, cwd = repo) => execFileSync("git", args, { cwd, encoding: "utf8" });
+    execFileSync("git", ["init", "-q", "--bare", bare]);
+    execFileSync("git", ["init", "-q", "-b", "main", repo]);
+    git(["config", "user.email", "t@example.com"]); git(["config", "user.name", "T"]);
+    git(["remote", "add", "origin", bare]);
+    writeFileSync(join(repo, "a.md"), "clean\n"); git(["add", "-A"]); git(["commit", "-qm", "one"]);
+    git(["push", "-q", "origin", "main"]);
+    const base = git(["rev-parse", "HEAD"]).trim();
+    writeFileSync(join(repo, "notes.md"), "secret zebracorp plan\n"); git(["add", "-A"]); git(["commit", "-qm", "two"]);
+    git(["rm", "-q", "notes.md"]); git(["commit", "-qm", "three"]);
+    writeFileSync(join(repo, "b.md"), "word zebracorp\n"); git(["add", "-A"]); git(["commit", "-qm", "four"]);
+    writeFileSync(join(repo, "b.md"), "edited out on disk\n");
+    const head = git(["rev-parse", "HEAD"]).trim();
+    const scan = new URL("../scripts/scan.mjs", import.meta.url).pathname;
+    const run = (stdin) => spawnSync(process.execPath, [scan, "--pre-push"], { cwd: repo, input: stdin, encoding: "utf8", env: { ...process.env, FLIGHT_BOARD_SCAN_WORDS: words } });
+    const r = run(`refs/heads/main ${head} refs/heads/main ${base}\n`);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /:notes\.md:1: a listed word/);
+    assert.match(r.stderr, /:b\.md:1: a listed word/);
+    const shell = (args) => git(args);
+    assert.equal(pushedCommits(`refs/heads/main ${head} refs/heads/main ${base}`, shell).length, 3);
+    assert.equal(pushedCommits(`refs/heads/x ${"0".repeat(40)} refs/heads/x ${base}`, shell).length, 0, "a deleted ref sends nothing");
+    assert.equal(scanCommit(base, ["zebracorp"], shell).length, 0);
+    assert.equal(run(`refs/heads/main ${base} refs/heads/main ${base}\n`).status, 0, "nothing new: clean");
+    writeFileSync(words, "# only comments\n");
+    assert.match(run("").stderr, /has no words/, "an empty list refuses");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

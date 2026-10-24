@@ -11,7 +11,8 @@ import { writeFileSync, mkdirSync } from "node:fs";
 
 const [configPath, wordsPath] = process.argv.slice(2);
 if (!configPath || !wordsPath) { console.error("Usage: node scripts/install.mjs <board.config.json> <private-words.txt>"); process.exit(2); }
-const inside = (p) => resolve(p).startsWith(resolve(".") + "/");
+const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
+const inside = (p) => resolve(p).startsWith(root + "/");
 if (inside(configPath) || inside(wordsPath)) { console.error("Keep board.config.json and the word list outside this repository."); process.exit(1); }
 if (!existsSync(wordsPath)) { console.error(`No word list at ${wordsPath}.`); process.exit(1); }
 try {

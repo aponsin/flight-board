@@ -8,3 +8,8 @@
 - A bare Ack on an answer closes it; a note on any button also goes in the item's thread, so a question in it waits for an answer.
 - The content scan before every push, against the team's private word list and for artifact links, real emails and phone numbers, and tokens.
 - `scripts/install.mjs`, `scripts/build-page.mjs`, and tests for every rule.
+
+### Fixed (review, before 0.1.0)
+- The pre-push scan reads what the push sends: every file each pushed commit adds or changes, and each commit's message, not the working tree. `--all` scans every commit ever made, for the check before going public.
+- The scan also catches phone numbers written as digits (+13035550100 style), Stripe, webhook, Resend and fine-grained GitHub keys; it refuses a word list with no words; no-reply addresses pass.
+- `install.mjs` keeps the config and word list outside the repository from any folder in it.
