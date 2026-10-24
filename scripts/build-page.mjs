@@ -1,6 +1,7 @@
 // Builds the board page for one team: page/board.template.html with its board.config.json injected.
 // Usage: node scripts/build-page.mjs <board.config.json> [out.html]   (out defaults to dist/board.html)
 // The page is then published as the team's artifact (see the README); the config never enters this repository.
+import { realpathSync } from "node:fs";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,7 +29,7 @@ export function buildPage(template, config) {
     .replaceAll("{{RUNNER_LABEL}}", esc(c.runnerLabel)).replaceAll("{{AUTOMATION_LABEL}}", esc(c.automationLabel));
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const [configPath, out = "dist/board.html"] = process.argv.slice(2);
   if (!configPath) { console.error("Usage: node scripts/build-page.mjs <board.config.json> [out.html]"); process.exit(2); }
   try {

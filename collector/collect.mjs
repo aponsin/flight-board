@@ -4,11 +4,12 @@
 // <stateDir>/<board>/out/derived-all.json: the one document the task then writes to the board as derived/all.
 // It prints one line per conflict (a card's declared phase against its evidence) and the cards live by the evidence but
 // still open, for the lead. It never writes the board itself: only a Claude session can (collector/TASK.md).
+import { realpathSync } from "node:fs";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync } from "node:fs";
 import { sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
 import { headFor, derivePhase, conflict, staleLive, closed } from "./derive.mjs";
@@ -56,7 +57,7 @@ export function collect({ config, cards, git, gh, now }) {
   return { doc: { at: now, cards: derived, conflicts, liveButOpen: staleLive(open, derived, config) }, conflicts };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const at = process.argv.indexOf("--config");
   let config;
   try {

@@ -5,8 +5,9 @@
 // - the turn began with the owner's "Board thread [<id>]" message and wrote no message to that thread (case 5: an
 //   answer in a comment the board never shows).
 // Exit 2 sends the reason back, so the lead writes it and finishes. A second stop in a row (stop_hook_active) passes.
+import { realpathSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readLines, sessionRole, currentTurn, turnCalls, turnText, lastReply } from "./session.mjs";
 import { writesOf } from "./gate.mjs";
@@ -31,7 +32,7 @@ export function stopCheck(lines, { config, env = {} }) {
   return out;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const at = process.argv.indexOf("--config");
   let config;
   try {

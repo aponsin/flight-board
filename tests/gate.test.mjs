@@ -323,6 +323,7 @@ test("the pinned copy is the commit itself, never the checkout's uncommitted edi
     const r = spawnSync(process.execPath, [join(clone, "scripts", "hooks.mjs"), cfg, "--pin", "HEAD", "--settings", settings, "--install-root", root, "--write"], { encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
     const sha = ex("git", ["rev-parse", "HEAD"], { cwd: clone, encoding: "utf8" }).trim();
+    assert.ok(r.stdout.includes(sha.slice(0, 12)), r.stdout);
     assert.notEqual(readFileSync(join(root, sha, "gate", "gate.mjs"), "utf8"), "// work in progress\n");
     assert.equal(readFileSync(join(root, sha, "gate", "gate.mjs"), "utf8"), ex("git", ["show", "HEAD:gate/gate.mjs"], { cwd: clone, encoding: "utf8" }));
   } finally { rmSync(dir, { recursive: true, force: true }); }

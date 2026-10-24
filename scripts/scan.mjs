@@ -10,6 +10,7 @@
 // the scan is a guard, not a guarantee.
 // --all scans every commit the repository has ever had (run it before making the repository public).
 // Usage: node scripts/scan.mjs [--pre-push | --all]   (exit 1 with one line per hit)
+import { realpathSync } from "node:fs";
 import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -80,7 +81,7 @@ export function scanTag(tag, words, git) {
   return scanText(tagText(git(["cat-file", "tag", tag])), words).map((h) => ({ where: `tag ${tag.slice(0, 8)}`, ...h }));
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const git = (args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   let list = process.env.FLIGHT_BOARD_SCAN_WORDS;
   if (!list) try { list = git(["config", "flightboard.scanwords"]).trim(); } catch { list = ""; }

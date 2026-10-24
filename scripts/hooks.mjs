@@ -1,6 +1,7 @@
 // The gate's hook entries for Claude Code's settings (~/.claude/settings.json): PreToolUse on board writes and
 // hand-off messages, Stop on the lead's replies. Printed by default; written only with --write, which keeps every other
 // entry and replaces an older flight-board one. Usage: node scripts/hooks.mjs <board.config.json> [--write [settings.json]]
+import { realpathSync } from "node:fs";
 import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -68,7 +69,7 @@ export function summary({ added, replaced, retired }, backup) {
   return `Changed: ${parts.join("; ")}.${backup ? ` Backup: ${backup}` : ""}`;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
   const configPath = args[0];
   const opt = (name) => { const n = args.indexOf(name); return n > 0 ? args[n + 1] : undefined; };

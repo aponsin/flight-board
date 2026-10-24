@@ -5,10 +5,11 @@
 //   has (rule 9, case 3).
 // The gate keeps its state (refusals in a row, stuck items, cards it has let through) in <stateDir>/<board>/gate.json and
 // reads the board's mirror (an export of its collections) from <stateDir>/<board>/mirror.
+import { realpathSync } from "node:fs";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { checkWrites, refusalText } from "./rules.mjs";
 import { readLines, sessionRole } from "./session.mjs";
@@ -97,7 +98,7 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
   return {};
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const at = process.argv.indexOf("--config");
   let config;
   try {
