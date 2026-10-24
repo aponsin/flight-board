@@ -34,9 +34,22 @@ test("a step open past 1.5 times its card size's median; waits, ends and closed 
   assert.deepEqual(run({ initiatives: [{ ...card, size: "?" }], steps: [start(T - 30 * HOUR)] }).lines, [], "no size, no median");
 });
 
-test("a memory reading older than 2 hours", () => {
-  assert.deepEqual(run({ ctx: [{ id: "Builder", pct: 40, at: T - HOUR }] }).lines, []);
-  assert.deepEqual(run({ ctx: [{ id: "Builder", pct: 40, at: T - 3 * HOUR }] }).lines, ["NUDGE Builder's memory reading is 3 h old"]);
+test("a working role's memory reading older than 2 hours; an idle role never (the context keeper's)", () => {
+  const card = { id: "tabs", size: "L", status: "active" };
+  const step = { id: "s1", init: "tabs", phase: "build", who: "Builder", kind: "start", at: T - HOUR };
+  assert.deepEqual(run({ initiatives: [card], steps: [step], ctx: [{ id: "Builder", pct: 40, at: T - HOUR }] }).lines, []);
+  assert.deepEqual(run({ initiatives: [card], steps: [step], ctx: [{ id: "Builder", pct: 40, at: T - 3 * HOUR }] }).lines, ["NUDGE Builder's memory reading is 3 h old"]);
+  assert.deepEqual(run({ ctx: [{ id: "Builder", pct: 40, at: T - 3 * HOUR }] }).lines, [], "no open step: idle");
+  assert.deepEqual(run({ initiatives: [card], steps: [step, { ...step, id: "s2", kind: "end", at: T - 30 * MIN }], ctx: [{ id: "Builder", pct: 40, at: T - 3 * HOUR }] }).lines, [], "its step ended");
+  assert.deepEqual(run({ initiatives: [{ ...card, status: "done" }], steps: [step], ctx: [{ id: "Builder", pct: 40, at: T - 3 * HOUR }] }).lines, [], "its card is done");
+});
+
+test("a card id like __proto__ is kept as data (Checker)", () => {
+  const card = { id: "__proto__", status: "active" };
+  const a = run({ initiatives: [card] }, T);
+  assert.equal(Object.hasOwn(a.state.seen, "__proto__"), true);
+  assert.deepEqual(run({ initiatives: [card] }, T + 25 * HOUR, JSON.parse(JSON.stringify(a.state))).lines, ["NUDGE __proto__: unchanged for 25 h; update it or park it"]);
+  assert.equal({}.fp, undefined);
 });
 
 test("a card unchanged for 24 hours, from the run that first saw it so; parked or closed cards never", () => {
@@ -59,7 +72,7 @@ test("each nudge once, again after the quiet period while it holds; forgotten wh
   const c = run(docs, T + 121 * MIN, b.state);
   assert.equal(c.lines.length, 1, "again after the quiet period");
   const d = run({ messages: [] }, T + 122 * MIN, c.state);
-  assert.deepEqual(d.state.sent, {}, "stopped holding: forgotten");
+  assert.deepEqual(Object.keys(d.state.sent), [], "stopped holding: forgotten");
   assert.equal(run(docs, T + 123 * MIN, d.state).lines.length, 1, "so it comes back at once if it holds again");
 });
 

@@ -4,7 +4,8 @@
 //   1. the owner waits: a thread whose last word is the owner's, or an ask the owner answered and nobody closed or
 //      answered since, for config.nudges.ownerWaitMin minutes;
 //   2. a step open too long: a declared start with no end, past stepFactor times the median for its card's size;
-//   3. a role's memory reading (ctx/<Role>) older than ctxMaxHours;
+//   3. a working role's memory reading (ctx/<Role>) older than ctxMaxHours: only roles with an open step (an idle role is
+//      the context keeper's, Manager 2026-10-24);
 //   4. a card unchanged for staleHours, unless parked (its status in config.nudges.parked).
 // The CONFLICT lines are the collector's own (collector/derive.mjs).
 
@@ -50,25 +51,27 @@ export function nudges({ config, docs, now, state = {} }) {
     if (now - s.at > n.stepFactor * median * HOUR) firing.push({ key: `step:${key}`, text: `${s.who} on ${s.init} (${s.phase}): open ${hours(now - s.at)} h, over ${n.stepFactor}× the ${card.size} median of ${median} h` });
   }
 
-  // 3. A memory reading too old.
+  // 3. A working role's memory reading too old.
+  const working = new Set([...runs.values()].filter((s) => cards.has(s.init) && !closed(cards.get(s.init))).map((s) => s.who));
   for (const c of docs.ctx ?? []) {
-    if (c && typeof c.at === "number" && now - c.at > n.ctxMaxHours * HOUR) firing.push({ key: `ctx:${c.id}`, text: `${c.id}'s memory reading is ${hours(now - c.at)} h old` });
+    if (c && working.has(c.id) && typeof c.at === "number" && now - c.at > n.ctxMaxHours * HOUR) firing.push({ key: `ctx:${c.id}`, text: `${c.id}'s memory reading is ${hours(now - c.at)} h old` });
   }
 
   // 4. A card unchanged too long, unless parked.
-  const seen = {};
+  // Keyed by card id, so no prototype: a board id may be any word, "__proto__" included (Checker).
+  const seen = Object.create(null);
   for (const card of cards.values()) {
     if (closed(card)) continue;
-    const fp = fingerprint(card), before = state.seen?.[card.id];
+    const fp = fingerprint(card), before = Object.hasOwn(state.seen ?? {}, card.id) ? state.seen[card.id] : undefined;
     seen[card.id] = before && before.fp === fp ? before : { fp, since: now };
     if (n.parked.includes(card.status)) continue;
     if (now - seen[card.id].since >= n.staleHours * HOUR) firing.push({ key: `stale:${card.id}`, text: `${card.id}: unchanged for ${hours(now - seen[card.id].since)} h; update it or park it` });
   }
 
   // Once, then again only after the quiet period; forgotten when it stops holding.
-  const sent = {}, lines = [];
+  const sent = Object.create(null), lines = [];
   for (const f of firing) {
-    const last = state.sent?.[f.key];
+    const last = Object.hasOwn(state.sent ?? {}, f.key) ? state.sent[f.key] : undefined;
     if (typeof last === "number" && now - last < n.quietMin * MIN) { sent[f.key] = last; continue; }
     sent[f.key] = now;
     lines.push(`NUDGE ${f.text}`);
