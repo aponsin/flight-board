@@ -271,3 +271,19 @@ test("the run's nudges keep their state next to the mirror: sent once, quiet on 
     assert.equal(runNudges(dir, cfg, docs, T + 31 * 60e3).length, 1, "a broken state file starts afresh");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("Security: TASK.md sets the task's title, its exact permission rules, no reading of the export, one task after a ship", async () => {
+  const { readFileSync: read } = await import("node:fs");
+  const doc = read(new URL("../collector/TASK.md", import.meta.url), "utf8");
+  assert.match(doc, /\*\*Session title\*\*: exactly `Collector`/);
+  assert.match(doc, /enforced by permission rules, not by the prompt/);
+  assert.match(doc, /`Bash\(node collector\/collect\.mjs --config <full path to board\.config\.json> --prepare\)`/);
+  assert.match(doc, /`Bash\(node collector\/collect\.mjs --config <full path to board\.config\.json>\)`/);
+  assert.match(doc, /no wildcards/);
+  assert.match(doc, /never runs with bypassPermissions or in auto mode/);
+  assert.match(doc, /Never open, read or print those files/);
+  assert.match(doc, /Never read the exported files/);
+  assert.match(doc, /The after-ship run is \*\*this same task\*\*/);
+  assert.match(doc, /`ctx`;[\s\S]*`query` of `steps`/, "the export takes the memory tiles and the last days' steps for the nudges");
+  assert.match(doc, /`NUDGE` line/);
+});
