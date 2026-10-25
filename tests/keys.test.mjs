@@ -7,7 +7,7 @@ function press(key, { value = "hi", shift = false, meta = false, ctrl = false, c
   const found = (sel) => buttons.find((b) => sel.split(",").includes(b.sel)) ?? null;
   const box = { querySelector: (sel) => found(sel) };
   const target = { tagName: "TEXTAREA", value, closest: () => (inBox ? box : null) };
-  return { key, target, shiftKey: shift, metaKey: meta, ctrlKey: ctrl, altKey: false, isComposing: composing, keyCode: composing ? 229 : 13 };
+  return { key, target, shiftKey: shift, metaKey: meta, ctrlKey: ctrl, altKey: false, isComposing: composing, keyCode: 13 };
 }
 
 test("Enter sends like the chat app; Shift+Enter and ⌘/Ctrl+Enter add a line; nothing while composing or empty", () => {
@@ -22,6 +22,7 @@ test("Enter sends like the chat app; Shift+Enter and ⌘/Ctrl+Enter add a line; 
   assert.equal(enterKey(press("Enter", { meta: true })).act, "line");
   assert.equal(enterKey(press("Enter", { ctrl: true })).act, "line");
   assert.equal(enterKey(press("Enter", { composing: true })), null, "an input method composing");
+  assert.equal(enterKey({ ...press("Enter"), keyCode: 229 }), null, "Safari's composing Enter (keyCode 229)");
   assert.equal(enterKey(press("Enter", { value: "  \n" })).act, "none", "an empty box sends nothing");
   assert.equal(enterKey(press("Enter", { buttons: [{ sel: "[data-tsend]", disabled: true }] })).act, "none", "a disabled button");
   assert.equal(enterKey(press("Enter", { buttons: [{ sel: ".btns button.opt" }] })).act, "none", "a decision with options has no main button");
