@@ -19,6 +19,11 @@ const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"
 export const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
 // gate.json has two writers (this hook and gate/after.mjs), which parallel calls can interleave: each writes a file of its
 // own and renames it into place, so a reader never sees half a file and a write is whole or not at all (Security).
+// The state to save, with the higher thread counter of this call's copy and the file now (after.mjs may have raised it).
+export function keepCounter(state, disk) {
+  const seq = Math.max(state?.threadSeq ?? 0, Number.isInteger(disk?.threadSeq) ? disk.threadSeq : 0);
+  return seq ? { ...state, threadSeq: seq } : state;
+}
 export function writeState(path, state) {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
@@ -102,7 +107,12 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
   const statePath = join(dir, "gate.json");
   let state = {};
   try { state = JSON.parse(readFileSync(statePath, "utf8")); } catch { /* first run */ }
-  const save = (s) => writeState(statePath, s);
+  // The counter after.mjs raised while this call ran is kept: re-read just before saving, the higher wins (Checker).
+  const save = (s) => {
+    let disk = {};
+    try { disk = JSON.parse(readFileSync(statePath, "utf8")); } catch { /* none yet */ }
+    writeState(statePath, keepCounter(s, disk));
+  };
   const t = input?.tool_input ?? {};
   const lines = input?.transcript_path ? readLines(input.transcript_path) : [];
   const { role, error: roleError } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);

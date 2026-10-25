@@ -162,3 +162,11 @@ test("the gate's state is written whole: a file of its own, renamed into place, 
     assert.deepEqual(readdirSync(join(dir, "b")), ["gate.json"], "no temporary file left");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("a counter raised by after.mjs while the gate's own call ran is kept when the gate saves (Checker)", async () => {
+  const { keepCounter } = await import("../gate/gate.mjs");
+  assert.equal(keepCounter({ threadSeq: 40, journal: [1] }, { threadSeq: 43 }).threadSeq, 43, "the raise on disk wins");
+  assert.deepEqual(JSON.parse(JSON.stringify(keepCounter({ threadSeq: 44, journal: [1] }, { threadSeq: 43 }))), { threadSeq: 44, journal: [1] });
+  assert.deepEqual(keepCounter({ journal: [] }, {}), { journal: [] }, "no counter yet: nothing added");
+  assert.equal(keepCounter({}, { threadSeq: "9" }).threadSeq, undefined, "only a whole number on disk counts");
+});
