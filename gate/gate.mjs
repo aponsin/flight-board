@@ -24,6 +24,12 @@ export function keepCounter(state, disk) {
   const seq = Math.max(state?.threadSeq ?? 0, Number.isInteger(disk?.threadSeq) ? disk.threadSeq : 0);
   return seq ? { ...state, threadSeq: seq } : state;
 }
+// The gate's save: the file is read again just before writing, so a counter after.mjs raised meanwhile is kept.
+export function saveState(path, state) {
+  let disk = {};
+  try { disk = JSON.parse(readFileSync(path, "utf8")); } catch { /* none yet */ }
+  writeState(path, keepCounter(state, disk));
+}
 export function writeState(path, state) {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
@@ -108,11 +114,7 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
   let state = {};
   try { state = JSON.parse(readFileSync(statePath, "utf8")); } catch { /* first run */ }
   // The counter after.mjs raised while this call ran is kept: re-read just before saving, the higher wins (Checker).
-  const save = (s) => {
-    let disk = {};
-    try { disk = JSON.parse(readFileSync(statePath, "utf8")); } catch { /* none yet */ }
-    writeState(statePath, keepCounter(s, disk));
-  };
+  const save = (s) => saveState(statePath, s);
   const t = input?.tool_input ?? {};
   const lines = input?.transcript_path ? readLines(input.transcript_path) : [];
   const { role, error: roleError } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);

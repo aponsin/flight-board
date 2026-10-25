@@ -169,4 +169,12 @@ test("a counter raised by after.mjs while the gate's own call ran is kept when t
   assert.deepEqual(JSON.parse(JSON.stringify(keepCounter({ threadSeq: 44, journal: [1] }, { threadSeq: 43 }))), { threadSeq: 44, journal: [1] });
   assert.deepEqual(keepCounter({ journal: [] }, {}), { journal: [] }, "no counter yet: nothing added");
   assert.equal(keepCounter({}, { threadSeq: "9" }).threadSeq, undefined, "only a whole number on disk counts");
+  const { saveState } = await import("../gate/gate.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fb-save-"));
+  try {
+    const path = join(dir, "gate.json");
+    writeState(path, { threadSeq: 43 }); // after.mjs, while the gate's call (which read 40) ran
+    saveState(path, { threadSeq: 40, journal: ["w"] });
+    assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { threadSeq: 43, journal: ["w"] });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
