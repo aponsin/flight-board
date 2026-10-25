@@ -165,7 +165,7 @@ test("an initiative carries its thread, folded, marked when Manager owes an answ
 test("one Threads panel: the new thread box (no kind to pick), then Needs you, then Waiting on Manager", () => {
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   const section = html.slice(html.indexOf('<section aria-labelledby="h-threads">'), html.indexOf("</section>", html.indexOf('<section aria-labelledby="h-threads">')));
-  assert.match(section, /<form class="newthread" id="newthread"><label for="nttext">Start a thread<\/label><textarea id="nttext"/);
+  assert.match(section, /<form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread<\/label><textarea id="nttext"/);
   assert.doesNotMatch(html, /<select id="ntkind"|<option value="idea">/, "no Question or Idea to pick");
   assert.ok(section.indexOf('id="newthread"') < section.indexOf('id="h-wait">Needs you') && section.indexOf('id="h-wait">Needs you') < section.indexOf('id="h-onlead">Waiting on Manager'));
   assert.match(section, /id="waiting"/);
@@ -284,4 +284,19 @@ test("a thread message's files: an image opens in the lightbox with that message
   assert.match(b.els["lb-cap"].textContent, /b\.png {2}\(2 of 2\)/);
   b.closeShot();
   assert.equal(b.els.lightbox.hidden, true, "Esc's close");
+});
+
+test("the new thread box takes files like a reply box: Attach, paste and drop under \"new\", sent as the first message's assets", () => {
+  const b = loadNames(["setAssets", "filesHtml", "replyOf", "threadWrites"]);
+  b.setAssets({});
+  assert.match(b.filesHtml("new"), /<button type="button" class="attach" data-attach="new">Attach<\/button><input type="file" id="file-new" data-files="new"/);
+  const form = { dataset: { reply: "new" } };
+  assert.equal(b.replyOf({ closest: (sel) => (sel.split(",").includes(".newthread[data-reply]") ? form : null) }), form, "a paste or drop in the new thread box");
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(html, /<div id="ntfiles"><\/div>/);
+  assert.match(html, /sendThread\(e\.target\.querySelector\("button\[type=submit\]"\),"t-"\+Date\.now\(\),d\.text,\$\("ntmsg"\),kind,d\.restore,"new"\)/, "its files are the ones waiting under \"new\"");
+  const files = [{ id: "392a9fe2edba5da37e73585fbc68825a", name: "shot.png", type: "image/png", size: 9 }];
+  const [first] = b.threadWrites("t-1", "", files, 5, "question", "abc");
+  assert.equal(first.data.thread, "t-1");
+  assert.deepEqual(JSON.parse(JSON.stringify(first.data.assets)), files, "the screenshot rides on the thread's first message");
 });
