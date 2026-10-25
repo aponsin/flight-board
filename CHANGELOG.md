@@ -4,6 +4,7 @@
 
 ### Changed
 - A reply's or thread message's files: an image is a thumbnail that opens in the board's lightbox (← →, zoom, Esc), with that message's other images; any other file downloads in place. No new tab, which a sandboxed board can't open (the links were broken).
+- The "Start a thread" box takes files like a reply box: Attach, paste or drop images and files; they go on the new thread's first message.
 - Text boxes work like the chat app where a box has one action (a thread's Send, Send to Manager, an answer's Ack): Enter sends; Shift+Enter or ⌘+Enter (Ctrl+Enter off a Mac) adds a line. Where a box has two outcomes (Done or "Something went wrong", OK or "Change something", options), Enter does nothing and the box says to click a button. Nothing while an input method composes, in an empty box or on a disabled button.
 - The collector runs hourly (the app's scheduler): the gate counts its mirror fresh for 75 minutes, not 30 (`gate.mirrorMaxAgeMin`), so the board-state rules keep running between runs. A scheduled run's session takes the task's own title, so the task is titled `Collector` and the role rule is unchanged.
 - The collector's first run (TASK.md): the folder is set in the app's view of the task and checked after saving; the export's folder (`mirror.next`) and step 3's `out` are the task's `additionalDirectories`, never their parent; the lead is messaged by session id, since a scheduled run reaches no session by name; a correct run asks for nothing, so any prompt is answered Deny and the run stopped (an "always allow" stays on the task).

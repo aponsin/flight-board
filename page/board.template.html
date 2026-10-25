@@ -154,7 +154,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .thumb.fthumb{width:44px;height:44px;max-width:none;border-radius:6px;flex:none}
 .thumb.fthumb img{width:44px;height:44px;object-fit:cover}
 .fchip .fx{border:0;background:none;color:var(--muted);font-size:1rem;line-height:1;cursor:pointer;padding:2px 6px;min-width:28px;min-height:28px}
-.reply.drop{outline:2px dashed var(--accent);outline-offset:4px;border-radius:6px}
+.reply.drop,.newthread.drop{outline:2px dashed var(--accent);outline-offset:4px;border-radius:6px}
 .sentfiles a{color:inherit}
 .reply.sent{padding:8px 10px;border-radius:6px;font-size:.9rem;background:var(--ok-soft);color:var(--ok)}
 .reply.sent.help{background:var(--bad-soft);color:var(--bad)}
@@ -273,7 +273,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
   <section aria-labelledby="h-threads">
     <h2 id="h-threads">Threads</h2>
     <div class="panel">
-      <form class="newthread" id="newthread"><label for="nttext">Start a thread</label><textarea id="nttext" rows="2" placeholder="Ask Manager something, or share an idea"></textarea><div class="keys" data-keys></div><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
+      <form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread</label><textarea id="nttext" rows="2" placeholder="Ask Manager something, or share an idea"></textarea><div class="keys" data-keys></div><div id="ntfiles"></div><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
       <h3 class="t-sec" id="h-wait">Needs you</h3>
       <div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div>
       <h3 class="t-sec" id="h-onlead">Waiting on Manager</h3>
@@ -408,17 +408,18 @@ function sentFiles(r){const fs=(Array.isArray(r&&r.files)?r.files:[]).filter(f=>
   return fs.length?` <span class="sentfiles">Files: ${fileLinks(fs)}</span>`:""}
 function addFiles(id,fl){const list=pendingFiles.get(id)||[],errs=[];
   [...(fl||[])].forEach(f=>{const c=fileCheck(f);if(c.error)errs.push(c.error);else if(list.length>=MAXN)errs.push(`${f.name}: ${MAXN} files at most per reply.`);else list.push(f)});
-  pendingFiles.set(id,list);renderWaiting();renderThreads();renderBoard();const msg=document.getElementById("msg-"+id);if(msg)msg.textContent=errs.join(" ")}
-const replyOf=t=>t&&t.closest&&t.closest(".reply[data-reply]");
+  pendingFiles.set(id,list);renderWaiting();renderThreads();renderBoard();const msg=id==="new"?$("ntmsg"):document.getElementById("msg-"+id);if(msg)msg.textContent=errs.join(" ")}
+// The box a paste or drop lands in: a reply box, or the new thread's (its files wait under "new").
+const replyOf=t=>t&&t.closest&&t.closest(".reply[data-reply],.newthread[data-reply]");
 document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-attach]");if(a){const inp=document.getElementById("file-"+a.dataset.attach);if(inp)inp.click()}
   const x=e.target.closest&&e.target.closest("[data-unattach]");if(x){const id=x.dataset.unattach,l=pendingFiles.get(id)||[];l.splice(+x.dataset.n,1).forEach(dropPreview);renderWaiting();renderThreads();renderBoard()}});
 document.addEventListener("change",e=>{const t=e.target;if(t&&t.dataset&&t.dataset.files){addFiles(t.dataset.files,t.files);t.value=""}});
 document.addEventListener("paste",e=>{const r=replyOf(e.target),cd=e.clipboardData;if(!r||!assetsRef||!cd||!cd.files||!cd.files.length)return;
   if(!cd.getData("text/plain"))e.preventDefault();addFiles(r.dataset.reply,cd.files)});
 const hasFiles=e=>e.dataTransfer&&[...(e.dataTransfer.types||[])].includes("Files");
-document.addEventListener("dragover",e=>{if(!hasFiles(e))return;e.preventDefault();const r=replyOf(e.target);document.querySelectorAll(".reply.drop").forEach(d=>{if(d!==r)d.classList.remove("drop")});if(r&&assetsRef)r.classList.add("drop")});
+document.addEventListener("dragover",e=>{if(!hasFiles(e))return;e.preventDefault();const r=replyOf(e.target);document.querySelectorAll(".reply.drop,.newthread.drop").forEach(d=>{if(d!==r)d.classList.remove("drop")});if(r&&assetsRef)r.classList.add("drop")});
 document.addEventListener("dragleave",e=>{const r=replyOf(e.target);if(r&&!r.contains(e.relatedTarget))r.classList.remove("drop")});
-document.addEventListener("drop",e=>{if(!hasFiles(e))return;e.preventDefault();const r=replyOf(e.target);document.querySelectorAll(".reply.drop").forEach(d=>d.classList.remove("drop"));if(r&&assetsRef)addFiles(r.dataset.reply,e.dataTransfer.files)});
+document.addEventListener("drop",e=>{if(!hasFiles(e))return;e.preventDefault();const r=replyOf(e.target);document.querySelectorAll(".reply.drop,.newthread.drop").forEach(d=>d.classList.remove("drop"));if(r&&assetsRef)addFiles(r.dataset.reply,e.dataTransfer.files)});
 const closedAnswers=new Set();
 // Web addresses in step text become links (opened in a new tab); email addresses are left as text.
 // Points written inline in an ask ("1) … 2) …", "A) … B) …") show one per line.
@@ -664,10 +665,10 @@ function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]
   draw();el.querySelectorAll("details[data-id]").forEach(d=>{if(open.has(d.dataset.id))d.open=true});
   Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t)t.value=v});
   if(focus){const t=document.getElementById(focus);if(t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}}
-function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())})}
-async function sendThread(btn,id,text,msg,kind,restore){
-  if(!dbRef){restore();msg.textContent="Can't save from here. Tell Manager in chat instead.";return}
-  const key="th:"+id;if(!text&&!(pendingFiles.get(key)||[]).length){msg.textContent="Write your message first.";return}
+function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())});const nf=$("ntfiles");if(nf)nf.innerHTML=filesHtml("new")}
+// key: where the box's files wait (a thread's reply box "th:<id>", the new thread's "new").
+async function sendThread(btn,id,text,msg,kind,restore,key="th:"+id){
+  if(!dbRef){restore();msg.textContent="Can't save from here. Tell Manager in chat instead.";return}if(!text&&!(pendingFiles.get(key)||[]).length){msg.textContent="Write your message first.";return}
   btn.disabled=true;lastPing="";const anchor=await prepAnchor(btn);
   let stored;try{stored=await storeFiles(key,msg)}catch(err){btn.disabled=false;restore();msg.textContent=err.message;return}
   const now=Date.now();
@@ -686,7 +687,7 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
   catch(err){b.disabled=false;if(msg)msg.textContent="Not closed ("+(err&&err.code||"error")+")."}});
 document.addEventListener("submit",e=>{if(!e.target||e.target.id!=="newthread")return;e.preventDefault();
   const kind="question",d=takeDraft($("nttext"));
-  sendThread(e.target.querySelector("button[type=submit]"),"t-"+Date.now(),d.text,$("ntmsg"),kind,d.restore)});
+  sendThread(e.target.querySelector("button[type=submit]"),"t-"+Date.now(),d.text,$("ntmsg"),kind,d.restore,"new")});
 const DAY=864e5;
 function phaseIndex(p){return PHASES.findIndex(x=>x[0]===p)}
 function phaseTimes(log,doneAt){const t={};const l=(Array.isArray(log)?log:[]).filter(e=>e&&e.phase&&num(e.start)!=null).sort((a,b)=>a.start-b.start);
@@ -965,7 +966,7 @@ setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()
   if(!db){$("synced").textContent="offline: open in Claude to see live data";return}
   $("dot").classList.add("on"); dbRef=db; renderWaiting();
   window.claude.use("comments").then(c=>{commentsRef=c}).catch(()=>{});
-  window.claude.use("assets").then(a=>{if(a){assetsRef=a;renderWaiting()}}).catch(()=>{});
+  window.claude.use("assets").then(a=>{if(a){assetsRef=a;renderWaiting();renderThreads()}}).catch(()=>{});
   const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderAll();$("synced").textContent="live, updated "+hhmm(Date.now())},
     ()=>{$("dot").classList.remove("on");$("synced").textContent="connection lost, reload"});
   ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived"].forEach(sub);
