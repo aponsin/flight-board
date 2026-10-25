@@ -70,6 +70,7 @@ test("gate (Checker's probe): the counter is pinned once it exists and never goe
   assert.match(errs([seq(2, "set", 0)], lead, at40).join(), /pin it with if_version/, "a set over an existing counter");
   assert.match(errs([num("t-x", 1), seq(2)], lead, at40).join(), /never goes back/, "pinned, but back to #T1");
   assert.match(errs([seq(39)], lead, at40).join(), /never goes back/);
+  assert.match(errs([num("t-a", 38), num("t-b", 39), num("t-c", 40), seq(41)], lead, at40).join(), /#T38 was handed out already/, "the counter moves up, but the numbers start below it");
   assert.deepEqual(errs([num("t-x", 40), seq(41)], lead, at40), [], "the next number up");
   const out = checkWrites([num("t-x", 40), seq(41)], { config, who: lead, now, state: at40 });
   assert.equal(out.state.threadSeq, 41);
