@@ -33,7 +33,7 @@ Created only with the owner's yes. Its settings:
       "allow": [
         "Bash(node <full path of the pinned install>/collector/collect.mjs --config <full path to board.config.json> --prepare)",
         "Bash(node <full path of the pinned install>/collector/collect.mjs --config <full path to board.config.json>)",
-        "Read(/<full path of gate.stateDir/board id>/out/derived-all.json)",
+        "Read(/<full path of collector.outDir>/derived-all.json)",
         "ArtifactData",
         "ToolSearch",
         "mcp__ccd_session_mgmt__send_message",
@@ -41,11 +41,12 @@ Created only with the owner's yes. Its settings:
         "mcp__ccd_turn__wrap_up"
       ],
       "deny": [
-        "Read(/<full path of gate.stateDir/board id>/mirror.next/**)", "Read(/<full path of gate.stateDir/board id>/mirror/**)",
-        "Read(/<full path of gate.stateDir/board id>/gate.json)", "Read(/<full path of the folder holding board.config.json>/**)",
+        "Read(/<full path of gate.stateDir/board id>/**)", "Read(/<full path of the folder holding board.config.json>/**)",
         "Read(/<full path of the home folder>/.claude/**)",
         "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Grep", "Glob", "Agent", "SendMessage",
         "Bash(head:*)", "Bash(tail:*)", "Bash(git:*)", "Bash(gh:*)", "Bash(npm:*)", "Bash(node --test:*)",
+        "Bash(cat:*)", "Bash(less:*)", "Bash(more:*)", "Bash(grep:*)", "Bash(rg:*)", "Bash(find:*)", "Bash(sed:*)",
+        "Bash(awk:*)", "Bash(jq:*)", "Bash(strings:*)", "Bash(xxd:*)", "Bash(od:*)", "Bash(python3:*)", "Bash(node -e:*)",
         "mcp__ccd_session_mgmt__clear_session", "mcp__ccd_session_mgmt__set_remote_control",
         "mcp__ccd_session_mgmt__stop_session", "mcp__ccd_session_mgmt__archive_session",
         "mcp__ccd_session_mgmt__delete_session", "mcp__ccd_session_mgmt__set_session_permission_mode"
@@ -62,9 +63,12 @@ Created only with the owner's yes. Its settings:
   command with the install's and the config's full paths written out (a re-pin changes the install's, so these two
   rules and the prompt's two commands change with it): no wildcards, and nothing before or after it (`cd <folder> && node
   …` matches no rule and asks: the first runs asked about ten times). The only file the run reads is step 3's
-  `derived-all.json` (ArtifactData `set` with `file_path` reads it); the export, the mirror, the gate's state, the
-  config's folder and `~/.claude` stay denied. Everything the run saves is inside its own folder: step 1's export
-  (`mirror.next`) and step 3's `out`; the gate's state beside them stays denied to Read, and Edit and Write are denied. ToolSearch loads the
+  `derived-all.json` (ArtifactData `set` with `file_path` reads it), in `collector.outDir`, a folder outside the run's
+  own (the config must set it, e.g. `<dir>-out`). The run's own folder is denied to Read whole: a session reads its own
+  folder without asking, and it holds the export, the mirror, the gate's state, a clone of the repository and whatever is
+  added later (Security). The run still saves there (step 1's export, step 3's version read): a save isn't a Read. The
+  config's folder and `~/.claude` are denied too, Edit and Write are denied, and so are the shell's readers (a folder's
+  own read-only commands may be allowed without asking); none of them matches the two node commands. ToolSearch loads the
   message tool; the plan and wrap-up tools only show progress. A scheduled run reaches another session only through
   `mcp__ccd_session_mgmt__send_message` (SendMessage refuses it); the session tools that stop, clear, archive, delete or
   change a session stay denied. Any other call isn't allowed, so it asks, and an unattended run stops. The task never runs with
@@ -100,7 +104,7 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
    for a day). A nudge is printed once, then again only after a quiet period while it still holds.
 3. **Write it**: ArtifactData `get` `derived/all` with `out_dir` `<dir>/out` (inside the run's folder; a scheduled
    run's scratchpad is outside it), for the version its result line shows (so the document's text never enters the session), then `set` `derived/all` with
-   `file_path` `<dir>/out/derived-all.json` and that `if_version` (no `if_version` the first time, when it doesn't exist
+   `file_path` `<collector.outDir>/derived-all.json` (step 2 wrote it) and that `if_version` (no `if_version` the first time, when it doesn't exist
    yet). Never pass the document inline.
 4. **Tell the lead**, only when step 2 printed a `CONFLICT`, `LIVE BUT OPEN` or `NUDGE` line: load
    `mcp__ccd_session_mgmt__send_message` (ToolSearch `select:mcp__ccd_session_mgmt__send_message`), then one call with

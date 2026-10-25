@@ -19,7 +19,7 @@ export const DEFAULTS = {
   // notes ref its sign-off is written to. deployWorkflow: the CI workflow whose successful run on the main branch means
   // live. lanePhases: the phases where one owner holds one card at a time (reviews and shipping queue). versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
   // how such a subject names each branch it shipped and its commit (groups: branch, sha), for branches deleted since.
-  collector: { repoPath: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "" },
+  collector: { repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "" },
   // The nudges (collector/nudges.mjs): minutes the owner may wait for an answer; how far past its size's median a step may
   // run (etaHours: the median hours a step takes, by card size); how old a memory reading may get; how long a card may
   // stay unchanged unless its status is one of parked; and the quiet minutes before a nudge is sent again.
@@ -71,7 +71,7 @@ export function checkConfig(c) {
     if (!k || typeof k !== "object" || Array.isArray(k)) out.push("collector: an object");
     else {
       for (const f of Object.keys(k)) if (!Object.hasOwn(DEFAULTS.collector, f)) out.push(`collector: unknown field "${f}" (known: ${Object.keys(DEFAULTS.collector).join(", ")})`);
-      for (const f of ["repoPath", "remote", "mainBranch", "deployWorkflow"]) if (k[f] !== undefined && !(typeof k[f] === "string" && !/[\n\0]/.test(k[f]) && k[f].length <= 300)) out.push(`collector.${f}: a short string`);
+      for (const f of ["repoPath", "outDir", "remote", "mainBranch", "deployWorkflow"]) if (k[f] !== undefined && !(typeof k[f] === "string" && !/[\n\0]/.test(k[f]) && k[f].length <= 300)) out.push(`collector.${f}: a short string`);
       for (const f of ["remote", "mainBranch"]) if (k[f] !== undefined && !/^[A-Za-z0-9._\/-]{1,100}$/.test(String(k[f]))) out.push(`collector.${f}: a git name`);
       if (k.notes !== undefined) {
         if (!k.notes || typeof k.notes !== "object" || Array.isArray(k.notes)) out.push("collector.notes: { phase: notes ref }");
