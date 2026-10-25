@@ -38,7 +38,7 @@ test("an answered ask moves from Needs you to Waiting on Manager, with its reply
   assert.match(b.threadsHtml(T), /data-id="ask-pics"/, "Manager answered but hasn't closed it: still waiting on Manager");
   b.state.waiting[0] = { ...ask, done: true };
   assert.doesNotMatch(b.threadsHtml(T), /data-id="ask-pics"/, "closed: gone from the section");
-  assert.match(b.threadsHtml(T), /Resolved threads, last 7 days \(1\)[\s\S]*Reply to: Send the pictures/, "closed with Manager's word last: resolved, folded");
+  assert.match(b.threadsHtml(T), /Resolved threads, last 7 days \(1\)[\s\S]*Reply to: <b class="t-name">Send the pictures/, "closed with Manager's word last: resolved, folded");
 });
 
 test("a message is shown as text: markup escaped, links made safe, files only from the board's own store", () => {
@@ -97,8 +97,8 @@ test("Waiting on Manager: answered asks, then threads whose last word is the own
     msg("t-3", "Owner", "Done one", T), msg("t-3", "Manager", "Closed.", T + 1, { resolved: true })] });
   const html = b.threadsHtml(T + 10);
   assert.ok(html.indexOf("Question one") > -1 && html.indexOf("Question one") < html.indexOf("Resolved threads"), html);
-  assert.match(html, /Question one<span class="t-badge open">waiting on Manager/);
-  assert.match(html, /Resolved threads, last 7 days \(2\)[\s\S]*Reply to: New ask[\s\S]*Done one/);
+  assert.match(html, /Question one<\/b><span class="t-badge open">waiting on Manager/);
+  assert.match(html, /Resolved threads, last 7 days \(2\)[\s\S]*Reply to: <b class="t-name">New ask[\s\S]*Done one/);
   assert.doesNotMatch(html, /Idea two|Old ask/, "answered threads are the owner's to read, and older resolved ones are out of view");
   const answered = b.threadRows(T + 10).answered;
   assert.match(answered, /Idea two/, "Manager answered an open thread: under Needs you");
@@ -117,7 +117,7 @@ test("the reply-card bug: a thread whose item is on the board stays under the it
   assert.doesNotMatch(html, /Reply to: Send the pictures/);
   b.state.messages.push(msg("ask-answered", "Manager", "Got them", T + 2));
   assert.doesNotMatch(b.threadsHtml(T + 10_000) + b.threadRows(T + 10_000).answered, /Reply to: Send the pictures/, "still on the board until Manager closes it");
-  assert.match(html, /Reply to: Menu/, "a done card's thread is a row of its own");
+  assert.match(html, /Reply to: <b class="t-name">Menu/, "a done card's thread is a row of its own");
 });
 
 test("case 6: a bare Ack on an answer closes it; an Ack with a follow-up keeps it open and puts the question in its thread", () => {
@@ -173,7 +173,7 @@ test("one Threads panel: the new thread box (no kind to pick), then Needs you, t
   assert.equal((html.match(/<section aria-labelledby="h-wait">/g) ?? []).length, 0, "no second panel");
   assert.match(html, /const kind="question",d=takeDraft\(\$\("nttext"\)\)/, "a new thread is a question in the data");
   assert.match(html, /"messages"[,\]][^\n]*\.forEach\(sub\)/, "the board listens to messages");
-  assert.match(html, /"derived"\]\.forEach\(sub\)/, "and to the collector's derived phases");
+  assert.match(html, /"derived"[,\]][^\n]*\.forEach\(sub\)/, "and to the collector's derived phases");
 });
 
 test("a re-draw keeps what Owner is typing and which folds are open", () => {

@@ -17,6 +17,22 @@ function pageRules() {
   return (page = ctx.__b);
 }
 
+// The counter thread numbers come from (meta/threadSeq {next}).
+export const THREAD_SEQ = "threadSeq";
+
+// A batch that numbers threads also moves the counter, pinned (if_version) so two allocations can't both pass: its nums
+// are distinct and run up to the counter's new next - 1, with no gap.
+export function threadNumErrors(writes) {
+  const nums = writes.filter((w) => w.collection === "threads" && w.op !== "delete" && w.data?.num !== undefined).map((w) => w.data.num);
+  if (!nums.length) return [];
+  const seq = writes.find((w) => w.collection === "meta" && w.doc_id === THREAD_SEQ && w.op !== "delete");
+  if (!seq) return [`threads: numbering a thread moves meta/${THREAD_SEQ} in the same batch (scripts/thread-ids.mjs writes both)`];
+  const sorted = [...nums].sort((a, b) => a - b);
+  if (new Set(nums).size !== nums.length) return ["threads: two threads in one batch can't share a number"];
+  if (sorted.some((n, k) => n !== seq.data?.next - nums.length + k)) return [`threads: the numbers run up to meta/${THREAD_SEQ}.next - 1 with no gap (${sorted.join(", ")} vs next ${seq.data?.next})`];
+  return [];
+}
+
 // The scheduled collector's fixed session title (collector/TASK.md).
 export const COLLECTOR_ROLE = "Collector";
 const TIME_FIELDS = ["at", "since", "nextNoteAt"];
@@ -50,6 +66,15 @@ export function writeErrors(w, { config, who, now }) {
   // What the repository says (derived/*) is the collector's, and the lead's to repair; no other role writes it (Security).
   if (collection === "derived" && who.role !== COLLECTOR_ROLE && !who.manager) {
     return [`derived/${id} is written by the ${COLLECTOR_ROLE} (or ${config.gate.managerRole}), not ${who.role}`];
+  }
+  // Thread numbers (#T27) and names: threads/<thread id> {num, title} and the counter meta/threadSeq {next} are the lead's
+  // alone (scripts/thread-ids.mjs allocates them). The owner renames a thread from the page, which writes only a title.
+  if (collection === "threads" || (collection === "meta" && id === THREAD_SEQ)) {
+    if (!who.manager) return [`${collection}/${id}: only ${config.gate.managerRole} numbers and names threads (the owner renames one from the board)`];
+    if (op === "delete") return [`${collection}/${id}: a thread number is kept for good`];
+    if (collection === "threads" && data?.num !== undefined && !(Number.isInteger(data.num) && data.num > 0)) return [`num: a whole number from 1`];
+    if (collection === "threads" && data?.title !== undefined && !(typeof data.title === "string" && data.title.trim() && data.title.length <= 120)) return [`title: 1 to 120 characters`];
+    if (collection === "meta" && !(Number.isInteger(data?.next) && data.next > 1)) return [`meta/${THREAD_SEQ}: next is a whole number above 1`];
   }
   // Rule 6: each role's memory tile is its own; Manager may also set every role's entry in meta/context (the keeper).
   if (collection === "ctx") {
@@ -138,6 +163,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
+  errors.push(...threadNumErrors(writes));
   // A write that passes for a stuck item clears its line in the same call, or it is refused.
   if (!errors.length) {
     const cleared = stuckClears(stuckWrite, next.stuck);

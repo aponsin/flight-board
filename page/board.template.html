@@ -127,6 +127,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
 .t-msg{margin:6px 0}.t-msg .t-from{font-weight:600}.t-msg .t-at{font-size:.8rem;color:var(--muted)}
+.t-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 4px}.t-name{font-weight:700}.t-num{font:inherit;font-size:.8rem;padding:1px 6px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}.t-rename{font:inherit;font-size:.78rem;padding:0;border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer}.t-head input{font:inherit;flex:1;min-width:12em;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}a.t-ref{font-weight:600}
 .t-msg.t-owner .t-from{color:var(--accent)}.t-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .thread .reply{margin:6px 0 4px 0}
 .t-badge{font-size:.75rem;border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin-left:6px;color:var(--muted)}.t-badge.open{color:var(--bad);border-color:var(--bad)}
@@ -324,7 +325,7 @@ const CONFIG=/*BOARD_CONFIG*/{"title":"Flight Board","owner":"Owner","phases":[[
 const OWNER=String(CONFIG.owner||"Owner");
 const PHASES=CONFIG.phases;
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -438,7 +439,9 @@ function linkify(t){
   // Any full https:// address becomes a link (g.page and others too); bare names only for common endings.
   return esc(t).replace(/(?<![@\w.\/-])(https?:\/\/[^\s<]+|(?:[a-z0-9-]+\.)+(?:com|net|org|io|app|dev)(?:\/[^\s<,;)]*)?)/gi,(m)=>{
     const clean=m.replace(/[.,;:)]+$/,""),tail=m.slice(clean.length);const href=/^https?:\/\//i.test(clean)?clean:"https://"+clean;
-    return `<a href="${href}" target="_blank" rel="noopener">${clean}</a>${tail}`});
+    return `<a href="${href}" target="_blank" rel="noopener">${clean}</a>${tail}`})
+    // A thread's number (#T27) jumps to that thread; a number no thread has stays plain text. Never inside a link's address.
+    .replace(/(?<![\w\/#&;.=?-])#T(\d{1,6})\b/g,(m,n)=>{const id=threadByNum(Number(n));return id?`<a href="#" class="t-ref" data-tref="${esc(id)}">${m}</a>`:m});
 }
 function safeImg(u){return typeof u==="string"&&(/^\/_blob\/[A-Za-z0-9_-]+$/.test(u)||/^https:\/\/[^\s"'<>]+$/.test(u))?u:null}
 function shots(w){
@@ -612,10 +615,25 @@ function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"
 function threadResolved(id){if(threadOpen(id))return false;const it=itemOf(id),t=threadOf(id),last=t[t.length-1];
   if(last&&last.resolved)return true;if(!it)return false;return it.coll==="initiatives"?it.doc.status==="done":!!it.doc.done}
 function threadTitle(id){const it=itemOf(id);if(it)return String(it.coll==="initiatives"?it.doc.name:it.doc.text||id);const f=threadOf(id)[0];return f?String(f.text):id}
+// A thread's number and name (threads/<thread id> {num, title}): the lead numbers threads in the order they opened
+// (scripts/thread-ids.mjs); the owner may rename one here. With no name, a short cut of the item's or first message's text.
+function threadDoc(id){return state.threads.find(t=>t&&t.id===id)||null}
+function threadNum(id){const n=(threadDoc(id)||{}).num;return Number.isInteger(n)&&n>0?n:null}
+function threadByNum(n){const t=state.threads.find(t=>t&&t.num===n);return t?t.id:null}
+function threadName(id){const t=threadDoc(id);if(t&&typeof t.title==="string"&&t.title.trim())return t.title.trim();
+  const s=threadTitle(id).replace(/\s+/g," ").trim();if(s.length<=60)return s;const cut=s.slice(0,60);return cut.slice(0,cut.lastIndexOf(" ")>30?cut.lastIndexOf(" "):60)+"…"}
+// The line on top of a thread: its name (when renamed: an item's own text already sits above its thread, and a panel row's
+// summary carries it), its number to copy, and Rename.
+function threadHead(id,where){const n=threadNum(id),t=threadDoc(id),named=where!=="panel"&&t&&typeof t.title==="string"&&t.title.trim();
+  return `<div class="t-head" data-thead="${esc(id)}">${named?`<span class="t-name">${esc(threadName(id))}</span>`:""}${n?`<button type="button" class="copy t-num" data-copy="#T${n}" title="Copy #T${n}">#T${n}</button>`:""}<button type="button" class="t-rename" data-trename="${esc(id)}">Rename</button></div>`}
+// The threads a text names by number, for the ping: "#T27 = <thread id>".
+function threadRefs(text){return [...new Set([...String(text).matchAll(/(?<![\w\/#&;.=?-])#T(\d{1,6})\b/g)].map(m=>Number(m[1])))].map(n=>[n,threadByNum(n)]).filter(([,id])=>id)}
 // Whether a message wakes Manager at once ("now", the default) or waits for its 5-minute check ("batch"): meta/board.wake.
 function wakeMode(){return (state.meta.find(d=>d.id==="board")||{}).wake==="batch"?"batch":"now"}
 // The ping Manager keys on, exactly: "Board thread [<thread>]: the owner: …".
-function threadPing(id,text,kind){return `Board thread [${id}]: ${OWNER}: ${kind?`(new ${kind}) `:""}${text}`.slice(0,1900)}
+function threadPing(id,text,kind){const refs=threadRefs(text),n=threadNum(id);
+  const tail=refs.length?` [Refs: ${refs.map(([k,t])=>`#T${k} = ${t}`).join(", ")}: read those threads first]`:"";
+  return (`Board thread [${id}]${n?` #T${n}`:""}: ${OWNER}: ${kind?`(new ${kind}) `:""}${text}`.slice(0,1900-tail.length)+tail)}
 // A message from the owner, as the writes it makes: the message, and a done ask or idea reopened (a reply reopens a thread).
 // An initiative is never reopened here: its phase is the collector's.
 function threadWrites(id,text,files,now,kind,rid){
@@ -634,7 +652,7 @@ function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&
   return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${linkify(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}</div>`}
 // A thread and its reply box. where: the place it is drawn (the same thread can show in two places), for unique ids.
 function threadHtml(id,where,{box=true}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`;
-  return `<div class="thread" data-thread="${esc(id)}">${t.map(msgHtml).join("")}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${keysHint()}${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button>${t.length&&!threadResolved(id)?`<button type="button" data-tclose="${esc(id)}" data-where="${esc(where)}">Close</button>`:""}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}</div>`}
+  return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${t.map(msgHtml).join("")}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${keysHint()}${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button>${t.length&&!threadResolved(id)?`<button type="button" data-tclose="${esc(id)}" data-where="${esc(where)}">Close</button>`:""}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}</div>`}
 // The Threads panel: open ones (Manager owes an answer) first, then answered ones, then resolved ones of the last 7 days,
 // folded. Older resolved threads stay saved, just out of view.
 // The thread rows whose item is not on the board (a New thread, or an item since closed), in three groups: open (the
@@ -643,7 +661,7 @@ function threadHtml(id,where,{box=true}={}){const t=threadOf(id),key="th:"+id,ti
 function threadRows(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now)),last=id=>{const t=threadOf(id);return t[t.length-1].at};
   const open=ids.filter(threadOpen).sort((a,b)=>last(a)-last(b)),res=ids.filter(id=>!threadOpen(id)&&threadResolved(id)&&now-last(id)<WEEK).sort((a,b)=>last(b)-last(a));
   const answered=ids.filter(id=>!threadOpen(id)&&!threadResolved(id)).sort((a,b)=>last(b)-last(a));
-  const row=(id,cls)=>`<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span><div class="w-text">${id.startsWith("t-")?"":"Reply to: "}${esc(threadTitle(id))}<span class="t-badge ${cls}">${cls==="open"?"waiting on Manager":cls==="res"?"resolved":"answered"}</span></div><span class="age">${dur(now-last(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"panel")}</details>`;
+  const row=(id,cls)=>`<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span><div class="w-text">${id.startsWith("t-")?"":"Reply to: "}<b class="t-name">${esc(threadName(id))}</b>${threadNum(id)?` <span class="t-numtxt">#T${threadNum(id)}</span>`:""}<span class="t-badge ${cls}">${cls==="open"?"waiting on Manager":cls==="res"?"resolved":"answered"}</span></div><span class="age">${dur(now-last(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"panel")}</details>`;
   return {open:open.map(id=>row(id,"open")).join(""),answered:answered.map(id=>row(id,"")).join(""),
     resolved:(res.length?`<details class="w-item w-later" data-id="__resolved"><summary class="later-sum">Resolved threads, last 7 days (${res.length}) <span class="caret" aria-hidden="true">▸</span></summary>${res.map(id=>row(id,"res")).join("")}</details>`:"")}}
 // "Waiting on Manager": the asks the owner answered that Manager has not closed (the reply and its thread under each),
@@ -670,6 +688,25 @@ async function sendThread(btn,id,text,msg,kind,restore){
   if(wakeMode()==="batch"){msg.textContent="Saved. Manager reads it at its next check (within 5 minutes).";btn.disabled=false;return}
   const pinged=await sendPing(anchor,threadPing(id,text||"(files)",kind));
   msg.textContent=pinged?"Sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.";btn.disabled=false}
+// The owner renames a thread: its title only (the number is the lead's). Set the first time, update after.
+function renameWrites(id,title){const t=String(title||"").replace(/\s+/g," ").trim().slice(0,120);if(!t)return [];
+  return [{op:threadDoc(id)?"update":"set",path:`threads/${id}`,data:{title:t}}]}
+// #T27 jumps to its thread and opens it; a thread not on the board now (resolved over 7 days ago) says so.
+document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-tref]");if(!a)return;e.preventDefault();
+  const el=[...document.querySelectorAll("[data-thread]")].find(x=>x.dataset.thread===a.dataset.tref);
+  if(!el){a.title="That thread is no longer shown on the board";return}
+  for(let d=el.closest("details");d;d=d.parentElement&&d.parentElement.closest("details"))d.open=true;
+  el.scrollIntoView({block:"start",behavior:"smooth"})});
+// Rename: the name becomes a box; Enter or Save writes it, Esc or Cancel puts the line back.
+document.addEventListener("click",e=>{const r=e.target.closest&&e.target.closest("[data-trename]");if(!r||!dbRef)return;e.preventDefault();
+  const id=r.dataset.trename,head=r.closest("[data-thead]");if(!head)return;const before=head.innerHTML;
+  head.innerHTML=`<input type="text" maxlength="120" aria-label="Thread name"><button type="button" data-tsave>Save</button><button type="button" data-tcancel>Cancel</button>`;
+  const box=head.querySelector("input");box.value=threadName(id);box.focus();box.select();
+  const done=()=>{head.innerHTML=before};
+  const save=async()=>{const ws=renameWrites(id,box.value);if(!ws.length)return done();head.querySelector("[data-tsave]").disabled=true;
+    try{await applyWrites(ws)}catch(_){head.querySelector("[data-tsave]").disabled=false;return}};
+  head.querySelector("[data-tsave]").addEventListener("click",save);head.querySelector("[data-tcancel]").addEventListener("click",done);
+  box.addEventListener("keydown",k=>{if(k.key==="Enter"&&!k.isComposing){k.preventDefault();save()}else if(k.key==="Escape"){k.preventDefault();done()}})});
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-tsend]");if(!b||b.disabled)return;
   const id=b.dataset.tsend,w=b.dataset.where,ta=document.getElementById(`tnote-${w}-${id}`),msg=document.getElementById(`tmsg-${w}-${id}`);
   const d=takeDraft(ta);sendThread(b,id,d.text,msg,null,d.restore)});
@@ -962,6 +999,6 @@ setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()
   window.claude.use("assets").then(a=>{if(a){assetsRef=a;renderWaiting()}}).catch(()=>{});
   const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderAll();$("synced").textContent="live, updated "+hhmm(Date.now())},
     ()=>{$("dot").classList.remove("on");$("synced").textContent="connection lost, reload"});
-  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived"].forEach(sub);
+  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads"].forEach(sub);
 })();
 </script>

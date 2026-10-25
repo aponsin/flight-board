@@ -9,6 +9,7 @@
 - The collector's first run (TASK.md): the folder is set in the app's view of the task and checked after saving; the export's folder (`mirror.next`) and step 3's `out` are the task's `additionalDirectories`, never their parent; the lead is messaged by session id, since a scheduled run reaches no session by name; a correct run asks for nothing, so any prompt is answered Deny and the run stopped (an "always allow" stays on the task).
 
 ### Added
+- Thread numbers and names: each thread gets a number (#T27) in the order threads opened, shown with a copy button; the Threads panel shows its name in bold, and a renamed thread shows its name on top. `#T27` in any message links to that thread; a message naming one tells the lead which threads to read first. The owner renames a thread from the board; the lead numbers them (`scripts/thread-ids.mjs`, backfill included), the gate keeping both the lead's.
 - A Close button on every open thread: the owner's message marks it resolved (and closes an ask or idea), with no ping; it folds into Resolved.
 - A message may name the one it answers (`after: <message id>`); it then always comes after it, whatever the clocks said.
 

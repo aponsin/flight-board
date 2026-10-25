@@ -1,0 +1,92 @@
+// Thread numbers and names (#T27): the lead's allocation, the gate's rules for it, and the page's links and pings.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { allocate } from "../scripts/thread-ids.mjs";
+import { fullConfig } from "../scripts/config.mjs";
+import { checkWrites } from "../gate/rules.mjs";
+import { loadNames } from "./harness.mjs";
+
+const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01" });
+const now = Date.now() - 1234;
+const lead = { role: "Manager", manager: true };
+const errs = (writes, who = lead) => checkWrites(writes, { config, who, now, state: {} }).errors;
+const msg = (thread, at) => ({ thread, at, from: "Sam", text: "x" });
+const num = (id, n, op = "set") => ({ op, collection: "threads", doc_id: id, data: { num: n } });
+const seq = (next, op = "update") => ({ op, collection: "meta", doc_id: "threadSeq", data: { next } });
+
+test("allocation: numbers in the order threads opened (each thread's first message), kept numbers kept, the counter last", () => {
+  const messages = [msg("b", 30), msg("a", 20), msg("a", 10), msg("c", 25), msg("b", 5), { thread: "", at: 1 }, { thread: "x" }];
+  const { batches, first, next } = allocate({ threads: [{ id: "c", num: 4 }, { id: "a", title: "Named" }], messages, seq: { next: 5 } });
+  assert.equal(first, 5);
+  assert.equal(next, 7);
+  assert.deepEqual(JSON.parse(JSON.stringify(batches)), [[
+    { op: "set", collection: "threads", doc_id: "b", data: { num: 5 } },
+    { op: "update", collection: "threads", doc_id: "a", data: { num: 6 } },
+    { op: "update", collection: "meta", doc_id: "threadSeq", data: { next: 7 } }]], "b opened at 5, a at 10; a's doc exists (its title), so update keeps it");
+  assert.equal(allocate({ threads: [{ id: "b", num: 9 }], messages: [msg("a", 1)], seq: { next: 3 } }).first, 10, "never below a number in use");
+  assert.equal(allocate({ messages: [msg("a", 1)] }).batches[0].at(-1).op, "set", "the first counter is created");
+  assert.deepEqual(allocate({ threads: [{ id: "a", num: 1 }], messages: [msg("a", 1)], seq: { next: 2 } }).batches, [], "nothing to number");
+});
+
+test("allocation: a big backfill comes in batches of at most 50 writes, each moving the counter; the gate takes each", () => {
+  const messages = Array.from({ length: 120 }, (_, k) => msg(`t-${String(k).padStart(3, "0")}`, 1000 + k));
+  const { batches, next } = allocate({ messages });
+  assert.equal(batches.length, 3);
+  assert.ok(batches.every((b) => b.length <= 50));
+  assert.equal(next, 121);
+  assert.deepEqual(batches.map((b) => b.at(-1).op), ["set", "update", "update"]);
+  for (const b of batches) assert.deepEqual(errs(b), []);
+  assert.equal(batches[0][0].doc_id, "t-000");
+  assert.equal(batches[2].at(-2).data.num, 120);
+});
+
+test("gate: only the lead numbers or names threads; a number moves the counter in the same batch, no gap, no repeat", () => {
+  const builder = { role: "Builder", manager: false };
+  assert.match(errs([num("a", 1), seq(2)], builder).join(), /only Manager numbers and names threads/);
+  assert.match(errs([{ op: "update", collection: "threads", doc_id: "a", data: { title: "x" } }], builder).join(), /only Manager/);
+  assert.match(errs([seq(5)], builder).join(), /only Manager/);
+  assert.deepEqual(errs([num("a", 1), num("b", 2), seq(3, "set")]), []);
+  assert.match(errs([num("a", 1)]).join(), /moves meta\/threadSeq in the same batch/);
+  assert.match(errs([num("a", 1), num("b", 3), seq(4)]).join(), /no gap/);
+  assert.match(errs([num("a", 2), num("b", 2), seq(3)]).join(), /can't share a number/);
+  assert.match(errs([num("a", 0), seq(1)]).join(), /num: a whole number from 1/);
+  assert.match(errs([{ op: "delete", collection: "threads", doc_id: "a" }]).join(), /kept for good/);
+  assert.match(errs([{ op: "update", collection: "threads", doc_id: "a", data: { title: "  " } }]).join(), /title: 1 to 120/);
+  assert.deepEqual(errs([{ op: "update", collection: "threads", doc_id: "a", data: { title: "Collector setup" } }]), [], "a name alone moves no counter");
+});
+
+function board(threads, messages = []) {
+  const b = loadNames(["state", "linkify", "threadHead", "threadRows", "threadPing", "renameWrites", "threadName"]);
+  b.state.threads = threads;
+  b.state.messages = messages;
+  return b;
+}
+
+test("page: #T27 links to its thread, an unknown number stays text, never inside an address", () => {
+  const b = board([{ id: "collector-create-task", num: 27 }]);
+  assert.equal(b.linkify("see #T27."), 'see <a href="#" class="t-ref" data-tref="collector-create-task">#T27</a>.');
+  assert.equal(b.linkify("see #T28"), "see #T28");
+  assert.match(b.linkify("https://example.com/#T27"), /^<a href="https:\/\/example\.com\/#T27" target="_blank" rel="noopener">https:\/\/example\.com\/#T27<\/a>$/);
+  assert.equal(b.linkify("x#T27 #T270"), "x#T27 #T270");
+});
+
+test("page: a thread's name and number, escaped; a short cut of its text when it has no name", () => {
+  const evil = '<img src=x onerror=alert(1)>"';
+  const b = board([{ id: "t-1", num: 3, title: evil }], [{ id: "m1", thread: "t-1", from: "Sam", text: "q", at: 1 }]);
+  const head = b.threadHead("t-1", "wait");
+  assert.match(head, /<span class="t-name">&lt;img src=x onerror=alert\(1\)&gt;&quot;<\/span>/);
+  assert.match(head, /data-copy="#T3"/);
+  assert.doesNotMatch(head + b.threadRows(10).open + b.threadRows(10).answered, /<img src=x/);
+  const long = board([], [{ id: "m1", thread: "t-2", from: "Sam", text: "Why does the collector need two folders outside its own when it runs every hour on the Studio", at: 1 }]);
+  assert.equal(long.threadName("t-2"), "Why does the collector need two folders outside its own…");
+  assert.doesNotMatch(long.threadHead("t-2", "wait"), /t-name|data-copy/, "no name of its own, no number yet: just Rename");
+});
+
+test("page: the ping names the threads a message refers to, so Manager reads them first; Rename writes the title only", () => {
+  const b = board([{ id: "collector-create-task", num: 27 }, { id: "t-9", num: 9 }]);
+  assert.equal(b.threadPing("t-9", "same as #T27 and #T27, not #T99", ""), "Board thread [t-9] #T9: Owner: same as #T27 and #T27, not #T99 [Refs: #T27 = collector-create-task: read those threads first]");
+  assert.equal(b.threadPing("t-9", "x".repeat(3000), "").length, 1900);
+  assert.deepEqual(JSON.parse(JSON.stringify(b.renameWrites("t-9", "  Collector   setup "))), [{ op: "update", path: "threads/t-9", data: { title: "Collector setup" } }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(b.renameWrites("t-new", "x"))), [{ op: "set", path: "threads/t-new", data: { title: "x" } }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(b.renameWrites("t-9", "   "))), []);
+});
