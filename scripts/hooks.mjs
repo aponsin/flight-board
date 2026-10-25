@@ -9,7 +9,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 // A flight-board hook, from this checkout or a pinned copy: replaced on every install.
-const MARK = /(?:flight-board|\/[0-9a-f]{40})\/gate\/(?:gate|stop)\.mjs/;
+const MARK = /(?:flight-board|\/[0-9a-f]{40})\/gate\/(?:gate|stop|after)\.mjs/;
 // A path as one shell word, in single quotes (a ' inside written '\''): sh expands nothing in it, so a folder with a
 // space ("Application Support") or a crafted name with $( ) or backticks stays a plain path.
 export const shellQuote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
@@ -18,6 +18,8 @@ export function hookEntries(repo, configPath, node = process.execPath) {
   const cmd = (file) => `${q(node)} ${q(resolve(repo, "gate", file))} --config ${q(resolve(configPath))}`;
   return {
     PreToolUse: { matcher: "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message", hooks: [{ type: "command", command: cmd("gate.mjs") }] },
+    // After a board write the board applied: what the gate must remember from it (the thread counter).
+    PostToolUse: { matcher: "ArtifactData", hooks: [{ type: "command", command: cmd("after.mjs") }] },
     Stop: { hooks: [{ type: "command", command: cmd("stop.mjs") }] },
   };
 }
@@ -63,7 +65,8 @@ export function pinCopy(repo, commit, root) {
 
 // "Added …; replaced …; retired …" in one line, for the person who ran it.
 export function summary({ added, replaced, retired }, backup) {
-  const parts = [`added the gate to ${added.join(" and ")}`];
+  const list = added.length > 1 ? `${added.slice(0, -1).join(", ")} and ${added.at(-1)}` : added.join("");
+  const parts = [`added the gate to ${list}`];
   if (replaced.length) parts.push(`replaced ${replaced.length} older flight-board entr${replaced.length > 1 ? "ies" : "y"}`);
   parts.push(retired.length ? `retired ${retired.length}: ${retired.join("; ")}` : "retired nothing");
   return `Changed: ${parts.join("; ")}.${backup ? ` Backup: ${backup}` : ""}`;

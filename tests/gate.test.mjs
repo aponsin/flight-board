@@ -289,7 +289,7 @@ test("hooks --write retires an older gate in the same write, keeps every other h
   assert.deepEqual(r.settings.hooks.PreToolUse, [{ matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }] }, e.PreToolUse], "the old gate's entry gone, the shared entry kept without it");
   assert.deepEqual(r.settings.hooks.Stop, [otherStop, e.Stop], "another Stop hook stays beside the gate's");
   assert.equal(r.retired.length, 2);
-  assert.match(summary(r, "/s.json.before-flight-board-1"), /^Changed: added the gate to PreToolUse and Stop; retired 2: PreToolUse: \/bin\/node \/home\/x\/board-tests\/write-gate\.mjs; .* Backup: \/s\.json\.before-flight-board-1$/);
+  assert.match(summary(r, "/s.json.before-flight-board-1"), /^Changed: added the gate to PreToolUse, PostToolUse and Stop; retired 2: PreToolUse: \/bin\/node \/home\/x\/board-tests\/write-gate\.mjs; .* Backup: \/s\.json\.before-flight-board-1$/);
   assert.match(summary(withHooks({}, e), null), /retired nothing\.$/);
 });
 
@@ -305,11 +305,11 @@ test("hooks --write end to end on a scratch settings file: a pinned copy of the 
     const args = [script, cfg, "--pin", "HEAD", "--retire", "board-tests/write-gate.mjs", "--settings", settings, "--install-root", root];
     assert.match(spawnSync(process.execPath, [script, cfg, "--settings", settings]).stderr.toString(), /--pin <signed commit>/, "no pin, no install");
     const dry = spawnSync(process.execPath, args, { encoding: "utf8" });
-    assert.match(dry.stdout, /Dry run, nothing written\. With --write it would change this: added the gate to PreToolUse and Stop; retired 1/);
+    assert.match(dry.stdout, /Dry run, nothing written\. With --write it would change this: added the gate to PreToolUse, PostToolUse and Stop; retired 1/);
     assert.match(dry.stdout, new RegExp(`run the copy of ${head.slice(0, 12)} at ${root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/${head}`));
     assert.equal(JSON.parse(readFileSync(settings, "utf8")).hooks.PreToolUse[0].matcher, "ArtifactData", "a dry run changes nothing");
     const run = spawnSync(process.execPath, [...args, "--write"], { encoding: "utf8" });
-    assert.match(run.stdout, /^Changed: added the gate to PreToolUse and Stop; retired 1: .*write-gate\.mjs\. Backup: .*settings\.json\.before-flight-board-\d+ Hooks run the copy of [0-9a-f]{12} at /);
+    assert.match(run.stdout, /^Changed: added the gate to PreToolUse, PostToolUse and Stop; retired 1: .*write-gate\.mjs\. Backup: .*settings\.json\.before-flight-board-\d+ Hooks run the copy of [0-9a-f]{12} at /);
     const after = JSON.parse(readFileSync(settings, "utf8"));
     assert.equal(after.hooks.PreToolUse.length, 1);
     assert.equal(after.hooks.PreToolUse[0].hooks[0].command.includes(`'${join(root, head, "gate", "gate.mjs")}'`), true, "the hook runs the pinned copy");
@@ -317,7 +317,7 @@ test("hooks --write end to end on a scratch settings file: a pinned copy of the 
     const backup = run.stdout.match(/Backup: (\S*)/)[1];
     assert.match(readFileSync(backup, "utf8"), /board-tests\/write-gate\.mjs/);
     const again = spawnSync(process.execPath, [...args, "--write"], { encoding: "utf8" });
-    assert.match(again.stdout, /replaced 2 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries: " + again.stdout + again.stderr);
+    assert.match(again.stdout, /replaced 3 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries: " + again.stdout + again.stderr);
     assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "nope-not-a-commit", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/);
     assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "--output=/tmp/x", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/, "a pin that looks like an option is still just a name");
   } finally { rmSync(dir, { recursive: true, force: true }); }

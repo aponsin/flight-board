@@ -5,6 +5,10 @@ import { allocate } from "../scripts/thread-ids.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 import { checkWrites } from "../gate/rules.mjs";
 import { writesOf } from "../gate/gate.mjs";
+import { afterWrite, after } from "../gate/after.mjs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadNames } from "./harness.mjs";
 
 const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01" });
@@ -41,9 +45,9 @@ test("allocation: a big backfill comes in batches of at most 50 writes, each mov
     const sent = b.map((w) => (w.collection === "meta" && k > 0 ? { ...w, if_version: k } : w));
     const out = checkWrites(sent, { config, who: lead, now, state });
     assert.deepEqual(out.errors, [], `batch ${k + 1}`);
-    state = out.state;
+    state = afterWrite(out.state, sent);
   });
-  assert.equal(state.threadSeq, 121, "the gate remembers the counter");
+  assert.equal(state.threadSeq, 121, "the gate remembers the counter the board applied");
   assert.equal(batches[0][0].doc_id, "t-000");
   assert.equal(batches[2].at(-2).data.num, 120);
 });
@@ -73,8 +77,20 @@ test("gate (Checker's probe): the counter is pinned once it exists and never goe
   assert.match(errs([num("t-a", 38), num("t-b", 39), num("t-c", 40), seq(41)], lead, at40).join(), /#T38 was handed out already/, "the counter moves up, but the numbers start below it");
   assert.deepEqual(errs([num("t-x", 40), seq(41)], lead, at40), [], "the next number up");
   const out = checkWrites([num("t-x", 40), seq(41)], { config, who: lead, now, state: at40 });
-  assert.equal(out.state.threadSeq, 41);
-  assert.equal(checkWrites([num("t-y", 41), seq(42, "update", 0)], { config, who: lead, now, state: at40 }).state.threadSeq, 40, "a refused batch moves nothing");
+  assert.equal(out.state.threadSeq, 40, "letting a batch through moves nothing: only the board applying it does");
+  assert.equal(afterWrite(out.state, [num("t-x", 40), seq(41)]).threadSeq, 41);
+  assert.equal(afterWrite(at40, [{ op: "update", collection: "threads", doc_id: "a", data: { title: "x" } }]), at40, "nothing to learn from a rename");
+});
+
+test("gate (Checker's second probe): a batch the board refused can be sent again; once applied, its numbers can't", () => {
+  const batch = [num("t-a", 40), num("t-b", 41), num("t-c", 42), seq(43)];
+  const first = checkWrites(batch, { config, who: lead, now, state: { threadSeq: 40 } });
+  assert.deepEqual(first.errors, []);
+  // The board refuses it (a stale pin, a network error): no PostToolUse, so the gate's memory stays at 40.
+  const rerun = checkWrites(batch, { config, who: lead, now, state: first.state });
+  assert.deepEqual(rerun.errors, [], "the rerun of the same numbers passes");
+  const applied = afterWrite(rerun.state, batch);
+  assert.match(checkWrites(batch, { config, who: lead, now, state: applied }).errors.join(), /#T40 was handed out already/, "once applied, those numbers are taken");
 });
 
 function board(threads, messages = []) {
@@ -120,4 +136,18 @@ test("page: the ping names the threads a message refers to, so Manager reads the
 test("the gate reads each write's pin (if_version), alone or in a batch", () => {
   assert.equal(writesOf({ action: "update", collection: "meta", doc_id: "threadSeq", data: { next: 3 }, if_version: 4 })[0].if_version, 4);
   assert.deepEqual(writesOf({ action: "batch", writes: [{ op: "update", collection: "meta", doc_id: "threadSeq", data: { next: 3 }, if_version: 5 }, { op: "set", collection: "threads", doc_id: "a", data: { num: 2 } }] }).map((w) => w.if_version), [5, undefined]);
+});
+
+test("the after-write hook: only an applied write to this board's counter changes the gate's memory", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fb-after-"));
+  try {
+    const cfg = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", gate: { stateDir: dir } });
+    const url = "https://claude.ai/" + "artifact/TestBoard01";
+    assert.equal(after({ tool_name: "ArtifactData", tool_input: { url: "https://claude.ai/" + "artifact/Other01", action: "update", collection: "meta", doc_id: "threadSeq", data: { next: 9 }, if_version: 1 } }, { config: cfg }), null, "another board");
+    assert.equal(after({ tool_name: "ArtifactData", tool_input: { url, action: "get", collection: "meta", doc_id: "threadSeq" } }, { config: cfg }), null, "a read");
+    after({ tool_name: "ArtifactData", tool_input: { url, action: "batch", writes: [{ op: "set", collection: "threads", doc_id: "a", data: { num: 1 } }, { op: "set", collection: "meta", doc_id: "threadSeq", data: { next: 2 } }] } }, { config: cfg });
+    assert.equal(JSON.parse(readFileSync(join(dir, "TestBoard01", "gate.json"), "utf8")).threadSeq, 2);
+    after({ tool_name: "ArtifactData", tool_input: { url, action: "update", collection: "meta", doc_id: "threadSeq", data: { next: 1 }, if_version: 2 } }, { config: cfg });
+    assert.equal(JSON.parse(readFileSync(join(dir, "TestBoard01", "gate.json"), "utf8")).threadSeq, 2, "never lower");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

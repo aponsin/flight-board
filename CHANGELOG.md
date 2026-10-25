@@ -12,6 +12,7 @@
 
 ### Added
 - The Threads panel in order: Start a thread, Needs you, Waiting on Manager, Later, then Resolved threads (last 7 days, folded) with a search box that finds any resolved thread, whatever its age, by name, #T number, item text or any message.
+- `gate/after.mjs`, a PostToolUse hook (installed with the others): after a board write the board applied, it records the thread counter, so the gate's "never back" follows what the board holds and a refused batch can be sent again.
 - Thread numbers and names: each thread gets a number (#T27) in the order threads opened, shown with a copy button; the Threads panel shows its name in bold, and a renamed thread shows its name on top. `#T27` in any message links to that thread; a message naming one tells the lead which threads to read first. The owner renames a thread from the board; the lead numbers them (`scripts/thread-ids.mjs`, backfill included), the gate keeping both the lead's.
 - A Close button on every open thread: the owner's message marks it resolved (and closes an ask or idea), with no ping; it folds into Resolved.
 - A message may name the one it answers (`after: <message id>`); it then always comes after it, whatever the clocks said.

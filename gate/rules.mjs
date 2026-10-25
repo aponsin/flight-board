@@ -23,7 +23,8 @@ export const THREAD_SEQ = "threadSeq";
 // A batch that numbers threads also moves the counter, pinned (if_version) so two allocations can't both pass: its nums
 // are distinct and run up to the counter's new next - 1, with no gap. The counter is pinned whenever it already exists
 // (only a set that creates it goes without), and never goes back: seen is the highest next the gate has let through
-// (its own state), and a batch's numbers start at it or above (Checker: an unpinned [num 1, next 2] reset it to #T1).
+// (its own state, raised by gate/after.mjs only once the board applied the write: a refused batch's rerun still passes),
+// and a batch's numbers start at it or above (Checker: an unpinned [num 1, next 2] reset it to #T1).
 export function threadNumErrors(writes, seen = 0) {
   const seqw = writes.find((w) => w.collection === "meta" && w.doc_id === THREAD_SEQ && w.op !== "delete");
   if (seqw && !Number.isInteger(seqw.if_version) && !(seqw.op === "set" && !seen)) return [`meta/${THREAD_SEQ}: pin it with if_version (the version a get just read); only the set that creates it goes without`];
@@ -183,8 +184,6 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
       if (next.refusals[key] >= STUCK_AFTER && !next.stuck[key]) stuckNow = { item: key, reason: errs[0] };
     }
   } else {
-    const seq = writes.find((w) => w.collection === "meta" && w.doc_id === THREAD_SEQ && w.op !== "delete");
-    if (seq && Number.isInteger(seq.data?.next)) next.threadSeq = Math.max(next.threadSeq ?? 0, seq.data.next);
     for (const key of perItem.keys()) delete next.refusals[key];
     for (const key of stuckClears(stuckWrite, next.stuck)) delete next.stuck[key];
   }
