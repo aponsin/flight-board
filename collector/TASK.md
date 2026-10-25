@@ -9,9 +9,13 @@ Created only with the owner's yes. Its settings:
   The after-ship run is **this same task**, started by the release role (run it now, by hand or by a call at the end of
   its ship); never a second task with other settings or more tools.
 - **Model**: the smallest one available; the run is a few fixed steps.
-- **Folder**: this repository, at the signed commit the hooks pin (`~/.flight-board/install/<sha>`). The folder is set in
-  the app's view of the task (the task's own file has none, and the scheduled-task tools can't set one): set it, save,
-  open the task again and check it. A run in any other folder loads none of the settings below.
+- **Folder**: the board's own state folder, `<dir>` = `<gate.stateDir>/<board id>`, where the export, the mirror and the
+  output live: a scheduled run saves ArtifactData exports (`out_dir`) only inside its own folder, whatever
+  `additionalDirectories` says (the second trial asked for every export). The code runs from the signed commit the hooks
+  pin (`~/.flight-board/install/<sha>`), by its full path; the collector reads nothing from the folder it runs in (the
+  repository comes from `collector.repoPath`, the state from `gate.stateDir`). The folder is set in the app's view of
+  the task (the task's own file has none, and the scheduled-task tools can't set one): set it, save, open the task
+  again and check it. A run in any other folder loads none of the settings below.
 - **Approvals**: a correct run asks for nothing. Any prompt means something is wrong: answer Deny (never allow, once or
   always), stop the run and tell Security. An "always allow" is saved on the task and every later run inherits it; one
   saved by mistake goes only by deleting the task and creating it again.
@@ -19,17 +23,16 @@ Created only with the owner's yes. Its settings:
   the task's title before its first tool call. And `FLIGHT_BOARD_ROLE=Collector` in its settings (below): if the two
   ever disagree, the gate refuses every write, which fails closed and shows. The gate refuses every board write from
   the Collector except `set` of `derived/all`.
-- **Tools, enforced by permission rules, not by the prompt**: one file, `.claude/settings.local.json` in the pinned
-  folder only (the hooks' integrity check leaves out that one file), never in `~/.claude/settings.json`:
+- **Tools, enforced by permission rules, not by the prompt**: one file, `<dir>/.claude/settings.local.json`, never in
+  `~/.claude/settings.json` (and nothing in the pinned install, which stays exactly the signed commit):
 
   ```json
   {
     "permissions": {
       "defaultMode": "default",
-      "additionalDirectories": ["<gate.stateDir>/<board id>/mirror.next", "<gate.stateDir>/<board id>/out"],
       "allow": [
-        "Bash(node collector/collect.mjs --config <full path to board.config.json> --prepare)",
-        "Bash(node collector/collect.mjs --config <full path to board.config.json>)",
+        "Bash(node <full path of the pinned install>/collector/collect.mjs --config <full path to board.config.json> --prepare)",
+        "Bash(node <full path of the pinned install>/collector/collect.mjs --config <full path to board.config.json>)",
         "Read(/<full path of gate.stateDir/board id>/out/derived-all.json)",
         "ArtifactData",
         "ToolSearch",
@@ -56,11 +59,12 @@ Created only with the owner's yes. Its settings:
   A path in a Read rule must start with `//`, the absolute form (`//Users/…`): a single `/` is relative to the settings
   file and silently matches nothing, so a deny wouldn't protect and the allow would ask (Security). In this block, write
   `/` plus the absolute path, which starts with its own `/`. Each Bash allow rule is the whole
-  command with the config's full path written out: no wildcards, and nothing before or after it (`cd <folder> && node
+  command with the install's and the config's full paths written out (a re-pin changes the install's, so these two
+  rules and the prompt's two commands change with it): no wildcards, and nothing before or after it (`cd <folder> && node
   …` matches no rule and asks: the first runs asked about ten times). The only file the run reads is step 3's
   `derived-all.json` (ArtifactData `set` with `file_path` reads it); the export, the mirror, the gate's state, the
-  config's folder and `~/.claude` stay denied. `additionalDirectories` is the two folders the run touches outside its own
-  (the app asks otherwise): step 1's export (`mirror.next`) and step 3's `out`, never their parent. ToolSearch loads the
+  config's folder and `~/.claude` stay denied. Everything the run saves is inside its own folder: step 1's export
+  (`mirror.next`) and step 3's `out`; the gate's state beside them stays denied to Read, and Edit and Write are denied. ToolSearch loads the
   message tool; the plan and wrap-up tools only show progress. A scheduled run reaches another session only through
   `mcp__ccd_session_mgmt__send_message` (SendMessage refuses it); the session tools that stop, clear, archive, delete or
   change a session stay denied. Any other call isn't allowed, so it asks, and an unattended run stops. The task never runs with
@@ -79,7 +83,8 @@ A short Claude session that keeps the board true to the repository and nudges th
 and write the board, so each run is these steps, in order. `<config>` is the team's `board.config.json`; `<dir>` is
 `<gate.stateDir>/<board id>` (the board id is the last part of `artifactUrl`).
 
-1. **Export the board**: run `node collector/collect.mjs --config <config> --prepare`. It makes an empty folder and
+1. **Export the board**: run `node <install>/collector/collect.mjs --config <config> --prepare` (`<install>` the pinned
+   install's full path). It makes an empty folder and
    prints its path and a `Steps since: <time>` line; never remove a folder yourself. Then, each with `out_dir` the printed
    path, so the documents go to the folder and never into this session:
    - one ArtifactData `list` per collection, with `query.limit` 1000: `initiatives`, `waiting`, `ideas`, `messages`,
@@ -89,12 +94,12 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
 
    Never open, read or print those files: step 2 reads them. Step 2 swaps the folder into place as the mirror the gate
    reads.
-2. **Work it out**: `node collector/collect.mjs --config <config>`. It prints one `CONFLICT` line per card whose phase
+2. **Work it out**: `node <install>/collector/collect.mjs --config <config>`. It prints one `CONFLICT` line per card whose phase
    disagrees with the repository, a `LIVE BUT OPEN` line, and one `NUDGE` line per nudge due (collector/nudges.mjs:
    the owner waiting for an answer, a step open past its card size's median, an old memory reading, a card unchanged
    for a day). A nudge is printed once, then again only after a quiet period while it still holds.
-3. **Write it**: ArtifactData `get` `derived/all` with `out_dir` the session's scratchpad folder, for the version its
-   result line shows (so the document's text never enters the session), then `set` `derived/all` with
+3. **Write it**: ArtifactData `get` `derived/all` with `out_dir` `<dir>/out` (inside the run's folder; a scheduled
+   run's scratchpad is outside it), for the version its result line shows (so the document's text never enters the session), then `set` `derived/all` with
    `file_path` `<dir>/out/derived-all.json` and that `if_version` (no `if_version` the first time, when it doesn't exist
    yet). Never pass the document inline.
 4. **Tell the lead**, only when step 2 printed a `CONFLICT`, `LIVE BUT OPEN` or `NUDGE` line: load
