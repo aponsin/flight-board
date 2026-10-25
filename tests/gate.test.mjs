@@ -104,6 +104,9 @@ test("the role is the session's title, never a /pickup in the talk; a title and 
   assert.equal(sessionRole([], "Builder").role, "Builder");
   assert.match(sessionRole(lines, "Manager").error, /title is "Release" but FLIGHT_BOARD_ROLE is "Manager"/);
   assert.equal(sessionRole([]).role, null);
+  // A scheduled run: the app writes the task's own title as the session's, before its first tool call.
+  const scheduled = [{ type: "user", message: { content: "<scheduled-task name=\"x\">" } }, { type: "custom-title", customTitle: "Collector" }, { type: "agent-name", agentName: "Collector" }];
+  assert.deepEqual(sessionRole(scheduled, "Collector"), { role: "Collector", error: null });
 });
 
 // ---- Rule 7 (case 8): passing states ----
@@ -207,9 +210,12 @@ test("the hook: refuses with reasons, keeps its state, counts cards it let throu
     writeFileSync(join(dir, "TestBoard01", "mirror", "initiatives", "other-card.json"), "{}");
     assert.deepEqual(call("SendMessage", { to: "builder", message: "New task, board id other-card" }), {});
     assert.match(call("SendMessage", { to: "builder", message: "New task, board id third-card" }).block, /no card third-card/);
-    const old = (Date.now() - 31 * 60e3) / 1000;
-    utimesSync(join(dir, "TestBoard01", "mirror", "initiatives", "other-card.json"), old, old);
-    assert.match(call("SendMessage", { to: "builder", message: "New task, board id third-card" }).note, /stale/);
+    // The collector runs hourly: last hour's export is still fresh (75 min), one that missed a run is stale.
+    const age = (min) => { const t = (Date.now() - min * 60e3) / 1000; utimesSync(join(dir, "TestBoard01", "mirror", "initiatives", "other-card.json"), t, t); };
+    age(70);
+    assert.match(call("SendMessage", { to: "builder", message: "New task, board id third-card" }).block, /no card third-card/, "70 min: fresh");
+    age(76);
+    assert.match(call("SendMessage", { to: "builder", message: "New task, board id third-card" }).note, /stale/, "76 min: stale");
     assert.equal(readMirror(join(dir, "TestBoard01", "mirror")).docs.initiatives[0].id, "other-card");
     writeFileSync(transcript, JSON.stringify({ type: "custom-title", customTitle: "Release" }) + "\n");
     assert.match(run({ tool_name: "ArtifactData", tool_input: { url: URL_, action: "set", collection: "ctx", doc_id: "Release", data: { pct: 1, at: now } }, transcript_path: transcript }, { config: cfg, env: { FLIGHT_BOARD_ROLE: "Manager" } }).block, /disagree|but FLIGHT_BOARD_ROLE/);

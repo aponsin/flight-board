@@ -4,13 +4,16 @@
 
 Created only with the owner's yes. Its settings:
 
-- **When**: every 30 minutes, and once after each ship. The after-ship run is **this same task**, started by the release
-  role (run it now, by hand or by a call at the end of its ship); never a second task with other settings or more tools.
+- **When**: every hour, and once after each ship. The gate counts the mirror fresh for `gate.mirrorMaxAgeMin` (75 by
+  default): a run a few minutes late leaves it fresh; a missed run shows as stale.
+  The after-ship run is **this same task**, started by the release role (run it now, by hand or by a call at the end of
+  its ship); never a second task with other settings or more tools.
 - **Model**: the smallest one available; the run is a few fixed steps.
 - **Folder**: this repository, at the signed commit the hooks pin (`~/.flight-board/install/<sha>`).
-- **Session title**: exactly `Collector`, and `FLIGHT_BOARD_ROLE=Collector` in its settings (below): if the two ever
-  disagree, the gate refuses every write, which fails closed and shows. The gate refuses every board write from the
-  Collector except `set` of `derived/all`.
+- **Session title**: exactly `Collector`, which is the task's own title in the app: the app gives each run's session
+  the task's title before its first tool call. And `FLIGHT_BOARD_ROLE=Collector` in its settings (below): if the two
+  ever disagree, the gate refuses every write, which fails closed and shows. The gate refuses every board write from
+  the Collector except `set` of `derived/all`.
 - **Tools, enforced by permission rules, not by the prompt**: one file, `.claude/settings.local.json` in the pinned
   folder only (the hooks' integrity check leaves out that one file), never in `~/.claude/settings.json`:
 

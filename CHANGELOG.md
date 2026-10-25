@@ -2,6 +2,9 @@
 
 ## 0.3.1 - Unreleased
 
+### Changed
+- The collector runs hourly (the app's scheduler): the gate counts its mirror fresh for 75 minutes, not 30 (`gate.mirrorMaxAgeMin`), so the board-state rules keep running between runs. A scheduled run's session takes the task's own title, so the task is titled `Collector` and the role rule is unchanged.
+
 ### Added
 - A Close button on every open thread: the owner's message marks it resolved (and closes an ask or idea), with no ping; it folds into Resolved.
 - A message may name the one it answers (`after: <message id>`); it then always comes after it, whatever the clocks said.

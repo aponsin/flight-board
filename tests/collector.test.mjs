@@ -266,9 +266,9 @@ test("the run's nudges keep their state next to the mirror: sent once, quiet on 
     const docs = { messages: [{ id: "m1", thread: "t-1", from: "Sam", text: "x", at: T - 20 * 60e3 }] };
     assert.deepEqual(runNudges(dir, cfg, docs, T), ["NUDGE thread t-1: Sam has waited 20 min for an answer"]);
     assert.equal(typeof JSON.parse(read(join(dir, "nudges.json"), "utf8")).sent["thread:t-1"], "number");
-    assert.deepEqual(runNudges(dir, cfg, docs, T + 30 * 60e3), [], "the next run, inside the quiet period");
+    assert.deepEqual(runNudges(dir, cfg, docs, T + 60 * 60e3), [], "the next run, an hour later, inside the quiet period");
     write(join(dir, "nudges.json"), "not json");
-    assert.equal(runNudges(dir, cfg, docs, T + 31 * 60e3).length, 1, "a broken state file starts afresh");
+    assert.equal(runNudges(dir, cfg, docs, T + 61 * 60e3).length, 1, "a broken state file starts afresh");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

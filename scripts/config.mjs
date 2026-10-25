@@ -14,7 +14,7 @@ export const DEFAULTS = {
   automationLabel: "Automation",
   // The write gate (gate/): the lead role, item ids that are passing agent states (never items), the words that make a
   // reply a verdict, where the gate keeps its state and the board's mirror, and how old a mirror may be.
-  gate: { managerRole: "Manager", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 30 },
+  gate: { managerRole: "Manager", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 75 },
   // The collector (collector/): the team's repository and how its work shows there. notes: each review phase and the git
   // notes ref its sign-off is written to. deployWorkflow: the CI workflow whose successful run on the main branch means
   // live. lanePhases: the phases where one owner holds one card at a time (reviews and shipping queue). versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
