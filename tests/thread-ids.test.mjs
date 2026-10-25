@@ -178,3 +178,17 @@ test("a counter raised by after.mjs while the gate's own call ran is kept when t
     assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { threadSeq: 43, journal: ["w"] });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("an item's top line shows its thread's #T and, once renamed, its name, before it opens (board-thread-head)", () => {
+  const b = loadNames(["state", "askHtml", "threadTag", "initRow", "enrich", "gates", "asShown"]);
+  b.state.threads = [{ id: "ask-1", num: 27 }, { id: "ask-2", num: 28, title: '<i>Collector</i> setup' }, { id: "card-1", num: 30 }];
+  const ask = (id) => ({ id, kind: "action", text: "Run the install", steps: ["x"], since: Date.now() });
+  const summary = (html) => html.slice(html.indexOf("<summary"), html.indexOf("</summary>"));
+  assert.match(summary(b.askHtml(ask("ask-1"), new Set())), /<span class="t-tag"><button type="button" class="copy t-num" data-copy="#T27"/);
+  assert.doesNotMatch(summary(b.askHtml(ask("ask-1"), new Set())), /t-name/, "not renamed: the item's own text is the name");
+  assert.match(summary(b.askHtml(ask("ask-2"), new Set())), /#T28<\/button><b class="t-name">&lt;i&gt;Collector&lt;\/i&gt; setup<\/b>/);
+  assert.equal(b.threadTag("ask-9"), "", "no number yet and no name: nothing");
+  b.state.steps = [];
+  const row = b.initRow(b.gates(b.enrich(b.asShown({ id: "card-1", name: "Tabs", status: "active", level: "Quick", skip: [] }))));
+  assert.match(row, /<strong>Tabs<\/strong><span class="t-tag"><button[^>]*data-copy="#T30"/);
+});

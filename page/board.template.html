@@ -127,7 +127,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
 .t-msg{margin:6px 0}.t-msg .t-from{font-weight:600}.t-msg .t-at{font-size:.8rem;color:var(--muted)}
-.t-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 4px}.t-name{font-weight:700}.t-num{font:inherit;font-size:.8rem;padding:1px 6px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}.t-rename{font:inherit;font-size:.78rem;padding:0;border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer}.t-head input{font:inherit;flex:1;min-width:12em;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}a.t-ref{font-weight:600}.t-err{font-size:.8rem;color:var(--bad)}
+.t-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 4px}.t-name{font-weight:700}.t-num{font:inherit;font-size:.8rem;padding:1px 6px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}.t-rename{font:inherit;font-size:.78rem;padding:0;border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer}.t-head input{font:inherit;flex:1;min-width:12em;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}a.t-ref{font-weight:600}.t-tag{display:inline-flex;align-items:center;gap:6px;margin:0 8px 2px 0;vertical-align:middle}.t-err{font-size:.8rem;color:var(--bad)}
 .t-msg.t-owner .t-from{color:var(--accent)}.t-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .thread .reply{margin:6px 0 4px 0}
 .t-badge{font-size:.75rem;border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin-left:6px;color:var(--muted)}.t-badge.open{color:var(--bad);border-color:var(--bad)}
@@ -349,7 +349,7 @@ function itemShown(id,now){const it=itemOf(id);if(!it)return false;
 // An ask as a row that opens to its steps, its reply buttons (or the sent line) and its thread.
 function askHtml(w,open){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
-   <div class="w-text">${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:askText(w.text||"")}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
+   <div class="w-text">${threadTag(w.id)}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:askText(w.text||"")}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
    <span class="age">${num(w.since)?dur(Date.now()-w.since)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
@@ -636,6 +636,11 @@ function threadName(id){const t=threadDoc(id);if(t&&typeof t.title==="string"&&t
 // summary carries it), its number to copy, and Rename.
 function threadHead(id,where){const n=threadNum(id),t=threadDoc(id),named=where!=="panel"&&t&&typeof t.title==="string"&&t.title.trim();
   return `<div class="t-head" data-thead="${esc(id)}">${named?`<span class="t-name">${esc(threadName(id))}</span>`:""}${n?`<button type="button" class="copy t-num" data-copy="#T${n}" title="Copy #T${n}">#T${n}</button>`:""}<button type="button" class="t-rename" data-trename="${esc(id)}">Rename</button></div>`}
+// The same on an item's top line, visible before it opens: its number (copy on click: the copy handler keeps the row
+// from folding) and, when renamed, its name (the item's own text already shows there). Empty while it has neither.
+function threadTag(id){const n=threadNum(id),t=threadDoc(id),named=t&&typeof t.title==="string"&&t.title.trim();
+  if(!n&&!named)return "";
+  return `<span class="t-tag">${n?`<button type="button" class="copy t-num" data-copy="#T${n}" title="Copy #T${n}">#T${n}</button>`:""}${named?`<b class="t-name">${esc(threadName(id))}</b>`:""}</span>`}
 // The threads a text names by number, for the ping: "#T27 = <thread id>".
 function threadRefs(text){return [...new Set([...String(text).matchAll(/(?<![\w\/#&;.=?-])#T(\d{1,6})\b/g)].map(m=>Number(m[1])))].map(n=>[n,threadByNum(n)]).filter(([,id])=>id)}
 // Whether a message wakes Manager at once ("now", the default) or waits for its 5-minute check ("batch"): meta/board.wake.
@@ -814,7 +819,7 @@ function initRow(i){
   const started=num(i.createdAt)?`<span>Started ${dayLabel(i.createdAt)} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-i.createdAt)} so far</span>`:"";
   const tn=threadOf(i.id).length,topen=threadOpen(i.id);
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:"Start a thread"}${topen?'<span class="t-badge open">waiting on Manager</span>':""}</summary>${threadHtml(i.id,"init")}</details>`;
-  return `<div class="i-row"><div><div class="i-name"><strong>${esc(i.name)}</strong><span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}</div>
+  return `<div class="i-row"><div><div class="i-name"><strong>${esc(i.name)}</strong>${threadTag(i.id)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}</div>
    ${i.summary?`<div class="w-sub">${esc(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>

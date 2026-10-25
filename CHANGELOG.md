@@ -3,6 +3,7 @@
 ## 0.3.1 - Unreleased
 
 ### Changed
+- Every ask, answer and initiative shows its thread's #T number (copy on click) and, once renamed, its name on its top line, before it opens. With no name of its own, a thread is named by its item's text, so none is ever unnamed.
 - The gate's journal (laid over the mirror) and its known cards are written by `gate/after.mjs`, once the board applied a write: a write the gate let through but the app or a stale pin refused no longer shows as done (Security).
 - A reply's or thread message's files: an image is a thumbnail that opens in the board's lightbox (← →, zoom, Esc), with that message's other images; any other file downloads in place. No new tab, which a sandboxed board can't open (the links were broken).
 - The "Start a thread" box takes files like a reply box: Attach, paste or drop images and files; they go on the new thread's first message.
