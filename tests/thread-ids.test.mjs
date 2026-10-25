@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import { allocate } from "../scripts/thread-ids.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 import { checkWrites } from "../gate/rules.mjs";
-import { writesOf } from "../gate/gate.mjs";
+import { writesOf, writeState } from "../gate/gate.mjs";
 import { afterWrite, after } from "../gate/after.mjs";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadNames } from "./harness.mjs";
@@ -149,5 +149,16 @@ test("the after-write hook: only an applied write to this board's counter change
     assert.equal(JSON.parse(readFileSync(join(dir, "TestBoard01", "gate.json"), "utf8")).threadSeq, 2);
     after({ tool_name: "ArtifactData", tool_input: { url, action: "update", collection: "meta", doc_id: "threadSeq", data: { next: 1 }, if_version: 2 } }, { config: cfg });
     assert.equal(JSON.parse(readFileSync(join(dir, "TestBoard01", "gate.json"), "utf8")).threadSeq, 2, "never lower");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the gate's state is written whole: a file of its own, renamed into place, nothing left behind (Security)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fb-state-"));
+  try {
+    const path = join(dir, "b", "gate.json");
+    writeState(path, { threadSeq: 3 });
+    writeState(path, { threadSeq: 4, journal: [] });
+    assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { threadSeq: 4, journal: [] });
+    assert.deepEqual(readdirSync(join(dir, "b")), ["gate.json"], "no temporary file left");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

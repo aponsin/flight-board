@@ -6,8 +6,8 @@
 // The gate keeps its state (refusals in a row, stuck items, cards it has let through) in <stateDir>/<board>/gate.json and
 // reads the board's mirror (an export of its collections) from <stateDir>/<board>/mirror.
 import { realpathSync } from "node:fs";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, renameSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
@@ -17,6 +17,14 @@ import { readLines, sessionRole } from "./session.mjs";
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"]);
 export const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
+// gate.json has two writers (this hook and gate/after.mjs), which parallel calls can interleave: each writes a file of its
+// own and renames it into place, so a reader never sees half a file and a write is whole or not at all (Security).
+export function writeState(path, state) {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, JSON.stringify(state, null, 2));
+  renameSync(tmp, path);
+}
 
 // The writes in one ArtifactData call, each with its data (read from file_path when given).
 export function writesOf(t) {
@@ -94,7 +102,7 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
   const statePath = join(dir, "gate.json");
   let state = {};
   try { state = JSON.parse(readFileSync(statePath, "utf8")); } catch { /* first run */ }
-  const save = (s) => { mkdirSync(dir, { recursive: true }); writeFileSync(statePath, JSON.stringify(s, null, 2)); };
+  const save = (s) => writeState(statePath, s);
   const t = input?.tool_input ?? {};
   const lines = input?.transcript_path ? readLines(input.transcript_path) : [];
   const { role, error: roleError } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);

@@ -2,12 +2,12 @@
 // Runs only after a board write the board applied (Claude Code calls PostToolUse on a tool's success), and records what
 // the gate must remember from it: the thread counter's new next. The PreToolUse gate checks "never back" against that,
 // so a batch the board refused (a stale pin, a network error) leaves the memory as it was and its rerun passes (Checker).
-import { readFileSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardId, checkConfig, fullConfig } from "../scripts/config.mjs";
 import { THREAD_SEQ } from "./rules.mjs";
-import { writesOf, home } from "./gate.mjs";
+import { writesOf, home, writeState } from "./gate.mjs";
 
 const WRITES = new Set(["set", "update", "batch"]);
 
@@ -29,8 +29,7 @@ export function after(input, { config }) {
   try { state = JSON.parse(readFileSync(path, "utf8")); } catch { /* first run */ }
   const next = afterWrite(state, writesOf(t));
   if (next === state) return state;
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(path, JSON.stringify(next, null, 2));
+  writeState(path, next);
   return next;
 }
 
