@@ -21,8 +21,13 @@ function pageRules() {
 export const THREAD_SEQ = "threadSeq";
 
 // A batch that numbers threads also moves the counter, pinned (if_version) so two allocations can't both pass: its nums
-// are distinct and run up to the counter's new next - 1, with no gap.
-export function threadNumErrors(writes) {
+// are distinct and run up to the counter's new next - 1, with no gap. The counter is pinned whenever it already exists
+// (only a set that creates it goes without), and never goes back: seen is the highest next the gate has let through
+// (its own state), and a batch's numbers start at it or above (Checker: an unpinned [num 1, next 2] reset it to #T1).
+export function threadNumErrors(writes, seen = 0) {
+  const seqw = writes.find((w) => w.collection === "meta" && w.doc_id === THREAD_SEQ && w.op !== "delete");
+  if (seqw && !Number.isInteger(seqw.if_version) && !(seqw.op === "set" && !seen)) return [`meta/${THREAD_SEQ}: pin it with if_version (the version a get just read); only the set that creates it goes without`];
+  if (seqw && Number.isInteger(seqw.data?.next) && seqw.data.next < seen) return [`meta/${THREAD_SEQ}: next never goes back (${seqw.data.next} < ${seen}, the last the gate let through)`];
   const nums = writes.filter((w) => w.collection === "threads" && w.op !== "delete" && w.data?.num !== undefined).map((w) => w.data.num);
   if (!nums.length) return [];
   const seq = writes.find((w) => w.collection === "meta" && w.doc_id === THREAD_SEQ && w.op !== "delete");
@@ -30,6 +35,7 @@ export function threadNumErrors(writes) {
   const sorted = [...nums].sort((a, b) => a - b);
   if (new Set(nums).size !== nums.length) return ["threads: two threads in one batch can't share a number"];
   if (sorted.some((n, k) => n !== seq.data?.next - nums.length + k)) return [`threads: the numbers run up to meta/${THREAD_SEQ}.next - 1 with no gap (${sorted.join(", ")} vs next ${seq.data?.next})`];
+  if (sorted[0] < seen) return [`threads: #T${sorted[0]} was handed out already (the counter was at ${seen}): export again and rerun scripts/thread-ids.mjs`];
   return [];
 }
 
@@ -143,7 +149,7 @@ const STUCK_AFTER = 3;
 // A whole tool call to the board. state: { refusals: { item: n }, stuck: { item: { reason, at } } }.
 // Returns { errors, state, stuckNow }: stuckNow names an item refused STUCK_AFTER times in a row, for the stuck line.
 export function checkWrites(writes, { config, who, now, state, mirror = null }) {
-  const next = { refusals: { ...(state?.refusals ?? {}) }, stuck: { ...(state?.stuck ?? {}) } };
+  const next = { refusals: { ...(state?.refusals ?? {}) }, stuck: { ...(state?.stuck ?? {}) }, ...(state?.threadSeq ? { threadSeq: state.threadSeq } : {}) };
   // A session with no role (no title, no FLIGHT_BOARD_ROLE) writes nothing, the stuck line included (Security).
   if (!who?.role) return { errors: ["no role for this session: give it its role as its title (or FLIGHT_BOARD_ROLE), then write"], state: next, stuckNow: null };
   // The Collector's one write is checked here too, before the stuck line's shortcut below skips writeErrors (Checker).
@@ -163,7 +169,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
-  errors.push(...threadNumErrors(writes));
+  errors.push(...threadNumErrors(writes, state?.threadSeq ?? 0));
   // A write that passes for a stuck item clears its line in the same call, or it is refused.
   if (!errors.length) {
     const cleared = stuckClears(stuckWrite, next.stuck);
@@ -177,6 +183,8 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
       if (next.refusals[key] >= STUCK_AFTER && !next.stuck[key]) stuckNow = { item: key, reason: errs[0] };
     }
   } else {
+    const seq = writes.find((w) => w.collection === "meta" && w.doc_id === THREAD_SEQ && w.op !== "delete");
+    if (seq && Number.isInteger(seq.data?.next)) next.threadSeq = Math.max(next.threadSeq ?? 0, seq.data.next);
     for (const key of perItem.keys()) delete next.refusals[key];
     for (const key of stuckClears(stuckWrite, next.stuck)) delete next.stuck[key];
   }

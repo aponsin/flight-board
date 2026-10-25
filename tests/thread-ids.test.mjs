@@ -4,15 +4,16 @@ import assert from "node:assert/strict";
 import { allocate } from "../scripts/thread-ids.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 import { checkWrites } from "../gate/rules.mjs";
+import { writesOf } from "../gate/gate.mjs";
 import { loadNames } from "./harness.mjs";
 
 const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01" });
 const now = Date.now() - 1234;
 const lead = { role: "Manager", manager: true };
-const errs = (writes, who = lead) => checkWrites(writes, { config, who, now, state: {} }).errors;
+const errs = (writes, who = lead, state = {}) => checkWrites(writes, { config, who, now, state }).errors;
 const msg = (thread, at) => ({ thread, at, from: "Sam", text: "x" });
 const num = (id, n, op = "set") => ({ op, collection: "threads", doc_id: id, data: { num: n } });
-const seq = (next, op = "update") => ({ op, collection: "meta", doc_id: "threadSeq", data: { next } });
+const seq = (next, op = "update", if_version = 7) => ({ op, collection: "meta", doc_id: "threadSeq", data: { next }, ...(if_version ? { if_version } : {}) });
 
 test("allocation: numbers in the order threads opened (each thread's first message), kept numbers kept, the counter last", () => {
   const messages = [msg("b", 30), msg("a", 20), msg("a", 10), msg("c", 25), msg("b", 5), { thread: "", at: 1 }, { thread: "x" }];
@@ -35,7 +36,14 @@ test("allocation: a big backfill comes in batches of at most 50 writes, each mov
   assert.ok(batches.every((b) => b.length <= 50));
   assert.equal(next, 121);
   assert.deepEqual(batches.map((b) => b.at(-1).op), ["set", "update", "update"]);
-  for (const b of batches) assert.deepEqual(errs(b), []);
+  let state = {};
+  batches.forEach((b, k) => {
+    const sent = b.map((w) => (w.collection === "meta" && k > 0 ? { ...w, if_version: k } : w));
+    const out = checkWrites(sent, { config, who: lead, now, state });
+    assert.deepEqual(out.errors, [], `batch ${k + 1}`);
+    state = out.state;
+  });
+  assert.equal(state.threadSeq, 121, "the gate remembers the counter");
   assert.equal(batches[0][0].doc_id, "t-000");
   assert.equal(batches[2].at(-2).data.num, 120);
 });
@@ -45,7 +53,7 @@ test("gate: only the lead numbers or names threads; a number moves the counter i
   assert.match(errs([num("a", 1), seq(2)], builder).join(), /only Manager numbers and names threads/);
   assert.match(errs([{ op: "update", collection: "threads", doc_id: "a", data: { title: "x" } }], builder).join(), /only Manager/);
   assert.match(errs([seq(5)], builder).join(), /only Manager/);
-  assert.deepEqual(errs([num("a", 1), num("b", 2), seq(3, "set")]), []);
+  assert.deepEqual(errs([num("a", 1), num("b", 2), seq(3, "set", 0)]), [], "the set that creates the counter goes unpinned");
   assert.match(errs([num("a", 1)]).join(), /moves meta\/threadSeq in the same batch/);
   assert.match(errs([num("a", 1), num("b", 3), seq(4)]).join(), /no gap/);
   assert.match(errs([num("a", 2), num("b", 2), seq(3)]).join(), /can't share a number/);
@@ -53,6 +61,19 @@ test("gate: only the lead numbers or names threads; a number moves the counter i
   assert.match(errs([{ op: "delete", collection: "threads", doc_id: "a" }]).join(), /kept for good/);
   assert.match(errs([{ op: "update", collection: "threads", doc_id: "a", data: { title: "  " } }]).join(), /title: 1 to 120/);
   assert.deepEqual(errs([{ op: "update", collection: "threads", doc_id: "a", data: { title: "Collector setup" } }]), [], "a name alone moves no counter");
+});
+
+test("gate (Checker's probe): the counter is pinned once it exists and never goes back; numbers below it are refused", () => {
+  const at40 = { threadSeq: 40 };
+  assert.match(errs([num("t-x", 1), seq(2, "update", 0)], lead, at40).join(), /pin it with if_version/, "unpinned");
+  assert.match(errs([seq(2, "update", 0)], lead, at40).join(), /pin it with if_version/, "the counter alone, unpinned");
+  assert.match(errs([seq(2, "set", 0)], lead, at40).join(), /pin it with if_version/, "a set over an existing counter");
+  assert.match(errs([num("t-x", 1), seq(2)], lead, at40).join(), /never goes back/, "pinned, but back to #T1");
+  assert.match(errs([seq(39)], lead, at40).join(), /never goes back/);
+  assert.deepEqual(errs([num("t-x", 40), seq(41)], lead, at40), [], "the next number up");
+  const out = checkWrites([num("t-x", 40), seq(41)], { config, who: lead, now, state: at40 });
+  assert.equal(out.state.threadSeq, 41);
+  assert.equal(checkWrites([num("t-y", 41), seq(42, "update", 0)], { config, who: lead, now, state: at40 }).state.threadSeq, 40, "a refused batch moves nothing");
 });
 
 function board(threads, messages = []) {
@@ -68,6 +89,10 @@ test("page: #T27 links to its thread, an unknown number stays text, never inside
   assert.equal(b.linkify("see #T28"), "see #T28");
   assert.match(b.linkify("https://example.com/#T27"), /^<a href="https:\/\/example\.com\/#T27" target="_blank" rel="noopener">https:\/\/example\.com\/#T27<\/a>$/);
   assert.equal(b.linkify("x#T27 #T270"), "x#T27 #T270");
+  for (const u of ["https://x.com/a,#T27", "https://x.com/a!#T27", "https://x.com/(a)#T27", "see example.com/a+#T27"]) {
+    const html = b.linkify(u);
+    assert.doesNotMatch(html, /<a [^>]*<a |href="[^"]*<|t-ref[^<]*<\/a>[^<]*<\/a>/, `no link inside a link: ${html}`);
+  }
 });
 
 test("page: a thread's name and number, escaped; a short cut of its text when it has no name", () => {
@@ -89,4 +114,9 @@ test("page: the ping names the threads a message refers to, so Manager reads the
   assert.deepEqual(JSON.parse(JSON.stringify(b.renameWrites("t-9", "  Collector   setup "))), [{ op: "update", path: "threads/t-9", data: { title: "Collector setup" } }]);
   assert.deepEqual(JSON.parse(JSON.stringify(b.renameWrites("t-new", "x"))), [{ op: "set", path: "threads/t-new", data: { title: "x" } }]);
   assert.deepEqual(JSON.parse(JSON.stringify(b.renameWrites("t-9", "   "))), []);
+});
+
+test("the gate reads each write's pin (if_version), alone or in a batch", () => {
+  assert.equal(writesOf({ action: "update", collection: "meta", doc_id: "threadSeq", data: { next: 3 }, if_version: 4 })[0].if_version, 4);
+  assert.deepEqual(writesOf({ action: "batch", writes: [{ op: "update", collection: "meta", doc_id: "threadSeq", data: { next: 3 }, if_version: 5 }, { op: "set", collection: "threads", doc_id: "a", data: { num: 2 } }] }).map((w) => w.if_version), [5, undefined]);
 });

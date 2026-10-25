@@ -127,7 +127,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
 .t-msg{margin:6px 0}.t-msg .t-from{font-weight:600}.t-msg .t-at{font-size:.8rem;color:var(--muted)}
-.t-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 4px}.t-name{font-weight:700}.t-num{font:inherit;font-size:.8rem;padding:1px 6px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}.t-rename{font:inherit;font-size:.78rem;padding:0;border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer}.t-head input{font:inherit;flex:1;min-width:12em;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}a.t-ref{font-weight:600}
+.t-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 4px}.t-name{font-weight:700}.t-num{font:inherit;font-size:.8rem;padding:1px 6px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}.t-rename{font:inherit;font-size:.78rem;padding:0;border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer}.t-head input{font:inherit;flex:1;min-width:12em;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}a.t-ref{font-weight:600}.t-err{font-size:.8rem;color:var(--bad)}
 .t-msg.t-owner .t-from{color:var(--accent)}.t-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .thread .reply{margin:6px 0 4px 0}
 .t-badge{font-size:.75rem;border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin-left:6px;color:var(--muted)}.t-badge.open{color:var(--bad);border-color:var(--bad)}
@@ -443,8 +443,9 @@ function linkify(t){
   return esc(t).replace(/(?<![@\w.\/-])(https?:\/\/[^\s<]+|(?:[a-z0-9-]+\.)+(?:com|net|org|io|app|dev)(?:\/[^\s<,;)]*)?)/gi,(m)=>{
     const clean=m.replace(/[.,;:)]+$/,""),tail=m.slice(clean.length);const href=/^https?:\/\//i.test(clean)?clean:"https://"+clean;
     return `<a href="${href}" target="_blank" rel="noopener">${clean}</a>${tail}`})
-    // A thread's number (#T27) jumps to that thread; a number no thread has stays plain text. Never inside a link's address.
-    .replace(/(?<![\w\/#&;.=?-])#T(\d{1,6})\b/g,(m,n)=>{const id=threadByNum(Number(n));return id?`<a href="#" class="t-ref" data-tref="${esc(id)}">${m}</a>`:m});
+    // A thread's number (#T27) jumps to that thread; a number no thread has stays plain text. Only in the text between
+    // the links made above, never inside one (Security: "https://x/a,#T5" once put a link inside an address).
+    .split(/(<a\b[^>]*>[\s\S]*?<\/a>)/).map((part,k)=>k%2?part:part.replace(/(?<![\w\/#&;.=?-])#T(\d{1,6})\b/g,(m,n)=>{const id=threadByNum(Number(n));return id?`<a href="#" class="t-ref" data-tref="${esc(id)}">${m}</a>`:m})).join("");
 }
 function safeImg(u){return typeof u==="string"&&(/^\/_blob\/[A-Za-z0-9_-]+$/.test(u)||/^https:\/\/[^\s"'<>]+$/.test(u))?u:null}
 function shots(w){
@@ -730,7 +731,9 @@ document.addEventListener("click",e=>{const r=e.target.closest&&e.target.closest
   const box=head.querySelector("input");box.value=threadName(id);box.focus();box.select();
   const done=()=>{head.innerHTML=before};
   const save=async()=>{const ws=renameWrites(id,box.value);if(!ws.length)return done();head.querySelector("[data-tsave]").disabled=true;
-    try{await applyWrites(ws)}catch(_){head.querySelector("[data-tsave]").disabled=false;return}};
+    try{await applyWrites(ws)}catch(err){head.querySelector("[data-tsave]").disabled=false;
+      const m=head.querySelector(".t-err")||head.appendChild(Object.assign(document.createElement("span"),{className:"t-err"}));
+      m.textContent=`Not saved (${err&&err.code||"error"}). Try again, or tell Manager in chat.`}};
   head.querySelector("[data-tsave]").addEventListener("click",save);head.querySelector("[data-tcancel]").addEventListener("click",done);
   box.addEventListener("keydown",k=>{if(k.key==="Enter"&&!k.isComposing){k.preventDefault();save()}else if(k.key==="Escape"){k.preventDefault();done()}})});
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-tsend]");if(!b||b.disabled)return;
