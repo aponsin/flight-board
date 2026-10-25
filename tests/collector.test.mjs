@@ -283,7 +283,6 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /never runs with\s+bypassPermissions or in auto mode/);
   assert.match(doc, /Never open, read or print those files/);
   assert.match(doc, /`out_dir` this session's scratchpad folder followed by\s+`\/flight-board-export`/, "the export goes to the run's scratchpad (the save test)");
-  assert.ok(settings.permissions.deny.some((r) => r.startsWith("Read(//private/tmp/claude-<uid>/")) && settings.permissions.deny.some((r) => r.startsWith("Read(//tmp/claude-<uid>/")), "the run's own scratchpad denied to Read (Security)");
   assert.match(doc, /Never read the exported files/);
   assert.match(doc, /The after-ship run is \*\*this same task\*\*/);
   assert.match(doc, /`ctx`;[\s\S]*`query` of `steps`/, "the export takes the memory tiles and the last days' steps for the nudges");
@@ -305,6 +304,7 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.ok(settings.permissions.allow.slice(0, 2).every((r) => r.startsWith("Bash(node <full path of the pinned install>/collector/collect.mjs --config ") && !r.includes("*")), "the two node commands, whole, by full path");
   for (const d of ["Grep", "Glob", "Agent", "SendMessage", "Bash(head:*)", "Bash(tail:*)", "Bash(git:*)", "Bash(npm:*)"]) assert.ok(settings.permissions.deny.includes(d), d);
   assert.equal(settings.permissions.defaultMode, "default");
+  assert.ok(settings.permissions.deny.some((r) => r.startsWith("Read(//private/tmp/claude-<uid>/")) && settings.permissions.deny.some((r) => r.startsWith("Read(//tmp/claude-<uid>/")), "the run's own scratchpad denied to Read (Security)");
   assert.match(doc, /`session_id` the lead's session id/, "a scheduled run reaches another session only by its id, through send_message");
   assert.match(doc, /a correct run asks for nothing\. Any prompt means something is wrong: answer Deny/);
   assert.deepEqual(settings.env, { FLIGHT_BOARD_ROLE: "Collector" });
