@@ -295,6 +295,8 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.ok(!settings.permissions.deny.includes("mcp__ccd_session_mgmt__send_message"));
   assert.match(doc, /never with cd, &&, or anything added or/, "the commands run exactly as allowed (Security)");
   assert.match(doc, /Never pass the document inline/);
+  assert.match(doc, /`get` `derived\/all` with `out_dir` the session's scratchpad folder/, "derived/all's text never enters the session (Security)");
+  assert.match(doc, /must start with `\/\/`, the absolute form/);
   assert.ok(settings.permissions.allow.slice(0, 2).every((r) => r.startsWith("Bash(node collector/collect.mjs --config ") && !r.includes("*")), "the two node commands, whole");
   for (const d of ["Grep", "Glob", "Agent", "SendMessage", "Bash(head:*)", "Bash(tail:*)", "Bash(git:*)", "Bash(npm:*)"]) assert.ok(settings.permissions.deny.includes(d), d);
   assert.equal(settings.permissions.defaultMode, "default");
