@@ -26,7 +26,7 @@ Created only with the owner's yes. Its settings:
   {
     "permissions": {
       "defaultMode": "default",
-      "additionalDirectories": ["<gate.stateDir>/<board id>/mirror.next"],
+      "additionalDirectories": ["<gate.stateDir>/<board id>/mirror.next", "<gate.stateDir>/<board id>/out"],
       "allow": [
         "Bash(node collector/collect.mjs --config <full path to board.config.json> --prepare)",
         "Bash(node collector/collect.mjs --config <full path to board.config.json>)",
@@ -45,8 +45,8 @@ Created only with the owner's yes. Its settings:
 
   Each Bash allow rule is the whole command with the config's full path written out: no wildcards. The denies cover the
   global allow rules a session inherits that could read the export or act elsewhere (they don't match the two node
-  commands). `additionalDirectories` is the one folder step 1's export is saved to (outside the run's folder, so the
-  app asks otherwise); Read stays denied there. Any other command isn't allowed, so it asks, and an unattended run stops. The task never runs with
+  commands). `additionalDirectories` is the two folders the run touches outside its own (the app asks otherwise): step 1's
+  export (`mirror.next`) and step 3's `out`, never their parent, which holds the gate's state; Read stays denied there. Any other command isn't allowed, so it asks, and an unattended run stops. The task never runs with
   bypassPermissions or in auto mode. Two limits are the prompt's only, not the permission rules': ArtifactData on **the
   board's link only**, and SendMessage **to the lead's session id only** (`local_…`, written in the prompt: a scheduled run reaches no session by
   its name).

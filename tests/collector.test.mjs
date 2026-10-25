@@ -291,7 +291,7 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.ok(settings.permissions.allow.slice(0, 2).every((r) => r.startsWith("Bash(node collector/collect.mjs --config ") && !r.includes("*")), "the two node commands, whole");
   for (const d of ["Read", "Grep", "Glob", "Agent", "Bash(head:*)", "Bash(tail:*)", "Bash(git:*)", "Bash(npm:*)", "mcp__ccd_session_mgmt__send_message"]) assert.ok(settings.permissions.deny.includes(d), d);
   assert.equal(settings.permissions.defaultMode, "default");
-  assert.deepEqual(settings.permissions.additionalDirectories, ["<gate.stateDir>/<board id>/mirror.next"], "only the export's folder (Security)");
+  assert.deepEqual(settings.permissions.additionalDirectories, ["<gate.stateDir>/<board id>/mirror.next", "<gate.stateDir>/<board id>/out"], "only the export's folder and step 3's out, never the parent (Security)");
   assert.match(doc, /SendMessage to the lead's\s+session id/, "a scheduled run reaches no session by name");
   assert.match(doc, /a correct run asks for nothing\. Any prompt means something is wrong: answer Deny/);
   assert.deepEqual(settings.env, { FLIGHT_BOARD_ROLE: "Collector" });
