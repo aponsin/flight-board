@@ -17,10 +17,14 @@ import { readLines, sessionRole } from "./session.mjs";
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"]);
 export const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
-// The state to save, with the higher thread counter of this call's copy and the file now (after.mjs may have raised it).
+// The state to save, with what after.mjs keeps taken from the file now (it may have written since this call read it):
+// the higher thread counter, and the journal and known cards as they are on disk (this hook never changes them).
 export function keepCounter(state, disk) {
   const seq = Math.max(state?.threadSeq ?? 0, Number.isInteger(disk?.threadSeq) ? disk.threadSeq : 0);
-  return seq ? { ...state, threadSeq: seq } : state;
+  const out = { ...state };
+  if (seq) out.threadSeq = seq;
+  for (const k of ["journal", "known"]) if (Array.isArray(disk?.[k])) out[k] = disk[k];
+  return out;
 }
 // The gate's save: the file is read again just before writing, so a counter after.mjs raised meanwhile is kept.
 export function saveState(path, state) {
@@ -68,7 +72,7 @@ export function readMirror(dir) {
 // The writes the gate let through since the mirror was exported, laid over it: the mirror then shows each card as it is
 // now (a card closed after the export is closed here too). journal: [{ op, collection, doc_id, data, at }].
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-const OVERLAY = new Set(["initiatives", "waiting", "ideas", "messages", "derived"]);
+export const OVERLAY = new Set(["initiatives", "waiting", "ideas", "messages", "derived"]);
 export function withJournal(mirror, journal) {
   if (!mirror) return null;
   const docs = Object.fromEntries(Object.entries(mirror.docs).map(([c, list]) => [c, list.map((d) => ({ ...d }))]));
@@ -128,11 +132,9 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
     // ...with every write the gate let through since its export laid over it.
     const mirror = m && now - m.at < config.gate.mirrorMaxAgeMin * 60e3 ? withJournal(m, state.journal) : null;
     const out = checkWrites(writes, { config, who, now, state, mirror });
-    const known = new Set(state.known ?? []);
-    if (!out.errors.length) for (const w of writes) if (w.collection === "initiatives" && w.op !== "delete") known.add(w.doc_id);
-    // The journal keeps the accepted writes of the board-state collections, newest 500, for the overlay.
-    const journal = out.errors.length ? (state.journal ?? []) : [...(state.journal ?? []), ...writes.filter((w) => OVERLAY.has(w.collection)).map((w) => ({ op: w.op, collection: w.collection, doc_id: w.doc_id, data: w.data, at: now }))].slice(-500);
-    save({ ...out.state, known: [...known], journal });
+    // The journal and the known cards are written by gate/after.mjs once the board applied the write (a write the
+    // gate lets through can still be refused, at the app's consent card or by a stale pin: Security).
+    save(out.state);
     return out.errors.length ? { block: refusalText(out.errors, out.stuckNow, now) } : {};
   }
   if (SEND_TOOLS.has(input?.tool_name) && who.manager) {

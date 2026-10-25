@@ -10,6 +10,7 @@ import { checkWrites, writeErrors, refusalText } from "../gate/rules.mjs";
 import { run, handOff, checkHandOff, readMirror, writesOf } from "../gate/gate.mjs";
 import { sessionRole, currentTurn } from "../gate/session.mjs";
 import { stopCheck } from "../gate/stop.mjs";
+import { after } from "../gate/after.mjs";
 
 const URL_ = "https://claude.ai/" + "artifact/TestBoard01";
 const config = fullConfig({ artifactUrl: URL_, gate: { transientPrefixes: ["needs-user-"] } });
@@ -197,7 +198,8 @@ test("the hook: refuses with reasons, keeps its state, counts cards it let throu
     const cfg = fullConfig({ artifactUrl: URL_, gate: { stateDir: dir } });
     const transcript = join(dir, "t.jsonl");
     writeFileSync(transcript, JSON.stringify({ type: "custom-title", customTitle: "Manager" }) + "\n");
-    const call = (tool_name, tool_input) => run({ tool_name, tool_input, transcript_path: transcript }, { config: cfg, env: {} });
+    // A whole tool call: the gate before it, and after.mjs when the board applied it (PostToolUse, on success only).
+    const call = (tool_name, tool_input) => { const r = run({ tool_name, tool_input, transcript_path: transcript }, { config: cfg, env: {} }); if (!r.block) after({ tool_name, tool_input }, { config: cfg }); return r; };
     assert.match(call("ArtifactData", { url: URL_, action: "set", collection: "waiting", doc_id: "w", data: { kind: "action", text: "Do", since: now } }).block, /no steps/);
     assert.equal(JSON.parse(readFileSync(join(dir, "TestBoard01", "gate.json"), "utf8")).refusals["waiting:w"], 1);
     assert.deepEqual(call("ArtifactData", { url: "https://claude.ai/" + "artifact/Other01", action: "set", collection: "waiting", doc_id: "w", data: {} }), {}, "another board passes");
@@ -348,7 +350,12 @@ test("Manager's find, Checker's probe: the writes the gate let through since the
     const transcript = join(dir, "t.jsonl");
     writeFileSync(transcript, JSON.stringify({ type: "custom-title", customTitle: "Manager" }) + "\n");
     let clock = Date.now() + 1000;
-    const call = (tool_input) => run({ tool_name: "ArtifactData", tool_input: { url: URL_, ...tool_input }, transcript_path: transcript }, { config: cfg, env: {}, now: (clock += 1000) });
+    const call = (tool_input) => {
+      const input = { tool_name: "ArtifactData", tool_input: { url: URL_, ...tool_input }, transcript_path: transcript };
+      const r = run(input, { config: cfg, env: {}, now: (clock += 1000) });
+      if (!r.block) after(input, { config: cfg }); // the board applied it: PostToolUse
+      return r;
+    };
     mkdirSync(join(dir, "TestBoard01", "mirror", "initiatives"), { recursive: true });
     writeFileSync(join(dir, "TestBoard01", "mirror", "initiatives", "old-card.json"), JSON.stringify({ status: "active", phase: "build", who: "Builder" }));
     writeFileSync(join(dir, "TestBoard01", "mirror", "initiatives", "new-card.json"), JSON.stringify({ status: "active", phase: "plan" }));
@@ -423,4 +430,29 @@ test("Security: a journaled write's __proto__, constructor or prototype key is s
   assert.equal(Object.hasOwn(card, "prototype"), false);
   assert.equal(card.polluted, undefined);
   assert.equal({}.polluted, undefined);
+});
+
+test("Security: a write the gate let through but the board refused leaves the journal and the known cards unchanged", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fb-refused-"));
+  try {
+    const cfg = fullConfig({ artifactUrl: URL_, gate: { stateDir: dir } });
+    const transcript = join(dir, "t.jsonl");
+    writeFileSync(transcript, JSON.stringify({ type: "custom-title", customTitle: "Manager" }) + "\n");
+    const input = { tool_name: "ArtifactData", tool_input: { url: URL_, action: "set", collection: "derived", doc_id: "all", data: { cards: {} } }, transcript_path: transcript };
+    const card = { tool_name: "ArtifactData", tool_input: { url: URL_, action: "set", collection: "initiatives", doc_id: "new-card", data: { name: "X", size: "S", status: "active", level: "Quick", plannedVersion: "1.0.0", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now } }, transcript_path: transcript };
+    assert.deepEqual(run(input, { config: cfg, env: {} }), {});
+    assert.deepEqual(run(card, { config: cfg, env: {} }), {});
+    // Neither reached the board (a consent card refused, a stale pin): no PostToolUse.
+    const state = () => { try { return JSON.parse(readFileSync(join(dir, "TestBoard01", "gate.json"), "utf8")); } catch { return {}; } };
+    assert.deepEqual(state().journal ?? [], [], "nothing journaled before the board applied it");
+    assert.deepEqual(state().known ?? [], []);
+    after(input, { config: cfg });
+    after(card, { config: cfg });
+    assert.deepEqual(state().journal.map((w) => `${w.collection}/${w.doc_id}`), ["derived/all", "initiatives/new-card"], "applied: journaled");
+    assert.deepEqual(state().known, ["new-card"]);
+    // A later gate call keeps what after.mjs wrote.
+    run({ ...input, tool_input: { ...input.tool_input, action: "get" } }, { config: cfg, env: {} });
+    run(input, { config: cfg, env: {} });
+    assert.equal(state().journal.length, 2, "the gate's own save never drops the journal");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

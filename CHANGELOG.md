@@ -3,6 +3,7 @@
 ## 0.3.1 - Unreleased
 
 ### Changed
+- The gate's journal (laid over the mirror) and its known cards are written by `gate/after.mjs`, once the board applied a write: a write the gate let through but the app or a stale pin refused no longer shows as done (Security).
 - A reply's or thread message's files: an image is a thumbnail that opens in the board's lightbox (← →, zoom, Esc), with that message's other images; any other file downloads in place. No new tab, which a sandboxed board can't open (the links were broken).
 - The "Start a thread" box takes files like a reply box: Attach, paste or drop images and files; they go on the new thread's first message.
 - Text boxes work like the chat app where a box has one action (a thread's Send, Send to Manager, an answer's Ack): Enter sends; Shift+Enter or ⌘+Enter (Ctrl+Enter off a Mac) adds a line. Where a box has two outcomes (Done or "Something went wrong", OK or "Change something", options), Enter does nothing and the box says to click a button. Nothing while an input method composes, in an empty box or on a disabled button.

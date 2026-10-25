@@ -7,15 +7,21 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardId, checkConfig, fullConfig } from "../scripts/config.mjs";
 import { THREAD_SEQ } from "./rules.mjs";
-import { writesOf, home, writeState } from "./gate.mjs";
+import { writesOf, home, writeState, OVERLAY } from "./gate.mjs";
 
 const WRITES = new Set(["set", "update", "batch"]);
 
-// state with what an applied write teaches the gate: the highest counter it has seen applied.
-export function afterWrite(state, writes) {
+// state with what an applied write teaches the gate: the highest thread counter applied, the cards it created (for
+// the hand-off check), and the journal of board-state writes, newest 500, which the gate lays over the mirror.
+export function afterWrite(state, writes, now = Date.now()) {
+  let next = state;
   const seq = writes.find((w) => w.collection === "meta" && w.doc_id === THREAD_SEQ && w.op !== "delete" && Number.isInteger(w.data?.next));
-  if (!seq) return state;
-  return { ...state, threadSeq: Math.max(state?.threadSeq ?? 0, seq.data.next) };
+  if (seq) next = { ...next, threadSeq: Math.max(next?.threadSeq ?? 0, seq.data.next) };
+  const cards = writes.filter((w) => w.collection === "initiatives" && w.op !== "delete").map((w) => w.doc_id);
+  if (cards.length) next = { ...next, known: [...new Set([...(next?.known ?? []), ...cards])] };
+  const kept = writes.filter((w) => OVERLAY.has(w.collection));
+  if (kept.length) next = { ...next, journal: [...(next?.journal ?? []), ...kept.map((w) => ({ op: w.op, collection: w.collection, doc_id: w.doc_id, data: w.data, at: now }))].slice(-500) };
+  return next;
 }
 
 // One hook call: { tool_name, tool_input }. Returns the new state, or null when the call isn't a write to this board.
