@@ -320,11 +320,12 @@ test("attachments: chosen files show as removable chips, names escaped; they sur
   assert.match(html, /<span class="fchip">(?:<button type="button" class="thumb fthumb"[^>]*><img [^>]*><\/button>)?&lt;b&gt;x&lt;\/b&gt;\.png <small>2\.5 MB<\/small><button type="button" class="fx" data-unattach="w1" data-n="0" aria-label="Remove &lt;b&gt;x&lt;\/b&gt;\.png">×<\/button><\/span>/);
 });
 
-test("attachments: a sent reply lists its files as links to the board's stored copies; bad ids are dropped", () => {
+test("attachments: a sent reply shows its files from the board's stored copies, never in a new tab; bad ids are dropped", () => {
   const html = renderWaitingHtml([{ id: "w1", kind: "action", text: "Do it", steps: ["x"], since: Date.now(), done: false, ping: "sent",
     response: { status: "help", note: "see", at: Date.now(), files: [{ id: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6", name: "err.png", type: "image/png" }, { id: "../evil", name: "bad" }] } }]);
-  assert.match(html, /<a href="\/_blob\/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6" target="_blank" rel="noopener">err\.png<\/a>/);
+  assert.match(html, /<button type="button" class="thumb fthumb" data-full="\/_blob\/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6" data-cap="err\.png"><img src="\/_blob\/a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"/);
   assert.doesNotMatch(html, /evil/);
+  assert.doesNotMatch(html, /target="_blank"/);
 });
 
 test("attachments: the ping to Manager names each file with its id, so Manager can download it", () => {
@@ -356,7 +357,7 @@ test("attachments: a picture shows as a small preview in its chip, which opens f
 test("a preview in a chip opens in the same full-size view as screenshots", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-  assert.match(src, /thumb\.closest\("\.shots,\.files"\)/);
+  assert.match(src, /thumb\.closest\("\.shots,\.files,\.sentfiles"\)/);
 });
 
 test("'Who is on what' is a collapsible panel, closed by default", async () => {

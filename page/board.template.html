@@ -398,8 +398,14 @@ function fmtSize(b){return b<1048576?Math.max(1,Math.round(b/1024))+" KB":(b/104
 function filesHtml(id){if(!assetsRef)return "";const list=pendingFiles.get(id)||[];
   return `<div class="files"><button type="button" class="attach" data-attach="${esc(id)}">Attach</button><input type="file" id="file-${esc(id)}" data-files="${esc(id)}" multiple hidden accept="${ACCEPT}">${list.map((f,n)=>{const pv=previewUrl(f);return `<span class="fchip">${pv?`<button type="button" class="thumb fthumb" data-full="${esc(pv)}" data-cap="${esc(f.name)}"><img src="${esc(pv)}" alt="Preview of ${esc(f.name)}"></button>`:""}${esc(f.name)} <small>${fmtSize(f.size)}</small><button type="button" class="fx" data-unattach="${esc(id)}" data-n="${n}" aria-label="Remove ${esc(f.name)}">×</button></span>`}).join("")}${list.length?"":'<span class="hint">or paste or drop files here (images, PDFs, text; 15 MB each)</span>'}</div>`}
 const blobId=x=>typeof x==="string"&&/^[A-Za-z0-9_-]{8,64}$/.test(x);
+// A sent reply's or message's files, at the board's own asset path (/_blob/<id>): an image is a thumbnail that opens in
+// the lightbox, with that reply's other images; any other file downloads in place. Never a new tab: the board runs in
+// a sandboxed frame, where a new tab can't open the board's own address.
+function fileLinks(fs){return fs.map(f=>/^image\//.test(String(f.type||""))
+  ?`<button type="button" class="thumb fthumb" data-full="/_blob/${f.id}" data-cap="${esc(f.name||"image")}"><img src="/_blob/${f.id}" alt="${esc(f.name||"image")}" loading="lazy"></button>`
+  :`<a href="/_blob/${f.id}" download="${esc(f.name||"file")}">${esc(f.name||"file")}</a>`).join(" ")}
 function sentFiles(r){const fs=(Array.isArray(r&&r.files)?r.files:[]).filter(f=>f&&blobId(f.id));
-  return fs.length?` <span class="sentfiles">Files: ${fs.map(f=>`<a href="/_blob/${f.id}" target="_blank" rel="noopener">${esc(f.name||"file")}</a>`).join(", ")}</span>`:""}
+  return fs.length?` <span class="sentfiles">Files: ${fileLinks(fs)}</span>`:""}
 function addFiles(id,fl){const list=pendingFiles.get(id)||[],errs=[];
   [...(fl||[])].forEach(f=>{const c=fileCheck(f);if(c.error)errs.push(c.error);else if(list.length>=MAXN)errs.push(`${f.name}: ${MAXN} files at most per reply.`);else list.push(f)});
   pendingFiles.set(id,list);renderWaiting();renderThreads();renderBoard();const msg=document.getElementById("msg-"+id);if(msg)msg.textContent=errs.join(" ")}
@@ -444,7 +450,7 @@ function shots(w){
 let lbSet=[],lbIdx=0;
 function showShot(){const it=lbSet[lbIdx];if(!it)return;resetZoom();$("lb-img").src=it.src;$("lb-img").alt=it.cap;$("lb-cap").textContent=it.cap+(lbSet.length>1?`  (${lbIdx+1} of ${lbSet.length})`:"");
   $("lb-prev").hidden=$("lb-next").hidden=lbSet.length<2}
-function openShot(thumb){const scope=thumb.closest(".shots,.files")||document;lbSet=[...scope.querySelectorAll(".thumb")].map(t=>({src:t.dataset.full,cap:t.dataset.cap}));
+function openShot(thumb){const scope=thumb.closest(".shots,.files,.sentfiles")||document;lbSet=[...scope.querySelectorAll(".thumb")].map(t=>({src:t.dataset.full,cap:t.dataset.cap}));
   lbIdx=Math.max(0,[...scope.querySelectorAll(".thumb")].indexOf(thumb));showShot();$("lightbox").hidden=false;$("lb-close").focus()}
 function stepShot(d){if(lbSet.length<2)return;lbIdx=(lbIdx+d+lbSet.length)%lbSet.length;showShot()}
 function closeShot(){$("lightbox").hidden=true;resetZoom();$("lb-img").removeAttribute("src")}
@@ -625,7 +631,7 @@ function closeWrites(id,now,rid){const out=[{op:"set",path:`messages/m${now}-${r
 function takeDraft(ta){const text=(ta&&ta.value||"").trim();if(ta)ta.value="";
   return {text,restore:()=>{const t=ta&&ta.id?document.getElementById(ta.id):ta;if(t&&!t.value)t.value=text}}}
 function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&blobId(f.id));
-  return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${linkify(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fs.map(f=>`<a href="/_blob/${f.id}" target="_blank" rel="noopener">${esc(f.name||"file")}</a>`).join(", ")}</div>`:""}</div>`}
+  return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${linkify(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}</div>`}
 // A thread and its reply box. where: the place it is drawn (the same thread can show in two places), for unique ids.
 function threadHtml(id,where,{box=true}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`;
   return `<div class="thread" data-thread="${esc(id)}">${t.map(msgHtml).join("")}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${keysHint()}${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button>${t.length&&!threadResolved(id)?`<button type="button" data-tclose="${esc(id)}" data-where="${esc(where)}">Close</button>`:""}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}</div>`}

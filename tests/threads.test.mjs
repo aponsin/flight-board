@@ -261,3 +261,27 @@ test("Needs you: the open asks, then the threads Manager answered; empty, it say
   assert.match(renderWaitingHtml([]), /Nothing needs you\./);
   assert.doesNotMatch(renderWaitingHtml([], { messages: [msg("t-9", "Owner", "Waiting", T)] }), /Waiting/, "the owner's own last word waits on Manager, not here");
 });
+
+test("a thread message's files: an image opens in the lightbox with that message's other images, Esc-able; any other file downloads in place", () => {
+  const b = loadNames(["msgHtml", "openShot", "closeShot"]);
+  const id1 = "392a9fe2edba5da37e73585fbc68825a", id2 = "d2ff20e3dc150c8fff5417cd8f4e6544", id3 = "0304d2adb98fa84a699c66a27aab61e9";
+  const html = b.msgHtml({ thread: "t-1", from: "Sam", text: "x", at: 1, assets: [
+    { id: id1, name: "a.png", type: "image/png" }, { id: id2, name: 'b"<i>.png', type: "image/png" }, { id: id3, name: "log.txt", type: "text/plain" }, { id: "../x", name: "bad", type: "image/png" }] });
+  assert.match(html, new RegExp(`<button type="button" class="thumb fthumb" data-full="/_blob/${id1}" data-cap="a.png"><img src="/_blob/${id1}" alt="a.png" loading="lazy"></button>`));
+  assert.match(html, /data-cap="b&quot;&lt;i&gt;\.png"/, "a file name is escaped");
+  assert.match(html, new RegExp(`<a href="/_blob/${id3}" download="log.txt">log.txt</a>`));
+  assert.doesNotMatch(html, /target=|\.\.\/x|<i>/);
+  // Clicking the second image opens the lightbox on it, with the message's two images to step through.
+  const thumbs = [{ dataset: { full: `/_blob/${id1}`, cap: "a.png" } }, { dataset: { full: `/_blob/${id2}`, cap: "b.png" } }];
+  const scope = { querySelectorAll: () => thumbs };
+  for (const t of thumbs) t.closest = (sel) => (sel.split(",").includes(".sentfiles") ? scope : null);
+  b.els["lb-img"] = { src: "", alt: "", style: {}, classList: { add() {}, remove() {} }, removeAttribute(n) { this[n] = ""; } };
+  b.els["lb-close"] = { focus() {} };
+  b.els.lightbox = { hidden: true };
+  b.openShot(thumbs[1]);
+  assert.equal(b.els.lightbox.hidden, false);
+  assert.equal(b.els["lb-img"].src, `/_blob/${id2}`);
+  assert.match(b.els["lb-cap"].textContent, /b\.png {2}\(2 of 2\)/);
+  b.closeShot();
+  assert.equal(b.els.lightbox.hidden, true, "Esc's close");
+});
