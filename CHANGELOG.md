@@ -3,6 +3,7 @@
 ## 0.3.1 - Unreleased
 
 ### Changed
+- The collector's fence (`collector/fence.mjs`): a PreToolUse hook on every tool, in the collector's state folder only, that lets through exactly the steps of TASK.md (the two collect commands, the board's exports into the run's scratchpad, set `derived/all` from its file, one message to the lead) and refuses everything else, failing closed. It is what makes the collector safe to run in auto mode, where the board write no longer asks every hour (Security).
 - Every ask, answer and initiative shows its thread's #T number (copy on click) and, once renamed, its name on its top line, before it opens. With no name of its own, a thread is named by its item's text, so none is ever unnamed.
 - The gate's journal (laid over the mirror) and its known cards are written by `gate/after.mjs`, once the board applied a write: a write the gate let through but the app or a stale pin refused no longer shows as done (Security).
 - A reply's or thread message's files: an image is a thumbnail that opens in the board's lightbox (← →, zoom, Esc), with that message's other images; any other file downloads in place. No new tab, which a sandboxed board can't open (the links were broken).
