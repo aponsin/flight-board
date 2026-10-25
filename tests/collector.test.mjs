@@ -293,7 +293,7 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.equal(settings.permissions.defaultMode, "default");
   assert.deepEqual(settings.permissions.additionalDirectories, ["<gate.stateDir>/<board id>/mirror.next"], "only the export's folder (Security)");
   assert.match(doc, /SendMessage to the lead's\s+session id/, "a scheduled run reaches no session by name");
-  assert.match(doc, /no prompt of a run with "always allow"/);
+  assert.match(doc, /a correct run asks for nothing\. Any prompt means something is wrong: answer Deny/);
   assert.deepEqual(settings.env, { FLIGHT_BOARD_ROLE: "Collector" });
   assert.match(doc, /the four steps below, written out in full \(the task can't Read this file\)/);
 });

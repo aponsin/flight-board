@@ -12,8 +12,9 @@ Created only with the owner's yes. Its settings:
 - **Folder**: this repository, at the signed commit the hooks pin (`~/.flight-board/install/<sha>`). The folder is set in
   the app's view of the task (the task's own file has none, and the scheduled-task tools can't set one): set it, save,
   open the task again and check it. A run in any other folder loads none of the settings below.
-- **Approvals**: answer no prompt of a run with "always allow": the app saves it on the task, and every later run
-  inherits it. One saved by mistake is removed only by deleting the task and creating it again.
+- **Approvals**: a correct run asks for nothing. Any prompt means something is wrong: answer Deny (never allow, once or
+  always), stop the run and tell Security. An "always allow" is saved on the task and every later run inherits it; one
+  saved by mistake goes only by deleting the task and creating it again.
 - **Session title**: exactly `Collector`, which is the task's own title in the app: the app gives each run's session
   the task's title before its first tool call. And `FLIGHT_BOARD_ROLE=Collector` in its settings (below): if the two
   ever disagree, the gate refuses every write, which fails closed and shows. The gate refuses every board write from

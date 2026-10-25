@@ -4,7 +4,7 @@
 
 ### Changed
 - The collector runs hourly (the app's scheduler): the gate counts its mirror fresh for 75 minutes, not 30 (`gate.mirrorMaxAgeMin`), so the board-state rules keep running between runs. A scheduled run's session takes the task's own title, so the task is titled `Collector` and the role rule is unchanged.
-- The collector's first run (TASK.md): the folder is set in the app's view of the task and checked after saving; the export's one folder (`mirror.next`) is the task's `additionalDirectories`; the lead is messaged by session id, since a scheduled run reaches no session by name; no prompt is answered with "always allow" (the app keeps it on the task).
+- The collector's first run (TASK.md): the folder is set in the app's view of the task and checked after saving; the export's one folder (`mirror.next`) is the task's `additionalDirectories`; the lead is messaged by session id, since a scheduled run reaches no session by name; a correct run asks for nothing, so any prompt is answered Deny and the run stopped (an "always allow" stays on the task).
 
 ### Added
 - A Close button on every open thread: the owner's message marks it resolved (and closes an ask or idea), with no ping; it folds into Resolved.
