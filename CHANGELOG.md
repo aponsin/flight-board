@@ -3,6 +3,7 @@
 ## 0.3.1 - Unreleased
 
 ### Changed
+- Text boxes work like the chat app: Enter presses the box's main button (Done, OK, Ack, Send, Send to Manager); Shift+Enter or ⌘+Enter (Ctrl+Enter off a Mac) adds a line. Nothing while an input method composes, in an empty box, on a disabled button or in a decision with options. Each box says so under it.
 - The collector runs hourly (the app's scheduler): the gate counts its mirror fresh for 75 minutes, not 30 (`gate.mirrorMaxAgeMin`), so the board-state rules keep running between runs. A scheduled run's session takes the task's own title, so the task is titled `Collector` and the role rule is unchanged.
 - The collector's first run (TASK.md): the folder is set in the app's view of the task and checked after saving; the export's folder (`mirror.next`) and step 3's `out` are the task's `additionalDirectories`, never their parent; the lead is messaged by session id, since a scheduled run reaches no session by name; a correct run asks for nothing, so any prompt is answered Deny and the run stopped (an "always allow" stays on the task).
 
