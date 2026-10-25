@@ -6,10 +6,10 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { fullConfig } from "../scripts/config.mjs";
+import { fullConfig, checkConfig } from "../scripts/config.mjs";
 import { boardIdOf, headFor, reviewsFor, derivePhase, conflict, staleLive } from "../collector/derive.mjs";
 import { remoteHeads, signedPhases, versionFor, mainLine, factsFor, shippedHeads } from "../collector/facts.mjs";
-import { collect, localNotes, prepareMirror, swapMirror, runNudges } from "../collector/collect.mjs";
+import { collect, localNotes, prepareMirror, swapMirror, runNudges, outPath } from "../collector/collect.mjs";
 import { mirrorErrors, checkWrites } from "../gate/rules.mjs";
 
 const config = fullConfig({ owner: "Sam", collector: { repoPath: "/x", notes: { language: "refs/notes/linguist", checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
@@ -288,8 +288,9 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /`NUDGE` line/);
   const settings = JSON.parse(doc.match(/```json\n([\s\S]*?)\n  ```/)[1].replace(/^  /gm, ""));
   assert.deepEqual(settings.permissions.allow.slice(3), ["ArtifactData", "ToolSearch", "mcp__ccd_session_mgmt__send_message", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
-  assert.match(settings.permissions.allow[2], /^Read\(\/<[^>]+>\/out\/derived-all\.json\)$/, "the one file the run reads: step 3's output (Security)");
-  for (const d of ["mirror.next/**", "mirror/**", "gate.json"]) assert.ok(settings.permissions.deny.some((r) => r.startsWith("Read(/") && r.endsWith(`/${d})`)), `Read of ${d} denied`);
+  assert.equal(settings.permissions.allow[2], "Read(/<full path of collector.outDir>/derived-all.json)", "the one file the run reads: step 2's output, outside the run's folder (Security)");
+  assert.ok(settings.permissions.deny.includes("Read(/<full path of gate.stateDir/board id>/**)"), "the run's own folder denied to Read whole (Security)");
+  for (const r of ["cat", "less", "grep", "rg", "find", "sed", "awk", "jq", "python3", "node -e"]) assert.ok(settings.permissions.deny.includes(`Bash(${r}:*)`), `the shell's ${r}`);
   assert.ok(!settings.permissions.deny.includes("Read"), "no bare Read deny: it blocks the set from file (the first run)");
   for (const d of ["clear_session", "set_remote_control", "stop_session", "archive_session", "delete_session", "set_session_permission_mode"]) assert.ok(settings.permissions.deny.includes(`mcp__ccd_session_mgmt__${d}`), d);
   assert.ok(!settings.permissions.deny.includes("mcp__ccd_session_mgmt__send_message"));
@@ -306,4 +307,12 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /a correct run asks for nothing\. Any prompt means something is wrong: answer Deny/);
   assert.deepEqual(settings.env, { FLIGHT_BOARD_ROLE: "Collector" });
   assert.match(doc, /the four steps below, written out in full \(the task can't Read this file\)/);
+});
+
+test("the output goes to collector.outDir when set (outside the state folder the run works in), else <dir>/out", () => {
+  assert.equal(outPath(fullConfig({}), "/s/board"), "/s/board/out/derived-all.json");
+  assert.equal(outPath(fullConfig({ collector: { outDir: "/s/board-out" } }), "/s/board"), "/s/board-out/derived-all.json");
+  assert.match(outPath(fullConfig({ collector: { outDir: "~/x-out" } }), "/s/board"), /^\/.+\/x-out\/derived-all\.json$/, "~ is the home folder");
+  assert.deepEqual(checkConfig({ collector: { outDir: "~/.flight-board/b-out" } }), []);
+  assert.ok(checkConfig({ collector: { outDir: "a\nb" } }).some((p) => p.startsWith("collector.outDir")));
 });
