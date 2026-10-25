@@ -3,6 +3,7 @@
 ## 0.3.1 - Unreleased
 
 ### Changed
+- A thread shows its newest message first, under one reply box at the top. An ask you haven't answered keeps only its own box (its buttons and note), so the thread's box no longer shows a second time after the last message. Once you have answered, the thread's box takes its place.
 - The collector's fence (`collector/fence.mjs`): a PreToolUse hook on every tool, in the collector's state folder only, that lets through exactly the steps of TASK.md (the two collect commands, the board's exports into the run's scratchpad, set `derived/all` from its file, one message to the lead) and refuses everything else, failing closed. It is what makes the collector safe to run in auto mode, where the board write no longer asks every hour (Security).
 - Every ask, answer and initiative shows its thread's #T number (copy on click) and, once renamed, its name on its top line, before it opens. With no name of its own, a thread is named by its item's text, so none is ever unnamed.
 - The gate's journal (laid over the mirror) and its known cards are written by `gate/after.mjs`, once the board applied a write: a write the gate let through but the app or a stale pin refused no longer shows as done (Security).

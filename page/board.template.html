@@ -354,7 +354,7 @@ function askHtml(w,open){const steps=Array.isArray(w.steps)?w.steps:[];
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
    return `<details class="w-item" data-id="${esc(w.id)}"${open.has(w.id)?" open":""}><summary class="w-row">${head}</summary>
-   <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}</li>`:`<li>${linkify(s&&s.text||"")}${s&&s.cmd?`<div class="cmd"><code>${esc(s.cmd)}</code><button type="button" class="copy" data-copy="${esc(s.cmd)}">Copy</button></div>`:""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length?threadHtml(w.id,"wait"):""}</details>`}
+   <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}</li>`:`<li>${linkify(s&&s.text||"")}${s&&s.cmd?`<div class="cmd"><code>${esc(s.cmd)}</code><button type="button" class="copy" data-copy="${esc(s.cmd)}">Copy</button></div>`:""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length?threadHtml(w.id,"wait",{box:!!(w.response&&w.response.status)}):""}</details>`}
 // "Needs you": the open asks, Later folded at their end, then the threads where Manager answered and the owner has not
 // closed or replied (their item is no longer on the board).
 function renderWaiting(){
@@ -665,9 +665,11 @@ function takeDraft(ta){const text=(ta&&ta.value||"").trim();if(ta)ta.value="";
   return {text,restore:()=>{const t=ta&&ta.id?document.getElementById(ta.id):ta;if(t&&!t.value)t.value=text}}}
 function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&blobId(f.id));
   return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${linkify(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}</div>`}
-// A thread and its reply box. where: the place it is drawn (the same thread can show in two places), for unique ids.
+// A thread: its reply box at the top, then the messages, newest first (display only: threadOf stays oldest first). An
+// unanswered ask draws it with box false, so its own response box above is the only one. where: the place it is drawn
+// (the same thread can show in two places), for unique ids.
 function threadHtml(id,where,{box=true}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`;
-  return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${t.map(msgHtml).join("")}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${keysHint()}${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button>${t.length&&!threadResolved(id)?`<button type="button" data-tclose="${esc(id)}" data-where="${esc(where)}">Close</button>`:""}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}</div>`}
+  return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${keysHint()}${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button>${t.length&&!threadResolved(id)?`<button type="button" data-tclose="${esc(id)}" data-where="${esc(where)}">Close</button>`:""}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}${t.slice().reverse().map(msgHtml).join("")}</div>`}
 // The thread rows whose item is not on the board (a New thread, or an item since closed): open (the owner's word is the
 // last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their
 // own place at the panel's end (resolvedHtml).

@@ -20,8 +20,35 @@ test("a thread: its own messages only, oldest first and newest last", () => {
 test("case 5: Manager's answer shows in the thread under the ask, not only in a comment the board never shows", () => {
   const html = renderWaitingHtml([{ id: "w1", kind: "action", text: "Click it", since: T }], { messages: [msg("w1", "Owner", "Which button?", T + 1), msg("w1", "Manager", "The green one.", T + 2)] });
   assert.match(html, /class="thread" data-thread="w1"/);
-  assert.ok(html.indexOf("Which button?") < html.indexOf("The green one."), "newest last");
-  assert.match(html, /data-tsend="w1"/, "a reply box in the thread");
+  assert.ok(html.indexOf("The green one.") < html.indexOf("Which button?"), "newest first");
+  assert.match(html, /data-reply="w1"/, "the ask's own box answers it");
+});
+
+// Count the reply boxes in a piece of the page: the ask's own (data-reply="<id>") and the thread's (data-reply="th:<id>").
+const boxes = (html) => (html.match(/<div class="reply" data-reply="/g) ?? []).length;
+const before = (html, a, b) => html.indexOf(a) >= 0 && html.indexOf(a) < html.indexOf(b);
+
+test("one reply box in every state, always above the messages, which show newest first", () => {
+  const thread = [msg("w2", "Owner", "first words", T + 1), msg("w2", "Manager", "latest words", T + 2)];
+  // An open ask: its own box (buttons and note), then the thread's messages, and no thread box.
+  const open = renderWaitingHtml([{ id: "w2", kind: "action", text: "Do it", since: T }], { messages: thread });
+  assert.equal(boxes(open), 1);
+  assert.match(open, /data-reply="w2"/);
+  assert.doesNotMatch(open, /data-tsend="w2"/);
+  assert.ok(before(open, 'data-reply="w2"', "latest words") && before(open, "latest words", "first words"));
+  // An answered ask: the "You marked this done" line, then the thread box, then the messages.
+  const b = board({ waiting: [{ id: "w2", kind: "action", text: "Do it", since: T, response: { status: "done", at: 1000 }, ping: "sent" }], messages: thread });
+  const answered = b.threadsHtml(T);
+  assert.equal(boxes(answered), 1);
+  assert.match(answered, /data-reply="th:w2"/);
+  assert.ok(before(answered, "You marked this done", 'data-reply="th:w2"') && before(answered, 'data-reply="th:w2"', "latest words") && before(answered, "latest words", "first words"));
+  // A thread drawn on its own (a panel row, an initiative's fold): its box, then the messages.
+  const alone = b.threadHtml("w2", "init");
+  assert.equal(boxes(alone), 1);
+  assert.ok(before(alone, 'data-reply="th:w2"', "latest words") && before(alone, "latest words", "first words"));
+  assert.equal(boxes(b.threadHtml("w2", "panel", { box: false })), 0);
+  // Display only: the thread itself stays oldest first, so the last word (open or answered) is still the newest.
+  assert.deepEqual(b.threadOf("w2").map((m) => m.text), ["first words", "latest words"]);
 });
 
 test("an answered ask moves from Needs you to Waiting on Manager, with its reply and thread, until Manager closes it", () => {
