@@ -17,8 +17,6 @@ import { readLines, sessionRole } from "./session.mjs";
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"]);
 export const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
-// gate.json has two writers (this hook and gate/after.mjs), which parallel calls can interleave: each writes a file of its
-// own and renames it into place, so a reader never sees half a file and a write is whole or not at all (Security).
 // The state to save, with the higher thread counter of this call's copy and the file now (after.mjs may have raised it).
 export function keepCounter(state, disk) {
   const seq = Math.max(state?.threadSeq ?? 0, Number.isInteger(disk?.threadSeq) ? disk.threadSeq : 0);
@@ -30,6 +28,8 @@ export function saveState(path, state) {
   try { disk = JSON.parse(readFileSync(path, "utf8")); } catch { /* none yet */ }
   writeState(path, keepCounter(state, disk));
 }
+// gate.json has two writers (this hook and gate/after.mjs), which parallel calls can interleave: each writes a file of its
+// own and renames it into place, so a reader never sees half a file and a write is whole or not at all (Security).
 export function writeState(path, state) {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
