@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { fullConfig, checkConfig } from "../scripts/config.mjs";
 import { boardIdOf, headFor, reviewsFor, derivePhase, conflict, staleLive } from "../collector/derive.mjs";
 import { remoteHeads, signedPhases, versionFor, mainLine, factsFor, shippedHeads } from "../collector/facts.mjs";
-import { collect, localNotes, prepareMirror, swapMirror, runNudges, outPath } from "../collector/collect.mjs";
+import { collect, localNotes, prepareMirror, swapMirror, runNudges, outPath, scratchRoots, findExport, takeExport, EXPORT_NAME } from "../collector/collect.mjs";
 import { mirrorErrors, checkWrites } from "../gate/rules.mjs";
 
 const config = fullConfig({ owner: "Sam", collector: { repoPath: "/x", notes: { language: "refs/notes/linguist", checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
@@ -282,6 +282,7 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /no wildcards/);
   assert.match(doc, /never runs with\s+bypassPermissions or in auto mode/);
   assert.match(doc, /Never open, read or print those files/);
+  assert.match(doc, /`out_dir` this session's scratchpad folder followed by\s+`\/flight-board-export`/, "the export goes to the run's scratchpad (the save test)");
   assert.match(doc, /Never read the exported files/);
   assert.match(doc, /The after-ship run is \*\*this same task\*\*/);
   assert.match(doc, /`ctx`;[\s\S]*`query` of `steps`/, "the export takes the memory tiles and the last days' steps for the nudges");
@@ -315,4 +316,35 @@ test("the output goes to collector.outDir when set (outside the state folder the
   assert.match(outPath(fullConfig({ collector: { outDir: "~/x-out" } }), "/s/board"), /^\/.+\/x-out\/derived-all\.json$/, "~ is the home folder");
   assert.deepEqual(checkConfig({ collector: { outDir: "~/.flight-board/b-out" } }), []);
   assert.ok(checkConfig({ collector: { outDir: "a\nb" } }).some((p) => p.startsWith("collector.outDir")));
+});
+
+test("the export lives in the run's scratchpad: found by its working folder, the newest since --prepare, a real folder of this user's", async () => {
+  const { mkdirSync: mk, writeFileSync: wr, symlinkSync, utimesSync: ut, existsSync: ex, readdirSync: rd } = await import("node:fs");
+  assert.deepEqual(scratchRoots("/Users/sam/.flight-board/Board01", 501), ["/private/tmp/claude-501/-Users-sam--flight-board-Board01", "/tmp/claude-501/-Users-sam--flight-board-Board01"]);
+  const root = mkdtempSync(join(tmpdir(), "fb-scratch-"));
+  try {
+    const uid = process.getuid();
+    const mkExport = (session, at) => { const p = join(root, session, "scratchpad", EXPORT_NAME); mk(join(p, "initiatives"), { recursive: true }); wr(join(p, "initiatives", "card-a.json"), "{}"); ut(p, at / 1000, at / 1000); return p; };
+    const T = Date.now() - 60e3;
+    mkExport("old-run", T - 3600e3);
+    const newer = mkExport("this-run", T + 10e3);
+    mkExport("earlier-today", T + 5e3);
+    assert.equal(findExport([root, join(root, "missing")], T, uid), newer, "the newest since --prepare");
+    assert.equal(findExport([root], T + 20e3, uid), null, "none since --prepare: stale exports never count");
+    assert.equal(findExport([root], T, uid + 1), null, "another user's folder");
+    const link = join(root, "linked", "scratchpad");
+    mk(link, { recursive: true });
+    symlinkSync(newer, join(link, EXPORT_NAME));
+    assert.equal(findExport([root], T, uid), newer, "a link is never taken, even the newest");
+    // Taking it: only <collection>/<doc>.json files, no links, nothing deeper; the export is removed.
+    wr(join(newer, "initiatives", "notes.txt"), "x");
+    mk(join(newer, "initiatives", "deeper"), { recursive: true });
+    symlinkSync("/etc/hosts", join(newer, "initiatives", "evil.json"));
+    mk(join(newer, "..bad"), { recursive: true });
+    const state = join(root, "state", "TestBoard01");
+    mk(state, { recursive: true });
+    assert.equal(takeExport(newer, state, "TestBoard01"), 1);
+    assert.deepEqual(rd(join(state, "mirror.next", "initiatives")), ["card-a.json"]);
+    assert.equal(ex(newer), false, "the export is gone once taken");
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

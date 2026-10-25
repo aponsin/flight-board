@@ -5,7 +5,7 @@
 // It prints one line per conflict (a card's declared phase against its evidence), the cards live by the evidence but
 // still open, and the nudges (collector/nudges.mjs), for the lead. It never writes the board itself: only a Claude session can (collector/TASK.md).
 import { realpathSync } from "node:fs";
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync, readdirSync, lstatSync, copyFileSync } from "node:fs";
 import { sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
@@ -47,6 +47,53 @@ export function swapMirror(dir, id) {
   renameSync(next, mirror);
   rmSync(old, { recursive: true, force: true });
   return true;
+}
+
+// A scheduled run saves its export (ArtifactData out_dir) without a prompt only inside its session's scratchpad, so
+// the board is exported there, into a folder named EXPORT_NAME, and step 2 takes it from there: the newest one made since
+// --prepare, found under the scratchpads of runs in this working folder. The run never types a path the permission
+// rules would have to match.
+export const EXPORT_NAME = "flight-board-export";
+// Where sessions working in `cwd` keep their scratchpads: <root>/<cwd, every character but a letter or digit as "-">/
+// <session>/scratchpad.
+export function scratchRoots(cwd, uid) {
+  const enc = String(cwd).replace(/[^A-Za-z0-9]/g, "-");
+  return [`/private/tmp/claude-${uid}/${enc}`, `/tmp/claude-${uid}/${enc}`];
+}
+// The newest export made since `since` (ms): a real folder, not a link, owned by this user. Null when there is none.
+export function findExport(roots, since, uid) {
+  let best = null;
+  for (const root of roots) {
+    let sessions = [];
+    try { sessions = readdirSync(root); } catch { continue; }
+    for (const s of sessions) {
+      const p = join(root, s, "scratchpad", EXPORT_NAME);
+      let st;
+      try { st = lstatSync(p); } catch { continue; }
+      if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== uid || st.mtimeMs < since) continue;
+      if (!best || st.mtimeMs > best.at) best = { path: p, at: st.mtimeMs };
+    }
+  }
+  return best?.path ?? null;
+}
+// Copies an export into a fresh mirror.next: only <collection>/<doc>.json regular files (no links, nothing deeper),
+// then removes the export. Returns the number of documents taken.
+export function takeExport(src, dir, id) {
+  const next = prepareMirror(dir, id);
+  let n = 0;
+  for (const c of readdirSync(src)) {
+    const cp = join(src, c);
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(c) || !lstatSync(cp).isDirectory()) continue;
+    mkdirSync(join(next, c), { recursive: true });
+    for (const f of readdirSync(cp)) {
+      const fp = join(cp, f);
+      if (!f.endsWith(".json") || !lstatSync(fp).isFile()) continue;
+      copyFileSync(fp, join(next, c, f));
+      n++;
+    }
+  }
+  rmSync(src, { recursive: true, force: true });
+  return n;
 }
 
 // The nudges, with the last run's state next to the mirror (<dir>/nudges.json: what was sent when, and since when each
@@ -95,12 +142,20 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const dir = join(home(config.gate.stateDir), boardId(config) ?? "no-board");
   if (process.argv.includes("--prepare")) {
     try {
-      console.log(`Export the board into: ${prepareMirror(dir, boardId(config))}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "export-since.json"), JSON.stringify({ at: Date.now() }));
+      console.log(`Export the board into: your scratchpad folder + /${EXPORT_NAME}`);
       console.log(`Steps since: ${Date.now() - STEPS_DAYS * 864e5}`);
       process.exit(0);
     } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
   }
-  try { swapMirror(dir, boardId(config)); } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
+  try {
+    let since = Infinity;
+    try { since = JSON.parse(readFileSync(join(dir, "export-since.json"), "utf8")).at; } catch { /* no --prepare yet */ }
+    const found = Number.isFinite(since) ? findExport(scratchRoots(process.cwd(), process.getuid()), since, process.getuid()) : null;
+    if (found) takeExport(found, dir, boardId(config));
+    swapMirror(dir, boardId(config));
+  } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
   const mirror = readMirror(join(dir, "mirror"));
   if (!mirror?.docs.initiatives) { console.error(`Collector: no mirror at ${join(dir, "mirror")}: export the board first (collector/TASK.md, step 1).`); process.exit(1); }
   if (!process.argv.includes("--no-fetch")) {

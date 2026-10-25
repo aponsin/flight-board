@@ -88,16 +88,18 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
 `<gate.stateDir>/<board id>` (the board id is the last part of `artifactUrl`).
 
 1. **Export the board**: run `node <install>/collector/collect.mjs --config <config> --prepare` (`<install>` the pinned
-   install's full path). It makes an empty folder and
-   prints its path and a `Steps since: <time>` line; never remove a folder yourself. Then, each with `out_dir` the printed
-   path, so the documents go to the folder and never into this session:
+   install's full path). It notes the time and prints `Export the board into: your scratchpad folder + /flight-board-export`
+   and a `Steps since: <time>` line. Then, each with `out_dir` this session's scratchpad folder followed by
+   `/flight-board-export` (a scheduled run saves an export without asking only into its own scratchpad), so the documents
+   go to that folder and never into this session:
    - one ArtifactData `list` per collection, with `query.limit` 1000: `initiatives`, `waiting`, `ideas`, `messages`,
      `derived`, `ctx`;
    - one ArtifactData `query` of `steps`, with `query.where` `[["at", ">=", <the Steps since time>]]` and
      `query.limit` 1000, again with each `next_cursor` until there is none.
 
-   Never open, read or print those files: step 2 reads them. Step 2 swaps the folder into place as the mirror the gate
-   reads.
+   Never open, read or print those files, and never remove a folder yourself: step 2 finds the newest export made since
+   `--prepare` under the scratchpads of runs in this folder (a real folder of this user's, only `<collection>/<doc>.json`
+   files), copies it in as the mirror the gate reads, and removes it.
 2. **Work it out**: `node <install>/collector/collect.mjs --config <config>`. It prints one `CONFLICT` line per card whose phase
    disagrees with the repository, a `LIVE BUT OPEN` line, and one `NUDGE` line per nudge due (collector/nudges.mjs:
    the owner waiting for an answer, a step open past its card size's median, an old memory reading, a card unchanged
