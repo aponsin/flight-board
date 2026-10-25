@@ -53,7 +53,9 @@ Created only with the owner's yes. Its settings:
   }
   ```
 
-  A path in a Read rule is absolute, so it starts with `//` (`/` plus the path's own). Each Bash allow rule is the whole
+  A path in a Read rule must start with `//`, the absolute form (`//Users/…`): a single `/` is relative to the settings
+  file and silently matches nothing, so a deny wouldn't protect and the allow would ask (Security). In this block, write
+  `/` plus the absolute path, which starts with its own `/`. Each Bash allow rule is the whole
   command with the config's full path written out: no wildcards, and nothing before or after it (`cd <folder> && node
   …` matches no rule and asks: the first runs asked about ten times). The only file the run reads is step 3's
   `derived-all.json` (ArtifactData `set` with `file_path` reads it); the export, the mirror, the gate's state, the
@@ -91,7 +93,8 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
    disagrees with the repository, a `LIVE BUT OPEN` line, and one `NUDGE` line per nudge due (collector/nudges.mjs:
    the owner waiting for an answer, a step open past its card size's median, an old memory reading, a card unchanged
    for a day). A nudge is printed once, then again only after a quiet period while it still holds.
-3. **Write it**: ArtifactData `get` `derived/all`, with no `out_dir`, for its version only, then `set` `derived/all` with
+3. **Write it**: ArtifactData `get` `derived/all` with `out_dir` the session's scratchpad folder, for the version its
+   result line shows (so the document's text never enters the session), then `set` `derived/all` with
    `file_path` `<dir>/out/derived-all.json` and that `if_version` (no `if_version` the first time, when it doesn't exist
    yet). Never pass the document inline.
 4. **Tell the lead**, only when step 2 printed a `CONFLICT`, `LIVE BUT OPEN` or `NUDGE` line: load
