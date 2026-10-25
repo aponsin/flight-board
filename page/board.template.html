@@ -473,13 +473,18 @@ document.addEventListener("click",e=>{const t=e.target.closest&&e.target.closest
     try{navigator.clipboard.writeText(txt).then(done,fallback)}catch(_){fallback()}}});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("lightbox").hidden)closeShot()});
 
-// Text boxes work like the chat app: Enter presses the box's main button (Done, OK, Ack, Send, Send to Manager), and
-// Shift+Enter or ⌘+Enter (Ctrl+Enter off a Mac) adds a line at the cursor. Enter does nothing while an input method is
-// composing, in an empty box, when the button is disabled, or in a decision with options (no one main button).
+// Text boxes work like the chat app where a box has one action (Send in a thread, Send to Manager, Ack): Enter presses it,
+// and Shift+Enter or ⌘+Enter (Ctrl+Enter off a Mac) adds a line at the cursor. Where a box has two outcomes (Done or
+// "Something went wrong", OK or "Change something", a decision's options), Enter never guesses: it does nothing, and the
+// box says to click a button (Checker: Enter once recorded Done under "the deploy failed"). Nothing either while an input
+// method is composing, in an empty box, or when the button is disabled.
 const MOD_KEY=/Mac|iPhone|iPad/.test((typeof navigator!=="undefined"&&(navigator.platform||navigator.userAgent))||"")?"⌘":"Ctrl";
 const KEYS_HINT=`Enter to send · ${MOD_KEY}+Enter for a new line`;
-const keysHint=()=>`<div class="keys">${esc(KEYS_HINT)}</div>`;
+const KEYS_PICK=`Click a button to send · ${MOD_KEY}+Enter for a new line`;
+const keysHint=(one=true)=>`<div class="keys">${esc(one?KEYS_HINT:KEYS_PICK)}</div>`;
 document.querySelectorAll("[data-keys]").forEach(x=>{x.textContent=KEYS_HINT});
+// A box with one action: a thread's Send, the new thread's Send to Manager, or an answer's Ack (its only button).
+function oneAction(box){return !!box.querySelector("[data-tsend],button[type=submit]")||box.querySelectorAll(".btns button").length===1&&!!box.querySelector(".btns button.ok")}
 // What a key press in a box does: "send" with the button to press, "line", "none", or null (not ours: the browser's own).
 function enterKey(e){
   const t=e.target;
@@ -487,6 +492,7 @@ function enterKey(e){
   const box=t.closest&&t.closest(".reply,.newthread");if(!box)return null;
   if(e.shiftKey)return null;
   if(e.metaKey||e.ctrlKey)return {act:"line"};
+  if(!oneAction(box))return {act:"none"};
   const b=box.querySelector("[data-tsend],button[type=submit],.btns button.ok");
   return b&&!b.disabled&&t.value.trim()?{act:"send",button:b}:{act:"none"}}
 document.addEventListener("keydown",e=>{const k=enterKey(e);if(!k)return;e.preventDefault();
@@ -517,7 +523,7 @@ function replyBox(w){
   if(r&&r.status){const lbl=r.status==="ack"?"You acknowledged this":r.status==="done"?"You marked this done":r.status==="chose"?"You chose "+(r.choice||""):r.status==="ok"?"You said OK":r.status==="change"?"You asked for changes":"You asked for help";
     return `<div class="reply sent ${r.status}">${lbl}${num(r.at)?" "+dur(Date.now()-r.at)+" ago":""}${r.note?`: “${esc(r.note)}”`:""}.${sentFiles(r)} ${r.status==="ack"&&!r.note?"":w.ping==="sent"?"Sent to Manager.":w.ping?`Not sent to Manager (${esc(w.ping)}); it picks it up at its next check.`:"Sending to Manager…"}</div>`}
   return `<div class="reply" data-reply="${esc(w.id)}"><label for="note-${esc(w.id)}">${w.kind==="answer"?"A follow-up question? (optional)":"Anything to add? (optional)"}</label>
-   <textarea id="note-${esc(w.id)}" rows="2" placeholder="What you saw, or what went wrong"></textarea>${keysHint()}${filesHtml(w.id)}
+   <textarea id="note-${esc(w.id)}" rows="2" placeholder="What you saw, or what went wrong"></textarea>${keysHint(w.kind==="answer")}${filesHtml(w.id)}
    <div class="btns">${w.kind==="decision"
      ?(Array.isArray(w.options)&&w.options.length
        ?w.options.map(o=>`<button type="button" class="opt${o.recommended?" rec":""}" data-act="chose" data-choice="${esc(o.key)}" data-id="${esc(w.id)}"><b>${esc(o.key)}</b> ${esc(o.label)}${o.recommended?' <span class="recl">Manager\'s pick</span>':""}</button>`).join("")+`<button type="button" class="help" data-act="other" data-id="${esc(w.id)}">Something else (say what)</button>`
