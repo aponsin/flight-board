@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { loadNames, renderWaitingHtml } from "./harness.mjs";
 
 const T = 1_800_000_000_000;
-const NAMES = ["threadOf", "threadOpen", "openThreads", "threadResolved", "threadTitle", "wakeMode", "threadPing", "threadWrites", "replyWrites", "threadHtml", "threadsHtml", "threadRows", "initRow", "enrich", "gates", "keep"];
+const NAMES = ["resolvedHtml", "rlistHtml", "laterHtml", "threadOf", "threadOpen", "openThreads", "threadResolved", "threadTitle", "wakeMode", "threadPing", "threadWrites", "replyWrites", "threadHtml", "threadsHtml", "threadRows", "initRow", "enrich", "gates", "keep"];
 // Objects made inside the board's sandbox, as plain ones for deepEqual.
 const plain = (x) => JSON.parse(JSON.stringify(x));
 const board = (st = {}) => { const b = loadNames(NAMES); Object.assign(b.state, st); return b; };
@@ -38,7 +38,7 @@ test("an answered ask moves from Needs you to Waiting on Manager, with its reply
   assert.match(b.threadsHtml(T), /data-id="ask-pics"/, "Manager answered but hasn't closed it: still waiting on Manager");
   b.state.waiting[0] = { ...ask, done: true };
   assert.doesNotMatch(b.threadsHtml(T), /data-id="ask-pics"/, "closed: gone from the section");
-  assert.match(b.threadsHtml(T), /Resolved threads, last 7 days \(1\)[\s\S]*Reply to: <b class="t-name">Send the pictures/, "closed with Manager's word last: resolved, folded");
+  assert.match(b.resolvedHtml(T), /Resolved threads, last 7 days \(1\)[\s\S]*Reply to: <b class="t-name">Send the pictures/, "closed with Manager's word last: resolved, folded");
 });
 
 test("a message is shown as text: markup escaped, links made safe, files only from the board's own store", () => {
@@ -96,9 +96,10 @@ test("Waiting on Manager: answered asks, then threads whose last word is the own
     msg("new", "Owner", "q", T), msg("new", "Manager", "a", T + 1), msg("old", "Owner", "q", T - 9 * DAY), msg("old", "Manager", "a", T - 9 * DAY + 1),
     msg("t-3", "Owner", "Done one", T), msg("t-3", "Manager", "Closed.", T + 1, { resolved: true })] });
   const html = b.threadsHtml(T + 10);
-  assert.ok(html.indexOf("Question one") > -1 && html.indexOf("Question one") < html.indexOf("Resolved threads"), html);
+  assert.ok(html.indexOf("Question one") > -1, html);
+  assert.doesNotMatch(html, /Resolved threads/, "resolved threads have their own place at the end");
   assert.match(html, /Question one<\/b><span class="t-badge open">waiting on Manager/);
-  assert.match(html, /Resolved threads, last 7 days \(2\)[\s\S]*Reply to: <b class="t-name">New ask[\s\S]*Done one/);
+  assert.match(b.resolvedHtml(T + 10), /Resolved threads, last 7 days \(2\)[\s\S]*Reply to: <b class="t-name">New ask[\s\S]*Done one/);
   assert.doesNotMatch(html, /Idea two|Old ask/, "answered threads are the owner's to read, and older resolved ones are out of view");
   const answered = b.threadRows(T + 10).answered;
   assert.match(answered, /Idea two/, "Manager answered an open thread: under Needs you");
@@ -299,4 +300,34 @@ test("the new thread box takes files like a reply box: Attach, paste and drop un
   const [first] = b.threadWrites("t-1", "", files, 5, "question", "abc");
   assert.equal(first.data.thread, "t-1");
   assert.deepEqual(JSON.parse(JSON.stringify(first.data.assets)), files, "the screenshot rides on the thread's first message");
+});
+
+test("the Threads panel's order: Start a thread, Needs you, Waiting on Manager, Later, Resolved threads", () => {
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  const at = (s) => html.indexOf(s);
+  assert.ok(at('id="newthread"') < at('id="h-wait"') && at('id="h-wait"') < at('id="h-onlead"') && at('id="h-onlead"') < at('id="later"') && at('id="later"') < at('id="resolved"'));
+  const b = board({ waiting: [{ id: "l1", kind: "later", text: "Some day", since: T }, { id: "a1", kind: "action", text: "Now", steps: ["x"], since: T }] });
+  assert.match(b.laterHtml(T + 1), /Later \(1\)[\s\S]*Some day/);
+  assert.doesNotMatch(renderWaitingHtml(b.state.waiting), /Later \(|Some day/, "Later left Needs you");
+});
+
+test("resolved threads: the last 7 days folded, and a search over every resolved thread by name, #T, item or message text", () => {
+  const DAY = 864e5;
+  const b = board({
+    waiting: [{ id: "ask-old", text: "Install the Collector task", since: T - 30 * DAY, done: true }],
+    messages: [msg("ask-old", "Owner", "it failed with a sandbox error", T - 30 * DAY), msg("ask-old", "Manager", "Fixed", T - 29 * DAY, { resolved: true }),
+      msg("t-9", "Owner", "Board colours", T - DAY), msg("t-9", "Manager", "Done", T - DAY + 1, { resolved: true }),
+      msg("t-10", "Owner", "Still open", T - 1)],
+    threads: [{ id: "t-9", num: 9, title: "Colour tweak" }, { id: "ask-old", num: 2 }],
+  });
+  const week = b.resolvedHtml(T);
+  assert.match(week, /Resolved threads, last 7 days \(1\)/);
+  assert.match(week, /<input type="search" id="rsearch"/);
+  assert.match(week, /Colour tweak/);
+  assert.doesNotMatch(week, /Install the Collector task|Still open/, "older than 7 days or open: not in the list");
+  for (const q of ["SANDBOX", "#t2", "collector task", "  install "]) assert.match(b.rlistHtml(T, q), /Install the Collector task/, q);
+  assert.match(b.rlistHtml(T, "colour"), /Colour tweak/);
+  assert.match(b.rlistHtml(T, "#T9"), /Colour tweak/);
+  assert.equal(b.rlistHtml(T, "<b>nothing"), '<div class="empty">No matches.</div>', "the query itself is never drawn");
+  assert.doesNotMatch(b.rlistHtml(T, "Still open"), /Still open/, "an open thread isn't a resolved one");
 });

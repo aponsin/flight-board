@@ -155,6 +155,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .thumb.fthumb{width:44px;height:44px;max-width:none;border-radius:6px;flex:none}
 .thumb.fthumb img{width:44px;height:44px;object-fit:cover}
 .fchip .fx{border:0;background:none;color:var(--muted);font-size:1rem;line-height:1;cursor:pointer;padding:2px 6px;min-width:28px;min-height:28px}
+.rsearch{padding:6px 12px 2px}.rsearch input{font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
 .reply.drop,.newthread.drop{outline:2px dashed var(--accent);outline-offset:4px;border-radius:6px}
 .sentfiles a{color:inherit}
 .reply.sent{padding:8px 10px;border-radius:6px;font-size:.9rem;background:var(--ok-soft);color:var(--ok)}
@@ -279,6 +280,8 @@ svg text{fill:var(--muted);font:10px var(--mono)}
       <div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div>
       <h3 class="t-sec" id="h-onlead">Waiting on Manager</h3>
       <div class="waiting" id="threads"><div class="empty">Nothing waiting on Manager.</div></div>
+      <div class="waiting" id="later"></div>
+      <div class="waiting" id="resolved"></div>
     </div>
   </section>
 
@@ -365,9 +368,8 @@ function renderWaiting(){
   queueMicrotask(()=>{Object.entries(drafts).forEach(([id,v])=>{const x=document.getElementById(id);if(x)x.value=v});if(focusId){const x=document.getElementById(focusId);if(x){x.focus();x.selectionStart=x.selectionEnd=x.value.length}}});
   const item=w=>askHtml(w,open);
   // "Later" items sit folded in one row at the bottom, so today's asks stay on the first screen.
-  const now=list.filter(w=>w.kind!=="later"), later=list.filter(w=>w.kind==="later");
-  el.innerHTML=(now.length?now.map(item).join(""):answeredRows?"":'<div class="empty">Nothing to do now.</div>')
-    +answeredRows+(later.length?`<details class="w-item w-later" data-id="__later"${open.has("__later")?" open":""}><summary class="later-sum">Later (${later.length}) <span class="caret" aria-hidden="true">▸</span></summary>${later.map(item).join("")}</details>`:"");
+  const now=list.filter(w=>w.kind!=="later");
+  el.innerHTML=(now.length?now.map(item).join(""):answeredRows?"":'<div class="empty">Nothing to do now.</div>')+answeredRows;
   el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply));
   el.querySelectorAll("details.w-item").forEach(d=>d.addEventListener("toggle",()=>{if(d.open)closedAnswers.delete(d.dataset.id);else closedAnswers.add(d.dataset.id)}));
 }
@@ -409,11 +411,11 @@ function sentFiles(r){const fs=(Array.isArray(r&&r.files)?r.files:[]).filter(f=>
   return fs.length?` <span class="sentfiles">Files: ${fileLinks(fs)}</span>`:""}
 function addFiles(id,fl){const list=pendingFiles.get(id)||[],errs=[];
   [...(fl||[])].forEach(f=>{const c=fileCheck(f);if(c.error)errs.push(c.error);else if(list.length>=MAXN)errs.push(`${f.name}: ${MAXN} files at most per reply.`);else list.push(f)});
-  pendingFiles.set(id,list);renderWaiting();renderThreads();renderBoard();const msg=id==="new"?$("ntmsg"):document.getElementById("msg-"+id);if(msg)msg.textContent=errs.join(" ")}
+  pendingFiles.set(id,list);renderWaiting();renderThreads();renderLater();renderBoard();const msg=id==="new"?$("ntmsg"):document.getElementById("msg-"+id);if(msg)msg.textContent=errs.join(" ")}
 // The box a paste or drop lands in: a reply box, or the new thread's (its files wait under "new").
 const replyOf=t=>t&&t.closest&&t.closest(".reply[data-reply],.newthread[data-reply]");
 document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-attach]");if(a){const inp=document.getElementById("file-"+a.dataset.attach);if(inp)inp.click()}
-  const x=e.target.closest&&e.target.closest("[data-unattach]");if(x){const id=x.dataset.unattach,l=pendingFiles.get(id)||[];l.splice(+x.dataset.n,1).forEach(dropPreview);renderWaiting();renderThreads();renderBoard()}});
+  const x=e.target.closest&&e.target.closest("[data-unattach]");if(x){const id=x.dataset.unattach,l=pendingFiles.get(id)||[];l.splice(+x.dataset.n,1).forEach(dropPreview);renderWaiting();renderThreads();renderLater();renderBoard()}});
 document.addEventListener("change",e=>{const t=e.target;if(t&&t.dataset&&t.dataset.files){addFiles(t.dataset.files,t.files);t.value=""}});
 document.addEventListener("paste",e=>{const r=replyOf(e.target),cd=e.clipboardData;if(!r||!assetsRef||!cd||!cd.files||!cd.files.length)return;
   if(!cd.getData("text/plain"))e.preventDefault();addFiles(r.dataset.reply,cd.files)});
@@ -660,22 +662,39 @@ function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&
 // A thread and its reply box. where: the place it is drawn (the same thread can show in two places), for unique ids.
 function threadHtml(id,where,{box=true}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`;
   return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${t.map(msgHtml).join("")}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${keysHint()}${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button>${t.length&&!threadResolved(id)?`<button type="button" data-tclose="${esc(id)}" data-where="${esc(where)}">Close</button>`:""}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}</div>`}
-// The Threads panel: open ones (Manager owes an answer) first, then answered ones, then resolved ones of the last 7 days,
-// folded. Older resolved threads stay saved, just out of view.
-// The thread rows whose item is not on the board (a New thread, or an item since closed), in three groups: open (the
-// owner's word is the last: waiting on Manager), answered (Manager's is: the owner reads, replies or closes it), and
-// resolved in the last 7 days. Older resolved threads stay saved, just out of view.
-function threadRows(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now)),last=id=>{const t=threadOf(id);return t[t.length-1].at};
-  const open=ids.filter(threadOpen).sort((a,b)=>last(a)-last(b)),res=ids.filter(id=>!threadOpen(id)&&threadResolved(id)&&now-last(id)<WEEK).sort((a,b)=>last(b)-last(a));
-  const answered=ids.filter(id=>!threadOpen(id)&&!threadResolved(id)).sort((a,b)=>last(b)-last(a));
-  const row=(id,cls)=>`<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span><div class="w-text">${id.startsWith("t-")?"":"Reply to: "}<b class="t-name">${esc(threadName(id))}</b>${threadNum(id)?` <span class="t-numtxt">#T${threadNum(id)}</span>`:""}<span class="t-badge ${cls}">${cls==="open"?"waiting on Manager":cls==="res"?"resolved":"answered"}</span></div><span class="age">${dur(now-last(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"panel")}</details>`;
-  return {open:open.map(id=>row(id,"open")).join(""),answered:answered.map(id=>row(id,"")).join(""),
-    resolved:(res.length?`<details class="w-item w-later" data-id="__resolved"><summary class="later-sum">Resolved threads, last 7 days (${res.length}) <span class="caret" aria-hidden="true">▸</span></summary>${res.map(id=>row(id,"res")).join("")}</details>`:"")}}
+// The thread rows whose item is not on the board (a New thread, or an item since closed): open (the owner's word is the
+// last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their
+// own place at the panel's end (resolvedHtml).
+const threadLast=id=>{const t=threadOf(id);return t[t.length-1].at};
+function threadRow(id,cls,now){return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span><div class="w-text">${id.startsWith("t-")?"":"Reply to: "}<b class="t-name">${esc(threadName(id))}</b>${threadNum(id)?` <span class="t-numtxt">#T${threadNum(id)}</span>`:""}<span class="t-badge ${cls}">${cls==="open"?"waiting on Manager":cls==="res"?"resolved":"answered"}</span></div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"panel")}</details>`}
+function threadRows(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now));
+  const open=ids.filter(threadOpen).sort((a,b)=>threadLast(a)-threadLast(b));
+  const answered=ids.filter(id=>!threadOpen(id)&&!threadResolved(id)).sort((a,b)=>threadLast(b)-threadLast(a));
+  return {open:open.map(id=>threadRow(id,"open",now)).join(""),answered:answered.map(id=>threadRow(id,"",now)).join("")}}
+// Resolved threads, folded at the panel's end: those of the last 7 days, and a search box that finds any resolved
+// thread, whatever its age, by its name, #T number, item text or any message (case-insensitive, as typed).
+let rQuery="";
+function resolvedIds(now){return threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&!threadOpen(id)&&threadResolved(id)).sort((a,b)=>threadLast(b)-threadLast(a))}
+function threadText(id){const n=threadNum(id);return [threadName(id),n?"#T"+n:"",threadTitle(id),...threadOf(id).map(m=>m.text||"")].join("\n").toLowerCase()}
+function resolvedMatches(q,now){const s=String(q||"").trim().toLowerCase(),all=resolvedIds(now);return s?all.filter(id=>threadText(id).includes(s)):all.filter(id=>now-threadLast(id)<WEEK)}
+const RMAX=50;
+function rlistHtml(now,q){const hits=resolvedMatches(q,now);
+  if(!hits.length)return `<div class="empty">${String(q||"").trim()?"No matches.":"None in the last 7 days. Search finds older ones."}</div>`;
+  return hits.slice(0,RMAX).map(id=>threadRow(id,"res",now)).join("")+(hits.length>RMAX?`<div class="empty">${hits.length-RMAX} more: narrow the search.</div>`:"")}
+function resolvedHtml(now,q=rQuery){if(!resolvedIds(now).length)return "";const week=resolvedMatches("",now).length;
+  return `<details class="w-item w-later" data-id="__resolved"><summary class="later-sum">Resolved threads, last 7 days (${week}) <span class="caret" aria-hidden="true">▸</span></summary><div class="rsearch"><input type="search" id="rsearch" placeholder="Search all resolved threads: name, #T number, any word" aria-label="Search resolved threads"></div><div id="rlist">${rlistHtml(now,q)}</div></details>`}
+function renderResolved(){const el=$("resolved"),focused=document.activeElement&&document.activeElement.id==="rsearch";
+  keep(el,()=>{el.innerHTML=resolvedHtml(Date.now())});const box=$("rsearch");if(box&&box.value!==undefined){box.value=rQuery;if(focused)box.focus()}}
+document.addEventListener("input",e=>{if(!e.target||e.target.id!=="rsearch")return;rQuery=e.target.value;const l=$("rlist");if(l)l.innerHTML=rlistHtml(Date.now(),rQuery)});
+// "Later": asks the owner can leave for now, folded in one row above the resolved threads.
+function laterHtml(now,open=new Set()){const later=state.waiting.filter(w=>needsYou(w,now)&&w.kind==="later").sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
+  return later.length?`<details class="w-item w-later" data-id="__later"${open.has("__later")?" open":""}><summary class="later-sum">Later (${later.length}) <span class="caret" aria-hidden="true">▸</span></summary>${later.map(w=>askHtml(w,open)).join("")}</details>`:""}
+function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(Date.now());el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply))})}
 // "Waiting on Manager": the asks the owner answered that Manager has not closed (the reply and its thread under each),
 // the threads whose last word is the owner's, and the resolved ones folded at the end.
 function threadsHtml(now){const r=threadRows(now),asks=state.waiting.filter(w=>onLead(w,now)).sort((a,b)=>(num(a.response.at)??0)-(num(b.response.at)??0));
-  if(!asks.length&&!r.open&&!r.resolved)return '<div class="empty">Nothing waiting on Manager.</div>';
-  return asks.map(w=>askHtml(w,new Set())).join("")+r.open+r.resolved}
+  if(!asks.length&&!r.open)return '<div class="empty">Nothing waiting on Manager.</div>';
+  return asks.map(w=>askHtml(w,new Set())).join("")+r.open}
 // Re-draws a part of the page without losing what the owner is typing or which folds are open.
 function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id)),drafts={};
   el.querySelectorAll("textarea[id]").forEach(t=>{if(t.value)drafts[t.id]=t.value});
@@ -991,7 +1010,7 @@ function gates(i){
 }
 // A card given up ("dropped", with dropReason) is closed like a done one, and says so.
 const asShown=i=>i&&i.status==="dropped"?{...i,status:"done",dropped:true}:i;
-function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderBoard();renderFeed();renderUsage()}
+function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderBoard();renderFeed();renderUsage()}
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});
