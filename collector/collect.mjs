@@ -8,7 +8,7 @@ import { realpathSync } from "node:fs";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync } from "node:fs";
 import { sep } from "node:path";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
@@ -73,6 +73,12 @@ export function collect({ config, cards, git, gh, now }) {
   return { doc: { at: now, cards: derived, conflicts, liveButOpen: staleLive(open, derived, config) }, conflicts };
 }
 
+// Its one output, in collector.outDir when set: a folder outside the state folder, so the scheduled run (whose working
+// folder is the state folder) is denied every read there and allowed this one file (Security). dir: the state folder.
+export function outPath(config, dir) {
+  return join(config.collector.outDir ? home(config.collector.outDir) : join(dir, "out"), "derived-all.json");
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const at = process.argv.indexOf("--config");
   let config;
@@ -104,8 +110,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const now = Date.now();
   const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now });
   const nudged = { lines: runNudges(dir, config, mirror.docs, now) };
-  mkdirSync(join(dir, "out"), { recursive: true });
-  const out = join(dir, "out", "derived-all.json");
+  const out = outPath(config, dir);
+  mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(doc, null, 2));
   console.log(`Derived ${Object.keys(doc.cards).length} open card(s) into ${out}.`);
   for (const line of conflicts) console.log(`CONFLICT ${line}`);
