@@ -456,3 +456,16 @@ test("Security: a write the gate let through but the board refused leaves the jo
     assert.equal(state().journal.length, 2, "the gate's own save never drops the journal");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("Checker: a single delete the board applied is journaled, so the overlay drops the document", async () => {
+  const { withJournal } = await import("../gate/gate.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fb-del-"));
+  try {
+    const cfg = fullConfig({ artifactUrl: URL_, gate: { stateDir: dir } });
+    after({ tool_name: "ArtifactData", tool_input: { url: URL_, action: "delete", collection: "waiting", doc_id: "w1", if_version: 3 } }, { config: cfg });
+    const journal = JSON.parse(readFileSync(join(dir, "TestBoard01", "gate.json"), "utf8")).journal;
+    assert.deepEqual(journal.map((w) => `${w.op} ${w.collection}/${w.doc_id}`), ["delete waiting/w1"]);
+    const out = withJournal({ at: 0, docs: { waiting: [{ id: "w1", text: "x" }, { id: "w2", text: "y" }] } }, journal);
+    assert.deepEqual(out.docs.waiting.map((d) => d.id), ["w2"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

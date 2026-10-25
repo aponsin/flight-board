@@ -9,7 +9,8 @@ import { boardId, checkConfig, fullConfig } from "../scripts/config.mjs";
 import { THREAD_SEQ } from "./rules.mjs";
 import { writesOf, home, writeState, OVERLAY } from "./gate.mjs";
 
-const WRITES = new Set(["set", "update", "batch"]);
+// Every write the gate sees, delete included (the overlay drops a deleted document: Checker).
+const WRITES = new Set(["set", "update", "delete", "batch"]);
 
 // state with what an applied write teaches the gate: the highest thread counter applied, the cards it created (for
 // the hand-off check), and the journal of board-state writes, newest 500, which the gate lays over the mirror.
