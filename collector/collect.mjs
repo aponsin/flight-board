@@ -5,7 +5,7 @@
 // It prints one line per conflict (a card's declared phase against its evidence), the cards live by the evidence but
 // still open, and the nudges (collector/nudges.mjs), for the lead. It never writes the board itself: only a Claude session can (collector/TASK.md).
 import { realpathSync } from "node:fs";
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync, readdirSync, lstatSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync, readdirSync, lstatSync, cpSync } from "node:fs";
 import { sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
@@ -54,45 +54,52 @@ export function swapMirror(dir, id) {
 // --prepare, found under the scratchpads of runs in this working folder. The run never types a path the permission
 // rules would have to match.
 export const EXPORT_NAME = "flight-board-export";
+// The collections a complete export holds (collector/TASK.md, step 1).
+export const EXPORT_COLLECTIONS = ["initiatives", "waiting", "ideas", "messages", "derived", "ctx", "steps"];
 // Where sessions working in `cwd` keep their scratchpads: <root>/<cwd, every character but a letter or digit as "-">/
-// <session>/scratchpad.
-export function scratchRoots(cwd, uid) {
+// <session>/scratchpad. One root only, links resolved (/tmp is /private/tmp on a Mac): never a wider search (Security).
+export function scratchRoot(cwd, uid, base = "/private/tmp") {
   const enc = String(cwd).replace(/[^A-Za-z0-9]/g, "-");
-  return [`/private/tmp/claude-${uid}/${enc}`, `/tmp/claude-${uid}/${enc}`];
+  const root = join(base, `claude-${uid}`, enc);
+  try { return realpathSync(root); } catch { return root; }
 }
-// The newest export made since `since` (ms): a real folder, not a link, owned by this user. Null when there is none.
-export function findExport(roots, since, uid) {
-  let best = null;
-  for (const root of roots) {
-    let sessions = [];
-    try { sessions = readdirSync(root); } catch { continue; }
-    for (const s of sessions) {
-      const p = join(root, s, "scratchpad", EXPORT_NAME);
-      let st;
-      try { st = lstatSync(p); } catch { continue; }
-      if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== uid || st.mtimeMs < since) continue;
-      if (!best || st.mtimeMs > best.at) best = { path: p, at: st.mtimeMs };
-    }
+// This run's export: the newest <root>/<session>/scratchpad/EXPORT_NAME made after --prepare (`since`, ms), a real
+// folder of this user's whose resolved path stays under the root, holding every collection. Null when there is none.
+export function findExport(root, since, uid) {
+  let best = null, sessions = [];
+  try { sessions = readdirSync(root); } catch { return null; }
+  for (const s of sessions) {
+    const p = join(root, s, "scratchpad", EXPORT_NAME);
+    let st, real;
+    try { st = lstatSync(p); real = realpathSync(p); } catch { continue; }
+    if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== uid || !real.startsWith(root + sep)) continue;
+    if (Math.max(st.birthtimeMs || 0, st.ctimeMs) < since) continue;
+    if (!EXPORT_COLLECTIONS.every((c) => { try { const cs = lstatSync(join(p, c)); return cs.isDirectory() && !cs.isSymbolicLink(); } catch { return false; } })) continue;
+    if (!best || st.mtimeMs > best.at) best = { path: real, at: st.mtimeMs };
   }
   return best?.path ?? null;
 }
-// Copies an export into a fresh mirror.next: only <collection>/<doc>.json regular files (no links, nothing deeper),
-// then removes the export. Returns the number of documents taken.
+// Moves an export into place as mirror.next (a rename, so the next run can't take it again; a copy and remove only
+// across disks), then keeps only <collection>/<doc>.json regular files: anything else (a link, a deeper folder) goes.
+// Returns the number of documents kept.
 export function takeExport(src, dir, id) {
   const next = prepareMirror(dir, id);
+  rmSync(next, { recursive: true, force: true });
+  try { renameSync(src, next); } catch (e) {
+    if (e.code !== "EXDEV") throw e;
+    cpSync(src, next, { recursive: true, verbatimSymlinks: true });
+    rmSync(src, { recursive: true, force: true });
+  }
   let n = 0;
-  for (const c of readdirSync(src)) {
-    const cp = join(src, c);
-    if (!/^[A-Za-z0-9_-]{1,100}$/.test(c) || !lstatSync(cp).isDirectory()) continue;
-    mkdirSync(join(next, c), { recursive: true });
+  for (const c of readdirSync(next)) {
+    const cp = join(next, c), cs = lstatSync(cp);
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(c) || !cs.isDirectory() || cs.isSymbolicLink()) { rmSync(cp, { recursive: true, force: true }); continue; }
     for (const f of readdirSync(cp)) {
       const fp = join(cp, f);
-      if (!f.endsWith(".json") || !lstatSync(fp).isFile()) continue;
-      copyFileSync(fp, join(next, c, f));
-      n++;
+      if (f.endsWith(".json") && lstatSync(fp).isFile()) n++;
+      else rmSync(fp, { recursive: true, force: true });
     }
   }
-  rmSync(src, { recursive: true, force: true });
   return n;
 }
 
@@ -152,8 +159,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try {
     let since = Infinity;
     try { since = JSON.parse(readFileSync(join(dir, "export-since.json"), "utf8")).at; } catch { /* no --prepare yet */ }
-    const found = Number.isFinite(since) ? findExport(scratchRoots(process.cwd(), process.getuid()), since, process.getuid()) : null;
-    if (found) takeExport(found, dir, boardId(config));
+    // Only this run's export: none since --prepare is an error, never an old mirror passed off as fresh (Security).
+    const found = Number.isFinite(since) ? findExport(scratchRoot(process.cwd(), process.getuid()), since, process.getuid()) : null;
+    if (!found) throw new Error("no complete board export since --prepare in this run's scratchpad: run step 1 again");
+    takeExport(found, dir, boardId(config));
     swapMirror(dir, boardId(config));
   } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
   const mirror = readMirror(join(dir, "mirror"));

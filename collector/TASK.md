@@ -42,6 +42,8 @@ Created only with the owner's yes. Its settings:
       ],
       "deny": [
         "Read(/<full path of gate.stateDir/board id>/**)", "Read(/<full path of the folder holding board.config.json>/**)",
+        "Read(//private/tmp/claude-<uid>/<the state folder's path, every character but a letter or digit as ->/**)",
+        "Read(//tmp/claude-<uid>/<the same>/**)",
         "Read(/<full path of the home folder>/.claude/**)",
         "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Grep", "Glob", "Agent", "SendMessage",
         "Bash(head:*)", "Bash(tail:*)", "Bash(git:*)", "Bash(gh:*)", "Bash(npm:*)", "Bash(node --test:*)",
@@ -97,9 +99,11 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
    - one ArtifactData `query` of `steps`, with `query.where` `[["at", ">=", <the Steps since time>]]` and
      `query.limit` 1000, again with each `next_cursor` until there is none.
 
-   Never open, read or print those files, and never remove a folder yourself: step 2 finds the newest export made since
-   `--prepare` under the scratchpads of runs in this folder (a real folder of this user's, only `<collection>/<doc>.json`
-   files), copies it in as the mirror the gate reads, and removes it.
+   Never open, read or print those files (the settings deny it: a session may otherwise read its own scratchpad), and
+   never remove a folder yourself: step 2 takes this run's export, the newest made after `--prepare` under this folder's
+   scratchpad root (a real folder of this user's, links resolved, holding all seven collections), moves it into place as
+   the mirror the gate reads (so no later run can take it again), and keeps only `<collection>/<doc>.json` files. No such
+   export is an error, never an old mirror passed off as fresh.
 2. **Work it out**: `node <install>/collector/collect.mjs --config <config>`. It prints one `CONFLICT` line per card whose phase
    disagrees with the repository, a `LIVE BUT OPEN` line, and one `NUDGE` line per nudge due (collector/nudges.mjs:
    the owner waiting for an answer, a step open past its card size's median, an old memory reading, a card unchanged
