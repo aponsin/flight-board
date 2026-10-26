@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { loadNames } from "./harness.mjs";
 
 const board = (plan, { derived = null, initiatives = [], ideas = [], threads = [], waiting = [] } = {}) => {
-  const b = loadNames(["planHtml", "setView"]);
+  const b = loadNames(["planHtml", "setView", "setV3View", "nowHtml"]);
   Object.assign(b.state, { plan, initiatives, ideas, threads, waiting, derived: derived ? [{ id: "all", plan: derived }] : [] });
   return b;
 };
@@ -76,7 +76,51 @@ test("the view switch: the current board by default, the new layout on the viewe
   assert.equal(v3.hidden, false);
   assert.equal(v2.hidden, true);
   assert.equal(link.textContent, "Back to the current board");
+  assert.match(b.els.now.innerHTML, /Nothing in flight/, "the new layout opens on Now");
+  b.setV3View("plan");
+  assert.deepEqual([b.els.v3now.hidden, b.els.v3plan.hidden], [true, false]);
   assert.match(b.els.plan.innerHTML, /Open the shop/, "the plan renders when shown");
   b.setView("v2");
   assert.deepEqual([v2.hidden, v3.hidden, link.textContent], [false, true, "Try the new layout"]);
+});
+
+test("Now: open cards grouped under their plan node in the plan's order, with the path above it; unlinked cards last", () => {
+  const ms = { id: "ms-front", parent: "obj-shop", order: 1, kind: "milestone", text: "The front" };
+  const steps = [{ ...sign, parent: "ms-front", order: 1 }, { ...door, parent: "ms-front", order: 2 }];
+  const t = Date.now() + 36e5;
+  const initiatives = [
+    { id: "c-door", name: "Hang the door", plan: "step-door", phase: "build", status: "active", etaLive: t },
+    { id: "c-sign-b", name: "Sign in build", plan: "step-sign", phase: "build", status: "active", etaLive: t },
+    { id: "c-sign-a", name: "Sign at ship", plan: "step-sign", phase: "ship", status: "active", etaLive: t },
+    { id: "c-free", name: "Loose card", phase: "plan", status: "active", etaLive: t },
+    { id: "c-gone", name: "Card on a missing node", plan: "nope", phase: "plan", status: "active", etaLive: t },
+    { id: "c-done", name: "Done long ago", plan: "step-sign", status: "done", doneAt: Date.now() - 3 * 864e5 },
+  ];
+  const derived = { nodes: { "step-sign": { state: "active" }, "step-door": { state: "gated" } }, objectives: {} };
+  const html = board([obj, ms, ...steps], { initiatives, derived }).nowHtml();
+  const at = (x) => html.indexOf(x);
+  assert.ok(at('data-node="step-sign"') < at('data-node="step-door"') && at('data-node="step-door"') < at('data-node=""'), "plan order, unlinked last");
+  assert.ok(at("Sign at ship") < at("Sign in build"), "within a group, the board's order: the furthest phase first");
+  assert.match(html, /<span class="now-path">Open the shop › The front<\/span>/);
+  assert.match(html, /data-node="step-door"><h3 class="now-head"><span class="pn-st st-warn">Gated<\/span>/);
+  assert.ok(at("Loose card") > at('data-node=""') && at("Card on a missing node") > at('data-node=""'), "no node, or a node not on the board: unlinked");
+  assert.doesNotMatch(html, /Done long ago/, "older than 24 h: not here");
+  assert.doesNotMatch(html, /data-node="obj-shop"/, "a node with no card has no group");
+});
+
+test("Now: what shipped and the threads resolved in the last 24 hours, folded at the bottom; nothing in flight says so", () => {
+  const now = Date.now();
+  const initiatives = [{ id: "c-shipped", name: "Shipped today", plan: "step-sign", status: "done", doneAt: now - 36e5, phase: "live" }];
+  const b = board([obj, sign], { initiatives });
+  const html = b.nowHtml(now);
+  assert.match(html, /Nothing in flight\./);
+  assert.match(html, /<details class="now-fold panel"><summary>Shipped in the last 24 h \(1\)<\/summary>[\s\S]*Shipped today/);
+  assert.doesNotMatch(html, /Threads resolved/, "none resolved: no fold");
+});
+
+test("Now never injects markup: node text, paths and card names are escaped", () => {
+  const evil = "<img src=x onerror=alert(1)>";
+  const html = board([{ ...obj, text: evil }, { ...sign, text: evil }], { initiatives: [{ id: "c1", name: evil, plan: "step-sign", phase: "build", status: "active" }] }).nowHtml();
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
 });

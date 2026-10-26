@@ -269,6 +269,15 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .pn-bar>span{display:block;height:100%;background:var(--ok)}
 .pn-cards{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:.88rem;margin-top:2px}
 .pn-cards span{color:var(--muted)}
+.v3tabs{display:flex;gap:6px}
+.v3tabs button{font:700 .95rem var(--display);letter-spacing:.06em;text-transform:uppercase;padding:6px 14px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;min-height:40px}
+.v3tabs button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+.now-group{margin-bottom:16px}
+.now-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:0 0 6px;font-weight:600}
+.now-path{color:var(--muted);font-weight:400;font-size:.88rem}
+.now-fold{margin-top:10px}
+.now-fold summary{cursor:pointer;font-weight:600;color:var(--muted)}
+.now-res{display:flex;gap:8px;padding:4px 0;font-size:.92rem}
 .plan-ideas{margin-top:16px;border-top:1px solid var(--line);padding-top:10px}
 .plan-ideas h3{font:700 1rem var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
 </style>
@@ -282,7 +291,12 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
   <p style="margin:0"><button type="button" class="viewlink" id="viewlink">Try the new layout</button></p>
 
   <div id="v3" hidden>
-  <section aria-labelledby="h-plan">
+  <nav class="v3tabs" aria-label="Views"><button type="button" data-v3="now" aria-pressed="true">Now</button><button type="button" data-v3="plan" aria-pressed="false">Plan</button></nav>
+  <section aria-labelledby="h-now" id="v3now">
+    <h2 id="h-now">Now</h2>
+    <div id="now"><div class="empty">Nothing in flight.</div></div>
+  </section>
+  <section aria-labelledby="h-plan" id="v3plan" hidden>
     <h2 id="h-plan">Plan</h2>
     <div class="panel" id="plan"><div class="empty">No plan yet.</div></div>
   </section>
@@ -764,7 +778,8 @@ function renameWrites(id,title){const t=String(title||"").replace(/\s+/g," ").tr
   return [{op:threadDoc(id)?"update":"set",path:`threads/${id}`,data:{title:t}}]}
 // #T27 jumps to its thread and opens it; a thread not on the board now (resolved over 7 days ago) says so.
 document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-tref]");if(!a)return;e.preventDefault();
-  const el=[...document.querySelectorAll("[data-thread]")].find(x=>x.dataset.thread===a.dataset.tref);
+  const all=[...document.querySelectorAll("[data-thread]")].filter(x=>x.dataset.thread===a.dataset.tref);
+  const el=all.find(x=>!x.closest("[hidden]"))||all[0];
   if(!el){a.title="That thread is no longer shown on the board";return}
   if(el.closest("#v2")&&$("v2").hidden)setView("v2");
   for(let d=el.closest("details");d;d=d.parentElement&&d.parentElement.closest("details"))d.open=true;
@@ -1135,20 +1150,54 @@ function planHtml(){
   const ideasHtml=ideas.length?`<div class="plan-ideas"><h3>Ideas not in the plan yet</h3><ul class="plan">${ideas.map(t=>`<li class="pn"><div class="pn-line">${t.kind&&IKIND[t.kind]?`<span class="ik ${esc(t.kind)}">${IKIND[t.kind]}</span>`:""}<span>${esc(t.text)}</span></div></li>`).join("")}</ul></div>`:"";
   if(!outline)return `<div class="empty">No plan yet. ${esc(CONFIG.gate&&CONFIG.gate.managerRole||"The lead")} writes it with ${esc(OWNER)} at the go-gate.</div>${ideasHtml}`;
   return `<ul class="plan">${outline}</ul>${dp?"":`<div class="pn-sub">States show once the collector has run on the plan.</div>`}${ideasHtml}`}
-function renderPlan(){const el=$("plan");if(!$("v3").hidden)keep(el,()=>{el.innerHTML=planHtml()})}
+function renderPlan(){const el=$("plan");if(!$("v3").hidden&&!$("v3plan").hidden)keep(el,()=>{el.innerHTML=planHtml()})}
+// Board v3, the Now view (step 3): the open cards grouped under the plan node they serve, in the plan's order (each
+// group headed by its node, its state and the path above it), cards no node claims last; then, folded, what shipped in
+// the last 24 hours and the threads resolved in that time. Cards are the current board's rows (initRow), in its order.
+function nowHtml(now=Date.now()){
+  const nodes=state.plan.filter(n=>n&&typeof n.id==="string"),byId=new Map(nodes.map(n=>[n.id,n])),kids=new Map(),roots=[];
+  for(const n of nodes){if(typeof n.parent==="string"&&byId.has(n.parent)&&n.parent!==n.id){if(!kids.has(n.parent))kids.set(n.parent,[]);kids.get(n.parent).push(n)}else roots.push(n)}
+  const sort=l=>l.slice().sort((a,b)=>(num(a.order)??0)-(num(b.order)??0)||String(a.id).localeCompare(String(b.id)));
+  const order=[],seen=new Set(),walk=(n,d)=>{if(seen.has(n.id)||d>30)return;seen.add(n.id);order.push(n);sort(kids.get(n.id)||[]).forEach(c=>walk(c,d+1))};
+  sort(roots).forEach(n=>walk(n,0));sort(nodes).forEach(n=>walk(n,0));
+  const open=state.initiatives.filter(i=>i.status!=="done").sort(openOrder),groups=new Map();
+  for(const i of open){const k=typeof i.plan==="string"&&byId.has(i.plan)?i.plan:"";if(!groups.has(k))groups.set(k,[]);groups.get(k).push(i)}
+  const dp=planDerived(),path=n=>{const up=[];for(let p=byId.get(n.parent),d=0;p&&d<30;p=byId.get(p.parent),d++)up.unshift(p.text);return up};
+  let h="";
+  for(const n of order){const list=groups.get(n.id);if(!list)continue;
+    const d=n.replacedBy?{state:"replaced"}:(dp&&dp.nodes&&dp.nodes[n.id]&&PLAN_STATES[dp.nodes[n.id].state]?dp.nodes[n.id]:null);
+    const up=path(n);
+    h+=`<div class="now-group" data-node="${esc(n.id)}"><h3 class="now-head">${d?`<span class="pn-st st-${PLAN_STATES[d.state][1]}">${PLAN_STATES[d.state][0]}</span>`:""}<span>${linkify(n.text)}</span>${up.length?`<span class="now-path">${up.map(t=>esc(t)).join(" › ")}</span>`:""}</h3><div class="panel board">${list.map(initRow).join("")}</div></div>`}
+  const loose=groups.get("");
+  if(loose)h+=`<div class="now-group" data-node=""><h3 class="now-head"><span>Not linked to the plan</span></h3><div class="panel board">${loose.map(initRow).join("")}</div></div>`;
+  if(!h)h='<div class="empty">Nothing in flight.</div>';
+  const shipped=state.initiatives.filter(i=>i.status==="done"&&(num(i.doneAt)??0)>now-DAY).sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0));
+  if(shipped.length)h+=`<details class="now-fold panel"><summary>Shipped in the last 24 h (${shipped.length})</summary><div class="board">${shipped.slice(0,20).map(initRow).join("")}</div></details>`;
+  const resolved=resolvedIds(now).filter(id=>now-threadLast(id)<DAY);
+  if(resolved.length)h+=`<details class="now-fold panel"><summary>Threads resolved in the last 24 h (${resolved.length})</summary>${resolved.slice(0,30).map(id=>{const n=threadNum(id);return `<div class="now-res">${n?`<a href="#" class="t-ref" data-tref="${esc(id)}">#T${n}</a>`:""}<span>${esc(threadName(id))}</span><span class="now-path">${esc(dur(now-threadLast(id)))} ago</span></div>`}).join("")}</details>`;
+  return h}
+function renderNow(){const el=$("now");if(!$("v3").hidden&&!$("v3now").hidden)keep(el,()=>{el.innerHTML=nowHtml()})}
+// The new layout's view (Now or Plan), this browser's choice only.
+let v3view="now";
+function setV3View(v){v3view=v==="plan"?"plan":"now";$("v3now").hidden=v3view!=="now";$("v3plan").hidden=v3view!=="plan";
+  document.querySelectorAll("[data-v3]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v3===v3view)));
+  try{localStorage.setItem("flight-board-v3view",v3view)}catch(e){}
+  renderNow();renderPlan()}
 // Which layout: the current board (v2) unless this viewer chose the new one ("#v3" in the link opens it too). The
 // choice is this browser's only; nothing is written to the board.
 let view="v2";
 function setView(v){view=v==="v3"?"v3":"v2";$("v3").hidden=view!=="v3";$("v2").hidden=view==="v3";
   $("viewlink").textContent=view==="v3"?"Back to the current board":"Try the new layout";
   try{localStorage.setItem("flight-board-view",view)}catch(e){}
-  if(view==="v3")renderPlan()}
-function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderBoard();renderFeed();renderUsage();renderPlan()}
+  if(view==="v3"){renderNow();renderPlan()}}
+function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderBoard();renderFeed();renderUsage();renderNow();renderPlan()}
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});
   document.querySelectorAll("[data-next]").forEach(e=>{const t=+e.dataset.next;e.textContent=t>Date.now()?"in "+dur(t-Date.now()):"due now"});}
 $("viewlink").addEventListener("click",()=>setView(view==="v3"?"v2":"v3"));
+document.querySelectorAll("[data-v3]").forEach(b=>b.addEventListener("click",()=>setV3View(b.dataset.v3)));
+(()=>{let v=null;try{v=localStorage.getItem("flight-board-v3view")}catch(e){}if(v==="plan")setV3View("plan")})();
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-view")}catch(e){}if(typeof location!=="undefined"&&location.hash==="#v3")v="v3";if(v==="v3")setView("v3")})();
 setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()},15000);tick();renderAll();
 
