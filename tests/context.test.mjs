@@ -2,7 +2,7 @@
 // saved by its PostToolUse hook, become ctx/<Role> and meta/context files the run writes as they are. Fictional sessions.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, existsSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -73,6 +73,34 @@ test("the hook keeps the session list and each planned session's reading in the 
     // Another folder, another tool: nothing saved.
     assert.equal(tap(hook(join(base, "elsewhere"), "mcp__ccd_session_mgmt__list_sessions", {}, text([])), { dir, now: NOW }), "not this board's state folder");
     assert.equal(tap(hook(dir, "Bash", { command: "x" }, "y"), { dir, now: NOW }), "not a memory reading");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("a session list too long for the run is read from the file the app saved it to: that run's own file only (the trial run, #C274)", () => {
+  const { base, dir } = setup();
+  try {
+    const home = join(base, "home"), sess = "923967cc-feeb-42f0-9712-cdf154fb5361";
+    const folder = join(home, ".claude", "projects", dir.replace(/[^A-Za-z0-9]/g, "-"), sess, "tool-results");
+    mkdirSync(folder, { recursive: true });
+    const file = join(folder, "mcp-ccd_session_mgmt-list_sessions-1793052036442.txt");
+    writeFileSync(file, JSON.stringify([row("local_c", "Checker", NOW - 1e3)], null, 2));
+    const saved = (p) => `Error: result (81,024 characters across 2,237 lines) exceeds maximum allowed tokens. Output has been saved to ${p}.\nFormat: Plain text\n- For targeted searches (find a line, locate a string): use grep on the file directly.\n`;
+    const list = (resp, over = {}) => { tap(hook(dir, "mcp__ccd_session_mgmt__list_sessions", { limit: 200 }, resp, { session_id: sess, ...over }), { dir, now: NOW, homeDir: home }); return JSON.parse(readFileSync(join(dir, "sessions.json"), "utf8")).rows.map((r) => r.id); };
+    assert.deepEqual(list(saved(file)), ["local_c"]);
+    assert.deepEqual(list([{ type: "text", text: saved(file) }]), ["local_c"], "as text blocks too");
+    // Anything but this run's own saved list is never read.
+    const other = join(home, ".claude", "projects", dir.replace(/[^A-Za-z0-9]/g, "-"), "another-session", "tool-results");
+    mkdirSync(other, { recursive: true });
+    writeFileSync(join(other, "mcp-ccd_session_mgmt-list_sessions-1.txt"), readFileSync(file));
+    assert.deepEqual(list(saved(join(other, "mcp-ccd_session_mgmt-list_sessions-1.txt"))), [], "another session's file");
+    writeFileSync(join(folder, "mcp-ccd_session_mgmt-get_usage-1.txt"), readFileSync(file));
+    assert.deepEqual(list(saved(join(folder, "mcp-ccd_session_mgmt-get_usage-1.txt"))), [], "another tool's file");
+    assert.deepEqual(list(saved(`${folder}/../tool-results/mcp-ccd_session_mgmt-list_sessions-1793052036442.txt`)), [], "a path with ..");
+    assert.deepEqual(list(saved(file), { session_id: "../x" }), [], "a bad session id");
+    symlinkSync(file, join(folder, "mcp-ccd_session_mgmt-list_sessions-7.txt"));
+    assert.deepEqual(list(saved(join(folder, "mcp-ccd_session_mgmt-list_sessions-7.txt"))), [], "a link");
+    writeFileSync(join(base, "elsewhere.txt"), readFileSync(file));
+    assert.deepEqual(list(saved(join(base, "elsewhere.txt"))), [], "a file elsewhere");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

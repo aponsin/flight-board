@@ -7,7 +7,7 @@
 // (collector.contextRoles: a session titled exactly as the role, the newest open one), step 2 turns the readings into
 // files in collector.outDir, and the run writes those files as they are (file_path), as it does derived/all. A session
 // the app can't read (no running process: "unavailable") keeps its last reading on the board.
-import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, readdirSync, lstatSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -36,6 +36,30 @@ export function responseJson(r) {
     if (Array.isArray(r)) r = r.filter((b) => b?.type === "text" && typeof b.text === "string").map((b) => b.text).join("");
     if (typeof r === "string") r = r ? JSON.parse(r) : null;
     return r !== null && typeof r === "object" ? r : null;
+  } catch { return null; }
+}
+
+// The text of a tool's answer as the hook sees it, or "".
+const responseText = (r) => {
+  if (plain(r) && Array.isArray(r.content)) r = r.content;
+  if (Array.isArray(r)) r = r.filter((b) => b?.type === "text" && typeof b.text === "string").map((b) => b.text).join("");
+  return typeof r === "string" ? r : "";
+};
+// An answer too long for the session (the trial run's 200 sessions came to 81,000 characters) is saved by the app to a
+// file, and the session and this hook get only a note naming it. The list is read from that file, and only from this
+// run's own: <home>/.claude/projects/<cwd, every character but a letter or digit as "-">/<session>/tool-results/
+// mcp-ccd_session_mgmt-list_sessions-<n>.txt, compared as an exact string, a plain file of this user's, never a link.
+// The run's model never reads it (its settings deny ~/.claude). Null when there is none.
+export function savedList(input, homeDir) {
+  const m = /saved to (\/\S+?\.txt)\.?(\s|$)/.exec(responseText(input.tool_response));
+  if (!m || !SESSION.test(String(input.session_id ?? "")) || typeof input.cwd !== "string") return null;
+  const folder = join(homeDir, ".claude", "projects", input.cwd.replace(/[^A-Za-z0-9]/g, "-"), input.session_id, "tool-results");
+  const p = m[1], name = p.slice(folder.length + 1);
+  if (!p.startsWith(folder + "/") || !/^mcp-ccd_session_mgmt-list_sessions-\d{1,20}\.txt$/.test(name)) return null;
+  try {
+    const st = lstatSync(p);
+    if (!st.isFile() || st.isSymbolicLink() || st.uid !== process.getuid() || st.size > 8 * 1024 * 1024 || realpathSync(p) !== join(realpathSync(folder), name)) return null;
+    return JSON.parse(readFileSync(p, "utf8"));
   } catch { return null; }
 }
 
@@ -72,11 +96,12 @@ export function readPlan(dir) {
 }
 
 // The hook: saves the session list, or one planned session's reading. Returns why nothing was saved, or null.
-export function tap(input, { dir, now }) {
+export function tap(input, { dir, now, homeDir = homedir() }) {
   if (!plain(input) || input.cwd !== dir) return "not this board's state folder";
   const resp = responseJson(input.tool_response);
   if (input.tool_name === LIST_TOOL) {
-    writeFileSync(join(dir, SESSIONS_FILE), JSON.stringify({ at: now, rows: sessionRows(resp) }));
+    const rows = sessionRows(Array.isArray(resp) ? resp : savedList(input, homeDir));
+    writeFileSync(join(dir, SESSIONS_FILE), JSON.stringify({ at: now, rows }));
     return null;
   }
   if (input.tool_name === USAGE_TOOL) {

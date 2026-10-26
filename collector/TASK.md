@@ -134,6 +134,8 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
 
 1. **Export the board**: with `collector.contextRoles` only, first one `mcp__ccd_session_mgmt__list_sessions` call with
    `limit` 200 (load it and `get_usage` with ToolSearch `select:mcp__ccd_session_mgmt__list_sessions,mcp__ccd_session_mgmt__get_usage`).
+   Its answer is usually too long for the session, and the app saves it to a file: never read that file (the settings
+   deny it and the fence refuses it); the memory hook reads it from there, this run's own file only.
    Then run `node <install>/collector/collect.mjs --config <config> --prepare` (`<install>` the current
    link's full path, `~/.flight-board/current` written out). It notes the time and prints `Export the board into: your scratchpad folder + /flight-board-export`,
    a `Steps since: <time>` line and, with `collector.contextRoles`, one `Read memory: get_usage session_id <id> (<Role>)`
