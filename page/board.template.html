@@ -160,7 +160,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .fchip .fx{border:0;background:none;color:var(--muted);font-size:1rem;line-height:1;cursor:pointer;padding:2px 6px;min-width:28px;min-height:28px}
 .rsearch{padding:6px 12px 2px}.rsearch input{font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
 .reply.drop,.newthread.drop{outline:2px dashed var(--accent);outline-offset:4px;border-radius:6px}
-.sentfiles a{color:inherit}.filesave{font:inherit;color:var(--accent);background:none;border:0;padding:0;text-decoration:underline;cursor:pointer}.filesave:disabled{opacity:.6;cursor:progress}
+.sentfiles a{color:inherit}.filesave{display:inline-flex;align-items:center;min-height:32px;padding:4px 2px;font:inherit;color:var(--accent);background:none;border:0;text-decoration:underline;cursor:pointer}.filesave:disabled{opacity:.6;cursor:progress}.savenote{color:var(--muted);margin-left:4px}.savenote:empty{display:none}.fsep{color:var(--muted)}
 .reply.sent{padding:8px 10px;border-radius:6px;font-size:.9rem;background:var(--ok-soft);color:var(--ok)}
 .reply.sent.help{background:var(--bad-soft);color:var(--bad)}
 /* Crew: compact tiles, several per row. */
@@ -504,22 +504,33 @@ const blobId=x=>typeof x==="string"&&/^[A-Za-z0-9_-]{8,64}$/.test(x);
 // alone. Never a new tab: the board runs in a sandboxed frame, where a new tab can't open the board's own address.
 let downloadsRef=null;
 function setDownloads(d){downloadsRef=d||null}
-function fileLinks(fs){return fs.map(f=>/^image\//.test(String(f.type||""))
-  ?`<button type="button" class="thumb fthumb" data-full="/_blob/${f.id}" data-cap="${esc(f.name||"image")}"><img src="/_blob/${f.id}" alt="${esc(f.name||"image")}" loading="lazy"></button>`
-  :downloadsRef?`<button type="button" class="filesave" data-save="${f.id}" data-name="${esc(f.name||"file")}" data-type="${esc(f.type||"")}">${esc(f.name||"file")}</button>`
-  :`<span class="fname" title="Saving files isn't available in this view">${esc(f.name||"file")}</span>`).join(" ")}
+// Images first, side by side; then the other files, " · " between them so two names never read as one. A file whose id
+// isn't a stored asset's is left out here too, whoever calls (Security).
+const isImage=f=>/^image\//.test(String(f.type||""));
+function fileLinks(fs){const ok=(fs||[]).filter(f=>f&&blobId(f.id));
+  const imgs=ok.filter(isImage).map(f=>`<button type="button" class="thumb fthumb" data-full="/_blob/${f.id}" data-cap="${esc(f.name||"image")}"><img src="/_blob/${f.id}" alt="${esc(f.name||"image")}" loading="lazy"></button>`);
+  const docs=ok.filter(f=>!isImage(f)).map(f=>downloadsRef
+    ?`<span class="fsave"><button type="button" class="filesave" data-save="${f.id}" data-name="${esc(f.name||"file")}" data-type="${esc(f.type||"")}">${esc(f.name||"file")}</button><small class="savenote" role="status"></small></span>`
+    :`<span class="fname" title="Saving files isn't available in this view">${esc(f.name||"file")}</span>`);
+  return [imgs.join(" "),docs.join('<span class="fsep"> · </span>')].filter(Boolean).join(" ")}
 // The name a file saves under: its own, with the extension its type wants when it has none (the viewer saves only known
 // extensions).
 const SAVE_EXT={"application/pdf":"pdf","text/plain":"txt","text/markdown":"md","application/json":"json","text/csv":"csv"};
 function saveName(name,type){const n=String(name||"").trim()||"file";return /\.[A-Za-z0-9]{1,5}$/.test(n)?n:n+"."+(SAVE_EXT[type]||"txt")}
-// A file button: the stored file, read back from the board's own path, handed to the viewer's save prompt. The viewer
-// confirms or declines; a decline is no error. Each other outcome says so on the button.
+// A file button's save: the stored file, read back from the board's own path, handed to the viewer's save prompt.
+// Returns the line to show beside the button ("" when saved or declined: the viewer's own prompt said it). A network
+// failure of the read is "read" too, never "not available" (Designer).
+const SAVE_SAID={read:"Couldn't read the file: try again",rate_limited:"A save is already open",rejected_extension:"This kind of file can't be saved here",extension_not_enabled:"This kind of file can't be saved here",too_large:"Too big to save here"};
+async function saveFile(id,name,type,{dl=downloadsRef,get=(u)=>fetch(u)}={}){
+  if(!dl||!blobId(id))return "Saving isn't available in this view";
+  try{let r;try{r=await get("/_blob/"+id)}catch(_){throw {code:"read"}}if(!r||!r.ok)throw {code:"read"};
+    await dl.save({filename:saveName(name,type),data:await r.blob()});return ""}
+  catch(err){const c=err&&err.code;return c==="declined"?"":SAVE_SAID[c]||"Saving isn't available in this view"}}
+// The click: one save at a time per button; its outcome shows in the note beside it (visible on a phone: a title wasn't).
 document.addEventListener("click",async e=>{const b=e.target&&e.target.closest&&e.target.closest("[data-save]");if(!b)return;
-  e.preventDefault();if(!downloadsRef||!blobId(b.dataset.save)||b.disabled)return;b.disabled=true;
-  try{const r=await fetch("/_blob/"+b.dataset.save);if(!r.ok)throw {code:"read"};
-    await downloadsRef.save({filename:saveName(b.dataset.name,b.dataset.type),data:await r.blob()});b.title="Saved"}
-  catch(err){const c=err&&err.code;b.title=c==="declined"?"":c==="read"?"Couldn't read the file: try again":c==="rate_limited"?"A save is already open":c==="rejected_extension"||c==="extension_not_enabled"?"This kind of file can't be saved here":c==="too_large"?"Too big to save here":"Saving isn't available in this view"}
-  finally{b.disabled=false}});
+  e.preventDefault();if(b.disabled)return;const note=b.nextElementSibling&&b.nextElementSibling.classList.contains("savenote")?b.nextElementSibling:null;
+  if(note)note.textContent="";b.disabled=true;
+  try{const said=await saveFile(b.dataset.save,b.dataset.name,b.dataset.type);if(note)note.textContent=said}finally{b.disabled=false}});
 function sentFiles(r){const fs=(Array.isArray(r&&r.files)?r.files:[]).filter(f=>f&&blobId(f.id));
   return fs.length?` <span class="sentfiles">Files: ${fileLinks(fs)}</span>`:""}
 function addFiles(id,fl){const list=pendingFiles.get(id)||[],errs=[];

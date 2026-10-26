@@ -323,6 +323,33 @@ test("Needs you: the open asks, then the threads Manager answered; empty, it say
   assert.doesNotMatch(renderWaitingHtml([], { messages: [msg("t-9", "Owner", "Waiting", T)] }), /Waiting/, "the owner's own last word waits on Manager, not here");
 });
 
+test("saving a file (#C272): the stored file under its save name; every outcome a line to show, a decline none; a bad id never read", async () => {
+  const b = loadNames(["saveFile", "fileLinks", "setDownloads"]);
+  const id = "0304d2adb98fa84a699c66a27aab61e9";
+  const got = [], blob = { size: 3 };
+  const get = async (u) => { got.push(u); return { ok: true, blob: async () => blob }; };
+  const saved = [];
+  const dl = (fail) => ({ save: async (r) => { saved.push(r); if (fail) throw { code: fail }; return { status: "saved" }; } });
+  assert.equal(await b.saveFile(id, "report", "application/pdf", { dl: dl(), get }), "", "saved: the viewer's prompt said so");
+  assert.deepEqual(got, [`/_blob/${id}`]);
+  assert.equal(saved[0].filename, "report.pdf");
+  assert.equal(saved[0].data, blob, "the stored file itself");
+  assert.equal(await b.saveFile(id, "a.txt", "text/plain", { dl: dl("declined"), get }), "", "a decline is no error");
+  assert.equal(await b.saveFile(id, "a.txt", "text/plain", { dl: dl("too_large"), get }), "Too big to save here");
+  assert.equal(await b.saveFile(id, "a.txt", "text/plain", { dl: dl("rate_limited"), get }), "A save is already open");
+  assert.equal(await b.saveFile(id, "a.exe", "", { dl: dl("rejected_extension"), get }), "This kind of file can't be saved here");
+  assert.equal(await b.saveFile(id, "a.txt", "text/plain", { dl: dl("something_new"), get }), "Saving isn't available in this view");
+  // Designer: a network failure of the read says so (fetch rejects with a TypeError, not a code).
+  assert.equal(await b.saveFile(id, "a.txt", "text/plain", { dl: dl(), get: async () => { throw new TypeError("Failed to fetch"); } }), "Couldn't read the file: try again");
+  assert.equal(await b.saveFile(id, "a.txt", "text/plain", { dl: dl(), get: async () => ({ ok: false }) }), "Couldn't read the file: try again");
+  // Security: an id that isn't a stored asset's is never read, and fileLinks drops it whoever calls it.
+  got.length = 0;
+  assert.equal(await b.saveFile('x" onclick="y', "a.txt", "text/plain", { dl: dl(), get }), "Saving isn't available in this view");
+  assert.deepEqual(got, []);
+  b.setDownloads({ save() {} });
+  assert.equal(b.fileLinks([{ id: '"><img src=x onerror=1>', name: "a.txt", type: "text/plain" }]), "");
+});
+
 test("a thread message's files: an image opens in the lightbox with that message's other images, Esc-able; any other file saves through the viewer (#C272)", () => {
   const b = loadNames(["msgHtml", "openShot", "closeShot", "setDownloads", "saveName"]);
   const id1 = "392a9fe2edba5da37e73585fbc68825a", id2 = "d2ff20e3dc150c8fff5417cd8f4e6544", id3 = "0304d2adb98fa84a699c66a27aab61e9";
@@ -335,8 +362,11 @@ test("a thread message's files: an image opens in the lightbox with that message
   assert.match(html, /<span class="fname" title="[^"]+">log\.txt<\/span>/);
   assert.doesNotMatch(html, /download=|<a href="\/_blob/);
   b.setDownloads({ save() {} });
-  const saving = b.msgHtml({ thread: "t-1", from: "Sam", text: "x", at: 1, assets: [{ id: id3, name: 'log".txt', type: "text/plain" }] });
-  assert.match(saving, new RegExp(`<button type="button" class="filesave" data-save="${id3}" data-name="log&quot;\\.txt" data-type="text/plain">log&quot;\\.txt</button>`));
+  const saving = b.msgHtml({ thread: "t-1", from: "Sam", text: "x", at: 1, assets: [{ id: id3, name: 'log".txt', type: "text/plain" }, { id: id1, name: "notes", type: "text/plain" }] });
+  assert.match(saving, new RegExp(`<button type="button" class="filesave" data-save="${id3}" data-name="log&quot;\\.txt" data-type="text/plain">log&quot;\\.txt</button><small class="savenote" role="status"></small>`));
+  // Designer: two files never read as one name; each has its own visible note for what happened.
+  assert.match(saving, /log&quot;\.txt<\/button><small class="savenote" role="status"><\/small><\/span><span class="fsep"> · <\/span><span class="fsave"><button[^>]*>notes<\/button>/);
+  assert.equal((saving.match(/class="savenote"/g) ?? []).length, 2);
   assert.equal(b.saveName("report", "application/pdf"), "report.pdf", "a name with no extension gets the one its type wants");
   assert.equal(b.saveName("notes.md", "text/markdown"), "notes.md");
   assert.equal(b.saveName("", "text/plain"), "file.txt");
