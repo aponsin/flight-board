@@ -89,4 +89,6 @@ test("through the gate: the lead writes the plan, a Builder's card needs its lin
   has(run([set("c1", card, "initiatives")], lead), "initiatives/c1: no plan");
   assert.deepEqual(run([set("c1", { ...card, plan: "keep-lights-on" }, "initiatives")], builder), []);
   has(run([set("obj-shop", node())], { role: "Collector", manager: false }), "only sets derived/all");
+  const linked = mirror([{ id: "obj-shop", ...node() }], [{ id: "c1", plan: "obj-shop" }]);
+  has(checkWrites([upd("obj-shop", { text: "Open two shops" })], { config, who: lead, now, state: {}, mirror: linked }).errors, "plan/obj-shop: text: 1 initiative(s) link here");
 });
