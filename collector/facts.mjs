@@ -43,7 +43,7 @@ export function entryIndex(git, sha, mainLine) {
 
 // The main branch's recent successful deploy runs, newest first: [{ headSha, createdAt (ms), updatedAt (ms) }]; [] when
 // no workflow is named or gh can't answer. One call per collector run.
-export function deployRuns(gh, workflow, main, limit = 30) {
+export function deployRuns(gh, workflow, main, limit = 100) {
   if (!workflow) return [];
   try {
     const runs = JSON.parse(gh(["run", "list", "--branch", main, "--workflow", workflow, "--status", "success", "--limit", String(limit), "--json", "headSha,createdAt,updatedAt"]));

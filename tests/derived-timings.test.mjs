@@ -75,6 +75,9 @@ test("work under way: build open until READY; a review open from READY (or the n
   try {
     r.g(["checkout", "-qb", "build/wip"]);
     r.commit(100, "w.md", "wip");
+    r.commit(150, "w.md", "more wip");
+    r.g(["checkout", "-qb", "build/one", "main"]);
+    r.commit(160, "o.md", "one commit, not READY");
     r.g(["checkout", "-qb", "build/half", "main"]);
     r.commit(110, "h.md", "half");
     const half = r.commit(200, "h.md", "ready\n\nBoard-Id: half");
@@ -88,9 +91,10 @@ test("work under way: build open until READY; a review open from READY (or the n
     r.commit(610, "v.md", `v1.6.0: build/going@${going.slice(0, 8)}`);
     r.g(["checkout", "-q", "main"]);
     r.sync();
-    const cards = ["wip", "half", "going"].map((id) => ({ id, status: "active", level: "Full" }));
+    const cards = ["wip", "one", "half", "going"].map((id) => ({ id, status: "active", level: "Full" }));
     const { doc } = collect({ config, cards, git: r.git, gh: runsGh([]), now: at(700) });
     assert.deepEqual(doc.times.wip, { build: { start: at(100), end: null } }, "no READY: build only, open");
+    assert.equal(doc.times.one, undefined, "one commit says nothing of when the work began: the steps' to tell");
     assert.deepEqual(doc.times.half, { build: { start: at(110), end: at(200) }, checker: { start: at(200), end: at(300) }, security: { start: at(300), end: null } });
     assert.deepEqual(doc.times.going.ship, { start: at(600), end: null }, "the ship run merged it; main doesn't have it yet");
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
@@ -141,6 +145,32 @@ test("the page: a finished phase with neither evidence nor a step says 'no recor
   const ahead = boxes(b.initRow(b.gates(b.enrich(b.asShown({ ...card, id: "d", status: "active", doneAt: undefined, phase: "checker" })))));
   assert.equal(ahead.Plan, "(no record)", "behind the card's phase");
   assert.notEqual(ahead.Ship, "(no record)", "ahead of it");
+});
+
+test("a head rewritten after its sign-off: READY is the first note; a deploy run read only after the head's own deploy says nothing", () => {
+  const r = repo();
+  try {
+    r.g(["checkout", "-qb", "build/redo"]);
+    r.commit(100, "r.md", "work");
+    const head = r.commit(300, "r.md", "rewritten after the review\n\nBoard-Id: redo");
+    r.note(200, "refs/notes/checker", head); // carried over from the commit that was signed
+    r.g(["checkout", "-qb", "dev", "main"]);
+    r.when(400); r.g(["merge", "-q", "--no-ff", "-m", `Merge commit '${head}' into dev`, head]);
+    r.commit(410, "v.md", `v1.7.0: build/redo@${head.slice(0, 8)}`);
+    r.g(["checkout", "-q", "main"]); r.g(["merge", "-q", "--ff-only", "dev"]);
+    const later = r.commit(900, "z.md", "later work on main");
+    r.sync();
+    const card = { id: "redo", status: "active", level: "Quick" };
+    // Only runs after its deploy were read: the oldest already has it.
+    const late = collect({ config, cards: [card], git: r.git, gh: runsGh([{ headSha: later, createdAt: iso(950), updatedAt: iso(990) }]), now: at(1000) }).doc;
+    assert.equal(late.cards.redo.phase, "live");
+    assert.deepEqual(late.times.redo, { build: { start: at(100), end: at(200) } }, "READY moved back to the note (build ends at 200, not 300); the review has no length; ship and live unknown");
+    // With the run before it read too, the first run that has it is found.
+    const runs = [{ headSha: later, createdAt: iso(950), updatedAt: iso(990) }, { headSha: r.g(["rev-parse", "main~1"]).trim(), createdAt: iso(600), updatedAt: iso(700) }, { headSha: r.start, createdAt: iso(50), updatedAt: iso(60) }];
+    const found = collect({ config, cards: [card], git: r.git, gh: runsGh(runs), now: at(1000) }).doc.times.redo;
+    assert.deepEqual(found.ship, { start: at(400), end: at(600) });
+    assert.deepEqual(found.live, { start: at(600), end: at(700) });
+  } finally { rmSync(r.dir, { recursive: true, force: true }); }
 });
 
 test("a note's time is the time it was written; a sha that isn't one, or no note, reads nothing", () => {
