@@ -896,10 +896,14 @@ function renderCrew(){
     const md=((state.meta.find(d=>d.id==="models")||{}).agents||{})[n];
     return `<div class="crew-row"><span class="who">${esc(n)}${md?`<small class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</small>`:""}</span><span class="crew-items">${body}</span></div>`}).join("");
 }
+// The open cards' order (the owner, 2026-10-26: the most advanced on top): by status (stuck, active, queued, paused),
+// then the furthest phase first in the config's order (ship before security, checker, language, test, build, plan),
+// then the sooner ETA shown.
+const STATUS_ORDER={stuck:0,active:1,queued:2,paused:3};
+function openOrder(a,b){return (STATUS_ORDER[a.status]??1)-(STATUS_ORDER[b.status]??1)||phaseIndex(b.phase)-phaseIndex(a.phase)||(cardEta(a)??9e15)-(cardEta(b)??9e15)}
 function renderBoard(){
   renderCrew();
-  const order={stuck:0,active:1,queued:2,paused:3};
-  const open=state.initiatives.filter(i=>i.status!=="done").sort((a,b)=>(order[a.status]??1)-(order[b.status]??1)||(cardEta(a)??9e15)-(cardEta(b)??9e15));
+  const open=state.initiatives.filter(i=>i.status!=="done").sort(openOrder);
   // Done and the shipped feed show the last 24 hours only; older items stay saved, just out of view.
   const done=state.initiatives.filter(i=>i.status==="done"&&(num(i.doneAt)??0)>Date.now()-DAY).sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0));
   keep($("board"),()=>{$("board").innerHTML=open.length?open.map(initRow).join(""):'<div class="empty">No initiatives in flight.</div>'});

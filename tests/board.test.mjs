@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadBoard, step, renderWaitingHtml } from "./harness.mjs";
+import { loadBoard, loadNames, step, renderWaitingHtml } from "./harness.mjs";
 
 const T = 1_800_000_000_000;
 function item(b, init, steps, fields = {}) {
@@ -390,4 +390,22 @@ test("the usage note names the board's first day only from the config (boardStar
   assert.match(usageNoteText("", 2.5e6), /About 2\.5M tokens/);
   const page = (await import("node:fs")).readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   assert.doesNotMatch(page, /Oct 14/);
+});
+
+test("open cards: by status, then the furthest phase first, then the sooner ETA (board-sort-progress)", () => {
+  const b = loadNames(["openOrder"]);
+  const t = Date.now() + 36e5;
+  const cards = [
+    { id: "build-late", status: "active", phase: "build", etaLive: t + 2e6 },
+    { id: "paused-ship", status: "paused", phase: "ship", etaLive: t },
+    { id: "checker", status: "active", phase: "checker", etaLive: t + 9e6 },
+    { id: "build-soon", status: "active", phase: "build", etaLive: t },
+    { id: "queued-security", status: "queued", phase: "security", etaLive: t },
+    { id: "ship", status: "active", phase: "ship", etaLive: t + 9e6 },
+    { id: "stuck-plan", status: "stuck", phase: "plan", etaLive: t },
+    { id: "plan", status: "active", phase: "plan", etaLive: t },
+    { id: "security", status: "active", phase: "security", etaLive: t + 9e6 },
+  ];
+  assert.deepEqual(cards.slice().sort(b.openOrder).map((c) => c.id),
+    ["stuck-plan", "ship", "security", "checker", "build-soon", "build-late", "plan", "queued-security", "paused-ship"]);
 });
