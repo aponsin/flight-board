@@ -5,7 +5,8 @@
 // - a ship: a repository's origin/main (local refs: every ship is a push from this machine) moved since the last run;
 // - a ship starting or ending: its candidate branches (collector.candidatePattern, local refs) appeared, moved or went;
 // - the owner marked an item done ("Board reply [<id>]: marked done");
-// - the owner asked for a refresh (the word "refresh" in what the owner typed, a thread message or a reply's note).
+// - the owner asked for a refresh (the word "refresh" in what the owner typed, a thread message or a reply's note);
+// - a READY reached the lead from another session (#C237), so a card's phase follows its new tip within minutes.
 // Never while a run is in flight, within debounceMin of the last run's start or of the hook's last ask (a run asked for
 // starts a minute or so later), or twice in a row (stop_hook_active). It only ever names run_scheduled_task <taskId>.
 // The last run is the time collect.mjs --prepare notes in <stateDir>/<board>/export-since.json, with the refresh repos'
@@ -57,7 +58,13 @@ export function ownerSaid(text) {
   return out;
 }
 
-// What the owner did, with when: [{ at (ms), kind: "done" | "refresh", id? }], from the transcript's lines.
+// A READY another session sent the lead (#C237): a line that starts with READY inside a cross-session message. It only
+// asks for a run, so nothing in it reaches the lead's feedback.
+const READY = /<cross-session-message\b[^>]*>(?:[\s\S]*?\n)?[ \t>*_]*READY\b/;
+export const saysReady = (text) => READY.test(String(text ?? ""));
+
+// What the owner did, with when: [{ at (ms), kind: "done" | "refresh" | "ready", id? }], from the transcript's lines;
+// "ready" is a READY a session sent the lead.
 export function ownerEvents(lines) {
   const out = [];
   for (const l of lines) {
@@ -68,6 +75,7 @@ export function ownerEvents(lines) {
       const s = ownerSaid(t);
       for (const id of s.done) out.push({ at, kind: "done", id });
       if (s.refresh) out.push({ at, kind: "refresh" });
+      if (saysReady(t)) out.push({ at, kind: "ready" });
     }
   }
   return out;
@@ -89,6 +97,7 @@ export function decide({ lead, stopActive, now, run = {}, refs = {}, baseline = 
   const done = [...new Set(events.filter((e) => e.kind === "done" && e.at > since).map((e) => idText(e.id)))];
   if (done.length) why.push(`marked done: ${done.join(", ")}`);
   if (events.some((e) => e.kind === "refresh" && e.at > since)) why.push("the owner asked for a refresh");
+  if (events.some((e) => e.kind === "ready" && e.at > since)) why.push("a READY came in");
   return why.length ? why.join("; ") : null;
 }
 

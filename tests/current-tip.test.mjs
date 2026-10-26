@@ -9,6 +9,8 @@ import { fullConfig } from "../scripts/config.mjs";
 import { headsFor } from "../collector/derive.mjs";
 import { collect, tipsOnly } from "../collector/collect.mjs";
 import { writeErrors, mirrorErrors } from "../gate/rules.mjs";
+import { saysReady, ownerEvents, decide } from "../collector/refresh.mjs";
+import { loadNames } from "./harness.mjs";
 
 const PATTERN = "([A-Za-z0-9._/-]+)@([0-9a-f]{7,40})";
 const T0 = 1_790_000_000; // seconds; every commit's time is set, so "newest" never rests on the clock
@@ -117,6 +119,37 @@ test("main and a ship run's candidate branch are never a card's branch, whatever
     assert.equal(doc.cards["ff-card"].phase, "live");
     assert.deepEqual(conflicts, []);
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
+});
+
+test("the page: the repository's reading says how old it is, greyed past 30 minutes; a card on two branches names the one behind", () => {
+  const b = loadNames(["evidence", "asOf"]);
+  const now = Date.now();
+  b.state.derived.push({ id: "all", cards: {
+    x: { phase: "checker", evidence: "e", at: now - 12 * 60e3 },
+    y: { phase: "checker", evidence: "e", at: now - 31 * 60e3 },
+    z: { phase: "checker", evidence: "e", at: now, branches: ["build/z", "fix/z<b>"], behind: "fix/z<b>" },
+  } });
+  assert.match(b.evidence({ id: "x", phase: "checker", status: "active" }), /<\/span> <small class="asof" data-asof="\d+" [^>]*>as of 12 min ago<\/small>$/);
+  assert.match(b.evidence({ id: "y", phase: "checker", status: "active" }), /<small class="asof stale" [^>]*>as of 31 min ago</);
+  const z = b.evidence({ id: "z", phase: "checker", status: "active" });
+  assert.match(z, /^<span class="evidence clash"[^>]*>Repository: Checker · 2 branches, fix\/z&lt;b&gt; behind<\/span>/, "a split shows as a conflict, the branch escaped");
+  assert.equal(b.asOf(undefined), "", "no reading time, nothing said");
+});
+
+test("a READY that reaches the lead from another session asks for a collector run; READY anywhere else doesn't", () => {
+  const msg = (body) => `<cross-session-message from="Builder [8d8b4b]">${body}</cross-session-message>`;
+  assert.ok(saysReady(msg("READY Full: build/x at abc123, Board-Id x")));
+  assert.ok(saysReady(msg("Done with x.\n**READY** (Quick): build/x")), "on a later line, in bold");
+  assert.ok(!saysReady(msg("not READY yet, two tests left")), "mid-line");
+  assert.ok(!saysReady(msg("READYING the branch")), "a longer word");
+  assert.ok(!saysReady("READY Full: build/x"), "typed, not from a session");
+  const T = 1_800_000_000_000, MIN = 60e3;
+  const line = (text, at) => ({ type: "user", timestamp: new Date(at).toISOString(), message: { role: "user", content: text } });
+  const events = ownerEvents([line(msg("READY Full: build/x"), T - 2 * MIN), line("READY", T - 1 * MIN)]);
+  assert.deepEqual(events, [{ at: T - 2 * MIN, kind: "ready" }]);
+  const run = { startedAt: T - 30 * MIN, finishedAt: T - 29 * MIN };
+  assert.equal(decide({ lead: true, stopActive: false, now: T, run, events }), "a READY came in");
+  assert.equal(decide({ lead: true, stopActive: false, now: T, run: { startedAt: T - 11 * MIN, finishedAt: T - 10 * MIN }, events: [{ at: T - 12 * MIN, kind: "ready" }] }), null, "before the last run");
 });
 
 test("the gate: a card names one branch at most; a list of branches, or another branch than the one it names, is refused", () => {
