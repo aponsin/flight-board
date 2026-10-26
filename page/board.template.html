@@ -900,12 +900,14 @@ function initRow(i){
    <div class="track">${steps}</div>
    <div class="i-meta">${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${(()=>{const g=gaps(i);return g.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(g.join(" · "))}</span>`:""})()}</div>${thread}</div>`;
 }
-function renderCrew(){
+// Who is on what: { by: { agent: [open cards] }, names: the roster, then anyone else on a card, notes: meta/crew's idle notes }.
+function crewBy(){
   const open=state.initiatives.filter(i=>i.status!=="done"&&(i.who||Object.keys(i.nowPhases||{}).length));
   const by={};open.forEach(i=>{const ws=new Set([i.who,...Object.values(i.nowPhases||{}).flat()].filter(Boolean));ws.forEach(w=>{(by[w]=by[w]||[]).push(i)})});
   const ROSTER=CONFIG.roster;
-  const notes=(state.meta.find(d=>d.id==="crew")||{}).notes||{};
-  const names=[...ROSTER,...Object.keys(by).filter(n=>!ROSTER.includes(n)).sort()];
+  return {by,names:[...ROSTER,...Object.keys(by).filter(n=>!ROSTER.includes(n)).sort()],notes:(state.meta.find(d=>d.id==="crew")||{}).notes||{}}}
+function renderCrew(){
+  const {by,names,notes}=crewBy();
   $("crew").innerHTML=names.map(n=>{const items=(by[n]||[]).sort((a,b)=>(a.status==="queued")-(b.status==="queued"));
     const body=items.length?items.map(i=>`<span class="ci ${esc(i.status)}">${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name)}</span>`).join(""):`<span class="ci idle">${esc(notes[n]||"Idle")}</span>`;
     const md=((state.meta.find(d=>d.id==="models")||{}).agents||{})[n];
@@ -985,17 +987,21 @@ function renderUsage(){
 // The note under the usage chart: the first day is partial only when the config names it (boardStart).
 function usageNoteText(start,tok){return "Agent minutes count time between reported steps (a step left open counts 2 h at most)."+(start?` The board started on ${start}, so that day is partial.`:"")+(tok?` About ${(tok/1e6).toFixed(1)}M tokens in the last 7 days (approximate).`:" Tokens are approximate, per day.")}
 function renderLive(){const m=state.meta.find(d=>d.id==="live");const gap=liveGap(m,state.events);$("livever").textContent=m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
+// The last 7 days from every card's phaseLog, summed by "who" (the agent) or "phase": { key: { work, busy, gate } } in ms.
+function logTotals(key,now=Date.now()){
+  const since=now-7*864e5, tot={};
+  state.initiatives.forEach(i=>{const log=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filter(e=>e&&num(e.start)!=null).sort((a,b)=>a.start-b.start);
+    log.forEach((e,k)=>{if(!e.who)return;const next=log[k+1];
+      const end=num(e.end)??(next?next.start:(i.status==="done"?(num(i.doneAt)??now):now));
+      const s=Math.max(e.start,since);if(end<=s||!e[key])return;
+      const t=tot[e[key]]=tot[e[key]]||{work:0,busy:0,gate:0};const ms=end-s;
+      if(e.wait==="gate"||e.wait==="decision")t.gate+=ms;else if(e.wait)t.busy+=ms;else t.work+=ms;})});
+  return tot}
 function renderQueue(){
   // From every initiative's phaseLog: time an agent was working on it vs time it sat waiting in that agent's queue (entries with wait:true), last 7 days.
   // An entry with no end stops where the next entry starts, or when the initiative finished; only the last one runs to now.
   // wait:"gate" (or "decision") = held by a pending decision or outside condition; any other wait = queued because the agent was busy.
-  const since=Date.now()-7*864e5, tot={};
-  state.initiatives.forEach(i=>{const log=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filter(e=>e&&num(e.start)!=null).sort((a,b)=>a.start-b.start);
-    log.forEach((e,k)=>{if(!e.who)return;const next=log[k+1];
-      const end=num(e.end)??(next?next.start:(i.status==="done"?(num(i.doneAt)??Date.now()):Date.now()));
-      const s=Math.max(e.start,since);if(end<=s)return;
-      const t=tot[e.who]=tot[e.who]||{work:0,busy:0,gate:0};const ms=end-s;
-      if(e.wait==="gate"||e.wait==="decision")t.gate+=ms;else if(e.wait)t.busy+=ms;else t.work+=ms;})});
+  const tot=logTotals("who");
   const rows=Object.entries(tot).sort((a,b)=>b[1].busy-a[1].busy);
   const fmt=ms=>ms?dur(ms):"—";
   $("qtable").innerHTML=rows.length?`<caption>Last 7 days, per agent</caption><thead><tr><th>Agent</th><th>Working</th><th title="Waiting because this agent was busy with other work">Queued (busy)</th><th title="Held by a pending decision or condition, not by the agent">Gated</th></tr></thead><tbody>${rows.map(([n,t])=>`<tr><td>${esc(n)}</td><td>${fmt(t.work)}</td><td class="${t.busy>t.work&&t.busy>36e5?"hot":""}">${fmt(t.busy)}</td><td>${fmt(t.gate)}</td></tr>`).join("")}</tbody>`:"";
@@ -1033,9 +1039,12 @@ document.addEventListener("submit",async e=>{const c=e.target.dataset&&e.target.
 // A dashed red tile means the agent saved its notes and waits for the owner to type /clear in it.
 // Each agent also writes its own reading to "ctx/<Role>" {pct, at} when it logs a step; the freshest reading wins.
 // The keeper's check (meta "context") still carries the saved / "clear me" flags. A reading older than 2 h is dimmed.
-function renderCtx(){const m=state.meta.find(d=>d.id==="context")||{},a={};
+// Each agent's memory reading: meta/context's, or a fresher ctx/<agent> one. { name: { pct, at, saved? } }.
+function ctxAgents(){const m=state.meta.find(d=>d.id==="context")||{},a={};
   Object.entries(m.agents||{}).forEach(([n,v])=>{a[n]={...v,at:num(v.at)??num(m.at)}});
   state.ctx.forEach(d=>{if(!d.id||num(d.pct)==null)return;const cur=a[d.id]||{};if(!num(cur.at)||num(d.at)>cur.at)a[d.id]={...cur,pct:d.pct,at:num(d.at)}});
+  return a}
+function renderCtx(){const a=ctxAgents();
   const ORDER=CONFIG.order;
   const names=[...ORDER.filter(n=>a[n]),...Object.keys(a).filter(n=>!ORDER.includes(n)).sort()];
   const ready=names.filter(n=>a[n].saved);
