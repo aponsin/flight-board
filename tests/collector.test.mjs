@@ -280,7 +280,9 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /"Bash\(node <full path of the pinned install>\/collector\/collect\.mjs --config <full path to board\.config\.json> --prepare\)"/);
   assert.match(doc, /"Bash\(node <full path of the pinned install>\/collector\/collect\.mjs --config <full path to board\.config\.json>\)"/);
   assert.match(doc, /no wildcards/);
-  assert.match(doc, /never runs with\s+bypassPermissions or in auto mode/);
+  assert.match(doc, /\*\*Mode: Auto\*\*/);
+  assert.match(doc, /Never\s+Accept edits or Bypass/);
+  assert.match(doc, /"matcher": "\*"[\s\S]*?collector\/fence\.mjs' --config '<full path to board\.config\.json>' --send-to <the lead's session id> \|\| exit 2/, "the fence on every tool, failing closed");
   assert.match(doc, /Never open, read or print those files/);
   assert.match(doc, /`out_dir` this session's scratchpad folder followed by\s+`\/flight-board-export`/, "the export goes to the run's scratchpad (the save test)");
   assert.match(doc, /Never read the exported files/);
@@ -297,7 +299,7 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.ok(!settings.permissions.deny.includes("mcp__ccd_session_mgmt__send_message"));
   assert.match(doc, /never with cd, &&, or anything added or/, "the commands run exactly as allowed (Security)");
   assert.match(doc, /Never pass the document inline/);
-  assert.match(doc, /`get` `derived\/all` with `out_dir` `<dir>\/out`/, "derived/all's text never enters the session (Security), saved inside the run's folder");
+  assert.match(doc, /`get` `derived\/all` with `out_dir` this session's scratchpad folder followed by\s+`\/derived-version`/, "derived/all's text never enters the session (Security), saved in the run's scratchpad, where the fence allows it");
   assert.match(doc, /\*\*Folder\*\*: the board's own state folder/, "exports are saved only inside the run's folder (trial 2)");
   assert.equal(settings.permissions.additionalDirectories, undefined, "everything is inside the run's folder");
   assert.match(doc, /must start with `\/\/`, the absolute form/);

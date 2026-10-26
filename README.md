@@ -11,29 +11,44 @@ Everything particular to one team lives in its own `board.config.json`, outside 
 | Path | What it is |
 |---|---|
 | `page/board.template.html` | The board page, with a `/*BOARD_CONFIG*/` block the build fills in. |
-| `scripts/config.mjs` | The config's fields and their check. |
+| `scripts/config.mjs` | The config's fields, their defaults and their check. |
 | `scripts/build-page.mjs` | Builds the page for one config into `dist/board.html`. |
+| `scripts/install.mjs` | One-time setup for a team: checks the config, turns on the scan, builds the page. |
 | `scripts/scan.mjs`, `.githooks/pre-push` | The content scan, run before every push. |
-| `scripts/install.mjs` | One-time setup for a team. |
-| `tests/` | The page's rules, the config check, the build and the scan. `npm test`. |
+| `scripts/hooks.mjs` | Installs the hooks below into Claude Code's settings, from a pinned copy of one signed commit. |
+| `scripts/thread-ids.mjs` | The lead's tool for numbering and naming threads. |
+| `gate/` | The write gate: a PreToolUse hook on board writes and hand-off messages, a PostToolUse hook that records what the board applied, and a Stop hook on the lead's replies. |
+| `collector/collect.mjs` | The collector: each card's phase worked out from the repository, and the nudges. |
+| `collector/TASK.md` | The scheduled task that runs the collector: its folder, settings, mode and steps. |
+| `collector/fence.mjs` | The collector's fence: a hook that lets its run make only its own steps. |
+| `collector/refresh.mjs` | A Stop hook that tells the lead to run the collector now, after a ship or the owner's word. |
+| `tests/` | Every rule's test. `npm test`. |
 | `board.config.example.json` | An example config, fictional. |
-
-| `gate/` | The write gate: a PreToolUse hook on board writes and hand-off messages, and a Stop hook on the lead's replies. |
-| `scripts/hooks.mjs` | The gate's entries for Claude Code's settings: printed, or written with `--write`. |
-
-| `collector/` | The collector: each card's phase worked out from the repository (`collect.mjs`), and the scheduled task that runs it (`TASK.md`). |
-
-Coming next: the nudges (timers that remind the lead agent).
 
 ## Set up a team
 
-1. Write your `board.config.json` somewhere outside this repository, starting from `board.config.example.json`. The fields: `title`, `owner` (the person the board works for, as they sign), `artifactUrl`, `phases` (`[key, label]` in order), `roster` and `order` (the roles shown), `skips` (a phase only at a level, or skipped when an item field is false), `boardStart`, and the usage labels.
-2. Write a private word list outside this repository: one word or name per line that must never appear here (the business's name, its people, its customers, its domain).
-3. Run `node scripts/install.mjs <board.config.json> <words.txt>`. It checks the config, turns on the pre-push scan with your list, and builds `dist/board.html`.
+Four steps, in order. Every path below is a placeholder: use your own.
 
-## Publish the page
-
-Ask your lead agent to publish `dist/board.html` with its Artifact tool: a new artifact the first time (put its link in `artifactUrl`), the same link afterwards. The page needs the `db`, `comments` and `assets` capabilities. Run `npm test` before every publish.
+1. **Config, word list, install.** Write your `board.config.json` somewhere outside this repository, starting from
+   `board.config.example.json`. The fields: `title`, `owner` (the person the board works for, as they sign),
+   `artifactUrl` (empty until step 2), `phases` (`[key, label]` in order), `roster` and `order` (the roles shown), `skips`
+   (a phase only at a level, or skipped when an item field is false), `boardStart`, the usage labels, and the `gate`,
+   `collector` and `nudges` blocks (below; `scripts/config.mjs` lists every field and its default). Write a private word
+   list outside this repository too: one word or name per line that must never appear here (the business's name, its
+   people, its customers, its domain). Then run `node scripts/install.mjs <board.config.json> <words.txt>`: it checks the
+   config, turns on the pre-push scan with your list, and builds `dist/board.html`.
+2. **Publish the page.** Ask your lead agent to publish `dist/board.html` with its Artifact tool: a new artifact the
+   first time (put its link in `artifactUrl` and build again), the same link afterwards. The page needs the `db`,
+   `comments` and `assets` capabilities. Run `npm test` before every publish.
+3. **Install the hooks.** Pick the commit you trust (its tests green, reviewed), then
+   `node scripts/hooks.mjs <board.config.json> --pin <commit>` prints what it would change; add `--write` to change
+   `~/.claude/settings.json` (it keeps a copy). Run it from a checkout of that very commit (a detached worktree is
+   simplest): the script that writes the hooks is the checkout's, so an older branch writes older hooks. This changes
+   Claude Code's settings, so the owner runs it, or says yes to it themselves; no agent approves it for them.
+4. **Create the collector's task.** Follow `collector/TASK.md`: the folder `<gate.stateDir>/<board id>`, the task
+   created from a one-off session started there, its settings file with the fence, the prompt, and Auto mode in the
+   task's Edit form. Run it once by hand, then schedule it hourly. Give the lead an allow rule for
+   `mcp__scheduled-tasks__run_scheduled_task` if it should start runs on demand.
 
 ## Threads
 
@@ -82,5 +97,29 @@ The nudges (`collector/nudges.mjs`, settings under `nudges` in the config) come 
 **Keep `~/.flight-board` private.** The gate's state (`gate.json`) holds the text of recent board writes, messages included, and the mirror holds a copy of the board. Leave that folder out of any backup that leaves the machine, any sync folder and any export.
 
 Each run is a scheduled Claude session following `collector/TASK.md`; only a Claude session can write the board.
+
+### The fence
+
+The run is unattended and in Auto mode (its one board write asks for consent once per session, and "Allow once" is all
+the consent offers, so in the default mode every run would wait for the owner). Auto lets the mode's own check approve
+calls, so `collector/fence.mjs` decides first: a PreToolUse hook on every tool, in the collector's folder only, that
+lets through exactly the steps of `collector/TASK.md` and refuses anything else. Each call may carry only its known
+fields; paths and links compare as exact strings; the board's rows go only to files in the run's scratchpad, never into
+the session. Any failure refuses, a crash or a missing file included (`|| exit 2` on its command). It never grants
+anything: it only refuses.
+
+### Runs on demand
+
+Besides the hourly run, `collector/refresh.mjs` (a Stop hook `scripts/hooks.mjs` installs next to the gate's) holds the
+lead's turn end once with "start the collector now" when, since the last run started:
+
+- a checkout listed in `collector.refresh.repos` shows its `origin/main` moved (local refs only, no fetch: a ship pushed
+  from this machine updates them; `--prepare` notes them when a run starts);
+- the owner marked an item done;
+- the owner wrote "refresh" (typed, in a thread, or in a reply's note).
+
+It names only `run_scheduled_task <collector.refresh.taskId>`, and never fires while a run is in flight
+(`flightMin`, 15), within `debounceMin` (10) of the last run or of its own last ask, or twice in a row. It is advisory:
+on any error it lets the turn end.
 
 **Every READY commit carries a `Board-Id: <card id>` trailer** from now on, so the collector finds the work even when the branch has another name.
