@@ -85,7 +85,7 @@ section{min-width:0}
 .state.stalled{background:var(--bad-soft);color:var(--bad)}
 .stall{color:var(--bad);font-weight:600}
 @media (prefers-reduced-motion:reduce){.step.now{animation:none;box-shadow:inset 0 0 0 2px var(--panel),0 0 0 2px var(--accent)}}
-.step small{display:block;font-weight:400;opacity:.85;overflow:hidden;text-overflow:ellipsis}
+.step small{display:block;font-weight:400;opacity:.85;overflow:hidden;text-overflow:ellipsis}.step small.norec{color:var(--muted);font-style:italic}
 /* The phase in progress carries the most detail (who, time, ship estimate): give it room. */
 .track>.step.now{flex:2.2 1 0}
 .track>.step,.track>.wait{display:flex;flex-direction:column;justify-content:center;min-height:2.6rem}
@@ -948,7 +948,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const steps=PHASES.map(([k,l],n)=>{if(k==="test"&&skip.includes(k)&&n!==idx)return "";const pre=(waits[k]||[]).map(w=>`<div class="wait ${w.kind}${w.open?" live":""}" title="${w.kind==="gate"?"Waiting on a decision":"Waiting: the agent was busy"} before ${esc(l)}">${w.kind==="gate"?"⏸ Gated":"⧗ Queued"}<small>${esc(w.who)}${w.who?" · ":""}${dur(w.ms)}</small></div>`).join("");const np=i.status!=="done"&&i.nowPhases&&i.nowPhases[k];let c="step";if(np&&n!==idx)c+=" now";else if(skip.includes(k)&&n!==idx)c+=" skip";else if(i.status==="done"||n<idx)c+=" done";else if(n===idx&&i.upNext&&!stuck)c+=" upnext";else if(n===idx&&!(waits[k]||[]).some(w=>w.open))c+=" now"+(stuck?" stuck":queued?" queued":"");
     // An open wait box in front of this phase already says what holds it; the phase itself stays plain until work starts.
     // A phase nobody has started says "up next" instead of pulsing as if someone were on it.
-    const t=(n===idx&&i.upNext&&!stuck&&i.status!=="done")?`<small>up next</small>`:(np&&n!==idx)?`<small>${esc(np.join(", "))}${times[k]?" · "+dur(times[k]):""}</small>`:(n===idx&&i.status!=="done"&&i.who)?`<small>${esc(i.who)}${times[k]?" · "+dur(times[k]):""}</small>`:times[k]?`<small>${dur(times[k])}</small>`:(skip.includes(k)?"<small>not needed</small>":"<small>&nbsp;</small>");// While Release ships: an estimate from past ships (tests ~7 min, then deploy, ~10 min in all), labelled "est.".
+    const t=(n===idx&&i.upNext&&!stuck&&i.status!=="done")?`<small>up next</small>`:(np&&n!==idx)?`<small>${esc(np.join(", "))}${times[k]?" · "+dur(times[k]):""}</small>`:(n===idx&&i.status!=="done"&&i.who)?`<small>${esc(i.who)}${times[k]?" · "+dur(times[k]):""}</small>`:times[k]?`<small>${dur(times[k])}</small>`:skip.includes(k)?"<small>not needed</small>":(i.status==="done"||n<idx)&&k!==LIVE_PHASE?'<small class="norec">no record</small>':"<small>&nbsp;</small>";// While Release ships: an estimate from past ships (tests ~7 min, then deploy, ~10 min in all), labelled "est.".
     const sm=k==="ship"&&n===idx&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
     const sd=sm!=null?`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`:k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";return pre+`<div class="${c}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}">${esc(l)}${t}${sd}</div>`}).join("");
   const iss=i.issues||{};const chips=[["bugs","bugs"],["security","security fixes"],["language","wording fixes"]].map(([k,l])=>{const v=num(iss[k])||0;return `<span class="chip ${v?"":"zero"}">${v} ${l}</span>`}).join(" ");
@@ -1136,7 +1136,16 @@ function renderCtx(){const a=ctxAgents();
 // {init: <initiative id>, phase: plan|build|language|checker|security|ship|live, who, kind: "start"|"end", at: <ms>, wait?: "busy"|"gate", version?}.
 // The page turns them into phase entries, so Manager no longer has to relay or guess times.
 // A "live" event marks the initiative done. Skips: Security unless level is Full; Linguist when customerText is false.
-function enrich(i){return byEvidence(fromSteps(i))}
+function enrich(i){return byEvidence(withEvidenceTimes(fromSteps(i)))}
+// Each phase's times from the evidence (#C235: the collector's derived/all.times, from git, the notes and the deploy
+// runs): for a phase the evidence shows, its entry takes the place of the steps' (waits stay, and the steps' who stays
+// with it); phases it doesn't show (a test, a design talk) keep their steps.
+function timesOf(id){const all=state.derived.find(d=>d.id==="all");const t=all&&all.times&&Object.prototype.hasOwnProperty.call(all.times,id)?all.times[id]:null;return t&&typeof t==="object"?t:null}
+function withEvidenceTimes(out){const t=timesOf(out.id);if(!t)return out;
+  const shown=PHASES.map(p=>p[0]).filter(k=>Object.prototype.hasOwnProperty.call(t,k)&&t[k]&&num(t[k].start)!=null);if(!shown.length)return out;
+  const log=Array.isArray(out.phaseLog)?out.phaseLog:[],kept=log.filter(e=>!(e&&!e.wait&&shown.includes(e.phase)));
+  const add=shown.map(k=>{const was=log.find(e=>e&&!e.wait&&e.phase===k&&e.who);const en={phase:k,who:was?was.who:null,start:t[k].start,evidence:true};if(num(t[k].end)!=null)en.end=t[k].end;return en});
+  return {...out,phaseLog:kept.concat(add)}}
 // The repository's word over the steps' (#C207): when the collector has firm evidence for a card (its head, sign-off
 // notes, main, the deploy), that is its phase; the steps give the timings, and a step phase that disagrees shows as a
 // clash. Steps win only when they are newer than the collector's run and further on (a review signed since).

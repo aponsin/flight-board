@@ -9,6 +9,7 @@ import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
 import { collect } from "../collector/collect.mjs";
 import { noteAt } from "../collector/timings.mjs";
+import { loadNames, step } from "./harness.mjs";
 
 const PATTERN = "([A-Za-z0-9._/-]+)@([0-9a-f]{7,40})";
 const T0 = 1_790_000_000; // seconds; every commit and note carries a set time
@@ -93,6 +94,53 @@ test("work under way: build open until READY; a review open from READY (or the n
     assert.deepEqual(doc.times.half, { build: { start: at(110), end: at(200) }, checker: { start: at(200), end: at(300) }, security: { start: at(300), end: null } });
     assert.deepEqual(doc.times.going.ship, { start: at(600), end: null }, "the ship run merged it; main doesn't have it yet");
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
+});
+
+// ---- The page ----
+const MIN = 60e3, D0 = 1_792_900_000_000;
+function page(times, steps = []) {
+  const b = loadNames(["initRow", "enrich", "gates", "asShown"]);
+  Object.assign(b.state, { steps, waiting: [] });
+  b.state.derived.push({ id: "all", cards: {}, times });
+  return b;
+}
+// The text under each phase's box: { Plan: "10 min", ... }.
+function boxes(html) {
+  const out = {};
+  for (const m of html.matchAll(/<div class="step[^"]*" title="([^"]+)">\1<small([^>]*)>([^<]*)<\/small>/g)) out[m[1]] = m[2].includes("norec") ? `(${m[3]})` : m[3];
+  return out;
+}
+const card = { id: "c", name: "C", status: "done", doneAt: D0 + 100 * MIN, level: "Full", customerText: false, version: "1.5.0" };
+
+test("the page: a card with no steps at all shows every box's time from the evidence", () => {
+  const b = page({ c: { plan: { start: D0, end: D0 + 10 * MIN }, build: { start: D0 + 10 * MIN, end: D0 + 40 * MIN }, checker: { start: D0 + 40 * MIN, end: D0 + 45 * MIN }, security: { start: D0 + 45 * MIN, end: D0 + 52 * MIN }, ship: { start: D0 + 60 * MIN, end: D0 + 68 * MIN }, live: { start: D0 + 68 * MIN, end: D0 + 71 * MIN } } });
+  const shown = boxes(b.initRow(b.gates(b.enrich(b.asShown(card)))));
+  assert.deepEqual(shown, { Plan: "10 min", Build: "30 min", Language: "not needed", Checker: "5 min", Security: "7 min", Ship: "8 min", Live: "3 min" });
+});
+
+test("the page: evidence beats a step that disagrees; a phase the evidence doesn't show keeps its steps", () => {
+  const steps = [
+    step("c", "build", "Builder", "start", D0), step("c", "build", "Builder", "end", D0 + 90 * MIN),
+    step("c", "test", "Builder", "start", D0 + 90 * MIN, { id: "t1" }), step("c", "test", "Builder", "end", D0 + 94 * MIN, { id: "t2" }),
+  ];
+  const b = page({ c: { build: { start: D0 + 10 * MIN, end: D0 + 40 * MIN } } }, steps);
+  const shown = boxes(b.initRow(b.gates(b.enrich(b.asShown(card)))));
+  assert.equal(shown.Build, "30 min", "the repository's 30 minutes, not the steps' 90");
+  assert.equal(shown.Test, "4 min", "no evidence for test: its steps");
+  const open = b.enrich(b.asShown({ ...card, status: "active", doneAt: undefined }));
+  assert.ok(open.phaseLog.some((e) => e.phase === "build" && e.evidence && e.who === "Builder"), "the steps' who stays with the evidence's entry");
+});
+
+test("the page: a finished phase with neither evidence nor a step says 'no record' in grey; skipped, ahead and live boxes don't", () => {
+  const b = page({ c: { build: { start: D0 + 10 * MIN, end: D0 + 40 * MIN } } });
+  const done = boxes(b.initRow(b.gates(b.enrich(b.asShown(card)))));
+  assert.equal(done.Plan, "(no record)");
+  assert.equal(done.Checker, "(no record)");
+  assert.equal(done.Language, "not needed");
+  assert.notEqual(done.Live, "(no record)", "live is where a card ends, not a phase with a length");
+  const ahead = boxes(b.initRow(b.gates(b.enrich(b.asShown({ ...card, id: "d", status: "active", doneAt: undefined, phase: "checker" })))));
+  assert.equal(ahead.Plan, "(no record)", "behind the card's phase");
+  assert.notEqual(ahead.Ship, "(no record)", "ahead of it");
 });
 
 test("a note's time is the time it was written; a sha that isn't one, or no note, reads nothing", () => {
