@@ -21,7 +21,9 @@ function fingerprint(doc) {
   return JSON.stringify(sort(doc));
 }
 
-export function nudges({ config, docs, now, state = {} }) {
+// waiting: the cards whose derived state is a wait with a known cause (#C278: queued for a board release, waiting for the
+// install): no step-overdue or unchanged nudge for them.
+export function nudges({ config, docs, now, state = {}, waiting = new Set() }) {
   const n = config.nudges, owner = config.owner, firing = [];
   const messages = (docs.messages ?? []).filter((m) => m && typeof m.thread === "string" && typeof m.at === "number");
   const byThread = new Map();
@@ -50,7 +52,7 @@ export function nudges({ config, docs, now, state = {} }) {
   }
   for (const [key, s] of runs) {
     const card = cards.get(s.init), median = n.etaHours[card?.size];
-    if (!card || closed(card) || typeof median !== "number") continue;
+    if (!card || closed(card) || waiting.has(card.id) || typeof median !== "number") continue;
     if (now - s.at > n.stepFactor * median * HOUR) firing.push({ key: `step:${key}`, text: `${q(s.who)} on ${q(s.init)} (${q(s.phase)}): open ${hours(now - s.at)} h, over ${n.stepFactor}× the ${q(card.size)} median of ${median} h` });
   }
 
@@ -67,7 +69,7 @@ export function nudges({ config, docs, now, state = {} }) {
     if (closed(card)) continue;
     const fp = fingerprint(card), before = Object.hasOwn(state.seen ?? {}, card.id) ? state.seen[card.id] : undefined;
     seen[card.id] = before && before.fp === fp ? before : { fp, since: now };
-    if (n.parked.includes(card.status)) continue;
+    if (n.parked.includes(card.status) || waiting.has(card.id)) continue;
     if (now - seen[card.id].since >= n.staleHours * HOUR) firing.push({ key: `stale:${card.id}`, text: `${q(card.id)}: unchanged for ${hours(now - seen[card.id].since)} h; update it or park it` });
   }
 

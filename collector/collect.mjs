@@ -5,8 +5,8 @@
 // It prints one line per conflict (a card's declared phase against its evidence), the cards live by the evidence but
 // still open, and the nudges (collector/nudges.mjs), for the lead. It never writes the board itself: only a Claude session can (collector/TASK.md).
 import { realpathSync } from "node:fs";
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync, readdirSync, lstatSync, cpSync } from "node:fs";
-import { sep } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync, readdirSync, lstatSync, cpSync, readlinkSync } from "node:fs";
+import { sep, basename } from "node:path";
 import { execFileSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -131,11 +131,11 @@ export function takeExport(src, dir, id) {
 
 // The nudges, with the last run's state next to the mirror (<dir>/nudges.json: what was sent when, and since when each
 // card is unchanged). Returns the NUDGE lines to print.
-export function runNudges(dir, config, docs, now) {
+export function runNudges(dir, config, docs, now, waiting = new Set()) {
   const path = join(dir, "nudges.json");
   let before = {};
   try { before = JSON.parse(readFileSync(path, "utf8")); } catch { /* first run, or a broken file: start afresh */ }
-  const { lines, state } = nudges({ config, docs, now, state: before && typeof before === "object" ? before : {} });
+  const { lines, state } = nudges({ config, docs, now, state: before && typeof before === "object" ? before : {}, waiting });
   writeFileSync(path, JSON.stringify(state));
   return lines;
 }
@@ -171,8 +171,38 @@ export function leastAdvanced(card, tips, derive, config) {
   return { ...d, branches: tips.map((t) => t.branch), behind: h.branch, evidence: `${d.evidence}; ${tips.length} branches, ${lineText(h.branch, 60)} is behind` };
 }
 
-// live: liveBuild()'s answer for this run (null when there is no liveUrl or it couldn't be read).
-export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null }) {
+// The repository a card lives in (#C278): one of collector.repos by the card's own repo field, else the first whose id
+// prefix the card carries; null for the team's own repository (collector.repoPath).
+export function repoOf(card, config) {
+  const repos = config.collector.repos ?? [];
+  if (card.repo) return repos.find((r) => r.name === card.repo) ?? null;
+  return repos.find((r) => (r.idPrefixes ?? []).some((p) => String(card.id).startsWith(p))) ?? null;
+}
+
+// A card in another repository, by the same derivation from its branch's current tip (#C237), with that repository's
+// notes and main branch, and "deployed" meaning installed: on main and inside the commit the repository's
+// installedLink points at. Every review signed is then a wait with a known cause, never a stall: "release" (not on main
+// yet: queued for a board release) or "install" (on main, not installed yet). use: { git, installed }, or nothing when
+// the repository couldn't be read, which leaves the card as declared.
+export function inRepo(card, r, use, config, now) {
+  const c = config.collector;
+  if (!use?.git) return { phase: null, evidence: `${r.name}: its repository was not read this run`, repo: r.name, at: now };
+  const remote = r.remote ?? "origin", main = r.mainBranch ?? "main";
+  const cfg = { ...config, collector: { ...c, remote, mainBranch: main, notes: localNotes(r.notes) } };
+  let heads = [];
+  try { heads = remoteHeads(use.git, remote); } catch { /* an empty clone */ }
+  const tips = headsFor(card.id, heads.filter((h) => h.branch !== main));
+  const derive = (h) => {
+    const facts = factsFor(use.git, h, { config: cfg, line: [], deployed: use.installed ?? null });
+    const d = derivePhase(card, facts, cfg);
+    return d.phase === c.shipPhase ? { ...d, wait: facts.onMain ? "install" : "release" } : d;
+  };
+  return { ...leastAdvanced(card, tips, derive, config), repo: r.name, at: now };
+}
+
+// live: liveBuild()'s answer for this run (null when there is no liveUrl or it couldn't be read). repos: { name: { git,
+// installed } } for the collector.repos read this run.
+export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null, repos = {} }) {
   const c = config.collector;
   const cfg = { ...config, collector: { ...c, notes: localNotes(c.notes) } };
   const line = mainLine(git, c.remote, c.mainBranch);
@@ -188,6 +218,8 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
     return { ...leastAdvanced(card, tips, (h) => derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg), config), at: now };
   };
   for (const card of open) {
+    const r = repoOf(card, config);
+    if (r) { derived[card.id] = inRepo(card, r, repos[r.name], config, now); continue; }
     derived[card.id] = phaseOf(card);
     const tips = tipsOf[card.id];
     if (tips.length > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
@@ -202,6 +234,7 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const times = {};
   const recent = cards.filter((k) => closed(k) && Number.isFinite(k.doneAt) && k.doneAt > now - STEPS_DAYS * 864e5);
   for (const card of [...open, ...recent]) {
+    if (repoOf(card, config)) continue; // the evidence times read the team's repository only
     const d = derived[card.id] ?? phaseOf(card);
     const head = tipsOf[card.id].find((h) => h.sha === d.head);
     if (!head) continue;
@@ -266,10 +299,28 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     git(["fetch", "-q", config.collector.remote]);
     git(["fetch", "-q", config.collector.remote, "+refs/notes/*:refs/notes/flight-board/*"]);
   }
+  // The other repositories (#C278), each from its own clone: fetched like the team's, and what's installed read from its
+  // link (the commit folder it points at). One that can't be read leaves its cards as declared.
+  const repos = {};
+  for (const r of config.collector.repos) {
+    try {
+      const at = home(r.path);
+      if (!existsSync(at)) continue;
+      const rgit = (args) => execFileSync("git", args, { cwd: at, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
+      if (!process.argv.includes("--no-fetch")) {
+        rgit(["fetch", "-q", r.remote ?? "origin"]);
+        rgit(["fetch", "-q", r.remote ?? "origin", "+refs/notes/*:refs/notes/flight-board/*"]);
+      }
+      let installed = null;
+      try { const sha = basename(readlinkSync(home(r.installedLink ?? ""))); installed = /^[0-9a-f]{40}$/.test(sha) ? sha : null; } catch { /* no link: nothing installed */ }
+      repos[r.name] = { git: rgit, installed };
+    } catch (e) { console.error(`Collector: ${r.name}: ${String(e.message).split("\n")[0]}`); }
+  }
   const now = Date.now();
   const live = await liveBuild(fetch, config.collector.liveUrl, config.collector.liveTag);
-  const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live });
-  const nudged = { lines: runNudges(dir, config, mirror.docs, now) };
+  const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos });
+  const waits = new Set(Object.entries(doc.cards).filter(([, d]) => d.wait).map(([id]) => id));
+  const nudged = { lines: runNudges(dir, config, mirror.docs, now, waits) };
   const out = outPath(config, dir);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(doc, null, 2));

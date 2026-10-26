@@ -938,18 +938,23 @@ function waitBoxes(log,doneAt){const out={};const l=(Array.isArray(log)?log:[]).
     const kind=e.wait==="busy"?"busy":"gate",arr=out[e.phase]=out[e.phase]||[],last=arr[arr.length-1];
     if(last&&last.kind===kind&&last.who===e.who){last.ms+=Math.max(0,en-e.start);last.open=open}else arr.push({kind,who:e.who||"",ms:Math.max(0,en-e.start),open})});
   return out}
+// A wait the repository explains (#C278, the collector's derived/all): signed and queued for a board release, or on main
+// and waiting for the owner's install. Nobody owes a step meanwhile, so no stall, no "never started", no stale next step.
+const KNOWN_WAITS={release:"Queued for board release",install:"Waiting for install"};
+function knownWait(i){const d=derivedOf(i&&i.id);return d&&Object.hasOwn(KNOWN_WAITS,d.wait)?d.wait:null}
 // What Manager forgot, flagged by the board itself instead of relying on memory.
-function gaps(i){const g=[],now=Date.now();
+function gaps(i){const g=[],now=Date.now(),kw=knownWait(i);
   if(i.status==="done"){const shipped=(Array.isArray(i.phaseLog)?i.phaseLog:[]).some(e=>e&&e.phase==="ship"&&!e.wait);if(shipped&&!i.shipDetail)g.push("no ship times");return g}
   const eta=cardEta(i);if(!eta)g.push("no ETA");else if(eta<now)g.push("ETA passed");
-  if(!i.nextNote)g.push("no next step");else if(num(i.nextNoteAt)&&now-i.nextNoteAt>36e5)g.push("next step over 1 h old");
+  if(!i.nextNote)g.push("no next step");else if(!kw&&num(i.nextNoteAt)&&now-i.nextNoteAt>36e5)g.push("next step over 1 h old");
   if(!i.level)g.push("no review level");
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];
-  if(!num(i.lastStepAt)&&!log.length){if(num(i.createdAt)&&now-i.createdAt>9e5)g.push("never started")}
+  if(!kw&&!num(i.lastStepAt)&&!log.length){if(num(i.createdAt)&&now-i.createdAt>9e5)g.push("never started")}
   return g}
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
-// tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, or done. Returns minutes.
-function stalled(i){if(!i||i.status!=="active"||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE))return 0;
+// tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
+// repository explains, or done. Returns minutes.
+function stalled(i){if(!i||i.status!=="active"||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE)||knownWait(i))return 0;
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];if(log.some(e=>e&&e.wait&&e.end==null))return 0;
   const last=num(i.lastStepAt)??log.reduce((m,e)=>Math.max(m,num(e&&e.end)??num(e&&e.start)??0),0);
   if(!last)return 0;const m=Math.floor((Date.now()-last)/60000);return m>=30?m:0}
@@ -1003,7 +1008,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   const vn=i.status!=="done"?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
   const st=stalled(i);
-  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":st?"Stalled":"In flight";
+  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:st?"Stalled":"In flight";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
   const nAt=num(i.nextNoteAt),stale=nAt!=null&&num(i.lastStepAt)!=null&&i.lastStepAt>nAt;
   const next=i.nextNote?`<span${stale?' style="opacity:.6"':""}>Next: <b>${esc(i.nextNote)}</b>${num(i.nextAt)?` <span data-next="${i.nextAt}">${i.nextAt>Date.now()?"in "+dur(i.nextAt-Date.now()):"due now"}</span>`:""}${nAt!=null?` <span data-ago="${nAt}">(written ${dur(Date.now()-nAt)} ago${stale?"; an agent has moved since":""})</span>`:" (not dated)"}</span>`:"";

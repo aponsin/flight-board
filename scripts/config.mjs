@@ -22,8 +22,10 @@ export const DEFAULTS = {
   // candidatePattern: the name of a ship run's own branch, which exists only while the run is on and whose commits name
   // what it ships (shippedPattern); empty for none. liveUrl: the live site the board's "Live now" reads (https, or empty for none); liveTag: how its page names the
   // build it serves (groups: version, commit). contextRoles: the roles whose memory tiles the collector reads from the app,
-  // each from the session titled exactly as the role (collector/context.mjs); empty for none.
-  collector: { contextRoles: [], repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", liveUrl: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
+  // each from the session titled exactly as the role (collector/context.mjs); empty for none. repos: other repositories
+  // whose cards the collector reads (#C278): [{ name, path (a clone of its own), mainBranch, remote, notes: {phase: ref},
+  // idPrefixes (card ids it holds; a card's own repo field wins), installedLink (the link whose commit is what's installed) }].
+  collector: { contextRoles: [], repos: [], repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", liveUrl: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
     // Runs on demand (collector/refresh.mjs): the checkouts whose origin/main moving means a ship (local refs, no fetch), the
     // scheduled task the lead is told to run, the quiet minutes after a run (or an ask) and how long a run may take.
     refresh: { repos: [], taskId: "board-collector", debounceMin: 10, flightMin: 15 } },
@@ -93,6 +95,24 @@ export function checkConfig(c) {
       for (const f of ["versionPattern", "shippedPattern", "liveTag", "candidatePattern"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
       if (k.liveUrl !== undefined && !(k.liveUrl === "" || (typeof k.liveUrl === "string" && k.liveUrl.length <= 300 && /^https:\/\/[^\s/?#]+(\/[^\s]*)?$/.test(k.liveUrl)))) out.push("collector.liveUrl: an https address, or empty");
       if (k.contextRoles !== undefined && !(Array.isArray(k.contextRoles) && k.contextRoles.length <= 40 && k.contextRoles.every((r) => typeof r === "string" && /^[A-Za-z0-9_-]{1,60}$/.test(r)))) out.push("collector.contextRoles: a list of up to 40 role names (letters, digits, _ and -), each a session's exact title");
+      if (k.repos !== undefined) {
+        const REPO = ["name", "path", "mainBranch", "remote", "notes", "idPrefixes", "installedLink"];
+        if (!Array.isArray(k.repos) || k.repos.length > 5) out.push("collector.repos: a list of up to 5 repositories");
+        else {
+          k.repos.forEach((r, n) => {
+            const at = `collector.repos[${n}]`;
+            if (!r || typeof r !== "object" || Array.isArray(r)) { out.push(`${at}: an object`); return; }
+            for (const f of Object.keys(r)) if (!REPO.includes(f)) out.push(`${at}: unknown field "${f}" (known: ${REPO.join(", ")})`);
+            if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(String(r.name ?? ""))) out.push(`${at}.name: lower case letters, digits and -`);
+            for (const f of ["path", "installedLink"]) if (r[f] !== undefined || f === "path") if (!(typeof r[f] === "string" && r[f].length > 0 && r[f].length <= 300 && !/[\n\0]/.test(r[f]))) out.push(`${at}.${f}: a folder path`);
+            for (const f of ["mainBranch", "remote"]) if (r[f] !== undefined && !/^[A-Za-z0-9._\/-]{1,100}$/.test(String(r[f]))) out.push(`${at}.${f}: a git name`);
+            if (!r.notes || typeof r.notes !== "object" || Array.isArray(r.notes) || Object.entries(r.notes).some(([p, ref]) => !phaseKeys2.includes(p) || !/^refs\/notes\/[A-Za-z0-9._-]{1,60}$/.test(String(ref)))) out.push(`${at}.notes: { phase: refs/notes/<name> }`);
+            if (r.idPrefixes !== undefined && !(Array.isArray(r.idPrefixes) && r.idPrefixes.length <= 10 && r.idPrefixes.every((p) => /^[a-z0-9-]{1,40}$/.test(String(p))))) out.push(`${at}.idPrefixes: a list of card id prefixes`);
+          });
+          const names = k.repos.map((r) => r?.name);
+          if (new Set(names).size !== names.length) out.push("collector.repos: each name once");
+        }
+      }
       if (k.refresh !== undefined) {
         const r = k.refresh;
         if (!r || typeof r !== "object" || Array.isArray(r)) out.push("collector.refresh: an object");

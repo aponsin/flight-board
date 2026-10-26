@@ -230,6 +230,30 @@ test("a folded Answer is clipped to three lines by the page's styles", async () 
 
 // ---- More gaps ----
 
+test("#C278: a wait the repository explains (queued for a board release, waiting for the install) is no stall and raises no step alarms", () => {
+  const b = loadBoard();
+  const old = Date.now() - 5 * 3600e3;
+  const base = { etaLive: Date.now() + 1, nextNote: "x", nextNoteAt: old, createdAt: old };
+  const derived = (wait) => { b.state.derived = [{ id: "all", cards: { "board-x": { phase: "ship", wait, evidence: "e" } } }]; };
+  for (const [wait, says] of [["release", "Queued for board release"], ["install", "Waiting for install"]]) {
+    derived(wait);
+    const i = item(b, "board-x", [step("board-x", "build", "Boardsmith", "start", old - 1), step("board-x", "build", "Boardsmith", "end", old)], base);
+    assert.equal(b.stalled(i), 0, wait);
+    assert.ok(![...b.gaps(i)].some((g) => /over 1 h old|never started/.test(g)), wait);
+    assert.match(b.initRow(i), new RegExp(says));
+    assert.doesNotMatch(b.initRow(i), /Stalled/);
+    const fresh = item(b, "board-x", [], { ...base, lastStepAt: undefined });
+    assert.ok(![...b.gaps(fresh)].includes("never started"), `${wait}: no step logged is fine while waiting`);
+  }
+  // Without a known wait (or an unknown one) the alarms are as before.
+  for (const wait of [undefined, "lunch", "constructor"]) {
+    derived(wait);
+    const i = item(b, "board-x", [step("board-x", "build", "Boardsmith", "start", old - 1), step("board-x", "build", "Boardsmith", "end", old)], base);
+    assert.ok(b.stalled(i) > 0, String(wait));
+    assert.ok([...b.gaps(i)].includes("next step over 1 h old"), String(wait));
+  }
+});
+
 test("9. stalled: in flight with no step for 30+ min shows a Stalled flag, not a Manager-missed line", () => {
   const b = loadBoard();
   const old = Date.now() - 31 * 60e3;

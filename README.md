@@ -131,6 +131,14 @@ Each card's version is the repository's, never written by hand (`plannedVersion`
 
 From those it works out the card's phase: build, then each review not yet signed, then ship, then live. A head is READY when it carries the card's `Board-Id`, or, until every team does, when any reviewer has signed it. A card given up closes as `"dropped"` with a `dropReason`. A card's phase is its branch's current tip's; a card is one branch (a second one is a `CONFLICT`: split the rework into a sub-card). The collector also times each phase from the evidence (`collector/timings.mjs`: the first commit, READY, each sign-off note, the ship run, the first deploy run that has the work). It writes everything to one document, `derived/all`. The page shows each card at the repository's phase when the evidence is firm (the evidence's times where it has them, the steps' elsewhere, "no record" for a finished phase with neither; steps newer than the run and further on win until the next one), with "Repository: <phase> <version>" on it, in red with "steps say …" when the steps disagree, and the gate checks phase moves, one card per role and phase, and done-only-when-closed against it.
 
+Cards whose work lives in another repository (the board's own cards, in flight-board) are read from it with
+`collector.repos` (#C278): each a name, a clone of its own (`path`), its main branch, its review notes, the card ids it
+holds (`idPrefixes`; a card's own `repo` field wins) and `installedLink`, the link whose commit is what's installed
+(`~/.flight-board/current` for the board). The same derivation runs there, with "deployed" meaning installed, and every
+review signed becomes a wait the repository explains: "Queued for board release" until the commit is on main, then
+"Waiting for install" until the link includes it, then live. Neither wait is a stall: the page raises no stalled, never
+started or stale next-step alarm, and the collector no step-overdue or unchanged nudge, while it lasts.
+
 Sign-off notes are fetched into `refs/notes/flight-board/`, so the team's own notes refs are never overwritten. Point `collector.repoPath` at a clone of its own, not at a checkout someone works in. `collector.outDir` is where the collector writes its one output, `derived-all.json` (default `<gate.stateDir>/<board id>/out`); the scheduled run sets it to a folder outside the state folder, which its settings deny to Read whole (`collector/TASK.md`).
 
 A thread with no number yet (the owner's own new thread from the page, which only the lead numbers) is one more
@@ -160,6 +168,9 @@ Every collector change used to cost the owner an install. Now only what constrai
 
 - **The owner's install** (`scripts/hooks.mjs --pin`, the collector's settings): the gate's hooks, the refresh hook,
   the fence and the memory hook, each pinned by commit in the settings, and every file they import (`importClosure` in `scripts/current.mjs`).
+  The fence takes only `collector/export.mjs` (two constants, no imports), so the collector's own code
+  (`collect.mjs`, `derive.mjs`, `facts.mjs`, `nudges.mjs` …) is not pinned: it goes out as a board release, under
+  Security's Full review (#C278).
   A change to them waits for the owner's next install, so batch them.
 - **No owner** (the collector's code, the page, the task's steps): the scheduled run starts
   `~/.flight-board/current/collector/collect.mjs`. `current` is a symlink to a pinned copy
