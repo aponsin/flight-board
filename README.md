@@ -128,6 +128,9 @@ From those it works out the card's phase: build, then each review not yet signed
 
 Sign-off notes are fetched into `refs/notes/flight-board/`, so the team's own notes refs are never overwritten. Point `collector.repoPath` at a clone of its own, not at a checkout someone works in. `collector.outDir` is where the collector writes its one output, `derived-all.json` (default `<gate.stateDir>/<board id>/out`); the scheduled run sets it to a folder outside the state folder, which its settings deny to Read whole (`collector/TASK.md`).
 
+A thread with no number yet (the owner's own new thread from the page, which only the lead numbers) is one more
+`NUDGE` line every run until the lead numbers it with `scripts/thread-ids.mjs`.
+
 The nudges (`collector/nudges.mjs`, settings under `nudges` in the config) come out of the same run as `NUDGE` lines: the owner waiting for an answer, a step open past its card size's median, an old memory reading, a card unchanged for a day. Each is sent once, then again only after a quiet period.
 
 **Keep `~/.flight-board` private.** The gate's state (`gate.json`) holds the text of recent board writes, messages included, and the mirror holds a copy of the board. Leave that folder out of any backup that leaves the machine, any sync folder and any export.
@@ -149,20 +152,29 @@ anything: it only refuses.
 Every collector change used to cost the owner an install. Now only what constrains an agent does (#C223):
 
 - **The owner's install** (`scripts/hooks.mjs --pin`, the collector's settings): the gate's hooks, the refresh hook and
-  the fence, each pinned by commit in the settings. A change to them waits for the owner's next install, so batch them.
+  the fence, each pinned by commit in the settings, and every file they import (`importClosure` in `scripts/current.mjs`).
+  A change to them waits for the owner's next install, so batch them.
 - **No owner** (the collector's code, the page, the task's steps): the scheduled run starts
   `~/.flight-board/current/collector/collect.mjs`. `current` is a symlink to a pinned copy
   (`~/.flight-board/install/<full commit>`). `node scripts/current.mjs <commit>`, from a checkout, moves it, and only to a
   commit on `origin/main` that carries Security's `SECURE` note (`refs/notes/security`, on this repository's origin). The
   move is one rename. The script says when the commit also changes the owner's files (they wait for the install) or
   `collector/TASK.md` (the lead saves the new steps into the task, `update_scheduled_task`). The lead republishes the page.
+  It compares with the commit the settings pin, and uses a copy already in `install/` only when it is exactly that
+  commit (`git archive`, file by file, nothing extra); anything else is refused.
+
+**What gates a collector change is Security's review**, not the fence. The fence bounds the session's tool calls, but
+`collect.mjs` is a Node process with the owner's user rights (no sandbox: it fetches from GitHub, asks `gh`, reads the
+live site and writes the repository clone's refs), and a `SECURE` note is a process, not an identity: any session that
+can push may write one. So every change the link carries (the collector, the page, the task) gets Full review, and
+Security signs with `git notes --ref=security add -m "SECURE" <commit>` and `git push origin refs/notes/security`.
 
 The fence lets the two steps run from its own pinned copy or from `current`, and from `current` only while it is a
 symlink to `<install root>/<full commit>` holding the collector. Step 1 records which copy it ran; step 2 refuses to run
-any other ("run step 1 again"), so a move mid-run never mixes two versions. A new collector still runs inside the
-pinned fence, whatever it does.
-
-Security signs a commit with `git notes --ref=security add -m "SECURE" <commit>` and `git push origin refs/notes/security`.
+any other ("run step 1 again"), so a move mid-run never mixes two versions. The owner's settings deny Edit and Write on
+`~/.flight-board/**` (`"deny": ["Edit(~/.flight-board/**)", "Write(~/.flight-board/**)"]` in `~/.claude/settings.json`),
+so no session's file tools can plant or edit a copy there; a shell command still can, which the copy check above catches
+at the next move and Security's install check catches after.
 
 ### Runs on demand
 

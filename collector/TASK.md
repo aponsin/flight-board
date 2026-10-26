@@ -122,7 +122,7 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
    `/flight-board-export` (a scheduled run saves an export without asking only into its own scratchpad), so the documents
    go to that folder and never into this session:
    - one ArtifactData `list` per collection, with `query.limit` 1000: `initiatives`, `waiting`, `ideas`, `messages`,
-     `derived`, `ctx`, `plan` (`plan` may be empty: a board with no plan yet exports no folder for it);
+     `derived`, `ctx`, `plan`, `threads` (`plan` and `threads` may be empty: a board with none yet exports no folder);
    - one ArtifactData `query` of `steps`, with `query.where` `[["at", ">=", <the Steps since time>]]` and
      `query.limit` 1000, again with each `next_cursor` until there is none.
 

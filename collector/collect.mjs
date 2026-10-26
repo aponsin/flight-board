@@ -18,6 +18,7 @@ import { nudges } from "./nudges.mjs";
 import { derivePlan } from "./plan-state.mjs";
 import { idText } from "./text.mjs";
 import { runMark, localMain, localShips } from "./refresh.mjs";
+import { allocate } from "../scripts/thread-ids.mjs";
 
 // The folder this run's code really lives in (the current link resolved, by Node, to a pinned copy).
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -62,9 +63,18 @@ export function swapMirror(dir, id) {
 // rules would have to match.
 export const EXPORT_NAME = "flight-board-export";
 // The collections a complete export holds (collector/TASK.md, step 1).
-export const EXPORT_COLLECTIONS = ["initiatives", "waiting", "ideas", "messages", "derived", "ctx", "steps", "plan"];
-// The ones a complete export must hold: an empty collection exports no folder, and a board may have no plan yet (v3).
-export const REQUIRED_COLLECTIONS = EXPORT_COLLECTIONS.filter((c) => c !== "plan");
+export const EXPORT_COLLECTIONS = ["initiatives", "waiting", "ideas", "messages", "derived", "ctx", "steps", "plan", "threads"];
+// The ones a complete export must hold: an empty collection exports no folder, and a board may have no plan yet (v3)
+// or no numbered thread yet.
+export const REQUIRED_COLLECTIONS = EXPORT_COLLECTIONS.filter((c) => c !== "plan" && c !== "threads");
+
+// Threads with no number yet (a waiting item, or a thread its messages open, with no threads/<id> {num}): the owner's
+// own new threads come in through the page, and only the lead numbers. One NUDGE line, every run until they're numbered,
+// so a new thread never sits without its #T (#C227). The lead runs scripts/thread-ids.mjs; the collector writes nothing.
+export function unnumberedThreads(docs) {
+  const { batches } = allocate({ threads: docs.threads ?? [], messages: docs.messages ?? [], waiting: docs.waiting ?? [], seq: null });
+  return batches.flat().filter((w) => w.collection === "threads" && Number.isInteger(w.data?.num)).map((w) => w.doc_id);
+}
 // Where sessions working in `cwd` keep their scratchpads: <root>/<cwd, every character but a letter or digit as "-">/
 // <session>/scratchpad. One root only, links resolved (/tmp is /private/tmp on a Mac): never a wider search (Security).
 export function scratchRoot(cwd, uid, base = "/private/tmp") {
@@ -218,4 +228,6 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   for (const line of conflicts) console.log(`CONFLICT ${line}`);
   if (doc.liveButOpen.length) console.log(`LIVE BUT OPEN (${doc.liveButOpen.length}): ${doc.liveButOpen.map(idText).join(", ")}`);
   for (const line of nudged.lines) console.log(line);
+  const loose = unnumberedThreads(mirror.docs);
+  if (loose.length) console.log(`NUDGE ${loose.length} thread(s) with no number: ${loose.map(idText).join(", ")}. Number them now (scripts/thread-ids.mjs, meta/threadSeq pinned).`);
 }
