@@ -4,6 +4,7 @@
 
 ### Added
 - Card numbers (`#C12`), like thread numbers: a new card takes `num` from `meta/cardSeq` in the same batch (pinned, no gaps, never back), and keeps it for good; `scripts/card-ids.mjs` numbers the open and recent cards that have none. The `C` keeps them from being read as threads' `#T12`.
+- The Plan view, step 2 of v3: "Try the new layout" (or `#v3` in the link) shows the plan as an outline, each node with its state (done, in progress, gated with what it waits on, next), each objective with its bar and an on track / at risk / blocked chip against its due day, replaced nodes struck through with when, why, their replacement and the decision's thread, the cards on each node, and the open ideas at the bottom. The current board stays the default; the choice is this browser's only. The collector works the states out (`collector/plan-state.mjs`) and writes them into `derived/all` as `plan`.
 - The plan layer, step 1 of v3 (data and gate only; the page doesn't show it yet): a `plan` collection of nodes (`objective`, `milestone`, `step`, nested by `parent`, with `outcome`, `measure`, `due`, `waitsOn`, a declared `state` with `evidence`). Only the lead writes it; a node is never deleted, and one that has cards is replaced (`replacedBy`, `changedAt`, `why`), never edited in its `text` or `outcome`. Every new card names the plan node it serves (`plan`), a real node that wasn't replaced. The collector exports `plan` too (optional: a board without a plan still exports complete).
 
 ### Changed

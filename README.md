@@ -77,6 +77,15 @@ writes the plan, and never deletes from it: a node that has cards is replaced, n
 `replacedBy`, `changedAt` and `why` and stays, struck through; the new one sits below it). `state` is only ever
 declared `done` with `evidence`; the collector works out the rest.
 
+The collector writes each node's state into `derived/all` (`plan.nodes`): replaced, done (declared, or every card and
+node below it done), in progress (an open card on it or below it), gated (a `waitsOn` entry naming a node or card not
+done, any other `waitsOn` text until the lead removes it, or an open ask tied to one of its cards) or next. Each objective
+gets its bar (done over all the nodes below it) and a chip against its `due` day (ending 23:59:59 UTC): done, blocked
+(all that is left is gated), at risk (the size medians of what is left, `nudges.etaHours`, run past it) or on track.
+The page's **Plan** view shows the outline with those states, the cards on each node, and the open ideas at the bottom.
+It sits behind "Try the new layout" (or `#v3` in the link); the current board stays the default, and the choice is
+remembered in that browser only.
+
 ## Tests
 
 `npm test` runs every rule's test. Each rule also had a mutation check: break the rule on purpose, a test must fail, restore.

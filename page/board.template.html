@@ -248,6 +248,29 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .ctx-head h2{font-size:.95rem}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .livever{font:600 .9rem var(--mono);color:var(--ok);margin-left:10px}
+/* Board v3 (step 2): the Plan view, behind "Try the new layout"; the current board stays the default. */
+#v2:not([hidden]),#v3:not([hidden]){display:contents}
+.viewlink{font:600 .85rem var(--body);color:var(--accent);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
+ul.plan{list-style:none;margin:0;padding:0}
+ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(--line)}
+.pn{padding:6px 0}
+.pn-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+.pn-text{font-weight:600}
+.k-objective>.pn-line .pn-text{font:700 1.2rem/1.2 var(--display);letter-spacing:.03em;text-transform:uppercase}
+.pn-st,.pn-chip{font:600 .72rem var(--mono);padding:1px 6px;border-radius:4px;white-space:nowrap}
+.st-ok{background:var(--ok-soft);color:var(--ok)}
+.st-accent{background:var(--accent-soft);color:var(--accent)}
+.st-warn{background:var(--warn-soft);color:var(--warn)}
+.st-bad{background:var(--bad-soft);color:var(--bad)}
+.st-muted{background:var(--track);color:var(--muted)}
+.pn-replaced>.pn-line .pn-text{color:var(--muted);font-weight:400}
+.pn-sub{color:var(--muted);font-size:.9rem;margin-top:2px}
+.pn-bar{display:inline-block;width:160px;max-width:40vw;height:8px;border-radius:4px;background:var(--track);overflow:hidden;vertical-align:middle}
+.pn-bar>span{display:block;height:100%;background:var(--ok)}
+.pn-cards{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:.88rem;margin-top:2px}
+.pn-cards span{color:var(--muted)}
+.plan-ideas{margin-top:16px;border-top:1px solid var(--line);padding-top:10px}
+.plan-ideas h3{font:700 1rem var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
 </style>
 
 <div class="wrap">
@@ -256,6 +279,16 @@ svg text{fill:var(--muted);font:10px var(--mono)}
     <div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div>
   </header>
   <div class="stuckline" id="stuck" hidden></div>
+  <p style="margin:0"><button type="button" class="viewlink" id="viewlink">Try the new layout</button></p>
+
+  <div id="v3" hidden>
+  <section aria-labelledby="h-plan">
+    <h2 id="h-plan">Plan</h2>
+    <div class="panel" id="plan"><div class="empty">No plan yet.</div></div>
+  </section>
+  </div>
+
+  <div id="v2">
 
   <section aria-labelledby="h-ctx">
     <div class="ctx-head"><h2 id="h-ctx" style="margin:0">Agents' memory</h2><span class="w-sub" id="ctxnote"></span></div>
@@ -316,6 +349,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
       </div>
     </section>
   </div>
+  </div>
 </div>
 
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot">
@@ -331,7 +365,7 @@ const PHASES=CONFIG.phases;
 // The phase work is built in, as the collector names it (collector.buildPhase).
 const BUILD_PHASE=(CONFIG.collector&&CONFIG.collector.buildPhase)||"build";
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -732,6 +766,7 @@ function renameWrites(id,title){const t=String(title||"").replace(/\s+/g," ").tr
 document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-tref]");if(!a)return;e.preventDefault();
   const el=[...document.querySelectorAll("[data-thread]")].find(x=>x.dataset.thread===a.dataset.tref);
   if(!el){a.title="That thread is no longer shown on the board";return}
+  if(el.closest("#v2")&&$("v2").hidden)setView("v2");
   for(let d=el.closest("details");d;d=d.parentElement&&d.parentElement.closest("details"))d.open=true;
   el.scrollIntoView({block:"start",behavior:"smooth"})});
 // Rename: the name becomes a box; Enter or Save writes it, Esc or Cancel puts the line back.
@@ -1047,11 +1082,68 @@ function gates(i){
 }
 // A card given up ("dropped", with dropReason) is closed like a done one, and says so.
 const asShown=i=>i&&i.status==="dropped"?{...i,status:"done",dropped:true}:i;
-function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderBoard();renderFeed();renderUsage()}
+// Board v3, the Plan view (step 2; board-brief section 9): the plan's outline, each node with the state the collector
+// worked out (derived/all's plan: done, in progress, gated, next), each objective with its bar and chip against its due
+// day, replaced nodes struck through with when and why, the cards serving each node, and the ideas not in the plan yet
+// at the bottom. Without the collector's states yet, only what the node itself says (replaced, declared done) shows.
+// Every value from the board goes through esc() or linkify().
+const PLAN_STATES={done:["Done","ok"],active:["In progress","accent"],gated:["Gated","warn"],next:["Next","muted"],replaced:["Changed","muted"]};
+const PLAN_CHIPS={"on-track":["On track","ok"],"at-risk":["At risk","warn"],blocked:["Blocked","bad"],done:["Done","ok"]};
+function planDerived(){const all=state.derived.find(d=>d.id==="all");return all&&all.plan&&typeof all.plan==="object"?all.plan:null}
+function planGate(g){if(!g||typeof g!=="object")return "";const on=String(g.on??"");
+  if(g.kind==="ask"){const q=state.waiting.find(w=>w.id===on);return `${esc(OWNER)}: ${q&&q.text?esc(String(q.text).slice(0,120)):"an open question"}${num(g.since)!=null?` (${esc(dur(Date.now()-g.since))})`:""}`}
+  if(g.kind==="below")return "everything left below it";
+  if(g.kind==="node"){const n=state.plan.find(x=>x.id===on);return n?`“${esc(n.text)}”`:esc(on)}
+  if(g.kind==="card"){const i=state.initiatives.find(x=>x.id===on);return `${i&&i.name?esc(i.name):esc(on)}${g.who?` (${esc(g.who)})`:""}`}
+  return linkify(on)}
+function planHtml(){
+  const nodes=state.plan.filter(n=>n&&typeof n.id==="string");
+  const dp=planDerived(),byId=new Map(nodes.map(n=>[n.id,n])),kids=new Map(),roots=[];
+  for(const n of nodes){if(typeof n.parent==="string"&&byId.has(n.parent)&&n.parent!==n.id){if(!kids.has(n.parent))kids.set(n.parent,[]);kids.get(n.parent).push(n)}else roots.push(n)}
+  const sort=l=>l.slice().sort((a,b)=>(num(a.order)??0)-(num(b.order)??0)||String(a.id).localeCompare(String(b.id)));
+  const cards=new Map();for(const i of state.initiatives)if(typeof i.plan==="string"&&i.status!=="dropped"){if(!cards.has(i.plan))cards.set(i.plan,[]);cards.get(i.plan).push(i)}
+  const seen=new Set();
+  const row=(n,depth)=>{if(seen.has(n.id)||depth>30)return "";seen.add(n.id);
+    const d=n.replacedBy?{state:"replaced"}:(dp&&dp.nodes&&dp.nodes[n.id]&&PLAN_STATES[dp.nodes[n.id].state]?dp.nodes[n.id]:(n.state==="done"?{state:"done"}:null));
+    const [label,cls]=d?PLAN_STATES[d.state]:["",""];
+    const kind=["objective","milestone","step"].includes(n.kind)?n.kind:"step";
+    let h=`<li class="pn k-${kind}${d?" pn-"+d.state:""}" data-node="${esc(n.id)}"><div class="pn-line">${d?`<span class="pn-st st-${cls}">${label}</span>`:""}<span class="pn-text">${n.replacedBy?`<s>${linkify(n.text)}</s>`:linkify(n.text)}</span>`;
+    if(n.due)h+=`<span class="pn-sub">due ${esc(n.due)}</span>`;
+    const o=kind==="objective"&&dp&&dp.objectives&&dp.objectives[n.id];
+    if(o&&num(o.total)){const pct=Math.max(0,Math.min(100,Math.round(100*(num(o.done)??0)/o.total)));
+      h+=`<span class="pn-bar" role="img" aria-label="${esc(`${num(o.done)??0} of ${o.total} done`)}"><span style="width:${pct}%"></span></span><span class="pn-sub">${esc(`${num(o.done)??0} of ${o.total}`)}</span>`}
+    if(o&&PLAN_CHIPS[o.chip])h+=`<span class="pn-chip st-${PLAN_CHIPS[o.chip][1]}">${PLAN_CHIPS[o.chip][0]}</span>`;
+    h+="</div>";
+    if(n.outcome||n.measure)h+=`<div class="pn-sub">${[n.outcome?linkify(n.outcome):"",n.measure?`Measure: ${linkify(n.measure)}`:""].filter(Boolean).join(" · ")}</div>`;
+    if(n.replacedBy){const by=byId.get(n.replacedBy);const tid=typeof n.decisionThread==="string"?n.decisionThread:null;const t=tid&&state.threads.find(x=>x.id===tid);
+      h+=`<div class="pn-sub">Changed${num(n.changedAt)!=null?" "+esc(new Date(n.changedAt).toLocaleDateString()):""}${n.why?`: ${linkify(n.why)}`:""}${by?` · now “${esc(by.text)}”`:""}${tid?` · <a href="#" class="t-ref" data-tref="${esc(tid)}">${t&&num(t.num)!=null?"#T"+t.num:"the decision"}</a>`:""}</div>`}
+    if(d&&d.state==="gated"&&Array.isArray(d.gates)&&d.gates.length)h+=`<div class="pn-sub">Waits on: ${d.gates.slice(0,6).map(planGate).filter(Boolean).join("; ")}</div>`;
+    if(n.state==="done"&&n.evidence)h+=`<div class="pn-sub">${linkify(n.evidence)}</div>`;
+    if(n.note)h+=`<div class="pn-sub">${linkify(n.note)}</div>`;
+    const mine=cards.get(n.id)||[];
+    if(mine.length)h+=`<div class="pn-cards">${mine.slice(0,12).map(i=>{const ph=i.status==="done"?"done":(PHASES.find(p=>p[0]===i.phase)||[,i.phase||""])[1];return `<span>${esc(i.name||i.id)}${ph?" · "+esc(ph):""}</span>`}).join("")}</div>`;
+    const below=sort(kids.get(n.id)||[]).map(c=>row(c,depth+1)).join("");
+    return h+(below?`<ul class="plan">${below}</ul>`:"")+"</li>"};
+  const outline=sort(roots).map(n=>row(n,0)).join("");
+  const ideas=listOpen("ideas");
+  const ideasHtml=ideas.length?`<div class="plan-ideas"><h3>Ideas not in the plan yet</h3><ul class="plan">${ideas.map(t=>`<li class="pn"><div class="pn-line">${t.kind&&IKIND[t.kind]?`<span class="ik ${esc(t.kind)}">${IKIND[t.kind]}</span>`:""}<span>${esc(t.text)}</span></div></li>`).join("")}</ul></div>`:"";
+  if(!outline)return `<div class="empty">No plan yet. ${esc(CONFIG.gate&&CONFIG.gate.managerRole||"The lead")} writes it with ${esc(OWNER)} at the go-gate.</div>${ideasHtml}`;
+  return `<ul class="plan">${outline}</ul>${dp?"":`<div class="pn-sub">States show once the collector has run on the plan.</div>`}${ideasHtml}`}
+function renderPlan(){const el=$("plan");if(!$("v3").hidden)keep(el,()=>{el.innerHTML=planHtml()})}
+// Which layout: the current board (v2) unless this viewer chose the new one ("#v3" in the link opens it too). The
+// choice is this browser's only; nothing is written to the board.
+let view="v2";
+function setView(v){view=v==="v3"?"v3":"v2";$("v3").hidden=view!=="v3";$("v2").hidden=view==="v3";
+  $("viewlink").textContent=view==="v3"?"Back to the current board":"Try the new layout";
+  try{localStorage.setItem("flight-board-view",view)}catch(e){}
+  if(view==="v3")renderPlan()}
+function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderBoard();renderFeed();renderUsage();renderPlan()}
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});
   document.querySelectorAll("[data-next]").forEach(e=>{const t=+e.dataset.next;e.textContent=t>Date.now()?"in "+dur(t-Date.now()):"due now"});}
+$("viewlink").addEventListener("click",()=>setView(view==="v3"?"v2":"v3"));
+(()=>{let v=null;try{v=localStorage.getItem("flight-board-view")}catch(e){}if(typeof location!=="undefined"&&location.hash==="#v3")v="v3";if(v==="v3")setView("v3")})();
 setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()},15000);tick();renderAll();
 
 (async()=>{
@@ -1062,6 +1154,6 @@ setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()
   window.claude.use("assets").then(a=>{if(a){assetsRef=a;renderWaiting();renderThreads()}}).catch(()=>{});
   const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderAll();$("synced").textContent="live, updated "+hhmm(Date.now())},
     ()=>{$("dot").classList.remove("on");$("synced").textContent="connection lost, reload"});
-  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads"].forEach(sub);
+  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan"].forEach(sub);
 })();
 </script>
