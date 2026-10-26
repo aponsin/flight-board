@@ -9,7 +9,7 @@ import { fullConfig, checkConfig, boardId } from "../scripts/config.mjs";
 import { checkWrites, writeErrors, refusalText } from "../gate/rules.mjs";
 import { run, handOff, checkHandOff, readMirror, writesOf } from "../gate/gate.mjs";
 import { sessionRole, currentTurn } from "../gate/session.mjs";
-import { stopCheck } from "../gate/stop.mjs";
+import { stopCheck, replyNotes, ACK_ONLY } from "../gate/stop.mjs";
 import { after } from "../gate/after.mjs";
 
 const URL_ = "https://claude.ai/" + "artifact/TestBoard01";
@@ -183,6 +183,28 @@ test("rule 9, case 5: the owner's thread message is answered in its thread, not 
   assert.match(stopCheck(turn(ping, [], "The green one."), { config })[0], /answer there/);
   assert.deepEqual(stopCheck(turn(ping, [boardWrite({ thread: "w1", from: "Manager", text: "The green one.", at: now }, "messages")], "Answered."), { config }), []);
   assert.match(stopCheck(turn(ping, [boardWrite({ thread: "w2", from: "Manager", text: "x", at: now }, "messages")], "Answered."), { config })[0], /thread w1/);
+});
+
+test("case 5, #C268: a note on a button reply is the owner's word in that thread; a turn that answers it only by comment can't end", () => {
+  // The page's ping for Ack or Done with a note: the note is written into the item's thread (#T854-#T856, 2026-10-26).
+  const note = 'Board reply [ans-pr-283]: acknowledged on "It is stuck on review.". Note: done';
+  const comment = { name: "ArtifactComments", input: { action: "reply", url: URL_, thread_id: "c1", text: "Thanks, it worked." } };
+  const answer = boardWrite({ thread: "ans-pr-283", from: "Manager", text: "Thanks, it worked.", at: now }, "messages");
+  assert.match(stopCheck(turn(note, [comment], "Answered in the comment."), { config }).join(), /the owner wrote in thread ans-pr-283: answer there/, "a comment only: refused");
+  assert.deepEqual(stopCheck(turn(note, [comment, answer], "Answered."), { config }), [], "answered in the thread too");
+  assert.deepEqual(stopCheck(turn(note, [], "Noted."), { config }), [], "an acknowledgement, left unanswered: nothing owed");
+  const question = 'Board reply [clear-demos]: marked done on "Clear Demos.". Note: it failed on step 2, what now?';
+  assert.match(stopCheck(turn(question, [], "I'll look."), { config }).join(), /thread clear-demos/, "a real question in a note is owed an answer in its thread");
+  assert.deepEqual(stopCheck(turn('Board reply [w9]: chose A on "Which?".', [comment], "Done."), { config }), [], "a reply without a note wrote nothing in a thread");
+  // As the comment quotes them: several pings, a note over two lines, files after a note.
+  const quoted = '[Artifact comment sent to Claude]\n=== BEGIN ARTIFACT COMMENT x ===\n> Board reply [a1]: acknowledged on "A.". Note: ok\n> Board reply [a2]: marked done on "B.". Note: done, but\n> the page is blank now?\n> Board reply [a3]: acknowledged on "C.". Note: ok Files (1): shot.png = f1\n=== END ARTIFACT COMMENT x ===';
+  assert.deepEqual(replyNotes(quoted), [{ id: "a1", note: "ok" }, { id: "a2", note: "done, but\nthe page is blank now?" }, { id: "a3", note: "ok" }]);
+  assert.deepEqual(stopCheck(turn(quoted, [], "On it."), { config }).map((e) => /thread (\S+):/.exec(e)[1]), ["a2"], "only the real question is owed");
+  // The page and the hook settle the same notes.
+  const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.equal(/const ACK_ONLY=(\/.*\/i);/.exec(page)[1], String(ACK_ONLY));
+  // The thread ping still counts as before, with a comment-only answer too.
+  assert.match(stopCheck(turn("Board thread [w1]: Owner: Which button?", [comment], "Commented."), { config }).join(), /thread w1/);
 });
 
 test("the turn starts at the last message a person sent, not at a tool result", () => {
