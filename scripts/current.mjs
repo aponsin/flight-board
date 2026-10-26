@@ -1,5 +1,5 @@
 // Points the collector's current link at a signed commit (#C223), so a collector change goes out without the owner:
-//   node scripts/current.mjs <commit> [--install-root <folder>] [--settings <file>] [--dry-run]
+//   node scripts/current.mjs <commit> [--repo <checkout>] [--install-root <folder>] [--settings <file>] [--dry-run]
 // Run it from a checkout of this repository. It refuses unless the commit is on origin/main and carries Security's
 // SECURE note (refs/notes/security, fetched from origin first). It then pins a copy of the commit
 // (<install root>/<full commit>, like scripts/hooks.mjs; a copy already there must be exactly the commit) and swaps
@@ -93,8 +93,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const args = process.argv.slice(2);
   const opt = (name) => { const n = args.indexOf(name); return n >= 0 ? args[n + 1] : undefined; };
   const commit = args[0];
-  if (!commit || commit.startsWith("--")) { console.error("Usage: node scripts/current.mjs <commit> [--install-root <folder>] [--settings <file>] [--dry-run]"); process.exit(2); }
-  const repo = fileURLToPath(new URL("..", import.meta.url));
+  if (!commit || commit.startsWith("--")) { console.error("Usage: node scripts/current.mjs <commit> [--repo <checkout>] [--install-root <folder>] [--settings <file>] [--dry-run]"); process.exit(2); }
+  // --repo: the checkout to read and fetch from, when this runs from a pinned copy (which has no .git): scripts/board-release.mjs.
+  const repo = resolve(opt("--repo") ?? fileURLToPath(new URL("..", import.meta.url)));
   const git = (a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   const quiet = (a) => { try { return git(a); } catch { return null; } };
   const root = resolve(opt("--install-root") ?? resolve(homedir(), ".flight-board", "install"));
