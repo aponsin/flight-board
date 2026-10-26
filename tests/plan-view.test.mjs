@@ -97,7 +97,7 @@ test("Now: open cards grouped under their plan node in the plan's order, with th
     { id: "c-done", name: "Done long ago", plan: "step-sign", status: "done", doneAt: Date.now() - 3 * 864e5 },
   ];
   const derived = { nodes: { "step-sign": { state: "active" }, "step-door": { state: "gated" } }, objectives: {} };
-  const html = board([obj, ms, ...steps], { initiatives, derived }).nowHtml();
+  const html = board([steps[1], obj, steps[0], ms], { initiatives, derived }).nowHtml(); // stored in any order
   const at = (x) => html.indexOf(x);
   assert.ok(at('data-node="step-sign"') < at('data-node="step-door"') && at('data-node="step-door"') < at('data-node=""'), "plan order, unlinked last");
   assert.ok(at("Sign at ship") < at("Sign in build"), "within a group, the board's order: the furthest phase first");
