@@ -143,6 +143,12 @@ test("a READY that reaches the lead from another session asks for a collector ru
   assert.ok(!saysReady(msg("not READY yet, two tests left")), "mid-line");
   assert.ok(!saysReady(msg("READYING the branch")), "a longer word");
   assert.ok(!saysReady("READY Full: build/x"), "typed, not from a session");
+  // Checker's cases (#C265).
+  assert.ok(saysReady(msg("Two for you. (2) READY (Quick): build/y")), "mid-line in the first line");
+  assert.ok(saysReady(msg("Re-sign please (Quick): build/x at def456\nFixed both notes.")), "a re-sign");
+  assert.ok(saysReady(msg("Fixed the two notes.\n- READY (Full): build/x")), "a bulleted READY on a later line");
+  assert.ok(!saysReady(msg("hi") + "\nREADY Full: build/x"), "after the message closes: the owner's text, not the session's");
+  assert.ok(!saysReady(msg("Status: tests running.\nWe're not READY until Checker answers.")), "mid-line after the first line");
   const T = 1_800_000_000_000, MIN = 60e3;
   const line = (text, at) => ({ type: "user", timestamp: new Date(at).toISOString(), message: { role: "user", content: text } });
   const events = ownerEvents([line(msg("READY Full: build/x"), T - 2 * MIN), line("READY", T - 1 * MIN)]);

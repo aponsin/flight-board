@@ -58,10 +58,21 @@ export function ownerSaid(text) {
   return out;
 }
 
-// A READY another session sent the lead (#C237): a line that starts with READY inside a cross-session message. It only
-// asks for a run, so nothing in it reaches the lead's feedback.
-const READY = /<cross-session-message\b[^>]*>(?:[\s\S]*?\n)?[ \t>*_]*READY\b/;
-export const saysReady = (text) => READY.test(String(text ?? ""));
+// A READY another session sent the lead (#C237, #C265): inside a cross-session message's own body (never text after it
+// closes), READY anywhere in its first line ("Two for you. (2) READY (Quick)") but not "not READY", a line that starts
+// with it (after a bullet or emphasis), or a body that starts "Re-sign please". It only asks for a run, so nothing in it
+// reaches the lead's feedback; a stray match costs one debounced run.
+const BODY = /<cross-session-message\b[^>]*>([\s\S]*?)(?:<\/cross-session-message>|$)/g;
+const FIRST = /(?<!\bnot )\bREADY\b/;
+const LINE = /^[ \t>*_•-]*READY\b/m;
+const RESIGN = /^\s*Re-sign please\b/i;
+export function saysReady(text) {
+  for (const [, body] of String(text ?? "").matchAll(BODY)) {
+    const first = body.trim().split("\n", 1)[0];
+    if (FIRST.test(first) || LINE.test(body) || RESIGN.test(body)) return true;
+  }
+  return false;
+}
 
 // What the owner did, with when: [{ at (ms), kind: "done" | "refresh" | "ready", id? }], from the transcript's lines;
 // "ready" is a READY a session sent the lead.
