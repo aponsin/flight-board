@@ -198,8 +198,13 @@ test("case 5, #C268: a note on a button reply is the owner's word in that thread
   assert.deepEqual(stopCheck(turn('Board reply [w9]: chose A on "Which?".', [comment], "Done."), { config }), [], "a reply without a note wrote nothing in a thread");
   // As the comment quotes them: several pings, a note over two lines, files after a note.
   const quoted = '[Artifact comment sent to Claude]\n=== BEGIN ARTIFACT COMMENT x ===\n> Board reply [a1]: acknowledged on "A.". Note: ok\n> Board reply [a2]: marked done on "B.". Note: done, but\n> the page is blank now?\n> Board reply [a3]: acknowledged on "C.". Note: ok Files (1): shot.png = f1\n=== END ARTIFACT COMMENT x ===';
-  assert.deepEqual(replyNotes(quoted), [{ id: "a1", note: "ok" }, { id: "a2", note: "done, but\nthe page is blank now?" }, { id: "a3", note: "ok" }]);
-  assert.deepEqual(stopCheck(turn(quoted, [], "On it."), { config }).map((e) => /thread (\S+):/.exec(e)[1]), ["a2"], "only the real question is owed");
+  assert.deepEqual(replyNotes(quoted), [{ id: "a1", note: "ok", files: false }, { id: "a2", note: "done, but\nthe page is blank now?", files: false }, { id: "a3", note: "ok", files: true }]);
+  // #C272: an "ok" with files is owed an answer, as the page keeps such a reply waiting on Manager.
+  assert.deepEqual(stopCheck(turn(quoted, [], "On it."), { config }).map((e) => /thread (\S+):/.exec(e)[1]), ["a2", "a3"], "the real question, and the files");
+  // #C272: an item whose own text says "Note: " is read from the page's separator, '". Note: ', never inside the text.
+  const inText = '> Board reply [n1]: acknowledged on "Note: run the migration first.". Note: ok\n> Board reply [n2]: marked done on "Step 2. Note: it may fail.\nThen restart.". Note: why does it fail?';
+  assert.deepEqual(replyNotes(inText), [{ id: "n1", note: "ok", files: false }, { id: "n2", note: "why does it fail?", files: false }]);
+  assert.deepEqual(stopCheck(turn(inText, [], "Ok."), { config }).map((e) => /thread (\S+):/.exec(e)[1]), ["n2"], "the acknowledgement owes nothing; the question does");
   // The page and the hook settle the same notes.
   const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   assert.equal(/const ACK_ONLY=(\/.*\/i);/.exec(page)[1], String(ACK_ONLY));
