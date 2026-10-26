@@ -399,6 +399,7 @@ const OWNER=String(CONFIG.owner||"Owner");
 const PHASES=CONFIG.phases;
 // The phase work is built in, as the collector names it (collector.buildPhase).
 const BUILD_PHASE=(CONFIG.collector&&CONFIG.collector.buildPhase)||"build";
+const LIVE_PHASE=(CONFIG.collector&&CONFIG.collector.livePhase)||"live";
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
 const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[]};
 const $=id=>document.getElementById(id);
@@ -664,9 +665,11 @@ function replyWrites(w,act,note,files,now,choice,rid){
 // What the repository says about a card (the collector's derived/all, board v2): its phase and version, and a conflict mark
 // when the card says otherwise. The page only shows it; the collector works it out.
 function derivedOf(id){const all=state.derived.find(d=>d.id==="all");return all&&all.cards&&all.cards[id]||null}
-function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const label=(PHASES.find(p=>p[0]===d.phase)||[d.phase,d.phase])[1];
-  const clash=i.status!=="done"&&i.phase&&i.phase!==d.phase;
-  return `<span class="evidence${clash?" clash":""}" title="${esc(d.evidence||"")}">${clash?"Repository says ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}</span>`}
+function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const name=k=>(PHASES.find(p=>p[0]===k)||[k,k])[1],label=name(d.phase);
+  // Shown by the evidence: a step phase that disagrees is the clash. Shown by the steps: the repository's word is.
+  const clash=i.status!=="done"&&(i.byEvidence?i.stepPhase&&i.stepPhase!==d.phase:i.phase&&i.phase!==d.phase);
+  const steps=i.byEvidence&&clash?` · steps say ${esc(name(i.stepPhase))}`:"";
+  return `<span class="evidence${clash?" clash":""}" title="${esc(d.evidence||"")}">${clash&&!i.byEvidence?"Repository says ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}${steps}</span>`}
 
 // The gate's stuck line: after three refusals in a row for one item, the lead writes meta/stuck {"<collection>:<id>":
 // {reason, at}}, and the line stays until a write for that item passes (the gate makes that write clear it).
@@ -872,7 +875,7 @@ function gaps(i){const g=[],now=Date.now();
   return g}
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, or done. Returns minutes.
-function stalled(i){if(!i||i.status!=="active"||i.who===OWNER)return 0;
+function stalled(i){if(!i||i.status!=="active"||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE))return 0;
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];if(log.some(e=>e&&e.wait&&e.end==null))return 0;
   const last=num(i.lastStepAt)??log.reduce((m,e)=>Math.max(m,num(e&&e.end)??num(e&&e.start)??0),0);
   if(!last)return 0;const m=Math.floor((Date.now()-last)/60000);return m>=30?m:0}
@@ -910,7 +913,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   if(i.status!=="done"&&i.plannedVersion) etaHtml+=`<div class="pv">Planned in <b>${esc(i.plannedVersion)}</b></div>`;
   const st=stalled(i);
-  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.status==="paused"?"Paused":st?"Stalled":"In flight";
+  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":st?"Stalled":"In flight";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
   const nAt=num(i.nextNoteAt),stale=nAt!=null&&num(i.lastStepAt)!=null&&i.lastStepAt>nAt;
   const next=i.nextNote?`<span${stale?' style="opacity:.6"':""}>Next: <b>${esc(i.nextNote)}</b>${num(i.nextAt)?` <span data-next="${i.nextAt}">${i.nextAt>Date.now()?"in "+dur(i.nextAt-Date.now()):"due now"}</span>`:""}${nAt!=null?` <span data-ago="${nAt}">(written ${dur(Date.now()-nAt)} ago${stale?"; an agent has moved since":""})</span>`:" (not dated)"}</span>`:"";
@@ -1081,7 +1084,21 @@ function renderCtx(){const a=ctxAgents();
 // {init: <initiative id>, phase: plan|build|language|checker|security|ship|live, who, kind: "start"|"end", at: <ms>, wait?: "busy"|"gate", version?}.
 // The page turns them into phase entries, so Manager no longer has to relay or guess times.
 // A "live" event marks the initiative done. Skips: Security unless level is Full; Linguist when customerText is false.
-function enrich(i){
+function enrich(i){return byEvidence(fromSteps(i))}
+// The repository's word over the steps' (#C207): when the collector has firm evidence for a card (its head, sign-off
+// notes, main, the deploy), that is its phase; the steps give the timings, and a step phase that disagrees shows as a
+// clash. Steps win only when they are newer than the collector's run and further on (a review signed since).
+function byEvidence(out){const d=derivedOf(out.id);
+  if(!d||!d.phase||d.firm===false||out.status==="done"||!PHASES.some(p=>p[0]===d.phase))return out;
+  const stepPhase=out.phase,last=Math.max(num(out.lastStepAt)??0,num(d.readyAt)??0);
+  if(stepPhase&&phaseIndex(stepPhase)>phaseIndex(d.phase)&&(num(out.lastStepAt)??0)>(num(d.at)??0))return out;
+  const res={...out,stepPhase,phase:d.phase,byEvidence:true,status:out.status==="queued"&&stepPhase===d.phase?"queued":"active"};
+  if(last)res.lastStepAt=last;
+  if(d.phase===LIVE_PHASE){res.who=null;res.upNext=false;if(d.version)res.version=d.version;return res}
+  if(stepPhase===d.phase)return res;
+  const on=(out.nowPhases||{})[d.phase];res.who=on&&on.length?on[0]:null;res.upNext=!res.who;
+  return res}
+function fromSteps(i){
   const evs=state.steps.filter(e=>e&&e.init===i.id&&e.phase&&num(e.at)!=null).sort((a,b)=>a.at-b.at);
   const skip=new Set(Array.isArray(i.skip)?i.skip:[]);
   // The configured skips: a phase only at a given level, or skipped when an item field is false.

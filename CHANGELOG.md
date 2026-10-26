@@ -3,6 +3,7 @@
 ## 0.3.1 - Unreleased
 
 ### Added
+- Cards show the repository's phase (derived/all) when the collector has firm evidence: a card on main and deployed says "Live, still open" (never stalled), a signed review moves it on with no step logged, and the agent on that phase is named. The steps still give the times; a step phase that disagrees shows as "steps say …" on the evidence chip. Steps win only when newer than the collector's run and further on (a review signed since). The stall clock counts from the READY commit too.
 - Card numbers (`#C12`), like thread numbers: a new card takes `num` from `meta/cardSeq` in the same batch (pinned, no gaps, never back), and keeps it for good; `scripts/card-ids.mjs` numbers the open and recent cards that have none. The `C` keeps them from being read as threads' `#T12`.
 - The owner's strip, step 5 of v3: in the new layout, what needs you and the "Start a thread" box stay at the top, whatever the tab (sticky, scrolling on its own when long). They are the same elements as on the current board, moved there and back, so a draft or an open answer goes with them.
 - The Crew view, step 4 of v3 (a third tab): a tile per agent with its model and effort, its memory (with "/clear me" once saved, dimmed when the reading is old) and what it is on, each card with its phase, or its idle note; then the last 7 days' time by phase (working, queued while busy, gated). The memory, crew and time-spent code is shared with the current board's (no change there).
