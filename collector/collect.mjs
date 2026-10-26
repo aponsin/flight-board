@@ -17,7 +17,7 @@ import { remoteHeads, mainLine, deployedSha, factsFor, shippedHeads, mainVersion
 import { nudges } from "./nudges.mjs";
 import { derivePlan } from "./plan-state.mjs";
 import { idText } from "./text.mjs";
-import { runMark, localMain } from "./refresh.mjs";
+import { runMark, localMain, localShips } from "./refresh.mjs";
 
 // The steps the export takes: the last 7 days' (older ones can't hold an open step worth a nudge, and there are many).
 export const STEPS_DAYS = 7;
@@ -119,6 +119,19 @@ export function runNudges(dir, config, docs, now) {
 }
 
 // plan, waiting: the board's plan nodes and asks (v3): the plan's states go out with the cards' phases.
+// The ship runs on now: [{ branch, names: [{ branch, sha }] }], from each candidate branch's last few commit subjects.
+export function shipping(git, heads, c) {
+  if (!c.candidatePattern || !c.shippedPattern) return [];
+  const isRun = new RegExp(c.candidatePattern);
+  return heads.filter((h) => h.message !== "" && isRun.test(h.branch)).map((h) => {
+    let subjects = [];
+    try { subjects = git(["log", "-5", "--format=%s", h.sha]).split("\n"); } catch { /* none */ }
+    const names = [];
+    for (const s of subjects) for (const m of s.matchAll(new RegExp(c.shippedPattern, "g"))) if (m[1] && /^[0-9a-f]{7,40}$/.test(m[2] ?? "")) names.push({ branch: m[1], sha: m[2] });
+    return { branch: h.branch, names };
+  });
+}
+
 // live: liveBuild()'s answer for this run (null when there is no liveUrl or it couldn't be read).
 export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null }) {
   const c = config.collector;
@@ -129,6 +142,11 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const open = cards.filter((k) => !closed(k));
   const derived = {};
   for (const card of open) derived[card.id] = { ...derivePhase(card, factsFor(git, headFor(card.id, heads), { config: cfg, line, deployed }), cfg), at: now };
+  // A ship run on now: the cards its candidate branch names (branch@sha in one of its last commits) are shipping now.
+  for (const s of shipping(git, heads, c)) for (const id of Object.keys(derived)) {
+    const h = derived[id].head;
+    if (h && !derived[id].version && s.names.some((n) => String(h).startsWith(n.sha))) derived[id].shipping = s.branch;
+  }
   const conflicts = open.map((k) => conflict(k, derived[k.id], config)).filter(Boolean);
   const doc = { at: now, cards: derived, conflicts, liveButOpen: staleLive(open, derived, config) };
   // "Live now" from the build the site serves, never from main; main's newest version shows beside it while it deploys.
@@ -161,7 +179,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     try {
       mkdirSync(dir, { recursive: true });
       // With the refresh repos' origin/main now: the baseline the lead's refresh check compares against (collector/refresh.mjs).
-      writeFileSync(join(dir, "export-since.json"), JSON.stringify(runMark(Date.now(), config.collector.refresh.repos, localMain)));
+      writeFileSync(join(dir, "export-since.json"), JSON.stringify(runMark(Date.now(), config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern))));
       console.log(`Export the board into: your scratchpad folder + /${EXPORT_NAME}`);
       console.log(`Steps since: ${Date.now() - STEPS_DAYS * 864e5}`);
       process.exit(0);

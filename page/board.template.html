@@ -879,17 +879,18 @@ function stalled(i){if(!i||i.status!=="active"||i.who===OWNER||(i.byEvidence&&i.
   const last=num(i.lastStepAt)??log.reduce((m,e)=>Math.max(m,num(e&&e.end)??num(e&&e.start)??0),0);
   if(!last)return 0;const m=Math.floor((Date.now()-last)/60000);return m>=30?m:0}
 // A card's version is the repository's, never written by hand (#C211): live or deploying, the version it went out in;
-// signed and waiting, its place in the shipping queue (signed cards by when they went READY); else what it is in.
+// in the ship run on now (its candidate branch names it), shipping now; signed and waiting, its place in the queue
+// (signed cards by when they went READY); else what it is in.
 const SHIP_PHASE=(CONFIG.collector&&CONFIG.collector.shipPhase)||"ship";
-const ORD=n=>n+(n%100>=11&&n%100<=13?"th":["th","st","nd","rd"][n%10]||"th");
 function shipQueue(){const all=state.derived.find(d=>d.id==="all"),cards=all&&all.cards||{};
   const open=new Set(state.initRaw.filter(i=>i&&i.status!=="done"&&i.status!=="dropped").map(i=>i.id));
-  return Object.keys(cards).filter(id=>open.has(id)&&cards[id]&&cards[id].phase===SHIP_PHASE&&!cards[id].version&&cards[id].firm!==false)
+  return Object.keys(cards).filter(id=>open.has(id)&&cards[id]&&cards[id].phase===SHIP_PHASE&&!cards[id].version&&!cards[id].shipping&&cards[id].firm!==false)
     .sort((a,b)=>(num(cards[a].readyAt)??Infinity)-(num(cards[b].readyAt)??Infinity)||(a<b?-1:1))}
 function versionNote(i){const d=derivedOf(i.id);if(!d||!d.phase||d.firm===false&&d.phase!==BUILD_PHASE)return "";
   if(d.phase===LIVE_PHASE)return d.version?`Live in <b>v${esc(d.version)}</b>`:"Live";
   if(d.phase===SHIP_PHASE&&d.version)return `Deploying <b>v${esc(d.version)}</b>`;
-  if(d.phase===SHIP_PHASE){const k=shipQueue().indexOf(i.id);return k===0?"<b>Ships next</b>":k>0?`<b>${ORD(k+1)}</b> in queue`:""}
+  if(d.shipping)return "<b>Shipping now</b>";
+  if(d.phase===SHIP_PHASE){const k=shipQueue().indexOf(i.id);return k>=0?`Queued (${k+1})`:""}
   if(d.phase===BUILD_PHASE||d.phase==="test")return "Building";
   return "In review"}
 // The header's "Live now" must match the newest version that shipped.

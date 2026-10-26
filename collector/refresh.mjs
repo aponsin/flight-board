@@ -3,6 +3,7 @@
 // ends and something happened since the collector's last run, the hook holds the turn once (exit 2) with "start the
 // collector now", so the lead's next step is run_scheduled_task, never the lead remembering. The triggers:
 // - a ship: a repository's origin/main (local refs: every ship is a push from this machine) moved since the last run;
+// - a ship starting or ending: its candidate branches (collector.candidatePattern, local refs) appeared, moved or went;
 // - the owner marked an item done ("Board reply [<id>]: marked done");
 // - the owner asked for a refresh (the word "refresh" in what the owner typed, a thread message or a reply's note).
 // Never while a run is in flight, within debounceMin of the last run's start or of the hook's last ask (a run asked for
@@ -83,7 +84,7 @@ export function decide({ lead, stopActive, now, run = {}, refs = {}, baseline = 
   if (started != null && now - started < debounceMin * 60e3) return null;
   const since = started ?? -Infinity;
   const why = [];
-  for (const [repo, sha] of Object.entries(refs)) if (sha && baseline[repo] && sha !== baseline[repo]) why.push(`${repo} shipped`);
+  for (const [repo, sha] of Object.entries(refs)) if (sha && baseline[repo] && sha !== baseline[repo]) why.push(repo.endsWith(SHIP_KEY) ? `${repo.slice(0, -SHIP_KEY.length)} ship started or ended` : `${repo} shipped`);
   // Ids come from comment lines: only a well-formed id reaches the lead's feedback (idText), never other text (Security).
   const done = [...new Set(events.filter((e) => e.kind === "done" && e.at > since).map((e) => idText(e.id)))];
   if (done.length) why.push(`marked done: ${done.join(", ")}`);
@@ -91,10 +92,17 @@ export function decide({ lead, stopActive, now, run = {}, refs = {}, baseline = 
   return why.length ? why.join("; ") : null;
 }
 
-// What --prepare notes at a run's start: its time and each refresh repo's origin/main then. git(path) gives a sha or null.
-export function runMark(at, repos, git) {
+// What --prepare notes at a run's start: its time and each refresh repo's origin/main then. git(path) gives a sha or null;
+// ships(path), when given, the repo's candidate branches as one string ("-" for none), kept as "<repo> ship".
+export const SHIP_KEY = " ship";
+export function runMark(at, repos, git, ships = null) {
   const refs = {};
-  for (const repo of repos) { const sha = git(home(repo)); if (sha) refs[basename(home(repo))] = sha; }
+  for (const repo of repos) {
+    const name = basename(home(repo)), sha = git(home(repo));
+    if (sha) refs[name] = sha;
+    const s = ships ? ships(home(repo)) : null;
+    if (s) refs[name + SHIP_KEY] = s;
+  }
   return { at, refs };
 }
 
@@ -108,7 +116,7 @@ export function baselineFor(state, startedAt, refs, markRefs = null) {
 }
 
 // The hook. Advisory: anything that goes wrong lets the turn end (exit 0); only a reason holds it (exit 2).
-export function main(input, { config, env = process.env, now = Date.now(), git, read = readFileSync, write = writeJson, mtime = mtimeOf } = {}) {
+export function main(input, { config, env = process.env, now = Date.now(), git, ships = null, read = readFileSync, write = writeJson, mtime = mtimeOf } = {}) {
   const lines = input?.transcript_path ? readLines(input.transcript_path) : [];
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
   const lead = role === config.gate.managerRole;
@@ -119,7 +127,7 @@ export function main(input, { config, env = process.env, now = Date.now(), git, 
   try { const m = JSON.parse(read(join(dir, "export-since.json"), "utf8")); startedAt = m.at; markRefs = m.refs ?? null; } catch { /* never ran */ }
   try { state = JSON.parse(read(join(dir, "refresh.json"), "utf8")); } catch { /* first time */ }
   const finishedAt = config.collector.outDir ? mtime(join(home(config.collector.outDir), "derived-all.json")) : null;
-  const { refs } = runMark(null, r.repos, git);
+  const { refs } = runMark(null, r.repos, git, ships);
   const { baseline, save } = baselineFor(state, Number.isFinite(startedAt) ? startedAt : null, refs, markRefs);
   const askedAt = save ? null : state?.askedAt ?? null;
   const why = decide({ lead: true, stopActive: false, now, run: { startedAt, finishedAt }, refs, baseline, events: ownerEvents(lines), askedAt, debounceMin: r.debounceMin, flightMin: r.flightMin });
@@ -135,6 +143,18 @@ function mtimeOf(path) { try { return statSync(path).mtimeMs; } catch { return n
 export function localMain(repo) {
   try { const sha = execFileSync("git", ["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000 }).trim(); return /^[0-9a-f]{40}$/.test(sha) ? sha : null; } catch { return null; }
 }
+// The candidate branches (pattern: collector.candidatePattern) as this checkout last saw them, as one string: a ship's
+// push makes one, its end deletes it. "-" for none; null without a pattern or when git can't answer. Never a network call.
+export function localShips(pattern) {
+  if (!pattern) return null;
+  const re = new RegExp(pattern);
+  return (repo) => {
+    try {
+      const out = execFileSync("git", ["for-each-ref", "refs/remotes/origin", "--format=%(refname:lstrip=3) %(objectname)"], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 3000 });
+      return out.split("\n").filter((l) => l && re.test(l.split(" ")[0])).sort().join(",") || "-";
+    } catch { return null; }
+  };
+}
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   let reason = null;
@@ -142,7 +162,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const at = process.argv.indexOf("--config");
     const raw = JSON.parse(readFileSync(process.argv[at + 1], "utf8"));
     if (at < 0 || checkConfig(raw).length) process.exit(0);
-    reason = main(JSON.parse(readFileSync(0, "utf8")), { config: fullConfig(raw), git: localMain });
+    const config = fullConfig(raw);
+    reason = main(JSON.parse(readFileSync(0, "utf8")), { config, git: localMain, ships: localShips(config.collector.candidatePattern) });
   } catch { process.exit(0); }
   if (reason) { process.stderr.write(reason + "\n"); process.exit(2); }
   process.exit(0);

@@ -93,8 +93,8 @@ export function writeErrors(w, { config, who, now }) {
   }
   // A card's archived timings (scripts/steps-archive.mjs) stand in for its steps on the page, and deleting a step erases
   // a card's history: both are the lead's alone, so no agent can make a card look shipped or rewrite its record (Security).
-  if (collection === "timings" && !who.manager) return [`timings/${idText(id)}: only ${config.gate.managerRole} archives steps (scripts/steps-archive.mjs)`];
-  if (collection === "steps" && op === "delete" && !who.manager) return [`steps/${idText(id)}: only ${config.gate.managerRole} deletes steps (scripts/steps-archive.mjs); log a new step instead`];
+  if (collection === "timings" && !who.manager) return [`only ${config.gate.managerRole} archives steps (scripts/steps-archive.mjs)`];
+  if (collection === "steps" && op === "delete" && !who.manager) return [`only ${config.gate.managerRole} deletes steps (scripts/steps-archive.mjs); log a new step instead`];
   // Thread numbers (#T27) and names: threads/<thread id> {num, title} and the counter meta/threadSeq {next} are the lead's
   // alone (scripts/thread-ids.mjs allocates them). The owner renames a thread from the page, which writes only a title.
   if (collection === "threads" || (collection === "meta" && id === THREAD_SEQ)) {

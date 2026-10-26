@@ -74,14 +74,28 @@ export function mainVersion(line, pattern) {
   return null;
 }
 
+// A response body's first max bytes as text, reading no further (the rest is cancelled) (Security).
+const CAP = 262144;
+async function capped(r, max) {
+  if (!r.body?.getReader) return "";
+  const reader = r.body.getReader(), parts = [];
+  let n = 0;
+  while (n < max) { const { done, value } = await reader.read(); if (done) break; parts.push(value); n += value.length; }
+  reader.cancel().catch(() => {});
+  const all = new Uint8Array(Math.min(n, max));
+  let k = 0;
+  for (const p of parts) { const take = p.subarray(0, all.length - k); all.set(take, k); k += take.length; if (k >= all.length) break; }
+  return new TextDecoder().decode(all);
+}
+
 // The build the live site serves, from its page (liveTag's groups: version, commit), or null when it can't be read.
-// fetchImpl: fetch; one GET, 10 seconds at most, no cookies; only the page's first 256 KB are read.
+// fetchImpl: fetch; one GET, 10 seconds at most, no cookies, https to the end; only the page's first 256 KB are read.
 export async function liveBuild(fetchImpl, url, tag) {
   if (!url) return null;
   try {
     const r = await fetchImpl(url, { redirect: "follow", credentials: "omit", headers: { "Cache-Control": "no-cache" }, signal: AbortSignal.timeout(10_000) });
-    if (!r.ok) return null;
-    const m = new RegExp(tag).exec((await r.text()).slice(0, 262144));
+    if (!r.ok || (r.redirected && !String(r.url).startsWith("https://"))) return null;
+    const m = new RegExp(tag).exec(await capped(r, CAP));
     return m && /^\d+\.\d+\.\d+$/.test(m[1] ?? "") && /^[0-9a-f]{7,40}$/.test(m[2] ?? "") ? { version: m[1], commit: m[2] } : null;
   } catch { return null; }
 }

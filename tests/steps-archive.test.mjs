@@ -115,9 +115,9 @@ test("the gate: only the lead writes timings or deletes steps (Security, Checker
   const agent = { role: "Builder", manager: false }, lead = { role: "Manager", manager: true };
   const forge = { op: "set", collection: "timings", doc_id: "card-a", data: { steps: [], at: now } };
   const erase = { op: "delete", collection: "steps", doc_id: "x-checker-start-1" };
-  assert.match(writeErrors(forge, { config, who: agent, now: now })[0] ?? "", /timings\/card-a: only Manager archives steps/);
+  assert.match(writeErrors(forge, { config, who: agent, now: now })[0] ?? "", /^only Manager archives steps/);
   assert.match(writeErrors({ ...forge, op: "delete", data: undefined }, { config, who: agent, now: now })[0] ?? "", /only Manager archives steps/);
-  assert.match(writeErrors(erase, { config, who: agent, now: now })[0] ?? "", /steps\/x-checker-start-1: only Manager deletes steps/);
+  assert.match(writeErrors(erase, { config, who: agent, now: now })[0] ?? "", /^only Manager deletes steps/);
   assert.deepEqual(writeErrors(forge, { config, who: lead, now: now }), []);
   assert.deepEqual(writeErrors(erase, { config, who: lead, now: now }), []);
   assert.deepEqual(writeErrors({ op: "set", collection: "steps", doc_id: "x-build-start-1", data: step("x", "build", "Builder", "start", now - 1) }, { config, who: agent, now: now }), [], "agents still log steps");
