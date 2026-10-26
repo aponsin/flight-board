@@ -36,8 +36,16 @@ const PAGE_FILE = "page/board.template.html";
 // prompt, the release role's), read apart so a change to one never passes for the other.
 export const settingsBlock = (text) => /```json\n([\s\S]*?)\n\s*```/.exec(String(text ?? ""))?.[1] ?? "";
 export const stepsOf = (text) => { const t = String(text ?? ""), at = t.indexOf("\n## The steps"); return at < 0 ? "" : t.slice(at); };
-// The capabilities a page asks for: every claude.use("<name>").
-export const pageCapabilities = (html) => [...new Set([...String(html ?? "").matchAll(/claude\.use\(\s*["'`]([A-Za-z0-9_-]+)["'`]\s*\)/g)].map((m) => m[1]))].sort();
+// The capabilities a page asks for: every claude.use("<name>"). A use whose name the scan can't read (a variable, a
+// template, claude["use"]) counts as a name the page computes, which no list holds, so it refuses (Checker). The
+// publish call's declaration is the real limit; this keeps a release from widening it unseen.
+export const COMPUTED = "(a name the page computes)";
+export function pageCapabilities(html) {
+  const s = String(html ?? "");
+  const named = [...s.matchAll(/claude\.use\s*\(\s*["'`]([A-Za-z0-9_-]+)["'`]\s*\)/g)].map((m) => m[1]);
+  const uses = [...s.matchAll(/claude\s*(?:\.\s*use|\[\s*["'`]use["'`]\s*\])\s*\(/g)].length;
+  return [...new Set([...named, ...(uses > named.length ? [COMPUTED] : [])])].sort();
+}
 // The task's prompt: the repository's template with this team's values. A placeholder left over, or an empty value, refuses.
 export function renderPrompt(template, values) {
   const text = String(template).replace(/\{\{([A-Z_]+)\}\}/g, (m, k) => { if (!values[k]) throw new Error(`${PROMPT_FILE}: no value for {{${k}}}`); return values[k]; });

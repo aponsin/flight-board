@@ -61,6 +61,10 @@ test("refused when the page would need a capability beyond the fixed four (Secur
   const page = 'a(await claude.use("db")); b(claude.use( "comments" )); c(claude.use(`assets`)); d(claude.use("db"))';
   assert.deepEqual(pageCapabilities(page), ["assets", "comments", "db"]);
   assert.deepEqual(pageCapabilities(readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8")), ["assets", "comments", "db", "downloads"]);
+  // A name the scan can't read is refused as one (Checker's probe): a variable, a bracketed use, an unquoted name.
+  for (const page of ['const n = "camera"; claude.use(n)', 'claude["use"]("location")', "claude['use']('x')", "claude.use (`a${b}`)"])
+    assert.ok(pageCapabilities(page).includes("(a name the page computes)"), page);
+  assert.match(verdict({ ...good, capabilities: pageCapabilities("claude.use(n)") }).refusals.join(), /computes/);
 });
 
 test("the prompt: the repository's template with the team's values filled in; a placeholder left over refuses", () => {
