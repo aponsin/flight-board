@@ -38,6 +38,18 @@ test("the release tool and everything it imports are the owner's (Security B): a
   assert.ok(!owned.includes("collector/PROMPT.txt") && !owned.includes("page/board.template.html"), "the prompt and the page stay the release role's");
 });
 
+test("#C278 (Security): the fence takes only collector/export.mjs, which imports nothing; the pinned set is exactly this list", () => {
+  const read = (f) => { try { return readFileSync(new URL(`../${f}`, import.meta.url), "utf8"); } catch { return null; } };
+  assert.doesNotMatch(read("collector/export.mjs"), /^\s*(import|export\s.*\sfrom)\b/m, "export.mjs imports nothing");
+  assert.deepEqual(importClosure(["collector/fence.mjs"], read), ["collector/context.mjs", "collector/export.mjs", "collector/fence.mjs", "scripts/config.mjs"]);
+  // A new import from a pinned file into the collector's code re-pins it, and this list says so.
+  assert.deepEqual(importClosure([...OWNER_ENTRIES, ...RELEASE_ENTRIES], read), [
+    "collector/context.mjs", "collector/export.mjs", "collector/fence.mjs", "collector/refresh.mjs", "collector/text.mjs",
+    "gate/after.mjs", "gate/gate.mjs", "gate/plan.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs",
+    "scripts/board-release.mjs", "scripts/config.mjs", "scripts/current.mjs", "scripts/hooks.mjs", "scripts/scan.mjs",
+  ]);
+});
+
 test("refused when the collector's settings (TASK.md's settings block) changed: they are the owner's", () => {
   assert.match(verdict({ ...good, settingsChanged: true }).refusals.join(), /collector\/TASK\.md.*settings/);
 });

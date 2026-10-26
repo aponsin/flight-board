@@ -9,7 +9,7 @@ import { join, dirname, resolve, basename } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { EXPORT_NAME, EXPORT_COLLECTIONS } from "./collect.mjs";
+import { EXPORT_NAME, EXPORT_COLLECTIONS } from "./export.mjs";
 import { LIST_TOOL, USAGE_TOOL, META_FILE, ctxFile, contextRoles, contextWriteErrors, readPlan } from "./context.mjs";
 
 export const MESSAGE_MAX = 4096;

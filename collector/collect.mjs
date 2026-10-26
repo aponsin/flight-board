@@ -63,9 +63,10 @@ export function swapMirror(dir, id) {
 // the board is exported there, into a folder named EXPORT_NAME, and step 2 takes it from there: the newest one made since
 // --prepare, found under the scratchpads of runs in this working folder. The run never types a path the permission
 // rules would have to match.
-export const EXPORT_NAME = "flight-board-export";
+export { EXPORT_NAME } from "./export.mjs";
 // The collections a complete export holds (collector/TASK.md, step 1).
-export const EXPORT_COLLECTIONS = ["initiatives", "waiting", "ideas", "messages", "derived", "ctx", "steps", "plan", "threads"];
+export { EXPORT_COLLECTIONS } from "./export.mjs";
+import { EXPORT_NAME, EXPORT_COLLECTIONS } from "./export.mjs";
 // The ones a complete export must hold: an empty collection exports no folder, and a board may have no plan yet (v3)
 // or no numbered thread yet.
 export const REQUIRED_COLLECTIONS = EXPORT_COLLECTIONS.filter((c) => c !== "plan" && c !== "threads");
