@@ -153,6 +153,15 @@ test("rule 9, case 3: a hand-off names its card, and the card exists", () => {
   assert.deepEqual(handOff("New task (L). Board id menu."), { ids: ["menu"], work: true }, "a one-word id after board id");
   assert.deepEqual(handOff("Card id: menu, and task `tabs`"), { ids: ["menu", "tabs"], work: true });
   assert.deepEqual(handOff("A task for you, card for later"), { ids: [], work: true }, "a bare task or card takes no plain word");
+  // #C276: a plain word after "card id" / "board card" is never an id; "is" / "was" before the id is read past (the
+  // lead's refused sends: "no card is on the board").
+  assert.deepEqual(handOff("The board card is first-screen-weight-flake; go ahead.").ids, ["first-screen-weight-flake"]);
+  assert.deepEqual(handOff("Its card id is board-derived-card-state.").ids, ["board-derived-card-state"]);
+  assert.deepEqual(handOff("The card id was menu-fix, now closed.").ids, ["menu-fix"]);
+  assert.deepEqual(handOff("A board card for you: board id menu.").ids, ["menu"], "\"for\" is not an id");
+  assert.deepEqual(handOff("Board card is the one I named.").ids, [], "a plain word after is names nothing");
+  assert.deepEqual(handOff("Decision on board id first-screen-weight-flake: go ahead.").ids, ["first-screen-weight-flake"]);
+  assert.deepEqual(handOff("card id: board-derived-card-state").ids, ["board-derived-card-state"]);
   assert.match(checkHandOff("New task: build the tabs", { known: new Set(), fresh: true }).errors[0], /names no card/);
   assert.match(checkHandOff("New task (board card demos-reports)", { known: new Set(), fresh: true }).errors[0], /no card demos-reports/);
   assert.deepEqual(checkHandOff("New task (board card demos-reports)", { known: new Set(["demos-reports"]), fresh: true }).errors, []);

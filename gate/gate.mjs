@@ -104,11 +104,13 @@ export function withJournal(mirror, journal) {
 
 // Rule 9 (case 3): the card ids a hand-off names ("board id x-y", "card x-y", "task x-y"), and whether it hands out work.
 // A one-word id ("board id menu") counts after "board id", "board card" or "card id", or in backticks; after a bare "card"
-// or "task" it needs a hyphen, so "task for you" names no card "for".
+// or "task" it needs a hyphen, so "task for you" names no card "for". "is" or "was" before the id is read past ("its card
+// id is x-y"), and a plain word is never an id ("board card for you"): the lead's refused sends, #C276.
+const NOT_IDS = new Set(["is", "was", "for", "the", "a", "an", "to", "on", "in", "of", "and", "or", "that", "this", "it", "as", "at", "by", "with", "from", "here", "now", "so", "one", "you", "me", "we", "be", "has", "had", "will", "not", "no"]);
 export function handOff(text) {
   const s = String(text);
-  const ids = [...s.matchAll(/\b(?:board (?:id|card)|card id)[:\s]+`?([a-z0-9]+(?:-[a-z0-9]+)*)`?/gi),
-    ...s.matchAll(/\b(?:card|task)[:\s]+(?:`([a-z0-9]+(?:-[a-z0-9]+)*)`|([a-z0-9]+(?:-[a-z0-9]+)+))/gi)].map((m) => (m[1] ?? m[2]).toLowerCase());
+  const ids = [...s.matchAll(/\b(?:board (?:id|card)|card id)(?:\s+(?:is|was))?[:\s]+`?([a-z0-9]+(?:-[a-z0-9]+)*)`?/gi),
+    ...s.matchAll(/\b(?:card|task)[:\s]+(?:`([a-z0-9]+(?:-[a-z0-9]+)*)`|([a-z0-9]+(?:-[a-z0-9]+)+))/gi)].map((m) => (m[1] ?? m[2]).toLowerCase()).filter((id) => !NOT_IDS.has(id));
   const work = /\btask\b|\bREADY\b|\bbuild\b/i.test(String(text)) || ids.length > 0;
   return { ids: [...new Set(ids)], work };
 }
