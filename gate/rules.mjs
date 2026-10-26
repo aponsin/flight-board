@@ -23,6 +23,7 @@ function pageRules() {
 // decision with options gives one button per choice; anything else shows a single button (#C227: an answer listed A)
 // and B) with only Ack).
 const FIELDS_WITH_CHOICES = ["text", "question", "title"];
+const SECOND_BRANCH = "one card is one branch: a rework on a second branch is a new card that names this one";
 export function offersChoices(text) {
   const s = String(text ?? "");
   const marks = (re) => new Set([...s.matchAll(re)].map((m) => m[1].toUpperCase()));
@@ -149,6 +150,9 @@ export function writeErrors(w, { config, who, now }) {
     }
     if (op === "update" && "nextNote" in data && typeof data.nextNoteAt !== "number" && !(data.nextNote && data.nextNote.__delete__)) e.push("nextNote set without nextNoteAt");    // The board shows the repository's version (#C211); a hand-written one only went stale. Removing it is fine.
     if ((op === "set" || op === "update") && "plannedVersion" in data && !(data.plannedVersion && data.plannedVersion.__delete__)) e.push("plannedVersion is retired: the board shows the version the repository ships it in");
+    // One card, one branch (#C237): a rework on a second branch is a new card of its own that names this one.
+    if ("branches" in data && !(data.branches && data.branches.__delete__)) e.push(SECOND_BRANCH);
+    if ("branch" in data && data.branch !== null && typeof data.branch !== "string" && !data.branch?.__delete__) e.push("branch: one branch name");
   }
   if (collection === "waiting") {
     // Rule 7: an agent's passing state ("needs the user") goes down the nudge path; it never becomes an item.
@@ -364,6 +368,8 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
   }
   // A card given up closes as "dropped" with its reason; it needs no live evidence.
   if (data.status === "dropped" && !String(data.dropReason ?? was?.dropReason ?? "").trim()) e.push('a dropped card needs dropReason (why it was given up)');
+  // A card that names its branch keeps it (#C237): naming another is a second branch.
+  if (typeof was?.branch === "string" && was.branch && typeof data.branch === "string" && data.branch !== was.branch) e.push(`${SECOND_BRANCH} (this card's branch is ${was.branch})`);
   if ((data.status === "done" || data.status === "dropped") && !shut(was ?? {})) {
     const thread = (mirror.docs.messages ?? []).filter((m) => m.thread === id && typeof m.at === "number").sort((a, b) => a.at - b.at);
     if (thread.length && thread[thread.length - 1].from === config.owner) e.push(`${config.owner}'s last message in its thread is unanswered`);

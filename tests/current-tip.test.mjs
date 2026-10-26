@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
 import { headsFor } from "../collector/derive.mjs";
 import { collect, tipsOnly } from "../collector/collect.mjs";
+import { writeErrors, mirrorErrors } from "../gate/rules.mjs";
 
 const PATTERN = "([A-Za-z0-9._/-]+)@([0-9a-f]{7,40})";
 const T0 = 1_790_000_000; // seconds; every commit's time is set, so "newest" never rests on the clock
@@ -116,4 +117,19 @@ test("main and a ship run's candidate branch are never a card's branch, whatever
     assert.equal(doc.cards["ff-card"].phase, "live");
     assert.deepEqual(conflicts, []);
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
+});
+
+test("the gate: a card names one branch at most; a list of branches, or another branch than the one it names, is refused", () => {
+  const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01" });
+  const who = { role: "Manager", manager: true }, now = 1_792_998_566_221;
+  const upd = (data, id = "tip-card") => ({ op: "update", collection: "initiatives", doc_id: id, data });
+  const second = (list) => list.some((e) => /one card is one branch/.test(e));
+  assert.ok(second(writeErrors(upd({ branches: ["build/a", "build/b"] }), { config, who, now })));
+  assert.ok(!second(writeErrors(upd({ branches: { __delete__: true } }), { config, who, now })), "removing a list is fine");
+  assert.ok(!second(writeErrors(upd({ branch: "build/a" }), { config, who, now })));
+  assert.match(writeErrors(upd({ branch: ["build/a"] }), { config, who, now }).join(), /branch: one branch name/);
+  const mirror = { docs: { initiatives: [{ id: "tip-card", status: "active", plan: "p", branch: "build/tip-card" }], waiting: [], messages: [], derived: [], plan: [{ id: "p", text: "P", kind: "step", state: "active" }] } };
+  assert.match(mirrorErrors(upd({ branch: "fix/tip-card-2" }), { config, mirror }).join(), /one card is one branch.*this card's branch is build\/tip-card/);
+  assert.ok(!second(mirrorErrors(upd({ branch: "build/tip-card" }), { config, mirror })), "the same branch again");
+  assert.ok(!second(mirrorErrors(upd({ branch: "build/new" }, "other"), { config, mirror })), "a card the mirror doesn't know yet");
 });
