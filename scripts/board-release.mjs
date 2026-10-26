@@ -54,7 +54,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const commit = args[0], configPath = opt("--config");
   if (!commit || commit.startsWith("--") || !configPath) { console.error("Usage: npm run board-release -- <commit> --config <board.config.json> [--prompt <file>] [--page <out.html>] [--dry-run]"); process.exit(2); }
   const repo = fileURLToPath(new URL("..", import.meta.url));
-  const git = (a, opts = {}) => execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts }).trim();
+  const git = (a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   const quiet = (a) => { try { return git(a); } catch { return null; } };
   const dry = args.includes("--dry-run");
   let tmp = null;
@@ -93,7 +93,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     if (dry) { console.log(`Dry run: ${sha.slice(0, 12)} passes every check and its page built (${page}); nothing pushed, the link not moved.`); process.exit(0); }
 
     // Out: main, then the link (scripts/current.mjs checks main and the SECURE note again, and pins an exact copy).
-    git(["push", "-q", "origin", `${sha}:refs/heads/main`], { stdio: ["ignore", "inherit", "inherit"] });
+    execFileSync("git", ["push", "-q", "origin", `${sha}:refs/heads/main`], { cwd: repo, stdio: ["ignore", "inherit", "inherit"] }); // the pre-push scan speaks for itself
     execFileSync(process.execPath, [join(repo, "scripts/current.mjs"), sha], { cwd: repo, stdio: "inherit" });
     if (linkedCommit(link) !== sha) throw new Error(`main is ${sha.slice(0, 12)} but the current link is not: run node scripts/current.mjs ${sha} and tell the lead`);
     console.log(`Released ${sha.slice(0, 12)} to flight-board main; the collector's next run uses it.`);
