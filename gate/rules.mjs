@@ -4,6 +4,7 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { PLAN, planWriteErrors, planMirrorErrors, initiativePlanErrors } from "./plan.mjs";
+import { idText } from "../collector/text.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 let page;
@@ -270,7 +271,8 @@ export function phaseOverlapErrors(w, { config, mirror, batch = [] }) {
   const readyAt = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards?.[card]?.readyAt;
   const live = [...open.values()].filter((e) => !(e.phase === c.buildPhase && typeof readyAt === "number" && readyAt >= e.at));
   const label = (p) => (config.phases.find((x) => x[0] === p) ?? [p, p])[1];
-  const since = (e) => `${label(e.phase)} is still open by ${e.who ?? "someone"} since ${new Date(e.at).toISOString().slice(11, 16)} UTC: end it first`;
+  // Board text (who wrote the step, its phase) reaches the writer only as a plain id (Security).
+  const since = (e) => `${idText(label(e.phase))} is still open by ${e.who ? idText(e.who) : "someone"} since ${new Date(e.at).toISOString().slice(11, 16)} UTC: end it first`;
   const build = live.find((e) => e.phase === c.buildPhase);
   if (reviews.has(data.phase) && build) return [since(build)];
   if (data.phase === c.buildPhase) { const r = live.find((e) => reviews.has(e.phase)); if (r) return [since(r)]; }

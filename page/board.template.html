@@ -328,6 +328,8 @@ document.getElementById("lightbox").addEventListener("click",e=>{if(e.target.id=
 const CONFIG=/*BOARD_CONFIG*/{"title":"Flight Board","owner":"Owner","phases":[["plan","Plan"],["build","Build"],["test","Test"],["language","Language"],["checker","Checker"],["security","Security"],["ship","Ship"],["live","Live"]],"roster":["Manager","Builder","Checker","Security","Release"],"order":["Manager","Builder","Checker","Security","Release"],"skips":[{"phase":"security","unlessLevel":"Full"},{"phase":"language","whenFalse":"customerText"}],"boardStart":"","usageNote":"Runner and automation minutes come from the job-run times the scheduler reports.","runnerLabel":"Runners","automationLabel":"Automation"}/*END_CONFIG*/;
 const OWNER=String(CONFIG.owner||"Owner");
 const PHASES=CONFIG.phases;
+// The phase work is built in, as the collector names it (collector.buildPhase).
+const BUILD_PHASE=(CONFIG.collector&&CONFIG.collector.buildPhase)||"build";
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
 const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[]};
 const $=id=>document.getElementById(id);
@@ -1012,7 +1014,7 @@ function enrich(i){
     if(open[key]&&open[key].end==null)open[key].end=e.at;
     const en={phase:e.phase,who:e.who,start:e.at};if(e.wait)en.wait=e.wait;log.push(en);open[key]=en});
   // A build step left open ends where the repository says the work went READY (the collector's readyAt), as a derived end.
-  const ra=num((derivedOf(i.id)||{}).readyAt);if(ra!=null)log.forEach(en=>{if(en.phase==="build"&&!en.wait&&en.end==null&&ra>=en.start){en.end=ra;en.derived=true;Object.keys(open).forEach(k=>{if(open[k]===en)delete open[k]})}});
+  const ra=num((derivedOf(i.id)||{}).readyAt);if(ra!=null)log.forEach(en=>{if(en.phase===BUILD_PHASE&&!en.wait&&en.end==null&&ra>=en.start){en.end=ra;en.derived=true;Object.keys(open).forEach(k=>{if(open[k]===en)delete open[k]})}});
   out.phaseLog=(Array.isArray(i.phaseLog)?i.phaseLog:[]).concat(log);
   if(out.status!=="done"){
     // Current phase: one someone is working on now (an open step), else the first needed phase nobody has finished.
