@@ -130,10 +130,11 @@ test("the refresh hook starts the collector when a ship run starts or ends (its 
   assert.deepEqual(runMark(5, ["/x/shop"], () => "m1").refs, { shop: "m1" });
 });
 
-test("liveBuild reads no more than 256 KB of the page and refuses a redirect off https (Checker, Security)", { timeout: 5000 }, async () => {
+test("liveBuild reads no more than 256 KB of the page and refuses a redirect off https (Checker, Security)", async () => {
   const tag = config.collector.liveTag;
   let pulled = 0;
-  const huge = () => new Response(new ReadableStream({ pull(ctl) { pulled++; ctl.enqueue(new TextEncoder().encode("x".repeat(65536))); } }));
+  // 2 MB in 64 KB chunks: a reader with no cap pulls all 32 (a stream with no end would never let a time limit fire).
+  const huge = () => new Response(new ReadableStream({ pull(ctl) { if (++pulled > 32) return ctl.close(); ctl.enqueue(new TextEncoder().encode("x".repeat(65536))); } }));
   assert.equal(await liveBuild(async () => huge(), "https://example.com/", tag), null);
   assert.ok(pulled <= 6, `read ${pulled} chunks of 64 KB`);
   const late = new Response("y".repeat(300000) + '<meta name="generator" content="Shop v1.2.3 abc1234">');

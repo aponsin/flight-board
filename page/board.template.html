@@ -889,8 +889,8 @@ function shipQueue(){const all=state.derived.find(d=>d.id==="all"),cards=all&&al
 function versionNote(i){const d=derivedOf(i.id);if(!d||!d.phase||d.firm===false&&d.phase!==BUILD_PHASE)return "";
   if(d.phase===LIVE_PHASE)return d.version?`Live in <b>v${esc(d.version)}</b>`:"Live";
   if(d.phase===SHIP_PHASE&&d.version)return `Deploying <b>v${esc(d.version)}</b>`;
-  // On main already (its deploy running while the run finishes): the version, not "shipping now".
-  if(d.shipping&&!d.version)return "<b>Shipping now</b>";
+  // After the two above: a card already on main while its run finishes shows its version, not "shipping now".
+  if(d.shipping)return "<b>Shipping now</b>";
   if(d.phase===SHIP_PHASE){const k=shipQueue().indexOf(i.id);return k>=0?`Queued (${k+1})`:""}
   if(d.phase===BUILD_PHASE||d.phase==="test")return "Building";
   return "In review"}
