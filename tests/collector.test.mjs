@@ -371,7 +371,7 @@ test("unnumberedThreads: a waiting item or a message thread without threads/<id>
   const docs = {
     threads: [{ id: "w-old", num: 4, title: "Old" }, { id: "w-untitled", num: 3 }],
     waiting: [{ id: "w-old", since: 1, text: "old" }, { id: "w-new", since: 5, text: "new ask" }],
-    messages: [{ id: "m1", thread: "t-1793000000000", at: 3, text: "a question" }, { id: "m2", thread: "w-old", at: 6, text: "reply" }],
+    messages: [{ id: "m1", thread: "t-1793000000000", at: 3, text: "a question" }, { id: "m2", thread: "w-old", at: 6, text: "reply" }, { id: "m3", thread: "w-untitled", at: 2, text: "named later" }],
   };
   assert.deepEqual(unnumberedThreads(docs), ["t-1793000000000", "w-new"]);
   assert.deepEqual(unnumberedThreads({ ...docs, threads: [...docs.threads, { id: "w-new", num: 5, title: "x" }, { id: "t-1793000000000", num: 6, title: "y" }] }), []);
