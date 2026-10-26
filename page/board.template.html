@@ -417,6 +417,16 @@ const SENT_MS=2500;
 const answered=(w,now)=>!!(w.response&&w.response.at&&now-w.response.at>SENT_MS);
 function needsYou(w,now){return !w.done&&!answered(w,now)}
 function onLead(w,now){return !w.done&&answered(w,now)}
+// Who something waits on now: the one answer its badge and its section both come from, so they can never disagree
+// (#C236: an answered ask under "Waiting on Manager" still said "waiting on you"). An open ask: "you" (unanswered) or
+// "lead" (answered, not closed). Any other thread: "lead" (the owner's word is the last), "resolved", "answered"
+// (Manager's word is the last: the owner reads it, under Needs you), or null with no messages.
+function waitsOn(id,now){const it=itemOf(id);
+  if(it&&it.coll==="waiting"&&!it.doc.done)return needsYou(it.doc,now)?"you":"lead";
+  if(!threadOf(id).length)return null;
+  return threadOpen(id)?"lead":threadResolved(id)?"resolved":"answered"}
+// The badge for a waitsOn answer: the only place the page writes one.
+function badge(on){return on==="you"?'<span class="t-badge you">waiting on you</span>':on==="lead"?'<span class="t-badge open">waiting on Manager</span>':on==="resolved"?'<span class="t-badge res">resolved</span>':on==="answered"?'<span class="t-badge ">answered</span>':""}
 // Whether an item is drawn with its thread under it: an open ask (either section), or an initiative in flight. Its
 // thread then stays there, never as a second row (a reply under an item once showed as a card of its own).
 function itemShown(id,now){const it=itemOf(id);if(!it)return false;
@@ -424,7 +434,7 @@ function itemShown(id,now){const it=itemOf(id);if(!it)return false;
 // An ask as a row that opens to its steps, its reply buttons (or the sent line) and its thread.
 function askHtml(w,open){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
-   <div class="w-text">${threadTag(w.id)}<span class="t-badge you">waiting on you</span>${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
+   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
    <span class="age">${num(w.since)?dur(Date.now()-w.since)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
@@ -433,7 +443,7 @@ function askHtml(w,open){const steps=Array.isArray(w.steps)?w.steps:[];
 // "Needs you": the open asks, Later folded at their end, then the threads where Manager answered and the owner has not
 // closed or replied (their item is no longer on the board).
 function renderWaiting(){
-  const t=Date.now(),list=state.waiting.filter(w=>needsYou(w,t)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
+  const t=Date.now(),list=state.waiting.filter(w=>waitsOn(w.id,t)==="you").sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
   const el=$("waiting"),answeredRows=threadRows(t).answered;
   if(!list.length&&!answeredRows){el.innerHTML='<div class="empty">Nothing needs you.</div>';return}
   const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id));
@@ -754,33 +764,33 @@ function threadHtml(id,where,{box=true}={}){const t=threadOf(id),key="th:"+id,ti
 // last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their
 // own place at the panel's end (resolvedHtml).
 const threadLast=id=>{const t=threadOf(id);return t[t.length-1].at};
-function threadRow(id,cls,now){return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span><div class="w-text">${id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b><span class="t-badge ${cls}">${cls==="open"?"waiting on Manager":cls==="res"?"resolved":"answered"}</span></div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"panel")}</details>`}
+function threadRow(id,now){return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span><div class="w-text">${id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(waitsOn(id,now))}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"panel")}</details>`}
 function threadRows(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now));
-  const open=ids.filter(threadOpen).sort((a,b)=>threadLast(a)-threadLast(b));
-  const answered=ids.filter(id=>!threadOpen(id)&&!threadResolved(id)).sort((a,b)=>threadLast(b)-threadLast(a));
-  return {open:open.map(id=>threadRow(id,"open",now)).join(""),answered:answered.map(id=>threadRow(id,"",now)).join("")}}
+  const open=ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b));
+  const answered=ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a));
+  return {open:open.map(id=>threadRow(id,now)).join(""),answered:answered.map(id=>threadRow(id,now)).join("")}}
 // Resolved threads, folded at the panel's end: those of the last 7 days, and a search box that finds any resolved
 // thread, whatever its age, by its name, #T number, item text or any message (case-insensitive, as typed).
 let rQuery="";
-function resolvedIds(now){return threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&!threadOpen(id)&&threadResolved(id)).sort((a,b)=>threadLast(b)-threadLast(a))}
+function resolvedIds(now){return threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&waitsOn(id,now)==="resolved").sort((a,b)=>threadLast(b)-threadLast(a))}
 function threadText(id){const n=threadNum(id);return [threadName(id),n?"#T"+n:"",threadTitle(id),...threadOf(id).map(m=>m.text||"")].join("\n").toLowerCase()}
 function resolvedMatches(q,now){const s=String(q||"").trim().toLowerCase(),all=resolvedIds(now);return s?all.filter(id=>threadText(id).includes(s)):all.filter(id=>now-threadLast(id)<WEEK)}
 const RMAX=50;
 function rlistHtml(now,q){const hits=resolvedMatches(q,now);
   if(!hits.length)return `<div class="empty">${String(q||"").trim()?"No matches.":"None in the last 7 days. Search finds older ones."}</div>`;
-  return hits.slice(0,RMAX).map(id=>threadRow(id,"res",now)).join("")+(hits.length>RMAX?`<div class="empty">${hits.length-RMAX} more: narrow the search.</div>`:"")}
+  return hits.slice(0,RMAX).map(id=>threadRow(id,now)).join("")+(hits.length>RMAX?`<div class="empty">${hits.length-RMAX} more: narrow the search.</div>`:"")}
 function resolvedHtml(now,q=rQuery){if(!resolvedIds(now).length)return "";const week=resolvedMatches("",now).length;
   return `<details class="w-item w-later" data-id="__resolved"><summary class="later-sum">Resolved threads, last 7 days (${week}) <span class="caret" aria-hidden="true">▸</span></summary><div class="rsearch"><input type="search" id="rsearch" placeholder="Search all resolved threads: name, #T number, any word" aria-label="Search resolved threads"></div><div id="rlist">${rlistHtml(now,q)}</div></details>`}
 function renderResolved(){const el=$("resolved"),focused=document.activeElement&&document.activeElement.id==="rsearch";
   keep(el,()=>{el.innerHTML=resolvedHtml(Date.now())});const box=$("rsearch");if(box&&box.value!==undefined){box.value=rQuery;if(focused)box.focus()}}
 document.addEventListener("input",e=>{if(!e.target||e.target.id!=="rsearch")return;rQuery=e.target.value;const l=$("rlist");if(l)l.innerHTML=rlistHtml(Date.now(),rQuery)});
 // "Later": asks the owner can leave for now, folded in one row above the resolved threads.
-function laterHtml(now,open=new Set()){const later=state.waiting.filter(w=>needsYou(w,now)&&w.kind==="later").sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
+function laterHtml(now,open=new Set()){const later=state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&w.kind==="later").sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
   return later.length?`<details class="w-item w-later" data-id="__later"${open.has("__later")?" open":""}><summary class="later-sum">Later (${later.length}) <span class="caret" aria-hidden="true">▸</span></summary>${later.map(w=>askHtml(w,open)).join("")}</details>`:""}
 function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(Date.now());el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply))})}
 // "Waiting on Manager": the asks the owner answered that Manager has not closed (the reply and its thread under each),
 // the threads whose last word is the owner's, and the resolved ones folded at the end.
-function threadsHtml(now){const r=threadRows(now),asks=state.waiting.filter(w=>onLead(w,now)).sort((a,b)=>(num(a.response.at)??0)-(num(b.response.at)??0));
+function threadsHtml(now){const r=threadRows(now),asks=state.waiting.filter(w=>waitsOn(w.id,now)==="lead").sort((a,b)=>(num(a.response.at)??0)-(num(b.response.at)??0));
   if(!asks.length&&!r.open)return '<div class="empty">Nothing waiting on Manager.</div>';
   return asks.map(w=>askHtml(w,new Set())).join("")+r.open}
 // Every fold the owner opened or closed, by what it shows (an ask's row and the same thread's row elsewhere are one fold:
@@ -949,8 +959,8 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const next=i.nextNote?`<span${stale?' style="opacity:.6"':""}>Next: <b>${esc(i.nextNote)}</b>${num(i.nextAt)?` <span data-next="${i.nextAt}">${i.nextAt>Date.now()?"in "+dur(i.nextAt-Date.now()):"due now"}</span>`:""}${nAt!=null?` <span data-ago="${nAt}">(written ${dur(Date.now()-nAt)} ago${stale?"; an agent has moved since":""})</span>`:" (not dated)"}</span>`:"";
   const wait=i.waitingOn?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
   const started=num(i.createdAt)?`<span>Started ${dayLabel(i.createdAt)} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-i.createdAt)} so far</span>`:"";
-  const tn=threadOf(i.id).length,topen=threadOpen(i.id);
-  const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:"Start a thread"}${topen?'<span class="t-badge open">waiting on Manager</span>':""}</summary>${threadHtml(i.id,w)}</details>`;
+  const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now());
+  const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:"Start a thread"}${on==="lead"?badge(on):""}</summary>${threadHtml(i.id,w)}</details>`;
   return `<div class="i-row"><div><div class="i-name">${cardTag(i)}<strong>${esc(i.name)}</strong>${threadTag(i.id)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}</div>
    ${i.summary?`<div class="w-sub">${esc(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
