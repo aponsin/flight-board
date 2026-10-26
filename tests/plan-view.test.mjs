@@ -124,3 +124,40 @@ test("Now never injects markup: node text, paths and card names are escaped", ()
   assert.doesNotMatch(html, /<img/);
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
 });
+
+test("Crew: a tile per agent with its model and effort, its memory and what it is on; then time by phase", () => {
+  const now = Date.now();
+  const b = loadNames(["crewHtml", "setV3View"]);
+  Object.assign(b.state, {
+    plan: [], ideas: [], threads: [], waiting: [], derived: [],
+    meta: [{ id: "models", agents: { Builder: { model: "opus", effort: "high" } } }, { id: "crew", notes: { Checker: "Reviewing nothing" } },
+      { id: "context", at: now - 6e4, agents: { Builder: { pct: 82, saved: true }, Scout: { pct: 10 } } }],
+    ctx: [{ id: "Builder", pct: 30, at: now - 1e4 }],
+    initiatives: [
+      { id: "c1", name: "Ship the sign", who: "Builder", status: "active", phase: "build", etaLive: now + 9e6 },
+      { id: "c2", name: "Order paint", who: "Builder", status: "queued", phase: "plan" },
+      { id: "c3", name: "Door review", who: "Checker", status: "active", phase: "ship", etaLive: now,
+        phaseLog: [{ phase: "build", who: "Builder", start: now - 3 * 36e5, end: now - 2 * 36e5 }, { phase: "checker", who: "Checker", start: now - 2 * 36e5, end: now - 36e5, wait: "busy" }] },
+    ],
+  });
+  const html = b.crewHtml(now);
+  assert.match(html, /data-agent="Builder"><h3><span>Builder<\/span><span class="mdl">opus · high<\/span><\/h3>/);
+  assert.match(html, /data-agent="Builder">[\s\S]*?Memory 30%[\s\S]*?\/clear me/, "the fresher ctx reading, and saved: ready to clear");
+  assert.match(html, /<span>Ship the sign · Build<\/span><span>⧗ Order paint · Plan<\/span>/, "its cards, queued marked");
+  assert.match(html, /data-agent="Checker">[\s\S]*?Door review · Ship/);
+  assert.match(html, /data-agent="Scout">[\s\S]*?<span class="idle">Idle<\/span>/, "an agent with only a memory reading still gets a tile");
+  assert.match(html, /<tr><td>Build<\/td><td>1 h[^<]*<\/td><td>—<\/td><td>—<\/td><\/tr><tr><td>Checker<\/td><td>—<\/td><td>1 h/, "time by phase, in the config's order");
+  b.setV3View("crew");
+  assert.deepEqual([b.els.v3now.hidden, b.els.v3plan.hidden, b.els.v3crew.hidden], [true, true, false]);
+  assert.match(b.els.crew3.innerHTML, /data-agent="Builder"/);
+});
+
+test("Crew never injects markup: agent names, models, notes and card names are escaped", () => {
+  const evil = "<img src=x onerror=alert(1)>";
+  const b = loadNames(["crewHtml"]);
+  Object.assign(b.state, { meta: [{ id: "models", agents: { [evil]: { model: evil } } }, { id: "crew", notes: { [evil]: evil } }], ctx: [{ id: evil, pct: 5, at: Date.now() }],
+    initiatives: [{ id: "c", name: evil, who: evil, status: "active", phase: evil }] });
+  const html = b.crewHtml();
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+});

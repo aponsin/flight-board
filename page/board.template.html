@@ -272,6 +272,15 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .v3tabs{display:flex;gap:6px}
 .v3tabs button{font:700 .95rem var(--display);letter-spacing:.06em;text-transform:uppercase;padding:6px 14px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;min-height:40px}
 .v3tabs button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+.crew3{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+.crew3-t{padding:10px 12px}
+.crew3-t h3{margin:0;font:700 1.05rem var(--display);letter-spacing:.04em;text-transform:uppercase;display:flex;justify-content:space-between;gap:8px}
+.crew3-t .mdl{font:400 .8rem var(--mono);color:var(--muted);text-transform:none;letter-spacing:0}
+.crew3-mem{display:flex;align-items:center;gap:8px;margin:6px 0;font:600 .8rem var(--mono);color:var(--muted)}
+.crew3-mem .ctx-bar{flex:1}
+.crew3-on{display:flex;flex-direction:column;gap:2px;font-size:.92rem}
+.crew3-on .idle{color:var(--muted)}
+table.crew3-ph{margin-top:14px}
 .now-group{margin-bottom:16px}
 .now-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:0 0 6px;font-weight:600}
 .now-path{color:var(--muted);font-weight:400;font-size:.88rem}
@@ -291,10 +300,14 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
   <p style="margin:0"><button type="button" class="viewlink" id="viewlink">Try the new layout</button></p>
 
   <div id="v3" hidden>
-  <nav class="v3tabs" aria-label="Views"><button type="button" data-v3="now" aria-pressed="true">Now</button><button type="button" data-v3="plan" aria-pressed="false">Plan</button></nav>
+  <nav class="v3tabs" aria-label="Views"><button type="button" data-v3="now" aria-pressed="true">Now</button><button type="button" data-v3="plan" aria-pressed="false">Plan</button><button type="button" data-v3="crew" aria-pressed="false">Crew</button></nav>
   <section aria-labelledby="h-now" id="v3now">
     <h2 id="h-now">Now</h2>
     <div id="now"><div class="empty">Nothing in flight.</div></div>
+  </section>
+  <section aria-labelledby="h-crew3" id="v3crew" hidden>
+    <h2 id="h-crew3">Crew</h2>
+    <div id="crew3"><div class="empty">No agents yet.</div></div>
   </section>
   <section aria-labelledby="h-plan" id="v3plan" hidden>
     <h2 id="h-plan">Plan</h2>
@@ -1186,27 +1199,47 @@ function nowHtml(now=Date.now()){
   if(resolved.length)h+=`<details class="now-fold panel"><summary>Threads resolved in the last 24 h (${resolved.length})</summary>${resolved.slice(0,30).map(id=>{const n=threadNum(id);return `<div class="now-res">${n?`<a href="#" class="t-ref" data-tref="${esc(id)}">#T${n}</a>`:""}<span>${esc(threadName(id))}</span><span class="now-path">${esc(dur(now-threadLast(id)))} ago</span></div>`}).join("")}</details>`;
   return h}
 function renderNow(){const el=$("now");if(!$("v3").hidden&&!$("v3now").hidden)keep(el,()=>{el.innerHTML=nowHtml()})}
-// The new layout's view (Now or Plan), this browser's choice only.
+// Board v3, the Crew view (step 4): a tile per agent (the roster, then anyone else on a card or with a memory reading):
+// its model and effort (meta/models), its memory (ctxAgents, with "/clear me" once saved, dimmed when the reading is over
+// 2 h old), and what it is on (crewBy: each card with its phase; queued and stuck marked) or its idle note; then the
+// last 7 days' time by phase (logTotals), working, queued while busy, and gated.
+function crewHtml(now=Date.now()){
+  const {by,names:onCards,notes}=crewBy(),mem=ctxAgents(),models=(state.meta.find(d=>d.id==="models")||{}).agents||{};
+  const names=[...onCards,...Object.keys(mem).filter(n=>!onCards.includes(n)).sort()];
+  const tiles=names.map(n=>{const md=models[n]||{},m=mem[n];
+    const p=m&&num(m.pct)!=null?Math.max(0,Math.min(100,Math.round(m.pct))):null,c=p==null?"":p>=70?"r":p>=40?"a":"g";
+    const old=m&&num(m.at)!=null&&now-m.at>72e5;
+    const items=(by[n]||[]).slice().sort(openOrder);
+    const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1];return `<span>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(notes[n]||"Idle")}</span>`;
+    return `<div class="panel crew3-t" data-agent="${esc(n)}"><h3><span>${esc(n)}</span>${md.model||md.effort?`<span class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</span>`:""}</h3>`+
+      (p!=null?`<div class="crew3-mem ctx-t ${c}${m.saved?" saved":""}"${old?' style="opacity:.55"':""}><span>Memory ${p}%</span><span class="ctx-bar"><i style="width:${p}%"></i></span>${m.saved?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
+      `<div class="crew3-on">${on}</div></div>`}).join("");
+  const tot=logTotals("phase",now),fmt=ms=>ms?dur(ms):"—";
+  const rows=PHASES.filter(([k])=>tot[k]).map(([k,label])=>`<tr><td>${esc(label)}</td><td>${fmt(tot[k].work)}</td><td>${fmt(tot[k].busy)}</td><td>${fmt(tot[k].gate)}</td></tr>`).join("");
+  const table=rows?`<div class="chart-wrap"><table class="qt crew3-ph"><caption>Last 7 days, by phase</caption><thead><tr><th>Phase</th><th>Working</th><th>Queued (busy)</th><th>Gated</th></tr></thead><tbody>${rows}</tbody></table></div>`:"";
+  return (tiles?`<div class="crew3">${tiles}</div>`:'<div class="empty">No agents yet.</div>')+table}
+function renderCrew3(){const el=$("crew3");if(!$("v3").hidden&&!$("v3crew").hidden)el.innerHTML=crewHtml()}
+// The new layout's view (Now, Plan or Crew), this browser's choice only.
 let v3view="now";
-function setV3View(v){v3view=v==="plan"?"plan":"now";$("v3now").hidden=v3view!=="now";$("v3plan").hidden=v3view!=="plan";
+function setV3View(v){v3view=["plan","crew"].includes(v)?v:"now";$("v3now").hidden=v3view!=="now";$("v3plan").hidden=v3view!=="plan";$("v3crew").hidden=v3view!=="crew";
   document.querySelectorAll("[data-v3]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v3===v3view)));
   try{localStorage.setItem("flight-board-v3view",v3view)}catch(e){}
-  renderNow();renderPlan()}
+  renderNow();renderPlan();renderCrew3()}
 // Which layout: the current board (v2) unless this viewer chose the new one ("#v3" in the link opens it too). The
 // choice is this browser's only; nothing is written to the board.
 let view="v2";
 function setView(v){view=v==="v3"?"v3":"v2";$("v3").hidden=view!=="v3";$("v2").hidden=view==="v3";
   $("viewlink").textContent=view==="v3"?"Back to the current board":"Try the new layout";
   try{localStorage.setItem("flight-board-view",view)}catch(e){}
-  if(view==="v3"){renderNow();renderPlan()}}
-function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderBoard();renderFeed();renderUsage();renderNow();renderPlan()}
+  if(view==="v3"){renderNow();renderPlan();renderCrew3()}}
+function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3()}
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});
   document.querySelectorAll("[data-next]").forEach(e=>{const t=+e.dataset.next;e.textContent=t>Date.now()?"in "+dur(t-Date.now()):"due now"});}
 $("viewlink").addEventListener("click",()=>setView(view==="v3"?"v2":"v3"));
 document.querySelectorAll("[data-v3]").forEach(b=>b.addEventListener("click",()=>setV3View(b.dataset.v3)));
-(()=>{let v=null;try{v=localStorage.getItem("flight-board-v3view")}catch(e){}if(v==="plan")setV3View("plan")})();
+(()=>{let v=null;try{v=localStorage.getItem("flight-board-v3view")}catch(e){}if(v==="plan"||v==="crew")setV3View(v)})();
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-view")}catch(e){}if(typeof location!=="undefined"&&location.hash==="#v3")v="v3";if(v==="v3")setView("v3")})();
 setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()},15000);tick();renderAll();
 

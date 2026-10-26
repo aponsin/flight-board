@@ -82,7 +82,7 @@ node below it done), in progress (an open card on it or below it), gated (a `wai
 done, any other `waitsOn` text until the lead removes it, or an open ask tied to one of its cards) or next. Each objective
 gets its bar (done over all the nodes below it) and a chip against its `due` day (ending 23:59:59 UTC): done, blocked
 (all that is left is gated), at risk (the size medians of what is left, `nudges.etaHours`, run past it) or on track.
-The new layout opens on **Now**: the open cards grouped under the plan node they serve, in the plan's order, unlinked cards last, and folded below what shipped and the threads resolved in the last 24 hours. Its **Plan** view shows the outline with those states, the cards on each node, and the open ideas at the bottom.
+The new layout opens on **Now**: the open cards grouped under the plan node they serve, in the plan's order, unlinked cards last, and folded below what shipped and the threads resolved in the last 24 hours. Its **Crew** view has a tile per agent (model and effort, memory, what it is on) and the last 7 days' time by phase. Its **Plan** view shows the outline with those states, the cards on each node, and the open ideas at the bottom.
 It sits behind "Try the new layout" (or `#v3` in the link); the current board stays the default, and the choice is
 remembered in that browser only.
 
