@@ -34,6 +34,8 @@ export function reviewsFor(card, config) {
   for (const k of config.skips ?? []) {
     if (k.unlessLevel && card.level && card.level !== k.unlessLevel) skip.add(k.phase);
     if (k.whenFalse && card[k.whenFalse] === false) skip.add(k.phase);
+    // A review only some cards need (a look change for a designer): skipped unless the card says it applies.
+    if (k.unlessTrue && card[k.unlessTrue] !== true) skip.add(k.phase);
   }
   return Object.keys(c.notes).filter((p) => !skip.has(p));
 }

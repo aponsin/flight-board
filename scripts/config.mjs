@@ -56,7 +56,8 @@ export function checkConfig(c) {
     if (!Array.isArray(c.skips)) out.push("skips: a list");
     else c.skips.forEach((s, n) => {
       if (!s || !phaseKeys.includes(s.phase)) out.push(`skips[${n}].phase: one of the phases`);
-      if (!s || (s.unlessLevel === undefined) === (s.whenFalse === undefined)) out.push(`skips[${n}]: exactly one of unlessLevel or whenFalse`);
+      if (!s || [s.unlessLevel, s.whenFalse, s.unlessTrue].filter((v) => v !== undefined).length !== 1) out.push(`skips[${n}]: exactly one of unlessLevel, whenFalse or unlessTrue`);
+      if (s && s.unlessTrue !== undefined && !(typeof s.unlessTrue === "string" && /^[A-Za-z][A-Za-z0-9]{0,40}$/.test(s.unlessTrue))) out.push(`skips[${n}].unlessTrue: a card field name`);
     });
   }
   if (c.boardStart !== undefined && c.boardStart !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(String(c.boardStart))) out.push("boardStart: YYYY-MM-DD, or empty");

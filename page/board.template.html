@@ -1128,8 +1128,8 @@ function stepsOf(i){const mine=state.steps.filter(e=>e&&e.init===i.id);
 function fromSteps(i){
   const evs=stepsOf(i).filter(e=>e&&e.phase&&num(e.at)!=null).sort((a,b)=>a.at-b.at);
   const skip=new Set(Array.isArray(i.skip)?i.skip:[]);
-  // The configured skips: a phase only at a given level, or skipped when an item field is false.
-  (CONFIG.skips||[]).forEach(k=>{if(k.unlessLevel&&i.level&&i.level!==k.unlessLevel)skip.add(k.phase);if(k.whenFalse&&i[k.whenFalse]===false)skip.add(k.phase)});
+  // The configured skips: a phase only at a given level, skipped when an item field is false, or only when one is true.
+  (CONFIG.skips||[]).forEach(k=>{if(k.unlessLevel&&i.level&&i.level!==k.unlessLevel)skip.add(k.phase);if(k.whenFalse&&i[k.whenFalse]===false)skip.add(k.phase);if(k.unlessTrue&&i[k.unlessTrue]!==true)skip.add(k.phase)});
   // Test is its own phase (build time looked inflated by test runs). Items whose agent logged no
   // test step (all earlier ones) skip it, so they never stall on a phase nobody logs.
   if(!evs.some(e=>e.phase==="test"))skip.add("test");

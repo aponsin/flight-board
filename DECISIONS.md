@@ -29,3 +29,6 @@ Chose: retire `plannedVersion` (the gate refuses it); a card shows its derived v
 
 ## Shipping now comes from the ship run's own branch
 Chose: the collector reads the run's candidate branch (`collector.candidatePattern`) and the branch@sha its last commits name; those cards are "Shipping now", the other signed cards "Queued (n)"; the refresh hook treats the branch appearing or going like a ship.   Because: two cards said one planned version while only one was in the run (#C211); the run itself is the evidence, and the board must show it within minutes.   Rejected: the ship script writing a ship record to the board (a script can't write it; a person relaying it is the drift we removed).   Revisit if: a team ships without a branch of its own per run.
+
+## A review few cards need is skipped unless the card asks for it
+Chose: the skip kind `unlessTrue: <field>`: the phase counts only on a card whose field is `true`.   Because: a new review phase (a designer's) with `whenFalse` would hold every existing card, which carries no such field, at that review.   Rejected: `whenFalse` with the field written on every card (the lead would have to backfill and never forget it).   Revisit if: most cards need the review; then `whenFalse` fits.

@@ -117,7 +117,7 @@ test("collect marks only the run's cards as shipping, and never one already on m
   };
   const cards = [{ id: "x", status: "active" }, { id: "y", status: "active" }];
   const { doc } = collect({ config: on, cards, git, gh: () => "[]", now });
-  assert.equal(doc.cards.x.shipping, "build/ship-v1.2.0");
+  assert.equal(doc.cards.x.shipping, true, "a flag, never the branch name");
   assert.equal(doc.cards.y.shipping, undefined);
 });
 

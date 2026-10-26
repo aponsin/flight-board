@@ -33,7 +33,8 @@ Four steps, in order. Every path below is a placeholder: use your own.
 1. **Config, word list, install.** Write your `board.config.json` somewhere outside this repository, starting from
    `board.config.example.json`. The fields: `title`, `owner` (the person the board works for, as they sign),
    `artifactUrl` (empty until step 2), `phases` (`[key, label]` in order), `roster` and `order` (the roles shown), `skips`
-   (a phase only at a level, or skipped when an item field is false), `boardStart`, the usage labels, and the `gate`,
+   (a phase only at a level, `unlessLevel`; skipped when an item field is false, `whenFalse`; or only when one is true,
+   `unlessTrue`, for a review few items need, like a designer's on `lookChange: true`), `boardStart`, the usage labels, and the `gate`,
    `collector` and `nudges` blocks (below; `scripts/config.mjs` lists every field and its default). Write a private word
    list outside this repository too: one word or name per line that must never appear here (the business's name, its
    people, its customers, its domain). Then run `node scripts/install.mjs <board.config.json> <words.txt>`: it checks the
