@@ -42,7 +42,10 @@ export function numErrors(writes, seen = 0, c = COUNTERS[0], mirror = null) {
   const seqw = writes.find((w) => w.collection === "meta" && w.doc_id === c.seq && w.op !== "delete");
   if (seqw && !Number.isInteger(seqw.if_version) && !(seqw.op === "set" && !seen)) return [`meta/${c.seq}: pin it with if_version (the version a get just read); only the set that creates it goes without`];
   if (seqw && Number.isInteger(seqw.data?.next) && seqw.data.next < seen) return [`meta/${c.seq}: next never goes back (${seqw.data.next} < ${seen}, the last the gate let through)`];
-  if (seqw && c.maxJump && Number.isInteger(seqw.data?.next) && seqw.data.next > Math.max(seen, 1) + c.maxJump) return [`meta/${c.seq}: next may move at most ${c.maxJump} past the last the gate let through (${Math.max(seen, 1)})`];
+  // Measured from what the gate knows: the last counter applied, or the board's highest number (a fresh install or a lost
+  // state file knows no counter). Knowing neither, there is nothing to measure from (Checker).
+  const base = Math.max(seen, ...[...had.values()].map((n) => n + 1));
+  if (seqw && c.maxJump && base > 0 && Number.isInteger(seqw.data?.next) && seqw.data.next > base + c.maxJump) return [`meta/${c.seq}: next may move at most ${c.maxJump} past ${base} (the last the gate let through, or the board's highest number + 1)`];
   const nums = writes.filter((w) => w.collection === c.collection && w.op !== "delete" && w.data?.num !== undefined && had.get(w.doc_id) !== w.data.num).map((w) => w.data.num);
   if (!nums.length) return [];
   if (!seqw) return [`${c.what}: numbering ${c.what === "threads" ? "a thread" : "a card"} moves meta/${c.seq} in the same batch (${c.tool} writes both)`];

@@ -90,6 +90,11 @@ test("card numbers: a new card takes the counter's next in the same batch; a num
   assert.match(errs([seq(1)]), /next is a whole number above 1/);
   assert.match(errs([seq(60)], { state: { cardSeq: 9 } }), /at most 50 past/, "no jumping the numbering ahead");
   assert.equal(errs([seq(59)], { state: { cardSeq: 9 } }), "");
+  // A fresh install (no counter in the gate's state) on a board already at #C79: the next card isn't locked out (Checker).
+  const big = mirror([{ id: "c79", ...card, num: 79 }]);
+  assert.equal(errs([{ op: "set", collection: "initiatives", doc_id: "c80", data: { ...card, num: 80 } }, seq(81)], { m: big, state: {} }), "");
+  assert.match(errs([seq(200)], { m: big, state: {} }), /at most 50 past 80/);
+  assert.equal(errs([seq(81, "set", 0)], { m: mirror(), state: {} }), "", "knowing nothing: nothing to measure from");
   assert.match(errs([{ op: "delete", collection: "meta", doc_id: CARD_SEQ }]), /never deleted/);
 });
 
