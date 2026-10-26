@@ -31,7 +31,7 @@ export function offersChoices(text) {
 function choiceErrors(data, kind) {
   if (kind === "decision") return [];
   const field = FIELDS_WITH_CHOICES.find((f) => typeof data[f] === "string" && offersChoices(data[f]));
-  return field ? [`${field} offers choices (A) … B), 1) … 2) or "option A"): make it kind "decision" with options, a button each`] : [];
+  return field ? [`${field} offers choices (A) … B), 1) … 2) or "option A"): make it kind "decision" with options, a button each (steps to follow go in steps[])`] : [];
 }
 
 // The counter thread numbers come from (meta/threadSeq {next}).

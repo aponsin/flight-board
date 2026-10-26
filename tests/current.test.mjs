@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, readlinkSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { judge, linkedCommit, swapLink, OWNER_INSTALLS } from "../scripts/current.mjs";
+import { readFileSync } from "node:fs";
+import { judge, linkedCommit, swapLink, importClosure, pinnedCommit, sameTree, OWNER_ENTRIES } from "../scripts/current.mjs";
 import { currentLink, fenceSpec, decide } from "../collector/fence.mjs";
 import { sameCode } from "../collector/collect.mjs";
 import { fullConfig } from "../scripts/config.mjs";
@@ -15,11 +16,42 @@ const A = "a".repeat(40), B = "b".repeat(40);
 test("judge: on main and SECURE, else refused with the reason; it names the owner's files and a task change", () => {
   assert.match(judge({ onMain: false, note: "SECURE", changed: [] }).reason, /origin\/main/);
   for (const note of [null, "", "RISKS", "secure", "PASS Full", "x\nSECURE", "NOT SECURE", "SECURED"]) assert.match(judge({ onMain: true, note, changed: [] }).reason, /SECURE/, String(note));
-  assert.deepEqual(judge({ onMain: true, note: "SECURE\n\nby Security", changed: ["collector/derive.mjs", "page/board.template.html"] }), { ok: true, ownerFiles: [], taskChanged: false });
-  const v = judge({ onMain: true, note: "SECURE", changed: ["gate/rules.mjs", "collector/fence.mjs", "collector/refresh.mjs", "scripts/hooks.mjs", "collector/TASK.md", "collector/collect.mjs"] });
-  assert.deepEqual(v.ownerFiles, ["gate/rules.mjs", "collector/fence.mjs", "collector/refresh.mjs", "scripts/hooks.mjs"]);
+  const owned = ["gate/rules.mjs", "collector/text.mjs"];
+  assert.deepEqual(judge({ onMain: true, note: "SECURE\n\nby Security", changed: ["collector/derive.mjs", "page/board.template.html"], owned }), { ok: true, ownerFiles: [], taskChanged: false });
+  const v = judge({ onMain: true, note: "SECURE", changed: ["gate/rules.mjs", "collector/text.mjs", "collector/TASK.md", "collector/collect.mjs"], owned });
+  assert.deepEqual(v.ownerFiles, ["gate/rules.mjs", "collector/text.mjs"]);
   assert.equal(v.taskChanged, true);
-  assert.ok(OWNER_INSTALLS.some((re) => re.test("scripts/config.mjs")));
+});
+
+test("importClosure: the owner's install is everything its entry points load; at this commit, the 15 files Security listed and more", () => {
+  const read = (f) => { try { return readFileSync(new URL(`../${f}`, import.meta.url), "utf8"); } catch { return null; } };
+  const owned = importClosure(OWNER_ENTRIES, read);
+  for (const f of ["collector/collect.mjs", "collector/derive.mjs", "collector/facts.mjs", "collector/fence.mjs", "collector/nudges.mjs", "collector/plan-state.mjs", "collector/refresh.mjs", "collector/text.mjs", "gate/after.mjs", "gate/gate.mjs", "gate/plan.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs", "scripts/config.mjs"]) assert.ok(owned.includes(f), f);
+  assert.ok(!owned.includes("collector/TASK.md") && !owned.includes("page/board.template.html"));
+  const files = { "a.mjs": 'import { x } from "./b/c.mjs";\nexport { y } from "../z.mjs";\nimport fs from "node:fs";', "b/c.mjs": 'import "./d.mjs";\nimport { a } from "../a.mjs";', "z.mjs": "", "b/d.mjs": null };
+  assert.deepEqual(importClosure(["a.mjs"], (f) => files[f] ?? null), ["a.mjs", "b/c.mjs"].sort(), "a bare import and a missing file add nothing; ../z.mjs is outside");
+  assert.deepEqual(importClosure(["a.mjs"], (f) => ({ ...files, "../z.mjs": "" })[f] ?? null), ["../z.mjs", "a.mjs", "b/c.mjs"]);
+  assert.deepEqual(importClosure(["a.mjs"], (f) => ({ ...files, "b/d.mjs": "" })[f] ?? null), ["a.mjs", "b/c.mjs", "b/d.mjs"], "a side-effect import is followed");
+});
+
+test("pinnedCommit: the commit the settings' gate hook runs from", () => {
+  assert.equal(pinnedCommit(`{"command": "node '/u/.flight-board/install/${A}/gate/gate.mjs' --config x"}`), A);
+  assert.equal(pinnedCommit(`node /u/flight-board/gate/gate.mjs`), null);
+  assert.equal(pinnedCommit(null), null);
+});
+
+test("sameTree: the same files byte for byte and nothing else; a planted or edited file differs", () => {
+  const base = mkdtempSync(join(tmpdir(), "fb-tree-"));
+  try {
+    const make = (name, files) => { for (const [f, t] of Object.entries(files)) { mkdirSync(join(base, name, f, ".."), { recursive: true }); writeFileSync(join(base, name, f), t); } return join(base, name); };
+    const good = { "collector/collect.mjs": "run()", "gate/gate.mjs": "gate()" };
+    assert.equal(sameTree(make("a", good), make("b", good)), true);
+    assert.equal(sameTree(make("c", { ...good, "collector/collect.mjs": "evil()" }), make("d", good)), false, "an edited file");
+    assert.equal(sameTree(make("e", { ...good, "extra.mjs": "x" }), make("f", good)), false, "a planted file");
+    assert.equal(sameTree(make("g", { "gate/gate.mjs": "gate()" }), make("h", good)), false, "a missing file");
+    const linked = make("i", { "gate/gate.mjs": "gate()" }); symlinkSync(join(base, "a", "collector"), join(linked, "collector"));
+    assert.equal(sameTree(linked, join(base, "a")), false, "a link in place of a folder");
+  } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
 function layout() {
