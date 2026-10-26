@@ -367,9 +367,9 @@ test("the export lives in the run's scratchpad: this folder's root only, made af
 });
 
 test("unnumberedThreads: a waiting item or a message thread without threads/<id> {num} is named; numbered ones are not (#C227)", async () => {
-  const { unnumberedThreads } = await import("../collector/collect.mjs");
+  const { unnumberedThreads, unnumberedLine } = await import("../collector/collect.mjs");
   const docs = {
-    threads: [{ id: "w-old", num: 4, title: "Old" }],
+    threads: [{ id: "w-old", num: 4, title: "Old" }, { id: "w-untitled", num: 3 }],
     waiting: [{ id: "w-old", since: 1, text: "old" }, { id: "w-new", since: 5, text: "new ask" }],
     messages: [{ id: "m1", thread: "t-1793000000000", at: 3, text: "a question" }, { id: "m2", thread: "w-old", at: 6, text: "reply" }],
   };
@@ -377,4 +377,6 @@ test("unnumberedThreads: a waiting item or a message thread without threads/<id>
   assert.deepEqual(unnumberedThreads({ ...docs, threads: [...docs.threads, { id: "w-new", num: 5, title: "x" }, { id: "t-1793000000000", num: 6, title: "y" }] }), []);
   assert.deepEqual(unnumberedThreads({ waiting: [{ id: "a", since: 1 }] }), ["a"], "no threads exported: every thread is unnumbered");
   assert.deepEqual(unnumberedThreads({}), []);
+  assert.match(unnumberedLine(docs), /^NUDGE 2 thread\(s\) with no number: .*t-1793000000000.*w-new.*scripts\/thread-ids\.mjs/, "a NUDGE line, so step 4 sends it");
+  assert.equal(unnumberedLine({}), null);
 });

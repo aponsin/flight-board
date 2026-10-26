@@ -75,6 +75,10 @@ export function unnumberedThreads(docs) {
   const { batches } = allocate({ threads: docs.threads ?? [], messages: docs.messages ?? [], waiting: docs.waiting ?? [], seq: null });
   return batches.flat().filter((w) => w.collection === "threads" && Number.isInteger(w.data?.num)).map((w) => w.doc_id);
 }
+export function unnumberedLine(docs) {
+  const loose = unnumberedThreads(docs);
+  return loose.length ? `NUDGE ${loose.length} thread(s) with no number: ${loose.map(idText).join(", ")}. Number them now (scripts/thread-ids.mjs, meta/threadSeq pinned).` : null;
+}
 // Where sessions working in `cwd` keep their scratchpads: <root>/<cwd, every character but a letter or digit as "-">/
 // <session>/scratchpad. One root only, links resolved (/tmp is /private/tmp on a Mac): never a wider search (Security).
 export function scratchRoot(cwd, uid, base = "/private/tmp") {
@@ -228,6 +232,6 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   for (const line of conflicts) console.log(`CONFLICT ${line}`);
   if (doc.liveButOpen.length) console.log(`LIVE BUT OPEN (${doc.liveButOpen.length}): ${doc.liveButOpen.map(idText).join(", ")}`);
   for (const line of nudged.lines) console.log(line);
-  const loose = unnumberedThreads(mirror.docs);
-  if (loose.length) console.log(`NUDGE ${loose.length} thread(s) with no number: ${loose.map(idText).join(", ")}. Number them now (scripts/thread-ids.mjs, meta/threadSeq pinned).`);
+  const loose = unnumberedLine(mirror.docs);
+  if (loose) console.log(loose);
 }

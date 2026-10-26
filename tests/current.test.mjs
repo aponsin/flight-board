@@ -49,8 +49,8 @@ test("sameTree: the same files byte for byte and nothing else; a planted or edit
     assert.equal(sameTree(make("c", { ...good, "collector/collect.mjs": "evil()" }), make("d", good)), false, "an edited file");
     assert.equal(sameTree(make("e", { ...good, "extra.mjs": "x" }), make("f", good)), false, "a planted file");
     assert.equal(sameTree(make("g", { "gate/gate.mjs": "gate()" }), make("h", good)), false, "a missing file");
-    const linked = make("i", { "gate/gate.mjs": "gate()" }); symlinkSync(join(base, "a", "collector"), join(linked, "collector"));
-    assert.equal(sameTree(linked, join(base, "a")), false, "a link in place of a folder");
+    const linked = make("i", { "gate/gate.mjs": "gate()" }); mkdirSync(join(linked, "collector")); symlinkSync(join(base, "a", "collector", "collect.mjs"), join(linked, "collector", "collect.mjs"));
+    assert.equal(sameTree(linked, join(base, "a")), false, "a link to the same bytes in place of the file");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
