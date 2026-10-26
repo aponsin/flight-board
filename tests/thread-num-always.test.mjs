@@ -64,3 +64,12 @@ test("a badge never breaks across lines (the owner's screenshot: \"waiting on / 
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   assert.match(html, /\.t-badge\{[^}]*white-space:nowrap[^}]*\}/);
 });
+
+test("one colour per who it waits on: red you, blue Manager, amber another agent, grey otherwise (contrast checked in both modes)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(html, /\.t-badge\.you\{color:var\(--bad\);border-color:var\(--bad\)\}/);
+  assert.match(html, /\.t-badge\.open\{color:var\(--accent\);border-color:var\(--accent\)\}/, "waiting on Manager: blue");
+  assert.match(html, /\.t-badge\.agent\{color:var\(--warn\);border-color:var\(--warn\)\}/);
+  assert.match(html, /\.t-badge\{[^}]*color:var\(--muted\)/, "answered and resolved: grey");
+});
