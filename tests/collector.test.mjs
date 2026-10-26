@@ -290,7 +290,9 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /`ctx`, `plan`[^;]*;[\s\S]*`query` of `steps`/, "the export takes the memory tiles, the plan and the last days' steps for the nudges");
   assert.match(doc, /`NUDGE` line/);
   const settings = JSON.parse(doc.match(/```json\n([\s\S]*?)\n  ```/)[1].replace(/^  /gm, ""));
-  assert.deepEqual(settings.permissions.allow.slice(3), ["ArtifactData", "ToolSearch", "mcp__ccd_session_mgmt__send_message", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
+  assert.deepEqual(settings.permissions.allow.slice(3), ["Read(/<full path of collector.outDir>/ctx-*.json)", "Read(/<full path of collector.outDir>/meta-context.json)", "ArtifactData", "ToolSearch", "mcp__ccd_session_mgmt__send_message", "mcp__ccd_session_mgmt__list_sessions", "mcp__ccd_session_mgmt__get_usage", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"], "the memory files and the two read-only session tools (#C274), nothing else");
+  assert.deepEqual(settings.hooks.PostToolUse.map((h) => h.matcher), ["mcp__ccd_session_mgmt__list_sessions|mcp__ccd_session_mgmt__get_usage"], "the memory hook on those two tools only");
+  assert.match(settings.hooks.PostToolUse[0].hooks[0].command, /<full path of the pinned install>\/collector\/context\.mjs' --config/, "pinned like the fence");
   assert.equal(settings.permissions.allow[2], "Read(/<full path of collector.outDir>/derived-all.json)", "the one file the run reads: step 2's output, outside the run's folder (Security)");
   assert.ok(settings.permissions.deny.includes("Read(/<full path of gate.stateDir/board id>/**)"), "the run's own folder denied to Read whole (Security)");
   for (const r of ["cat", "less", "grep", "rg", "find", "sed", "awk", "jq", "python3", "node -e"]) assert.ok(settings.permissions.deny.includes(`Bash(${r}:*)`), `the shell's ${r}`);

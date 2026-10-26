@@ -26,7 +26,7 @@ test("judge: on main and SECURE, else refused with the reason; it names the owne
 test("importClosure: the owner's install is everything its entry points load; at this commit, the 15 files Security listed and more", () => {
   const read = (f) => { try { return readFileSync(new URL(`../${f}`, import.meta.url), "utf8"); } catch { return null; } };
   const owned = importClosure(OWNER_ENTRIES, read);
-  for (const f of ["collector/collect.mjs", "collector/derive.mjs", "collector/facts.mjs", "collector/fence.mjs", "collector/nudges.mjs", "collector/plan-state.mjs", "collector/refresh.mjs", "collector/text.mjs", "gate/after.mjs", "gate/gate.mjs", "gate/plan.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs", "scripts/config.mjs"]) assert.ok(owned.includes(f), f);
+  for (const f of ["collector/collect.mjs", "collector/context.mjs", "collector/derive.mjs", "collector/facts.mjs", "collector/fence.mjs", "collector/nudges.mjs", "collector/plan-state.mjs", "collector/refresh.mjs", "collector/text.mjs", "gate/after.mjs", "gate/gate.mjs", "gate/plan.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs", "scripts/config.mjs"]) assert.ok(owned.includes(f), f);
   assert.ok(!owned.includes("collector/TASK.md") && !owned.includes("page/board.template.html"));
   const files = { "a.mjs": 'import { x } from "./b/c.mjs";\nexport { y } from "../z.mjs";\nimport fs from "node:fs";', "b/c.mjs": 'import "./d.mjs";\nimport { a } from "../a.mjs";', "z.mjs": "", "b/d.mjs": null };
   assert.deepEqual(importClosure(["a.mjs"], (f) => files[f] ?? null), ["a.mjs", "b/c.mjs"].sort(), "a bare import and a missing file add nothing; ../z.mjs is outside");

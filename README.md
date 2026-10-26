@@ -23,6 +23,7 @@ Everything particular to one team lives in its own `board.config.json`, outside 
 | `collector/collect.mjs` | The collector: each card's phase worked out from the repository, and the nudges. |
 | `collector/TASK.md` | The scheduled task that runs the collector: its folder, settings, mode and steps. |
 | `collector/fence.mjs` | The collector's fence: a hook that lets its run make only its own steps. |
+| `collector/context.mjs` | Memory tiles from the app's own numbers: a hook that saves each role's context reading for the collector to write. |
 | `collector/refresh.mjs` | A Stop hook that tells the lead to run the collector now, after a ship or the owner's word. |
 | `tests/` | Every rule's test. `npm test`. |
 | `board.config.example.json` | An example config, fictional. |
@@ -137,6 +138,8 @@ A thread with no number yet (the owner's own new thread from the page, which onl
 
 The nudges (`collector/nudges.mjs`, settings under `nudges` in the config) come out of the same run as `NUDGE` lines: the owner waiting for an answer, a step open past its card size's median, an old memory reading, a card unchanged for a day. Each is sent once, then again only after a quiet period.
 
+With `collector.contextRoles` (a list of roles, each a session's exact title), the run also fills the memory tiles from the app's own numbers instead of each agent's report: it lists the sessions, reads each role's newest session with `get_usage`, and writes `ctx/<Role>` and `meta/context` `agents.<Role>` as `{pct, at}`. A hook (`collector/context.mjs`) saves the readings, so the numbers never pass through the run's model; a session the app can't read (no running process) keeps its last reading. The gate lets the Collector write those and nothing else beside `derived/all`.
+
 **Keep `~/.flight-board` private.** The gate's state (`gate.json`) holds the text of recent board writes, messages included, and the mirror holds a copy of the board. Leave that folder out of any backup that leaves the machine, any sync folder and any export.
 
 Each run is a scheduled Claude session following `collector/TASK.md`; only a Claude session can write the board.
@@ -155,8 +158,8 @@ anything: it only refuses.
 
 Every collector change used to cost the owner an install. Now only what constrains an agent does (#C223):
 
-- **The owner's install** (`scripts/hooks.mjs --pin`, the collector's settings): the gate's hooks, the refresh hook and
-  the fence, each pinned by commit in the settings, and every file they import (`importClosure` in `scripts/current.mjs`).
+- **The owner's install** (`scripts/hooks.mjs --pin`, the collector's settings): the gate's hooks, the refresh hook,
+  the fence and the memory hook, each pinned by commit in the settings, and every file they import (`importClosure` in `scripts/current.mjs`).
   A change to them waits for the owner's next install, so batch them.
 - **No owner** (the collector's code, the page, the task's steps): the scheduled run starts
   `~/.flight-board/current/collector/collect.mjs`. `current` is a symlink to a pinned copy

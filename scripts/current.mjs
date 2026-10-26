@@ -16,9 +16,9 @@ import { fileURLToPath } from "node:url";
 import { pinnedDir } from "./hooks.mjs";
 
 export const NOTES_REF = "refs/notes/security";
-// What the owner's install runs, pinned in the settings: the gate's hooks, the refresh hook and the fence. Everything
+// What the owner's install runs, pinned in the settings: the gate's hooks, the refresh hook, the fence and the memory hook. Everything
 // they import (importClosure) waits for the owner's install too; the rest moves with the link (Security).
-export const OWNER_ENTRIES = ["gate/gate.mjs", "gate/after.mjs", "gate/stop.mjs", "collector/refresh.mjs", "collector/fence.mjs", "scripts/hooks.mjs"];
+export const OWNER_ENTRIES = ["gate/gate.mjs", "gate/after.mjs", "gate/stop.mjs", "collector/refresh.mjs", "collector/fence.mjs", "collector/context.mjs", "scripts/hooks.mjs"];
 export const TASK_FILE = "collector/TASK.md";
 
 // The files `entries` load, themselves included: every relative static import, followed. read(path) gives a file's

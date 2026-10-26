@@ -8,6 +8,7 @@
 - The Stop hook owes an answer to an "ok" that came with files, as the page keeps such a reply waiting on Manager; and it reads a note from the page's own separator, so an item whose text says "Note: " no longer starts the note early (#C272, Checker).
 
 ### Added
+- Memory tiles from the app's own numbers (#C274): with `collector.contextRoles`, each collector run reads every listed role's context from the app (`list_sessions`, then `get_usage` of the newest session titled as the role) and writes `ctx/<Role>` and `meta/context` `agents.<Role>`. A PostToolUse hook in the collector's folder (`collector/context.mjs`, pinned like the fence) saves the readings, and the run writes them from files; the fence allows only those calls, and the gate lets the Collector write exactly `{pct, at}` for the listed roles. A session the app can't read keeps its last reading.
 - Fixtures for a bare Ack and a bare Done; the fixture reader also reads a row's position in its section and its age (#C272, Checker).
 
 ## 0.3.3 - 2026-10-26
