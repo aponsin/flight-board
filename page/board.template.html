@@ -903,8 +903,10 @@ function renderUsage(){
   $("chart").querySelectorAll("rect.hit").forEach(r=>{
     const show=ev=>{tipEl.textContent=r.dataset.tip;tipEl.hidden=false;const box=$("chart").getBoundingClientRect();const rb=r.getBoundingClientRect();tipEl.style.left=Math.max(0,Math.min(rb.left-box.left,box.width-240))+"px";tipEl.style.top="0px"};
     r.addEventListener("mouseenter",show);r.addEventListener("click",show);r.addEventListener("mouseleave",()=>{tipEl.hidden=true})});
-  const tok=sum(lastN(7),"tokensApprox");$("usenote").textContent="Agent minutes count time between reported steps (a step left open counts 2 h at most). The board started the evening of Oct 14, so that day is partial."+(tok?` About ${(tok/1e6).toFixed(1)}M tokens in the last 7 days (approximate).`:" Tokens are approximate, per day.");
+  $("usenote").textContent=usageNoteText(BOARD_START,sum(lastN(7),"tokensApprox"));
 }
+// The note under the usage chart: the first day is partial only when the config names it (boardStart).
+function usageNoteText(start,tok){return "Agent minutes count time between reported steps (a step left open counts 2 h at most)."+(start?` The board started on ${start}, so that day is partial.`:"")+(tok?` About ${(tok/1e6).toFixed(1)}M tokens in the last 7 days (approximate).`:" Tokens are approximate, per day.")}
 function renderLive(){const m=state.meta.find(d=>d.id==="live");const gap=liveGap(m,state.events);$("livever").textContent=m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
 function renderQueue(){
   // From every initiative's phaseLog: time an agent was working on it vs time it sat waiting in that agent's queue (entries with wait:true), last 7 days.

@@ -47,8 +47,10 @@ Four steps, in order. Every path below is a placeholder: use your own.
    Claude Code's settings, so the owner runs it, or says yes to it themselves; no agent approves it for them.
 4. **Create the collector's task.** Follow `collector/TASK.md`: the folder `<gate.stateDir>/<board id>`, the task
    created from a one-off session started there, its settings file with the fence, the prompt, and Auto mode in the
-   task's Edit form. Run it once by hand, then schedule it hourly. Give the lead an allow rule for
-   `mcp__scheduled-tasks__run_scheduled_task` if it should start runs on demand.
+   task's Edit form. Run it once by hand, then schedule it hourly. For runs on demand, set `collector.refresh.taskId` in
+   the config to the task's id (the id the create call returned, not its title; the default is `board-collector`), list
+   your checkouts in `collector.refresh.repos`, and give the lead an allow rule for
+   `mcp__scheduled-tasks__run_scheduled_task`.
 
 ## Threads
 

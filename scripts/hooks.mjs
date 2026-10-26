@@ -1,6 +1,8 @@
-// The gate's hook entries for Claude Code's settings (~/.claude/settings.json): PreToolUse on board writes and
-// hand-off messages, Stop on the lead's replies. Printed by default; written only with --write, which keeps every other
-// entry and replaces an older flight-board one. Usage: node scripts/hooks.mjs <board.config.json> [--write [settings.json]]
+// The board's hook entries for Claude Code's settings (~/.claude/settings.json): PreToolUse on board writes and
+// hand-off messages, PostToolUse after them, Stop on the lead's replies (the gate's check, then the collector on demand).
+// Printed by default; written only with --write, which keeps every other entry and replaces an older flight-board one.
+// Usage: node scripts/hooks.mjs <board.config.json> --pin <signed commit> [--write] [--retire <text>]... [--settings <file>]
+// [--install-root <folder>]. Run it from a checkout of that commit: the entries it writes are this file's.
 import { realpathSync } from "node:fs";
 import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";

@@ -381,3 +381,13 @@ test("picture viewer: pinch, double-tap, trackpad and +/- zoom are wired, and zo
   assert.match(src, /function showShot\(\)\{[^\n]*resetZoom\(\)/);
   assert.match(src, /touch-action:pan-x pan-y/);
 });
+
+test("the usage note names the board's first day only from the config (boardStart), never a team's own history", async () => {
+  const { loadNames } = await import("./harness.mjs");
+  const { usageNoteText } = loadNames(["usageNoteText"]);
+  assert.doesNotMatch(usageNoteText("", 0), /started/);
+  assert.match(usageNoteText("2026-01-05", 0), /The board started on 2026-01-05, so that day is partial\./);
+  assert.match(usageNoteText("", 2.5e6), /About 2\.5M tokens/);
+  const page = (await import("node:fs")).readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.doesNotMatch(page, /Oct 14/);
+});
