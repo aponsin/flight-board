@@ -17,6 +17,7 @@ Everything particular to one team lives in its own `board.config.json`, outside 
 | `scripts/scan.mjs`, `.githooks/pre-push` | The content scan, run before every push. |
 | `scripts/hooks.mjs` | Installs the hooks below into Claude Code's settings, from a pinned copy of one signed commit. |
 | `scripts/thread-ids.mjs` | The lead's tool for numbering and naming threads. |
+| `scripts/steps-archive.mjs` | The lead's tool for archiving closed cards' steps: each card's timings and steps go to `timings/<card id>`, and the steps leave `steps` (run it daily; the page reads a card's timings once they exist). |
 | `gate/` | The write gate: a PreToolUse hook on board writes and hand-off messages, a PostToolUse hook that records what the board applied, and a Stop hook on the lead's replies. |
 | `collector/collect.mjs` | The collector: each card's phase worked out from the repository, and the nudges. |
 | `collector/TASK.md` | The scheduled task that runs the collector: its folder, settings, mode and steps. |
