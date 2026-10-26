@@ -88,6 +88,8 @@ test("card numbers: a new card takes the counter's next in the same batch; a num
   assert.equal(errs([{ op: "set", collection: "initiatives", doc_id: "c1", data: { ...card, num: 3 } }], nine), "", "a whole set that keeps #C3");
   assert.equal(errs([{ op: "update", collection: "initiatives", doc_id: "c1", data: { num: 3, nextNote: "x", nextNoteAt: now } }], nine), "", "an update that echoes it");
   assert.match(errs([seq(1)]), /next is a whole number above 1/);
+  assert.match(errs([seq(60)], { state: { cardSeq: 9 } }), /at most 50 past/, "no jumping the numbering ahead");
+  assert.equal(errs([seq(59)], { state: { cardSeq: 9 } }), "");
   assert.match(errs([{ op: "delete", collection: "meta", doc_id: CARD_SEQ }]), /never deleted/);
 });
 

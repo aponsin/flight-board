@@ -26,7 +26,8 @@ export const CARD_SEQ = "cardSeq";
 // Each numbered collection, its counter, the key the gate's state remembers it under, and the tool that allocates.
 export const COUNTERS = [
   { seq: THREAD_SEQ, collection: "threads", key: "threadSeq", tag: "#T", what: "threads", tool: "scripts/thread-ids.mjs" },
-  { seq: CARD_SEQ, collection: "initiatives", key: "cardSeq", tag: "#C", what: "cards", tool: "scripts/card-ids.mjs" },
+  // Any role that makes a card moves its counter, so it may jump at most one batch ahead of the last one applied (Security).
+  { seq: CARD_SEQ, collection: "initiatives", key: "cardSeq", tag: "#C", what: "cards", tool: "scripts/card-ids.mjs", maxJump: 50 },
 ];
 
 // A batch that numbers threads (or cards) also moves the counter, pinned (if_version) so two allocations can't both
@@ -40,6 +41,7 @@ export function numErrors(writes, seen = 0, c = COUNTERS[0], mirror = null) {
   const seqw = writes.find((w) => w.collection === "meta" && w.doc_id === c.seq && w.op !== "delete");
   if (seqw && !Number.isInteger(seqw.if_version) && !(seqw.op === "set" && !seen)) return [`meta/${c.seq}: pin it with if_version (the version a get just read); only the set that creates it goes without`];
   if (seqw && Number.isInteger(seqw.data?.next) && seqw.data.next < seen) return [`meta/${c.seq}: next never goes back (${seqw.data.next} < ${seen}, the last the gate let through)`];
+  if (seqw && c.maxJump && Number.isInteger(seqw.data?.next) && seqw.data.next > Math.max(seen, 1) + c.maxJump) return [`meta/${c.seq}: next may move at most ${c.maxJump} past the last the gate let through (${Math.max(seen, 1)})`];
   const nums = writes.filter((w) => w.collection === c.collection && w.op !== "delete" && w.data?.num !== undefined && had.get(w.doc_id) !== w.data.num).map((w) => w.data.num);
   if (!nums.length) return [];
   if (!seqw) return [`${c.what}: numbering ${c.what === "threads" ? "a thread" : "a card"} moves meta/${c.seq} in the same batch (${c.tool} writes both)`];
