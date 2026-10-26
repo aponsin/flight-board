@@ -37,5 +37,6 @@ test("the page skips the design box unless the card says lookChange: true", () =
 test("the config takes exactly one skip kind, and unlessTrue names a card field", () => {
   assert.deepEqual(checkConfig({ ...base, phases, skips }).filter((p) => /skips/.test(p)), []);
   assert.ok(checkConfig({ ...base, phases, skips: [{ phase: "design", unlessTrue: "lookChange", whenFalse: "x" }] }).some((p) => /exactly one of unlessLevel, whenFalse or unlessTrue/.test(p)));
+  assert.ok(checkConfig({ ...base, phases, skips: [{ phase: "design" }] }).some((p) => /exactly one of/.test(p)), "no kind at all");
   assert.ok(checkConfig({ ...base, phases, skips: [{ phase: "design", unlessTrue: "look change!" }] }).some((p) => /unlessTrue: a card field name/.test(p)));
 });
