@@ -1240,7 +1240,7 @@ let view="v2";
 // whatever its tab. The very same elements move there and back (their ids, handlers and drafts go with them).
 let ownerHome=null;
 function placeOwnerPart(v3){const part=$("ownerpart"),strip=$("v3strip");if(!part||!strip||!part.parentNode)return;
-  if(v3&&part.parentNode!==strip){if(!ownerHome){ownerHome=document.createComment("ownerpart");part.parentNode.insertBefore(ownerHome,part)}strip.appendChild(part)}
+  if(v3){if(!ownerHome){ownerHome=document.createComment("ownerpart");part.parentNode.insertBefore(ownerHome,part)}strip.appendChild(part)}
   else if(!v3&&ownerHome&&ownerHome.parentNode&&part.parentNode===strip)ownerHome.parentNode.insertBefore(part,ownerHome.nextSibling)}
 function setView(v){view=v==="v3"?"v3":"v2";$("v3").hidden=view!=="v3";$("v2").hidden=view==="v3";placeOwnerPart(view==="v3");
   $("viewlink").textContent=view==="v3"?"Back to the current board":"Try the new layout";
