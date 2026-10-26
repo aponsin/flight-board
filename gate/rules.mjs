@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { PLAN, planWriteErrors, planMirrorErrors, initiativePlanErrors } from "./plan.mjs";
 import { idText } from "../collector/text.mjs";
+import { contextRoles, contextWriteErrors, isContextWrite } from "../collector/context.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 let page;
@@ -75,6 +76,8 @@ export const threadNumErrors = (writes, seen = 0) => numErrors(writes, seen, COU
 
 // The scheduled collector's fixed session title (collector/TASK.md).
 export const COLLECTOR_ROLE = "Collector";
+// A memory reading the Collector may write: only when the team listed roles for it (collector.contextRoles).
+const collectorMemory = (w, config) => contextRoles(config).length > 0 && isContextWrite(w);
 const TIME_FIELDS = ["at", "since", "nextNoteAt"];
 // A step written as plain text that holds a command: the owner can't copy it. Commands go in {text, cmd}.
 const COMMAND = /`[^`]+`|(^|[\s:])(npm|npx|git|gh|node|python3?|cd|curl|brew|sudo|wrangler|bash|zsh)\s+[^\s]/;
@@ -98,10 +101,13 @@ export function writeErrors(w, { config, who, now }) {
   const phases = config.phases.map((p) => p[0]);
   // An edit in place (ArtifactData str_replace) leaves the gate blind to the field's new value: write the whole field.
   if (op === "str_replace") return [`a text edit in place can't be checked: write the whole field with update instead`];
-  // The scheduled collector (its session titled "Collector", collector/TASK.md) sets derived/all and nothing else
-  // (Security): whatever its run reads, it can't change a card, an ask, a message, a step or a tile.
+  // The scheduled collector (its session titled "Collector", collector/TASK.md) sets derived/all and, for the roles in
+  // collector.contextRoles, their memory readings (ctx/<Role> and meta/context agents.<Role>, exactly {pct, at}:
+  // collector/context.mjs), and nothing else (Security): whatever its run reads, it can't change a card, an ask, a
+  // message, a step, another tile or the keeper's flags.
   if (who.role === COLLECTOR_ROLE && !(collection === "derived" && id === "all" && op === "set")) {
-    return [`the ${COLLECTOR_ROLE} only sets derived/all`];
+    if (collectorMemory(w, config)) return contextWriteErrors(w, contextRoles(config), now);
+    return [`the ${COLLECTOR_ROLE} only sets derived/all${contextRoles(config).length ? " and the memory readings" : ""}`];
   }
   // What the repository says (derived/*) is the collector's, and the lead's to repair; no other role writes it (Security).
   if (collection === "derived" && who.role !== COLLECTOR_ROLE && !who.manager) {
@@ -205,7 +211,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
   if (!who?.role) return { errors: ["no role for this session: give it its role as its title (or FLIGHT_BOARD_ROLE), then write"], state: next, stuckNow: null };
   // The Collector's one write is checked here too, before the stuck line's shortcut below skips writeErrors (Checker).
   if (who.role === COLLECTOR_ROLE) {
-    const other = writes.filter((w) => !(w.collection === "derived" && w.doc_id === "all" && w.op === "set"));
+    const other = writes.filter((w) => !(w.collection === "derived" && w.doc_id === "all" && w.op === "set") && !collectorMemory(w, config));
     if (other.length) return { errors: other.map((w) => `${w.collection}/${w.doc_id}: the ${COLLECTOR_ROLE} only sets derived/all`), state: next, stuckNow: null };
   }
   const errors = [];

@@ -18,6 +18,7 @@ import { evidenceTimes } from "./timings.mjs";
 import { nudges } from "./nudges.mjs";
 import { derivePlan } from "./plan-state.mjs";
 import { idText, lineText } from "./text.mjs";
+import { planReadings, writeContext } from "./context.mjs";
 import { runMark, localMain, localShips } from "./refresh.mjs";
 import { allocate } from "../scripts/thread-ids.mjs";
 
@@ -244,6 +245,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       writeFileSync(join(dir, "export-since.json"), JSON.stringify({ ...runMark(Date.now(), config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern)), code: CODE }));
       console.log(`Export the board into: your scratchpad folder + /${EXPORT_NAME}`);
       console.log(`Steps since: ${Date.now() - STEPS_DAYS * 864e5}`);
+      for (const line of planReadings(dir, config, Date.now())) console.log(line);
       process.exit(0);
     } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
   }
@@ -276,4 +278,5 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   for (const line of nudged.lines) console.log(line);
   const loose = unnumberedLine(mirror.docs);
   if (loose) console.log(loose);
+  for (const line of writeContext(dir, dirname(out), config, Date.now())) console.log(line);
 }

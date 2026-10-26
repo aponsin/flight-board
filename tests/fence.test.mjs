@@ -70,7 +70,47 @@ test("ArtifactData: this board, the exported collections into this session's scr
   refused(call("ArtifactData", setAll({ file_path: "/srv/fb/TestBoard01-out/other.json" })), "output file only");
   refused(call("ArtifactData", setAll({ file_path: undefined, data: { x: 1 } })), "unexpected data");
   refused(call("ArtifactData", setAll({ if_version: "2" })), "whole number");
-  for (const action of ["update", "batch", "delete", "str_replace", "profiles"]) refused(call("ArtifactData", { action, url: URL_ }), "not one of the steps");
+  for (const action of ["batch", "delete", "str_replace", "profiles"]) refused(call("ArtifactData", { action, url: URL_ }), "not one of the steps");
+});
+
+test("memory readings (#C274): the session list, get_usage of a planned session, and the tiles from their files only", () => {
+  const NOW = 1_793_050_000_123, OUT = "/srv/fb/TestBoard01-out";
+  const files = { [`${OUT}/ctx-Checker.json`]: { pct: 41, at: NOW - 5 }, [`${OUT}/meta-context.json`]: { agents: { Checker: { pct: 41, at: NOW - 5 } } } };
+  const read = (p) => { if (!(p in files)) throw new Error("no file"); return files[p]; };
+  const on = fenceSpec({ config: fullConfig({ ...raw, collector: { ...raw.collector, contextRoles: ["Checker", "Manager"] } }), configPath: "/srv/team/board.config.json", install: "/srv/fb/install/abc123", sendTo: "local_lead-1", uid: 501, usageIds: ["local_c"], now: NOW });
+  const ok = (c) => assert.equal(decide(c, on, read), null, JSON.stringify(c.tool_input));
+  const no = (c, part, s = on) => { const r = decide(c, s, read); assert.ok(r && r.includes(part), `"${part}" in: ${r}`); };
+  const tile = (over = {}) => ({ action: "set", url: URL_, collection: "ctx", doc_id: "Checker", file_path: `${OUT}/ctx-Checker.json`, if_version: 71, ...over });
+  const meta = (over = {}) => ({ action: "update", url: URL_, collection: "meta", doc_id: "context", file_path: `${OUT}/meta-context.json`, if_version: 9, ...over });
+  ok(call("mcp__ccd_session_mgmt__list_sessions", { limit: 200 }));
+  ok(call("mcp__ccd_session_mgmt__list_sessions", {}));
+  ok(call("mcp__ccd_session_mgmt__get_usage", { session_id: "local_c" }));
+  ok(call("ArtifactData", tile()));
+  ok(call("ArtifactData", tile({ if_version: undefined })));
+  ok(call("ArtifactData", meta()));
+  ok(call("ArtifactData", { action: "get", url: URL_, collection: "meta", doc_id: "context", out_dir: `${PAD}/context-version` }));
+  no(call("mcp__ccd_session_mgmt__list_sessions", { limit: 500 }), "limit");
+  no(call("mcp__ccd_session_mgmt__list_sessions", { include_archived: true }), "unexpected include_archived");
+  no(call("mcp__ccd_session_mgmt__get_usage", { session_id: "local_m" }), "a session --prepare planned");
+  no(call("mcp__ccd_session_mgmt__get_usage", {}), "a session --prepare planned");
+  no(call("mcp__ccd_session_mgmt__get_usage", { session_id: "local_c", x: 1 }), "unexpected x");
+  no(call("ArtifactData", tile({ doc_id: "Manager" })), "its own file");
+  no(call("ArtifactData", tile({ doc_id: "Builder", file_path: `${OUT}/ctx-Builder.json` })), "collector.contextRoles");
+  no(call("ArtifactData", tile({ file_path: undefined, data: { pct: 1, at: NOW } })), "unexpected data");
+  no(call("ArtifactData", tile({ action: "update" })), "ctx/<Role>: set");
+  no(call("ArtifactData", meta({ file_path: `${OUT}/ctx-Checker.json` })), "its own file");
+  no(call("ArtifactData", meta({ doc_id: "stuck" })), "derived/all");
+  no(call("ArtifactData", meta({ action: "set" })), "meta/context: update");
+  no(call("ArtifactData", { action: "get", url: URL_, collection: "meta", doc_id: "context", out_dir: `${PAD}/derived-version` }), "context-version");
+  files[`${OUT}/ctx-Checker.json`] = { pct: 41, at: NOW - 5, saved: true };
+  no(call("ArtifactData", tile()), "only pct and at");
+  files[`${OUT}/meta-context.json`] = { agents: { Checker: { pct: 41, at: NOW - 5 } }, stuck: 1 };
+  no(call("ArtifactData", meta()), "only agents");
+  delete files[`${OUT}/meta-context.json`];
+  no(call("ArtifactData", meta()), "can't read");
+  // With no roles configured, none of it.
+  no(call("mcp__ccd_session_mgmt__list_sessions", {}), "collector.contextRoles is empty", { ...spec, now: NOW });
+  no(call("ArtifactData", tile()), "collector.contextRoles is empty", { ...spec, now: NOW });
 });
 
 test("send_message: the lead's session only, the message capped; every other tool refused", () => {

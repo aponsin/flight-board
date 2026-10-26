@@ -10,6 +10,7 @@ import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { EXPORT_NAME, EXPORT_COLLECTIONS } from "./collect.mjs";
+import { LIST_TOOL, USAGE_TOOL, META_FILE, ctxFile, contextRoles, contextWriteErrors, readPlan } from "./context.mjs";
 
 export const MESSAGE_MAX = 4096;
 const SESSION = /^[A-Za-z0-9_-]{1,100}$/;
@@ -32,8 +33,8 @@ export function currentLink(install) {
 
 // What one run may do, from the config and the fence's own command line: never from the call.
 // install: the pinned copy this file runs from; current: currentLink(install) or null; configPath: exactly as the
-// task's prompt types it.
-export function fenceSpec({ config, configPath, install, current = null, sendTo, uid }) {
+// task's prompt types it. usageIds: the sessions --prepare planned to read (collector/context.mjs); now: the clock.
+export function fenceSpec({ config, configPath, install, current = null, sendTo, uid, usageIds = [], now = Date.now() }) {
   const id = boardId(config);
   if (!id) throw new Error("the config has no board link");
   if (!config.collector.outDir) throw new Error("collector.outDir is empty");
@@ -47,8 +48,13 @@ export function fenceSpec({ config, configPath, install, current = null, sendTo,
     cwd: join(home(config.gate.stateDir), id),
     commands,
     derivedFile: join(home(config.collector.outDir), "derived-all.json"),
+    roles: contextRoles(config),
+    ctxFile: (role) => join(home(config.collector.outDir), ctxFile(role)),
+    metaFile: join(home(config.collector.outDir), META_FILE),
+    usageIds,
     sendTo,
     uid,
+    now,
   };
 }
 
@@ -62,8 +68,11 @@ export function scratchpads(spec, session) {
 const plain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const onlyKeys = (input, keys) => Object.keys(input).filter((k) => !keys.includes(k));
 
-// The reason a call is refused, or null when the fence lets it through. Pure: the hook's input and the spec only.
-export function decide(input, spec) {
+const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+
+// The reason a call is refused, or null when the fence lets it through. Pure but for read: the hook's input, the spec,
+// and the memory files a tile write sends (their shape is checked here as well as by the gate).
+export function decide(input, spec, read = readJson) {
   if (!plain(input)) return "no hook input";
   const { tool_name: tool, tool_input: t, session_id: session, cwd } = input;
   if (cwd !== spec.cwd) return `this fence is for runs in ${spec.cwd} only`;
@@ -77,7 +86,15 @@ export function decide(input, spec) {
     if (!spec.commands.includes(t.command)) return "Bash: only the two collect.mjs commands, exactly as the steps write them (from the pinned copy or the current link)";
     return null;
   }
-  if (tool === "ArtifactData") return artifactData(t, spec, session);
+  if (tool === "ArtifactData") return artifactData(t, spec, session, read);
+  // Memory readings (collector/context.mjs): the session list once, then get_usage of each session --prepare planned.
+  if (tool === LIST_TOOL || tool === USAGE_TOOL) {
+    if (!spec.roles.length) return `${tool}: collector.contextRoles is empty`;
+    const extra = onlyKeys(t, tool === LIST_TOOL ? ["limit"] : ["session_id"]);
+    if (extra.length) return `${tool}: unexpected ${extra.join(", ")}`;
+    if (tool === LIST_TOOL) return t.limit === undefined || (Number.isInteger(t.limit) && t.limit >= 1 && t.limit <= 200) ? null : `${tool}: limit a whole number from 1 to 200`;
+    return spec.usageIds.includes(t.session_id) ? null : `${tool}: only a session --prepare planned to read`;
+  }
   if (tool === "mcp__ccd_session_mgmt__send_message") {
     const extra = onlyKeys(t, ["session_id", "message"]);
     if (extra.length) return `send_message: unexpected ${extra.join(", ")}`;
@@ -89,11 +106,12 @@ export function decide(input, spec) {
   return `${String(tool)}: not one of the collector's steps`;
 }
 
-function artifactData(t, spec, session) {
+function artifactData(t, spec, session, read) {
   if (t.url !== spec.url) return "ArtifactData: this board only";
   const pads = scratchpads(spec, session);
   const inPad = (dir, name) => pads.some((p) => dir === `${p}/${name}`);
-  const keys = { list: ["action", "url", "collection", "query", "out_dir"], query: ["action", "url", "collection", "query", "out_dir"], get: ["action", "url", "collection", "doc_id", "out_dir"], set: ["action", "url", "collection", "doc_id", "file_path", "if_version"] }[t.action];
+  const write = ["action", "url", "collection", "doc_id", "file_path", "if_version"];
+  const keys = { list: ["action", "url", "collection", "query", "out_dir"], query: ["action", "url", "collection", "query", "out_dir"], get: ["action", "url", "collection", "doc_id", "out_dir"], set: write, update: write }[t.action];
   if (!keys) return `ArtifactData: ${String(t.action)} is not one of the steps`;
   const extra = onlyKeys(t, keys);
   if (extra.length) return `ArtifactData: unexpected ${extra.join(", ")}`;
@@ -103,11 +121,28 @@ function artifactData(t, spec, session) {
     if (!inPad(t.out_dir, EXPORT_NAME)) return `ArtifactData: export into this session's scratchpad + /${EXPORT_NAME} only`;
     return null;
   }
+  if (t.if_version !== undefined && !Number.isInteger(t.if_version)) return "ArtifactData: if_version a whole number";
+  if (t.collection === "ctx" || (t.collection === "meta" && t.doc_id === "context")) return memoryWrite(t, spec, pads, read);
   if (t.collection !== "derived" || t.doc_id !== "all") return "ArtifactData: derived/all only";
+  if (t.action === "update") return "ArtifactData: derived/all: set only";
   if (t.action === "get") return inPad(t.out_dir, "derived-version") ? null : "ArtifactData: get into this session's scratchpad + /derived-version only";
   if (t.file_path !== spec.derivedFile) return "ArtifactData: set derived/all from the collector's output file only";
-  if (t.if_version !== undefined && !Number.isInteger(t.if_version)) return "ArtifactData: if_version a whole number";
   return null;
+}
+
+// ctx/<Role> set and meta/context update, each from its own file in collector.outDir, whose content is checked too; and
+// the get of meta/context into the scratchpad for its version.
+function memoryWrite(t, spec, pads, read) {
+  if (!spec.roles.length) return "ArtifactData: collector.contextRoles is empty";
+  const meta = t.collection === "meta";
+  if (t.action === "get") return meta && pads.some((p) => t.out_dir === `${p}/context-version`) ? null : "ArtifactData: get meta/context into this session's scratchpad + /context-version only";
+  if (meta ? t.action !== "update" : t.action !== "set") return meta ? "ArtifactData: meta/context: update only" : "ArtifactData: ctx/<Role>: set only";
+  if (!meta && !spec.roles.includes(t.doc_id)) return `ArtifactData: ctx/${t.doc_id} is not in collector.contextRoles`;
+  if (t.file_path !== (meta ? spec.metaFile : spec.ctxFile(t.doc_id))) return "ArtifactData: a memory write comes from its own file in collector.outDir only";
+  let data;
+  try { data = read(t.file_path); } catch { return "ArtifactData: can't read the memory file"; }
+  const errs = contextWriteErrors({ op: t.action, collection: t.collection, doc_id: t.doc_id, data }, spec.roles, spec.now);
+  return errs.length ? `ArtifactData: ${errs.join("; ")}` : null;
 }
 
 // The hook: read the call, decide, refuse with exit 2. Every failure on the way refuses too.
@@ -118,7 +153,9 @@ export function main(argv, stdin) {
   const problems = checkConfig(raw);
   if (problems.length) throw new Error(problems.join("; "));
   const install = dirname(dirname(fileURLToPath(import.meta.url)));
-  const spec = fenceSpec({ config: fullConfig(raw), configPath, install, current: currentLink(install), sendTo: opt("--send-to"), uid: process.getuid() });
+  const config = fullConfig(raw), id = boardId(config);
+  const plan = id ? readPlan(join(home(config.gate.stateDir), id)) : null;
+  const spec = fenceSpec({ config, configPath, install, current: currentLink(install), sendTo: opt("--send-to"), uid: process.getuid(), usageIds: Object.values(plan?.roles ?? {}) });
   return decide(JSON.parse(stdin), spec);
 }
 

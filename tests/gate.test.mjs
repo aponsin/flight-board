@@ -414,6 +414,30 @@ test("withJournal: set, update (with __delete__) and delete laid over the mirror
   assert.deepEqual(withJournal(m, [{ op: "delete", collection: "initiatives", doc_id: "a", at: 120 }]).docs.initiatives, []);
 });
 
+test("#C274: with collector.contextRoles, the Collector also writes those roles' tiles, exactly {pct, at}, and nothing more", () => {
+  const collector = { role: "Collector", manager: false };
+  const cfg = fullConfig({ artifactUrl: URL_, collector: { contextRoles: ["Checker", "Manager"] } });
+  const tile = (doc_id, data) => ({ op: "set", collection: "ctx", doc_id, data });
+  const meta = (data, op = "update") => ({ op, collection: "meta", doc_id: "context", data });
+  const err = (w, c = cfg) => writeErrors(w, { config: c, who: collector, now }).join("; ");
+  assert.equal(err(tile("Checker", { pct: 41, at: now - 5 })), "");
+  assert.equal(err(meta({ agents: { Checker: { pct: 41, at: now - 5 }, Manager: { pct: 35, at: now - 6 } } })), "");
+  assert.deepEqual(checkWrites([tile("Checker", { pct: 41, at: now - 5 }), meta({ agents: { Checker: { pct: 41, at: now - 5 } } })], { config: cfg, who: collector, now, state: {} }).errors, []);
+  assert.match(err(tile("Builder", { pct: 41, at: now })), /not in collector.contextRoles/);
+  assert.match(err(tile("Checker", { pct: 41, at: now, saved: true })), /only pct and at/);
+  assert.match(err(tile("Checker", { pct: 141, at: now })), /pct/);
+  assert.match(err(tile("Checker", { pct: 41, at: now + 3600e3 })), /at:/);
+  assert.match(err(meta({ agents: { Checker: { pct: 41, at: now, saved: false } } })), /only pct and at/, "never the keeper's saved flag");
+  assert.match(err(meta({ agents: { Builder: { pct: 41, at: now } } })), /not in collector.contextRoles/);
+  assert.match(err(meta({ agents: { Checker: { pct: 41, at: now } }, at: now })), /only agents/);
+  assert.match(err(meta({ agents: { Checker: { pct: 41, at: now } } }, "set")), /only sets derived\/all/);
+  assert.match(err({ op: "delete", collection: "ctx", doc_id: "Checker" }), /only sets derived\/all/);
+  assert.match(err(tile("Checker", { pct: 41, at: now }), config), /only sets derived\/all/, "without contextRoles, as before");
+  assert.match(checkWrites([tile("Checker", { pct: 41, at: now }), { op: "update", collection: "meta", doc_id: "stuck", data: {} }], { config: cfg, who: collector, now, state: {} }).errors.join(), /meta\/stuck: the Collector only sets derived\/all/);
+  // Another role still writes only its own tile.
+  assert.match(writeErrors(tile("Manager", { pct: 1, at: now }), { config: cfg, who: { role: "Checker", manager: false }, now }).join(), /Manager's own tile/);
+});
+
 test("Security: the Collector only sets derived/all; only it or the lead writes derived/*; a session with no role writes nothing", () => {
   const collector = { role: "Collector", manager: false };
   assert.deepEqual(writeErrors({ op: "set", collection: "derived", doc_id: "all", data: { cards: {} } }, { config, who: collector, now }), []);
