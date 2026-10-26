@@ -1009,7 +1009,7 @@ function logTotals(key,now=Date.now()){
   state.initiatives.forEach(i=>{const log=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filter(e=>e&&num(e.start)!=null).sort((a,b)=>a.start-b.start);
     log.forEach((e,k)=>{if(!e.who)return;const next=log[k+1];
       const end=num(e.end)??(next?next.start:(i.status==="done"?(num(i.doneAt)??now):now));
-      const s=Math.max(e.start,since);if(end<=s||!e[key])return;
+      const s=Math.max(e.start,since);if(end<=s)return;
       const t=tot[e[key]]=tot[e[key]]||{work:0,busy:0,gate:0};const ms=end-s;
       if(e.wait==="gate"||e.wait==="decision")t.gate+=ms;else if(e.wait)t.busy+=ms;else t.work+=ms;})});
   return tot}

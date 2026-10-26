@@ -150,6 +150,8 @@ test("Crew: a tile per agent with its model and effort, its memory and what it i
   b.setV3View("crew");
   assert.deepEqual([b.els.v3now.hidden, b.els.v3plan.hidden, b.els.v3crew.hidden], [true, true, false]);
   assert.match(b.els.crew3.innerHTML, /data-agent="Builder"/);
+  b.setV3View("now");
+  assert.deepEqual([b.els.v3now.hidden, b.els.v3crew.hidden], [false, true], "and away again");
 });
 
 test("Crew never injects markup: agent names, models, notes and card names are escaped", () => {
