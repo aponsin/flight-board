@@ -170,6 +170,15 @@ Every collector change used to cost the owner an install. Now only what constrai
   It compares with the commit the settings pin, and uses a copy already in `install/` only when it is exactly that
   commit (`git archive`, file by file, nothing extra); anything else is refused.
 
+**A board release is the release role's** (#C276), like a product release: from a checkout,
+`npm run board-release -- <commit> --config <board.config.json> [--prompt <file>]`. Before anything changes it checks
+Checker's `PASS` (`refs/notes/checker`) and Security's `SECURE` on that exact commit, that it continues `origin/main`,
+that the page builds and passes its scenarios, and that nothing the owner's install pins changed since the commit the
+settings pin: the owner's closure above, and `collector/TASK.md`'s settings block. It refuses, naming each file, and
+changes nothing, if any check fails; those changes go out with the owner's install. Otherwise it pushes the commit to
+`main` (a fast-forward), moves the link (`scripts/current.mjs`), and prints the page to republish and, when the task's
+steps changed (which needs `--prompt`), the prompt to save into the task. `--dry-run` checks and builds only.
+
 **What gates a collector change is Security's review**, not the fence. The fence bounds the session's tool calls, but
 `collect.mjs` is a Node process with the owner's user rights (no sandbox: it fetches from GitHub, asks `gh`, reads the
 live site and writes the repository clone's refs), and a `SECURE` note is a process, not an identity: any session that
