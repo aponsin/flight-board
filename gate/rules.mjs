@@ -3,6 +3,7 @@
 // gate's own state and the board's mirror come in; the problems and the new state go out. gate/gate.mjs is the hook.
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { PLAN, planWriteErrors, planMirrorErrors, initiativePlanErrors } from "./plan.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 let page;
@@ -96,6 +97,8 @@ export function writeErrors(w, { config, who, now }) {
     if (!who.role) e.push("no role for this session: give it its role as its title");
     else if (agents.some((a) => a !== who.role) || others.length) e.push(`meta/context: ${who.role} may write only agents.${who.role}`);
   }
+  // The plan (board v3, gate/plan.mjs): the lead's alone, never deleted, every field checked.
+  if (collection === PLAN) return [...e, ...planWriteErrors(w, { who, config })];
   if (op === "delete" || !data || typeof data !== "object") return e;
   e.push(...timeErrors(data, now));
   const rules = pageRules();
@@ -236,8 +239,11 @@ export function threadErrors(w, { mirror, batch = [], now = Date.now() }) {
 export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now() }) {
   const { op, collection, doc_id: id, data } = w;
   if (collection === "messages") return threadErrors(w, { mirror, batch, now: at });
-  if (collection !== "initiatives" || op === "delete" || !data || typeof data !== "object" || !mirror) return [];
-  const e = [];
+  if (collection === PLAN) return planMirrorErrors(w, { mirror, batch });
+  // Every card links to the plan node it serves (board v3); a new card can't go without one, mirror or not.
+  const planned = collection === "initiatives" ? initiativePlanErrors(w, { mirror, batch }) : [];
+  if (collection !== "initiatives" || op === "delete" || !data || typeof data !== "object" || !mirror) return planned;
+  const e = [...planned];
   const order = config.phases.map((p) => p[0]);
   const cards = mirror.docs.initiatives ?? [];
   const was = cards.find((k) => k.id === id);

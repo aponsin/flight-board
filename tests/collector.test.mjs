@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { fullConfig, checkConfig } from "../scripts/config.mjs";
 import { boardIdOf, headFor, reviewsFor, derivePhase, conflict, staleLive } from "../collector/derive.mjs";
 import { remoteHeads, signedPhases, versionFor, mainLine, factsFor, shippedHeads } from "../collector/facts.mjs";
-import { collect, localNotes, prepareMirror, swapMirror, runNudges, outPath, scratchRoot, findExport, takeExport, EXPORT_NAME, EXPORT_COLLECTIONS } from "../collector/collect.mjs";
+import { collect, localNotes, prepareMirror, swapMirror, runNudges, outPath, scratchRoot, findExport, takeExport, EXPORT_NAME, EXPORT_COLLECTIONS, REQUIRED_COLLECTIONS } from "../collector/collect.mjs";
 import { mirrorErrors, checkWrites } from "../gate/rules.mjs";
 
 const config = fullConfig({ owner: "Sam", collector: { repoPath: "/x", notes: { language: "refs/notes/linguist", checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
@@ -287,7 +287,7 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /`out_dir` this session's scratchpad folder followed by\s+`\/flight-board-export`/, "the export goes to the run's scratchpad (the save test)");
   assert.match(doc, /Never read the exported files/);
   assert.match(doc, /The after-ship run is \*\*this same task\*\*/);
-  assert.match(doc, /`ctx`;[\s\S]*`query` of `steps`/, "the export takes the memory tiles and the last days' steps for the nudges");
+  assert.match(doc, /`ctx`, `plan`[^;]*;[\s\S]*`query` of `steps`/, "the export takes the memory tiles, the plan and the last days' steps for the nudges");
   assert.match(doc, /`NUDGE` line/);
   const settings = JSON.parse(doc.match(/```json\n([\s\S]*?)\n  ```/)[1].replace(/^  /gm, ""));
   assert.deepEqual(settings.permissions.allow.slice(3), ["ArtifactData", "ToolSearch", "mcp__ccd_session_mgmt__send_message", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
@@ -339,6 +339,12 @@ test("the export lives in the run's scratchpad: this folder's root only, made af
     assert.equal(findExport(root, since, uid), mine);
     assert.equal(findExport(root, since, uid + 1), null, "another user's folder");
     assert.equal(findExport(join(base, "missing"), since, uid), null);
+    // A board with no plan yet exports no plan folder: the export is still complete (v3).
+    await new Promise((r) => setTimeout(r, 30));
+    const noPlan = mkExport("no-plan-run", REQUIRED_COLLECTIONS);
+    assert.ok(!REQUIRED_COLLECTIONS.includes("plan") && EXPORT_COLLECTIONS.includes("plan"));
+    assert.equal(findExport(root, since, uid), noPlan, "complete without plan");
+    rmSync(noPlan, { recursive: true, force: true });
     const outside = join(base, "elsewhere", EXPORT_NAME);
     for (const c of EXPORT_COLLECTIONS) mk(join(outside, c), { recursive: true });
     mk(join(root, "planted", "scratchpad"), { recursive: true });

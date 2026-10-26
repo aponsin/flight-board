@@ -35,7 +35,7 @@ test("the gate's config: known gate fields; the board id comes from its link", (
 test("an item needs ETA, next step, level and planned version; a complete one passes", () => {
   const e = one({ op: "set", collection: "initiatives", doc_id: "x", data: { name: "X", size: "S", status: "active" } });
   for (const r of ["no ETA", "no next step", "no review level"]) has(e, r);
-  ok(one({ op: "set", collection: "initiatives", doc_id: "x", data: { name: "X", size: "S", status: "active", level: "Quick", plannedVersion: "1.0.0", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now } }));
+  ok(one({ op: "set", collection: "initiatives", doc_id: "x", data: { name: "X", size: "S", status: "active", level: "Quick", plannedVersion: "1.0.0", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now, plan: "keep-lights-on" } }));
 });
 
 test("times are read from the clock: never in the future, never rounded; a next step carries its time", () => {
@@ -204,7 +204,7 @@ test("the hook: refuses with reasons, keeps its state, counts cards it let throu
     assert.equal(JSON.parse(readFileSync(join(dir, "TestBoard01", "gate.json"), "utf8")).refusals["waiting:w"], 1);
     assert.deepEqual(call("ArtifactData", { url: "https://claude.ai/" + "artifact/Other01", action: "set", collection: "waiting", doc_id: "w", data: {} }), {}, "another board passes");
     assert.deepEqual(call("ArtifactData", { url: URL_, action: "get", collection: "waiting", doc_id: "w" }), {}, "reads pass");
-    const card = { name: "X", size: "S", status: "active", level: "Quick", plannedVersion: "1.0.0", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now };
+    const card = { name: "X", size: "S", status: "active", level: "Quick", plannedVersion: "1.0.0", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now, plan: "keep-lights-on" };
     assert.deepEqual(call("ArtifactData", { url: URL_, action: "set", collection: "initiatives", doc_id: "tab-fix", data: card }), {});
     assert.deepEqual(call("SendMessage", { to: "builder", message: "New task, board id tab-fix" }), {}, "a card the gate let through");
     assert.match(call("SendMessage", { to: "builder", message: "New task, board id other-card" }).note, /stale/, "no mirror yet");
@@ -439,7 +439,7 @@ test("Security: a write the gate let through but the board refused leaves the jo
     const transcript = join(dir, "t.jsonl");
     writeFileSync(transcript, JSON.stringify({ type: "custom-title", customTitle: "Manager" }) + "\n");
     const input = { tool_name: "ArtifactData", tool_input: { url: URL_, action: "set", collection: "derived", doc_id: "all", data: { cards: {} } }, transcript_path: transcript };
-    const card = { tool_name: "ArtifactData", tool_input: { url: URL_, action: "set", collection: "initiatives", doc_id: "new-card", data: { name: "X", size: "S", status: "active", level: "Quick", plannedVersion: "1.0.0", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now } }, transcript_path: transcript };
+    const card = { tool_name: "ArtifactData", tool_input: { url: URL_, action: "set", collection: "initiatives", doc_id: "new-card", data: { name: "X", size: "S", status: "active", level: "Quick", plannedVersion: "1.0.0", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now, plan: "keep-lights-on" } }, transcript_path: transcript };
     assert.deepEqual(run(input, { config: cfg, env: {} }), {});
     assert.deepEqual(run(card, { config: cfg, env: {} }), {});
     // Neither reached the board (a consent card refused, a stale pin): no PostToolUse.

@@ -58,6 +58,16 @@ Every item is a thread. The `messages` collection holds `{thread, from, text, at
 
 Each message from the owner pings the lead agent as a comment that reads exactly `Board thread [<thread>]: <owner>: <text>`. With `meta/board` `{ "wake": "batch" }` the page only saves, and the lead agent checks the open threads on its own schedule.
 
+## The plan
+
+Where the work is going (board v3). The `plan` collection holds nodes `{parent, order, text, kind, outcome?, measure?,
+due?, waitsOn?, state?, evidence?, replacedBy?, changedAt?, why?, decisionThread?, note?}`: `kind` is `objective`,
+`milestone` or `step`, nested by `parent` (`null` at the top), with no depth limit. Every card names the node it serves in
+its `plan` field (a "keep the lights on" node takes the rest), and the gate refuses a new card without one. Only the lead
+writes the plan, and never deletes from it: a node that has cards is replaced, not edited (the old node gets
+`replacedBy`, `changedAt` and `why` and stays, struck through; the new one sits below it). `state` is only ever
+declared `done` with `evidence`; the collector works out the rest.
+
 ## Tests
 
 `npm test` runs every rule's test. Each rule also had a mutation check: break the rule on purpose, a test must fail, restore.

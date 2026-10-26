@@ -56,7 +56,9 @@ export function swapMirror(dir, id) {
 // rules would have to match.
 export const EXPORT_NAME = "flight-board-export";
 // The collections a complete export holds (collector/TASK.md, step 1).
-export const EXPORT_COLLECTIONS = ["initiatives", "waiting", "ideas", "messages", "derived", "ctx", "steps"];
+export const EXPORT_COLLECTIONS = ["initiatives", "waiting", "ideas", "messages", "derived", "ctx", "steps", "plan"];
+// The ones a complete export must hold: an empty collection exports no folder, and a board may have no plan yet (v3).
+export const REQUIRED_COLLECTIONS = EXPORT_COLLECTIONS.filter((c) => c !== "plan");
 // Where sessions working in `cwd` keep their scratchpads: <root>/<cwd, every character but a letter or digit as "-">/
 // <session>/scratchpad. One root only, links resolved (/tmp is /private/tmp on a Mac): never a wider search (Security).
 export function scratchRoot(cwd, uid, base = "/private/tmp") {
@@ -75,7 +77,7 @@ export function findExport(root, since, uid) {
     try { st = lstatSync(p); real = realpathSync(p); } catch { continue; }
     if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== uid || !real.startsWith(root + sep)) continue;
     if (Math.max(st.birthtimeMs || 0, st.ctimeMs) < since) continue;
-    if (!EXPORT_COLLECTIONS.every((c) => { try { const cs = lstatSync(join(p, c)); return cs.isDirectory() && !cs.isSymbolicLink(); } catch { return false; } })) continue;
+    if (!REQUIRED_COLLECTIONS.every((c) => { try { const cs = lstatSync(join(p, c)); return cs.isDirectory() && !cs.isSymbolicLink(); } catch { return false; } })) continue;
     if (!best || st.mtimeMs > best.at) best = { path: real, at: st.mtimeMs };
   }
   return best?.path ?? null;

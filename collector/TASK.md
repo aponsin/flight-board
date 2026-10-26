@@ -121,13 +121,13 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
    `/flight-board-export` (a scheduled run saves an export without asking only into its own scratchpad), so the documents
    go to that folder and never into this session:
    - one ArtifactData `list` per collection, with `query.limit` 1000: `initiatives`, `waiting`, `ideas`, `messages`,
-     `derived`, `ctx`;
+     `derived`, `ctx`, `plan` (`plan` may be empty: a board with no plan yet exports no folder for it);
    - one ArtifactData `query` of `steps`, with `query.where` `[["at", ">=", <the Steps since time>]]` and
      `query.limit` 1000, again with each `next_cursor` until there is none.
 
    Never open, read or print those files (the settings deny it: a session may otherwise read its own scratchpad), and
    never remove a folder yourself: step 2 takes this run's export, the newest made after `--prepare` under this folder's
-   scratchpad root (a real folder of this user's, links resolved, holding all seven collections), moves it into place as
+   scratchpad root (a real folder of this user's, links resolved, holding all seven required collections (`plan` too when it has nodes)), moves it into place as
    the mirror the gate reads (so no later run can take it again), and keeps only `<collection>/<doc>.json` files. No such
    export is an error, never an old mirror passed off as fresh.
 2. **Work it out**: `node <install>/collector/collect.mjs --config <config>`. It prints one `CONFLICT` line per card whose phase

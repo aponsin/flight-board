@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- The plan layer, step 1 of v3 (data and gate only; the page doesn't show it yet): a `plan` collection of nodes (`objective`, `milestone`, `step`, nested by `parent`, with `outcome`, `measure`, `due`, `waitsOn`, a declared `state` with `evidence`). Only the lead writes it; a node is never deleted, and one that has cards is replaced (`replacedBy`, `changedAt`, `why`), never edited in its `text` or `outcome`. Every new card names the plan node it serves (`plan`), a real node that wasn't replaced. The collector exports `plan` too (optional: a board without a plan still exports complete).
+
 ## 0.3.1 - Unreleased
 
 ### Changed
