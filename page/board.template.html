@@ -1010,6 +1010,8 @@ function enrich(i){
     // A second start by the same agent on the same phase closes the first (it never logged an end).
     if(open[key]&&open[key].end==null)open[key].end=e.at;
     const en={phase:e.phase,who:e.who,start:e.at};if(e.wait)en.wait=e.wait;log.push(en);open[key]=en});
+  // A build step left open ends where the repository says the work went READY (the collector's readyAt), as a derived end.
+  const ra=num((derivedOf(i.id)||{}).readyAt);if(ra!=null)log.forEach(en=>{if(en.phase==="build"&&!en.wait&&en.end==null&&ra>=en.start){en.end=ra;en.derived=true;Object.keys(open).forEach(k=>{if(open[k]===en)delete open[k]})}});
   out.phaseLog=(Array.isArray(i.phaseLog)?i.phaseLog:[]).concat(log);
   if(out.status!=="done"){
     // Current phase: one someone is working on now (an open step), else the first needed phase nobody has finished.

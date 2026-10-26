@@ -45,15 +45,17 @@ export function derivePhase(card, facts, config) {
   if (!facts.head) return { phase: null, evidence: "no branch or Board-Id commit for this card" };
   const head = facts.head.sha;
   const short = String(head).slice(0, 8);
-  if (facts.onMain && facts.deployed) return { phase: c.livePhase, head, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch} and deployed${facts.version ? ` in ${facts.version}` : ""}` };
-  if (facts.onMain) return { phase: c.shipPhase, head, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch}, not deployed yet` };
+  // readyAt: the READY commit's time, where build ends by the evidence (the page closes a build step left open there).
+  const readyAt = Number.isFinite(facts.head.at) ? facts.head.at : null;
+  if (facts.onMain && facts.deployed) return { phase: c.livePhase, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch} and deployed${facts.version ? ` in ${facts.version}` : ""}` };
+  if (facts.onMain) return { phase: c.shipPhase, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch}, not deployed yet` };
   const ready = boardIdOf(facts.head.message) === card.id || facts.signed.size > 0;
   // Without a trailer or a note the head may still be READY, unsigned yet: build is only what the evidence can show.
   if (!ready) return { phase: c.buildPhase, head, firm: false, evidence: `${facts.head.branch} at ${short}, no READY trailer or sign-off yet` };
   const order = config.phases.map((p) => p[0]);
   const waiting = reviewsFor(card, config).filter((p) => !facts.signed.has(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  if (waiting.length) return { phase: waiting[0], head, evidence: `READY at ${short}; waiting for ${waiting.join(", ")}` };
-  return { phase: c.shipPhase, head, evidence: `READY at ${short}; every review signed` };
+  if (waiting.length) return { phase: waiting[0], head, readyAt, evidence: `READY at ${short}; waiting for ${waiting.join(", ")}` };
+  return { phase: c.shipPhase, head, readyAt, evidence: `READY at ${short}; every review signed` };
 }
 
 // A conflict line when the card's declared phase disagrees with the derived one (one line per card, for the lead).

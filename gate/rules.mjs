@@ -249,9 +249,35 @@ export function threadErrors(w, { mirror, batch = [], now = Date.now() }) {
   return [`thread ${t} is no item on the board, no thread with messages and no new thread of the owner's: reply under the item with its id as the thread`];
 }
 
+// One open phase per card (Build and Checker once both lit on one card because a build step was never ended). Starting
+// a review while build is open, build while a review is open, or ship while anything is open is refused; only the review
+// phases (those with sign-off notes) overlap each other. An open step is a start with no later end by the same agent on
+// the same phase; a build left open ends where the repository says the card went READY (derived readyAt). Skipped when
+// the export has no steps.
+export function phaseOverlapErrors(w, { config, mirror, batch = [] }) {
+  const { op, collection, data } = w;
+  if (collection !== "steps" || op !== "set" || !data || data.kind !== "start" || data.wait || !Array.isArray(mirror?.docs?.steps)) return [];
+  const c = config.collector, reviews = new Set(Object.keys(c.notes ?? {}));
+  const card = data.init;
+  const evs = [...mirror.docs.steps, ...batch.filter((b) => b !== w && b.collection === "steps" && b.op === "set").map((b) => b.data)]
+    .filter((e) => e && e.init === card && e.phase && typeof e.at === "number" && !e.wait && e.phase !== c.livePhase).sort((a, b) => a.at - b.at);
+  const open = new Map();
+  for (const e of evs) { const key = `${e.phase}|${e.who ?? ""}`; if (e.kind === "start") open.set(key, e); else if (e.kind === "end") open.delete(key); }
+  const readyAt = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards?.[card]?.readyAt;
+  const live = [...open.values()].filter((e) => !(e.phase === c.buildPhase && typeof readyAt === "number" && readyAt >= e.at));
+  const label = (p) => (config.phases.find((x) => x[0] === p) ?? [p, p])[1];
+  const since = (e) => `${label(e.phase)} is still open by ${e.who ?? "someone"} since ${new Date(e.at).toISOString().slice(11, 16)} UTC: end it first`;
+  const build = live.find((e) => e.phase === c.buildPhase);
+  if (reviews.has(data.phase) && build) return [since(build)];
+  if (data.phase === c.buildPhase) { const r = live.find((e) => reviews.has(e.phase)); if (r) return [since(r)]; }
+  if (data.phase === c.shipPhase) { const any = live.find((e) => e.phase !== c.shipPhase); if (any) return [since(any)]; }
+  return [];
+}
+
 export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now() }) {
   const { op, collection, doc_id: id, data } = w;
   if (collection === "messages") return threadErrors(w, { mirror, batch, now: at });
+  if (collection === "steps") return phaseOverlapErrors(w, { config, mirror, batch });
   if (collection === PLAN) return planMirrorErrors(w, { mirror, batch });
   // Every card links to the plan node it serves (board v3); a new card can't go without one, mirror or not.
   const planned = collection === "initiatives" ? initiativePlanErrors(w, { mirror, batch }) : [];

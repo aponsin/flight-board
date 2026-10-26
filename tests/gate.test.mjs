@@ -378,9 +378,11 @@ test("withJournal: set, update (with __delete__) and delete laid over the mirror
     { op: "set", collection: "initiatives", doc_id: "b", data: { status: "active" }, at: 160 },
     { op: "set", collection: "initiatives", doc_id: "c", data: {}, at: 90 },
     { op: "set", collection: "steps", doc_id: "s", data: {}, at: 170 },
+    { op: "set", collection: "ctx", doc_id: "B", data: {}, at: 170 },
   ]);
   assert.deepEqual(out.docs.initiatives, [{ id: "a", status: "done", phase: "build" }, { id: "b", status: "active" }]);
-  assert.equal(out.docs.steps, undefined, "only the board-state collections");
+  assert.deepEqual(out.docs.steps, [{ id: "s" }], "steps too, so the one-open-phase rule sees an end written since the export");
+  assert.equal(out.docs.ctx, undefined, "only the board-state collections");
   assert.deepEqual(m.docs.initiatives[0].who, "B", "the mirror itself untouched");
   assert.deepEqual(withJournal(m, [{ op: "delete", collection: "initiatives", doc_id: "a", at: 120 }]).docs.initiatives, []);
 });
