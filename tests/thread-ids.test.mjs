@@ -24,13 +24,15 @@ test("allocation: numbers in the order threads opened (each thread's first messa
   const { batches, first, next } = allocate({ threads: [{ id: "c", num: 4 }, { id: "a", title: "Named" }], messages, seq: { next: 5 } });
   assert.equal(first, 5);
   assert.equal(next, 7);
-  assert.deepEqual(JSON.parse(JSON.stringify(batches)), [[
-    { op: "set", collection: "threads", doc_id: "b", data: { num: 5 } },
-    { op: "update", collection: "threads", doc_id: "a", data: { num: 6 } },
-    { op: "update", collection: "meta", doc_id: "threadSeq", data: { next: 7 } }]], "b opened at 5, a at 10; a's doc exists (its title), so update keeps it");
+  assert.deepEqual(JSON.parse(JSON.stringify(batches)), [
+    [{ op: "update", collection: "threads", doc_id: "c", data: { title: "x" } }],
+    [{ op: "set", collection: "threads", doc_id: "b", data: { num: 5, title: "x" } },
+      { op: "update", collection: "threads", doc_id: "a", data: { num: 6 } },
+      { op: "update", collection: "meta", doc_id: "threadSeq", data: { next: 7 } }]],
+  "c numbered with no title gets its first message's (number kept); b opened at 5, a at 10; a keeps its own title");
   assert.equal(allocate({ threads: [{ id: "b", num: 9 }], messages: [msg("a", 1)], seq: { next: 3 } }).first, 10, "never below a number in use");
   assert.equal(allocate({ messages: [msg("a", 1)] }).batches[0].at(-1).op, "set", "the first counter is created");
-  assert.deepEqual(allocate({ threads: [{ id: "a", num: 1 }], messages: [msg("a", 1)], seq: { next: 2 } }).batches, [], "nothing to number");
+  assert.deepEqual(allocate({ threads: [{ id: "a", num: 1, title: "A" }], messages: [msg("a", 1)], seq: { next: 2 } }).batches, [], "nothing to number or name");
 });
 
 test("allocation: a big backfill comes in batches of at most 50 writes, each moving the counter; the gate takes each", () => {
@@ -179,14 +181,15 @@ test("a counter raised by after.mjs while the gate's own call ran is kept when t
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("an item's top line shows its thread's #T and, once renamed, its name, before it opens (board-thread-head)", () => {
+test("an item's top line shows \"#T<num> · title\" before it opens (board-thread-head; thread-num-always)", () => {
   const b = loadNames(["state", "askHtml", "threadTag", "initRow", "enrich", "gates", "asShown"]);
   b.state.threads = [{ id: "ask-1", num: 27 }, { id: "ask-2", num: 28, title: '<i>Collector</i> setup' }, { id: "card-1", num: 30 }];
   const ask = (id) => ({ id, kind: "action", text: "Run the install", steps: ["x"], since: Date.now() });
   const summary = (html) => html.slice(html.indexOf("<summary"), html.indexOf("</summary>"));
+  b.state.waiting = [ask("ask-1"), ask("ask-2")];
   assert.match(summary(b.askHtml(ask("ask-1"), new Set())), /<span class="t-tag"><button type="button" class="copy t-num" data-copy="#T27"/);
-  assert.doesNotMatch(summary(b.askHtml(ask("ask-1"), new Set())), /t-name/, "not renamed: the item's own text is the name");
-  assert.match(summary(b.askHtml(ask("ask-2"), new Set())), /#T28<\/button><b class="t-name">&lt;i&gt;Collector&lt;\/i&gt; setup<\/b>/);
+  assert.match(summary(b.askHtml(ask("ask-1"), new Set())), /#T27<\/button> · <b class="t-name">Run the install<\/b>/, "not renamed: named by the item's own text (thread-num-always)");
+  assert.match(summary(b.askHtml(ask("ask-2"), new Set())), /#T28<\/button> · <b class="t-name">&lt;i&gt;Collector&lt;\/i&gt; setup<\/b>/);
   assert.equal(b.threadTag("ask-9"), "", "no number yet and no name: nothing");
   b.state.steps = [];
   const row = b.initRow(b.gates(b.enrich(b.asShown({ id: "card-1", name: "Tabs", status: "active", level: "Quick", skip: [] }))));

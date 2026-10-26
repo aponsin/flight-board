@@ -131,7 +131,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .t-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 4px}.t-name{font-weight:700}.t-num{font:inherit;font-size:.8rem;padding:1px 6px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}.t-rename{font:inherit;font-size:.78rem;padding:0;border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer}.t-head input{font:inherit;flex:1;min-width:12em;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}a.t-ref{font-weight:600}.t-tag{display:inline-flex;align-items:center;gap:6px;margin:0 8px 2px 0;vertical-align:middle}.t-err{font-size:.8rem;color:var(--bad)}
 .t-msg.t-owner .t-from{color:var(--accent)}.t-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .thread .reply{margin:6px 0 4px 0}
-.t-badge{font-size:.75rem;border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin-left:6px;color:var(--muted)}.t-badge.open{color:var(--bad);border-color:var(--bad)}
+.t-badge{font-size:.75rem;border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin-left:6px;color:var(--muted);white-space:nowrap}.t-badge.you{color:var(--bad);border-color:var(--bad)}.t-badge.open{color:var(--warn);border-color:var(--warn)}
 .newthread{display:flex;flex-direction:column;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)}
 .newthread label{font-size:.82rem;color:var(--muted)}
 .t-sec{margin:0;padding:10px 16px 6px;border-top:1px solid var(--line);font:600 .8rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
@@ -421,7 +421,7 @@ function itemShown(id,now){const it=itemOf(id);if(!it)return false;
 // An ask as a row that opens to its steps, its reply buttons (or the sent line) and its thread.
 function askHtml(w,open){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
-   <div class="w-text">${threadTag(w.id)}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:askText(w.text||"")}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
+   <div class="w-text">${threadTag(w.id)}<span class="t-badge you">waiting on you</span>${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:askText(w.text||"")}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
    <span class="age">${num(w.since)?dur(Date.now()-w.since)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
@@ -708,11 +708,12 @@ function threadName(id){const t=threadDoc(id);if(t&&typeof t.title==="string"&&t
 // summary carries it), its number to copy, and Rename.
 function threadHead(id,where){const n=threadNum(id),t=threadDoc(id),named=where!=="panel"&&t&&typeof t.title==="string"&&t.title.trim();
   return `<div class="t-head" data-thead="${esc(id)}">${named?`<span class="t-name">${esc(threadName(id))}</span>`:""}${n?`<button type="button" class="copy t-num" data-copy="#T${n}" title="Copy #T${n}">#T${n}</button>`:""}<button type="button" class="t-rename" data-trename="${esc(id)}">Rename</button></div>`}
-// The same on an item's top line, visible before it opens: its number (copy on click: the copy handler keeps the row
-// from folding) and, when renamed, its name (the item's own text already shows there). Empty while it has neither.
+// The same on an item's top line, visible before it opens: "#T<num> · title" (thread-num-always: every item has both;
+// the number copies on click, and the copy handler keeps the row from folding). Before the lead numbers it, its name
+// alone once renamed, else nothing.
 function threadTag(id){const n=threadNum(id),t=threadDoc(id),named=t&&typeof t.title==="string"&&t.title.trim();
   if(!n&&!named)return "";
-  return `<span class="t-tag">${n?`<button type="button" class="copy t-num" data-copy="#T${n}" title="Copy #T${n}">#T${n}</button>`:""}${named?`<b class="t-name">${esc(threadName(id))}</b>`:""}</span>`}
+  return `<span class="t-tag">${n?`<button type="button" class="copy t-num" data-copy="#T${n}" title="Copy #T${n}">#T${n}</button>`:""}${n?" · ":""}<b class="t-name">${esc(threadName(id))}</b></span>`}
 // The threads a text names by number, for the ping: "#T27 = <thread id>".
 function threadRefs(text){return [...new Set([...String(text).matchAll(/(?<![\w\/#&;.=?-])#T(\d{1,6})\b/g)].map(m=>Number(m[1])))].map(n=>[n,threadByNum(n)]).filter(([,id])=>id)}
 // Whether a message wakes Manager at once ("now", the default) or waits for its 5-minute check ("batch"): meta/board.wake.
@@ -746,7 +747,7 @@ function threadHtml(id,where,{box=true}={}){const t=threadOf(id),key="th:"+id,ti
 // last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their
 // own place at the panel's end (resolvedHtml).
 const threadLast=id=>{const t=threadOf(id);return t[t.length-1].at};
-function threadRow(id,cls,now){return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span><div class="w-text">${id.startsWith("t-")?"":"Reply to: "}<b class="t-name">${esc(threadName(id))}</b>${threadNum(id)?` <span class="t-numtxt">#T${threadNum(id)}</span>`:""}<span class="t-badge ${cls}">${cls==="open"?"waiting on Manager":cls==="res"?"resolved":"answered"}</span></div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"panel")}</details>`}
+function threadRow(id,cls,now){return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span><div class="w-text">${id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b><span class="t-badge ${cls}">${cls==="open"?"waiting on Manager":cls==="res"?"resolved":"answered"}</span></div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"panel")}</details>`}
 function threadRows(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now));
   const open=ids.filter(threadOpen).sort((a,b)=>threadLast(a)-threadLast(b));
   const answered=ids.filter(id=>!threadOpen(id)&&!threadResolved(id)).sort((a,b)=>threadLast(b)-threadLast(a));

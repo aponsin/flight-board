@@ -257,6 +257,26 @@ export function threadErrors(w, { mirror, batch = [], now = Date.now() }) {
   return [`thread ${t} is no item on the board, no thread with messages and no new thread of the owner's: reply under the item with its id as the thread`];
 }
 
+// Every thread has its number from the start (thread-num-always; the owner, 2026-10-26: items showed without their #T):
+// a new waiting item, and a message that opens a thread the board hasn't numbered, come with threads/<id> {num, title}
+// in the same batch (numErrors then checks the number against meta/threadSeq, moved in that batch too). A thread the
+// owner opened from the board (t-<time>) is numbered by the lead's next batch (scripts/thread-ids.mjs backfills it).
+// Skipped (fail open, like the other mirror rules) when the export has no threads collection.
+export function threadNumberedErrors(w, { mirror, batch = [] }) {
+  const { op, collection, doc_id: id, data } = w;
+  if (op === "delete" || !data || typeof data !== "object" || !Array.isArray(mirror?.docs?.threads)) return [];
+  let t = null;
+  if (collection === "waiting" && op === "set" && !(mirror.docs.waiting ?? []).some((d) => d.id === id)) t = id;
+  else if (collection === "messages" && typeof data.thread === "string" && data.thread && !OWNER_THREAD.test(data.thread)) t = data.thread;
+  if (!t) return [];
+  const numbered = (d) => d && Number.isInteger(d.num) && d.num > 0 && typeof d.title === "string" && d.title.trim() !== "";
+  if (numbered(mirror.docs.threads.find((d) => d.id === t))) return [];
+  const inBatch = batch.find((b) => b.collection === "threads" && b.doc_id === t && b.op !== "delete");
+  const after = inBatch ? { ...(inBatch.op === "update" ? mirror.docs.threads.find((d) => d.id === t) : {}), ...inBatch.data } : null;
+  if (numbered(after)) return [];
+  return [`thread ${t} has no number yet: set threads/${t} {num: meta/${THREAD_SEQ}.next, title} and move meta/${THREAD_SEQ} in the same batch (scripts/thread-ids.mjs)`];
+}
+
 // One open phase per card (Build and Checker once both lit on one card because a build step was never ended). Starting
 // a review while build is open, or ship while anything is open, is refused; reviews overlap each other, and a build may
 // start while a review is open (a fix round after FINDINGS is real work while the review waits). An open step is a
@@ -284,7 +304,8 @@ export function phaseOverlapErrors(w, { config, mirror, batch = [] }) {
 
 export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now() }) {
   const { op, collection, doc_id: id, data } = w;
-  if (collection === "messages") return threadErrors(w, { mirror, batch, now: at });
+  if (collection === "messages") return [...threadErrors(w, { mirror, batch, now: at }), ...threadNumberedErrors(w, { mirror, batch })];
+  if (collection === "waiting") return threadNumberedErrors(w, { mirror, batch });
   if (collection === "steps") return phaseOverlapErrors(w, { config, mirror, batch });
   if (collection === PLAN) return planMirrorErrors(w, { mirror, batch });
   // Every card links to the plan node it serves (board v3); a new card can't go without one, mirror or not.
