@@ -82,7 +82,7 @@ export function checkConfig(c) {
     else {
       for (const f of Object.keys(k)) if (!Object.hasOwn(DEFAULTS.collector, f)) out.push(`collector: unknown field "${f}" (known: ${Object.keys(DEFAULTS.collector).join(", ")})`);
       for (const f of ["repoPath", "outDir", "remote", "mainBranch", "deployWorkflow"]) if (k[f] !== undefined && !(typeof k[f] === "string" && !/[\n\0]/.test(k[f]) && k[f].length <= 300)) out.push(`collector.${f}: a short string`);
-      for (const f of ["remote", "mainBranch"]) if (k[f] !== undefined && !/^[A-Za-z0-9._\/-]{1,100}$/.test(String(k[f]))) out.push(`collector.${f}: a git name`);
+      for (const f of ["remote", "mainBranch"]) if (k[f] !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,99}$/.test(String(k[f]))) out.push(`collector.${f}: a git name`);
       if (k.notes !== undefined) {
         if (!k.notes || typeof k.notes !== "object" || Array.isArray(k.notes)) out.push("collector.notes: { phase: notes ref }");
         else for (const [p, ref] of Object.entries(k.notes)) {
@@ -105,7 +105,7 @@ export function checkConfig(c) {
             for (const f of Object.keys(r)) if (!REPO.includes(f)) out.push(`${at}: unknown field "${f}" (known: ${REPO.join(", ")})`);
             if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(String(r.name ?? ""))) out.push(`${at}.name: lower case letters, digits and -`);
             for (const f of ["path", "installedLink"]) if (r[f] !== undefined || f === "path") if (!(typeof r[f] === "string" && r[f].length > 0 && r[f].length <= 300 && !/[\n\0]/.test(r[f]))) out.push(`${at}.${f}: a folder path`);
-            for (const f of ["mainBranch", "remote"]) if (r[f] !== undefined && !/^[A-Za-z0-9._\/-]{1,100}$/.test(String(r[f]))) out.push(`${at}.${f}: a git name`);
+            for (const f of ["mainBranch", "remote"]) if (r[f] !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,99}$/.test(String(r[f]))) out.push(`${at}.${f}: a git name`);
             if (!r.notes || typeof r.notes !== "object" || Array.isArray(r.notes) || Object.entries(r.notes).some(([p, ref]) => !phaseKeys2.includes(p) || !/^refs\/notes\/[A-Za-z0-9._-]{1,60}$/.test(String(ref)))) out.push(`${at}.notes: { phase: refs/notes/<name> }`);
             if (r.idPrefixes !== undefined && !(Array.isArray(r.idPrefixes) && r.idPrefixes.length <= 10 && r.idPrefixes.every((p) => /^[a-z0-9-]{1,40}$/.test(String(p))))) out.push(`${at}.idPrefixes: a list of card id prefixes`);
           });

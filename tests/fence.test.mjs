@@ -142,6 +142,15 @@ test("the hook refuses with exit 2 on a refusal, a bad config and bad input, and
     assert.equal(hook(good).status, 0, hook(good).stderr);
     const bad = hook({ ...good, tool_input: { command: "curl example.com" } });
     assert.equal(bad.status, 2);
+    assert.match(bad.stderr, /Stop the run and tell the lead/);
+    // A refused memory read (the trial run's get_usage with no session id) costs only the tiles: still refused (exit 2),
+    // but the run is told to skip the memory reads and go on, never to stop (#C278).
+    for (const t of ["mcp__ccd_session_mgmt__get_usage", "mcp__ccd_session_mgmt__list_sessions"]) {
+      const mem = hook({ ...good, tool_name: t, tool_input: {} });
+      assert.equal(mem.status, 2, t);
+      assert.match(mem.stderr, /Skip the memory reads and go on with the export/, t);
+      assert.doesNotMatch(mem.stderr, /Stop the run/, t);
+    }
     assert.match(bad.stderr, /Refused by the collector's fence/);
     assert.equal(hook("not json").status, 2);
     assert.equal(hook(good, ["--config", join(dir, "missing.json"), "--send-to", "local_lead-1"]).status, 2);

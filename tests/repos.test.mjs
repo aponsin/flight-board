@@ -48,6 +48,14 @@ test("config: collector.repos, each a name, a folder, notes per review phase, th
   for (const bad of [{ ...BOARD, name: "Two Words" }, { ...BOARD, path: "" }, { ...BOARD, notes: { nope: "refs/notes/x" } }, { ...BOARD, idPrefixes: "board-" }, { ...BOARD, mainBranch: "a b" }, { ...BOARD, extra: 1 }])
     assert.match(checkConfig({ collector: { repos: [bad] } }).join(), /collector\.repos/, JSON.stringify(bad));
   assert.match(checkConfig({ collector: { repos: [BOARD, BOARD] } }).join(), /each name once/);
+  // A git name never starts with "-": it would reach git fetch as an option (Security).
+  for (const bad of ["--prune", "-x"]) {
+    assert.match(checkConfig({ collector: { repos: [{ ...BOARD, remote: bad }] } }).join(), /remote: a git name/, bad);
+    assert.match(checkConfig({ collector: { repos: [{ ...BOARD, mainBranch: bad }] } }).join(), /mainBranch: a git name/, bad);
+    assert.match(checkConfig({ collector: { remote: bad } }).join(), /collector\.remote: a git name/, bad);
+    assert.match(checkConfig({ collector: { mainBranch: bad } }).join(), /collector\.mainBranch: a git name/, bad);
+  }
+  assert.deepEqual(checkConfig({ collector: { remote: "origin", mainBranch: "release/v2", repos: [{ ...BOARD, remote: "up-stream" }] } }), []);
 });
 
 test("a card's repository: its own repo field, else the first whose id prefix it carries, else the team's", () => {

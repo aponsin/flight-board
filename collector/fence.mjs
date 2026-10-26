@@ -160,8 +160,14 @@ export function main(argv, stdin) {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  let reason;
-  try { reason = main(process.argv.slice(2), readFileSync(0, "utf8")); } catch (e) { reason = `fence error: ${e?.message ?? e}`; }
-  if (reason) { process.stderr.write(`Refused by the collector's fence: ${reason}. Stop the run and tell the lead.\n`); process.exit(2); }
+  let reason, tool = null;
+  try {
+    const raw = readFileSync(0, "utf8");
+    try { tool = JSON.parse(raw)?.tool_name ?? null; } catch { /* main reports it */ }
+    reason = main(process.argv.slice(2), raw);
+  } catch (e) { reason = `fence error: ${e?.message ?? e}`; }
+  // A refused memory read costs only that run's tiles (#C278): the run goes on with the export; anything else stops it.
+  const next = tool === LIST_TOOL || tool === USAGE_TOOL ? "Skip the memory reads and go on with the export" : "Stop the run and tell the lead";
+  if (reason) { process.stderr.write(`Refused by the collector's fence: ${reason}. ${next}.\n`); process.exit(2); }
   process.exit(0);
 }

@@ -141,7 +141,9 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
    Then run `node <install>/collector/collect.mjs --config <config> --prepare` (`<install>` the current
    link's full path, `~/.flight-board/current` written out). It notes the time and prints `Export the board into: your scratchpad folder + /flight-board-export`,
    a `Steps since: <time>` line and, with `collector.contextRoles`, one `Read memory: get_usage session_id <id> (<Role>)`
-   line per role: one `get_usage` call with that `session_id` each, nothing else from its answer. Then, each with `out_dir` this session's scratchpad folder followed by
+   line per role: one `get_usage` call each with the input `{"session_id": "<id>"}` (never an empty input, which reads
+   the run's own session and is refused), nothing else from its answer. A refused memory read skips the remaining ones and
+   the run goes on with the export: the fence says so, and only the tiles wait for the next run. Then, each with `out_dir` this session's scratchpad folder followed by
    `/flight-board-export` (a scheduled run saves an export without asking only into its own scratchpad), so the documents
    go to that folder and never into this session:
    - one ArtifactData `list` per collection, with `query.limit` 1000: `initiatives`, `waiting`, `ideas`, `messages`,
