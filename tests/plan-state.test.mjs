@@ -70,6 +70,7 @@ test("the objective's bar and chip: done over all, on track or at risk against i
   const evening = derivePlan({ nodes: [obj({ due: "2030-01-10" }), ...nodes.slice(1)], cards, config, now: Date.parse("2030-01-10T18:00:00Z") });
   assert.equal(evening.objectives["obj-shop"].chip, "at-risk", "9.5 h left, 6 h to the end of the day (UTC)");
   assert.equal(run([obj({ due: undefined }), ...nodes.slice(1)], cards).objectives["obj-shop"].chip, null, "no due day: no chip");
+  assert.deepEqual(run([obj()]).objectives["obj-shop"], { done: 0, total: 0, hoursLeft: 0, chip: null }, "nothing below it yet: no chip (Checker)");
   assert.equal(run([obj({ replacedBy: "obj-new", why: "w", changedAt: 1 }), { ...obj(), id: "obj-new" }]).objectives["obj-shop"], undefined, "a replaced objective has no bar");
 });
 
