@@ -19,7 +19,10 @@ export const DEFAULTS = {
   // notes ref its sign-off is written to. deployWorkflow: the CI workflow whose successful run on the main branch means
   // live. lanePhases: the phases where one owner holds one card at a time (reviews and shipping queue). versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
   // how such a subject names each branch it shipped and its commit (groups: branch, sha), for branches deleted since.
-  collector: { repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "" },
+  collector: { repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "",
+    // Runs on demand (collector/refresh.mjs): the checkouts whose origin/main moving means a ship (local refs, no fetch), the
+    // scheduled task the lead is told to run, the quiet minutes after a run (or an ask) and how long a run may take.
+    refresh: { repos: [], taskId: "board-collector", debounceMin: 10, flightMin: 15 } },
   // The nudges (collector/nudges.mjs): minutes the owner may wait for an answer; how far past its size's median a step may
   // run (etaHours: the median hours a step takes, by card size); how old a memory reading may get; how long a card may
   // stay unchanged unless its status is one of parked; and the quiet minutes before a nudge is sent again.
@@ -83,6 +86,16 @@ export function checkConfig(c) {
       for (const f of ["buildPhase", "shipPhase", "livePhase"]) if (k[f] !== undefined && !phaseKeys2.includes(k[f])) out.push(`collector.${f}: one of the phases`);
       if (k.lanePhases !== undefined && !(Array.isArray(k.lanePhases) && k.lanePhases.every((p) => phaseKeys2.includes(p)))) out.push("collector.lanePhases: a list of phases");
       for (const f of ["versionPattern", "shippedPattern"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
+      if (k.refresh !== undefined) {
+        const r = k.refresh;
+        if (!r || typeof r !== "object" || Array.isArray(r)) out.push("collector.refresh: an object");
+        else {
+          for (const f of Object.keys(r)) if (!Object.hasOwn(DEFAULTS.collector.refresh, f)) out.push(`collector.refresh: unknown field "${f}" (known: ${Object.keys(DEFAULTS.collector.refresh).join(", ")})`);
+          if (r.repos !== undefined && !(Array.isArray(r.repos) && r.repos.length <= 10 && r.repos.every((p) => typeof p === "string" && p.length > 0 && p.length <= 300 && !/[\n\0]/.test(p)))) out.push("collector.refresh.repos: a list of checkout folders");
+          if (r.taskId !== undefined && !/^[a-z0-9][a-z0-9-]{0,60}$/.test(String(r.taskId))) out.push("collector.refresh.taskId: a scheduled task id");
+          for (const f of ["debounceMin", "flightMin"]) if (r[f] !== undefined && !(Number.isInteger(r[f]) && r[f] >= 1 && r[f] <= 240)) out.push(`collector.refresh.${f}: whole minutes, 1 to 240`);
+        }
+      }
     }
   }
   if (c.nudges !== undefined) {
@@ -100,7 +113,7 @@ export function checkConfig(c) {
 
 // The defaults with the team's values on top.
 export function fullConfig(c) {
-  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}) }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) } };
+  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}), refresh: { ...DEFAULTS.collector.refresh, ...(c?.collector?.refresh ?? {}) } }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) } };
 }
 
 // The board's id, from its link: what the gate matches a write's url against.

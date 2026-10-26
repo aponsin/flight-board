@@ -319,7 +319,7 @@ test("hooks --write end to end on a scratch settings file: a pinned copy of the 
     const backup = run.stdout.match(/Backup: (\S*)/)[1];
     assert.match(readFileSync(backup, "utf8"), /board-tests\/write-gate\.mjs/);
     const again = spawnSync(process.execPath, [...args, "--write"], { encoding: "utf8" });
-    assert.match(again.stdout, /replaced 3 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries: " + again.stdout + again.stderr);
+    assert.match(again.stdout, /replaced 4 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries (the refresh check too): " + again.stdout + again.stderr);
     assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "nope-not-a-commit", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/);
     assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "--output=/tmp/x", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/, "a pin that looks like an option is still just a name");
   } finally { rmSync(dir, { recursive: true, force: true }); }

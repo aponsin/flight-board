@@ -8,6 +8,12 @@ Created only with the owner's yes. Its settings:
   default): a run a few minutes late leaves it fresh; a missed run shows as stale.
   The after-ship run is **this same task**, started by the release role (run it now, by hand or by a call at the end of
   its ship); never a second task with other settings or more tools.
+  On demand, too: `collector/refresh.mjs`, a Stop hook installed with the gate's (`scripts/hooks.mjs`), holds the lead's
+  turn end once with "start the collector now" (`run_scheduled_task <collector.refresh.taskId>`) when a checkout in
+  `collector.refresh.repos` shows origin/main moved (local refs only: a ship is a push from this machine), the owner
+  marked an item done, or the owner wrote "refresh", since the last run's start. Never while a run is in flight
+  (`flightMin`, 15), within `debounceMin` (10) of the last run or of its own last ask, or twice in a row. The lead
+  needs its own allow rule for `mcp__scheduled-tasks__run_scheduled_task`; this task's settings stay as they are.
 - **Model**: the smallest one available; the run is a few fixed steps.
 - **Folder**: the board's own state folder, `<dir>` = `<gate.stateDir>/<board id>`, where the export, the mirror and the
   output live: a scheduled run saves ArtifactData exports (`out_dir`) only inside its own folder, whatever

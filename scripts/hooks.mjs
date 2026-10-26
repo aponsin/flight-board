@@ -9,18 +9,19 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 // A flight-board hook, from this checkout or a pinned copy: replaced on every install.
-const MARK = /(?:flight-board|\/[0-9a-f]{40})\/gate\/(?:gate|stop|after)\.mjs/;
+const MARK = /(?:flight-board|\/[0-9a-f]{40})\/(?:gate\/(?:gate|stop|after)|collector\/refresh)\.mjs/;
 // A path as one shell word, in single quotes (a ' inside written '\''): sh expands nothing in it, so a folder with a
 // space ("Application Support") or a crafted name with $( ) or backticks stays a plain path.
 export const shellQuote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const q = shellQuote;
 export function hookEntries(repo, configPath, node = process.execPath) {
-  const cmd = (file) => `${q(node)} ${q(resolve(repo, "gate", file))} --config ${q(resolve(configPath))}`;
+  const cmd = (file, dir = "gate") => `${q(node)} ${q(resolve(repo, dir, file))} --config ${q(resolve(configPath))}`;
   return {
     PreToolUse: { matcher: "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message", hooks: [{ type: "command", command: cmd("gate.mjs") }] },
     // After a board write the board applied: what the gate must remember from it (the thread counter).
     PostToolUse: { matcher: "ArtifactData", hooks: [{ type: "command", command: cmd("after.mjs") }] },
-    Stop: { hooks: [{ type: "command", command: cmd("stop.mjs") }] },
+    // The lead's turn end: the gate's checks, then "start the collector now" when a card moved since its last run.
+    Stop: { hooks: [{ type: "command", command: cmd("stop.mjs") }, { type: "command", command: cmd("refresh.mjs", "collector") }] },
   };
 }
 

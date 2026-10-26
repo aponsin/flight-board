@@ -3,6 +3,7 @@
 ## 0.3.1 - Unreleased
 
 ### Changed
+- The collector also runs on demand: when the lead's turn ends after a ship, an item marked done or the owner's "refresh", a Stop hook (`collector/refresh.mjs`) tells it to start the collector task now. At most once per 10 minutes, never while a run is in flight. New config block `collector.refresh` (repos, taskId, debounceMin, flightMin).
 - A thread shows its newest message first, under one reply box at the top. An ask you haven't answered keeps only its own box (its buttons and note), so the thread's box no longer shows a second time after the last message. Once you have answered, the thread's box takes its place.
 - The collector's fence (`collector/fence.mjs`): a PreToolUse hook on every tool, in the collector's state folder only, that lets through exactly the steps of TASK.md (the two collect commands, the board's exports into the run's scratchpad, set `derived/all` from its file, one message to the lead) and refuses everything else, failing closed. It is what makes the collector safe to run in auto mode, where the board write no longer asks every hour (Security).
 - Every ask, answer and initiative shows its thread's #T number (copy on click) and, once renamed, its name on its top line, before it opens. With no name of its own, a thread is named by its item's text, so none is ever unnamed.
