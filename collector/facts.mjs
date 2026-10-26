@@ -25,16 +25,30 @@ export const isAncestor = (git, a, b) => ok(() => git(["merge-base", "--is-ances
 // in onwards, whose subject matches the version pattern. [{ sha, subject }] is the main line, oldest first.
 export function versionFor(git, sha, mainLine, pattern) {
   const re = new RegExp(pattern);
-  if (!mainLine.length) return null;
-  // The main-line commit that brought it in: itself, or the oldest first-parent commit that descends from it.
-  let from = mainLine.findIndex((c) => c.sha === sha);
-  if (from < 0) {
-    const entry = git(["log", "--first-parent", "--ancestry-path", "--reverse", "--format=%H", `${sha}..${mainLine[mainLine.length - 1].sha}`]).split("\n").find(Boolean);
-    from = entry ? mainLine.findIndex((c) => c.sha === entry) : -1;
-  }
+  const from = entryIndex(git, sha, mainLine);
   if (from < 0) return null;
   for (const c of mainLine.slice(from)) { const m = re.exec(c.subject); if (m) return m[1] ?? m[0]; }
   return null;
+}
+
+// The main-line commit that brought a commit in: itself, or the oldest first-parent commit that descends from it. Its
+// index in mainLine, or -1.
+export function entryIndex(git, sha, mainLine) {
+  if (!mainLine.length) return -1;
+  const at = mainLine.findIndex((c) => c.sha === sha);
+  if (at >= 0) return at;
+  const entry = git(["log", "--first-parent", "--ancestry-path", "--reverse", "--format=%H", `${sha}..${mainLine[mainLine.length - 1].sha}`]).split("\n").find(Boolean);
+  return entry ? mainLine.findIndex((c) => c.sha === entry) : -1;
+}
+
+// The main branch's recent successful deploy runs, newest first: [{ headSha, createdAt (ms), updatedAt (ms) }]; [] when
+// no workflow is named or gh can't answer. One call per collector run.
+export function deployRuns(gh, workflow, main, limit = 30) {
+  if (!workflow) return [];
+  try {
+    const runs = JSON.parse(gh(["run", "list", "--branch", main, "--workflow", workflow, "--status", "success", "--limit", String(limit), "--json", "headSha,createdAt,updatedAt"]));
+    return (Array.isArray(runs) ? runs : []).filter((r) => /^[0-9a-f]{40}$/.test(r?.headSha ?? "")).map((r) => ({ headSha: r.headSha, createdAt: Date.parse(r.createdAt ?? ""), updatedAt: Date.parse(r.updatedAt ?? "") }));
+  } catch { return []; }
 }
 
 export function mainLine(git, remote, main, limit = 400) {

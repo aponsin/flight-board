@@ -13,7 +13,8 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
 import { headsFor, derivePhase, conflict, staleLive, closed } from "./derive.mjs";
-import { remoteHeads, mainLine, deployedSha, factsFor, shippedHeads, mainVersion, liveBuild } from "./facts.mjs";
+import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild } from "./facts.mjs";
+import { evidenceTimes } from "./timings.mjs";
 import { nudges } from "./nudges.mjs";
 import { derivePlan } from "./plan-state.mjs";
 import { idText, lineText } from "./text.mjs";
@@ -175,22 +176,40 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const line = mainLine(git, c.remote, c.mainBranch);
   const remote = remoteHeads(git, c.remote);
   const heads = [...remote, ...tipsOnly(remote, shippedHeads(git, line, c.shippedPattern))];
-  const deployed = deployedSha(gh, c.deployWorkflow, c.mainBranch);
+  const runs = deployRuns(gh, c.deployWorkflow, c.mainBranch);
+  const deployed = runs[0]?.headSha ?? null;
   const open = cards.filter((k) => !closed(k));
-  const derived = {}, split = [];
+  const derived = {}, split = [], tipsOf = {};
   const work = heads.filter((h) => h.branch !== c.mainBranch && !(c.candidatePattern && new RegExp(c.candidatePattern).test(h.branch)));
+  const phaseOf = (card) => {
+    const tips = tipsOf[card.id] = headsFor(card.id, work);
+    return { ...leastAdvanced(card, tips, (h) => derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg), config), at: now };
+  };
   for (const card of open) {
-    const tips = headsFor(card.id, work);
-    derived[card.id] = { ...leastAdvanced(card, tips, (h) => derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg), config), at: now };
+    derived[card.id] = phaseOf(card);
+    const tips = tipsOf[card.id];
     if (tips.length > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
   }
   // A ship run on now: the cards its candidate branch names (branch@sha in one of its last commits) are shipping now.
-  for (const s of shipping(git, heads, c)) for (const id of Object.keys(derived)) {
+  const ships = shipping(git, heads, c);
+  for (const s of ships) for (const id of Object.keys(derived)) {
     const h = derived[id].head;
     if (h && s.names.some((n) => String(h).startsWith(n.sha))) derived[id].shipping = true; // never the branch's name (Security)
   }
+  // Each phase's times from the evidence (#C235), for open cards and those closed in the last STEPS_DAYS days.
+  const times = {};
+  const recent = cards.filter((k) => closed(k) && Number.isFinite(k.doneAt) && k.doneAt > now - STEPS_DAYS * 864e5);
+  for (const card of [...open, ...recent]) {
+    const d = derived[card.id] ?? phaseOf(card);
+    const head = tipsOf[card.id].find((h) => h.sha === d.head);
+    if (!head) continue;
+    const run = ships.find((s) => s.names.some((n) => head.sha.startsWith(n.sha)));
+    const candidate = run ? heads.find((h) => h.branch === run.branch)?.sha ?? null : null;
+    const t = evidenceTimes(git, { card, derived: d, head, line, runs, config: cfg, notes: cfg.collector.notes, candidate });
+    if (Object.keys(t).length) times[card.id] = t;
+  }
   const conflicts = [...open.map((k) => conflict(k, derived[k.id], config)).filter(Boolean), ...split];
-  const doc = { at: now, cards: derived, conflicts, liveButOpen: staleLive(open, derived, config) };
+  const doc = { at: now, cards: derived, times, conflicts, liveButOpen: staleLive(open, derived, config) };
   // "Live now" from the build the site serves, never from main; main's newest version shows beside it while it deploys.
   if (c.liveUrl) doc.live = { ...(live ?? {}), mainVersion: mainVersion(line, c.versionPattern), at: now };
   if (Array.isArray(plan) && plan.length) doc.plan = derivePlan({ nodes: plan, cards, derived, waiting, config, now });
