@@ -890,7 +890,9 @@ function waitGaps(w){const g=[];if(!w||w.done)return g;
   if(w.kind==="decision"&&/(^|\s)A\)\s[\s\S]*\sB\)\s/.test(w.text||"")&&!(Array.isArray(w.options)&&w.options.length))g.push("no A/B buttons");
   if(w.kind==="answer"&&!w.question)g.push("no question");
   return g}
-function initRow(i){
+// where: whose copy this row is ("init" on the current board, "now" in the new layout's Now view), so its reply box's ids
+// (tnote-<where>-<id>, tmsg-<where>-<id>) stay unique with both on the page. Anything else (map's index) means "init".
+function initRow(i,where){const w=typeof where==="string"?where:"init";
   const idx=phaseIndex(i.phase), stuck=i.status==="stuck", queued=i.status==="queued", times=phaseTimes(i.phaseLog,i.status==="done"?i.doneAt:null);
   const skip=Array.isArray(i.skip)?i.skip:[], waits=waitBoxes(i.phaseLog,i.status==="done"?i.doneAt:null);
   const steps=PHASES.map(([k,l],n)=>{if(k==="test"&&skip.includes(k)&&n!==idx)return "";const pre=(waits[k]||[]).map(w=>`<div class="wait ${w.kind}${w.open?" live":""}" title="${w.kind==="gate"?"Waiting on a decision":"Waiting: the agent was busy"} before ${esc(l)}">${w.kind==="gate"?"⏸ Gated":"⧗ Queued"}<small>${esc(w.who)}${w.who?" · ":""}${dur(w.ms)}</small></div>`).join("");const np=i.status!=="done"&&i.nowPhases&&i.nowPhases[k];let c="step";if(np&&n!==idx)c+=" now";else if(skip.includes(k)&&n!==idx)c+=" skip";else if(i.status==="done"||n<idx)c+=" done";else if(n===idx&&i.upNext&&!stuck)c+=" upnext";else if(n===idx&&!(waits[k]||[]).some(w=>w.open))c+=" now"+(stuck?" stuck":queued?" queued":"");
@@ -914,7 +916,7 @@ function initRow(i){
   const wait=i.waitingOn?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
   const started=num(i.createdAt)?`<span>Started ${dayLabel(i.createdAt)} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-i.createdAt)} so far</span>`:"";
   const tn=threadOf(i.id).length,topen=threadOpen(i.id);
-  const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:"Start a thread"}${topen?'<span class="t-badge open">waiting on Manager</span>':""}</summary>${threadHtml(i.id,"init")}</details>`;
+  const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:"Start a thread"}${topen?'<span class="t-badge open">waiting on Manager</span>':""}</summary>${threadHtml(i.id,w)}</details>`;
   return `<div class="i-row"><div><div class="i-name">${cardTag(i)}<strong>${esc(i.name)}</strong>${threadTag(i.id)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}</div>
    ${i.summary?`<div class="w-sub">${esc(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
@@ -924,7 +926,7 @@ function initRow(i){
 // Who is on what: { by: { agent: [open cards] }, names: the roster, then anyone else on a card, notes: meta/crew's idle notes }.
 function crewBy(){
   const open=state.initiatives.filter(i=>i.status!=="done"&&(i.who||Object.keys(i.nowPhases||{}).length));
-  const by={};open.forEach(i=>{const ws=new Set([i.who,...Object.values(i.nowPhases||{}).flat()].filter(Boolean));ws.forEach(w=>{(by[w]=by[w]||[]).push(i)})});
+  const by=Object.create(null);open.forEach(i=>{const ws=new Set([i.who,...Object.values(i.nowPhases||{}).flat()].filter(Boolean));ws.forEach(w=>{(by[w]=by[w]||[]).push(i)})});
   const ROSTER=CONFIG.roster;
   return {by,names:[...ROSTER,...Object.keys(by).filter(n=>!ROSTER.includes(n)).sort()],notes:(state.meta.find(d=>d.id==="crew")||{}).notes||{}}}
 function renderCrew(){
@@ -1010,7 +1012,7 @@ function usageNoteText(start,tok){return "Agent minutes count time between repor
 function renderLive(){const m=state.meta.find(d=>d.id==="live");const gap=liveGap(m,state.events);$("livever").textContent=m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
 // The last 7 days from every card's phaseLog, summed by "who" (the agent) or "phase": { key: { work, busy, gate } } in ms.
 function logTotals(key,now=Date.now()){
-  const since=now-7*864e5, tot={};
+  const since=now-7*864e5, tot=Object.create(null); // keyed by board values: no prototype to reach
   state.initiatives.forEach(i=>{const log=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filter(e=>e&&num(e.start)!=null).sort((a,b)=>a.start-b.start);
     log.forEach((e,k)=>{if(!e.who)return;const next=log[k+1];
       const end=num(e.end)??(next?next.start:(i.status==="done"?(num(i.doneAt)??now):now));
@@ -1153,7 +1155,7 @@ function planHtml(){
   const cards=new Map();for(const i of state.initiatives)if(typeof i.plan==="string"&&i.status!=="dropped"){if(!cards.has(i.plan))cards.set(i.plan,[]);cards.get(i.plan).push(i)}
   const seen=new Set();
   const row=(n,depth)=>{if(seen.has(n.id)||depth>30)return "";seen.add(n.id);
-    const d=n.replacedBy?{state:"replaced"}:(dp&&dp.nodes&&dp.nodes[n.id]&&PLAN_STATES[dp.nodes[n.id].state]?dp.nodes[n.id]:(n.state==="done"?{state:"done"}:null));
+    const d=n.replacedBy?{state:"replaced"}:(dp&&dp.nodes&&dp.nodes[n.id]&&Object.hasOwn(PLAN_STATES,dp.nodes[n.id].state)?dp.nodes[n.id]:(n.state==="done"?{state:"done"}:null));
     const [label,cls]=d?PLAN_STATES[d.state]:["",""];
     const kind=["objective","milestone","step"].includes(n.kind)?n.kind:"step";
     let h=`<li class="pn k-${kind}${d?" pn-"+d.state:""}" data-node="${esc(n.id)}"><div class="pn-line">${d?`<span class="pn-st st-${cls}">${label}</span>`:""}<span class="pn-text">${n.replacedBy?`<s>${linkify(n.text)}</s>`:linkify(n.text)}</span>`;
@@ -1161,7 +1163,7 @@ function planHtml(){
     const o=kind==="objective"&&dp&&dp.objectives&&dp.objectives[n.id];
     if(o&&num(o.total)){const pct=Math.max(0,Math.min(100,Math.round(100*(num(o.done)??0)/o.total)));
       h+=`<span class="pn-bar" role="img" aria-label="${esc(`${num(o.done)??0} of ${o.total} done`)}"><span style="width:${pct}%"></span></span><span class="pn-sub">${esc(`${num(o.done)??0} of ${o.total}`)}</span>`}
-    if(o&&PLAN_CHIPS[o.chip])h+=`<span class="pn-chip st-${PLAN_CHIPS[o.chip][1]}">${PLAN_CHIPS[o.chip][0]}</span>`;
+    if(o&&Object.hasOwn(PLAN_CHIPS,o.chip))h+=`<span class="pn-chip st-${PLAN_CHIPS[o.chip][1]}">${PLAN_CHIPS[o.chip][0]}</span>`;
     h+="</div>";
     if(n.outcome||n.measure)h+=`<div class="pn-sub">${[n.outcome?linkify(n.outcome):"",n.measure?`Measure: ${linkify(n.measure)}`:""].filter(Boolean).join(" · ")}</div>`;
     if(n.replacedBy){const by=byId.get(n.replacedBy);const tid=typeof n.decisionThread==="string"?n.decisionThread:null;const t=tid&&state.threads.find(x=>x.id===tid);
@@ -1195,14 +1197,14 @@ function nowHtml(now=Date.now()){
   const dp=planDerived(),path=n=>{const up=[];for(let p=byId.get(n.parent),d=0;p&&d<30;p=byId.get(p.parent),d++)up.unshift(p.text);return up};
   let h="";
   for(const n of order){const list=groups.get(n.id);if(!list)continue;
-    const d=n.replacedBy?{state:"replaced"}:(dp&&dp.nodes&&dp.nodes[n.id]&&PLAN_STATES[dp.nodes[n.id].state]?dp.nodes[n.id]:null);
+    const d=n.replacedBy?{state:"replaced"}:(dp&&dp.nodes&&dp.nodes[n.id]&&Object.hasOwn(PLAN_STATES,dp.nodes[n.id].state)?dp.nodes[n.id]:null);
     const up=path(n);
-    h+=`<div class="now-group" data-node="${esc(n.id)}"><h3 class="now-head">${d?`<span class="pn-st st-${PLAN_STATES[d.state][1]}">${PLAN_STATES[d.state][0]}</span>`:""}<span>${linkify(n.text)}</span>${up.length?`<span class="now-path">${up.map(t=>esc(t)).join(" › ")}</span>`:""}</h3><div class="panel board">${list.map(initRow).join("")}</div></div>`}
+    h+=`<div class="now-group" data-node="${esc(n.id)}"><h3 class="now-head">${d?`<span class="pn-st st-${PLAN_STATES[d.state][1]}">${PLAN_STATES[d.state][0]}</span>`:""}<span>${linkify(n.text)}</span>${up.length?`<span class="now-path">${up.map(t=>esc(t)).join(" › ")}</span>`:""}</h3><div class="panel board">${list.map(i=>initRow(i,"now")).join("")}</div></div>`}
   const loose=groups.get("");
-  if(loose)h+=`<div class="now-group" data-node=""><h3 class="now-head"><span>Not linked to the plan</span></h3><div class="panel board">${loose.map(initRow).join("")}</div></div>`;
+  if(loose)h+=`<div class="now-group" data-node=""><h3 class="now-head"><span>Not linked to the plan</span></h3><div class="panel board">${loose.map(i=>initRow(i,"now")).join("")}</div></div>`;
   if(!h)h='<div class="empty">Nothing in flight.</div>';
   const shipped=state.initiatives.filter(i=>i.status==="done"&&(num(i.doneAt)??0)>now-DAY).sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0));
-  if(shipped.length)h+=`<details class="now-fold panel"><summary>Shipped in the last 24 h (${shipped.length})</summary><div class="board">${shipped.slice(0,20).map(initRow).join("")}</div></details>`;
+  if(shipped.length)h+=`<details class="now-fold panel"><summary>Shipped in the last 24 h (${shipped.length})</summary><div class="board">${shipped.slice(0,20).map(i=>initRow(i,"now")).join("")}</div></details>`;
   const resolved=resolvedIds(now).filter(id=>now-threadLast(id)<DAY);
   if(resolved.length)h+=`<details class="now-fold panel"><summary>Threads resolved in the last 24 h (${resolved.length})</summary>${resolved.slice(0,30).map(id=>{const n=threadNum(id);return `<div class="now-res">${n?`<a href="#" class="t-ref" data-tref="${esc(id)}">#T${n}</a>`:""}<span>${esc(threadName(id))}</span><span class="now-path">${esc(dur(now-threadLast(id)))} ago</span></div>`}).join("")}</details>`;
   return h}

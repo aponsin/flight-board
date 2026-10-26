@@ -184,3 +184,32 @@ test("the owner's strip: in the new layout, what needs the owner and the New-thr
   assert.deepEqual(panel.kids.map((k) => k.name), ["#ownerpart", "ownerpart", "threads"], "back exactly where it was");
   assert.deepEqual(strip.kids, []);
 });
+
+test("every element id on the page stays unique with the current board and the Now view both drawn (Checker: lost replies)", () => {
+  const b = loadNames(["renderBoard", "nowHtml", "planHtml", "crewHtml"]);
+  const now = Date.now();
+  Object.assign(b.state, {
+    plan: [obj, sign], ideas: [], waiting: [], derived: [], meta: [], ctx: [],
+    threads: [{ id: "c-sign", num: 4, title: "Sign" }],
+    messages: [{ id: "m1", thread: "c-sign", from: "owner", text: "Is the sign ready?", at: now - 6e4 }],
+    initiatives: [
+      { id: "c-sign", name: "Paint the sign", plan: "step-sign", phase: "build", status: "active", etaLive: now + 36e5 },
+      { id: "c-done", name: "Till works", plan: "step-sign", phase: "live", status: "done", doneAt: now - 36e5 },
+    ],
+  });
+  b.renderBoard();
+  const page = [b.els.board.innerHTML, b.els.doneboard.innerHTML, b.nowHtml(now), b.planHtml(), b.crewHtml(now)].join("\n");
+  const ids = [...page.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(ids.includes("tnote-init-c-sign") && ids.includes("tnote-now-c-sign"), "a reply box in each view");
+  assert.deepEqual(ids.filter((id, k) => ids.indexOf(id) !== k), [], "no id twice");
+  assert.match(page, /data-tsend="c-sign" data-where="now"/, "the Now copy's Send finds its own box");
+});
+
+test("a derived state or chip that is an inherited name ('constructor') shows nothing, never breaks the page (Security)", () => {
+  const derived = { nodes: { "obj-shop": { state: "constructor" }, "step-sign": { state: "__proto__" } }, objectives: { "obj-shop": { done: 0, total: 1, chip: "toString" } } };
+  const b = board([obj, sign], { derived, initiatives: [{ id: "c1", name: "A card", plan: "step-sign", phase: "build", status: "active" }] });
+  const plan = b.planHtml();
+  assert.match(plan, /<li class="pn k-objective" data-node="obj-shop">/, "no state chip");
+  assert.doesNotMatch(plan, /pn-chip/);
+  assert.match(b.nowHtml(), /data-node="step-sign"><h3 class="now-head"><span>Sign up<\/span>/);
+});
