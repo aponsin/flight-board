@@ -116,13 +116,14 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     if (!v.ok) { console.error(`Not moved: ${sha.slice(0, 12)} is ${v.reason}.`); process.exit(1); }
     // A copy already there is used only when it is exactly the commit (Checker, Security): a folder planted or edited
     // under a signed commit's name is refused, never run.
+    mkdirSync(root, { recursive: true }); // a first install has no root yet (Checker)
     const fresh = mkdtempSync(join(root, ".check-"));
     try {
       execFileSync("tar", ["-x", "-C", fresh], { input: execFileSync("git", ["archive", "--format=tar", sha], { cwd: repo, maxBuffer: 64 * 1024 * 1024 }) });
       if (existsSync(dir) && !sameTree(dir, fresh)) throw new Error(`${dir} is not exactly ${sha.slice(0, 12)}: move it away and run this again`);
-      if (!existsSync(dir)) { mkdirSync(root, { recursive: true }); renameSync(fresh, dir); }
+      if (!existsSync(dir) && !args.includes("--dry-run")) renameSync(fresh, dir); // a dry run writes nothing (Checker)
     } finally { rmSync(fresh, { recursive: true, force: true }); }
-    if (args.includes("--dry-run")) console.log(`Dry run: ${dir} is exactly ${sha.slice(0, 12)}; would point ${link} at it.`);
+    if (args.includes("--dry-run")) console.log(`Dry run: ${existsSync(dir) ? `${dir} is exactly ${sha.slice(0, 12)}` : `would copy ${sha.slice(0, 12)} to ${dir}`}; would point ${link} at it.`);
     else { swapLink(link, dir); console.log(`current: ${before ? before.slice(0, 12) : "none"} → ${sha.slice(0, 12)} (${dir}). The next collector run uses it.`); }
     if (fromPin === null) console.log("No pinned commit found in the settings to compare with: check by hand whether the owner's files changed.");
     else if (v.ownerFiles.length) console.log(`The gate's hooks, the fence and the refresh hook keep the owner's pinned copy (${pinned.slice(0, 12)}) until the owner's install; changed since: ${v.ownerFiles.join(", ")}.`);
