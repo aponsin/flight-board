@@ -1,7 +1,7 @@
 // #C237: a card's phase comes from its branch's current tip, and a card is one branch.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -121,7 +121,7 @@ test("main and a ship run's candidate branch are never a card's branch, whatever
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
 });
 
-test("the page: the repository's reading says how old it is, greyed past 30 minutes; a card on two branches names the one behind", () => {
+test("the page: the repository's reading says how old it is, and 'old' in the warning colour past 30 minutes; a card on two branches names the one behind", () => {
   const b = loadNames(["evidence", "asOf"]);
   const now = Date.now();
   b.state.derived.push({ id: "all", cards: {
@@ -130,7 +130,11 @@ test("the page: the repository's reading says how old it is, greyed past 30 minu
     z: { phase: "checker", evidence: "e", at: now, branches: ["build/z", "fix/z<b>"], behind: "fix/z<b>" },
   } });
   assert.match(b.evidence({ id: "x", phase: "checker", status: "active" }), /<\/span> <small class="asof" data-asof="\d+" [^>]*>as of 12 min ago<\/small>$/);
-  assert.match(b.evidence({ id: "y", phase: "checker", status: "active" }), /<small class="asof stale" [^>]*>as of 31 min ago</);
+  assert.match(b.evidence({ id: "y", phase: "checker", status: "active" }), /<small class="asof stale" [^>]*>as of 31 min ago · old</);
+  assert.doesNotMatch(b.evidence({ id: "x", phase: "checker", status: "active" }), /old/, "a fresh reading says no more");
+  const css = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8").match(/\.asof\.stale\{[^}]*\}/)[0];
+  assert.match(css, /color:var\(--warn\)/, "the warning colour (passes 4.5:1 with the badges' check)");
+  assert.doesNotMatch(css, /opacity/, "never dimmed (Designer: about 2:1 at half opacity)");
   const z = b.evidence({ id: "z", phase: "checker", status: "active" });
   assert.match(z, /^<span class="evidence clash"[^>]*>Repository: Checker · 2 branches, fix\/z&lt;b&gt; behind<\/span>/, "a split shows as a conflict, the branch escaped");
   assert.equal(b.asOf(undefined), "", "no reading time, nothing said");

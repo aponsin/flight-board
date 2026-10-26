@@ -1,6 +1,15 @@
 # Changelog
 
-## 0.3.2 - Unreleased
+## 0.3.3 - Unreleased
+
+### Fixed
+- The refresh hook reads a READY only inside a session message's own body, never in text after it closes; and it now sees the usual wordings: READY anywhere in the first line (not "not READY"), a READY line after a bullet, and "Re-sign please" (#C265, Checker).
+- A stale "as of" stamp says "· old" in the warning colour at full contrast; dimmed to half, it read at about 2:1 (#C265, Designer).
+
+## 0.3.2 - 2026-10-26
+
+### Fixed
+- The gate lays its journal over each collection from when that collection was listed, not from the export's newest file, so an ask and thread written while an export ran are seen (#C264: the lead's messages into c226-iphone-test were refused).
 
 ### Added
 - Phase times from the evidence (#C235): the collector works out when each phase ran from the repository, not from steps someone remembered to log: plan from the card to its branch's first commit, build to READY (never after the first sign-off), each review to its sign-off note's time (in the order the notes came; the one the card waits on runs open), ship from the ship run taking the work to the first deploy run on main that has it, live that run. Open cards and those closed in the last 7 days, in `derived/all` as `times`; one deploy-run list per run. On the page each phase the evidence shows replaces the steps' times for it (who and waits kept); steps fill only phases with no evidence (a test, a design talk, a one-commit branch's plan and build). A finished phase with neither says "no record" in grey.

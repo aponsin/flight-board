@@ -126,7 +126,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .reply label{font-size:.82rem;color:var(--muted)}
 .reply textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
-.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.clash{border-color:var(--bad);color:var(--bad)}.asof{font:.7rem var(--mono);color:var(--muted)}.asof.stale{opacity:.5}
+.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.clash{border-color:var(--bad);color:var(--bad)}.asof{font:.7rem var(--mono);color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
 .t-msg{margin:6px 0}.t-msg .t-from{font-weight:600}.t-msg .t-at{font-size:.8rem;color:var(--muted)}
@@ -686,10 +686,12 @@ function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const nam
   // A card on two branches (#C237): the phase is the one behind, named; one card should be one branch.
   const split=Array.isArray(d.branches)&&d.branches.length>1&&i.status!=="done"?` · ${d.branches.length} branches, ${esc(d.behind||"")} behind`:"";
   return `<span class="evidence${clash||split?" clash":""}" title="${esc(d.evidence||"")}">${clash&&!i.byEvidence?"Repository says ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}${steps}${split}</span>${asOf(d.at)}`}
-// How old the repository's reading is (#C237): "as of 12 min ago", greyed once it is older than half an hour.
+// How old the repository's reading is (#C237): "as of 12 min ago"; past half an hour it says "· old" in the warning
+// colour, at full contrast (#C265: dimmed, it was hardest to read just when it mattered).
 const ASOF_STALE=30*60e3;
+function asOfText(at,now=Date.now()){return "as of "+dur(now-at)+" ago"+(now-at>ASOF_STALE?" · old":"")}
 function asOf(at,now=Date.now()){if(num(at)==null)return "";const old=now-at>ASOF_STALE;
-  return ` <small class="asof${old?" stale":""}" data-asof="${at}" title="When the collector last read the repository">as of ${dur(now-at)} ago</small>`}
+  return ` <small class="asof${old?" stale":""}" data-asof="${at}" title="When the collector last read the repository">${asOfText(at,now)}</small>`}
 
 // The gate's stuck line: after three refusals in a row for one item, the lead writes meta/stuck {"<collection>:<id>":
 // {reason, at}}, and the line stays until a write for that item passes (the gate makes that write clear it).
@@ -1338,7 +1340,7 @@ function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});
   document.querySelectorAll("[data-next]").forEach(e=>{const t=+e.dataset.next;e.textContent=t>Date.now()?"in "+dur(t-Date.now()):"due now"});
-  document.querySelectorAll("[data-asof]").forEach(e=>{const t=+e.dataset.asof;e.textContent="as of "+dur(Date.now()-t)+" ago";e.classList.toggle("stale",Date.now()-t>ASOF_STALE)});}
+  document.querySelectorAll("[data-asof]").forEach(e=>{const t=+e.dataset.asof;e.textContent=asOfText(t);e.classList.toggle("stale",Date.now()-t>ASOF_STALE)});}
 $("viewlink").addEventListener("click",()=>setView(view==="v3"?"v2":"v3"));
 document.querySelectorAll("[data-v3]").forEach(b=>b.addEventListener("click",()=>setV3View(b.dataset.v3)));
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-v3view")}catch(e){}if(v==="plan"||v==="crew")setV3View(v)})();
