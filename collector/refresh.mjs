@@ -63,7 +63,7 @@ export function ownerSaid(text) {
 // with it (after a bullet or emphasis), or a body that starts "Re-sign please". It only asks for a run, so nothing in it
 // reaches the lead's feedback; a stray match costs one debounced run.
 const BODY = /<cross-session-message\b[^>]*>([\s\S]*?)(?:<\/cross-session-message>|$)/g;
-const FIRST = /(?<!\bnot )\bREADY\b/;
+const FIRST = /(?<!\b[Nn][Oo][Tt] )\bREADY\b/;
 const LINE = /^[ \t>*_•-]*READY\b/m;
 const RESIGN = /^\s*Re-sign please\b/i;
 export function saysReady(text) {
