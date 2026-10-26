@@ -27,6 +27,18 @@ export function headFor(id, heads) {
   return pick(byTrailer) ?? pick(byName);
 }
 
+// Every branch the card has, each at its current tip (#C237): the newest matching head per branch, by trailer or by
+// name, newest first. A card is one branch; a second one is a rework that belongs in a sub-card.
+export function headsFor(id, heads) {
+  const tips = new Map();
+  for (const h of heads) {
+    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id) continue;
+    const had = tips.get(h.branch);
+    if (!had || (h.at ?? 0) > (had.at ?? 0)) tips.set(h.branch, h);
+  }
+  return [...tips.values()].sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
+}
+
 // The review phases a card needs: the config's review phases, minus the ones its skips or its fields rule out.
 export function reviewsFor(card, config) {
   const c = config.collector;

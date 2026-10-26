@@ -12,11 +12,11 @@ import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
-import { headFor, derivePhase, conflict, staleLive, closed } from "./derive.mjs";
+import { headsFor, derivePhase, conflict, staleLive, closed } from "./derive.mjs";
 import { remoteHeads, mainLine, deployedSha, factsFor, shippedHeads, mainVersion, liveBuild } from "./facts.mjs";
 import { nudges } from "./nudges.mjs";
 import { derivePlan } from "./plan-state.mjs";
-import { idText } from "./text.mjs";
+import { idText, lineText } from "./text.mjs";
 import { runMark, localMain, localShips } from "./refresh.mjs";
 import { allocate } from "../scripts/thread-ids.mjs";
 
@@ -151,22 +151,45 @@ export function shipping(git, heads, c) {
   });
 }
 
+// A branch's current tip, never an older commit of it the main line once shipped (#C237: a card read live from its
+// first ship while its newer tip waited): a shipped head counts only for a branch gone from the remote.
+export function tipsOnly(remote, shipped) {
+  const there = new Set(remote.map((h) => h.branch));
+  return shipped.filter((h) => !there.has(h.branch));
+}
+
+// The card's phase from each of its branches' tips: the least advanced one (live only when every tip is deployed),
+// naming the branch behind when there are several. derive(head) is derivePhase for that head.
+export function leastAdvanced(card, tips, derive, config) {
+  if (tips.length <= 1) return derive(tips[0] ?? null);
+  const order = config.phases.map((p) => p[0]);
+  const all = tips.map((h) => ({ h, d: derive(h) }));
+  const { h, d } = all.reduce((a, b) => (order.indexOf(b.d.phase) < order.indexOf(a.d.phase) ? b : a));
+  return { ...d, branches: tips.map((t) => t.branch), behind: h.branch, evidence: `${d.evidence}; ${tips.length} branches, ${lineText(h.branch, 60)} is behind` };
+}
+
 // live: liveBuild()'s answer for this run (null when there is no liveUrl or it couldn't be read).
 export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null }) {
   const c = config.collector;
   const cfg = { ...config, collector: { ...c, notes: localNotes(c.notes) } };
   const line = mainLine(git, c.remote, c.mainBranch);
-  const heads = [...remoteHeads(git, c.remote), ...shippedHeads(git, line, c.shippedPattern)];
+  const remote = remoteHeads(git, c.remote);
+  const heads = [...remote, ...tipsOnly(remote, shippedHeads(git, line, c.shippedPattern))];
   const deployed = deployedSha(gh, c.deployWorkflow, c.mainBranch);
   const open = cards.filter((k) => !closed(k));
-  const derived = {};
-  for (const card of open) derived[card.id] = { ...derivePhase(card, factsFor(git, headFor(card.id, heads), { config: cfg, line, deployed }), cfg), at: now };
+  const derived = {}, split = [];
+  const work = heads.filter((h) => h.branch !== c.mainBranch && !(c.candidatePattern && new RegExp(c.candidatePattern).test(h.branch)));
+  for (const card of open) {
+    const tips = headsFor(card.id, work);
+    derived[card.id] = { ...leastAdvanced(card, tips, (h) => derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg), config), at: now };
+    if (tips.length > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
+  }
   // A ship run on now: the cards its candidate branch names (branch@sha in one of its last commits) are shipping now.
   for (const s of shipping(git, heads, c)) for (const id of Object.keys(derived)) {
     const h = derived[id].head;
     if (h && s.names.some((n) => String(h).startsWith(n.sha))) derived[id].shipping = true; // never the branch's name (Security)
   }
-  const conflicts = open.map((k) => conflict(k, derived[k.id], config)).filter(Boolean);
+  const conflicts = [...open.map((k) => conflict(k, derived[k.id], config)).filter(Boolean), ...split];
   const doc = { at: now, cards: derived, conflicts, liveButOpen: staleLive(open, derived, config) };
   // "Live now" from the build the site serves, never from main; main's newest version shows beside it while it deploys.
   if (c.liveUrl) doc.live = { ...(live ?? {}), mainVersion: mainVersion(line, c.versionPattern), at: now };
