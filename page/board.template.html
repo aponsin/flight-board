@@ -277,7 +277,10 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .crew3-t h3{margin:0;font:700 1.05rem var(--display);letter-spacing:.04em;text-transform:uppercase;display:flex;justify-content:space-between;gap:8px}
 .crew3-t .mdl{font:400 .8rem var(--mono);color:var(--muted);text-transform:none;letter-spacing:0}
 .crew3-mem{display:flex;align-items:center;gap:8px;margin:6px 0;font:600 .8rem var(--mono);color:var(--muted)}
-.crew3-mem .ctx-bar{flex:1}
+.crew3-mem .ctx-bar{flex:1;height:6px}
+.crew3-mem.g .ctx-bar i{background:var(--ok)}.crew3-mem.a .ctx-bar i{background:var(--warn)}.crew3-mem.r .ctx-bar i{background:var(--bad)}
+.crew3-mem.r .pc{color:var(--bad)}.crew3-mem.a .pc{color:var(--warn)}
+.crew3-mem .sv{color:var(--bad);text-transform:uppercase}
 .crew3-on{display:flex;flex-direction:column;gap:2px;font-size:.92rem}
 .crew3-on .idle{color:var(--muted)}
 table.crew3-ph{margin-top:14px}
@@ -1212,7 +1215,7 @@ function crewHtml(now=Date.now()){
     const items=(by[n]||[]).slice().sort(openOrder);
     const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1];return `<span>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(notes[n]||"Idle")}</span>`;
     return `<div class="panel crew3-t" data-agent="${esc(n)}"><h3><span>${esc(n)}</span>${md.model||md.effort?`<span class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</span>`:""}</h3>`+
-      (p!=null?`<div class="crew3-mem ctx-t ${c}${m.saved?" saved":""}"${old?' style="opacity:.55"':""}><span>Memory ${p}%</span><span class="ctx-bar"><i style="width:${p}%"></i></span>${m.saved?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
+      (p!=null?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${p}%</span><span class="ctx-bar"><i style="width:${p}%"></i></span>${m.saved?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
       `<div class="crew3-on">${on}</div></div>`}).join("");
   const tot=logTotals("phase",now),fmt=ms=>ms?dur(ms):"—";
   const rows=PHASES.filter(([k])=>tot[k]).map(([k,label])=>`<tr><td>${esc(label)}</td><td>${fmt(tot[k].work)}</td><td>${fmt(tot[k].busy)}</td><td>${fmt(tot[k].gate)}</td></tr>`).join("");
