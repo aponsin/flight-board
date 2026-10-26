@@ -91,6 +91,10 @@ export function writeErrors(w, { config, who, now }) {
   if (collection === "derived" && who.role !== COLLECTOR_ROLE && !who.manager) {
     return [`derived/${id} is written by the ${COLLECTOR_ROLE} (or ${config.gate.managerRole}), not ${who.role}`];
   }
+  // A card's archived timings (scripts/steps-archive.mjs) stand in for its steps on the page, and deleting a step erases
+  // a card's history: both are the lead's alone, so no agent can make a card look shipped or rewrite its record (Security).
+  if (collection === "timings" && !who.manager) return [`timings/${idText(id)}: only ${config.gate.managerRole} archives steps (scripts/steps-archive.mjs)`];
+  if (collection === "steps" && op === "delete" && !who.manager) return [`steps/${idText(id)}: only ${config.gate.managerRole} deletes steps (scripts/steps-archive.mjs); log a new step instead`];
   // Thread numbers (#T27) and names: threads/<thread id> {num, title} and the counter meta/threadSeq {next} are the lead's
   // alone (scripts/thread-ids.mjs allocates them). The owner renames a thread from the page, which writes only a title.
   if (collection === "threads" || (collection === "meta" && id === THREAD_SEQ)) {
@@ -254,7 +258,7 @@ export function threadErrors(w, { mirror, batch = [], now = Date.now() }) {
   if (box && Number(box[1]) <= now + 60e3 && now - Number(box[1]) <= OWNER_THREAD_DAYS * 864e5) return [];
   const has = (c) => (mirror.docs[c] ?? []).some((d) => d.id === t) || batch.some((b) => b.collection === c && b.doc_id === t && b.op !== "delete");
   if (["initiatives", "waiting", "ideas"].some(has) || (mirror.docs.messages ?? []).some((m) => m.thread === t)) return [];
-  return [`thread ${t} is no item on the board, no thread with messages and no new thread of the owner's: reply under the item with its id as the thread`];
+  return [`thread ${idText(t)} is no item on the board, no thread with messages and no new thread of the owner's: reply under the item with its id as the thread`];
 }
 
 // Every thread has its number from the start (thread-num-always; the owner, 2026-10-26: items showed without their #T):
@@ -274,7 +278,7 @@ export function threadNumberedErrors(w, { mirror, batch = [] }) {
   const inBatch = batch.find((b) => b.collection === "threads" && b.doc_id === t && b.op !== "delete");
   const after = inBatch ? { ...(inBatch.op === "update" ? mirror.docs.threads.find((d) => d.id === t) : {}), ...inBatch.data } : null;
   if (numbered(after)) return [];
-  return [`thread ${t} has no number yet: set threads/${t} {num: meta/${THREAD_SEQ}.next, title} and move meta/${THREAD_SEQ} in the same batch (scripts/thread-ids.mjs)`];
+  return [`thread ${idText(t)} has no number yet: set threads/${idText(t)} {num: meta/${THREAD_SEQ}.next, title} and move meta/${THREAD_SEQ} in the same batch (scripts/thread-ids.mjs); only the lead numbers threads, so if that isn't you, ask it to number this one first`];
 }
 
 // One open phase per card (Build and Checker once both lit on one card because a build step was never ended). Starting

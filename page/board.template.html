@@ -1098,18 +1098,14 @@ function byEvidence(out){const d=derivedOf(out.id);
   if(stepPhase===d.phase)return res;
   const on=(out.nowPhases||{})[d.phase];res.who=on&&on.length?on[0]:null;res.upNext=!res.who;
   return res}
-// A closed card whose steps were archived (scripts/steps-archive.mjs, #C210) has its timings in timings/<id>: its
-// phase entries and what its live step said. Its steps are being deleted, so they no longer count.
-function fromTimings(i,t){const skip=new Set(Array.isArray(i.skip)?i.skip:[]);
-  (CONFIG.skips||[]).forEach(k=>{if(k.unlessLevel&&i.level&&i.level!==k.unlessLevel)skip.add(k.phase);if(k.whenFalse&&i[k.whenFalse]===false)skip.add(k.phase)});
-  const log=Array.isArray(t.phaseLog)?t.phaseLog.filter(e=>e&&e.phase&&num(e.start)!=null):[];
-  if(!log.some(e=>e.phase==="test"))skip.add("test");
-  const out={...i,skip:[...skip],phaseLog:(Array.isArray(i.phaseLog)?i.phaseLog:[]).concat(log)};
-  if(t.live){out.status="done";out.phase=LIVE_PHASE;if(num(t.doneAt)!=null)out.doneAt=t.doneAt;if(t.version)out.version=t.version;if(t.shipDetail)out.shipDetail=t.shipDetail}
-  return out}
+// A closed card's archived steps (scripts/steps-archive.mjs, #C210) are in timings/<id>.steps; any logged after the
+// archive are still in steps. Both count, each step once (by its id). An open card's timings never count (Security).
+function stepsOf(i){const mine=state.steps.filter(e=>e&&e.init===i.id);
+  const t=(i.status==="done"||i.status==="dropped")&&state.timings.find(x=>x&&x.id===i.id);
+  if(!t||!Array.isArray(t.steps))return mine;
+  const seen=new Set(mine.map(e=>e.id));return mine.concat(t.steps.filter(e=>e&&e.init===i.id&&!seen.has(e.id)))}
 function fromSteps(i){
-  const t=state.timings.find(x=>x&&x.id===i.id);if(t)return fromTimings(i,t);
-  const evs=state.steps.filter(e=>e&&e.init===i.id&&e.phase&&num(e.at)!=null).sort((a,b)=>a.at-b.at);
+  const evs=stepsOf(i).filter(e=>e&&e.phase&&num(e.at)!=null).sort((a,b)=>a.at-b.at);
   const skip=new Set(Array.isArray(i.skip)?i.skip:[]);
   // The configured skips: a phase only at a given level, or skipped when an item field is false.
   (CONFIG.skips||[]).forEach(k=>{if(k.unlessLevel&&i.level&&i.level!==k.unlessLevel)skip.add(k.phase);if(k.whenFalse&&i[k.whenFalse]===false)skip.add(k.phase)});
