@@ -132,7 +132,8 @@ export function writeErrors(w, { config, who, now }) {
       if (!data.size) e.push("no size");
       for (const g of rules.gaps({ status: "active", ...data })) if (!/stalled|never started|over 1 h old|ETA passed/.test(g)) e.push(g);
     }
-    if (op === "update" && "nextNote" in data && typeof data.nextNoteAt !== "number" && !(data.nextNote && data.nextNote.__delete__)) e.push("nextNote set without nextNoteAt");
+    if (op === "update" && "nextNote" in data && typeof data.nextNoteAt !== "number" && !(data.nextNote && data.nextNote.__delete__)) e.push("nextNote set without nextNoteAt");    // The board shows the repository's version (#C211); a hand-written one only went stale. Removing it is fine.
+    if ((op === "set" || op === "update") && "plannedVersion" in data && !(data.plannedVersion && data.plannedVersion.__delete__)) e.push("plannedVersion is retired: the board shows the version the repository ships it in");
   }
   if (collection === "waiting") {
     // Rule 7: an agent's passing state ("needs the user") goes down the nudge path; it never becomes an item.

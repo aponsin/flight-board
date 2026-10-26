@@ -19,7 +19,9 @@ export const DEFAULTS = {
   // notes ref its sign-off is written to. deployWorkflow: the CI workflow whose successful run on the main branch means
   // live. lanePhases: the phases where one owner holds one card at a time (reviews and shipping queue). versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
   // how such a subject names each branch it shipped and its commit (groups: branch, sha), for branches deleted since.
-  collector: { repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "",
+  // liveUrl: the live site the board's "Live now" reads (https, or empty for none); liveTag: how its page names the
+  // build it serves (groups: version, commit).
+  collector: { repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", liveUrl: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
     // Runs on demand (collector/refresh.mjs): the checkouts whose origin/main moving means a ship (local refs, no fetch), the
     // scheduled task the lead is told to run, the quiet minutes after a run (or an ask) and how long a run may take.
     refresh: { repos: [], taskId: "board-collector", debounceMin: 10, flightMin: 15 } },
@@ -85,7 +87,8 @@ export function checkConfig(c) {
       }
       for (const f of ["buildPhase", "shipPhase", "livePhase"]) if (k[f] !== undefined && !phaseKeys2.includes(k[f])) out.push(`collector.${f}: one of the phases`);
       if (k.lanePhases !== undefined && !(Array.isArray(k.lanePhases) && k.lanePhases.every((p) => phaseKeys2.includes(p)))) out.push("collector.lanePhases: a list of phases");
-      for (const f of ["versionPattern", "shippedPattern"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
+      for (const f of ["versionPattern", "shippedPattern", "liveTag"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
+      if (k.liveUrl !== undefined && !(k.liveUrl === "" || (typeof k.liveUrl === "string" && k.liveUrl.length <= 300 && /^https:\/\/[^\s/?#]+(\/[^\s]*)?$/.test(k.liveUrl)))) out.push("collector.liveUrl: an https address, or empty");
       if (k.refresh !== undefined) {
         const r = k.refresh;
         if (!r || typeof r !== "object" || Array.isArray(r)) out.push("collector.refresh: an object");

@@ -65,7 +65,7 @@ test("a card's number shows as #C, never as a thread's #T", () => {
 const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01" });
 const who = { role: "Builder", manager: false };
 const now = Date.now() - 1234;
-const card = { name: "X", size: "S", status: "active", level: "Quick", plannedVersion: "1.0.0", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now, plan: "keep-lights-on" };
+const card = { name: "X", size: "S", status: "active", level: "Quick", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now, plan: "keep-lights-on" };
 const mirror = (initiatives = []) => ({ docs: { initiatives, plan: [{ id: "keep-lights-on", parent: null, order: 1, text: "K", kind: "objective" }], waiting: [], ideas: [], messages: [], derived: [] } });
 const seq = (next, op = "update", if_version = 3) => ({ op, collection: "meta", doc_id: CARD_SEQ, data: { next }, ...(if_version ? { if_version } : {}) });
 const errs = (writes, { m = mirror(), state = {} } = {}) => checkWrites(writes, { config, who, now, state, mirror: m }).errors.join(" | ");

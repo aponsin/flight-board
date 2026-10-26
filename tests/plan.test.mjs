@@ -14,7 +14,7 @@ const node = (over = {}) => ({ parent: null, order: 1, text: "Open the shop", ki
 const set = (id, data, collection = "plan") => ({ op: "set", collection, doc_id: id, data });
 const upd = (id, data, collection = "plan") => ({ op: "update", collection, doc_id: id, data });
 const has = (errs, part) => assert.ok(errs.some((e) => e.includes(part)), `"${part}" in: ${errs.join(" | ")}`);
-const card = { name: "X", size: "S", status: "active", level: "Quick", plannedVersion: "1.0.0", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now };
+const card = { name: "X", size: "S", status: "active", level: "Quick", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now };
 const mirror = (plan, initiatives = []) => ({ docs: { plan, initiatives, waiting: [], ideas: [], messages: [], derived: [] } });
 
 test("a node: the lead's alone, its fields checked, never deleted", () => {

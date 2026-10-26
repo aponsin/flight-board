@@ -869,7 +869,6 @@ function gaps(i){const g=[],now=Date.now();
   const eta=cardEta(i);if(!eta)g.push("no ETA");else if(eta<now)g.push("ETA passed");
   if(!i.nextNote)g.push("no next step");else if(num(i.nextNoteAt)&&now-i.nextNoteAt>36e5)g.push("next step over 1 h old");
   if(!i.level)g.push("no review level");
-  else if(i.level!=="None"&&!i.plannedVersion)g.push("no planned version");
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];
   if(!num(i.lastStepAt)&&!log.length){if(num(i.createdAt)&&now-i.createdAt>9e5)g.push("never started")}
   return g}
@@ -879,6 +878,20 @@ function stalled(i){if(!i||i.status!=="active"||i.who===OWNER||(i.byEvidence&&i.
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];if(log.some(e=>e&&e.wait&&e.end==null))return 0;
   const last=num(i.lastStepAt)??log.reduce((m,e)=>Math.max(m,num(e&&e.end)??num(e&&e.start)??0),0);
   if(!last)return 0;const m=Math.floor((Date.now()-last)/60000);return m>=30?m:0}
+// A card's version is the repository's, never written by hand (#C211): live or deploying, the version it went out in;
+// signed and waiting, its place in the shipping queue (signed cards by when they went READY); else what it is in.
+const SHIP_PHASE=(CONFIG.collector&&CONFIG.collector.shipPhase)||"ship";
+const ORD=n=>n+(n%100>=11&&n%100<=13?"th":["th","st","nd","rd"][n%10]||"th");
+function shipQueue(){const all=state.derived.find(d=>d.id==="all"),cards=all&&all.cards||{};
+  const open=new Set(state.initRaw.filter(i=>i&&i.status!=="done"&&i.status!=="dropped").map(i=>i.id));
+  return Object.keys(cards).filter(id=>open.has(id)&&cards[id]&&cards[id].phase===SHIP_PHASE&&!cards[id].version&&cards[id].firm!==false)
+    .sort((a,b)=>(num(cards[a].readyAt)??Infinity)-(num(cards[b].readyAt)??Infinity)||(a<b?-1:1))}
+function versionNote(i){const d=derivedOf(i.id);if(!d||!d.phase||d.firm===false&&d.phase!==BUILD_PHASE)return "";
+  if(d.phase===LIVE_PHASE)return d.version?`Live in <b>v${esc(d.version)}</b>`:"Live";
+  if(d.phase===SHIP_PHASE&&d.version)return `Deploying <b>v${esc(d.version)}</b>`;
+  if(d.phase===SHIP_PHASE){const k=shipQueue().indexOf(i.id);return k===0?"<b>Ships next</b>":k>0?`<b>${ORD(k+1)}</b> in queue`:""}
+  if(d.phase===BUILD_PHASE||d.phase==="test")return "Building";
+  return "In review"}
 // The header's "Live now" must match the newest version that shipped.
 function verParts(v){return String(v||"").replace(/^v/,"").split(".").map(n=>parseInt(n,10)||0)}
 function verCmp(a,b){const x=verParts(a),y=verParts(b);for(let k=0;k<3;k++){if((x[k]||0)!==(y[k]||0))return (x[k]||0)-(y[k]||0)}return 0}
@@ -911,7 +924,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   if(i.status==="done") etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"")}</div><div class="lbl">${num(i.doneAt)?dayLabel(i.doneAt):""}</div>`;
   else if(eta) etaHtml=`<div class="lbl">Live in</div><div class="big" data-eta="${eta}">${eta>Date.now()?dur(eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(eta)}${derivedEta(i)==null?" (declared)":""}</div>`;
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
-  if(i.status!=="done"&&i.plannedVersion) etaHtml+=`<div class="pv">Planned in <b>${esc(i.plannedVersion)}</b></div>`;
+  const vn=i.status!=="done"?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
   const st=stalled(i);
   const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":st?"Stalled":"In flight";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
@@ -1013,7 +1026,13 @@ function renderUsage(){
 }
 // The note under the usage chart: the first day is partial only when the config names it (boardStart).
 function usageNoteText(start,tok){return "Agent minutes count time between reported steps (a step left open counts 2 h at most)."+(start?` The board started on ${start}, so that day is partial.`:"")+(tok?` About ${(tok/1e6).toFixed(1)}M tokens in the last 7 days (approximate).`:" Tokens are approximate, per day.")}
-function renderLive(){const m=state.meta.find(d=>d.id==="live");const gap=liveGap(m,state.events);$("livever").textContent=m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
+// "Live now" is what the live site serves (the collector reads its build tag: derived/all.live), and "deploying" while
+// main names a newer version. Without that reading, the lead's meta/live as before.
+function liveText(){const all=state.derived.find(d=>d.id==="all"),l=all&&all.live;
+  if(l&&typeof l.version==="string"&&l.version){const ahead=typeof l.mainVersion==="string"&&verCmp(l.mainVersion,l.version)>0;
+    return "Live now: v"+l.version+(ahead?" · deploying v"+l.mainVersion:"")}
+  const m=state.meta.find(d=>d.id==="live");const gap=liveGap(m,state.events);return m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
+function renderLive(){$("livever").textContent=liveText()}
 // The last 7 days from every card's phaseLog, summed by "who" (the agent) or "phase": { key: { work, busy, gate } } in ms.
 function logTotals(key,now=Date.now()){
   const since=now-7*864e5, tot=Object.create(null); // keyed by board values: no prototype to reach

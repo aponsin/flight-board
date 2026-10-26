@@ -13,7 +13,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
 import { headFor, derivePhase, conflict, staleLive, closed } from "./derive.mjs";
-import { remoteHeads, mainLine, deployedSha, factsFor, shippedHeads } from "./facts.mjs";
+import { remoteHeads, mainLine, deployedSha, factsFor, shippedHeads, mainVersion, liveBuild } from "./facts.mjs";
 import { nudges } from "./nudges.mjs";
 import { derivePlan } from "./plan-state.mjs";
 import { idText } from "./text.mjs";
@@ -119,7 +119,8 @@ export function runNudges(dir, config, docs, now) {
 }
 
 // plan, waiting: the board's plan nodes and asks (v3): the plan's states go out with the cards' phases.
-export function collect({ config, cards, git, gh, now, plan = [], waiting = [] }) {
+// live: liveBuild()'s answer for this run (null when there is no liveUrl or it couldn't be read).
+export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null }) {
   const c = config.collector;
   const cfg = { ...config, collector: { ...c, notes: localNotes(c.notes) } };
   const line = mainLine(git, c.remote, c.mainBranch);
@@ -130,6 +131,8 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [] }
   for (const card of open) derived[card.id] = { ...derivePhase(card, factsFor(git, headFor(card.id, heads), { config: cfg, line, deployed }), cfg), at: now };
   const conflicts = open.map((k) => conflict(k, derived[k.id], config)).filter(Boolean);
   const doc = { at: now, cards: derived, conflicts, liveButOpen: staleLive(open, derived, config) };
+  // "Live now" from the build the site serves, never from main; main's newest version shows beside it while it deploys.
+  if (c.liveUrl) doc.live = { ...(live ?? {}), mainVersion: mainVersion(line, c.versionPattern), at: now };
   if (Array.isArray(plan) && plan.length) doc.plan = derivePlan({ nodes: plan, cards, derived, waiting, config, now });
   return { doc, conflicts };
 }
@@ -180,7 +183,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     git(["fetch", "-q", config.collector.remote, "+refs/notes/*:refs/notes/flight-board/*"]);
   }
   const now = Date.now();
-  const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [] });
+  const live = await liveBuild(fetch, config.collector.liveUrl, config.collector.liveTag);
+  const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live });
   const nudged = { lines: runNudges(dir, config, mirror.docs, now) };
   const out = outPath(config, dir);
   mkdirSync(dirname(out), { recursive: true });

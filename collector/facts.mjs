@@ -67,6 +67,25 @@ export function deployedSha(gh, workflow, main) {
   } catch { return null; }
 }
 
+// The newest version the main line names (versionPattern), or null: what main will serve once deployed.
+export function mainVersion(line, pattern) {
+  const re = new RegExp(pattern);
+  for (let k = line.length - 1; k >= 0; k--) { const m = re.exec(line[k].subject); if (m) return m[1] ?? m[0]; }
+  return null;
+}
+
+// The build the live site serves, from its page (liveTag's groups: version, commit), or null when it can't be read.
+// fetchImpl: fetch; one GET, 10 seconds at most, no cookies; only the page's first 256 KB are read.
+export async function liveBuild(fetchImpl, url, tag) {
+  if (!url) return null;
+  try {
+    const r = await fetchImpl(url, { redirect: "follow", credentials: "omit", headers: { "Cache-Control": "no-cache" }, signal: AbortSignal.timeout(10_000) });
+    if (!r.ok) return null;
+    const m = new RegExp(tag).exec((await r.text()).slice(0, 262144));
+    return m && /^\d+\.\d+\.\d+$/.test(m[1] ?? "") && /^[0-9a-f]{7,40}$/.test(m[2] ?? "") ? { version: m[1], commit: m[2] } : null;
+  } catch { return null; }
+}
+
 // Everything derivePhase needs for one head.
 export function factsFor(git, head, { config, line, deployed }) {
   const c = config.collector;

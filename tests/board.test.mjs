@@ -181,7 +181,7 @@ test("an open item with no ETA, no next step or no review level is flagged", () 
 test("a complete open item has no gaps; a done item is never flagged", () => {
   const b = loadBoard();
   const now = Date.now();
-  const ok = item(b, "x", [step("x", "build", "Admin", "start", now)], { etaLive: now + 3600e3, nextNote: "Admin building.", nextNoteAt: now, plannedVersion: "1.0.0" });
+  const ok = item(b, "x", [step("x", "build", "Admin", "start", now)], { etaLive: now + 3600e3, nextNote: "Admin building.", nextNoteAt: now });
   assert.deepEqual([...b.gaps(ok)], []);
   const done = item(b, "x", [step("x", "live", "Release", "end", now, { version: "v1" })]);
   assert.deepEqual([...b.gaps(done)], []);
@@ -233,7 +233,7 @@ test("a folded Answer is clipped to three lines by the page's styles", async () 
 test("9. stalled: in flight with no step for 30+ min shows a Stalled flag, not a Manager-missed line", () => {
   const b = loadBoard();
   const old = Date.now() - 31 * 60e3;
-  const base = { etaLive: Date.now() + 1, nextNote: "x", nextNoteAt: Date.now(), plannedVersion: "1.0.0" };
+  const base = { etaLive: Date.now() + 1, nextNote: "x", nextNoteAt: Date.now() };
   const i = item(b, "x", [step("x", "build", "Admin", "start", old - 1), step("x", "build", "Admin", "end", old)], base);
   assert.equal(b.stalled(i), 31);
   assert.ok(![...b.gaps(i)].some((g) => /stalled/.test(g)));
@@ -263,11 +263,10 @@ test("10. never started: created 15+ min ago with no step logged", () => {
   assert.ok([...b.gaps(i)].includes("never started"));
 });
 
-test("11. no planned version on a code item (Quick or Full), fine on None", () => {
+test("11. (retired, #C211) a card without a planned version is no gap: the board shows the repository's version", () => {
   const b = loadBoard();
   const base = { etaLive: Date.now() + 1, nextNote: "x", nextNoteAt: Date.now() };
-  assert.ok([...b.gaps(item(b, "x", [step("x", "build", "A", "start", Date.now())], { ...base, level: "Quick" }))].includes("no planned version"));
-  assert.ok(![...b.gaps(item(b, "x", [step("x", "build", "A", "start", Date.now())], { ...base, level: "None" }))].includes("no planned version"));
+  assert.ok(![...b.gaps(item(b, "x", [step("x", "build", "A", "start", Date.now())], { ...base, level: "Quick" }))].some((g) => /planned version/.test(g)));
 });
 
 test("12. a choice written as A) ... B) ... without the A/B buttons", () => {
