@@ -21,25 +21,33 @@ function pageRules() {
 // The counter thread numbers come from (meta/threadSeq {next}).
 export const THREAD_SEQ = "threadSeq";
 
-// A batch that numbers threads also moves the counter, pinned (if_version) so two allocations can't both pass: its nums
-// are distinct and run up to the counter's new next - 1, with no gap. The counter is pinned whenever it already exists
-// (only a set that creates it goes without), and never goes back: seen is the highest next the gate has let through
-// (its own state, raised by gate/after.mjs only once the board applied the write: a refused batch's rerun still passes),
-// and a batch's numbers start at it or above (Checker: an unpinned [num 1, next 2] reset it to #T1).
-export function threadNumErrors(writes, seen = 0) {
-  const seqw = writes.find((w) => w.collection === "meta" && w.doc_id === THREAD_SEQ && w.op !== "delete");
-  if (seqw && !Number.isInteger(seqw.if_version) && !(seqw.op === "set" && !seen)) return [`meta/${THREAD_SEQ}: pin it with if_version (the version a get just read); only the set that creates it goes without`];
-  if (seqw && Number.isInteger(seqw.data?.next) && seqw.data.next < seen) return [`meta/${THREAD_SEQ}: next never goes back (${seqw.data.next} < ${seen}, the last the gate let through)`];
-  const nums = writes.filter((w) => w.collection === "threads" && w.op !== "delete" && w.data?.num !== undefined).map((w) => w.data.num);
+// The counter card numbers come from (meta/cardSeq {next}): #C12 on a card, never to be read as a thread's #T12.
+export const CARD_SEQ = "cardSeq";
+// Each numbered collection, its counter, the key the gate's state remembers it under, and the tool that allocates.
+export const COUNTERS = [
+  { seq: THREAD_SEQ, collection: "threads", key: "threadSeq", tag: "#T", what: "threads", tool: "scripts/thread-ids.mjs" },
+  { seq: CARD_SEQ, collection: "initiatives", key: "cardSeq", tag: "#C", what: "cards", tool: "scripts/card-ids.mjs" },
+];
+
+// A batch that numbers threads (or cards) also moves the counter, pinned (if_version) so two allocations can't both
+// pass: its nums are distinct and run up to the counter's new next - 1, with no gap. The counter is pinned whenever it
+// already exists (only a set that creates it goes without), and never goes back: seen is the highest next the gate has
+// let through (its own state, raised by gate/after.mjs only once the board applied the write: a refused batch's rerun
+// still passes), and a batch's numbers start at it or above (Checker: an unpinned [num 1, next 2] reset it to #T1).
+export function numErrors(writes, seen = 0, c = COUNTERS[0]) {
+  const seqw = writes.find((w) => w.collection === "meta" && w.doc_id === c.seq && w.op !== "delete");
+  if (seqw && !Number.isInteger(seqw.if_version) && !(seqw.op === "set" && !seen)) return [`meta/${c.seq}: pin it with if_version (the version a get just read); only the set that creates it goes without`];
+  if (seqw && Number.isInteger(seqw.data?.next) && seqw.data.next < seen) return [`meta/${c.seq}: next never goes back (${seqw.data.next} < ${seen}, the last the gate let through)`];
+  const nums = writes.filter((w) => w.collection === c.collection && w.op !== "delete" && w.data?.num !== undefined).map((w) => w.data.num);
   if (!nums.length) return [];
-  const seq = writes.find((w) => w.collection === "meta" && w.doc_id === THREAD_SEQ && w.op !== "delete");
-  if (!seq) return [`threads: numbering a thread moves meta/${THREAD_SEQ} in the same batch (scripts/thread-ids.mjs writes both)`];
+  if (!seqw) return [`${c.what}: numbering ${c.what === "threads" ? "a thread" : "a card"} moves meta/${c.seq} in the same batch (${c.tool} writes both)`];
   const sorted = [...nums].sort((a, b) => a - b);
-  if (new Set(nums).size !== nums.length) return ["threads: two threads in one batch can't share a number"];
-  if (sorted.some((n, k) => n !== seq.data?.next - nums.length + k)) return [`threads: the numbers run up to meta/${THREAD_SEQ}.next - 1 with no gap (${sorted.join(", ")} vs next ${seq.data?.next})`];
-  if (sorted[0] < seen) return [`threads: #T${sorted[0]} was handed out already (the counter was at ${seen}): export again and rerun scripts/thread-ids.mjs`];
+  if (new Set(nums).size !== nums.length) return [`${c.what}: two ${c.what} in one batch can't share a number`];
+  if (sorted.some((n, k) => n !== seqw.data?.next - nums.length + k)) return [`${c.what}: the numbers run up to meta/${c.seq}.next - 1 with no gap (${sorted.join(", ")} vs next ${seqw.data?.next})`];
+  if (sorted[0] < seen) return [`${c.what}: ${c.tag}${sorted[0]} was handed out already (the counter was at ${seen}): export again and rerun ${c.tool}`];
   return [];
 }
+export const threadNumErrors = (writes, seen = 0) => numErrors(writes, seen, COUNTERS[0]);
 
 // The scheduled collector's fixed session title (collector/TASK.md).
 export const COLLECTOR_ROLE = "Collector";
@@ -84,6 +92,10 @@ export function writeErrors(w, { config, who, now }) {
     if (collection === "threads" && data?.title !== undefined && !(typeof data.title === "string" && data.title.trim() && data.title.length <= 120)) return [`title: 1 to 120 characters`];
     if (collection === "meta" && !(Number.isInteger(data?.next) && data.next > 1)) return [`meta/${THREAD_SEQ}: next is a whole number above 1`];
   }
+  // Card numbers (#C12): any session that creates a card moves meta/cardSeq with it, pinned; a num is a whole number.
+  if (collection === "meta" && id === CARD_SEQ && op !== "delete" && !(Number.isInteger(data?.next) && data.next > 1)) return [`meta/${CARD_SEQ}: next is a whole number above 1`];
+  if (collection === "meta" && id === CARD_SEQ && op === "delete") return [`meta/${CARD_SEQ} is never deleted`];
+  if (collection === "initiatives" && data && typeof data === "object" && data.num !== undefined && !(Number.isInteger(data.num) && data.num > 0)) e.push("num: a whole number from 1");
   // Rule 6: each role's memory tile is its own; Manager may also set every role's entry in meta/context (the keeper).
   if (collection === "ctx") {
     if (!who.role) e.push("no role for this session: give it its role as its title");
@@ -153,7 +165,8 @@ const STUCK_AFTER = 3;
 // A whole tool call to the board. state: { refusals: { item: n }, stuck: { item: { reason, at } } }.
 // Returns { errors, state, stuckNow }: stuckNow names an item refused STUCK_AFTER times in a row, for the stuck line.
 export function checkWrites(writes, { config, who, now, state, mirror = null }) {
-  const next = { refusals: { ...(state?.refusals ?? {}) }, stuck: { ...(state?.stuck ?? {}) }, ...(state?.threadSeq ? { threadSeq: state.threadSeq } : {}) };
+  const next = { refusals: { ...(state?.refusals ?? {}) }, stuck: { ...(state?.stuck ?? {}) } };
+  for (const c of COUNTERS) if (state?.[c.key]) next[c.key] = state[c.key];
   // A session with no role (no title, no FLIGHT_BOARD_ROLE) writes nothing, the stuck line included (Security).
   if (!who?.role) return { errors: ["no role for this session: give it its role as its title (or FLIGHT_BOARD_ROLE), then write"], state: next, stuckNow: null };
   // The Collector's one write is checked here too, before the stuck line's shortcut below skips writeErrors (Checker).
@@ -173,7 +186,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
-  errors.push(...threadNumErrors(writes, state?.threadSeq ?? 0));
+  for (const c of COUNTERS) errors.push(...numErrors(writes, state?.[c.key] ?? 0, c));
   // A write that passes for a stuck item clears its line in the same call, or it is refused.
   if (!errors.length) {
     const cleared = stuckClears(stuckWrite, next.stuck);
@@ -249,6 +262,9 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
   const was = cards.find((k) => k.id === id);
   const now = { ...(op === "update" ? was : {}), ...data };
   const derived = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards?.[id];
+  // A card's number (#C12) is given once, when the card is made, and kept: never changed or removed.
+  if (was && Number.isInteger(was.num) && (op === "set" ? data.num !== was.num : "num" in data && data.num !== was.num)) e.push(`num: this card is #C${was.num} for good`);
+  if (!was && op === "set" && data.num === undefined) e.push(`a new card gets its number: num from meta/${CARD_SEQ}, moved in the same batch (scripts/card-ids.mjs)`);
   if (was?.phase && "phase" in data && data.phase !== was.phase) {
     const from = order.indexOf(was.phase), to = order.indexOf(data.phase);
     if (to >= 0 && from >= 0 && to < from) e.push(`phases only move forward: ${was.phase} → ${data.phase}`);

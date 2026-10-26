@@ -42,6 +42,7 @@ section{min-width:0}
 .w-answer{white-space:pre-line}
 .w-item:not([open]) .w-answer{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .gaps{color:var(--bad);font-weight:600;font-size:.85rem}
+.c-num{font:600 .75rem var(--mono);color:var(--muted);margin-right:6px}
 .w-text{min-width:0}
 .w-list{margin:6px 0;padding-left:1.4em}.w-list li{margin:3px 0}
 .w-sub{color:var(--muted);font-size:.85rem}
@@ -756,6 +757,25 @@ document.addEventListener("submit",e=>{if(!e.target||e.target.id!=="newthread")r
   sendThread(e.target.querySelector("button[type=submit]"),"t-"+Date.now(),d.text,$("ntmsg"),kind,d.restore,"new")});
 const DAY=864e5;
 function phaseIndex(p){return PHASES.findIndex(x=>x[0]===p)}
+// A card's number (#C12, from meta/cardSeq): a C, so it is never read as a thread's #T12.
+function cardTag(i){return Number.isInteger(i&&i.num)&&i.num>0?`<span class="t-numtxt c-num" title="Card number">#C${i.num}</span> `:""}
+// A ship's estimate: tests then deploy, about 10 minutes from the release start (the ship tile's own ~10 min).
+const SHIP_MS=10*60e3, MIN_LEFT=5*60e3;
+// The medians of the time each phase took, from the cards that went live (their phase logs, waits left out).
+function phaseMedians(cards){const by={};(cards||[]).forEach(i=>{if(!i||i.status!=="done")return;const t=phaseTimes(i.phaseLog,i.doneAt);Object.entries(t).forEach(([k,ms])=>{if(ms>0)(by[k]=by[k]||[]).push(ms)})});
+  const med={};Object.entries(by).forEach(([k,a])=>{a.sort((x,y)=>x-y);const m=a.length>>1;med[k]=a.length%2?a[m]:(a[m-1]+a[m])/2});return med}
+// The ETA, derived, never declared (the declared etaLive is only the fallback when there is no data): in ship, the
+// release start plus the estimate; before it, now plus what is left of this phase plus the medians of the phases still
+// ahead up to the last (live), skips left out. null when a phase ahead has no history yet.
+function derivedEta(i,med=state.phaseMed||{},now=Date.now()){
+  if(!i||i.status==="done"||i.status==="dropped")return null;
+  if(i.phase==="ship"&&num(i.shipAt)!=null)return Math.max(i.shipAt+SHIP_MS,now+60e3);
+  const idx=phaseIndex(i.phase);if(idx<0)return null;
+  const skip=new Set(Array.isArray(i.skip)?i.skip:[]),spent=phaseTimes(i.phaseLog,now);let left=0;
+  for(let n=idx;n<PHASES.length-1;n++){const k=PHASES[n][0];if(n>idx&&skip.has(k))continue;
+    const m=med[k];if(m==null)return null;left+=n===idx?Math.max(m-(spent[k]||0),MIN_LEFT):m}
+  return now+left}
+function cardEta(i){return derivedEta(i)??num(i&&i.etaLive)}
 function phaseTimes(log,doneAt){const t={};const l=(Array.isArray(log)?log:[]).filter(e=>e&&e.phase&&num(e.start)!=null).sort((a,b)=>a.start-b.start);
   l.forEach((e,k)=>{if(e.wait)return;const next=l[k+1];const en=num(e.end)??(next?next.start:(num(doneAt)??Date.now()));t[e.phase]=(t[e.phase]||0)+Math.max(0,en-e.start)});return t}
 // Waits: time an item sat queued (its agent was busy, wait:"busy") or gated (held by a decision, wait:"gate"),
@@ -768,7 +788,7 @@ function waitBoxes(log,doneAt){const out={};const l=(Array.isArray(log)?log:[]).
 // What Manager forgot, flagged by the board itself instead of relying on memory.
 function gaps(i){const g=[],now=Date.now();
   if(i.status==="done"){const shipped=(Array.isArray(i.phaseLog)?i.phaseLog:[]).some(e=>e&&e.phase==="ship"&&!e.wait);if(shipped&&!i.shipDetail)g.push("no ship times");return g}
-  if(!num(i.etaLive))g.push("no ETA");else if(i.etaLive<now)g.push("ETA passed");
+  const eta=cardEta(i);if(!eta)g.push("no ETA");else if(eta<now)g.push("ETA passed");
   if(!i.nextNote)g.push("no next step");else if(num(i.nextNoteAt)&&now-i.nextNoteAt>36e5)g.push("next step over 1 h old");
   if(!i.level)g.push("no review level");
   else if(i.level!=="None"&&!i.plannedVersion)g.push("no planned version");
@@ -806,10 +826,10 @@ function initRow(i){
     const sm=k==="ship"&&n===idx&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
     const sd=sm!=null?`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`:k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";return pre+`<div class="${c}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}">${esc(l)}${t}${sd}</div>`}).join("");
   const iss=i.issues||{};const chips=[["bugs","bugs"],["security","security fixes"],["language","wording fixes"]].map(([k,l])=>{const v=num(iss[k])||0;return `<span class="chip ${v?"":"zero"}">${v} ${l}</span>`}).join(" ");
-  const eta=num(i.etaLive);
+  const eta=cardEta(i);
   let etaHtml;
   if(i.status==="done") etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"")}</div><div class="lbl">${num(i.doneAt)?dayLabel(i.doneAt):""}</div>`;
-  else if(eta) etaHtml=`<div class="lbl">Live in</div><div class="big" data-eta="${eta}">${eta>Date.now()?dur(eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(eta)}</div>`;
+  else if(eta) etaHtml=`<div class="lbl">Live in</div><div class="big" data-eta="${eta}">${eta>Date.now()?dur(eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(eta)}${derivedEta(i)==null?" (declared)":""}</div>`;
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   if(i.status!=="done"&&i.plannedVersion) etaHtml+=`<div class="pv">Planned in <b>${esc(i.plannedVersion)}</b></div>`;
   const st=stalled(i);
@@ -821,7 +841,7 @@ function initRow(i){
   const started=num(i.createdAt)?`<span>Started ${dayLabel(i.createdAt)} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-i.createdAt)} so far</span>`:"";
   const tn=threadOf(i.id).length,topen=threadOpen(i.id);
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:"Start a thread"}${topen?'<span class="t-badge open">waiting on Manager</span>':""}</summary>${threadHtml(i.id,"init")}</details>`;
-  return `<div class="i-row"><div><div class="i-name"><strong>${esc(i.name)}</strong>${threadTag(i.id)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}</div>
+  return `<div class="i-row"><div><div class="i-name">${cardTag(i)}<strong>${esc(i.name)}</strong>${threadTag(i.id)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}</div>
    ${i.summary?`<div class="w-sub">${esc(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
@@ -841,7 +861,7 @@ function renderCrew(){
 function renderBoard(){
   renderCrew();
   const order={stuck:0,active:1,queued:2,paused:3};
-  const open=state.initiatives.filter(i=>i.status!=="done").sort((a,b)=>(order[a.status]??1)-(order[b.status]??1)||(num(a.etaLive)??9e15)-(num(b.etaLive)??9e15));
+  const open=state.initiatives.filter(i=>i.status!=="done").sort((a,b)=>(order[a.status]??1)-(order[b.status]??1)||(cardEta(a)??9e15)-(cardEta(b)??9e15));
   // Done and the shipped feed show the last 24 hours only; older items stay saved, just out of view.
   const done=state.initiatives.filter(i=>i.status==="done"&&(num(i.doneAt)??0)>Date.now()-DAY).sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0));
   keep($("board"),()=>{$("board").innerHTML=open.length?open.map(initRow).join(""):'<div class="empty">No initiatives in flight.</div>'});
@@ -1022,7 +1042,7 @@ function gates(i){
 }
 // A card given up ("dropped", with dropReason) is closed like a done one, and says so.
 const asShown=i=>i&&i.status==="dropped"?{...i,status:"done",dropped:true}:i;
-function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderBoard();renderFeed();renderUsage()}
+function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderBoard();renderFeed();renderUsage()}
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});

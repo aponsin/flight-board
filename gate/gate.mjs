@@ -18,11 +18,13 @@ const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"]);
 export const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
 // The state to save, with what after.mjs keeps taken from the file now (it may have written since this call read it):
-// the higher thread counter, and the journal and known cards as they are on disk (this hook never changes them).
+// the higher thread and card counters, and the journal and known cards as they are on disk (this hook never changes them).
 export function keepCounter(state, disk) {
-  const seq = Math.max(state?.threadSeq ?? 0, Number.isInteger(disk?.threadSeq) ? disk.threadSeq : 0);
   const out = { ...state };
-  if (seq) out.threadSeq = seq;
+  for (const k of ["threadSeq", "cardSeq"]) {
+    const seq = Math.max(state?.[k] ?? 0, Number.isInteger(disk?.[k]) ? disk[k] : 0);
+    if (seq) out[k] = seq;
+  }
   for (const k of ["journal", "known"]) if (Array.isArray(disk?.[k])) out[k] = disk[k];
   return out;
 }

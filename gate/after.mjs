@@ -6,18 +6,20 @@ import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardId, checkConfig, fullConfig } from "../scripts/config.mjs";
-import { THREAD_SEQ } from "./rules.mjs";
+import { COUNTERS } from "./rules.mjs";
 import { writesOf, home, writeState, OVERLAY } from "./gate.mjs";
 
 // Every write the gate sees, delete included (the overlay drops a deleted document: Checker).
 const WRITES = new Set(["set", "update", "delete", "batch"]);
 
-// state with what an applied write teaches the gate: the highest thread counter applied, the cards it created (for
+// state with what an applied write teaches the gate: the highest thread and card counters applied, the cards it created (for
 // the hand-off check), and the journal of board-state writes, newest 500, which the gate lays over the mirror.
 export function afterWrite(state, writes, now = Date.now()) {
   let next = state;
-  const seq = writes.find((w) => w.collection === "meta" && w.doc_id === THREAD_SEQ && w.op !== "delete" && Number.isInteger(w.data?.next));
-  if (seq) next = { ...next, threadSeq: Math.max(next?.threadSeq ?? 0, seq.data.next) };
+  for (const c of COUNTERS) {
+    const seq = writes.find((w) => w.collection === "meta" && w.doc_id === c.seq && w.op !== "delete" && Number.isInteger(w.data?.next));
+    if (seq) next = { ...next, [c.key]: Math.max(next?.[c.key] ?? 0, seq.data.next) };
+  }
   const cards = writes.filter((w) => w.collection === "initiatives" && w.op !== "delete").map((w) => w.doc_id);
   if (cards.length) next = { ...next, known: [...new Set([...(next?.known ?? []), ...cards])] };
   const kept = writes.filter((w) => OVERLAY.has(w.collection));

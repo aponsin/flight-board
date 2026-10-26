@@ -58,6 +58,15 @@ Every item is a thread. The `messages` collection holds `{thread, from, text, at
 
 Each message from the owner pings the lead agent as a comment that reads exactly `Board thread [<thread>]: <owner>: <text>`. With `meta/board` `{ "wake": "batch" }` the page only saves, and the lead agent checks the open threads on its own schedule.
 
+## Card numbers and ETAs
+
+Every card has a number, `#C12`, from `meta/cardSeq` (`{next}`), the way threads have `#T27`: a new card takes `num`
+equal to the counter's `next` and moves the counter in the same batch, pinned with `if_version`; a card keeps its number
+for good. `node scripts/card-ids.mjs <export folder>` numbers the open cards, and those closed in the last 30 days,
+that have none. A card's "Live in" is worked out from its phase (the medians of the phases still ahead, from the cards
+that went live; in ship, the release start plus about 10 minutes); the `etaLive` a card was made with is only the
+fallback.
+
 ## The plan
 
 Where the work is going (board v3). The `plan` collection holds nodes `{parent, order, text, kind, outcome?, measure?,
