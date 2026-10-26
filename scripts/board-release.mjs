@@ -107,7 +107,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const known = (c) => Boolean(c) && quiet(["cat-file", "-e", `${c}^{commit}`]) !== null;
     tmp = mkdtempSync(join(tmpdir(), "board-release-"));
     execFileSync("tar", ["-x", "-C", tmp], { input: execFileSync("git", ["archive", "--format=tar", sha], { cwd: repo, maxBuffer: 64 * 1024 * 1024 }) });
-    const at = (c) => (f) => (c === sha ? (existsSync(join(tmp, f)) ? readFileSync(join(tmp, f), "utf8") : null) : quiet(["show", `${c}:${f}`]));
+    // A file as it is at a commit, byte for byte (never trimmed, or every comparison with the snapshot would differ).
+    const shown = (c, f) => { try { return execFileSync("git", ["show", `${c}:${f}`], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 }); } catch { return null; } };
+    const at = (c) => (f) => (c === sha ? (existsSync(join(tmp, f)) ? readFileSync(join(tmp, f), "utf8") : null) : shown(c, f));
     const entries = [...OWNER_ENTRIES, ...RELEASE_ENTRIES];
     const changed = known(pinned) ? (quiet(["diff", "--name-only", pinned, sha]) ?? "").split("\n").filter(Boolean) : null;
     const owned = [...new Set([...importClosure(entries, at(sha)), ...(known(pinned) ? importClosure(entries, at(pinned)) : [])])];
