@@ -1124,7 +1124,9 @@ function planHtml(){
     if(mine.length)h+=`<div class="pn-cards">${mine.slice(0,12).map(i=>{const ph=i.status==="done"?"done":(PHASES.find(p=>p[0]===i.phase)||[,i.phase||""])[1];return `<span>${esc(i.name||i.id)}${ph?" · "+esc(ph):""}</span>`}).join("")}</div>`;
     const below=sort(kids.get(n.id)||[]).map(c=>row(c,depth+1)).join("");
     return h+(below?`<ul class="plan">${below}</ul>`:"")+"</li>"};
-  const outline=sort(roots).map(n=>row(n,0)).join("");
+  let outline=sort(roots).map(n=>row(n,0)).join("");
+  // Nodes no root reaches (a parent loop the gate should have refused) still show, once, at the top level.
+  for(const n of sort(nodes))if(!seen.has(n.id))outline+=row(n,0);
   const ideas=listOpen("ideas");
   const ideasHtml=ideas.length?`<div class="plan-ideas"><h3>Ideas not in the plan yet</h3><ul class="plan">${ideas.map(t=>`<li class="pn"><div class="pn-line">${t.kind&&IKIND[t.kind]?`<span class="ik ${esc(t.kind)}">${IKIND[t.kind]}</span>`:""}<span>${esc(t.text)}</span></div></li>`).join("")}</ul></div>`:"";
   if(!outline)return `<div class="empty">No plan yet. ${esc(CONFIG.gate&&CONFIG.gate.managerRole||"The lead")} writes it with ${esc(OWNER)} at the go-gate.</div>${ideasHtml}`;

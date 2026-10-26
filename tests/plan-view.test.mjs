@@ -65,7 +65,7 @@ test("plan text never injects markup: every value is escaped, links only through
 
 test("a broken plan renders once: a parent loop and a node that is its own parent don't hang or repeat", () => {
   const html = board([{ id: "a", parent: "b", order: 1, kind: "step", text: "A" }, { id: "b", parent: "a", order: 1, kind: "step", text: "B" }, { id: "c", parent: "c", order: 1, kind: "step", text: "C" }]).planHtml();
-  assert.equal((html.match(/data-node="c"/g) ?? []).length, 1);
+  for (const id of ["a", "b", "c"]) assert.equal((html.match(new RegExp(`data-node="${id}"`, "g")) ?? []).length, 1, `${id} shows once`);
   assert.match(html, /<ul class="plan">/);
 });
 
