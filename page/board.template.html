@@ -444,7 +444,9 @@ function renderWaiting(){
   const item=w=>askHtml(w,open);
   // "Later" items sit folded in one row at the bottom, so today's asks stay on the first screen.
   const now=list.filter(w=>w.kind!=="later");
+  const y=window.scrollY;
   el.innerHTML=(now.length?now.map(item).join(""):answeredRows?"":'<div class="empty">Nothing to do now.</div>')+answeredRows;
+  restoreFolds(el,open);if(window.scrollY!==y)window.scrollTo(0,y);
   el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply));
   el.querySelectorAll("details.w-item").forEach(d=>d.addEventListener("toggle",()=>{if(d.open)closedAnswers.delete(d.dataset.id);else closedAnswers.add(d.dataset.id)}));
 }
@@ -781,11 +783,22 @@ function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(D
 function threadsHtml(now){const r=threadRows(now),asks=state.waiting.filter(w=>onLead(w,now)).sort((a,b)=>(num(a.response.at)??0)-(num(b.response.at)??0));
   if(!asks.length&&!r.open)return '<div class="empty">Nothing waiting on Manager.</div>';
   return asks.map(w=>askHtml(w,new Set())).join("")+r.open}
-// Re-draws a part of the page without losing what the owner is typing or which folds are open.
+// Every fold the owner opened or closed, by what it shows (an ask's row and the same thread's row elsewhere are one fold:
+// "th-" and "ith-" are the thread rows' prefixes), kept across every live re-draw of any part of the page, so a thread
+// that moves from one list to another stays as the owner left it (#C241: it folded shut while the owner read it).
+const folds=new Map();
+const foldKey=d=>String(d.dataset.id||"").replace(/^i?th-/,"");
+document.addEventListener("toggle",e=>{const d=e.target;if(d&&d.tagName==="DETAILS"&&d.dataset&&d.dataset.id)folds.set(foldKey(d),d.open)},true);
+// After a part is drawn again: each fold as the owner last left it, else as it was in that part (open: its data-ids).
+function restoreFolds(el,open){el.querySelectorAll("details[data-id]").forEach(d=>{const k=foldKey(d),want=folds.has(k)?folds.get(k):open.has(d.dataset.id);if(want!==d.open)d.open=want})}
+// Re-draws a part of the page without losing what the owner is typing, which folds are open, or where the page is scrolled
+// (the part's own scroll too: the owner's strip scrolls on its own).
 function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id)),drafts={};
   el.querySelectorAll("textarea[id]").forEach(t=>{if(t.value)drafts[t.id]=t.value});
   const focus=document.activeElement&&document.activeElement.id&&drafts[document.activeElement.id]!=null?document.activeElement.id:null;
-  draw();el.querySelectorAll("details[data-id]").forEach(d=>{if(open.has(d.dataset.id))d.open=true});
+  const y=window.scrollY,inner=el.scrollTop;
+  draw();restoreFolds(el,open);
+  if(el.scrollTop!==inner)el.scrollTop=inner;if(window.scrollY!==y)window.scrollTo(0,y);
   Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t)t.value=v});
   if(focus){const t=document.getElementById(focus);if(t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}}
 function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())});const nf=$("ntfiles");if(nf)nf.innerHTML=filesHtml("new")}

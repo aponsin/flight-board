@@ -217,6 +217,38 @@ test("a re-draw keeps what Owner is typing and which folds are open", () => {
   assert.equal(freshDet.open, true);
 });
 
+// #C241: a live update while the owner reads a thread (a message written in another tab moves it to another list).
+test("a thread the owner opened stays open through every live re-draw, in whichever list it lands; one the owner closed stays closed", () => {
+  const b = board();
+  const toggle = (id, open) => b.listeners.toggle.forEach((fn) => fn({ target: { tagName: "DETAILS", dataset: { id }, open } }));
+  const part = (dets) => ({ querySelectorAll: (q) => (q.startsWith("details") ? dets : []) });
+  // The owner opens the thread in Needs you; another tab's message moves it to Waiting on Manager, drawn there closed.
+  toggle("th-t-1", true);
+  const moved = { dataset: { id: "th-t-1" }, open: false };
+  b.keep(part([moved]), () => {});
+  assert.equal(moved.open, true, "the thread stays open in its new list");
+  // The same thread as its item's row (no "th-" prefix) and inside a card ("ith-") is the same fold.
+  const asRow = { dataset: { id: "t-1" }, open: false }, inCard = { dataset: { id: "ith-t-1" }, open: false };
+  b.keep(part([asRow, inCard]), () => {});
+  assert.deepEqual([asRow.open, inCard.open], [true, true]);
+  // One the owner closed stays closed, even if the list draws it open.
+  toggle("w-2", false);
+  const drawnOpen = { dataset: { id: "w-2" }, open: true };
+  b.keep(part([drawnOpen]), () => {});
+  assert.equal(drawnOpen.open, false);
+  // A fold the owner never touched keeps what its own list had.
+  const other = { dataset: { id: "w-3" }, open: false };
+  const before = { querySelectorAll: (q) => (q === "details[open]" ? [{ dataset: { id: "w-3" }, open: true }] : q.startsWith("details") ? [other] : []) };
+  b.keep(before, () => {});
+  assert.equal(other.open, true);
+});
+
+test("Needs you draws its thread rows with the folds as the owner left them (#C241: they were always drawn shut)", () => {
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  const fn = html.slice(html.indexOf("function renderWaiting("), html.indexOf("\n}\n", html.indexOf("function renderWaiting(")));
+  assert.match(fn, /el\.innerHTML=[^\n]*answeredRows;\n\s*restoreFolds\(el,open\);/);
+});
+
 test("the stuck line: \"Manager stuck on <item>: <reason>\" for each item the gate stuck on, oldest first; none when cleared", () => {
   const b = loadNames(["stuckLines"]);
   Object.assign(b.state, { waiting: [{ id: "w1", text: "Pick a colour" }], initRaw: [{ id: "x-y", name: "Tabs" }] });
