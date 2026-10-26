@@ -16,6 +16,7 @@ import { headFor, derivePhase, conflict, staleLive, closed } from "./derive.mjs"
 import { remoteHeads, mainLine, deployedSha, factsFor, shippedHeads } from "./facts.mjs";
 import { nudges } from "./nudges.mjs";
 import { idText } from "./text.mjs";
+import { runMark, localMain } from "./refresh.mjs";
 
 // The steps the export takes: the last 7 days' (older ones can't hold an open step worth a nudge, and there are many).
 export const STEPS_DAYS = 7;
@@ -150,7 +151,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   if (process.argv.includes("--prepare")) {
     try {
       mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "export-since.json"), JSON.stringify({ at: Date.now() }));
+      // With the refresh repos' origin/main now: the baseline the lead's refresh check compares against (collector/refresh.mjs).
+      writeFileSync(join(dir, "export-since.json"), JSON.stringify(runMark(Date.now(), config.collector.refresh.repos, localMain)));
       console.log(`Export the board into: your scratchpad folder + /${EXPORT_NAME}`);
       console.log(`Steps since: ${Date.now() - STEPS_DAYS * 864e5}`);
       process.exit(0);

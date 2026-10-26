@@ -7,7 +7,8 @@
 // - the owner asked for a refresh (the word "refresh" in what the owner typed, a thread message or a reply's note).
 // Never while a run is in flight, within debounceMin of the last run's start or of the hook's last ask (a run asked for
 // starts a minute or so later), or twice in a row (stop_hook_active). It only ever names run_scheduled_task <taskId>.
-// The last run is the time collect.mjs --prepare notes in <stateDir>/<board>/export-since.json; it has finished when
+// The last run is the time collect.mjs --prepare notes in <stateDir>/<board>/export-since.json, with the refresh repos'
+// origin/main at that moment (the ship baseline, so a ship during a long lead turn is still seen); it has finished when
 // <outDir>/derived-all.json is newer.
 
 import { readFileSync, writeFileSync, mkdirSync, renameSync, statSync, realpathSync } from "node:fs";
@@ -88,9 +89,18 @@ export function decide({ lead, stopActive, now, run = {}, refs = {}, baseline = 
   return why.length ? why.join("; ") : null;
 }
 
-// The refs to compare against: the ones kept for this run, or, when a newer run has started, today's (the run fetched).
+// What --prepare notes at a run's start: its time and each refresh repo's origin/main then. git(path) gives a sha or null.
+export function runMark(at, repos, git) {
+  const refs = {};
+  for (const repo of repos) { const sha = git(home(repo)); if (sha) refs[basename(home(repo))] = sha; }
+  return { at, refs };
+}
+
+// The refs to compare against: the ones --prepare noted at the run's start (markRefs) when it did; else (a run before
+// this code) the ones kept for this run, or, when a newer run has started, today's.
 // state: { runAt, refs } as saved; returns { baseline, save } (save: the state to write, or null when unchanged).
-export function baselineFor(state, startedAt, refs) {
+export function baselineFor(state, startedAt, refs, markRefs = null) {
+  if (markRefs && typeof markRefs === "object" && !Array.isArray(markRefs)) return { baseline: markRefs, save: state?.runAt === startedAt ? null : { runAt: startedAt ?? null, refs: markRefs } };
   if (state && state.runAt === startedAt && state.refs && typeof state.refs === "object") return { baseline: state.refs, save: null };
   return { baseline: refs, save: { runAt: startedAt ?? null, refs } };
 }
@@ -103,13 +113,12 @@ export function main(input, { config, env = process.env, now = Date.now(), git, 
   if (!lead || input?.stop_hook_active) return null;
   const r = config.collector.refresh;
   const dir = join(home(config.gate.stateDir), boardId(config) ?? "no-board");
-  let startedAt = null, state = null;
-  try { startedAt = JSON.parse(read(join(dir, "export-since.json"), "utf8")).at; } catch { /* never ran */ }
+  let startedAt = null, markRefs = null, state = null;
+  try { const m = JSON.parse(read(join(dir, "export-since.json"), "utf8")); startedAt = m.at; markRefs = m.refs ?? null; } catch { /* never ran */ }
   try { state = JSON.parse(read(join(dir, "refresh.json"), "utf8")); } catch { /* first time */ }
   const finishedAt = config.collector.outDir ? mtime(join(home(config.collector.outDir), "derived-all.json")) : null;
-  const refs = {};
-  for (const repo of r.repos) { const sha = git(home(repo)); if (sha) refs[basename(home(repo))] = sha; }
-  const { baseline, save } = baselineFor(state, Number.isFinite(startedAt) ? startedAt : null, refs);
+  const { refs } = runMark(null, r.repos, git);
+  const { baseline, save } = baselineFor(state, Number.isFinite(startedAt) ? startedAt : null, refs, markRefs);
   const askedAt = save ? null : state?.askedAt ?? null;
   const why = decide({ lead: true, stopActive: false, now, run: { startedAt, finishedAt }, refs, baseline, events: ownerEvents(lines), askedAt, debounceMin: r.debounceMin, flightMin: r.flightMin });
   const next = { ...(save ?? state), ...(why ? { askedAt: now } : askedAt != null ? { askedAt } : {}) };

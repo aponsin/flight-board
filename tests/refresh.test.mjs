@@ -2,7 +2,7 @@
 // marked done or a refresh asked for; never while one runs, just after one, or twice in a row. Fictional sessions.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ownerSaid, ownerEvents, decide, baselineFor } from "../collector/refresh.mjs";
+import { ownerSaid, ownerEvents, decide, baselineFor, runMark, main as hookMain } from "../collector/refresh.mjs";
 
 const T = 1_800_000_000_000, MIN = 60e3;
 const comment = (...lines) => `[Artifact comment sent to Claude]\n=== BEGIN ARTIFACT COMMENT abc ===\n${lines.map((l) => "> " + l).join("\n")}\n=== END ARTIFACT COMMENT abc ===`;
@@ -145,4 +145,52 @@ test("the hook entries: the refresh check runs after the gate's Stop check, and 
   assert.equal(e.Stop.hooks[1].command, "'/bin/node' '/r/flight-board/collector/refresh.mjs' --config '/cfg/board.config.json'");
   const old = { hooks: [{ type: "command", command: "'/bin/node' '/h/.flight-board/install/" + "a".repeat(40) + "/collector/refresh.mjs' --config x" }] };
   assert.deepEqual(withHooks({ hooks: { Stop: [old] } }, e).settings.hooks.Stop, [e.Stop]);
+});
+
+test("the ship baseline is taken when the run starts: a ship during a long lead turn is still seen (Checker's probe)", async () => {
+  const { mkdtempSync, writeFileSync, mkdirSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { fullConfig } = await import("../scripts/config.mjs");
+  assert.deepEqual(runMark(5, ["/x/webapp", "/x/none"], (p) => (p === "/x/webapp" ? "a" : null)), { at: 5, refs: { webapp: "a" } });
+  assert.deepEqual(baselineFor({ runAt: 1, refs: { webapp: "old" } }, 5, { webapp: "b" }, { webapp: "a" }), { baseline: { webapp: "a" }, save: { runAt: 5, refs: { webapp: "a" } } });
+  assert.deepEqual(baselineFor({ runAt: 5, refs: { webapp: "a" } }, 5, { webapp: "b" }, { webapp: "a" }).save, null);
+  const dir = mkdtempSync(join(tmpdir(), "refresh-probe-"));
+  try {
+    const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", gate: { stateDir: dir }, collector: { repoPath: "/r", outDir: join(dir, "out"), refresh: { repos: ["/x/webapp"] } } });
+    const state = join(dir, "TestBoard01"); mkdirSync(state, { recursive: true });
+    // State from the run before: 09:00, refs a. This run started at 10:00 with refs a; the ship (b) came at 10:30.
+    writeFileSync(join(state, "refresh.json"), JSON.stringify({ runAt: T - 90 * MIN, refs: { webapp: "a" } }));
+    writeFileSync(join(state, "export-since.json"), JSON.stringify({ at: T - 31 * MIN, refs: { webapp: "a" } }));
+    const t = join(dir, "lead.jsonl"); writeFileSync(t, JSON.stringify({ customTitle: "Manager" }));
+    const opts = { config, env: {}, now: T, git: () => "b", mtime: () => T - 25 * MIN };
+    assert.match(hookMain({ transcript_path: t }, opts), /webapp shipped/, "the lead's first turn end after the ship");
+    // The same with no state at all (the very first call).
+    rmSync(join(state, "refresh.json"));
+    assert.match(hookMain({ transcript_path: t }, opts), /webapp shipped/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("collect.mjs --prepare notes the run's start with each refresh repo's origin/main", async () => {
+  const { mkdtempSync, writeFileSync, readFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { execFileSync, spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "refresh-prep-"));
+  try {
+    const repo = join(dir, "webapp");
+    const g = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8" }).trim();
+    execFileSync("git", ["init", "-q", repo]);
+    g("-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x");
+    const sha = g("rev-parse", "HEAD");
+    g("update-ref", "refs/remotes/origin/main", sha);
+    const cfg = join(dir, "board.config.json");
+    writeFileSync(cfg, JSON.stringify({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", gate: { stateDir: dir }, collector: { repoPath: repo, outDir: join(dir, "out"), refresh: { repos: [repo, join(dir, "missing")] } } }));
+    const before = Date.now();
+    const r = spawnSync(process.execPath, [new URL("../collector/collect.mjs", import.meta.url).pathname, "--config", cfg, "--prepare"], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    const mark = JSON.parse(readFileSync(join(dir, "TestBoard01", "export-since.json"), "utf8"));
+    assert.ok(mark.at >= before);
+    assert.deepEqual(mark.refs, { webapp: sha }, "a folder without the ref is left out");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
