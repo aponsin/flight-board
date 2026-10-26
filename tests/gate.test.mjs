@@ -159,7 +159,9 @@ test("rule 9, case 3: a hand-off names its card, and the card exists", () => {
   assert.deepEqual(handOff("Its card id is board-derived-card-state.").ids, ["board-derived-card-state"]);
   assert.deepEqual(handOff("The card id was menu-fix, now closed.").ids, ["menu-fix"]);
   assert.deepEqual(handOff("A board card for you: board id menu.").ids, ["menu"], "\"for\" is not an id");
-  assert.deepEqual(handOff("Board card is the one I named.").ids, [], "a plain word after is names nothing");
+  assert.deepEqual(handOff("Board card is the one I named."), { ids: [], work: true }, "a plain word after is names nothing, and it is still a hand-off (refused as naming no card)");
+  assert.deepEqual(handOff("Board id: is menu-fix"), { ids: ["menu-fix"], work: true }, "a colon before is (Checker's probe)");
+  assert.deepEqual(handOff("Board id: for later"), { ids: [], work: true }, "never less checked than before the fix (Checker)");
   assert.deepEqual(handOff("Decision on board id first-screen-weight-flake: go ahead.").ids, ["first-screen-weight-flake"]);
   assert.deepEqual(handOff("card id: board-derived-card-state").ids, ["board-derived-card-state"]);
   assert.match(checkHandOff("New task: build the tabs", { known: new Set(), fresh: true }).errors[0], /names no card/);

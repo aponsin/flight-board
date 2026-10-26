@@ -109,9 +109,12 @@ export function withJournal(mirror, journal) {
 const NOT_IDS = new Set(["is", "was", "for", "the", "a", "an", "to", "on", "in", "of", "and", "or", "that", "this", "it", "as", "at", "by", "with", "from", "here", "now", "so", "one", "you", "me", "we", "be", "has", "had", "will", "not", "no"]);
 export function handOff(text) {
   const s = String(text);
-  const ids = [...s.matchAll(/\b(?:board (?:id|card)|card id)(?:\s+(?:is|was))?[:\s]+`?([a-z0-9]+(?:-[a-z0-9]+)*)`?/gi),
-    ...s.matchAll(/\b(?:card|task)[:\s]+(?:`([a-z0-9]+(?:-[a-z0-9]+)*)`|([a-z0-9]+(?:-[a-z0-9]+)+))/gi)].map((m) => (m[1] ?? m[2]).toLowerCase()).filter((id) => !NOT_IDS.has(id));
-  const work = /\btask\b|\bREADY\b|\bbuild\b/i.test(String(text)) || ids.length > 0;
+  const named = [...s.matchAll(/\b(?:board (?:id|card)|card id)(?:[:\s]+(?:is|was))?[:\s]+`?([a-z0-9]+(?:-[a-z0-9]+)*)`?/gi),
+    ...s.matchAll(/\b(?:card|task)[:\s]+(?:`([a-z0-9]+(?:-[a-z0-9]+)*)`|([a-z0-9]+(?:-[a-z0-9]+)+))/gi)].map((m) => (m[1] ?? m[2]).toLowerCase());
+  const ids = named.filter((id) => !NOT_IDS.has(id));
+  // A message that tried to name a card is a hand-off even when it named only plain words: it is refused as naming no
+  // card, never let through unchecked (Checker).
+  const work = /\btask\b|\bREADY\b|\bbuild\b/i.test(String(text)) || named.length > 0;
   return { ids: [...new Set(ids)], work };
 }
 
