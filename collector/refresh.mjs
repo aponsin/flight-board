@@ -18,6 +18,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readLines, sessionRole } from "../gate/session.mjs";
+import { idText } from "./text.mjs";
 const MID = "The user sent a new message while you were working:";
 const NOT_TYPED = ["<", "Another Claude session sent", "Stop hook feedback", "Base directory for this skill"];
 const REFRESH = /\brefresh\b/i;
@@ -83,7 +84,8 @@ export function decide({ lead, stopActive, now, run = {}, refs = {}, baseline = 
   const since = started ?? -Infinity;
   const why = [];
   for (const [repo, sha] of Object.entries(refs)) if (sha && baseline[repo] && sha !== baseline[repo]) why.push(`${repo} shipped`);
-  const done = [...new Set(events.filter((e) => e.kind === "done" && e.at > since).map((e) => e.id))];
+  // Ids come from comment lines: only a well-formed id reaches the lead's feedback (idText), never other text (Security).
+  const done = [...new Set(events.filter((e) => e.kind === "done" && e.at > since).map((e) => idText(e.id)))];
   if (done.length) why.push(`marked done: ${done.join(", ")}`);
   if (events.some((e) => e.kind === "refresh" && e.at > since)) why.push("the owner asked for a refresh");
   return why.length ? why.join("; ") : null;
