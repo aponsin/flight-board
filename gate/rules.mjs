@@ -258,10 +258,10 @@ export function threadErrors(w, { mirror, batch = [], now = Date.now() }) {
 }
 
 // One open phase per card (Build and Checker once both lit on one card because a build step was never ended). Starting
-// a review while build is open, build while a review is open, or ship while anything is open is refused; only the review
-// phases (those with sign-off notes) overlap each other. An open step is a start with no later end by the same agent on
-// the same phase; a build left open ends where the repository says the card went READY (derived readyAt). Skipped when
-// the export has no steps.
+// a review while build is open, or ship while anything is open, is refused; reviews overlap each other, and a build may
+// start while a review is open (a fix round after FINDINGS is real work while the review waits). An open step is a
+// start with no later end by the same agent on the same phase; a build left open ends where the repository says the card
+// went READY (derived readyAt). Skipped when the export has no steps.
 export function phaseOverlapErrors(w, { config, mirror, batch = [] }) {
   const { op, collection, data } = w;
   if (collection !== "steps" || op !== "set" || !data || data.kind !== "start" || data.wait || !Array.isArray(mirror?.docs?.steps)) return [];
@@ -278,7 +278,6 @@ export function phaseOverlapErrors(w, { config, mirror, batch = [] }) {
   const since = (e) => `${idText(label(e.phase))} is still open by ${e.who ? idText(e.who) : "someone"} since ${new Date(e.at).toISOString().slice(11, 16)} UTC: end it first`;
   const build = live.find((e) => e.phase === c.buildPhase);
   if (reviews.has(data.phase) && build) return [since(build)];
-  if (data.phase === c.buildPhase) { const r = live.find((e) => reviews.has(e.phase)); if (r) return [since(r)]; }
   if (data.phase === c.shipPhase) { const any = live.find((e) => e.phase !== c.shipPhase); if (any) return [since(any)]; }
   return [];
 }
