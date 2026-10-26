@@ -34,11 +34,13 @@ export const COUNTERS = [
 // already exists (only a set that creates it goes without), and never goes back: seen is the highest next the gate has
 // let through (its own state, raised by gate/after.mjs only once the board applied the write: a refused batch's rerun
 // still passes), and a batch's numbers start at it or above (Checker: an unpinned [num 1, next 2] reset it to #T1).
-export function numErrors(writes, seen = 0, c = COUNTERS[0]) {
+// mirror: the board's export, when there is one; a write that keeps the number its document already has numbers nothing.
+export function numErrors(writes, seen = 0, c = COUNTERS[0], mirror = null) {
+  const had = new Map((mirror?.docs?.[c.collection] ?? []).filter((d) => d && Number.isInteger(d.num)).map((d) => [d.id, d.num]));
   const seqw = writes.find((w) => w.collection === "meta" && w.doc_id === c.seq && w.op !== "delete");
   if (seqw && !Number.isInteger(seqw.if_version) && !(seqw.op === "set" && !seen)) return [`meta/${c.seq}: pin it with if_version (the version a get just read); only the set that creates it goes without`];
   if (seqw && Number.isInteger(seqw.data?.next) && seqw.data.next < seen) return [`meta/${c.seq}: next never goes back (${seqw.data.next} < ${seen}, the last the gate let through)`];
-  const nums = writes.filter((w) => w.collection === c.collection && w.op !== "delete" && w.data?.num !== undefined).map((w) => w.data.num);
+  const nums = writes.filter((w) => w.collection === c.collection && w.op !== "delete" && w.data?.num !== undefined && had.get(w.doc_id) !== w.data.num).map((w) => w.data.num);
   if (!nums.length) return [];
   if (!seqw) return [`${c.what}: numbering ${c.what === "threads" ? "a thread" : "a card"} moves meta/${c.seq} in the same batch (${c.tool} writes both)`];
   const sorted = [...nums].sort((a, b) => a - b);
@@ -186,7 +188,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
-  for (const c of COUNTERS) errors.push(...numErrors(writes, state?.[c.key] ?? 0, c));
+  for (const c of COUNTERS) errors.push(...numErrors(writes, state?.[c.key] ?? 0, c, mirror));
   // A write that passes for a stuck item clears its line in the same call, or it is refused.
   if (!errors.length) {
     const cleared = stuckClears(stuckWrite, next.stuck);

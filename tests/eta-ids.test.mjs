@@ -23,6 +23,7 @@ test("phase medians come from the cards that went live; open cards and waits don
   assert.equal(med.build, 3 * H);
   assert.equal(med.checker, 30 * MIN);
   assert.equal(med.ship, 10 * MIN);
+  assert.equal(b.phaseMedians([...done, { status: "done", dropped: true, doneAt: NOW, phaseLog: log(["build", NOW - 60 * H, NOW]) }]).build, 3 * H, "a dropped card never went live");
 });
 
 test("the ETA from the phase: in ship the release start + ~10 min; before, what's left here + the medians ahead, skips left out", () => {
@@ -82,6 +83,10 @@ test("card numbers: a new card takes the counter's next in the same batch; a num
   assert.match(errs([{ op: "update", collection: "initiatives", doc_id: "c1", data: { num: 9 } }, seq(10)], { m: old }), /#C3 for good/);
   assert.match(errs([{ op: "set", collection: "initiatives", doc_id: "c1", data: card }], { m: old }), /#C3 for good/, "a set that drops it");
   assert.equal(errs([{ op: "update", collection: "initiatives", doc_id: "c2", data: { num: 4 } }, seq(5)], { m: mirror([{ id: "c2", ...card }]), state: { cardSeq: 4 } }), "", "a backfill numbers an old card");
+  // Keeping its own number numbers nothing: a whole set or an update that echoes it back passes (Checker).
+  const nine = { m: old, state: { cardSeq: 9 } };
+  assert.equal(errs([{ op: "set", collection: "initiatives", doc_id: "c1", data: { ...card, num: 3 } }], nine), "", "a whole set that keeps #C3");
+  assert.equal(errs([{ op: "update", collection: "initiatives", doc_id: "c1", data: { num: 3, nextNote: "x", nextNoteAt: now } }], nine), "", "an update that echoes it");
   assert.match(errs([seq(1)]), /next is a whole number above 1/);
   assert.match(errs([{ op: "delete", collection: "meta", doc_id: CARD_SEQ }]), /never deleted/);
 });

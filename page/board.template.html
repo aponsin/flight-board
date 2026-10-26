@@ -761,8 +761,9 @@ function phaseIndex(p){return PHASES.findIndex(x=>x[0]===p)}
 function cardTag(i){return Number.isInteger(i&&i.num)&&i.num>0?`<span class="t-numtxt c-num" title="Card number">#C${i.num}</span> `:""}
 // A ship's estimate: tests then deploy, about 10 minutes from the release start (the ship tile's own ~10 min).
 const SHIP_MS=10*60e3, MIN_LEFT=5*60e3;
-// The medians of the time each phase took, from the cards that went live (their phase logs, waits left out).
-function phaseMedians(cards){const by={};(cards||[]).forEach(i=>{if(!i||i.status!=="done")return;const t=phaseTimes(i.phaseLog,i.doneAt);Object.entries(t).forEach(([k,ms])=>{if(ms>0)(by[k]=by[k]||[]).push(ms)})});
+// The medians of the time each phase took, from the cards that went live (their phase logs, waits left out; a dropped
+// card shows as done but never went live).
+function phaseMedians(cards){const by={};(cards||[]).forEach(i=>{if(!i||i.status!=="done"||i.dropped)return;const t=phaseTimes(i.phaseLog,i.doneAt);Object.entries(t).forEach(([k,ms])=>{if(ms>0)(by[k]=by[k]||[]).push(ms)})});
   const med={};Object.entries(by).forEach(([k,a])=>{a.sort((x,y)=>x-y);const m=a.length>>1;med[k]=a.length%2?a[m]:(a[m-1]+a[m])/2});return med}
 // The ETA, derived, never declared (the declared etaLive is only the fallback when there is no data): in ship, the
 // release start plus the estimate; before it, now plus what is left of this phase plus the medians of the phases still
