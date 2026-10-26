@@ -163,3 +163,24 @@ test("Crew never injects markup: agent names, models, notes and card names are e
   assert.doesNotMatch(html, /<img/);
   assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
 });
+
+test("the owner's strip: in the new layout, what needs the owner and the New-thread box move to its top, and back on return", () => {
+  // A tiny tree: enough of a DOM for appendChild, insertBefore, parentNode and nextSibling.
+  const node = (name) => ({ name, kids: [], parentNode: null, hidden: false, textContent: "", innerHTML: "", classList: { add() {}, remove() {}, toggle() {} }, querySelectorAll: () => [], setAttribute() {},
+    get nextSibling() { const p = this.parentNode; return p ? p.kids[p.kids.indexOf(this) + 1] ?? null : null; },
+    appendChild(c) { if (c.parentNode) c.parentNode.kids.splice(c.parentNode.kids.indexOf(c), 1); c.parentNode = this; this.kids.push(c); return c; },
+    insertBefore(c, ref) { if (c.parentNode) c.parentNode.kids.splice(c.parentNode.kids.indexOf(c), 1); c.parentNode = this; const at = ref ? this.kids.indexOf(ref) : -1; this.kids.splice(at < 0 ? this.kids.length : at, 0, c); return c; } });
+  const b = loadNames(["setView"]);
+  const panel = node("threads-panel"), part = node("ownerpart"), strip = node("v3strip"), later = node("threads");
+  panel.appendChild(part); panel.appendChild(later);
+  Object.assign(b.els, { ownerpart: part, v3strip: strip });
+  b.document.createComment = (t) => node(`#${t}`);
+  b.setView("v3");
+  assert.equal(part.parentNode, strip, "on top in the new layout");
+  assert.deepEqual(panel.kids.map((k) => k.name), ["#ownerpart", "threads"], "a marker keeps its place");
+  b.setView("v3");
+  assert.equal(strip.kids.length, 1, "switching again moves nothing twice");
+  b.setView("v2");
+  assert.deepEqual(panel.kids.map((k) => k.name), ["#ownerpart", "ownerpart", "threads"], "back exactly where it was");
+  assert.deepEqual(strip.kids, []);
+});

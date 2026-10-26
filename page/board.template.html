@@ -269,6 +269,8 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .pn-bar>span{display:block;height:100%;background:var(--ok)}
 .pn-cards{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:.88rem;margin-top:2px}
 .pn-cards span{color:var(--muted)}
+.v3strip{position:sticky;top:0;z-index:5}
+.v3strip .panel{max-height:45vh;overflow:auto;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .v3tabs{display:flex;gap:6px}
 .v3tabs button{font:700 .95rem var(--display);letter-spacing:.06em;text-transform:uppercase;padding:6px 14px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;min-height:40px}
 .v3tabs button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
@@ -303,6 +305,7 @@ table.crew3-ph{margin-top:14px}
   <p style="margin:0"><button type="button" class="viewlink" id="viewlink">Try the new layout</button></p>
 
   <div id="v3" hidden>
+  <section aria-labelledby="h-strip" class="v3strip"><h2 id="h-strip" class="sr">What needs you</h2><div class="panel" id="v3strip"></div></section>
   <nav class="v3tabs" aria-label="Views"><button type="button" data-v3="now" aria-pressed="true">Now</button><button type="button" data-v3="plan" aria-pressed="false">Plan</button><button type="button" data-v3="crew" aria-pressed="false">Crew</button></nav>
   <section aria-labelledby="h-now" id="v3now">
     <h2 id="h-now">Now</h2>
@@ -339,9 +342,11 @@ table.crew3-ph{margin-top:14px}
   <section aria-labelledby="h-threads">
     <h2 id="h-threads">Threads</h2>
     <div class="panel">
+      <div id="ownerpart">
       <form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread</label><textarea id="nttext" rows="2" placeholder="Ask Manager something, or share an idea"></textarea><div class="keys" data-keys></div><div id="ntfiles"></div><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
       <h3 class="t-sec" id="h-wait">Needs you</h3>
       <div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div>
+      </div>
       <h3 class="t-sec" id="h-onlead">Waiting on Manager</h3>
       <div class="waiting" id="threads"><div class="empty">Nothing waiting on Manager.</div></div>
       <div class="waiting" id="later"></div>
@@ -1231,7 +1236,13 @@ function setV3View(v){v3view=["plan","crew"].includes(v)?v:"now";$("v3now").hidd
 // Which layout: the current board (v2) unless this viewer chose the new one ("#v3" in the link opens it too). The
 // choice is this browser's only; nothing is written to the board.
 let view="v2";
-function setView(v){view=v==="v3"?"v3":"v2";$("v3").hidden=view!=="v3";$("v2").hidden=view==="v3";
+// Board v3, the owner's strip (step 5): what needs the owner and the New-thread box stay at the top of the new layout,
+// whatever its tab. The very same elements move there and back (their ids, handlers and drafts go with them).
+let ownerHome=null;
+function placeOwnerPart(v3){const part=$("ownerpart"),strip=$("v3strip");if(!part||!strip||!part.parentNode)return;
+  if(v3&&part.parentNode!==strip){if(!ownerHome){ownerHome=document.createComment("ownerpart");part.parentNode.insertBefore(ownerHome,part)}strip.appendChild(part)}
+  else if(!v3&&ownerHome&&ownerHome.parentNode&&part.parentNode===strip)ownerHome.parentNode.insertBefore(part,ownerHome.nextSibling)}
+function setView(v){view=v==="v3"?"v3":"v2";$("v3").hidden=view!=="v3";$("v2").hidden=view==="v3";placeOwnerPart(view==="v3");
   $("viewlink").textContent=view==="v3"?"Back to the current board":"Try the new layout";
   try{localStorage.setItem("flight-board-view",view)}catch(e){}
   if(view==="v3"){renderNow();renderPlan();renderCrew3()}}
