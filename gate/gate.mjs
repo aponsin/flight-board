@@ -52,10 +52,11 @@ export function writesOf(t) {
   return [{ op: t.action, collection: t.collection, doc_id: t.doc_id, data: load(t), if_version: t.if_version }];
 }
 
-// The board's mirror: { docs: { collection: [ {id, ...data} ] }, at } from an ArtifactData export (out_dir), or null.
+// The board's mirror: { docs: { collection: [ {id, ...data} ] }, at, atBy } from an ArtifactData export (out_dir), or
+// null. at: its newest file; atBy: each collection's, when that collection was listed (an export lists one after another).
 export function readMirror(dir) {
   if (!existsSync(dir)) return null;
-  const docs = {};
+  const docs = {}, atBy = {};
   let at = 0;
   for (const c of readdirSync(dir)) {
     const cdir = join(dir, c);
@@ -64,15 +65,20 @@ export function readMirror(dir) {
     for (const f of readdirSync(cdir)) {
       if (!f.endsWith(".json")) continue;
       const path = join(cdir, f);
-      at = Math.max(at, statSync(path).mtimeMs);
+      const t = statSync(path).mtimeMs;
+      at = Math.max(at, t);
+      atBy[c] = Math.max(atBy[c] ?? 0, t);
       try { docs[c].push({ id: f.slice(0, -5), ...JSON.parse(readFileSync(path, "utf8")) }); } catch { /* half written */ }
     }
   }
-  return { docs, at };
+  return { docs, at, atBy };
 }
 
 // The writes the gate let through since the mirror was exported, laid over it: the mirror then shows each card as it is
-// now (a card closed after the export is closed here too). journal: [{ op, collection, doc_id, data, at }].
+// now (a card closed after the export is closed here too). journal: [{ op, collection, doc_id, data, at }]. "Since" is
+// since that write's collection was listed: an ask written after `waiting` was listed but before the export's last
+// collection is in neither the files nor, measured from the newest file, the overlay (c226-iphone-test: the lead's
+// messages into its thread were refused). A collection the export didn't hold counts from its newest file.
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 // threads too (#C234: a thread numbered since the export read as unnumbered, and the lead's message into it was refused),
 // but only onto a mirror that has threads: a few recent ones alone would make every older thread look unnumbered.
@@ -81,7 +87,8 @@ export function withJournal(mirror, journal) {
   if (!mirror) return null;
   const docs = Object.fromEntries(Object.entries(mirror.docs).map(([c, list]) => [c, list.map((d) => ({ ...d }))]));
   for (const w of journal ?? []) {
-    if (!OVERLAY.has(w.collection) || !(w.at > mirror.at)) continue;
+    const listed = Object.prototype.hasOwnProperty.call(mirror.atBy ?? {}, w.collection) ? mirror.atBy[w.collection] : mirror.at;
+    if (!OVERLAY.has(w.collection) || !(w.at > listed)) continue;
     if (w.collection === "threads" && !Array.isArray(docs.threads)) continue;
     const list = (docs[w.collection] ||= []);
     const i = list.findIndex((d) => d.id === w.doc_id);
