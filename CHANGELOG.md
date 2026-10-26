@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2 - Unreleased
+
+### Added
+- Phase times from the evidence (#C235): the collector works out when each phase ran from the repository, not from steps someone remembered to log: plan from the card to its branch's first commit, build to READY (never after the first sign-off), each review to its sign-off note's time (in the order the notes came; the one the card waits on runs open), ship from the ship run taking the work to the first deploy run on main that has it, live that run. Open cards and those closed in the last 7 days, in `derived/all` as `times`; one deploy-run list per run. On the page each phase the evidence shows replaces the steps' times for it (who and waits kept); steps fill only phases with no evidence (a test, a design talk, a one-commit branch's plan and build). A finished phase with neither says "no record" in grey.
+- The repository's reading says how old it is (#C237): "as of 12 min ago" beside a card's repository mark, greyed past 30 minutes. A READY another session sends the lead asks for a collector run at the end of its turn (the refresh hook).
+
+### Changed
+- A card's phase comes from its branch's current tip (#C237): an older commit of the branch that a release named counts only once the branch is gone, so a card whose first try shipped and whose rework waits no longer shows "Live in" the old version. One card is one branch: a card with two takes the least advanced one's phase, names it on the card, and the collector prints a `CONFLICT` to split the rework into a sub-card; the gate refuses a card write that lists branches or names another branch than the card's. Main and a ship run's candidate branch are never a card's branch.
+- Who an item waits on comes from one function, `waitsOn`, for its section and its badge alike (#C236): an answered ask under "Waiting on Manager" says so (it said "waiting on you"). A page lint keeps every badge in `badge()`.
+- Every live re-draw keeps each fold as the owner left it, wherever its thread lands, and the scroll position (#C241); Needs you's thread rows are no longer drawn shut.
+
 ## 0.3.1 - Unreleased
 
 ### Fixed
