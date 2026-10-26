@@ -160,7 +160,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .fchip .fx{border:0;background:none;color:var(--muted);font-size:1rem;line-height:1;cursor:pointer;padding:2px 6px;min-width:28px;min-height:28px}
 .rsearch{padding:6px 12px 2px}.rsearch input{font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
 .reply.drop,.newthread.drop{outline:2px dashed var(--accent);outline-offset:4px;border-radius:6px}
-.sentfiles a{color:inherit}
+.sentfiles a{color:inherit}.filesave{font:inherit;color:var(--accent);background:none;border:0;padding:0;text-decoration:underline;cursor:pointer}.filesave:disabled{opacity:.6;cursor:progress}
 .reply.sent{padding:8px 10px;border-radius:6px;font-size:.9rem;background:var(--ok-soft);color:var(--ok)}
 .reply.sent.help{background:var(--bad-soft);color:var(--bad)}
 /* Crew: compact tiles, several per row. */
@@ -499,11 +499,27 @@ function filesHtml(id){if(!assetsRef)return "";const list=pendingFiles.get(id)||
   return `<div class="files"><button type="button" class="attach" data-attach="${esc(id)}">Attach</button><input type="file" id="file-${esc(id)}" data-files="${esc(id)}" multiple hidden accept="${ACCEPT}">${list.map((f,n)=>{const pv=previewUrl(f);return `<span class="fchip">${pv?`<button type="button" class="thumb fthumb" data-full="${esc(pv)}" data-cap="${esc(f.name)}"><img src="${esc(pv)}" alt="Preview of ${esc(f.name)}"></button>`:""}${esc(f.name)} <small>${fmtSize(f.size)}</small><button type="button" class="fx" data-unattach="${esc(id)}" data-n="${n}" aria-label="Remove ${esc(f.name)}">×</button></span>`}).join("")}${list.length?"":'<span class="hint">or paste or drop files here (images, PDFs, text; 15 MB each)</span>'}</div>`}
 const blobId=x=>typeof x==="string"&&/^[A-Za-z0-9_-]{8,64}$/.test(x);
 // A sent reply's or message's files, at the board's own asset path (/_blob/<id>): an image is a thumbnail that opens in
-// the lightbox, with that reply's other images; any other file downloads in place. Never a new tab: the board runs in
-// a sandboxed frame, where a new tab can't open the board's own address.
+// the lightbox, with that reply's other images. Any other file saves through the viewer's own prompt (the downloads
+// capability): a plain download link does nothing in the artifact viewer (#C272). Without the capability, the name
+// alone. Never a new tab: the board runs in a sandboxed frame, where a new tab can't open the board's own address.
+let downloadsRef=null;
+function setDownloads(d){downloadsRef=d||null}
 function fileLinks(fs){return fs.map(f=>/^image\//.test(String(f.type||""))
   ?`<button type="button" class="thumb fthumb" data-full="/_blob/${f.id}" data-cap="${esc(f.name||"image")}"><img src="/_blob/${f.id}" alt="${esc(f.name||"image")}" loading="lazy"></button>`
-  :`<a href="/_blob/${f.id}" download="${esc(f.name||"file")}">${esc(f.name||"file")}</a>`).join(" ")}
+  :downloadsRef?`<button type="button" class="filesave" data-save="${f.id}" data-name="${esc(f.name||"file")}" data-type="${esc(f.type||"")}">${esc(f.name||"file")}</button>`
+  :`<span class="fname" title="Saving files isn't available in this view">${esc(f.name||"file")}</span>`).join(" ")}
+// The name a file saves under: its own, with the extension its type wants when it has none (the viewer saves only known
+// extensions).
+const SAVE_EXT={"application/pdf":"pdf","text/plain":"txt","text/markdown":"md","application/json":"json","text/csv":"csv"};
+function saveName(name,type){const n=String(name||"").trim()||"file";return /\.[A-Za-z0-9]{1,5}$/.test(n)?n:n+"."+(SAVE_EXT[type]||"txt")}
+// A file button: the stored file, read back from the board's own path, handed to the viewer's save prompt. The viewer
+// confirms or declines; a decline is no error. Each other outcome says so on the button.
+document.addEventListener("click",async e=>{const b=e.target&&e.target.closest&&e.target.closest("[data-save]");if(!b)return;
+  e.preventDefault();if(!downloadsRef||!blobId(b.dataset.save)||b.disabled)return;b.disabled=true;
+  try{const r=await fetch("/_blob/"+b.dataset.save);if(!r.ok)throw {code:"read"};
+    await downloadsRef.save({filename:saveName(b.dataset.name,b.dataset.type),data:await r.blob()});b.title="Saved"}
+  catch(err){const c=err&&err.code;b.title=c==="declined"?"":c==="read"?"Couldn't read the file: try again":c==="rate_limited"?"A save is already open":c==="rejected_extension"||c==="extension_not_enabled"?"This kind of file can't be saved here":c==="too_large"?"Too big to save here":"Saving isn't available in this view"}
+  finally{b.disabled=false}});
 function sentFiles(r){const fs=(Array.isArray(r&&r.files)?r.files:[]).filter(f=>f&&blobId(f.id));
   return fs.length?` <span class="sentfiles">Files: ${fileLinks(fs)}</span>`:""}
 function addFiles(id,fl){const list=pendingFiles.get(id)||[],errs=[];
@@ -1368,6 +1384,7 @@ setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()
   $("dot").classList.add("on"); dbRef=db; renderWaiting();
   window.claude.use("comments").then(c=>{commentsRef=c}).catch(()=>{});
   window.claude.use("assets").then(a=>{if(a){assetsRef=a;renderWaiting();renderThreads()}}).catch(()=>{});
+  window.claude.use("downloads").then(d=>{if(d){setDownloads(d);renderAll()}}).catch(()=>{});
   const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderAll();$("synced").textContent="live, updated "+hhmm(Date.now())},
     ()=>{$("dot").classList.remove("on");$("synced").textContent="connection lost, reload"});
   ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings"].forEach(sub);

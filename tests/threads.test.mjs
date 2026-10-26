@@ -75,8 +75,8 @@ test("a message is shown as text: markup escaped, links made safe, files only fr
   assert.doesNotMatch(html, /<img src=x/);
   assert.match(html, /&lt;b&gt;Manager&lt;\/b&gt;/);
   assert.match(html, /<a href="https:\/\/example.com\/x" target="_blank" rel="noopener">/);
-  assert.match(html, /href="\/_blob\/abcdefgh12"/);
-  assert.match(html, /&lt;s&gt;\.png/);
+  assert.match(html, /<span class="fname"[^>]*>&lt;s&gt;\.png<\/span>/, "the stored file, by its escaped name (no save in this view)");
+  assert.equal((html.match(/class="fname"/g) ?? []).length, 1, "the made-up id is dropped");
   assert.doesNotMatch(html, /javascript:/);
 });
 
@@ -323,14 +323,23 @@ test("Needs you: the open asks, then the threads Manager answered; empty, it say
   assert.doesNotMatch(renderWaitingHtml([], { messages: [msg("t-9", "Owner", "Waiting", T)] }), /Waiting/, "the owner's own last word waits on Manager, not here");
 });
 
-test("a thread message's files: an image opens in the lightbox with that message's other images, Esc-able; any other file downloads in place", () => {
-  const b = loadNames(["msgHtml", "openShot", "closeShot"]);
+test("a thread message's files: an image opens in the lightbox with that message's other images, Esc-able; any other file saves through the viewer (#C272)", () => {
+  const b = loadNames(["msgHtml", "openShot", "closeShot", "setDownloads", "saveName"]);
   const id1 = "392a9fe2edba5da37e73585fbc68825a", id2 = "d2ff20e3dc150c8fff5417cd8f4e6544", id3 = "0304d2adb98fa84a699c66a27aab61e9";
   const html = b.msgHtml({ thread: "t-1", from: "Sam", text: "x", at: 1, assets: [
     { id: id1, name: "a.png", type: "image/png" }, { id: id2, name: 'b"<i>.png', type: "image/png" }, { id: id3, name: "log.txt", type: "text/plain" }, { id: "../x", name: "bad", type: "image/png" }] });
   assert.match(html, new RegExp(`<button type="button" class="thumb fthumb" data-full="/_blob/${id1}" data-cap="a.png"><img src="/_blob/${id1}" alt="a.png" loading="lazy"></button>`));
   assert.match(html, /data-cap="b&quot;&lt;i&gt;\.png"/, "a file name is escaped");
-  assert.match(html, new RegExp(`<a href="/_blob/${id3}" download="log.txt">log.txt</a>`));
+  // #C272: a plain download link does nothing in the artifact viewer. Without the downloads capability, the name alone;
+  // with it, a button that hands the stored file to the viewer's save prompt.
+  assert.match(html, /<span class="fname" title="[^"]+">log\.txt<\/span>/);
+  assert.doesNotMatch(html, /download=|<a href="\/_blob/);
+  b.setDownloads({ save() {} });
+  const saving = b.msgHtml({ thread: "t-1", from: "Sam", text: "x", at: 1, assets: [{ id: id3, name: 'log".txt', type: "text/plain" }] });
+  assert.match(saving, new RegExp(`<button type="button" class="filesave" data-save="${id3}" data-name="log&quot;\\.txt" data-type="text/plain">log&quot;\\.txt</button>`));
+  assert.equal(b.saveName("report", "application/pdf"), "report.pdf", "a name with no extension gets the one its type wants");
+  assert.equal(b.saveName("notes.md", "text/markdown"), "notes.md");
+  assert.equal(b.saveName("", "text/plain"), "file.txt");
   assert.doesNotMatch(html, /target=|\.\.\/x|<i>/);
   // Clicking the second image opens the lightbox on it, with the message's two images to step through.
   const thumbs = [{ dataset: { full: `/_blob/${id1}`, cap: "a.png" } }, { dataset: { full: `/_blob/${id2}`, cap: "b.png" } }];

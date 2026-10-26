@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.3.3 - Unreleased
+## 0.3.4 - Unreleased
+
+### Fixed
+- A thread's non-image files save through the viewer's own prompt (the `downloads` capability, now one of the page's four): a plain download link did nothing in the artifact viewer. Without the capability a file shows by name only (#C272).
+- Waiting on Manager orders and dates each ask by its newest word, so a reopened ask shows the owner's fresh message, not its old reply (#C272, Designer).
+- The Stop hook owes an answer to an "ok" that came with files, as the page keeps such a reply waiting on Manager; and it reads a note from the page's own separator, so an item whose text says "Note: " no longer starts the note early (#C272, Checker).
+
+### Added
+- Fixtures for a bare Ack and a bare Done; the fixture reader also reads a row's position in its section and its age (#C272, Checker).
+
+## 0.3.3 - 2026-10-26
 
 ### Added
 - Rendered scenarios (#C268): `tests/fixtures/board/` holds board documents for each item state (asked, answered, acknowledged, acted, replied, reopened, queued, shipping now, live, gated) and what the owner must see; `scripts/fixtures.mjs` draws them with the page's own script and compares section, rows, badge, thread and phase row. `npm test` runs them, and `scripts/build-page.mjs` builds no page that fails one.

@@ -42,7 +42,8 @@ Four steps, in order. Every path below is a placeholder: use your own.
    config, turns on the pre-push scan with your list, and builds `dist/board.html`.
 2. **Publish the page.** Ask your lead agent to publish `dist/board.html` with its Artifact tool: a new artifact the
    first time (put its link in `artifactUrl` and build again), the same link afterwards. The page needs the `db`,
-   `comments` and `assets` capabilities. Run `npm test` before every publish.
+   `comments`, `assets` and `downloads` capabilities, declared together (a declaration is the whole set): `downloads`
+   lets a thread's non-image files be saved; without it they show by name only. Run `npm test` before every publish.
 3. **Install the hooks.** Pick the commit you trust (its tests green, reviewed), then
    `node scripts/hooks.mjs <board.config.json> --pin <commit>` prints what it would change; add `--write` to change
    `~/.claude/settings.json` (it keeps a copy). Run it from a checkout of that very commit (a detached worktree is
