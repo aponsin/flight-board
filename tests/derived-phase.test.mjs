@@ -19,8 +19,10 @@ test("live by the evidence: the card says Live, still open, never stalled, whate
   assert.equal(i.stepPhase, "checker");
   assert.equal(i.version, "1.104.1");
   assert.equal(i.upNext, false);
-  assert.equal(b.stalled({ ...i, lastStepAt: T - 9e6 }), 0);
-  const html = b.initRow(i);
+  const old = Date.now() - 9e6;
+  assert.equal(b.stalled({ ...i, lastStepAt: old }), 0);
+  assert.ok(b.stalled({ ...i, byEvidence: false, lastStepAt: old }) > 0, "the same card by its steps alone would stall");
+  const html = b.initRow({ ...i, lastStepAt: old });
   assert.match(html, /Live, still open/);
   assert.doesNotMatch(html, /Stalled|up next/);
   assert.match(html, /class="evidence clash"[^>]*>Repository: Live 1\.104\.1 · steps say Checker</);
@@ -40,6 +42,16 @@ test("the agent on the evidence's phase is named; agreement shows no clash", () 
   assert.equal(i.phase, "checker");
   assert.equal(i.who, "Checker");
   assert.doesNotMatch(b.initRow(i), /evidence clash/);
+});
+
+test("two reviews open at once, the evidence on the earlier one: that reviewer is named", () => {
+  const b = loadBoard();
+  const both = [...built, step("x", "checker", "Checker", "start", T + 2), step("x", "security", "Security", "start", T + 3)];
+  const i = card(b, both, { phase: "checker", at: T + 100 });
+  assert.equal(i.stepPhase, "security");
+  assert.equal(i.phase, "checker");
+  assert.equal(i.who, "Checker");
+  assert.equal(i.upNext, false);
 });
 
 test("steps newer than the collector's run and further on win until the next run; older ones don't", () => {
