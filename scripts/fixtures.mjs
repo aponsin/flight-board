@@ -65,11 +65,14 @@ export function observe(drawn, id) {
     // A row is an item's own fold (data-id its id, or th-<id> for a thread row); a button's data-id is not a row.
     ROW.lastIndex = 0;
     const starts = [...html.matchAll(ROW)].map((m) => m.index);
+    // Top-level rows only for the position: a row inside a folded group (Later, Resolved) is not counted at that level.
+    let place = 0;
     starts.forEach((start, n) => {
       const key = html.slice(html.indexOf('data-id="', start) + 9).split('"', 1)[0];
+      if (!key.startsWith("__")) place++;
       if (key !== id && key !== `th-${id}`) return;
       const row = html.slice(start, starts[n + 1] ?? html.length);
-      out.rows++; where.push(section); first ??= { section, row, card: false };
+      out.rows++; where.push(section); first ??= { section, row, card: false, position: place };
     });
   }
   out.section = where.length ? [...new Set(where)].join(", ") : "none";
@@ -78,7 +81,12 @@ export function observe(drawn, id) {
   const badge = /<span class="t-badge[^"]*">([^<]*)<\/span>/.exec(head);
   out.badge = badge ? badge[1] : null;
   out.threadUnder = first.row.includes(`data-thread="${id}"`);
-  if (!first.card) { out.replyRow = head.includes("Reply to:"); return out; }
+  if (!first.card) {
+    out.replyRow = head.includes("Reply to:");
+    out.position = first.position;
+    out.age = strip((/<span class="age">([\s\S]*?)<span class="caret"/.exec(head) ?? ["", ""])[1]) || null;
+    return out;
+  }
   const steps = [...first.row.matchAll(/<div class="step([^"]*)" title="([^"]+)"/g)].filter((m) => /\b(now|upnext)\b/.test(m[1]));
   out.phase = steps.length ? steps[steps.length - 1][2].split(":")[0] : null;
   out.status = strip((/<span class="state [^"]*">([\s\S]*?)<\/span>/.exec(first.row) ?? ["", ""])[1]);

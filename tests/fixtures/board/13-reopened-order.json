@@ -1,0 +1,16 @@
+{
+  "name": "Waiting on Manager orders and dates each ask by its newest word, so a reopened ask shows what is fresh (#C272)",
+  "about": "An ask answered 30 minutes ago and reopened 5 minutes ago by the owner's new question shows \"5 min ago\" and comes after one answered 10 minutes ago (oldest first, as the section always sorted).",
+  "docs": {
+    "waiting": [
+      { "id": "older-answered", "kind": "decision", "text": "Which hero?", "options": [{ "key": "A", "label": "A" }, { "key": "B", "label": "B" }], "since": "now-60m", "response": { "status": "chose", "choice": "A", "note": "", "at": "now-10m" } },
+      { "id": "reopened", "kind": "answer", "question": "Why red?", "text": "A flaky test.", "since": "now-90m", "done": true, "response": { "status": "ack", "note": "", "at": "now-30m" } }
+    ],
+    "messages": [{ "id": "r1", "thread": "reopened", "from": "@owner", "text": "It failed again, which test?", "at": "now-5m" }],
+    "threads": [{ "id": "older-answered", "num": 41, "title": "Hero" }, { "id": "reopened", "num": 42, "title": "Red" }]
+  },
+  "expect": {
+    "older-answered": { "section": "waiting-on-manager", "position": 1, "age": "10 min ago" },
+    "reopened": { "section": "waiting-on-manager", "rows": 1, "position": 2, "age": "5 min ago", "badge": "waiting on Manager" }
+  }
+}

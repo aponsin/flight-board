@@ -43,12 +43,12 @@ test("a page whose fixtures fail is never built; the team's page is checked with
 test("the reader: times relative to now, a button's data-id is no row, a card's phase row", () => {
   assert.deepEqual(times({ a: "now-5m", b: ["now+1h", "now"], c: "nowhere" }, 1_000_000_000), { a: 1_000_000_000 - 300e3, b: [1_000_000_000 + 36e5, 1_000_000_000], c: "nowhere" });
   const drawn = { "needs-you": '<details class="w-item" data-id="x"><summary class="w-row">Ask<span class="t-badge you">waiting on you</span></summary><button data-id="x">Done</button></details>', "waiting-on-manager": "", later: "", resolved: "", board: "", done: "" };
-  assert.deepEqual(observe(drawn, "x"), { rows: 1, section: "needs-you", badge: "waiting on you", threadUnder: false, replyRow: false });
+  assert.deepEqual(observe(drawn, "x"), { rows: 1, section: "needs-you", badge: "waiting on you", threadUnder: false, replyRow: false, position: 1, age: null });
   assert.deepEqual(observe(drawn, "y"), { rows: 0, section: "none", badge: null });
 });
 
 test("every fixture names what it checks, and every expected key is one the reader knows", () => {
-  const keys = new Set(["section", "rows", "badge", "replyRow", "threadUnder", "phase", "status", "version", "gated"]);
+  const keys = new Set(["section", "rows", "badge", "replyRow", "threadUnder", "phase", "status", "version", "gated", "position", "age"]);
   for (const f of fixtures()) {
     assert.ok(f.name && f.about, f.file);
     for (const want of Object.values(f.expect)) for (const k of Object.keys(want)) assert.ok(keys.has(k), `${f.file}: ${k}`);

@@ -1,0 +1,17 @@
+{
+  "name": "A bare Ack on an answer and a bare Done on a Your click item settle the ask (#C272)",
+  "about": "No note at all: the owner pressed the button and nothing else. Neither waits on anyone, and with no thread neither has a row; a bare choice on a decision still waits on Manager.",
+  "docs": {
+    "waiting": [
+      { "id": "ack-bare", "kind": "answer", "question": "Did it ship?", "text": "Yes, in 1.4.0.", "since": "now-30m", "response": { "status": "ack", "note": "", "at": "now-20m" } },
+      { "id": "done-bare", "kind": "action", "text": "Restart the Studio.", "steps": ["Open it.", "Restart."], "since": "now-30m", "response": { "status": "done", "note": "", "at": "now-15m" } },
+      { "id": "chose-bare", "kind": "decision", "text": "Which?", "options": [{ "key": "A", "label": "A" }, { "key": "B", "label": "B" }], "since": "now-30m", "response": { "status": "chose", "choice": "B", "note": "", "at": "now-10m" } }
+    ],
+    "threads": [{ "id": "ack-bare", "num": 31, "title": "Shipped?" }, { "id": "done-bare", "num": 32, "title": "Studio" }, { "id": "chose-bare", "num": 33, "title": "Pick" }]
+  },
+  "expect": {
+    "ack-bare": { "section": "none", "rows": 0 },
+    "done-bare": { "section": "none", "rows": 0 },
+    "chose-bare": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager" }
+  }
+}

@@ -441,10 +441,11 @@ function badge(on){return on==="you"?'<span class="t-badge you">waiting on you</
 function itemShown(id,now){const it=itemOf(id);if(!it)return false;
   return it.coll==="waiting"?!settled(it.doc)||threadOpen(id):it.coll==="initiatives"?it.doc.status!=="done":false}
 // An ask as a row that opens to its steps, its reply buttons (or the sent line) and its thread.
-function askHtml(w,open){const steps=Array.isArray(w.steps)?w.steps:[];
+// at: the time its age counts from (Waiting on Manager passes the ask's newest word); else when it was asked.
+function askHtml(w,open,at=w.since){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
    <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
-   <span class="age">${num(w.since)?dur(Date.now()-w.since)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
+   <span class="age">${num(at)?dur(Date.now()-at)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
    return `<details class="w-item" data-id="${esc(w.id)}"${open.has(w.id)?" open":""}><summary class="w-row">${head}</summary>
@@ -809,9 +810,12 @@ function laterHtml(now,open=new Set()){const later=state.waiting.filter(w=>waits
 function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(Date.now());el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply))})}
 // "Waiting on Manager": the asks the owner answered that Manager has not closed (the reply and its thread under each),
 // the threads whose last word is the owner's, and the resolved ones folded at the end.
-function threadsHtml(now){const r=threadRows(now),asks=state.waiting.filter(w=>waitsOn(w.id,now)==="lead").sort((a,b)=>(num(a.response&&a.response.at)??0)-(num(b.response&&b.response.at)??0));
+// Each ask by its newest word, the owner's reply or a later message in its thread (#C272: a reopened ask sat and dated
+// at its old reply, though the owner had just written), oldest first.
+const newestWord=w=>Math.max(num(w.response&&w.response.at)??0,threadOf(w.id).length?threadLast(w.id):0)||null;
+function threadsHtml(now){const r=threadRows(now),asks=state.waiting.filter(w=>waitsOn(w.id,now)==="lead").sort((a,b)=>(newestWord(a)??0)-(newestWord(b)??0));
   if(!asks.length&&!r.open)return '<div class="empty">Nothing waiting on Manager.</div>';
-  return asks.map(w=>askHtml(w,new Set())).join("")+r.open}
+  return asks.map(w=>askHtml(w,new Set(),newestWord(w))).join("")+r.open}
 // Every fold the owner opened or closed, by what it shows (an ask's row and the same thread's row elsewhere are one fold:
 // "th-" and "ith-" are the thread rows' prefixes), kept across every live re-draw of any part of the page, so a thread
 // that moves from one list to another stays as the owner left it (#C241: it folded shut while the owner read it).
