@@ -34,7 +34,9 @@ test("a node: the lead's alone, its fields checked, never deleted", () => {
   has(w(set("obj-shop", node({ text: "x".repeat(201) }))), "text: 1 to 200");
   has(w(set("obj-shop", node({ waitsOn: "the printer" }))), "waitsOn");
   has(w(upd("obj-shop", { text: { __delete__: true } })), "text can't be removed");
-  has(w(upd("obj-shop", { state: "done" })), "declared with evidence");
+  has(w(set("obj-shop", node({ state: "done" }))), "declared with evidence");
+  assert.deepEqual(w(upd("obj-shop", { state: "done" })), [], "an update may rely on the evidence the board has (checked against the mirror)");
+  has(w(upd("obj-shop", { replacedBy: "obj-2", why: "w", changedAt: Date.now() + 36e5 })), "changedAt is in the future");
   assert.deepEqual(w(upd("obj-shop", { state: "done", evidence: "the sign is up (photo in the thread)" })), []);
   has(w(upd("obj-shop", { state: "blocked" })), "the collector works out the rest");
   has(w(upd("obj-shop", { replacedBy: "obj-shop-2" })), "says why");
@@ -63,6 +65,21 @@ test("a node with cards is replaced, never edited; a replacement stays; parents 
   assert.deepEqual(planMirrorErrors(upd("obj-shop", { text: "x" }), { mirror: { docs: { initiatives: [{ id: "c1", plan: "obj-shop" }] } }, batch: [] }), [], "no plan in the export: skipped");
 });
 
+test("no loops: a node can't sit inside its own branch, nor be replaced in a circle (Checker)", () => {
+  const m = mirror([{ id: "b", ...node() }, { id: "a", ...node({ parent: "b", kind: "step" }) }, { id: "c", ...node({ parent: "a", kind: "step" }) }]);
+  const w = (x, batch = [x]) => planMirrorErrors(x, { mirror: m, batch });
+  has(w(upd("b", { parent: "a" })), "makes a loop");
+  has(w(upd("b", { parent: "c" })), "makes a loop", "a longer loop");
+  assert.deepEqual(w(upd("c", { parent: "b" })), [], "moving within the tree is fine");
+  const two = [upd("a", { parent: "x" }), set("x", node({ parent: "a", kind: "milestone" }))];
+  has(planMirrorErrors(two[0], { mirror: m, batch: two }), "makes a loop", "a loop made across one call");
+  const rep = mirror([{ id: "p", ...node({ replacedBy: "q", why: "w", changedAt: 1 }) }, { id: "q", ...node() }]);
+  has(planMirrorErrors(upd("q", { replacedBy: "p", why: "w", changedAt: now }), { mirror: rep, batch: [] }), "loop of replacements");
+  const ev = mirror([{ id: "s", ...node({ kind: "step", parent: null, evidence: "the photo" }) }, { id: "t", ...node({ kind: "step", parent: null }) }]);
+  assert.deepEqual(planMirrorErrors(upd("s", { state: "done" }), { mirror: ev, batch: [] }), [], "the board's evidence counts");
+  has(planMirrorErrors(upd("t", { state: "done" }), { mirror: ev, batch: [] }), "declared with evidence");
+});
+
 test("every new card names a live plan node; a card naming one names a real one", () => {
   const m = mirror([{ id: "obj-shop", ...node() }, { id: "old", ...node({ replacedBy: "obj-shop", why: "w", changedAt: 1 }) }, { id: "keep-lights-on", ...node({ order: 99, text: "Keep the lights on" }) }]);
   const w = (x, batch = [x], mir = m) => initiativePlanErrors(x, { mirror: mir, batch });
@@ -75,6 +92,11 @@ test("every new card names a live plan node; a card naming one names a real one"
   has(w(upd("c1", { plan: "old" }, "initiatives")), "replaced by obj-shop: link to that");
   has(w(upd("c1", { plan: { __delete__: true } }, "initiatives")), "plan can't be removed");
   has(w(upd("c1", { plan: 7 }, "initiatives")), "plan: a node id");
+  // An update to a replaced node in the same call doesn't make it current again (Checker).
+  const sneak = [upd("old", { note: "x" }), upd("c1", { plan: "old" }, "initiatives")];
+  has(w(sneak[1], sneak), "replaced by obj-shop: link to that");
+  const unreplace = [upd("old", { replacedBy: { __delete__: true } }), upd("c1", { plan: "old" }, "initiatives")];
+  assert.deepEqual(w(unreplace[1], unreplace), [], "the link reads the node as the call leaves it (the node's own write is refused on its own)");
   const both = [set("step-new", node({ parent: "obj-shop", kind: "step" })), set("c2", { ...card, plan: "step-new" }, "initiatives")];
   assert.deepEqual(w(both[1], both), [], "a node made in the same call");
   assert.deepEqual(w(set("c1", { ...card, plan: "anything" }, "initiatives"), undefined, { docs: {} }), [], "no plan in the export: only the link's presence is checked");

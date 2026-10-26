@@ -110,7 +110,7 @@ export function writeErrors(w, { config, who, now }) {
     else if (agents.some((a) => a !== who.role) || others.length) e.push(`meta/context: ${who.role} may write only agents.${who.role}`);
   }
   // The plan (board v3, gate/plan.mjs): the lead's alone, never deleted, every field checked.
-  if (collection === PLAN) return [...e, ...planWriteErrors(w, { who, config })];
+  if (collection === PLAN) return [...e, ...planWriteErrors(w, { who, config, now })];
   if (op === "delete" || !data || typeof data !== "object") return e;
   e.push(...timeErrors(data, now));
   const rules = pageRules();
