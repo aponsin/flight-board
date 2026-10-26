@@ -9,7 +9,7 @@ import { loadNames, renderWaitingHtml } from "./harness.mjs";
 
 const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01" });
 const T = 1_800_000_000_000;
-const mirror = (over = {}) => ({ docs: { initiatives: [], waiting: [{ id: "w-old" }], ideas: [], messages: [], derived: [], threads: [{ id: "w-old", num: 4, title: "Old ask" }, { id: "w-bare" }], ...over } });
+const mirror = (over = {}) => ({ docs: { initiatives: [], waiting: [{ id: "w-old" }, { id: "w-legacy" }], ideas: [], messages: [], derived: [], threads: [{ id: "w-old", num: 4, title: "Old ask" }, { id: "w-bare" }], ...over } });
 const set = (collection, id, data) => ({ op: "set", collection, doc_id: id, data });
 const has = (errs, part) => assert.ok(errs.some((e) => e.includes(part)), `"${part}" in: ${errs.join(" | ")}`);
 
@@ -21,6 +21,7 @@ test("a new waiting item comes with its numbered thread in the same batch; one a
   has(mirrorErrors(item, { config, mirror: mirror(), batch: [item, set("threads", "w-new", { num: 5 })] }), "has no number yet", "a title too");
   assert.deepEqual(mirrorErrors({ op: "update", collection: "waiting", doc_id: "w-old", data: { done: true } }, { config, mirror: mirror() }), [], "an update to an item on the board");
   assert.deepEqual(mirrorErrors(set("waiting", "w-old", { text: "again" }), { config, mirror: mirror() }), [], "a set over an item on the board");
+  assert.deepEqual(mirrorErrors(set("waiting", "w-legacy", { text: "again" }), { config, mirror: mirror() }), [], "an item from before, not numbered yet: still editable (the backfill numbers it)");
   assert.deepEqual(threadNumberedErrors(item, { mirror: { docs: { waiting: [] } }, batch: [item] }), [], "no threads in the export: skipped");
 });
 
@@ -56,4 +57,10 @@ test("the page: every item and thread shows #T<num> · title, and who it waits o
   const html = b.askHtml(w, new Set());
   assert.match(html, /class="t-tag"><button type="button" class="copy t-num" data-copy="#T4"[^>]*>#T4<\/button> · <b class="t-name">Old ask<\/b>/);
   assert.match(html, /<span class="t-badge you">waiting on you<\/span>/);
+});
+
+test("a badge never breaks across lines (the owner's screenshot: \"waiting on / Manager\")", async () => {
+  const { readFileSync } = await import("node:fs");
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(html, /\.t-badge\{[^}]*white-space:nowrap[^}]*\}/);
 });
