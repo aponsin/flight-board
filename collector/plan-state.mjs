@@ -11,7 +11,7 @@
 //   next     - anything else.
 // An objective also gets its bar (done over all the nodes below it, replaced ones left out) and its chip: done, blocked
 // (every node left is gated), at-risk (the ETA medians of what is left run past its due day) or on-track; null with no
-// due day unless done or blocked. The due day ends at 23:59:59 UTC (the clock comes in; no time zone is read).
+// due day, or nothing below it yet, unless done or blocked. The due day ends at 23:59:59 UTC (the clock comes in; no time zone is read).
 import { closed } from "./derive.mjs";
 
 const HOUR = 36e5;
@@ -80,7 +80,7 @@ export function derivePlan({ nodes, cards, derived = {}, waiting = [], config, n
     let chip = null;
     if (out[n.id].state === "done") chip = "done";
     else if (left.length && left.every((c) => out[c.id].state === "gated")) chip = "blocked";
-    else if (dueAt !== null) chip = now + hours * HOUR > dueAt ? "at-risk" : "on-track";
+    else if (dueAt !== null && all.length) chip = now + hours * HOUR > dueAt ? "at-risk" : "on-track";
     objectives[n.id] = { done, total: all.length, hoursLeft: Math.round(hours * 10) / 10, chip };
   }
   return { at: now, nodes: out, objectives };
