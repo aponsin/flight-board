@@ -1,0 +1,25 @@
+{
+  "name": "Threads: the owner's reply on a card, a new thread of his, Manager's answer to read, and a real question after an ask closed",
+  "about": "A reply under a card stays under the card. The owner's own new thread waits on Manager until answered. A closed ask whose thread carries a real question shows as that ask under Waiting on Manager, never as a second \"Reply to\" row.",
+  "docs": {
+    "initiatives": [{ "id": "card-replied", "name": "Hero photo", "status": "active", "level": "Quick", "size": "S", "phase": "build", "who": "Builder", "createdAt": "now-3h", "etaLive": "now+2h", "nextNote": "Builder builds it.", "nextNoteAt": "now-10m", "plan": "p" }],
+    "waiting": [{ "id": "closed-then-asked", "kind": "answer", "question": "Is the form live?", "text": "Yes.", "since": "now-2h", "done": true, "doneAt": "now-100m", "response": { "status": "ack", "note": "", "at": "now-100m" } }],
+    "messages": [
+      { "id": "c1", "thread": "card-replied", "from": "@owner", "text": "Can it be bigger on the phone?", "at": "now-6m" },
+      { "id": "n1", "thread": "t-1793000000000", "from": "@owner", "text": "Can we add Spanish to the footer?", "at": "now-9m", "kind": "idea" },
+      { "id": "a1", "thread": "t-1793000000001", "from": "@owner", "text": "Is the CDN cached?", "at": "now-40m", "kind": "question" },
+      { "id": "a2", "thread": "t-1793000000001", "from": "Manager", "text": "Yes, for a day.", "at": "now-30m", "after": "a1" },
+      { "id": "q1", "thread": "closed-then-asked", "from": "@owner", "text": "It shows the old form on my phone, why?", "at": "now-4m" }
+    ],
+    "threads": [
+      { "id": "card-replied", "num": 11, "title": "Hero photo" }, { "id": "t-1793000000000", "num": 12, "title": "Spanish footer" },
+      { "id": "t-1793000000001", "num": 13, "title": "CDN" }, { "id": "closed-then-asked", "num": 14, "title": "Form live" }
+    ]
+  },
+  "expect": {
+    "card-replied": { "section": "board", "rows": 1, "badge": "waiting on Manager", "threadUnder": true },
+    "t-1793000000000": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager" },
+    "t-1793000000001": { "section": "needs-you", "rows": 1, "badge": "answered" },
+    "closed-then-asked": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager", "replyRow": false, "threadUnder": true }
+  }
+}

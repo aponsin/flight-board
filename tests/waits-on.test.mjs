@@ -13,13 +13,17 @@ const badgeOf = (html, id) => (html.match(new RegExp(`data-id="(?:th-)?${id}"[\\
 
 test("waitsOn: an open ask is you, then the lead once answered; a thread is the lead, answered or resolved by its last word", () => {
   const ask = { id: "a1", kind: "action", text: "Do it", since: T };
-  const answered = { ...ask, id: "a2", response: { status: "done", at: 1000 } };
-  const b = board({ waiting: [ask, answered, { ...ask, id: "a3", done: true }], messages: [
+  const answered = { ...ask, id: "a2", response: { status: "help", note: "step 2 fails", at: 1000 } };
+  // A bare Done, or one that only acknowledges, settles the ask (#C268): nothing waits on anyone.
+  const doneBare = { ...ask, id: "a4", response: { status: "done", at: 1000 } }, doneOk = { ...ask, id: "a5", response: { status: "done", note: "done.", at: 1000 } };
+  const b = board({ waiting: [ask, answered, { ...ask, id: "a3", done: true }, doneBare, doneOk], messages: [
     msg("t-1", "Owner", "a question", T), msg("t-2", "Owner", "q", T), msg("t-2", "Manager", "an answer", T + 1),
     msg("t-3", "Owner", "q", T), msg("t-3", "Manager", "done", T + 1, { resolved: true }), msg("a3", "Manager", "thanks", T + 1),
   ] });
   assert.equal(b.waitsOn("a1", T), "you");
   assert.equal(b.waitsOn("a2", T), "lead");
+  assert.equal(b.waitsOn("a4", T), null, "a bare Done: settled, no thread");
+  assert.equal(b.waitsOn("a5", T), null, "Done with \"done.\": settled too");
   assert.equal(b.waitsOn("t-1", T), "lead", "the owner's word is the last");
   assert.equal(b.waitsOn("t-2", T), "answered", "Manager's word is the last");
   assert.equal(b.waitsOn("t-3", T), "resolved");

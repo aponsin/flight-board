@@ -1,0 +1,12 @@
+{
+  "name": "Fault 2 (#T855, 2026-10-26): a closed ask's \"ok\" is never a separate \"Reply to\" row waiting on Manager",
+  "about": "The same answer, once Manager closed it: the owner's \"ok\" was the thread's last word, so the old page drew a second row, \"Reply to: #T855\", under Waiting on Manager (a regression of board-reply-thread-bug).",
+  "docs": {
+    "waiting": [{ "id": "ans-idle", "kind": "answer", "question": "Is Boardsmith idle?", "text": "Yes, on purpose.", "since": "now-12m", "done": true, "response": { "status": "ack", "note": "ok", "at": "now-10m" } }],
+    "messages": [{ "id": "m1", "thread": "ans-idle", "from": "@owner", "text": "ok", "at": "now-10m" }],
+    "threads": [{ "id": "ans-idle", "num": 855, "title": "Boardsmith idle?" }]
+  },
+  "expect": {
+    "ans-idle": { "section": "resolved", "rows": 1, "badge": "resolved" }
+  }
+}

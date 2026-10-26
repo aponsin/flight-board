@@ -1,0 +1,12 @@
+{
+  "name": "Fault 3 (#T856, 2026-10-26): a Your click item the owner marked Done, with \"done.\", leaves Waiting on Manager",
+  "about": "The owner clicked Done on \"Clear Demos by hand\" and typed \"done.\". The old page filed the Your click item under Waiting on Manager, badged \"waiting on Manager\", as if it still needed something.",
+  "docs": {
+    "waiting": [{ "id": "clear-demos", "kind": "action", "text": "Clear Demos yourself.", "steps": ["Open the Demos session.", "Type /clear."], "since": "now-20m", "ping": "sent", "response": { "status": "done", "note": "done.", "at": "now-15m" } }],
+    "messages": [{ "id": "m1", "thread": "clear-demos", "from": "@owner", "text": "done.", "at": "now-15m" }],
+    "threads": [{ "id": "clear-demos", "num": 856, "title": "Clear Demos by hand" }]
+  },
+  "expect": {
+    "clear-demos": { "section": "resolved", "rows": 1, "badge": "resolved" }
+  }
+}

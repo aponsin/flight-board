@@ -1,0 +1,27 @@
+{
+  "name": "Cards through their life: queued for a ship, shipping now, live, and gated on the owner",
+  "about": "Each card's phase row and version line, as the repository and the asks tied to it say.",
+  "docs": {
+    "initiatives": [
+      { "id": "queued", "name": "Queued card", "status": "active", "level": "Quick", "size": "S", "phase": "checker", "createdAt": "now-5h", "etaLive": "now+1h", "nextNote": "Release ships it.", "nextNoteAt": "now-5m", "plan": "p" },
+      { "id": "shipping", "name": "Shipping card", "status": "active", "level": "Quick", "size": "S", "phase": "checker", "createdAt": "now-5h", "etaLive": "now+1h", "nextNote": "Release ships it.", "nextNoteAt": "now-5m", "plan": "p" },
+      { "id": "live", "name": "Live card", "status": "active", "level": "Quick", "size": "S", "phase": "ship", "createdAt": "now-5h", "etaLive": "now+1h", "nextNote": "Close it.", "nextNoteAt": "now-5m", "plan": "p" },
+      { "id": "gated", "name": "Gated card", "status": "active", "level": "Quick", "size": "S", "phase": "build", "who": "Builder", "createdAt": "now-5h", "etaLive": "now+1h", "nextNote": "Waits on the owner's pick.", "nextNoteAt": "now-5m", "plan": "p" }
+    ],
+    "derived": [{ "id": "all", "at": "now-3m", "cards": {
+      "queued": { "phase": "ship", "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "readyAt": "now-20m", "evidence": "every review signed", "at": "now-3m" },
+      "shipping": { "phase": "ship", "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "readyAt": "now-25m", "evidence": "every review signed", "shipping": true, "at": "now-3m" },
+      "live": { "phase": "live", "head": "cccccccccccccccccccccccccccccccccccccccc", "readyAt": "now-2h", "version": "1.2.3", "evidence": "on main and deployed", "at": "now-3m" }
+    } }],
+    "waiting": [{ "id": "gate-pick", "kind": "decision", "initiative": "gated", "text": "Which colour?", "options": [{ "key": "A", "label": "Blue" }, { "key": "B", "label": "Green" }], "since": "now-15m" }],
+    "threads": [{ "id": "gate-pick", "num": 21, "title": "Colour" }],
+    "steps": [{ "id": "s1", "init": "gated", "phase": "build", "who": "Builder", "kind": "start", "at": "now-40m" }]
+  },
+  "expect": {
+    "queued": { "section": "board", "rows": 1, "phase": "Ship", "version": "Queued (1)" },
+    "shipping": { "section": "board", "rows": 1, "phase": "Ship", "version": "Shipping now" },
+    "live": { "section": "board", "rows": 1, "status": "Live, still open", "version": "Live in v1.2.3" },
+    "gated": { "section": "board", "rows": 1, "gated": true },
+    "gate-pick": { "section": "needs-you", "rows": 1, "badge": "waiting on you" }
+  }
+}

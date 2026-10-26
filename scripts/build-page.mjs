@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig } from "./config.mjs";
+import { checkAll } from "./fixtures.mjs";
 
 const TEMPLATE = new URL("../page/board.template.html", import.meta.url);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -29,11 +30,20 @@ export function buildPage(template, config) {
     .replaceAll("{{RUNNER_LABEL}}", esc(c.runnerLabel)).replaceAll("{{AUTOMATION_LABEL}}", esc(c.automationLabel));
 }
 
+// The page, only if it draws every rendered scenario as expected (#C268): a failing fixture throws, and nothing is
+// written. The built page itself is checked, with the team's config in it.
+export function buildChecked(template, config, dir) {
+  const html = buildPage(template, config);
+  const failed = checkAll(html, dir).filter((r) => r.bad.length);
+  if (failed.length) throw new Error(`Not built: ${failed.length} page fixture(s) fail (node scripts/fixtures.mjs):\n${failed.map((r) => `- ${r.file}: ${r.bad.join("; ")}`).join("\n")}`);
+  return html;
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const [configPath, out = "dist/board.html"] = process.argv.slice(2);
   if (!configPath) { console.error("Usage: node scripts/build-page.mjs <board.config.json> [out.html]"); process.exit(2); }
   try {
-    const html = buildPage(readFileSync(TEMPLATE, "utf8"), JSON.parse(readFileSync(configPath, "utf8")));
+    const html = buildChecked(readFileSync(TEMPLATE, "utf8"), JSON.parse(readFileSync(configPath, "utf8")));
     mkdirSync(dirname(resolve(out)), { recursive: true });
     writeFileSync(out, html);
     console.log(`Built ${out}. Publish it as your board's artifact (README, "Publish the page").`);

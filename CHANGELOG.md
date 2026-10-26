@@ -2,7 +2,12 @@
 
 ## 0.3.3 - Unreleased
 
+### Added
+- Rendered scenarios (#C268): `tests/fixtures/board/` holds board documents for each item state (asked, answered, acknowledged, acted, replied, reopened, queued, shipping now, live, gated) and what the owner must see; `scripts/fixtures.mjs` draws them with the page's own script and compares section, rows, badge, thread and phase row. `npm test` runs them, and `scripts/build-page.mjs` builds no page that fails one.
+
 ### Fixed
+- An Ack on an answer, or a Done on anything but a decision, with no note or a note that only acknowledges ("ok", "done.", "Thanks!"), settles the ask: it leaves Waiting on Manager, and its thread reads resolved (#C268, #T855, #T856: they stayed badged "waiting on Manager"). A choice, a help request or a note with a question still waits on Manager.
+- A closed ask whose thread carries the owner's real question shows as that ask under Waiting on Manager, never also as a "Reply to" row (#C268: #T855 showed twice).
 - The refresh hook reads a READY only inside a session message's own body, never in text after it closes; and it now sees the usual wordings: READY anywhere in the first line (not "not READY"), a READY line after a bullet, and "Re-sign please" (#C265, Checker).
 - A stale "as of" stamp says "· old" in the warning colour at full contrast; dimmed to half, it read at about 2:1 (#C265, Designer).
 

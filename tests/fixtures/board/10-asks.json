@@ -1,0 +1,36 @@
+{
+  "name": "Asks through their life: asked, answered, acknowledged, acted, reopened, and a real question in a note",
+  "about": "One ask in each state, on one board. Each shows in exactly one place, with the badge its section means.",
+  "docs": {
+    "waiting": [
+      { "id": "asked", "kind": "action", "text": "Run the install.", "steps": ["Open Terminal.", "Run it."], "since": "now-30m" },
+      { "id": "answered", "kind": "decision", "text": "Which hero?", "options": [{ "key": "A", "label": "A" }, { "key": "B", "label": "B" }], "since": "now-40m", "response": { "status": "chose", "choice": "A", "note": "", "at": "now-20m" } },
+      { "id": "acked", "kind": "answer", "question": "Is it live?", "text": "Yes.", "since": "now-50m", "done": true, "doneAt": "now-45m", "response": { "status": "ack", "note": "", "at": "now-45m" } },
+      { "id": "acted", "kind": "decision", "text": "Ship it?", "options": [{ "key": "y", "label": "Yes" }, { "key": "n", "label": "No" }], "since": "now-90m", "done": true, "response": { "status": "chose", "choice": "y", "note": "go", "at": "now-80m" } },
+      { "id": "reopened", "kind": "answer", "question": "Why red?", "text": "A flaky test.", "since": "now-90m", "done": false, "reopenedAt": "now-5m", "response": { "status": "ack", "note": "", "at": "now-60m" } },
+      { "id": "asks-more", "kind": "action", "text": "Restart the runner.", "steps": ["Open the Studio.", "Restart."], "since": "now-30m", "response": { "status": "done", "note": "It says permission denied on step 2, what now?", "at": "now-8m" } },
+      { "id": "acked-thanks", "kind": "answer", "question": "Where is the guide?", "text": "In the Learn tab.", "since": "now-25m", "response": { "status": "ack", "note": "Thanks!", "at": "now-20m" } }
+    ],
+    "messages": [
+      { "id": "a1", "thread": "acted", "from": "@owner", "text": "go", "at": "now-80m" },
+      { "id": "a2", "thread": "acted", "from": "Manager", "text": "Shipped in 1.2.0.", "at": "now-70m", "after": "a1" },
+      { "id": "r1", "thread": "reopened", "from": "@owner", "text": "Which test? It failed again just now.", "at": "now-5m" },
+      { "id": "q1", "thread": "asks-more", "from": "@owner", "text": "It says permission denied on step 2, what now?", "at": "now-8m" },
+      { "id": "t1", "thread": "acked-thanks", "from": "@owner", "text": "Thanks!", "at": "now-20m" }
+    ],
+    "threads": [
+      { "id": "asked", "num": 1, "title": "Install" }, { "id": "answered", "num": 2, "title": "Hero" }, { "id": "acked", "num": 3, "title": "Live?" },
+      { "id": "acted", "num": 4, "title": "Ship" }, { "id": "reopened", "num": 5, "title": "Red" }, { "id": "asks-more", "num": 6, "title": "Runner" },
+      { "id": "acked-thanks", "num": 7, "title": "Guide" }
+    ]
+  },
+  "expect": {
+    "asked": { "section": "needs-you", "rows": 1, "badge": "waiting on you" },
+    "answered": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager" },
+    "acked": { "section": "none", "rows": 0 },
+    "acted": { "section": "resolved", "rows": 1, "badge": "resolved" },
+    "reopened": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager", "threadUnder": true },
+    "asks-more": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager", "threadUnder": true },
+    "acked-thanks": { "section": "resolved", "rows": 1, "badge": "resolved" }
+  }
+}

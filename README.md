@@ -12,7 +12,8 @@ Everything particular to one team lives in its own `board.config.json`, outside 
 |---|---|
 | `page/board.template.html` | The board page, with a `/*BOARD_CONFIG*/` block the build fills in. |
 | `scripts/config.mjs` | The config's fields, their defaults and their check. |
-| `scripts/build-page.mjs` | Builds the page for one config into `dist/board.html`. |
+| `scripts/build-page.mjs` | Builds the page for one config into `dist/board.html`, only if the built page passes every rendered scenario. |
+| `scripts/fixtures.mjs`, `tests/fixtures/board/` | Rendered scenarios: board documents and what the owner must see for each item, drawn by the page's own script. |
 | `scripts/install.mjs` | One-time setup for a team: checks the config, turns on the scan, builds the page. |
 | `scripts/scan.mjs`, `.githooks/pre-push` | The content scan, run before every push. |
 | `scripts/hooks.mjs` | Installs the hooks below into Claude Code's settings, from a pinned copy of one signed commit. |
@@ -91,6 +92,8 @@ remembered in that browser only.
 ## Tests
 
 `npm test` runs every rule's test. Each rule also had a mutation check: break the rule on purpose, a test must fail, restore.
+
+Rendered scenarios check the page as the owner sees it. Each file in `tests/fixtures/board/` is a set of board documents (times written `now-5m`, the owner `@owner`) and, for each item, what must show: its `section` (`needs-you`, `waiting-on-manager`, `later`, `resolved`, `board`, `done` or `none`), how many `rows`, its `badge`, `threadUnder` and `replyRow`, and for a card its `phase`, `status`, `version` and `gated`. `scripts/fixtures.mjs` draws the whole board with the page's own script and compares; `node scripts/fixtures.mjs [page.html]` prints each result. `npm test` runs them on the template, and `scripts/build-page.mjs` refuses to build a page that fails one. A display fault the owner reports becomes a fixture first, which must fail before its fix.
 
 ## The write gate
 

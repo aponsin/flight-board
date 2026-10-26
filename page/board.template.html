@@ -415,22 +415,31 @@ function dayLabel(t){const d=new Date(t),n=new Date();if(d.toDateString()===n.to
 // ago, the "sent" moment), then under "Waiting on Manager" until Manager closes it, with the reply and its thread.
 const SENT_MS=2500;
 const answered=(w,now)=>!!(w.response&&w.response.at&&now-w.response.at>SENT_MS);
-function needsYou(w,now){return !w.done&&!answered(w,now)}
-function onLead(w,now){return !w.done&&answered(w,now)}
+// A note that only acknowledges ("ok", "done.", "Thanks!"): it asks Manager nothing (#C268: an Ack with "ok" and a Done
+// with "done." stayed under Waiting on Manager, badged so, and once closed showed again as a "Reply to" row).
+const ACK_ONLY=/^(?:ok(?:ay)?|k|done|thanks?(?: you)?|thx|ty|got it|noted|yes|yep|yup|sure|great|perfect|good|cool|nice|fine|all good|will do|👍|✅|🙏)$/i;
+function ackOnly(text){return ACK_ONLY.test(String(text||"").trim().replace(/[\s.!👍✅🙏]+$/u,"").replace(/^[\s👍✅🙏]+/u,"")||"ok")}
+// Settled: closed, or the owner's own reply closed it: an Ack on an answer, or a Done on anything but a decision, with no
+// note, or one that only acknowledges, and no files. A choice, a "help" or a note with a question waits for Manager.
+function settled(w){if(!w)return false;if(w.done)return true;const r=w.response;if(!r||(Array.isArray(r.files)&&r.files.length)||!ackOnly(r.note))return false;
+  return (w.kind==="answer"&&r.status==="ack")||(w.kind!=="decision"&&r.status==="done")}
+function needsYou(w,now){return !settled(w)&&!answered(w,now)}
+function onLead(w,now){return !settled(w)&&answered(w,now)}
 // Who something waits on now: the one answer its badge and its section both come from, so they can never disagree
 // (#C236: an answered ask under "Waiting on Manager" still said "waiting on you"). An open ask: "you" (unanswered) or
 // "lead" (answered, not closed). Any other thread: "lead" (the owner's word is the last), "resolved", "answered"
 // (Manager's word is the last: the owner reads it, under Needs you), or null with no messages.
 function waitsOn(id,now){const it=itemOf(id);
-  if(it&&it.coll==="waiting"&&!it.doc.done)return needsYou(it.doc,now)?"you":"lead";
+  if(it&&it.coll==="waiting"&&!settled(it.doc))return needsYou(it.doc,now)?"you":"lead";
   if(!threadOf(id).length)return null;
   return threadOpen(id)?"lead":threadResolved(id)?"resolved":"answered"}
 // The badge for a waitsOn answer: the only place the page writes one.
 function badge(on){return on==="you"?'<span class="t-badge you">waiting on you</span>':on==="lead"?'<span class="t-badge open">waiting on Manager</span>':on==="resolved"?'<span class="t-badge res">resolved</span>':on==="answered"?'<span class="t-badge ">answered</span>':""}
-// Whether an item is drawn with its thread under it: an open ask (either section), or an initiative in flight. Its
-// thread then stays there, never as a second row (a reply under an item once showed as a card of its own).
+// Whether an item is drawn with its thread under it: an open ask (either section), a closed one whose thread waits on
+// Manager (a real question after it closed: the ask itself shows, never a second "Reply to" row, #C268), or an
+// initiative in flight. Its thread then stays there (a reply under an item once showed as a card of its own).
 function itemShown(id,now){const it=itemOf(id);if(!it)return false;
-  return it.coll==="waiting"?!it.doc.done:it.coll==="initiatives"?it.doc.status!=="done":false}
+  return it.coll==="waiting"?!settled(it.doc)||threadOpen(id):it.coll==="initiatives"?it.doc.status!=="done":false}
 // An ask as a row that opens to its steps, its reply buttons (or the sent line) and its thread.
 function askHtml(w,open){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
@@ -713,14 +722,16 @@ function threadOf(id){const t=state.messages.filter(m=>m&&m.thread===id&&num(m.a
     if(p&&!seen.has(p)){seen.add(m);v=Math.max(v,k(p,seen)+1)}key.set(m,v);return v};
   return t.sort((a,b)=>k(a)-k(b)||a.at-b.at)}
 function threadIds(){return [...new Set(state.messages.filter(m=>m&&typeof m.thread==="string"&&num(m.at)!=null).map(m=>m.thread))]}
-function threadOpen(id){const t=threadOf(id),last=t[t.length-1];return !!last&&last.from===OWNER&&!last.resolved}
+// Open: the owner's word is the last, unless it only acknowledges an ask that is settled (#C268).
+function threadOpen(id){const t=threadOf(id),last=t[t.length-1];if(!last||last.from!==OWNER||last.resolved)return false;
+  const it=itemOf(id);return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
 function openThreads(){return threadIds().filter(threadOpen)}
 function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"waiting",doc:w};
   const i=state.initRaw.find(x=>x.id===id);if(i)return {coll:"initiatives",doc:i};
   const d=state.ideas.find(x=>x.id===id);if(d)return {coll:"ideas",doc:d};return null}
 // Resolved: its item is done (an ask or idea done, an initiative done), or Manager's last word marked it resolved.
 function threadResolved(id){if(threadOpen(id))return false;const it=itemOf(id),t=threadOf(id),last=t[t.length-1];
-  if(last&&last.resolved)return true;if(!it)return false;return it.coll==="initiatives"?it.doc.status==="done":!!it.doc.done}
+  if(last&&last.resolved)return true;if(!it)return false;return it.coll==="initiatives"?it.doc.status==="done":it.coll==="waiting"?settled(it.doc):!!it.doc.done}
 function threadTitle(id){const it=itemOf(id);if(it)return String(it.coll==="initiatives"?it.doc.name:it.doc.text||id);const f=threadOf(id)[0];return f?String(f.text):id}
 // A thread's number and name (threads/<thread id> {num, title}): the lead numbers threads in the order they opened
 // (scripts/thread-ids.mjs); the owner may rename one here. With no name, a short cut of the item's or first message's text.
@@ -798,7 +809,7 @@ function laterHtml(now,open=new Set()){const later=state.waiting.filter(w=>waits
 function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(Date.now());el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply))})}
 // "Waiting on Manager": the asks the owner answered that Manager has not closed (the reply and its thread under each),
 // the threads whose last word is the owner's, and the resolved ones folded at the end.
-function threadsHtml(now){const r=threadRows(now),asks=state.waiting.filter(w=>waitsOn(w.id,now)==="lead").sort((a,b)=>(num(a.response.at)??0)-(num(b.response.at)??0));
+function threadsHtml(now){const r=threadRows(now),asks=state.waiting.filter(w=>waitsOn(w.id,now)==="lead").sort((a,b)=>(num(a.response&&a.response.at)??0)-(num(b.response&&b.response.at)??0));
   if(!asks.length&&!r.open)return '<div class="empty">Nothing waiting on Manager.</div>';
   return asks.map(w=>askHtml(w,new Set())).join("")+r.open}
 // Every fold the owner opened or closed, by what it shows (an ask's row and the same thread's row elsewhere are one fold:

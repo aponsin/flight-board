@@ -1,0 +1,12 @@
+{
+  "name": "Fault 1 (#T855, 2026-10-26): an answer acknowledged with \"ok\" is closed, never badged waiting on Manager",
+  "about": "The owner pressed Ack on Manager's answer and typed \"ok\" in the box. The old page kept it open under Waiting on Manager, badged \"waiting on Manager\": an acknowledgement asks nothing.",
+  "docs": {
+    "waiting": [{ "id": "ans-idle", "kind": "answer", "question": "Is Boardsmith idle?", "text": "Yes, on purpose.", "since": "now-12m", "ping": "sent", "response": { "status": "ack", "note": "ok", "at": "now-10m" } }],
+    "messages": [{ "id": "m1", "thread": "ans-idle", "from": "@owner", "text": "ok", "at": "now-10m" }],
+    "threads": [{ "id": "ans-idle", "num": 855, "title": "Boardsmith idle?" }]
+  },
+  "expect": {
+    "ans-idle": { "section": "resolved", "rows": 1, "badge": "resolved" }
+  }
+}

@@ -36,12 +36,13 @@ test("one reply box in every state, always above the messages, which show newest
   assert.match(open, /data-reply="w2"/);
   assert.doesNotMatch(open, /data-tsend="w2"/);
   assert.ok(before(open, 'data-reply="w2"', "latest words") && before(open, "latest words", "first words"));
-  // An answered ask: the "You marked this done" line, then the thread box, then the messages.
-  const b = board({ waiting: [{ id: "w2", kind: "action", text: "Do it", since: T, response: { status: "done", at: 1000 }, ping: "sent" }], messages: thread });
+  // An answered ask that waits on Manager (a help request; a bare Done settles it, #C268): the "You asked for help" line,
+  // then the thread box, then the messages.
+  const b = board({ waiting: [{ id: "w2", kind: "action", text: "Do it", since: T, response: { status: "help", note: "it failed", at: 1000 }, ping: "sent" }], messages: thread });
   const answered = b.threadsHtml(T);
   assert.equal(boxes(answered), 1);
   assert.match(answered, /data-reply="th:w2"/);
-  assert.ok(before(answered, "You marked this done", 'data-reply="th:w2"') && before(answered, 'data-reply="th:w2"', "latest words") && before(answered, "latest words", "first words"));
+  assert.ok(before(answered, "You asked for help", 'data-reply="th:w2"') && before(answered, 'data-reply="th:w2"', "latest words") && before(answered, "latest words", "first words"));
   // A thread drawn on its own (a panel row, an initiative's fold): its box, then the messages.
   const alone = b.threadHtml("w2", "init");
   assert.equal(boxes(alone), 1);
