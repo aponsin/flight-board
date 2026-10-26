@@ -2,6 +2,11 @@
 
 ## 0.3.1 - Unreleased
 
+### Fixed
+- An ask's own text sits on its own line under the #T number, title and badge, with a small gap (#C234: it ran on after "waiting on you").
+- The gate lays threads written since the collector's export over its mirror, so a thread the lead just numbered is no longer refused as unnumbered (#C234; it came with #C227's thread export). Only onto a mirror that has threads.
+- `scripts/current.mjs` makes the install root before its check copy, and a dry run copies nothing (Checker).
+
 ### Added
 - The current link (#C223): the scheduled collector runs from `~/.flight-board/current`, a symlink to a pinned signed commit, which `scripts/current.mjs` moves only to a commit on main with Security's `SECURE` note, and only to a copy that is exactly that commit. A collector, page or task change no longer needs the owner's install; the gate, the refresh hook, the fence and what they import stay pinned in the settings and do. The fence accepts the link only while it points at a pinned copy, and a run's step 2 refuses code other than step 1's. Security's review is what gates a link move (the README says so).
 - Unnumbered threads (#C227): the collector exports `threads` and prints a `NUDGE` line every run while a thread has no number, for the lead to number it.

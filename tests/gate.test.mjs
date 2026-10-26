@@ -471,3 +471,16 @@ test("Checker: a single delete the board applied is journaled, so the overlay dr
     assert.deepEqual(out.docs.waiting.map((d) => d.id), ["w2"]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("a thread numbered since the export counts as numbered: the lead's message into it passes (#C234)", async () => {
+  const { withJournal } = await import("../gate/gate.mjs");
+  const mirror = { at: 100, docs: { threads: [{ id: "old", num: 1, title: "Old" }], waiting: [], messages: [], initiatives: [] } };
+  const msg = { op: "set", collection: "messages", doc_id: "m1", data: { thread: "install-hook-settings", from: "Manager", text: "Done.", at: now } };
+  const refused = (m) => checkWrites([msg], { config, who: lead, now, state: {}, mirror: m }).errors.some((e) => e.includes("has no number yet"));
+  assert.equal(refused(mirror), true, "unnumbered before");
+  const journal = [{ op: "set", collection: "threads", doc_id: "install-hook-settings", data: { num: 818, title: "Install the hook" }, at: 150 }];
+  assert.equal(refused(withJournal(mirror, journal)), false, "numbered since the export");
+  assert.equal(refused(withJournal(mirror, journal.map((w) => ({ ...w, at: 90 })))), true, "a write older than the export is already in it (or was undone)");
+  const noThreads = withJournal({ at: 100, docs: { messages: [] } }, journal);
+  assert.equal(noThreads.docs.threads, undefined, "never a partial threads list on a mirror without them");
+});

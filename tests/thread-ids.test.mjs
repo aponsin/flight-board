@@ -81,7 +81,9 @@ test("gate (Checker's probe): the counter is pinned once it exists and never goe
   const out = checkWrites([num("t-x", 40), seq(41)], { config, who: lead, now, state: at40 });
   assert.equal(out.state.threadSeq, 40, "letting a batch through moves nothing: only the board applying it does");
   assert.equal(afterWrite(out.state, [num("t-x", 40), seq(41)]).threadSeq, 41);
-  assert.equal(afterWrite(at40, [{ op: "update", collection: "threads", doc_id: "a", data: { title: "x" } }]), at40, "nothing to learn from a rename");
+  const renamed = afterWrite(at40, [{ op: "update", collection: "threads", doc_id: "a", data: { title: "x" } }]);
+  assert.equal(renamed.threadSeq, 40, "a rename moves no counter");
+  assert.deepEqual(renamed.journal.map((w) => [w.collection, w.doc_id, w.data]), [["threads", "a", { title: "x" }]], "it is journaled, so the gate sees the thread as it is now (#C234)");
 });
 
 test("gate (Checker's second probe): a batch the board refused can be sent again; once applied, its numbers can't", () => {

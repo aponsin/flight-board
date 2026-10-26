@@ -74,12 +74,15 @@ export function readMirror(dir) {
 // The writes the gate let through since the mirror was exported, laid over it: the mirror then shows each card as it is
 // now (a card closed after the export is closed here too). journal: [{ op, collection, doc_id, data, at }].
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-export const OVERLAY = new Set(["initiatives", "waiting", "ideas", "messages", "derived", "steps", "plan"]);
+// threads too (#C234: a thread numbered since the export read as unnumbered, and the lead's message into it was refused),
+// but only onto a mirror that has threads: a few recent ones alone would make every older thread look unnumbered.
+export const OVERLAY = new Set(["initiatives", "waiting", "ideas", "messages", "derived", "steps", "plan", "threads"]);
 export function withJournal(mirror, journal) {
   if (!mirror) return null;
   const docs = Object.fromEntries(Object.entries(mirror.docs).map(([c, list]) => [c, list.map((d) => ({ ...d }))]));
   for (const w of journal ?? []) {
     if (!OVERLAY.has(w.collection) || !(w.at > mirror.at)) continue;
+    if (w.collection === "threads" && !Array.isArray(docs.threads)) continue;
     const list = (docs[w.collection] ||= []);
     const i = list.findIndex((d) => d.id === w.doc_id);
     if (w.op === "delete") { if (i >= 0) list.splice(i, 1); continue; }

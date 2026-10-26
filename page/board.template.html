@@ -40,6 +40,8 @@ section{min-width:0}
 .kind.later{background:var(--track);color:var(--muted)}
 .kind.answer{background:var(--ok-soft);color:var(--ok)}
 .w-answer{white-space:pre-line}
+/* The item's own text on its own line under the #T number, title and badge (#C234: it ran on after the badge). */
+.w-body,.w-answer{display:block;margin-top:4px}
 .w-item:not([open]) .w-answer{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .gaps{color:var(--bad);font-weight:600;font-size:.85rem}
 .c-num{font:600 .75rem var(--mono);color:var(--muted);margin-right:6px}
@@ -422,7 +424,7 @@ function itemShown(id,now){const it=itemOf(id);if(!it)return false;
 // An ask as a row that opens to its steps, its reply buttons (or the sent line) and its thread.
 function askHtml(w,open){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
-   <div class="w-text">${threadTag(w.id)}<span class="t-badge you">waiting on you</span>${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:askText(w.text||"")}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
+   <div class="w-text">${threadTag(w.id)}<span class="t-badge you">waiting on you</span>${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
    <span class="age">${num(w.since)?dur(Date.now()-w.since)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
