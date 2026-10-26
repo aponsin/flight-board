@@ -17,8 +17,9 @@ Created only with the owner's yes. Its settings:
 - **Model**: the smallest one available; the run is a few fixed steps.
 - **Folder**: the board's own state folder, `<dir>` = `<gate.stateDir>/<board id>`, where the export, the mirror and the
   output live: a scheduled run saves ArtifactData exports (`out_dir`) only inside its own folder, whatever
-  `additionalDirectories` says (the second trial asked for every export). The code runs from the signed commit the hooks
-  pin (`~/.flight-board/install/<sha>`), by its full path; the collector reads nothing from the folder it runs in (the
+  `additionalDirectories` says (the second trial asked for every export). The code runs from the current link
+  (`~/.flight-board/current`, a symlink to a pinned signed commit, `~/.flight-board/install/<sha>`; README "The current
+  link"), by its full path, so a collector change needs no new settings; the fence stays the copy the settings pin; the collector reads nothing from the folder it runs in (the
   repository comes from `collector.repoPath`, the state from `gate.stateDir`). The folder is set in the app's view of
   the task (the task's own file has none, and the scheduled-task tools can't set one): set it, save, open the task
   again and check it. A run in any other folder loads none of the settings below.
@@ -42,8 +43,8 @@ Created only with the owner's yes. Its settings:
     "permissions": {
       "defaultMode": "default",
       "allow": [
-        "Bash(node <full path of the pinned install>/collector/collect.mjs --config <full path to board.config.json> --prepare)",
-        "Bash(node <full path of the pinned install>/collector/collect.mjs --config <full path to board.config.json>)",
+        "Bash(node <full path of the current link>/collector/collect.mjs --config <full path to board.config.json> --prepare)",
+        "Bash(node <full path of the current link>/collector/collect.mjs --config <full path to board.config.json>)",
         "Read(/<full path of collector.outDir>/derived-all.json)",
         "ArtifactData",
         "ToolSearch",
@@ -77,8 +78,8 @@ Created only with the owner's yes. Its settings:
   A path in a Read rule must start with `//`, the absolute form (`//Users/…`): a single `/` is relative to the settings
   file and silently matches nothing, so a deny wouldn't protect and the allow would ask (Security). In this block, write
   `/` plus the absolute path, which starts with its own `/`. Each Bash allow rule is the whole
-  command with the install's and the config's full paths written out (a re-pin changes the install's, so these two
-  rules and the prompt's two commands change with it): no wildcards, and nothing before or after it (`cd <folder> && node
+  command with the current link's and the config's full paths written out (the link's path never changes, so a new
+  collector needs no new rules; only a new fence or gate does, with the owner's install): no wildcards, and nothing before or after it (`cd <folder> && node
   …` matches no rule and asks: the first runs asked about ten times). The only file the run reads is step 3's
   `derived-all.json` (ArtifactData `set` with `file_path` reads it), in `collector.outDir`, a folder outside the run's
   own (the config must set it, e.g. `<dir>-out`). The run's own folder is denied to Read whole: a session reads its own
@@ -115,8 +116,8 @@ A short Claude session that keeps the board true to the repository and nudges th
 and write the board, so each run is these steps, in order. `<config>` is the team's `board.config.json`; `<dir>` is
 `<gate.stateDir>/<board id>` (the board id is the last part of `artifactUrl`).
 
-1. **Export the board**: run `node <install>/collector/collect.mjs --config <config> --prepare` (`<install>` the pinned
-   install's full path). It notes the time and prints `Export the board into: your scratchpad folder + /flight-board-export`
+1. **Export the board**: run `node <install>/collector/collect.mjs --config <config> --prepare` (`<install>` the current
+   link's full path, `~/.flight-board/current` written out). It notes the time and prints `Export the board into: your scratchpad folder + /flight-board-export`
    and a `Steps since: <time>` line. Then, each with `out_dir` this session's scratchpad folder followed by
    `/flight-board-export` (a scheduled run saves an export without asking only into its own scratchpad), so the documents
    go to that folder and never into this session:

@@ -4,8 +4,8 @@
 // permission mode decides: a run in auto mode can't be steered by board text into any other call (Security). It never
 // grants: it only refuses, so it can't raise what the settings allow. Any failure refuses (the "|| exit 2" covers a
 // crash or a missing file, which a hook would otherwise let pass). Paths and links compare as exact strings.
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { readFileSync, readlinkSync, existsSync } from "node:fs";
+import { join, dirname, resolve, basename } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
@@ -17,18 +17,35 @@ const FREE = new Set(["ToolSearch", "mcp__ccd_turn__update_plan", "mcp__ccd_turn
 const QUERY_KEYS = new Set(["limit", "cursor", "where", "order_by"]);
 const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
 
+// The collector's code may run from the fence's own pinned copy or from the current link (#C223): <install root>/../current,
+// a symlink scripts/current.mjs points at a pinned copy once Security signed it, so a collector change needs no new
+// settings. The link counts only while it is a symlink to <install root>/<full commit> holding the collector; anything
+// else (a folder, a link elsewhere) and only the pinned copy runs. Returns the link's path, or null.
+export function currentLink(install) {
+  const root = dirname(install), link = join(dirname(root), "current");
+  try { // readlinkSync throws on anything but a symlink
+    const target = resolve(dirname(link), readlinkSync(link));
+    if (dirname(target) !== root || !/^[0-9a-f]{40}$/.test(basename(target))) return null;
+    return existsSync(join(target, "collector", "collect.mjs")) ? link : null;
+  } catch { return null; }
+}
+
 // What one run may do, from the config and the fence's own command line: never from the call.
-// install: the pinned copy this file runs from; configPath: exactly as the task's prompt types it.
-export function fenceSpec({ config, configPath, install, sendTo, uid }) {
+// install: the pinned copy this file runs from; current: currentLink(install) or null; configPath: exactly as the
+// task's prompt types it.
+export function fenceSpec({ config, configPath, install, current = null, sendTo, uid }) {
   const id = boardId(config);
   if (!id) throw new Error("the config has no board link");
   if (!config.collector.outDir) throw new Error("collector.outDir is empty");
   if (!SESSION.test(String(sendTo ?? ""))) throw new Error("--send-to: a session id");
-  const collect = `node ${install}/collector/collect.mjs --config ${configPath}`;
+  const commands = [install, current].filter(Boolean).flatMap((dir) => {
+    const collect = `node ${dir}/collector/collect.mjs --config ${configPath}`;
+    return [`${collect} --prepare`, collect];
+  });
   return {
     url: config.artifactUrl,
     cwd: join(home(config.gate.stateDir), id),
-    commands: [`${collect} --prepare`, collect],
+    commands,
     derivedFile: join(home(config.collector.outDir), "derived-all.json"),
     sendTo,
     uid,
@@ -57,7 +74,7 @@ export function decide(input, spec) {
     const extra = onlyKeys(t, ["command", "description", "timeout", "dangerouslyDisableSandbox"]);
     if (extra.length) return `Bash: unexpected ${extra.join(", ")}`;
     if (t.dangerouslyDisableSandbox !== undefined && t.dangerouslyDisableSandbox !== false) return "Bash: never outside the sandbox";
-    if (!spec.commands.includes(t.command)) return "Bash: only the two collect.mjs commands, exactly as the steps write them";
+    if (!spec.commands.includes(t.command)) return "Bash: only the two collect.mjs commands, exactly as the steps write them (from the pinned copy or the current link)";
     return null;
   }
   if (tool === "ArtifactData") return artifactData(t, spec, session);
@@ -101,7 +118,7 @@ export function main(argv, stdin) {
   const problems = checkConfig(raw);
   if (problems.length) throw new Error(problems.join("; "));
   const install = dirname(dirname(fileURLToPath(import.meta.url)));
-  const spec = fenceSpec({ config: fullConfig(raw), configPath, install, sendTo: opt("--send-to"), uid: process.getuid() });
+  const spec = fenceSpec({ config: fullConfig(raw), configPath, install, current: currentLink(install), sendTo: opt("--send-to"), uid: process.getuid() });
   return decide(JSON.parse(stdin), spec);
 }
 

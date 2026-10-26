@@ -19,6 +19,11 @@ import { derivePlan } from "./plan-state.mjs";
 import { idText } from "./text.mjs";
 import { runMark, localMain, localShips } from "./refresh.mjs";
 
+// The folder this run's code really lives in (the current link resolved, by Node, to a pinned copy).
+const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
+// Step 2 runs only the code step 1 ran: a mark without code (an older --prepare) passes once.
+export const sameCode = (mark, code) => mark?.code === undefined || mark.code === code;
+
 // The steps the export takes: the last 7 days' (older ones can't hold an open step worth a nudge, and there are many).
 export const STEPS_DAYS = 7;
 
@@ -179,15 +184,17 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     try {
       mkdirSync(dir, { recursive: true });
       // With the refresh repos' origin/main now: the baseline the lead's refresh check compares against (collector/refresh.mjs).
-      writeFileSync(join(dir, "export-since.json"), JSON.stringify(runMark(Date.now(), config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern))));
+      // With the code this run started with (the current link resolved): step 2 must run the same (#C223).
+      writeFileSync(join(dir, "export-since.json"), JSON.stringify({ ...runMark(Date.now(), config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern)), code: CODE }));
       console.log(`Export the board into: your scratchpad folder + /${EXPORT_NAME}`);
       console.log(`Steps since: ${Date.now() - STEPS_DAYS * 864e5}`);
       process.exit(0);
     } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
   }
   try {
-    let since = Infinity;
-    try { since = JSON.parse(readFileSync(join(dir, "export-since.json"), "utf8")).at; } catch { /* no --prepare yet */ }
+    let since = Infinity, mark = {};
+    try { mark = JSON.parse(readFileSync(join(dir, "export-since.json"), "utf8")); since = mark.at; } catch { /* no --prepare yet */ }
+    if (!sameCode(mark, CODE)) throw new Error("the collector's code changed between step 1 and step 2 (the current link moved): run step 1 again");
     // Only this run's export: none since --prepare is an error, never an old mirror passed off as fresh (Security).
     const found = Number.isFinite(since) ? findExport(scratchRoot(process.cwd(), process.getuid()), since, process.getuid()) : null;
     if (!found) throw new Error("no complete board export since --prepare in this run's scratchpad: run step 1 again");

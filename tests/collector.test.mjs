@@ -277,8 +277,8 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   const doc = read(new URL("../collector/TASK.md", import.meta.url), "utf8");
   assert.match(doc, /\*\*Session title\*\*: exactly `Collector`/);
   assert.match(doc, /enforced by permission rules, not by the prompt/);
-  assert.match(doc, /"Bash\(node <full path of the pinned install>\/collector\/collect\.mjs --config <full path to board\.config\.json> --prepare\)"/);
-  assert.match(doc, /"Bash\(node <full path of the pinned install>\/collector\/collect\.mjs --config <full path to board\.config\.json>\)"/);
+  assert.match(doc, /"Bash\(node <full path of the current link>\/collector\/collect\.mjs --config <full path to board\.config\.json> --prepare\)"/);
+  assert.match(doc, /"Bash\(node <full path of the current link>\/collector\/collect\.mjs --config <full path to board\.config\.json>\)"/);
   assert.match(doc, /no wildcards/);
   assert.match(doc, /\*\*Mode: Auto\*\*/);
   assert.match(doc, /Never\s+Accept edits or Bypass/);
@@ -303,7 +303,7 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /\*\*Folder\*\*: the board's own state folder/, "exports are saved only inside the run's folder (trial 2)");
   assert.equal(settings.permissions.additionalDirectories, undefined, "everything is inside the run's folder");
   assert.match(doc, /must start with `\/\/`, the absolute form/);
-  assert.ok(settings.permissions.allow.slice(0, 2).every((r) => r.startsWith("Bash(node <full path of the pinned install>/collector/collect.mjs --config ") && !r.includes("*")), "the two node commands, whole, by full path");
+  assert.ok(settings.permissions.allow.slice(0, 2).every((r) => r.startsWith("Bash(node <full path of the current link>/collector/collect.mjs --config ") && !r.includes("*")), "the two node commands, whole, by full path");
   for (const d of ["Grep", "Glob", "Agent", "SendMessage", "Bash(head:*)", "Bash(tail:*)", "Bash(git:*)", "Bash(npm:*)"]) assert.ok(settings.permissions.deny.includes(d), d);
   assert.equal(settings.permissions.defaultMode, "default");
   assert.ok(settings.permissions.deny.some((r) => r.startsWith("Read(//private/tmp/claude-<uid>/")) && settings.permissions.deny.some((r) => r.startsWith("Read(//tmp/claude-<uid>/")), "the run's own scratchpad denied to Read (Security)");

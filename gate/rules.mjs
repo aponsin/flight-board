@@ -19,6 +19,21 @@ function pageRules() {
   return (page = ctx.__b);
 }
 
+// Text that offers the owner a choice: two lettered or numbered options ("A) … B)", "1) … 2)") or "option A". Only a
+// decision with options gives one button per choice; anything else shows a single button (#C227: an answer listed A)
+// and B) with only Ack).
+const FIELDS_WITH_CHOICES = ["text", "question", "title"];
+export function offersChoices(text) {
+  const s = String(text ?? "");
+  const marks = (re) => new Set([...s.matchAll(re)].map((m) => m[1].toUpperCase()));
+  return marks(/(?:^|[\s([])([A-Za-z])\)/g).size >= 2 || marks(/(?:^|[\s([])([0-9])\)/g).size >= 2 || /\boption [A-Z0-9]\b/i.test(s);
+}
+function choiceErrors(data, kind) {
+  if (kind === "decision") return [];
+  const field = FIELDS_WITH_CHOICES.find((f) => typeof data[f] === "string" && offersChoices(data[f]));
+  return field ? [`${field} offers choices (A) … B), 1) … 2) or "option A"): make it kind "decision" with options, a button each`] : [];
+}
+
 // The counter thread numbers come from (meta/threadSeq {next}).
 export const THREAD_SEQ = "threadSeq";
 
@@ -160,6 +175,8 @@ export function writeErrors(w, { config, who, now }) {
         if (missing.length) e.push(`a look decision needs a screenshot for each option (missing: ${missing.join(", ")})`);
       }
     }
+    // Choices need buttons (#C227). An update that doesn't name the kind is checked against the mirror's (mirrorErrors).
+    if (op === "set" || "kind" in data) e.push(...choiceErrors(data, kind));
     // Rule 1: a command goes in {text, cmd}, so the owner gets a Copy button.
     if (Array.isArray(data.steps)) data.steps.forEach((s, n) => { if (typeof s === "string" && COMMAND.test(s)) e.push(`steps[${n}] holds a command: write it as {text, cmd}`); });
   }
@@ -310,7 +327,10 @@ export function phaseOverlapErrors(w, { config, mirror, batch = [] }) {
 export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now() }) {
   const { op, collection, doc_id: id, data } = w;
   if (collection === "messages") return [...threadErrors(w, { mirror, batch, now: at }), ...threadNumberedErrors(w, { mirror, batch })];
-  if (collection === "waiting") return threadNumberedErrors(w, { mirror, batch });
+  if (collection === "waiting") {
+    const was = op !== "set" && op !== "delete" && data && typeof data === "object" && !("kind" in data) ? (mirror?.docs?.waiting ?? []).find((x) => x.id === id) : null;
+    return [...threadNumberedErrors(w, { mirror, batch }), ...(was ? choiceErrors(data, was.kind) : [])];
+  }
   if (collection === "steps") return phaseOverlapErrors(w, { config, mirror, batch });
   if (collection === PLAN) return planMirrorErrors(w, { mirror, batch });
   // Every card links to the plan node it serves (board v3); a new card can't go without one, mirror or not.

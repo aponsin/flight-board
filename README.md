@@ -144,6 +144,26 @@ fields; paths and links compare as exact strings; the board's rows go only to fi
 the session. Any failure refuses, a crash or a missing file included (`|| exit 2` on its command). It never grants
 anything: it only refuses.
 
+### The current link
+
+Every collector change used to cost the owner an install. Now only what constrains an agent does (#C223):
+
+- **The owner's install** (`scripts/hooks.mjs --pin`, the collector's settings): the gate's hooks, the refresh hook and
+  the fence, each pinned by commit in the settings. A change to them waits for the owner's next install, so batch them.
+- **No owner** (the collector's code, the page, the task's steps): the scheduled run starts
+  `~/.flight-board/current/collector/collect.mjs`. `current` is a symlink to a pinned copy
+  (`~/.flight-board/install/<full commit>`). `node scripts/current.mjs <commit>`, from a checkout, moves it, and only to a
+  commit on `origin/main` that carries Security's `SECURE` note (`refs/notes/security`, on this repository's origin). The
+  move is one rename. The script says when the commit also changes the owner's files (they wait for the install) or
+  `collector/TASK.md` (the lead saves the new steps into the task, `update_scheduled_task`). The lead republishes the page.
+
+The fence lets the two steps run from its own pinned copy or from `current`, and from `current` only while it is a
+symlink to `<install root>/<full commit>` holding the collector. Step 1 records which copy it ran; step 2 refuses to run
+any other ("run step 1 again"), so a move mid-run never mixes two versions. A new collector still runs inside the
+pinned fence, whatever it does.
+
+Security signs a commit with `git notes --ref=security add -m "SECURE" <commit>` and `git push origin refs/notes/security`.
+
 ### Runs on demand
 
 Besides the hourly run, `collector/refresh.mjs` (a Stop hook `scripts/hooks.mjs` installs next to the gate's) holds the
