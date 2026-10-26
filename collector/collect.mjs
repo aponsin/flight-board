@@ -145,7 +145,7 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   // A ship run on now: the cards its candidate branch names (branch@sha in one of its last commits) are shipping now.
   for (const s of shipping(git, heads, c)) for (const id of Object.keys(derived)) {
     const h = derived[id].head;
-    if (h && !derived[id].version && s.names.some((n) => String(h).startsWith(n.sha))) derived[id].shipping = s.branch;
+    if (h && s.names.some((n) => String(h).startsWith(n.sha))) derived[id].shipping = s.branch;
   }
   const conflicts = open.map((k) => conflict(k, derived[k.id], config)).filter(Boolean);
   const doc = { at: now, cards: derived, conflicts, liveButOpen: staleLive(open, derived, config) };

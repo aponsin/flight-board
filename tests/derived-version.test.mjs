@@ -97,6 +97,8 @@ test("a ship run on now: the cards its candidate branch names are shipping now; 
   const b = board(["x", "y"], { x: { phase: "ship", head: A, readyAt: now - 900, shipping: "build/ship-v1.2.0" }, y: { phase: "ship", head: B, readyAt: now - 100 } });
   assert.equal(b.versionNote({ id: "x" }), "<b>Shipping now</b>");
   assert.equal(b.versionNote({ id: "y" }), "Queued (1)", "the card in the run holds no place in the queue");
+  const deploying = board(["x"], { x: { phase: "ship", head: A, version: "1.2.0", shipping: "build/ship-v1.2.0" } });
+  assert.equal(deploying.versionNote({ id: "x" }), "Deploying <b>v1.2.0</b>", "on main while the run finishes: its version");
   const after = board(["x", "y"], { x: { phase: "live", head: A, version: "1.2.0" }, y: { phase: "ship", head: B, readyAt: now - 100 } });
   assert.equal(after.versionNote({ id: "x" }), "Live in <b>v1.2.0</b>");
   assert.equal(after.versionNote({ id: "y" }), "Queued (1)", "only the card in the run has a version");
@@ -128,7 +130,7 @@ test("the refresh hook starts the collector when a ship run starts or ends (its 
   assert.deepEqual(runMark(5, ["/x/shop"], () => "m1").refs, { shop: "m1" });
 });
 
-test("liveBuild reads no more than 256 KB of the page and refuses a redirect off https (Checker, Security)", async () => {
+test("liveBuild reads no more than 256 KB of the page and refuses a redirect off https (Checker, Security)", { timeout: 5000 }, async () => {
   const tag = config.collector.liveTag;
   let pulled = 0;
   const huge = () => new Response(new ReadableStream({ pull(ctl) { pulled++; ctl.enqueue(new TextEncoder().encode("x".repeat(65536))); } }));
