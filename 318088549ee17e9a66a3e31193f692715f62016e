@@ -1,0 +1,1 @@
+PASS Full: #C298 owner-msg-unanswered commit C (Manager Stop gate: owner + lead reads of the day, inline, whole, limit 1000; persisted results read from the session's own tool-results only); 369/369, scan clean; probed wholeBody on a real saved 137 KB result (read whole) and another session's folder (no read); real inline query format matches the parser
