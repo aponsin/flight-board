@@ -1,7 +1,8 @@
 // Every card says how long it should take (#C348, the owner on the board: "missing timings"): beside "so far" the
-// card's size and its expected hours with when that comes due, and on each running phase when it comes due, both from
-// the median hours a step takes by size (nudges.etaHours). A card nobody has started (no build start logged, no branch
-// the collector has seen) shows Build as queued with its ETA, never lit as if someone were on it.
+// card's size and its expected hours with when that comes due, from the median hours a step takes by size
+// (nudges.etaHours). One due time per card, on that line only (Designer's FINDINGS on c6c6e839: a second one on the
+// running tile competed with it). A card nobody has started (no build start logged, no branch the collector has seen)
+// shows Build as queued, never lit as if someone were on it, and its line says how long it has waited, with no due.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadBoard, step } from "./harness.mjs";
@@ -25,25 +26,25 @@ test("beside 'so far': the size, its expected hours and when that comes due; 'wa
   assert.doesNotMatch(b.initRow(done), /expected/, "a finished card says nothing more");
 });
 
-test("each running phase says when it comes due, from when it started and the size's median", () => {
+test("Designer 1: one due time per card; a running tile shows who and how long only", () => {
   const b = loadBoard(), now = Date.now();
   const i = card(b, [step("x", "build", "Admin", "start", now - 20 * MIN)], { createdAt: now - 30 * MIN, size: "M" });
-  assert.match(b.initRow(i), new RegExp(`class="step now"[^>]*>Build<small>Admin · 20 min · due ~${hhmm(now - 20 * MIN + 3.5 * H)}`));
-  const two = card(b, [step("x", "build", "Builder", "start", now - 2 * H), step("x", "build", "Builder", "end", now - H), step("x", "checker", "Checker", "start", now - 30 * MIN), step("x", "build", "Admin", "start", now - 10 * MIN)], { createdAt: now - 3 * H });
-  const html = b.initRow(two);
-  assert.match(html, new RegExp(`>Build<small>Admin · 1 h 10 min · due ~${hhmm(now - 70 * MIN + 1.5 * H)}`), "a phase lit beside the current one too: its whole time so far counts");
-  assert.match(html, new RegExp(`>Checker<small>Checker · 20 min · due ~${hhmm(now - 20 * MIN + 1.5 * H)}`), "due follows the time the page shows (phaseTimes)");
+  const html = b.initRow(i);
+  assert.match(html, /class="step now"[^>]*>Build<small>Admin · 20 min<\/small>/);
+  assert.equal(html.match(/due ~/g).length, 1, "the meta line's only");
 });
 
-test("a card nobody has started shows Build queued with its ETA, not lit; a branch or a build start makes it started", () => {
+test("a card nobody has started shows Build queued, not lit; a branch or a build start makes it started", () => {
   const b = loadBoard(), now = Date.now();
-  const q = card(b, [], { phase: "plan", who: "Boardsmith", createdAt: now - 10 * MIN, etaLive: now + 2 * H });
+  const q = card(b, [], { phase: "plan", who: "Boardsmith", createdAt: now - 12 * MIN, etaLive: now + 2 * H });
   const html = b.initRow(q);
-  assert.match(html, new RegExp(`class="step now queued"[^>]*>Build<small>queued · live ~${hhmm(now + 2 * H)}</small>`));
+  assert.match(html, /class="step now queued"[^>]*>Build<small>queued<\/small>/, "Designer 3: queued alone; the header has the ETA");
   assert.doesNotMatch(html, /class="step now"[^>]*>(Plan|Build)<small>Boardsmith/, "nothing lit as if someone were on it");
   assert.match(html, /<span class="state active">Queued<\/span>/);
+  assert.match(html, /<span>Queued 12 min · expected S 1\.5 h once started<\/span>/, "Designer 2: no 'Started', no due");
+  assert.doesNotMatch(html, /Started|due ~/);
   const branched = card(b, [], { phase: "plan", who: "Boardsmith", createdAt: now - 10 * MIN }, { phase: "build", head: { sha: "abc1234", branch: "x" }, firm: false });
-  assert.doesNotMatch(b.initRow(branched), /queued/, "the collector has seen its branch");
+  assert.doesNotMatch(b.initRow(branched), /queued/i, "the collector has seen its branch");
   const begun = card(b, [step("x", "build", "Boardsmith", "start", now - 5 * MIN)], { createdAt: now - 10 * MIN });
-  assert.doesNotMatch(b.initRow(begun), /queued/, "a build start logged");
+  assert.doesNotMatch(b.initRow(begun), /queued/i, "a build start logged");
 });
