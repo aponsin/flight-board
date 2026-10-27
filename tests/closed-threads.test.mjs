@@ -33,6 +33,20 @@ test("a card's Thread fold holds its closed asks, each with its whole thread, ne
   assert.deepEqual([...b.cardAsks("trace", T)].map((w) => w.id), ["logs", "zoho"]);
 });
 
+test("Designer: a closed ask on its card reads as the ask it was: its own kind and colour, no 'Reply to:', a reopen hint", () => {
+  const b = board({ initRaw: [card], waiting: [done("zoho", "Check your Sent box"), done("ans", "It was Safari", { kind: "answer" }), done("odd", "Odd kind", { kind: "constructor" })],
+    messages: [msg("zoho", "Manager", "Safari", T), msg("ans", "Manager", "ok", T - 1), msg("odd", "Manager", "x", T - 2)] });
+  const html = b.initRow(b.gates(b.enrich(card)));
+  const block = html.slice(html.indexOf('class="i-asks"'));
+  assert.match(block, /<span class="kind action">Your click<\/span>/);
+  assert.match(block, /<span class="kind answer">Answer<\/span>/);
+  assert.match(block, /<span class="kind constructor">constructor<\/span>/, "an inherited name is shown as itself, never a function");
+  assert.doesNotMatch(block, /Reply to:|<span class="kind">Thread<\/span>/);
+  assert.equal((block.match(/Writing here reopens it\./g) ?? []).length, 3);
+  assert.match(b.rlistHtml(T, ""), /Reply to: <b class="t-name">Check your Sent box/, "the Resolved list draws it as before");
+  assert.doesNotMatch(b.rlistHtml(T, ""), /Writing here reopens it/);
+});
+
 test("the card's own thread and its closed asks, together; no closed asks: the fold as before", () => {
   const b = board({ initRaw: [card], waiting: [done("zoho", "Check your Sent box")], messages: [msg("trace", "Owner", "why?", T), msg("zoho", "Manager", "Safari", T)] });
   assert.match(b.initRow(b.gates(b.enrich(card))), /<summary>Thread \(1\) · 1 closed ask<span class="t-badge open">waiting on Manager<\/span><\/summary>/, "the card's own badge stays");
