@@ -28,7 +28,7 @@ function board() {
 }
 
 test("one box in the heading's row, labelled, with a magnifier; the heading itself unchanged", () => {
-  assert.match(page, /<div class="init-head"><h2 id="h-init">Initiatives in flight<span class="h-count" id="initcount" hidden><\/span><\/h2><div class="sbox"><svg class="sicon"[^>]*aria-hidden="true">[\s\S]*?<\/svg><input type="search" id="isearch" placeholder="Search cards: #C number, name, who, any word" aria-label="Search initiatives" autocomplete="off"><\/div><\/div>/);
+  assert.match(page, /<div class="init-head"><h2 id="h-init">Initiatives in flight<span class="h-count" id="initcount" hidden><\/span><\/h2><div class="sbox clr"><svg class="sicon"[^>]*aria-hidden="true">[\s\S]*?<\/svg><input type="search" id="isearch" placeholder="Search cards: #C number, name, who, any word" aria-label="Search initiatives" autocomplete="off"><button [^>]*data-sclear="isearch"[^>]*>×<\/button><\/div><\/div>/);
   assert.match(page, /\.sicon\{[^}]*top:50%;[^}]*transform:translateY\(-50%\)/, "Designer on 96fb1bf: the mark centred in the box");
   assert.match(page, /<div class="rsearch" id="tsearch"><div class="sbox"><svg class="sicon"/, "the same mark in the Threads box");
 });

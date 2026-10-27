@@ -198,6 +198,14 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .init-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 16px;margin-bottom:10px}
 .init-head h2{margin:0}
 .init-head .sbox{flex:0 1 28rem}
+@media (max-width:600px){.init-head .sbox{flex:1 1 100%}}
+/* The × that clears the cards' box and the feed's (Designer on 7ce1632), as the Threads row's Clear: inside, on the
+   right, while there's text; a 28 px tap area; the browser's own clear hidden, so there's one. */
+.sbox .sclear{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:28px;height:28px;padding:0;border:0;border-radius:4px;background:none;color:var(--muted);font:400 1.1rem/1 var(--body);cursor:pointer}
+.sbox .sclear:hover{color:var(--ink)}
+.sbox .sclear:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.sbox.clr input{padding-right:30px}
+.sbox.clr input::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
 .tstat:empty{display:none}
 .tstat{font:400 .78rem var(--mono);color:var(--muted);white-space:nowrap}
 .tclear{font:600 .78rem var(--mono);color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
@@ -420,7 +428,7 @@ table.crew3-ph{margin-top:14px}
   </section>
 
   <section aria-labelledby="h-init">
-    <div class="init-head"><h2 id="h-init">Initiatives in flight<span class="h-count" id="initcount" hidden></span></h2><div class="sbox"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="isearch" placeholder="Search cards: #C number, name, who, any word" aria-label="Search initiatives" autocomplete="off"></div></div>
+    <div class="init-head"><h2 id="h-init">Initiatives in flight<span class="h-count" id="initcount" hidden></span></h2><div class="sbox clr"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="isearch" placeholder="Search cards: #C number, name, who, any word" aria-label="Search initiatives" autocomplete="off"><button type="button" class="sclear" data-sclear="isearch" aria-label="Clear the search" title="Clear the search" hidden>×</button></div></div>
     <details class="panel todo" id="crewbox"><summary><h2 id="h-crew">Who is on what</h2><span class="caret" aria-hidden="true">▸</span></summary>
       <div class="crew" id="crew" aria-label="Who is on what"></div>
     </details>
@@ -431,7 +439,7 @@ table.crew3-ph{margin-top:14px}
   <div class="cols">
     <section aria-labelledby="h-feed" class="feedsec">
       <h2 id="h-feed">Shipped and reported<span class="h-count" id="feedcount" hidden></span></h2>
-      <div class="panel feedpanel"><div class="fhead"><div class="sbox"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="fsearch" placeholder="Search: version, #C number, any word" aria-label="Search shipped and reported" autocomplete="off"></div></div><div class="feedwrap"><ul class="feed" id="feed"><li><span></span><span class="empty" style="padding:0">Releases and review results show here as they happen.</span></li></ul></div></div>
+      <div class="panel feedpanel"><div class="fhead"><div class="sbox clr"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="fsearch" placeholder="Search: version, #C number, any word" aria-label="Search shipped and reported" autocomplete="off"><button type="button" class="sclear" data-sclear="fsearch" aria-label="Clear the search" title="Clear the search" hidden>×</button></div></div><div class="feedwrap"><ul class="feed" id="feed"><li><span></span><span class="empty" style="padding:0">Releases and review results show here as they happen.</span></li></ul></div></div>
     </section>
     <section aria-labelledby="h-use">
       <h2 id="h-use">Time spent</h2>
@@ -1257,7 +1265,7 @@ function openOrder(a,b){return (STATUS_ORDER[a.status]??1)-(STATUS_ORDER[b.statu
 let iQuery="";
 function initHit(i,q=iQuery){const c=/^#c(\d{1,6})$/.exec(String(q||"").trim().toLowerCase());if(c)return i.num===Number(c[1]);
   return qHas(textOnce("c:"+i.id,()=>[i.name,i.summary,i.nextNote,i.who,i.phase,threadText(i.id)].join("\n")),q,i.id)}
-function setInitSearch(q){clearTimeout(initTimer);iQuery=String(q??"");const box=$("isearch");if(box&&box.value!==iQuery)box.value=iQuery;renderBoard()}
+function setInitSearch(q){clearTimeout(initTimer);iQuery=String(q??"");const box=$("isearch");if(box&&box.value!==iQuery)box.value=iQuery;showClear("isearch");renderBoard()}
 // As the Threads box (#C363): each key waits SEARCH_WAIT for the next, and each card's text is built once per data update.
 let initTimer=null;
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="isearch"){const v=e.target.value;clearTimeout(initTimer);initTimer=setTimeout(()=>setInitSearch(v),SEARCH_WAIT)}});
@@ -1277,8 +1285,14 @@ function renderBoard(){
 // words too (qHas would look for a thread). It reads events only.
 let fQuery="",feedTimer=null;
 function feedHit(e,q=fQuery){const s=String(q||"").trim().toLowerCase();return !s||textOnce("e:"+e.id,()=>[e.version,e.text].join("\n")).includes(s)}
-function setFeedSearch(q){clearTimeout(feedTimer);fQuery=String(q??"");const box=$("fsearch");if(box&&box.value!==fQuery)box.value=fQuery;renderFeed()}
+function setFeedSearch(q){clearTimeout(feedTimer);fQuery=String(q??"");const box=$("fsearch");if(box&&box.value!==fQuery)box.value=fQuery;showClear("fsearch");renderFeed()}
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="fsearch"){const v=e.target.value;clearTimeout(feedTimer);feedTimer=setTimeout(()=>setFeedSearch(v),SEARCH_WAIT)}});
+// The × in the cards' box and the feed's (Designer on 7ce1632): shown on the key while there's text, not after the
+// wait; one click empties the box, redraws at once and keeps the focus there.
+const SCLEAR={isearch:q=>setInitSearch(q),fsearch:q=>setFeedSearch(q)};
+function showClear(id){const x=document.querySelector(`[data-sclear="${id}"]`),box=$(id);if(x)x.hidden=!(box&&box.value)}
+document.addEventListener("input",e=>{if(e.target&&SCLEAR[e.target.id])showClear(e.target.id)});
+document.addEventListener("click",e=>{const x=e.target.closest&&e.target.closest("[data-sclear]");if(!x)return;const id=x.dataset.sclear;SCLEAR[id]("");const box=$(id);if(box&&box.focus)box.focus()});
 function renderFeed(){
   const on=isOn(fQuery),all=[...state.events].sort((a,b)=>(num(b.at)??0)-(num(a.at)??0)),ev=on?all.filter(e=>feedHit(e)):all;
   const none=t=>`<li><span></span><span class="empty" style="padding:0">${t}</span></li>`;
