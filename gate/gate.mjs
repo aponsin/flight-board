@@ -53,33 +53,40 @@ export function writesOf(t) {
   return [{ op: t.action, collection: t.collection, doc_id: t.doc_id, data: load(t), if_version: t.if_version }];
 }
 
-// The board's mirror: { docs: { collection: [ {id, ...data} ] }, at, atBy } from an ArtifactData export (out_dir), or
-// null. at: its newest file; atBy: each collection's, when that collection was listed (an export lists one after another).
+// The board's mirror: { docs: { collection: [ {id, ...data} ] }, at, atBy, atDoc } from an ArtifactData export (out_dir),
+// or null. at: its newest file; atBy: each collection's, when that collection was listed (an export lists one after
+// another); atDoc: { collection: { id: time } }, when each document was listed. A file that doesn't parse (half written)
+// is no document and moves none of them (#C347).
 export function readMirror(dir) {
   if (!existsSync(dir)) return null;
-  const docs = {}, atBy = {};
+  const docs = {}, atBy = {}, atDoc = {};
   let at = 0;
   for (const c of readdirSync(dir)) {
     const cdir = join(dir, c);
     if (!statSync(cdir).isDirectory()) continue;
     docs[c] = [];
+    atDoc[c] = {};
     for (const f of readdirSync(cdir)) {
       if (!f.endsWith(".json")) continue;
       const path = join(cdir, f);
       const t = statSync(path).mtimeMs;
+      let doc;
+      try { doc = { id: f.slice(0, -5), ...JSON.parse(readFileSync(path, "utf8")) }; } catch { continue; /* half written */ }
+      docs[c].push(doc);
+      atDoc[c][doc.id] = t;
       at = Math.max(at, t);
       atBy[c] = Math.max(atBy[c] ?? 0, t);
-      try { docs[c].push({ id: f.slice(0, -5), ...JSON.parse(readFileSync(path, "utf8")) }); } catch { /* half written */ }
     }
   }
-  return { docs, at, atBy };
+  return { docs, at, atBy, atDoc };
 }
 
-// The writes the gate let through since the mirror was exported, laid over it: the mirror then shows each card as it is
-// now (a card closed after the export is closed here too). journal: [{ op, collection, doc_id, data, at }]. "Since" is
-// since that write's collection was listed: an ask written after `waiting` was listed but before the export's last
-// collection is in neither the files nor, measured from the newest file, the overlay (c226-iphone-test: the lead's
-// messages into its thread were refused). A collection the export didn't hold counts from its newest file.
+// The writes the gate let through, laid over the mirror: it then shows each card as it is now (a card closed after the
+// export is closed here too). journal: [{ op, collection, doc_id, data, at }]. Document by document (#C347, the
+// Director's card): a write counts unless the mirror holds that same document listed at or after it (atDoc, else its
+// collection's listing, else the export's). A document the mirror doesn't hold takes every write to it: the collection's
+// newest file says nothing about it (a later file in steps hid Checker's 22:20 end step, and a right ship start was
+// refused three times), and the export reads steps only since a time.
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 // threads too (#C234: a thread numbered since the export read as unnumbered, and the lead's message into it was refused),
 // but only onto a mirror that has threads: a few recent ones alone would make every older thread look unnumbered.
@@ -88,9 +95,14 @@ export const OVERLAY = new Set(["initiatives", "waiting", "ideas", "messages", "
 export function withJournal(mirror, journal) {
   if (!mirror) return null;
   const docs = Object.fromEntries(Object.entries(mirror.docs).map(([c, list]) => [c, list.map((d) => ({ ...d }))]));
+  const held = (c, id) => (mirror.docs[c] ?? []).some((d) => d.id === id);
   for (const w of journal ?? []) {
-    const listed = Object.prototype.hasOwnProperty.call(mirror.atBy ?? {}, w.collection) ? mirror.atBy[w.collection] : mirror.at;
-    if (!OVERLAY.has(w.collection) || !(w.at > listed)) continue;
+    if (!OVERLAY.has(w.collection)) continue;
+    if (held(w.collection, w.doc_id)) {
+      const own = mirror.atDoc?.[w.collection];
+      const listed = own && Object.hasOwn(own, w.doc_id) ? own[w.doc_id] : Object.hasOwn(mirror.atBy ?? {}, w.collection) ? mirror.atBy[w.collection] : mirror.at;
+      if (!(w.at > listed)) continue;
+    }
     if (w.collection === "threads" && !Array.isArray(docs.threads)) continue;
     const list = (docs[w.collection] ||= []);
     const i = list.findIndex((d) => d.id === w.doc_id);

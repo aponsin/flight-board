@@ -69,6 +69,11 @@ test("Checker 2: an update can't take a look decision's pictures away", () => {
   assert.match(errs([{ op: "set", collection: "waiting", doc_id: "w-new", data: { kind: "decision", since: NOW, done: false, text: "Which hero?", options: two, images: pics } }, upd("w-new", { images: [] })], { s: withAsks }), LOOK, "an earlier set in the batch counts");
 });
 
+test("Security's nit on 7685568: a __proto__ key in an update can't hide the ask's fields from the look check", () => {
+  const noDone = { ...withAsks, docs: { ...withAsks.docs, waiting: [{ id: "w-nodone", kind: "decision", text: "Which hero do we keep?", options: two, images: pics, since: NOW - 6e5 }] } };
+  assert.match(errs(upd("w-nodone", JSON.parse('{"images": [], "__proto__": {"done": true}}')), { s: noDone }), LOOK);
+});
+
 test("Checker 3: an option added by an update needs its picture", () => {
   assert.match(errs(upd("w-look", { options: [...two, { key: "C", label: "Something new" }] }), { s: withAsks }), /missing: C\)/);
 });

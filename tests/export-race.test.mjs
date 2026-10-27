@@ -60,6 +60,6 @@ test("each collection keeps when it was listed; one the export didn't hold takes
     assert.equal(m.atBy.threads, T + 2 * MIN);
     assert.equal(m.at, T + 2 * MIN, "the age check still reads the newest file");
     const seen = withJournal(m, [{ op: "set", collection: "ideas", doc_id: "i1", data: { text: "x" }, at: T + MIN }]);
-    assert.equal(seen.docs.ideas, undefined, "no ideas listed: only writes after the whole export count");
+    assert.deepEqual(seen.docs.ideas, [{ id: "i1", text: "x" }], "#C347: a document the export doesn't hold takes its write, whenever it was made");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -231,7 +231,9 @@ export function writeErrors(w, { config, who, now }) {
 // 001aaa6a: an update made a plain decision a look one, or took its pictures away), when it touches what makes a look or
 // its pictures: an ask from before the rule still takes its ping or its close.
 const LOOK_FIELDS = ["kind", "text", "title", "initiative", "look", "options", "images"];
-const lay = (doc, d) => { const out = { ...(doc ?? {}) }; for (const [k, v] of Object.entries(d ?? {})) if (v && typeof v === "object" && v.__delete__) delete out[k]; else out[k] = v; return out; };
+// A key named like an object's own machinery is skipped, as in the gate's journal (Security's nit on 7685568).
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const lay = (doc, d) => { const out = { ...(doc ?? {}) }; for (const [k, v] of Object.entries(d ?? {})) if (UNSAFE_KEYS.has(k)) continue; else if (v && typeof v === "object" && v.__delete__) delete out[k]; else out[k] = v; return out; };
 export function lookErrors(w, { config, seen, batch = [] }) {
   const { op, collection, doc_id: wid } = w;
   if (collection !== "waiting" || !w.data || typeof w.data !== "object") return [];

@@ -423,7 +423,8 @@ test("withJournal: set, update (with __delete__) and delete laid over the mirror
     { op: "set", collection: "steps", doc_id: "s", data: {}, at: 170 },
     { op: "set", collection: "ctx", doc_id: "B", data: {}, at: 170 },
   ]);
-  assert.deepEqual(out.docs.initiatives, [{ id: "a", status: "done", phase: "build" }, { id: "b", status: "active" }]);
+  assert.deepEqual(out.docs.initiatives, [{ id: "a", status: "done", phase: "build" }, { id: "b", status: "active" }, { id: "c" }], "#C347: c isn't in the mirror, so its write counts though it is older");
+  assert.equal(withJournal(m, [{ op: "update", collection: "initiatives", doc_id: "a", data: { status: "done" }, at: 90 }]).docs.initiatives[0].status, "active", "a write older than the mirror's copy of its document isn't laid again");
   assert.deepEqual(out.docs.steps, [{ id: "s" }], "steps too, so the one-open-phase rule sees an end written since the export");
   assert.equal(out.docs.ctx, undefined, "only the board-state collections");
   assert.deepEqual(m.docs.initiatives[0].who, "B", "the mirror itself untouched");
@@ -547,7 +548,7 @@ test("a thread numbered since the export counts as numbered: the lead's message 
   assert.equal(refused(mirror), true, "unnumbered before");
   const journal = [{ op: "set", collection: "threads", doc_id: "install-hook-settings", data: { num: 818, title: "Install the hook" }, at: 150 }];
   assert.equal(refused(withJournal(mirror, journal)), false, "numbered since the export");
-  assert.equal(refused(withJournal(mirror, journal.map((w) => ({ ...w, at: 90 })))), true, "a write older than the export is already in it (or was undone)");
+  assert.equal(refused(withJournal(mirror, journal.map((w) => ({ ...w, at: 90 })))), false, "#C347: the export doesn't hold this thread, so its numbering counts however old");
   const noThreads = withJournal({ at: 100, docs: { messages: [] } }, journal);
   assert.equal(noThreads.docs.threads, undefined, "never a partial threads list on a mirror without them");
 });
