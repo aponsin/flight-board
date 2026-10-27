@@ -1,0 +1,1 @@
+PASS Quick: #C295 board-initiative-count, count badge on 'Initiatives in flight' (textContent only, hidden at 0, counts what the list draws); 359/359, scan clean; never-hide mutation fails initiative-count.test.mjs
