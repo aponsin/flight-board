@@ -40,27 +40,25 @@ export function threadPings(text, owner) {
 }
 
 // The lead's reads of the board's messages this turn (#C298, Manager's design after Checker's findings: every message
-// of a day was hundreds, cut to 50 paths with out_dir or one page without a limit). Two kinds count, each inline (no
-// out_dir) and whole (no "more" in its result):
-//   owner  - the owner's own messages a day back or more: where from == owner (and at > a time a day ago or earlier),
-//            limit 1000 or more;
-//   thread - one thread's messages, or its lead's: where thread == <id> (and from == the lead).
+// of a day was hundreds, cut to 50 paths with out_dir or one page without a limit; then one read per thread was ~75).
+// Two reads, each inline (no out_dir), whole (no "more" in its result) and limit 1000 or more: the owner's own messages
+// and the lead's, each a day back or more (where from == <them>, and at > a time a day ago or earlier). Any answer to an
+// owner word of the last day is itself of the last day, so the two settle every thread.
 const MANY = 1000;
 function readKind(input, now, owner, lead) {
-  if (input.collection !== "messages" || input.action !== "query" || input.out_dir) return null;
+  if (input.collection !== "messages" || input.action !== "query" || input.out_dir || !(Number(input.query?.limit) >= MANY)) return null;
   const where = Array.isArray(input.query?.where) ? input.query.where : [];
   const is = (w, f, op) => Array.isArray(w) && w[0] === f && w[1] === op;
-  if (where.some((w) => is(w, "from", "==") && w[2] === owner) && Number(input.query?.limit) >= MANY
-    && where.every((w) => (is(w, "from", "==") && w[2] === owner) || ((is(w, "at", ">") || is(w, "at", ">=")) && typeof w[2] === "number" && w[2] <= now - DAY))) return { kind: "owner" };
-  const t = where.find((w) => is(w, "thread", "==") && typeof w[2] === "string");
-  if (t && where.every((w) => w === t || (is(w, "from", "==") && w[2] === lead))) return { kind: "thread", thread: t[2] };
-  return null;
+  const by = where.filter((w) => is(w, "from", "=="));
+  if (by.length !== 1 || (by[0][2] !== owner && by[0][2] !== lead)) return null;
+  if (!where.every((w) => w === by[0] || ((is(w, "at", ">") || is(w, "at", ">=")) && typeof w[2] === "number" && w[2] <= now - DAY))) return null;
+  return by[0][2] === owner ? "owner" : "lead";
 }
 // A result cut short: the board's own marker for documents it didn't print, or a cursor to the next page.
 const CUT = /next_cursor|\[\d+ more\b|\bmore (?:saved )?documents\b/i;
 
-// What this turn read: { owner: whether the owner's messages were read whole, threads: Set of threads read whole, docs:
-// [{ id, ...data }] } from the result's document lines ({"id", "data", "version"} each, one per line).
+// What this turn read: { owner, lead: whether each one's messages were read whole, docs: [{ id, ...data }] } from the
+// result's document lines ({"id", "data", "version"} each, one per line).
 export function messagesRead(turn, id, now, { owner, lead }) {
   const reads = new Map();
   for (const l of turn) {
@@ -72,16 +70,14 @@ export function messagesRead(turn, id, now, { owner, lead }) {
       }
     }
   }
-  const docs = [], threads = new Set();
-  let ownerRead = false;
+  const docs = [], whole = new Set();
   for (const l of turn) {
     if (l?.type !== "user" || !Array.isArray(l.message?.content)) continue;
     for (const p of l.message.content) {
       if (p?.type !== "tool_result" || !reads.has(p.tool_use_id)) continue;
       const body = typeof p.content === "string" ? p.content : Array.isArray(p.content) ? p.content.map((c) => c?.text ?? "").join("\n") : "";
       if (CUT.test(body)) continue;
-      const k = reads.get(p.tool_use_id);
-      if (k.kind === "owner") ownerRead = true; else threads.add(k.thread);
+      whole.add(reads.get(p.tool_use_id));
       for (const line of body.split("\n")) {
         if (!line.startsWith("{")) continue;
         try {
@@ -91,7 +87,7 @@ export function messagesRead(turn, id, now, { owner, lead }) {
       }
     }
   }
-  return { owner: ownerRead, threads, docs };
+  return { owner: whole.has("owner"), lead: whole.has("lead"), docs };
 }
 
 // A note that only acknowledges ("ok", "done.", "Thanks!"): the same list as the page's ACK_ONLY, which settles an ask.
@@ -137,20 +133,17 @@ export function stopCheck(lines, { config, env = {}, now = Date.now() }) {
   for (const t of new Set(asked)) {
     if (!writes.some((w) => w.collection === "messages" && w.op !== "delete" && w.data?.thread === t)) out.push(`the owner wrote in thread ${idText(t)}: answer there (messages {thread: "${idText(t)}", from: "${role}", text, at}), not only here`);
   }
-  // The owner's word unanswered on the board (#C298): every turn reads the owner's messages of the last day, then each of
-  // their threads still open by what it has (this turn's own messages count as answers); one whose newest message is
-  // the owner's, WAIT_MIN minutes on, refuses the stop until it's answered there.
+  // The owner's word unanswered on the board (#C298): every turn reads the owner's messages of the last day and the
+  // lead's (this turn's own messages count too); a thread whose newest message is the owner's, WAIT_MIN minutes on,
+  // refuses the stop until it's answered there.
   const seen = messagesRead(turn, id, now, { owner: config.owner, lead: role });
-  if (!seen.owner) out.push(`read the owner's messages this turn before finishing (ArtifactData query, collection messages, where from == "${config.owner}" and at > ${now - DAY}, limit ${MANY}, no out_dir), then each thread of theirs still unanswered (where thread == <id>, limit ${MANY})`);
+  const need = [[seen.owner, config.owner], [seen.lead, role]].filter(([done]) => !done).map(([, who]) => who);
+  if (need.length) out.push(`read ${need.map((w) => `${w}'s`).join(" and ")} messages this turn before finishing (ArtifactData query, collection messages, where from == "<name>" and at > ${now - DAY}, limit ${MANY}, no out_dir; one query each)`);
   else {
     const mine = writes.filter((w) => w.collection === "messages" && w.op !== "delete" && w.data && typeof w.data === "object").map((w) => ({ ...w.data, id: w.doc_id }));
-    const all = [...seen.docs, ...mine];
-    const theirs = new Set(seen.docs.filter((m) => m.from === config.owner && typeof m.at === "number" && m.at > now - DAY).map((m) => m.thread));
-    for (const w of openOwnerWords(all.filter((m) => theirs.has(m.thread)), { owner: config.owner, now, minutes: WAIT_MIN })) {
+    for (const w of openOwnerWords([...seen.docs, ...mine], { owner: config.owner, now, minutes: WAIT_MIN })) {
       const t = idText(w.thread);
-      out.push(seen.threads.has(w.thread)
-        ? `the owner's message in thread ${t} has waited ${Math.round((now - w.at) / 60e3)} min with no answer: answer there (messages {thread: "${t}", from: "${role}", text, at}) before finishing`
-        : `read thread ${t} before finishing (ArtifactData query, collection messages, where thread == "${t}", limit ${MANY}): the owner's message there is ${Math.round((now - w.at) / 60e3)} min old and this turn hasn't seen an answer`);
+      out.push(`the owner's message in thread ${t} has waited ${Math.round((now - w.at) / 60e3)} min with no answer: answer there (messages {thread: "${t}", from: "${role}", text, at}) before finishing`);
     }
   }
   return out;
