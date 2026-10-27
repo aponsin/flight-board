@@ -134,6 +134,8 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .t-msg.t-owner .t-from{color:var(--accent)}.t-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .thread .reply{margin:6px 0 4px 0}
 .t-badge{font-size:.75rem;border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin-left:6px;color:var(--muted);white-space:nowrap}.t-badge.you{color:var(--bad);border-color:var(--bad)}.t-badge.open{color:var(--accent);border-color:var(--accent)}.t-badge.agent{color:var(--warn);border-color:var(--warn)}
+/* The owner's word unanswered 5+ minutes (#C297): the lead owes it now. */
+.late{font:600 .75rem var(--mono);color:var(--bad);margin-left:6px;white-space:nowrap}
 /* A heading's count (#C295), drawn like the badges (.t-badge, which only badge() writes): the heading's capitals and spacing are not the number's. */
 .h-count{font:600 .75rem var(--mono);letter-spacing:0;vertical-align:2px;font-variant-numeric:tabular-nums;margin-left:8px;border:1px solid var(--line);border-radius:10px;padding:1px 7px;color:var(--muted);white-space:nowrap}
 .newthread{display:flex;flex-direction:column;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)}
@@ -449,7 +451,7 @@ function itemShown(id,now){const it=itemOf(id);if(!it)return false;
 // at: the time its age counts from (Waiting on Manager passes the ask's newest word); else when it was asked.
 function askHtml(w,open,at=w.since){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
-   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
+   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
    <span class="age">${num(at)?dur(Date.now()-at)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
@@ -817,11 +819,16 @@ function threadHtml(id,where,{box=true,hint=""}={}){const t=threadOf(id),key="th
 // last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their
 // own place at the panel's end (resolvedHtml).
 const threadLast=id=>{const t=threadOf(id);return t[t.length-1].at};
+// The owner's word unanswered 5 minutes on (#C297): red on the thread's row, any thread a new one included. Only a
+// duration the page works out; never the message's text.
+const LATE_MIN=5;
+function lateTag(id,now){if(!threadOpen(id))return"";const at=threadLast(id);
+  return now-at>=LATE_MIN*60000?`<span class="late">unanswered ${dur(now-at)}</span>`:""}
 // where: the thread's place on the page, for unique box ids. ask: a card's closed ask (#C288), drawn as the ask it was
 // (its own kind and colour, no "Reply to:"), with a hint that writing reopens it.
 function threadRow(id,now,where="panel",ask=null){
   const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
-  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(waitsOn(id,now))}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{})}</details>`}
+  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(waitsOn(id,now))}${lateTag(id,now)}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{})}</details>`}
 function threadRows(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now));
   const open=ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b));
   const answered=ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a));
@@ -1038,7 +1045,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const started=num(i.createdAt)?`<span>Started ${dayLabel(i.createdAt)} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-i.createdAt)} so far</span>`:"";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
-  const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
+  const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
   return `<div class="i-row"><div><div class="i-name">${cardTag(i)}<strong>${esc(i.name)}</strong>${threadTag(i.id)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}</div>
    ${i.summary?`<div class="w-sub">${esc(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
