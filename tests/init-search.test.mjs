@@ -64,5 +64,6 @@ test("searching filters the open cards and the done ones; the count reads N of M
   b.setInitSearch("");
   assert.equal(b.els.initcount.textContent, "3");
   assert.equal(b.els.donesum.textContent, "Done in the last 24 h (2)");
-  assert.match(page, /document\.addEventListener\("input",e=>\{if\(e\.target&&e\.target\.id==="isearch"\)setInitSearch\(e\.target\.value\)\}\)/);
+  assert.match(page, /if\(e\.target&&e\.target\.id==="isearch"\)\{const v=e\.target\.value;clearTimeout\(initTimer\);initTimer=setTimeout\(\(\)=>setInitSearch\(v\),SEARCH_WAIT\)\}/, "#C363's pace: one redraw for a word typed quickly");
+  assert.match(page, /textOnce\("c:"\+i\.id,/, "#C363's matching: each card's text built once per data update");
 });

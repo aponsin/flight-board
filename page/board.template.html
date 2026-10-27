@@ -1248,9 +1248,11 @@ function openOrder(a,b){return (STATUS_ORDER[a.status]??1)-(STATUS_ORDER[b.statu
 // or #C356's matching over its name, summary, next step, who, phase and its thread (#T number, title, messages).
 let iQuery="";
 function initHit(i,q=iQuery){const c=/^#c(\d{1,6})$/.exec(String(q||"").trim().toLowerCase());if(c)return i.num===Number(c[1]);
-  return qMatch([i.name,i.summary,i.nextNote,i.who,i.phase,threadText(i.id)].join("\n"),q,i.id)}
-function setInitSearch(q){iQuery=String(q??"");const box=$("isearch");if(box&&box.value!==iQuery)box.value=iQuery;renderBoard()}
-document.addEventListener("input",e=>{if(e.target&&e.target.id==="isearch")setInitSearch(e.target.value)});
+  return qHas(textOnce("c:"+i.id,()=>[i.name,i.summary,i.nextNote,i.who,i.phase,threadText(i.id)].join("\n")),q,i.id)}
+function setInitSearch(q){clearTimeout(initTimer);iQuery=String(q??"");const box=$("isearch");if(box&&box.value!==iQuery)box.value=iQuery;renderBoard()}
+// As the Threads box (#C363): each key waits SEARCH_WAIT for the next, and each card's text is built once per data update.
+let initTimer=null;
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="isearch"){const v=e.target.value;clearTimeout(initTimer);initTimer=setTimeout(()=>setInitSearch(v),SEARCH_WAIT)}});
 function renderBoard(){
   renderCrew();
   const on=!!iQuery.trim(),all=state.initiatives.filter(i=>i.status!=="done").sort(openOrder),open=all.filter(i=>initHit(i));
