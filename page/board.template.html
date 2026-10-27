@@ -102,6 +102,14 @@ details.done-list summary{cursor:pointer;color:var(--muted);padding:10px 16px}
 .feed li{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:9px 16px;border-top:1px solid var(--line)}
 .feed li:first-child{border-top:0}
 .feed time{font:400 .82rem var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Shipped and reported (#C362): Time spent beside it sets the row's height on a laptop, and the list scrolls inside,
+   under its search box; on a phone, a fixed height. */
+.feedsec{display:flex;flex-direction:column}
+.feedpanel{flex:1 1 auto;display:flex;flex-direction:column;min-height:18rem}
+.fhead{display:flex;padding:10px 16px;border-bottom:1px solid var(--line)}
+.feedwrap{position:relative;flex:1 1 auto}
+.feedwrap>.feed{position:absolute;inset:0;overflow-y:auto;overscroll-behavior:contain}
+@media (max-width:760px){.feedpanel{min-height:0}.feedwrap{flex:none;height:26rem}}
 .ver{font:600 .78rem var(--mono);color:var(--ok)}
 .usage{padding:14px 16px;display:flex;flex-direction:column;gap:14px}
 .totals{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
@@ -421,9 +429,9 @@ table.crew3-ph{margin-top:14px}
   </section>
 
   <div class="cols">
-    <section aria-labelledby="h-feed">
-      <h2 id="h-feed">Shipped and reported</h2>
-      <div class="panel"><ul class="feed" id="feed"><li><span></span><span class="empty" style="padding:0">Releases and review results show here as they happen.</span></li></ul></div>
+    <section aria-labelledby="h-feed" class="feedsec">
+      <h2 id="h-feed">Shipped and reported<span class="h-count" id="feedcount" hidden></span></h2>
+      <div class="panel feedpanel"><div class="fhead"><div class="sbox"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="fsearch" placeholder="Search: version, #C number, any word" aria-label="Search shipped and reported" autocomplete="off"></div></div><div class="feedwrap"><ul class="feed" id="feed"><li><span></span><span class="empty" style="padding:0">Releases and review results show here as they happen.</span></li></ul></div></div>
     </section>
     <section aria-labelledby="h-use">
       <h2 id="h-use">Time spent</h2>
@@ -1264,9 +1272,18 @@ function renderBoard(){
   $("donebox").hidden=!doneAll.length; $("donesum").textContent=`Done in the last 24 h (${on?`${done.length} of ${doneAll.length}`:doneAll.length})`;
   keep($("doneboard"),()=>{$("doneboard").innerHTML=done.length?done.slice(0,20).map(initRow).join(""):on?NO_MATCH:""});
 }
+// Shipped and reported (#C362): every event, of any age, newest first (it scrolls inside), and its own search box, at
+// #C363's pace and with its per-update text: the version and the event's words, any case; a "#T953" in an event is
+// words too (qHas would look for a thread). It reads events only.
+let fQuery="",feedTimer=null;
+function feedHit(e,q=fQuery){const s=String(q||"").trim().toLowerCase();return !s||textOnce("e:"+e.id,()=>[e.version,e.text].join("\n")).includes(s)}
+function setFeedSearch(q){clearTimeout(feedTimer);fQuery=String(q??"");const box=$("fsearch");if(box&&box.value!==fQuery)box.value=fQuery;renderFeed()}
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="fsearch"){const v=e.target.value;clearTimeout(feedTimer);feedTimer=setTimeout(()=>setFeedSearch(v),SEARCH_WAIT)}});
 function renderFeed(){
-  const ev=[...state.events].filter(e=>(num(e.at)??0)>Date.now()-DAY).sort((a,b)=>(num(b.at)??0)-(num(a.at)??0)).slice(0,25);
-  $("feed").innerHTML=ev.length?ev.map(e=>`<li><time>${num(e.at)?dayLabel(e.at):""}</time><span>${e.version?`<span class="ver">${esc(e.version)}</span> `:""}${esc(e.text)}</span></li>`).join(""):'<li><span></span><span class="empty" style="padding:0">Nothing shipped in the last 24 hours.</span></li>';
+  const on=isOn(fQuery),all=[...state.events].sort((a,b)=>(num(b.at)??0)-(num(a.at)??0)),ev=on?all.filter(e=>feedHit(e)):all;
+  const none=t=>`<li><span></span><span class="empty" style="padding:0">${t}</span></li>`;
+  $("feed").innerHTML=ev.length?ev.map(e=>`<li><time>${num(e.at)?dayLabel(e.at):""}</time><span>${e.version?`<span class="ver">${esc(e.version)}</span> `:""}${esc(e.text)}</span></li>`).join(""):none(on?"No matches.":"Nothing shipped yet.");
+  $("feedcount").textContent=on?`${ev.length} of ${all.length}`:""; $("feedcount").hidden=!on;
 }
 const OPEN_CAP=2*36e5, BOARD_START=String(CONFIG.boardStart||"");
 function agentMinutesByDay(){
