@@ -4,6 +4,9 @@
 // writes it, never in another session's message. A thread id in a refusal is id-shaped or "?" (Security).
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fullConfig } from "../scripts/config.mjs";
 import { stopCheck } from "../gate/stop.mjs";
 import { openOwnerWords } from "../gate/owner-waits.mjs";
@@ -69,6 +72,26 @@ test("Checker's case: three owner threads, two answered in the lead's read, one 
   assert.match(check(turn([...both(owner, lead), write({ thread: "t-a", from: "Manager", text: "x", at: NOW })])).join(), /t-c/, "an answer elsewhere doesn't count");
   assert.deepEqual(check(turn(both([msg("t-d", "Owner", NOW - 4 * MIN)]))), [], "under 5 minutes");
   assert.match(check(turn(both([...owner.slice(0, 1), msg("t-a", "Owner", NOW - 7 * MIN)], lead))).join(), /thread t-a has waited 7 min/, "a follow-up after the lead's answer");
+});
+
+test("a result saved to a file (the transcript keeps a 2 KB preview) is read whole from this session's tool-results, or counts as no read (Checker)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fb-saved-")), transcript = join(dir, "s1.jsonl"), results = join(dir, "s1", "tool-results");
+  try {
+    mkdirSync(results, { recursive: true });
+    const owner = [msg("t-a", "Owner", NOW - 30 * MIN), msg("t-late", "Owner", NOW - 9 * MIN)];
+    const full = result(owner);
+    writeFileSync(join(results, "big.txt"), full);
+    const preview = (path) => `<persisted-output>\nOutput too large (48.1KB). Full output saved to: ${path}\n\nPreview (first 2KB):\n${full.split("\n").slice(0, 3).join("\n")}\n…\n</persisted-output>`;
+    const lead = [msg("t-a", "Manager", NOW - 25 * MIN)];
+    const at = (path) => stopCheck(turn([...read(OWNER_Q, [], preview(path)), ...read(LEAD_Q, lead)]), { config, now: NOW, transcript });
+    const errs = at(join(results, "big.txt"));
+    assert.equal(errs.length, 1, "the owner word past the preview is seen");
+    assert.match(errs[0], /thread t-late has waited 9 min/);
+    assert.match(at(join(results, "gone.txt")).join(), /read Owner's messages/, "the file is gone: no read");
+    writeFileSync(join(dir, "elsewhere.txt"), result([]));
+    assert.match(at(join(dir, "elsewhere.txt")).join(), /read Owner's messages/, "a file outside this session's tool-results: no read");
+    assert.match(stopCheck(turn([...read(OWNER_Q, [], preview(join(results, "big.txt"))), ...read(LEAD_Q, lead)]), { config, now: NOW }).join(), /read Owner's messages/, "no transcript path: no read");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("a ping counts only as the page writes it: a line that starts 'Board thread [id]: <owner>:', never in another session's message (Manager's false positive) or mid-line", () => {

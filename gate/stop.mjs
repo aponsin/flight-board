@@ -5,8 +5,9 @@
 // - the turn began with the owner's "Board thread [<id>]" message and wrote no message to that thread (case 5: an
 //   answer in a comment the board never shows).
 // Exit 2 sends the reason back, so the lead writes it and finishes. A second stop in a row (stop_hook_active) passes.
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { readFileSync } from "node:fs";
+import { basename, dirname, join, sep } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readLines, sessionRole, currentTurn, turnCalls, lastReply } from "./session.mjs";
@@ -56,10 +57,28 @@ function readKind(input, now, owner, lead) {
 }
 // A result cut short: the board's own marker for documents it didn't print, or a cursor to the next page.
 const CUT = /next_cursor|\[\d+ more\b|\bmore (?:saved )?documents\b/i;
+// A result too large for the transcript is saved to a file, and the transcript keeps a 2 KB preview (Checker: a day's
+// owner messages are ~48 KB): the whole result is that file, read only from this session's own tool-results folder
+// (<transcript without .jsonl>/tool-results, a regular file there). Anything else is no read: null.
+const SAVED = /<persisted-output>[\s\S]*?Full output saved to: (\S+)/;
+export function wholeBody(body, results) {
+  const m = SAVED.exec(body);
+  if (!m) return body;
+  if (!results) return null;
+  try {
+    const f = realpathSync(m[1]), root = realpathSync(results);
+    const s = statSync(f);
+    if (!f.startsWith(root + sep) || !s.isFile() || s.size > 64e6) return null;
+    const raw = readFileSync(f, "utf8");
+    try { const j = JSON.parse(raw); if (Array.isArray(j)) return j.map((c) => c?.text ?? "").join("\n"); } catch { /* the text itself */ }
+    return raw;
+  } catch { return null; }
+}
+export const resultsDir = (transcript) => (transcript ? join(dirname(transcript), basename(transcript, ".jsonl"), "tool-results") : null);
 
 // What this turn read: { owner, lead: whether each one's messages were read whole, docs: [{ id, ...data }] } from the
 // result's document lines ({"id", "data", "version"} each, one per line).
-export function messagesRead(turn, id, now, { owner, lead }) {
+export function messagesRead(turn, id, now, { owner, lead, results = null }) {
   const reads = new Map();
   for (const l of turn) {
     if (l?.type !== "assistant" || !Array.isArray(l.message?.content)) continue;
@@ -75,8 +94,8 @@ export function messagesRead(turn, id, now, { owner, lead }) {
     if (l?.type !== "user" || !Array.isArray(l.message?.content)) continue;
     for (const p of l.message.content) {
       if (p?.type !== "tool_result" || !reads.has(p.tool_use_id)) continue;
-      const body = typeof p.content === "string" ? p.content : Array.isArray(p.content) ? p.content.map((c) => c?.text ?? "").join("\n") : "";
-      if (CUT.test(body)) continue;
+      const body = wholeBody(typeof p.content === "string" ? p.content : Array.isArray(p.content) ? p.content.map((c) => c?.text ?? "").join("\n") : "", results);
+      if (body == null || CUT.test(body)) continue;
       whole.add(reads.get(p.tool_use_id));
       for (const line of body.split("\n")) {
         if (!line.startsWith("{")) continue;
@@ -109,7 +128,8 @@ export function replyNotes(text) {
   return out;
 }
 
-export function stopCheck(lines, { config, env = {}, now = Date.now() }) {
+// transcript: the transcript's path, for a result saved beside it (wholeBody).
+export function stopCheck(lines, { config, env = {}, now = Date.now(), transcript = null }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
   if (role !== config.gate.managerRole) return [];
   const id = boardId(config);
@@ -136,7 +156,7 @@ export function stopCheck(lines, { config, env = {}, now = Date.now() }) {
   // The owner's word unanswered on the board (#C298): every turn reads the owner's messages of the last day and the
   // lead's (this turn's own messages count too); a thread whose newest message is the owner's, WAIT_MIN minutes on,
   // refuses the stop until it's answered there.
-  const seen = messagesRead(turn, id, now, { owner: config.owner, lead: role });
+  const seen = messagesRead(turn, id, now, { owner: config.owner, lead: role, results: resultsDir(transcript) });
   const need = [[seen.owner, config.owner], [seen.lead, role]].filter(([done]) => !done).map(([, who]) => who);
   if (need.length) out.push(`read ${need.map((w) => `${w}'s`).join(" and ")} messages this turn before finishing (ArtifactData query, collection messages, where from == "<name>" and at > ${now - DAY}, limit ${MANY}, no out_dir; one query each)`);
   else {
@@ -163,7 +183,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let input = {};
     try { input = JSON.parse(raw); } catch { process.exit(0); }
     if (input.stop_hook_active || !input.transcript_path) process.exit(0);
-    const errs = stopCheck(readLines(input.transcript_path), { config, env: process.env });
+    const errs = stopCheck(readLines(input.transcript_path), { config, env: process.env, transcript: input.transcript_path });
     if (errs.length) { process.stderr.write(`Before you finish:\n- ${errs.join("\n- ")}\n`); process.exit(2); }
     process.exit(0);
   });
