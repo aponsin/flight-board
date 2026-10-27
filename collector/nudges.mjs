@@ -6,14 +6,32 @@
 //   2. a step open too long: a declared start with no end, past stepFactor times the median for its card's size;
 //   3. a working role's memory reading (ctx/<Role>) older than ctxMaxHours: only roles with an open step (an idle role is
 //      the context keeper's, Manager 2026-10-24);
-//   4. a card unchanged for staleHours, unless parked (its status in config.nudges.parked).
+//   4. a card unchanged for staleHours, unless parked (its status in config.nudges.parked);
+//   5. a READY a required reviewer never picked up (#C290): DISPATCH_MIN minutes after the READY commit, a review the card
+//      needs with no note on that commit and no open step for it. The fence lets the collector message the lead only, so
+//      a second line carries the READY for the lead to forward.
 // The CONFLICT lines are the collector's own (collector/derive.mjs). Every board value a line names goes through idText
 // (collector/text.mjs): the lines reach a session that can write the board and message the team.
 
 import { idText as q } from "./text.mjs";
 
-const MIN = 60e3, HOUR = 36e5;
+const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10;
 const closed = (k) => k.status === "done" || k.status === "dropped";
+// A branch name from the repository: printed only if it has a branch's plain shape (it goes on to a reviewer), else "?".
+const branchText = (b) => (typeof b === "string" && /^[A-Za-z0-9._/-]{1,100}$/.test(b) ? b : "?");
+
+// The role that signs a review phase: the roster's name for its notes ref ("refs/notes/linguist": Linguist), in the
+// team's repository or another one (#C278), else the phase's label.
+function reviewerOf(phase, config) {
+  const c = config.collector;
+  const refs = [c.notes?.[phase], ...(c.repos ?? []).map((r) => r.notes?.[phase])].filter((r) => typeof r === "string");
+  for (const ref of refs) {
+    const name = ref.split("/").pop().toLowerCase();
+    const role = (config.roster ?? []).find((r) => String(r).toLowerCase() === name);
+    if (role) return role;
+  }
+  return (config.phases ?? []).find((p) => p[0] === phase)?.[1] ?? phase;
+}
 
 // A card's content, keys sorted, to tell whether it changed between runs (the export carries no change time).
 function fingerprint(doc) {
@@ -22,8 +40,8 @@ function fingerprint(doc) {
 }
 
 // waiting: the cards whose derived state is a wait with a known cause (#C278: queued for a board release, waiting for the
-// install): no step-overdue or unchanged nudge for them.
-export function nudges({ config, docs, now, state = {}, waiting = new Set() }) {
+// install): no step-overdue or unchanged nudge for them. derived: this run's derived cards ({ id: derivePhase's answer }).
+export function nudges({ config, docs, now, state = {}, waiting = new Set(), derived = {} }) {
   const n = config.nudges, owner = config.owner, firing = [];
   const messages = (docs.messages ?? []).filter((m) => m && typeof m.thread === "string" && typeof m.at === "number");
   const byThread = new Map();
@@ -73,6 +91,24 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set() }) {
     if (now - seen[card.id].since >= n.staleHours * HOUR) firing.push({ key: `stale:${card.id}`, text: `${q(card.id)}: unchanged for ${hours(now - seen[card.id].since)} h; update it or park it` });
   }
 
+  // 5. A READY a required reviewer never picked up: keyed by the READY commit, so a new tip is a new dispatch.
+  const reviewing = new Set([...runs.values()].map((s) => `${s.init}:${s.phase}`));
+  for (const [id, d] of Object.entries(derived)) {
+    const card = cards.get(id);
+    if (!card || closed(card) || !Array.isArray(d?.waitingFor) || typeof d.readyAt !== "number" || now - d.readyAt < DISPATCH_MIN * MIN) continue;
+    const num = Number.isInteger(card.num) && card.num > 0 ? `C${card.num}` : null, tag = num ? ` (#${num})` : "";
+    const sha = /^[0-9a-f]{40}$/.test(d.head ?? "") ? d.head : "?", level = card.level ? ` (${q(card.level)})` : "";
+    for (const p of d.waitingFor) {
+      if (reviewing.has(`${id}:${p}`) || (num && reviewing.has(`${num}:${p}`))) continue;
+      const who = q(reviewerOf(p, config));
+      firing.push({
+        key: `ready:${id}:${p}:${sha}`,
+        text: `${q(id)}${tag}: ${who} has no note on ${sha.slice(0, 8)} and no open ${q(p)} step, ${mins(now - d.readyAt)} min after READY; forward it:`,
+        then: `forward to ${who}: READY ${branchText(d.branch)}@${sha}${level}, board card ${q(id)}${tag}`,
+      });
+    }
+  }
+
   // Once, then again only after the quiet period; forgotten when it stops holding.
   const sent = Object.create(null), lines = [];
   for (const f of firing) {
@@ -80,6 +116,7 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set() }) {
     if (typeof last === "number" && now - last < n.quietMin * MIN) { sent[f.key] = last; continue; }
     sent[f.key] = now;
     lines.push(`NUDGE ${f.text}`);
+    if (f.then) lines.push(`NUDGE ${f.then}`);
   }
   return { lines, state: { sent, seen } };
 }

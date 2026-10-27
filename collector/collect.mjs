@@ -131,11 +131,11 @@ export function takeExport(src, dir, id) {
 
 // The nudges, with the last run's state next to the mirror (<dir>/nudges.json: what was sent when, and since when each
 // card is unchanged). Returns the NUDGE lines to print.
-export function runNudges(dir, config, docs, now, waiting = new Set()) {
+export function runNudges(dir, config, docs, now, waiting = new Set(), derived = {}) {
   const path = join(dir, "nudges.json");
   let before = {};
   try { before = JSON.parse(readFileSync(path, "utf8")); } catch { /* first run, or a broken file: start afresh */ }
-  const { lines, state } = nudges({ config, docs, now, state: before && typeof before === "object" ? before : {}, waiting });
+  const { lines, state } = nudges({ config, docs, now, state: before && typeof before === "object" ? before : {}, waiting, derived });
   writeFileSync(path, JSON.stringify(state));
   return lines;
 }
@@ -334,7 +334,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const live = await liveBuild(fetch, config.collector.liveUrl, config.collector.liveTag);
   const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos });
   const waits = new Set(Object.entries(doc.cards).filter(([, d]) => d.wait).map(([id]) => id));
-  const nudged = { lines: runNudges(dir, config, mirror.docs, now, waits) };
+  const nudged = { lines: runNudges(dir, config, mirror.docs, now, waits, doc.cards) };
   const out = outPath(config, dir);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(doc, null, 2));

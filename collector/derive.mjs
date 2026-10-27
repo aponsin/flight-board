@@ -52,7 +52,7 @@ export function reviewsFor(card, config) {
   return Object.keys(c.notes).filter((p) => !skip.has(p));
 }
 
-// { phase, head, version, evidence } for one card, or { phase: null } when the facts say nothing.
+// { phase, head, version, evidence } (in review, also waitingFor and branch) for one card, or { phase: null } when the facts say nothing.
 // facts: { head: {branch, sha, message} | null, signed: Set of phases with a note on head.sha, onMain, deployed, version }
 export function derivePhase(card, facts, config) {
   const c = config.collector;
@@ -68,7 +68,8 @@ export function derivePhase(card, facts, config) {
   if (!ready) return { phase: c.buildPhase, head, firm: false, evidence: `${facts.head.branch} at ${short}, no READY trailer or sign-off yet` };
   const order = config.phases.map((p) => p[0]);
   const waiting = reviewsFor(card, config).filter((p) => !facts.signed.has(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  if (waiting.length) return { phase: waiting[0], head, readyAt, evidence: `READY at ${short}; waiting for ${waiting.join(", ")}` };
+  // waitingFor and branch: the reviews still unsigned on this READY commit, for the dispatch nudge (#C290).
+  if (waiting.length) return { phase: waiting[0], head, readyAt, waitingFor: waiting, branch: facts.head.branch, evidence: `READY at ${short}; waiting for ${waiting.join(", ")}` };
   return { phase: c.shipPhase, head, readyAt, evidence: `READY at ${short}; every review signed` };
 }
 
