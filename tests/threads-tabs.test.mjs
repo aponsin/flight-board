@@ -82,5 +82,5 @@ test("the form is one line plus Attach until it is used, then today's form: its 
   assert.match(form, /<textarea id="nttext" rows="1" placeholder="Start a thread: ask Manager something, or share an idea">/);
   assert.match(page, /\.newthread:not\(:focus-within\):not\(\.has\) :is\(label,\.keys,\.btns,\.fchip,\.hint\)\{display:none\}/, "folded: no label, hint, chips or Send");
   assert.match(page, /\.newthread:not\(:focus-within\):not\(\.has\)\{flex-direction:row/, "folded: one row, the input then Attach");
-  assert.match(page, /classList\.toggle\("has",!!\(\$\("nttext"\)\.value\.trim\(\)\|\|\(pendingFiles\.get\("new"\)\|\|\[\]\)\.length\)\)/, "typed text or a file keeps it open");
+  assert.match(page, /classList\.toggle\("has",!!\(String\(t\.value\|\|""\)\.trim\(\)\|\|\(pendingFiles\.get\("new"\)\|\|\[\]\)\.length\)\)/, "typed text or a file keeps it open");
 });

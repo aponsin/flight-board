@@ -66,7 +66,7 @@ test("an answered ask moves from Needs you to Waiting on Manager, with its reply
   assert.match(b.threadsHtml(T), /data-id="ask-pics"/, "Manager answered but hasn't closed it: still waiting on Manager");
   b.state.waiting[0] = { ...ask, done: true };
   assert.doesNotMatch(b.threadsHtml(T), /data-id="ask-pics"/, "closed: gone from the section");
-  assert.match(b.resolvedHtml(T), /Resolved threads, last 7 days \(1\)[\s\S]*Reply to: <b class="t-name">Send the pictures/, "closed with Manager's word last: resolved, folded");
+  assert.match(b.resolvedHtml(T), /Reply to: <b class="t-name">Send the pictures/, "closed with Manager's word last: resolved, in the Resolved tab");
 });
 
 test("a message is shown as text: markup escaped, links made safe, files only from the board's own store", () => {
@@ -127,7 +127,7 @@ test("Waiting on Manager: answered asks, then threads whose last word is the own
   assert.ok(html.indexOf("Question one") > -1, html);
   assert.doesNotMatch(html, /Resolved threads/, "resolved threads have their own place at the end");
   assert.match(html, /Question one<\/b><span class="t-badge open">waiting on Manager/);
-  assert.match(b.resolvedHtml(T + 10), /Resolved threads, last 7 days \(2\)[\s\S]*Reply to: <b class="t-name">New ask[\s\S]*Done one/);
+  assert.match(b.resolvedHtml(T + 10), /Reply to: <b class="t-name">New ask[\s\S]*Done one/);
   assert.doesNotMatch(html, /Idea two|Old ask/, "answered threads are the owner's to read, and older resolved ones are out of view");
   const answered = b.threadRows(T + 10).answered;
   assert.match(answered, /Idea two/, "Manager answered an open thread: under Needs you");
@@ -191,12 +191,12 @@ test("an initiative carries its thread, folded, marked when Manager owes an answ
   assert.match(html, /Is this still on\?/);
 });
 
-test("one Threads panel: the new thread box (no kind to pick), then Needs you, then Waiting on Manager", () => {
+test("one Threads panel: the new thread box (no kind to pick), then the tabs, Needs you before Waiting on Manager", () => {
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   const section = html.slice(html.indexOf('<section aria-labelledby="h-threads">'), html.indexOf("</section>", html.indexOf('<section aria-labelledby="h-threads">')));
   assert.match(section, /<form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread<\/label><textarea id="nttext"/);
   assert.doesNotMatch(html, /<select id="ntkind"|<option value="idea">/, "no Question or Idea to pick");
-  assert.ok(section.indexOf('id="newthread"') < section.indexOf('id="h-wait">Needs you') && section.indexOf('id="h-wait">Needs you') < section.indexOf('id="h-onlead">Waiting on Manager'));
+  assert.ok(section.indexOf('id="newthread"') < section.indexOf('id="ttabs"') && section.indexOf('id="tp-you"') < section.indexOf('id="tp-lead"'), "#C351: tabs, not headings");
   assert.match(section, /id="waiting"/);
   assert.match(section, /id="threads"/);
   assert.equal((html.match(/<section aria-labelledby="h-wait">/g) ?? []).length, 0, "no second panel");
@@ -401,12 +401,10 @@ test("the new thread box takes files like a reply box: Attach, paste and drop un
   assert.deepEqual(JSON.parse(JSON.stringify(first.data.assets)), files, "the screenshot rides on the thread's first message");
 });
 
-test("the Threads panel's order: Start a thread, Needs you, Waiting on Manager, Later, Resolved threads", () => {
-  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-  const at = (s) => html.indexOf(s);
-  assert.ok(at('id="newthread"') < at('id="h-wait"') && at('id="h-wait"') < at('id="h-onlead"') && at('id="h-onlead"') < at('id="later"') && at('id="later"') < at('id="resolved"'));
+test("Later asks leave Needs you for the Later tab (#C351: the order of the tabs is in threads-tabs.test.mjs)", () => {
   const b = board({ waiting: [{ id: "l1", kind: "later", text: "Some day", since: T }, { id: "a1", kind: "action", text: "Now", steps: ["x"], since: T }] });
-  assert.match(b.laterHtml(T + 1), /Later \(1\)[\s\S]*Some day/);
+  assert.match(b.laterHtml(T + 1), /Some day/);
+  assert.doesNotMatch(b.laterHtml(T + 1), /Now/);
   assert.doesNotMatch(renderWaitingHtml(b.state.waiting), /Later \(|Some day/, "Later left Needs you");
 });
 
@@ -420,7 +418,7 @@ test("resolved threads: the last 7 days folded, and a search over every resolved
     threads: [{ id: "t-9", num: 9, title: "Colour tweak" }, { id: "ask-old", num: 2 }],
   });
   const week = b.resolvedHtml(T);
-  assert.match(week, /Resolved threads, last 7 days \(1\)/);
+  assert.match(week, /^<div class="rsearch">/, "#C351: the tab holds the search and the list, no fold");
   assert.match(week, /<input type="search" id="rsearch"/);
   assert.match(week, /Colour tweak/);
   assert.doesNotMatch(week, /Install the Collector task|Still open/, "older than 7 days or open: not in the list");

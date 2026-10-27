@@ -25,7 +25,7 @@ test("the config: known fields only, each in its shape; the defaults pass", () =
 test("the page for a config: its values in the script and the HTML, escaped; a bad config builds nothing", () => {
   const html = buildPage(template, { title: "Team & Co", owner: "Sam", roster: ["Lead", "Maker"], phases: [["make", "Make"], ["done", "Done"]], skips: [] });
   assert.match(html, /<title>Team &amp; Co<\/title>/);
-  assert.match(html, /<h3 class="t-sec" id="h-wait">Needs you<\/h3>/);
+  assert.match(html, /<div class="ttabs" id="ttabs" role="tablist"/, "the Threads box's tabs (#C351)");
   assert.doesNotMatch(html, /\{\{[A-Z_]+\}\}/, "every placeholder filled");
   const injected = JSON.parse(html.match(/const CONFIG=\/\*BOARD_CONFIG\*\/([\s\S]*?)\/\*END_CONFIG\*\//)[1]);
   assert.equal(injected.owner, "Sam");

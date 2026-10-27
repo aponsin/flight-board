@@ -907,7 +907,7 @@ function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]
   if(focus){const t=document.getElementById(focus);if(t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}}
 function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())});const nf=$("ntfiles");if(nf)nf.innerHTML=filesHtml("new");ntHas()}
 // The new-thread form folds to one line plus Attach (#C351); focus, typed text or a waiting file opens it to the whole form.
-function ntHas(){const f=$("newthread");if(f&&$("nttext"))f.classList.toggle("has",!!($("nttext").value.trim()||(pendingFiles.get("new")||[]).length))}
+function ntHas(){const f=$("newthread"),t=$("nttext");if(f&&t)f.classList.toggle("has",!!(String(t.value||"").trim()||(pendingFiles.get("new")||[]).length))}
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="nttext")ntHas()});
 // The Threads box's tabs (#C351, the owner's pick B and the change in #T957): each over its own list, with its count.
 // Needs you opens by default; the open tab is this viewer's, for this visit.
