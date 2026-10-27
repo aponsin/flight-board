@@ -1,0 +1,1 @@
+PASS Full: #C288 board-closed-threads (closed asks on a card, #T opens any resolved thread, Designer's ask kinds); 347/347, scan clean; mutations: tRefQuery resolved-only guard and the ask argument both fail closed-threads.test.mjs; text escaped, unique box ids
