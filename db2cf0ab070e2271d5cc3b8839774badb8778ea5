@@ -1,0 +1,1 @@
+PASS Quick: #C292 board-phone-phase-track, phone rule now covers .step.now (same specificity, later in the sheet, so it wins); 348/348, scan clean; reverting the rule fails phone-track.test.mjs
