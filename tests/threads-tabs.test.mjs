@@ -60,6 +60,18 @@ test("a tab opens its own list only, and comes into view in the strip (it scroll
   assert.match(page, /\.ttab\{[^}]*white-space:nowrap/, "a tab's label stays on one line");
 });
 
+test("Designer on 859e16f: the strip fades at its right edge while there are more tabs to scroll to; scroll padding keeps an opened tab out from under it", () => {
+  const b = loadNames(["ttMore"]);
+  const attrs = [];
+  b.els.ttabs = { scrollLeft: 0, clientWidth: 356, scrollWidth: 825, toggleAttribute: (n, on) => attrs.push([n, on]) };
+  b.ttMore();
+  b.els.ttabs.scrollLeft = 825 - 356;
+  b.ttMore();
+  assert.deepEqual(attrs, [["data-more", true], ["data-more", false]]);
+  assert.match(page, /\.ttabs\[data-more\]\{-webkit-mask-image:linear-gradient\(to left,transparent,#000 3rem\);mask-image:linear-gradient\(to left,transparent,#000 3rem\)\}/);
+  assert.match(page, /\.ttabs\{[^}]*scroll-padding-inline:3rem/);
+});
+
 test("Later is a plain list, and an empty tab says so on one line", () => {
   const b = board({ waiting: [{ id: "l1", kind: "later", text: "Some day", since: T }] });
   const html = b.laterHtml(T + 1);
@@ -79,7 +91,7 @@ test("Resolved holds the search box and the last 7 days' list, with no fold; emp
 
 test("the form is one line plus Attach until it is used, then today's form: its hint, files and Send", () => {
   const form = page.slice(page.indexOf('<form class="newthread"'), page.indexOf("</form>", page.indexOf('<form class="newthread"')));
-  assert.match(form, /<textarea id="nttext" rows="1" placeholder="Start a thread: ask Manager something, or share an idea">/);
+  assert.match(form, /<textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea">/, "Designer on 859e16f: the label says 'Start a thread' once, and this fits a phone");
   assert.match(page, /\.newthread:not\(:focus-within\):not\(\.has\) :is\(label,\.keys,\.btns,\.fchip,\.hint\)\{display:none\}/, "folded: no label, hint, chips or Send");
   assert.match(page, /\.newthread:not\(:focus-within\):not\(\.has\)\{flex-direction:row/, "folded: one row, the input then Attach");
   assert.match(page, /classList\.toggle\("has",!!\(String\(t\.value\|\|""\)\.trim\(\)\|\|\(pendingFiles\.get\("new"\)\|\|\[\]\)\.length\)\)/, "typed text or a file keeps it open");

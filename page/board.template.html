@@ -148,7 +148,9 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .newthread:not(:focus-within):not(.has) textarea{flex:1;min-width:0;resize:none;height:2.3em}
 .newthread:not(:focus-within):not(.has) #ntfiles .files{margin:0;padding:0;border:0}
 /* The tabs (#C351): one strip under the form; on a phone it scrolls sideways. */
-.ttabs{display:flex;gap:4px;padding:0 12px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.ttabs{display:flex;gap:4px;padding:0 12px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;scroll-padding-inline:3rem}
+/* More tabs off to the right: the strip fades there (Designer, as the sites' Our work filters, #C307). */
+.ttabs[data-more]{-webkit-mask-image:linear-gradient(to left,transparent,#000 3rem);mask-image:linear-gradient(to left,transparent,#000 3rem)}
 .ttabs::-webkit-scrollbar{display:none}
 .ttab{white-space:nowrap;flex:none;font:600 .8rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:none;border:0;border-bottom:2px solid transparent;padding:12px 8px 10px;cursor:pointer}
 .ttab.on{color:var(--ink);border-bottom-color:var(--accent)}
@@ -364,7 +366,7 @@ table.crew3-ph{margin-top:14px}
     <h2 id="h-threads">Threads</h2>
     <div class="panel">
       <div id="ownerpart">
-      <form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread</label><textarea id="nttext" rows="1" placeholder="Start a thread: ask Manager something, or share an idea"></textarea><div class="keys" data-keys></div><div id="ntfiles"></div><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
+      <form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread</label><textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea"></textarea><div class="keys" data-keys></div><div id="ntfiles"></div><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
       <div class="ttabs" id="ttabs" role="tablist" aria-label="Threads and lists"></div>
       <div id="tp-you" role="tabpanel" aria-labelledby="tab-you"><div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div></div>
       <div id="tp-later" role="tabpanel" aria-labelledby="tab-later" hidden><div class="waiting" id="later"></div></div>
@@ -930,7 +932,10 @@ function tabCounts(now){const s=threadSets(now),mine=w=>waitsOn(w.id,now);
     resolved:resolvedMatches("",now).length}}
 function tabsHtml(now,active=tab){const c=tabCounts(now);
   return TABS.map(([k,l])=>`<button type="button" role="tab" id="tab-${k}" class="ttab${k===active?" on":""}" aria-selected="${k===active}" aria-controls="tp-${k}" tabindex="${k===active?0:-1}" data-tab="${k}">${l} <span class="tcount${k==="you"&&c[k]?" hot":""}">${c[k]}</span></button>`).join("")}
-function renderTabs(){const el=$("ttabs");if(!el)return;el.innerHTML=tabsHtml(Date.now());TABS.forEach(([k])=>{const p=$("tp-"+k);if(p)p.hidden=k!==tab})}
+function renderTabs(){const el=$("ttabs");if(!el)return;el.innerHTML=tabsHtml(Date.now());TABS.forEach(([k])=>{const p=$("tp-"+k);if(p)p.hidden=k!==tab});ttMore()}
+// Whether the strip has more tabs to the right than it shows: it fades there until scrolled to its end.
+function ttMore(){const s=$("ttabs");if(s&&s.toggleAttribute)s.toggleAttribute("data-more",s.scrollLeft+s.clientWidth<s.scrollWidth-2)}
+(()=>{const s=$("ttabs");if(s)s.addEventListener("scroll",ttMore,{passive:true});if(typeof window.addEventListener==="function")window.addEventListener("resize",ttMore)})();
 // Opening a tab brings it into view in the strip, which scrolls sideways on a phone.
 function showTab(k){if(!TABS.some(t=>t[0]===k))return;tab=k;renderTabs();const b=$("tab-"+k);if(b&&b.scrollIntoView)b.scrollIntoView({block:"nearest",inline:"nearest"})}
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-tab]");if(b)showTab(b.dataset.tab)});
