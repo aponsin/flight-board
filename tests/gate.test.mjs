@@ -170,9 +170,12 @@ test("rule 9, case 3: a hand-off names its card, and the card exists", () => {
   assert.match(checkHandOff("New task (board card demos-reports)", { known: new Set(), fresh: false }).note, /mirror is stale/);
 });
 
+// Every lead turn reads the board's messages (#C297): an empty read of them all, so these cases test their own rules.
 const turn = (userText, calls = [], reply = "") => [
   { type: "custom-title", customTitle: "Manager" },
   { type: "user", message: { content: [{ type: "text", text: userText }] } },
+  { type: "assistant", message: { content: [{ type: "tool_use", id: "read-msgs", name: "ArtifactData", input: { url: URL_, action: "list", collection: "messages" } }] } },
+  { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "read-msgs", content: "0 documents" }] } },
   { type: "assistant", message: { content: calls.map((c) => ({ type: "tool_use", name: c.name, input: c.input })) } },
   { type: "user", message: { content: [{ type: "tool_result", content: "ok" }] } },
   { type: "assistant", message: { content: [{ type: "text", text: reply }] } },
