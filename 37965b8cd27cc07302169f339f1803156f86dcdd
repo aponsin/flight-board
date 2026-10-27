@@ -1,0 +1,1 @@
+PASS Full: #C282 board-local-main-ff, local main fast-forward after push (pinned, goes with the next install); 341/341, scan clean; mutation (drop the diverged/behind guard) fails 2 tests in local-main.test.mjs; ff-only, update-ref pinned to the old value, no reset, never throws
