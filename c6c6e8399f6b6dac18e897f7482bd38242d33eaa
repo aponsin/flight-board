@@ -1,0 +1,1 @@
+PASS Quick: board-eta-queued (#C348). The page shows a card's expected hours and due time beside so far, a due time on each running phase, and a card with no build start and no branch as Build queued with its live ETA, never lit or up next. Text escaped (i.size), numbers from etaHours. A card in planning keeps Plan lit through nowPhases. Suite 415/415. Checker 2026-10-27.
