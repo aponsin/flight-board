@@ -11,7 +11,7 @@ import { basename, dirname, join, sep } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readLines, sessionRole, currentTurn, turnCalls, lastReply } from "./session.mjs";
-import { writesOf } from "./gate.mjs";
+import { writesOf, writeState, home } from "./gate.mjs";
 import { openOwnerWords, WAIT_MIN } from "./owner-waits.mjs";
 import { idText } from "../collector/text.mjs";
 
@@ -43,16 +43,22 @@ export function threadPings(text, owner) {
 // The lead's reads of the board's messages this turn (#C298, Manager's design after Checker's findings: every message
 // of a day was hundreds, cut to 50 paths with out_dir or one page without a limit; then one read per thread was ~75).
 // Two reads, each inline (no out_dir), whole (no "more" in its result) and limit 1000 or more: the owner's own messages
-// and the lead's, each a day back or more (where from == <them>, and at > a time a day ago or earlier). Any answer to an
-// owner word of the last day is itself of the last day, so the two settle every thread.
+// and the lead's, each back to `since` or further (where from == <them>, and at > a time no later than since). Any
+// answer to an owner word since then is itself since then, so the two settle every thread.
 const MANY = 1000;
-function readKind(input, now, owner, lead) {
+// since (#C316, the owner's choice A on #T928: a day was ~90 + ~136 messages, ~5% of the lead's context a turn): when the
+// lead's last checked turn read, less SLACK; with no such turn on record, a day back. A check that passed settled every
+// owner word in its reads WAIT_MIN minutes old or more, so an owner word it left is under WAIT_MIN minutes older than the
+// read, or written after it (on the owner's clock, which may be a little behind): SLACK covers both.
+export const SLACK = (WAIT_MIN + 10) * 60e3;
+export const sinceOf = (last, now) => (last == null ? now - DAY : last - SLACK);
+function readKind(input, since, owner, lead) {
   if (input.collection !== "messages" || input.action !== "query" || input.out_dir || !(Number(input.query?.limit) >= MANY)) return null;
   const where = Array.isArray(input.query?.where) ? input.query.where : [];
   const is = (w, f, op) => Array.isArray(w) && w[0] === f && w[1] === op;
   const by = where.filter((w) => is(w, "from", "=="));
   if (by.length !== 1 || (by[0][2] !== owner && by[0][2] !== lead)) return null;
-  if (!where.every((w) => w === by[0] || ((is(w, "at", ">") || is(w, "at", ">=")) && typeof w[2] === "number" && w[2] <= now - DAY))) return null;
+  if (!where.every((w) => w === by[0] || ((is(w, "at", ">") || is(w, "at", ">=")) && typeof w[2] === "number" && w[2] <= since))) return null;
   return by[0][2] === owner ? "owner" : "lead";
 }
 // A result cut short: the board's own marker for documents it didn't print, or a cursor to the next page.
@@ -76,20 +82,22 @@ export function wholeBody(body, results) {
 }
 export const resultsDir = (transcript) => (transcript ? join(dirname(transcript), basename(transcript, ".jsonl"), "tool-results") : null);
 
-// What this turn read: { owner, lead: whether each one's messages were read whole, docs: [{ id, ...data }] } from the
-// result's document lines ({"id", "data", "version"} each, one per line).
-export function messagesRead(turn, id, now, { owner, lead, results = null }) {
-  const reads = new Map();
+// What this turn read: { owner, lead: whether each one's messages were read whole, docs: [{ id, ...data }], readAt: when
+// the earliest whole read was made (its transcript line's time), or null if one has none } from the result's document
+// lines ({"id", "data", "version"} each, one per line).
+export function messagesRead(turn, id, since, { owner, lead, results = null }) {
+  const reads = new Map(), when = new Map();
   for (const l of turn) {
     if (l?.type !== "assistant" || !Array.isArray(l.message?.content)) continue;
     for (const p of l.message.content) {
       if (p?.type === "tool_use" && p.name === "ArtifactData" && id && String(p.input?.url ?? "").includes(id)) {
-        const k = readKind(p.input ?? {}, now, owner, lead);
-        if (k) reads.set(p.id, k);
+        const k = readKind(p.input ?? {}, since, owner, lead);
+        if (k) { reads.set(p.id, k); when.set(p.id, Date.parse(l.timestamp)); }
       }
     }
   }
   const docs = [], whole = new Set();
+  let readAt = Infinity;
   for (const l of turn) {
     if (l?.type !== "user" || !Array.isArray(l.message?.content)) continue;
     for (const p of l.message.content) {
@@ -97,6 +105,7 @@ export function messagesRead(turn, id, now, { owner, lead, results = null }) {
       const body = wholeBody(typeof p.content === "string" ? p.content : Array.isArray(p.content) ? p.content.map((c) => c?.text ?? "").join("\n") : "", results);
       if (body == null || CUT.test(body)) continue;
       whole.add(reads.get(p.tool_use_id));
+      readAt = Math.min(readAt, when.get(p.tool_use_id));
       for (const line of body.split("\n")) {
         if (!line.startsWith("{")) continue;
         try {
@@ -106,7 +115,22 @@ export function messagesRead(turn, id, now, { owner, lead, results = null }) {
       }
     }
   }
-  return { owner: whole.has("owner"), lead: whole.has("lead"), docs };
+  return { owner: whole.has("owner"), lead: whole.has("lead"), docs, readAt: Number.isFinite(readAt) ? readAt : null };
+}
+
+// The record of checked turns: <stateDir>/<board>/stop.json, { sessions: { <transcript name>: readAt } }. A session
+// with none, or a time that isn't a number before now, has no last turn (lastPass null).
+export const passPath = (config) => join(home(config.gate.stateDir), boardId(config) ?? "no-board", "stop.json");
+const readPasses = (path) => {
+  try { const j = JSON.parse(readFileSync(path, "utf8")); return j && typeof j.sessions === "object" && j.sessions ? j.sessions : {}; } catch { return {}; }
+};
+export function lastPass(path, session, now) {
+  const s = readPasses(path), t = Object.hasOwn(s, session) ? s[session] : null;
+  return typeof t === "number" && Number.isFinite(t) && t <= now ? t : null;
+}
+// Another session's record written meanwhile may be lost (read, then written whole): that session reads a day back.
+export function recordPass(path, session, readAt) {
+  writeState(path, { sessions: { ...readPasses(path), [session]: readAt } });
 }
 
 // A note that only acknowledges ("ok", "done.", "Thanks!"): the same list as the page's ACK_ONLY, which settles an ask.
@@ -128,10 +152,12 @@ export function replyNotes(text) {
   return out;
 }
 
-// transcript: the transcript's path, for a result saved beside it (wholeBody).
-export function stopCheck(lines, { config, env = {}, now = Date.now(), transcript = null }) {
+// transcript: the transcript's path, for a result saved beside it (wholeBody). since: how far back the reads must reach
+// (sinceOf). Returns { errs, readAt }: readAt, when the check passed, is the turn's read time to record (else null).
+export const stopCheck = (lines, opts) => stopRun(lines, opts).errs;
+export function stopRun(lines, { config, env = {}, now = Date.now(), transcript = null, since = sinceOf(null, now) }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
-  if (role !== config.gate.managerRole) return [];
+  if (role !== config.gate.managerRole) return { errs: [], readAt: null };
   const id = boardId(config);
   const turn = currentTurn(lines);
   const writes = turnCalls(turn).filter((c) => c.name === "ArtifactData" && id && String(c.input.url ?? "").includes(id) && WRITES.has(c.input.action))
@@ -153,12 +179,12 @@ export function stopCheck(lines, { config, env = {}, now = Date.now(), transcrip
   for (const t of new Set(asked)) {
     if (!writes.some((w) => w.collection === "messages" && w.op !== "delete" && w.data?.thread === t)) out.push(`the owner wrote in thread ${idText(t)}: answer there (messages {thread: "${idText(t)}", from: "${role}", text, at}), not only here`);
   }
-  // The owner's word unanswered on the board (#C298): every turn reads the owner's messages of the last day and the
+  // The owner's word unanswered on the board (#C298): every turn reads the owner's messages since `since` and the
   // lead's (this turn's own messages count too); a thread whose newest message is the owner's, WAIT_MIN minutes on,
   // refuses the stop until it's answered there.
-  const seen = messagesRead(turn, id, now, { owner: config.owner, lead: role, results: resultsDir(transcript) });
+  const seen = messagesRead(turn, id, since, { owner: config.owner, lead: role, results: resultsDir(transcript) });
   const need = [[seen.owner, config.owner], [seen.lead, role]].filter(([done]) => !done).map(([, who]) => who);
-  if (need.length) out.push(`read ${need.map((w) => `${w}'s`).join(" and ")} messages this turn before finishing (ArtifactData query, collection messages, where from == "<name>" and at > ${now - DAY}, limit ${MANY}, no out_dir; one query each)`);
+  if (need.length) out.push(`read ${need.map((w) => `${w}'s`).join(" and ")} messages this turn before finishing (ArtifactData query, collection messages, where from == "<name>" and at > ${since}, limit ${MANY}, no out_dir; one query each; ${since} is your last checked turn's read less ${SLACK / 60e3} min, or a day back)`);
   else {
     const mine = writes.filter((w) => w.collection === "messages" && w.op !== "delete" && w.data && typeof w.data === "object").map((w) => ({ ...w.data, id: w.doc_id }));
     for (const w of openOwnerWords([...seen.docs, ...mine], { owner: config.owner, now, minutes: WAIT_MIN })) {
@@ -166,7 +192,7 @@ export function stopCheck(lines, { config, env = {}, now = Date.now(), transcrip
       out.push(`the owner's message in thread ${t} has waited ${Math.round((now - w.at) / 60e3)} min with no answer: answer there (messages {thread: "${t}", from: "${role}", text, at}) before finishing`);
     }
   }
-  return out;
+  return { errs: out, readAt: out.length ? null : seen.readAt };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
@@ -182,8 +208,13 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   process.stdin.on("end", () => {
     let input = {};
     try { input = JSON.parse(raw); } catch { process.exit(0); }
-    if (input.stop_hook_active || !input.transcript_path) process.exit(0);
-    const errs = stopCheck(readLines(input.transcript_path), { config, env: process.env, transcript: input.transcript_path });
+    if (!input.transcript_path) process.exit(0);
+    // A second stop in a row passes, but it records the turn only when its check is clean: a refused turn's reads never
+    // move the next turn's since past an owner word it left waiting.
+    const now = Date.now(), path = passPath(config), session = basename(String(input.transcript_path), ".jsonl");
+    const { errs, readAt } = stopRun(readLines(input.transcript_path), { config, env: process.env, now, transcript: input.transcript_path, since: sinceOf(lastPass(path, session, now), now) });
+    if (!errs.length && readAt != null) { try { recordPass(path, session, readAt); } catch { /* no record: a day back next turn */ } }
+    if (input.stop_hook_active) process.exit(0);
     if (errs.length) { process.stderr.write(`Before you finish:\n- ${errs.join("\n- ")}\n`); process.exit(2); }
     process.exit(0);
   });
