@@ -502,7 +502,7 @@ function renderWaiting(){
   // Keep what the owner is typing: a live update re-draws the list, which would otherwise wipe the note boxes.
   const drafts={};el.querySelectorAll("textarea[id^='note-'],textarea[id^='tnote-']").forEach(x=>{if(x.value)drafts[x.id]=x.value});
   const focusId=document.activeElement&&document.activeElement.id&&/^t?note-/.test(document.activeElement.id)?document.activeElement.id:null;
-  queueMicrotask(()=>{Object.entries(drafts).forEach(([id,v])=>{const x=document.getElementById(id);if(x)x.value=v});if(focusId){const x=document.getElementById(focusId);if(x){x.focus();x.selectionStart=x.selectionEnd=x.value.length}}});
+  queueMicrotask(()=>{Object.entries(drafts).forEach(([id,v])=>{const x=document.getElementById(id);if(x){x.value=v;fitBox(x)}});if(focusId){const x=document.getElementById(focusId);if(x){x.focus();x.selectionStart=x.selectionEnd=x.value.length}}});
   const item=w=>askHtml(w,open);
   // "Later" items sit folded in one row at the bottom, so today's asks stay on the first screen.
   const now=list.filter(w=>w.kind!=="later");
@@ -851,8 +851,22 @@ function closeWrites(id,now,rid){const out=[{op:"set",path:`messages/m${now}-${r
   return out}
 // The text in a reply box, taken out of it at once: a re-draw while the message is saving can't put it back, and a
 // second press can't send it twice. Returns the text and a way to put it back if saving fails.
-function takeDraft(ta){const text=(ta&&ta.value||"").trim();if(ta)ta.value="";
-  return {text,restore:()=>{const t=ta&&ta.id?document.getElementById(ta.id):ta;if(t&&!t.value)t.value=text}}}
+function takeDraft(ta){const text=(ta&&ta.value||"").trim();if(ta){ta.value="";fitBox(ta)}
+  return {text,restore:()=>{const t=ta&&ta.id?document.getElementById(ta.id):ta;if(t&&!t.value){t.value=text;fitBox(t)}}}}
+// A text box fits its text (#C357, the owner in #T964): it grows to about BOX_LINES lines, then scrolls inside, and the
+// line with the cursor stays in view (⌘+Enter's setRangeText never scrolled the box, so new lines went out of sight).
+// On input (typing, a paste, ⌘+Enter), on a restored draft and after sending, which shrinks it back.
+const BOX_LINES=6;
+function fitBox(t){if(!t||t.tagName!=="TEXTAREA"||!t.style)return;
+  const cs=typeof getComputedStyle==="function"?getComputedStyle(t):null,lh=parseFloat(cs&&cs.lineHeight)||21;
+  const max=Math.round(lh*BOX_LINES+(parseFloat(cs&&cs.paddingTop)||6)+(parseFloat(cs&&cs.paddingBottom)||6)+2);
+  t.style.height="auto";const full=t.scrollHeight+2;t.style.height=Math.min(full,max)+"px";t.style.overflowY=full>max?"auto":"hidden";
+  if(full<=max)return;
+  const at=num(t.selectionEnd)??t.value.length;
+  if(at>=t.value.length){t.scrollTop=t.scrollHeight;return}
+  const top=(t.value.slice(0,at).split("\n").length-1)*lh;
+  if(top<t.scrollTop)t.scrollTop=top;else if(top+lh>t.scrollTop+t.clientHeight)t.scrollTop=top+lh-t.clientHeight}
+document.addEventListener("input",e=>fitBox(e.target));
 function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&blobId(f.id));
   return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${linkify(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}</div>`}
 // A thread: its reply box at the top, then the messages, newest first (display only: threadOf stays oldest first). An
@@ -942,7 +956,7 @@ function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]
   const y=window.scrollY,inner=el.scrollTop;
   draw();restoreFolds(el,open);
   if(el.scrollTop!==inner)el.scrollTop=inner;if(window.scrollY!==y)window.scrollTo(0,y);
-  Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t)t.value=v});
+  Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t){t.value=v;fitBox(t)}});
   if(focus){const t=document.getElementById(focus);if(t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}}
 function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())});const nf=$("ntfiles");if(nf)nf.innerHTML=filesHtml("new");ntHas()}
 // The new-thread form folds to one line plus Attach (#C351); focus, typed text or a waiting file opens it to the whole form.
