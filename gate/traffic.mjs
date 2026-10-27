@@ -1,5 +1,5 @@
 // Mechanical traffic (#C335, the context-tax brief's card B): a message that only reports a status the lead needs no
-// judgment on ("picked up Ops", "SHIPPED v1.155.1", "finished #C330") is written to the board's log instead of waking the
+// judgment on ("picked up Ops", "step logged", "finished #C330") is written to the board's log instead of waking the
 // lead, and the lead gets one digest line. The classes are the config's (traffic.mechanical: [{ name, pattern }], each a
 // pattern the whole message must match, trimmed); a message holding any of NEVER is always the lead's, whatever matches,
 // and a message no class matches is allowed: the gate never guesses.
