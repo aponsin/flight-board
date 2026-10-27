@@ -277,6 +277,11 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .ctx-t.r .pc{color:var(--bad)}.ctx-t.r .ctx-bar i{background:var(--bad)}
 .ctx-t.saved{border:2px dashed var(--bad);background:var(--bad-soft)}
 .ctx-t .sv{font:600 .6rem/1 var(--mono);color:var(--bad);text-transform:uppercase;letter-spacing:.03em}
+/* An old tile's Refresh, and what came of it (#C354). */
+.ctx-t .ctx-st{font:400 .62rem/1.2 var(--mono);color:var(--muted);max-width:11rem}
+.ctx-ref{align-self:flex-start;font:600 .62rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
+.ctx-ref:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.ctx-ref:disabled{opacity:.6;cursor:default}
 .ctx-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 8px;margin-bottom:4px}
 .ctx-head h2{font-size:.95rem}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
@@ -431,7 +436,7 @@ const PHASES=CONFIG.phases;
 const BUILD_PHASE=(CONFIG.collector&&CONFIG.collector.buildPhase)||"build";
 const LIVE_PHASE=(CONFIG.collector&&CONFIG.collector.livePhase)||"live";
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -1286,10 +1291,24 @@ function renderCtx(){const a=ctxAgents();
   const names=[...ORDER.filter(n=>a[n]),...Object.keys(a).filter(n=>!ORDER.includes(n)).sort()];
   const ready=names.filter(n=>a[n].saved);
   $("ctxnote").textContent=ready.length?`${ready.length} to clear: ${ready.join(", ")}`:"";
-  $("ctx").innerHTML=names.length?names.map(n=>{const p=Math.max(0,Math.min(100,num(a[n].pct)??0)),c=p>=70?"r":p>=40?"a":"g";
-    const old=num(a[n].at)&&Date.now()-a[n].at>72e5;
-    return `<div class="ctx-t ${c}${a[n].saved?" saved":""}"${old?' style="opacity:.55"':""} title="${esc(n)}: ${p}% of its memory used${num(a[n].at)?", read "+dur(Date.now()-a[n].at)+" ago":""}${a[n].saved?"; saved, ready to clear":""}"><span class="nm">${esc(n)}<span class="pc">${p}%</span></span><span class="ctx-bar"><i style="width:${p}%"></i></span>${a[n].saved?'<span class="sv">/clear me</span>':""}</div>`}).join(""):'<div class="note">No check yet.</div>';
+  const now=Date.now();
+  $("ctx").innerHTML=names.length?names.map(n=>ctxTileHtml(n,a[n],ctxRequest(n),now)).join(""):'<div class="note">No check yet.</div>';
 }
+// One memory tile. Over 2 h old it fades and offers Refresh (#C354, the owner in #T961): a click asks the lead for a new
+// reading (ctxRequests/<Role> {at}, and a ping). Until a newer reading lands it says "refreshing…"; after 10 min with
+// none, plainly that the session isn't running (the app reads only running sessions, so the collector kept the old one).
+const CTX_OLD=72e5,CTX_WAIT=10*60e3;
+function ctxRequest(n){return (state.ctxRequests||[]).find(d=>d&&d.id===n&&num(d.at)!=null)||null}
+function ctxTileHtml(n,t,req,now){const p=Math.max(0,Math.min(100,num(t.pct)??0)),c=p>=70?"r":p>=40?"a":"g";
+  const old=num(t.at)&&now-t.at>CTX_OLD,asked=old&&req&&!(num(t.at)>req.at),waiting=asked&&now-req.at<CTX_WAIT;
+  const st=waiting?"refreshing…":asked?`no new reading: ${n}'s session isn't running`:"";
+  return `<div class="ctx-t ${c}${t.saved?" saved":""}"${old?' style="opacity:.55"':""} title="${esc(n)}: ${p}% of its memory used${num(t.at)?", read "+dur(now-t.at)+" ago":""}${t.saved?"; saved, ready to clear":""}"><span class="nm">${esc(n)}<span class="pc">${p}%</span></span><span class="ctx-bar"><i style="width:${p}%"></i></span>${t.saved?'<span class="sv">/clear me</span>':""}${st?`<span class="ctx-st">${esc(st)}</span>`:""}${old&&!waiting?`<button type="button" class="ctx-ref" data-ctxref="${esc(n)}" aria-label="Refresh ${esc(n)}'s memory reading">Refresh</button>`:""}</div>`}
+function ctxRefreshWrites(n,now){return /^[A-Za-z0-9_-]{1,60}$/.test(String(n))?[{op:"set",path:`ctxRequests/${n}`,data:{at:now}}]:[]}
+const ctxPingText=n=>`Board: refresh ${n}'s memory tile (run board-collector)`;
+document.addEventListener("click",async e=>{const r=e.target.closest&&e.target.closest("[data-ctxref]");if(!r||!dbRef)return;
+  const n=r.dataset.ctxref,ws=ctxRefreshWrites(n,Date.now());if(!ws.length)return;r.disabled=true;
+  const anchor=await prepAnchor(r);
+  try{await applyWrites(ws);await sendPing(anchor,ctxPingText(n))}catch(_){r.disabled=false}});
 // Steps: each agent logs its own step as it happens, one document per event in "steps":
 // {init: <initiative id>, phase: plan|build|language|checker|security|ship|live, who, kind: "start"|"end", at: <ms>, wait?: "busy"|"gate", version?}.
 // The page turns them into phase entries, so Manager no longer has to relay or guess times.
@@ -1512,6 +1531,6 @@ setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()
   window.claude.use("downloads").then(d=>{if(d){setDownloads(d);renderAll()}}).catch(()=>{});
   const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderAll();$("synced").textContent="live, updated "+hhmm(Date.now())},
     ()=>{$("dot").classList.remove("on");$("synced").textContent="connection lost, reload"});
-  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings"].forEach(sub);
+  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests"].forEach(sub);
 })();
 </script>
