@@ -4,6 +4,7 @@
 // <stateDir>/<board>/out/derived-all.json: the one document the task then writes to the board as derived/all.
 // It prints one line per conflict (a card's declared phase against its evidence), the cards live by the evidence but
 // still open, and the nudges (collector/nudges.mjs), for the lead. It never writes the board itself: only a Claude session can (collector/TASK.md).
+// Last, it refreshes the pickup digests in the refresh repositories that ship one (collector/pickup.mjs: PICKUP lines).
 import { realpathSync } from "node:fs";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync, readdirSync, lstatSync, cpSync, readlinkSync } from "node:fs";
 import { sep, basename } from "node:path";
@@ -21,6 +22,7 @@ import { idText, lineText } from "./text.mjs";
 import { planReadings, writeContext } from "./context.mjs";
 import { runMark, localMain, localShips } from "./refresh.mjs";
 import { allocate } from "../scripts/thread-ids.mjs";
+import { refreshPickups } from "./pickup.mjs";
 
 // The folder this run's code really lives in (the current link resolved, by Node, to a pinned copy).
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -345,4 +347,6 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const loose = unnumberedLine(mirror.docs);
   if (loose) console.log(loose);
   for (const line of writeContext(dir, dirname(out), config, Date.now())) console.log(line);
+  // Last, once the board's work is written: every role's pickup digest in the refresh repositories that ship one (#C338).
+  for (const line of refreshPickups(config.collector.refresh.repos, { remote: config.collector.remote, main: config.collector.mainBranch })) console.log(line);
 }
