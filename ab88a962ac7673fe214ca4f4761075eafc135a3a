@@ -1,0 +1,1 @@
+PASS Quick: board stack top ab88a96 (#C351, #C353, #C354 with Designer's follow-up, #C355), on 7965e60 (signed). Adds only a late class (var(--warn)) on a card's no-answer-yet line. Suite 436/436. My #C355 note on the ? in the check ping: Manager keeps it on purpose (each Check gets a board answer). Checker 2026-10-27.
