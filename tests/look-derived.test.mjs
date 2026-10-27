@@ -36,6 +36,13 @@ test("a look word counts only as a whole word; a decision with none, off the vis
   assert.doesNotMatch(errs(ask({ text: "Fix the iconography docs?", initiative: "c-gate" })), /look decision/, "icon inside a word");
 });
 
+test("Manager: a device or 'looks good?' question is no look by its words: phone, laptop and looks are off the list", () => {
+  assert.doesNotMatch(errs(ask({ text: "Which phone number goes on the contact form?", options: [...two, { key: "C", label: "Something else" }] })), /look decision/);
+  assert.doesNotMatch(errs(ask({ text: "The fix looks good on my laptop: ship it today or tomorrow?" })), /look decision/);
+  for (const w of ["phone", "laptop", "looks"]) assert.ok(!DEFAULTS.decisions.lookWords.includes(w), w);
+  for (const w of ["button", "photo"]) assert.ok(DEFAULTS.decisions.lookWords.includes(w), w);
+});
+
 test("a decision on a card in a visual lane is a look, by the card's who or whoever built it", () => {
   assert.match(errs(ask({ text: "Ship v1.2 today or tomorrow?", initiative: "c-design" })), LOOK);
   assert.match(errs(ask({ text: "Ship v1.2 today or tomorrow?", initiative: "c-review" })), LOOK, "Demos built it; Checker holds it now");

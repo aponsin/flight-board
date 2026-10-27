@@ -47,7 +47,7 @@ export const DEFAULTS = {
   // it) is one of visualLanes (the team's roles: none by default). offBoard: wording that sends the owner off the board
   // (to a session's chat), refused in any ask.
   decisions: {
-    lookWords: ["mock-up", "mockup", "screenshot", "layout", "band", "icon", "colour", "color", "font", "spacing", "px", "phone", "laptop", "looks", "hero", "banner", "logo", "photo", "button", "text size"],
+    lookWords: ["mock-up", "mockup", "screenshot", "layout", "band", "icon", "colour", "color", "font", "spacing", "px", "hero", "banner", "logo", "photo", "button", "text size"],
     visualLanes: [],
     offBoard: ["Manager chat", "in chat", "see chat", "in the chat"],
   },

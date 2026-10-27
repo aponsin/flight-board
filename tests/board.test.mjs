@@ -204,8 +204,8 @@ test("an item that went live without Release's ship times is flagged", () => {
 test("asks: an action with no steps, or a look question with no screenshots, is flagged", () => {
   const b = loadBoard();
   assert.ok([...b.waitGaps({ kind: "action", text: "Do X" })].includes("no steps"));
-  assert.ok([...b.waitGaps({ kind: "decision", text: "OK to ship as it looks?" })].includes("no screenshots"));
-  assert.deepEqual([...b.waitGaps({ kind: "decision", text: "OK to ship as it looks?", images: [{ url: "/_blob/abc" }] })], []);
+  assert.ok([...b.waitGaps({ kind: "decision", text: "OK to ship the new banner?" })].includes("no screenshots"));
+  assert.deepEqual([...b.waitGaps({ kind: "decision", text: "OK to ship the new banner?", images: [{ url: "/_blob/abc" }] })], []);
   assert.deepEqual([...b.waitGaps({ kind: "answer", text: "x", question: "y" })], []);
 });
 
@@ -363,10 +363,10 @@ test("attachments: the ping to Manager names each file with its id, so Manager c
 test("a look question needs screenshots: a look word in it, or look: true; look: false no longer opts out", () => {
   const b = loadBoard();
   const has = (w) => [...b.waitGaps({ kind: "decision", ...w })].includes("no screenshots");
-  assert.ok(has({ text: "OK to ship as it looks?" }));
+  assert.ok(has({ text: "OK to ship the new banner?" }));
   assert.ok(has({ text: "Anything", look: true }));
   assert.ok(has({ text: "Should agents attach a screenshot to every READY?" }), "the Director's card: screenshot is a look word");
-  assert.ok(has({ text: "OK to ship as it looks?", look: false }));
+  assert.ok(has({ text: "OK to ship the new banner?", look: false }));
   assert.ok(!has({ text: "The run failed: retry it?" }));
 });
 
