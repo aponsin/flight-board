@@ -1,0 +1,1 @@
+PASS Quick: board-eta-queued (#C348) at e9ff9d6, f0f5c72 rebased onto main c6ecd0a. range-diff shows both commits unchanged (=). Suite 419/419. Supersedes the PASS on f0f5c72. Checker 2026-10-27.
