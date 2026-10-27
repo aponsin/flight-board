@@ -76,4 +76,9 @@ test("#T opens a resolved thread even past the 50-row list: the search narrows t
   assert.doesNotMatch(b.rlistHtml(T, "#T7"), /data-thread="a7[0-9]"/, "#T7 is not #T70–#T79");
   assert.match(b.rlistHtml(T, "#t7"), /data-thread="a7"/, "the search box: any case");
   assert.equal(b.tRefQuery("nope", T), null, "not a resolved thread: nothing to search");
+  // Checker: a numbered thread still open or answered isn't in the resolved list, so no search would find it.
+  b.state.messages.push(msg("t-open", "Owner", "still a question", T), msg("t-ans", "Manager", "an answer to read", T));
+  b.state.threads.push({ id: "t-open", num: 901 }, { id: "t-ans", num: 902 });
+  assert.equal(b.tRefQuery("t-open", T), null, "open: waits on Manager, drawn in its own section");
+  assert.equal(b.tRefQuery("t-ans", T), null, "answered: drawn under Needs you");
 });
