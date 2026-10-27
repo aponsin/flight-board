@@ -34,10 +34,10 @@ export const DEFAULTS = {
   // stay unchanged unless its status is one of parked; and the quiet minutes before a nudge is sent again.
   nudges: { ownerWaitMin: 15, stepFactor: 1.5, etaHours: { XS: 1, S: 1.5, M: 3.5, L: 6 }, ctxMaxHours: 2, staleHours: 24, parked: ["paused"], quietMin: 120 },
   // Mechanical traffic (gate/traffic.mjs): status-only messages the gate sends to the board's log instead of the lead,
-  // each class a name and a pattern the whole message must match (case aside). An empty list turns it off.
+  // each class a name and a pattern the whole message must match (case aside). An empty list turns it off. A ship is not
+  // one: the lead acts on it at once (Manager, #C335).
   traffic: { mechanical: [
     { name: "picked-up", pattern: String.raw`picked up [A-Za-z0-9_-]{1,60}\.?` },
-    { name: "shipped", pattern: String.raw`SHIPPED v?\d+(?:\.\d+){1,3}\.?` },
     { name: "step-logged", pattern: String.raw`(?:board )?steps? logged\.?` },
     { name: "tile-updated", pattern: String.raw`(?:memory )?tile updated\.?` },
     { name: "finished", pattern: String.raw`finished #?[A-Za-z0-9-]{1,80}\.?` },

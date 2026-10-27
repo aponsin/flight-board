@@ -13,6 +13,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { checkWrites, refusalText } from "./rules.mjs";
 import { readLines, sessionRole } from "./session.mjs";
+import { mechanicalClass, refusal } from "./traffic.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"]);
@@ -82,7 +83,8 @@ export function readMirror(dir) {
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 // threads too (#C234: a thread numbered since the export read as unnumbered, and the lead's message into it was refused),
 // but only onto a mirror that has threads: a few recent ones alone would make every older thread look unnumbered.
-export const OVERLAY = new Set(["initiatives", "waiting", "ideas", "messages", "derived", "steps", "plan", "threads"]);
+// log too (#C335): the journal is where the lead's digest finds the mechanical messages written since its last prompt.
+export const OVERLAY = new Set(["initiatives", "waiting", "ideas", "messages", "derived", "steps", "plan", "threads", "log"]);
 export function withJournal(mirror, journal) {
   if (!mirror) return null;
   const docs = Object.fromEntries(Object.entries(mirror.docs).map(([c, list]) => [c, list.map((d) => ({ ...d }))]));
@@ -153,6 +155,12 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
     // gate lets through can still be refused, at the app's consent card or by a stale pin: Security).
     save(out.state);
     return out.errors.length ? { block: refusalText(out.errors, out.stuckNow, now) } : {};
+  }
+  // A status-only message from any session but the lead's, to anyone, goes to the board's log instead (#C335): the lead
+  // gets a digest line at its next prompt (gate/digest.mjs). The gate never guesses: no class, no refusal.
+  if (SEND_TOOLS.has(input?.tool_name) && !who.manager) {
+    const kind = mechanicalClass(t.message ?? t.text ?? "", config.traffic?.mechanical);
+    return kind ? { block: `${refusal(kind)}\n` } : {};
   }
   if (SEND_TOOLS.has(input?.tool_name) && who.manager) {
     const mirror = readMirror(join(dir, "mirror"));

@@ -1,5 +1,6 @@
 // The board's hook entries for Claude Code's settings (~/.claude/settings.json): PreToolUse on board writes and
-// hand-off messages, PostToolUse after them, Stop on the lead's replies (the gate's check, then the collector on demand).
+// hand-off messages, PostToolUse after them, Stop on the lead's replies (the gate's check, then the collector on demand),
+// UserPromptSubmit on the lead's prompts (the digest).
 // Printed by default; written only with --write, which keeps every other entry and replaces an older flight-board one.
 // Usage: node scripts/hooks.mjs <board.config.json> --pin <signed commit> [--write] [--retire <text>]... [--settings <file>]
 // [--install-root <folder>]. Run it from a checkout of that commit: the entries it writes are this file's.
@@ -11,7 +12,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 // A flight-board hook, from this checkout or a pinned copy: replaced on every install.
-const MARK = /(?:flight-board|\/[0-9a-f]{40})\/(?:gate\/(?:gate|stop|after)|collector\/refresh)\.mjs/;
+const MARK = /(?:flight-board|\/[0-9a-f]{40})\/(?:gate\/(?:gate|stop|after|digest)|collector\/refresh)\.mjs/;
 // A path as one shell word, in single quotes (a ' inside written '\''): sh expands nothing in it, so a folder with a
 // space ("Application Support") or a crafted name with $( ) or backticks stays a plain path.
 export const shellQuote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
@@ -24,6 +25,8 @@ export function hookEntries(repo, configPath, node = process.execPath) {
     PostToolUse: { matcher: "ArtifactData", hooks: [{ type: "command", command: cmd("after.mjs") }] },
     // The lead's turn end: the gate's checks, then "start the collector now" when a card moved since its last run.
     Stop: { hooks: [{ type: "command", command: cmd("stop.mjs") }, { type: "command", command: cmd("refresh.mjs", "collector") }] },
+    // The lead's turn start: one line of the mechanical messages logged since its last prompt (#C335).
+    UserPromptSubmit: { hooks: [{ type: "command", command: cmd("digest.mjs") }] },
   };
 }
 
