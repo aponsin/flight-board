@@ -33,6 +33,15 @@ export const DEFAULTS = {
   // run (etaHours: the median hours a step takes, by card size); how old a memory reading may get; how long a card may
   // stay unchanged unless its status is one of parked; and the quiet minutes before a nudge is sent again.
   nudges: { ownerWaitMin: 15, stepFactor: 1.5, etaHours: { XS: 1, S: 1.5, M: 3.5, L: 6 }, ctxMaxHours: 2, staleHours: 24, parked: ["paused"], quietMin: 120 },
+  // Mechanical traffic (gate/traffic.mjs): status-only messages the gate sends to the board's log instead of the lead,
+  // each class a name and a pattern the whole message must match (case aside). An empty list turns it off.
+  traffic: { mechanical: [
+    { name: "picked-up", pattern: String.raw`picked up [A-Za-z0-9_-]{1,60}\.?` },
+    { name: "shipped", pattern: String.raw`SHIPPED v?\d+(?:\.\d+){1,3}\.?` },
+    { name: "step-logged", pattern: String.raw`(?:board )?steps? logged\.?` },
+    { name: "tile-updated", pattern: String.raw`(?:memory )?tile updated\.?` },
+    { name: "finished", pattern: String.raw`finished #?[A-Za-z0-9-]{1,80}\.?` },
+  ] },
 };
 
 const KEYS = Object.keys(DEFAULTS);
@@ -135,12 +144,27 @@ export function checkConfig(c) {
       if (k.parked !== undefined && !(Array.isArray(k.parked) && k.parked.every((x) => typeof x === "string" && KEY.test(x)))) out.push("nudges.parked: a list of statuses");
     }
   }
+  if (c.traffic !== undefined) {
+    const k = c.traffic;
+    if (!k || typeof k !== "object" || Array.isArray(k)) out.push("traffic: an object");
+    else {
+      for (const f of Object.keys(k)) if (!Object.hasOwn(DEFAULTS.traffic, f)) out.push(`traffic: unknown field "${f}" (known: ${Object.keys(DEFAULTS.traffic).join(", ")})`);
+      if (k.mechanical !== undefined) {
+        if (!Array.isArray(k.mechanical) || k.mechanical.length > 20) out.push("traffic.mechanical: a list of up to 20 classes");
+        else k.mechanical.forEach((m, n) => {
+          let ok = !!m && typeof m === "object" && KEY.test(String(m.name ?? "")) && typeof m.pattern === "string" && m.pattern.length > 0 && m.pattern.length <= 300;
+          if (ok) { try { new RegExp(m.pattern); } catch { ok = false; } }
+          if (!ok) out.push(`traffic.mechanical[${n}]: { name, pattern }, a short lower-case name and a regular expression`);
+        });
+      }
+    }
+  }
   return out;
 }
 
 // The defaults with the team's values on top.
 export function fullConfig(c) {
-  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}), refresh: { ...DEFAULTS.collector.refresh, ...(c?.collector?.refresh ?? {}) } }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) } };
+  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}), refresh: { ...DEFAULTS.collector.refresh, ...(c?.collector?.refresh ?? {}) } }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) }, traffic: { ...DEFAULTS.traffic, ...(c?.traffic ?? {}) } };
 }
 
 // The board's id, from its link: what the gate matches a write's url against.

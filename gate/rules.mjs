@@ -143,6 +143,19 @@ export function writeErrors(w, { config, who, now }) {
     if (!who.role) e.push("no role for this session: give it its role as its title");
     else if (agents.some((a) => a !== who.role) || others.length) e.push(`meta/context: ${who.role} may write only agents.${who.role}`);
   }
+  // The log (#C335, gate/traffic.mjs): mechanical messages land here instead of with the lead. Each session writes its
+  // own entries, once, exactly {from, kind, text, at}; only the lead deletes.
+  if (collection === "log") {
+    if (op === "delete") return who.manager ? [] : [`only ${config.gate.managerRole} deletes log entries`];
+    if (op !== "set") return ["a log entry is written once (set), never changed"];
+    if (!data || typeof data !== "object") return ["a log entry is {from, kind, text, at}"];
+    const extra = Object.keys(data).filter((k) => !["from", "kind", "text", "at"].includes(k));
+    if (extra.length) e.push(`a log entry holds only from, kind, text and at (not ${extra.join(", ")})`);
+    if (!who.role || data.from !== who.role) e.push(`from: ${who.role ?? "<your role>"}, this session's role`);
+    if (!(typeof data.kind === "string" && /^[a-z][a-z0-9-]{0,39}$/.test(data.kind))) e.push("kind: the class name (lower case letters, digits and -)");
+    if (!(typeof data.text === "string" && data.text.trim() && data.text.length <= 300)) e.push("text: 1 to 300 characters");
+    return [...e, ...timeErrors(data, now)];
+  }
   // The plan (board v3, gate/plan.mjs): the lead's alone, never deleted, every field checked.
   if (collection === PLAN) return [...e, ...planWriteErrors(w, { who, config, now })];
   if (op === "delete" || !data || typeof data !== "object") return e;
