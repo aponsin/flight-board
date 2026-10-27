@@ -316,7 +316,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 /* An old tile's Refresh, and what came of it (#C354). */
 .ctx-t.stale>:not(.ctx-line),.ctx-t.stale .ctx-st{opacity:.55}
 .ctx-line{font:400 .62rem/1.2 var(--mono);color:var(--muted);max-width:11rem}
-.ctx-ref{font:600 .9rem/1 var(--mono);color:var(--accent);background:none;border:0;padding:0 2px;cursor:pointer;vertical-align:-1px}
+.ctx-ref{font:600 .9rem/1 var(--mono);color:var(--accent);background:none;border:0;padding:8px 10px;margin:-8px -8px;cursor:pointer;vertical-align:-1px}
 .ctx-ref:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .ctx-ref:disabled{opacity:.6;cursor:default}
 .ctx-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 8px;margin-bottom:4px}
@@ -1438,9 +1438,9 @@ function ctxTileHtml(n,t,req,now){const p=Math.max(0,Math.min(100,num(t.pct)??0)
   const old=num(t.at)&&now-t.at>CTX_OLD,asked=old&&req&&!(num(t.at)>req.at);
   const noAnswer=asked&&req.outcome==="no answer"&&num(req.doneAt)!=null&&req.doneAt>=req.at,waiting=asked&&!noAnswer&&now-req.at<CTX_WAIT;
   // An old tile says why it is faded (its age), and its Refresh stays at full strength (Designer on f8d3e56).
-  const st=waiting?`waking ${n}…`:noAnswer?`${n} didn't answer`:asked?`no new reading: ${n}'s session isn't running`:old?`${dur(now-t.at)} old`:"";
+  const st=waiting?"waking…":noAnswer?`${n} didn't answer`:asked?`no new reading: ${n}'s session isn't running`:old?`${dur(now-t.at)} old`:"";
   // ↻ alone, as on cards (#C355, #C361); the label says what it does.
-  const ref=old&&!waiting?` <button type="button" class="ctx-ref" data-ctxref="${esc(n)}" aria-label="Refresh ${esc(n)}'s memory reading" title="Refresh ${esc(n)}'s memory reading">↻</button>`:"";
+  const ref=old&&!waiting?` <button type="button" class="ctx-ref" data-ctxref="${esc(n)}" aria-label="Refresh ${esc(n)}'s reading" title="Refresh ${esc(n)}'s reading">↻</button>`:"";
   return `<div class="ctx-t ${c}${t.saved?" saved":""}${old?" stale":""}" title="${esc(n)}: ${p}% of its memory used${num(t.at)?", read "+dur(now-t.at)+" ago":""}${t.saved?"; saved, ready to clear":""}"><span class="nm">${esc(n)}<span class="pc">${p}%</span></span><span class="ctx-bar"><i style="width:${p}%"></i></span>${t.saved?'<span class="sv">/clear me</span>':""}${st?`<span class="ctx-line"><span class="ctx-st">${esc(st)}</span>${ref}</span>`:""}</div>`}
 function ctxRefreshWrites(n,now){return /^[A-Za-z0-9_-]{1,60}$/.test(String(n))?[{op:"set",path:`ctxRequests/${n}`,data:{at:now}}]:[]}
 const ctxPingText=n=>`Board: refresh ${n}'s memory tile (wake ${n}, then run board-collector)`;

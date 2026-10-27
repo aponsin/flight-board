@@ -17,8 +17,9 @@ test("a tile read in the last 2 h has no Refresh; an older one says how old, and
   const old = b.ctxTileHtml("Sales", { pct: 30, at: now - 3 * H }, null, now);
   assert.match(old, /^<div class="ctx-t g stale"/, "Designer on f8d3e56: the contents fade, not the whole tile");
   assert.doesNotMatch(old, /opacity/);
-  assert.match(old, /<span class="ctx-line"><span class="ctx-st">3 h old<\/span> <button type="button" class="ctx-ref" data-ctxref="Sales" aria-label="Refresh Sales's memory reading" title="Refresh Sales's memory reading">↻<\/button><\/span>/, "its age, then ↻ alone, as on cards (#C361)");
+  assert.match(old, /<span class="ctx-line"><span class="ctx-st">3 h old<\/span> <button type="button" class="ctx-ref" data-ctxref="Sales" aria-label="Refresh Sales's reading" title="Refresh Sales's reading">↻<\/button><\/span>/, "its age, then ↻ alone, as on cards (#C361)");
   assert.match(page, /\.ctx-t\.stale>:not\(\.ctx-line\),\.ctx-t\.stale \.ctx-st\{opacity:\.55\}/, "the link isn't faded");
+  assert.match(page, /\.ctx-ref\{[^}]*padding:8px 10px;margin:-8px -8px;[^}]*\}/, "Designer on 9585346: a ~28 px hit area, the look unchanged (padding taken back by the margin)");
 });
 
 test("a click writes ctxRequests/<Role> {at} and pings the lead with one plain line", () => {
@@ -33,17 +34,17 @@ test("#C361: the lead's answer on the request shows at once: 'no answer' says so
   assert.match(none, /<span class="ctx-st">Sales didn&#39;t answer<\/span>/, "well before the 10-minute fallback");
   assert.match(none, /data-ctxref="Sales"/, "it can be tried again");
   const updated = b.ctxTileHtml("Sales", tile, { at: now - 3 * MIN, doneAt: now - MIN, outcome: "updated" }, now);
-  assert.match(updated, /<span class="ctx-st">waking Sales…<\/span>/, "'updated' but the new reading hasn't reached the page yet: still waiting for it");
+  assert.match(updated, /<span class="ctx-st">waking…<\/span>/, "'updated' but the new reading hasn't reached the page yet: still waiting for it");
   const fresh = b.ctxTileHtml("Sales", { pct: 52, at: now - 30e3 }, { at: now - 3 * MIN, doneAt: now - MIN, outcome: "updated" }, now);
   assert.doesNotMatch(fresh, /ctx-st|data-ctxref/, "the reading landed");
   const older = b.ctxTileHtml("Sales", tile, { at: now - MIN, doneAt: now - 5 * MIN, outcome: "no answer" }, now);
-  assert.match(older, /waking Sales…/, "an answer older than the request belongs to an earlier one");
+  assert.match(older, /waking…/, "an answer older than the request belongs to an earlier one");
 });
 
-test("waking <Role>… until a newer reading lands; after 10 min with no answer, it says the session isn't running", () => {
+test("waking… until a newer reading lands; after 10 min with no answer, it says the session isn't running", () => {
   const now = Date.now(), tile = { pct: 30, at: now - 3 * H };
   const wait = b.ctxTileHtml("Sales", tile, { at: now - 2 * MIN }, now);
-  assert.match(wait, /<span class="ctx-st">waking Sales…<\/span>/);
+  assert.match(wait, /<span class="ctx-st">waking…<\/span>/);
   assert.doesNotMatch(wait, /data-ctxref/, "no second click while it waits");
   const none = b.ctxTileHtml("Sales", tile, { at: now - 11 * MIN }, now);
   assert.match(none, /<span class="ctx-st">no new reading: Sales&#39;s session isn&#39;t running<\/span>/, "escaped like any board text");
