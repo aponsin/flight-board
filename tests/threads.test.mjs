@@ -418,8 +418,7 @@ test("resolved threads: the last 7 days folded, and a search over every resolved
     threads: [{ id: "t-9", num: 9, title: "Colour tweak" }, { id: "ask-old", num: 2 }],
   });
   const week = b.resolvedHtml(T);
-  assert.match(week, /^<div class="rsearch">/, "#C351: the tab holds the search and the list, no fold");
-  assert.match(week, /<input type="search" id="rsearch"/);
+  assert.match(week, /^<div id="rlist">/, "#C351/#C356: the tab holds the list, no fold; the search box is over every tab");
   assert.match(week, /Colour tweak/);
   assert.doesNotMatch(week, /Install the Collector task|Still open/, "older than 7 days or open: not in the list");
   for (const q of ["SANDBOX", "#t2", "collector task", "  install "]) assert.match(b.rlistHtml(T, q), /Install the Collector task/, q);

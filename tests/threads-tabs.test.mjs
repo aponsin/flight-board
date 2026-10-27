@@ -80,13 +80,13 @@ test("Later is a plain list, and an empty tab says so on one line", () => {
   assert.equal(board().laterHtml(T), '<div class="empty">Nothing for later.</div>');
 });
 
-test("Resolved holds the search box and the last 7 days' list, with no fold; empty, the search still finds older ones", () => {
+test("Resolved holds the last 7 days' list, with no fold (its search is the box over every tab, #C356); empty, it says search finds older ones", () => {
   const b = board({ messages: [msg("t-2", "Owner", "Board colours", T - 864e5), msg("t-2", "Manager", "Done", T - 864e5 + 1, { resolved: true })], threads: [{ id: "t-2", num: 2, title: "Colours" }] });
   const html = b.resolvedHtml(T);
-  assert.match(html, /^<div class="rsearch"><input type="search" id="rsearch"/);
+  assert.match(html, /^<div id="rlist">/);
   assert.match(html, /Colours/);
   assert.doesNotMatch(html, /data-id="__resolved"|Resolved threads, last 7 days/, "no fold of its own; each thread is still its own row");
-  assert.match(board().resolvedHtml(T), /id="rsearch"[\s\S]*<div class="empty">None in the last 7 days\. Search finds older ones\.<\/div>/);
+  assert.equal(board().resolvedHtml(T), '<div id="rlist"><div class="empty">None in the last 7 days. Search finds older ones.</div></div>');
 });
 
 test("the form is one line plus Attach until it is used, then today's form: its hint, files and Send", () => {

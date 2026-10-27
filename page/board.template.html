@@ -381,6 +381,7 @@ table.crew3-ph{margin-top:14px}
       <div id="ownerpart">
       <form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread</label><textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea"></textarea><div class="keys" data-keys></div><div id="ntfiles"></div><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
       <div class="ttabs" id="ttabs" role="tablist" aria-label="Threads and lists"></div>
+      <div class="rsearch" id="tsearch"><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search the open tab" autocomplete="off"></div>
       <div id="tp-you" role="tabpanel" aria-labelledby="tab-you"><div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div></div>
       <div id="tp-later" role="tabpanel" aria-labelledby="tab-later" hidden><div class="waiting" id="later"></div></div>
       <div id="tp-lead" role="tabpanel" aria-labelledby="tab-lead" hidden><div class="waiting" id="threads"><div class="empty">Nothing waiting on Manager.</div></div></div>
@@ -494,9 +495,9 @@ function askHtml(w,open,at=w.since){const steps=Array.isArray(w.steps)?w.steps:[
 // "Needs you": the open asks, Later folded at their end, then the threads where Manager answered and the owner has not
 // closed or replied (their item is no longer on the board).
 function renderWaiting(){
-  const t=Date.now(),list=state.waiting.filter(w=>waitsOn(w.id,t)==="you").sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
+  const t=Date.now(),list=state.waiting.filter(w=>waitsOn(w.id,t)==="you"&&askHit(w)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
   const el=$("waiting"),answeredRows=threadRows(t).answered;
-  if(!list.length&&!answeredRows){el.innerHTML='<div class="empty">Nothing needs you.</div>';return}
+  if(!list.length&&!answeredRows){el.innerHTML=searching()?NO_MATCH:'<div class="empty">Nothing needs you.</div>';return}
   const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id));
   // Keep what the owner is typing: a live update re-draws the list, which would otherwise wipe the note boxes.
   const drafts={};el.querySelectorAll("textarea[id^='note-'],textarea[id^='tnote-']").forEach(x=>{if(x.value)drafts[x.id]=x.value});
@@ -506,7 +507,7 @@ function renderWaiting(){
   // "Later" items sit folded in one row at the bottom, so today's asks stay on the first screen.
   const now=list.filter(w=>w.kind!=="later");
   const y=window.scrollY;
-  el.innerHTML=(now.length?now.map(item).join(""):answeredRows?"":'<div class="empty">Nothing to do now.</div>')+answeredRows;
+  el.innerHTML=(now.length?now.map(item).join(""):answeredRows?"":searching()?NO_MATCH:'<div class="empty">Nothing to do now.</div>')+answeredRows;
   restoreFolds(el,open);if(window.scrollY!==y)window.scrollTo(0,y);
   el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply));
   el.querySelectorAll("details.w-item").forEach(d=>d.addEventListener("toggle",()=>{if(d.open)closedAnswers.delete(d.dataset.id);else closedAnswers.add(d.dataset.id)}));
@@ -874,7 +875,7 @@ function lateTag(id,now){if(!threadOpen(id))return"";const at=threadLast(id);
 function threadRow(id,now,where="panel",ask=null){
   const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
   return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(waitsOn(id,now))}${lateTag(id,now)}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{})}</details>`}
-function threadSets(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now));
+function threadSets(now){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
     answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a))}}
 function threadRows(now){const s=threadSets(now);
@@ -894,24 +895,36 @@ const RMAX=50;
 function rlistHtml(now,q){const hits=resolvedMatches(q,now);
   if(!hits.length)return `<div class="empty">${String(q||"").trim()?"No matches.":"None in the last 7 days. Search finds older ones."}</div>`;
   return hits.slice(0,RMAX).map(id=>threadRow(id,now)).join("")+(hits.length>RMAX?`<div class="empty">${hits.length-RMAX} more: narrow the search.</div>`:"")}
-// The Resolved tab (#C351): the search box and the list, no fold; its count is on the tab.
-function resolvedHtml(now,q=rQuery){
-  return `<div class="rsearch"><input type="search" id="rsearch" placeholder="Search all resolved threads: name, #T number, any word" aria-label="Search resolved threads"></div><div id="rlist">${rlistHtml(now,q)}</div>`}
-function renderResolved(){const el=$("resolved"),focused=document.activeElement&&document.activeElement.id==="rsearch";
-  keep(el,()=>{el.innerHTML=resolvedHtml(Date.now())});const box=$("rsearch");if(box&&box.value!==undefined){box.value=rQuery;if(focused)box.focus()}}
-document.addEventListener("input",e=>{if(!e.target||e.target.id!=="rsearch")return;rQuery=e.target.value;const l=$("rlist");if(l)l.innerHTML=rlistHtml(Date.now(),rQuery)});
+// The Resolved tab (#C351): its list, no fold; its count is on the tab, and its search is the box over every tab (#C356).
+function resolvedHtml(now,q=rQuery){return `<div id="rlist">${rlistHtml(now,q)}</div>`}
+function renderResolved(){const el=$("resolved");keep(el,()=>{el.innerHTML=resolvedHtml(Date.now())})}
+// One search box over the six tabs (#C356, the owner in #T963): it filters every tab's list as the owner types, with
+// Resolved's matching (an exact #T number, or any text in the name, the item or a message, any case); each tab's count
+// is then its matches, and an empty result says "No matches.". The text stays when the tab changes. Resolved keeps its
+// reach (every resolved thread, any age: resolvedMatches).
+function qMatch(text,q,id){const s=String(q||"").trim().toLowerCase();if(!s)return true;const n=/^#t(\d{1,6})$/.exec(s);
+  return n?id!=null&&threadNum(id)===Number(n[1]):String(text||"").toLowerCase().includes(s)}
+const askHit=(w,q=rQuery)=>qMatch([w.text,w.title,w.question,threadText(w.id)].join("\n"),q,w.id);
+const threadHit=(id,q=rQuery)=>qMatch(threadText(id),q,id);
+const listHit=(t,q=rQuery)=>qMatch([t.text,t.area,t.note].join("\n"),q,null);
+const searching=()=>!!String(rQuery||"").trim();
+const NO_MATCH='<div class="empty">No matches.</div>';
+function setSearch(q){rQuery=String(q??"");const box=$("rsearch");if(box&&box.value!==rQuery)box.value=rQuery;
+  renderWaiting();renderLater();renderThreads();renderTodo();renderResolved();renderTabs()}
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="rsearch")setSearch(e.target.value)});
 // "Later": asks the owner can leave for now, in a tab of their own (#C351: no longer a fold-out).
-const laterAsks=now=>state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&w.kind==="later").sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
+const laterAsks=now=>state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&w.kind==="later"&&askHit(w)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
 function laterHtml(now,open=new Set()){const later=laterAsks(now);
-  return later.length?later.map(w=>askHtml(w,open)).join(""):'<div class="empty">Nothing for later.</div>'}
+  return later.length?later.map(w=>askHtml(w,open)).join(""):searching()?NO_MATCH:'<div class="empty">Nothing for later.</div>'}
 function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(Date.now());el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply))})}
 // "Waiting on Manager": the asks the owner answered that Manager has not closed (the reply and its thread under each),
 // the threads whose last word is the owner's, and the resolved ones folded at the end.
 // Each ask by its newest word, the owner's reply or a later message in its thread (#C272: a reopened ask sat and dated
 // at its old reply, though the owner had just written), oldest first.
 const newestWord=w=>Math.max(num(w.response&&w.response.at)??0,threadOf(w.id).length?threadLast(w.id):0)||null;
-function threadsHtml(now){const r=threadRows(now),asks=state.waiting.filter(w=>waitsOn(w.id,now)==="lead").sort((a,b)=>(newestWord(a)??0)-(newestWord(b)??0));
-  if(!asks.length&&!r.open)return '<div class="empty">Nothing waiting on Manager.</div>';
+const leadAsks=now=>state.waiting.filter(w=>waitsOn(w.id,now)==="lead"&&askHit(w));
+function threadsHtml(now){const r=threadRows(now),asks=leadAsks(now).sort((a,b)=>(newestWord(a)??0)-(newestWord(b)??0));
+  if(!asks.length&&!r.open)return searching()?NO_MATCH:'<div class="empty">Nothing waiting on Manager.</div>';
   return asks.map(w=>askHtml(w,new Set(),newestWord(w))).join("")+r.open}
 // Every fold the owner opened or closed, by what it shows (an ask's row and the same thread's row elsewhere are one fold:
 // "th-" and "ith-" are the thread rows' prefixes), kept across every live re-draw of any part of the page, so a thread
@@ -940,9 +953,9 @@ document.addEventListener("input",e=>{if(e.target&&e.target.id==="nttext")ntHas(
 const TABS=[["you","Needs you"],["later","Later"],["lead","Waiting on Manager"],["todo","To-do"],["ideas","Ideas"],["resolved","Resolved, 7 days"]];
 let tab="you";
 function tabCounts(now){const s=threadSets(now),mine=w=>waitsOn(w.id,now);
-  return {you:state.waiting.filter(w=>mine(w)==="you"&&w.kind!=="later").length+s.answered.length,later:laterAsks(now).length,
-    lead:state.waiting.filter(w=>mine(w)==="lead").length+s.open.length,todo:listOpen("todo").length,ideas:listOpen("ideas").length,
-    resolved:resolvedMatches("",now).length}}
+  return {you:state.waiting.filter(w=>mine(w)==="you"&&w.kind!=="later"&&askHit(w)).length+s.answered.length,later:laterAsks(now).length,
+    lead:leadAsks(now).length+s.open.length,todo:listOpen("todo").filter(t=>listHit(t)).length,ideas:listOpen("ideas").filter(t=>listHit(t)).length,
+    resolved:resolvedMatches(rQuery,now).length}}
 function tabsHtml(now,active=tab){const c=tabCounts(now);
   return TABS.map(([k,l])=>`<button type="button" role="tab" id="tab-${k}" class="ttab${k===active?" on":""}" aria-selected="${k===active}" aria-controls="tp-${k}" tabindex="${k===active?0:-1}" data-tab="${k}">${l} <span class="tcount${k==="you"&&c[k]?" hot":""}">${c[k]}</span></button>`).join("")}
 function renderTabs(){const el=$("ttabs");if(!el)return;el.innerHTML=tabsHtml(Date.now());TABS.forEach(([k])=>{const p=$("tp-"+k);if(p)p.hidden=k!==tab});ttMore()}
@@ -975,7 +988,7 @@ function renameWrites(id,title){const t=String(title||"").replace(/\s+/g," ").tr
 document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-tref]");if(!a)return;e.preventDefault();
   const find=()=>[...document.querySelectorAll("[data-thread]")].filter(x=>x.dataset.thread===a.dataset.tref);
   let all=find();const q=all.length?null:tRefQuery(a.dataset.tref,Date.now());
-  if(q){rQuery=q;renderResolved();all=find()}
+  if(q){setSearch(q);all=find()}
   const el=all.find(x=>!x.closest("[hidden]"))||all[0];
   if(!el){a.title="That thread is no longer shown on the board";return}
   if(el.closest("#v2")&&$("v2").hidden)setView("v2");
@@ -1278,9 +1291,10 @@ function renderQueue(){
 const LISTS={todo:{box:"todo",close:"Done",empty:"Nothing on the list yet."},ideas:{box:"ideas",close:"Close",empty:"No ideas yet."}};
 const IKIND={build:"Build",discuss:"Discuss",assess:"Assess"};
 function listOpen(c){return (state[c]||[]).filter(t=>!t.done&&t.text).sort((a,b)=>(num(a.rank)??9e9)-(num(b.rank)??9e9))}
-function renderList(c){const L=LISTS[c],list=listOpen(c);
-  $(c+"list").innerHTML=list.length?list.map((t,n)=>`<div class="td-row"><span class="td-n">${n+1}</span><div class="w-text">${t.kind&&IKIND[t.kind]?`<span class="ik ${esc(t.kind)}">${IKIND[t.kind]}</span> `:""}${esc(t.text)}${t.area||t.note?`<div class="w-sub">${esc([t.area,t.note].filter(Boolean).join(" · "))}</div>`:""}</div>
-    <span class="td-btns"><button type="button" data-td="up" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move up"${n?"":" disabled"}>▲</button><button type="button" data-td="down" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move down"${n<list.length-1?"":" disabled"}>▼</button>${c==="ideas"?(t.startAt?`<span class="w-sub" style="align-self:center">Sent to Manager</span>`:`<button type="button" class="td-start" data-td="start" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Let's start this">Let's start</button>`):""}<button type="button" class="td-done" data-td="done" data-coll="${c}" data-id="${esc(t.id)}" aria-label="${L.close}">${L.close}</button></span></div>`).join(""):`<div class="empty">${L.empty}</div>`;
+// A search shows the matching rows only (#C356), each with its place in the whole list; the arrows move it in that list.
+function renderList(c){const L=LISTS[c],all=listOpen(c),list=all.filter(t=>listHit(t));
+  $(c+"list").innerHTML=list.length?list.map(t=>{const n=all.indexOf(t);return `<div class="td-row"><span class="td-n">${n+1}</span><div class="w-text">${t.kind&&IKIND[t.kind]?`<span class="ik ${esc(t.kind)}">${IKIND[t.kind]}</span> `:""}${esc(t.text)}${t.area||t.note?`<div class="w-sub">${esc([t.area,t.note].filter(Boolean).join(" · "))}</div>`:""}</div>
+    <span class="td-btns"><button type="button" data-td="up" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move up"${n?"":" disabled"}>▲</button><button type="button" data-td="down" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move down"${n<all.length-1?"":" disabled"}>▼</button>${c==="ideas"?(t.startAt?`<span class="w-sub" style="align-self:center">Sent to Manager</span>`:`<button type="button" class="td-start" data-td="start" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Let's start this">Let's start</button>`):""}<button type="button" class="td-done" data-td="done" data-coll="${c}" data-id="${esc(t.id)}" aria-label="${L.close}">${L.close}</button></span></div>`}).join(""):searching()?NO_MATCH:`<div class="empty">${L.empty}</div>`;
 }
 function renderTodo(){renderList("todo");renderList("ideas")}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-td]");if(!b||!dbRef)return;const c=b.dataset.coll;if(!LISTS[c])return;
