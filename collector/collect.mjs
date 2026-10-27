@@ -12,7 +12,7 @@ import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
-import { headsFor, derivePhase, conflict, staleLive, closed } from "./derive.mjs";
+import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf } from "./derive.mjs";
 import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild } from "./facts.mjs";
 import { evidenceTimes } from "./timings.mjs";
 import { nudges } from "./nudges.mjs";
@@ -179,6 +179,18 @@ export function repoOf(card, config) {
   return repos.find((r) => (r.idPrefixes ?? []).some((p) => String(card.id).startsWith(p))) ?? null;
 }
 
+// The newest commit on a repository's main line (its last 400) whose Board-Id trailer is exactly the card's id, as a
+// head { branch: main, sha, at, message }, or null. The id goes to git as a fixed string, never a pattern or an option.
+export function trailerOnMain(git, remote, main, id) {
+  let out = "";
+  try { out = git(["log", "-400", "--fixed-strings", `--grep=Board-Id: ${id}`, "--format=%H%x1f%ct%x1f%B%x1e", `${remote}/${main}`]); } catch { return null; }
+  for (const r of out.split("\x1e")) {
+    const [sha, at, message] = r.replace(/^\n/, "").split("\x1f");
+    if (/^[0-9a-f]{40}$/.test(sha ?? "") && boardIdOf(message) === id) return { branch: main, sha, at: Number(at) * 1000, message };
+  }
+  return null;
+}
+
 // A card in another repository, by the same derivation from its branch's current tip (#C237), with that repository's
 // notes and main branch, and "deployed" meaning installed: on main and inside the commit the repository's
 // installedLink points at. Every review signed is then a wait with a known cause, never a stall: "release" (not on main
@@ -191,7 +203,9 @@ export function inRepo(card, r, use, config, now) {
   const cfg = { ...config, collector: { ...c, remote, mainBranch: main, notes: localNotes(r.notes) } };
   let heads = [];
   try { heads = remoteHeads(use.git, remote); } catch { /* an empty clone */ }
-  const tips = headsFor(card.id, heads.filter((h) => h.branch !== main));
+  const live = headsFor(card.id, heads.filter((h) => h.branch !== main));
+  // A branch deleted after it merged leaves only its Board-Id trailer on main (#C281).
+  const tips = live.length ? live : [trailerOnMain(use.git, remote, main, card.id)].filter(Boolean);
   const derive = (h) => {
     const facts = factsFor(use.git, h, { config: cfg, line: [], deployed: use.installed ?? null });
     const d = derivePhase(card, facts, cfg);

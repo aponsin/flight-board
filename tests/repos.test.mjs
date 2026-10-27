@@ -27,7 +27,11 @@ function scratchBoard() {
   // Live: merged, and the install moved past it.
   g(["checkout", "-qb", "board-live"]); const live = commit("l.md", "live work\n\nBoard-Id: board-live"); sign(live, "checker", "security");
   g(["checkout", "-q", "main"]); g(["merge", "-q", "--ff-only", "board-live"]);
+  // Branch gone (never pushed, as after a delete): only its Board-Id trailer on main says where it went (#C281).
+  commit("gl.md", "gone live work\n\nBoard-Id: board-gone-live");
+  commit("glx.md", "a near miss\n\nBoard-Id: board-gone-live-x");
   const installed = g(["rev-parse", "HEAD"]).trim();
+  commit("gw.md", "gone waiting work\n\nBoard-Id: board-gone-waiting");
   // Waiting for the install: merged after it.
   g(["checkout", "-qb", "board-waiting"]); const waiting = commit("w.md", "waiting work\n\nBoard-Id: board-waiting"); sign(waiting, "checker", "security");
   g(["checkout", "-q", "main"]); g(["merge", "-q", "--ff-only", "board-waiting"]);
@@ -80,6 +84,11 @@ test("signed, not on main: queued for a board release; on main, not installed: w
     assert.deepEqual([doc.cards["board-review"].phase, doc.cards["board-review"].wait], ["security", undefined]);
     for (const id of ["board-live", "board-waiting", "board-queued", "board-review"]) assert.equal(doc.cards[id].repo, "flight-board");
     assert.equal(doc.cards["menu-fix"].phase, null, "the team's card is read from the team's repository");
+    // #C281: a card whose branch is gone is found on main by its Board-Id trailer, exactly.
+    const gone = collect({ config, cards: ["board-gone-live", "board-gone-waiting", "board-gone"].map((id) => ({ id, status: "active", phase: "build", level: "Full" })), git: none, gh: () => "[]", now: 5, repos: { "flight-board": { git: s.git, installed: s.installed } } }).doc;
+    assert.equal(gone.cards["board-gone-live"].phase, "live");
+    assert.deepEqual([gone.cards["board-gone-waiting"].phase, gone.cards["board-gone-waiting"].wait], ["ship", "install"]);
+    assert.equal(gone.cards["board-gone"].phase, null, "no prefix match: board-gone is not board-gone-live");
     // A repository that couldn't be read leaves its cards as declared, never guessed.
     const missing = collect({ config, cards, git: none, gh: () => "[]", now: 5, repos: {} }).doc;
     assert.equal(missing.cards["board-queued"].phase, null);
