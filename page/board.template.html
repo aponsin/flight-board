@@ -189,7 +189,6 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .tstat{font:400 .78rem var(--mono);color:var(--muted);white-space:nowrap}
 .tclear{font:600 .78rem var(--mono);color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
 .tclear:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.tcount.match{color:var(--accent);border-color:var(--accent)}
 .reply.drop,.newthread.drop{outline:2px dashed var(--accent);outline-offset:4px;border-radius:6px}
 .sentfiles a{color:inherit}.filesave{display:inline-flex;align-items:center;min-height:32px;padding:4px 2px;font:inherit;color:var(--accent);background:none;border:0;text-decoration:underline;cursor:pointer}.filesave:disabled{opacity:.6;cursor:progress}.savenote{color:var(--muted);margin-left:4px}.savenote:empty{display:none}.fsep{color:var(--muted)}
 .reply.sent{padding:8px 10px;border-radius:6px;font-size:.9rem;background:var(--ok-soft);color:var(--ok)}
@@ -504,9 +503,9 @@ function askHtml(w,open,at=w.since){const steps=Array.isArray(w.steps)?w.steps:[
 // "Needs you": the open asks, Later folded at their end, then the threads where Manager answered and the owner has not
 // closed or replied (their item is no longer on the board).
 function renderWaiting(){
-  const t=Date.now(),list=state.waiting.filter(w=>waitsOn(w.id,t)==="you"&&askHit(w)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
-  const el=$("waiting"),answeredRows=threadRows(t).answered;
-  if(!list.length&&!answeredRows){el.innerHTML=searching()?NO_MATCH:'<div class="empty">Nothing needs you.</div>';return}
+  const q=qOf("you"),t=Date.now(),list=state.waiting.filter(w=>waitsOn(w.id,t)==="you"&&askHit(w,q)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
+  const el=$("waiting"),answeredRows=threadRows(t,q).answered;
+  if(!list.length&&!answeredRows){el.innerHTML=isOn(q)?NO_MATCH:'<div class="empty">Nothing needs you.</div>';return}
   const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id));
   // Keep what the owner is typing: a live update re-draws the list, which would otherwise wipe the note boxes.
   const drafts={};el.querySelectorAll("textarea[id^='note-'],textarea[id^='tnote-']").forEach(x=>{if(x.value)drafts[x.id]=x.value});
@@ -516,7 +515,7 @@ function renderWaiting(){
   // "Later" items sit folded in one row at the bottom, so today's asks stay on the first screen.
   const now=list.filter(w=>w.kind!=="later");
   const y=window.scrollY;
-  el.innerHTML=(now.length?now.map(item).join(""):answeredRows?"":searching()?NO_MATCH:'<div class="empty">Nothing to do now.</div>')+answeredRows;
+  el.innerHTML=(now.length?now.map(item).join(""):answeredRows?"":isOn(q)?NO_MATCH:'<div class="empty">Nothing to do now.</div>')+answeredRows;
   restoreFolds(el,open);if(window.scrollY!==y)window.scrollTo(0,y);
   el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply));
   el.querySelectorAll("details.w-item").forEach(d=>d.addEventListener("toggle",()=>{if(d.open)closedAnswers.delete(d.dataset.id);else closedAnswers.add(d.dataset.id)}));
@@ -901,13 +900,17 @@ function threadRow(id,now,where="panel",ask=null){
 function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id,q));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
     answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a))}}
-function threadRows(now){const s=threadSets(now);
+function threadRows(now,q=rQuery){const s=threadSets(now,q);
   return {open:s.open.map(id=>threadRow(id,now)).join(""),answered:s.answered.map(id=>threadRow(id,now)).join("")}}
 // Resolved threads, folded at the panel's end: those of the last 7 days, and a search box that finds any resolved
 // thread, whatever its age, by its name, #T number, item text or any message (case-insensitive, as typed).
 let rQuery="";
 function resolvedIds(now){return threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&waitsOn(id,now)==="resolved").sort((a,b)=>threadLast(b)-threadLast(a))}
-function threadText(id){const n=threadNum(id);return [threadName(id),n?"#T"+n:"",threadTitle(id),...threadOf(id).map(m=>m.text||"")].join("\n").toLowerCase()}
+// Search text, built once per data update (#C363: every key rebuilt and lower-cased it for every item, ~215 ms a key on
+// a real board): renderAll clears it.
+const qText=new Map();
+function textOnce(k,build){let v=qText.get(k);if(v===undefined){v=String(build()).toLowerCase();qText.set(k,v)}return v}
+function threadText(id){return textOnce("t:"+id,()=>{const n=threadNum(id);return [threadName(id),n?"#T"+n:"",threadTitle(id),...threadOf(id).map(m=>m.text||"")].join("\n")})}
 // "#T77" alone finds exactly #T77, never #T770 (#C288: a #T link opens its thread through this search).
 function resolvedMatches(q,now){const s=String(q||"").trim().toLowerCase(),all=resolvedIds(now),n=/^#t(\d{1,6})$/.exec(s);
   return n?all.filter(id=>threadNum(id)===Number(n[1])):s?all.filter(id=>threadText(id).includes(s)):all.filter(id=>now-threadLast(id)<WEEK)}
@@ -919,26 +922,36 @@ function rlistHtml(now,q){const hits=resolvedMatches(q,now);
   if(!hits.length)return `<div class="empty">${String(q||"").trim()?"No matches.":"None in the last 7 days. Search finds older ones."}</div>`;
   return hits.slice(0,RMAX).map(id=>threadRow(id,now)).join("")+(hits.length>RMAX?`<div class="empty">${hits.length-RMAX} more: narrow the search.</div>`:"")}
 // The Resolved tab (#C351): its list, no fold; its count is on the tab, and its search is the box over every tab (#C356).
-function resolvedHtml(now,q=rQuery){return `<div id="rlist">${rlistHtml(now,q)}</div>`}
+function resolvedHtml(now,q=qOf("resolved")){return `<div id="rlist">${rlistHtml(now,q)}</div>`}
 function renderResolved(){const el=$("resolved");keep(el,()=>{el.innerHTML=resolvedHtml(Date.now())})}
-// One search box over the six tabs (#C356, the owner in #T963): it filters every tab's list as the owner types, with
-// Resolved's matching (an exact #T number, or any text in the name, the item or a message, any case); each tab's count
-// is then its matches, and an empty result says "No matches.". The text stays when the tab changes. Resolved keeps its
-// reach (every resolved thread, any age: resolvedMatches).
-function qMatch(text,q,id){const s=String(q||"").trim().toLowerCase();if(!s)return true;const n=/^#t(\d{1,6})$/.exec(s);
-  return n?id!=null&&threadNum(id)===Number(n[1]):String(text||"").toLowerCase().includes(s)}
-const askHit=(w,q=rQuery)=>qMatch([w.text,w.title,w.question,threadText(w.id)].join("\n"),q,w.id);
-const threadHit=(id,q=rQuery)=>qMatch(threadText(id),q,id);
-const listHit=(t,q=rQuery)=>qMatch([t.text,t.area,t.note].join("\n"),q,null);
-const searching=()=>!!String(rQuery||"").trim();
+// The search box over the tabs (#C356; #C363, the owner on the live board: it filtered every tab at once and was slow):
+// it filters the open tab's list only, with Resolved's matching (an exact #T number, or any text in the name, the item
+// or a message, any case); every tab's count stays its real total, and the row says the open tab's matches. Switching
+// tabs clears it. Each key waits SEARCH_WAIT for the next and redraws the open tab only. Resolved keeps its reach
+// (every resolved thread, any age: resolvedMatches).
+function qHas(lower,q,id){const s=String(q||"").trim().toLowerCase();if(!s)return true;const n=/^#t(\d{1,6})$/.exec(s);
+  return n?id!=null&&threadNum(id)===Number(n[1]):lower.includes(s)}
+function qMatch(text,q,id){return qHas(String(text||"").toLowerCase(),q,id)}
+const askHit=(w,q=rQuery)=>qHas(textOnce("a:"+w.id,()=>[w.text,w.title,w.question,threadText(w.id)].join("\n")),q,w.id);
+const threadHit=(id,q=rQuery)=>qHas(threadText(id),q,id);
+const listHit=(t,q=rQuery)=>qHas(textOnce("l:"+t.id,()=>[t.text,t.area,t.note].join("\n")),q,null);
+// The query a tab's list is drawn with: the box's for the open tab, none for the others.
+const qOf=k=>k===tab?rQuery:"";
+const isOn=q=>!!String(q||"").trim();
+const searching=()=>isOn(rQuery);
 const NO_MATCH='<div class="empty">No matches.</div>';
-function setSearch(q){rQuery=String(q??"");const box=$("rsearch");if(box&&box.value!==rQuery)box.value=rQuery;
-  renderWaiting();renderLater();renderThreads();renderTodo();renderResolved();renderTabs()}
+const SEARCH_WAIT=150;
+let searchTimer=null;
+function searchNow(q){clearTimeout(searchTimer);rQuery=String(q??"");const box=$("rsearch");if(box&&box.value!==rQuery)box.value=rQuery;
+  renderTab(tab);const st=$("tstat");if(st)st.innerHTML=searchStatus(Date.now())}
+function setSearch(q){clearTimeout(searchTimer);searchTimer=setTimeout(()=>searchNow(q),SEARCH_WAIT)}
+// One tab's list drawn again.
+function renderTab(k){({you:renderWaiting,later:renderLater,lead:renderThreads,todo:()=>renderList("todo"),ideas:()=>renderList("ideas"),resolved:renderResolved})[k]?.()}
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="rsearch")setSearch(e.target.value)});
 // "Later": asks the owner can leave for now, in a tab of their own (#C351: no longer a fold-out).
 const laterAsks=(now,q=rQuery)=>state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&w.kind==="later"&&askHit(w,q)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
-function laterHtml(now,open=new Set()){const later=laterAsks(now);
-  return later.length?later.map(w=>askHtml(w,open)).join(""):searching()?NO_MATCH:'<div class="empty">Nothing for later.</div>'}
+function laterHtml(now,open=new Set()){const q=qOf("later"),later=laterAsks(now,q);
+  return later.length?later.map(w=>askHtml(w,open)).join(""):isOn(q)?NO_MATCH:'<div class="empty">Nothing for later.</div>'}
 function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(Date.now());el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply))})}
 // "Waiting on Manager": the asks the owner answered that Manager has not closed (the reply and its thread under each),
 // the threads whose last word is the owner's, and the resolved ones folded at the end.
@@ -946,8 +959,8 @@ function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(D
 // at its old reply, though the owner had just written), oldest first.
 const newestWord=w=>Math.max(num(w.response&&w.response.at)??0,threadOf(w.id).length?threadLast(w.id):0)||null;
 const leadAsks=(now,q=rQuery)=>state.waiting.filter(w=>waitsOn(w.id,now)==="lead"&&askHit(w,q));
-function threadsHtml(now){const r=threadRows(now),asks=leadAsks(now).sort((a,b)=>(newestWord(a)??0)-(newestWord(b)??0));
-  if(!asks.length&&!r.open)return searching()?NO_MATCH:'<div class="empty">Nothing waiting on Manager.</div>';
+function threadsHtml(now){const q=qOf("lead"),r=threadRows(now,q),asks=leadAsks(now,q).sort((a,b)=>(newestWord(a)??0)-(newestWord(b)??0));
+  if(!asks.length&&!r.open)return isOn(q)?NO_MATCH:'<div class="empty">Nothing waiting on Manager.</div>';
   return asks.map(w=>askHtml(w,new Set(),newestWord(w))).join("")+r.open}
 // Every fold the owner opened or closed, by what it shows (an ask's row and the same thread's row elsewhere are one fold:
 // "th-" and "ith-" are the thread rows' prefixes), kept across every live re-draw of any part of the page, so a thread
@@ -979,24 +992,27 @@ function tabCounts(now,q=rQuery){const s=threadSets(now,q),mine=w=>waitsOn(w.id,
   return {you:state.waiting.filter(w=>mine(w)==="you"&&w.kind!=="later"&&askHit(w,q)).length+s.answered.length,later:laterAsks(now,q).length,
     lead:leadAsks(now,q).length+s.open.length,todo:listOpen("todo").filter(t=>listHit(t,q)).length,ideas:listOpen("ideas").filter(t=>listHit(t,q)).length,
     resolved:resolvedMatches(q,now).length}}
-// While a search is on (Manager's must-fix on f1c9f73, Checker's and Designer's finding): Needs you's red count is always
-// what really waits on the owner, its matches in its title; the other tabs show their matches, outlined (.match).
-function tabsHtml(now,active=tab){const on=searching(),c=tabCounts(now),all=on?tabCounts(now,""):c;
-  return TABS.map(([k,l])=>{const you=k==="you",n=you?all.you:c[k];
-    const pill=you?`<span class="tcount${n?" hot":""}"${on?` title="Waiting on you: ${n} (${c.you} matching the search)"`:""}>${n}</span>`:`<span class="tcount${on?" match":""}"${on?' title="Matching the search"':""}>${n}</span>`;
-    return `<button type="button" role="tab" id="tab-${k}" class="ttab${k===active?" on":""}" aria-selected="${k===active}" aria-controls="tp-${k}" tabindex="${k===active?0:-1}" data-tab="${k}">${l} ${pill}</button>`}).join("")}
-// The search row says a search is on (Designer on f1c9f73: text that stays across tabs is easy to forget): the open
-// tab's matches, and Clear.
-function searchStatus(now){if(!searching())return "";const n=tabCounts(now)[tab];
+// Every tab's count is its real total, whatever is typed (#C363; Needs you red when anything waits on the owner).
+function tabsHtml(now,active=tab){const c=tabCounts(now,"");
+  return TABS.map(([k,l])=>`<button type="button" role="tab" id="tab-${k}" class="ttab${k===active?" on":""}" aria-selected="${k===active}" aria-controls="tp-${k}" tabindex="${k===active?0:-1}" data-tab="${k}">${l} <span class="tcount${k==="you"&&c[k]?" hot":""}">${c[k]}</span></button>`).join("")}
+// The open tab's matches alone (one list, not six, per key).
+function tabMatches(k,now,q){const s=()=>threadSets(now,q),mine=w=>waitsOn(w.id,now);
+  return k==="you"?state.waiting.filter(w=>mine(w)==="you"&&w.kind!=="later"&&askHit(w,q)).length+s().answered.length:k==="later"?laterAsks(now,q).length:
+    k==="lead"?leadAsks(now,q).length+s().open.length:k==="todo"||k==="ideas"?listOpen(k).filter(t=>listHit(t,q)).length:resolvedMatches(q,now).length}
+// The search row says a search is on (Designer on f1c9f73): the open tab's matches, and Clear.
+function searchStatus(now){if(!searching())return "";const n=tabMatches(tab,now,rQuery);
   return `${n?`${n} match${n>1?"es":""}`:"No matches."} · <button type="button" class="tclear" data-tclear>Clear</button>`}
 function renderTabs(){const el=$("ttabs");if(!el)return;const now=Date.now();el.innerHTML=tabsHtml(now);TABS.forEach(([k])=>{const p=$("tp-"+k);if(p)p.hidden=k!==tab});
   const st=$("tstat");if(st)st.innerHTML=searchStatus(now);ttMore()}
-document.addEventListener("click",e=>{if(e.target.closest&&e.target.closest("[data-tclear]")){setSearch("");const box=$("rsearch");if(box&&box.focus)box.focus()}});
+document.addEventListener("click",e=>{if(e.target.closest&&e.target.closest("[data-tclear]")){searchNow("");const box=$("rsearch");if(box&&box.focus)box.focus()}});
 // Whether the strip has more tabs to the right than it shows: it fades there until scrolled to its end.
 function ttMore(){const s=$("ttabs");if(s&&s.toggleAttribute)s.toggleAttribute("data-more",s.scrollLeft+s.clientWidth<s.scrollWidth-2)}
 (()=>{const s=$("ttabs");if(s)s.addEventListener("scroll",ttMore,{passive:true});if(typeof window.addEventListener==="function")window.addEventListener("resize",ttMore)})();
 // Opening a tab brings it into view in the strip, which scrolls sideways on a phone.
-function showTab(k){if(!TABS.some(t=>t[0]===k))return;tab=k;renderTabs();const b=$("tab-"+k);if(b&&b.scrollIntoView)b.scrollIntoView({block:"nearest",inline:"nearest"})}
+// Switching tabs clears the search (#C363): the tab it filtered is drawn whole again.
+function showTab(k){if(!TABS.some(t=>t[0]===k))return;clearTimeout(searchTimer);
+  if(rQuery&&k!==tab){const was=tab;rQuery="";const box=$("rsearch");if(box)box.value="";renderTab(was)}
+  tab=k;renderTabs();const b=$("tab-"+k);if(b&&b.scrollIntoView)b.scrollIntoView({block:"nearest",inline:"nearest"})}
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-tab]");if(b)showTab(b.dataset.tab)});
 // Arrow keys move between the tabs, as a tab list does.
 document.addEventListener("keydown",e=>{const b=e.target&&e.target.closest&&e.target.closest("[data-tab]");if(!b||!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;e.preventDefault();
@@ -1021,7 +1037,7 @@ function renameWrites(id,title){const t=String(title||"").replace(/\s+/g," ").tr
 document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-tref]");if(!a)return;e.preventDefault();
   const find=()=>[...document.querySelectorAll("[data-thread]")].filter(x=>x.dataset.thread===a.dataset.tref);
   let all=find();const q=all.length?null:tRefQuery(a.dataset.tref,Date.now());
-  if(q){setSearch(q);all=find()}
+  if(q){showTab("resolved");searchNow(q);all=find()}
   const el=all.find(x=>!x.closest("[hidden]"))||all[0];
   if(!el){a.title="That thread is no longer shown on the board";return}
   if(el.closest("#v2")&&$("v2").hidden)setView("v2");
@@ -1326,9 +1342,9 @@ const IKIND={build:"Build",discuss:"Discuss",assess:"Assess"};
 function listOpen(c){return (state[c]||[]).filter(t=>!t.done&&t.text).sort((a,b)=>(num(a.rank)??9e9)-(num(b.rank)??9e9))}
 // A search shows the matching rows only (#C356), each with its place in the whole list; the arrows move it in that list.
 // While a search is on the arrows are off (Designer on f1c9f73: they would move a row past rows the owner can't see).
-function renderList(c){const L=LISTS[c],all=listOpen(c),list=all.filter(t=>listHit(t)),off=searching()?' disabled title="Clear the search to reorder"':"";
+function renderList(c){const L=LISTS[c],q=qOf(c),all=listOpen(c),list=all.filter(t=>listHit(t,q)),off=isOn(q)?' disabled title="Clear the search to reorder"':"";
   $(c+"list").innerHTML=list.length?list.map(t=>{const n=all.indexOf(t);return `<div class="td-row"><span class="td-n">${n+1}</span><div class="w-text">${t.kind&&IKIND[t.kind]?`<span class="ik ${esc(t.kind)}">${IKIND[t.kind]}</span> `:""}${esc(t.text)}${t.area||t.note?`<div class="w-sub">${esc([t.area,t.note].filter(Boolean).join(" · "))}</div>`:""}</div>
-    <span class="td-btns"><button type="button" data-td="up" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move up"${off||!n?off||" disabled":""}>▲</button><button type="button" data-td="down" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move down"${off||n>=all.length-1?off||" disabled":""}>▼</button>${c==="ideas"?(t.startAt?`<span class="w-sub" style="align-self:center">Sent to Manager</span>`:`<button type="button" class="td-start" data-td="start" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Let's start this">Let's start</button>`):""}<button type="button" class="td-done" data-td="done" data-coll="${c}" data-id="${esc(t.id)}" aria-label="${L.close}">${L.close}</button></span></div>`}).join(""):searching()?NO_MATCH:`<div class="empty">${L.empty}</div>`;
+    <span class="td-btns"><button type="button" data-td="up" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move up"${off||!n?off||" disabled":""}>▲</button><button type="button" data-td="down" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move down"${off||n>=all.length-1?off||" disabled":""}>▼</button>${c==="ideas"?(t.startAt?`<span class="w-sub" style="align-self:center">Sent to Manager</span>`:`<button type="button" class="td-start" data-td="start" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Let's start this">Let's start</button>`):""}<button type="button" class="td-done" data-td="done" data-coll="${c}" data-id="${esc(t.id)}" aria-label="${L.close}">${L.close}</button></span></div>`}).join(""):isOn(q)?NO_MATCH:`<div class="empty">${L.empty}</div>`;
 }
 function renderTodo(){renderList("todo");renderList("ideas")}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-td]");if(!b||!dbRef)return;const c=b.dataset.coll;if(!LISTS[c])return;
@@ -1584,7 +1600,7 @@ function setView(v){view=v==="v3"?"v3":"v2";$("v3").hidden=view!=="v3";$("v2").h
   $("viewlink").textContent=view==="v3"?"Back to the current board":"Try the new layout";
   try{localStorage.setItem("flight-board-view",view)}catch(e){}
   if(view==="v3"){renderNow();renderPlan();renderCrew3()}}
-function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3()}
+function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3()}
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});
