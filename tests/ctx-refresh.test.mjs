@@ -11,12 +11,14 @@ const page = readFileSync(new URL("../page/board.template.html", import.meta.url
 const H = 3600e3, MIN = 60e3;
 const b = loadNames(["ctxTileHtml", "ctxRefreshWrites", "ctxPingText", "ctxRequest"]);
 
-test("a tile read in the last 2 h has no Refresh; an older one has it, faded", () => {
+test("a tile read in the last 2 h has no Refresh; an older one says how old, and its Refresh stays at full strength", () => {
   const now = Date.now();
-  assert.doesNotMatch(b.ctxTileHtml("Sales", { pct: 30, at: now - H }, null, now), /data-ctxref/);
+  assert.doesNotMatch(b.ctxTileHtml("Sales", { pct: 30, at: now - H }, null, now), /data-ctxref|stale/);
   const old = b.ctxTileHtml("Sales", { pct: 30, at: now - 3 * H }, null, now);
-  assert.match(old, /style="opacity:\.55"/);
-  assert.match(old, /<button type="button" class="ctx-ref" data-ctxref="Sales" aria-label="Refresh Sales's memory reading">Refresh<\/button>/);
+  assert.match(old, /^<div class="ctx-t g stale"/, "Designer on f8d3e56: the contents fade, not the whole tile");
+  assert.doesNotMatch(old, /opacity/);
+  assert.match(old, /<span class="ctx-line"><span class="ctx-st">3 h old<\/span> · <button type="button" class="ctx-ref" data-ctxref="Sales" aria-label="Refresh Sales's memory reading">Refresh<\/button><\/span>/, "its age, then Refresh");
+  assert.match(page, /\.ctx-t\.stale>:not\(\.ctx-line\),\.ctx-t\.stale \.ctx-st\{opacity:\.55\}/, "the link isn't faded");
 });
 
 test("a click writes ctxRequests/<Role> {at} and pings the lead with one plain line", () => {
@@ -34,7 +36,7 @@ test("refreshing… until a newer reading lands; after 10 min with none, it says
   assert.match(none, /<span class="ctx-st">no new reading: Sales&#39;s session isn&#39;t running<\/span>/, "escaped like any board text");
   assert.match(none, /data-ctxref="Sales"/, "it can be tried again");
   const fresh = b.ctxTileHtml("Sales", { pct: 41, at: now - MIN }, { at: now - 5 * MIN }, now);
-  assert.doesNotMatch(fresh, /ctx-st|data-ctxref|opacity/, "the new reading landed: a plain tile again");
+  assert.doesNotMatch(fresh, /ctx-st|data-ctxref|stale/, "the new reading landed: a plain tile again");
   assert.match(fresh, /<span class="pc">41%<\/span>/);
 });
 
