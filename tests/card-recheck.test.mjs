@@ -43,6 +43,8 @@ test("checking… until the lead stamps checkedAt; then checked HH:MM; after 30 
   assert.equal(b.checkLine({ id: "x", checkedAt: now - 9 * MIN }, { at: now - 5 * MIN }, now), "checking…", "a stamp older than the request doesn't answer it");
   const html = b.initRow(card(b, {}, { at: now - 5 * MIN }));
   assert.match(html, /<span class="i-checked">checking…<\/span>/);
+  assert.match(b.initRow(card(b, {}, { at: now - 40 * MIN })), /<span class="i-checked late">no answer yet: asked at /, "Designer on be20a80: the one state to notice");
+  assert.match(page, /\.i-checked\{font:400 \.75rem var\(--mono\);color:var\(--muted\)\}\s*\.i-checked\.late\{color:var\(--warn\)\}/);
   assert.doesNotMatch(html, /data-check=/, "no second click while it waits");
   assert.match(page, /"timings","ctxRequests","checkRequests"\]\.forEach\(sub\)/, "the board listens to the requests");
 });

@@ -283,6 +283,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .i-check:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .i-check:disabled{opacity:.6;cursor:default}
 .i-checked{font:400 .75rem var(--mono);color:var(--muted)}
+.i-checked.late{color:var(--warn)}
 /* An old tile's Refresh, and what came of it (#C354). */
 .ctx-t.stale>:not(.ctx-line),.ctx-t.stale .ctx-st{opacity:.55}
 .ctx-line{font:400 .62rem/1.2 var(--mono);color:var(--muted);max-width:11rem}
@@ -1046,7 +1047,7 @@ function checkLine(i,req,now){const at=num(i.checkedAt);
   if(req&&!(at!=null&&at>=req.at))return now-req.at<CHECK_WAIT?"checking…":`no answer yet: asked at ${hhmm(req.at)}`;
   return at!=null?`checked ${hhmm(at)}`:""}
 function checkHtml(i,now){if(i.status==="done")return "";const req=checkRequest(i.id),line=checkLine(i,req,now),waiting=line==="checking…";
-  return `${line?`<span class="i-checked">${esc(line)}</span>`:""}${waiting?"":`<button type="button" class="i-check" data-check="${esc(i.id)}" aria-label="Ask Manager whether ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} is up to date">↻ Check</button>`}`}
+  return `${line?`<span class="i-checked${line.startsWith("no answer")?" late":""}">${esc(line)}</span>`:""}${waiting?"":`<button type="button" class="i-check" data-check="${esc(i.id)}" aria-label="Ask Manager whether ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} is up to date">↻ Check</button>`}`}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-check]");if(!b||!dbRef)return;
   const i=state.initiatives.find(x=>x.id===b.dataset.check),ws=i?checkWrites(i.id,Date.now()):[];if(!ws.length)return;b.disabled=true;
   const anchor=await prepAnchor(b);
