@@ -9,7 +9,7 @@ import { loadNames } from "./harness.mjs";
 
 const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 const T = 1_800_000_000_000, DAY = 864e5;
-const NAMES = ["setSearch", "qMatch", "tabCounts", "laterHtml", "threadsHtml", "resolvedHtml", "renderWaiting", "renderList", "showTab"];
+const NAMES = ["setSearch", "qMatch", "tabCounts", "tabsHtml", "laterHtml", "threadsHtml", "resolvedHtml", "renderWaiting", "renderList", "showTab"];
 const msg = (thread, from, text, at, extra = {}) => ({ id: `m${at}${from}`, thread, from, text, at, ...extra });
 function board() {
   const b = loadNames(NAMES);
@@ -32,7 +32,6 @@ function board() {
 test("one box under the tab strip, above every tab; Resolved no longer holds its own", () => {
   const at = (s) => page.indexOf(s);
   assert.ok(at('id="ttabs"') < at('id="tsearch"') && at('id="tsearch"') < at('id="tp-you"'));
-  assert.match(page, /<div class="rsearch" id="tsearch"><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search the open tab" autocomplete="off"><\/div>/);
   assert.doesNotMatch(board().resolvedHtml(T), /<input/);
 });
 
@@ -62,6 +61,40 @@ test("a search filters every tab's list, and each tab's count becomes its matche
   assert.match(b.els.todolist.innerHTML, /<span class="td-n">2<\/span>[\s\S]*Pottery shelf photos/, "a row keeps its place number in the whole list");
   assert.doesNotMatch(b.els.todolist.innerHTML, /Renew the domain/);
   assert.match(b.resolvedHtml(T), /Pottery colours[\s\S]*Old pottery/);
+});
+
+test("Manager's must-fix (Checker's and Designer's finding on f1c9f73): Needs you's red count is always the real one; the others show matches, outlined", () => {
+  const b = board();
+  b.setSearch("pottery");
+  const html = b.tabsHtml(T, "todo");
+  assert.match(html, /id="tab-you"[^>]*>Needs you <span class="tcount hot" title="Waiting on you: 2 \(1 matching the search\)">2<\/span>/, "2 asks wait on the owner whatever the search");
+  assert.match(html, /id="tab-todo"[^>]*>To-do <span class="tcount match" title="Matching the search">1<\/span>/);
+  b.setSearch("#T958");
+  assert.match(b.tabsHtml(T), /Needs you <span class="tcount hot"[^>]*>2<\/span>/, "a #T link's search never hides what waits on the owner");
+  b.setSearch("");
+  assert.match(b.tabsHtml(T), /To-do <span class="tcount">2<\/span>/, "no search: plain counts");
+});
+
+test("Designer on f1c9f73: the search row says it is on, with its matches and a Clear; the box is labelled", () => {
+  const b = board();
+  b.setSearch("pottery");
+  b.showTab("todo");
+  assert.equal(b.els.tstat.innerHTML, '1 match · <button type="button" class="tclear" data-tclear>Clear</button>');
+  b.showTab("ideas");
+  assert.equal(b.els.tstat.innerHTML, 'No matches. · <button type="button" class="tclear" data-tclear>Clear</button>');
+  b.setSearch("");
+  assert.equal(b.els.tstat.innerHTML, "", "nothing typed: nothing to say");
+  assert.match(page, /<div class="rsearch" id="tsearch"><span class="tsicon" aria-hidden="true">⌕<\/span><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search threads, to-dos and ideas" autocomplete="off"><span class="tstat" id="tstat" role="status"><\/span><\/div>/);
+  assert.match(page, /document\.addEventListener\("click",e=>\{if\(e\.target\.closest&&e\.target\.closest\("\[data-tclear\]"\)\)\{setSearch\(""\);const box=\$\("rsearch"\);if\(box&&box\.focus\)box\.focus\(\)\}\}\)/, "Clear empties it in one click");
+});
+
+test("Designer on f1c9f73: while a search is on, ▲▼ are off (they would move a row past rows you can't see)", () => {
+  const b = board();
+  b.setSearch("pottery");
+  b.renderList("todo");
+  assert.match(b.els.todolist.innerHTML, /data-td="up"[^>]*disabled title="Clear the search to reorder"/);
+  assert.match(b.els.todolist.innerHTML, /data-td="down"[^>]*disabled title="Clear the search to reorder"/);
+  assert.match(b.els.todolist.innerHTML, /data-td="done"/, "Done stays");
 });
 
 test("the text stays when the tab changes; clearing it brings every list and count back", () => {
