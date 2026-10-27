@@ -162,6 +162,18 @@ export function writeErrors(w, { config, who, now }) {
   }
   // The plan (board v3, gate/plan.mjs): the lead's alone, never deleted, every field checked.
   if (collection === PLAN) return [...e, ...planWriteErrors(w, { who, config, now })];
+  // The owner's words are the page's alone (#C337, Security: since #C334 the Stop hook puts them in the lead's refusal
+  // with a hook's weight): no session writes a message from the owner, nor an ask's response. The lead may only clear a
+  // response, to reopen an ask that isn't done (Manager: an owner's pick that was really a question).
+  if (op !== "delete" && data && typeof data === "object") {
+    if (collection === "messages" && data.from === config.owner) e.push(`from: "${config.owner}" is the owner's: only the board's page writes it`);
+    if (collection === "waiting" && "response" in data) {
+      const clear = data.response && typeof data.response === "object" && data.response.__delete__ === true && Object.keys(data.response).length === 1;
+      if (!clear) e.push("response is the owner's answer: only the board's page writes it");
+      else if (!who.manager) e.push(`only ${config.gate.managerRole} clears a response (to reopen the ask)`);
+      else if (op !== "update" || data.done === true) e.push("clearing the response reopens the ask: not with done, and as an update");
+    }
+  }
   if (op === "delete" || !data || typeof data !== "object") return e;
   e.push(...timeErrors(data, now));
   const rules = pageRules();
