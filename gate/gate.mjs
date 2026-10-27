@@ -149,8 +149,10 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
     // Rules 3-5 read the mirror the collector keeps; a stale one skips them (fail open) with a note.
     const m = readMirror(join(dir, "mirror"));
     // ...with every write the gate let through since its export laid over it.
-    const mirror = m && now - m.at < config.gate.mirrorMaxAgeMin * 60e3 ? withJournal(m, state.journal) : null;
-    const out = checkWrites(writes, { config, who, now, state, mirror });
+    const seen = m ? withJournal(m, state.journal) : null;
+    const mirror = m && now - m.at < config.gate.mirrorMaxAgeMin * 60e3 ? seen : null;
+    // The owner's words are looked up however old the mirror is (#C337): an old mirror's owner message is still theirs.
+    const out = checkWrites(writes, { config, who, now, state, mirror, seen });
     // The journal and the known cards are written by gate/after.mjs once the board applied the write (a write the
     // gate lets through can still be refused, at the app's consent card or by a stale pin: Security).
     save(out.state);

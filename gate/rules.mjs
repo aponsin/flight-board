@@ -231,9 +231,42 @@ export function writeErrors(w, { config, who, now }) {
 const itemKey = (w) => `${w.collection}:${w.doc_id}`;
 const STUCK_AFTER = 3;
 
+// The owner's words already on the board (#C337, Checker's and Security's findings on 08e79666: the data rule alone let
+// an update, a set or a delete change or erase them). seen: the mirror with the journal over it, however old (an owner's
+// message in an old mirror is still the owner's), or null with no mirror at all; batch: this call's writes, an earlier
+// set in it counting as on the board. Messages are append-only:
+// - a set onto a message id the board holds is refused (a new message gets a new id);
+// - an update may only mark a thread resolved, and only the lead's;
+// - only the lead deletes a message, one the gate can see and that isn't the owner's.
+// An ask the owner answered (a response on it) is never set over: the lead reopens it with the response clear only.
+export function ownerWordErrors(w, { config, who, seen, batch = [] }) {
+  const { op, collection, doc_id: id, data } = w;
+  if (collection !== "messages" && collection !== "waiting") return [];
+  const before = batch.slice(0, batch.indexOf(w)).filter((b) => b.collection === collection && b.doc_id === id && b.op === "set").map((b) => ({ id, ...(b.data ?? {}) }));
+  const doc = [...((seen?.docs?.[collection] ?? []).filter((d) => d.id === id)), ...before].pop() ?? null;
+  if (collection === "messages") {
+    const owners = doc?.from === config.owner;
+    if (op === "set" && doc) return [`messages/${id} is already on the board: a new message gets a new id`];
+    if (op === "update") {
+      const keys = data && typeof data === "object" ? Object.keys(data) : [];
+      if (!who.manager || !keys.length || keys.some((k) => k !== "resolved")) return [`a message is never changed: only ${config.gate.managerRole} marks a thread resolved (update {resolved: true})`];
+    }
+    if (op === "delete") {
+      if (!who.manager) return [`only ${config.gate.managerRole} deletes a message`];
+      if (!doc) return ["a message the gate can't see (no board mirror, or newer than it) isn't deleted: the owner's might be"];
+      if (owners) return ["the owner's message is never deleted: answer it, or mark its thread resolved"];
+    }
+    return [];
+  }
+  const answered = doc && doc.response !== undefined && doc.response !== null;
+  if (op === "set" && answered) return [`waiting/${id} holds the owner's answer: never set over it (${config.gate.managerRole} reopens an ask with update {response: {__delete__: true}})`];
+  return [];
+}
+
 // A whole tool call to the board. state: { refusals: { item: n }, stuck: { item: { reason, at } } }.
 // Returns { errors, state, stuckNow }: stuckNow names an item refused STUCK_AFTER times in a row, for the stuck line.
-export function checkWrites(writes, { config, who, now, state, mirror = null }) {
+// seen: the board as the gate last saw it however old (ownerWordErrors).
+export function checkWrites(writes, { config, who, now, state, mirror = null, seen = mirror }) {
   const next = { refusals: { ...(state?.refusals ?? {}) }, stuck: { ...(state?.stuck ?? {}) } };
   for (const c of COUNTERS) if (state?.[c.key]) next[c.key] = state[c.key];
   // A session with no role (no title, no FLIGHT_BOARD_ROLE) writes nothing, the stuck line included (Security).
@@ -251,7 +284,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null }) 
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
-    const errs = [...writeErrors(w, { config, who, now }), ...mirrorErrors(w, { config, mirror, batch: writes, now })];
+    const errs = [...writeErrors(w, { config, who, now }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now })];
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
