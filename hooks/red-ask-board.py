@@ -4,7 +4,7 @@
 # Manager only (the session titled Manager; the owner, 2026-10-18): when the owner's message this turn asks a question
 # (a "?" in what he typed, a mid-turn message, or a board comment), the reply must also write a waiting/ans-<topic> item,
 # or (board v2 threads, 2026-10-24) answer in a thread: a write to the board's "messages" collection counts as the answer.
-import json, re, sys
+import json, os, re, sys
 RED = re.compile(r"^\s*(?:[-*>]\s*)?(?:\*\*)?\U0001F534", re.M)  # only a line that starts with the red mark is an ask
 try:
     inp = json.load(sys.stdin)
@@ -116,8 +116,44 @@ if MANAGER:
         reasons.append(f"Manager's memory tile on the board says {shown if shown is not None else 'nothing'}% but your context is {round(now)}%. Update it now in one batch: meta/context agents.Manager.pct and ctx/Manager {{pct, at}} (real clock, if_version), then finish.")
 # Board answers (the owner, 2026-10-23): every Manager turn reads the board's waiting items and acts on each answer of the owner's
 # still open (a response other than "ack" on an item not done). On 2026-10-23 five answers were missed while Manager was busy.
+# The read is the open items only, whole (#C329: a day of items was ~80, ~4k tokens a turn; the open ones are a handful):
+# a query of waiting where done == false and nothing else, limit 1000 or more, inline (out_dir lists 50 paths), not cut
+# short. A result too large for the transcript is read from its saved copy in this session's own tool-results folder.
+MANY = 1000
+CUT = re.compile(r"next_cursor|\[\d+ more\b|\bmore (?:saved )?documents\b", re.I)
+SAVED = re.compile(r"<persisted-output>[\s\S]*?Full output saved to: (\S+)")
+def open_read(i):
+    q = i.get("query") if isinstance(i.get("query"), dict) else {}
+    where = q.get("where") if isinstance(q.get("where"), list) else []
+    try:
+        many = float(q.get("limit")) >= MANY
+    except Exception:
+        many = False
+    return (i.get("action") == "query" and i.get("collection") == "waiting" and not i.get("out_dir") and many
+            and len(where) == 1 and isinstance(where[0], list) and len(where[0]) == 3
+            and where[0][0] == "done" and where[0][1] in ("==", "eq") and where[0][2] is False)
+def whole_body(body, results):
+    m = SAVED.search(body)
+    if not m:
+        return body
+    if not results:
+        return None
+    try:
+        f, root = os.path.realpath(m.group(1)), os.path.realpath(results)
+        if not f.startswith(root + os.sep) or not os.path.isfile(f) or os.path.getsize(f) > 64e6:
+            return None
+        raw = open(f, encoding="utf-8").read()
+        try:
+            j = json.loads(raw)
+            if isinstance(j, list):
+                return "\n".join((c or {}).get("text") or "" for c in j if isinstance(c, dict))
+        except Exception:
+            pass
+        return raw
+    except Exception:
+        return None
 if MANAGER:
-    import os, time
+    results = os.path.join(path[:-len(".jsonl")] if path.endswith(".jsonl") else path, "tool-results")
     start = 0
     for i in range(len(lines) - 1, -1, -1):
         try:
@@ -128,7 +164,7 @@ if MANAGER:
         if e.get("type") == "user" and not (isinstance(c, list) and c and all(isinstance(x, dict) and x.get("type") == "tool_result" for x in c)):
             start = i
             break
-    reads, written, items = {}, set(), {}
+    reads, written, items, whole = {}, set(), {}, False
     for line in lines[start:]:
         try:
             e = json.loads(line)
@@ -142,27 +178,27 @@ if MANAGER:
                 continue
             if x.get("type") == "tool_use" and x.get("name") == "ArtifactData":
                 i = x.get("input") or {}
-                if i.get("action") in ("get", "list", "query") and i.get("collection") == "waiting":
+                if open_read(i):
                     reads[x.get("id")] = i
                 for w in i.get("writes") or ([i] if i.get("action") in ("set", "update", "delete", "str_replace") else []):
-                    if w.get("collection") == "waiting" and w.get("doc_id"):
+                    if isinstance(w, dict) and w.get("collection") == "waiting" and w.get("doc_id"):
                         written.add(w["doc_id"])
             elif x.get("type") == "tool_result" and x.get("tool_use_id") in reads:
-                body = "\n".join(texts(x.get("content")))
-                for m in re.finditer(r'\{"id":"([^"]+)","data":(\{.*?\}),"version"', body):
+                body = whole_body("\n".join(texts(x.get("content"))), results)
+                if body is None or CUT.search(body):
+                    continue
+                whole = True
+                for l in body.split("\n"):
+                    if not l.startswith("{"):
+                        continue
                     try:
-                        items[m.group(1)] = json.loads(m.group(2))
+                        d = json.loads(l)
                     except Exception:
-                        pass
-                for f in re.findall(r'"(/[^"]+/waiting/[^"/]+\.json)"', body):
-                    try:
-                        d = json.load(open(f))
-                        items[d.get("id") or os.path.basename(f)[:-5]] = d.get("data", d)
-                    except Exception:
-                        pass
-    if not reads:
-        since = int(time.time() * 1000) - 24 * 3600 * 1000
-        reasons.append(f"Manager: read the board's waiting items this turn before finishing (ArtifactData query, collection waiting, where since > {since}, out_dir in your scratchpad), then act on every item with a response other than ack and done false.")
+                        continue
+                    if isinstance(d, dict) and isinstance(d.get("id"), str) and isinstance(d.get("data"), dict) and "version" in d:
+                        items[d["id"]] = d["data"]
+    if not whole:
+        reasons.append("Manager: read the board's open waiting items this turn before finishing (ArtifactData query, collection waiting, where done == false, limit 1000, no out_dir; nothing else in where), then act on every item with a response other than ack.")
     else:
         open_ = [k for k, v in items.items() if isinstance(v, dict) and not v.get("done") and isinstance(v.get("response"), dict) and v["response"].get("status") not in (None, "ack") and k not in written]
         if open_:
