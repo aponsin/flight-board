@@ -17,7 +17,7 @@ function pageRules() {
   const el = () => ({ innerHTML: "", textContent: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });
   const ctx = { document: { getElementById: () => el(), querySelectorAll: () => [], querySelector: () => null, addEventListener() {}, activeElement: null, createRange: () => ({}) }, window: {}, console, setInterval() {}, setTimeout() {}, queueMicrotask() {}, navigator: {}, getSelection: () => ({}), Date, Math, JSON, Number, String, Array, Object, Set, Map, isFinite, URLSearchParams, WeakMap };
   vm.createContext(ctx);
-  vm.runInContext(script + "\n;globalThis.__b={gaps,waitGaps};", ctx);
+  vm.runInContext(script + "\n;globalThis.__b={gaps,waitGaps,lookDecision};", ctx);
   return (page = ctx.__b);
 }
 
@@ -195,7 +195,8 @@ export function writeErrors(w, { config, who, now }) {
     if (op === "set") {
       if (!data.kind) e.push("no kind");
       if (typeof data.since !== "number") e.push("no since (when it was asked)");
-      for (const g of rules.waitGaps({ ...data, done: false })) e.push(g);
+      // The page's "no screenshots" reads the template's own config: rule 1's look (lookErrors, the team's) decides instead.
+      for (const g of rules.waitGaps({ ...data, done: false })) if (g !== "no screenshots") e.push(g);
     }
     if ((op === "set" || op === "update") && "kind" in data && !["decision", "action", "answer"].includes(data.kind)) e.push(`kind "${data.kind}" is not drawn: use decision, action or answer`);
     const kind = data.kind;
@@ -203,16 +204,11 @@ export function writeErrors(w, { config, who, now }) {
       if (op === "set" ? kind !== "decision" : "kind" in data && kind !== "decision") e.push('options show as buttons only on kind "decision"');
       if (data.options.some((o) => !o || !o.key || !o.label)) e.push("each option needs key and label");
     }
-    // Rule 1: a decision has at least two options and a line of context; a look decision a screenshot per option.
+    // Rule 1: a decision has at least two options and a line of context (a look decision a screenshot per option: lookErrors).
     if (op === "set" && kind === "decision" && !data.done) {
       const opts = Array.isArray(data.options) ? data.options.filter((o) => o && o.key && o.label) : [];
       if (opts.length < 2) e.push("a decision needs at least two options {key, label}");
       if (!String(data.text ?? "").trim()) e.push("a decision needs its context in text");
-      if (data.look === true) {
-        const shown = new Set((Array.isArray(data.images) ? data.images : []).map((i) => i && i.option));
-        const missing = opts.filter((o) => !shown.has(o.key)).map((o) => o.key);
-        if (missing.length) e.push(`a look decision needs a screenshot for each option (missing: ${missing.join(", ")})`);
-      }
     }
     // Choices need buttons (#C227). An update that doesn't name the kind is checked against the mirror's (mirrorErrors).
     if (op === "set" || "kind" in data) e.push(...choiceErrors(data, kind));
@@ -223,6 +219,45 @@ export function writeErrors(w, { config, who, now }) {
     if (!phases.includes(data.phase)) e.push(`unknown phase "${data.phase}" (use ${phases.join(", ")})`);
     if (!["start", "end"].includes(data.kind)) e.push("kind must be start or end");
     if (!data.init || !data.who || typeof data.at !== "number") e.push("a step needs init, who and at");
+  }
+  return e;
+}
+
+// Rule 1, the look (#C344, the Director's card): a decision is a look decision by its words or its card's lane, derived
+// by the page's own lookDecision with the team's config.decisions, never taken from data.look alone (look: false no longer
+// unmakes one). The card and its build steps come from the board as the gate last saw it (seen, however old: a card's
+// lane rarely moves) with this batch's writes over it; with no board seen, the words alone decide.
+export function lookErrors(w, { config, seen, batch = [] }) {
+  const { op, collection, data } = w;
+  if (collection !== "waiting" || op !== "set" || !data || data.kind !== "decision" || data.done) return [];
+  const id = typeof data.initiative === "string" ? data.initiative : null;
+  let card = id ? (seen?.docs?.initiatives ?? []).find((d) => d && d.id === id) ?? null : null;
+  for (const b of batch) if (id && b.collection === "initiatives" && b.doc_id === id && b.op !== "delete" && b.data) card = { ...(b.op === "update" ? card : {}), ...b.data, id };
+  const steps = [...(seen?.docs?.steps ?? []), ...batch.filter((b) => b.collection === "steps" && b.op === "set").map((b) => b.data)];
+  if (!pageRules().lookDecision(data, card, steps, config.decisions, config.collector.buildPhase)) return [];
+  const opts = Array.isArray(data.options) ? data.options.filter((o) => o && o.key && o.label) : [];
+  const shown = new Set((Array.isArray(data.images) ? data.images : []).map((i) => i && i.option));
+  const missing = opts.filter((o) => !shown.has(o.key)).map((o) => o.key);
+  return missing.length ? [`a look decision needs a screenshot for each option (missing: ${missing.join(", ")})`] : [];
+}
+
+// Rule 11: an ask never sends the owner off the board (#C344): wording from config.decisions.offBoard ("in chat") in its
+// text, title, question, steps or options is refused, on a set or an update; the picture or file goes on the board.
+const ASK_TEXTS = (d) => [
+  ...["text", "title", "question"].map((f) => [f, d[f]]),
+  ...(Array.isArray(d.steps) ? d.steps.map((s, n) => [`steps[${n}]`, typeof s === "string" ? s : s?.text]) : []),
+  ...(Array.isArray(d.options) ? d.options.map((o, n) => [`options[${n}]`, o?.label]) : []),
+];
+export function offBoardErrors(w, { config }) {
+  const { op, collection, data } = w;
+  if (collection !== "waiting" || (op !== "set" && op !== "update") || !data || typeof data !== "object") return [];
+  const words = (config.decisions?.offBoard ?? []).filter((s) => typeof s === "string" && s.trim());
+  if (!words.length) return [];
+  const re = new RegExp(`(?<![A-Za-z])(?:${words.map((s) => s.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")).join("|")})(?![A-Za-z])`, "i");
+  const e = [];
+  for (const [f, t] of ASK_TEXTS(data)) {
+    const m = typeof t === "string" ? re.exec(t) : null;
+    if (m) e.push(`${f} sends the owner off the board ("${m[0]}"): the board is the place: attach it`);
   }
   return e;
 }
@@ -289,7 +324,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null, se
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
-    const errs = [...writeErrors(w, { config, who, now }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now })];
+    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now })];
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }

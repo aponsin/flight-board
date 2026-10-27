@@ -76,7 +76,7 @@ test("rule 1: a decision has two options or more, its context, and for a look a 
   has(one(ask({ kind: "decision", options: two, text: " " })), "context");
   has(one(ask({ kind: "decision", options: two, look: true, images: [{ url: "/_blob/abcdefgh", option: "A" }] })), "missing: B");
   ok(one(ask({ kind: "decision", options: two, look: true, images: [{ url: "/_blob/abcdefgh", option: "A" }, { url: "/_blob/ijklmnop", option: "B" }] })));
-  ok(one(ask({ kind: "decision", text: "Should every READY carry a screenshot?", options: two })), "mentioning a screenshot isn't a look question");
+  has(one(ask({ kind: "decision", text: "Should every READY carry a screenshot?", options: two })), "missing: A, B"); // #C344: a look word decides
 });
 
 test("rule 1: a step that holds a command is written {text, cmd}, so the owner gets a Copy button", () => {

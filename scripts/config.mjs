@@ -42,6 +42,15 @@ export const DEFAULTS = {
     { name: "tile-updated", pattern: String.raw`(?:memory )?tile updated\.?` },
     { name: "finished", pattern: String.raw`finished #?[A-Za-z0-9-]{1,80}\.?` },
   ] },
+  // The owner's decisions (gate rules 1 and 11, #C344): a decision is a look decision, needing a picture per option, when
+  // its text or title names one of lookWords (a whole word, a plural too), or its card's lane (its who, or whoever built
+  // it) is one of visualLanes (the team's roles: none by default). offBoard: wording that sends the owner off the board
+  // (to a session's chat), refused in any ask.
+  decisions: {
+    lookWords: ["mock-up", "mockup", "screenshot", "layout", "band", "icon", "colour", "color", "font", "spacing", "px", "phone", "laptop", "looks", "hero", "banner", "logo", "photo", "button", "text size"],
+    visualLanes: [],
+    offBoard: ["Manager chat", "in chat", "see chat", "in the chat"],
+  },
 };
 
 const KEYS = Object.keys(DEFAULTS);
@@ -159,12 +168,21 @@ export function checkConfig(c) {
       }
     }
   }
+  if (c.decisions !== undefined) {
+    const k = c.decisions;
+    if (!k || typeof k !== "object" || Array.isArray(k)) out.push("decisions: an object");
+    else {
+      for (const f of Object.keys(k)) if (!Object.hasOwn(DEFAULTS.decisions, f)) out.push(`decisions: unknown field "${f}" (known: ${Object.keys(DEFAULTS.decisions).join(", ")})`);
+      for (const f of ["lookWords", "offBoard"]) if (k[f] !== undefined && !(Array.isArray(k[f]) && k[f].length <= 100 && k[f].every((w) => typeof w === "string" && w.trim().length >= 2 && w.length <= 40 && !/[<>{}\n]/.test(w)))) out.push(`decisions.${f}: a list of up to 100 short words or phrases`);
+      if (k.visualLanes !== undefined && !(Array.isArray(k.visualLanes) && k.visualLanes.every((r) => typeof r === "string" && NAME.test(r)))) out.push("decisions.visualLanes: a list of role names");
+    }
+  }
   return out;
 }
 
 // The defaults with the team's values on top.
 export function fullConfig(c) {
-  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}), refresh: { ...DEFAULTS.collector.refresh, ...(c?.collector?.refresh ?? {}) } }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) }, traffic: { ...DEFAULTS.traffic, ...(c?.traffic ?? {}) } };
+  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}), refresh: { ...DEFAULTS.collector.refresh, ...(c?.collector?.refresh ?? {}) } }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) }, traffic: { ...DEFAULTS.traffic, ...(c?.traffic ?? {}) }, decisions: { ...DEFAULTS.decisions, ...(c?.decisions ?? {}) } };
 }
 
 // The board's id, from its link: what the gate matches a write's url against.

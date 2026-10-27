@@ -358,17 +358,16 @@ test("attachments: the ping to Manager names each file with its id, so Manager c
   assert.equal(b.pingText({ text: "Q" }, "w2", { status: "ack" }), 'Board reply [w2]: acknowledged on "Q".');
 });
 
-// ---- Look questions (2026-10-19: "screenshot" in any text was taken as a look question, twice) ----
+// ---- Look questions: derived from the config's look words and visual lanes (#C344, tests/look-derived.test.mjs) ----
 
-test("a look question needs screenshots; text that merely mentions a screenshot or 'looks like' does not", () => {
+test("a look question needs screenshots: a look word in it, or look: true; look: false no longer opts out", () => {
   const b = loadBoard();
   const has = (w) => [...b.waitGaps({ kind: "decision", ...w })].includes("no screenshots");
   assert.ok(has({ text: "OK to ship as it looks?" }));
-  assert.ok(has({ text: "Is the new look OK?" }));
   assert.ok(has({ text: "Anything", look: true }));
-  assert.ok(!has({ text: "Should agents attach a screenshot to every READY?" }));
-  assert.ok(!has({ text: "It looks like the run failed: retry it?" }));
-  assert.ok(!has({ text: "OK to ship as it looks?", look: false }));
+  assert.ok(has({ text: "Should agents attach a screenshot to every READY?" }), "the Director's card: screenshot is a look word");
+  assert.ok(has({ text: "OK to ship as it looks?", look: false }));
+  assert.ok(!has({ text: "The run failed: retry it?" }));
 });
 
 test("attachments: a picture shows as a small preview in its chip, which opens full size; other files show their name only", () => {
@@ -380,7 +379,7 @@ test("attachments: a picture shows as a small preview in its chip, which opens f
 test("a preview in a chip opens in the same full-size view as screenshots", async () => {
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-  assert.match(src, /thumb\.closest\("\.shots,\.files,\.sentfiles"\)/);
+  assert.match(src, /thumb\.closest\("\.shots,\.files,\.sentfiles,\.btns"\)/);
 });
 
 test("'Who is on what' is a collapsible panel, closed by default", async () => {

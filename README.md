@@ -37,7 +37,7 @@ Four steps, in order. Every path below is a placeholder: use your own.
    `artifactUrl` (empty until step 2), `phases` (`[key, label]` in order), `roster` and `order` (the roles shown), `skips`
    (a phase only at a level, `unlessLevel`; skipped when an item field is false, `whenFalse`; or only when one is true,
    `unlessTrue`, for a review few items need, like a designer's on `lookChange: true`), `boardStart`, the usage labels, and the `gate`,
-   `collector` and `nudges` blocks (below; `scripts/config.mjs` lists every field and its default). Write a private word
+   `collector`, `nudges` and `decisions` blocks (below; `scripts/config.mjs` lists every field and its default). Write a private word
    list outside this repository too: one word or name per line that must never appear here (the business's name, its
    people, its customers, its domain). Then run `node scripts/install.mjs <board.config.json> <words.txt>`: it checks the
    config, turns on the pre-push scan with your list, and builds `dist/board.html`.
@@ -102,7 +102,7 @@ Rendered scenarios check the page as the owner sees it. Each file in `tests/fixt
 Every write to the board goes through `gate/gate.mjs` first, and is refused with its reasons when it breaks a rule, so the writer fixes it and sends again:
 
 - the board's own checks (an item's ETA, next step, level and version; an ask's steps, question and time; real clock times);
-- a decision has two options or more and its context, and a look decision a screenshot per option; a command in a step is written `{text, cmd}`;
+- a decision has two options or more and its context, and a look decision a screenshot per option; a decision is a look one when its text or title names one of `decisions.lookWords`, or its card's lane (its `who`, or whoever built it) is one of `decisions.visualLanes`, whatever its `look` field says; no ask sends the owner off the board (`decisions.offBoard`, "in chat"); a command in a step is written `{text, cmd}`;
 - `ctx/<Role>` is written only by that role's session, and `meta/context` `agents.<Role>` too, except by the lead role; a session's role is its title in the app (or `FLIGHT_BOARD_ROLE`, which must agree). This is an integrity check against mistakes (a session that thinks it is another role), not access control: any session can rename itself, so nothing that needs protecting may depend on it; a session with no role at all (no title, no `FLIGHT_BOARD_ROLE`) writes nothing to the board, its own steps and the stuck line included, so give every session that logs to the board a title, check-in and keeper sessions too;
 - an id listed in `gate.transientPrefixes` is a passing agent state and never becomes an item;
 - one open phase per card: a review can't start while build is open, and ship can't while anything is; reviews overlap each other, and build may start while a review waits (a fix round after findings); a build step left open ends where the collector found the READY commit (`readyAt`, shown as a derived end);

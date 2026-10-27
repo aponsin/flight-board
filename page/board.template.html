@@ -193,6 +193,9 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .shots{margin:6px 16px 4px 44px;display:flex;flex-direction:column;gap:10px}
 .shot-opt{font:600 .75rem var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin-bottom:4px}
 .shot-row{display:flex;flex-wrap:wrap;gap:10px}
+.opt-line{display:flex;flex-wrap:wrap;align-items:center;gap:10px;flex-basis:100%}
+.opt-shots{display:flex;flex-wrap:wrap;gap:8px}
+.opt-shots .thumb{width:120px;padding:0;border-radius:8px;font:inherit;font-size:1rem}
 .thumb{display:flex;flex-direction:column;gap:4px;width:150px;max-width:45%;padding:0;border:1px solid var(--line);border-radius:8px;background:var(--panel);cursor:zoom-in;overflow:hidden;text-align:left;color:var(--ink)}
 .thumb img{display:block;width:100%;height:100px;object-fit:cover;object-position:top}
 .thumb span{font-size:.75rem;padding:0 6px 6px;color:var(--muted)}
@@ -403,7 +406,7 @@ table.crew3-ph{margin-top:14px}
 <script>
 document.getElementById("lightbox").addEventListener("click",e=>{if(e.target.id==="lightbox")closeShot()});
 // Everything particular to one team is board.config.json, injected here by scripts/build-page.mjs (see the README).
-const CONFIG=/*BOARD_CONFIG*/{"title":"Flight Board","owner":"Owner","phases":[["plan","Plan"],["build","Build"],["test","Test"],["language","Language"],["checker","Checker"],["security","Security"],["ship","Ship"],["live","Live"]],"roster":["Manager","Builder","Checker","Security","Release"],"order":["Manager","Builder","Checker","Security","Release"],"skips":[{"phase":"security","unlessLevel":"Full"},{"phase":"language","whenFalse":"customerText"}],"boardStart":"","usageNote":"Runner and automation minutes come from the job-run times the scheduler reports.","runnerLabel":"Runners","automationLabel":"Automation"}/*END_CONFIG*/;
+const CONFIG=/*BOARD_CONFIG*/{"title":"Flight Board","owner":"Owner","phases":[["plan","Plan"],["build","Build"],["test","Test"],["language","Language"],["checker","Checker"],["security","Security"],["ship","Ship"],["live","Live"]],"roster":["Manager","Builder","Checker","Security","Release"],"order":["Manager","Builder","Checker","Security","Release"],"skips":[{"phase":"security","unlessLevel":"Full"},{"phase":"language","whenFalse":"customerText"}],"boardStart":"","usageNote":"Runner and automation minutes come from the job-run times the scheduler reports.","runnerLabel":"Runners","automationLabel":"Automation","decisions":{"lookWords":["mock-up","mockup","screenshot","layout","band","icon","colour","color","font","spacing","px","phone","laptop","looks","hero","banner","logo","photo","button","text size"],"visualLanes":[],"offBoard":["Manager chat","in chat","see chat","in the chat"]}}/*END_CONFIG*/;
 const OWNER=String(CONFIG.owner||"Owner");
 const PHASES=CONFIG.phases;
 // The phase work is built in, as the collector names it (collector.buildPhase).
@@ -579,16 +582,21 @@ function linkify(t){
     .split(/(<a\b[^>]*>[\s\S]*?<\/a>)/).map((part,k)=>k%2?part:part.replace(/(?<![\w\/#&;.=?-])#T(\d{1,6})\b/g,(m,n)=>{const id=threadByNum(Number(n));return id?`<a href="#" class="t-ref" data-tref="${esc(id)}">${m}</a>`:m})).join("");
 }
 function safeImg(u){return typeof u==="string"&&(/^\/_blob\/[A-Za-z0-9_-]+$/.test(u)||/^https:\/\/[^\s"'<>]+$/.test(u))?u:null}
+function shotThumb(i,opt){return `<button type="button" class="thumb" data-full="${esc(safeImg(i.url))}" data-cap="${esc((opt?"Option "+opt+" · ":"")+(i.label||""))}"><img src="${esc(safeImg(i.url))}" alt="${esc(i.label||"Screenshot")}" loading="lazy"><span>${esc(i.label||"")}</span></button>`}
+// An open decision's option pictures sit beside their buttons (#C344), not above them; once answered they show above, by option.
+function besideKeys(w){return w.kind==="decision"&&!(w.response&&w.response.status)&&Array.isArray(w.options)?new Set(w.options.filter(o=>o&&o.key).map(o=>String(o.key))):new Set()}
+function optShots(w,key){return (Array.isArray(w.images)?w.images:[]).filter(i=>i&&safeImg(i.url)&&String(i.option||"")===String(key)).map(i=>shotThumb(i,key)).join("")}
 function shots(w){
-  const imgs=(Array.isArray(w.images)?w.images:[]).filter(i=>i&&safeImg(i.url));
+  const beside=besideKeys(w);
+  const imgs=(Array.isArray(w.images)?w.images:[]).filter(i=>i&&safeImg(i.url)&&!beside.has(String(i.option||"")));
   if(!imgs.length)return "";
   const groups={};imgs.forEach(i=>{const k=i.option||"";(groups[k]=groups[k]||[]).push(i)});
-  return `<div class="shots">${Object.entries(groups).map(([opt,list])=>`<div class="shot-group">${opt?`<div class="shot-opt">Option ${esc(opt)}</div>`:""}<div class="shot-row">${list.map(i=>`<button type="button" class="thumb" data-full="${esc(safeImg(i.url))}" data-cap="${esc((opt?"Option "+opt+" · ":"")+(i.label||""))}"><img src="${esc(safeImg(i.url))}" alt="${esc(i.label||"Screenshot")}" loading="lazy"><span>${esc(i.label||"")}</span></button>`).join("")}</div></div>`).join("")}</div>`;
+  return `<div class="shots">${Object.entries(groups).map(([opt,list])=>`<div class="shot-group">${opt?`<div class="shot-opt">Option ${esc(opt)}</div>`:""}<div class="shot-row">${list.map(i=>shotThumb(i,opt)).join("")}</div></div>`).join("")}</div>`;
 }
 let lbSet=[],lbIdx=0;
 function showShot(){const it=lbSet[lbIdx];if(!it)return;resetZoom();$("lb-img").src=it.src;$("lb-img").alt=it.cap;$("lb-cap").textContent=it.cap+(lbSet.length>1?`  (${lbIdx+1} of ${lbSet.length})`:"");
   $("lb-prev").hidden=$("lb-next").hidden=lbSet.length<2}
-function openShot(thumb){const scope=thumb.closest(".shots,.files,.sentfiles")||document;lbSet=[...scope.querySelectorAll(".thumb")].map(t=>({src:t.dataset.full,cap:t.dataset.cap}));
+function openShot(thumb){const scope=thumb.closest(".shots,.files,.sentfiles,.btns")||document;lbSet=[...scope.querySelectorAll(".thumb")].map(t=>({src:t.dataset.full,cap:t.dataset.cap}));
   lbIdx=Math.max(0,[...scope.querySelectorAll(".thumb")].indexOf(thumb));showShot();$("lightbox").hidden=false;$("lb-close").focus()}
 function stepShot(d){if(lbSet.length<2)return;lbIdx=(lbIdx+d+lbSet.length)%lbSet.length;showShot()}
 function closeShot(){$("lightbox").hidden=true;resetZoom();$("lb-img").removeAttribute("src")}
@@ -670,7 +678,8 @@ function replyBox(w){
    <textarea id="note-${esc(w.id)}" rows="2" placeholder="What you saw, or what went wrong"></textarea>${keysHint(w.kind==="answer")}${filesHtml(w.id)}
    <div class="btns">${w.kind==="decision"
      ?(Array.isArray(w.options)&&w.options.length
-       ?w.options.map(o=>`<button type="button" class="opt${o.recommended?" rec":""}" data-act="chose" data-choice="${esc(o.key)}" data-id="${esc(w.id)}"><b>${esc(o.key)}</b> ${esc(o.label)}${o.recommended?' <span class="recl">Manager\'s pick</span>':""}</button>`).join("")+`<button type="button" class="help" data-act="other" data-id="${esc(w.id)}">Something else (say what)</button>`
+       ?w.options.map(o=>{const pics=optShots(w,o.key),btn=`<button type="button" class="opt${o.recommended?" rec":""}" data-act="chose" data-choice="${esc(o.key)}" data-id="${esc(w.id)}"><b>${esc(o.key)}</b> ${esc(o.label)}${o.recommended?' <span class="recl">Manager\'s pick</span>':""}</button>`;
+         return pics?`<div class="opt-line"><div class="opt-shots">${pics}</div>${btn}</div>`:btn}).join("")+`<button type="button" class="help" data-act="other" data-id="${esc(w.id)}">Something else (say what)</button>`
        :`<button type="button" class="ok" data-act="ok" data-id="${esc(w.id)}">OK</button><button type="button" class="help" data-act="change" data-id="${esc(w.id)}">Change something (say what)</button>`)
      :w.kind==="answer"?`<button type="button" class="ok" data-act="ack" data-id="${esc(w.id)}">Ack</button>`
      :`<button type="button" class="ok" data-act="done" data-id="${esc(w.id)}">Done</button><button type="button" class="help" data-act="help" data-id="${esc(w.id)}">Something went wrong, help</button>`}</div>
@@ -1004,10 +1013,17 @@ function verParts(v){return String(v||"").replace(/^v/,"").split(".").map(n=>par
 function verCmp(a,b){const x=verParts(a),y=verParts(b);for(let k=0;k<3;k++){if((x[k]||0)!==(y[k]||0))return (x[k]||0)-(y[k]||0)}return 0}
 function liveGap(live,events){const vs=(events||[]).map(e=>e&&e.version).filter(v=>/^v?\d+\.\d+\.\d+$/.test(String(v||"")));if(!vs.length||!live||!live.version)return "";
   const top=vs.reduce((a,b)=>verCmp(a,b)>=0?a:b);return verCmp(top,live.version)>0?`Live now shows ${live.version} but ${top} shipped`:""}
-// A look question asks the owner to judge how something looks. Merely mentioning a screenshot, or "it looks like", is not one
-// (2026-10-19: two false alarms). Manager can say so outright with look:true or look:false.
-function isLook(w){if(w.look===true)return true;if(w.look===false)return false;
-  return /\b(?:as it looks|how (?:it|they|this|that) looks?|(?:the|new|its|a) look\b|look(?:s)? (?:ok|okay|right|good|fine)\b)/i.test(w.text||"")}
+// A look decision (#C344) is derived, never taken on the writer's word: its text or title names one of dec.lookWords (a
+// whole word, a plural too), or its card's lane (the card's who, or whoever built it) is one of dec.visualLanes. look:true
+// still makes one; look:false no longer unmakes one. The gate runs this same function with the team's config.
+function lookWordsRe(words){const alts=(Array.isArray(words)?words:[]).filter(w=>typeof w==="string"&&w.trim()).map(w=>w.trim().replace(/[.*+?^${}()|[\]\\]/g,"\\$&").replace(/\s+/g,"\\s+"));
+  return alts.length?new RegExp("(?<![A-Za-z])(?:"+alts.join("|")+")(?:e?s)?(?![A-Za-z])","i"):null}
+function lookDecision(w,card,steps,dec,build){if(w.look===true)return true;
+  const re=lookWordsRe(dec&&dec.lookWords);if(re&&[w.text,w.title].some(t=>typeof t==="string"&&re.test(t)))return true;
+  const lanes=new Set(dec&&Array.isArray(dec.visualLanes)?dec.visualLanes:[]);if(!lanes.size||!card)return false;
+  return [card.who,...(Array.isArray(steps)?steps:[]).filter(e=>e&&e.init===card.id&&e.phase===build).map(e=>e.who)].some(x=>lanes.has(x))}
+function isLook(w){const card=w.initiative?(state.initiatives||[]).find(i=>i&&i.id===w.initiative):null;
+  return lookDecision(w,card,state.steps,CONFIG.decisions,BUILD_PHASE)}
 function waitGaps(w){const g=[];if(!w||w.done)return g;
   if(w.kind==="action"&&!(Array.isArray(w.steps)&&w.steps.length))g.push("no steps");
   if(w.kind==="decision"&&isLook(w)&&!(Array.isArray(w.images)&&w.images.length))g.push("no screenshots");
