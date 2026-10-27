@@ -142,6 +142,19 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .newthread label{font-size:.82rem;color:var(--muted)}
 .t-sec{margin:0;padding:10px 16px 6px;border-top:1px solid var(--line);font:600 .8rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .newthread textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
+/* Folded (#C351): one line, the input then Attach, until it has focus, text or a file. */
+.newthread:not(:focus-within):not(.has){flex-direction:row;align-items:center;gap:8px}
+.newthread:not(:focus-within):not(.has) :is(label,.keys,.btns,.fchip,.hint){display:none}
+.newthread:not(:focus-within):not(.has) textarea{flex:1;min-width:0;resize:none;height:2.3em}
+.newthread:not(:focus-within):not(.has) #ntfiles .files{margin:0;padding:0;border:0}
+/* The tabs (#C351): one strip under the form; on a phone it scrolls sideways. */
+.ttabs{display:flex;gap:4px;padding:0 12px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+.ttabs::-webkit-scrollbar{display:none}
+.ttab{white-space:nowrap;flex:none;font:600 .8rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:none;border:0;border-bottom:2px solid transparent;padding:12px 8px 10px;cursor:pointer}
+.ttab.on{color:var(--ink);border-bottom-color:var(--accent)}
+.ttab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.tcount{display:inline-block;min-width:1.5em;margin-left:4px;padding:0 5px;border:1px solid var(--line);border-radius:999px;font-weight:600;text-align:center;letter-spacing:0}
+.tcount.hot{color:var(--bad);border-color:var(--bad)}
 .i-thread{grid-column:1/-1}.i-thread>summary{cursor:pointer;font-size:.85rem;color:var(--muted);margin:4px 0 0}.i-thread .thread{margin-left:0}
 .i-asks{margin:8px 0 0;border-top:1px solid var(--line)}.i-asks-h{font-size:.82rem;color:var(--muted);margin:6px 0 2px}.i-asks .w-item .thread{margin-left:0}.i-asks .w-row{padding:10px 0}
 /* A card's closed asks on a phone: the kind and the age on one line, the name under them at full width (#C288). */
@@ -340,29 +353,26 @@ table.crew3-ph{margin-top:14px}
     <div class="ctx" id="ctx"></div>
   </section>
 
-  <section>
-    <details class="panel todo" id="todobox"><summary><h2 id="h-todo">To-do</h2><span class="w-sub" id="todocount"></span><span class="caret" aria-hidden="true">▸</span></summary>
-      <div id="todolist"><div class="empty">Nothing on the list yet.</div></div>
-      <form class="todo-add" id="todoadd" data-coll="todo"><label class="sr" for="todonew">Add a to-do</label><input id="todonew" maxlength="200" placeholder="Add something to do at some point" autocomplete="off"><button type="submit">Add</button></form>
-    </details>
-    <details class="panel todo" id="ideasbox" style="margin-top:10px"><summary><h2 id="h-ideas">Ideas backlog</h2><span class="w-sub" id="ideascount"></span><span class="caret" aria-hidden="true">▸</span></summary>
-      <div id="ideaslist"><div class="empty">No ideas yet.</div></div>
-      <form class="todo-add" id="ideasadd" data-coll="ideas"><label class="sr" for="ideaskind">Kind</label><select id="ideaskind"><option value="build">Build</option><option value="discuss">Discuss</option><option value="assess">Assess</option></select><label class="sr" for="ideasnew">Add an idea</label><input id="ideasnew" maxlength="200" placeholder="A feature, a question, something to assess" autocomplete="off"><button type="submit">Add</button></form>
-    </details>
-  </section>
-
+  <!-- One box (#C351, the owner's pick B): the form, then six tabs, each over its own list. -->
   <section aria-labelledby="h-threads">
     <h2 id="h-threads">Threads</h2>
     <div class="panel">
       <div id="ownerpart">
-      <form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread</label><textarea id="nttext" rows="2" placeholder="Ask Manager something, or share an idea"></textarea><div class="keys" data-keys></div><div id="ntfiles"></div><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
-      <h3 class="t-sec" id="h-wait">Needs you</h3>
-      <div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div>
+      <form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread</label><textarea id="nttext" rows="1" placeholder="Start a thread: ask Manager something, or share an idea"></textarea><div class="keys" data-keys></div><div id="ntfiles"></div><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
+      <div class="ttabs" id="ttabs" role="tablist" aria-label="Threads and lists"></div>
+      <div id="tp-you" role="tabpanel" aria-labelledby="tab-you"><div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div></div>
+      <div id="tp-later" role="tabpanel" aria-labelledby="tab-later" hidden><div class="waiting" id="later"></div></div>
+      <div id="tp-lead" role="tabpanel" aria-labelledby="tab-lead" hidden><div class="waiting" id="threads"><div class="empty">Nothing waiting on Manager.</div></div></div>
+      <div id="tp-todo" role="tabpanel" aria-labelledby="tab-todo" hidden>
+        <div id="todolist"><div class="empty">Nothing on the list yet.</div></div>
+        <form class="todo-add" id="todoadd" data-coll="todo"><label class="sr" for="todonew">Add a to-do</label><input id="todonew" maxlength="200" placeholder="Add something to do at some point" autocomplete="off"><button type="submit">Add</button></form>
       </div>
-      <h3 class="t-sec" id="h-onlead">Waiting on Manager</h3>
-      <div class="waiting" id="threads"><div class="empty">Nothing waiting on Manager.</div></div>
-      <div class="waiting" id="later"></div>
-      <div class="waiting" id="resolved"></div>
+      <div id="tp-ideas" role="tabpanel" aria-labelledby="tab-ideas" hidden>
+        <div id="ideaslist"><div class="empty">No ideas yet.</div></div>
+        <form class="todo-add" id="ideasadd" data-coll="ideas"><label class="sr" for="ideaskind">Kind</label><select id="ideaskind"><option value="build">Build</option><option value="discuss">Discuss</option><option value="assess">Assess</option></select><label class="sr" for="ideasnew">Add an idea</label><input id="ideasnew" maxlength="200" placeholder="A feature, a question, something to assess" autocomplete="off"><button type="submit">Add</button></form>
+      </div>
+      <div id="tp-resolved" role="tabpanel" aria-labelledby="tab-resolved" hidden><div class="waiting" id="resolved"></div></div>
+      </div>
     </div>
   </section>
 
@@ -838,10 +848,11 @@ function lateTag(id,now){if(!threadOpen(id))return"";const at=threadLast(id);
 function threadRow(id,now,where="panel",ask=null){
   const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
   return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(waitsOn(id,now))}${lateTag(id,now)}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{})}</details>`}
-function threadRows(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now));
-  const open=ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b));
-  const answered=ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a));
-  return {open:open.map(id=>threadRow(id,now)).join(""),answered:answered.map(id=>threadRow(id,now)).join("")}}
+function threadSets(now){const ids=threadIds().filter(id=>id.startsWith("t-")||!itemShown(id,now));
+  return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
+    answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a))}}
+function threadRows(now){const s=threadSets(now);
+  return {open:s.open.map(id=>threadRow(id,now)).join(""),answered:s.answered.map(id=>threadRow(id,now)).join("")}}
 // Resolved threads, folded at the panel's end: those of the last 7 days, and a search box that finds any resolved
 // thread, whatever its age, by its name, #T number, item text or any message (case-insensitive, as typed).
 let rQuery="";
@@ -857,14 +868,16 @@ const RMAX=50;
 function rlistHtml(now,q){const hits=resolvedMatches(q,now);
   if(!hits.length)return `<div class="empty">${String(q||"").trim()?"No matches.":"None in the last 7 days. Search finds older ones."}</div>`;
   return hits.slice(0,RMAX).map(id=>threadRow(id,now)).join("")+(hits.length>RMAX?`<div class="empty">${hits.length-RMAX} more: narrow the search.</div>`:"")}
-function resolvedHtml(now,q=rQuery){if(!resolvedIds(now).length)return "";const week=resolvedMatches("",now).length;
-  return `<details class="w-item w-later" data-id="__resolved"><summary class="later-sum">Resolved threads, last 7 days (${week}) <span class="caret" aria-hidden="true">▸</span></summary><div class="rsearch"><input type="search" id="rsearch" placeholder="Search all resolved threads: name, #T number, any word" aria-label="Search resolved threads"></div><div id="rlist">${rlistHtml(now,q)}</div></details>`}
+// The Resolved tab (#C351): the search box and the list, no fold; its count is on the tab.
+function resolvedHtml(now,q=rQuery){
+  return `<div class="rsearch"><input type="search" id="rsearch" placeholder="Search all resolved threads: name, #T number, any word" aria-label="Search resolved threads"></div><div id="rlist">${rlistHtml(now,q)}</div>`}
 function renderResolved(){const el=$("resolved"),focused=document.activeElement&&document.activeElement.id==="rsearch";
   keep(el,()=>{el.innerHTML=resolvedHtml(Date.now())});const box=$("rsearch");if(box&&box.value!==undefined){box.value=rQuery;if(focused)box.focus()}}
 document.addEventListener("input",e=>{if(!e.target||e.target.id!=="rsearch")return;rQuery=e.target.value;const l=$("rlist");if(l)l.innerHTML=rlistHtml(Date.now(),rQuery)});
-// "Later": asks the owner can leave for now, folded in one row above the resolved threads.
-function laterHtml(now,open=new Set()){const later=state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&w.kind==="later").sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
-  return later.length?`<details class="w-item w-later" data-id="__later"${open.has("__later")?" open":""}><summary class="later-sum">Later (${later.length}) <span class="caret" aria-hidden="true">▸</span></summary>${later.map(w=>askHtml(w,open)).join("")}</details>`:""}
+// "Later": asks the owner can leave for now, in a tab of their own (#C351: no longer a fold-out).
+const laterAsks=now=>state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&w.kind==="later").sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
+function laterHtml(now,open=new Set()){const later=laterAsks(now);
+  return later.length?later.map(w=>askHtml(w,open)).join(""):'<div class="empty">Nothing for later.</div>'}
 function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(Date.now());el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply))})}
 // "Waiting on Manager": the asks the owner answered that Manager has not closed (the reply and its thread under each),
 // the threads whose last word is the owner's, and the resolved ones folded at the end.
@@ -892,7 +905,28 @@ function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]
   if(el.scrollTop!==inner)el.scrollTop=inner;if(window.scrollY!==y)window.scrollTo(0,y);
   Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t)t.value=v});
   if(focus){const t=document.getElementById(focus);if(t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}}
-function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())});const nf=$("ntfiles");if(nf)nf.innerHTML=filesHtml("new")}
+function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())});const nf=$("ntfiles");if(nf)nf.innerHTML=filesHtml("new");ntHas()}
+// The new-thread form folds to one line plus Attach (#C351); focus, typed text or a waiting file opens it to the whole form.
+function ntHas(){const f=$("newthread");if(f&&$("nttext"))f.classList.toggle("has",!!($("nttext").value.trim()||(pendingFiles.get("new")||[]).length))}
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="nttext")ntHas()});
+// The Threads box's tabs (#C351, the owner's pick B and the change in #T957): each over its own list, with its count.
+// Needs you opens by default; the open tab is this viewer's, for this visit.
+const TABS=[["you","Needs you"],["later","Later"],["lead","Waiting on Manager"],["todo","To-do"],["ideas","Ideas"],["resolved","Resolved, 7 days"]];
+let tab="you";
+function tabCounts(now){const s=threadSets(now),mine=w=>waitsOn(w.id,now);
+  return {you:state.waiting.filter(w=>mine(w)==="you"&&w.kind!=="later").length+s.answered.length,later:laterAsks(now).length,
+    lead:state.waiting.filter(w=>mine(w)==="lead").length+s.open.length,todo:listOpen("todo").length,ideas:listOpen("ideas").length,
+    resolved:resolvedMatches("",now).length}}
+function tabsHtml(now,active=tab){const c=tabCounts(now);
+  return TABS.map(([k,l])=>`<button type="button" role="tab" id="tab-${k}" class="ttab${k===active?" on":""}" aria-selected="${k===active}" aria-controls="tp-${k}" tabindex="${k===active?0:-1}" data-tab="${k}">${l} <span class="tcount${k==="you"&&c[k]?" hot":""}">${c[k]}</span></button>`).join("")}
+function renderTabs(){const el=$("ttabs");if(!el)return;el.innerHTML=tabsHtml(Date.now());TABS.forEach(([k])=>{const p=$("tp-"+k);if(p)p.hidden=k!==tab})}
+// Opening a tab brings it into view in the strip, which scrolls sideways on a phone.
+function showTab(k){if(!TABS.some(t=>t[0]===k))return;tab=k;renderTabs();const b=$("tab-"+k);if(b&&b.scrollIntoView)b.scrollIntoView({block:"nearest",inline:"nearest"})}
+document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-tab]");if(b)showTab(b.dataset.tab)});
+// Arrow keys move between the tabs, as a tab list does.
+document.addEventListener("keydown",e=>{const b=e.target&&e.target.closest&&e.target.closest("[data-tab]");if(!b||!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;e.preventDefault();
+  const n=TABS.findIndex(t=>t[0]===b.dataset.tab),to=e.key==="Home"?0:e.key==="End"?TABS.length-1:(n+(e.key==="ArrowRight"?1:-1)+TABS.length)%TABS.length;
+  showTab(TABS[to][0]);const nb=$("tab-"+TABS[to][0]);if(nb&&nb.focus)nb.focus()});
 // key: where the box's files wait (a thread's reply box "th:<id>", the new thread's "new").
 async function sendThread(btn,id,text,msg,kind,restore,key="th:"+id){
   if(!dbRef){restore();msg.textContent="Can't save from here. Tell Manager in chat instead.";return}if(!text&&!(pendingFiles.get(key)||[]).length){msg.textContent="Write your message first.";return}
@@ -916,6 +950,7 @@ document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest
   const el=all.find(x=>!x.closest("[hidden]"))||all[0];
   if(!el){a.title="That thread is no longer shown on the board";return}
   if(el.closest("#v2")&&$("v2").hidden)setView("v2");
+  const tp=el.closest("[role=tabpanel]");if(tp&&tp.hidden)showTab(tp.id.slice(3));
   for(let d=el.closest("details");d;d=d.parentElement&&d.parentElement.closest("details"))d.open=true;
   el.scrollIntoView({block:"start",behavior:"smooth"})});
 // Rename: the name becomes a box; Enter or Save writes it, Esc or Cancel puts the line back.
@@ -1199,7 +1234,6 @@ const LISTS={todo:{box:"todo",close:"Done",empty:"Nothing on the list yet."},ide
 const IKIND={build:"Build",discuss:"Discuss",assess:"Assess"};
 function listOpen(c){return (state[c]||[]).filter(t=>!t.done&&t.text).sort((a,b)=>(num(a.rank)??9e9)-(num(b.rank)??9e9))}
 function renderList(c){const L=LISTS[c],list=listOpen(c);
-  $(c+"count").textContent=list.length?`${list.length} item${list.length>1?"s":""}`:"";
   $(c+"list").innerHTML=list.length?list.map((t,n)=>`<div class="td-row"><span class="td-n">${n+1}</span><div class="w-text">${t.kind&&IKIND[t.kind]?`<span class="ik ${esc(t.kind)}">${IKIND[t.kind]}</span> `:""}${esc(t.text)}${t.area||t.note?`<div class="w-sub">${esc([t.area,t.note].filter(Boolean).join(" · "))}</div>`:""}</div>
     <span class="td-btns"><button type="button" data-td="up" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move up"${n?"":" disabled"}>▲</button><button type="button" data-td="down" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move down"${n<list.length-1?"":" disabled"}>▼</button>${c==="ideas"?(t.startAt?`<span class="w-sub" style="align-self:center">Sent to Manager</span>`:`<button type="button" class="td-start" data-td="start" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Let's start this">Let's start</button>`):""}<button type="button" class="td-done" data-td="done" data-coll="${c}" data-id="${esc(t.id)}" aria-label="${L.close}">${L.close}</button></span></div>`).join(""):`<div class="empty">${L.empty}</div>`;
 }
@@ -1441,7 +1475,7 @@ function setView(v){view=v==="v3"?"v3":"v2";$("v3").hidden=view!=="v3";$("v2").h
   $("viewlink").textContent=view==="v3"?"Back to the current board":"Try the new layout";
   try{localStorage.setItem("flight-board-view",view)}catch(e){}
   if(view==="v3"){renderNow();renderPlan();renderCrew3()}}
-function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3()}
+function renderAll(){state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3()}
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});
