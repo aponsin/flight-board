@@ -46,7 +46,7 @@ test("#C278 (Security): the fence takes only collector/export.mjs, which imports
   assert.deepEqual(importClosure([...OWNER_ENTRIES, ...RELEASE_ENTRIES], read), [
     "collector/context.mjs", "collector/export.mjs", "collector/fence.mjs", "collector/refresh.mjs", "collector/text.mjs",
     "gate/after.mjs", "gate/gate.mjs", "gate/owner-waits.mjs", "gate/plan.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs",
-    "scripts/board-release.mjs", "scripts/config.mjs", "scripts/current.mjs", "scripts/hooks.mjs", "scripts/scan.mjs",
+    "hooks/red-ask-board.py", "scripts/board-release.mjs", "scripts/config.mjs", "scripts/current.mjs", "scripts/hooks.mjs", "scripts/scan.mjs",
   ]);
 });
 
