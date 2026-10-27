@@ -92,6 +92,8 @@ export function observe(drawn, id) {
   out.status = strip((/<span class="state [^"]*">([\s\S]*?)<\/span>/.exec(first.row) ?? ["", ""])[1]);
   out.version = strip((/<div class="pv">([\s\S]*?)<\/div>/.exec(first.row) ?? ["", ""])[1]) || null;
   out.gated = /<div class="wait gate/.test(first.row);
+  // The card's closed asks (#C288): the thread rows in its Thread fold, by their ask's id, in the order drawn.
+  out.closedAsks = [...first.row.matchAll(/<details class="w-item" data-id="th-([^"]+)"/g)].map((m) => m[1]);
   return out;
 }
 

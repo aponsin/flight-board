@@ -1,0 +1,31 @@
+{
+  "name": "A card keeps its closed asks: done asks with a thread show in its Thread fold, newest first, and still in Resolved",
+  "about": "#C288: the owner lost a whole conversation once its asks were done (only the 50-row resolved list held them). An open ask stays under Needs you; another card's ask and an ask with no thread stay off this card.",
+  "docs": {
+    "initiatives": [
+      { "id": "trace", "name": "Trace the visits", "status": "active", "level": "Full", "size": "S", "phase": "build", "who": "Triage", "createdAt": "now-5h", "etaLive": "now+1h", "nextNote": "Triage reads the logs.", "nextNoteAt": "now-5m", "plan": "p" },
+      { "id": "other", "name": "Another card", "status": "active", "level": "Quick", "size": "S", "phase": "build", "who": "Builder", "createdAt": "now-5h", "etaLive": "now+1h", "nextNote": "Builds.", "nextNoteAt": "now-5m", "plan": "p" }
+    ],
+    "waiting": [
+      { "id": "zoho", "kind": "action", "text": "Check your Sent box", "since": "now-3h", "initiative": "trace", "done": true, "doneAt": "now-2h", "response": { "status": "help", "note": "nothing there", "at": "now-2h" } },
+      { "id": "logs", "kind": "action", "text": "Open the Workers logs", "since": "now-2h", "initiative": "trace", "done": true, "doneAt": "now-1h" },
+      { "id": "quiet", "kind": "action", "text": "Closed with no thread", "since": "now-2h", "initiative": "trace", "done": true },
+      { "id": "open", "kind": "action", "text": "Still open", "since": "now-30m", "initiative": "trace" },
+      { "id": "theirs", "kind": "action", "text": "Another card's ask", "since": "now-2h", "initiative": "other", "done": true }
+    ],
+    "messages": [
+      { "id": "m1", "thread": "zoho", "from": "@owner", "text": "nothing there", "at": "now-2h" },
+      { "id": "m2", "thread": "zoho", "from": "Manager", "text": "Then it's Safari", "at": "now-119m" },
+      { "id": "m3", "thread": "logs", "from": "@owner", "text": "this what you wanted?", "at": "now-61m" },
+      { "id": "m4", "thread": "logs", "from": "Manager", "text": "That's it, thank you", "at": "now-60m" },
+      { "id": "m5", "thread": "theirs", "from": "Manager", "text": "Elsewhere", "at": "now-90m" }
+    ],
+    "threads": [{ "id": "zoho", "num": 877 }, { "id": "logs", "num": 878 }]
+  },
+  "expect": {
+    "trace": { "rows": 1, "section": "board", "closedAsks": ["logs", "zoho"] },
+    "other": { "closedAsks": ["theirs"] },
+    "zoho": { "section": "resolved", "rows": 1, "badge": "resolved" },
+    "open": { "section": "needs-you", "rows": 1 }
+  }
+}

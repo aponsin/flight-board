@@ -48,7 +48,7 @@ test("the reader: times relative to now, a button's data-id is no row, a card's 
 });
 
 test("every fixture names what it checks, and every expected key is one the reader knows", () => {
-  const keys = new Set(["section", "rows", "badge", "replyRow", "threadUnder", "phase", "status", "version", "gated", "position", "age"]);
+  const keys = new Set(["section", "rows", "badge", "replyRow", "threadUnder", "phase", "status", "version", "gated", "position", "age", "closedAsks"]);
   for (const f of fixtures()) {
     assert.ok(f.name && f.about, f.file);
     for (const want of Object.values(f.expect)) for (const k of Object.keys(want)) assert.ok(keys.has(k), `${f.file}: ${k}`);
