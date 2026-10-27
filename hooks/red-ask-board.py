@@ -120,7 +120,11 @@ if MANAGER:
 # a query of waiting where done == false and nothing else, limit 1000 or more, inline (out_dir lists 50 paths), not cut
 # short. A result too large for the transcript is read from its saved copy in this session's own tool-results folder.
 MANY = 1000
-CUT = re.compile(r"next_cursor|\[\d+ more\b|\bmore (?:saved )?documents\b", re.I)
+# The board's own markers for a result cut short, looked for only on its own lines: a document line ("{…") holds the
+# item's text, which may say "more documents" itself (Checker).
+CUT = re.compile(r"next_cursor|\[\d+ more\b|\bmore (?:saved )?documents\b|\bmore may exist\b", re.I)
+def cut(body):
+    return any(CUT.search(l) for l in body.split("\n") if not l.startswith("{"))
 SAVED = re.compile(r"<persisted-output>[\s\S]*?Full output saved to: (\S+)")
 def open_read(i):
     q = i.get("query") if isinstance(i.get("query"), dict) else {}
@@ -185,7 +189,7 @@ if MANAGER:
                         written.add(w["doc_id"])
             elif x.get("type") == "tool_result" and x.get("tool_use_id") in reads:
                 body = whole_body("\n".join(texts(x.get("content"))), results)
-                if body is None or CUT.search(body):
+                if body is None or cut(body):
                     continue
                 whole = True
                 for l in body.split("\n"):

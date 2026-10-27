@@ -51,6 +51,13 @@ test("the waiting read is the open items whole: where done == false alone, limit
   assert.match(hook(quiet([OPEN], [[0, `${docs([])}\n[12 more saved documents, at /x/<doc_id>.json each]`]])), no, "a result cut short");
   assert.match(hook(quiet([OPEN], [[0, `${docs([])}\nnext_cursor: "abc"`]])), no, "a next page");
   assert.doesNotMatch(hook(quiet([{ ...OPEN, query: { ...OPEN.query, where: [["done", "eq", false]] } }], [[0, docs([])]])), /waiting items/, "eq is ==");
+  assert.match(hook(quiet([{ ...OPEN, query: { ...OPEN.query, order_by: { field: "since" } } }], [[0, `${docs([])}\n[ordered queries return one page: these are the first 1000 by "since" — more may exist.]`]])), no, "an ordered page that says more may exist");
+});
+
+test("Checker: a cut marker counts only on the board's own lines, never inside a document's text", () => {
+  for (const q of ["Makaan will send more documents tomorrow", "[2 more to check]", "next_cursor is a field name"]) {
+    assert.doesNotMatch(hook(quiet([OPEN], [[0, docs([item("w-q", { question: q })])]])), /waiting items/, q);
+  }
 });
 
 test("an open item the owner answered refuses the stop until it is acted on; ack, done or written this turn don't", () => {

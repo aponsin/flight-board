@@ -61,8 +61,11 @@ function readKind(input, since, owner, lead) {
   if (!where.every((w) => w === by[0] || ((is(w, "at", ">") || is(w, "at", ">=")) && typeof w[2] === "number" && w[2] <= since))) return null;
   return by[0][2] === owner ? "owner" : "lead";
 }
-// A result cut short: the board's own marker for documents it didn't print, or a cursor to the next page.
-const CUT = /next_cursor|\[\d+ more\b|\bmore (?:saved )?documents\b/i;
+// A result cut short: the board's own marker for documents it didn't print, a cursor to the next page, or an ordered
+// page's note. Looked for only on the board's own lines: a document line ("{…") holds a message's text, which may say
+// "more documents" itself (Checker).
+const CUT = /next_cursor|\[\d+ more\b|\bmore (?:saved )?documents\b|\bmore may exist\b/i;
+const cut = (body) => body.split("\n").some((l) => !l.startsWith("{") && CUT.test(l));
 // A result too large for the transcript is saved to a file, and the transcript keeps a 2 KB preview (Checker: a day's
 // owner messages are ~48 KB): the whole result is that file, read only from this session's own tool-results folder
 // (<transcript without .jsonl>/tool-results, a regular file there). Anything else is no read: null.
@@ -103,7 +106,7 @@ export function messagesRead(turn, id, since, { owner, lead, results = null }) {
     for (const p of l.message.content) {
       if (p?.type !== "tool_result" || !reads.has(p.tool_use_id)) continue;
       const body = wholeBody(typeof p.content === "string" ? p.content : Array.isArray(p.content) ? p.content.map((c) => c?.text ?? "").join("\n") : "", results);
-      if (body == null || CUT.test(body)) continue;
+      if (body == null || cut(body)) continue;
       whole.add(reads.get(p.tool_use_id));
       readAt = Math.min(readAt, when.get(p.tool_use_id));
       for (const line of body.split("\n")) {

@@ -54,6 +54,18 @@ test("the reads must reach back to since: one that stops short is no read, and t
   assert.match(stopCheck(turn(both(since, NOW - MIN, [msg("t-a", "Owner", since + MIN)])), { config, now: NOW, since }).join(), /thread t-a has waited/);
 });
 
+test("Checker: a cut marker counts only on the board's own lines, never inside a message's text", () => {
+  const since = NOW - 3600e3;
+  for (const text of ["I'll send more documents tomorrow", "[2 more to check]", "next_cursor?"]) {
+    const m = { ...msg("t-a", "Owner", NOW - 30 * MIN), text };
+    const lead = { ...msg("t-a", "Manager", NOW - 20 * MIN), text: "ok" };
+    assert.deepEqual(stopCheck(turn([...read(Q("Owner", since), [m], NOW - MIN), ...read(Q("Manager", since), [lead], NOW - MIN)]), { config, now: NOW, since }), [], text);
+  }
+  const ordered = `${result([])}\n[ordered queries return one page: these are the first 1000 by "at" — more may exist.]`;
+  const r = turn([{ type: "assistant", timestamp: new Date(NOW - MIN).toISOString(), message: { content: [{ type: "tool_use", id: "o1", name: "ArtifactData", input: { url: URL_, ...Q("Owner", since) } }] } }, { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "o1", content: ordered }] } }, ...read(Q("Manager", since), [], NOW - MIN)]);
+  assert.match(stopCheck(r, { config, now: NOW, since }).join(), /read Owner's messages/, "an ordered page that says more may exist");
+});
+
 test("readAt: the earlier read's time when the check passes; none when it refuses or a read has no time", () => {
   const since = NOW - 3600e3;
   assert.equal(stopRun(turn(both(since, NOW - 9 * MIN)), { config, now: NOW, since }).readAt, NOW - 9 * MIN);
