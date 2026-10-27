@@ -7,9 +7,9 @@
 //   3. a working role's memory reading (ctx/<Role>) older than ctxMaxHours: only roles with an open step (an idle role is
 //      the context keeper's, Manager 2026-10-24);
 //   4. a card unchanged for staleHours, unless parked (its status in config.nudges.parked);
-//   5. a READY a required reviewer never picked up (#C290): DISPATCH_MIN minutes after the READY commit, a review the card
-//      needs with no note on that commit and no open step for it. The fence lets the collector message the lead only, so
-//      a second line carries the READY for the lead to forward.
+//   5. a READY a required reviewer never picked up (#C290): DISPATCH_MIN minutes after the READY commit (or after the run
+//      that first saw it, if later), a review the card needs with no note on that commit and no step for it since. The
+//      fence lets the collector message the lead only, so a second line carries the READY for the lead to forward.
 // The CONFLICT lines are the collector's own (collector/derive.mjs). Every board value a line names goes through idText
 // (collector/text.mjs): the lines reach a session that can write the board and message the team.
 
@@ -91,19 +91,29 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     if (now - seen[card.id].since >= n.staleHours * HOUR) firing.push({ key: `stale:${card.id}`, text: `${q(card.id)}: unchanged for ${hours(now - seen[card.id].since)} h; update it or park it` });
   }
 
-  // 5. A READY a required reviewer never picked up: keyed by the READY commit, so a new tip is a new dispatch.
+  // 5. A READY a required reviewer never picked up: keyed by the READY commit, so a new tip is a new dispatch. Its clock
+  // starts at the later of the commit's time and the run that first saw that commit (a commit pushed long after it was
+  // made is not late; Checker). A review with any step on this READY (open, or a round that ended in FINDINGS and waits
+  // on the owner's fix; Checker) or one still open from before is picked up.
   const reviewing = new Set([...runs.values()].map((s) => `${s.init}:${s.phase}`));
+  const readySeen = Object.create(null);
   for (const [id, d] of Object.entries(derived)) {
     const card = cards.get(id);
-    if (!card || closed(card) || !Array.isArray(d?.waitingFor) || typeof d.readyAt !== "number" || now - d.readyAt < DISPATCH_MIN * MIN) continue;
+    if (!card || closed(card) || !Array.isArray(d?.waitingFor) || typeof d.readyAt !== "number") continue;
     const num = Number.isInteger(card.num) && card.num > 0 ? `C${card.num}` : null, tag = num ? ` (#${num})` : "";
     const sha = /^[0-9a-f]{40}$/.test(d.head ?? "") ? d.head : "?", level = card.level ? ` (${q(card.level)})` : "";
+    const at = `${id}:${sha}`, before = Object.hasOwn(state.readySeen ?? {}, at) ? state.readySeen[at] : undefined;
+    readySeen[at] = typeof before === "number" ? before : now;
+    const since = Math.max(d.readyAt, readySeen[at]);
+    if (now - since < DISPATCH_MIN * MIN) continue;
+    const ours = (s) => s && !s.wait && (s.init === id || (num && s.init === num));
     for (const p of d.waitingFor) {
       if (reviewing.has(`${id}:${p}`) || (num && reviewing.has(`${num}:${p}`))) continue;
+      if ((docs.steps ?? []).some((s) => ours(s) && s.phase === p && typeof s.at === "number" && s.at >= d.readyAt)) continue;
       const who = q(reviewerOf(p, config));
       firing.push({
         key: `ready:${id}:${p}:${sha}`,
-        text: `${q(id)}${tag}: ${who} has no note on ${sha.slice(0, 8)} and no open ${q(p)} step, ${mins(now - d.readyAt)} min after READY; forward it:`,
+        text: `${q(id)}${tag}: ${who} has no note on ${sha.slice(0, 8)} and no ${q(p)} step since READY, ${mins(now - since)} min on; forward it:`,
         then: `forward to ${who}: READY ${branchText(d.branch)}@${sha}${level}, board card ${q(id)}${tag}`,
       });
     }
@@ -118,5 +128,5 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     lines.push(`NUDGE ${f.text}`);
     if (f.then) lines.push(`NUDGE ${f.then}`);
   }
-  return { lines, state: { sent, seen } };
+  return { lines, state: { sent, seen, readySeen } };
 }
