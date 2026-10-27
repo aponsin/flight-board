@@ -182,9 +182,14 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .fchip .fx{border:0;background:none;color:var(--muted);font-size:1rem;line-height:1;cursor:pointer;padding:2px 6px;min-width:28px;min-height:28px}
 .rsearch{padding:6px 12px 2px}.rsearch input{font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
 /* The box over the tabs (#C356): a search mark inside, and while a search is on, its matches and Clear on the right. */
-#tsearch{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
-#tsearch input{flex:1 1 14rem;padding-left:1.8em}
-.tsicon{position:absolute;left:20px;top:11px;color:var(--muted);pointer-events:none;font-size:.95rem;line-height:1}
+#tsearch{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+/* A search box with its magnifier centred inside (Designer on 96fb1bf), the Threads box's and the cards' (#C360). */
+.sbox{position:relative;flex:1 1 14rem;min-width:0}
+.sbox input{font:inherit;width:100%;padding:6px 8px 6px 2em;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.sicon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+.init-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 16px;margin-bottom:10px}
+.init-head h2{margin:0}
+.init-head .sbox{flex:0 1 28rem}
 .tstat:empty{display:none}
 .tstat{font:400 .78rem var(--mono);color:var(--muted);white-space:nowrap}
 .tclear{font:600 .78rem var(--mono);color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
@@ -389,7 +394,7 @@ table.crew3-ph{margin-top:14px}
       <div id="ownerpart">
       <form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread</label><textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea"></textarea><div class="keys" data-keys></div><div id="ntfiles"></div><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
       <div class="ttabs" id="ttabs" role="tablist" aria-label="Threads and lists"></div>
-      <div class="rsearch" id="tsearch"><span class="tsicon" aria-hidden="true">⌕</span><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search threads, to-dos and ideas" autocomplete="off"><span class="tstat" id="tstat" role="status"></span></div>
+      <div class="rsearch" id="tsearch"><div class="sbox"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search threads, to-dos and ideas" autocomplete="off"></div><span class="tstat" id="tstat" role="status"></span></div>
       <div id="tp-you" role="tabpanel" aria-labelledby="tab-you"><div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div></div>
       <div id="tp-later" role="tabpanel" aria-labelledby="tab-later" hidden><div class="waiting" id="later"></div></div>
       <div id="tp-lead" role="tabpanel" aria-labelledby="tab-lead" hidden><div class="waiting" id="threads"><div class="empty">Nothing waiting on Manager.</div></div></div>
@@ -407,7 +412,7 @@ table.crew3-ph{margin-top:14px}
   </section>
 
   <section aria-labelledby="h-init">
-    <h2 id="h-init">Initiatives in flight<span class="h-count" id="initcount" hidden></span></h2>
+    <div class="init-head"><h2 id="h-init">Initiatives in flight<span class="h-count" id="initcount" hidden></span></h2><div class="sbox"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="isearch" placeholder="Search cards: #C number, name, who, any word" aria-label="Search initiatives" autocomplete="off"></div></div>
     <details class="panel todo" id="crewbox"><summary><h2 id="h-crew">Who is on what</h2><span class="caret" aria-hidden="true">▸</span></summary>
       <div class="crew" id="crew" aria-label="Who is on what"></div>
     </details>
@@ -1239,16 +1244,23 @@ function renderCrew(){
 // then the sooner ETA shown.
 const STATUS_ORDER={stuck:0,active:1,queued:2,paused:3};
 function openOrder(a,b){return (STATUS_ORDER[a.status]??1)-(STATUS_ORDER[b.status]??1)||phaseIndex(b.phase)-phaseIndex(a.phase)||(cardEta(a)??9e15)-(cardEta(b)??9e15)}
+// The cards' own search (#C360, the owner in #T966), apart from the Threads box's: a card matches its #C number exactly,
+// or #C356's matching over its name, summary, next step, who, phase and its thread (#T number, title, messages).
+let iQuery="";
+function initHit(i,q=iQuery){const c=/^#c(\d{1,6})$/.exec(String(q||"").trim().toLowerCase());if(c)return i.num===Number(c[1]);
+  return qMatch([i.name,i.summary,i.nextNote,i.who,i.phase,threadText(i.id)].join("\n"),q,i.id)}
+function setInitSearch(q){iQuery=String(q??"");const box=$("isearch");if(box&&box.value!==iQuery)box.value=iQuery;renderBoard()}
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="isearch")setInitSearch(e.target.value)});
 function renderBoard(){
   renderCrew();
-  const open=state.initiatives.filter(i=>i.status!=="done").sort(openOrder);
+  const on=!!iQuery.trim(),all=state.initiatives.filter(i=>i.status!=="done").sort(openOrder),open=all.filter(i=>initHit(i));
   // Done and the shipped feed show the last 24 hours only; older items stay saved, just out of view.
-  const done=state.initiatives.filter(i=>i.status==="done"&&(num(i.doneAt)??0)>Date.now()-DAY).sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0));
-  keep($("board"),()=>{$("board").innerHTML=open.length?open.map(initRow).join(""):'<div class="empty">No initiatives in flight.</div>'});
-  // The heading's count (#C295): the cards the list above draws, none when there are none.
-  $("initcount").textContent=open.length?String(open.length):""; $("initcount").hidden=!open.length;
-  $("donebox").hidden=!done.length; $("donesum").textContent=`Done in the last 24 h (${done.length})`;
-  keep($("doneboard"),()=>{$("doneboard").innerHTML=done.slice(0,20).map(initRow).join("")});
+  const doneAll=state.initiatives.filter(i=>i.status==="done"&&(num(i.doneAt)??0)>Date.now()-DAY).sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0)),done=doneAll.filter(i=>initHit(i));
+  keep($("board"),()=>{$("board").innerHTML=open.length?open.map(initRow).join(""):on?NO_MATCH:'<div class="empty">No initiatives in flight.</div>'});
+  // The heading's count (#C295): the cards the list above draws, none when there are none; "N of M" while searching.
+  $("initcount").textContent=on?`${open.length} of ${all.length}`:all.length?String(all.length):""; $("initcount").hidden=!on&&!all.length;
+  $("donebox").hidden=!doneAll.length; $("donesum").textContent=`Done in the last 24 h (${on?`${done.length} of ${doneAll.length}`:doneAll.length})`;
+  keep($("doneboard"),()=>{$("doneboard").innerHTML=done.length?done.slice(0,20).map(initRow).join(""):on?NO_MATCH:""});
 }
 function renderFeed(){
   const ev=[...state.events].filter(e=>(num(e.at)??0)>Date.now()-DAY).sort((a,b)=>(num(b.at)??0)-(num(a.at)??0)).slice(0,25);

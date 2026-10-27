@@ -76,6 +76,8 @@ test("#C363: every count stays its real total while searching; the row says the 
   assert.equal(b.els.tstat.innerHTML, 'No matches. · <button type="button" class="tclear" data-tclear>Clear</button>');
   b.searchNow("");
   assert.equal(b.els.tstat.innerHTML, "", "nothing typed: nothing to say");
+  assert.match(page, /<div class="rsearch" id="tsearch"><div class="sbox"><svg class="sicon"[^>]*aria-hidden="true">[\s\S]*?<\/svg><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search threads, to-dos and ideas" autocomplete="off"><\/div><span class="tstat" id="tstat" role="status"><\/span><\/div>/);
+  assert.match(page, /document\.addEventListener\("click",e=>\{if\(e\.target\.closest&&e\.target\.closest\("\[data-tclear\]"\)\)\{searchNow\(""\);const box=\$\("rsearch"\);if\(box&&box\.focus\)box\.focus\(\)\}\}\)/, "Clear empties it in one click");
 });
 
 test("#C363: switching tabs clears the box, and the tab it filtered is drawn whole again", () => {
