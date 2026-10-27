@@ -4,7 +4,7 @@
 # Manager only (the session titled Manager; the owner, 2026-10-18): when the owner's message this turn asks a question
 # (a "?" in what he typed, a mid-turn message, or a board comment), the reply must also write a waiting/ans-<topic> item,
 # or (board v2 threads, 2026-10-24) answer in a thread: a write to the board's "messages" collection counts as the answer.
-import json, os, re, sys
+import json, re, sys
 RED = re.compile(r"^\s*(?:[-*>]\s*)?(?:\*\*)?\U0001F534", re.M)  # only a line that starts with the red mark is an ask
 try:
     inp = json.load(sys.stdin)
@@ -92,121 +92,9 @@ if red and not wrote:
     reasons.append("Your reply has a red ask (🔴) but you wrote nothing to the flight board's 'waiting' collection this turn. Manager: add the waiting item now (ArtifactData set), then finish. Any other agent: don't ask the owner directly; send the question to Manager and remove the 🔴.")
 elif MANAGER and question and not answered:
     reasons.append("The owner asked a question this turn, but you wrote no board answer. Manager: answer in its thread (messages {thread, from: \"Manager\", text, at}); if it has no thread, add waiting/ans-<topic> {kind:\"answer\", question, text, since, done:false}. Then finish.")
-# Manager's memory tile (the owner, 2026-10-19): the board's ctx/Manager pct must stay within 2 points of the real context.
-if MANAGER:
-    now = shown = None
-    for line in lines:
-        try:
-            e = json.loads(line)
-        except Exception:
-            continue
-        if e.get("type") != "assistant":
-            continue
-        msg = e.get("message") or {}
-        u = msg.get("usage")
-        if u:
-            now = sum(u.get(k) or 0 for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")) / 10000
-        for c in msg.get("content") or []:
-            if isinstance(c, dict) and c.get("type") == "tool_use" and c.get("name") == "ArtifactData":
-                i = c.get("input") or {}
-                for w in i.get("writes") or [i]:
-                    if w.get("collection") == "ctx" and w.get("doc_id") == "Manager" and isinstance((w.get("data") or {}).get("pct"), (int, float)):
-                        shown = w["data"]["pct"]
-    if now is not None and (shown is None or abs(now - shown) >= 2):
-        reasons.append(f"Manager's memory tile on the board says {shown if shown is not None else 'nothing'}% but your context is {round(now)}%. Update it now in one batch: meta/context agents.Manager.pct and ctx/Manager {{pct, at}} (real clock, if_version), then finish.")
-# Board answers (the owner, 2026-10-23): every Manager turn reads the board's waiting items and acts on each answer of the owner's
-# still open (a response other than "ack" on an item not done). On 2026-10-23 five answers were missed while Manager was busy.
-# The read is the open items only, whole (#C329: a day of items was ~80, ~4k tokens a turn; the open ones are a handful):
-# a query of waiting where done == false and nothing else, limit 1000 or more, inline (out_dir lists 50 paths), not cut
-# short. A result too large for the transcript is read from its saved copy in this session's own tool-results folder.
-MANY = 1000
-# The board's own markers for a result cut short, looked for only on its own lines: a document line ("{…") holds the
-# item's text, which may say "more documents" itself (Checker).
-CUT = re.compile(r"next_cursor|\[\d+ more\b|\bmore (?:saved )?documents\b|\bmore may exist\b", re.I)
-def cut(body):
-    return any(CUT.search(l) for l in body.split("\n") if not l.startswith("{"))
-SAVED = re.compile(r"<persisted-output>[\s\S]*?Full output saved to: (\S+)")
-def open_read(i):
-    q = i.get("query") if isinstance(i.get("query"), dict) else {}
-    where = q.get("where") if isinstance(q.get("where"), list) else []
-    try:
-        many = float(q.get("limit")) >= MANY
-    except Exception:
-        many = False
-    return (i.get("action") == "query" and i.get("collection") == "waiting" and not i.get("out_dir") and many
-            and len(where) == 1 and isinstance(where[0], list) and len(where[0]) == 3
-            and where[0][0] == "done" and where[0][1] in ("==", "eq") and where[0][2] is False)
-def whole_body(body, results):
-    m = SAVED.search(body)
-    if not m:
-        return body
-    if not results:
-        return None
-    try:
-        f, root = os.path.realpath(m.group(1)), os.path.realpath(results)
-        if not f.startswith(root + os.sep) or not os.path.isfile(f) or os.path.getsize(f) > 64e6:
-            return None
-        raw = open(f, encoding="utf-8").read()
-        try:
-            j = json.loads(raw)
-            if isinstance(j, list):
-                return "\n".join((c or {}).get("text") or "" for c in j if isinstance(c, dict))
-        except Exception:
-            pass
-        return raw
-    except Exception:
-        return None
-if MANAGER:
-    results = os.path.join(path[:-len(".jsonl")] if path.endswith(".jsonl") else path, "tool-results")
-    start = 0
-    for i in range(len(lines) - 1, -1, -1):
-        try:
-            e = json.loads(lines[i])
-        except Exception:
-            continue
-        c = (e.get("message") or {}).get("content")
-        if e.get("type") == "user" and not (isinstance(c, list) and c and all(isinstance(x, dict) and x.get("type") == "tool_result" for x in c)):
-            start = i
-            break
-    reads, written, items, whole = {}, set(), {}, False
-    for line in lines[start:]:
-        try:
-            e = json.loads(line)
-        except Exception:
-            continue
-        c = (e.get("message") or {}).get("content")
-        if not isinstance(c, list):
-            continue
-        for x in c:
-            if not isinstance(x, dict):
-                continue
-            if x.get("type") == "tool_use" and x.get("name") == "ArtifactData":
-                i = x.get("input") or {}
-                if open_read(i):
-                    reads[x.get("id")] = i
-                for w in i.get("writes") or ([i] if i.get("action") in ("set", "update", "delete", "str_replace") else []):
-                    if isinstance(w, dict) and w.get("collection") == "waiting" and w.get("doc_id"):
-                        written.add(w["doc_id"])
-            elif x.get("type") == "tool_result" and x.get("tool_use_id") in reads:
-                body = whole_body("\n".join(texts(x.get("content"))), results)
-                if body is None or cut(body):
-                    continue
-                whole = True
-                for l in body.split("\n"):
-                    if not l.startswith("{"):
-                        continue
-                    try:
-                        d = json.loads(l)
-                    except Exception:
-                        continue
-                    if isinstance(d, dict) and isinstance(d.get("id"), str) and isinstance(d.get("data"), dict) and "version" in d:
-                        items[d["id"]] = d["data"]
-    if not whole:
-        reasons.append("Manager: read the board's open waiting items this turn before finishing (ArtifactData query, collection waiting, where done == false, limit 1000, no out_dir; nothing else in where), then act on every item with a response other than ack.")
-    else:
-        open_ = [k for k, v in items.items() if isinstance(v, dict) and not v.get("done") and isinstance(v.get("response"), dict) and v["response"].get("status") not in (None, "ack") and k not in written]
-        if open_:
-            reasons.append("Manager: the owner answered these board items and they're still open: " + ", ".join(sorted(open_)) + ". Act on each (tell the owner, reply) and mark it done (waiting update done:true, if_version) before finishing.")
+# Two rules left this hook (#C334, the context-tax brief's card A): the memory tile (the Collector writes it from the
+# app's numbers, collector/context.mjs) and the read of the waiting items (the Stop gate, gate/stop.mjs, sees the open
+# asks the owner answered on the board itself). Each made Manager spend a tool call, and its result, every turn.
 if reasons:
     print(json.dumps({"decision": "block", "reason": " ".join(reasons)}))
 sys.exit(0)
