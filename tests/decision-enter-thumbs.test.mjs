@@ -39,5 +39,5 @@ test("each option's pictures at a readable width: ~240 px beside the button on a
   assert.match(page, /\.opt-line\{display:grid;grid-template-columns:minmax\(0,240px\) minmax\(0,1fr\);/, "a 240 px column beside the button");
   assert.match(page, /\.opt-shots \.thumb\{width:100%;max-width:none;/, "the picture fills its column");
   assert.match(page, /\.opt-shots \.thumb span\{[^}]*-webkit-line-clamp:2/, "its label on one or two lines");
-  assert.match(page, /@media \(max-width:760px\)\{\.opt-line\{grid-template-columns:minmax\(0,1fr\)\}/, "full width on a phone, the button under it");
+  assert.match(page, /@media \(max-width:760px\)\{\.opt-line\{grid-template-columns:minmax\(0,1fr\);row-gap:6px\}\.opt-line\+\.opt-line\{margin-top:12px\}\}/, "full width on a phone, the button 6 px under its own picture, the next option ~20 px on (Designer on 90bb412)");
 });
