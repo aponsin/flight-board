@@ -179,7 +179,9 @@ Every collector change used to cost the owner an install. Now only what constrai
   move is one rename. The script says when the commit also changes the owner's files (they wait for the install) or
   `collector/TASK.md` (the lead saves the new steps into the task, `update_scheduled_task`). The lead republishes the page.
   It compares with the commit the settings pin, and uses a copy already in `install/` only when it is exactly that
-  commit (`git archive`, file by file, nothing extra); anything else is refused.
+  commit (`git archive`, file by file, nothing extra); anything else is refused. Then it fast-forwards the checkout's
+  local `main` to the commit, but only as a fast-forward and only when `main` is not checked out or is checked out
+  clean, and not mid-rebase or mid-merge. It never resets anything, and it says what it did or why it left `main` alone.
 
 **A board release is the release role's** (#C276), like a product release, and runs only from the signed linked copy:
 `node ~/.flight-board/current/scripts/board-release.mjs <full commit> [--dry-run]`, never from a checkout. It takes

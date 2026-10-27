@@ -13,7 +13,8 @@
 //   - the task's steps didn't change without its prompt (collector/PROMPT.txt);
 //   - the page uses no capability beyond PAGE_CAPABILITIES, builds and passes its rendered scenarios.
 // Then it runs the scan (this copy's), pushes the commit to origin/main, moves the collector's current link with this
-// copy's scripts/current.mjs, and prints what the release role publishes: the page, and the prompt when it changed.
+// copy's scripts/current.mjs (which also fast-forwards the checkout's local main when it is clean and only behind,
+// #C282), and prints what the release role publishes: the page, and the prompt when it changed.
 // It never touches ~/.claude/settings.json, the collector's settings or the config.
 import { realpathSync, existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";

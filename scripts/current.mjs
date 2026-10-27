@@ -7,7 +7,8 @@
 // may write one, so what gates a collector change is Security's review of the commit.
 // The scheduled collector runs from the link; the gate, the fence and the settings never do: they stay pinned in the
 // settings and change only with the owner's install. It says which of those this commit changes, and whether the
-// task's steps (collector/TASK.md) changed, which the lead then saves into the task.
+// task's steps (collector/TASK.md) changed, which the lead then saves into the task. Last, it fast-forwards the
+// checkout's local main to the commit when nobody's work is in the way (fastForwardMain, #C282), and says what it did.
 import { realpathSync, existsSync, lstatSync, readlinkSync, symlinkSync, renameSync, rmSync, readdirSync, readFileSync, mkdirSync, mkdtempSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve, dirname, join, basename, posix } from "node:path";
@@ -89,6 +90,54 @@ export function swapLink(link, target) {
   renameSync(tmp, link);
 }
 
+// The checkout's own main after a push (#C282): installs and board releases push a signed commit to origin/main and
+// used to leave local main far behind. The decision, from the facts only: main moves only by a fast-forward (behind:
+// main is an ancestor of sha), and only over no one's work: not checked out anywhere, or checked out and clean; never
+// in the middle of a rebase, merge or cherry-pick. Anything else is left as it is, and said.
+export function localMainMove({ sha, main, behind, contains, checkedOut, clean, busy }) {
+  const s = (c) => String(c).slice(0, 12), left = (why) => ({ action: "none", say: `local main: left as it is, ${why}` });
+  if (!main) return { action: "none", say: "local main: none (no local main branch); nothing to move" };
+  if (main === sha) return { action: "none", say: `local main: already at ${s(sha)}` };
+  if (busy) return left(`a worktree is in the middle of a rebase, merge or cherry-pick on it (${s(main)})`);
+  if (contains) return { action: "none", say: `local main: ${s(main)} already has ${s(sha)}; left as it is` };
+  if (!behind) return left(`it has diverged from ${s(sha)} (${s(main)}): bring it up to date by hand`);
+  if (checkedOut && !clean) return left(`${checkedOut} has uncommitted changes on it (${s(main)})`);
+  return { action: checkedOut ? "merge" : "ref", say: `local main: ${s(main)} → ${s(sha)} (fast-forward${checkedOut ? ` in ${checkedOut}` : ""})` };
+}
+
+// Reads the facts in repo (any worktree of the checkout) and fast-forwards local main to sha when localMainMove says so.
+// Returns what it did, as one line; never throws (a push already made stays made whatever happens here).
+export function fastForwardMain(repo, sha, { dry = false } = {}) {
+  const run = (cwd, a) => execFileSync("git", ["-c", "core.hooksPath=/dev/null", ...a], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const quiet = (cwd, a) => { try { return run(cwd, a); } catch { return null; } };
+  try {
+    const main = quiet(repo, ["rev-parse", "--verify", "-q", "refs/heads/main^{commit}"]);
+    // Every worktree: which has main checked out, and whether any is mid-operation on it.
+    const trees = run(repo, ["worktree", "list", "--porcelain"]).split("\n\n").map((b) => ({
+      path: /^worktree (.+)$/m.exec(b)?.[1], branch: /^branch (.+)$/m.exec(b)?.[1] ?? null,
+    })).filter((t) => t.path && existsSync(t.path));
+    const checkedOut = trees.find((t) => t.branch === "refs/heads/main")?.path ?? null;
+    const gitPath = (t, p) => quiet(t, ["rev-parse", "--path-format=absolute", "--git-path", p]);
+    const headName = (t) => ["rebase-merge/head-name", "rebase-apply/head-name"].map((p) => gitPath(t, p)).filter((f) => f && existsSync(f)).map((f) => readFileSync(f, "utf8").trim());
+    const busy = trees.some((t) => headName(t.path).includes("refs/heads/main"))
+      || (checkedOut !== null && ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply"].some((p) => { const f = gitPath(checkedOut, p); return f && existsSync(f); }));
+    const clean = checkedOut === null || run(checkedOut, ["status", "--porcelain", "--untracked-files=no"]) === "";
+    const behind = Boolean(main) && quiet(repo, ["merge-base", "--is-ancestor", main, sha]) !== null;
+    const contains = Boolean(main) && quiet(repo, ["merge-base", "--is-ancestor", sha, main]) !== null;
+    const m = localMainMove({ sha, main, behind, contains, checkedOut, clean, busy });
+    if (m.action === "none") return m.say;
+    if (dry) return `Dry run: would move ${m.say}`;
+    // A fast-forward merge in the worktree that has main (it refuses rather than overwrite an untracked file), or the
+    // ref alone, moved only from the commit read above.
+    if (m.action === "merge") run(checkedOut, ["merge", "--ff-only", "-q", sha]);
+    else run(repo, ["update-ref", "-m", `fast-forward to ${sha.slice(0, 12)} after its push`, "refs/heads/main", sha, main]);
+    const now = quiet(repo, ["rev-parse", "refs/heads/main"]);
+    return now === sha ? m.say : `local main: left as it is, the fast-forward didn't land (it is ${String(now).slice(0, 12)})`;
+  } catch (e) {
+    return `local main: left as it is, ${String(e.stderr || e.message).trim().split("\n")[0]}`;
+  }
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
   const opt = (name) => { const n = args.indexOf(name); return n >= 0 ? args[n + 1] : undefined; };
@@ -126,6 +175,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     } finally { rmSync(fresh, { recursive: true, force: true }); }
     if (args.includes("--dry-run")) console.log(`Dry run: ${existsSync(dir) ? `${dir} is exactly ${sha.slice(0, 12)}` : `would copy ${sha.slice(0, 12)} to ${dir}`}; would point ${link} at it.`);
     else { swapLink(link, dir); console.log(`current: ${before ? before.slice(0, 12) : "none"} → ${sha.slice(0, 12)} (${dir}). The next collector run uses it.`); }
+    console.log(fastForwardMain(repo, sha, { dry: args.includes("--dry-run") }));
     if (fromPin === null) console.log("No pinned commit found in the settings to compare with: check by hand whether the owner's files changed.");
     else if (v.ownerFiles.length) console.log(`The gate's hooks, the fence and the refresh hook keep the owner's pinned copy (${pinned.slice(0, 12)}) until the owner's install; changed since: ${v.ownerFiles.join(", ")}.`);
     if ((fromLink ?? []).includes(TASK_FILE)) console.log(`${TASK_FILE} changed: the lead saves the new steps into the scheduled task.`);
