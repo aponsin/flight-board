@@ -6,6 +6,7 @@ import vm from "node:vm";
 import { PLAN, planWriteErrors, planMirrorErrors, initiativePlanErrors } from "./plan.mjs";
 import { idText } from "../collector/text.mjs";
 import { contextRoles, contextWriteErrors, isContextWrite } from "../collector/context.mjs";
+import { mechanicalClass } from "./traffic.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 let page;
@@ -153,7 +154,10 @@ export function writeErrors(w, { config, who, now }) {
     if (extra.length) e.push(`a log entry holds only from, kind, text and at (not ${extra.join(", ")})`);
     if (!who.role || data.from !== who.role) e.push(`from: ${who.role ?? "<your role>"}, this session's role`);
     if (!(typeof data.kind === "string" && /^[a-z][a-z0-9-]{0,39}$/.test(data.kind))) e.push("kind: the class name (lower case letters, digits and -)");
-    if (!(typeof data.text === "string" && data.text.trim() && data.text.length <= 300)) e.push("text: 1 to 300 characters");
+    // The digest puts the text in the lead's turn (Security): only a mechanical status of its own kind, never free text.
+    if (mechanicalClass(data.text, config.traffic?.mechanical) !== data.kind) e.push("text: a mechanical status that matches its kind's pattern (anything else goes to the lead as a message)");
+    // An entry's id starts with its writer's role, so no session replaces another's entry before the digest (Checker).
+    if (who.role && !String(id).startsWith(`${who.role}-`)) e.push(`id: ${who.role}-<anything>, so the entry is yours`);
     return [...e, ...timeErrors(data, now)];
   }
   // The plan (board v3, gate/plan.mjs): the lead's alone, never deleted, every field checked.

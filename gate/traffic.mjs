@@ -18,17 +18,20 @@ export function mechanicalClass(text, classes) {
   return null;
 }
 
-export const refusal = (name) => `Mechanical (${name}): write it to the board instead (ArtifactData set, collection log, {from: <your role>, kind: "${name}", text, at}); the lead sees a digest. Not sent.`;
+export const refusal = (name) => `Mechanical (${name}): write it to the board instead (ArtifactData set, collection log, doc_id <your role>-<time>, data {from: <your role>, kind: "${name}", text, at} with this same text); the lead sees a digest. Not sent.`;
 
 // One digest line from log entries newer than `since`, oldest first: "Since your last turn: Ops: picked up Ops; …", or
 // null with none. entries: [{ from, kind, text, at }]. Each part one line, no tags, 80 characters at most; 20 at most.
+// Only an entry whose text is a status of its own kind (mechanicalClass of `classes`) counts (Security: the line sits
+// in the lead's turn beside the owner's prompt, so a journaled free text, or one from before a config change, never
+// does); the gate's log rule refuses such entries too.
 const brief = (t) => {
   const s = String(t ?? "").replace(/[\u0000-\u001f\u007f<>"]+/g, " ").replace(/\s+/g, " ").trim();
   return s.length > 80 ? `${s.slice(0, 79)}…` : s;
 };
 const WHO = /^[A-Za-z0-9_-]{1,60}$/;
-export function logDigest(entries, since) {
-  const fresh = (entries ?? []).filter((e) => e && typeof e.at === "number" && e.at > since && typeof e.text === "string").sort((a, b) => a.at - b.at);
+export function logDigest(entries, since, classes) {
+  const fresh = (entries ?? []).filter((e) => e && typeof e.at === "number" && e.at > since && typeof e.text === "string" && mechanicalClass(e.text, classes) === e.kind).sort((a, b) => a.at - b.at);
   if (!fresh.length) return null;
   const parts = fresh.slice(-20).map((e) => `${WHO.test(String(e.from)) ? e.from : "?"}: ${brief(e.text)}`);
   return `Since your last turn: ${fresh.length > 20 ? `(${fresh.length - 20} older) ` : ""}${parts.join("; ")}.`;
