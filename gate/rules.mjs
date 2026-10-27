@@ -226,10 +226,24 @@ export function writeErrors(w, { config, who, now }) {
 // Rule 1, the look (#C344, the Director's card): a decision is a look decision by its words or its card's lane, derived
 // by the page's own lookDecision with the team's config.decisions, never taken from data.look alone (look: false no longer
 // unmakes one). The card and its build steps come from the board as the gate last saw it (seen, however old: a card's
-// lane rarely moves) with this batch's writes over it; with no board seen, the words alone decide.
+// lane rarely moves) with this batch's writes over it; with no board seen, the words alone decide. An update is laid over
+// the ask as the board holds it (and this batch's earlier writes to it) and the result checked (Checker's FINDINGS on
+// 001aaa6a: an update made a plain decision a look one, or took its pictures away), when it touches what makes a look or
+// its pictures: an ask from before the rule still takes its ping or its close.
+const LOOK_FIELDS = ["kind", "text", "title", "initiative", "look", "options", "images"];
+const lay = (doc, d) => { const out = { ...(doc ?? {}) }; for (const [k, v] of Object.entries(d ?? {})) if (v && typeof v === "object" && v.__delete__) delete out[k]; else out[k] = v; return out; };
 export function lookErrors(w, { config, seen, batch = [] }) {
-  const { op, collection, data } = w;
-  if (collection !== "waiting" || op !== "set" || !data || data.kind !== "decision" || data.done) return [];
+  const { op, collection, doc_id: wid } = w;
+  if (collection !== "waiting" || !w.data || typeof w.data !== "object") return [];
+  if (op === "update" && !LOOK_FIELDS.some((f) => f in w.data)) return [];
+  if (op !== "set" && op !== "update") return [];
+  let data = w.data;
+  if (op === "update") {
+    let doc = (seen?.docs?.waiting ?? []).find((d) => d && d.id === wid) ?? null;
+    for (const b of batch.slice(0, batch.indexOf(w))) if (b.collection === "waiting" && b.doc_id === wid) doc = b.op === "delete" ? null : b.op === "set" ? { ...b.data } : lay(doc, b.data);
+    data = lay(doc, w.data);
+  }
+  if (data.kind !== "decision" || data.done) return [];
   const id = typeof data.initiative === "string" ? data.initiative : null;
   let card = id ? (seen?.docs?.initiatives ?? []).find((d) => d && d.id === id) ?? null : null;
   for (const b of batch) if (id && b.collection === "initiatives" && b.doc_id === id && b.op !== "delete" && b.data) card = { ...(b.op === "update" ? card : {}), ...b.data, id };

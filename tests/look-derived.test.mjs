@@ -44,6 +44,34 @@ test("a decision on a card in a visual lane is a look, by the card's who or whoe
   assert.doesNotMatch(errs(ask({ text: "Ship today?", initiative: "c-design" }), { s: null }), /look decision/, "no board seen: words only");
 });
 
+// Checker's FINDINGS on 001aaa6a: an update went unchecked. It is laid over the ask the board holds (and this batch's
+// earlier writes), and the result checked, when it touches what makes a look or its pictures.
+const asks = [{ id: "w-plain", kind: "decision", text: "Which plan do we pick?", options: two, since: NOW - 6e5, done: false }, { id: "w-look", kind: "decision", text: "Which hero do we keep?", options: two, images: pics, since: NOW - 6e5, done: false }, { id: "w-old", kind: "decision", text: "Which hero, from before the rule?", options: two, since: NOW - 6e5, done: false }];
+const withAsks = { ...seen, docs: { ...seen.docs, waiting: asks } };
+const upd = (id, data) => ({ op: "update", collection: "waiting", doc_id: id, data });
+
+test("Checker 1: an update that makes a plain decision a look one needs its pictures", () => {
+  assert.match(errs(upd("w-plain", { text: "Which hero photo do we keep?" }), { s: withAsks }), LOOK);
+  assert.match(errs(upd("w-plain", { initiative: "c-design" }), { s: withAsks }), LOOK, "moved onto a visual lane's card");
+  assert.doesNotMatch(errs(upd("w-plain", { text: "Which hero photo do we keep?", images: pics }), { s: withAsks }), /look decision/);
+});
+
+test("Checker 2: an update can't take a look decision's pictures away", () => {
+  assert.match(errs(upd("w-look", { images: [] }), { s: withAsks }), LOOK);
+  assert.match(errs(upd("w-look", { images: { __delete__: true } }), { s: withAsks }), LOOK);
+  assert.match(errs([{ op: "set", collection: "waiting", doc_id: "w-new", data: { kind: "decision", since: NOW, done: false, text: "Which hero?", options: two, images: pics } }, upd("w-new", { images: [] })], { s: withAsks }), LOOK, "an earlier set in the batch counts");
+});
+
+test("Checker 3: an option added by an update needs its picture", () => {
+  assert.match(errs(upd("w-look", { options: [...two, { key: "C", label: "Something new" }] }), { s: withAsks }), /missing: C\)/);
+});
+
+test("an update that touches nothing a look depends on passes, and closing an ask always does", () => {
+  assert.doesNotMatch(errs(upd("w-old", { ping: "sent" }), { s: withAsks }), /look decision/, "an ask from before the rule");
+  assert.doesNotMatch(errs(upd("w-old", { done: true, doneAt: NOW }), { s: withAsks }), /look decision/);
+  assert.doesNotMatch(errs(upd("w-look", { images: [], done: true }), { s: withAsks }), /look decision/);
+});
+
 test("the lists come from the config: an empty word list or no visual lanes derives nothing", () => {
   const none = fullConfig({ artifactUrl: config.artifactUrl, decisions: { lookWords: [], visualLanes: [] } });
   assert.doesNotMatch(errs(ask({ text: "Which hero photo goes first?", initiative: "c-design" }), { cfg: none }), /look decision/);
