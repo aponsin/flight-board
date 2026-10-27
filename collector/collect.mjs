@@ -165,13 +165,23 @@ export function tipsOnly(remote, shipped) {
 
 // The card's phase from each of its branches' tips: the least advanced one (live only when every tip is deployed),
 // naming the branch behind when there are several. derive(head) is derivePhase for that head.
-export function leastAdvanced(card, tips, derive, config) {
+// A stacked follow-up (#C358): a tip found by the card's Board-Id on another card's branch (one named after a card on the
+// board, stacked on this one: #C353's nit rode on #C354's branch) ships with that card. Once one of the card's own tips is
+// live it holds the card back no more, and isn't a second branch to split; before that it counts like any tip.
+export function leastAdvanced(card, tips, derive, config, stacked = () => false) {
   if (tips.length <= 1) return derive(tips[0] ?? null);
   const order = config.phases.map((p) => p[0]);
-  const all = tips.map((h) => ({ h, d: derive(h) }));
+  let all = tips.map((h) => ({ h, d: derive(h) }));
+  const riders = all.filter((x) => stacked(x.h));
+  if (riders.length && all.some((x) => !stacked(x.h) && x.d.phase === config.collector.livePhase)) {
+    all = all.filter((x) => !stacked(x.h));
+    if (all.length === 1) return { ...all[0].d, evidence: `${all[0].d.evidence}; ${riders.map((x) => lineText(x.h.branch, 60)).join(", ")} carries a later commit for it: that ships with ${riders.length > 1 ? "those cards" : `${lineText(riders[0].h.branch, 60)}'s card`}` };
+  }
   const { h, d } = all.reduce((a, b) => (order.indexOf(b.d.phase) < order.indexOf(a.d.phase) ? b : a));
-  return { ...d, branches: tips.map((t) => t.branch), behind: h.branch, evidence: `${d.evidence}; ${tips.length} branches, ${lineText(h.branch, 60)} is behind` };
+  return { ...d, branches: all.map((x) => x.h.branch), behind: h.branch, evidence: `${d.evidence}; ${all.length} branches, ${lineText(h.branch, 60)} is behind` };
 }
+// Whether a tip is another card's branch carrying this card's Board-Id: named after one of the board's cards, not this one.
+export const stackedOn = (card, ids) => (h) => { const seg = String(h?.branch ?? "").split("/").pop(); return seg !== card.id && ids.has(seg); };
 
 // The repository a card lives in (#C278): one of collector.repos by the card's own repo field, else the first whose id
 // prefix the card carries; null for the team's own repository (collector.repoPath).
@@ -198,7 +208,7 @@ export function trailerOnMain(git, remote, main, id) {
 // installedLink points at. Every review signed is then a wait with a known cause, never a stall: "release" (not on main
 // yet: queued for a board release) or "install" (on main, not installed yet). use: { git, installed }, or nothing when
 // the repository couldn't be read, which leaves the card as declared.
-export function inRepo(card, r, use, config, now) {
+export function inRepo(card, r, use, config, now, ids = new Set()) {
   const c = config.collector;
   if (!use?.git) return { phase: null, evidence: `${r.name}: its repository was not read this run`, repo: r.name, at: now };
   const remote = r.remote ?? "origin", main = r.mainBranch ?? "main";
@@ -213,7 +223,7 @@ export function inRepo(card, r, use, config, now) {
     const d = derivePhase(card, facts, cfg);
     return d.phase === c.shipPhase ? { ...d, wait: facts.onMain ? "install" : "release" } : d;
   };
-  return { ...leastAdvanced(card, tips, derive, config), repo: r.name, at: now };
+  return { ...leastAdvanced(card, tips, derive, config, stackedOn(card, ids)), repo: r.name, at: now };
 }
 
 // live: liveBuild()'s answer for this run (null when there is no liveUrl or it couldn't be read). repos: { name: { git,
@@ -229,16 +239,18 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const open = cards.filter((k) => !closed(k));
   const derived = {}, split = [], tipsOf = {};
   const work = heads.filter((h) => h.branch !== c.mainBranch && !(c.candidatePattern && new RegExp(c.candidatePattern).test(h.branch)));
+  const ids = new Set(cards.map((k) => k.id));
   const phaseOf = (card) => {
     const tips = tipsOf[card.id] = headsFor(card.id, work);
-    return { ...leastAdvanced(card, tips, (h) => derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg), config), at: now };
+    return { ...leastAdvanced(card, tips, (h) => derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg), config, stackedOn(card, ids)), at: now };
   };
   for (const card of open) {
     const r = repoOf(card, config);
-    if (r) { derived[card.id] = inRepo(card, r, repos[r.name], config, now); continue; }
+    if (r) { derived[card.id] = inRepo(card, r, repos[r.name], config, now, ids); continue; }
     derived[card.id] = phaseOf(card);
     const tips = tipsOf[card.id];
-    if (tips.length > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
+    // A stacked follow-up set aside (#C358) is no second branch to split.
+    if (tips.length > 1 && (derived[card.id].branches?.length ?? 1) > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
   }
   // A ship run on now: the cards its candidate branch names (branch@sha in one of its last commits) are shipping now.
   const ships = shipping(git, heads, c);
