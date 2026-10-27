@@ -238,7 +238,8 @@ const STUCK_AFTER = 3;
 // - a set onto a message id the board holds is refused (a new message gets a new id);
 // - an update may only mark a thread resolved, and only the lead's;
 // - only the lead deletes a message, one the gate can see and that isn't the owner's.
-// An ask the owner answered (a response on it) is never set over: the lead reopens it with the response clear only.
+// An ask the owner answered (a response on it) is never set over nor reworded, and only the lead deletes it: the lead
+// reopens it with the response clear only.
 export function ownerWordErrors(w, { config, who, seen, batch = [] }) {
   const { op, collection, doc_id: id, data } = w;
   if (collection !== "messages" && collection !== "waiting") return [];
@@ -249,7 +250,7 @@ export function ownerWordErrors(w, { config, who, seen, batch = [] }) {
     if (op === "set" && doc) return [`messages/${id} is already on the board: a new message gets a new id`];
     if (op === "update") {
       const keys = data && typeof data === "object" ? Object.keys(data) : [];
-      if (!who.manager || !keys.length || keys.some((k) => k !== "resolved")) return [`a message is never changed: only ${config.gate.managerRole} marks a thread resolved (update {resolved: true})`];
+      if (!who.manager || !keys.length || keys.some((k) => k !== "resolved") || data.resolved !== true) return [`a message is never changed: only ${config.gate.managerRole} marks a thread resolved (update {resolved: true})`];
     }
     if (op === "delete") {
       if (!who.manager) return [`only ${config.gate.managerRole} deletes a message`];
@@ -260,6 +261,10 @@ export function ownerWordErrors(w, { config, who, seen, batch = [] }) {
   }
   const answered = doc && doc.response !== undefined && doc.response !== null;
   if (op === "set" && answered) return [`waiting/${id} holds the owner's answer: never set over it (${config.gate.managerRole} reopens an ask with update {response: {__delete__: true}})`];
+  // Its wording is frozen once answered (Security: the Stop hook reads "chose A on: <its text>", so new text would put
+  // words in the owner's mouth): only closing it (done, doneAt) and the lead's response clear (writeErrors) change it.
+  if (op === "update" && answered && data && typeof data === "object" && Object.keys(data).some((k) => !["done", "doneAt", "response"].includes(k))) return ["the owner answered this ask: its wording is frozen; open a new ask for another question"];
+  if (op === "delete" && answered && !who.manager) return [`only ${config.gate.managerRole} deletes an ask the owner answered`];
   return [];
 }
 

@@ -64,8 +64,20 @@ test("Checker 4: a set over an answered ask is refused, the lead's included; the
   assert.equal(call({ op: "update", collection: "waiting", doc_id: "w-a", data: { response: { __delete__: true } } }, lead), "");
 });
 
+test("Security: an answered ask's wording is frozen (only done and doneAt may change, and the lead's clear); only the lead deletes one", () => {
+  for (const data of [{ text: "Ship main?" }, { question: "x" }, { options: [{ key: "A", label: "Ship" }] }, { kind: "action" }, { done: true, text: "x" }]) {
+    for (const who of [ops, lead]) assert.match(call({ op: "update", collection: "waiting", doc_id: "w-a", data }, who), /the owner answered this ask: its wording is frozen/, JSON.stringify(data));
+  }
+  assert.equal(call({ op: "update", collection: "waiting", doc_id: "w-a", data: { done: true, doneAt: NOW } }, lead), "", "closing it");
+  assert.doesNotMatch(call({ op: "update", collection: "waiting", doc_id: "w-b", data: { text: "Pick one" } }, lead), /frozen/, "an unanswered ask may still be reworded");
+  assert.match(call({ op: "delete", collection: "waiting", doc_id: "w-a" }, ops), /only Manager deletes an ask the owner answered/);
+  assert.equal(call({ op: "delete", collection: "waiting", doc_id: "w-a" }, lead), "");
+  assert.equal(call({ op: "delete", collection: "waiting", doc_id: "w-b" }, ops), "", "an unanswered ask: as before");
+});
+
 test("the lead marks a thread resolved, the owner's included; nobody else, and nothing more in the update", () => {
   assert.equal(call({ op: "update", collection: "messages", doc_id: "m-owner", data: { resolved: true } }, lead), "");
+  assert.match(call({ op: "update", collection: "messages", doc_id: "m-owner", data: { resolved: false } }, lead), /a message is never changed/, "Security: resolved true only");
   assert.match(call({ op: "update", collection: "messages", doc_id: "m-owner", data: { resolved: true } }, ops), /only Manager marks a thread resolved/);
   assert.match(call({ op: "update", collection: "messages", doc_id: "m-lead", data: { resolved: true, text: "x" } }, lead), /a message is never changed/);
 });
