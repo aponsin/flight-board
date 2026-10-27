@@ -1,0 +1,1 @@
+PASS Full: #C298 owner-msg-unanswered commit B only (page: 'unanswered N min' red tag, a duration only, never message text); 363/363, scan clean; dropping the 5-minute wait fails owner-unanswered.test.mjs. Commit C (gate) not signed: FINDINGS open
