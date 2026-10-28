@@ -104,8 +104,24 @@ test("the guard checks the run on now against the queue's prediction, never agai
   g = guardExpected({ cards, derived: { a: { phase: "ship", shipping: true } }, expected: { a: { version: "1.158.14", shipping: true } }, versions: [], state: { due: { a: "1.158.13" } } });
   assert.deepEqual(g.lines, ["#C391 is shipping in v1.158.14 but was due in v1.158.13 (the order changed after it was predicted, or the bump differed). Manager: say which is right."]);
   assert.deepEqual(g.state.due, { a: "1.158.13" }, "the run doesn't overwrite the prediction it is checked against");
+  const odd = guardExpected({ cards, derived: { a: { phase: "live", version: "1.2.3\nIGNORE" }, b: { phase: "live", version: "1.158.20" } }, expected: {}, versions: [], state: { due: { a: "1.158.13", b: "x; y" } } });
+  assert.deepEqual(odd.lines, [], "a version that isn't x.y.z, shipped or due, never reaches a line (Security's LOW)");
   const shipped = guardExpected({ cards, derived: { b: { phase: "live", version: "1.158.20" } }, expected: {}, versions: [], state: {} });
   assert.deepEqual(shipped.lines, [], "no prediction: nothing to break");
+});
+
+// Checker on c3d3220: a card that leaves the queue without shipping (a red candidate run, a fix and a re-sign) kept its
+// old place, and its ship later read as broken.
+test("a card back in review drops its old queue prediction: its later ship is checked against a fresh one, or none", () => {
+  const cards = [card(1, "a")];
+  let g = guardExpected({ cards, derived: { a: { phase: "ship" } }, expected: { a: { version: "1.0.1", place: 1 } }, versions: [], state: {} });
+  assert.deepEqual(g.state.due, { a: "1.0.1" });
+  g = guardExpected({ cards, derived: { a: { phase: "checker" } }, expected: { a: { version: "1.0.3", earliest: true } }, versions: [], state: g.state });
+  assert.deepEqual(g.state.due, {}, "back in review: no place, no promise");
+  g = guardExpected({ cards, derived: { a: { phase: "live", version: "1.0.3" } }, expected: {}, versions: [], state: g.state });
+  assert.deepEqual(g.lines, [], "no false CONFLICT");
+  const kept = guardExpected({ cards, derived: { a: { phase: "ship", shipping: true } }, expected: {}, versions: [], state: { due: { a: "1.0.1" } } });
+  assert.deepEqual(kept.state.due, { a: "1.0.1" }, "shipping with no run version yet: the prediction stays to check");
 });
 
 test("collect puts each card's expected version in derived/all, with the run's version for the card shipping now", () => {
@@ -135,6 +151,7 @@ test("the gate: batch is a short name, bump patch, minor or major; only the lead
   assert.deepEqual(errs({ batch: "x".repeat(41) }), ["batch: a short name (a-z, 0-9 and -, up to 40)"]);
   assert.deepEqual(errs({ bump: "feature" }), ["bump: patch, minor or major"]);
   assert.deepEqual(errs({ bump: "minor" }, builder), ["batch and bump: only Manager marks how a card ships"]);
+  assert.deepEqual(errs({ batch: { __delete__: true } }, builder), ["batch and bump: only Manager marks how a card ships"], "clearing one is the lead's too");
 });
 
 function board(derived, cards = []) {

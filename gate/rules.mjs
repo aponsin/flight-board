@@ -199,7 +199,8 @@ export function writeErrors(w, { config, who, now }) {
     // How a card ships (#C400, collector/expected.mjs): the lead marks the cards that go out together (batch) and a
     // feature or bigger (bump); the Collector works out the versions from them.
     const marks = ["batch", "bump"].filter((f) => f in data && !data[f]?.__delete__);
-    if (marks.length && !who.manager) e.push(`batch and bump: only ${config.gate.managerRole} marks how a card ships`);
+    // Clearing one is the lead's too (Checker on c3d3220).
+    if (["batch", "bump"].some((f) => f in data) && !who.manager) e.push(`batch and bump: only ${config.gate.managerRole} marks how a card ships`);
     if (marks.includes("batch") && !(typeof data.batch === "string" && /^[a-z0-9-]{1,40}$/.test(data.batch))) e.push("batch: a short name (a-z, 0-9 and -, up to 40)");
     if (marks.includes("bump") && !["patch", "minor", "major"].includes(data.bump)) e.push("bump: patch, minor or major");
   }

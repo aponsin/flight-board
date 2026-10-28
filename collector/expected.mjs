@@ -88,11 +88,14 @@ export function guardExpected({ cards, derived, expected, versions = [], state =
   const broke = Object.fromEntries(Object.entries(state.broke ?? {}).filter(([id]) => open.has(id)));
   for (const [id, k] of open) {
     const got = derived[id]?.version ?? (expected[id]?.shipping ? expected[id].version : null);
-    if (!got || !due[id]) continue;
+    // Only x.y.z on either side reaches the line (Security's LOW on c3d3220): a commit title or the state file could hold anything.
+    if (!parts(got) || !parts(due[id])) continue;
     if (String(got).replace(/^v/, "") !== due[id]) broke[id] = broken(k, String(got).replace(/^v/, ""), due[id], !derived[id]?.version);
     if (derived[id]?.version) delete due[id];
   }
   for (const [id, e] of Object.entries(expected)) if (open.has(id) && Number.isInteger(e.place)) due[id] = e.version;
+  // A card that left the queue without shipping (back in review after a fix, Checker on c3d3220) owes no old place.
+  for (const id of Object.keys(due)) if (!derived[id]?.version && !derived[id]?.shipping && !Number.isInteger(expected[id]?.place)) delete due[id];
   const lines = [...open.keys()].filter((id) => broke[id]).map((id) => broke[id]);
   // A batch is one version.
   const batches = new Map();
