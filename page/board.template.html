@@ -777,13 +777,22 @@ function cardOpen(id){const c=state.initiatives.find(i=>i.id===id);if(!c)return 
 // the card (no hover there).
 const HOVER=()=>typeof window.matchMedia==="function"&&window.matchMedia("(hover:hover)").matches;
 let cbubFor=null;
-function cbubShow(a){const c=state.initiatives.find(i=>i.id===a.dataset.cref),b=$("cbub");if(!c||!b)return;
-  b.innerHTML=cardBubble(c);b.hidden=false;cbubFor=a;a.setAttribute("aria-describedby","cbub");
+// A thread's bubble (#C380, the owner in t-1793164921212: "just like for Initiatives", a #T link in text names only its
+// number): its number and title, then whom it waits on, its newest word (who and the first words) and how long ago.
+function threadBubble(id,now=Date.now()){const cut=(s,n)=>s.length>n?s.slice(0,n-1)+"…":s,n=threadNum(id),t=threadOf(id),last=t[t.length-1];
+  const on={you:"Waiting on you",lead:"With the team",resolved:"Resolved",answered:"Answered"}[waitsOn(id,now)]||"";
+  const word=last?`${last.from||""}: ${cut(String(last.text||"").replace(/\s+/g," ").trim(),80)}`:"";
+  return `<b>${n?"#T"+n+" ":""}${esc(cut(threadName(id),120))}</b><br>${esc([on,word,last?dur(now-last.at)+" ago":""].filter(Boolean).join(" · "))}`}
+function cbubShow(a){const b=$("cbub");if(!b)return;
+  if(a.dataset.tref){if(!threadDoc(a.dataset.tref)&&!threadOf(a.dataset.tref).length&&!itemOf(a.dataset.tref))return;b.innerHTML=threadBubble(a.dataset.tref)}
+  else{const c=state.initiatives.find(i=>i.id===a.dataset.cref);if(!c)return;b.innerHTML=cardBubble(c)}
+  b.hidden=false;cbubFor=a;a.setAttribute("aria-describedby","cbub");
   const r=a.getBoundingClientRect(),w=b.offsetWidth,h=b.offsetHeight;let y=r.bottom+6;if(y+h>window.innerHeight-8)y=r.top-h-6;
   b.style.left=Math.max(8,Math.min(r.left,window.innerWidth-w-8))+"px";b.style.top=Math.max(8,y)+"px"}
 function cbubHide(){const b=$("cbub");if(b)b.hidden=true;if(cbubFor&&cbubFor.removeAttribute)cbubFor.removeAttribute("aria-describedby");cbubFor=null}
-document.addEventListener("mouseover",e=>{if(!HOVER())return;const a=e.target.closest&&e.target.closest("[data-cref]");if(a)cbubShow(a);else if(cbubFor)cbubHide()});
-document.addEventListener("focusin",e=>{const a=e.target.closest&&e.target.closest("[data-cref]");if(a)cbubShow(a);else if(cbubFor)cbubHide()});
+const BUB_REFS="[data-cref],[data-tref]";
+document.addEventListener("mouseover",e=>{if(!HOVER())return;const a=e.target.closest&&e.target.closest(BUB_REFS);if(a)cbubShow(a);else if(cbubFor)cbubHide()});
+document.addEventListener("focusin",e=>{const a=e.target.closest&&e.target.closest(BUB_REFS);if(a)cbubShow(a);else if(cbubFor)cbubHide()});
 document.addEventListener("focusout",e=>{if(cbubFor&&e.target===cbubFor)cbubHide()});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&cbubFor)cbubHide()});
 if(typeof window.addEventListener==="function")window.addEventListener("scroll",()=>{if(cbubFor)cbubHide()},{passive:true});
@@ -1399,7 +1408,7 @@ function trefOpen(id){const now=Date.now(),p=trefPlace(id,now);if(!p)return null
   if(el.closest("#v2")&&$("v2").hidden)setView("v2");
   for(let d=el.closest("details");d;d=d.parentElement&&d.parentElement.closest("details"))d.open=true;
   el.scrollIntoView({block:"start",behavior:"smooth"});return el}
-document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-tref]");if(!a)return;e.preventDefault();
+document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-tref]");if(!a)return;e.preventDefault();cbubHide();
   if(!trefOpen(a.dataset.tref))a.title="That thread is no longer shown on the board"});
 // Rename: the name becomes a box; Enter or Save writes it, Esc or Cancel puts the line back.
 document.addEventListener("click",e=>{const r=e.target.closest&&e.target.closest("[data-trename]");if(!r||!dbRef)return;e.preventDefault();
