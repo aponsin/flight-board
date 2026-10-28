@@ -1,6 +1,7 @@
 // Memory tiles from the app's own numbers (#C274): each run reads every role's session context from the app
-// (mcp__ccd_session_mgmt__list_sessions, then get_usage per session) and writes ctx/<Role> {pct, at} and meta/context
-// agents.<Role> {pct, at}, so a tile no longer depends on each agent reporting itself.
+// (mcp__ccd_session_mgmt__list_sessions, then get_usage per session) and writes ctx/<Role> {pct, tokens, at} and
+// meta/context agents.<Role> {pct, tokens, at}, so a tile no longer depends on each agent reporting itself. tokens
+// (#C350) is the session's context in tokens, what the tiles show against 200k; a reading without it is {pct, at}.
 // The numbers never pass through the run's model: this file is also a PostToolUse hook on those two tools, in the state
 // folder's settings only (node <pinned install>/collector/context.mjs --config <board.config.json>), which saves the
 // session list and each reading in the state folder. --prepare plans which session to read for each role
@@ -22,6 +23,9 @@ export const ctxFile = (role) => `ctx-${role}.json`;
 export const LIST_MAX_AGE = 15 * 60e3;
 // A reading the run writes is this run's: never older than this when the gate or the fence sees it.
 export const CTX_MAX_AGE = 2 * 3600e3;
+// No session's context is near this; a larger number is a misread, never a tile.
+export const MAX_TOKENS = 1e8;
+const wholeTokens = (t) => Number.isInteger(t) && t >= 0 && t <= MAX_TOKENS;
 const SESSION = /^[A-Za-z0-9_-]{1,100}$/;
 export const ROLE = /^[A-Za-z0-9_-]{1,60}$/;
 const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
@@ -80,12 +84,14 @@ export function pickSessions(rows, roles) {
   return out;
 }
 
-// get_usage's answer for one session: { status, pct } with pct a whole percentage, or null when the app couldn't read it.
+// get_usage's answer for one session: { status, pct, tokens } with pct a whole percentage, or null when the app couldn't
+// read it, and tokens its tokensUsed as a whole number, or null when the answer has none (the percentage still counts).
 export function usageReading(resp, sessionId) {
   const c = plain(resp) ? resp.context : null;
   const p = plain(c) && c.session === sessionId && c.status === "ok" && typeof c.percentUsed === "number" ? Math.round(c.percentUsed) : null;
   const pct = Number.isInteger(p) && p >= 0 && p <= 100 ? p : null;
-  return { status: pct === null ? "unavailable" : "ok", pct };
+  const t = pct !== null && typeof c.tokensUsed === "number" ? Math.round(c.tokensUsed) : null;
+  return { status: pct === null ? "unavailable" : "ok", pct, tokens: wholeTokens(t) ? t : null };
 }
 
 export function readPlan(dir) {
@@ -141,8 +147,9 @@ export function writeContext(dir, out, config, now) {
     const id = plan?.roles?.[role];
     let r = null;
     try { r = id && SESSION.test(id) ? JSON.parse(readFileSync(join(dir, USAGE_DIR, `${id}.json`), "utf8")) : null; } catch { /* no reading */ }
-    if (!plain(r) || r.status !== "ok" || !(r.at >= plan.at) || ctxDocErrors({ pct: r.pct, at: r.at }, now).length) continue;
-    agents[role] = { pct: r.pct, at: r.at };
+    const tile = wholeTokens(r?.tokens) ? { pct: r.pct, tokens: r.tokens, at: r.at } : { pct: r?.pct, at: r?.at };
+    if (!plain(r) || r.status !== "ok" || !(r.at >= plan.at) || ctxDocErrors(tile, now).length) continue;
+    agents[role] = tile;
     writeFileSync(join(out, ctxFile(role)), JSON.stringify(agents[role]));
     lines.push(`MEMORY set ctx/${role} from ${join(out, ctxFile(role))}`);
   }
@@ -155,19 +162,21 @@ export function writeContext(dir, out, config, now) {
   return lines;
 }
 
-// A tile the collector writes: exactly { pct, at }, a whole percentage read in the last CTX_MAX_AGE.
+// A tile the collector writes: exactly { pct, at } or { pct, tokens, at }, a whole percentage (and a whole number of
+// tokens) read in the last CTX_MAX_AGE.
 export function ctxDocErrors(d, now) {
-  if (!plain(d)) return ["a memory reading is an object {pct, at}"];
+  if (!plain(d)) return ["a memory reading is an object {pct, tokens, at}"];
   const e = [];
-  const extra = Object.keys(d).filter((k) => k !== "pct" && k !== "at");
-  if (extra.length) e.push(`only pct and at (not ${extra.join(", ")})`);
+  const extra = Object.keys(d).filter((k) => k !== "pct" && k !== "tokens" && k !== "at");
+  if (extra.length) e.push(`only pct, tokens and at (not ${extra.join(", ")})`);
   if (!(Number.isInteger(d.pct) && d.pct >= 0 && d.pct <= 100)) e.push("pct: a whole number from 0 to 100");
+  if ("tokens" in d && !wholeTokens(d.tokens)) e.push(`tokens: a whole number from 0 to ${MAX_TOKENS}`);
   if (!(Number.isInteger(d.at) && d.at <= now + 60e3 && d.at >= now - CTX_MAX_AGE)) e.push("at: when it was read, in this run");
   return e;
 }
-// The collector's meta/context update: only agents.<Role> {pct, at}, for roles in collector.contextRoles.
+// The collector's meta/context update: only agents.<Role> {pct, tokens, at}, for roles in collector.contextRoles.
 export function contextUpdateErrors(d, roles, now) {
-  if (!plain(d) || Object.keys(d).some((k) => k !== "agents") || !plain(d.agents) || !Object.keys(d.agents).length) return ["meta/context: only agents.<Role> {pct, at}"];
+  if (!plain(d) || Object.keys(d).some((k) => k !== "agents") || !plain(d.agents) || !Object.keys(d.agents).length) return ["meta/context: only agents.<Role> {pct, tokens, at}"];
   return Object.entries(d.agents).flatMap(([role, v]) => (roles.includes(role) ? ctxDocErrors(v, now) : [`${role} is not in collector.contextRoles`]).map((m) => `agents.${role}: ${m}`));
 }
 // The gate's and the fence's check of one collector write to ctx/<Role> or meta/context.

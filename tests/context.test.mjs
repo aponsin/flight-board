@@ -13,7 +13,7 @@ const NOW = 1_793_050_000_123;
 const roles = ["Checker", "Manager", "Security"];
 const text = (o) => [{ type: "text", text: JSON.stringify(o) }];
 const row = (sessionId, title, at, over = {}) => ({ sessionId, title, cwd: "/srv/code", isArchived: false, isRunning: false, lastActivityAt: new Date(at).toISOString(), ...over });
-const usage = (session, percentUsed, status = "ok") => ({ plan: { status: "ok" }, context: { session, status, percentUsed, tokensUsed: 1, contextWindow: 100 } });
+const usage = (session, percentUsed, status = "ok", tokensUsed = null) => ({ plan: { status: "ok" }, context: { session, status, percentUsed, tokensUsed, contextWindow: 1_000_000 } });
 
 test("config: collector.contextRoles is a list of role names a session can be titled with; empty (the default) turns it off", () => {
   assert.deepEqual(checkConfig({ collector: { contextRoles: ["Checker", "Release-2"] } }), []);
@@ -41,11 +41,19 @@ test("each role's session is the newest open one titled exactly as the role; arc
 });
 
 test("a reading is a whole percentage from that session's own window; unavailable or another session's is none", () => {
-  assert.deepEqual(usageReading(usage("local_c", 28), "local_c"), { status: "ok", pct: 28 });
-  assert.deepEqual(usageReading(usage("local_c", 28.6), "local_c"), { status: "ok", pct: 29 });
-  assert.deepEqual(usageReading(usage("local_c", null, "unavailable"), "local_c"), { status: "unavailable", pct: null });
-  assert.deepEqual(usageReading(usage("local_other", 28), "local_c"), { status: "unavailable", pct: null });
+  assert.deepEqual(usageReading(usage("local_c", 28), "local_c"), { status: "ok", pct: 28, tokens: null });
+  assert.deepEqual(usageReading(usage("local_c", 28.6), "local_c"), { status: "ok", pct: 29, tokens: null });
+  assert.deepEqual(usageReading(usage("local_c", null, "unavailable"), "local_c"), { status: "unavailable", pct: null, tokens: null });
+  assert.deepEqual(usageReading(usage("local_other", 28), "local_c"), { status: "unavailable", pct: null, tokens: null });
   for (const p of [-1, 101, "28", NaN]) assert.equal(usageReading(usage("local_c", p), "local_c").pct, null, String(p));
+});
+
+test("a reading carries the session's context in tokens too (#C350), a whole number; anything else is no tokens, the percentage kept", () => {
+  assert.deepEqual(usageReading(usage("local_c", 52, "ok", 518048), "local_c"), { status: "ok", pct: 52, tokens: 518048 });
+  assert.deepEqual(usageReading(usage("local_c", 52, "ok", 518048.4), "local_c"), { status: "ok", pct: 52, tokens: 518048 });
+  for (const t of [-1, "518048", NaN, Infinity, 2e8, true]) assert.deepEqual(usageReading(usage("local_c", 52, "ok", t), "local_c"), { status: "ok", pct: 52, tokens: null }, String(t));
+  assert.equal(usageReading(usage("local_c", null, "unavailable", 5000), "local_c").tokens, null, "no tokens without a reading");
+  assert.equal(usageReading(usage("local_other", 52, "ok", 5000), "local_c").tokens, null, "nor from another session");
 });
 
 const setup = () => {
@@ -69,7 +77,7 @@ test("the hook keeps the session list and each planned session's reading in the 
     tap(hook(dir, "mcp__ccd_session_mgmt__get_usage", { session_id: "local_c" }, text(usage("local_c", 41))), { dir, now: NOW + 5 });
     tap(hook(dir, "mcp__ccd_session_mgmt__get_usage", { session_id: "local_m" }, text(usage("local_m", 50))), { dir, now: NOW + 6 });
     assert.deepEqual(readdirSync(join(dir, "usage")), ["local_c.json"]);
-    assert.deepEqual(JSON.parse(readFileSync(join(dir, "usage", "local_c.json"), "utf8")), { status: "ok", pct: 41, at: NOW + 5 });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "usage", "local_c.json"), "utf8")), { status: "ok", pct: 41, tokens: null, at: NOW + 5 });
     // Another folder, another tool: nothing saved.
     assert.equal(tap(hook(join(base, "elsewhere"), "mcp__ccd_session_mgmt__list_sessions", {}, text([])), { dir, now: NOW }), "not this board's state folder");
     assert.equal(tap(hook(dir, "Bash", { command: "x" }, "y"), { dir, now: NOW }), "not a memory reading");
@@ -129,14 +137,14 @@ test("step 2 writes one ctx file per fresh reading and one meta/context file; an
     const config = fullConfig({ collector: { contextRoles: roles } });
     writeFileSync(join(dir, "usage-plan.json"), JSON.stringify({ at: NOW, roles: { Checker: "local_c", Manager: "local_m", Security: "local_s" } }));
     mkdirSync(join(dir, "usage"));
-    writeFileSync(join(dir, "usage", "local_c.json"), JSON.stringify({ status: "ok", pct: 41, at: NOW + 5 }));
-    writeFileSync(join(dir, "usage", "local_m.json"), JSON.stringify({ status: "unavailable", pct: null, at: NOW + 6 }));
+    writeFileSync(join(dir, "usage", "local_c.json"), JSON.stringify({ status: "ok", pct: 41, tokens: 410321, at: NOW + 5 }));
+    writeFileSync(join(dir, "usage", "local_m.json"), JSON.stringify({ status: "unavailable", pct: null, tokens: null, at: NOW + 6 }));
     writeFileSync(join(dir, "usage", "local_s.json"), JSON.stringify({ status: "ok", pct: 12, at: NOW - 1 }), "utf8"); // before the plan: another run's
     mkdirSync(out);
     writeFileSync(join(out, "ctx-Security.json"), "{}"); // last run's
     const lines = writeContext(dir, out, config, NOW + 10);
-    assert.deepEqual(JSON.parse(readFileSync(join(out, "ctx-Checker.json"), "utf8")), { pct: 41, at: NOW + 5 });
-    assert.deepEqual(JSON.parse(readFileSync(join(out, "meta-context.json"), "utf8")), { agents: { Checker: { pct: 41, at: NOW + 5 } } });
+    assert.deepEqual(JSON.parse(readFileSync(join(out, "ctx-Checker.json"), "utf8")), { pct: 41, tokens: 410321, at: NOW + 5 });
+    assert.deepEqual(JSON.parse(readFileSync(join(out, "meta-context.json"), "utf8")), { agents: { Checker: { pct: 41, tokens: 410321, at: NOW + 5 } } });
     assert.equal(existsSync(join(out, "ctx-Security.json")), false);
     assert.equal(existsSync(join(out, "ctx-Manager.json")), false);
     assert.deepEqual(lines, [
@@ -144,14 +152,23 @@ test("step 2 writes one ctx file per fresh reading and one meta/context file; an
       `MEMORY update meta/context from ${join(out, "meta-context.json")}`,
       "MEMORY kept (no reading this run): Manager, Security",
     ]);
+    // An older app's reading, no tokens: the tile stays {pct, at}.
+    writeFileSync(join(dir, "usage", "local_c.json"), JSON.stringify({ status: "ok", pct: 41, tokens: null, at: NOW + 5 }));
+    writeContext(dir, out, config, NOW + 10);
+    assert.deepEqual(JSON.parse(readFileSync(join(out, "ctx-Checker.json"), "utf8")), { pct: 41, at: NOW + 5 });
     rmSync(join(dir, "usage"), { recursive: true });
     assert.deepEqual(writeContext(dir, out, config, NOW + 10), ["MEMORY kept (no reading this run): Checker, Manager, Security"]);
     assert.equal(existsSync(join(out, "meta-context.json")), false);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("shapes: a tile is exactly {pct, at}; meta/context only agents.<Role> {pct, at} for the configured roles", () => {
+test("shapes: a tile is exactly {pct, at} or {pct, tokens, at}; meta/context only agents.<Role> of those for the configured roles", () => {
   assert.deepEqual(ctxDocErrors({ pct: 41, at: NOW }, NOW), []);
+  assert.deepEqual(ctxDocErrors({ pct: 41, tokens: 410321, at: NOW }, NOW), []);
+  assert.deepEqual(ctxDocErrors({ pct: 0, tokens: 0, at: NOW }, NOW), []);
+  assert.deepEqual(contextUpdateErrors({ agents: { Checker: { pct: 41, tokens: 410321, at: NOW } } }, roles, NOW), []);
+  for (const tokens of [-1, 4.5, "410321", null, 2e8, true])
+    assert.notDeepEqual(ctxDocErrors({ pct: 41, tokens, at: NOW }, NOW), [], `tokens ${JSON.stringify(tokens)}`);
   for (const bad of [{ pct: 41 }, { pct: 41, at: NOW, saved: true }, { pct: 101, at: NOW }, { pct: 4.5, at: NOW }, { pct: 41, at: NOW + 120e3 }, { pct: 41, at: NOW - CTX_MAX_AGE - 1 }, null, []])
     assert.notDeepEqual(ctxDocErrors(bad, NOW), [], JSON.stringify(bad));
   assert.deepEqual(contextUpdateErrors({ agents: { Checker: { pct: 41, at: NOW } } }, roles, NOW), []);

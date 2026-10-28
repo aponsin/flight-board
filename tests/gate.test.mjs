@@ -431,7 +431,7 @@ test("withJournal: set, update (with __delete__) and delete laid over the mirror
   assert.deepEqual(withJournal(m, [{ op: "delete", collection: "initiatives", doc_id: "a", at: 120 }]).docs.initiatives, []);
 });
 
-test("#C274: with collector.contextRoles, the Collector also writes those roles' tiles, exactly {pct, at}, and nothing more", () => {
+test("#C274: with collector.contextRoles, the Collector also writes those roles' tiles, exactly {pct, at} or {pct, tokens, at} (#C350), and nothing more", () => {
   const collector = { role: "Collector", manager: false };
   const cfg = fullConfig({ artifactUrl: URL_, collector: { contextRoles: ["Checker", "Manager"] } });
   const tile = (doc_id, data) => ({ op: "set", collection: "ctx", doc_id, data });
@@ -439,12 +439,17 @@ test("#C274: with collector.contextRoles, the Collector also writes those roles'
   const err = (w, c = cfg) => writeErrors(w, { config: c, who: collector, now }).join("; ");
   assert.equal(err(tile("Checker", { pct: 41, at: now - 5 })), "");
   assert.equal(err(meta({ agents: { Checker: { pct: 41, at: now - 5 }, Manager: { pct: 35, at: now - 6 } } })), "");
+  assert.equal(err(tile("Checker", { pct: 41, tokens: 410321, at: now - 5 })), "");
+  assert.equal(err(meta({ agents: { Checker: { pct: 41, tokens: 410321, at: now - 5 }, Manager: { pct: 35, at: now - 6 } } })), "");
+  assert.match(err(tile("Checker", { pct: 41, tokens: -3, at: now })), /tokens:/);
+  assert.match(err(tile("Checker", { pct: 41, tokens: "410k", at: now })), /tokens:/);
+  assert.match(err(meta({ agents: { Checker: { pct: 41, tokens: 4.5, at: now } } })), /tokens:/);
   assert.deepEqual(checkWrites([tile("Checker", { pct: 41, at: now - 5 }), meta({ agents: { Checker: { pct: 41, at: now - 5 } } })], { config: cfg, who: collector, now, state: {} }).errors, []);
   assert.match(err(tile("Builder", { pct: 41, at: now })), /not in collector.contextRoles/);
-  assert.match(err(tile("Checker", { pct: 41, at: now, saved: true })), /only pct and at/);
+  assert.match(err(tile("Checker", { pct: 41, at: now, saved: true })), /only pct, tokens and at/);
   assert.match(err(tile("Checker", { pct: 141, at: now })), /pct/);
   assert.match(err(tile("Checker", { pct: 41, at: now + 3600e3 })), /at:/);
-  assert.match(err(meta({ agents: { Checker: { pct: 41, at: now, saved: false } } })), /only pct and at/, "never the keeper's saved flag");
+  assert.match(err(meta({ agents: { Checker: { pct: 41, at: now, saved: false } } })), /only pct, tokens and at/, "never the keeper's saved flag");
   assert.match(err(meta({ agents: { Builder: { pct: 41, at: now } } })), /not in collector.contextRoles/);
   assert.match(err(meta({ agents: { Checker: { pct: 41, at: now } }, at: now })), /only agents/);
   assert.match(err(meta({ agents: { Checker: { pct: 41, at: now } } }, "set")), /only sets derived\/all/);

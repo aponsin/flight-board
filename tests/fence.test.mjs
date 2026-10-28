@@ -102,8 +102,15 @@ test("memory readings (#C274): the session list, get_usage of a planned session,
   no(call("ArtifactData", meta({ doc_id: "stuck" })), "derived/all");
   no(call("ArtifactData", meta({ action: "set" })), "meta/context: update");
   no(call("ArtifactData", { action: "get", url: URL_, collection: "meta", doc_id: "context", out_dir: `${PAD}/derived-version` }), "context-version");
+  // #C350: a tile's file may carry the context in tokens, a whole number.
+  files[`${OUT}/ctx-Checker.json`] = { pct: 41, tokens: 410321, at: NOW - 5 };
+  files[`${OUT}/meta-context.json`] = { agents: { Checker: { pct: 41, tokens: 410321, at: NOW - 5 } } };
+  ok(call("ArtifactData", tile()));
+  ok(call("ArtifactData", meta()));
+  files[`${OUT}/ctx-Checker.json`] = { pct: 41, tokens: "410k", at: NOW - 5 };
+  no(call("ArtifactData", tile()), "tokens:");
   files[`${OUT}/ctx-Checker.json`] = { pct: 41, at: NOW - 5, saved: true };
-  no(call("ArtifactData", tile()), "only pct and at");
+  no(call("ArtifactData", tile()), "only pct, tokens and at");
   files[`${OUT}/meta-context.json`] = { agents: { Checker: { pct: 41, at: NOW - 5 } }, stuck: 1 };
   no(call("ArtifactData", meta()), "only agents");
   delete files[`${OUT}/meta-context.json`];

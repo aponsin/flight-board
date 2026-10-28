@@ -103,7 +103,7 @@ export function writeErrors(w, { config, who, now }) {
   // An edit in place (ArtifactData str_replace) leaves the gate blind to the field's new value: write the whole field.
   if (op === "str_replace") return [`a text edit in place can't be checked: write the whole field with update instead`];
   // The scheduled collector (its session titled "Collector", collector/TASK.md) sets derived/all and, for the roles in
-  // collector.contextRoles, their memory readings (ctx/<Role> and meta/context agents.<Role>, exactly {pct, at}:
+  // collector.contextRoles, their memory readings (ctx/<Role> and meta/context agents.<Role>, exactly {pct, at} or {pct, tokens, at}:
   // collector/context.mjs), and nothing else (Security): whatever its run reads, it can't change a card, an ask, a
   // message, a step, another tile or the keeper's flags.
   if (who.role === COLLECTOR_ROLE && !(collection === "derived" && id === "all" && op === "set")) {
