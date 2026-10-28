@@ -20,7 +20,7 @@ test("the run that cues a reset waits for it and sends the pickup itself", () =>
 test("the lead is never in the wave: cued last, after the wave is picked up, and picked up the same way", () => {
   assert.match(step(5), /except Manager/);
   assert.match(step(7), /^Manager last, and only after the wave/);
-  assert.match(step(7), /report \(step 8\) first, then exactly "CONTEXT RESET"/, "the cue is the last message it gets");
+  assert.match(step(7), /report \(step 8\) first, [^"]*"pickup sent"[^"]*, then exactly "CONTEXT RESET"/, "the cue is the last message it gets");
   assert.match(step(7), /"\/pickup Manager"/);
   assert.ok(prompt.indexOf("7. Manager last") > prompt.indexOf("6. Pick the wave back up"));
 });
@@ -32,34 +32,57 @@ test("Director is never measured, cued or messaged, so never reset in a wave wit
 
 test("a reset is told by the Messages category, never the total (Checker on a307d81: ~88k of overhead in a cleared session)", () => {
   assert.match(step(3), /"Messages" category \(none listed counts as 0\)/);
-  assert.match(step(4), /idle \(not working\), whose Messages are under 5,000 tokens/);
+  assert.match(step(4), /idle \(not working\) and whose Messages are under 5,000 tokens/);
   assert.doesNotMatch(prompt, /under 25,000 tokens/, "the total never falls that low");
 });
 
 // #C401: "/pickup Reviewer" went out three runs in a row to a session already picked up (idle, 91k, Messages under 5k):
-// low Messages alone isn't "reset". A pickup from an earlier run is owed only to an agent this keeper reset (a saved
-// entry on the board's meta/context, which the lead writes from the report), once: the report asks the lead to drop the
-// entry for every pickup sent, so the next run, with no new reset, finds none and sends none.
-test("a pickup from an earlier run goes only to an agent the keeper reset (its saved entry), once", () => {
+// low Messages alone isn't "reset". Manager's pick B (after Checker on c70dfb1: a saved entry left out every agent that
+// resets itself on its own cue): the lead records pickedAt for each pickup the report lists, and step 4 skips a session
+// picked up since its last reset (pickedAt set, no activity more than 30 minutes past it); no pickedAt, a pickup.
+test("a pickup from an earlier run skips a session picked up since its reset (pickedAt), and the lead records pickedAt", () => {
   assert.match(step(1), /select:[^"]*mcp__ccd_session_mgmt__send_message,ArtifactData"/, "the keeper reads the board");
+  assert.match(step(2), /note each one's lastActivityAt/);
   assert.match(step(4), /ArtifactData get, url \{\{BOARD\}\}, collection "meta", doc_id "context"; read it, never write it/);
-  assert.match(step(4), /and whose title has a saved entry there \(agents\.<Title>\.saved\)/);
-  assert.match(step(4), /Never send it to a session with no saved entry/, "low Messages alone isn't a reset");
-  assert.match(step(8), /for each pickup sent, delete its saved, savedTokens and savedPct/, "the entry goes once used, so a second run sends none");
-  assert.match(step(8), /for each reset sent that isn't picked up yet \(not reset\), set saved with savedTokens and savedPct/, "a reset picked up in this run leaves no entry behind");
+  assert.match(step(4), /agents\.<Title>\.pickedAt there is a time \(milliseconds\) and the session's lastActivityAt \(from step 2\) is no more than 30 minutes after it\. Send that one nothing/);
+  assert.match(step(4), /A missing pickedAt still gets the pickup \(an agent that reset itself on its own cue\)/);
+  assert.doesNotMatch(step(4), /Never send it to a session with no saved entry/, "a self-reset has no saved entry (Checker on c70dfb1)");
+  assert.match(step(8), /for each pickup sent, set pickedAt to now \(milliseconds\) and delete its saved, savedTokens and savedPct/);
+  assert.match(step(7), /with Manager listed under "pickup sent" \(it is picked up next\)/, "the lead's own pickup gets a pickedAt too");
   assert.match(doc, /`\{\{BOARD\}\}` \(the board's link/);
 });
 
-test("in a run with no new reset, the only pickups are for saved entries the lead hasn't dropped", () => {
-  // The keeper's steps 4 and 8 as a rule, two runs on: run 1 picks Reviewer up (it has a saved entry) and the lead drops
-  // the entry from the report; run 2 sees the same idle, low-Messages Reviewer and no entry, and sends nothing.
-  const pickups = (sessions, saved) => sessions.filter((s) => s.idle && s.messages < 5000 && Object.hasOwn(saved, s.title)).map((s) => `/pickup ${s.title}`);
-  const reviewer = { title: "Reviewer", idle: true, messages: 3100 };
-  const saved = { Reviewer: { saved: 1, savedTokens: 610000, savedPct: 61 } };
-  assert.deepEqual(pickups([reviewer], saved), ["/pickup Reviewer"]);
-  delete saved.Reviewer; // step 8: the lead drops the entry for each pickup sent
-  assert.deepEqual(pickups([reviewer], saved), [], "the second run sends none");
-  assert.match(step(4), /idle \(not working\), whose Messages are under 5,000 tokens, and whose title has a saved entry/, "the prompt's rule is this one");
+// The keeper's step 4 as a rule, over runs (times in minutes).
+const MIN = 60e3;
+const pickups = (sessions, agents) => sessions.filter((s) => s.idle && s.messages < 5000 && !(typeof agents[s.title]?.pickedAt === "number" && s.lastActivityAt <= agents[s.title].pickedAt + 30 * MIN)).map((s) => `/pickup ${s.title}`);
+
+test("the keeper's reset, picked up once: a second run sends none", () => {
+  const agents = {};
+  const reviewer = { title: "Reviewer", idle: true, messages: 3100, lastActivityAt: 0 };
+  assert.deepEqual(pickups([reviewer], agents), ["/pickup Reviewer"], "run 1: owed");
+  agents.Reviewer = { pickedAt: 1 * MIN }; // step 8: the lead records it
+  reviewer.lastActivityAt = 3 * MIN; // it read the pickup and went idle, Messages still under 5,000
+  assert.deepEqual(pickups([reviewer], agents), [], "run 2: none");
+  assert.deepEqual(pickups([reviewer], agents), [], "run 3: none");
+});
+
+test("the self-reset path: an agent that resets itself on its own cue is still picked up", () => {
+  const builder = { title: "Builder", idle: true, messages: 900, lastActivityAt: 0 };
+  assert.deepEqual(pickups([builder], {}), ["/pickup Builder"], "never picked up before: no pickedAt, a pickup");
+  // Picked up at 0, worked for hours up to the limit, then handed off and cleared itself at 5 h.
+  const agents = { Builder: { pickedAt: 0 } };
+  builder.lastActivityAt = 300 * MIN;
+  assert.deepEqual(pickups([builder], agents), ["/pickup Builder"], "a reset after the last pickup: picked up again");
+  agents.Builder.pickedAt = 301 * MIN;
+  builder.lastActivityAt = 303 * MIN;
+  assert.deepEqual(pickups([builder], agents), [], "and only once");
+  assert.deepEqual(pickups([{ ...builder, idle: false }, { ...builder, messages: 40000, lastActivityAt: 999 * MIN }], {}), [], "working, or not reset: none");
+});
+
+test("no ArtifactData allow rule: one can't be limited to a get (Security on c70dfb1)", () => {
+  assert.match(doc, /the task has no ArtifactData allow rule/);
+  assert.match(doc, /tell Security before anyone widens anything/);
+  assert.doesNotMatch(doc, /permissions allow ArtifactData get/);
 });
 
 // #C399 (the owner's 600k in #T1038): the limit is the config's resetAt, filled in where the lead saves the prompt.
