@@ -156,8 +156,9 @@ test("decision and action text is linkified too, not only answers", () => {
 test("numbered points written inline (\"1) … 2) …\") show one per line in an ask (2026-10-18)", () => {
   const b = loadBoard();
   const out = b.askText("Board tests: 1) a test file; 2) a publish check; 3) tests first. Go?");
-  assert.match(out, /Board tests:<br>1\) a test file;<br>2\) a publish check;<br>3\) tests first\. Go\?/);
-  assert.equal(b.askText("A) keep it; B) change it"), "A) keep it;<br>B) change it");
+  // The markers bold since #C369.
+  assert.match(out, /Board tests:<br><b class="optk">1\)<\/b> a test file;<br><b class="optk">2\)<\/b> a publish check;<br><b class="optk">3\)<\/b> tests first\. Go\?/);
+  assert.equal(b.askText("A) keep it; B) change it"), '<b class="optk">A)</b> keep it;<br><b class="optk">B)</b> change it');
   assert.equal(b.askText("Plain sentence (with parentheses)."), "Plain sentence (with parentheses).");
 });
 

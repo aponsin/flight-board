@@ -55,6 +55,7 @@ section{min-width:0}
 .gaps{color:var(--bad);font-weight:600;font-size:.85rem}
 .c-num{font:600 .75rem var(--mono);color:var(--muted);margin-right:6px}
 .w-text{min-width:0}
+.pgap{display:block;height:.5em}.optk{font-weight:700}
 .w-list{margin:6px 0;padding-left:1.4em}.w-list li{margin:3px 0}
 .w-sub{color:var(--muted);font-size:.85rem}
 .age{font:400 .82rem var(--mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -550,7 +551,7 @@ function itemShown(id,now){const it=itemOf(id);if(!it)return false;
 // under its text (With the team's "Manager answering", #C364).
 function askHtml(w,open,at=w.since,sub=""){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
-   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
+   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
    <span class="age">${num(at)?dur(Date.now()-at)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
@@ -673,13 +674,21 @@ const closedAnswers=new Set();
 // Web addresses in step text become links (opened in a new tab); email addresses are left as text.
 // Points written inline in an ask ("1) … 2) …", "A) … B) …") show one per line.
 // Line breaks in an ask show; lines starting "1." or "-" become a real numbered or bulleted list.
-function askLine(t){return linkify(t).replace(/\s+(?=(?:\d{1,2}|[A-H])\)\s)/g,"<br>")}
+// An option's marker (#C369, the owner in #T981: #T980's A/B read as one wall): "A)", "A:" or "Option A" (and "1)") at a
+// line's start or after a sentence starts its own line, the marker bold; "A)" and "1)" after any space, as before. Only
+// in the text between the links linkify made, so never inside an address; the bold is the page's, the text escaped.
+const OPT_MARK=/(^|[.!?;:]\s+|\s+(?=(?:Option\s+)?(?:[A-H]|\d{1,2})\)\s))((?:Option\s+)?[A-H][):]|Option\s+[A-H]|\d{1,2}\))(?=\s|$)/g;
+function askLine(t){return linkify(t).split(/(<a\b[^>]*>[\s\S]*?<\/a>)/).map((part,k)=>k%2?part:part.replace(OPT_MARK,(m,pre,mk)=>{
+    if(!pre&&k)return m;return (pre.trim()?pre.trimEnd()+"<br>":pre?"<br>":"")+`<b class="optk">${mk}</b>`})).join("")}
+// Asks, answers, thread messages and card summaries (#C369): a line break a break, a blank line a small gap.
 function askText(t){
-  const lines=String(t).split("\n").map(l=>l.trim()).filter(Boolean);
+  const raw=String(t??"").split("\n").map(l=>l.trim()),lines=raw.filter(Boolean);
   if(lines.length<2)return askLine(lines[0]||"");
-  let out="",list=null,prevText=false;
+  let out="",list=null,prevText=false,gap=false;
   const close=()=>{if(list){out+=`<${list.tag} class="w-list">${list.items.join("")}</${list.tag}>`;list=null}};
-  for(const line of lines){
+  for(const line of raw){
+    if(!line){gap=!!(out||list);continue}
+    if(gap){close();out+='<span class="pgap"></span>';prevText=false;gap=false}
     const m=line.match(/^(?:(\d{1,2})\.|[-•])\s+(.*)$/);
     if(m){const tag=m[1]?"ol":"ul";if(!list||list.tag!==tag){close();list={tag,items:[]}}list.items.push(`<li>${askLine(m[2])}</li>`);prevText=false;continue}
     close();out+=(prevText?"<br>":"")+askLine(line);prevText=true}
@@ -1011,7 +1020,7 @@ function fitBox(t){if(!t||t.tagName!=="TEXTAREA"||!t.style)return;
   if(top<t.scrollTop)t.scrollTop=top;else if(top+lh>t.scrollTop+t.clientHeight)t.scrollTop=top+lh-t.clientHeight}
 document.addEventListener("input",e=>fitBox(e.target));
 function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&blobId(f.id));
-  return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${linkify(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}</div>`}
+  return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${askText(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}</div>`}
 // A thread: its reply box at the top, then the messages, newest first (display only: threadOf stays oldest first). An
 // unanswered ask draws it with box false, so its own response box above is the only one. where: the place it is drawn
 // (the same thread can show in two places), for unique ids.
@@ -1396,7 +1405,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
   return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${cardTag(i)}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>
-   ${i.summary?`<div class="w-sub">${cardLinks(esc(i.summary))}</div>`:""}</div>
+   ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
    <div class="i-meta">${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${(()=>{const g=gaps(i);return g.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(g.join(" · "))}</span>`:""})()}</div>${thread}</div>`;
