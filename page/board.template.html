@@ -153,6 +153,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.clash{border-color:var(--bad);color:var(--bad)}.asof{font:.7rem var(--mono);color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
+.stuckline div+.deaf{margin-top:6px}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
 .t-msg{margin:6px 0}.t-msg .t-from{font-weight:600}.t-msg .t-at{font-size:.8rem;color:var(--muted)}
 .t-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 4px}.t-name{font-weight:700}.t-num{font:inherit;font-size:.8rem;padding:1px 6px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}.t-rename{font:inherit;font-size:.78rem;padding:0;border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer}.t-head input{font:inherit;flex:1;min-width:12em;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}a.t-ref{font-weight:600;color:var(--accent);text-decoration:underline;text-underline-offset:2px}.t-tag{display:inline-flex;align-items:center;gap:6px;margin:0 8px 2px 0;vertical-align:middle}.t-err{font-size:.8rem;color:var(--bad)}
@@ -975,13 +976,14 @@ function stuckLines(){const m=state.meta.find(d=>d.id==="stuck")||{},lead=(CONFI
 const REARM_ID="rearm-pings";
 function deafLine(now=Date.now()){const lead=(CONFIG.gate&&CONFIG.gate.managerRole)||"Manager",min=(CONFIG.nudges&&num(CONFIG.nudges.deafMin))||30;
   if(state.waiting.some(w=>w&&w.id===REARM_ID&&!w.done))return "";
-  const leadAt=new Map(),own=new Map(),words=[];
-  for(const m of state.messages){if(!m||typeof m.thread!=="string"||num(m.at)==null)continue;
-    if(m.from===lead&&m.at>(leadAt.get(m.thread)??-Infinity))leadAt.set(m.thread,m.at);
-    if(m.from===OWNER&&m.at>((own.get(m.thread)||{}).at??-Infinity))own.set(m.thread,m)}
-  const seen=id=>leadAt.get(id)??-Infinity,open=new Set();
-  for(const [id,m] of own)if(!m.resolved&&m.at>seen(id)){open.add(id);words.push(m.at)}
-  for(const w of state.waiting){const at=w&&w.response&&num(w.response.at);if(at==null||w.done||open.has(w.id)||at<=seen(w.id))continue;words.push(at)}
+  // As the rest of the page reads a thread (Checker on 26bca32): in threadOf's order, the owner's newest word after the
+  // lead's last (another role's word isn't the lead's), not closed, not an Ack on a settled ask, its item not done.
+  const leadAt=new Map(),open=new Set(),words=[];
+  for(const id of threadIds()){const t=threadOf(id),o=t.findLastIndex(m=>m.from===OWNER),l=t.findLastIndex(m=>m.from===lead);if(l>=0)leadAt.set(id,t[l].at);
+    if(o<0||o<l)continue;const m=t[o],it=itemOf(id);
+    if(m.resolved||it&&(it.coll==="initiatives"?it.doc.status==="done":it.coll==="ideas"?!!it.doc.done:settled(it.doc)&&ackOnly(m.text)&&!(Array.isArray(m.assets)&&m.assets.length)))continue;
+    open.add(id);words.push(m.at)}
+  for(const w of state.waiting){const at=w&&w.response&&num(w.response.at);if(at==null||settled(w)||open.has(w.id)||at<=(leadAt.get(w.id)??-Infinity))continue;words.push(at)}
   const oldest=Math.min(...words.filter(at=>now-at<864e5));if(!(now-oldest>=min*60000))return "";
   const cmd=`Turn the board's comment auto-replies back on: ${CONFIG.artifactUrl||"<the board's link>"}`;
   return `<div class="deaf">You wrote, and ${esc(lead)} has said nothing for ${Math.floor((now-oldest)/60000)} min: its board pings may be off. Only you can turn them back on: send ${esc(lead)} this.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}

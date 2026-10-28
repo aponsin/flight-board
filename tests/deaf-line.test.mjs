@@ -32,6 +32,20 @@ test("an answered ask counts too; the line goes once Manager has raised the re-a
   assert.equal(board({ waiting: [ask, { id: "rearm-pings", kind: "action" }] }).deafLine(T), "", "Manager's own ask holds the command now");
 });
 
+// Checker's FINDINGS on 26bca32: each of these waits on nobody, and raised the line.
+test("as the rest of the page: a settled ask, an answer ordered after the owner's word, a done item's thread", () => {
+  const ack = { id: "a1", kind: "answer", response: { status: "ack", at: T - 40 * MIN } };
+  assert.equal(board({ waiting: [ack] }).deafLine(T), "", "the owner's Ack settles an answer");
+  assert.equal(board({ waiting: [{ id: "a2", kind: "action", response: { status: "done", note: "thanks", at: T - 40 * MIN } }] }).deafLine(T), "", "a Done with a thanks");
+  assert.notEqual(board({ waiting: [{ id: "a3", kind: "decision", response: { status: "done", at: T - 40 * MIN } }] }).deafLine(T), "", "a decision's Done waits");
+  const early = [msg("t-1", "Owner", T - 40 * MIN, { id: "o1" }), msg("t-1", "Manager", T - 40 * MIN - 2000, { id: "l1", after: "o1" })];
+  assert.equal(board({ messages: early }).deafLine(T), "", "the lead's answer names the owner's word");
+  assert.equal(board({ messages: [msg("ship", "Owner", T - 40 * MIN)], initRaw: [{ id: "ship", status: "done" }] }).deafLine(T), "", "its card is done");
+  assert.equal(board({ messages: [msg("idea", "Owner", T - 40 * MIN)], ideas: [{ id: "idea", done: true }] }).deafLine(T), "", "its idea is done");
+  assert.equal(board({ waiting: [ack], messages: [msg("a1", "Owner", T - 30 * MIN, { text: "thanks!" })] }).deafLine(T), "", "an Ack word on a settled ask");
+  assert.notEqual(board({ waiting: [ack], messages: [msg("a1", "Owner", T - 30 * MIN, { text: "wait, why?" })] }).deafLine(T), "", "a real question after it");
+});
+
 test("the stuck line's place shows it, alone or under the stuck lines", () => {
   const b = board({ messages: [msg("t-1", "Owner", Date.now() - 45 * MIN)] });
   b.renderStuck();

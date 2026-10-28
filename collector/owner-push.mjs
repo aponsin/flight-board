@@ -19,19 +19,58 @@ export const REARM_ID = "rearm-pings";
 // MAX_LINES of them a run, newest first, then one "and N more" line: the lead's message stays under the fence's 4 KB.
 export const WINDOW_H = 24, MAX_LINES = 5;
 
-// The owner's unseen words: [{ kind: "thread" | "ask", id, at }], one per thread (an ask's thread is its id).
+// The page's own rules, mirrored (page/board.template.html: ACK_ONLY, ackOnly, settled, threadOf), so a word counts here
+// exactly when the page shows it waiting on the lead (Checker on 26bca32: an Ack, an answer stamped a little early and a
+// shipped card's thread each raised the deaf line).
+const ACK_ONLY = /^(?:ok(?:ay)?|k|done|thanks?(?: you)?|thx|ty|got it|noted|yes|yep|yup|sure|great|perfect|good|cool|nice|fine|all good|will do|👍|✅|🙏)$/i;
+export const ackOnly = (text) => ACK_ONLY.test(String(text || "").trim().replace(/[\s.!👍✅🙏]+$/u, "").replace(/^[\s👍✅🙏]+/u, "") || "ok");
+// Closed, or the owner's own reply closed it: an Ack on an answer, or a Done on anything but a decision, with no note
+// (or one that only acknowledges) and no files.
+export function settled(w) {
+  if (!w) return false;
+  if (w.done) return true;
+  const r = w.response;
+  if (!r || (Array.isArray(r.files) && r.files.length) || !ackOnly(r.note)) return false;
+  return (w.kind === "answer" && r.status === "ack") || (w.kind !== "decision" && r.status === "done");
+}
+// A thread's messages oldest first; one that names the message it answers (after: <id>) comes after it, whatever the
+// clocks said.
+export function ordered(list) {
+  const by = new Map(list.map((m) => [m.id, m])), key = new Map();
+  const k = (m, seen = new Set()) => {
+    if (key.has(m)) return key.get(m);
+    let v = m.at;
+    const p = m.after && by.get(m.after);
+    if (p && !seen.has(p)) { seen.add(m); v = Math.max(v, k(p, seen) + 1); }
+    key.set(m, v);
+    return v;
+  };
+  return [...list].sort((a, b) => k(a) - k(b) || a.at - b.at);
+}
+
+// The owner's unseen words: [{ kind: "thread" | "ask", id, at }], one per thread (an ask's thread is its id). A thread's
+// newest owner word with no word from the lead after it (another role's word isn't the lead's), unless the owner closed
+// it, it only acknowledges a settled ask, or its item is done (a card done, an idea done). An ask the owner answered and
+// that isn't settled, with no word from the lead since.
 export function unseenOwner(docs, config) {
   const owner = config.owner, lead = config.gate.managerRole, out = [];
-  const messages = (docs.messages ?? []).filter((m) => m && typeof m.thread === "string" && typeof m.at === "number");
-  const leadLast = new Map(), ownerLast = new Map();
-  for (const m of messages) {
-    if (m.from === lead && m.at > (leadLast.get(m.thread) ?? -Infinity)) leadLast.set(m.thread, m.at);
-    if (m.from === owner && m.at > (ownerLast.get(m.thread)?.at ?? -Infinity)) ownerLast.set(m.thread, m);
+  const byThread = new Map();
+  for (const m of docs.messages ?? []) if (m && typeof m.thread === "string" && typeof m.at === "number") byThread.set(m.thread, [...(byThread.get(m.thread) ?? []), m]);
+  const asks = new Map((docs.waiting ?? []).filter(Boolean).map((w) => [w.id, w]));
+  const done = (id) => (docs.initiatives ?? []).some((k) => k?.id === id && k.status === "done") || (docs.ideas ?? []).some((d) => d?.id === id && d.done);
+  const leadAt = new Map();
+  for (const [id, list] of byThread) {
+    const t = ordered(list);
+    const o = t.findLastIndex((m) => m.from === owner), l = t.findLastIndex((m) => m.from === lead);
+    if (l >= 0) leadAt.set(id, t[l].at);
+    if (o < 0 || o < l) continue;
+    const m = t[o], w = asks.get(id);
+    if (m.resolved || done(id) || (w && settled(w) && ackOnly(m.text) && !(Array.isArray(m.assets) && m.assets.length))) continue;
+    out.push({ kind: "thread", id, at: m.at });
   }
-  for (const [id, m] of ownerLast) if (!m.resolved && m.at > (leadLast.get(id) ?? -Infinity)) out.push({ kind: "thread", id, at: m.at });
-  for (const w of docs.waiting ?? []) {
-    const at = w?.response?.at;
-    if (!w || w.done || typeof at !== "number" || out.some((u) => u.id === w.id) || at <= (leadLast.get(w.id) ?? -Infinity)) continue;
+  for (const w of asks.values()) {
+    const at = w.response?.at;
+    if (settled(w) || typeof at !== "number" || out.some((u) => u.id === w.id) || at <= (leadAt.get(w.id) ?? -Infinity)) continue;
     out.push({ kind: "ask", id: w.id, at });
   }
   return out;

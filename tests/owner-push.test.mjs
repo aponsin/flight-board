@@ -33,6 +33,24 @@ test("an owner word is unseen until the lead writes after it in its thread; a cl
   assert.deepEqual(unseenOwner(docs({ waiting: [{ id: "ask-b" }] }), config), [], "an ask not answered yet");
 });
 
+// Checker's FINDINGS on 26bca32: each of these waits on nobody on the page, and raised the deaf line 30 minutes on.
+test("as the page: a settled ask, an answer ordered after the owner's word, a done item's thread, an Ack on a settled ask", () => {
+  const u = (d) => unseenOwner(docs(d), config);
+  const ack = { id: "a1", kind: "answer", response: { status: "ack", at: T - 40 * MIN } };
+  assert.deepEqual(u({ waiting: [ack] }), [], "the owner's Ack settles an answer");
+  assert.deepEqual(u({ waiting: [{ id: "a2", kind: "action", response: { status: "done", note: "thanks", at: T - 40 * MIN } }] }), [], "a Done with a thanks");
+  assert.deepEqual(u({ waiting: [{ id: "a3", kind: "decision", response: { status: "done", at: T - 40 * MIN } }] }).length, 1, "a decision's Done still waits on the lead");
+  assert.deepEqual(u({ waiting: [{ id: "a4", kind: "action", response: { status: "done", note: "it failed?", at: T - 40 * MIN } }] }).length, 1, "a note with a question waits");
+  assert.deepEqual(u({ waiting: [{ id: "a5", kind: "action", response: { status: "done", at: T - 40 * MIN, files: ["x.png"] } }] }).length, 1, "files wait");
+  const early = [msg("t-1", "Sam", T - 40 * MIN, { id: "o1" }), msg("t-1", "Manager", T - 40 * MIN - 2000, { id: "l1", after: "o1" })];
+  assert.deepEqual(u({ messages: early }), [], "the lead's answer names the owner's word: it comes after, whatever the clocks");
+  assert.deepEqual(u({ messages: [msg("ship", "Sam", T - 40 * MIN)], initiatives: [{ id: "ship", status: "done" }] }), [], "its card is done");
+  assert.deepEqual(u({ messages: [msg("idea", "Sam", T - 40 * MIN)], ideas: [{ id: "idea", done: true }] }), [], "its idea is done");
+  assert.deepEqual(u({ messages: [msg("ship", "Sam", T - 40 * MIN)], initiatives: [{ id: "ship", status: "active" }] }).length, 1, "a card in flight: still the lead's");
+  assert.deepEqual(u({ waiting: [ack], messages: [msg("a1", "Sam", T - 30 * MIN, { text: "thanks!" })] }), [], "an ack-only word on a settled ask");
+  assert.deepEqual(u({ waiting: [ack], messages: [msg("a1", "Sam", T - 30 * MIN, { text: "wait, why?" })] }).length, 1, "a real question after it settled");
+});
+
 test("each unseen word is pushed once, at the first run that sees it, by id only; a new word pushes again", () => {
   const first = run({ messages: [msg("t-1", "Sam", T - 2 * MIN)] });
   assert.deepEqual(first.lines, ["NUDGE Sam wrote in thread t-1 2 min ago, and Manager has written nothing there since: read it on the board."]);
