@@ -1,7 +1,8 @@
 // A search box at the top of "Initiatives in flight" (#C360, the owner in #T966): it filters the open cards as he types,
 // matching the #C number (exact), name, summary, next step, who, phase, the #T number and the card's thread messages, in
 // any case (#C356's matching). The heading's count reads "N of M" while searching, an empty result says "No matches.",
-// and "Done in the last 24 h" is filtered too. Its own box: the Threads box's search is unaffected.
+// and "Done in the last 24 h" was filtered too, until #C395 gave Done its own box. Its own box: the Threads box's search
+// is unaffected.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -48,15 +49,16 @@ test("what a card matches: #C exactly, name, summary, next step, who, phase, #T 
   assert.equal(b.initHit(ts, ""), true);
 });
 
-test("searching filters the open cards and the done ones; the count reads N of M; nothing found says so", () => {
+// #C395: Done has its own box now (tests/done-search.test.mjs), so this one leaves Done alone.
+test("searching filters the open cards (not Done: it has its own box); the count reads N of M; nothing found says so", () => {
   const b = board();
   b.setInitSearch("pottery");
   assert.match(b.els.board.innerHTML, /Yogamason: pottery photos/);
   assert.doesNotMatch(b.els.board.innerHTML, /search box|where visitors/);
   assert.equal(b.els.initcount.textContent, "1 of 3");
   assert.match(b.els.doneboard.innerHTML, /Pottery shelf/);
-  assert.doesNotMatch(b.els.doneboard.innerHTML, /Logo shape/);
-  assert.equal(b.els.donesum.textContent, "Done in the last 24 h (1 of 2)");
+  assert.match(b.els.doneboard.innerHTML, /Logo shape/);
+  assert.equal(b.els.donesum.textContent, "Done in the last 24 h (2)");
   b.setInitSearch("nothing like it");
   assert.equal(b.els.board.innerHTML, '<div class="empty">No matches.</div>');
   assert.equal(b.els.initcount.textContent, "0 of 3");

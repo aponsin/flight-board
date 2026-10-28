@@ -111,6 +111,7 @@ section{min-width:0}
 .chip{font:600 .75rem var(--mono);padding:1px 6px;border-radius:4px;background:var(--warn-soft);color:var(--warn)}
 .chip.zero{background:var(--track);color:var(--muted)}
 details.done-list summary{cursor:pointer;color:var(--muted);padding:10px 16px}
+.dhead{display:flex;padding:0 16px 10px}
 /* two columns below */
 .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px}
 @media (max-width:760px){.cols{grid-template-columns:1fr}.i-row{grid-template-columns:1fr}.eta{text-align:left}.track>.step,.track>.step.now{flex:1 1 22%}}
@@ -493,7 +494,7 @@ table.crew3-ph{margin-top:14px}
       <div class="crew" id="crew" aria-label="Who is on what"></div>
     </details>
     <div class="panel board" id="board" style="margin-top:10px"><div class="empty">No initiatives yet. Each thing you ask for appears here with its phase and ETA.</div></div>
-    <details class="done-list panel" id="donebox" hidden style="margin-top:10px"><summary id="donesum">Done</summary><div class="board" id="doneboard"></div></details>
+    <details class="done-list panel" id="donebox" hidden style="margin-top:10px"><summary id="donesum">Done</summary><div class="dhead"><div class="sbox clr"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="dsearch" placeholder="Search done cards: #C number, name, who, any word" aria-label="Search done cards" autocomplete="off"><button type="button" class="sclear" data-sclear="dsearch" aria-label="Clear the search" title="Clear the search" hidden>×</button></div></div><div class="board" id="doneboard"></div></details>
   </section>
 
   <div class="cols">
@@ -743,11 +744,12 @@ function cardBubble(i,now=Date.now()){const done=i.status==="done",cut=(s,n)=>s.
   const eta=done?(num(i.doneAt)?dayLabel(i.doneAt,now):""):cardEta(i)?dueText(cardEta(i)):"";
   const next=!done&&i.nextNote?"Next: "+cut(String(i.nextNote),90):"";
   return `<b>${Number.isInteger(i.num)?"#C"+i.num+" ":""}${esc(i.name||i.id)}</b><br>${esc([ph,!done&&i.who!==ph&&i.who,eta,next].filter(Boolean).join(" · "))}`}
-// A card's number opens it: on the board, or under Done (opened), clearing a cards' search that hides it. null when the
-// board no longer draws it (Done shows the last 24 hours).
+// A card's number opens it: on the board, or under Done (opened), clearing its list's search when that hides it. null
+// when the board no longer draws it (Done shows the last 24 hours).
 function cardOpen(id){const c=state.initiatives.find(i=>i.id===id);if(!c)return null;
-  if(iQuery&&!initHit(c))setInitSearch("");
-  const done=c.status==="done",el=[...$(done?"doneboard":"board").querySelectorAll("[data-card]")].find(x=>x.dataset.card===id);if(!el)return null;
+  const done=c.status==="done";
+  if(done?dQuery&&!initHit(c,dQuery):iQuery&&!initHit(c))done?setDoneSearch(""):setInitSearch("");
+  const el=[...$(done?"doneboard":"board").querySelectorAll("[data-card]")].find(x=>x.dataset.card===id);if(!el)return null;
   if(done)$("donebox").open=true;
   if(el.closest("#v2")&&$("v2").hidden)setView("v2");
   el.scrollIntoView({block:"start",behavior:"smooth"});return el}
@@ -1608,16 +1610,25 @@ function setInitSearch(q){clearTimeout(initTimer);iQuery=String(q??"");const box
 // As the Threads box (#C363): each key waits SEARCH_WAIT for the next, and each card's text is built once per data update.
 let initTimer=null;
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="isearch"){const v=e.target.value;clearTimeout(initTimer);initTimer=setTimeout(()=>setInitSearch(v),SEARCH_WAIT)}});
+// The Done list's own search (#C395, the owner in t-1793170014758), the cards' matching (initHit): while it has text it
+// searches every done card, of any age, newest first; the list shows the last 24 hours otherwise.
+let dQuery="",doneTimer=null;
+const DONE_SHOWN=20;
+function setDoneSearch(q){clearTimeout(doneTimer);dQuery=String(q??"");const box=$("dsearch");if(box&&box.value!==dQuery)box.value=dQuery;showClear("dsearch");renderBoard()}
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="dsearch"){const v=e.target.value;clearTimeout(doneTimer);doneTimer=setTimeout(()=>setDoneSearch(v),SEARCH_WAIT)}});
 function renderBoard(){
   renderCrew();
   const on=!!iQuery.trim(),all=state.initiatives.filter(i=>i.status!=="done").sort(openOrder),open=all.filter(i=>initHit(i));
-  // Done and the shipped feed show the last 24 hours only; older items stay saved, just out of view.
-  const doneAll=state.initiatives.filter(i=>i.status==="done"&&(num(i.doneAt)??0)>Date.now()-DAY).sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0)),done=doneAll.filter(i=>initHit(i));
+  // Done and the shipped feed show the last 24 hours only; older items stay saved, just out of view, and Done's search
+  // finds them.
+  const dOn=isOn(dQuery),doneAny=state.initiatives.filter(i=>i.status==="done").sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0));
+  const doneDay=doneAny.filter(i=>(num(i.doneAt)??0)>Date.now()-DAY),done=dOn?doneAny.filter(i=>initHit(i,dQuery)):doneDay;
   keep($("board"),()=>{$("board").innerHTML=open.length?open.map(initRow).join(""):on?NO_MATCH:'<div class="empty">No initiatives in flight.</div>'});
   // The heading's count (#C295): the cards the list above draws, none when there are none; "N of M" while searching.
   $("initcount").textContent=on?`${open.length} of ${all.length}`:all.length?String(all.length):""; $("initcount").hidden=!on&&!all.length;
-  $("donebox").hidden=!doneAll.length; $("donesum").textContent=`Done in the last 24 h (${on?`${done.length} of ${doneAll.length}`:doneAll.length})`;
-  keep($("doneboard"),()=>{$("doneboard").innerHTML=done.length?done.slice(0,20).map(initRow).join(""):on?NO_MATCH:""});
+  $("donebox").hidden=!doneAny.length; $("donesum").textContent=dOn?`Done: ${done.length} found, any age`:`Done in the last 24 h (${doneDay.length})`;
+  const more=done.length>DONE_SHOWN?`<div class="empty">The newest ${DONE_SHOWN} of ${done.length} shown: add a word to narrow it.</div>`:"";
+  keep($("doneboard"),()=>{$("doneboard").innerHTML=done.length?done.slice(0,DONE_SHOWN).map(initRow).join("")+more:dOn?NO_MATCH:'<div class="empty">Nothing done in the last 24 h: search for older cards.</div>'});
 }
 // Shipped and reported (#C362): every event, of any age, newest first (it scrolls inside), and its own search box, at
 // #C363's pace and with its per-update text: the version and the event's words, any case; a "#T953" in an event is
@@ -1628,7 +1639,7 @@ function setFeedSearch(q){clearTimeout(feedTimer);fQuery=String(q??"");const box
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="fsearch"){const v=e.target.value;clearTimeout(feedTimer);feedTimer=setTimeout(()=>setFeedSearch(v),SEARCH_WAIT)}});
 // The × in the cards' box and the feed's (Designer on 7ce1632): shown on the key while there's text, not after the
 // wait; one click empties the box, redraws at once and keeps the focus there.
-const SCLEAR={isearch:q=>setInitSearch(q),fsearch:q=>setFeedSearch(q)};
+const SCLEAR={isearch:q=>setInitSearch(q),fsearch:q=>setFeedSearch(q),dsearch:q=>setDoneSearch(q)};
 function showClear(id){const x=document.querySelector(`[data-sclear="${id}"]`),box=$(id);if(x)x.hidden=!(box&&box.value)}
 document.addEventListener("input",e=>{if(e.target&&Object.hasOwn(SCLEAR,e.target.id))showClear(e.target.id)});
 document.addEventListener("click",e=>{const x=e.target.closest&&e.target.closest("[data-sclear]");if(!x)return;const id=x.dataset.sclear;if(!Object.hasOwn(SCLEAR,id))return;SCLEAR[id]("");const box=$(id);if(box&&box.focus)box.focus()});
