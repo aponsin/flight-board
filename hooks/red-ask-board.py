@@ -4,7 +4,7 @@
 # Manager only (the session titled Manager; the owner, 2026-10-18): when the owner's message this turn asks a question
 # (a "?" in what he typed, a mid-turn message, or a board comment), the reply must also write a waiting/ans-<topic> item,
 # or (board v2 threads, 2026-10-24) answer in a thread: a write to the board's "messages" collection counts as the answer.
-# Any titled session (an agent; #C350): when its context is over 400k tokens (#C384; 200k before), a reset cue (hand off once the work in
+# Any titled session (an agent; #C350): when its context is over the config's resetAt (#C399: 600k; 400k before), a reset cue (hand off once the work in
 # flight is safe), unless this turn already reset it. The context keeper's 60% cue becomes the fallback. While the owner
 # wrote under 10 minutes ago or an ask of theirs is open, the cue waits one turn (#C392): "resetting after this" first.
 import glob, json, os, re, sys, time
@@ -59,7 +59,20 @@ def texts(content):
         elif c.get("type") == "tool_result":
             out.extend(texts(c.get("content")))
     return out
+# The reset limit is the board config's resetAt (#C399, the owner's 600k in #T1038), so a new limit is a config change,
+# never a new hook: the config is the one the board's Stop gate is registered with in ~/.claude/settings.json ("…/gate/
+# stop.mjs' --config '<path>'"). No config, or no good value: 400k, the limit before.
 RESET_AT = 400000
+try:
+    with open(os.path.join(os.path.expanduser("~"), ".claude", "settings.json"), encoding="utf-8") as _f:
+        _m = re.search(r"/gate/stop\.mjs' --config '([^'\n]{1,300})'", _f.read())
+    if _m:
+        with open(os.path.expanduser(_m.group(1)), encoding="utf-8") as _f:
+            _r = json.load(_f).get("resetAt")
+        if isinstance(_r, int) and not isinstance(_r, bool) and 100000 <= _r <= 2000000:
+            RESET_AT = _r
+except Exception:
+    pass
 # A turn that is itself a reset: the owner's /handoff, /clear or /compact, or the keeper's cue alone on its line.
 RESET_CMD = re.compile(r"<command-name>/(?:handoff|clear|compact)</command-name>")
 RESET_CUE = re.compile(r"(?:^|[:>])\s*CONTEXT RESET\s*(?:$|<)", re.M)
@@ -137,37 +150,48 @@ def owner_word(e):
         if MID in t or (t and not t.startswith(("<", "Stop hook feedback", "Another Claude session sent", "Base directory for this skill"))):
             return True
     return False
-now = owner_at = None
-deferred = False  # a deferral cue since the last reset: this cue no longer waits
-for line in lines:
-    try:
-        e = json.loads(line)
-    except Exception:
-        continue
-    if not isinstance(e, dict):
-        continue
-    at = stamp(e)
-    if at is not None:
-        now = at if now is None else max(now, at)
-    if e.get("type") == "system" and e.get("subtype") == "compact_boundary":
-        deferred = False
-    if e.get("type") == "user":
-        ts = texts((e.get("message") or {}).get("content"))
-        if any(RESET_CMD.search(t) or RESET_CUE.search(t) for t in ts):
+# Returns (now, the owner's last word's time, deferred): deferred, a deferral cue since the last reset (this cue no
+# longer waits).
+def scan():
+    now = owner_at = None
+    deferred = False
+    for line in lines:
+        try:
+            e = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(e, dict):
+            continue
+        at = stamp(e)
+        if at is not None:
+            now = at if now is None else max(now, at)
+        if e.get("type") == "system" and e.get("subtype") == "compact_boundary":
             deferred = False
-        if any(t.lstrip().startswith("Stop hook feedback") and "Context reset cue: deferred" in t for t in ts):
-            deferred = True
-    if at is not None and owner_word(e):
-        owner_at = at
+        if e.get("type") == "user":
+            ts = texts((e.get("message") or {}).get("content"))
+            if any(RESET_CMD.search(t) or RESET_CUE.search(t) for t in ts):
+                deferred = False
+            if any(t.lstrip().startswith("Stop hook feedback") and "Context reset cue: deferred" in t for t in ts):
+                deferred = True
+        if at is not None and owner_word(e):
+            owner_at = at
+    return now, owner_at, deferred
+# Security's LOW on 7692ec0: an exception here must never drop the hook's other verdicts; the plain cue stands.
+try:
+    now, owner_at, deferred = scan()
+except Exception:
+    now = owner_at = None
+    deferred = True
 fresh = now is not None and owner_at is not None and now - owner_at < OWNER_FRESH_MS
 pending = red or (question and not answered)
+LIMIT = f"{RESET_AT // 1000}k"
 if TITLE and not cleared and tokens is not None and tokens > RESET_AT:
-    # Tokens cut down: 400,999 reads 400k, over the line all the same.
+    # Tokens cut down: 600,999 reads 600k, over the line all the same.
     if (fresh or pending) and not deferred:
         why = f"the owner wrote {int((now - owner_at) // 60000)} min ago" if fresh else "an ask of the owner's is open"
-        reasons.append(f"Context reset cue: deferred one turn. This session's context is at {tokens // 1000}k tokens, over 400k, but {why}, so don't reset now: a reset now loses what the owner just set up (the board's auto-replies too). Write \"{DEFER_MARK}\" on the board now (a message in the thread you're answering, from you), finish this turn, and reset with /handoff at the end of the next one.")
+        reasons.append(f"Context reset cue: deferred one turn. This session's context is at {tokens // 1000}k tokens, over {LIMIT}, but {why}, so don't reset now: a reset now loses what the owner just set up (the board's auto-replies too). Write \"{DEFER_MARK}\" on the board now (a message in the thread you're answering, from you), finish this turn, and reset with /handoff at the end of the next one.")
     else:
-        reasons.append(f"Context reset cue: this session's context is at {tokens // 1000}k tokens, over 400k. Once the work in flight is committed and pushed (or at the end of this turn if it is), write your handoff note and reset with /handoff, so the next session starts small.")
+        reasons.append(f"Context reset cue: this session's context is at {tokens // 1000}k tokens, over {LIMIT}. Once the work in flight is committed and pushed (or at the end of this turn if it is), write your handoff note and reset with /handoff, so the next session starts small.")
 # The live memory tile (#C392, the owner's ask; Manager's pick A): the Collector's tile is as old as its last run (it read
 # 34% at 06:12Z while Manager was at 43% at 06:30Z). This hook knows the context every turn, so it asks the agent to
 # write ctx/<Role> itself, but only when the tile is CTX_STALE_MIN old or CTX_DRIFT points off: far below #C334's
@@ -185,8 +209,10 @@ def read_json(p):
         return None
 def num(v):
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None
-if TITLE and ROLE_FILE.match(TITLE) and tokens:
-    fb = os.path.join(os.path.expanduser("~"), ".flight-board")
+def tile_ask():
+    if not (TITLE and ROLE_FILE.match(TITLE) and tokens):
+        return
+    fb =os.path.join(os.path.expanduser("~"), ".flight-board")
     tile = None
     for p in glob.glob(os.path.join(glob.escape(fb), "*", "mirror", "ctx", TITLE + ".json")):
         r = read_json(p)
@@ -206,6 +232,11 @@ if TITLE and ROLE_FILE.match(TITLE) and tokens:
                     json.dump({"pct": pct, "at": ms}, f)
             except Exception:
                 pass
+# Security's LOW on 7692ec0: the tile is a nicety; an exception in it never drops the hook's other verdicts.
+try:
+    tile_ask()
+except Exception:
+    pass
 # Two rules left this hook (#C334, the context-tax brief's card A): the memory tile (the Collector writes it from the
 # app's numbers, collector/context.mjs) and the read of the waiting items (the Stop gate, gate/stop.mjs, sees the open
 # asks the owner answered on the board itself). Each made Manager spend a tool call, and its result, every turn. The

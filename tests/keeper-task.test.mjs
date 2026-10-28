@@ -36,9 +36,12 @@ test("a reset is told by the Messages category, never the total (Checker on a307
   assert.doesNotMatch(prompt, /under 25,000 tokens/, "the total never falls that low");
 });
 
-test("the reset limit is the live task's: 400k tokens, or 80% of a 200k window; the lead's the same", () => {
-  assert.match(step(5), /400,000 tokens or more \(or 80% of a 200k window\)/);
-  assert.match(step(7), /at 400,000 tokens or more/);
+// #C399 (the owner's 600k in #T1038): the limit is the config's resetAt, filled in where the lead saves the prompt.
+test("the reset limit is the config's resetAt ({{RESET_AT}}), or 80% of a 200k window; the lead's the same; no number left", () => {
+  assert.match(step(5), /\{\{RESET_AT\}\} tokens or more \(or 80% of a 200k window\)/);
+  assert.match(step(7), /at \{\{RESET_AT\}\} tokens or more/);
+  assert.doesNotMatch(prompt, /\d00,000 tokens/, "no limit written into the prompt itself");
+  assert.match(doc, /`\{\{RESET_AT\}\}` \(board\.config\.json's `resetAt`/);
 });
 
 test("the task may run only the exact command 'sleep 120' (Security on a307d81)", () => {

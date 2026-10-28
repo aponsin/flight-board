@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { checkConfig, fullConfig } from "../scripts/config.mjs";
 
 const HOOK = fileURLToPath(new URL("../hooks/red-ask-board.py", import.meta.url));
 // The hook's verdict on a turn: "" when it lets the turn end, else its reason.
@@ -109,6 +110,36 @@ test("the answer rule: the owner's question needs a board answer, in a thread or
   assert.match(hook(turn([{ action: "list", collection: "messages" }])), /asked a question this turn/, "a read of messages isn't an answer");
   const builder = hook(turn([], { title: "Builder", text: "/pickup Manager quoted in a test? <command-name>/pickup</command-name><command-args>Manager</command-args>" }));
   assert.doesNotMatch(builder, /asked a question|memory tile/, "Builder isn't Manager");
+});
+
+// #C399 (the owner's 600k in #T1038): the limit is the board config's resetAt, the config the board's Stop gate is
+// registered with in ~/.claude/settings.json; none, or a bad value, is 400k as before.
+const configHome = (resetAt) => {
+  const home = mkdtempSync(join(tmpdir(), "fb-cfg-"));
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  const cfg = join(home, "board.config.json");
+  writeFileSync(cfg, JSON.stringify({ owner: "Owner", ...(resetAt === undefined ? {} : { resetAt }) }));
+  const stop = `'/n/node' '${home}/.flight-board/install/${"a".repeat(40)}/gate/stop.mjs' --config '${cfg}'`;
+  writeFileSync(join(home, ".claude", "settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "python3 ~/.claude/hooks/red-ask-board.py" }, { type: "command", command: stop }] }] } }));
+  return home;
+};
+test("resetAt: a config value, checked", () => {
+  assert.deepEqual(checkConfig({ resetAt: 600000 }), []);
+  for (const bad of [50000, 600000.5, "600000", 3000000]) assert.deepEqual(checkConfig({ resetAt: bad }), ["resetAt: whole tokens, 100,000 to 2,000,000"], String(bad));
+  assert.equal(fullConfig({}).resetAt, 400000);
+});
+test("the reset limit is the board config's resetAt: 600k cues over 600k, not at 450k; no config or a bad value, 400k", () => {
+  const t = (read) => big(turn([], { title: "Boardsmith", text: "go on" }), { input: 1000, read });
+  const six = configHome(600000);
+  try {
+    assert.equal(hook(t(449000), six), "", "450k: under the owner's 600k");
+    assert.match(hook(t(609000), six), /^Context reset cue: this session's context is at 610k tokens, over 600k\. /);
+    assert.equal(hook(t(599000), six), "", "600k is not over");
+  } finally { rmSync(six, { recursive: true, force: true }); }
+  for (const bad of [undefined, "600000", 50000, 600000.5, true]) {
+    const h = configHome(bad);
+    try { assert.match(hook(t(449000), h), /over 400k/, `resetAt ${JSON.stringify(bad)}: 400k`); } finally { rmSync(h, { recursive: true, force: true }); }
+  }
 });
 
 // #C392 (b), Manager's pick A: the live memory tile. The hook asks the agent to write ctx/<Role> when the board's tile is

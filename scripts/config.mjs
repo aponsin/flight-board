@@ -4,6 +4,10 @@ export const DEFAULTS = {
   title: "Flight Board",
   owner: "Owner",
   artifactUrl: "",
+  // An agent's context, in tokens, past which it is cued to reset (#C399, the owner's 600k in #T1038): the red-ask hook
+  // reads it from this file, and the context keeper's prompt is filled with it ({{RESET_AT}}), so a new limit is a
+  // config change, never a re-sign.
+  resetAt: 400000,
   phases: [["plan", "Plan"], ["build", "Build"], ["test", "Test"], ["language", "Language"], ["checker", "Checker"], ["security", "Security"], ["ship", "Ship"], ["live", "Live"]],
   roster: ["Manager", "Builder", "Checker", "Security", "Release"],
   order: ["Manager", "Builder", "Checker", "Security", "Release"],
@@ -63,6 +67,7 @@ export function checkConfig(c) {
   for (const k of Object.keys(c)) if (!KEYS.includes(k)) out.push(`unknown field "${k}" (known: ${KEYS.join(", ")})`);
   for (const k of ["title", "owner"]) if (c[k] !== undefined && !(typeof c[k] === "string" && NAME.test(c[k]))) out.push(`${k}: 1 to 60 characters, no < > { } or line breaks`);
   if (c.artifactUrl !== undefined && c.artifactUrl !== "" && !/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+$/.test(String(c.artifactUrl))) out.push("artifactUrl: a claude.ai artifact link, or empty");
+  if (c.resetAt !== undefined && !(Number.isInteger(c.resetAt) && c.resetAt >= 100000 && c.resetAt <= 2000000)) out.push("resetAt: whole tokens, 100,000 to 2,000,000");
   if (c.phases !== undefined) {
     if (!Array.isArray(c.phases) || c.phases.length < 2) out.push("phases: at least two [key, label] pairs");
     else {
