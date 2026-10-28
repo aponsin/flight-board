@@ -1,0 +1,1 @@
+PASS Quick: #C370 queue-aware ETAs, no 'never started' while waiting a turn, started cards first. Suite 501/501 at 3f61411; FINDINGS on 88e525a (queueEta cost) fixed: 20 cards and 4000 steps went from 1267 ms to 1.4 ms; the caches key on arrays every live update replaces; mutation check: pass (no build-start index turns the once-per-update test red).
