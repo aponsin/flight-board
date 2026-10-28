@@ -78,4 +78,6 @@ test("Crew's memory line reads the same: tokens with their colour, or the percen
   const html = b.crewHtml(now);
   assert.match(html, /data-agent="Manager">[\s\S]*?<div class="crew3-mem r"><span class="pc">Memory 439k<\/span><span class="ctx-bar"><i style="width:100%"><\/i>/);
   assert.match(html, /data-agent="Sales">[\s\S]*?<div class="crew3-mem a"><span class="pc">Memory 52%<\/span><span class="ctx-bar"><i style="width:52%"><\/i>/);
+  const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(page, /\.crew3-mem\.g \.pc\{color:var\(--ok\)\}/, "Designer on bcadb2a: green reads green, as amber and red do");
 });
