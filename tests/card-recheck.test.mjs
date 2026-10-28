@@ -22,13 +22,16 @@ test("an open card's #C label is its Check button, with a small ↻; a finished 
   const b = loadNames(NAMES);
   const html = b.initRow(card(b));
   // #C376, the owner (t-1793166475210): the label itself is the button, so no ↻ Check pill wraps onto its own line.
-  assert.match(html, /<div class="i-name"><button type="button" class="c-num i-check" data-check="x" aria-label="Have the Collector check #C351 at its next run" title="Have the Collector check this card">#C351<span class="i-ic" aria-hidden="true">↻<\/span><\/button> <strong>X<\/strong>/);
+  assert.match(html, /<div class="i-name"><button type="button" class="c-num i-check" data-check="x" aria-label="Check #C351 at the next Collector run" title="Check #C351 at the next Collector run">#C351<span class="i-ic" aria-hidden="true">↻<\/span><\/button> <strong>X<\/strong>/);
   assert.equal(html.match(/data-check=/g).length, 1, "one button: no separate pill");
   assert.doesNotMatch(html, />↻ Check</);
   const done = b.initRow(card(b, { status: "done", doneAt: Date.now() - MIN, phase: "live" }));
   assert.doesNotMatch(done, /data-check/);
   assert.match(done, /<span class="t-numtxt c-num" title="Card number">#C351<\/span>/);
-  assert.match(page, /\.c-num\.i-check\{[^}]*color:var\(--accent\)/, "the label reads as clickable");
+  // Designer on f8a9f84: the same outline pill as the old ↻ Check, so it reads as a button; 44 px tall on touch, without
+  // moving the title row.
+  assert.match(page, /\.c-num\.i-check\{[^}]*border:1px solid var\(--line\);border-radius:999px[^}]*color:var\(--accent\)/, "a pill, in the accent");
+  assert.match(page, /@media \(pointer:coarse\)\{\.c-num\.i-check\{min-height:44px;padding:0 10px;margin:-14px 6px -14px 0\}\}/, "44 px on touch");
 });
 
 test("a card with no number yet keeps the ↻ Check pill", () => {
