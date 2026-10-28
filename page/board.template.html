@@ -149,12 +149,34 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .newthread{display:flex;flex-direction:column;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)}
 .newthread label{font-size:.82rem;color:var(--muted)}
 .t-sec{margin:0;padding:10px 16px 6px;border-top:1px solid var(--line);font:600 .8rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-.newthread textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
-/* Folded (#C351): one line, the input then Attach, until it has focus, text or a file. */
-.newthread:not(:focus-within):not(.has){flex-direction:row;align-items:center;gap:8px}
-.newthread:not(:focus-within):not(.has) :is(label,.keys,.btns,.fchip,.hint){display:none}
-.newthread:not(:focus-within):not(.has) textarea{flex:1;min-width:0;resize:none;height:2.3em}
-.newthread:not(:focus-within):not(.has) #ntfiles .files{margin:0;padding:0;border:0}
+/* The new-thread form is one box, always (#C359, the owner's B in #T968): empty, one line, the text then Attach and Send;
+   with text or files the same box grows: chips at its top, the text (up to ~6 lines, #C357), then a bar with the Enter
+   hint on the left and Attach and Send on the right. */
+.cbox{display:grid;grid-template-columns:minmax(0,1fr);align-items:center;gap:6px 8px;padding:6px 6px 6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.cbox:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.newthread textarea{font:inherit;color:var(--ink);background:transparent;border:0;outline:0;padding:4px 0;width:100%;resize:none;min-width:0}
+.cbar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cbar .keys{margin:0}
+.cbtns{display:flex;align-items:center;gap:8px;margin-left:auto}
+.cbtns .attach{display:inline-flex;align-items:center;gap:6px;min-height:34px}
+.cbtns .clip{display:none}
+.newthread:not(.has) .cbox{grid-template-columns:minmax(0,1fr) auto}
+.newthread:not(.has) :is(#ntfiles,.cbar .keys){display:none}
+.newthread:not(.has) textarea{height:2.1em}
+.newthread:not(.has) .cbtns .ok{opacity:.55}
+.newthread .msg:empty{display:none}
+.cchips{display:flex;flex-wrap:wrap;gap:8px;padding-top:4px}
+.cimg{position:relative;display:inline-flex}
+.cimg .fthumb{border:1px solid var(--line);border-radius:8px;overflow:hidden;padding:0}
+.cimg .cx{position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;border:0;padding:0;background:var(--ink);color:var(--panel);font:600 .72rem/18px var(--body);text-align:center;cursor:pointer}
+.cdoc{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:4px 4px 4px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+.ctype{display:inline-flex;color:var(--muted)}
+.ctype.pdf{color:var(--bad)}
+.cmeta{display:flex;flex-direction:column;line-height:1.2;min-width:0}
+.cdoc .cname{max-width:240px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cdoc small{color:var(--muted);font-size:.78rem}
+.cdoc .fx{border:0;background:none;color:var(--muted);font-size:1rem;line-height:1;cursor:pointer;min-width:28px;min-height:28px}
+@media (max-width:600px){.cbar .keys,.cbtns .atxt{display:none}.cbtns .clip{display:inline-block}}
 /* The tabs (#C351): one strip under the form; on a phone it scrolls sideways. */
 .ttabs{display:flex;gap:4px;padding:0 12px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none;scroll-padding-inline:3rem}
 /* More tabs off to the right: the strip fades there (Designer, as the sites' Our work filters, #C307). */
@@ -409,7 +431,7 @@ table.crew3-ph{margin-top:14px}
     <h2 id="h-threads">Threads</h2>
     <div class="panel">
       <div id="ownerpart">
-      <form class="newthread" id="newthread" data-reply="new"><label for="nttext">Start a thread</label><textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea"></textarea><div class="keys" data-keys></div><div id="ntfiles"></div><div class="btns"><button type="submit" class="ok">Send to Manager</button></div><div class="msg" id="ntmsg" role="status"></div></form>
+      <form class="newthread" id="newthread" data-reply="new"><label class="sr" for="nttext">Start a thread</label><div class="cbox"><div id="ntfiles"></div><textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea"></textarea><div class="cbar"><div class="keys" data-keys></div><span class="cbtns btns"><span id="ntattach"></span><button type="submit" class="ok">Send</button></span></div></div><div class="msg" id="ntmsg" role="status"></div></form>
       <div class="ttabs" id="ttabs" role="tablist" aria-label="Threads and lists"></div>
       <div class="rsearch" id="tsearch"><div class="sbox"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search threads, to-dos and ideas" autocomplete="off"></div><span class="tstat" id="tstat" role="status"></span></div>
       <div id="tp-you" role="tabpanel" aria-labelledby="tab-you"><div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div></div>
@@ -572,6 +594,19 @@ function dropPreview(f){const u=previews.get(f);if(u){try{URL.revokeObjectURL(u)
 function fmtSize(b){return b<1048576?Math.max(1,Math.round(b/1024))+" KB":(b/1048576).toFixed(1).replace(/\.0$/,"")+" MB"}
 function filesHtml(id){if(!assetsRef)return "";const list=pendingFiles.get(id)||[];
   return `<div class="files"><button type="button" class="attach" data-attach="${esc(id)}">Attach</button><input type="file" id="file-${esc(id)}" data-files="${esc(id)}" multiple hidden accept="${ACCEPT}">${list.map((f,n)=>{const pv=previewUrl(f);return `<span class="fchip">${pv?`<button type="button" class="thumb fthumb" data-full="${esc(pv)}" data-cap="${esc(f.name)}"><img src="${esc(pv)}" alt="Preview of ${esc(f.name)}"></button>`:""}${esc(f.name)} <small>${fmtSize(f.size)}</small><button type="button" class="fx" data-unattach="${esc(id)}" data-n="${n}" aria-label="Remove ${esc(f.name)}">×</button></span>`}).join("")}${list.length?"":'<span class="hint">or paste or drop files here (images, PDFs, text; 15 MB each)</span>'}</div>`}
+// The new-thread box's own chips and Attach (#C359): an image a thumbnail with a round × on it; any other file its type
+// (red for PDF), its name and "PDF · 48 KB" under it. The viewer opens from .files, as the reply boxes' chips.
+const DOC_ICON=`<svg viewBox="0 0 16 16" width="22" height="22"><path d="M4 1.5h5.5L13 5v9.5H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9.5 1.5V5H13M6 8.5h4.5M6 11h4.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
+function fileKind(f){const m=String(f&&f.name||"").match(/\.([a-z0-9]{1,5})$/i);
+  return m?m[1].toUpperCase():({"application/pdf":"PDF","text/plain":"TXT","text/markdown":"MD","text/csv":"CSV","application/json":"JSON"})[String(f&&f.type||"")]||"FILE"}
+function ntChip(f,n,pv){const x=c=>`<button type="button" class="${c}" data-unattach="new" data-n="${n}" aria-label="Remove ${esc(f.name)}">×</button>`;
+  if(pv)return `<span class="cimg"><button type="button" class="thumb fthumb" data-full="${esc(pv)}" data-cap="${esc(f.name)}"><img src="${esc(pv)}" alt="Preview of ${esc(f.name)}"></button>${x("cx")}</span>`;
+  const k=fileKind(f);
+  return `<span class="cdoc"><span class="ctype${k==="PDF"?" pdf":""}" aria-hidden="true">${DOC_ICON}</span><span class="cmeta"><span class="cname" title="${esc(f.name)}">${esc(f.name)}</span><small>${esc(k)} · ${fmtSize(f.size)}</small></span>${x("fx")}</span>`}
+function ntFilesHtml(list){return list.length?`<div class="files cchips">${list.map((f,n)=>ntChip(f,n,previewUrl(f))).join("")}</div>`:""}
+function ntAttachHtml(can){return can?`<button type="button" class="attach" data-attach="new" aria-label="Attach files"><svg class="clip" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M10.5 4.5 5.6 9.4a1.5 1.5 0 0 0 2.1 2.1l5-5a3 3 0 0 0-4.2-4.2l-5 5a4.5 4.5 0 0 0 6.4 6.4L13.5 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span class="atxt">Attach</span></button><input type="file" id="file-new" data-files="new" multiple hidden accept="${ACCEPT}">`:""}
+// A phone's placeholder is shorter (the owner's B on a phone).
+function ntPlaceholder(narrow){return narrow?"Ask Manager anything":"Ask Manager something, or share an idea"}
 const blobId=x=>typeof x==="string"&&/^[A-Za-z0-9_-]{8,64}$/.test(x);
 // A sent reply's or message's files, at the board's own asset path (/_blob/<id>): an image is a thumbnail that opens in
 // the lightbox, with that reply's other images. Any other file saves through the viewer's own prompt (the downloads
@@ -1005,7 +1040,9 @@ function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]
   if(el.scrollTop!==inner)el.scrollTop=inner;if(window.scrollY!==y)window.scrollTo(0,y);
   Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t){t.value=v;fitBox(t)}});
   if(focus){const t=document.getElementById(focus);if(t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}}
-function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())});const nf=$("ntfiles");if(nf)nf.innerHTML=filesHtml("new");ntHas()}
+function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())});const nf=$("ntfiles");if(nf)nf.innerHTML=ntFilesHtml(pendingFiles.get("new")||[]);const na=$("ntattach");if(na)na.innerHTML=ntAttachHtml(!!assetsRef);ntHas()}
+(()=>{const t=$("nttext"),mq=typeof window.matchMedia==="function"?window.matchMedia("(max-width:600px)"):null;if(!t||!mq)return;
+  const set=()=>{t.placeholder=ntPlaceholder(mq.matches)};set();if(mq.addEventListener)mq.addEventListener("change",set)})();
 // The new-thread form folds to one line plus Attach (#C351); focus, typed text or a waiting file opens it to the whole form.
 function ntHas(){const f=$("newthread"),t=$("nttext");if(f&&t)f.classList.toggle("has",!!(String(t.value||"").trim()||(pendingFiles.get("new")||[]).length))}
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="nttext")ntHas()});

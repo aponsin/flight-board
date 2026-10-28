@@ -89,10 +89,9 @@ test("Resolved holds the last 7 days' list, with no fold (its search is the box 
   assert.equal(board().resolvedHtml(T), '<div id="rlist"><div class="empty">None in the last 7 days. Search finds older ones.</div></div>');
 });
 
-test("the form is one line plus Attach until it is used, then today's form: its hint, files and Send", () => {
+// #C359 replaced the unfolding form with one box that only grows (compose-compact.test.mjs has its look).
+test("the form is one line until it has text or a file", () => {
   const form = page.slice(page.indexOf('<form class="newthread"'), page.indexOf("</form>", page.indexOf('<form class="newthread"')));
   assert.match(form, /<textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea">/, "Designer on 859e16f: the label says 'Start a thread' once, and this fits a phone");
-  assert.match(page, /\.newthread:not\(:focus-within\):not\(\.has\) :is\(label,\.keys,\.btns,\.fchip,\.hint\)\{display:none\}/, "folded: no label, hint, chips or Send");
-  assert.match(page, /\.newthread:not\(:focus-within\):not\(\.has\)\{flex-direction:row/, "folded: one row, the input then Attach");
   assert.match(page, /classList\.toggle\("has",!!\(String\(t\.value\|\|""\)\.trim\(\)\|\|\(pendingFiles\.get\("new"\)\|\|\[\]\)\.length\)\)/, "typed text or a file keeps it open");
 });
