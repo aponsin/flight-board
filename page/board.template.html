@@ -361,8 +361,9 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .i-check{font:600 .7rem var(--mono);color:var(--accent);background:none;border:1px solid var(--line);border-radius:999px;padding:1px 8px;cursor:pointer}
 .i-check:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .i-check:disabled{opacity:.6;cursor:default}
-.c-num.i-check{font:600 .75rem var(--mono);color:var(--accent);border:0;border-radius:4px;padding:3px 5px;margin:-3px 1px -3px -5px}
+.c-num.i-check{font:600 .75rem var(--mono);border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin:0 6px 0 0;color:var(--accent)}
 .c-num.i-check:hover{background:var(--accent-soft)}
+@media (pointer:coarse){.c-num.i-check{min-height:44px;padding:0 10px;margin:-14px 6px -14px 0}}
 .i-ic{font-size:1.15em;line-height:1;margin-left:4px}
 .i-checked{font:400 .75rem var(--mono);color:var(--muted)}
 .i-checked.is-late{color:var(--warn)}
@@ -1416,7 +1417,7 @@ function checkLine(i,req,now){const lead=num(i.checkedAt),d=derivedOf(i.id),run=
 // a card with no number yet keeps the pill. While checking, or once done, the label is plain text.
 const checkable=(i,now)=>i.status!=="done"&&!checkLine(i,checkRequest(i.id),now).startsWith("checking…");
 const checkLabel=i=>`Have the Collector check ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} at its next run`;
-function checkTag(i,now){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}" title="Have the Collector check this card">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> `:cardTag(i)}
+function checkTag(i,now){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="Check #C${i.num} at the next Collector run" title="Check #C${i.num} at the next Collector run">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> `:cardTag(i)}
 function checkHtml(i,now){if(i.status==="done")return "";const line=checkLine(i,checkRequest(i.id),now);
   return `${line?`<span class="i-checked${line.includes("run late")?" is-late":""}">${esc(line)}</span>`:""}${checkable(i,now)&&!cardTag(i)?`<button type="button" class="i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}">↻ Check</button>`:""}`}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-check]");if(!b||!dbRef)return;
