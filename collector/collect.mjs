@@ -17,6 +17,7 @@ import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf } from ".
 import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild } from "./facts.mjs";
 import { evidenceTimes } from "./timings.mjs";
 import { nudges } from "./nudges.mjs";
+import { ownerPush } from "./owner-push.mjs";
 import { derivePlan } from "./plan-state.mjs";
 import { idText, lineText } from "./text.mjs";
 import { planReadings, writeContext } from "./context.mjs";
@@ -138,6 +139,17 @@ export function runNudges(dir, config, docs, now, waiting = new Set(), derived =
   let before = {};
   try { before = JSON.parse(readFileSync(path, "utf8")); } catch { /* first run, or a broken file: start afresh */ }
   const { lines, state } = nudges({ config, docs, now, state: before && typeof before === "object" ? before : {}, waiting, derived });
+  writeFileSync(path, JSON.stringify(state));
+  return lines;
+}
+
+// The owner's unseen words, pushed to the lead (collector/owner-push.mjs, #C392), with their own state next to the
+// mirror (<dir>/owner-push.json: which words went out, and when the deaf line last did). Returns the NUDGE lines.
+export function runOwnerPush(dir, config, docs, now) {
+  const path = join(dir, "owner-push.json");
+  let before = {};
+  try { before = JSON.parse(readFileSync(path, "utf8")); } catch { /* first run, or a broken file: start afresh */ }
+  const { lines, state } = ownerPush({ config, docs, now, state: before && typeof before === "object" ? before : {} });
   writeFileSync(path, JSON.stringify(state));
   return lines;
 }
@@ -348,7 +360,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const live = await liveBuild(fetch, config.collector.liveUrl, config.collector.liveTag);
   const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos });
   const waits = new Set(Object.entries(doc.cards).filter(([, d]) => d.wait).map(([id]) => id));
-  const nudged = { lines: runNudges(dir, config, mirror.docs, now, waits, doc.cards) };
+  const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards)] };
   const out = outPath(config, dir);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(doc, null, 2));

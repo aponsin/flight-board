@@ -159,7 +159,9 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
 2. **Work it out**: `node <install>/collector/collect.mjs --config <config>`. It prints one `CONFLICT` line per card whose phase
    disagrees with the repository, a `LIVE BUT OPEN` line, and one `NUDGE` line per nudge due (collector/nudges.mjs:
    the owner waiting for an answer, a step open past its card size's median, an old memory reading, a card unchanged
-   for a day). A nudge is printed once, then again only after a quiet period while it still holds. With
+   for a day) and, before those, the owner's words the lead has written nothing after (collector/owner-push.mjs, by
+   thread or ask id, each once) and, 30 minutes on, the deaf line asking the lead to raise `waiting/rearm-pings`. A
+   nudge is printed once, then again only after a quiet period while it still holds. With
    `collector.contextRoles`, it also writes the memory files and prints `MEMORY set ctx/<Role> from <file>` per role read
    this run, `MEMORY update meta/context from <file>`, and `MEMORY kept …` for roles with no reading (their tiles stay).
 3. **Write it**: ArtifactData `get` `derived/all` with `out_dir` this session's scratchpad folder followed by

@@ -32,7 +32,7 @@ export const DEFAULTS = {
   // The nudges (collector/nudges.mjs): minutes the owner may wait for an answer; how far past its size's median a step may
   // run (etaHours: the median hours a step takes, by card size); how old a memory reading may get; how long a card may
   // stay unchanged unless its status is one of parked; and the quiet minutes before a nudge is sent again.
-  nudges: { ownerWaitMin: 15, stepFactor: 1.5, etaHours: { XS: 1, S: 1.5, M: 3.5, L: 6 }, ctxMaxHours: 2, staleHours: 24, parked: ["paused"], quietMin: 120 },
+  nudges: { ownerWaitMin: 15, stepFactor: 1.5, etaHours: { XS: 1, S: 1.5, M: 3.5, L: 6 }, ctxMaxHours: 2, staleHours: 24, parked: ["paused"], quietMin: 120, deafMin: 30 },
   // Mechanical traffic (gate/traffic.mjs): status-only messages the gate sends to the board's log instead of the lead,
   // each class a name and a pattern the whole message must match (case aside). An empty list turns it off. A ship is not
   // one: the lead acts on it at once (Manager, #C335).
@@ -148,7 +148,7 @@ export function checkConfig(c) {
     if (!k || typeof k !== "object" || Array.isArray(k)) out.push("nudges: an object");
     else {
       for (const f of Object.keys(k)) if (!Object.hasOwn(DEFAULTS.nudges, f)) out.push(`nudges: unknown field "${f}" (known: ${Object.keys(DEFAULTS.nudges).join(", ")})`);
-      for (const f of ["ownerWaitMin", "stepFactor", "ctxMaxHours", "staleHours", "quietMin"]) if (k[f] !== undefined && !(typeof k[f] === "number" && k[f] > 0 && k[f] < 1e4)) out.push(`nudges.${f}: a positive number`);
+      for (const f of ["ownerWaitMin", "stepFactor", "ctxMaxHours", "staleHours", "quietMin", "deafMin"]) if (k[f] !== undefined && !(typeof k[f] === "number" && k[f] > 0 && k[f] < 1e4)) out.push(`nudges.${f}: a positive number`);
       if (k.etaHours !== undefined && !(k.etaHours && typeof k.etaHours === "object" && !Array.isArray(k.etaHours) && Object.entries(k.etaHours).every(([s, h]) => /^[A-Za-z]{1,4}$/.test(s) && typeof h === "number" && h > 0))) out.push("nudges.etaHours: { size: hours }");
       if (k.parked !== undefined && !(Array.isArray(k.parked) && k.parked.every((x) => typeof x === "string" && KEY.test(x)))) out.push("nudges.parked: a list of statuses");
     }

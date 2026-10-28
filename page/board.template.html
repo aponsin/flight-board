@@ -152,6 +152,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
 .evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.clash{border-color:var(--bad);color:var(--bad)}.asof{font:.7rem var(--mono);color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
+.stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
 .t-msg{margin:6px 0}.t-msg .t-from{font-weight:600}.t-msg .t-at{font-size:.8rem;color:var(--muted)}
 .t-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:2px 0 4px}.t-name{font-weight:700}.t-num{font:inherit;font-size:.8rem;padding:1px 6px;border:1px solid var(--line);border-radius:999px;background:transparent;color:var(--muted);cursor:pointer}.t-rename{font:inherit;font-size:.78rem;padding:0;border:0;background:none;color:var(--muted);text-decoration:underline;cursor:pointer}.t-head input{font:inherit;flex:1;min-width:12em;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}a.t-ref{font-weight:600;color:var(--accent);text-decoration:underline;text-underline-offset:2px}.t-tag{display:inline-flex;align-items:center;gap:6px;margin:0 8px 2px 0;vertical-align:middle}.t-err{font-size:.8rem;color:var(--bad)}
@@ -966,7 +967,25 @@ function stuckLines(){const m=state.meta.find(d=>d.id==="stuck")||{},lead=(CONFI
   return Object.entries(m).filter(([k,v])=>k!=="id"&&v&&typeof v==="object"&&!v.__delete__).sort((a,b)=>(num(a[1].at)??0)-(num(b[1].at)??0))
     .map(([k,v])=>{const id=k.includes(":")?k.slice(k.indexOf(":")+1):k,it=itemOf(id);
       return `${lead} stuck on ${it?(it.coll==="initiatives"?it.doc.name:it.doc.text)||id:id}: ${v.reason||"refused three times"}`})}
-function renderStuck(){const el=$("stuck"),l=stuckLines();el.hidden=!l.length;el.innerHTML=l.map(t=>`<div>${esc(t)}</div>`).join("")}
+// The deaf line (#C392): Manager's board pings arm only when the owner's own message carries the board's link, so after
+// a clear Manager missed ~40 board messages. The owner's word with nothing from Manager after it (a thread's newest
+// owner word not closed, or an answered ask not done; the last day's only), DEAF_MIN minutes on, shows here with the
+// command to send Manager, until Manager answers or raises waiting/rearm-pings (its own ask with the same command).
+// The collector pushes the same words to Manager by message (collector/owner-push.mjs), so this is the owner's half.
+const REARM_ID="rearm-pings";
+function deafLine(now=Date.now()){const lead=(CONFIG.gate&&CONFIG.gate.managerRole)||"Manager",min=(CONFIG.nudges&&num(CONFIG.nudges.deafMin))||30;
+  if(state.waiting.some(w=>w&&w.id===REARM_ID&&!w.done))return "";
+  const leadAt=new Map(),own=new Map(),words=[];
+  for(const m of state.messages){if(!m||typeof m.thread!=="string"||num(m.at)==null)continue;
+    if(m.from===lead&&m.at>(leadAt.get(m.thread)??-Infinity))leadAt.set(m.thread,m.at);
+    if(m.from===OWNER&&m.at>((own.get(m.thread)||{}).at??-Infinity))own.set(m.thread,m)}
+  const seen=id=>leadAt.get(id)??-Infinity,open=new Set();
+  for(const [id,m] of own)if(!m.resolved&&m.at>seen(id)){open.add(id);words.push(m.at)}
+  for(const w of state.waiting){const at=w&&w.response&&num(w.response.at);if(at==null||w.done||open.has(w.id)||at<=seen(w.id))continue;words.push(at)}
+  const oldest=Math.min(...words.filter(at=>now-at<864e5));if(!(now-oldest>=min*60000))return "";
+  const cmd=`Turn the board's comment auto-replies back on: ${CONFIG.artifactUrl||"<the board's link>"}`;
+  return `<div class="deaf">You wrote, and ${esc(lead)} has said nothing for ${Math.floor((now-oldest)/60000)} min: its board pings may be off. Only you can turn them back on: send ${esc(lead)} this.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}
+function renderStuck(){const el=$("stuck"),l=stuckLines(),d=deafLine();el.hidden=!l.length&&!d;el.innerHTML=l.map(t=>`<div>${esc(t)}</div>`).join("")+d}
 
 // ---- Threads (board v2) ----
 // Every item is a thread: messages {thread, from: "<owner>" | "<Role>", text, at, assets?, kind?, resolved?}, oldest first.
