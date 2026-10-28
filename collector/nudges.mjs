@@ -11,12 +11,14 @@
 //      that first saw it, if later), a review the card needs with no note on that commit and no step for it since. The
 //      fence lets the collector message the lead only, so a second line carries the READY for the lead to forward.
 //   6. a card live config.nudges.shipTimesMin minutes (within the last day) with no ship times (#C397): no testsMin or
-//      deployMin on its live step, and no row for its version in the release log (releaseTimes); a second line for the
-//      lead to forward to whoever logged the live step.
+//      deployMin on its live end step, which names a version (versionPattern), and no row for that version in the
+//      release log (releaseTimes); cards in another repository aside. A second line for the lead to forward to whoever
+//      logged the live step.
 // The CONFLICT lines are the collector's own (collector/derive.mjs). Every board value a line names goes through idText
 // (collector/text.mjs): the lines reach a session that can write the board and message the team.
 
 import { idText as q } from "./text.mjs";
+import { repoOf } from "./derive.mjs";
 
 const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10;
 const closed = (k) => k.status === "done" || k.status === "dropped";
@@ -123,20 +125,22 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     }
   }
 
-  // 6. A card live with no ship times: its newest live step, from shipTimesMin minutes to a day old.
-  const liveSteps = new Map();
-  for (const s of docs.steps ?? []) if (s && s.phase === config.collector.livePhase && typeof s.at === "number" && !(liveSteps.get(s.init)?.at >= s.at)) liveSteps.set(s.init, s);
+  // 6. A card live with no ship times: its newest live end step naming a shipped version (versionPattern), from
+  // shipTimesMin minutes to a day old. A start step, or one with no version, is no ship (an install, a review: Checker);
+  // a card in another repository has no release log.
+  const liveSteps = new Map(), versionRe = new RegExp(config.collector.versionPattern);
+  for (const s of docs.steps ?? []) if (s && s.phase === config.collector.livePhase && s.kind === "end" && typeof s.at === "number" && !(liveSteps.get(s.init)?.at >= s.at)) liveSteps.set(s.init, s);
   for (const [id, s] of liveSteps) {
-    const card = cards.get(id);
-    if (!card || now - s.at < n.shipTimesMin * MIN || now - s.at > 24 * HOUR) continue;
+    const card = cards.get(id), v = versionRe.exec(String(s.version ?? ""));
+    if (!card || !v || repoOf(card, config) || now - s.at < n.shipTimesMin * MIN || now - s.at > 24 * HOUR) continue;
     if (typeof s.testsMin === "number" || typeof s.deployMin === "number") continue;
-    const v = /^v?(\d+\.\d+\.\d+)$/.exec(String(s.version ?? ""));
-    if (v && Object.hasOwn(releaseTimes, v[1])) continue;
-    const tag = Number.isInteger(card.num) && card.num > 0 ? ` (#C${card.num})` : "", ver = v ? `v${v[1]}` : "";
+    const ver = v[1] ?? v[0];
+    if (Object.hasOwn(releaseTimes, ver)) continue;
+    const tag = Number.isInteger(card.num) && card.num > 0 ? ` (#C${card.num})` : "";
     firing.push({
       key: `shiptimes:${id}`,
-      text: `${q(id)}${tag}: live${ver ? ` in ${ver}` : ""} for ${mins(now - s.at)} min with no ship times; forward:`,
-      then: `forward to ${q(s.who || "Release")}: ship times for ${ver || q(id)}${tag}: add testsMin and deployMin to its live step, or its row to the release log`,
+      text: `${q(id)}${tag}: live in v${q(ver)} for ${mins(now - s.at)} min with no ship times; forward:`,
+      then: `forward to ${q(s.who || "Release")}: ship times for v${q(ver)}${tag}: add testsMin and deployMin to its live step, or its row to the release log`,
     });
   }
 
