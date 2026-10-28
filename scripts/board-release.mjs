@@ -9,7 +9,9 @@
 //   - the commit continues origin/main (the push is a fast-forward, never forced);
 //   - nothing the owner's install pins changed since the commit the settings pin: the gate's hooks, the refresh hook,
 //     the fence, the memory hook, this release tool and every file they import (importClosure), and collector/TASK.md's
-//     settings block. Those stay the owner's install;
+//     settings block. Those stay the owner's install. Except on top of a waiting install pack (#C412, pendingPack): when
+//     every such change on the line from the pin is signed and this commit adds none of its own, it goes out, and the
+//     pinned code still waits for the owner's install;
 //   - the task's steps didn't change without its prompt (collector/PROMPT.txt);
 //   - the page uses no capability beyond PAGE_CAPABILITIES, builds and passes its rendered scenarios.
 // Then it runs the scan (this copy's), pushes the commit to origin/main, moves the collector's current link with this
@@ -58,19 +60,48 @@ export function renderPrompt(template, values) {
 export const configFromSettings = (text) => /gate\/gate\.mjs'? --config '([^']+)'/.exec(String(text ?? ""))?.[1] ?? null;
 export const leadFromSettings = (text) => /collector\/fence\.mjs'? [^"]*?--send-to ([A-Za-z0-9_-]{1,100})/.exec(String(text ?? ""))?.[1] ?? null;
 
+const signed = (notes) => /^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim()) && /^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim());
+
+// A page release while an install pack waits (#C412, Director: v3.19's pack waited 564 min and held four page releases;
+// Security's ruling on plan A): a commit built on a signed pack S may go out before the owner installs S, if it adds no
+// pinned change of its own. S is never named by anyone: it is the newest commit on the line from the installed pin to
+// this one that touches what the owner's install pins (a pinned file, or TASK.md's settings block). Every such commit
+// must be signed (PASS and SECURE), every commit on that line must descend from the pin (no side branch, no rollback),
+// and the pinned files here must be S's byte for byte. The owner's hooks, fence, memory hook and release tool stay
+// pinned until the pack; only what the link runs (the collector's own code, the page) goes out early.
+// descends: the pin is an ancestor of this commit. range: the commits in pin..this, oldest first, each { sha,
+// touches (a pinned change against its first parent), notes, fromPin (it descends from the pin) }. sameAs(s): this
+// commit's pinned files and settings block equal s's. Returns null when nothing in the range touches a pinned file
+// (no pack waits), else { sha: S or null, refusals }.
+export function pendingPack({ descends, range, sameAs }) {
+  const touching = (range ?? []).filter((c) => c.touches);
+  if (!touching.length) return null;
+  const S = touching[touching.length - 1].sha, r = [];
+  if (!descends) r.push("it doesn't descend from the commit the owner's install pins");
+  const side = (range ?? []).filter((c) => !c.fromPin).map((c) => c.sha.slice(0, 12));
+  if (side.length) r.push(`commits on its line don't descend from the commit the owner's install pins (a side branch): ${side.join(", ")}`);
+  const unsigned = touching.filter((c) => !signed(c.notes)).map((c) => c.sha.slice(0, 12));
+  if (unsigned.length) r.push(`a change to what the owner's install pins, on its line, isn't signed by both Checker and Security: ${unsigned.join(", ")}`);
+  if (!sameAs(S)) r.push(`it changes what the owner's install pins after the waiting pack ${S.slice(0, 12)}: a pinned change goes out with an install pack`);
+  return { sha: r.length ? null : S, refusals: r };
+}
+
 // The verdict, from the facts only. changed: the files that differ from the pinned commit (null: no pinned commit);
-// owned: the owner's closure (OWNER_ENTRIES and RELEASE_ENTRIES) at the pinned commit and at this one.
-export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities }) {
+// owned: the owner's closure (OWNER_ENTRIES and RELEASE_ENTRIES) at the pinned commit and at this one. pending: what
+// pendingPack found; a waiting pack it accepts (sha set) covers the pinned changes and the settings block.
+export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, pending = null }) {
   const r = [];
   if (!/^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim())) r.push(`no PASS from Checker on it in ${NOTES.checker}`);
   if (!/^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim())) r.push(`no SECURE from Security on it in ${NOTES.security}`);
   if (!forward) r.push("it doesn't continue origin/main: rebase it on main and sign it again");
   if (!pinned || !Array.isArray(changed)) r.push("no pinned commit found in ~/.claude/settings.json to compare with: the owner's install decides");
+  else if (pending?.sha) { /* the pinned changes are the waiting pack's, signed; the owner's install takes them */ }
+  else if (pending) r.push(...pending.refusals);
   else {
     const mine = changed.filter((f) => owned.includes(f));
     if (mine.length) r.push(`it changes what the owner's install pins (${pinned.slice(0, 12)}): ${mine.join(", ")}`);
   }
-  if (settingsChanged) r.push(`${TASK_FILE}: the collector's settings block changed, and those settings are the owner's`);
+  if (settingsChanged && !pending?.sha) r.push(`${TASK_FILE}: the collector's settings block changed, and those settings are the owner's`);
   if (stepsChanged && !promptChanged) r.push(`${TASK_FILE}: the task's steps changed but ${PROMPT_FILE} didn't`);
   const extra = (capabilities ?? []).filter((c) => !PAGE_CAPABILITIES.includes(c));
   if (extra.length) r.push(`the page asks for a capability beyond ${PAGE_CAPABILITIES.join(", ")}: ${extra.join(", ")} (a new capability is the owner's)`);
@@ -122,10 +153,25 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const entries = [...OWNER_ENTRIES, ...RELEASE_ENTRIES];
     const changed = known(pinned) ? (quiet(["diff", "--name-only", pinned, sha]) ?? "").split("\n").filter(Boolean) : null;
     const owned = [...new Set([...importClosure(entries, at(sha)), ...(known(pinned) ? importClosure(entries, at(pinned)) : [])])];
+    // A waiting pack (#C412): the line from the pin to this commit, each commit's pinned change against its first parent
+    // and its sign-offs, read from origin's notes like this commit's.
+    let pending = null;
+    if (known(pinned)) {
+      const list = (a) => (quiet(a) ?? "").split("\n").filter(Boolean);
+      const path = new Set(list(["rev-list", "--ancestry-path", `${pinned}..${sha}`]));
+      const touches = (c) => {
+        const p = quiet(["rev-parse", "--verify", "-q", `${c}^1`]);
+        if (!p) return true;
+        return list(["diff", "--name-only", p, c]).some((f) => owned.includes(f)) || settingsBlock(at(p)(TASK_FILE)) !== settingsBlock(at(c)(TASK_FILE));
+      };
+      const range = list(["rev-list", "--reverse", `${pinned}..${sha}`]).map((c) => ({ sha: c, fromPin: path.has(c), touches: touches(c), notes: Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", c])])) }));
+      const sameAs = (s) => [...new Set([...importClosure(entries, at(sha)), ...importClosure(entries, at(s))])].every((f) => at(s)(f) === at(sha)(f)) && settingsBlock(at(s)(TASK_FILE)) === settingsBlock(at(sha)(TASK_FILE));
+      pending = pendingPack({ descends: quiet(["merge-base", "--is-ancestor", pinned, sha]) !== null, range, sameAs });
+    }
     const base = known(before) ? before : known(pinned) ? pinned : null; // what the task runs now
     const capabilities = pageCapabilities(at(sha)(PAGE_FILE));
     const v = verdict({
-      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities,
+      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, pending,
       settingsChanged: known(pinned) && settingsBlock(at(pinned)(TASK_FILE)) !== settingsBlock(at(sha)(TASK_FILE)),
       stepsChanged: base !== null && stepsOf(at(base)(TASK_FILE)) !== stepsOf(at(sha)(TASK_FILE)),
       promptChanged: base === null || at(base)(PROMPT_FILE) !== at(sha)(PROMPT_FILE),
@@ -143,7 +189,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
 
     line(!v.refusals.some((r) => /PASS|SECURE/.test(r)), `sign-offs on ${sha}: Checker "${String(notes.checker ?? "none").split("\n")[0]}", Security "${String(notes.security ?? "none").split("\n")[0]}"`);
     line(forward, `continues origin/main ${main.slice(0, 12)}`);
-    line(!v.refusals.some((r) => /owner's install|settings block|no pinned/.test(r)), `nothing pinned changed since ${pinned ? pinned.slice(0, 12) : "(none)"}`);
+    line(!v.refusals.some((r) => /owner's install|settings block|no pinned/.test(r)), pending?.sha ? `pinned changes since ${pinned.slice(0, 12)} are the waiting pack's only: ${pending.sha.slice(0, 12)}, signed (they go live with the owner's install; the link's code goes now)` : `nothing pinned changed since ${pinned ? pinned.slice(0, 12) : "(none)"}`);
     line(!v.refusals.some((r) => /PROMPT/.test(r)), v.promptNeeded ? `prompt changed: ${promptPath} (SHA-256 ${sha256(prompt)})` : "prompt unchanged");
     line(!v.refusals.some((r) => /capabilit/.test(r)), `page capabilities: ${capabilities.join(", ")}`);
     if (v.ok) line(built, built ? `page built and its scenarios pass: ${page} (SHA-256 ${sha256(readFileSync(page))})` : "page not built");

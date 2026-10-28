@@ -204,6 +204,21 @@ refusal it names each file and changes nothing, and those changes go out with th
 its own copy's scan, pushes the commit to `main` (a fast-forward), moves the link with its own copy's
 `scripts/current.mjs`, and prints the page to republish and, when it changed, the prompt to save into the task.
 
+**A page release never waits behind an install pack** (#C412, Security's ruling on plan A). A release built on a
+signed pack S goes out before the owner installs S, when every change to what the owner's install pins on the line
+from the pin is signed (PASS and SECURE) and the release adds none of its own (its pinned files are S's, byte for byte).
+Nobody names S: the release tool finds it, the newest such commit on that line, all of whose commits must descend from
+the pin. The owner's hooks, fence, memory hook and release tool keep running from the old pin until the pack; only what
+the link runs (the collector's own code, the page) goes live early. So every pack from then on:
+
+- builds on the newest signed release, and its rehearsal proves its link-run code works with the old pinned gate and the
+  old config: new config fields default off, and nothing reads a field only the new `checkConfig` takes (Security looks
+  for that test in each pack check);
+- skips its push when S is already on `main`, and keeps the `cmp` of its pinned copy against S;
+- leaves the link where it is when it already points at a signed release on `main` that has S: `scripts/current.mjs`
+  never moves it back, and says so. The pack's page is built from the link's commit, so the publish hook (#C409) still
+  matches it.
+
 **What gates a collector change is Security's review**, not the fence. The fence bounds the session's tool calls, but
 `collect.mjs` is a Node process with the owner's user rights (no sandbox: it fetches from GitHub, asks `gh`, reads the
 live site and writes the repository clone's refs), and a `SECURE` note is a process, not an identity: any session that
