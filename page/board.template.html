@@ -196,8 +196,9 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .sbox input{font:inherit;width:100%;padding:6px 8px 6px 2em;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
 .sicon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
 .init-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 16px;margin-bottom:10px}
-.init-head h2{margin:0}
-.init-head .sbox{flex:0 1 28rem}
+/* The cards' box fills the row right of the heading (#C365, the owner in #T975); on a phone, the row under it. */
+.init-head h2{margin:0;flex:none}
+.init-head .sbox{flex:1 1 16rem}
 @media (max-width:600px){.init-head .sbox{flex:1 1 100%}}
 /* The × that clears the cards' box and the feed's (Designer on 7ce1632), as the Threads row's Clear: inside, on the
    right, while there's text; a 28 px tap area; the browser's own clear hidden, so there's one. */
@@ -1053,18 +1054,31 @@ async function sendThread(btn,id,text,msg,kind,restore,key="th:"+id){
 // The owner renames a thread: its title only (the number is the lead's). Set the first time, update after.
 function renameWrites(id,title){const t=String(title||"").replace(/\s+/g," ").trim().slice(0,120);if(!t)return [];
   return [{op:threadDoc(id)?"update":"set",path:`threads/${id}`,data:{title:t}}]}
-// #T27 jumps to its thread and opens it. A resolved thread the page doesn't show now is drawn first, by searching the
-// resolved threads for exactly its number (#C288); only a number no thread has stays put.
-document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-tref]");if(!a)return;e.preventDefault();
-  const find=()=>[...document.querySelectorAll("[data-thread]")].filter(x=>x.dataset.thread===a.dataset.tref);
-  let all=find();const q=all.length?null:tRefQuery(a.dataset.tref,Date.now());
-  if(q){showTab("resolved");searchNow(q);all=find()}
-  const el=all.find(x=>!x.closest("[hidden]"))||all[0];
-  if(!el){a.title="That thread is no longer shown on the board";return}
+// Where #T<id>'s item is drawn (#C365, the owner in #T974: since #C351 it may sit in a tab's hidden panel, and an ask
+// with no messages yet has no thread element, so #T972 did nothing): an open ask in its tab (Needs you, Later, Waiting
+// on Manager), a card in flight on the board, a thread row in Needs you (Manager's word last) or Waiting on Manager, a
+// closed one under Resolved, an idea under Ideas; null when the board draws it nowhere.
+function trefPlace(id,now){const it=itemOf(id);
+  if(it&&it.coll==="initiatives"&&it.doc.status!=="done")return {card:true};
+  const on=waitsOn(id,now);
+  if(it&&it.coll==="waiting"&&itemShown(id,now))return {tab:on==="you"?(it.doc.kind==="later"?"later":"you"):"lead"};
+  if(on==="answered")return {tab:"you"};if(on==="lead")return {tab:"lead"};if(on==="resolved")return {tab:"resolved"};
+  return it&&it.coll==="ideas"&&!it.doc.done?{tab:"ideas"}:null}
+// #T27 opens its item: its tab (or the board, for a card), clearing a search that hides it, then its row by id (an ask,
+// a thread row "th-", a card's thread "ith-"), its folds, and scrolls there. A resolved thread is searched for by its
+// exact number, so one of any age is drawn (#C288). Returns the row, or null.
+function trefOpen(id){const now=Date.now(),p=trefPlace(id,now);if(!p)return null;let scope;
+  if(p.card){const c=state.initiatives.find(i=>i.id===id);if(c&&iQuery&&!initHit(c))setInitSearch("");scope=$("board")}
+  else{showTab(p.tab);const q=p.tab==="resolved"?tRefQuery(id,now):null;if(q)searchNow(q);scope=$("tp-"+p.tab)}
+  const find=()=>[...scope.querySelectorAll("[data-id]")].find(x=>[id,"th-"+id,"ith-"+id].includes(x.dataset.id));
+  let el=find();if(!el&&!p.card&&searching()){searchNow("");el=find()}
+  if(!el)return null;
+  if(el.tagName!=="DETAILS")el=el.closest(".td-row")||el;
   if(el.closest("#v2")&&$("v2").hidden)setView("v2");
-  const tp=el.closest("[role=tabpanel]");if(tp&&tp.hidden)showTab(tp.id.slice(3));
   for(let d=el.closest("details");d;d=d.parentElement&&d.parentElement.closest("details"))d.open=true;
-  el.scrollIntoView({block:"start",behavior:"smooth"})});
+  el.scrollIntoView({block:"start",behavior:"smooth"});return el}
+document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-tref]");if(!a)return;e.preventDefault();
+  if(!trefOpen(a.dataset.tref))a.title="That thread is no longer shown on the board"});
 // Rename: the name becomes a box; Enter or Save writes it, Esc or Cancel puts the line back.
 document.addEventListener("click",e=>{const r=e.target.closest&&e.target.closest("[data-trename]");if(!r||!dbRef)return;e.preventDefault();
   const id=r.dataset.trename,head=r.closest("[data-thead]");if(!head)return;const before=head.innerHTML;

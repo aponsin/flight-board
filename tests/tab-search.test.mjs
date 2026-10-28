@@ -90,7 +90,7 @@ test("#C363: switching tabs clears the box, and the tab it filtered is drawn who
   assert.equal(b.els.rsearch.value, "", "cleared");
   assert.match(b.laterHtml(T), /Spanish/, "Later whole again");
   assert.match(b.threadsHtml(T), /ETAs/);
-  assert.match(page, /if\(q\)\{showTab\("resolved"\);searchNow\(q\);all=find\(\)\}/, "a #T link to an old thread opens Resolved, then searches it");
+  assert.match(page, /showTab\(p\.tab\);const q=p\.tab==="resolved"\?tRefQuery\(id,now\):null;if\(q\)searchNow\(q\)/, "a #T link to an old thread opens Resolved, then searches it (#C365: tref-any-tab.test.mjs)");
 });
 
 test("#C363: each key waits for the next (one redraw for a word typed quickly), and the search text is built once per data update", () => {

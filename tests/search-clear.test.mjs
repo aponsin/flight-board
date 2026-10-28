@@ -44,5 +44,10 @@ test("the × shows as he types, and one click clears, redraws and keeps the focu
 });
 
 test("on a phone the cards' box drops under the heading, full width", () => {
-  assert.match(page, /\.init-head \.sbox\{flex:0 1 28rem\}\n@media \(max-width:600px\)\{\.init-head \.sbox\{flex:1 1 100%\}\}/);
+  assert.match(page, /\.init-head \.sbox\{flex:1 1 16rem\}\n@media \(max-width:600px\)\{\.init-head \.sbox\{flex:1 1 100%\}\}/);
+});
+
+test("#C365, the owner in #T975: on a laptop the cards' box fills the whole width right of the heading", () => {
+  assert.doesNotMatch(page, /\.init-head \.sbox\{[^}]*28rem/, "no cap");
+  assert.match(page, /\.init-head h2\{margin:0;flex:none\}/, "the heading keeps its width; the box takes the rest");
 });
