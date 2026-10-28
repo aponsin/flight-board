@@ -40,10 +40,10 @@ test("every box says how: Enter to send, the modifier for a new line", () => {
   assert.equal(keysHint(false), '<div class="keys">Click a button to send · Ctrl+Enter for a new line</div>', "a box with two outcomes");
 });
 
-test("an ask's box says which: Enter sends an answer's Ack; a task or a decision says to click a button", () => {
+test("an ask's box says what Enter sends: a task's note as 'Something went wrong', an answer's as a follow-up (#C368)", () => {
   const since = Date.now();
   const html = renderWaitingHtml([{ id: "a1", kind: "action", text: "Do it", steps: ["x"], since }, { id: "a2", kind: "answer", text: "Here", since }]);
   const box = (id) => html.slice(html.indexOf(`data-reply="${id}"`)).split("</textarea>")[1].slice(0, 120);
-  assert.match(box("a1"), /^<div class="keys">Click a button to send/);
-  assert.match(box("a2"), /^<div class="keys">Enter to send/);
+  assert.match(box("a1"), /^<div class="cbar"><div class="keys">Enter sends it as “Something went wrong”/);
+  assert.match(box("a2"), /^<div class="cbar"><div class="keys">Enter to send/);
 });

@@ -25,7 +25,7 @@ test("case 5: Manager's answer shows in the thread under the ask, not only in a 
 });
 
 // Count the reply boxes in a piece of the page: the ask's own (data-reply="<id>") and the thread's (data-reply="th:<id>").
-const boxes = (html) => (html.match(/<div class="reply" data-reply="/g) ?? []).length;
+const boxes = (html) => (html.match(/<div class="reply(?: cmp(?: has)?)?" data-reply="/g) ?? []).length;
 const before = (html, a, b) => html.indexOf(a) >= 0 && html.indexOf(a) < html.indexOf(b);
 
 test("one reply box in every state, always above the messages, which show newest first", () => {

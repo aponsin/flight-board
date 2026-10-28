@@ -123,7 +123,7 @@ test("an Answer shows only an Ack button and a follow-up box", () => {
   const html = b.replyBox({ id: "a", kind: "answer", text: "x" });
   assert.match(html, /data-act="ack"/);
   assert.doesNotMatch(html, /data-act="done"|data-act="help"|data-act="ok"/);
-  assert.match(html, /A follow-up question\? \(optional\)/);
+  assert.match(html, /placeholder="Reply to Manager"/, "#C368: the compact box, a follow-up its Send");
 });
 
 test("an acknowledged Answer says so and doesn't claim it was sent to Manager", () => {
@@ -332,7 +332,7 @@ test("attachments: images, PDFs and text files up to 15 MB are accepted; others 
 
 test("attachments: every note box gets Attach, a hidden file picker and a paste/drop hint when the board can store files", () => {
   const html = renderWaitingHtml([{ id: "w1", kind: "action", text: "Do it", steps: ["x"], since: Date.now(), done: false }], { assets: true });
-  assert.match(html, /<button type="button" class="attach" data-attach="w1">Attach<\/button>/);
+  assert.match(html, /<button type="button" class="attach" data-attach="w1" aria-label="Attach files"><svg class="clip"[\s\S]*?<span class="atxt">Attach<\/span><\/button>/, "#C368: the compact box's Attach");
   assert.match(html, /<input type="file" id="file-w1" data-files="w1" multiple hidden accept="[^"]*image\/png[^"]*application\/pdf[^"]*">/);
   assert.match(html, /paste or drop/i);
   const none = renderWaitingHtml([{ id: "w1", kind: "action", text: "Do it", steps: ["x"], since: Date.now(), done: false }]);
@@ -341,7 +341,10 @@ test("attachments: every note box gets Attach, a hidden file picker and a paste/
 
 test("attachments: chosen files show as removable chips, names escaped; they survive a re-draw", () => {
   const html = renderWaitingHtml([{ id: "w1", kind: "answer", question: "q", text: "a", since: Date.now(), done: false }], { assets: true, pending: { w1: [{ name: "<b>x</b>.png", type: "image/png", size: 2.5 * 1024 * 1024 }] } });
-  assert.match(html, /<span class="fchip">(?:<button type="button" class="thumb fthumb"[^>]*><img [^>]*><\/button>)?&lt;b&gt;x&lt;\/b&gt;\.png <small>2\.5 MB<\/small><button type="button" class="fx" data-unattach="w1" data-n="0" aria-label="Remove &lt;b&gt;x&lt;\/b&gt;\.png">×<\/button><\/span>/);
+  // #C368: #C359's chips; a box with files is drawn grown (.has).
+  assert.match(html, /<div class="reply cmp has" data-reply="w1">/);
+  assert.match(html, /<span class="cimg"><button type="button" class="thumb fthumb" data-full="blob:test\/&lt;b&gt;x&lt;\/b&gt;\.png" data-cap="&lt;b&gt;x&lt;\/b&gt;\.png"><img [^>]*alt="Preview of &lt;b&gt;x&lt;\/b&gt;\.png"><\/button><button type="button" class="cx" data-unattach="w1" data-n="0" aria-label="Remove &lt;b&gt;x&lt;\/b&gt;\.png">×<\/button><\/span>/);
+  assert.doesNotMatch(html, /<b>x<\/b>/);
 });
 
 test("attachments: a sent reply shows its files from the board's stored copies, never in a new tab; bad ids are dropped", () => {
@@ -373,7 +376,8 @@ test("a look question needs screenshots: a look word in it, or look: true; look:
 
 test("attachments: a picture shows as a small preview in its chip, which opens full size; other files show their name only", () => {
   const html = renderWaitingHtml([{ id: "w1", kind: "action", text: "x", steps: ["x"], since: Date.now(), done: false }], { assets: true, pending: { w1: [{ name: "shot.png", type: "image/png", size: 2048 }, { name: "log.txt", type: "text/plain", size: 10 }] } });
-  assert.match(html, /<span class="fchip"><button type="button" class="thumb fthumb" data-full="blob:test\/shot\.png" data-cap="shot\.png"><img src="blob:test\/shot\.png" alt="Preview of shot\.png"><\/button>shot\.png/);
+  assert.match(html, /<span class="cimg"><button type="button" class="thumb fthumb" data-full="blob:test\/shot\.png" data-cap="shot\.png"><img src="blob:test\/shot\.png" alt="Preview of shot\.png"><\/button>/, "#C368: #C359's chips");
+  assert.match(html, /<span class="cname" title="log\.txt">log\.txt<\/span><small>TXT · 1 KB<\/small>/);
   assert.doesNotMatch(html, /blob:test\/log\.txt/);
 });
 

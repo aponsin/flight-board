@@ -175,6 +175,17 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .newthread:not(.has) textarea{height:2.1em}
 .newthread:not(.has) .cbtns .ok{opacity:.55}
 .newthread .msg:empty{display:none}
+/* Every reply box is the same compact box (#C368, the owner's A in #T980): the choices as chips above it, the box with
+   its own Attach and Send; empty, one line, grown (.has) with text or files. On a phone the choices stack full width. */
+.cmp textarea{font:inherit;color:var(--ink);background:transparent;border:0;outline:0;padding:4px 0;width:100%;resize:none;min-width:0;border-radius:0}
+.cmp:not(.has) .cbox{grid-template-columns:minmax(0,1fr) auto}
+.cmp:not(.has) :is(.cfiles,.cbar .keys){display:none}
+.cmp:not(.has) textarea{height:2.1em}
+.cmp:not(.has) .cbtns .ok{opacity:.55}
+.cmp .msg:empty{display:none}
+.cchoice{align-items:flex-start}
+.btns button.other{border-style:dashed;color:var(--muted);font-weight:400}
+@media (max-width:600px){.cchoice{flex-direction:column;align-items:stretch}.cchoice button{text-align:left}.cchoice .opt-line>button.opt{justify-self:stretch}}
 .cchips{display:flex;flex-wrap:wrap;gap:8px;padding-top:4px}
 .cimg{position:relative;display:inline-flex}
 .cimg .fthumb{border:1px solid var(--line);border-radius:8px;overflow:hidden;padding:0}
@@ -612,12 +623,12 @@ function filesHtml(id){if(!assetsRef)return "";const list=pendingFiles.get(id)||
 const DOC_ICON=`<svg viewBox="0 0 16 16" width="22" height="22"><path d="M4 1.5h5.5L13 5v9.5H4z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M9.5 1.5V5H13M6 8.5h4.5M6 11h4.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>`;
 function fileKind(f){const m=String(f&&f.name||"").match(/\.([a-z0-9]{1,5})$/i);
   return m?m[1].toUpperCase():({"application/pdf":"PDF","text/plain":"TXT","text/markdown":"MD","text/csv":"CSV","application/json":"JSON"})[String(f&&f.type||"")]||"FILE"}
-function ntChip(f,n,pv){const x=c=>`<button type="button" class="${c}" data-unattach="new" data-n="${n}" aria-label="Remove ${esc(f.name)}">×</button>`;
+function ntChip(f,n,pv,key="new"){const x=c=>`<button type="button" class="${c}" data-unattach="${esc(key)}" data-n="${n}" aria-label="Remove ${esc(f.name)}">×</button>`;
   if(pv)return `<span class="cimg"><button type="button" class="thumb fthumb" data-full="${esc(pv)}" data-cap="${esc(f.name)}"><img src="${esc(pv)}" alt="Preview of ${esc(f.name)}"></button>${x("cx")}</span>`;
   const k=fileKind(f);
   return `<span class="cdoc"><span class="ctype${k==="PDF"?" pdf":""}" aria-hidden="true">${DOC_ICON}</span><span class="cmeta"><span class="cname" title="${esc(f.name)}">${esc(f.name)}</span><small>${esc(k)} · ${fmtSize(f.size)}</small></span>${x("fx")}</span>`}
-function ntFilesHtml(list){return list.length?`<div class="files cchips">${list.map((f,n)=>ntChip(f,n,previewUrl(f))).join("")}</div>`:""}
-function ntAttachHtml(can){return can?`<button type="button" class="attach" data-attach="new" aria-label="Attach files"><svg class="clip" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M10.5 4.5 5.6 9.4a1.5 1.5 0 0 0 2.1 2.1l5-5a3 3 0 0 0-4.2-4.2l-5 5a4.5 4.5 0 0 0 6.4 6.4L13.5 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span class="atxt">Attach</span></button><input type="file" id="file-new" data-files="new" multiple hidden accept="${ACCEPT}">`:""}
+function ntFilesHtml(list,key="new"){return list.length?`<div class="files cchips">${list.map((f,n)=>ntChip(f,n,previewUrl(f),key)).join("")}</div>`:""}
+function ntAttachHtml(can,key="new"){return can?`<button type="button" class="attach" data-attach="${esc(key)}" aria-label="Attach files"><svg class="clip" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M10.5 4.5 5.6 9.4a1.5 1.5 0 0 0 2.1 2.1l5-5a3 3 0 0 0-4.2-4.2l-5 5a4.5 4.5 0 0 0 6.4 6.4L13.5 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span class="atxt">Attach</span></button><input type="file" id="file-${esc(key)}" data-files="${esc(key)}" multiple hidden accept="${ACCEPT}">`:""}
 // A phone's placeholder is shorter (the owner's B on a phone).
 function ntPlaceholder(narrow){return narrow?"Ask Manager anything":"Ask Manager something, or share an idea"}
 const blobId=x=>typeof x==="string"&&/^[A-Za-z0-9_-]{8,64}$/.test(x);
@@ -793,7 +804,23 @@ const KEYS_HINT=`Enter to send · ${MOD_KEY}+Enter for a new line`;
 const KEYS_PICK=`Click a button to send · ${MOD_KEY}+Enter for a new line`;
 const KEYS_OTHER=`Enter sends it as “Something else” · ${MOD_KEY}+Enter for a new line`;
 const keysHint=(one=true)=>`<div class="keys">${esc(one==="other"?KEYS_OTHER:one?KEYS_HINT:KEYS_PICK)}</div>`;
-document.querySelectorAll("[data-keys]").forEach(x=>{x.textContent=KEYS_HINT});
+// The compact boxes' bar (#C368, the owner's A in #T980; Checker's LOW on #C359: nothing said files paste or drop): what
+// Enter does there, and that files paste or drop. ⌘+Enter still adds a line.
+const DROP_HINT=" · paste or drop files";
+const CMP_HINT={send:"Enter to send",other:"Enter sends it as “Something else”",change:"Enter sends it as “Change something”",help:"Enter sends it as “Something went wrong”"};
+document.querySelectorAll("[data-keys]").forEach(x=>{x.textContent=CMP_HINT.send+DROP_HINT});
+// A phone's shorter placeholders (the A mock-up on a phone).
+const NARROW=()=>typeof window.matchMedia==="function"&&window.matchMedia("(max-width:600px)").matches;
+// The one compact box (#C359's, now on every reply box: #C368): empty, one line with Attach and Send; with text or files
+// it grows: the files' chips at its top, the text, then the bar with the hint and Attach and Send. key: where its files
+// wait; ta: its text box's id; send: its Send (data-csend: Enter presses it). The wrapper is .reply.cmp (cmpWrap).
+function cmpBox(key,ta,{ph,send,hint=CMP_HINT.send}){
+  return `<div class="cbox">${assetsRef?`<div class="cfiles">${ntFilesHtml(pendingFiles.get(key)||[],key)}</div>`:""}<textarea id="${esc(ta)}" rows="1" placeholder="${esc(ph)}"></textarea><div class="cbar"><div class="keys">${esc(hint+(assetsRef?DROP_HINT:""))}</div><span class="cbtns btns">${ntAttachHtml(!!assetsRef,key)}${send}</span></div></div>`}
+// Grown (.has) while there is text or a file waiting: on every input, a restored draft (fitBox) and a draw with files.
+function cmpWrap(key,inner){return `<div class="reply cmp${(pendingFiles.get(key)||[]).length?" has":""}" data-reply="${esc(key)}">${inner}</div>`}
+function cmpHas(t){const c=t&&t.closest&&t.closest(".cmp");if(!c||!c.classList)return;c.classList.toggle("has",!!(String(t.value||"").trim()||(pendingFiles.get(c.dataset.reply)||[]).length))}
+// "Something else (say what)" and the like put the cursor in the box.
+document.addEventListener("click",e=>{const f=e.target.closest&&e.target.closest("[data-focus]");if(!f)return;const t=document.getElementById(f.dataset.focus);if(t&&t.focus)t.focus()});
 // A box with one action: a thread's Send, the new thread's Send to Manager, or an answer's Ack (its only button).
 function oneAction(box){return !!box.querySelector("[data-tsend],button[type=submit]")||box.querySelectorAll(".btns button").length===1&&!!box.querySelector(".btns button.ok")}
 // What a key press in a box does: "send" with the button to press, "line", "none", or null (not ours: the browser's own).
@@ -803,6 +830,9 @@ function enterKey(e){
   const box=t.closest&&t.closest(".reply,.newthread");if(!box)return null;
   if(e.shiftKey)return null;
   if(e.metaKey||e.ctrlKey)return {act:"line"};
+  // A compact box (#C368): Enter presses its own Send, whatever the choices above it.
+  const cs=box.querySelector("[data-csend]");
+  if(cs)return !cs.disabled&&t.value.trim()?{act:"send",button:cs}:{act:"none"};
   const other=box.querySelector("[data-act=other]");
   if(other)return !other.disabled&&t.value.trim()?{act:"send",button:other}:{act:"none"};
   if(!oneAction(box))return {act:"none"};
@@ -835,16 +865,19 @@ function replyBox(w){
   const r=w.response;
   if(r&&r.status){const lbl=r.status==="ack"?"You acknowledged this":r.status==="done"?"You marked this done":r.status==="chose"?"You chose "+(r.choice||""):r.status==="ok"?"You said OK":r.status==="change"?"You asked for changes":"You asked for help";
     return `<div class="reply sent ${r.status}">${lbl}${num(r.at)?" "+dur(Date.now()-r.at)+" ago":""}${r.note?`: “${esc(r.note)}”`:""}.${sentFiles(r)} ${r.status==="ack"&&!r.note?"":w.ping==="sent"?"Sent to Manager.":w.ping?`Not sent to Manager (${esc(w.ping)}); it picks it up at its next check.`:"Sending to Manager…"}</div>`}
-  return `<div class="reply" data-reply="${esc(w.id)}"><label for="note-${esc(w.id)}">${w.kind==="answer"?"A follow-up question? (optional)":"Anything to add? (optional)"}</label>
-   <textarea id="note-${esc(w.id)}" rows="2" placeholder="What you saw, or what went wrong"></textarea>${keysHint(w.kind==="decision"&&Array.isArray(w.options)&&w.options.length?"other":w.kind==="answer")}${filesHtml(w.id)}
-   <div class="btns">${w.kind==="decision"
-     ?(Array.isArray(w.options)&&w.options.length
-       ?w.options.map(o=>{const pics=optShots(w,o.key),btn=`<button type="button" class="opt${o.recommended?" rec":""}" data-act="chose" data-choice="${esc(o.key)}" data-id="${esc(w.id)}"><b>${esc(o.key)}</b> ${esc(o.label)}${o.recommended?' <span class="recl">Manager\'s pick</span>':""}</button>`;
-         return pics?`<div class="opt-line"><div class="opt-shots">${pics}</div>${btn}</div>`:btn}).join("")+`<button type="button" class="help" data-act="other" data-id="${esc(w.id)}">Something else (say what)</button>`
-       :`<button type="button" class="ok" data-act="ok" data-id="${esc(w.id)}">OK</button><button type="button" class="help" data-act="change" data-id="${esc(w.id)}">Change something (say what)</button>`)
-     :w.kind==="answer"?`<button type="button" class="ok" data-act="ack" data-id="${esc(w.id)}">Ack</button>`
-     :`<button type="button" class="ok" data-act="done" data-id="${esc(w.id)}">Done</button><button type="button" class="help" data-act="help" data-id="${esc(w.id)}">Something went wrong, help</button>`}</div>
-   <div class="msg" id="msg-${esc(w.id)}" role="status"></div></div>`;
+  // The owner's A (#C368, #T980): the choices as chips above the compact box; the box keeps its own Send, which sends the
+  // note as the "with a note" outcome: Something else (a decision), Change something (an approval), Something went
+  // wrong (an action), or a follow-up (an answer, whose Ack is its choice).
+  const id=esc(w.id),narrow=NARROW(),opts=w.kind==="decision"&&Array.isArray(w.options)&&w.options.length;
+  const b=(act,cls,label,x="")=>`<button type="button"${cls?` class="${cls}"`:""} data-act="${act}" data-id="${id}"${x}>${label}</button>`;
+  const [choices,ph,act,label,hint]=opts
+    ?[w.options.map(o=>{const pics=optShots(w,o.key),btn=`<button type="button" class="opt${o.recommended?" rec":""}" data-act="chose" data-choice="${esc(o.key)}" data-id="${id}"><b>${esc(o.key)}</b> ${esc(o.label)}${o.recommended?' <span class="recl">Manager\'s pick</span>':""}</button>`;
+        return pics?`<div class="opt-line"><div class="opt-shots">${pics}</div>${btn}</div>`:btn}).join("")+`<button type="button" class="other" data-focus="note-${id}">Something else (say what)</button>`,
+      narrow?"Anything to add?":"Anything to add? (optional)","other","Send as something else",CMP_HINT.other]
+    :w.kind==="decision"?[b("ok","ok","OK")+b("change","","Change something"),narrow?"What should change?":"What should change? (optional)","change","Send",CMP_HINT.change]
+    :w.kind==="answer"?[b("ack","ok","Ack"),narrow?"Reply":"Reply to Manager","ack","Send",CMP_HINT.send]
+    :[b("done","ok","Done")+b("help","help","Something went wrong, help"),narrow?"A note (optional)":"A note (optional): what you saw","help","Send",CMP_HINT.help];
+  return cmpWrap(w.id,`<div class="cchoice btns">${choices}</div>${cmpBox(w.id,"note-"+w.id,{ph,hint,send:b(act,"ok",label," data-csend")})}<div class="msg" id="msg-${id}" role="status"></div>`);
 }
 async function onReply(e){
   const id=e.currentTarget.dataset.id, act=e.currentTarget.dataset.act, choice=e.currentTarget.dataset.choice||null;
@@ -852,7 +885,10 @@ async function onReply(e){
   const msg=document.getElementById("msg-"+id);
   if(!dbRef){msg.textContent="Can't save from here. Tell Manager in chat instead.";return}
   const files=pendingFiles.get(id)||[];
-  if((act==="help"||act==="change"||act==="other")&&!note.trim()&&!files.length){msg.textContent="Say in a few words what you'd like, in the box above, then press again.";return}
+  // The box's own Send with nothing in it does nothing but say so (#C368: on an answer it would have acked it).
+  const box=document.getElementById("note-"+id),focus=()=>{if(box&&box.focus)box.focus()};
+  if(e.currentTarget.hasAttribute&&e.currentTarget.hasAttribute("data-csend")&&!note.trim()&&!files.length){msg.textContent="Write your note first, or pick a choice above.";focus();return}
+  if((act==="help"||act==="change"||act==="other")&&!note.trim()&&!files.length){msg.textContent="Say in a few words what you'd like, in the box below, then press again.";focus();return}
   const btn=e.currentTarget; btn.disabled=true; lastPing="";
   const anchor=await prepAnchor(btn);
   // Files first: the reply is saved only once every file is stored, so Manager never gets a reply with a missing file.
@@ -1009,7 +1045,7 @@ function takeDraft(ta){const text=(ta&&ta.value||"").trim();if(ta){ta.value="";f
 // line with the cursor stays in view (⌘+Enter's setRangeText never scrolled the box, so new lines went out of sight).
 // On input (typing, a paste, ⌘+Enter), on a restored draft and after sending, which shrinks it back.
 const BOX_LINES=6;
-function fitBox(t){if(!t||t.tagName!=="TEXTAREA"||!t.style)return;
+function fitBox(t){if(!t||t.tagName!=="TEXTAREA"||!t.style)return;cmpHas(t);
   const cs=typeof getComputedStyle==="function"?getComputedStyle(t):null,lh=parseFloat(cs&&cs.lineHeight)||21;
   const max=Math.round(lh*BOX_LINES+(parseFloat(cs&&cs.paddingTop)||6)+(parseFloat(cs&&cs.paddingBottom)||6)+2);
   t.style.height="auto";const full=t.scrollHeight+2;t.style.height=Math.min(full,max)+"px";t.style.overflowY=full>max?"auto":"hidden";
@@ -1030,7 +1066,7 @@ function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&
 function threadHtml(id,where,{box=true,hint="",acts=false}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`,st=acts?threadState(id):null,open=t.length&&!threadResolved(id);
   const at=`data-where="${esc(where)}"`,opts=st==="decision"?threadOptions(id).map(o=>`<button type="button" class="opt" data-topt="${esc(id)}" data-choice="${esc(o.key)}" ${at}><b>${esc(o.key)}</b> ${esc(o.label)}</button>`).join(""):"";
   const end=!open||st==="building"?"":st==="answer"||st==="live"?`<button type="button" class="ok" data-tack="${esc(id)}" ${at}>Ack</button>`:`<button type="button" data-tclose="${esc(id)}" ${at}>Close</button>`;
-  return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${keysHint()}${hint?`<div class="keys">${esc(hint)}</div>`:""}${filesHtml(key)}<div class="btns">${opts}<button type="button" data-tsend="${esc(id)}" ${at}>Send</button>${end}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}${t.slice().reverse().map(msgHtml).join("")}</div>`}
+  return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${box?cmpWrap(key,`${opts||end?`<div class="cchoice btns">${opts}${end}</div>`:""}${cmpBox(key,tid,{ph:t.length?(NARROW()?"Reply":"Reply to Manager"):"Start a thread on this",send:`<button type="button" class="ok" data-tsend="${esc(id)}" ${at} data-csend>Send</button>`})}${hint?`<div class="keys">${esc(hint)}</div>`:""}<div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div>`):""}${t.slice().reverse().map(msgHtml).join("")}</div>`}
 // The thread rows whose item is not on the board (a New thread, or an item since closed): open (the owner's word is the
 // last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their
 // own place at the panel's end (resolvedHtml).

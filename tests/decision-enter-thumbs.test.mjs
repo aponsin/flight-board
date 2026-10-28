@@ -28,9 +28,11 @@ test("Enter in a decision's box sends the note as 'Something else'; ⌘/Ctrl+Ent
 
 test("a decision's box says what Enter does", () => {
   const html = renderWaitingHtml([{ id: "d1", kind: "decision", text: "Pick one", options: [{ key: "A", label: "a" }, { key: "B", label: "b" }], since: Date.now(), done: false }]);
-  assert.match(html, /<div class="keys">Enter sends it as “Something else” · Ctrl\+Enter for a new line<\/div>/);
+  // #C368: in the compact box's bar; its own Send is "Send as something else".
+  assert.match(html, /<div class="keys">Enter sends it as “Something else”<\/div>/);
+  assert.match(html, /data-act="other" data-id="d1" data-csend>Send as something else<\/button>/);
   const ok = renderWaitingHtml([{ id: "d2", kind: "decision", text: "OK to ship?", since: Date.now(), done: false }]);
-  assert.match(ok, /Click a button to send/, "OK or Change something: still two outcomes");
+  assert.match(ok, /<div class="keys">Enter sends it as “Change something”<\/div>/, "an approval's note is a change");
 });
 
 test("each option's pictures at a readable width: ~240 px beside the button on a laptop, full width above it on a phone", () => {
