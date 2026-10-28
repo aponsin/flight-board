@@ -1003,7 +1003,13 @@ function deafLine(now=Date.now()){const lead=(CONFIG.gate&&CONFIG.gate.managerRo
   const oldest=Math.min(...words.filter(at=>now-at<864e5));if(!(now-oldest>=min*60000))return "";
   const cmd=`Turn the board's comment auto-replies back on: ${CONFIG.artifactUrl||"<the board's link>"}`;
   return `<div class="deaf">You wrote, and ${esc(lead)} has said nothing for ${Math.floor((now-oldest)/60000)} min: its board pings may be off. Only you can turn them back on: send ${esc(lead)} this.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}
-function renderStuck(){const el=$("stuck"),l=stuckLines(),d=deafLine();el.hidden=!l.length&&!d;el.innerHTML=l.map(t=>`<div>${esc(t)}</div>`).join("")+d}
+// The keeper line (#C407): the owner's keeper paste didn't save and nothing said so. The Collector says only whether the
+// task's saved prompt matches the installed one (derived/all.keeper.ok); the command comes from this page's own config.
+function keeperLine(){const all=state.derived.find(d=>d.id==="all"),k=all&&all.keeper,p=CONFIG.collector&&CONFIG.collector.keeper;
+  if(!k||k.ok!==false||!p||!p.prompt||!/^~?[A-Za-z0-9._\/-]+$/.test(p.prompt))return "";
+  const file=p.prompt.split("/").pop(),task=String(p.skill||"").split("/").slice(-2,-1)[0]||"context keeper",cmd=`pbcopy < ${p.prompt}`;
+  return `<div class="deaf">The context keeper's saved prompt isn't the one your install shipped: its last paste didn't save. Copy ${esc(file)} with this in a terminal, paste it into the ${esc(task)} task's prompt and Save.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}
+function renderStuck(){const el=$("stuck"),l=stuckLines(),d=deafLine()+keeperLine();el.hidden=!l.length&&!d;el.innerHTML=l.map(t=>`<div>${esc(t)}</div>`).join("")+d}
 
 // ---- Threads (board v2) ----
 // Every item is a thread: messages {thread, from: "<owner>" | "<Role>", text, at, assets?, kind?, resolved?}, oldest first.

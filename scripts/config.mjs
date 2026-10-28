@@ -33,7 +33,10 @@ export const DEFAULTS = {
   collector: { contextRoles: [], repos: [], repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", releaseTimes: "docs/RELEASE-TIMES.md", liveUrl: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
     // Runs on demand (collector/refresh.mjs): the checkouts whose origin/main moving means a ship (local refs, no fetch), the
     // scheduled task the lead is told to run, the quiet minutes after a run (or an ask) and how long a run may take.
-    refresh: { repos: [], taskId: "board-collector", debounceMin: 10, flightMin: 15 } },
+    refresh: { repos: [], taskId: "board-collector", debounceMin: 10, flightMin: 15 },
+    // The context keeper's saved prompt against the one the owner's install shipped (#C407, collector/keeper.mjs): the
+    // scheduled task's SKILL.md, the prompt file the owner pastes, and that prompt's sha256 (trimmed). Empty: off.
+    keeper: { skill: "", prompt: "", promptSha256: "" } },
   // The nudges (collector/nudges.mjs): minutes the owner may wait for an answer; how far past its size's median a step may
   // run (etaHours: the median hours a step takes, by card size); how old a memory reading may get; how long a card may
   // stay unchanged unless its status is one of parked; and the quiet minutes before a nudge is sent again.
@@ -119,6 +122,17 @@ export function checkConfig(c) {
       for (const f of ["versionPattern", "shippedPattern", "liveTag", "candidatePattern"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
       // A path git shows from main: relative, inside the repository, never an option or a ref:path of its own (Security).
       if (k.releaseTimes !== undefined && !(k.releaseTimes === "" || (typeof k.releaseTimes === "string" && k.releaseTimes.length <= 200 && /^[A-Za-z0-9_][A-Za-z0-9._\/-]*$/.test(k.releaseTimes) && !k.releaseTimes.split("/").includes("..")))) out.push("collector.releaseTimes: a path inside the repository, or empty");
+      // Paths the page puts in a shell command for the owner to copy (Security): no spaces, quotes or "..", ~ only first.
+      if (k.keeper !== undefined) {
+        const p = k.keeper, PATH = /^~?[A-Za-z0-9._\/-]{1,300}$/;
+        if (!p || typeof p !== "object" || Array.isArray(p) || Object.keys(p).some((f) => !["skill", "prompt", "promptSha256"].includes(f))) out.push("collector.keeper: { skill, prompt, promptSha256 }");
+        else {
+          const set = ["skill", "prompt", "promptSha256"].filter((f) => p[f]);
+          for (const f of ["skill", "prompt"]) if (p[f] && !(typeof p[f] === "string" && PATH.test(p[f]) && !p[f].split("/").includes(".."))) out.push(`collector.keeper.${f}: a file path (letters, digits, . _ - /, ~ first), or empty`);
+          if (p.promptSha256 && !/^[0-9a-f]{64}$/.test(String(p.promptSha256))) out.push("collector.keeper.promptSha256: 64 hex digits, or empty");
+          if (set.length && set.length < 3) out.push("collector.keeper: skill, prompt and promptSha256 all set, or none");
+        }
+      }
       if (k.liveUrl !== undefined && !(k.liveUrl === "" || (typeof k.liveUrl === "string" && k.liveUrl.length <= 300 && /^https:\/\/[^\s/?#]+(\/[^\s]*)?$/.test(k.liveUrl)))) out.push("collector.liveUrl: an https address, or empty");
       if (k.contextRoles !== undefined && !(Array.isArray(k.contextRoles) && k.contextRoles.length <= 40 && k.contextRoles.every((r) => typeof r === "string" && /^[A-Za-z0-9_-]{1,60}$/.test(r)))) out.push("collector.contextRoles: a list of up to 40 role names (letters, digits, _ and -), each a session's exact title");
       if (k.repos !== undefined) {
@@ -190,7 +204,7 @@ export function checkConfig(c) {
 
 // The defaults with the team's values on top.
 export function fullConfig(c) {
-  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}), refresh: { ...DEFAULTS.collector.refresh, ...(c?.collector?.refresh ?? {}) } }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) }, traffic: { ...DEFAULTS.traffic, ...(c?.traffic ?? {}) }, decisions: { ...DEFAULTS.decisions, ...(c?.decisions ?? {}) } };
+  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}), refresh: { ...DEFAULTS.collector.refresh, ...(c?.collector?.refresh ?? {}) }, keeper: { ...DEFAULTS.collector.keeper, ...(c?.collector?.keeper ?? {}) } }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) }, traffic: { ...DEFAULTS.traffic, ...(c?.traffic ?? {}) }, decisions: { ...DEFAULTS.decisions, ...(c?.decisions ?? {}) } };
 }
 
 // The board's id, from its link: what the gate matches a write's url against.

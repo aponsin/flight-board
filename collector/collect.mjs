@@ -20,6 +20,7 @@ import { nudges } from "./nudges.mjs";
 import { ownerPush } from "./owner-push.mjs";
 import { derivePlan } from "./plan-state.mjs";
 import { expectedVersions, guardExpected } from "./expected.mjs";
+import { keeperCheck, keeperLine } from "./keeper.mjs";
 import { idText, lineText } from "./text.mjs";
 import { planReadings, writeContext } from "./context.mjs";
 import { runMark, localMain, localShips } from "./refresh.mjs";
@@ -382,6 +383,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const guard = runExpected(dir, mirror.docs.initiatives, doc, versions);
   doc.conflicts.push(...guard);
   conflicts.push(...guard);
+  // The context keeper's saved prompt against the installed one (#C407): only whether it matches leaves the run.
+  const keeper = keeperCheck(config, (p) => readFileSync(home(p), "utf8"), now);
+  if (keeper) doc.keeper = keeper;
   const waits = new Set(Object.entries(doc.cards).filter(([, d]) => d.wait).map(([id]) => id));
   const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards, doc.releaseTimes)] };
   const out = outPath(config, dir);
@@ -389,6 +393,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   writeFileSync(out, JSON.stringify(doc, null, 2));
   console.log(`Derived ${Object.keys(doc.cards).length} open card(s) into ${out}.`);
   for (const line of conflicts) console.log(`CONFLICT ${line}`);
+  const kl = keeperLine(config, keeper);
+  if (kl) console.log(kl);
   if (doc.liveButOpen.length) console.log(`LIVE BUT OPEN (${doc.liveButOpen.length}): ${doc.liveButOpen.map(idText).join(", ")}`);
   for (const line of nudged.lines) console.log(line);
   const loose = unnumberedLine(mirror.docs);

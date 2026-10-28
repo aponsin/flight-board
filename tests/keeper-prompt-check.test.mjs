@@ -1,0 +1,70 @@
+// The keeper's saved prompt is checked (#C407): the owner's v3.20 keeper paste didn't save, the task ran v3.19's prompt,
+// and nothing noticed until Security looked. Each Collector run compares the task's saved prompt (SKILL.md, without the
+// app's front matter) with the sha256 of the prompt the owner's install shipped; derived/all.keeper says only whether
+// it matches, the lead gets a KEEPER line, and the page shows the owner a red line with the command that copies the file.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { promptBody, promptSha, keeperCheck, keeperLine } from "../collector/keeper.mjs";
+import { fullConfig, checkConfig } from "../scripts/config.mjs";
+import { loadNames } from "./harness.mjs";
+
+const T = 1_800_000_000_000;
+const V320 = "You are the Team context keeper.\n\n1. Load tools: ArtifactData.\n";
+const V319 = "You are the Team context keeper.\n\n1. Load tools.\n";
+const saved = (body) => `---\nname: team-context-keeper\ndescription: Every 1 hour\n---\n\n${body}`;
+const keeper = { skill: "~/.claude/scheduled-tasks/team-context-keeper/SKILL.md", prompt: "~/Documents/Team/keeper-prompt-v320.txt", promptSha256: promptSha(V320) };
+const config = fullConfig({ collector: { keeper } });
+
+test("the prompt as the task holds it: front matter dropped, CRLF as LF, trimmed; one sha256 for both sides", () => {
+  assert.equal(promptBody(saved(V320)), V320.trim());
+  assert.equal(promptBody(V320), V320.trim(), "the pack's file has no front matter");
+  assert.equal(promptSha(saved(V320).replace(/\n/g, "\r\n")), promptSha(V320));
+  assert.equal(promptSha(saved(V320) + "\n\n"), promptSha(V320), "a trailing blank line the editor adds");
+  assert.notEqual(promptSha(saved(V319)), promptSha(V320));
+  assert.match(promptSha(V320), /^[0-9a-f]{64}$/);
+});
+
+test("the check: the saved prompt matches or not; off, or no file to read, says nothing", () => {
+  const read = (text) => (p) => { assert.equal(p, keeper.skill, "only the configured path"); return text; };
+  assert.deepEqual(keeperCheck(config, read(saved(V320)), T), { ok: true, at: T });
+  assert.deepEqual(keeperCheck(config, read(saved(V319)), T), { ok: false, at: T }, "the v3.20 paste that didn't save");
+  assert.equal(keeperCheck(config, () => { throw new Error("ENOENT"); }, T), null);
+  assert.equal(keeperCheck(fullConfig({}), () => { throw new Error("never read"); }, T), null, "off by default");
+});
+
+test("the lead's line names the prompt file, never the task's text", () => {
+  assert.equal(keeperLine(config, { ok: false, at: T }), "KEEPER the context keeper's saved prompt isn't the installed one: the owner pastes keeper-prompt-v320.txt into the keeper task and saves (the board shows the command that copies it)");
+  assert.equal(keeperLine(config, { ok: true, at: T }), null);
+  assert.equal(keeperLine(config, null), null);
+});
+
+test("its config: three fields all set or none; paths a shell can take unquoted; 64 hex", () => {
+  assert.deepEqual(fullConfig({}).collector.keeper, { skill: "", prompt: "", promptSha256: "" });
+  assert.deepEqual(checkConfig({ collector: { keeper } }), []);
+  assert.deepEqual(checkConfig({ collector: { keeper: { skill: "", prompt: "", promptSha256: "" } } }), []);
+  assert.deepEqual(checkConfig({ collector: { keeper: { ...keeper, promptSha256: "" } } }), ["collector.keeper: skill, prompt and promptSha256 all set, or none"]);
+  for (const bad of ["~/a b.txt", "~/x;rm -rf ~", "~/$(id).txt", "../x.txt", "~/a/../b", "a\nb", "`x`", "x~"])
+    assert.ok(checkConfig({ collector: { keeper: { ...keeper, prompt: bad } } }).includes("collector.keeper.prompt: a file path (letters, digits, . _ - /, ~ first), or empty"), bad);
+  assert.deepEqual(checkConfig({ collector: { keeper: { ...keeper, promptSha256: "ABC" } } }), ["collector.keeper.promptSha256: 64 hex digits, or empty"]);
+  assert.deepEqual(checkConfig({ collector: { keeper: { ...keeper, extra: 1 } } }), ["collector.keeper: { skill, prompt, promptSha256 }"]);
+});
+
+const board = (keeperDoc, cfg = keeper) => {
+  const b = loadNames(["keeperLine", "renderStuck", "CONFIG"]);
+  b.CONFIG.collector = { ...(b.CONFIG.collector ?? {}), keeper: cfg };
+  b.state.derived = keeperDoc === undefined ? [] : [{ id: "all", at: T, cards: {}, keeper: keeperDoc }];
+  return b;
+};
+const CMD = "pbcopy &lt; ~/Documents/Team/keeper-prompt-v320.txt";
+
+test("the page: a red line with the copy command when the saved prompt doesn't match; nothing otherwise", () => {
+  const html = board({ ok: false, at: T }).keeperLine();
+  assert.match(html, /^<div class="deaf">The context keeper's saved prompt isn't the one your install shipped/);
+  assert.match(html, /Copy keeper-prompt-v320\.txt with this in a terminal, paste it into the team-context-keeper task's prompt and Save\./);
+  assert.ok(html.includes(`<code>${CMD}</code>`) && html.includes(`data-copy="${CMD}"`), html);
+  assert.equal(board({ ok: true, at: T }).keeperLine(), "");
+  assert.equal(board(undefined).keeperLine(), "", "an older Collector: no word");
+  assert.equal(board({ ok: false, at: T }, { skill: "", prompt: "", promptSha256: "" }).keeperLine(), "", "off in this page's config");
+  assert.equal(board({ ok: false, at: T }, { ...keeper, prompt: "~/x; rm -rf ~" }).keeperLine(), "", "a path the config check refuses is never drawn");
+  assert.equal(board({ ok: "false" }).keeperLine(), "", "only a false ok");
+});
