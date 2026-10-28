@@ -88,7 +88,7 @@ test("the tab, its badge and its empty line say 'With the team'", () => {
 test("each With the team row says which: Manager answering, or the card it became with its phase and ETA", () => {
   const b = board();
   assert.match(rowOf(b, "t-q"), /<div class="w-sub t-with">Manager answering<\/div>/);
-  assert.match(rowOf(b, "t-qb"), /<div class="w-sub t-with">Manager answering<\/div>/);
+  assert.match(rowOf(b, "t-qb"), /<div class="w-sub t-with">Manager answering · → <a href="#" class="t-ref c-ref" data-cref="card-358">#C358<\/a>/, "#C371: and its card");
   const r = rowOf(b, "t-b");
   assert.match(r, /<div class="w-sub t-with">→ <a href="#" class="t-ref c-ref" data-cref="card-356">#C356<\/a> · Build · ~\d/, "the tag opens the card");
   assert.match(rowOf(b, "t-m"), /data-cref="card-358">#C358<\/a> · Checker · ~\d/);
@@ -103,7 +103,7 @@ test("the badge is the state; the buttons follow it", () => {
   assert.match(page, /@media \(max-width:600px\)\{\.kind \.kn\{display:none\}\}/);
   // Designer on 763300d: the muted lines' links in the board's accent, as .steps a, not the browser's bold blue.
   assert.match(page, /\.t-with a\.t-ref,\.receipt a\.t-ref,\.c-from a\.t-ref\{color:var\(--accent\);text-decoration:underline;text-underline-offset:2px;font-weight:400\}/);
-  assert.equal(chip("t-l"), '<span class="kind live">Live</span>');
+  assert.equal(chip("t-l"), '<span class="kind live">Live<span class="kn"> #C357</span></span>', "#C371: the badge keeps its card's number once live");
   assert.equal(chip("t-a"), '<span class="kind answer">Answer</span>');
   assert.equal(chip("t-d"), '<span class="kind decision">Decision</span>');
   const has = (id, attr) => new RegExp(`${attr}="${id}"`).test(rowOf(b, id));
@@ -132,6 +132,36 @@ test("Ack closes the thread with one click, no note; an option sends the owner's
   assert.equal(b.optionText("t-d", "Z"), null, "not one of its options");
   assert.match(page, /closest\("\[data-tack\]"\)[\s\S]{0,400}closeWrites\(id,Date\.now\(\),Math\.random\(\)\.toString\(36\)\.slice\(2,8\),"Ack\."\)/);
   assert.match(page, /closest\("\[data-topt\]"\)[\s\S]{0,400}optionText\(id,b\.dataset\.choice\)[\s\S]{0,300}sendThread\(b,id,/);
+});
+
+// #C371 (the owner in t-1793156601181): a thread's line keeps its card's link in every state, not only while the card is
+// in flight: once live (#T978 / #C367 showed just LIVE), dropped, asked again, or resolved.
+test("a thread's line keeps its card's #C link in every state", () => {
+  const b = board();
+  b.state.initiatives = b.state.initRaw = [...cards(), { id: "card-x", num: 360, name: "Dropped", size: "S", status: "dropped", thread: "t-x" }];
+  b.state.messages.push(msg("t-x", "Owner", "Try this", T - 9e5), msg("t-x", "Manager", "Card #C360", T - 8e5, { kind: "building" }));
+  const line = (id) => (rowOf(b, id).match(/<div class="w-sub t-with">.*?<\/div>/) || [""])[0];
+  const link = (id, n) => `<a href="#" class="t-ref c-ref" data-cref="${id}">#C${n}</a>`;
+  assert.equal(line("t-l"), `<div class="w-sub t-with">→ ${link("card-357", 357)} · Live</div>`, "live: the link stays, the phase says Live");
+  assert.equal(line("t-lk"), `<div class="w-sub t-with">→ ${link("card-359", 359)} · Live</div>`);
+  assert.equal(line("t-x"), `<div class="w-sub t-with">→ ${link("card-x", 360)} · Dropped</div>`);
+  assert.match(line("t-qb"), new RegExp(`^<div class="w-sub t-with">Manager answering · → ${link("card-358", 358)} · Checker · ~\\d`), "asked again: Manager answering, and its card");
+  assert.equal(line("t-q"), '<div class="w-sub t-with">Manager answering</div>', "no card: as before");
+  assert.equal(line("t-a"), "", "an answer with no card: no line");
+  // Resolved: the thread closed, the card still named.
+  b.state.messages.push(msg("t-l", "Owner", "Ack.", T - 1e5, { resolved: true }));
+  assert.equal(b.waitsOn("t-l", T), "resolved");
+  assert.equal(line("t-l"), `<div class="w-sub t-with">→ ${link("card-357", 357)} · Live</div>`);
+  // An ask's row (Needs you, an ask with its thread) keeps its own badge and no line, as before.
+  assert.doesNotMatch(b.threadRow("t-l", T, "panel", { kind: "decision" }), /t-with/);
+});
+
+test("of several cards, the one in flight, else the newest", () => {
+  const b = board();
+  b.state.initiatives = b.state.initRaw = [...cards(), { id: "card-y", num: 361, name: "Again", size: "S", status: "done", phase: "live", thread: "t-l", doneAt: T - 1e5 }];
+  assert.match(rowOf(b, "t-l"), /data-cref="card-y">#C361<\/a> · Live/);
+  b.state.initiatives = b.state.initRaw = [...cards(), { id: "card-z", num: 362, name: "More", size: "S", status: "active", phase: "build", thread: "t-l", etaLive: T + 36e5 }];
+  assert.match(rowOf(b, "t-l"), /data-cref="card-z">#C362<\/a> · Build/);
 });
 
 test("the card shows the thread it came from, which opens it", () => {

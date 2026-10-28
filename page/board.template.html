@@ -980,6 +980,8 @@ function threadCards(id){if(tcOf!==state.initiatives){tcOf=state.initiatives;tcI
     (state.initiatives||[]).forEach(i=>{if(i)new Set([i.thread,...(Array.isArray(i.threads)?i.threads:[])]).forEach(t=>{if(typeof t==="string"&&t)(tcIx.get(t)||tcIx.set(t,[]).get(t)).push(i)})})}
   return tcIx.get(id)||[]}
 const threadCard=id=>threadCards(id).find(i=>i.status!=="done"&&i.status!=="dropped")||null;
+// The card a thread names in its line and badge (#C371): the one in flight, else its newest (live or dropped).
+const threadCardAny=id=>threadCard(id)||threadCards(id).slice().sort((a,b)=>(num(b.num)??0)-(num(a.num)??0))[0]||null;
 // A thread's state now, not what it started as (#C364, the owner in #T979): "question" (the owner's word is the last),
 // "building" (it became a card still in flight), "live" (Manager's word says so, or the card it became went live before
 // Manager said), "decision" (Manager asks the owner to pick), else "answer" (Manager's word informs). Manager's messages
@@ -996,10 +998,18 @@ function threadOptions(id){const t=threadOf(id),last=t[t.length-1];
   return last&&last.from!==OWNER&&Array.isArray(last.options)?last.options.filter(o=>o&&o.key&&o.label):[]}
 // The owner's pick, as the message it sends: "Chose A: Red"; null for a key the decision doesn't offer.
 function optionText(id,key){const o=threadOptions(id).find(o=>String(o.key)===String(key));return o?`Chose ${o.key}: ${o.label}`:null}
-// What a With the team row says it waits on: Manager's answer, or the card it became, its phase and ETA (the tag opens it).
-function withLine(id){if(threadOpen(id)||itemOf(id)&&itemOf(id).coll==="waiting")return `<div class="w-sub t-with">Manager answering</div>`;const c=threadCard(id);if(!c)return "";
+// A thread's card, as its line names it: "→ #C356 · Build · ~01:30" in flight, "→ #C357 · Live", "→ #C360 · Dropped"
+// (#C371, the owner in t-1793156601181: the link stays in every state, not only while the card is in flight).
+function cardLine(id){const c=threadCardAny(id);if(!c)return "";
+  const link=`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>`;
+  if(c.status==="done"&&!c.dropped)return `→ ${link} · Live`;if(c.status==="dropped"||c.dropped)return `→ ${link} · Dropped`;
   const eta=cardEta(c),ph=(PHASES.find(p=>p[0]===(notStarted(c)?BUILD_PHASE:c.phase))||[,c.phase||""])[1];
-  return `<div class="w-sub t-with">→ <a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>${ph?" · "+esc(ph):""}${eta?" · ~"+hhmm(eta):""}</div>`}
+  return `→ ${link}${ph?" · "+esc(ph):""}${eta?" · ~"+hhmm(eta):""}`}
+// What a thread's row says under its name: on With the team, Manager answering (and its card, if it has one); else
+// its card's line (the tag opens the card).
+function withLine(id,lead=true){const cl=cardLine(id);
+  if(lead&&(threadOpen(id)||itemOf(id)&&itemOf(id).coll==="waiting"))return `<div class="w-sub t-with">Manager answering${cl?" · "+cl:""}</div>`;
+  return cl?`<div class="w-sub t-with">${cl}</div>`:""}
 function threadTitle(id){const it=itemOf(id);if(it)return String(it.coll==="initiatives"?it.doc.name:it.doc.text||id);const f=threadOf(id)[0];return f?String(f.text):id}
 // A thread's number and name (threads/<thread id> {num, title}): the lead numbers threads in the order they opened
 // (scripts/thread-ids.mjs); the owner may rename one here. With no name, a short cut of the item's or first message's text.
@@ -1080,9 +1090,9 @@ function lateTag(id,now){if(!threadOpen(id))return"";const at=threadLast(id);
 // (its own kind and colour, no "Reply to:"), with a hint that writing reopens it.
 // A thread's kind is its state now (#C364): Question, Building #C356, Answer, Live, Decision; a resolved one keeps the
 // kind it started as. Under With the team, a line says what it waits on (withLine).
-function threadRow(id,now,where="panel",ask=null){const on=waitsOn(id,now),st=ask||on==="resolved"?null:threadState(id),card=st==="building"?threadCard(id):null;
+function threadRow(id,now,where="panel",ask=null){const on=waitsOn(id,now),st=ask||on==="resolved"?null:threadState(id),card=st?threadCardAny(id):null;
   const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:st?`<span class="kind ${st}">${TSTATE[st]}${card&&Number.isInteger(card.num)?`<span class="kn"> #C${card.num}</span>`:""}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
-  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${on==="lead"&&!ask?withLine(id):""}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
+  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
 function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id,q));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
     answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a))}}
