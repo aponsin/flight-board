@@ -1650,15 +1650,26 @@ document.addEventListener("submit",async e=>{const c=e.target.dataset&&e.target.
   const max=Math.max(0,...listOpen(c).map(t=>num(t.rank)||0)),kind=$(c+"kind")?$(c+"kind").value:null;
   const doc={text:text.slice(0,200),rank:max+1,area:"Added by "+OWNER,addedAt:Date.now(),done:false};if(kind)doc.kind=kind;
   try{await dbRef.doc(c+"/t"+Date.now()).set(doc);inp.value=""}catch(_){}});
-// Agents' memory: how full each session's context is (green under 40%, amber to 69%, red from 70%), from Manager's checks.
+// Agents' memory: how full each session's context is, from the Collector's readings (ctx/<Role> and meta/context).
+// In tokens when the reading has them (#C350): green under 100k, amber up to 200k, red over, the bar full at 200k;
+// a reading without (an older collector) in percent: green under 40%, amber to 69%, red from 70%.
 // A dashed red tile means the agent saved its notes and waits for the owner to type /clear in it.
-// Each agent also writes its own reading to "ctx/<Role>" {pct, at} when it logs a step; the freshest reading wins.
 // The keeper's check (meta "context") still carries the saved / "clear me" flags. A reading older than 2 h is dimmed.
-// Each agent's memory reading: meta/context's, or a fresher ctx/<agent> one. { name: { pct, at, saved? } }.
+// Each agent's memory reading: meta/context's, or a fresher ctx/<agent> one. { name: { pct, tokens?, at, saved? } }.
 function ctxAgents(){const m=state.meta.find(d=>d.id==="context")||{},a={};
   Object.entries(m.agents||{}).forEach(([n,v])=>{a[n]={...v,at:num(v.at)??num(m.at)}});
-  state.ctx.forEach(d=>{if(!d.id||num(d.pct)==null)return;const cur=a[d.id]||{};if(!num(cur.at)||num(d.at)>cur.at)a[d.id]={...cur,pct:d.pct,at:num(d.at)}});
+  state.ctx.forEach(d=>{if(!d.id||num(d.pct)==null)return;const cur=a[d.id]||{};if(!num(cur.at)||num(d.at)>cur.at){const {tokens:_,...rest}=cur;a[d.id]={...rest,pct:d.pct,at:num(d.at),...(d.tokens!==undefined?{tokens:d.tokens}:{})}}});
   return a}
+const CTX_TOK=2e5;
+// "439k", "1.2M": cut down, so a count under a line never reads as the line.
+function fmtTokens(t){return t>=1e6?`${Math.floor(t/1e5)/10}M`:t>=1e3?`${Math.floor(t/1e3)}k`:String(t)}
+// A reading's face: { txt, c, w (bar %), tip } in tokens when it has a whole count, else in percent; null with neither.
+function ctxLevel(t){const k=t&&t.tokens;
+  if(Number.isInteger(k)&&k>=0){const c=k>CTX_TOK?"r":k>=1e5?"a":"g";
+    return {txt:fmtTokens(k),c,w:Math.min(100,Math.round(k/CTX_TOK*100)),tip:`${fmtTokens(k)} tokens in its context (${c==="r"?"red over":c==="a"?"amber up to":"green under"} ${c==="g"?"100k":"200k"})${num(t.pct)!=null?`, ${Math.round(t.pct)}% of its window`:""}`}}
+  if(!t||num(t.pct)==null)return null;
+  const p=Math.max(0,Math.min(100,Math.round(t.pct)));
+  return {txt:`${p}%`,c:p>=70?"r":p>=40?"a":"g",w:p,tip:`${p}% of its memory used`}}
 function renderCtx(){const a=ctxAgents();
   const ORDER=CONFIG.order;
   const names=[...ORDER.filter(n=>a[n]),...Object.keys(a).filter(n=>!ORDER.includes(n)).sort()];
@@ -1672,7 +1683,7 @@ function renderCtx(){const a=ctxAgents();
 // none, plainly that the session isn't running (the app reads only running sessions, so the collector kept the old one).
 const CTX_OLD=72e5,CTX_WAIT=10*60e3;
 function ctxRequest(n){return (state.ctxRequests||[]).find(d=>d&&d.id===n&&num(d.at)!=null)||null}
-function ctxTileHtml(n,t,req,now){const p=Math.max(0,Math.min(100,num(t.pct)??0)),c=p>=70?"r":p>=40?"a":"g";
+function ctxTileHtml(n,t,req,now){const L=ctxLevel(t)||ctxLevel({pct:0}),c=L.c;
   // #C361 (the owner in #T967): the lead wakes the agent, which writes its reading, then answers on the request
   // ({doneAt, outcome}); "no answer" shows at once, and the 10-minute line is only the fallback when nobody answers.
   const old=num(t.at)&&now-t.at>CTX_OLD,asked=old&&req&&!(num(t.at)>req.at);
@@ -1681,7 +1692,7 @@ function ctxTileHtml(n,t,req,now){const p=Math.max(0,Math.min(100,num(t.pct)??0)
   const st=waiting?"waking…":noAnswer?`${n} didn't answer`:asked?`no new reading: ${n}'s session isn't running`:old?`${dur(now-t.at)} old`:"";
   // ↻ alone, as on cards (#C355, #C361); the label says what it does.
   const ref=old&&!waiting?` <button type="button" class="ctx-ref" data-ctxref="${esc(n)}" aria-label="Refresh ${esc(n)}'s reading" title="Refresh ${esc(n)}'s reading">↻</button>`:"";
-  return `<div class="ctx-t ${c}${t.saved?" saved":""}${old?" stale":""}" title="${esc(n)}: ${p}% of its memory used${num(t.at)?", read "+dur(now-t.at)+" ago":""}${t.saved?"; saved, ready to clear":""}"><span class="nm">${esc(n)}<span class="pc">${p}%</span></span><span class="ctx-bar"><i style="width:${p}%"></i></span>${t.saved?'<span class="sv">/clear me</span>':""}${st?`<span class="ctx-line"><span class="ctx-st">${esc(st)}</span>${ref}</span>`:""}</div>`}
+  return `<div class="ctx-t ${c}${t.saved?" saved":""}${old?" stale":""}" title="${esc(n)}: ${esc(L.tip)}${num(t.at)?", read "+dur(now-t.at)+" ago":""}${t.saved?"; saved, ready to clear":""}"><span class="nm">${esc(n)}<span class="pc">${esc(L.txt)}</span></span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${t.saved?'<span class="sv">/clear me</span>':""}${st?`<span class="ctx-line"><span class="ctx-st">${esc(st)}</span>${ref}</span>`:""}</div>`}
 function ctxRefreshWrites(n,now){return /^[A-Za-z0-9_-]{1,60}$/.test(String(n))?[{op:"set",path:`ctxRequests/${n}`,data:{at:now}}]:[]}
 const ctxPingText=n=>`Board: refresh ${n}'s memory tile (wake ${n}, then run board-collector)`;
 document.addEventListener("click",async e=>{const r=e.target.closest&&e.target.closest("[data-ctxref]");if(!r||!dbRef)return;
@@ -1858,12 +1869,12 @@ function crewHtml(now=Date.now()){
   const {by,names:onCards,notes}=crewBy(),mem=ctxAgents(),models=(state.meta.find(d=>d.id==="models")||{}).agents||{};
   const names=[...onCards,...Object.keys(mem).filter(n=>!onCards.includes(n)).sort()];
   const tiles=names.map(n=>{const md=models[n]||{},m=mem[n];
-    const p=m&&num(m.pct)!=null?Math.max(0,Math.min(100,Math.round(m.pct))):null,c=p==null?"":p>=70?"r":p>=40?"a":"g";
+    const L=m?ctxLevel(m):null,c=L?L.c:"";
     const old=m&&num(m.at)!=null&&now-m.at>72e5;
     const items=(by[n]||[]).slice().sort(openOrder);
     const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1];return `<span>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(notes[n]||"Idle")}</span>`;
     return `<div class="panel crew3-t" data-agent="${esc(n)}"><h3><span>${esc(n)}</span>${md.model||md.effort?`<span class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</span>`:""}</h3>`+
-      (p!=null?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${p}%</span><span class="ctx-bar"><i style="width:${p}%"></i></span>${m.saved?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
+      (L?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${esc(L.txt)}</span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${m.saved?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
       `<div class="crew3-on">${on}</div></div>`}).join("");
   const tot=logTotals("phase",now),fmt=ms=>ms?dur(ms):"—";
   const rows=PHASES.filter(([k])=>tot[k]).map(([k,label])=>`<tr><td>${esc(label)}</td><td>${fmt(tot[k].work)}</td><td>${fmt(tot[k].busy)}</td><td>${fmt(tot[k].gate)}</td></tr>`).join("");
