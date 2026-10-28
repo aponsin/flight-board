@@ -195,6 +195,34 @@ export function tipsOnly(remote, shipped) {
   return shipped.filter((h) => !there.has(h.branch));
 }
 
+// A branch left behind by a rebase or a cherry-pick (#C412, Manager: six live cards read open from stale branches;
+// "done-list-search-v319 is behind", "keeper-pickup-once is behind"): every commit it has beyond main is already on
+// main as the same patch (git cherry: all "-"), so the card's change is the one on main. Such a tip is read as the
+// newest main commit carrying one of its patches; tips that come to the same commit count once. A tip with any commit
+// of its own (a "+") stays as it is, and so does one already on main (nothing beyond it).
+export function settledTips(git, remote, main, tips) {
+  const out = [], seen = new Set();
+  for (const h of tips) {
+    let t = h;
+    try {
+      const lines = (args) => git(args).split("\n").filter(Boolean);
+      const beyond = lines(["cherry", `${remote}/${main}`, h.sha]);
+      if (beyond.length && beyond.every((l) => l.startsWith("- "))) {
+        const on = lines(["cherry", h.sha, `${remote}/${main}`]).filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim());
+        const sha = on[on.length - 1];
+        if (/^[0-9a-f]{40}$/.test(sha ?? "")) {
+          const [at, message] = git(["log", "-1", "--format=%ct%x1f%B", sha]).split("\x1f");
+          t = { branch: main, sha, at: Number(at) * 1000, message: String(message ?? "").replace(/\n+$/, ""), settled: h.branch };
+        }
+      }
+    } catch { /* a tip git can't compare stays as it is */ }
+    if (!seen.has(t.sha)) { seen.add(t.sha); out.push(t); }
+  }
+  return out;
+}
+// The evidence says so when a tip was read from main this way.
+export const settledNote = (h, d) => (h?.settled ? { ...d, evidence: `${d.evidence}; ${lineText(h.settled, 60)} was rebased: its change is on main as ${String(h.sha).slice(0, 12)}` } : d);
+
 // The card's phase from each of its branches' tips: the least advanced one (live only when every tip is deployed),
 // naming the branch behind when there are several. derive(head) is derivePhase for that head.
 // A stacked follow-up (#C358): a tip found by the card's Board-Id on another card's branch (one named after a card on the
@@ -242,12 +270,12 @@ export function inRepo(card, r, use, config, now, ids = new Set()) {
   const cfg = { ...config, collector: { ...c, remote, mainBranch: main, notes: localNotes(r.notes) } };
   let heads = [];
   try { heads = remoteHeads(use.git, remote); } catch { /* an empty clone */ }
-  const live = headsFor(card.id, heads.filter((h) => h.branch !== main));
+  const live = settledTips(use.git, remote, main, headsFor(card.id, heads.filter((h) => h.branch !== main)));
   // A branch deleted after it merged leaves only its Board-Id trailer on main (#C281).
   const tips = live.length ? live : [trailerOnMain(use.git, remote, main, card.id)].filter(Boolean);
   const derive = (h) => {
     const facts = factsFor(use.git, h, { config: cfg, line: [], deployed: use.installed ?? null });
-    const d = derivePhase(card, facts, cfg);
+    const d = settledNote(h, derivePhase(card, facts, cfg));
     return d.phase === c.shipPhase ? { ...d, wait: facts.onMain ? "install" : "release" } : d;
   };
   return { ...leastAdvanced(card, tips, derive, config, stackedOn(card, ids)), repo: r.name, at: now };
@@ -268,8 +296,8 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const work = heads.filter((h) => h.branch !== c.mainBranch && !(c.candidatePattern && new RegExp(c.candidatePattern).test(h.branch)));
   const ids = new Set(cards.map((k) => k.id));
   const phaseOf = (card) => {
-    const tips = tipsOf[card.id] = headsFor(card.id, work);
-    return { ...leastAdvanced(card, tips, (h) => derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg), config, stackedOn(card, ids)), at: now };
+    const tips = tipsOf[card.id] = settledTips(git, c.remote, c.mainBranch, headsFor(card.id, work));
+    return { ...leastAdvanced(card, tips, (h) => settledNote(h, derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg)), config, stackedOn(card, ids)), at: now };
   };
   for (const card of open) {
     const r = repoOf(card, config);
