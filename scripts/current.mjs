@@ -47,6 +47,14 @@ export function judge({ onMain, note, changed, owned = [] }) {
   return { ok: true, ownerFiles: files.filter((f) => owned.includes(f)), taskChanged: files.includes(TASK_FILE) };
 }
 
+// Never back (#C412, Security's condition 5): a page release may have gone out on top of a waiting pack, so when the
+// pack moves the link to its commit the link may already be at a later one that has it. The link stays there when that
+// later commit is on origin/main and signed SECURE; anything else moves to sha, as before.
+export function linkMove({ sha, before, beforeHasSha, beforeOnMain, beforeNote }) {
+  const keep = Boolean(before) && before !== sha && beforeHasSha && beforeOnMain && /^SECURE\b/.test(String(beforeNote ?? "").split("\n")[0].trim());
+  return keep ? "keep" : "move";
+}
+
 // The commit the owner's install pins: the one the gate's hook runs from in the settings, or null.
 export function pinnedCommit(settingsText) {
   return /install\/([0-9a-f]{40})\/gate\/gate\.mjs/.exec(String(settingsText ?? ""))?.[1] ?? null;
@@ -174,9 +182,12 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       if (existsSync(dir) && !sameTree(dir, fresh)) throw new Error(`${dir} is not exactly ${sha.slice(0, 12)}: move it away and run this again`);
       if (!existsSync(dir) && !args.includes("--dry-run")) renameSync(fresh, dir); // a dry run writes nothing (Checker)
     } finally { rmSync(fresh, { recursive: true, force: true }); }
-    if (args.includes("--dry-run")) console.log(`Dry run: ${existsSync(dir) ? `${dir} is exactly ${sha.slice(0, 12)}` : `would copy ${sha.slice(0, 12)} to ${dir}`}; would point ${link} at it.`);
+    const known = (c) => Boolean(c) && quiet(["cat-file", "-e", `${c}^{commit}`]) !== null;
+    const move = linkMove({ sha, before, beforeHasSha: known(before) && quiet(["merge-base", "--is-ancestor", sha, before]) !== null, beforeOnMain: known(before) && quiet(["merge-base", "--is-ancestor", before, "origin/main"]) !== null, beforeNote: known(before) ? quiet(["notes", "--ref=flight-board-current/security", "show", before]) : null });
+    if (move === "keep") console.log(`current: kept at ${before.slice(0, 12)}: it already has ${sha.slice(0, 12)} (a signed release on main after it), so the link never moves back. The pinned copy ${dir} is there for the owner's hooks.`);
+    else if (args.includes("--dry-run")) console.log(`Dry run: ${existsSync(dir) ? `${dir} is exactly ${sha.slice(0, 12)}` : `would copy ${sha.slice(0, 12)} to ${dir}`}; would point ${link} at it.`);
     else { swapLink(link, dir); console.log(`current: ${before ? before.slice(0, 12) : "none"} → ${sha.slice(0, 12)} (${dir}). The next collector run uses it.`); }
-    console.log(fastForwardMain(repo, sha, { dry: args.includes("--dry-run") }));
+    console.log(fastForwardMain(repo, move === "keep" ? before : sha, { dry: args.includes("--dry-run") }));
     if (fromPin === null) console.log("No pinned commit found in the settings to compare with: check by hand whether the owner's files changed.");
     else if (v.ownerFiles.length) console.log(`The gate's hooks, the fence and the refresh hook keep the owner's pinned copy (${pinned.slice(0, 12)}) until the owner's install; changed since: ${v.ownerFiles.join(", ")}.`);
     if ((fromLink ?? []).includes(TASK_FILE)) console.log(`${TASK_FILE} changed: the lead saves the new steps into the scheduled task.`);
