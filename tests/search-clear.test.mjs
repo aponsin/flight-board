@@ -43,6 +43,14 @@ test("the × shows as he types, and one click clears, redraws and keeps the focu
   assert.equal(b.els.initcount.hidden, true, "redrawn at once: no N of M");
 });
 
+test("Security's nit on 0aac0d2: an id like 'constructor' is no box of SCLEAR's", () => {
+  const { b } = wired();
+  const odd = { id: "constructor", value: "x" };
+  for (const fn of b.listeners.input) fn({ target: odd });
+  assert.match(page, /if\(e\.target&&Object\.hasOwn\(SCLEAR,e\.target\.id\)\)showClear\(e\.target\.id\)/);
+  assert.match(page, /const id=x\.dataset\.sclear;if\(!Object\.hasOwn\(SCLEAR,id\)\)return;/);
+});
+
 test("on a phone the cards' box drops under the heading, full width", () => {
   assert.match(page, /\.init-head \.sbox\{flex:1 1 16rem\}\n@media \(max-width:600px\)\{\.init-head \.sbox\{flex:1 1 100%\}\}/);
 });

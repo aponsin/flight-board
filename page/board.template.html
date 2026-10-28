@@ -1305,8 +1305,8 @@ document.addEventListener("input",e=>{if(e.target&&e.target.id==="fsearch"){cons
 // wait; one click empties the box, redraws at once and keeps the focus there.
 const SCLEAR={isearch:q=>setInitSearch(q),fsearch:q=>setFeedSearch(q)};
 function showClear(id){const x=document.querySelector(`[data-sclear="${id}"]`),box=$(id);if(x)x.hidden=!(box&&box.value)}
-document.addEventListener("input",e=>{if(e.target&&SCLEAR[e.target.id])showClear(e.target.id)});
-document.addEventListener("click",e=>{const x=e.target.closest&&e.target.closest("[data-sclear]");if(!x)return;const id=x.dataset.sclear;SCLEAR[id]("");const box=$(id);if(box&&box.focus)box.focus()});
+document.addEventListener("input",e=>{if(e.target&&Object.hasOwn(SCLEAR,e.target.id))showClear(e.target.id)});
+document.addEventListener("click",e=>{const x=e.target.closest&&e.target.closest("[data-sclear]");if(!x)return;const id=x.dataset.sclear;if(!Object.hasOwn(SCLEAR,id))return;SCLEAR[id]("");const box=$(id);if(box&&box.focus)box.focus()});
 function renderFeed(){
   const on=isOn(fQuery),all=[...state.events].sort((a,b)=>(num(b.at)??0)-(num(a.at)??0)),ev=on?all.filter(e=>feedHit(e)):all;
   const none=t=>`<li><span></span><span class="empty" style="padding:0">${t}</span></li>`;
