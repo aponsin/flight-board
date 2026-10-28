@@ -1,0 +1,1 @@
+PASS Quick: #C384 tiles-percent, rebased re-sign (branch board-tiles-percent-main, on main 00bb8e2). Range-diff bd7d6f8=42988b3; I signed bd7d6f8. Suite 543/544 on this tip; the one failure (card-refs 'the bubble', a done time from before midnight) fails identically on main 00bb8e2: clock-dependent, not this change.
