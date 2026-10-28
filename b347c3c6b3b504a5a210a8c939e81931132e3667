@@ -1,0 +1,1 @@
+PASS Quick: #C376 check-by-code, re-sign on v3.18 (branch board-check-by-code-v318, on main 33ff2fc). Range-diff 42988b3..0855ca3 vs 33ff2fc..671af14: all '='; I signed c3b77c1. Suite 555/556 (only the clock test, fixed by #C391 on top).
