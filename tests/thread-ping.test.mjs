@@ -1,7 +1,7 @@
 // A Ping on a thread Manager hasn't answered (#C372, the owner in t-1793156758845): when the owner's message is a
-// thread's newest and 10 minutes or more have passed, the row offers Ping. A press sends Manager the thread again through
-// the reply route ("Board ping [<id>]: waiting N min: <first words>") and, once sent, records threadPings/<id> {at}; the
-// row then says "Pinged HH:MM" until Manager answers. At most one ping per 10 minutes per thread.
+// thread's newest, the row offers Ping (at once since #C396; it waited 10 minutes before). A press sends Manager the
+// thread again through the reply route ("Board ping [<id>]: waiting N min: <first words>") and, once sent, records
+// threadPings/<id> {at}; the row then says "Pinged HH:MM" until Manager answers, and Ping stays.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -26,24 +26,25 @@ function board(pings = []) {
 const row = (b, id, now = T) => b.threadRow(id, now);
 const PING = (id) => `<button type="button" class="t-ping" data-tping="${id}" title="Send Manager this thread again">Ping</button>`;
 
-test("Ping shows once the owner's word has waited 10 minutes, and only then", () => {
+// #C396 (the owner's "always visible" in #T1030): no 10-minute wait, before or after a ping.
+test("Ping shows on every open thread where the owner spoke last, at once", () => {
   const b = board();
   assert.equal(b.pingState("t-q", T).show, "ping");
   assert.ok(row(b, "t-q").includes(PING("t-q")));
-  assert.equal(b.pingState("t-new", T).show, null, "9 minutes: not yet");
-  assert.ok(!row(b, "t-new").includes("data-tping"));
-  assert.ok(row(b, "t-new", T + MIN).includes(PING("t-new")), "at 10 minutes");
+  assert.equal(b.pingState("t-new", T).show, "ping", "9 minutes: shown too");
+  assert.ok(row(b, "t-new").includes(PING("t-new")));
+  b.state.messages.push(msg("t-now", "Owner", "Just sent", T));
+  assert.ok(row(b, "t-now").includes(PING("t-now")), "the moment it's sent");
   assert.equal(b.pingState("t-a", T).show, null, "Manager's word is the newest: nothing to ping");
   assert.ok(!row(b, "t-a").includes("data-tping"));
 });
 
-test("after a ping: 'Pinged HH:MM' until Manager answers; one ping per 10 minutes", () => {
+test("after a ping: 'Pinged HH:MM' until Manager answers, with Ping still there", () => {
   const b = board([{ id: "t-q", at: T - 2 * MIN }]);
-  assert.deepEqual({ ...b.pingState("t-q", T) }, { show: "pinged", at: T - 2 * MIN });
+  assert.deepEqual({ ...b.pingState("t-q", T) }, { show: "ping", at: T - 2 * MIN });
   const r = row(b, "t-q");
   assert.ok(r.includes(`<span class="t-pinged">Pinged ${b.hhmm(T - 2 * MIN)}</span>`), r);
-  assert.ok(!r.includes("data-tping"), "no second ping within 10 minutes");
-  assert.ok(row(b, "t-q", T + 8 * MIN).includes(PING("t-q")), "10 minutes after the ping, again");
+  assert.ok(r.includes(PING("t-q")), "Ping again at once, no wait");
   assert.ok(row(b, "t-q", T + 8 * MIN).includes("Pinged "), "still saying when it was pinged");
   b.state.messages.push(msg("t-q", "Manager", "On it", T - MIN));
   assert.equal(b.pingState("t-q", T).show, null, "Manager answered: no ping, no 'Pinged'");

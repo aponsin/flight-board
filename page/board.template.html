@@ -1124,15 +1124,14 @@ const threadLast=id=>{const t=threadOf(id);return t[t.length-1].at};
 const LATE_MIN=5;
 function lateTag(id,now){if(!threadOpen(id))return"";const at=threadLast(id);
   return now-at>=LATE_MIN*60000?`<span class="late">unanswered ${dur(now-at)}</span>`:""}
-// Ping (#C372, the owner in t-1793156758845): the owner's word the newest, unanswered 10 minutes on, the row offers Ping,
-// which sends Manager the thread again through the reply route and, once sent, records threadPings/<id> {at}. A ping
-// counts only for the owner's newest word (at or after it); it shows "Pinged HH:MM" until Manager answers, and Ping
-// comes back 10 minutes after it. A ping that didn't send records nothing.
-const PING_MIN=10;
+// Ping (#C372, the owner in t-1793156758845): the owner's word the newest, the row offers Ping, which sends Manager the
+// thread again through the reply route and, once sent, records threadPings/<id> {at}. Always visible on such a thread
+// (#C396, the owner in #T1030: it waited 10 minutes, before and after a ping). A ping counts only for the owner's newest
+// word (at or after it); it shows "Pinged HH:MM" beside Ping until Manager answers. A ping that didn't send records
+// nothing; a press while one is sending is ignored (the button is disabled).
 function pingState(id,now){if(!threadOpen(id))return {show:null};const last=threadLast(id);
   const p=(state.threadPings||[]).find(d=>d&&d.id===id&&num(d.at)!=null&&d.at>=last)||null;
-  const can=now-last>=PING_MIN*60000&&(!p||now-p.at>=PING_MIN*60000);
-  return p?{show:can?"ping":"pinged",at:p.at}:{show:can?"ping":null}}
+  return p?{show:"ping",at:p.at}:{show:"ping"}}
 function pingHtml(id,now){const s=pingState(id,now);
   return (s.at!=null?`<span class="t-pinged">Pinged ${hhmm(s.at)}</span>`:"")+(s.show==="ping"?`<button type="button" class="t-ping" data-tping="${esc(id)}" title="Send Manager this thread again">Ping</button>`:"")}
 // "Board ping [<id>]: waiting N min: <first words>": the owner's newest word on one line, cut at a word near 80 characters.
