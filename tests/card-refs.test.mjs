@@ -67,7 +67,7 @@ test("a click opens the card: on the board, or in Done (opened); a search that h
 
 test("wiring: rows carry their card, the click opens it, the bubble shows on hover or focus only", () => {
   const b = board();
-  assert.match(b.initRow(b.state.initiatives[0]), /^<div class="i-row" data-card="card-a">/);
+  assert.match(b.initRow(b.state.initiatives[0]), /^<div class="i-row"><div data-card="card-a">/, "inside the row: the fixtures reader splits on the row's exact tag");
   assert.match(b.withLine("t-x"), /^$/, "nothing for a thread with no card");
   assert.match(page, /<div class="cbub" id="cbub" role="tooltip" hidden><\/div>/);
   assert.match(page, /closest\("\[data-cref\]"\);if\(!a\)return;e\.preventDefault\(\);cbubHide\(\);\s*if\(!cardOpen\(a\.dataset\.cref\)\)a\.title="That card is no longer shown on the board"/);
