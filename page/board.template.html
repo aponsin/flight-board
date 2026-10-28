@@ -535,7 +535,7 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
 function dur(ms){if(ms==null)return"";const m=Math.round(Math.abs(ms)/60000);if(m<60)return m+" min";const h=Math.floor(m/60),r=m%60;if(h<48)return h+" h"+(r?" "+r+" min":"");return Math.round(h/24)+" d"}
 function hhmm(t){const d=new Date(t);return d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}
-function dayLabel(t){const d=new Date(t),n=new Date();if(d.toDateString()===n.toDateString())return hhmm(t);return d.toLocaleDateString([], {month:"short",day:"numeric"})+" "+hhmm(t)}
+function dayLabel(t,now=Date.now()){const d=new Date(t),n=new Date(now);if(d.toDateString()===n.toDateString())return hhmm(t);return d.toLocaleDateString([], {month:"short",day:"numeric"})+" "+hhmm(t)}
 
 // Where an ask shows in the Threads panel: under "Needs you" while it is open and unanswered (or answered under 2.5 s
 // ago, the "sent" moment), then under "With the team" until Manager closes it, with the reply and its thread.
@@ -734,7 +734,7 @@ function cardLinks(html){return String(html).replace(/(?<![\w\/#&;.=?-])#C(\d{1,
 // step, cut so it stays two lines.
 function cardBubble(i,now=Date.now()){const done=i.status==="done",cut=(s,n)=>s.length>n?s.slice(0,n-1)+"…":s;
   const ph=done?(i.dropped?"Dropped":"Live"+(i.version?" "+i.version:"")):notStarted(i)?"Queued":(PHASES.find(p=>p[0]===i.phase)||[,i.phase||""])[1];
-  const eta=done?(num(i.doneAt)?dayLabel(i.doneAt):""):cardEta(i)?dueText(cardEta(i)):"";
+  const eta=done?(num(i.doneAt)?dayLabel(i.doneAt,now):""):cardEta(i)?dueText(cardEta(i)):"";
   const next=!done&&i.nextNote?"Next: "+cut(String(i.nextNote),90):"";
   return `<b>${Number.isInteger(i.num)?"#C"+i.num+" ":""}${esc(i.name||i.id)}</b><br>${esc([ph,!done&&i.who!==ph&&i.who,eta,next].filter(Boolean).join(" · "))}`}
 // A card's number opens it: on the board, or under Done (opened), clearing a cards' search that hides it. null when the

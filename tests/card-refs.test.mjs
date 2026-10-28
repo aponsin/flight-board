@@ -43,7 +43,10 @@ test("the bubble: name, then phase and who, ETA and next step; escaped", () => {
   const b = board();
   const h = b.cardBubble(b.state.initiatives[0], T);
   assert.match(h, /^<b>#C356 Tabs &lt;search&gt;<\/b><br>Build · Boardsmith · due ~\d.* · Next: Build the tabs &amp; the box$/);
-  assert.match(b.cardBubble(b.state.initiatives[1], T), /^<b>#C300 Pill count<\/b><br>Live v3\.15\.2 · \d/);
+  // #C391: the time is passed in, so the test doesn't hang on the real clock (it failed for an hour after midnight).
+  const NOON = new Date(2026, 9, 27, 12).getTime(), hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  assert.equal(b.cardBubble({ ...cards()[1], doneAt: NOON - 36e5 }, NOON), `<b>#C300 Pill count</b><br>Live v3.15.2 · ${hhmm(NOON - 36e5)}`, "done today: the time");
+  assert.match(b.cardBubble({ ...cards()[1], doneAt: NOON - 13 * 36e5 }, NOON), /^<b>#C300 Pill count<\/b><br>Live v3\.15\.2 · Oct 26 /, "done the day before: the date too");
   assert.match(b.cardBubble({ ...cards()[0], phase: "checker", who: "Checker" }, T), /<br>Checker · due ~/, "a phase and its owner of one name: said once");
   const long = b.cardBubble({ ...cards()[0], nextNote: "x".repeat(200) }, T);
   assert.ok(long.length < 260, "the next step is cut, so it stays two lines");
