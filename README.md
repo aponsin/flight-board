@@ -25,6 +25,7 @@ Everything particular to one team lives in its own `board.config.json`, outside 
 | `collector/fence.mjs` | The collector's fence: a hook that lets its run make only its own steps. |
 | `collector/context.mjs` | Memory tiles from the app's own numbers: a hook that saves each role's context reading for the collector to write. |
 | `collector/refresh.mjs` | A Stop hook that tells the lead to run the collector now, after a ship or the owner's word. |
+| `keeper/TASK.md` | The context keeper's scheduled task: measures each agent's context, cues resets, and picks its own wave back up (the lead last); the lead saves its prompt into the task. |
 | `tests/` | Every rule's test. `npm test`. |
 | `board.config.example.json` | An example config, fictional. |
 
