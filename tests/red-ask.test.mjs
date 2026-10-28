@@ -2,7 +2,7 @@
 // transcripts. The answer rule's checks are the ones its own test_red_ask.py held before it came here (#C329).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -10,12 +10,14 @@ import { fileURLToPath } from "node:url";
 
 const HOOK = fileURLToPath(new URL("../hooks/red-ask-board.py", import.meta.url));
 // The hook's verdict on a turn: "" when it lets the turn end, else its reason.
-export function hook(lines) {
+// HOME is a fresh folder unless a test passes one (#C392: the hook reads ~/.flight-board), so the machine's own board
+// never leaks in.
+export function hook(lines, home = null) {
   const dir = mkdtempSync(join(tmpdir(), "fb-redask-"));
   try {
     const path = join(dir, "s.jsonl");
     writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
-    const r = spawnSync("python3", [HOOK], { input: JSON.stringify({ transcript_path: path }), encoding: "utf8" });
+    const r = spawnSync("python3", [HOOK], { input: JSON.stringify({ transcript_path: path }), encoding: "utf8", env: { ...process.env, HOME: home ?? dir } });
     assert.equal(r.status, 0, r.stderr);
     return r.stdout.trim() ? JSON.parse(r.stdout).reason : "";
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -107,6 +109,37 @@ test("the answer rule: the owner's question needs a board answer, in a thread or
   assert.match(hook(turn([{ action: "list", collection: "messages" }])), /asked a question this turn/, "a read of messages isn't an answer");
   const builder = hook(turn([], { title: "Builder", text: "/pickup Manager quoted in a test? <command-name>/pickup</command-name><command-args>Manager</command-args>" }));
   assert.doesNotMatch(builder, /asked a question|memory tile/, "Builder isn't Manager");
+});
+
+// #C392 (b), Manager's pick A: the live memory tile. The hook asks the agent to write ctx/<Role> when the board's tile is
+// 30+ min old or 5+ points off; the window comes from the Collector's reading on this machine (tokens over pct).
+const tileHome = (role, reading) => {
+  const home = mkdtempSync(join(tmpdir(), "fb-home-"));
+  const d = join(home, ".flight-board", "Board1", "mirror", "ctx");
+  mkdirSync(d, { recursive: true });
+  if (reading) writeFileSync(join(d, `${role}.json`), JSON.stringify(reading));
+  return home;
+};
+const at1 = (tokens, title = "Manager") => { const l = turn([], { title, text: "status" }); l[2].message.usage = { input_tokens: tokens, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }; return l; };
+test("the live tile: asked when the board's tile is 5+ points off or 30+ min old, once, on the Collector's window", () => {
+  const now = Date.now();
+  const home = tileHome("Manager", { pct: 34, tokens: 340000, at: now - 18 * 60e3 });
+  try {
+    const r = hook(at1(390000), home);
+    assert.match(r, /^Memory tile: your context is 39% of its window \(390k tokens\); the board's tile says 34%, 18 min old\. /);
+    assert.match(r, /ArtifactData get ctx\/Manager for its version, then set ctx\/Manager \{"pct": 39, "tokens": 390000, "at": \d{13}\}/);
+    assert.equal(hook(at1(391000), home), "", "asked already: the next turn, still 39%, says nothing");
+    assert.equal(hook(at1(420000), home).includes("Memory tile"), false, "3 points on from what it last asked: nothing");
+    assert.match(hook(at1(440000), home), /Memory tile: your context is 44%/, "5 points on from what it last asked");
+  } finally { rmSync(home, { recursive: true, force: true }); }
+  const fresh = tileHome("Manager", { pct: 42, tokens: 420000, at: now - 10 * 60e3 });
+  try { assert.equal(hook(at1(400000), fresh), "", "2 points off, 10 min old: nothing"); } finally { rmSync(fresh, { recursive: true, force: true }); }
+  const old = tileHome("Manager", { pct: 43, tokens: 430000, at: now - 31 * 60e3 });
+  try { assert.match(hook(at1(430000), old), /says 43%, 31 min old/, "the same number, but 31 min old"); } finally { rmSync(old, { recursive: true, force: true }); }
+  const small = tileHome("Builder", { pct: 50, tokens: 100000, at: now - 40 * 60e3 });
+  try { assert.match(hook(at1(120000, "Builder"), small), /your context is 60% of its window/, "a 200k window, from 100k at 50%"); } finally { rmSync(small, { recursive: true, force: true }); }
+  const none = tileHome("Manager", null);
+  try { assert.doesNotMatch(hook(at1(430000, "Collector"), none), /Memory tile/, "no tile for the role on this machine: never asked"); } finally { rmSync(none, { recursive: true, force: true }); }
 });
 
 // #C392: the cue waits one turn while the owner is in the middle of something. Manager's 06:31Z reset threw away the

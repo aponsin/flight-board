@@ -7,7 +7,7 @@
 # Any titled session (an agent; #C350): when its context is over 400k tokens (#C384; 200k before), a reset cue (hand off once the work in
 # flight is safe), unless this turn already reset it. The context keeper's 60% cue becomes the fallback. While the owner
 # wrote under 10 minutes ago or an ask of theirs is open, the cue waits one turn (#C392): "resetting after this" first.
-import json, re, sys
+import glob, json, os, re, sys, time
 from datetime import datetime
 RED = re.compile(r"^\s*(?:[-*>]\s*)?(?:\*\*)?\U0001F534", re.M)  # only a line that starts with the red mark is an ask
 try:
@@ -168,9 +168,48 @@ if TITLE and not cleared and tokens is not None and tokens > RESET_AT:
         reasons.append(f"Context reset cue: deferred one turn. This session's context is at {tokens // 1000}k tokens, over 400k, but {why}, so don't reset now: a reset now loses what the owner just set up (the board's auto-replies too). Write \"{DEFER_MARK}\" on the board now (a message in the thread you're answering, from you), finish this turn, and reset with /handoff at the end of the next one.")
     else:
         reasons.append(f"Context reset cue: this session's context is at {tokens // 1000}k tokens, over 400k. Once the work in flight is committed and pushed (or at the end of this turn if it is), write your handoff note and reset with /handoff, so the next session starts small.")
+# The live memory tile (#C392, the owner's ask; Manager's pick A): the Collector's tile is as old as its last run (it read
+# 34% at 06:12Z while Manager was at 43% at 06:30Z). This hook knows the context every turn, so it asks the agent to
+# write ctx/<Role> itself, but only when the tile is CTX_STALE_MIN old or CTX_DRIFT points off: far below #C334's
+# per-turn call. Only a role with a tile from the Collector on this machine (the board's mirror, ~/.flight-board/<board>/
+# mirror/ctx/<Role>.json), whose tokens over percent give its window (the model id doesn't say: a 1M session reads
+# plain "claude-opus-5-5"), snapped to 200k or 1M. What it last asked is kept in ~/.flight-board/ctx-asks/<Role>.json.
+CTX_STALE_MIN, CTX_DRIFT = 30, 5
+ROLE_FILE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+def read_json(p):
+    try:
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else None
+    except Exception:
+        return None
+def num(v):
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None
+if TITLE and ROLE_FILE.match(TITLE) and tokens:
+    fb = os.path.join(os.path.expanduser("~"), ".flight-board")
+    tile = None
+    for p in glob.glob(os.path.join(glob.escape(fb), "*", "mirror", "ctx", TITLE + ".json")):
+        r = read_json(p)
+        if r and num(r.get("pct")) and num(r.get("tokens")) and num(r.get("at")) and (tile is None or r["at"] > tile["at"]):
+            tile = r
+    if tile:
+        size = 1000000 if tile["tokens"] * 100 / tile["pct"] > 600000 else 200000
+        pct = min(100, round(tokens * 100 / size))
+        ms = int(time.time() * 1000)
+        asked = read_json(os.path.join(fb, "ctx-asks", TITLE + ".json"))
+        last = asked if asked and num(asked.get("at")) and isinstance(asked.get("pct"), (int, float)) and asked["at"] > tile["at"] else tile
+        if ms - last["at"] >= CTX_STALE_MIN * 60000 or abs(pct - last["pct"]) >= CTX_DRIFT:
+            reasons.append(f"Memory tile: your context is {pct}% of its window ({tokens // 1000}k tokens); the board's tile says {round(last['pct'])}%, {int((ms - last['at']) // 60000)} min old. Write it: ArtifactData get ctx/{TITLE} for its version, then set ctx/{TITLE} {{\"pct\": {pct}, \"tokens\": {tokens}, \"at\": {ms}}} with that if_version (none if it has none). Then finish.")
+            try:
+                os.makedirs(os.path.join(fb, "ctx-asks"), exist_ok=True)
+                with open(os.path.join(fb, "ctx-asks", TITLE + ".json"), "w", encoding="utf-8") as f:
+                    json.dump({"pct": pct, "at": ms}, f)
+            except Exception:
+                pass
 # Two rules left this hook (#C334, the context-tax brief's card A): the memory tile (the Collector writes it from the
 # app's numbers, collector/context.mjs) and the read of the waiting items (the Stop gate, gate/stop.mjs, sees the open
-# asks the owner answered on the board itself). Each made Manager spend a tool call, and its result, every turn.
+# asks the owner answered on the board itself). Each made Manager spend a tool call, and its result, every turn. The
+# tile came back throttled (#C392, above): only when it is 30 min old or 5 points off.
 if reasons:
     print(json.dumps({"decision": "block", "reason": " ".join(reasons)}))
 sys.exit(0)
