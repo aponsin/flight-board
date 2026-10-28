@@ -256,3 +256,49 @@ It names only `run_scheduled_task <collector.refresh.taskId>`, and never fires w
 on any error it lets the turn end.
 
 **Every READY commit carries a `Board-Id: <card id>` trailer** from now on, so the collector finds the work even when the branch has another name.
+
+## The state probe
+
+The board shows each agent's current activity and each card's stage within about a minute and a half, from a script,
+with no model and no Collector run (#C420). Three parts, all the owner's (pinned, `OWNER_ENTRIES`: a board release
+changes none of them):
+
+- **`collector/state.mjs`**, run by launchd every 60 s from the pinned copy `~/.flight-board/install/<sha>/` (never the
+  current link). It reads the open cards on the last board export and, for each, its branch tip, sign-off notes, main
+  and deploy (the collector's phase rule, a copy of `collector/derive.mjs`'s that a test keeps equal) and the CI run on
+  it (`gh`); and each roster role's newest open session in the app (its file under `~/Library/Application Support/Claude/
+  claude-code-sessions`) and its transcript's last 20 entries: working or idle, since when, the class of its last tool,
+  and the card it is on (an exact board id or `#C<num>` of a card on the board). It writes `<stateDir>/<board>/state.json`
+  and POSTs it to the Worker.
+- **`worker/state-worker.mjs`**, a Cloudflare Worker (`flight-board-state`) on the owner's own account: one per owner,
+  many boards. `POST /b/<board>/state` with the board's token; `POST /mcp/<path>`, a read-only remote MCP server with one
+  tool, `board_state`. Each board's Worker secret holds only sha256 of its token and of its path, compared in constant time.
+  At most 64 KB, one POST per 30 s, the latest only (KV); anything else, a wrong path included, is a bare 404; no CORS.
+- **The page's "Right now" section**, through the owner's claude.ai connector named exactly **Flight Board State** (the
+  `mcp` capability, its `board_state` only; the page reads it once a minute). Without the connector the section stays
+  hidden and the board is what the Collector's `derived/all` makes it.
+
+**What leaves the Studio** is exactly `collector/state-schema.mjs` (Security's data plan), checked by the script before
+it posts, by the Worker on every POST, and again on what the tool answers (rebuilt field by field, never the stored text):
+the board's id, time, probe commit and page commit; per card its number, phase, head (12 hex), the reviews signed, on main,
+CI state and minutes, live version; per role its state, last activity, tool class (a fixed list, `mcp`, or `other`), card
+id and since. Ids, enums, numbers and times only: no session title, no transcript text, no commit message. The scanned
+text is never logged, cached or written. An error never quotes what it refused.
+
+**The owner's install**, from the pinned copy, in the owner's own terminal (`scripts/state-install.mjs`; a pack's steps
+give the exact commands):
+
+1. `npx wrangler kv namespace create STATE`, then `node ~/.flight-board/install/<sha>/scripts/state-install.mjs worker
+   --config <board.config.json> --kv <its id>` (writes `~/.flight-board/worker/wrangler.toml`: this copy's Worker, one
+   workers.dev address, no preview ones) and `npx wrangler deploy --config ~/.flight-board/worker/wrangler.toml`.
+2. `node … state-install.mjs secrets --config <board.config.json> --url https://flight-board-state.<you>.workers.dev`:
+   makes the token (32 random bytes) and the MCP path (16) into `<stateDir>/<board>/state-secrets/secrets.json` (0600 in a
+   0700 folder), hands the Worker their hashes on wrangler's stdin, and puts the connector URL on the clipboard. Neither
+   is printed.
+3. In claude.ai, Settings, Connectors: add a custom connector named **Flight Board State** with that URL. The URL is a
+   bearer secret: it goes there and nowhere else.
+4. `node … state-install.mjs launchd --config <board.config.json>`: writes and loads
+   `~/Library/LaunchAgents/com.flight-board.state.<board>.plist`; its one line per run goes to `<stateDir>/<board>/state.log`.
+
+**Rotation** is one command: step 2 with `--rotate` (a new token and path; the old ones stop at once), then the new URL
+in the connector. A new signed pack re-runs steps 1 (deploy) and 4 for its commit.

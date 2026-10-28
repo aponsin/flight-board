@@ -44,9 +44,10 @@ test("#C278 (Security): the fence takes only collector/export.mjs, which imports
   assert.deepEqual(importClosure(["collector/fence.mjs"], read), ["collector/context.mjs", "collector/export.mjs", "collector/fence.mjs", "scripts/config.mjs"]);
   // A new import from a pinned file into the collector's code re-pins it, and this list says so.
   assert.deepEqual(importClosure([...OWNER_ENTRIES, ...RELEASE_ENTRIES], read), [
-    "collector/context.mjs", "collector/export.mjs", "collector/fence.mjs", "collector/refresh.mjs", "collector/text.mjs",
+    "collector/context.mjs", "collector/export.mjs", "collector/fence.mjs", "collector/refresh.mjs", "collector/state-schema.mjs", "collector/state.mjs", "collector/text.mjs",
     "gate/after.mjs", "gate/digest.mjs", "gate/gate.mjs", "gate/live.mjs", "gate/owner-waits.mjs", "gate/plan.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs", "gate/traffic.mjs",
-    "hooks/red-ask-board.py", "scripts/board-release.mjs", "scripts/config.mjs", "scripts/current.mjs", "scripts/hooks.mjs", "scripts/scan.mjs",
+    "hooks/red-ask-board.py", "scripts/board-release.mjs", "scripts/config.mjs", "scripts/current.mjs", "scripts/hooks.mjs", "scripts/scan.mjs", "scripts/state-install.mjs",
+    "worker/state-worker.mjs",
   ]);
 });
 
@@ -67,12 +68,12 @@ test("refused when the task's steps changed but its prompt (collector/PROMPT.txt
   assert.match(verdict({ ...good, promptChanged: false }).refusals.join(), /PROMPT\.txt/);
 });
 
-test("refused when the page would need a capability beyond the fixed four (Security D: a new one is the owner's)", () => {
-  assert.deepEqual(PAGE_CAPABILITIES, ["db", "comments", "assets", "downloads"]);
-  assert.match(verdict({ ...good, capabilities: [...good.capabilities, "mcp"] }).refusals.join(), /capabilit.*mcp/);
+test("refused when the page would need a capability beyond the fixed five (Security D: a new one is the owner's; mcp came with #C420's pack)", () => {
+  assert.deepEqual(PAGE_CAPABILITIES, ["db", "comments", "assets", "downloads", "mcp"]);
+  assert.match(verdict({ ...good, capabilities: [...good.capabilities, "room"] }).refusals.join(), /capabilit.*room/);
   const page = 'a(await claude.use("db")); b(claude.use( "comments" )); c(claude.use(`assets`)); d(claude.use("db"))';
   assert.deepEqual(pageCapabilities(page), ["assets", "comments", "db"]);
-  assert.deepEqual(pageCapabilities(readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8")), ["assets", "comments", "db", "downloads"]);
+  assert.deepEqual(pageCapabilities(readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8")), ["assets", "comments", "db", "downloads", "mcp"]);
   // A name the scan can't read is refused as one (Checker's probe): a variable, a bracketed use, an unquoted name.
   for (const page of ['const n = "camera"; claude.use(n)', 'claude["use"]("location")', "claude['use']('x')", "claude.use (`a${b}`)"])
     assert.ok(pageCapabilities(page).includes("(a name the page computes)"), page);

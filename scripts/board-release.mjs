@@ -31,7 +31,8 @@ export const NOTES = { security: "refs/notes/security", checker: "refs/notes/che
 // The release tool and what it runs are the owner's too (Security): a release can't loosen the next one.
 export const RELEASE_ENTRIES = ["scripts/board-release.mjs", "scripts/current.mjs", "scripts/scan.mjs"];
 // The capabilities the board page is published with; a new one is the owner's (README, "The page").
-export const PAGE_CAPABILITIES = ["db", "comments", "assets", "downloads"];
+// mcp (#C420): the Studio's state through the owner's "Flight Board State" connector, its board_state tool only.
+export const PAGE_CAPABILITIES = ["db", "comments", "assets", "downloads", "mcp"];
 export const PROMPT_FILE = "collector/PROMPT.txt";
 const PAGE_FILE = "page/board.template.html";
 
