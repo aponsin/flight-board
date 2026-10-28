@@ -12,7 +12,7 @@ const step = (n) => prompt.match(new RegExp(`^${n}\\. ([\\s\\S]*?)(?=^\\d+\\. |(
 test("the run that cues a reset waits for it and sends the pickup itself", () => {
   assert.match(step(6), /in this run/);
   assert.match(step(6), /run_in_background: true/, "a background sleep: a foreground one is refused");
-  assert.match(step(6), /idle and under 25,000 tokens has reset: send it exactly "\/pickup <Title>"/);
+  assert.match(step(6), /idle and whose Messages are under 5,000 tokens has reset: send it exactly "\/pickup <Title>"/);
   assert.match(step(6), /at most 8 waits/, "bounded: a reset that never comes doesn't hold the run");
   assert.match(step(6), /"not reset"/);
 });
@@ -30,8 +30,24 @@ test("Director is never measured, cued or messaged, so never reset in a wave wit
   assert.doesNotMatch(step(2), /title is one of:[^.]*Director/);
 });
 
-test("the report names what was picked up and what didn't reset", () => {
+test("a reset is told by the Messages category, never the total (Checker on a307d81: ~88k of overhead in a cleared session)", () => {
+  assert.match(step(3), /"Messages" category \(none listed counts as 0\)/);
+  assert.match(step(4), /idle \(not working\) and whose Messages are under 5,000 tokens/);
+  assert.doesNotMatch(prompt, /under 25,000 tokens/, "the total never falls that low");
+});
+
+test("the reset limit is the live task's: 400k tokens, or 80% of a 200k window; the lead's the same", () => {
+  assert.match(step(5), /400,000 tokens or more \(or 80% of a 200k window\)/);
+  assert.match(step(7), /at 400,000 tokens or more/);
+});
+
+test("the task may run only the exact command 'sleep 120' (Security on a307d81)", () => {
+  assert.match(doc, /allow Bash for exactly the command `sleep 120` \(an exact rule\), never Bash in general/);
+});
+
+test("the report names what was picked up and what didn't reset, and asks for #C374's save count", () => {
   assert.match(step(8), /\| pickup sent: <Title>, … \(or none\) \| not reset: <Title>, … \(or none\) \|/);
+  assert.match(step(8), /for each reset sent, set saved with savedTokens and savedPct/);
 });
 
 test("the keeper still never clears a session or touches Remote Control", () => {
