@@ -361,6 +361,9 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .i-check{font:600 .7rem var(--mono);color:var(--accent);background:none;border:1px solid var(--line);border-radius:999px;padding:1px 8px;cursor:pointer}
 .i-check:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .i-check:disabled{opacity:.6;cursor:default}
+.c-num.i-check{font:600 .75rem var(--mono);color:var(--accent);border:0;border-radius:4px;padding:3px 5px;margin:-3px 1px -3px -5px}
+.c-num.i-check:hover{background:var(--accent-soft)}
+.i-ic{font-size:1.15em;line-height:1;margin-left:4px}
 .i-checked{font:400 .75rem var(--mono);color:var(--muted)}
 .i-checked.is-late{color:var(--warn)}
 /* An old tile's Refresh, and what came of it (#C354). */
@@ -1409,8 +1412,13 @@ function checkLine(i,req,now){const lead=num(i.checkedAt),d=derivedOf(i.id),run=
   if(last==null)return "checking… until the Collector's next run";
   const due=last+COLLECTOR_EVERY;
   return due>now?`checking… next Collector run ~${hhmm(due)}`:`checking… Collector run late (due ${hhmm(due)})`}
-function checkHtml(i,now){if(i.status==="done")return "";const req=checkRequest(i.id),line=checkLine(i,req,now),waiting=line.startsWith("checking…");
-  return `${line?`<span class="i-checked${line.includes("run late")?" is-late":""}">${esc(line)}</span>`:""}${waiting?"":`<button type="button" class="i-check" data-check="${esc(i.id)}" aria-label="Have the Collector check ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} at its next run">↻ Check</button>`}`}
+// The card's #C label is the button (#C376, the owner in t-1793166475210: a separate pill wrapped onto its own line);
+// a card with no number yet keeps the pill. While checking, or once done, the label is plain text.
+const checkable=(i,now)=>i.status!=="done"&&!checkLine(i,checkRequest(i.id),now).startsWith("checking…");
+const checkLabel=i=>`Have the Collector check ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} at its next run`;
+function checkTag(i,now){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}" title="Have the Collector check this card">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> `:cardTag(i)}
+function checkHtml(i,now){if(i.status==="done")return "";const line=checkLine(i,checkRequest(i.id),now);
+  return `${line?`<span class="i-checked${line.includes("run late")?" is-late":""}">${esc(line)}</span>`:""}${checkable(i,now)&&!cardTag(i)?`<button type="button" class="i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}">↻ Check</button>`:""}`}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-check]");if(!b||!dbRef)return;
   const i=state.initiatives.find(x=>x.id===b.dataset.check),ws=i?checkWrites(i.id,Date.now()):[];if(!ws.length)return;b.disabled=true;
   try{await applyWrites(ws)}catch(_){b.disabled=false}});
@@ -1522,7 +1530,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
-  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${cardTag(i)}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>
+  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
