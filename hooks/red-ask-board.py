@@ -69,8 +69,9 @@ try:
     if _m:
         with open(os.path.expanduser(_m.group(1)), encoding="utf-8") as _f:
             _r = json.load(_f).get("resetAt")
-        if isinstance(_r, int) and not isinstance(_r, bool) and 100000 <= _r <= 2000000:
-            RESET_AT = _r
+        # A whole number written 600000.0 or 6e5 is a float to json.load but whole to checkConfig (Security's LOW).
+        if isinstance(_r, (int, float)) and not isinstance(_r, bool) and 100000 <= _r <= 2000000 and _r == int(_r):
+            RESET_AT = int(_r)
 except Exception:
     pass
 # A turn that is itself a reset: the owner's /handoff, /clear or /compact, or the keeper's cue alone on its line.

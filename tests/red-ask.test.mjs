@@ -114,11 +114,11 @@ test("the answer rule: the owner's question needs a board answer, in a thread or
 
 // #C399 (the owner's 600k in #T1038): the limit is the board config's resetAt, the config the board's Stop gate is
 // registered with in ~/.claude/settings.json; none, or a bad value, is 400k as before.
-const configHome = (resetAt) => {
+const configHome = (resetAt, raw) => {
   const home = mkdtempSync(join(tmpdir(), "fb-cfg-"));
   mkdirSync(join(home, ".claude"), { recursive: true });
   const cfg = join(home, "board.config.json");
-  writeFileSync(cfg, JSON.stringify({ owner: "Owner", ...(resetAt === undefined ? {} : { resetAt }) }));
+  writeFileSync(cfg, raw ?? JSON.stringify({ owner: "Owner", ...(resetAt === undefined ? {} : { resetAt }) }));
   const stop = `'/n/node' '${home}/.flight-board/install/${"a".repeat(40)}/gate/stop.mjs' --config '${cfg}'`;
   writeFileSync(join(home, ".claude", "settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "python3 ~/.claude/hooks/red-ask-board.py" }, { type: "command", command: stop }] }] } }));
   return home;
@@ -140,6 +140,21 @@ test("the reset limit is the board config's resetAt: 600k cues over 600k, not at
     const h = configHome(bad);
     try { assert.match(hook(t(449000), h), /over 400k/, `resetAt ${JSON.stringify(bad)}: 400k`); } finally { rmSync(h, { recursive: true, force: true }); }
   }
+});
+// Security's LOW on 5b07a2c: checkConfig takes 600000.0 and 6e5 (whole numbers in JSON), but Python's json.load reads
+// them as floats; the hook took only ints, so the config said 600k and the hook cued at 400k.
+test("a whole resetAt written as 600000.0 or 6e5 is 600k to the hook too, as it is to checkConfig", () => {
+  const t = (read) => big(turn([], { title: "Boardsmith", text: "go on" }), { input: 1000, read });
+  for (const text of ["600000.0", "6e5", "6.0e5"]) {
+    assert.deepEqual(checkConfig(JSON.parse(`{"resetAt": ${text}}`)), [], text);
+    const h = configHome(undefined, `{"owner": "Owner", "resetAt": ${text}}`);
+    try {
+      assert.equal(hook(t(449000), h), "", `${text}: not cued at 450k`);
+      assert.match(hook(t(609000), h), /over 600k\. /, text);
+    } finally { rmSync(h, { recursive: true, force: true }); }
+  }
+  const h = configHome(undefined, `{"owner": "Owner", "resetAt": 6.000005e5}`);
+  try { assert.match(hook(t(449000), h), /over 400k/, "600000.5 stays refused"); } finally { rmSync(h, { recursive: true, force: true }); }
 });
 
 // #C392 (b), Manager's pick A: the live memory tile. The hook asks the agent to write ctx/<Role> when the board's tile is
