@@ -205,15 +205,20 @@ export function ciOf(gh, sha, now) {
 // commit (cache: { sha: { ci, ciMin } }, saved by the caller), and a run asks gh at most MAX_CI_CALLS times; a card past
 // that shows no CI this minute (Checker, #C420).
 export const MAX_CI_CALLS = 10;
+// A cached entry counts only as exactly a finished { ci, ciMin }, and only those two leave it (Security: a bad entry must
+// neither override a card's other fields nor stop every run); anything else is asked again.
+const FINISHED = ["passed", "failed", "cancelled"];
+export const ciEntry = (v) => (v && FINISHED.includes(v.ci) && (v.ciMin === null || (Number.isInteger(v.ciMin) && v.ciMin >= 0 && v.ciMin <= 10000)) ? { ci: v.ci, ciMin: v.ciMin } : null);
 export function ciReader(gh, now, cache) {
   let calls = 0;
   return (sha) => {
-    if (cache[sha]) return cache[sha];
+    const kept = ciEntry(cache[sha]);
+    if (kept) return kept;
     if (calls >= MAX_CI_CALLS) return { ci: "none", ciMin: null };
     calls++;
     const r = ciOf(gh, sha, now);
-    if (["passed", "failed", "cancelled"].includes(r.ci)) cache[sha] = r;
-    return r;
+    if (FINISHED.includes(r.ci)) cache[sha] = { ci: r.ci, ciMin: r.ciMin };
+    return { ci: r.ci, ciMin: r.ciMin };
   };
 }
 
@@ -245,7 +250,7 @@ export function cardState(card, repo, config, now) {
   const deployed = onMain && !!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed }, cfg);
-  return { ...base, phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null };
+  return { ...base, phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(() => { const r = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null; return r ? { ci: r.ci, ciMin: r.ciMin } : {}; })(), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null };
 }
 
 export function cardStates({ cards, config, repos, now }) {
@@ -316,7 +321,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   // Finished CI runs, kept by commit from run to run (the newest 500).
   const ciPath = join(stateDir, id, "ci-cache.json");
   let ciCache = {};
-  try { const r = readTail(ciPath, 1024 * 1024); const o = r?.whole ? JSON.parse(r.text) : null; if (plain(o)) ciCache = Object.fromEntries(Object.entries(o).filter(([k, v]) => /^[0-9a-f]{40}$/.test(k) && plain(v))); } catch { /* start afresh */ }
+  try { const r = readTail(ciPath, 1024 * 1024); const o = r?.whole ? JSON.parse(r.text) : null; if (plain(o)) ciCache = Object.fromEntries(Object.entries(o).filter(([k]) => /^[0-9a-f]{40}$/.test(k)).map(([k, v]) => [k, ciEntry(v)]).filter(([, v]) => v)); } catch { /* start afresh */ }
   // A repository git can't read gives no tips: its cards stay as declared.
   const repos = {};
   if (c.repoPath) {

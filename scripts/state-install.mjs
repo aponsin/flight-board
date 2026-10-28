@@ -165,9 +165,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       wrangler(["secret", "put", secretName(id), "--config", toml], { input: workerSecret(s.token, s.path), stdio: ["pipe", "ignore", "inherit"] });
       execFileSync("pbcopy", [], { input: `${opt("--url")}/mcp/${s.path}` });
       console.log(`state: token ${s.made ? "made" : "kept"} and written; the Worker has its hash; the connector URL is on the clipboard: paste it in claude.ai, Settings, Connectors, as "Flight Board State", then press Return here`);
-      // The URL is a bearer secret: the clipboard is cleared once it is pasted (Security).
+      // The URL is a bearer secret: the clipboard is cleared once it is pasted, or when stdin closes (no terminal,
+      // Ctrl-D) before Return (Security).
       const rl = createInterface({ input: process.stdin, output: process.stdout });
-      await new Promise((done) => rl.question("", () => { rl.close(); done(); }));
+      await new Promise((done) => { rl.on("close", done); rl.question("", () => rl.close()); });
       execFileSync("pbcopy", [], { input: "" });
       console.log("state: clipboard cleared (a clipboard manager or Universal Clipboard may still hold it: clear it there too)");
     } else if (cmd === "launchd") {

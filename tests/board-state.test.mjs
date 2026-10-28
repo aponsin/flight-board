@@ -420,6 +420,23 @@ test("the probe asks gh at most 10 times a run, and never again for a finished r
   assert.equal(calls, 10, "a cached run costs no call");
 });
 
+test("Security: a bad cache entry gives only {ci, ciMin}, or is asked again; it never overrides a card's fields or stops the run", () => {
+  const sha = "c".repeat(40);
+  for (const bad of [{ ci: "passed", ciMin: 2, phase: "live", onMain: true, signed: ["x"] }, { ci: "<b>", ciMin: 1 }, { ci: "passed", ciMin: -3 }, "passed", null]) {
+    let calls = 0;
+    const gh = () => { calls++; return JSON.stringify([{ status: "completed", conclusion: "failure", createdAt: new Date(T - 120e3).toISOString(), updatedAt: new Date(T).toISOString() }]); };
+    const r = ciReader(gh, T, { [sha]: bad })(sha);
+    assert.deepEqual(Object.keys(r).sort(), ["ci", "ciMin"]);
+    if (bad?.ci === "passed" && bad.ciMin === 2) assert.deepEqual([r, calls], [{ ci: "passed", ciMin: 2 }, 0]);
+    else assert.deepEqual([r, calls], [{ ci: "failed", ciMin: 2 }, 1], JSON.stringify(bad));
+  }
+  const config = { phases: [["build"], ["ship"], ["live"]], skips: [], collector: { notes: {}, buildPhase: "build", shipPhase: "ship", livePhase: "live", mainBranch: "main", repos: [] } };
+  const head = { branch: "c", sha, at: T, message: "x" };
+  const repo = { git: () => { throw new Error("no"); }, ci: () => ({ ci: "passed", ciMin: 1, phase: "live", onMain: true, at: 0 }), remote: "origin", main: "main", notes: {}, tips: [head], live: null, versionPattern: null };
+  const s = cardState({ id: "c", num: 1 }, repo, config, T);
+  assert.deepEqual([s.phase, s.onMain, s.at, s.ci], ["build", false, T, "passed"]);
+});
+
 // --- The page --------------------------------------------------------------------------------------------------
 
 const page = () => loadNames(["probeHtml", "probeFits", "probeEvent", "renderProbe"]);
@@ -465,6 +482,7 @@ test("the release tool pins mcp to Flight Board State / board_state: another con
     html.replace("mcp.watchTool(STATE_SERVER,STATE_TOOL,", "mcp.watchTool(STATE_SERVER,\"other\","),
     html.replace("if(!mcp)return;", "if(!mcp)return;mcp.server(\"Gmail\");"),
     html + '<script>const STATE_SERVER="Gmail",STATE_TOOL="x"</script>',
+    html.replace("mcp.callTool(STATE_SERVER,STATE_TOOL,null)", 'mcp["callTool"]("Gmail","send_message",{})'),
   ]) {
     assert.ok(pageMcpErrors(bad).length, "refused");
     assert.match(verdict({ ...releaseGood, mcpErrors: pageMcpErrors(bad) }).refusals.join(), /mcp capability is the owner's/);

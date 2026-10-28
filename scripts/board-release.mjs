@@ -38,10 +38,13 @@ export const PAGE_CAPABILITIES = ["db", "comments", "assets", "downloads", "mcp"
 export const PAGE_MCP = { servers: [{ server: "Flight Board State", tools: ["board_state"] }] };
 export const PAGE_DECLARATION = { db: {}, comments: {}, assets: {}, downloads: true, mcp: PAGE_MCP };
 // The page's connector calls, each against PAGE_MCP: the names as the page's one constant line, and every callTool,
-// watchTool, server, describeTool or listTools call made with exactly those two constants. [] when it fits.
+// watchTool, server, describeTool or listTools call made with exactly those two constants; a call by a bracketed name
+// (mcp["callTool"]) refuses. [] when it fits. A scan, not a proof (an alias of the namespace would slip it): the real gate
+// is the declaration the page is published with, which only a publish the owner approves can set (Security).
 export function pageMcpErrors(html) {
   const s = String(html ?? ""), e = [];
   const { server, tools: [tool] } = PAGE_MCP.servers[0];
+  if (/\[\s*["'`](callTool|watchTool|server|describeTool|listTools|invalidate)["'`]\s*\]/.test(s)) e.push(`the page calls an mcp method by a bracketed name`);
   const decl = [...s.matchAll(/const STATE_SERVER="([^"]*)",STATE_TOOL="([^"]*)"/g)];
   if (/\bmcp\b/.test(s) && /claude\.use\(\s*["'`]mcp/.test(s)) {
     if (decl.length !== 1 || decl[0][1] !== server || decl[0][2] !== tool) e.push(`the page's mcp names aren't exactly ${server} / ${tool}`);
