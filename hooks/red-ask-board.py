@@ -97,8 +97,9 @@ for line in reversed(lines):
     for c in content:
         if c.get("type") == "text" and RED.search(c.get("text") or ""):
             red = True
-        if c.get("type") == "tool_use" and (c.get("name") == "mcp__ccd_session_mgmt__clear_session" or (c.get("name") == "Skill" and re.fullmatch(r"(?:[\w-]+:)?handoff", str((c.get("input") or {}).get("skill") or "")))):
-            cleared = True  # this turn handed off or asked the app to clear it
+        _in = c.get("input") or {}
+        if c.get("type") == "tool_use" and ((c.get("name") == "mcp__ccd_session_mgmt__clear_session" and _in.get("session_id") in (None, "", "self")) or (c.get("name") == "Skill" and re.fullmatch(r"(?:[\w-]+:)?handoff", str(_in.get("skill") or "")))):
+            cleared = True  # this turn handed off or asked the app to clear it (itself: clearing another session isn't this one's reset)
         if c.get("type") == "tool_use" and c.get("name") == "ArtifactData":
             s = json.dumps(c.get("input") or {})
             writes = any(a in s for a in ('"set"', '"update"', '"batch"'))
