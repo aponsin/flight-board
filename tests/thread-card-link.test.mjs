@@ -83,9 +83,10 @@ test("each With the team row says which: Manager answering, or the card it becam
 
 test("the badge is the state; the buttons follow it", () => {
   const b = board();
-  const chip = (id) => (rowOf(b, id).match(/<span class="kind[^"]*">[^<]*<\/span>/) || [""])[0];
+  const chip = (id) => (rowOf(b, id).match(/<span class="kind[^"]*">(?:[^<]|<span class="kn">[^<]*<\/span>)*<\/span>/) || [""])[0];
   assert.equal(chip("t-q"), '<span class="kind question">Question</span>');
-  assert.equal(chip("t-b"), '<span class="kind building">Building #C356</span>');
+  assert.equal(chip("t-b"), '<span class="kind building">Building<span class="kn"> #C356</span></span>', "the number hides on a phone, where the row's line names the card");
+  assert.match(page, /@media \(max-width:600px\)\{\.kind \.kn\{display:none\}\}/);
   assert.equal(chip("t-l"), '<span class="kind live">Live</span>');
   assert.equal(chip("t-a"), '<span class="kind answer">Answer</span>');
   assert.equal(chip("t-d"), '<span class="kind decision">Decision</span>');

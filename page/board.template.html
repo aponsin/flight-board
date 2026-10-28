@@ -42,6 +42,8 @@ section{min-width:0}
 /* A thread's state (#C364): Question as an ask, Building blue, Live green as an answer, Decision as a decision. */
 .kind.building{background:var(--accent-soft);color:var(--accent)}
 .kind.live{background:var(--ok-soft);color:var(--ok)}
+/* On a phone the chip says Building alone: the row's line under the title names the card. */
+@media (max-width:600px){.kind .kn{display:none}}
 .t-with{margin-top:2px}.c-from{font-size:.8rem;color:var(--muted);margin-right:8px;white-space:nowrap}
 .w-answer{white-space:pre-line}
 /* The item's own text on its own line under the #T number, title and badge (#C234: it ran on after the badge). */
@@ -994,7 +996,7 @@ function lateTag(id,now){if(!threadOpen(id))return"";const at=threadLast(id);
 // A thread's kind is its state now (#C364): Question, Building #C356, Answer, Live, Decision; a resolved one keeps the
 // kind it started as. Under With the team, a line says what it waits on (withLine).
 function threadRow(id,now,where="panel",ask=null){const on=waitsOn(id,now),st=ask||on==="resolved"?null:threadState(id),card=st==="building"?threadCard(id):null;
-  const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:st?`<span class="kind ${st}">${TSTATE[st]}${card&&Number.isInteger(card.num)?" #C"+card.num:""}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
+  const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:st?`<span class="kind ${st}">${TSTATE[st]}${card&&Number.isInteger(card.num)?`<span class="kn"> #C${card.num}</span>`:""}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
   return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${on==="lead"&&!ask?withLine(id):""}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
 function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id,q));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
