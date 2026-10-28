@@ -40,7 +40,7 @@ test("a lead's own checkedAt still answers a request; one older than the request
   assert.match(b.checkLine({ id: "x", checkedAt: now - 9 * MIN }, { at: now - 5 * MIN }, now), /^checking…/, "a stamp older than the request doesn't answer it");
   const html = b.initRow(card(b, {}, { at: now - 5 * MIN }));
   assert.match(html, /<span class="i-checked">checking…/);
-  assert.match(page, /\.i-checked\{font:400 \.75rem var\(--mono\);color:var\(--muted\)\}\s*\.i-checked\.late\{color:var\(--warn\)\}/);
+  assert.match(page, /\.i-checked\{font:400 \.75rem var\(--mono\);color:var\(--muted\)\}\s*\.i-checked\.is-late\{color:var\(--warn\)\}/);
   assert.doesNotMatch(html, /data-check=/, "no second click while it waits");
   assert.match(page, /"timings","ctxRequests","checkRequests"(?:,"\w+")*\]\.forEach\(sub\)/, "the board listens to the requests");
 });
