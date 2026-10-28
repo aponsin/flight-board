@@ -31,12 +31,13 @@ export function offersChoices(text) {
   const marks = (re) => new Set([...s.matchAll(re)].map((m) => m[1].toUpperCase()));
   return marks(/(?:^|[\s([])([A-Za-z])\)/g).size >= 2 || marks(/(?:^|[\s([])([0-9])\)/g).size >= 2 || /\boption [A-Z0-9]\b/i.test(s);
 }
-// A thread message's choices (#C378): lettered only, "A) … B)", "option A", or two lines that open with a capital letter
-// and ":" or "(" ("A (my pick): …", "B: …").
+// A thread message's choices (#C378): capital letters only, and both A and B: "A) … B)", or lines that open "A: …" or
+// "A (my pick): …"; or "option A" to "option H". Checker on f047a36: "option I recommend", "file(s) … (a)", log lines
+// "E: … F: …" and "A (small) fix." are ordinary text.
 export function offersLetteredChoices(text) {
   const s = String(text ?? "");
-  const marks = (re) => new Set([...s.matchAll(re)].map((m) => m[1].toUpperCase()));
-  return marks(/(?:^|[\s([])([A-Za-z])\)/g).size >= 2 || marks(/^[\s*_]*([A-H])[*_]*\s*[:(]/gm).size >= 2 || /\boption [A-Z]\b/i.test(s);
+  const ab = (re) => { const m = new Set([...s.matchAll(re)].map((x) => x[1])); return m.has("A") && m.has("B"); };
+  return ab(/(?:^|[\s([])([A-H])\)/g) || ab(/^[\s*_]*([A-H])[*_]*\s*(?:\([^)\n]*\))?\s*:/gm) || /\boption [A-H]\b/.test(s);
 }
 function choiceErrors(data, kind) {
   if (kind === "decision") return [];
