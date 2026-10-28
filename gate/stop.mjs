@@ -78,8 +78,9 @@ export function boardPings(lines, owner) {
 //   this turn's own writes and the thread pings after the messages' listing;
 // - an open ask (done not true) with the owner's answer, anything but an Ack or "marked done", not written this turn:
 //   from the view, or a reply ping after the asks' listing.
-// live: the owner's messages the lead's live queries returned (gate/live.mjs, #C394), counted like the view's.
-export function needsYou({ view, pings, writes, owner, now, since, live = [] }) {
+// live: the owner's messages the lead's live queries returned (gate/live.mjs, #C394), counted like the view's. liveAsks:
+// the waiting items they returned with the owner's reply (#C406), each over the view's copy when its reply is newer.
+export function needsYou({ view, pings, writes, owner, now, since, live = [], liveAsks = [] }) {
   const mine = writes.filter((w) => w.collection === "messages" && w.op !== "delete" && w.data && typeof w.data === "object").map((w) => ({ ...w.data, id: w.doc_id }));
   const known = new Set((view.docs.messages ?? []).map((m) => m?.id));
   const msgs = [...(view.docs.messages ?? []), ...live.filter((m) => !known.has(m.id)), ...mine,
@@ -89,6 +90,10 @@ export function needsYou({ view, pings, writes, owner, now, since, live = [] }) 
     .map((w) => ({ kind: "thread", id: w.thread, text: textOf.get(w.id), at: w.at }));
   const written = new Set(writes.filter((w) => w.collection === "waiting").map((w) => w.doc_id));
   const asks = new Map((view.docs.waiting ?? []).map((d) => [d.id, d]));
+  for (const a of liveAsks) {
+    const seen = asks.get(a.id), seenAt = typeof seen?.respondedAt === "number" ? seen.respondedAt : seen?.response?.at;
+    if (!(typeof seenAt === "number" && seenAt >= a.respondedAt)) asks.set(a.id, { ...seen, ...a });
+  }
   const owed = new Map();
   for (const [id, d] of asks) {
     const s = d?.response?.status;
@@ -173,7 +178,7 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   if (role !== config.gate.managerRole) return { errs: [], record: null, note: null, liveNext: null };
   const id = boardId(config);
   const turn = currentTurn(lines);
-  const stored = live?.stored ?? { checkedAt: null, msgs: [] };
+  const stored = live?.stored ?? { checkedAt: null, msgs: [], asks: [] };
   const fresh = turnLive(turn, config, liveSince(stored.checkedAt, now)), liveNext = nextLive(stored, fresh, now);
   const writes = turnCalls(turn).filter((c) => c.name === "ArtifactData" && id && String(c.input.url ?? "").includes(id) && WRITES.has(c.input.action))
     .flatMap((c) => { try { return writesOf(c.input); } catch { return []; } });
@@ -194,16 +199,16 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   for (const t of new Set(asked)) {
     if (!writes.some((w) => w.collection === "messages" && w.op !== "delete" && w.data?.thread === t)) out.push(`the owner wrote in thread ${idText(t)}: answer there (messages {thread: "${idText(t)}", from: "${role}", text, at}), not only here`);
   }
-  // A cut-short check is asked again at once, whatever the 5-min throttle says: its checkedAt didn't move.
+  // Every turn runs the check (#C406); a cut-short or half-done one is asked again: its checkedAt didn't move.
   if (live?.require && (fresh === null || !fresh.complete)) out.push(liveAsk(config, liveSince(stored.checkedAt, now), fresh !== null));
-  // With no mirror, the live check's messages still count (they need none); the rest of the board waits for one.
+  // With no mirror, the live check's finds still count (they need none); the rest of the board waits for one.
   if (!view) {
     const bare = { docs: { messages: [], waiting: [] }, at: now, atBy: {} };
-    const items = liveNext.msgs.length ? needsYou({ view: bare, pings: [], writes, owner: config.owner, now, since, live: liveNext.msgs }) : [];
+    const items = liveNext.msgs.length || liveNext.asks.length ? needsYou({ view: bare, pings: [], writes, owner: config.owner, now, since, live: liveNext.msgs, liveAsks: liveNext.asks }) : [];
     if (items.length) out.push(needsText(items, role, now));
     return { errs: out, record: null, note: "Flight board: no board mirror yet, so the Stop hook couldn't check the board this turn (the Collector's next run makes one).", liveNext };
   }
-  const items = needsYou({ view, pings: boardPings(lines, config.owner), writes, owner: config.owner, now, since, live: liveNext.msgs });
+  const items = needsYou({ view, pings: boardPings(lines, config.owner), writes, owner: config.owner, now, since, live: liveNext.msgs, liveAsks: liveNext.asks });
   if (items.length) out.push(needsText(items, role, now));
   return { errs: out, record: out.length ? null : Math.min(now, listedAt(view, "messages")), note: null, liveNext };
 }

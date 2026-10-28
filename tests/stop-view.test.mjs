@@ -116,9 +116,12 @@ test("the hook: the cursor is keyed by role, so a reset (a new transcript, same 
       writeFileSync(t, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
       return spawnSync(process.execPath, [fileURLToPath(new URL("../gate/stop.mjs", import.meta.url)), "--config", cfg], { input: JSON.stringify({ transcript_path: t, stop_hook_active: active }), encoding: "utf8" });
     };
-    // Each turn runs the live owner check (#C394), which finds nothing new: what follows is the mirror's part.
+    // Each turn runs the live owner check (#C394; two queries since #C406), which finds nothing new: what follows is the
+    // mirror's part.
     const LIVE = [{ type: "assistant", message: { content: [{ type: "tool_use", id: "q1", name: "ArtifactData", input: { url: URL_, action: "query", collection: "messages", query: { where: [["from", "==", "Owner"], ["at", ">", 0]], limit: 100 } } }] } },
-      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "q1", content: "0 documents from collection \"messages\"." }] } }];
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "q1", content: "0 documents from collection \"messages\"." }] } },
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "q2", name: "ArtifactData", input: { url: URL_, action: "query", collection: "waiting", query: { where: [["respondedAt", ">", 0]], limit: 100 } } }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "q2", content: "0 documents from collection \"waiting\"." }] } }];
     const asked = hook("s0", turn());
     assert.equal(asked.status, 2, "the hook itself asks for the live check");
     assert.match(asked.stderr, /live board check/);

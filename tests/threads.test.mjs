@@ -152,7 +152,7 @@ test("the reply-card bug: a thread whose item is on the board stays under the it
 test("case 6: a bare Ack on an answer closes it; an Ack with a follow-up keeps it open and puts the question in its thread", () => {
   const b = board();
   const [bare] = b.replyWrites({ id: "ans-x", kind: "answer" }, "ack", "", [], T, null, "r");
-  assert.deepEqual(plain(bare), { op: "update", path: "waiting/ans-x", data: { response: { status: "ack", note: "", at: T }, done: true, doneAt: T } });
+  assert.deepEqual(plain(bare), { op: "update", path: "waiting/ans-x", data: { response: { status: "ack", note: "", at: T }, respondedAt: T, done: true, doneAt: T } });
   const follow = b.replyWrites({ id: "ans-x", kind: "answer" }, "ack", "But why?", [], T, null, "r");
   assert.equal(follow[0].data.done, undefined);
   assert.deepEqual(plain(follow[1].data), { thread: "ans-x", from: "Owner", text: "But why?", at: T });
@@ -161,15 +161,16 @@ test("case 6: a bare Ack on an answer closes it; an Ack with a follow-up keeps i
 test("case 10: Done with a note in it keeps the note as the owner's thread message, so the question waits for Manager", () => {
   const b = board({ waiting: [{ id: "board-link-manager", kind: "action" }] });
   const writes = b.replyWrites({ id: "board-link-manager", kind: "action" }, "done", "Done, but where is the link?", [], T, null, "r");
-  assert.deepEqual(plain(writes[0].data), { response: { status: "done", note: "Done, but where is the link?", at: T } });
+  assert.deepEqual(plain(writes[0].data), { response: { status: "done", note: "Done, but where is the link?", at: T }, respondedAt: T });
   assert.deepEqual(plain(writes[1]), { op: "set", path: `messages/m${T}-r`, data: { thread: "board-link-manager", from: "Owner", text: "Done, but where is the link?", at: T } });
   b.state.messages.push({ id: "m", ...writes[1].data });
   assert.equal(b.threadOpen("board-link-manager"), true);
 });
 
+// #C406 (Manager's B): the response and its respondedAt (for the lead's live check), still no message.
 test("the buttons work as before: a choice, an OK or a Done without a note write only the response", () => {
   const b = board();
-  assert.deepEqual(plain(b.replyWrites({ id: "d", kind: "decision" }, "chose", "", [], T, "A", "r")), [{ op: "update", path: "waiting/d", data: { response: { status: "chose", note: "", at: T, choice: "A" } } }]);
+  assert.deepEqual(plain(b.replyWrites({ id: "d", kind: "decision" }, "chose", "", [], T, "A", "r")), [{ op: "update", path: "waiting/d", data: { response: { status: "chose", note: "", at: T, choice: "A" }, respondedAt: T } }]);
   assert.deepEqual(plain(b.replyWrites({ id: "d", kind: "decision" }, "other", "C please", [], T, null, "r")[0].data.response), { status: "chose", note: "C please", at: T, choice: "something else" });
   assert.equal(b.replyWrites({ id: "a", kind: "action" }, "done", "", [], T, null, "r").length, 1);
   assert.equal(b.replyWrites({ id: "a", kind: "action" }, "ack", "", [], T, null, "r")[0].data.done, undefined, "only an answer closes on Ack");

@@ -954,7 +954,8 @@ function replyWrites(w,act,note,files,now,choice,rid){
   if(act==="chose")response.choice=choice; if(act==="other")response.choice="something else";
   if(files.length)response.files=files;
   const bare=act==="ack"&&!response.note&&!files.length;
-  const out=[{op:"update",path:"waiting/"+w.id,data:bare&&w.kind==="answer"?{response,done:true,doneAt:now}:{response}}];
+  // respondedAt beside the response (#C406): the lead's live check queries it (a query can't reach response.at).
+  const out=[{op:"update",path:"waiting/"+w.id,data:bare&&w.kind==="answer"?{response,respondedAt:now,done:true,doneAt:now}:{response,respondedAt:now}}];
   if(response.note)out.push({op:"set",path:`messages/m${now}-${rid}`,data:{thread:w.id,from:OWNER,text:response.note,at:now,...(files.length?{assets:files}:{})}});
   return out}
 
