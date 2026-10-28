@@ -3,6 +3,7 @@
 // at 200k. A reading without tokens (older collector) keeps today's percentage and its 40/70 colours.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { loadNames } from "./harness.mjs";
 
 const b = loadNames(["ctxTileHtml", "ctxAgents", "crewHtml", "ctxLevel", "fmtTokens"]);
@@ -26,6 +27,8 @@ test("a tile with tokens: the number, its colour against 200k, a bar full at 200
   assert.match(b.ctxTileHtml("Manager", { pct: 5, tokens: 50000, at }, null, now), /<i style="width:25%">/);
   assert.match(t, /title="Manager: 439k tokens in its context \(red over 200k\), 44% of its window, read 1 min ago"/);
   assert.doesNotMatch(t, /44%<\/span>/, "no percentage on the face");
+  const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(page, /\.ctx-t \.pc\{[^}]*text-transform:none\}/, "'439k', not the name's capitals' '439K'");
 });
 
 test("a reading without tokens keeps today's tile: the percentage, green under 40%, amber to 69%, red from 70%", () => {
