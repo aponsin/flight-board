@@ -32,7 +32,7 @@ test("Checker's case: the old flag, a green reading, then 130k: still no /clear 
 
 test("a saved flag while the reading is still at or above the save's count asks for its clear", () => {
   assert.equal(b.clearMe(live), true);
-  assert.match(b.ctxTileHtml("Checker", live, null, now), /^<div class="ctx-t r saved"[\s\S]*\/clear me/);
+  assert.match(b.ctxTileHtml("Checker", live, null, now), /^<div class="ctx-t g saved"[\s\S]*\/clear me/, "31% of its window: green since #C384, the flag all the same");
   assert.equal(b.clearMe({ ...live, tokens: 318500 }), true, "a little more: its last notes");
   assert.equal(b.clearMe({ ...live, tokens: 311999 }), false, "less: it reset");
   assert.equal(b.clearMe({ pct: 62, at: now, saved: true, savedPct: 60 }), true, "a reading in percent, at or over the save's");
