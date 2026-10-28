@@ -92,6 +92,21 @@ test("no red 'never started' on a card waiting its turn; the first in line, or o
   assert.ok(f.gaps(f.state.initiatives[0]).includes("never started"), "nothing ahead of it: it should have started");
 });
 
+// Checker's FINDINGS on 88e525a: queueOf sorted again at every level of queueEta's recursion, and each comparison scanned
+// every step (notStarted): 20 cards and 4,000 steps took 1.3 s a pass. Built once per data update now.
+test("a long queue on a big board stays fast: 20 cards, 4,000 steps, every card's ETA and gaps in one pass", () => {
+  const now = Date.now();
+  const list = [card(1, "s1", { phase: "checker", branch: "s1", queuePos: 1 }), card(2, "s2", { phase: "build", branch: "s2", queuePos: 2, phaseLog: [{ phase: "build", start: now - 9 * MIN }] }),
+    ...Array.from({ length: 18 }, (_, k) => card(10 + k, "q" + k, { queuePos: 3 + k }))];
+  const b = queueBoard(list);
+  b.state.steps = Array.from({ length: 4000 }, (_, k) => ({ init: "other-" + (k % 300), phase: k % 2 ? "build" : "checker", who: "X", kind: k % 3 ? "start" : "end", at: now - k * 1e3 }));
+  const t0 = performance.now();
+  for (const i of list) { b.cardEta(i); b.gaps(i); }
+  const ms = performance.now() - t0;
+  assert.ok(ms < 60, `one pass took ${ms.toFixed(1)} ms`);
+  near(b.cardEta(list[19]), now + (60 - 9) * MIN + 17 * 60 * MIN + CHAIN, "and still right: the 20th after s2's build and 17 builds ahead");
+});
+
 test("Checker on 6531fc5: a started card sorts before the queued ones, place or not", () => {
   const b = queueBoard([card(1, "q", { queuePos: 1 }), card(2, "started", { phase: "build", branch: "s" }), card(3, "q2", { queuePos: 2 })]);
   assert.deepEqual([...b.queueOf("Boardsmith")].map((i) => i.id), ["started", "q", "q2"]);

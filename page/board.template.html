@@ -1283,12 +1283,21 @@ function dueText(t){return `${t<Date.now()?"was due":"due"} ~${hhmm(t)}`}
 // has seen. It shows Build queued with its ETA, never a phase lit as if someone were on it.
 function notStarted(i){if(!i||i.status==="done"||i.dropped||phaseIndex(i.phase)>phaseIndex(BUILD_PHASE))return false;
   const d=derivedOf(i.id);if(d&&d.head||typeof i.branch==="string"&&i.branch)return false;
-  return !state.steps.some(e=>e&&e.init===i.id&&e.phase===BUILD_PHASE&&e.kind==="start")}
+  return !buildStarted(i.id)}
+// The cards with a build start logged, indexed once per data update (Checker's FINDINGS on 88e525a: notStarted scanned
+// every step, and queueOf's sort asked it at every comparison).
+let bsOf=null,bsSet=new Set();
+function buildStarted(id){if(bsOf!==state.steps){bsOf=state.steps;bsSet=new Set((state.steps||[]).filter(e=>e&&e.phase===BUILD_PHASE&&e.kind==="start").map(e=>e.init))}return bsSet.has(id)}
 // Whose queue a card waits in, and where (#C370, the owner in #T983: 'BUILD queued' said neither). A who's queue: its
 // open cards by queuePos (1 = next; Manager keeps it), ties by createdAt; a card without a positive whole queuePos last.
 const qPos=i=>Number.isInteger(i&&i.queuePos)&&i.queuePos>0?i.queuePos:Infinity;
 // Started cards first, place or not (Checker on 6531fc5: one without a queuePos sorted after the queued ones).
-function queueOf(who){return state.initiatives.filter(i=>i&&i.who===who&&i.status!=="done"&&i.status!=="dropped").sort((a,b)=>isQueued(a)-isQueued(b)||qPos(a)-qPos(b)||(num(a.createdAt)??0)-(num(b.createdAt)??0))}
+// Each who's queue is sorted once per data update (Checker on 88e525a: queueEta's recursion sorted it at every level);
+// renderAll makes state.initiatives anew, so a new list is a new update.
+let qOfI=null,qOfS=null,qMemo=new Map();
+function queueOf(who){if(qOfI!==state.initiatives||qOfS!==state.steps){qOfI=state.initiatives;qOfS=state.steps;qMemo=new Map()}
+  if(!qMemo.has(who))qMemo.set(who,sortQueue(who));return qMemo.get(who)}
+function sortQueue(who){return state.initiatives.filter(i=>i&&i.who===who&&i.status!=="done"&&i.status!=="dropped").sort((a,b)=>isQueued(a)-isQueued(b)||qPos(a)-qPos(b)||(num(a.createdAt)??0)-(num(b.createdAt)??0))}
 function ordinal(n){const t=n%100,s=t>10&&t<14?"th":({1:"st",2:"nd",3:"rd"})[n%10]||"th";return n+s}
 const isQueued=i=>notStarted(i)||i.status==="queued";
 // Waiting its turn: queued with a place, and a card ahead of it in its queue still open (Designer and Manager on
