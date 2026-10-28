@@ -6,7 +6,7 @@
 :root{
   --bg:#f3f5f7; --panel:#ffffff; --ink:#18202a; --muted:#5d6b7a; --line:#dde3ea;
   --accent:#1f5fd6; --accent-soft:#e3ecfc;
-  --ok:#1b7f4b; --ok-soft:#dff3e8; --warn:#a85f00; --warn-soft:#fdf0d9; --bad:#b4232c; --bad-soft:#fbe2e3;
+  --ok:#1b7f4b; --ok-soft:#dff3e8; --warn:#a85f00; --warn-soft:#fdf0d9; --warn-ink:#9a5700; --bad:#b4232c; --bad-soft:#fbe2e3;
   --track:#e7ecf2;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -14,10 +14,10 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0f141a; --panel:#171e26; --ink:#e7edf3; --muted:#93a2b2; --line:#2a3542;
-  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; color-scheme:dark}}
+  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --warn-ink:#f2b45c; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0f141a; --panel:#171e26; --ink:#e7edf3; --muted:#93a2b2; --line:#2a3542;
-  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; color-scheme:dark}
+  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --warn-ink:#f2b45c; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);padding:20px 16px 40px}
 .wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
@@ -49,6 +49,18 @@ section{min-width:0}
 .t-ping::after{content:"";position:absolute;inset:-11px -6px}
 .t-ping:disabled{opacity:.6;cursor:default}.t-ping:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .t-pinged{font:400 .72rem var(--mono);color:var(--muted);margin-left:6px}
+/* A card's running sub-step (#C417): a thin bar under the words (the tick is the median, full at 2×); past 2× the row
+   goes amber, its words in --warn-ink (Designer: #9a5700 on --warn-soft is 4.99:1; --warn's 4.33). */
+.nw{white-space:nowrap}
+.ss-bar{display:block;position:relative;width:120px;max-width:60%;height:3px;margin:5px 0 1px;border-radius:2px;background:var(--track);overflow:hidden}
+.ss-bar i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:2px}
+.ss-bar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--muted)}
+.ss.slow{color:var(--warn-ink);font-weight:600}
+.w-row:has(.ss.slow){background:var(--warn-soft);box-shadow:inset 3px 0 0 var(--warn)}
+.w-row:has(.ss.slow) .ss-bar i{background:var(--warn)}
+/* On a phone "then …" and the ETA give way while a sub-step runs, so the line stays two lines (Manager); the bar shows
+   the pace. */
+@media (max-width:600px){.ss-eta{display:none}}
 .t-with{margin-top:2px}.c-from{font-size:.8rem;color:var(--muted);margin-right:8px;white-space:nowrap}
 /* A card number's bubble (#C367): one for the page, placed by the script under (or over) the number. */
 .cbub{position:fixed;z-index:60;max-width:min(360px,calc(100vw - 16px));padding:6px 10px;border-radius:8px;background:var(--ink);color:var(--bg);font-size:.8rem;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.18);pointer-events:none}.cbub[hidden]{display:none}
@@ -1060,11 +1072,44 @@ function threadOptions(id){const t=threadOf(id),last=t[t.length-1];
 function optionText(id,key){const o=threadOptions(id).find(o=>String(o.key)===String(key));return o?`Chose ${o.key}: ${o.label}`:null}
 // A thread's card, as its line names it: "→ #C356 · Build · ~01:30" in flight, "→ #C357 · Live", "→ #C360 · Dropped"
 // (#C371, the owner in t-1793156601181: the link stays in every state, not only while the card is in flight).
-function cardLine(id){const c=threadCardAny(id);if(!c)return "";
+// #C417 (the owner saw "nothing moved for 20 minutes" while three versions shipped; his B): with a sub-step running,
+// the line names it, its age and who is next ("e2e running 3 min · then Checker"; a ship "Release shipping · CI 2/4
+// min" against the median test minutes), with a thin bar under it (the tick is the median, full at 2×). Past 2× its
+// median the row goes amber, the usual time replaces the ETA. No running sub-step: the phase and the ETA, as before.
+function cardLine(id,now=Date.now()){const c=threadCardAny(id);if(!c)return "";
   const link=`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>`;
   if(c.status==="done"&&!c.dropped)return `→ ${link} · Live`;if(c.status==="dropped"||c.dropped)return `→ ${link} · Dropped`;
-  const eta=cardEta(c),ph=(PHASES.find(p=>p[0]===(notStarted(c)?BUILD_PHASE:c.phase))||[,c.phase||""])[1];
+  const eta=cardEta(c),s=liveSubstep(c.id);
+  if(s){const med=stepMedians()[s.phase],age=Math.max(0,now-s.at),slow=med!=null&&age>2*med,nx=nextPhaseLabel(c,s.phase);
+    const verb=s.phase==="test"?"e2e running":`${esc(s.who||"")} ${SUB_VERB[s.phase]||"reviewing"}`.trim();
+    const ci=s.phase==="ship"?stepMedians().ci:null;
+    const words=ci!=null?`${verb} · <span class="nw">CI ${Math.round(age/60e3)}/${Math.round(ci/60e3)} min</span>`:`${verb} <span class="nw">${esc(dur(age))}</span>`;
+    const usual=slow?` <span class="nw">(usually ${esc(dur(med).replace(/ min$/,""))})</span>`:"";
+    const bar=med!=null?`<span class="ss-bar" aria-hidden="true"><i style="width:${Math.round(Math.min(age/(2*med),1)*100)}%"></i></span>`:"";
+    return `→ ${link} · <span class="ss${slow?" slow":""}">${words}${usual}</span>${nx?`<span class="ss-eta"> · <span class="nw">then ${esc(nx)}</span></span>`:""}${!slow&&eta?`<span class="ss-eta"> · ~${hhmm(eta)}</span>`:""}${bar}`}
+  const ph=(PHASES.find(p=>p[0]===(notStarted(c)?BUILD_PHASE:c.phase))||[,c.phase||""])[1];
   return `→ ${link}${ph?" · "+esc(ph):""}${eta?" · ~"+hhmm(eta):""}`}
+const SUB_VERB={plan:"planning",build:"building",ship:"shipping"};
+// A card's running sub-step: its newest start step with no end of the same phase after it; null when none runs.
+function liveSubstep(id){let best=null;
+  for(const e of state.steps||[])if(e&&e.init===id&&e.kind==="start"&&num(e.at)!=null&&e.phase!==LIVE_PHASE&&(!best||e.at>best.at))best=e;
+  if(!best)return null;
+  return (state.steps||[]).some(e=>e&&e.init===id&&e.kind==="end"&&e.phase===best.phase&&num(e.at)!=null&&e.at>=best.at)?null:best}
+// The median time each sub-step took (a start to the first end of its phase after it, per card), and ci: the median
+// testsMin of the live steps, in ms; a median needs 3 samples. Worked out once per data update.
+let smOf=null,smMemo={};
+function stepMedians(){if(smOf===state.steps)return smMemo;smOf=state.steps;
+  const by={},ci=[],steps=(state.steps||[]).filter(e=>e&&num(e.at)!=null).sort((a,b)=>a.at-b.at),open=new Map();
+  for(const e of steps){const k=e.init+"\u0000"+e.phase;
+    if(e.kind==="start"){if(!open.has(k))open.set(k,e.at)}
+    else if(e.kind==="end"&&open.has(k)){const ms=e.at-open.get(k);open.delete(k);if(ms>0)(by[e.phase]=by[e.phase]||[]).push(ms)}
+    if(num(e.testsMin)!=null&&e.testsMin>0)ci.push(e.testsMin*60e3)}
+  const med=a=>{if(a.length<3)return null;a.sort((x,y)=>x-y);const m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2};
+  smMemo=Object.fromEntries(Object.entries(by).map(([k,a])=>[k,med(a)]).filter(([,v])=>v!=null));
+  const c=med(ci);if(c!=null)smMemo.ci=c;return smMemo}
+// The phase after this one that the card doesn't skip, by its label; none when that is the last (live).
+function nextPhaseLabel(c,phase){const skip=new Set(Array.isArray(c.skip)?c.skip:[]);
+  for(let n=phaseIndex(phase)+1;n>0&&n<PHASES.length-1;n++)if(!skip.has(PHASES[n][0]))return PHASES[n][1];return ""}
 // What a thread's row says under its name: on With the team, Manager answering (and its card, if it has one); else
 // its card's line (the tag opens the card).
 function withLine(id,lead=true){const cl=cardLine(id);
