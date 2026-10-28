@@ -1,0 +1,1 @@
+PASS Quick: #C385 board-new-thread-box. New-thread box white with accent outline and visible label; .newthread .cbox outranks .cbox, focus ring kept, reply boxes stay grey; search inputs unfilled. Suite 562/562.
