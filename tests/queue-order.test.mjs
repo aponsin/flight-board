@@ -50,4 +50,6 @@ test("the card's line: the whole queue, each number a link, this one as 'this', 
   assert.ok(b.initRow(of(b, "board-queue-order")).includes(line), "on the card");
   assert.equal(b.queueLine(of(b, "board-card-refs")), "", "a started card has no queue line");
   assert.equal(b.queueLine({ ...of(b, "ctx-tokens"), who: "" }), "", "no who, no queue");
+  assert.equal(b.queueLine({ ...of(b, "ctx-tokens") }), "", "a card the board's list doesn't hold: no empty line");
+  assert.equal(b.queueLine({ ...of(b, "ctx-tokens"), who: "Solo" }), "", "alone in its queue: nothing to show");
 });

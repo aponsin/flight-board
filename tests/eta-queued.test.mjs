@@ -38,7 +38,7 @@ test("a card nobody has started shows Build queued, not lit; a branch or a build
   const b = loadBoard(), now = Date.now();
   const q = card(b, [], { phase: "plan", who: "Boardsmith", createdAt: now - 12 * MIN, etaLive: now + 2 * H });
   const html = b.initRow(q);
-  assert.match(html, /class="step now queued"[^>]*>Build<small>queued<\/small>/, "Designer 3: queued alone; the header has the ETA");
+  assert.match(html, /class="step now queued"[^>]*>Build<small>queued · Boardsmith<\/small>/, "Designer 3: no time; the header has the ETA (#C370: whose queue, and its place when it has one)");
   assert.doesNotMatch(html, /class="step now"[^>]*>(Plan|Build)<small>Boardsmith/, "nothing lit as if someone were on it");
   assert.match(html, /<span class="state active">Queued<\/span>/);
   assert.match(html, /<span>Queued 12 min · expected S 1\.5 h once started<\/span>/, "Designer 2: no 'Started', no due");

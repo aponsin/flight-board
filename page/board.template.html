@@ -1292,10 +1292,11 @@ function ordinal(n){const t=n%100,s=t>10&&t<14?"th":({1:"st",2:"nd",3:"rd"})[n%1
 const isQueued=i=>notStarted(i)||i.status==="queued";
 // A queued card's phase box: "queued · Boardsmith · 3rd", or without a place "queued · Boardsmith".
 function queueLabel(i){if(!i.who)return "queued";const k=qPos(i)<Infinity?queueOf(i.who).indexOf(i):-1;return ["queued",i.who,k>=0?ordinal(k+1):""].filter(Boolean).join(" · ")}
-// Its line: the whole queue, each number a link, this card as "this", a started one with where it is.
-function queueLine(i){if(!i.who||!isQueued(i))return "";
+// Its line: the whole queue, each number a link, this card as "this", a started one with where it is. None when the
+// card isn't in the board's list (nothing to place it among) or is alone in its queue.
+function queueLine(i){if(!i.who||!isQueued(i))return "";const q=queueOf(i.who);if(!q.includes(i)||q.length<2)return "";
   const at=c=>c===i?"this":`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>${isQueued(c)?"":phaseIndex(c.phase)>phaseIndex(BUILD_PHASE)?" (in review)":" (building)"}`;
-  return `<span class="q-line">${esc(i.who)}&#39;s queue: ${queueOf(i.who).map(at).join(" → ")}</span>`}
+  return `<span class="q-line">${esc(i.who)}&#39;s queue: ${q.map(at).join(" → ")}</span>`}
 // ↻ Check on a card (#C355, the owner in #T962): a click asks the lead whether the card is up to date
 // (checkRequests/<card id> {at}, and a ping); the lead asks its owner, updates the card and stamps checkedAt. The card says
 // "checking…" until then, "checked HH:MM" after, and plainly that no answer came if CHECK_WAIT passes without one.
