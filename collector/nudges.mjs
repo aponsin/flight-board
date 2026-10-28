@@ -10,6 +10,9 @@
 //   5. a READY a required reviewer never picked up (#C290): DISPATCH_MIN minutes after the READY commit (or after the run
 //      that first saw it, if later), a review the card needs with no note on that commit and no step for it since. The
 //      fence lets the collector message the lead only, so a second line carries the READY for the lead to forward.
+//   6. a card live config.nudges.shipTimesMin minutes (within the last day) with no ship times (#C397): no testsMin or
+//      deployMin on its live step, and no row for its version in the release log (releaseTimes); a second line for the
+//      lead to forward to whoever logged the live step.
 // The CONFLICT lines are the collector's own (collector/derive.mjs). Every board value a line names goes through idText
 // (collector/text.mjs): the lines reach a session that can write the board and message the team.
 
@@ -41,7 +44,8 @@ function fingerprint(doc) {
 
 // waiting: the cards whose derived state is a wait with a known cause (#C278: queued for a board release, waiting for the
 // install): no step-overdue or unchanged nudge for them. derived: this run's derived cards ({ id: derivePhase's answer }).
-export function nudges({ config, docs, now, state = {}, waiting = new Set(), derived = {} }) {
+// releaseTimes: the release log's times by version (collector/facts.mjs releaseTimes).
+export function nudges({ config, docs, now, state = {}, waiting = new Set(), derived = {}, releaseTimes = {} }) {
   const n = config.nudges, owner = config.owner, firing = [];
   const messages = (docs.messages ?? []).filter((m) => m && typeof m.thread === "string" && typeof m.at === "number");
   const byThread = new Map();
@@ -117,6 +121,23 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
         then: `forward to ${who}: READY ${branchText(d.branch)}@${sha}${level}, board card ${q(id)}${tag}`,
       });
     }
+  }
+
+  // 6. A card live with no ship times: its newest live step, from shipTimesMin minutes to a day old.
+  const liveSteps = new Map();
+  for (const s of docs.steps ?? []) if (s && s.phase === config.collector.livePhase && typeof s.at === "number" && !(liveSteps.get(s.init)?.at >= s.at)) liveSteps.set(s.init, s);
+  for (const [id, s] of liveSteps) {
+    const card = cards.get(id);
+    if (!card || now - s.at < n.shipTimesMin * MIN || now - s.at > 24 * HOUR) continue;
+    if (typeof s.testsMin === "number" || typeof s.deployMin === "number") continue;
+    const v = /^v?(\d+\.\d+\.\d+)$/.exec(String(s.version ?? ""));
+    if (v && Object.hasOwn(releaseTimes, v[1])) continue;
+    const tag = Number.isInteger(card.num) && card.num > 0 ? ` (#C${card.num})` : "", ver = v ? `v${v[1]}` : "";
+    firing.push({
+      key: `shiptimes:${id}`,
+      text: `${q(id)}${tag}: live${ver ? ` in ${ver}` : ""} for ${mins(now - s.at)} min with no ship times; forward:`,
+      then: `forward to ${q(s.who || "Release")}: ship times for ${ver || q(id)}${tag}: add testsMin and deployMin to its live step, or its row to the release log`,
+    });
   }
 
   // Once, then again only after the quiet period; forgotten when it stops holding.

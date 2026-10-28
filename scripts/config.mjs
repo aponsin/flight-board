@@ -24,19 +24,20 @@ export const DEFAULTS = {
   // live. lanePhases: the phases where one owner holds one card at a time (reviews and shipping queue). versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
   // how such a subject names each branch it shipped and its commit (groups: branch, sha), for branches deleted since.
   // candidatePattern: the name of a ship run's own branch, which exists only while the run is on and whose commits name
-  // what it ships (shippedPattern); empty for none. liveUrl: the live site the board's "Live now" reads (https, or empty for none); liveTag: how its page names the
+  // what it ships (shippedPattern); empty for none. releaseTimes: the release log in the repository, read on main for each
+  // version's CI times (#C397, collector/facts.mjs releaseTimes); empty for none. liveUrl: the live site the board's "Live now" reads (https, or empty for none); liveTag: how its page names the
   // build it serves (groups: version, commit). contextRoles: the roles whose memory tiles the collector reads from the app,
   // each from the session titled exactly as the role (collector/context.mjs); empty for none. repos: other repositories
   // whose cards the collector reads (#C278): [{ name, path (a clone of its own), mainBranch, remote, notes: {phase: ref},
   // idPrefixes (card ids it holds; a card's own repo field wins), installedLink (the link whose commit is what's installed) }].
-  collector: { contextRoles: [], repos: [], repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", liveUrl: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
+  collector: { contextRoles: [], repos: [], repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", releaseTimes: "docs/RELEASE-TIMES.md", liveUrl: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
     // Runs on demand (collector/refresh.mjs): the checkouts whose origin/main moving means a ship (local refs, no fetch), the
     // scheduled task the lead is told to run, the quiet minutes after a run (or an ask) and how long a run may take.
     refresh: { repos: [], taskId: "board-collector", debounceMin: 10, flightMin: 15 } },
   // The nudges (collector/nudges.mjs): minutes the owner may wait for an answer; how far past its size's median a step may
   // run (etaHours: the median hours a step takes, by card size); how old a memory reading may get; how long a card may
   // stay unchanged unless its status is one of parked; and the quiet minutes before a nudge is sent again.
-  nudges: { ownerWaitMin: 15, stepFactor: 1.5, etaHours: { XS: 1, S: 1.5, M: 3.5, L: 6 }, ctxMaxHours: 2, staleHours: 24, parked: ["paused"], quietMin: 120, deafMin: 30 },
+  nudges: { ownerWaitMin: 15, stepFactor: 1.5, etaHours: { XS: 1, S: 1.5, M: 3.5, L: 6 }, ctxMaxHours: 2, staleHours: 24, parked: ["paused"], quietMin: 120, deafMin: 30, shipTimesMin: 15 },
   // Mechanical traffic (gate/traffic.mjs): status-only messages the gate sends to the board's log instead of the lead,
   // each class a name and a pattern the whole message must match (case aside). An empty list turns it off. A ship is not
   // one: the lead acts on it at once (Manager, #C335).
@@ -116,6 +117,8 @@ export function checkConfig(c) {
       for (const f of ["buildPhase", "shipPhase", "livePhase"]) if (k[f] !== undefined && !phaseKeys2.includes(k[f])) out.push(`collector.${f}: one of the phases`);
       if (k.lanePhases !== undefined && !(Array.isArray(k.lanePhases) && k.lanePhases.every((p) => phaseKeys2.includes(p)))) out.push("collector.lanePhases: a list of phases");
       for (const f of ["versionPattern", "shippedPattern", "liveTag", "candidatePattern"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
+      // A path git shows from main: relative, inside the repository, never an option or a ref:path of its own (Security).
+      if (k.releaseTimes !== undefined && !(k.releaseTimes === "" || (typeof k.releaseTimes === "string" && k.releaseTimes.length <= 200 && /^[A-Za-z0-9_][A-Za-z0-9._\/-]*$/.test(k.releaseTimes) && !k.releaseTimes.split("/").includes("..")))) out.push("collector.releaseTimes: a path inside the repository, or empty");
       if (k.liveUrl !== undefined && !(k.liveUrl === "" || (typeof k.liveUrl === "string" && k.liveUrl.length <= 300 && /^https:\/\/[^\s/?#]+(\/[^\s]*)?$/.test(k.liveUrl)))) out.push("collector.liveUrl: an https address, or empty");
       if (k.contextRoles !== undefined && !(Array.isArray(k.contextRoles) && k.contextRoles.length <= 40 && k.contextRoles.every((r) => typeof r === "string" && /^[A-Za-z0-9_-]{1,60}$/.test(r)))) out.push("collector.contextRoles: a list of up to 40 role names (letters, digits, _ and -), each a session's exact title");
       if (k.repos !== undefined) {
@@ -153,7 +156,7 @@ export function checkConfig(c) {
     if (!k || typeof k !== "object" || Array.isArray(k)) out.push("nudges: an object");
     else {
       for (const f of Object.keys(k)) if (!Object.hasOwn(DEFAULTS.nudges, f)) out.push(`nudges: unknown field "${f}" (known: ${Object.keys(DEFAULTS.nudges).join(", ")})`);
-      for (const f of ["ownerWaitMin", "stepFactor", "ctxMaxHours", "staleHours", "quietMin", "deafMin"]) if (k[f] !== undefined && !(typeof k[f] === "number" && k[f] > 0 && k[f] < 1e4)) out.push(`nudges.${f}: a positive number`);
+      for (const f of ["ownerWaitMin", "stepFactor", "ctxMaxHours", "staleHours", "quietMin", "deafMin", "shipTimesMin"]) if (k[f] !== undefined && !(typeof k[f] === "number" && k[f] > 0 && k[f] < 1e4)) out.push(`nudges.${f}: a positive number`);
       if (k.etaHours !== undefined && !(k.etaHours && typeof k.etaHours === "object" && !Array.isArray(k.etaHours) && Object.entries(k.etaHours).every(([s, h]) => /^[A-Za-z]{1,4}$/.test(s) && typeof h === "number" && h > 0))) out.push("nudges.etaHours: { size: hours }");
       if (k.parked !== undefined && !(Array.isArray(k.parked) && k.parked.every((x) => typeof x === "string" && KEY.test(x)))) out.push("nudges.parked: a list of statuses");
     }

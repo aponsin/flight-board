@@ -14,7 +14,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
 import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf } from "./derive.mjs";
-import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild } from "./facts.mjs";
+import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes } from "./facts.mjs";
 import { evidenceTimes } from "./timings.mjs";
 import { nudges } from "./nudges.mjs";
 import { ownerPush } from "./owner-push.mjs";
@@ -134,11 +134,11 @@ export function takeExport(src, dir, id) {
 
 // The nudges, with the last run's state next to the mirror (<dir>/nudges.json: what was sent when, and since when each
 // card is unchanged). Returns the NUDGE lines to print.
-export function runNudges(dir, config, docs, now, waiting = new Set(), derived = {}) {
+export function runNudges(dir, config, docs, now, waiting = new Set(), derived = {}, releaseTimes = {}) {
   const path = join(dir, "nudges.json");
   let before = {};
   try { before = JSON.parse(readFileSync(path, "utf8")); } catch { /* first run, or a broken file: start afresh */ }
-  const { lines, state } = nudges({ config, docs, now, state: before && typeof before === "object" ? before : {}, waiting, derived });
+  const { lines, state } = nudges({ config, docs, now, state: before && typeof before === "object" ? before : {}, waiting, derived, releaseTimes });
   writeFileSync(path, JSON.stringify(state));
   return lines;
 }
@@ -285,6 +285,8 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   }
   const conflicts = [...open.map((k) => conflict(k, derived[k.id], config)).filter(Boolean), ...split];
   const doc = { at: now, cards: derived, times, conflicts, liveButOpen: staleLive(open, derived, config) };
+  // The release log's CI times by version (#C397): the page shows them for a card whose live step has none.
+  doc.releaseTimes = releaseTimes(git, `${c.remote}/${c.mainBranch}`, c.releaseTimes);
   // "Live now" from the build the site serves, never from main; main's newest version shows beside it while it deploys.
   if (c.liveUrl) doc.live = { ...(live ?? {}), mainVersion: mainVersion(line, c.versionPattern), at: now };
   if (Array.isArray(plan) && plan.length) doc.plan = derivePlan({ nodes: plan, cards, derived, waiting, config, now });
@@ -360,7 +362,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const live = await liveBuild(fetch, config.collector.liveUrl, config.collector.liveTag);
   const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos });
   const waits = new Set(Object.entries(doc.cards).filter(([, d]) => d.wait).map(([id]) => id));
-  const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards)] };
+  const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards, doc.releaseTimes)] };
   const out = outPath(config, dir);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(doc, null, 2));
