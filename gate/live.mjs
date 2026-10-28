@@ -16,10 +16,8 @@ export const LIVE_SLACK = 2 * 60e3;
 // What live.json keeps: the last KEEP_DAYS days' owner messages, at most KEEP of them.
 const KEEP_DAYS = 2, KEEP = 300;
 export const LIVE_LIMIT = 100;
-// A turn ending within LIVE_EVERY_MIN of the last check isn't asked again (Manager's yes to the design: at most one
-// query every 5 minutes); what that check returned still counts.
-export const LIVE_EVERY_MIN = 5;
-export const liveDue = (checkedAt, now) => checkedAt == null || now - checkedAt >= LIVE_EVERY_MIN * 60e3;
+// Every lead turn runs it (#C406): #C394's 5-minute throttle let a turn end unchecked a minute after a check, and Manager
+// missed the owner's 18:03Z reply for ~10 min. The owner's A in #T1037 was one query per turn.
 
 export const livePath = (config) => join(home(config.gate.stateDir), boardId(config) ?? "no-board", "live.json");
 // { checkedAt, msgs } for a role: checkedAt the last turn whose query was read (null: never), msgs its owner messages.
@@ -47,7 +45,7 @@ const LIVE_MAX = 1000;
 // the largest page.
 export function liveAsk(config, since, cut = false) {
   const where = JSON.stringify([["from", "==", config.owner], ["at", ">", since]]);
-  const why = cut ? "your last one came back cut short (its limit filled, or more pages), so it doesn't count yet; run it again" : "at most one every 5 min: pings sent while you work are dropped";
+  const why = cut ? "your last one came back cut short (its limit filled, or more pages), so it doesn't count yet; run it again" : "every turn: pings sent while you work are dropped";
   return `live board check (${why}): ArtifactData query, url ${config.artifactUrl}, collection "messages", query {"where": ${where}, "limit": ${cut ? LIVE_MAX : LIVE_LIMIT}}. Answer, in its thread, any message it shows that you haven't answered; then finish`;
 }
 
@@ -92,7 +90,7 @@ function liveQuery(i, config, id, since) {
 // This turn's live check: { msgs, complete }, or null when the turn ran none. msgs, the owner's messages its live queries
 // returned (only the owner's, whatever else a result held); complete, whether one came back whole: fewer documents than
 // its limit and no next_cursor. A cut-short result's messages still count, but it isn't the check (Checker: a truncated
-// result moved checkedAt, and the 5-min throttle then hid what it cut). since: where the window must start (liveSince).
+// result moved checkedAt, so the next window skipped what it cut). since: where the window must start (liveSince).
 export function turnLive(turn, config, since) {
   const id = boardId(config);
   if (!id) return null;

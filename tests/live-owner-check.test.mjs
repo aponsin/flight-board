@@ -34,16 +34,30 @@ const run = (lines, { v = view(), stored = { checkedAt: null, msgs: [] } } = {})
 test("a Manager turn with no live query is asked for one, from its last check (less 2 min), or a day back", () => {
   const r = run(turn());
   assert.equal(r.errs.length, 1);
-  assert.ok(r.errs[0].startsWith(`live board check (at most one every 5 min: pings sent while you work are dropped): ArtifactData query, url ${URL_}, collection "messages", query {"where": [["from","==","Owner"],["at",">",${NOW - DAY}]], "limit": 100}. `), r.errs[0]);
+  assert.ok(r.errs[0].startsWith(`live board check (every turn: pings sent while you work are dropped): ArtifactData query, url ${URL_}, collection "messages", query {"where": [["from","==","Owner"],["at",">",${NOW - DAY}]], "limit": 100}. `), r.errs[0]);
   assert.match(run(turn(), { stored: { checkedAt: NOW - 10 * MIN, msgs: [] } }).errs[0], new RegExp(`"at",">",${NOW - 10 * MIN - LIVE_SLACK}\\]`));
-  // Manager's yes to the design: at most one query every 5 minutes; what the last one returned still counts.
-  assert.deepEqual(run(turn(), { stored: { checkedAt: NOW - 4 * MIN, msgs: [] } }).errs, [], "checked 4 min ago: not asked again");
-  assert.equal(run(turn(), { stored: { checkedAt: NOW - 5 * MIN, msgs: [] } }).errs.length, 1, "5 min: asked");
   const kept = { checkedAt: NOW - 4 * MIN, msgs: [{ id: "m-k", thread: "t-k", from: "Owner", text: "still?", at: NOW - 30 * MIN }] };
-  assert.match(run(turn(), { stored: kept }).errs.join("\n"), /thread t-k "still\?"/, "not asked, but the last check's word still counts");
+  assert.match(run(turn(query([])), { stored: kept }).errs.join("\n"), /thread t-k "still\?"/, "the last check's word still counts");
   assert.deepEqual(run(turn(query([]))).errs, [], "the query ran, nothing came back: clean");
   assert.deepEqual(stopRun(turn(), { config, now: NOW, since: NOW - DAY, view: view() }).errs, [], "a caller that asks nothing of it checks as before");
   assert.deepEqual(run(turn([], { title: "Builder" })).errs, [], "only the lead");
+});
+
+// #C406 (Manager missed the owner's 18:03Z reply for ~10 min on v3.19): the owner's A in #T1037 is one live query per
+// Manager turn; #C394's 5-minute throttle let a turn end unchecked right after a check. No throttle now.
+test("every Manager turn runs the live check: a turn a minute after the last one, with an owner reply since, is asked", () => {
+  for (const ago of [1, 4, 30]) assert.equal(run(turn(), { stored: { checkedAt: NOW - ago * MIN, msgs: [] } }).errs.length, 1, `checked ${ago} min ago: asked`);
+  const reply = doc("m-r", { thread: "ship-15-push", from: "Owner", text: "go", at: NOW - 1 * MIN });
+  const stored = { checkedAt: NOW - 2 * MIN, msgs: [] };
+  assert.match(run(turn(), { stored }).errs[0], new RegExp(`^live board check \\(every turn[^]*"at",">",${NOW - 2 * MIN - LIVE_SLACK}\\]`), "the reply came a minute after the check: the turn can't end without looking");
+  const looked = run(turn(query([reply], { where: [["from", "==", "Owner"], ["at", ">", NOW - 2 * MIN - LIVE_SLACK]] })), { stored });
+  assert.deepEqual(looked.liveNext.msgs.map((m) => m.id), ["m-r"], "and the look finds it");
+  assert.equal(looked.liveNext.checkedAt, NOW);
+});
+
+test("the old throttle is gone from the code", () => {
+  const src = readFileSync(new URL("../gate/live.mjs", import.meta.url), "utf8") + readFileSync(new URL("../gate/stop.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /liveDue|LIVE_EVERY_MIN|at most one every 5 min/);
 });
 
 test("what the query returned counts at once: an owner word it shows, unanswered 5 min on, is refused; kept for later turns", () => {
