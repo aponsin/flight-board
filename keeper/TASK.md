@@ -5,6 +5,13 @@ the prompt below into the task (`update_scheduled_task`) after a release that ch
 place of `{{TEAM}}` (the team's name), `{{FOLDER}}` (a word every agent's folder contains) and `{{ROLES}}` (the
 agents' titles, the lead's included, comma-separated). Hourly (cron `0 * * * *`).
 
+The task's permissions allow Bash for exactly the command `sleep 120` (an exact rule), never Bash in general
+(Security on a307d81): the keeper reads every session's title, so a broad grant would let a crafted title run commands.
+
+A reset is told by the Messages category of get_usage's context, not its total (Checker on a307d81): the total carries
+some 88k of tools, prompt, memory and skills even in a cleared session. Messages under 5,000 is a session cleared and
+not yet picked up; a pickup's own note and digest put it well over, so a picked-up session is never sent a second one.
+
 Why the pickups are the keeper's (#C379, Director for the owner): the 05:12Z wave of 2026-10-28 reset the lead along
 with everyone else, so nobody sent the pickups, and every reset session sat idle with Remote Control off until the
 owner saw the laptop go blank. Now the run that cues a reset waits for it and sends `/pickup <Role>` itself (a message
@@ -19,13 +26,13 @@ Thresholds are in TOKENS, not percent (the owner, 2026-10-27): usage charges the
 
 1. Load tools with ToolSearch: "select:mcp__ccd_session_mgmt__list_sessions,mcp__ccd_session_mgmt__get_usage,mcp__ccd_session_mgmt__send_message".
 2. list_sessions (limit 50; old scheduled-task runs crowd the list). Keep sessions that are not archived, whose cwd contains "{{FOLDER}}", and whose title is one of: {{ROLES}}. Never measure, cue or message Director or any scheduled-task session.
-3. For each, call get_usage with its sessionId and read the context tokens used, plus the percent for the report (skip any whose context status isn't "ok"; note those as "n/a").
-4. Pickups first: for each session that is idle (not working) and under 25,000 tokens, send it exactly "/pickup <Title>" (for example "/pickup Checker"). Such a session was just cleared and can't resume itself.
+3. For each, call get_usage with its sessionId and read the context tokens used, plus the percent for the report, and the tokens of its "Messages" category (none listed counts as 0). Skip any whose context status isn't "ok"; note those as "n/a".
+4. Pickups first: for each session that is idle (not working) and whose Messages are under 5,000 tokens, send it exactly "/pickup <Title>" (for example "/pickup Checker"). Such a session was just cleared and can't resume itself.
 5. The wave: every session at 400,000 tokens or more (or 80% of a 200k window), except Manager. Skip one that is working right now; it gets the cue on the next run. Send each exactly "CONTEXT RESET" and nothing else.
-6. Pick the wave back up, in this run: wait with a background shell sleep of 120 seconds (Bash, run_in_background: true, "sleep 120"; never a foreground sleep), and when it ends call get_usage again for each session of the wave not yet picked up. A session that is idle and under 25,000 tokens has reset: send it exactly "/pickup <Title>" at once. Wait again for the rest, at most 8 waits (16 minutes) in all. A session still not reset after that is listed as "not reset" in the report; step 4 picks it up on a later run.
+6. Pick the wave back up, in this run: wait with a background shell sleep of 120 seconds (Bash, run_in_background: true, "sleep 120"; never a foreground sleep), and when it ends call get_usage again for each session of the wave not yet picked up. A session that is idle and whose Messages are under 5,000 tokens has reset: send it exactly "/pickup <Title>" at once. Wait again for the rest, at most 8 waits (16 minutes) in all. A session still not reset after that is listed as "not reset" in the report; step 4 picks it up on a later run.
 7. Manager last, and only after the wave: if Manager is at 400,000 tokens or more and idle, send it the report (step 8) first, then exactly "CONTEXT RESET", then wait and pick it up exactly as in step 6 ("/pickup Manager"). If Manager is working, skip it; it gets the cue on the next run. Director is never cued by this task, so Director is never reset in the same wave as Manager.
 8. Always send ONE report to the session titled "Manager" (find its sessionId in the list), exactly in this shape, once the wave is picked up (before Manager's own reset cue, if any):
-   "Context keeper: all: <Title> <tokens>k (<pct>%), … | reset sent: <Title> <tokens>k, … (or none) | pickup sent: <Title>, … (or none) | not reset: <Title>, … (or none) | busy, retry next run: <Title>, … (or none). Update the board's Agents' memory tiles."
+   "Context keeper: all: <Title> <tokens>k (<pct>%), … | reset sent: <Title> <tokens>k, … (or none) | pickup sent: <Title>, … (or none) | not reset: <Title>, … (or none) | busy, retry next run: <Title>, … (or none). Update the board's Agents' memory tiles; for each reset sent, set saved with savedTokens and savedPct at its count above."
    "all" lists every session measured, by tokens descending, Manager included.
 9. Reply with one line: the messages sent.
 ```
