@@ -1509,14 +1509,24 @@ function shipQueue(){const all=state.derived.find(d=>d.id==="all"),cards=all&&al
   const open=new Set(state.initRaw.filter(i=>i&&i.status!=="done"&&i.status!=="dropped").map(i=>i.id));
   return Object.keys(cards).filter(id=>open.has(id)&&cards[id]&&cards[id].phase===SHIP_PHASE&&!cards[id].version&&!cards[id].shipping&&cards[id].firm!==false)
     .sort((a,b)=>(num(cards[a].readyAt)??Infinity)-(num(cards[b].readyAt)??Infinity)||(a<b?-1:1))}
+// The Collector's expected version (#C400, collector/expected.mjs) names the version each one ships in: "Shipping now:
+// v1.158.15", "Next: v1.158.16 (2nd, with #C392)", "In review · then after the queue: v1.159.1 at the earliest". Without
+// one (no version known yet) the note says what it did before.
 function versionNote(i){const d=derivedOf(i.id);if(!d||!d.phase||d.firm===false&&d.phase!==BUILD_PHASE)return "";
   if(d.phase===LIVE_PHASE)return d.version?`Live in <b>v${esc(d.version)}</b>`:"Live";
   if(d.phase===SHIP_PHASE&&d.version)return `Deploying <b>v${esc(d.version)}</b>`;
+  const e=d.expected&&typeof d.expected==="object"&&/^\d+\.\d+\.\d+$/.test(String(d.expected.version))?d.expected:null;
   // After the two above: a card already on main while its run finishes shows its version, not "shipping now".
-  if(d.shipping)return "<b>Shipping now</b>";
-  if(d.phase===SHIP_PHASE){const k=shipQueue().indexOf(i.id);return k>=0?`Queued (${k+1})`:""}
+  if(d.shipping)return e&&e.shipping?`Shipping now: <b>v${e.version}</b>`:"<b>Shipping now</b>";
+  if(d.phase===SHIP_PHASE){if(e&&Number.isInteger(e.place)&&e.place>0)return `Next: <b>v${e.version}</b> (${expectedTail(e)})`;
+    const k=shipQueue().indexOf(i.id);return k>=0?`Queued (${k+1})`:""}
   if(d.phase===BUILD_PHASE||d.phase==="test")return "Building";
-  return "In review"}
+  return e&&e.earliest?`In review · then after the queue: <b>v${e.version}</b> at the earliest`:"In review"}
+// "2nd, with #C392" · "3rd · minor: a feature": the place, the batch's other cards the board holds, a bump past a patch.
+function expectedTail(e){const mates=(Array.isArray(e.with)?e.with:[]).map(id=>(state.initRaw||[]).find(c=>c&&c.id===id)).filter(Boolean)
+    .map(c=>`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>`);
+  const bump=e.bump==="minor"?"minor: a feature":e.bump==="major"?"major":"";
+  return ordinal(e.place)+(mates.length?", with "+mates.join(", "):"")+(bump?" · "+bump:"")}
 // The header's "Live now" must match the newest version that shipped.
 function verParts(v){return String(v||"").replace(/^v/,"").split(".").map(n=>parseInt(n,10)||0)}
 function verCmp(a,b){const x=verParts(a),y=verParts(b);for(let k=0;k<3;k++){if((x[k]||0)!==(y[k]||0))return (x[k]||0)-(y[k]||0)}return 0}

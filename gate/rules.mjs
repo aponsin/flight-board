@@ -196,6 +196,12 @@ export function writeErrors(w, { config, who, now }) {
     // One card, one branch (#C237): a rework on a second branch is a new card of its own that names this one.
     if ("branches" in data && !(data.branches && data.branches.__delete__)) e.push(SECOND_BRANCH);
     if ("branch" in data && data.branch !== null && typeof data.branch !== "string" && !data.branch?.__delete__) e.push("branch: one branch name");
+    // How a card ships (#C400, collector/expected.mjs): the lead marks the cards that go out together (batch) and a
+    // feature or bigger (bump); the Collector works out the versions from them.
+    const marks = ["batch", "bump"].filter((f) => f in data && !data[f]?.__delete__);
+    if (marks.length && !who.manager) e.push(`batch and bump: only ${config.gate.managerRole} marks how a card ships`);
+    if (marks.includes("batch") && !(typeof data.batch === "string" && /^[a-z0-9-]{1,40}$/.test(data.batch))) e.push("batch: a short name (a-z, 0-9 and -, up to 40)");
+    if (marks.includes("bump") && !["patch", "minor", "major"].includes(data.bump)) e.push("bump: patch, minor or major");
   }
   if (collection === "waiting") {
     // Rule 7: an agent's passing state ("needs the user") goes down the nudge path; it never becomes an item.

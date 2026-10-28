@@ -19,6 +19,7 @@ import { evidenceTimes } from "./timings.mjs";
 import { nudges } from "./nudges.mjs";
 import { ownerPush } from "./owner-push.mjs";
 import { derivePlan } from "./plan-state.mjs";
+import { expectedVersions, guardExpected } from "./expected.mjs";
 import { idText, lineText } from "./text.mjs";
 import { planReadings, writeContext } from "./context.mjs";
 import { runMark, localMain, localShips } from "./refresh.mjs";
@@ -143,6 +144,24 @@ export function runNudges(dir, config, docs, now, waiting = new Set(), derived =
   return lines;
 }
 
+// The versions the main line names, oldest first (the guard reads a ship's bump from the one before it).
+export function versionsOf(line, pattern) {
+  const re = new RegExp(pattern);
+  return line.map((l) => { const m = re.exec(l.subject); return m ? m[1] ?? m[0] : null; }).filter(Boolean);
+}
+
+// The expected-version guard (#C400), with its state next to the mirror (<dir>/expected.json: each card's last queue
+// prediction, and the ones a ship broke). Its lines are conflicts: on the board and to the lead.
+export function runExpected(dir, cards, doc, versions) {
+  const path = join(dir, "expected.json");
+  let before = {};
+  try { before = JSON.parse(readFileSync(path, "utf8")); } catch { /* first run */ }
+  const expected = Object.fromEntries(Object.entries(doc.cards).filter(([, d]) => d.expected).map(([id, d]) => [id, d.expected]));
+  const { lines, state } = guardExpected({ cards, derived: doc.cards, expected, versions, state: before && typeof before === "object" ? before : {} });
+  writeFileSync(path, JSON.stringify(state));
+  return lines;
+}
+
 // The owner's unseen words, pushed to the lead (collector/owner-push.mjs, #C392), with their own state next to the
 // mirror (<dir>/owner-push.json: which words went out, and when the deaf line last did). Returns the NUDGE lines.
 export function runOwnerPush(dir, config, docs, now) {
@@ -260,11 +279,15 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
     if (tips.length > 1 && (derived[card.id].branches?.length ?? 1) > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
   }
   // A ship run on now: the cards its candidate branch names (branch@sha in one of its last commits) are shipping now.
-  const ships = shipping(git, heads, c);
+  const ships = shipping(git, heads, c), runOf = {};
   for (const s of ships) for (const id of Object.keys(derived)) {
     const h = derived[id].head;
-    if (h && s.names.some((n) => String(h).startsWith(n.sha))) derived[id].shipping = true; // never the branch's name (Security)
+    if (h && s.names.some((n) => String(h).startsWith(n.sha))) { derived[id].shipping = true; runOf[id] = s.branch; } // never the branch's name (Security)
   }
+  // Each card's expected version (#C400): from the live site's, main's or the run's, through the queue.
+  const main = mainVersion(line, c.versionPattern);
+  const expected = expectedVersions({ cards, derived, live: { version: live?.version ?? null, mainVersion: main }, runOf, config });
+  for (const [id, e] of Object.entries(expected)) derived[id].expected = e;
   // Each phase's times from the evidence (#C235), for open cards and those closed in the last STEPS_DAYS days.
   const times = {};
   const recent = cards.filter((k) => closed(k) && Number.isFinite(k.doneAt) && k.doneAt > now - STEPS_DAYS * 864e5);
@@ -283,9 +306,9 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   // The release log's CI times by version (#C397): the page shows them for a card whose live step has none.
   doc.releaseTimes = releaseTimes(git, `${c.remote}/${c.mainBranch}`, c.releaseTimes);
   // "Live now" from the build the site serves, never from main; main's newest version shows beside it while it deploys.
-  if (c.liveUrl) doc.live = { ...(live ?? {}), mainVersion: mainVersion(line, c.versionPattern), at: now };
+  if (c.liveUrl) doc.live = { ...(live ?? {}), mainVersion: main, at: now };
   if (Array.isArray(plan) && plan.length) doc.plan = derivePlan({ nodes: plan, cards, derived, waiting, config, now });
-  return { doc, conflicts };
+  return { doc, conflicts, versions: versionsOf(line, c.versionPattern) };
 }
 
 // Its one output, in collector.outDir when set: a folder outside the state folder, so the scheduled run (whose working
@@ -355,7 +378,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   }
   const now = Date.now();
   const live = await liveBuild(fetch, config.collector.liveUrl, config.collector.liveTag);
-  const { doc, conflicts } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos });
+  const { doc, conflicts, versions } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos });
+  const guard = runExpected(dir, mirror.docs.initiatives, doc, versions);
+  doc.conflicts.push(...guard);
+  conflicts.push(...guard);
   const waits = new Set(Object.entries(doc.cards).filter(([, d]) => d.wait).map(([id]) => id));
   const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards, doc.releaseTimes)] };
   const out = outPath(config, dir);
