@@ -524,20 +524,23 @@ function askHtml(w,open,at=w.since){const steps=Array.isArray(w.steps)?w.steps:[
    <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}</li>`:`<li>${linkify(s&&s.text||"")}${s&&s.cmd?`<div class="cmd"><code>${esc(s.cmd)}</code><button type="button" class="copy" data-copy="${esc(s.cmd)}">Copy</button></div>`:""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length?threadHtml(w.id,"wait",{box:!!(w.response&&w.response.status)}):""}</details>`}
 // "Needs you": the open asks, Later folded at their end, then the threads where Manager answered and the owner has not
 // closed or replied (their item is no longer on the board).
+// What Needs you holds: the open asks on the owner (Later has its own tab) and the threads Manager answered. Its list and
+// its pill both come from here (#C366: the pill read 1 over "Nothing to do now.").
+function youItems(now,q){return {asks:state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&w.kind!=="later"&&askHit(w,q)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0)),
+  answered:threadSets(now,q).answered}}
+function youCount(now,q){const y=youItems(now,q);return y.asks.length+y.answered.length}
 function renderWaiting(){
-  const q=qOf("you"),t=Date.now(),list=state.waiting.filter(w=>waitsOn(w.id,t)==="you"&&askHit(w,q)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
-  const el=$("waiting"),answeredRows=threadRows(t,q).answered;
-  if(!list.length&&!answeredRows){el.innerHTML=isOn(q)?NO_MATCH:'<div class="empty">Nothing needs you.</div>';return}
+  const q=qOf("you"),t=Date.now(),{asks,answered:ans}=youItems(t,q);
+  const el=$("waiting"),answeredRows=ans.map(id=>threadRow(id,t)).join("");
+  if(!asks.length&&!ans.length){el.innerHTML=isOn(q)?NO_MATCH:'<div class="empty">Nothing needs you.</div>';return}
   const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id));
   // Keep what the owner is typing: a live update re-draws the list, which would otherwise wipe the note boxes.
   const drafts={};el.querySelectorAll("textarea[id^='note-'],textarea[id^='tnote-']").forEach(x=>{if(x.value)drafts[x.id]=x.value});
   const focusId=document.activeElement&&document.activeElement.id&&/^t?note-/.test(document.activeElement.id)?document.activeElement.id:null;
   queueMicrotask(()=>{Object.entries(drafts).forEach(([id,v])=>{const x=document.getElementById(id);if(x){x.value=v;fitBox(x)}});if(focusId){const x=document.getElementById(focusId);if(x){x.focus();x.selectionStart=x.selectionEnd=x.value.length}}});
   const item=w=>askHtml(w,open);
-  // "Later" items sit folded in one row at the bottom, so today's asks stay on the first screen.
-  const now=list.filter(w=>w.kind!=="later");
   const y=window.scrollY;
-  el.innerHTML=(now.length?now.map(item).join(""):answeredRows?"":isOn(q)?NO_MATCH:'<div class="empty">Nothing to do now.</div>')+answeredRows;
+  el.innerHTML=asks.map(item).join("")+answeredRows;
   restoreFolds(el,open);if(window.scrollY!==y)window.scrollTo(0,y);
   el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply));
   el.querySelectorAll("details.w-item").forEach(d=>d.addEventListener("toggle",()=>{if(d.open)closedAnswers.delete(d.dataset.id);else closedAnswers.add(d.dataset.id)}));
@@ -770,10 +773,10 @@ async function onReply(e){
     // A bare Ack needs nothing from Manager, so it sends no ping; a follow-up question does.
     const bare=act==="ack"&&!response.note&&!stored.length;
     const pinged=bare?false:await pingManager(anchor,id,response);
-    if(bare){msg.textContent="Acknowledged.";setTimeout(renderWaiting,2600);return}
+    if(bare){msg.textContent="Acknowledged.";setTimeout(settleRedraw,2600);return}
     msg.textContent=pinged?"Saved and sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.";
     try{await dbRef.doc("waiting/"+id).update({ping:pinged?"sent":lastPing})}catch(_){}
-    setTimeout(renderWaiting,2600)}
+    setTimeout(settleRedraw,2600)}
   catch(err){btn.disabled=false;msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead."}
 }
 // Stores a reply's pending files (key: its reply box) as board assets, one by one; throws with the line to show if one fails.
@@ -1010,20 +1013,23 @@ document.addEventListener("input",e=>{if(e.target&&e.target.id==="nttext")ntHas(
 // Needs you opens by default; the open tab is this viewer's, for this visit.
 const TABS=[["you","Needs you"],["later","Later"],["lead","Waiting on Manager"],["todo","To-do"],["ideas","Ideas"],["resolved","Resolved, 7 days"]];
 let tab="you";
-function tabCounts(now,q=rQuery){const s=threadSets(now,q),mine=w=>waitsOn(w.id,now);
-  return {you:state.waiting.filter(w=>mine(w)==="you"&&w.kind!=="later"&&askHit(w,q)).length+s.answered.length,later:laterAsks(now,q).length,
+function tabCounts(now,q=rQuery){const s=threadSets(now,q);
+  return {you:youCount(now,q),later:laterAsks(now,q).length,
     lead:leadAsks(now,q).length+s.open.length,todo:listOpen("todo").filter(t=>listHit(t,q)).length,ideas:listOpen("ideas").filter(t=>listHit(t,q)).length,
     resolved:resolvedMatches(q,now).length}}
 // Every tab's count is its real total, whatever is typed (#C363; Needs you red when anything waits on the owner).
 function tabsHtml(now,active=tab){const c=tabCounts(now,"");
   return TABS.map(([k,l])=>`<button type="button" role="tab" id="tab-${k}" class="ttab${k===active?" on":""}" aria-selected="${k===active}" aria-controls="tp-${k}" tabindex="${k===active?0:-1}" data-tab="${k}">${l} <span class="tcount${k==="you"&&c[k]?" hot":""}">${c[k]}</span></button>`).join("")}
 // The open tab's matches alone (one list, not six, per key).
-function tabMatches(k,now,q){const s=()=>threadSets(now,q),mine=w=>waitsOn(w.id,now);
-  return k==="you"?state.waiting.filter(w=>mine(w)==="you"&&w.kind!=="later"&&askHit(w,q)).length+s().answered.length:k==="later"?laterAsks(now,q).length:
+function tabMatches(k,now,q){const s=()=>threadSets(now,q);
+  return k==="you"?youCount(now,q):k==="later"?laterAsks(now,q).length:
     k==="lead"?leadAsks(now,q).length+s().open.length:k==="todo"||k==="ideas"?listOpen(k).filter(t=>listHit(t,q)).length:resolvedMatches(q,now).length}
 // The search row says a search is on (Designer on f1c9f73): the open tab's matches, and Clear.
 function searchStatus(now){if(!searching())return "";const n=tabMatches(tab,now,rQuery);
   return `${n?`${n} match${n>1?"es":""}`:"No matches."} · <button type="button" class="tclear" data-tclear>Clear</button>`}
+// Once a reply counts as sent (SENT_MS), its ask moves from Needs you to Waiting on Manager: both lists and the pills
+// are drawn again together (#C366: the timer redrew Needs you alone, and the pills kept the old numbers).
+function settleRedraw(){renderWaiting();renderThreads();renderTabs()}
 function renderTabs(){const el=$("ttabs");if(!el)return;const now=Date.now();el.innerHTML=tabsHtml(now);TABS.forEach(([k])=>{const p=$("tp-"+k);if(p)p.hidden=k!==tab});
   const st=$("tstat");if(st)st.innerHTML=searchStatus(now);ttMore()}
 document.addEventListener("click",e=>{if(e.target.closest&&e.target.closest("[data-tclear]")){searchNow("");const box=$("rsearch");if(box&&box.focus)box.focus()}});
