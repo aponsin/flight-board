@@ -44,7 +44,9 @@ section{min-width:0}
 .kind.live{background:var(--ok-soft);color:var(--ok)}
 /* On a phone the chip says Building alone: the row's line under the title names the card. */
 @media (max-width:600px){.kind .kn{display:none}}
-.t-ping{font:600 .72rem var(--mono);color:var(--accent);background:none;border:1px solid var(--accent);border-radius:999px;padding:1px 8px;margin-left:6px;cursor:pointer}
+/* Ping is a control beside status pills (Designer on 7b85ba9): filled, square-ish, its hit area ~40 px tall. */
+.t-ping{position:relative;font:600 .72rem var(--mono);color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent);border-radius:4px;padding:1px 8px;margin-left:6px;cursor:pointer}
+.t-ping::after{content:"";position:absolute;inset:-11px -6px}
 .t-ping:disabled{opacity:.6;cursor:default}.t-ping:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .t-pinged{font:400 .72rem var(--mono);color:var(--muted);margin-left:6px}
 .t-with{margin-top:2px}.c-from{font-size:.8rem;color:var(--muted);margin-right:8px;white-space:nowrap}
@@ -1108,7 +1110,7 @@ function threadPingText(id,now){const t=threadOf(id),w=[...t].reverse().find(m=>
 function threadPingWrites(id,now){return /^[A-Za-z0-9_-]{1,100}$/.test(String(id))?[{op:"set",path:`threadPings/${id}`,data:{at:now}}]:[]}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tping]");if(!b)return;e.preventDefault();e.stopPropagation();
   const id=b.dataset.tping,now=Date.now();if(!dbRef||b.disabled||pingState(id,now).show!=="ping")return;b.disabled=true;
-  const anchor=await prepAnchor(b),sent=await sendPing(anchor,threadPingText(id,now));
+  lastPing="";const anchor=await prepAnchor(b),sent=await sendPing(anchor,threadPingText(id,now));
   try{if(sent)await applyWrites(threadPingWrites(id,now));else{b.disabled=false;b.textContent="Not sent";b.title=lastPing||""}}catch(_){b.disabled=false}});
 // where: the thread's place on the page, for unique box ids. ask: a card's closed ask (#C288), drawn as the ask it was
 // (its own kind and colour, no "Reply to:"), with a hint that writing reopens it.

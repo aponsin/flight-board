@@ -78,4 +78,13 @@ test("pressing Ping sends first and records only what was sent; the row doesn't 
   assert.match(body, /e\.preventDefault\(\)/, "a button in the row's summary must not fold it open");
   assert.match(body, /prepAnchor\(b\)[\s\S]*sendPing\(anchor,threadPingText\(id,now\)\)[\s\S]*if\(sent\)await applyWrites\(threadPingWrites\(id,now\)\)/);
   assert.match(body, /pingState\(id,now\)\.show!=="ping"/, "re-checked on press: a double click sends once");
+  assert.match(body, /lastPing="";const anchor=await prepAnchor\(b\)/, "Checker on 7b85ba9: 'Not sent' names this press's reason, never an older one");
+});
+
+test("Ping reads as a button beside the status pills, with a ~40 px hit area (Designer on 7b85ba9)", () => {
+  const css = (page.match(/\.t-ping\{[^}]*\}/) || [""])[0];
+  assert.match(css, /background:var\(--accent-soft\)/, "filled, unlike the outlined 'with the team' pill");
+  assert.match(css, /border-radius:4px/, "a button's corners, not a pill's");
+  assert.match(css, /position:relative/);
+  assert.match(page, /\.t-ping::after\{content:"";position:absolute;inset:-11px -6px\}/, "the hit area grows, the look doesn't");
 });
