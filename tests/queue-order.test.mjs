@@ -20,7 +20,7 @@ const cards = () => [
   card(299, "done-one", { status: "done", queuePos: 1 }),
 ];
 function board() {
-  const b = loadNames(["queueOf", "queueLabel", "queueLine", "ordinal", "initRow"]);
+  const b = loadNames(["queueOf", "queueLabel", "queueLine", "ordinal", "initRow", "cardEta", "derivedEta", "gaps"]);
   Object.assign(b.state, { steps: [], derived: [], waiting: [], ideas: [], messages: [], threads: [], initRaw: cards(), initiatives: cards() });
   return b;
 }
@@ -46,10 +46,54 @@ test("the card's line: the whole queue, each number a link, this one as 'this', 
   const b = board();
   const link = (id, n) => `<a href="#" class="t-ref c-ref" data-cref="${id}">#C${n}</a>`;
   const line = b.queueLine(of(b, "board-queue-order"));
-  assert.equal(line, `<span class="q-line">Boardsmith&#39;s queue: ${link("board-thread-card-link", 364)} (in review) → ${link("board-card-refs", 367)} (building) → this → ${link("board-reply-compact", 368)} → ${link("bad-pos", 371)} → ${link("ctx-tokens", 350)}</span>`);
+  assert.equal(line, `<span class="q-line">Boardsmith&#39;s queue: ${link("board-thread-card-link", 364)} (in review) → ${link("board-card-refs", 367)} (building) → <b>this</b> → ${link("board-reply-compact", 368)} → ${link("bad-pos", 371)} → ${link("ctx-tokens", 350)}</span>`);
   assert.ok(b.initRow(of(b, "board-queue-order")).includes(line), "on the card");
   assert.equal(b.queueLine(of(b, "board-card-refs")), "", "a started card has no queue line");
   assert.equal(b.queueLine({ ...of(b, "ctx-tokens"), who: "" }), "", "no who, no queue");
   assert.equal(b.queueLine({ ...of(b, "ctx-tokens") }), "", "a card the board's list doesn't hold: no empty line");
   assert.equal(b.queueLine({ ...of(b, "ctx-tokens"), who: "Solo" }), "", "alone in its queue: nothing to show");
+});
+
+// Designer on 6531fc5, Manager: #C370 (3rd) and #C368 (4th) both said "live in 3 h". A queued card with a place starts
+// when the card ahead of it in its who's queue is expected to finish its build, then adds its own phases.
+const MIN = 60e3;
+const MED = { build: 60 * MIN, test: 10 * MIN, language: 10 * MIN, checker: 30 * MIN, security: 20 * MIN, ship: 10 * MIN };
+const CHAIN = 140 * MIN; // build to ship, each phase's median
+function queueBoard(list) {
+  const b = board();
+  b.state.initiatives = b.state.initRaw = list;
+  b.state.phaseMed = MED;
+  return b;
+}
+const near = (a, want, what) => assert.ok(Math.abs(a - want) < 5e3, `${what}: ${new Date(a).toISOString()} vs ${new Date(want).toISOString()}`);
+
+test("queue-aware ETAs: each queued card starts when the one ahead finishes its build", () => {
+  const now = Date.now();
+  const a = card(1, "a", { phase: "build", branch: "a", queuePos: 1, phaseLog: [{ phase: "build", start: now - 20 * MIN }] });
+  const q2 = card(2, "q2", { queuePos: 2 }), q3 = card(3, "q3", { queuePos: 3 }), loose = card(4, "loose", { etaLive: now + 9 * MIN });
+  const b = queueBoard([a, q2, q3, loose]);
+  near(b.cardEta(q2), now + 40 * MIN + CHAIN, "2nd: after a's 40 min of build left");
+  near(b.cardEta(q3), now + 40 * MIN + 60 * MIN + CHAIN, "3rd: after 2nd's build too");
+  assert.equal(b.cardEta(loose), b.derivedEta(loose) ?? loose.etaLive, "no queuePos: as before");
+  const r = queueBoard([card(1, "r", { phase: "checker", branch: "r", queuePos: 1 }), card(2, "s", { queuePos: 2 })]);
+  near(r.cardEta(r.state.initiatives[1]), now + CHAIN, "the card ahead is in review: its build is done, so now");
+  const n = queueBoard([card(1, "x", { queuePos: 1 }), card(2, "y", { queuePos: 2, etaLive: now + 7 * MIN })]);
+  n.state.phaseMed = { checker: 1 };
+  assert.equal(n.cardEta(n.state.initiatives[1]), n.derivedEta(n.state.initiatives[1]) ?? now + 7 * MIN, "no build median: as before");
+});
+
+test("no red 'never started' on a card waiting its turn; the first in line, or one with no place, still says so", () => {
+  const old = { createdAt: Date.now() - 60 * MIN };
+  const b = queueBoard([card(1, "a", { phase: "build", branch: "a", queuePos: 1 }), card(2, "w", { queuePos: 2, ...old }), card(3, "loose", { ...old })]);
+  const [, w, loose] = b.state.initiatives;
+  assert.ok(!b.gaps(w).includes("never started"), "waiting behind a");
+  assert.ok(b.gaps(loose).includes("never started"), "no place in line");
+  const f = queueBoard([card(1, "first", { queuePos: 1, ...old })]);
+  assert.ok(f.gaps(f.state.initiatives[0]).includes("never started"), "nothing ahead of it: it should have started");
+});
+
+test("Checker on 6531fc5: a started card sorts before the queued ones, place or not", () => {
+  const b = queueBoard([card(1, "q", { queuePos: 1 }), card(2, "started", { phase: "build", branch: "s" }), card(3, "q2", { queuePos: 2 })]);
+  assert.deepEqual([...b.queueOf("Boardsmith")].map((i) => i.id), ["started", "q", "q2"]);
+  assert.equal(b.queueLabel(b.state.initiatives[0]), "queued · Boardsmith · 2nd");
 });

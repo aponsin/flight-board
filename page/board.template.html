@@ -1274,7 +1274,7 @@ function derivedEta(i,med=state.phaseMed||{},now=Date.now()){
   for(let n=idx;n<PHASES.length-1;n++){const k=PHASES[n][0];if(n>idx&&skip.has(k))continue;
     const m=med[k];if(m==null)return null;left+=n===idx?Math.max(m-(spent[k]||0),MIN_LEFT):m}
   return now+left}
-function cardEta(i){return derivedEta(i)??num(i&&i.etaLive)}
+function cardEta(i){return queueEta(i)??derivedEta(i)??num(i&&i.etaLive)}
 // How long a step should take (#C348, the owner: "missing timings"): the median hours by card size (nudges.etaHours),
 // in ms, or null for a size it doesn't know.
 function stepMs(i){const h=((CONFIG.nudges||{}).etaHours||{})[i&&i.size];return typeof h==="number"&&h>0?h*3600e3:null}
@@ -1287,15 +1287,29 @@ function notStarted(i){if(!i||i.status==="done"||i.dropped||phaseIndex(i.phase)>
 // Whose queue a card waits in, and where (#C370, the owner in #T983: 'BUILD queued' said neither). A who's queue: its
 // open cards by queuePos (1 = next; Manager keeps it), ties by createdAt; a card without a positive whole queuePos last.
 const qPos=i=>Number.isInteger(i&&i.queuePos)&&i.queuePos>0?i.queuePos:Infinity;
-function queueOf(who){return state.initiatives.filter(i=>i&&i.who===who&&i.status!=="done"&&i.status!=="dropped").sort((a,b)=>qPos(a)-qPos(b)||(num(a.createdAt)??0)-(num(b.createdAt)??0))}
+// Started cards first, place or not (Checker on 6531fc5: one without a queuePos sorted after the queued ones).
+function queueOf(who){return state.initiatives.filter(i=>i&&i.who===who&&i.status!=="done"&&i.status!=="dropped").sort((a,b)=>isQueued(a)-isQueued(b)||qPos(a)-qPos(b)||(num(a.createdAt)??0)-(num(b.createdAt)??0))}
 function ordinal(n){const t=n%100,s=t>10&&t<14?"th":({1:"st",2:"nd",3:"rd"})[n%10]||"th";return n+s}
 const isQueued=i=>notStarted(i)||i.status==="queued";
+// Waiting its turn: queued with a place, and a card ahead of it in its queue still open (Designer and Manager on
+// 6531fc5: such a card isn't late, so no red "never started").
+function waitingTurn(i){return !!(i&&i.who&&isQueued(i)&&qPos(i)<Infinity&&queueOf(i.who).indexOf(i)>0)}
+// A queued card's ETA counts from its turn (Manager, Designer on 6531fc5: the 3rd and 4th in line both said "live in
+// 3 h"): when the card ahead is expected to finish its build (now if that build is done; the rest of its build median if
+// it is building; its own turn plus a build median if it waits too), then its own phases from build on. null (as before)
+// for a card without a place or with no build median yet.
+function buildFree(c,med,now){const mb=med[BUILD_PHASE];if(mb==null)return null;
+  if(!isQueued(c))return phaseIndex(c.phase)>phaseIndex(BUILD_PHASE)?now:now+Math.max(mb-(phaseTimes(c.phaseLog,now)[BUILD_PHASE]||0),MIN_LEFT);
+  const s=turnAt(c,med,now);return s==null?null:s+mb}
+function turnAt(i,med,now){const q=queueOf(i.who),k=q.indexOf(i);return k<=0?now:buildFree(q[k-1],med,now)}
+function queueEta(i,med=state.phaseMed||{},now=Date.now()){if(!i||!i.who||!isQueued(i)||qPos(i)===Infinity)return null;
+  const s=turnAt(i,med,now);return s==null?null:derivedEta({...i,phase:BUILD_PHASE,phaseLog:[],shipAt:null},med,s)}
 // A queued card's phase box: "queued · Boardsmith · 3rd", or without a place "queued · Boardsmith".
 function queueLabel(i){if(!i.who)return "queued";const k=qPos(i)<Infinity?queueOf(i.who).indexOf(i):-1;return ["queued",i.who,k>=0?ordinal(k+1):""].filter(Boolean).join(" · ")}
 // Its line: the whole queue, each number a link, this card as "this", a started one with where it is. None when the
 // card isn't in the board's list (nothing to place it among) or is alone in its queue.
 function queueLine(i){if(!i.who||!isQueued(i))return "";const q=queueOf(i.who);if(!q.includes(i)||q.length<2)return "";
-  const at=c=>c===i?"this":`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>${isQueued(c)?"":phaseIndex(c.phase)>phaseIndex(BUILD_PHASE)?" (in review)":" (building)"}`;
+  const at=c=>c===i?"<b>this</b>":`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>${isQueued(c)?"":phaseIndex(c.phase)>phaseIndex(BUILD_PHASE)?" (in review)":" (building)"}`;
   return `<span class="q-line">${esc(i.who)}&#39;s queue: ${q.map(at).join(" → ")}</span>`}
 // ↻ Check on a card (#C355, the owner in #T962): a click asks the lead whether the card is up to date
 // (checkRequests/<card id> {at}, and a ping); the lead asks its owner, updates the card and stamps checkedAt. The card says
@@ -1333,7 +1347,7 @@ function gaps(i){const g=[],now=Date.now(),kw=knownWait(i);
   if(!i.nextNote)g.push("no next step");else if(!kw&&num(i.nextNoteAt)&&now-i.nextNoteAt>36e5)g.push("next step over 1 h old");
   if(!i.level)g.push("no review level");
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];
-  if(!kw&&!num(i.lastStepAt)&&!log.length){if(num(i.createdAt)&&now-i.createdAt>9e5)g.push("never started")}
+  if(!kw&&!num(i.lastStepAt)&&!log.length){if(num(i.createdAt)&&now-i.createdAt>9e5&&!waitingTurn(i))g.push("never started")}
   return g}
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
