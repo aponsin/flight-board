@@ -900,12 +900,13 @@ const threadCard=id=>threadCards(id).find(i=>i.status!=="done"&&i.status!=="drop
 // A thread's state now, not what it started as (#C364, the owner in #T979): "question" (the owner's word is the last),
 // "building" (it became a card still in flight), "live" (Manager's word says so, or the card it became went live before
 // Manager said), "decision" (Manager asks the owner to pick), else "answer" (Manager's word informs). Manager's messages
-// carry it as kind: answer | live | decision | building.
+// carry it as kind: answer | live | decision | building. A building word with no card in flight (none named yet, or
+// dropped) is an answer (Checker: it stuck under With the team with no Ack and no Close).
 const TSTATE={question:"Question",building:"Building",answer:"Answer",live:"Live",decision:"Decision"};
 function threadState(id){const t=threadOf(id),last=t[t.length-1];if(!last)return null;
   if(threadOpen(id))return "question";if(threadCard(id))return "building";
   const k=last.from===OWNER?"":String(last.kind||"");
-  if(k==="building")return threadCards(id).some(i=>i.status==="done"&&!i.dropped)?"live":"building";
+  if(k==="building")return threadCards(id).some(i=>i.status==="done"&&!i.dropped)?"live":"answer";
   return k==="live"||k==="decision"?k:"answer"}
 // A decision's options, from Manager's last word (as an ask's: {key, label}).
 function threadOptions(id){const t=threadOf(id),last=t[t.length-1];

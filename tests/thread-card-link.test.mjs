@@ -52,6 +52,20 @@ test("a thread's state is its latest: Question, Building, Answer, Live, Decision
   assert.equal(s("t-d"), "decision");
 });
 
+// Checker's FINDINGS on 763300d: a building word with no card in flight stuck under With the team for good, no Ack,
+// no Close, no card line. Building lasts only while a card is in flight.
+test("a building word with no card in flight, or its card dropped, is Manager's answer: Needs you, with Ack", () => {
+  const b = board();
+  b.state.initiatives = b.state.initRaw = [...cards(), { id: "card-x", num: 360, name: "Dropped", size: "S", status: "dropped", thread: "t-x" }];
+  b.state.messages.push(msg("t-x", "Owner", "Try this", T - 9e5), msg("t-x", "Manager", "Card #C360", T - 8e5, { kind: "building" }),
+    msg("t-y", "Owner", "And this", T - 9e5), msg("t-y", "Manager", "Making a card", T - 8e5, { kind: "building" }));
+  for (const id of ["t-x", "t-y"]) {
+    assert.equal(b.threadState(id, T), "answer", id);
+    assert.equal(b.waitsOn(id, T), "answered", id);
+    assert.match(rowOf(b, id), new RegExp(`data-tack="${id}"`), `${id}: Ack`);
+  }
+});
+
 test("With the team holds the threads Manager is answering and those that became a card in flight; Needs you the rest", () => {
   const b = board();
   for (const id of ["t-q", "t-b", "t-m", "t-qb"]) assert.equal(b.waitsOn(id, T), "lead", id);
