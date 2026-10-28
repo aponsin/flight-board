@@ -1711,9 +1711,12 @@ function ctxLevel(t){const k=t&&t.tokens;
   const p=Math.max(0,Math.min(100,Math.round(t.pct)));
   return {txt:`${p}%`,c:p>=70?"r":p>=40?"a":"g",w:p,tip:`${p}% of its memory used`}}
 // "/clear me" (#C374, the owner in #T991): the keeper's saved flag is never cleared, so after a reset it stayed over a
-// fresh, low reading. A save is only asked for high up (the keeper at 60%, the reset cue over 200k), so a flag beside a
-// green reading is from before the reset and isn't shown.
-function clearMe(t){const L=t&&t.saved?ctxLevel(t):null;return !!L&&L.c!=="g"}
+// fresh, low reading, and came back once the agent worked high again (Checker on 93b4c08). The keeper writes the count
+// it saw at the save (savedTokens, or savedPct for a reading in percent); a session's context only shrinks when it
+// resets, so the flag stands while the reading is still at or above that count. A flag without one isn't shown.
+function clearMe(t){if(!t||!t.saved)return false;
+  if(Number.isInteger(t.savedTokens)&&Number.isInteger(t.tokens))return t.tokens>=t.savedTokens;
+  return num(t.savedPct)!=null&&num(t.pct)!=null&&t.pct>=t.savedPct}
 function renderCtx(){const a=ctxAgents();
   const ORDER=CONFIG.order;
   const names=[...ORDER.filter(n=>a[n]),...Object.keys(a).filter(n=>!ORDER.includes(n)).sort()];

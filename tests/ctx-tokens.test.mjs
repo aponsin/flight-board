@@ -56,7 +56,7 @@ test("the freshest reading carries its tokens; a newer one without tokens counts
 // it is under 2 h old, so a self-report never hides it.
 test("an agent's own percent-only write after the Collector's count doesn't hide the count", () => {
   const now = Date.now(), MIN = 60e3;
-  b.state.meta = [{ id: "context", at: now - 30 * MIN, agents: { Checker: { pct: 35, tokens: 350000, at: now - 30 * MIN, saved: true } } }];
+  b.state.meta = [{ id: "context", at: now - 30 * MIN, agents: { Checker: { pct: 35, tokens: 350000, at: now - 30 * MIN, saved: true, savedTokens: 350000 } } }];
   b.state.ctx = [{ id: "Checker", pct: 35, at: now - MIN }];
   const a = b.ctxAgents(now);
   assert.equal(a.Checker.tokens, 350000);
