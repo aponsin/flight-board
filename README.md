@@ -226,7 +226,10 @@ the link runs (the collector's own code, the page) goes live early. So every pac
 - skips its push when S is already on `main`, and keeps the `cmp` of its pinned copy against S;
 - leaves the link where it is when it already points at a signed release on `main` that has S: `scripts/current.mjs`
   never moves it back, and says so. The pack's page is built from the link's commit, so the publish hook (#C409) still
-  matches it.
+  matches it;
+- writes every command in its steps file out in full, ready to paste: never a command held in a shell variable (`$S`
+  is one word in zsh, the Mac's shell, so v3.23's `S="node …"` shortcut ran nothing), and its rehearsal runs each step's
+  command line under `zsh` as the owner would paste it.
 
 **What gates a collector change is Security's review**, not the fence. The fence bounds the session's tool calls, but
 `collect.mjs` is a Node process with the owner's user rights (no sandbox: it fetches from GitHub, asks `gh`, reads the
