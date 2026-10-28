@@ -18,10 +18,22 @@ function card(b, fields = {}, req = null) {
   return b.gates(b.enrich({ id: "x", num: 351, name: "X", size: "S", level: "Quick", skip: ["plan"], status: "active", createdAt: now - 30 * MIN, ...fields }));
 }
 
-test("an open card has a ↻ Check button; a finished one doesn't", () => {
+test("an open card's #C label is its Check button, with a small ↻; a finished one's is plain text", () => {
   const b = loadNames(NAMES);
-  assert.match(b.initRow(card(b)), /<button type="button" class="i-check" data-check="x" aria-label="Have the Collector check #C351 at its next run">↻ Check<\/button>/);
-  assert.doesNotMatch(b.initRow(card(b, { status: "done", doneAt: Date.now() - MIN, phase: "live" })), /data-check/);
+  const html = b.initRow(card(b));
+  // #C376, the owner (t-1793166475210): the label itself is the button, so no ↻ Check pill wraps onto its own line.
+  assert.match(html, /<div class="i-name"><button type="button" class="c-num i-check" data-check="x" aria-label="Have the Collector check #C351 at its next run" title="Have the Collector check this card">#C351<span class="i-ic" aria-hidden="true">↻<\/span><\/button> <strong>X<\/strong>/);
+  assert.equal(html.match(/data-check=/g).length, 1, "one button: no separate pill");
+  assert.doesNotMatch(html, />↻ Check</);
+  const done = b.initRow(card(b, { status: "done", doneAt: Date.now() - MIN, phase: "live" }));
+  assert.doesNotMatch(done, /data-check/);
+  assert.match(done, /<span class="t-numtxt c-num" title="Card number">#C351<\/span>/);
+  assert.match(page, /\.c-num\.i-check\{[^}]*color:var\(--accent\)/, "the label reads as clickable");
+});
+
+test("a card with no number yet keeps the ↻ Check pill", () => {
+  const b = loadNames(NAMES);
+  assert.match(b.initRow(card(b, { num: undefined })), /<button type="button" class="i-check" data-check="x" aria-label="Have the Collector check X at its next run">↻ Check<\/button>/);
 });
 
 test("a click writes checkRequests/<card id> {at}, and nothing pings the lead", () => {
@@ -42,5 +54,6 @@ test("a lead's own checkedAt still answers a request; one older than the request
   assert.match(html, /<span class="i-checked">checking…/);
   assert.match(page, /\.i-checked\{font:400 \.75rem var\(--mono\);color:var\(--muted\)\}\s*\.i-checked\.is-late\{color:var\(--warn\)\}/);
   assert.doesNotMatch(html, /data-check=/, "no second click while it waits");
+  assert.match(html, /<span class="t-numtxt c-num" title="Card number">#C351<\/span>/, "the label stays, as plain text");
   assert.match(page, /"timings","ctxRequests","checkRequests"(?:,"\w+")*\]\.forEach\(sub\)/, "the board listens to the requests");
 });
