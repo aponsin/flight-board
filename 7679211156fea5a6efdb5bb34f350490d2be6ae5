@@ -1,0 +1,1 @@
+PASS Quick: #C396 ping-always-visible (on v3.19 bc0d444). pingState drops both 10-minute waits: Ping shows on every open thread where the owner spoke last, with 'Pinged HH:MM' beside it after a ping; the press handler still disables and re-checks. Suite 587/587.
