@@ -1,0 +1,1 @@
+PASS Quick: #C372 board-thread-ping at 7b85ba9 (stacked on #C371 4dd0dab). Ping after 10 min unanswered, records threadPings only after a sent ping, re-checks on press; suite 518/518. LOW: the Ping handler doesn't reset lastPing before prepAnchor, so a 'Not sent' title can show an older failure's reason.
