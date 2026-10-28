@@ -194,7 +194,7 @@ test("an initiative carries its thread, folded, marked when Manager owes an answ
 test("one Threads panel: the new thread box (no kind to pick), then the tabs, Needs you before Waiting on Manager", () => {
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   const section = html.slice(html.indexOf('<section aria-labelledby="h-threads">'), html.indexOf("</section>", html.indexOf('<section aria-labelledby="h-threads">')));
-  assert.match(section, /<form class="newthread" id="newthread" data-reply="new"><label class="sr" for="nttext">Start a thread<\/label><div class="cbox"><div id="ntfiles"><\/div><textarea id="nttext"/);
+  assert.match(section, /<form class="newthread" id="newthread" data-reply="new"><label class="nt-label" for="nttext">Start a thread<\/label><div class="cbox"><div id="ntfiles"><\/div><textarea id="nttext"/);
   assert.doesNotMatch(html, /<select id="ntkind"|<option value="idea">/, "no Question or Idea to pick");
   assert.ok(section.indexOf('id="newthread"') < section.indexOf('id="ttabs"') && section.indexOf('id="tp-you"') < section.indexOf('id="tp-lead"'), "#C351: tabs, not headings");
   assert.match(section, /id="waiting"/);

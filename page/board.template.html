@@ -164,6 +164,10 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .h-count{font:600 .75rem var(--mono);letter-spacing:0;vertical-align:2px;font-variant-numeric:tabular-nums;margin-left:8px;border:1px solid var(--line);border-radius:10px;padding:1px 7px;color:var(--muted);white-space:nowrap}
 .newthread{display:flex;flex-direction:column;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)}
 .newthread label{font-size:.82rem;color:var(--muted)}
+/* The new-thread box stands out from search (#C385, the owner's pick A with Designer's label): a white field with an accent
+   outline under a visible label; it keeps every compose box's focus ring. Reply boxes in threads stay grey. */
+.newthread .nt-label{font:600 .78rem var(--body);color:var(--accent)}
+.newthread .cbox{background:var(--panel);border:1.5px solid var(--accent)}
 .t-sec{margin:0;padding:10px 16px 6px;border-top:1px solid var(--line);font:600 .8rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 /* The new-thread form is one box, always (#C359, the owner's B in #T968): empty, one line, the text then Attach and Send;
    with text or files the same box grows: chips at its top, the text (up to ~6 lines, #C357), then a bar with the Enter
@@ -237,12 +241,12 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .thumb.fthumb{width:44px;height:44px;max-width:none;border-radius:6px;flex:none}
 .thumb.fthumb img{width:44px;height:44px;object-fit:cover}
 .fchip .fx{border:0;background:none;color:var(--muted);font-size:1rem;line-height:1;cursor:pointer;padding:2px 6px;min-width:28px;min-height:28px}
-.rsearch{padding:6px 12px 2px}.rsearch input{font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.rsearch{padding:6px 12px 2px}.rsearch input{font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink)}
 /* The box over the tabs (#C356): a search mark inside, and while a search is on, its matches and Clear on the right. */
 #tsearch{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
 /* A search box with its magnifier centred inside (Designer on 96fb1bf), the Threads box's and the cards' (#C360). */
 .sbox{position:relative;flex:1 1 14rem;min-width:0}
-.sbox input{font:inherit;width:100%;padding:6px 8px 6px 2em;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+.sbox input{font:inherit;width:100%;padding:6px 8px 6px 2em;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink)}
 .sicon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
 .init-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 16px;margin-bottom:10px}
 /* The cards' box fills the row right of the heading (#C365, the owner in #T975); on a phone, the row under it. */
@@ -462,7 +466,7 @@ table.crew3-ph{margin-top:14px}
     <h2 id="h-threads">Threads</h2>
     <div class="panel">
       <div id="ownerpart">
-      <form class="newthread" id="newthread" data-reply="new"><label class="sr" for="nttext">Start a thread</label><div class="cbox"><div id="ntfiles"></div><textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea"></textarea><div class="cbar"><div class="keys" data-keys></div><span class="cbtns btns"><span id="ntattach"></span><button type="submit" class="ok">Send</button></span></div></div><div class="msg" id="ntmsg" role="status"></div></form>
+      <form class="newthread" id="newthread" data-reply="new"><label class="nt-label" for="nttext">Start a thread</label><div class="cbox"><div id="ntfiles"></div><textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea"></textarea><div class="cbar"><div class="keys" data-keys></div><span class="cbtns btns"><span id="ntattach"></span><button type="submit" class="ok">Send</button></span></div></div><div class="msg" id="ntmsg" role="status"></div></form>
       <div class="ttabs" id="ttabs" role="tablist" aria-label="Threads and lists"></div>
       <div class="rsearch" id="tsearch"><div class="sbox"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search threads, to-dos and ideas" autocomplete="off"></div><span class="tstat" id="tstat" role="status"></span></div>
       <div id="tp-you" role="tabpanel" aria-labelledby="tab-you"><div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div></div>

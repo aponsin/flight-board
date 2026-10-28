@@ -14,7 +14,7 @@ const page = readFileSync(new URL("../page/board.template.html", import.meta.url
 const b = loadNames(["ntChip", "ntFilesHtml", "ntAttachHtml", "ntPlaceholder", "fileKind"]);
 
 test("one box: the chips, the text, then a bar with the hint, Attach and Send", () => {
-  assert.ok(page.includes('<form class="newthread" id="newthread" data-reply="new"><label class="sr" for="nttext">Start a thread</label><div class="cbox"><div id="ntfiles"></div><textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea"></textarea><div class="cbar"><div class="keys" data-keys></div><span class="cbtns btns"><span id="ntattach"></span><button type="submit" class="ok">Send</button></span></div></div><div class="msg" id="ntmsg" role="status"></div></form>'));
+  assert.ok(page.includes('<form class="newthread" id="newthread" data-reply="new"><label class="nt-label" for="nttext">Start a thread</label><div class="cbox"><div id="ntfiles"></div><textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea"></textarea><div class="cbar"><div class="keys" data-keys></div><span class="cbtns btns"><span id="ntattach"></span><button type="submit" class="ok">Send</button></span></div></div><div class="msg" id="ntmsg" role="status"></div></form>'));
   assert.doesNotMatch(page, /\.newthread:not\(:focus-within\)/, "focus alone never opens it");
   assert.match(page, /\.newthread:not\(\.has\) \.cbox\{grid-template-columns:minmax\(0,1fr\) auto\}/, "empty: one line, the text then the buttons");
   assert.match(page, /\.newthread:not\(\.has\) :is\(#ntfiles,\.cbar \.keys\)\{display:none\}/);
