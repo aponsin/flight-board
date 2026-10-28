@@ -1,0 +1,1 @@
+PASS Quick: #C408 board-typing-perf; snapshots call renderSoon (one redraw per 100 ms burst, held 1.2 s after any input); keep/renderWaiting unchanged. No A/B decision. Suite 621/621; mutation: renderAll back in the snapshot -> all 3 typing-perf tests fail (10 s worst), restored
