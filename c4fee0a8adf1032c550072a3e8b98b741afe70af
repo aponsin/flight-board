@@ -1,0 +1,1 @@
+PASS Quick: #C369 option markers start their own line in bold; askText now draws messages, answers and card summaries. Suite 493/493 at c4fee0a; escaping and address probes clean; mutation check: pass (no after-a-sentence alternative turns options-format red).
