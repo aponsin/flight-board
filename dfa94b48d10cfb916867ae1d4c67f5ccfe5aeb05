@@ -1,0 +1,1 @@
+PASS Quick: #C374 clear-flag-reset. clearMe shows /clear me only while the reading is at or above the keeper's savedTokens/savedPct; my case (stale flag, green, then 130k/250k) stays hidden. Suite 535/535; mutation (token compare forced true) fails 5 of 6 new tests. Needs the keeper to write the save count, or no flag ever shows.
