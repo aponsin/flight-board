@@ -1,0 +1,1 @@
+PASS Quick: #C370 a queued card shows its place and its owner's queue (queueOf by queuePos, queueLabel, queueLine). Suite 496/496 at 6531fc5; escaped; mutation check: pass (ignoring queuePos turns 3 red). LOW: a started card without queuePos sorts after queued ones.
