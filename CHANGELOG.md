@@ -3,6 +3,7 @@
 ## 0.3.4 - Unreleased
 
 ### Added
+- An install pack writes the context keeper's prompt itself (#C413): `scripts/keeper-write.mjs <skill> <prompt> <sha256> <backup suffix>`, run by the pack from the owner's terminal, keeps the task's front matter byte for byte and replaces only the prompt after it, keeps a backup, and stops with nothing written when the prompt file isn't the pack's, the task's file is reached through a symlink, isn't a regular file of at most 64 KB, has no front matter, or changed while it ran (an open Edit form). It ends with "keeper prompt: ok" or "keeper prompt: paste pending".
 - Page-only board releases publish without asking the owner (#C409, the owner's B in #T1051): a pinned PreToolUse hook on Artifact allows the lead's publish of exactly the page the signed board code builds, to this board only, and stays silent on everything else. Installed with the gate's hooks.
 
 ### Fixed
