@@ -87,7 +87,9 @@ section{min-width:0}
 .state.stuck{background:var(--bad-soft);color:var(--bad)}
 .state.done{background:var(--ok-soft);color:var(--ok)}
 .state.paused{background:var(--track);color:var(--muted)}
-.eta{text-align:right;font-variant-numeric:tabular-nums}
+/* The ETA column is capped (#C424): its version line ("In review · then after the queue: v1.159.1 at the earliest") wraps
+   inside it instead of widening the column and squeezing the card's summary into a narrow strip. */
+.eta{text-align:right;font-variant-numeric:tabular-nums;max-width:16rem}
 .eta .big{font:600 1.3rem var(--mono)}
 .eta .lbl{font-size:.78rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .track{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px}
@@ -126,7 +128,7 @@ details.done-list summary{cursor:pointer;color:var(--muted);padding:10px 16px}
 .dhead{display:flex;padding:0 16px 10px}
 /* two columns below */
 .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px}
-@media (max-width:760px){.cols{grid-template-columns:1fr}.i-row{grid-template-columns:1fr}.eta{text-align:left}.track>.step,.track>.step.now{flex:1 1 22%}}
+@media (max-width:760px){.cols{grid-template-columns:1fr}.i-row{grid-template-columns:1fr}.eta{text-align:left;max-width:none}.track>.step,.track>.step.now{flex:1 1 22%}}
 .feed{list-style:none;margin:0;padding:0}
 .feed li{display:grid;grid-template-columns:auto 1fr;gap:10px;padding:9px 16px;border-top:1px solid var(--line)}
 .feed li:first-child{border-top:0}
@@ -350,7 +352,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .steps a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .expect{margin:6px 16px 14px 44px;padding:8px 10px;border-radius:6px;background:var(--ok-soft);color:var(--ok);font-size:.9rem}
 .pv{margin-top:4px;font:400 .8rem var(--mono);color:var(--muted)}
-.pv b{color:var(--ink);font-weight:600}
+.pv b{color:var(--ink);font-weight:600;white-space:nowrap}
 .todo>summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:10px;padding:12px 16px}
 .todo>summary::-webkit-details-marker{display:none}
 .todo>summary h2{margin:0}

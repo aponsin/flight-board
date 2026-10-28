@@ -2,6 +2,9 @@
 
 ## 0.3.4 - Unreleased
 
+### Fixed
+- A long ETA line no longer squeezes a card's summary (#C424, the owner on #C423's card): the ETA column is capped at 16rem and its version line ("In review · then after the queue: v1.159.1 at the earliest") wraps inside it, the version kept whole; on a phone the column is the card's width. A test measures the card in headless Chrome at 1180 and 390.
+
 ### Added
 - The board's state without a model (#C420): `collector/state.mjs`, run by launchd every minute from the owner's pinned copy, reads each open card's stage from git and CI and each roster role's activity from the app's session files and its transcript's last 20 entries (working or idle, since when, its tool's class, its card), and POSTs exactly `collector/state-schema.mjs`'s allowlist to `worker/state-worker.mjs`, a Worker on the owner's own Cloudflare account, which serves it as a read-only MCP tool, `board_state`. The page's new "Right now" section reads it through the owner's "Flight Board State" connector (the `mcp` capability, now in the release tool's list) once a minute, and stays hidden without it. `scripts/state-install.mjs` (the owner's): the Worker's config, the board's token and MCP path (0600, never printed, `--rotate`), the launchd job.
 - The publish hook closes its race (#C415, Security's two parts of #C409's residual): the allow publishes a copy of the very bytes it checked, made in a fresh 0700 folder in the config's folder (`updatedInput`, which the app honours with an allow), so the file changing between the check and the publish changes nothing; and its reason line names the page's sha256, which the lead checks the board's read-back against with `scripts/publish-check.mjs` (the app's document wrapping taken off; on the live board the inside of the read-back is the published file byte for byte).
