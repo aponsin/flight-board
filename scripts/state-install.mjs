@@ -11,7 +11,10 @@
 //       makes the board's token and MCP path (32 and 16 random bytes) into <stateDir>/<board>/state-secrets/secrets.json
 //       (0600 in a 0700 folder), hands the Worker their hashes (wrangler secret put, on its stdin) and copies the connector
 //       URL to the clipboard for claude.ai's connector settings, then clears the clipboard once the owner presses Return.
-//       Neither is ever printed. --rotate makes new ones: the old token and URL stop working at once.
+//       Neither is ever printed. --rotate makes new ones: the old token and URL stop working at once. It first checks the
+//       Worker is deployed (else: run deploy). Over SSH (SSH_CONNECTION or SSH_TTY) the clipboard is the remote Mac's, so
+//       it stops and asks for --show, which prints the URL once instead of copying it (#C426).
+//   Every step ends with the next one's command, and a STOPPED line names what to run next.
 //   node … state-install.mjs launchd --config <board.config.json>
 //       writes ~/Library/LaunchAgents/com.flight-board.state.<board>.plist, running THIS copy's collector/state.mjs every
 //       60 s (condition A: pinned, never the current link), and loads it.
@@ -136,48 +139,98 @@ const WHOAMI = ["whoami"];
 
 const atomic = (file, text, mode = 0o644) => { const tmp = `${file}.${process.pid}.part`; writeFileSync(tmp, text, { mode, flag: "wx" }); renameSync(tmp, file); };
 
+// Why a step stopped and the command to run next, in one line (#C426: the owner's first secrets run stopped with no
+// reason he could see). next is a whole command, ready to paste.
+export class Stop extends Error { constructor(message, next = null) { super(message); this.next = next; } }
+export const stopLine = (e) => `state: STOPPED: ${String(e.message).split("\n")[0]}${e.next ? `. Next: ${e.next}` : ""}`;
+const q = (s) => /^[\w@%+=:,./~-]+$/.test(String(s)) ? String(s) : `'${String(s).replace(/'/g, "'\\''")}'`;
+// The command for one of this copy's steps, written out in full (README: a pack's steps never hold one in a variable).
+export const stepCommand = (code, config) => (step, extra = "") => `node ${q(join(code, "scripts", "state-install.mjs"))} ${step} --config ${q(config)}${extra}`;
+// Over SSH, pbcopy fills the clipboard of the Mac the script runs on, not the one the owner pastes from (#C426).
+export const overSsh = (env) => Boolean(env.SSH_CONNECTION || env.SSH_TTY);
+const URL_RE = /^https:\/\/[A-Za-z0-9.-]{1,200}$/;
+
+// The secrets step. Everything that can stop it is checked before anything is made; wrangler runs with its own output
+// on the terminal (a question it asks is never hidden), and no question it asks can be answered from a pipe: the deploy
+// check gets no stdin, and the secret put is only reached once the Worker exists, where wrangler asks none.
+// run(args, opts): wrangler; copy(text): the clipboard; ask(): resolves on Return (or stdin closing); log(line).
+export async function secretsStep({ id, dir, toml, url, rotate = false, show = false, env = {}, run, copy, ask, log, cmd, bytes }) {
+  const again = (extra = "") => cmd("secrets", ` --url ${q(url ?? "https://flight-board-state.<you>.workers.dev")}${extra}`);
+  if (!existsSync(toml)) throw new Stop("no wrangler config for the Worker yet", cmd("worker", " --kv <the KV namespace id> --account <the account id>"));
+  if (!URL_RE.test(String(url))) throw new Stop("--url: the Worker's https address, with no path", again(rotate ? " --rotate" : ""));
+  if (overSsh(env) && !show)
+    throw new Stop("this terminal is on the Mac over SSH, so the connector URL would go to the Mac's clipboard, not the one you paste from; --show prints it here once instead", again(`${rotate ? " --rotate" : ""} --show`));
+  try { run(["deployments", "list", "--config", toml], { stdio: ["ignore", "ignore", "ignore"] }); }
+  catch { throw new Stop(`wrangler finds no deployed Worker "${WORKER_NAME}" on this login (not deployed yet, or logged in to another account); nothing was made`, cmd("deploy")); }
+  const s = makeSecrets(dir, url, { rotate, ...(bytes ? { bytes } : {}) });
+  try { run(["secret", "put", secretName(id), "--config", toml], { input: workerSecret(s.token, s.path), stdio: ["pipe", "inherit", "inherit"] }); }
+  catch { throw new Stop(`wrangler did not take the Worker's secret (its reason is above); the ${s.made ? "new " : ""}token is kept for the next run`, again(show ? " --show" : "")); }
+  const connector = `${url}/mcp/${s.path}`;
+  if (show) {
+    log(`state: token ${s.made ? "made" : "kept"} and written; the Worker has its hash. The connector URL, shown once (it is a bearer secret: don't screenshot it or paste it anywhere but claude.ai's connector):`);
+    log(connector);
+    log(`state: paste it in claude.ai, Settings, Connectors, as "Flight Board State", then press Return here`);
+  } else {
+    copy(connector);
+    log(`state: token ${s.made ? "made" : "kept"} and written; the Worker has its hash; the connector URL is on the clipboard: paste it in claude.ai, Settings, Connectors, as "Flight Board State", then press Return here`);
+  }
+  // The URL is a bearer secret: the clipboard is cleared once it is pasted, or when stdin closes (no terminal,
+  // Ctrl-D) before Return (Security).
+  await ask();
+  if (show) log("state: done; clear this terminal's scrollback now (Cmd-K): the URL is in it");
+  else { copy(""); log("state: clipboard cleared (a clipboard manager or Universal Clipboard may still hold it: clear it there too)"); }
+  log(`state: next: ${cmd("launchd")}`);
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
-  const [cmd, ...args] = process.argv.slice(2);
+  const [step, ...args] = process.argv.slice(2);
   const opt = (n) => { const k = args.indexOf(n); return k >= 0 ? args[k + 1] : undefined; };
+  const cmdLine = `node ${process.argv.slice(1).map(q).join(" ")}`;
   try {
-    const raw = JSON.parse(readFileSync(opt("--config") ?? "", "utf8"));
+    let raw;
+    try { raw = JSON.parse(readFileSync(opt("--config") ?? "", "utf8")); }
+    catch { throw new Stop("--config: no board.config.json there, or it isn't JSON", "the same command with --config <the board.config.json path the pack's steps give>"); }
     const problems = checkConfig(raw);
-    if (problems.length) throw new Error(problems.join("; "));
+    if (problems.length) throw new Stop(problems.join("; "), "fix board.config.json, then run the same command again");
     const config = fullConfig(raw), id = boardId(config);
-    if (!id) throw new Error("the config has no board link");
+    if (!id) throw new Stop("the config has no board link", "fix board.config.json, then run the same command again");
     const root = resolve(home(config.gate.stateDir), "install");
-    pinnedSha(CODE, root);
+    try { pinnedSha(CODE, root); } catch (e) { throw new Stop(e.message, "the command exactly as the pack's steps give it (node ~/.flight-board/install/<signed commit>/scripts/state-install.mjs …)"); }
     const toml = join(home(config.gate.stateDir), "worker", "wrangler.toml");
-    if (cmd === "whoami") {
+    const cmd = stepCommand(CODE, realpathSync(opt("--config")));
+    if (step === "whoami") {
       wrangler(WHOAMI, { stdio: "inherit" });
-    } else if (cmd === "kv") {
+      console.log(`state: check the account above is yours; next: ${cmd("kv")}`);
+    } else if (step === "kv") {
       wrangler(["kv", "namespace", "create", WORKER_NAME], { stdio: "inherit" });
-    } else if (cmd === "worker") {
+      console.log(`state: next: ${cmd("worker", " --kv <the id printed above> --account <the account id whoami showed>")}`);
+    } else if (step === "worker") {
       mkdirSync(dirname(toml), { recursive: true });
       atomic(toml, wranglerToml({ main: join(CODE, "worker", "state-worker.mjs"), kv: opt("--kv"), account: opt("--account") ?? null, writes: opt("--writes") === undefined ? 2000 : Number(opt("--writes")) }));
-      console.log(`state: wrangler config written (${toml}); deploy it with this script's deploy step`);
-    } else if (cmd === "deploy") {
-      if (!existsSync(toml)) throw new Error("no wrangler config: run the worker step first");
+      console.log(`state: wrangler config written (${toml}); next: ${cmd("deploy")}`);
+    } else if (step === "deploy") {
+      if (!existsSync(toml)) throw new Stop("no wrangler config for the Worker yet", cmd("worker", " --kv <the KV namespace id> --account <the account id>"));
       wrangler(["deploy", "--config", toml], { stdio: "inherit" });
-    } else if (cmd === "secrets") {
-      if (!existsSync(toml)) throw new Error("no wrangler config: run the worker step first");
-      const s = makeSecrets(join(home(config.gate.stateDir), id, "state-secrets"), opt("--url"), { rotate: args.includes("--rotate") });
-      wrangler(["secret", "put", secretName(id), "--config", toml], { input: workerSecret(s.token, s.path), stdio: ["pipe", "ignore", "inherit"] });
-      execFileSync("pbcopy", [], { input: `${opt("--url")}/mcp/${s.path}` });
-      console.log(`state: token ${s.made ? "made" : "kept"} and written; the Worker has its hash; the connector URL is on the clipboard: paste it in claude.ai, Settings, Connectors, as "Flight Board State", then press Return here`);
-      // The URL is a bearer secret: the clipboard is cleared once it is pasted, or when stdin closes (no terminal,
-      // Ctrl-D) before Return (Security).
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
-      await new Promise((done) => { rl.on("close", done); rl.question("", () => rl.close()); });
-      execFileSync("pbcopy", [], { input: "" });
-      console.log("state: clipboard cleared (a clipboard manager or Universal Clipboard may still hold it: clear it there too)");
-    } else if (cmd === "launchd") {
+      console.log(`state: deployed; next: ${cmd("secrets", " --url https://flight-board-state.<you>.workers.dev")} (the address wrangler printed above)`);
+    } else if (step === "secrets") {
+      await secretsStep({
+        id, dir: join(home(config.gate.stateDir), id, "state-secrets"), toml, url: opt("--url"),
+        rotate: args.includes("--rotate"), show: args.includes("--show"), env: process.env, run: wrangler, cmd,
+        copy: (text) => execFileSync("pbcopy", [], { input: text }),
+        ask: () => { const rl = createInterface({ input: process.stdin, output: process.stdout }); return new Promise((done) => { rl.on("close", done); rl.question("", () => rl.close()); }); },
+        log: (line) => console.log(line),
+      });
+    } else if (step === "launchd") {
       const agents = join(homedir(), "Library", "LaunchAgents"), file = join(agents, `${plistLabel(id)}.plist`);
       mkdirSync(agents, { recursive: true });
       atomic(file, plist({ id, node: process.execPath, script: join(CODE, "collector", "state.mjs"), config: realpathSync(opt("--config")), log: join(home(config.gate.stateDir), id, "state.log") }));
       try { execFileSync("launchctl", ["bootout", `gui/${process.getuid()}/${plistLabel(id)}`], { stdio: "ignore" }); } catch { /* not loaded yet */ }
       execFileSync("launchctl", ["bootstrap", `gui/${process.getuid()}`, file], { stdio: "inherit" });
       console.log(`state: the probe runs every minute from ${CODE.slice(-40, -28)} (${file})`);
-    } else throw new Error("usage: state-install.mjs whoami|kv|worker|deploy|secrets|launchd --config <board.config.json> [--kv <id>] [--account <id>] [--writes <n>] [--url <https address>] [--rotate]");
-  } catch (e) { console.error(`state: STOPPED: ${String(e.message).split("\n")[0]}`); process.exit(1); }
+    } else throw new Stop("usage: state-install.mjs whoami|kv|worker|deploy|secrets|launchd --config <board.config.json> [--kv <id>] [--account <id>] [--writes <n>] [--url <https address>] [--rotate] [--show]", cmd("whoami"));
+  } catch (e) {
+    // Every stop names what to run next; one this script didn't foresee (wrangler's own, printed above) is a re-run.
+    console.error(stopLine(e instanceof Stop ? e : new Stop(e.message, `fix what is printed above, then run the same command again: ${cmdLine}`)));
+    process.exit(1);
+  }
 }

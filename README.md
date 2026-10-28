@@ -229,7 +229,10 @@ the link runs (the collector's own code, the page) goes live early. So every pac
   matches it;
 - writes every command in its steps file out in full, ready to paste: never a command held in a shell variable (`$S`
   is one word in zsh, the Mac's shell, so v3.23's `S="node …"` shortcut ran nothing), and its rehearsal runs each step's
-  command line under `zsh` as the owner would paste it.
+  command line under `zsh` as the owner would paste it;
+- says, on every step that shows a secret (the connector dialog with its URL, the `secrets --show` output), not to
+  screenshot it, or to crop the URL out of the shot (#C426: v3.23's Add-connector screenshot put the URL on the board,
+  so it had to be rotated).
 
 **What gates a collector change is Security's review**, not the fence. The fence bounds the session's tool calls, but
 `collect.mjs` is a Node process with the owner's user rights (no sandbox: it fetches from GitHub, asks `gh`, reads the
@@ -309,10 +312,18 @@ pinned copy's folder, with the login wrangler already has on that machine:
    no preview ones) and `… deploy --config …`.
 2. `… secrets --config <board.config.json> --url https://flight-board-state.<you>.workers.dev`: makes the token (32 random
    bytes) and the MCP path (16) into `<stateDir>/<board>/state-secrets/secrets.json` (0600 in a 0700 folder), hands the
-   Worker their hashes on wrangler's stdin, and puts the connector URL on the clipboard. Neither is printed.
+   Worker their hashes on wrangler's stdin, and puts the connector URL on the clipboard. Neither is printed. It first
+   checks with wrangler that the Worker is deployed, and if not stops with "run the deploy step first" before making
+   anything; wrangler's own output stays on the terminal. Over SSH (`SSH_CONNECTION` or `SSH_TTY` set) the clipboard
+   would be the remote Mac's, so it stops and offers `--show`: the same command with `--show` prints the URL once, with
+   a warning, instead of copying it (then clear the terminal's scrollback, Cmd-K).
 3. In claude.ai, Settings, Connectors: add a custom connector named **Flight Board State** with that URL, then press
    Return in the terminal: the script clears the clipboard. The URL is a bearer secret: it goes there and nowhere else (a
-   clipboard manager or Universal Clipboard may keep a copy: clear it there too).
+   clipboard manager or Universal Clipboard may keep a copy: clear it there too). Don't screenshot the connector dialog
+   or the `--show` output, or crop the URL out.
+
+Each step ends with the next one's command, written in full, and every `state: STOPPED:` line says why and names the
+command to run next.
 4. `node … state-install.mjs launchd --config <board.config.json>`: writes and loads
    `~/Library/LaunchAgents/com.flight-board.state.<board>.plist`; its one line per run goes to `<stateDir>/<board>/state.log`.
 

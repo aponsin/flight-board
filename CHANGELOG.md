@@ -3,6 +3,7 @@
 ## 0.3.4 - Unreleased
 
 ### Fixed
+- The live-state installer says plainly why a step stopped (#C426, the owner's first v3.23 `secrets` run): `secrets` checks the Worker is deployed before making anything ("run the deploy step first"), shows wrangler's own output instead of hiding it, and over SSH stops and offers `--show` (the URL printed once, with a warning not to screenshot it) since `pbcopy` there fills the remote Mac's clipboard. Every step ends with the next one's command and every STOPPED line names it. README: a pack's steps say not to screenshot a step that shows a secret. The ETA-wrap test runs Chrome with its own profile folder (Security's LOW on #C424).
 - A long ETA line no longer squeezes a card's summary (#C424, the owner on #C423's card): the ETA column is capped at 16rem and its version line ("In review · then after the queue: v1.159.1 at the earliest") wraps inside it, the version kept whole; on a phone the column is the card's width. A test measures the card in headless Chrome at 1180 and 390.
 
 ### Added

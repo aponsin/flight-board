@@ -4,7 +4,7 @@
 // and keeps its secrets 0600 in a 0700 folder. Security's conditions A to E, one test or more each.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, readFileSync, statSync, utimesSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, readFileSync, statSync, utimesSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -12,7 +12,7 @@ import { stateErrors, pickState, toolClass, MAX_BYTES } from "../collector/state
 import { cardIn, activity, agentStates, appSessions, lastEntries, readTail, readSecrets, buildState, phaseOf, headsFor as headsForProbe, cardState, postState, ciReader, WORKING_QUIET_MS } from "../collector/state.mjs";
 import { derivePhase, headsFor } from "../collector/derive.mjs";
 import worker, { sha256hex, secretName, RATE_MS, TOOL, WRITES_DEFAULT } from "../worker/state-worker.mjs";
-import { pinnedSha, makeSecrets, workerSecret, secretName as installSecretName, plist, wranglerToml, WRANGLER, WRANGLER_VERSION } from "../scripts/state-install.mjs";
+import { pinnedSha, makeSecrets, workerSecret, secretName as installSecretName, plist, wranglerToml, WRANGLER, WRANGLER_VERSION, secretsStep, Stop, stopLine, stepCommand } from "../scripts/state-install.mjs";
 import { pageMcpErrors, PAGE_MCP, verdict } from "../scripts/board-release.mjs";
 import { loadNames } from "./harness.mjs";
 
@@ -388,6 +388,90 @@ test("the install: secrets made 0600 in a 0700 folder, kept on a re-run, new on 
   assert.equal((await worker.fetch(post(good(), { token: first.token }), env, {}, T + RATE_MS)).status, 401);
   assert.equal((await worker.fetch(rpc({ jsonrpc: "2.0", id: 1, method: "ping" }, rotated.path), env, {}, T)).status, 200);
   assert.equal((await worker.fetch(rpc({ jsonrpc: "2.0", id: 1, method: "ping" }, first.path), env, {}, T)).status, 404);
+});
+
+// The secrets step with wrangler, the clipboard and Return faked (#C426).
+function secretsRig({ deployed = true, putFails = false, toml = true } = {}) {
+  const base = tmp(), calls = [], clip = [], lines = [];
+  const file = join(base, "wrangler.toml");
+  if (toml) writeFileSync(file, "name = \"flight-board-state\"\n");
+  const run = (args, opts) => {
+    calls.push({ args, opts });
+    if (args[0] === "deployments" && !deployed) throw new Error("This Worker does not exist on your account");
+    if (args[0] === "secret" && putFails) throw new Error("wrangler: authentication error");
+  };
+  const o = { id: BOARD, dir: join(base, "state-secrets"), toml: file, url: "https://w.example", env: {}, run, copy: (t) => clip.push(t), ask: async () => lines.push("<Return>"), log: (l) => lines.push(l), cmd: stepCommand("/Users/x/.flight-board/install/" + "e".repeat(40), "/Users/x/Team/board.config.json") };
+  return { o, calls, clip, lines, made: () => existsSync(join(o.dir, "secrets.json")) };
+}
+
+test("the install's secrets step: no Worker deployed is a plain stop naming the deploy step, before anything is made", async () => {
+  const r = secretsRig({ deployed: false });
+  const e = await secretsStep(r.o).then(() => null, (x) => x);
+  assert.ok(e instanceof Stop);
+  assert.match(stopLine(e), /^state: STOPPED: wrangler finds no deployed Worker "flight-board-state".*nothing was made\. Next: node \/Users\/x\/\.flight-board\/install\/e{40}\/scripts\/state-install\.mjs deploy --config \/Users\/x\/Team\/board\.config\.json$/);
+  assert.equal(r.made(), false);
+  assert.deepEqual(r.calls.map((c) => c.args[0]), ["deployments"], "no secret put");
+  assert.deepEqual(r.clip, []);
+  const none = secretsRig({ toml: false });
+  assert.match(stopLine(await secretsStep(none.o).catch((x) => x)), /no wrangler config.*Next: node .*state-install\.mjs worker --config .* --kv /);
+  assert.deepEqual(none.calls, []);
+  const bad = secretsRig();
+  assert.match(stopLine(await secretsStep({ ...bad.o, url: "http://w.example/x" }).catch((x) => x)), /--url.*Next: .* secrets --config .* --url /);
+  assert.equal(bad.made(), false);
+});
+
+test("the install's secrets step: wrangler's questions are never hidden; the deploy check can't read an answer from a pipe", async () => {
+  const r = secretsRig();
+  await secretsStep(r.o);
+  const [check, put] = r.calls;
+  assert.deepEqual(check.args, ["deployments", "list", "--config", r.o.toml]);
+  assert.equal(check.opts.stdio[0], "ignore");
+  assert.deepEqual(put.args.slice(0, 2), ["secret", "put"]);
+  assert.deepEqual(put.opts.stdio, ["pipe", "inherit", "inherit"], "wrangler's output (a question included) is on the terminal");
+  assert.equal(r.calls.length, 2);
+});
+
+test("the install's secrets step: a failed secret put names the re-run (without --rotate: the new token is kept)", async () => {
+  const r = secretsRig({ putFails: true });
+  const line = stopLine(await secretsStep({ ...r.o, rotate: true }).catch((x) => x));
+  assert.match(line, /did not take the Worker's secret.*the new token is kept.*Next: node .*state-install\.mjs secrets --config \S+ --url https:\/\/w\.example$/);
+  assert.doesNotMatch(line, /--rotate/);
+  assert.deepEqual(r.clip, []);
+});
+
+test("the install's secrets step: on the Mac's own terminal the URL goes to the clipboard, cleared on Return, and is never printed", async () => {
+  const r = secretsRig();
+  await secretsStep(r.o);
+  const { path } = JSON.parse(readFileSync(join(r.o.dir, "secrets.json"), "utf8"));
+  assert.deepEqual(r.clip, [`https://w.example/mcp/${path}`, ""]);
+  assert.ok(!r.lines.join("\n").includes(path));
+  assert.ok(r.lines.indexOf("<Return>") < r.lines.findIndex((l) => /clipboard cleared/.test(l)));
+  assert.match(r.lines.at(-1), /^state: next: node .*state-install\.mjs launchd --config /);
+});
+
+test("the install's secrets step: over SSH it stops before anything, and offers --show; --show prints the URL once, with the warning", async () => {
+  for (const env of [{ SSH_CONNECTION: "10.0.0.2 52000 10.0.0.1 22" }, { SSH_TTY: "/dev/ttys004" }]) {
+    const r = secretsRig();
+    const line = stopLine(await secretsStep({ ...r.o, env, rotate: true }).catch((x) => x));
+    assert.match(line, /over SSH.*Mac's clipboard.*Next: node .*state-install\.mjs secrets --config \S+ --url https:\/\/w\.example --rotate --show$/);
+    assert.deepEqual([r.calls, r.clip, r.made()], [[], [], false]);
+  }
+  const r = secretsRig();
+  await secretsStep({ ...r.o, env: { SSH_TTY: "/dev/ttys004" }, show: true });
+  const { path } = JSON.parse(readFileSync(join(r.o.dir, "secrets.json"), "utf8"));
+  assert.deepEqual(r.clip, [], "pbcopy never runs with --show");
+  assert.equal(r.lines.filter((l) => l.includes(path)).length, 1, "printed once");
+  const at = r.lines.findIndex((l) => l.includes(path));
+  assert.match(r.lines[at - 1], /don't screenshot it or paste it anywhere but claude\.ai's connector/);
+  assert.match(r.lines.join("\n"), /<Return>\nstate: done; clear this terminal's scrollback/);
+});
+
+test("the install: a STOPPED line from the script itself names the next step (run from a checkout here)", () => {
+  const cfg = join(tmp(), "board.config.json");
+  writeFileSync(cfg, "{not json");
+  const run = (args) => { try { execFileSync(process.execPath, [new URL("../scripts/state-install.mjs", import.meta.url).pathname, ...args], { stdio: ["ignore", "pipe", "pipe"] }); return ""; } catch (e) { return String(e.stderr); } };
+  assert.match(run(["secrets", "--config", cfg]), /^state: STOPPED: --config: .*\. Next: the same command with --config /);
+  assert.match(run(["secrets"]), /^state: STOPPED: --config: .*\. Next: /);
 });
 
 test("the install: the Worker's own config: its name, one workers.dev address, no route, no preview, its KV namespace only (Security's same-account conditions)", () => {

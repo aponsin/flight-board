@@ -40,7 +40,7 @@ test("measured: a long ETA line leaves the summary most of the card at 1180, and
   const at = (w) => {
     const f = join(dir, `card-${w}.html`);
     writeFileSync(f, html(w));
-    const dom = execFileSync(CHROME, ["--headless=new", "--disable-gpu", "--hide-scrollbars", `--window-size=${w},900`, "--virtual-time-budget=2000", "--dump-dom", "file://" + f], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 60_000 });
+    const dom = execFileSync(CHROME, [`--user-data-dir=${join(dir, "chrome")}`, "--headless=new", "--disable-gpu", "--hide-scrollbars", `--window-size=${w},900`, "--virtual-time-budget=2000", "--dump-dom", "file://" + f], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 60_000 });
     const m = /data-m="([^"]+)"/.exec(dom);
     assert.ok(m, `measured at ${w}`);
     return JSON.parse(m[1].replace(/&quot;/g, '"'));
