@@ -1,0 +1,1 @@
+PASS Quick: #C364 threads follow what they became (With the team, threadState, card links, Ack and options, receipt). Suite 483/483 at a07b796; FINDINGS on 763300d (a building thread with no card in flight stuck) fixed and tested; mutation check: pass (old building fallback turns the new test red).
