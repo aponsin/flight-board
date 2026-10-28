@@ -1,0 +1,1 @@
+PASS Full: #C350 ctx-tokens at cdf7300. Tiles in tokens vs 200k; a count under 2 h outlives a newer pct-only self-report; collector/gate/fence accept {pct, tokens, at}; stop-hook reset cue over 200k with its guard (own clear_session only). Suite 521/521; mutations checked: hook guard dropped, keep-count rule dropped (both red).
