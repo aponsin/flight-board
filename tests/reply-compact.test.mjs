@@ -92,6 +92,11 @@ test("a thread's box: its Ack, Close or a decision's options above; Send in the 
   assert.match(none, /placeholder="Start a thread on this"/);
 });
 
+test("an ask's numbered steps line up with its reply column (Designer on 0b34b89: the numbers poked out to its left)", () => {
+  assert.match(page, /\.steps\{margin:0;padding:4px 16px 4px calc\(44px \+ 1\.4em\);/, "the marker inside the 44 px the reply box starts at");
+  assert.match(page, /\.reply\{margin:4px 16px 14px 44px;/);
+});
+
 test("the new-thread box's bar says files paste or drop too (Checker's LOW on #C359)", () => {
   assert.match(page, /document\.querySelectorAll\("\[data-keys\]"\)\.forEach\(x=>\{x\.textContent=CMP_HINT\.send\+DROP_HINT\}\)/);
   assert.match(page, /const DROP_HINT=" · paste or drop files";/);
