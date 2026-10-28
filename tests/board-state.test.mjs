@@ -464,6 +464,11 @@ test("the install's secrets step: over SSH it stops before anything, and offers 
   const at = r.lines.findIndex((l) => l.includes(path));
   assert.match(r.lines[at - 1], /don't screenshot it or paste it anywhere but claude\.ai's connector/);
   assert.match(r.lines.join("\n"), /<Return>\nstate: done; clear this terminal's scrollback/);
+  // Security's LOW: --show on the Mac's own terminal is refused before anything, and names the command without it.
+  const local = secretsRig();
+  const line = stopLine(await secretsStep({ ...local.o, show: true, rotate: true }).catch((x) => x));
+  assert.match(line, /--show is only for a terminal on the Mac over SSH.*Next: node .*state-install\.mjs secrets --config \S+ --url https:\/\/w\.example --rotate$/);
+  assert.deepEqual([local.calls, local.clip, local.made()], [[], [], false]);
 });
 
 test("the install: a STOPPED line from the script itself names the next step (run from a checkout here)", () => {

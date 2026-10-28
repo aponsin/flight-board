@@ -316,16 +316,17 @@ pinned copy's folder, with the login wrangler already has on that machine:
    checks with wrangler that the Worker is deployed, and if not stops with "run the deploy step first" before making
    anything; wrangler's own output stays on the terminal. Over SSH (`SSH_CONNECTION` or `SSH_TTY` set) the clipboard
    would be the remote Mac's, so it stops and offers `--show`: the same command with `--show` prints the URL once, with
-   a warning, instead of copying it (then clear the terminal's scrollback, Cmd-K).
+   a warning, instead of copying it (then clear the terminal's scrollback, Cmd-K). `--show` is refused anywhere but over
+   SSH, and is run in Terminal.app, never in the Claude app's Terminal panel, whose output agents can read.
 3. In claude.ai, Settings, Connectors: add a custom connector named **Flight Board State** with that URL, then press
    Return in the terminal: the script clears the clipboard. The URL is a bearer secret: it goes there and nowhere else (a
    clipboard manager or Universal Clipboard may keep a copy: clear it there too). Don't screenshot the connector dialog
    or the `--show` output, or crop the URL out.
+4. `node … state-install.mjs launchd --config <board.config.json>`: writes and loads
+   `~/Library/LaunchAgents/com.flight-board.state.<board>.plist`; its one line per run goes to `<stateDir>/<board>/state.log`.
 
 Each step ends with the next one's command, written in full, and every `state: STOPPED:` line says why and names the
 command to run next.
-4. `node … state-install.mjs launchd --config <board.config.json>`: writes and loads
-   `~/Library/LaunchAgents/com.flight-board.state.<board>.plist`; its one line per run goes to `<stateDir>/<board>/state.log`.
 
 **Rotation** is one command: step 2 with `--rotate` (a new token and path; the old ones stop at once), then the new URL
 in the connector. A new signed pack re-runs steps 1 (deploy) and 4 for its commit.

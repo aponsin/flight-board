@@ -158,6 +158,8 @@ export async function secretsStep({ id, dir, toml, url, rotate = false, show = f
   const again = (extra = "") => cmd("secrets", ` --url ${q(url ?? "https://flight-board-state.<you>.workers.dev")}${extra}`);
   if (!existsSync(toml)) throw new Stop("no wrangler config for the Worker yet", cmd("worker", " --kv <the KV namespace id> --account <the account id>"));
   if (!URL_RE.test(String(url))) throw new Stop("--url: the Worker's https address, with no path", again(rotate ? " --rotate" : ""));
+  // --show prints a bearer secret into the terminal: only where the clipboard can't carry it (Security's LOW on 3b053838).
+  if (show && !overSsh(env)) throw new Stop("--show is only for a terminal on the Mac over SSH; here the URL goes to the clipboard", again(rotate ? " --rotate" : ""));
   if (overSsh(env) && !show)
     throw new Stop("this terminal is on the Mac over SSH, so the connector URL would go to the Mac's clipboard, not the one you paste from; --show prints it here once instead", again(`${rotate ? " --rotate" : ""} --show`));
   try { run(["deployments", "list", "--config", toml], { stdio: ["ignore", "ignore", "ignore"] }); }
