@@ -195,7 +195,13 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
     if (!writes.some((w) => w.collection === "messages" && w.op !== "delete" && w.data?.thread === t)) out.push(`the owner wrote in thread ${idText(t)}: answer there (messages {thread: "${idText(t)}", from: "${role}", text, at}), not only here`);
   }
   if (live?.require && fresh === null) out.push(liveAsk(config, liveSince(stored.checkedAt, now)));
-  if (!view) return { errs: out, record: null, note: "Flight board: no board mirror yet, so the Stop hook couldn't check the board this turn (the Collector's next run makes one).", liveNext };
+  // With no mirror, the live check's messages still count (they need none); the rest of the board waits for one.
+  if (!view) {
+    const bare = { docs: { messages: [], waiting: [] }, at: now, atBy: {} };
+    const items = liveNext.msgs.length ? needsYou({ view: bare, pings: [], writes, owner: config.owner, now, since, live: liveNext.msgs }) : [];
+    if (items.length) out.push(needsText(items, role, now));
+    return { errs: out, record: null, note: "Flight board: no board mirror yet, so the Stop hook couldn't check the board this turn (the Collector's next run makes one).", liveNext };
+  }
   const items = needsYou({ view, pings: boardPings(lines, config.owner), writes, owner: config.owner, now, since, live: liveNext.msgs });
   if (items.length) out.push(needsText(items, role, now));
   return { errs: out, record: out.length ? null : Math.min(now, listedAt(view, "messages")), note: null, liveNext };

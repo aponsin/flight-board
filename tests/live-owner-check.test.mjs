@@ -52,6 +52,9 @@ test("what the query returned counts at once: an owner word it shows, unanswered
   const answered = { type: "assistant", message: { content: [{ type: "tool_use", id: "w1", name: "ArtifactData", input: { url: URL_, action: "set", collection: "messages", doc_id: "m-a", data: { thread: "t-1", from: "Manager", text: "Yes.", at: NOW } } }] } };
   assert.deepEqual(run(turn([answered, ...query([])]), { stored: r.liveNext }).errs, [], "answered this turn");
   assert.deepEqual(run(turn(query([owner])), { v: view([{ id: "m-l", thread: "t-1", from: "Manager", text: "y", at: NOW - 10 * MIN }]) }).errs, [], "answered on the board");
+  const bare = run(turn(query([owner])), { v: null });
+  assert.match(bare.errs.join("\n"), /thread t-1 "Did the 06:36 ping arrive\?"/, "no mirror yet: the live check still counts");
+  assert.match(bare.note, /no board mirror/);
 });
 
 test("only a real query of this board's messages for the owner counts, and only its result's owner messages", () => {
