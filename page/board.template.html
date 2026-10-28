@@ -572,7 +572,10 @@ function askHtml(w,open,at=w.since,sub=""){const steps=Array.isArray(w.steps)?w.
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
    return `<details class="w-item" data-id="${esc(w.id)}"${open.has(w.id)?" open":""}><summary class="w-row">${head}</summary>
-   <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}</li>`:`<li>${linkify(s&&s.text||"")}${s&&s.cmd?`<div class="cmd"><code>${esc(s.cmd)}</code><button type="button" class="copy" data-copy="${esc(s.cmd)}">Copy</button></div>`:""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length?threadHtml(w.id,"wait",{box:!!(w.response&&w.response.status)}):""}</details>`}
+   <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}</li>`:`<li>${linkify(s&&s.text||"")}${s&&s.cmd?`<div class="cmd"><code>${esc(s.cmd)}</code><button type="button" class="copy" data-copy="${esc(s.cmd)}">Copy</button></div>`:""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length||answeredAsk(w)?threadHtml(w.id,"wait",{box:answeredAsk(w),ph:"Add more for Manager"}):""}</details>`}
+// Once the owner has answered an ask, its thread's box is always there to add more (#C386, the owner in t-1793166144265:
+// a chosen decision, with the team, had no box until its thread had a message).
+const answeredAsk=w=>!!(w.response&&w.response.status);
 // "Needs you": the open asks, Later folded at their end, then the threads where Manager answered and the owner has not
 // closed or replied (their item is no longer on the board).
 // What Needs you holds: the open asks on the owner (Later has its own tab) and the threads Manager answered. Its list and
@@ -1078,10 +1081,10 @@ function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&
 // hint: a muted line under the box (a closed ask's: writing reopens it, #C288).
 // acts: a thread row's buttons follow its state (#C364): an answer or live word an Ack (its close), a decision its
 // options, a building thread none; a question keeps Close.
-function threadHtml(id,where,{box=true,hint="",acts=false}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`,st=acts?threadState(id):null,open=t.length&&!threadResolved(id);
+function threadHtml(id,where,{box=true,hint="",acts=false,ph=""}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`,st=acts?threadState(id):null,open=t.length&&!threadResolved(id);
   const at=`data-where="${esc(where)}"`,opts=st==="decision"?threadOptions(id).map(o=>`<button type="button" class="opt" data-topt="${esc(id)}" data-choice="${esc(o.key)}" ${at}><b>${esc(o.key)}</b> ${esc(o.label)}</button>`).join(""):"";
   const end=!open||st==="building"?"":st==="answer"||st==="live"?`<button type="button" class="ok" data-tack="${esc(id)}" ${at}>Ack</button>`:`<button type="button" data-tclose="${esc(id)}" ${at}>Close</button>`;
-  return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${box?cmpWrap(key,`${opts||end?`<div class="cchoice btns">${opts}${end}</div>`:""}${cmpBox(key,tid,{ph:t.length?(NARROW()?"Reply":"Reply to Manager"):"Start a thread on this",send:`<button type="button" class="ok" data-tsend="${esc(id)}" ${at} data-csend>Send</button>`})}${hint?`<div class="keys">${esc(hint)}</div>`:""}<div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div>`):""}${t.slice().reverse().map(msgHtml).join("")}</div>`}
+  return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${box?cmpWrap(key,`${opts||end?`<div class="cchoice btns">${opts}${end}</div>`:""}${cmpBox(key,tid,{ph:t.length?(NARROW()?"Reply":"Reply to Manager"):ph||"Start a thread on this",send:`<button type="button" class="ok" data-tsend="${esc(id)}" ${at} data-csend>Send</button>`})}${hint?`<div class="keys">${esc(hint)}</div>`:""}<div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div>`):""}${t.slice().reverse().map(msgHtml).join("")}</div>`}
 // The thread rows whose item is not on the board (a New thread, or an item since closed): open (the owner's word is the
 // last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their
 // own place at the panel's end (resolvedHtml).
