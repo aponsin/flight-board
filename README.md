@@ -184,6 +184,13 @@ Every collector change used to cost the owner an install. Now only what constrai
   local `main` to the commit, but only as a fast-forward and only when `main` is not checked out or is checked out
   clean, and not mid-rebase or mid-merge. It never resets anything, and it says what it did or why it left `main` alone.
 
+**An install pack's output is one line** (#C404): the owner pastes what a pack printed into the board, and a reply box
+keeps 1000 characters (a thread message 2000), so the v3.19 output arrived cut and read as a failure. Each pack writes
+its full output to a log beside it (`board-v<N>-install.log`) and prints one short line to paste: `v3.20 OK: hooks
+<sha>, settings <hash>, config <hash>, log <path>`, or `v3.20 STOPPED: <its STOP line>, log <path>`. The steps name
+that line. The board guards the rest: a paste over a box's limit goes cut with a line that says so, and the full text
+is attached as a text file.
+
 **A board release is the release role's** (#C276), like a product release, and runs only from the signed linked copy:
 `node ~/.flight-board/current/scripts/board-release.mjs <full commit> [--dry-run]`, never from a checkout. It takes
 the config from the gate's pinned hook, the lead's session from the fence's `--send-to`, and the target's files from

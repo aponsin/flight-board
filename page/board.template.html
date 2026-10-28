@@ -910,20 +910,21 @@ async function onReply(e){
   if((act==="help"||act==="change"||act==="other")&&!note.trim()&&!files.length){msg.textContent="Say in a few words what you'd like, in the box below, then press again.";focus();return}
   const btn=e.currentTarget; btn.disabled=true; lastPing="";
   const anchor=await prepAnchor(btn);
+  const lp=longPaste(note,NOTE_MAX,Date.now(),!!assetsRef),unattach=attachLong(id,lp);
   // Files first: the reply is saved only once every file is stored, so Manager never gets a reply with a missing file.
-  let stored;try{stored=await storeFiles(id,msg)}catch(err){btn.disabled=false;msg.textContent=err.message;return}
+  let stored;try{stored=await storeFiles(id,msg)}catch(err){unattach();btn.disabled=false;msg.textContent=err.message;return}
   const w=state.waiting.find(x=>x.id===id)||{id};
-  const writes=replyWrites(w,act,note,stored,Date.now(),choice,Math.random().toString(36).slice(2,8));
+  const writes=replyWrites(w,act,lp.text,stored,Date.now(),choice,Math.random().toString(36).slice(2,8));
   const response=writes[0].data.response;
   try{await applyWrites(writes);msg.textContent="Saved.";(pendingFiles.get(id)||[]).forEach(dropPreview);pendingFiles.delete(id);
     // A bare Ack needs nothing from Manager, so it sends no ping; a follow-up question does.
     const bare=act==="ack"&&!response.note&&!stored.length;
     const pinged=bare?false:await pingManager(anchor,id,response);
     if(bare){msg.textContent="Acknowledged.";setTimeout(settleRedraw,2600);return}
-    msg.textContent=pinged?"Saved and sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.";
+    msg.textContent=(pinged?"Saved and sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.")+longLine(lp,NOTE_MAX);
     try{await dbRef.doc("waiting/"+id).update({ping:pinged?"sent":lastPing})}catch(_){}
     setTimeout(settleRedraw,2600)}
-  catch(err){btn.disabled=false;msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead."}
+  catch(err){unattach();btn.disabled=false;msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead."}
 }
 // Stores a reply's pending files (key: its reply box) as board assets, one by one; throws with the line to show if one fails.
 async function storeFiles(key,msg){const files=pendingFiles.get(key)||[],stored=[];
@@ -932,12 +933,24 @@ async function storeFiles(key,msg){const files=pendingFiles.get(key)||[],stored=
       stored.push({id:res.id,name:String(f.name).slice(0,200),type:res.contentType,size:res.sizeBytes})}
     catch(err){const c=err&&err.code||"error";throw new Error(`Not sent: ${f.name} couldn't be stored (${c}${c==="too_large"?": too big":c==="unsupported_type"?": not a kind the board takes":c==="quota_or_state"?": the board's storage is full, tell Manager":""}). Remove it or try again.`)}}
   return stored}
+// A paste over a box's limit (#C404: the owner's v3.19 install output was cut at 1000 characters with no word, and the
+// auto-reply read the cut as a failure): the text goes cut, ending with a line that says so, and the whole of it rides
+// along as a text file. attach false (no asset store here): the line asks for the rest in a second message instead.
+const NOTE_MAX=1000;
+function longPaste(text,max,now,attach=true){const s=String(text||"").trim();if(s.length<=max)return {text:s,cut:false,name:null,full:null};
+  const name=attach?`full-text-${now}.txt`:null;
+  const tail=name?`\n… cut at ${max} characters: the full text (${s.length}) is attached as ${name}`:`\n… cut at ${max} characters (${s.length} in all): send the rest in a second message`;
+  return {text:s.slice(0,max-tail.length).trimEnd()+tail,cut:true,name,full:name?s:null}}
+// The full text as a pending file of the box (key), and a way to take it back out if the send stops.
+function attachLong(key,lp){if(!lp.name||typeof File!=="function")return ()=>{};const f=new File([lp.full],lp.name,{type:"text/plain"});
+  pendingFiles.set(key,[...(pendingFiles.get(key)||[]),f]);return ()=>{const l=pendingFiles.get(key)||[],k=l.indexOf(f);if(k>=0)l.splice(k,1)}}
+const longLine=(lp,max)=>!lp.cut?"":lp.name?` Your text was over ${max} characters: it went cut, with the full text attached as ${lp.name}.`:` Your text was over ${max} characters: it went cut; send the rest in a second message.`;
 async function applyWrites(ws){for(const w of ws){const d=dbRef.doc(w.path);if(w.op==="set")await d.set(w.data);else await d.update(w.data)}}
 // A button reply on an ask (unchanged for every kind), as the writes it makes. Board v2: a bare Ack on
 // an answer closes it (case 6: 22 acked answers stayed open); a note, whatever the button, also goes in the item's thread
 // as the owner's message, so a question in a Done note waits for Manager instead of closing with the item (case 10).
 function replyWrites(w,act,note,files,now,choice,rid){
-  const response={status:act==="other"?"chose":act,note:String(note||"").trim().slice(0,1000),at:now};
+  const response={status:act==="other"?"chose":act,note:String(note||"").trim().slice(0,NOTE_MAX),at:now};
   if(act==="chose")response.choice=choice; if(act==="other")response.choice="something else";
   if(files.length)response.files=files;
   const bare=act==="ack"&&!response.note&&!files.length;
@@ -1282,13 +1295,16 @@ document.addEventListener("keydown",e=>{const b=e.target&&e.target.closest&&e.ta
 async function sendThread(btn,id,text,msg,kind,restore,key="th:"+id){
   if(!dbRef){restore();msg.textContent="Can't save from here. Tell Manager in chat instead.";return}if(!text&&!(pendingFiles.get(key)||[]).length){msg.textContent="Write your message first.";return}
   btn.disabled=true;lastPing="";const anchor=await prepAnchor(btn);
-  let stored;try{stored=await storeFiles(key,msg)}catch(err){btn.disabled=false;restore();msg.textContent=err.message;return}
+  const lp=longPaste(text,MAXT,Date.now(),!!assetsRef),unattach=attachLong(key,lp);
+  let stored;try{stored=await storeFiles(key,msg)}catch(err){unattach();btn.disabled=false;restore();msg.textContent=err.message;return}
   const now=Date.now();
-  try{await applyWrites(threadWrites(id,text,stored,now,kind,Math.random().toString(36).slice(2,8)));(pendingFiles.get(key)||[]).forEach(dropPreview);pendingFiles.delete(key)}
-  catch(err){btn.disabled=false;restore();msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead.";return}
-  if(wakeMode()==="batch"){if(key==="new"){msg.innerHTML=sentLine(id,"batch")}else msg.textContent="Saved. Manager reads it at its next check (within 5 minutes).";btn.disabled=false;return}
-  const pinged=await sendPing(anchor,threadPing(id,text||"(files)",kind));
-  if(key==="new"){msg.innerHTML=sentLine(id,pinged?"sent":"unsent",lastPing)}else msg.textContent=pinged?"Sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.";btn.disabled=false}
+  try{await applyWrites(threadWrites(id,lp.text,stored,now,kind,Math.random().toString(36).slice(2,8)));(pendingFiles.get(key)||[]).forEach(dropPreview);pendingFiles.delete(key)}
+  catch(err){unattach();btn.disabled=false;restore();msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead.";return}
+  const long=longLine(lp,MAXT);
+  if(wakeMode()==="batch"){if(key==="new"){msg.innerHTML=sentLine(id,"batch")+esc(long)}else msg.textContent="Saved. Manager reads it at its next check (within 5 minutes)."+long;btn.disabled=false;return}
+  // The ping is cut shorter still (1,900): a cut text says so first, so the auto-reply never reads the cut as the whole.
+  const pinged=await sendPing(anchor,threadPing(id,lp.cut?`(long text, cut${lp.name?`; the full text is attached as ${lp.name}`:""}) ${lp.text}`:text||"(files)",kind));
+  if(key==="new"){msg.innerHTML=sentLine(id,pinged?"sent":"unsent",lastPing)+esc(long)}else msg.textContent=(pinged?"Sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.")+long;btn.disabled=false}
 // The new thread's receipt (#C364): where it landed, the link opening it; it stays until the owner's next keystroke.
 // how: "sent", "batch" (Manager reads it at its check) or "unsent" (why: the ping's refusal).
 function sentLine(id,how,why=""){const p=trefPlace(id,Date.now()),l=p&&p.tab?(TABS.find(t=>t[0]===p.tab)||[,""])[1]:"With the team";
