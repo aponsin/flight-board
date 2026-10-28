@@ -1,8 +1,10 @@
 // The owner's install of the board state probe (#C420), run only from the pinned copy of a signed commit, in the
 // owner's own terminal (an install pack's steps give the exact commands):
 //   node ~/.flight-board/install/<sha>/scripts/state-install.mjs worker --config <board.config.json> --kv <namespace id>
-//       writes ~/.flight-board/worker/wrangler.toml (the Worker = this copy's worker/state-worker.mjs, one workers.dev
-//       address, no preview addresses, the KV namespace the owner made); the owner then runs wrangler deploy with it.
+//       [--account <account id>] [--writes <KV writes a day, 500>]
+//       writes ~/.flight-board/worker/wrangler.toml (the Worker = this copy's worker/state-worker.mjs, its own name, one
+//       workers.dev address, no route, no preview addresses, only the KV namespace the owner made for it); the owner then
+//       runs wrangler deploy with it.
 //   node … state-install.mjs secrets --config <board.config.json> --url https://<worker address> [--rotate]
 //       makes the board's token and MCP path (32 and 16 random bytes) into <stateDir>/<board>/state-secrets/secrets.json
 //       (0600 in a 0700 folder), hands the Worker their hashes (wrangler secret put, on its stdin) and copies the connector
@@ -99,20 +101,29 @@ ${args}
 `;
 }
 
-// The Worker's wrangler config: this copy's Worker, one workers.dev address, no preview ones, the owner's KV namespace.
-export function wranglerToml({ main, kv }) {
+// The Worker's wrangler config: this copy's Worker under its own name, one workers.dev address and no route (so never
+// on another product's zone), no preview addresses, its own KV namespace and nothing else bound (Security, same account
+// as other Workers). account: the account id wrangler whoami shows, when given (a login with several accounts then
+// can't deploy it elsewhere). writes: the Worker's KV writes a day (the account's are shared).
+export function wranglerToml({ main, kv, account = null, writes = 500 }) {
   if (!/^[0-9a-f]{32}$/.test(String(kv))) throw new Error("--kv: the KV namespace id wrangler printed (32 hex)");
+  if (account !== null && !/^[0-9a-f]{32}$/.test(String(account))) throw new Error("--account: the account id wrangler whoami shows (32 hex)");
+  if (!(Number.isInteger(writes) && writes >= 50 && writes <= 100000)) throw new Error("--writes: a whole number from 50 to 100000");
   return `name = "${WORKER_NAME}"
 main = ${JSON.stringify(main)}
-compatibility_date = "2026-10-01"
+${account ? `account_id = "${account}"\n` : ""}compatibility_date = "2026-10-01"
 workers_dev = true
 preview_urls = false
+
+[vars]
+WRITES_PER_DAY = "${writes}"
 
 [[kv_namespaces]]
 binding = "STATE"
 id = "${kv}"
 `;
 }
+export const WRANGLER = ["--yes", "wrangler@4"];
 
 const atomic = (file, text, mode = 0o644) => { const tmp = `${file}.${process.pid}.part`; writeFileSync(tmp, text, { mode, flag: "wx" }); renameSync(tmp, file); };
 
@@ -130,14 +141,14 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const toml = join(home(config.gate.stateDir), "worker", "wrangler.toml");
     if (cmd === "worker") {
       mkdirSync(dirname(toml), { recursive: true });
-      atomic(toml, wranglerToml({ main: join(CODE, "worker", "state-worker.mjs"), kv: opt("--kv") }));
-      console.log(`state: wrangler config written (${toml}); deploy with: npx wrangler deploy --config ${toml}`);
+      atomic(toml, wranglerToml({ main: join(CODE, "worker", "state-worker.mjs"), kv: opt("--kv"), account: opt("--account") ?? null, writes: opt("--writes") === undefined ? 500 : Number(opt("--writes")) }));
+      console.log(`state: wrangler config written (${toml}); deploy with: npx ${WRANGLER.join(" ")} deploy --config ${toml}`);
     } else if (cmd === "secrets") {
       if (!existsSync(toml)) throw new Error("no wrangler config: run the worker step first");
       const s = makeSecrets(join(home(config.gate.stateDir), id, "state-secrets"), opt("--url"), { rotate: args.includes("--rotate") });
-      execFileSync("npx", ["wrangler", "secret", "put", secretName(id), "--config", toml], { input: workerSecret(s.token, s.path), stdio: ["pipe", "ignore", "inherit"] });
+      execFileSync("npx", [...WRANGLER, "secret", "put", secretName(id), "--config", toml], { input: workerSecret(s.token, s.path), stdio: ["pipe", "ignore", "inherit"] });
       execFileSync("pbcopy", [], { input: `${opt("--url")}/mcp/${s.path}` });
-      console.log(`state: token ${s.made ? "made" : "kept"} and written; the Worker has its hash; the connector URL is on the clipboard (paste it in claude.ai, Settings, Connectors, as "Flight Board State")`);
+      console.log(`state: token ${s.made ? "made" : "kept"} and written; the Worker has its hash; the connector URL is on the clipboard: paste it in claude.ai, Settings, Connectors, as "Flight Board State", then copy something else (it is a secret)`);
     } else if (cmd === "launchd") {
       const agents = join(homedir(), "Library", "LaunchAgents"), file = join(agents, `${plistLabel(id)}.plist`);
       mkdirSync(agents, { recursive: true });
@@ -145,6 +156,6 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       try { execFileSync("launchctl", ["bootout", `gui/${process.getuid()}/${plistLabel(id)}`], { stdio: "ignore" }); } catch { /* not loaded yet */ }
       execFileSync("launchctl", ["bootstrap", `gui/${process.getuid()}`, file], { stdio: "inherit" });
       console.log(`state: the probe runs every minute from ${CODE.slice(-40, -28)} (${file})`);
-    } else throw new Error("usage: state-install.mjs worker|secrets|launchd --config <board.config.json> [--kv <id>] [--url <https address>] [--rotate]");
+    } else throw new Error("usage: state-install.mjs worker|secrets|launchd --config <board.config.json> [--kv <id>] [--account <id>] [--writes <n>] [--url <https address>] [--rotate]");
   } catch (e) { console.error(`state: STOPPED: ${String(e.message).split("\n")[0]}`); process.exit(1); }
 }

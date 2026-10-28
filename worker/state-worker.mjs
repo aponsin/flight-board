@@ -10,6 +10,19 @@
 import { stateErrors, pickState, MAX_BYTES } from "../collector/state-schema.mjs";
 
 export const RATE_MS = 30_000;
+// KV writes are the account's (Workers Free: 1,000 a day, shared with every other Worker on it):
+// a POST is stored only when what the page shows changed (changeKey), or as a heartbeat every HEARTBEAT_MS, and never
+// more than WRITES_PER_DAY times a UTC day (a [vars] value in wrangler.toml; 500 when unset). An unchanged POST is a 204
+// that writes nothing; one past the budget a 429 until midnight UTC.
+export const HEARTBEAT_MS = 15 * 60e3, WRITES_DEFAULT = 500;
+// What the page shows, without the times that move on every run (board.at, each card's at, lastActivityAt) and the
+// numbers that tick (ciMin), nor the tool an agent last called (it changes every few seconds; the heartbeat carries it):
+// a write when an agent starts or ends a turn or moves to another card, or a card moves.
+export const changeKey = (s) => JSON.stringify([
+  Object.entries(s.cards).map(([id, c]) => [id, c.num, c.phase, c.headSha12, c.signed, c.onMain, c.ci, c.liveVersion]),
+  Object.entries(s.agents).map(([r, a]) => [r, a.state, a.card, a.since]),
+  s.board.probe, s.board.pageVersion,
+]);
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const TOOL = {
   name: "board_state",
@@ -83,7 +96,12 @@ async function postState(request, env, boardId, now) {
   let before = null;
   try { before = JSON.parse((await env.STATE.get(key)) ?? "null"); } catch { /* none */ }
   if (Number.isFinite(before?.receivedAt) && now - before.receivedAt < RATE_MS) return bare(429, { "retry-after": "30" });
-  await env.STATE.put(key, JSON.stringify({ receivedAt: now, state: pickState(state) }));
+  const picked = pickState(state), change = changeKey(picked);
+  if (before?.change === change && now - before.receivedAt < HEARTBEAT_MS) return bare(204);
+  const day = new Date(now).toISOString().slice(0, 10), budget = Number.parseInt(env.WRITES_PER_DAY ?? "", 10);
+  const writes = before?.day === day && Number.isInteger(before.writes) ? before.writes : 0;
+  if (writes >= (Number.isInteger(budget) && budget > 0 ? budget : WRITES_DEFAULT)) return bare(429);
+  await env.STATE.put(key, JSON.stringify({ receivedAt: now, day, writes: writes + 1, change, state: picked }));
   return bare(204);
 }
 

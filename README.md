@@ -269,11 +269,17 @@ changes none of them):
   it (`gh`); and each roster role's newest open session in the app (its file under `~/Library/Application Support/Claude/
   claude-code-sessions`) and its transcript's last 20 entries: working or idle, since when, the class of its last tool,
   and the card it is on (an exact board id or `#C<num>` of a card on the board). It writes `<stateDir>/<board>/state.json`
-  and POSTs it to the Worker.
+  and POSTs it to the Worker. GitHub's API is shared with every agent's `gh`, so a finished CI run is kept by commit and a
+  run asks `gh` at most 10 times.
 - **`worker/state-worker.mjs`**, a Cloudflare Worker (`flight-board-state`) on the owner's own account: one per owner,
   many boards. `POST /b/<board>/state` with the board's token; `POST /mcp/<path>`, a read-only remote MCP server with one
   tool, `board_state`. Each board's Worker secret holds only sha256 of its token and of its path, compared in constant time.
   At most 64 KB, one POST per 30 s, the latest only (KV); anything else, a wrong path included, is a bare 404; no CORS.
+  It may share the account with other Workers, so it keeps apart from them: its own name, `wrangler.toml`, KV namespace
+  and secrets, no route on any zone (its workers.dev address only), nothing else bound. KV writes are the account's (1,000
+  a day on Workers Free, for every Worker on it), so it stores a POST only when what the page shows changed (a card's
+  phase, head, reviews, main, CI state, version; an agent's state, card, since), else every 15 min, and at most
+  `WRITES_PER_DAY` a UTC day (500 unless `--writes` says otherwise); a POST past that is a 429 until midnight UTC.
 - **The page's "Right now" section**, through the owner's claude.ai connector named exactly **Flight Board State** (the
   `mcp` capability, its `board_state` only; the page reads it once a minute). Without the connector the section stays
   hidden and the board is what the Collector's `derived/all` makes it.
@@ -288,15 +294,17 @@ text is never logged, cached or written. An error never quotes what it refused.
 **The owner's install**, from the pinned copy, in the owner's own terminal (`scripts/state-install.mjs`; a pack's steps
 give the exact commands):
 
-1. `npx wrangler kv namespace create STATE`, then `node ~/.flight-board/install/<sha>/scripts/state-install.mjs worker
-   --config <board.config.json> --kv <its id>` (writes `~/.flight-board/worker/wrangler.toml`: this copy's Worker, one
-   workers.dev address, no preview ones) and `npx wrangler deploy --config ~/.flight-board/worker/wrangler.toml`.
+1. `npx --yes wrangler@4 whoami`: the account wrangler is logged in to (its name and id); it must be the owner's. Then
+   `npx --yes wrangler@4 kv namespace create flight-board-state`, then `node ~/.flight-board/install/<sha>/scripts/
+   state-install.mjs worker --config <board.config.json> --kv <its id> --account <the account id>` (writes
+   `~/.flight-board/worker/wrangler.toml`: this copy's Worker, pinned to that account, one workers.dev address, no route,
+   no preview ones) and `npx --yes wrangler@4 deploy --config ~/.flight-board/worker/wrangler.toml`.
 2. `node … state-install.mjs secrets --config <board.config.json> --url https://flight-board-state.<you>.workers.dev`:
    makes the token (32 random bytes) and the MCP path (16) into `<stateDir>/<board>/state-secrets/secrets.json` (0600 in a
    0700 folder), hands the Worker their hashes on wrangler's stdin, and puts the connector URL on the clipboard. Neither
    is printed.
 3. In claude.ai, Settings, Connectors: add a custom connector named **Flight Board State** with that URL. The URL is a
-   bearer secret: it goes there and nowhere else.
+   bearer secret: it goes there and nowhere else; copy something else once it is pasted.
 4. `node … state-install.mjs launchd --config <board.config.json>`: writes and loads
    `~/Library/LaunchAgents/com.flight-board.state.<board>.plist`; its one line per run goes to `<stateDir>/<board>/state.log`.
 

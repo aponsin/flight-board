@@ -2102,7 +2102,9 @@ function renderSoon(){if(renderDue!=null)return;
 // agent working or idle, on which card, with which tool, since when, and each card's stage by the repository. Ids,
 // enums, numbers and times only; every value is checked before it shows, and one that doesn't fit shows nothing.
 // Without the connector the section stays hidden and the board is as before (the Collector's derived/all).
-const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",PROBE_EVERY=60e3,PROBE_OLD=5*60e3;
+// The Worker stores a reading when what shows here changed, else every 15 min (its KV writes are the account's): "as of"
+// is that reading's time, and it goes amber only past PROBE_OLD.
+const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",PROBE_EVERY=60e3,PROBE_OLD=20*60e3;
 let probe=null,probeNote="",probeAsk=false;
 const isT=v=>Number.isInteger(v)&&v>1577836800000&&v<4102444800000;
 const probeFits=s=>!!s&&typeof s==="object"&&s.v===1&&s.board&&isT(s.board.at)&&s.cards&&typeof s.cards==="object"&&s.agents&&typeof s.agents==="object";

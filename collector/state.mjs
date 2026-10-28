@@ -197,6 +197,22 @@ export function ciOf(gh, sha, now) {
   return { ci, ciMin: Number.isInteger(min) && min >= 0 && min <= 10000 ? min : null };
 }
 
+// GitHub's API allows 5,000 calls an hour, shared with every agent's gh: a finished run never changes, so it is kept by
+// commit (cache: { sha: { ci, ciMin } }, saved by the caller), and a run asks gh at most MAX_CI_CALLS times; a card past
+// that shows no CI this minute (Checker, #C420).
+export const MAX_CI_CALLS = 10;
+export function ciReader(gh, now, cache) {
+  let calls = 0;
+  return (sha) => {
+    if (cache[sha]) return cache[sha];
+    if (calls >= MAX_CI_CALLS) return { ci: "none", ciMin: null };
+    calls++;
+    const r = ciOf(gh, sha, now);
+    if (["passed", "failed", "cancelled"].includes(r.ci)) cache[sha] = r;
+    return r;
+  };
+}
+
 // The version a commit went live in: the first subject naming one (versionPattern), from the commit itself on along
 // the main line's first parents that descend from it.
 function versionAfter(git, sha, ref, pattern) {
@@ -225,7 +241,7 @@ export function cardState(card, repo, config, now) {
   const deployed = onMain && !!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed }, cfg);
-  return { ...base, phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(repo.gh ? ciOf(repo.gh, head.sha, now) : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null };
+  return { ...base, phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null };
 }
 
 export function cardStates({ cards, config, repos, now }) {
@@ -293,13 +309,17 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     try { tips = remoteTips(git, remote); } catch { /* an empty clone */ }
     return { git, gh: run(path)("gh", 15_000), remote, main, notes: local, tips };
   };
+  // Finished CI runs, kept by commit from run to run (the newest 500).
+  const ciPath = join(stateDir, id, "ci-cache.json");
+  let ciCache = {};
+  try { const r = readTail(ciPath, 1024 * 1024); const o = r?.whole ? JSON.parse(r.text) : null; if (plain(o)) ciCache = Object.fromEntries(Object.entries(o).filter(([k, v]) => /^[0-9a-f]{40}$/.test(k) && plain(v))); } catch { /* start afresh */ }
   // A repository git can't read gives no tips: its cards stay as declared.
   const repos = {};
   if (c.repoPath) {
     const r = repoAt(home(c.repoPath), c.remote, c.mainBranch, c.notes);
     let live = null;
     if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { /* none */ } }
-    repos[""] = { ...r, live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern };
+    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern };
   }
   for (const x of c.repos) {
     let installed = null;
@@ -320,6 +340,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try {
     state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents });
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
+    writeAtomic(ciPath, JSON.stringify(Object.fromEntries(Object.entries(ciCache).slice(-500))));
   } catch (e) { console.error(`state: ${String(e.message).split("\n")[0]}`); process.exit(1); }
   if (process.argv.includes("--no-post")) { console.log(`state: written, ${Object.keys(state.cards).length} card(s), ${Object.keys(state.agents).length} agent(s), not posted`); process.exit(0); }
   const secrets = readSecrets(secretsDir(stateDir, id));

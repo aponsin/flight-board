@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { stateErrors, pickState, toolClass, MAX_BYTES } from "../collector/state-schema.mjs";
-import { cardIn, activity, agentStates, appSessions, lastEntries, readTail, readSecrets, buildState, phaseOf, headsFor as headsForProbe, cardState, postState, WORKING_QUIET_MS } from "../collector/state.mjs";
+import { cardIn, activity, agentStates, appSessions, lastEntries, readTail, readSecrets, buildState, phaseOf, headsFor as headsForProbe, cardState, postState, ciReader, WORKING_QUIET_MS } from "../collector/state.mjs";
 import { derivePhase, headsFor } from "../collector/derive.mjs";
 import worker, { sha256hex, secretName, RATE_MS, TOOL } from "../worker/state-worker.mjs";
 import { pinnedSha, makeSecrets, workerSecret, secretName as installSecretName, plist, wranglerToml } from "../scripts/state-install.mjs";
@@ -118,12 +118,45 @@ test("the Worker: over 64 KB is a 413; one POST per 30 s per board (429), the la
   const { env, kv } = await envFor();
   assert.equal((await worker.fetch(post("x".repeat(MAX_BYTES + 1)), env, {}, T)).status, 413);
   assert.equal((await worker.fetch(post(good()), env, {}, T)).status, 204);
-  const later = good(); later.board.at = T + 1000;
+  const later = good(); later.board.at = T + 1000; later.agents.Checker.state = "idle";
   const r = await worker.fetch(post(later), env, {}, T + RATE_MS - 1);
   assert.equal(r.status, 429);
   assert.equal(JSON.parse([...kv.values()][0]).state.board.at, T);
   assert.equal((await worker.fetch(post(later), env, {}, T + RATE_MS)).status, 204);
   assert.equal(JSON.parse([...kv.values()][0]).state.board.at, T + 1000);
+});
+
+test("the Worker spends the account's KV writes only on a change the page shows, a 15-min heartbeat, and its daily budget", async () => {
+  const { env, kv } = await envFor();
+  let puts = 0;
+  const put = env.STATE.put;
+  env.STATE.put = async (k, v) => { puts++; return put(k, v); };
+  const at = (min, f = () => {}) => { const s = good(); s.board.at = T + min * 60e3; s.cards["board-state-probe"].at = s.board.at; s.agents.Checker.lastActivityAt = s.board.at; f(s); return s; };
+  const send = (min, f) => worker.fetch(post(at(min, f)), env, {}, T + min * 60e3).then((r) => r.status);
+  assert.equal(await send(0), 204);
+  assert.equal(puts, 1);
+  // Times, ticking CI minutes and the tool alone are no change: a 204 that writes nothing.
+  assert.equal(await send(1, (s) => { s.agents.Checker.tool = "Edit"; s.cards["board-state-probe"].ciMin = 4; }), 204);
+  assert.equal(puts, 1);
+  assert.equal(JSON.parse([...kv.values()][0]).state.board.at, T);
+  // A card moving, or an agent's turn ending, is.
+  assert.equal(await send(2, (s) => { s.cards["board-state-probe"].phase = "checker"; }), 204);
+  assert.equal(await send(3, (s) => { s.cards["board-state-probe"].phase = "checker"; s.agents.Checker.state = "idle"; }), 204);
+  assert.equal(puts, 3);
+  // Nothing changed for 15 min: the heartbeat writes once.
+  const same = (s) => { s.cards["board-state-probe"].phase = "checker"; s.agents.Checker.state = "idle"; };
+  assert.equal(await send(17, same), 204);
+  assert.equal(puts, 3);
+  assert.equal(await send(18, same), 204);
+  assert.equal(puts, 4);
+  // The budget: WRITES_PER_DAY, then 429s until the UTC day turns, with nothing written.
+  env.WRITES_PER_DAY = "4";
+  assert.equal(await send(20, (s) => { s.agents.Checker.state = "working"; }), 429);
+  assert.equal(puts, 4);
+  const next = Date.UTC(2026, 9, 29, 0, 1);
+  const s = good(); s.board.at = next;
+  assert.equal((await worker.fetch(post(s), env, {}, next)).status, 204);
+  assert.equal(JSON.parse([...kv.values()][0]).writes, 1);
 });
 
 test("the Worker: the MCP tool answers only from the schema, whatever was stored", async () => {
@@ -353,13 +386,34 @@ test("the install: secrets made 0600 in a 0700 folder, kept on a re-run, new on 
   assert.equal((await worker.fetch(rpc({ jsonrpc: "2.0", id: 1, method: "ping" }, first.path), env, {}, T)).status, 404);
 });
 
-test("the install: the Worker's config has one workers.dev address, no preview ones, and the owner's KV namespace", () => {
+test("the install: the Worker's own config: its name, one workers.dev address, no route, no preview, its KV namespace only (Security's same-account conditions)", () => {
   const t = wranglerToml({ main: "/i/install/e/worker/state-worker.mjs", kv: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6" });
   assert.match(t, /^name = "flight-board-state"$/m);
   assert.match(t, /^workers_dev = true$/m);
   assert.match(t, /^preview_urls = false$/m);
   assert.match(t, /binding = "STATE"\nid = "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6"/);
+  assert.match(t, /^WRITES_PER_DAY = "500"$/m);
+  assert.doesNotMatch(t, /route|zone|account_id|services|d1_databases|r2_buckets|durable_objects|queues/);
+  assert.equal(t.match(/\[\[/g).length, 1, "one binding block: its own KV namespace");
+  assert.match(wranglerToml({ main: "m", kv: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6", account: "f".repeat(32), writes: 2000 }), /^account_id = "f{32}"$[\s\S]*^WRITES_PER_DAY = "2000"$/m);
   assert.throws(() => wranglerToml({ main: "m", kv: "x\"\n[vars]" }), /32 hex/);
+  assert.throws(() => wranglerToml({ main: "m", kv: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6", account: "not-an-id" }), /--account/);
+  assert.throws(() => wranglerToml({ main: "m", kv: "a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6", writes: Number("x") }), /--writes/);
+});
+
+test("the probe asks gh at most 10 times a run, and never again for a finished run", () => {
+  let calls = 0;
+  const gh = (args) => { calls++; return JSON.stringify([{ status: args[3].startsWith("a") ? "completed" : "in_progress", conclusion: "success", createdAt: new Date(T - 60e3).toISOString(), updatedAt: new Date(T).toISOString() }]); };
+  const cache = {};
+  const read = ciReader(gh, T, cache);
+  const shas = Array.from({ length: 15 }, (_, k) => (k % 2 ? "a" : "b") + String(k).padStart(39, "0"));
+  const out = shas.map(read);
+  assert.equal(calls, 10);
+  assert.deepEqual(out.slice(10), Array(5).fill({ ci: "none", ciMin: null }));
+  assert.deepEqual(Object.keys(cache).sort(), shas.slice(0, 10).filter((s) => s.startsWith("a")).sort(), "only finished runs are kept");
+  const again = ciReader(gh, T, cache);
+  shas.filter((s) => s.startsWith("a")).slice(0, 5).forEach(again);
+  assert.equal(calls, 10, "a cached run costs no call");
 });
 
 // --- The page --------------------------------------------------------------------------------------------------
