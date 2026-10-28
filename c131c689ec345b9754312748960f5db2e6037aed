@@ -1,0 +1,1 @@
+PASS Quick: #C367 card numbers link to their card (messages, asks, summaries, feed), with a hover or focus bubble. Suite 488/488 at c131c68; escaping checked (cardLinks runs on escaped text, outside links; bubble escaped); mutation check: pass (unknown numbers linked turns card-refs red).
