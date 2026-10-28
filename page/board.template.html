@@ -703,7 +703,7 @@ function cardBubble(i,now=Date.now()){const done=i.status==="done",cut=(s,n)=>s.
   const ph=done?(i.dropped?"Dropped":"Live"+(i.version?" "+i.version:"")):notStarted(i)?"Queued":(PHASES.find(p=>p[0]===i.phase)||[,i.phase||""])[1];
   const eta=done?(num(i.doneAt)?dayLabel(i.doneAt):""):cardEta(i)?dueText(cardEta(i)):"";
   const next=!done&&i.nextNote?"Next: "+cut(String(i.nextNote),90):"";
-  return `<b>${Number.isInteger(i.num)?"#C"+i.num+" ":""}${esc(i.name||i.id)}</b><br>${esc([ph,!done&&i.who,eta,next].filter(Boolean).join(" · "))}`}
+  return `<b>${Number.isInteger(i.num)?"#C"+i.num+" ":""}${esc(i.name||i.id)}</b><br>${esc([ph,!done&&i.who!==ph&&i.who,eta,next].filter(Boolean).join(" · "))}`}
 // A card's number opens it: on the board, or under Done (opened), clearing a cards' search that hides it. null when the
 // board no longer draws it (Done shows the last 24 hours).
 function cardOpen(id){const c=state.initiatives.find(i=>i.id===id);if(!c)return null;

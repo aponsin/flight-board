@@ -44,6 +44,7 @@ test("the bubble: name, then phase and who, ETA and next step; escaped", () => {
   const h = b.cardBubble(b.state.initiatives[0], T);
   assert.match(h, /^<b>#C356 Tabs &lt;search&gt;<\/b><br>Build · Boardsmith · due ~\d.* · Next: Build the tabs &amp; the box$/);
   assert.match(b.cardBubble(b.state.initiatives[1], T), /^<b>#C300 Pill count<\/b><br>Live v3\.15\.2 · \d/);
+  assert.match(b.cardBubble({ ...cards()[0], phase: "checker", who: "Checker" }, T), /<br>Checker · due ~/, "a phase and its owner of one name: said once");
   const long = b.cardBubble({ ...cards()[0], nextNote: "x".repeat(200) }, T);
   assert.ok(long.length < 260, "the next step is cut, so it stays two lines");
 });
