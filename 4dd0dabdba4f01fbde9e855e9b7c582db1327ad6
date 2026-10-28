@@ -1,0 +1,1 @@
+PASS Quick: #C371 board-thread-card-tag at 4dd0dab. Thread rows keep their card's #C link in every state (live, dropped, asked again, resolved); escaping intact; suite 513/513.
