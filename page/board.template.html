@@ -167,7 +167,9 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
 .probe{margin:0 0 12px;padding:8px 12px}.probe h2{font-size:.9rem;margin:0 0 4px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
-.probe-row{display:flex;gap:10px;font-size:.85rem;padding:2px 0}.probe-row .who{font-weight:600;flex:0 0 7em}.probe-row .what{display:flex;flex-wrap:wrap;gap:2px 10px;min-width:0}.probe-row .idle{color:var(--muted)}.probe-row .what span{white-space:nowrap}
+.probe .probe-sub{font:700 .9rem/1.2 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:10px 0 4px}
+.probe-row{display:flex;gap:10px;font-size:.85rem;padding:2px 0}.probe-row .who{font-weight:600;flex:0 0 7em}.probe-row .what{min-width:0}.probe .idle{color:var(--muted)}.probe .nw{white-space:nowrap}
+.probe-line{font-size:.85rem;padding:2px 0;color:var(--muted)}
 .probe .note{margin-top:4px}
 .stuckline div+.deaf{margin-top:6px}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
@@ -2108,20 +2110,28 @@ const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",PROBE_EVERY=60e
 let probe=null,probeNote="",probeAsk=false;
 const isT=v=>Number.isInteger(v)&&v>1577836800000&&v<4102444800000;
 const probeFits=s=>!!s&&typeof s==="object"&&s.v===1&&s.board&&isT(s.board.at)&&s.cards&&typeof s.cards==="object"&&s.agents&&typeof s.agents==="object";
-function probeCard(s,id){if(typeof id!=="string"||!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id))return "";const c=s.cards[id];return c&&Number.isInteger(c.num)?"#C"+c.num:id}
+// A card as markup: "#C<num>" (else its id), the board's card link when the card is on the board (Designer).
+function probeCard(s,id){if(typeof id!=="string"||!/^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/.test(id))return "";const c=s.cards[id],txt=c&&Number.isInteger(c.num)?"#C"+c.num:id;
+  return (state.initiatives||[]).some(i=>i.id===id)?`<a href="#" class="t-ref c-ref" data-cref="${esc(id)}">${esc(txt)}</a>`:esc(txt)}
+// Parts of a line, already markup, each kept whole and joined by the board's " · ".
+const probeParts=parts=>parts.filter(Boolean).map(p=>`<span class="nw">${p}</span>`).join(" · ");
+// Working agents first, a row each; then one line for the idle and one for those not seen (Designer: what moves is what
+// the owner looks for). Then each card in flight by the repository.
 function probeHtml(s,now=Date.now()){
-  const rows=Object.keys(s.agents).filter(r=>/^[A-Za-z0-9_-]{1,60}$/.test(r)).sort().map(r=>{const a=s.agents[r]||{};
-    const st=["working","idle","unknown"].includes(a.state)?a.state:"unknown",card=probeCard(s,a.card),tool=typeof a.tool==="string"&&/^[A-Za-z]{1,30}$/.test(a.tool)?a.tool:"";
-    const since=isT(a.since)?`since ${hhmm(a.since)}`:"";
-    if(st==="unknown")return `<div class="probe-row"><span class="who">${esc(r)}</span><span class="what"><span class="idle">not seen</span></span></div>`;
-    if(st==="idle")return `<div class="probe-row"><span class="who">${esc(r)}</span><span class="what"><span class="idle">idle${since?" "+esc(since):""}</span>${card?`<span class="idle">last on ${esc(card)}</span>`:""}</span></div>`;
-    return `<div class="probe-row"><span class="who">${esc(r)}</span><span class="what"><span>working${card?" on "+esc(card):""}</span>${tool?`<span>${esc(tool)}</span>`:""}${since?`<span>${esc(since)}</span>`:""}</span></div>`}).join("");
+  const roles=Object.keys(s.agents).filter(r=>/^[A-Za-z][A-Za-z0-9]{1,23}$/.test(r)).sort(),ag=r=>s.agents[r]||{};
+  const st=r=>["working","idle","unknown"].includes(ag(r).state)?ag(r).state:"unknown";
+  const at=a=>isT(a.since)?esc(hhmm(a.since)):"",tool=a=>typeof a.tool==="string"&&/^[A-Za-z]{1,30}$/.test(a.tool)?esc(a.tool):"";
+  const working=roles.filter(r=>st(r)==="working").map(r=>{const a=ag(r),card=probeCard(s,a.card),t=at(a);
+    return `<div class="probe-row"><span class="who">${esc(r)}</span><span class="what">${probeParts([`working${card?" on "+card:""}`,tool(a),t?"since "+t:""])}</span></div>`}).join("");
+  const idle=roles.filter(r=>st(r)==="idle").map(r=>{const a=ag(r),card=probeCard(s,a.card),t=at(a),more=[t,card?"last "+card:""].filter(Boolean).join(", ");return `<span class="nw">${esc(r)}${more?` (${more})`:""}</span>`});
+  const unseen=roles.filter(r=>st(r)==="unknown").map(r=>`<span class="nw">${esc(r)}</span>`);
+  const quiet=(idle.length?`<div class="probe-line">Idle: ${idle.join(", ")}</div>`:"")+(unseen.length?`<div class="probe-line">Not seen: ${unseen.join(", ")}</div>`:"");
   const cards=Object.keys(s.cards).filter(id=>{const c=s.cards[id];return c&&typeof c.headSha12==="string"&&/^[0-9a-f]{12}$/.test(c.headSha12)&&c.phase!=="live"}).sort().map(id=>{const c=s.cards[id];
     const ph=typeof c.phase==="string"?(PHASES.find(x=>x[0]===c.phase)||[,""])[1]:"";
     const ci=["queued","running","passed","failed","cancelled"].includes(c.ci)?`CI ${c.ci}${Number.isInteger(c.ciMin)?" "+c.ciMin+" min":""}`:"";
     const signed=Array.isArray(c.signed)?c.signed.filter(p=>typeof p==="string"&&PHASES.some(x=>x[0]===p)).map(p=>PHASES.find(x=>x[0]===p)[1]):[];
-    return `<div class="probe-row"><span class="who">${esc(probeCard(s,id))}</span><span class="what">${ph?`<span>${esc(ph)}</span>`:""}<span class="idle">${esc(c.headSha12.slice(0,8))}</span>${signed.length?`<span>signed: ${esc(signed.join(", "))}</span>`:""}${ci?`<span>${esc(ci)}</span>`:""}${c.onMain===true?"<span>on main</span>":""}</span></div>`}).join("");
-  return rows+(cards?`<div class="note">Cards by the repository</div>${cards}`:"")}
+    return `<div class="probe-row"><span class="who">${probeCard(s,id)}</span><span class="what">${probeParts([ph?esc(ph):"",`<span class="idle">${esc(c.headSha12.slice(0,8))}</span>`,signed.length?"signed: "+esc(signed.join(", ")):"",ci?esc(ci):"",c.onMain===true?"on main":""])}</span></div>`}).join("");
+  return working+quiet+(cards?`<h3 class="probe-sub">From the repository</h3>${cards}`:"")}
 function renderProbe(){const el=$("probe");if(!el)return;el.hidden=!probe&&!probeNote;if(el.hidden)return;
   const asof=$("probe-asof");if(probe){asof.dataset.asof=probe.board.at;asof.textContent=asOfText(probe.board.at);asof.classList.toggle("stale",Date.now()-probe.board.at>PROBE_OLD)}else{delete asof.dataset.asof;asof.textContent=""}
   $("probe-body").innerHTML=(probe?probeHtml(probe):"")+(probeNote?`<div class="note">${esc(probeNote)}${probeAsk?' <button type="button" class="viewlink" id="probe-allow">Allow</button>':""}</div>`:"")}

@@ -33,6 +33,24 @@ export const RELEASE_ENTRIES = ["scripts/board-release.mjs", "scripts/current.mj
 // The capabilities the board page is published with; a new one is the owner's (README, "The page").
 // mcp (#C420): the Studio's state through the owner's "Flight Board State" connector, its board_state tool only.
 export const PAGE_CAPABILITIES = ["db", "comments", "assets", "downloads", "mcp"];
+// The whole declaration the page is published with: mcp exactly this one connector and tool (Security). The publish hook
+// passes no capabilities at all, so only a publish the owner approves can declare them; this says what that one is.
+export const PAGE_MCP = { servers: [{ server: "Flight Board State", tools: ["board_state"] }] };
+export const PAGE_DECLARATION = { db: {}, comments: {}, assets: {}, downloads: true, mcp: PAGE_MCP };
+// The page's connector calls, each against PAGE_MCP: the names as the page's one constant line, and every callTool,
+// watchTool, server, describeTool or listTools call made with exactly those two constants. [] when it fits.
+export function pageMcpErrors(html) {
+  const s = String(html ?? ""), e = [];
+  const { server, tools: [tool] } = PAGE_MCP.servers[0];
+  const decl = [...s.matchAll(/const STATE_SERVER="([^"]*)",STATE_TOOL="([^"]*)"/g)];
+  if (/\bmcp\b/.test(s) && /claude\.use\(\s*["'`]mcp/.test(s)) {
+    if (decl.length !== 1 || decl[0][1] !== server || decl[0][2] !== tool) e.push(`the page's mcp names aren't exactly ${server} / ${tool}`);
+    for (const m of s.matchAll(/\.(callTool|watchTool|server|describeTool|listTools|invalidate)\s*\(([^)]*)/g)) {
+      if (!/^(callTool|watchTool)$/.test(m[1]) || !/^\s*STATE_SERVER\s*,\s*STATE_TOOL\s*[,)]?/.test(m[2] + ")")) e.push(`the page calls mcp.${m[1]} beyond ${server} / ${tool}`);
+    }
+  }
+  return e;
+}
 export const PROMPT_FILE = "collector/PROMPT.txt";
 const PAGE_FILE = "page/board.template.html";
 
@@ -90,7 +108,7 @@ export function pendingPack({ descends, range, sameAs }) {
 // The verdict, from the facts only. changed: the files that differ from the pinned commit (null: no pinned commit);
 // owned: the owner's closure (OWNER_ENTRIES and RELEASE_ENTRIES) at the pinned commit and at this one. pending: what
 // pendingPack found; a waiting pack it accepts (sha set) covers the pinned changes and the settings block.
-export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, pending = null }) {
+export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null }) {
   const r = [];
   if (!/^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim())) r.push(`no PASS from Checker on it in ${NOTES.checker}`);
   if (!/^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim())) r.push(`no SECURE from Security on it in ${NOTES.security}`);
@@ -106,6 +124,7 @@ export function verdict({ forward, notes, pinned, changed, owned, settingsChange
   if (stepsChanged && !promptChanged) r.push(`${TASK_FILE}: the task's steps changed but ${PROMPT_FILE} didn't`);
   const extra = (capabilities ?? []).filter((c) => !PAGE_CAPABILITIES.includes(c));
   if (extra.length) r.push(`the page asks for a capability beyond ${PAGE_CAPABILITIES.join(", ")}: ${extra.join(", ")} (a new capability is the owner's)`);
+  for (const m of mcpErrors) r.push(`${m} (a wider mcp capability is the owner's)`);
   return { ok: r.length === 0, refusals: r, promptNeeded: Boolean(promptChanged) };
 }
 
@@ -170,9 +189,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       pending = pendingPack({ descends: quiet(["merge-base", "--is-ancestor", pinned, sha]) !== null, range, sameAs });
     }
     const base = known(before) ? before : known(pinned) ? pinned : null; // what the task runs now
-    const capabilities = pageCapabilities(at(sha)(PAGE_FILE));
+    const capabilities = pageCapabilities(at(sha)(PAGE_FILE)), mcpErrors = pageMcpErrors(at(sha)(PAGE_FILE));
     const v = verdict({
-      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, pending,
+      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending,
       settingsChanged: known(pinned) && settingsBlock(at(pinned)(TASK_FILE)) !== settingsBlock(at(sha)(TASK_FILE)),
       stepsChanged: base !== null && stepsOf(at(base)(TASK_FILE)) !== stepsOf(at(sha)(TASK_FILE)),
       promptChanged: base === null || at(base)(PROMPT_FILE) !== at(sha)(PROMPT_FILE),
@@ -204,7 +223,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     execFileSync(process.execPath, [join(self, "current.mjs"), sha, "--repo", repo], { stdio: "inherit" });
     if (linkedCommit(link) !== sha) throw new Error(`main is ${sha.slice(0, 12)} but the current link is not: tell the lead`);
     console.log(`Released ${sha.slice(0, 12)} to flight-board main; the collector's next run uses it.`);
-    console.log(`Page: ${page}. Republish it as the board, with exactly the capabilities ${PAGE_CAPABILITIES.join(", ")}.`);
+    console.log(`Page: ${page}. Republish it as the board, with exactly the capabilities ${PAGE_CAPABILITIES.join(", ")} (when declared: ${JSON.stringify(PAGE_DECLARATION)}).`);
     if (v.promptNeeded) console.log(`Prompt: ${promptPath}. Save it into the task: update_scheduled_task ${config.collector.refresh.taskId}, the prompt set to the whole file.`);
     else console.log("Prompt: unchanged; the task stays as it is.");
   } catch (e) { console.error(`Not released: ${String(e.message).split("\n")[0]}`); process.exit(1); }

@@ -25,10 +25,13 @@ export const toolClass = (name) => {
 export const AGENT_STATES = ["working", "idle", "unknown"];
 export const CI_STATES = ["none", "queued", "running", "passed", "failed", "cancelled"];
 
+// The board's real shapes, no wider (Security): a card id is 1 to 5 lowercase words joined by "-", 40 characters at most
+// (today's longest is 29); a role one word; a phase one lowercase word. None fits a sentence.
 const BOARD_ID = /^[A-Za-z0-9-]{1,64}$/;
-export const CARD_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-export const ROLE = /^[A-Za-z0-9_-]{1,60}$/;
-const PHASE = /^[a-z][a-z0-9-]{0,29}$/;
+export const CARD_ID = /^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/;
+export const CARD_ID_MAX = 40;
+export const ROLE = /^[A-Za-z][A-Za-z0-9]{1,23}$/;
+const PHASE = /^[a-z]{2,16}$/;
 const SHA12 = /^[0-9a-f]{12}$/;
 const VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
 
@@ -37,7 +40,7 @@ const plain = (v) => v !== null && typeof v === "object" && !Array.isArray(v) &&
 const isTime = (v) => Number.isInteger(v) && v >= 1577836800000 && v <= 4102444800000;
 const nullOr = (test) => (v) => v === null || test(v);
 const re = (r) => (v) => typeof v === "string" && r.test(v);
-const isId = (v) => re(CARD_ID)(v) && v.length <= 80;
+const isId = (v) => re(CARD_ID)(v) && v.length <= CARD_ID_MAX;
 
 const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pageVersion: nullOr(re(SHA12)) };
 const CARD = {

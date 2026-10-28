@@ -276,13 +276,17 @@ changes none of them):
   tool, `board_state`. Each board's Worker secret holds only sha256 of its token and of its path, compared in constant time.
   At most 64 KB, one POST per 30 s, the latest only (KV); anything else, a wrong path included, is a bare 404; no CORS.
   It may share the account with other Workers, so it keeps apart from them: its own name, `wrangler.toml`, KV namespace
-  and secrets, no route on any zone (its workers.dev address only), nothing else bound. KV writes are the account's (1,000
-  a day on Workers Free, for every Worker on it), so it stores a POST only when what the page shows changed (a card's
-  phase, head, reviews, main, CI state, version; an agent's state, card, since), else every 15 min, and at most
-  `WRITES_PER_DAY` a UTC day (500 unless `--writes` says otherwise); a POST past that is a 429 until midnight UTC.
+  and secrets, no route on any zone (its workers.dev address only), nothing else bound. KV writes are the account's, for
+  every Worker on it (Workers Paid includes a million a month; Workers Free allows 1,000 a day), so it stores a POST only
+  when what the page shows changed (a card's phase, head, reviews, main, CI state, version; an agent's state, tool, card,
+  since), else every 15 min, and at most `WRITES_PER_DAY` a UTC day (2,000 unless `--writes` says otherwise: more than a
+  day of the probe's 1,440 posts, so it only stops a runaway poster); a POST past that is a 429 until midnight UTC.
 - **The page's "Right now" section**, through the owner's claude.ai connector named exactly **Flight Board State** (the
-  `mcp` capability, its `board_state` only; the page reads it once a minute). Without the connector the section stays
-  hidden and the board is what the Collector's `derived/all` makes it.
+  `mcp` capability, its `board_state` only; the page reads it once a minute). Working agents each get a row ("working on
+  #C420 · Bash · since 3:25 PM"), then one line for the idle ones and one for those not seen; then each card in flight
+  "From the repository". Without the connector the section stays hidden and the board is what the Collector's
+  `derived/all` makes it. The release tool refuses a page whose `mcp` use goes beyond that one connector and tool
+  (`PAGE_MCP`, `pageMcpErrors`); the whole declaration a publish carries is `PAGE_DECLARATION`.
 
 **What leaves the Studio** is exactly `collector/state-schema.mjs` (Security's data plan), checked by the script before
 it posts, by the Worker on every POST, and again on what the tool answers (rebuilt field by field, never the stored text):
@@ -292,19 +296,20 @@ id and since. Ids, enums, numbers and times only: no session title, no transcrip
 text is never logged, cached or written. An error never quotes what it refused.
 
 **The owner's install**, from the pinned copy, in the owner's own terminal (`scripts/state-install.mjs`; a pack's steps
-give the exact commands):
+give the exact commands). Every wrangler call is the script's, at one exact version (`WRANGLER_VERSION`), run from the
+pinned copy's folder, with the login wrangler already has on that machine:
 
-1. `npx --yes wrangler@4 whoami`: the account wrangler is logged in to (its name and id); it must be the owner's. Then
-   `npx --yes wrangler@4 kv namespace create flight-board-state`, then `node ~/.flight-board/install/<sha>/scripts/
-   state-install.mjs worker --config <board.config.json> --kv <its id> --account <the account id>` (writes
+1. `node ~/.flight-board/install/<sha>/scripts/state-install.mjs whoami --config <board.config.json>`: the account wrangler
+   is logged in to (its name and id); it must be the owner's. Then `… kv --config …` (the Worker's own KV namespace,
+   `flight-board-state`), `… worker --config … --kv <its id> --account <the account id>` (writes
    `~/.flight-board/worker/wrangler.toml`: this copy's Worker, pinned to that account, one workers.dev address, no route,
-   no preview ones) and `npx --yes wrangler@4 deploy --config ~/.flight-board/worker/wrangler.toml`.
-2. `node … state-install.mjs secrets --config <board.config.json> --url https://flight-board-state.<you>.workers.dev`:
-   makes the token (32 random bytes) and the MCP path (16) into `<stateDir>/<board>/state-secrets/secrets.json` (0600 in a
-   0700 folder), hands the Worker their hashes on wrangler's stdin, and puts the connector URL on the clipboard. Neither
-   is printed.
-3. In claude.ai, Settings, Connectors: add a custom connector named **Flight Board State** with that URL. The URL is a
-   bearer secret: it goes there and nowhere else; copy something else once it is pasted.
+   no preview ones) and `… deploy --config …`.
+2. `… secrets --config <board.config.json> --url https://flight-board-state.<you>.workers.dev`: makes the token (32 random
+   bytes) and the MCP path (16) into `<stateDir>/<board>/state-secrets/secrets.json` (0600 in a 0700 folder), hands the
+   Worker their hashes on wrangler's stdin, and puts the connector URL on the clipboard. Neither is printed.
+3. In claude.ai, Settings, Connectors: add a custom connector named **Flight Board State** with that URL, then press
+   Return in the terminal: the script clears the clipboard. The URL is a bearer secret: it goes there and nowhere else (a
+   clipboard manager or Universal Clipboard may keep a copy: clear it there too).
 4. `node … state-install.mjs launchd --config <board.config.json>`: writes and loads
    `~/Library/LaunchAgents/com.flight-board.state.<board>.plist`; its one line per run goes to `<stateDir>/<board>/state.log`.
 

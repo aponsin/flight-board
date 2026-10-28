@@ -10,17 +10,18 @@
 import { stateErrors, pickState, MAX_BYTES } from "../collector/state-schema.mjs";
 
 export const RATE_MS = 30_000;
-// KV writes are the account's (Workers Free: 1,000 a day, shared with every other Worker on it):
-// a POST is stored only when what the page shows changed (changeKey), or as a heartbeat every HEARTBEAT_MS, and never
-// more than WRITES_PER_DAY times a UTC day (a [vars] value in wrangler.toml; 500 when unset). An unchanged POST is a 204
-// that writes nothing; one past the budget a 429 until midnight UTC.
-export const HEARTBEAT_MS = 15 * 60e3, WRITES_DEFAULT = 500;
+// KV writes are the account's, shared with every other Worker on it (Workers Paid, the owner's plan: a million a month
+// included; Workers Free: 1,000 a day). A POST is stored only when what the page shows changed (changeKey), else as a
+// heartbeat every HEARTBEAT_MS, and never more than WRITES_PER_DAY times a UTC day (a [vars] value in wrangler.toml;
+// WRITES_DEFAULT when unset). The probe posts once a minute, 1,440 a day at most, so the default never stops a day's
+// changes (Checker); the cap is there for a runaway poster. An unchanged POST is a 204 that writes nothing; one past the
+// budget a 429 until midnight UTC.
+export const HEARTBEAT_MS = 15 * 60e3, WRITES_DEFAULT = 2000;
 // What the page shows, without the times that move on every run (board.at, each card's at, lastActivityAt) and the
-// numbers that tick (ciMin), nor the tool an agent last called (it changes every few seconds; the heartbeat carries it):
-// a write when an agent starts or ends a turn or moves to another card, or a card moves.
+// numbers that tick (ciMin).
 export const changeKey = (s) => JSON.stringify([
   Object.entries(s.cards).map(([id, c]) => [id, c.num, c.phase, c.headSha12, c.signed, c.onMain, c.ci, c.liveVersion]),
-  Object.entries(s.agents).map(([r, a]) => [r, a.state, a.card, a.since]),
+  Object.entries(s.agents).map(([r, a]) => [r, a.state, a.tool, a.card, a.since]),
   s.board.probe, s.board.pageVersion,
 ]);
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];

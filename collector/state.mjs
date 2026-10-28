@@ -15,7 +15,7 @@ import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
+import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
 
 // The folder this run's code lives in: the pinned copy <install root>/<full sha>, whose sha is the board's probe.
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -64,11 +64,15 @@ export function appSessions(root, uid = process.getuid()) {
 }
 
 // A session's transcript: <home>/.claude/projects/<cwd, every character but a letter or digit as "-">/<id>.jsonl, a
-// file that really sits there (no link out of the projects folder).
+// file that really sits there: neither it nor its folder a link out of the projects folder (Security).
 export function transcriptPath(homeDir, cwd, id) {
-  const dir = join(homeDir, ".claude", "projects", String(cwd).replace(/[^A-Za-z0-9]/g, "-"));
+  const root = join(homeDir, ".claude", "projects"), dir = join(root, String(cwd).replace(/[^A-Za-z0-9]/g, "-"));
   const p = join(dir, `${id}.jsonl`);
-  try { return realpathSync(p) === join(realpathSync(dir), `${id}.jsonl`) ? p : null; } catch { return null; }
+  try {
+    const realDir = realpathSync(dir);
+    if (!realDir.startsWith(realpathSync(root) + "/")) return null;
+    return realpathSync(p) === join(realDir, `${id}.jsonl`) ? p : null;
+  } catch { return null; }
 }
 
 // Its last TAIL_ENTRIES user and assistant entries, oldest first (a line cut by the tail's start is dropped).
@@ -93,7 +97,7 @@ const isPrompt = (e) => e.type === "user" && (typeof e.message.content === "stri
 // The card a session is on: the newest entry naming a card on the board, and in it the last such name (an exact id, or
 // #C<num> of a card on the board). Only the id leaves; the text is read here and dropped.
 export function cardIn(entries, ids, nums) {
-  const known = [...ids].filter((id) => CARD_ID.test(id)).sort((a, b) => b.length - a.length);
+  const known = [...ids].filter((id) => CARD_ID.test(id) && id.length <= CARD_ID_MAX).sort((a, b) => b.length - a.length);
   const re = new RegExp(`${known.length ? `(?<![A-Za-z0-9-])(${known.join("|")})(?![A-Za-z0-9-])|` : ""}#C(\\d{1,6})(?!\\d)`, "g");
   for (let k = entries.length - 1; k >= 0; k--) {
     let text = "";
@@ -246,7 +250,7 @@ export function cardState(card, repo, config, now) {
 
 export function cardStates({ cards, config, repos, now }) {
   const out = {};
-  for (const card of cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= 80).slice(0, MAX_CARDS)) {
+  for (const card of cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX).slice(0, MAX_CARDS)) {
     const r = repoOf(card, config);
     out[card.id] = cardState(card, repos[r ? r.name : ""] ?? null, config, now);
   }
