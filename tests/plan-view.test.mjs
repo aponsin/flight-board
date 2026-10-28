@@ -132,7 +132,7 @@ test("Crew: a tile per agent with its model and effort, its memory and what it i
     plan: [], ideas: [], threads: [], waiting: [], derived: [],
     meta: [{ id: "models", agents: { Builder: { model: "opus", effort: "high" } } }, { id: "crew", notes: { Checker: "Reviewing nothing" } },
       { id: "context", at: now - 6e4, agents: { Builder: { pct: 82, saved: true }, Scout: { pct: 10 } } }],
-    ctx: [{ id: "Builder", pct: 30, at: now - 1e4 }],
+    ctx: [{ id: "Builder", pct: 55, at: now - 1e4 }],
     initiatives: [
       { id: "c1", name: "Ship the sign", who: "Builder", status: "active", phase: "build", etaLive: now + 9e6 },
       { id: "c2", name: "Order paint", who: "Builder", status: "queued", phase: "plan" },
@@ -142,7 +142,7 @@ test("Crew: a tile per agent with its model and effort, its memory and what it i
   });
   const html = b.crewHtml(now);
   assert.match(html, /data-agent="Builder"><h3><span>Builder<\/span><span class="mdl">opus · high<\/span><\/h3>/);
-  assert.match(html, /data-agent="Builder">[\s\S]*?Memory 30%[\s\S]*?\/clear me/, "the fresher ctx reading, and saved: ready to clear");
+  assert.match(html, /data-agent="Builder">[\s\S]*?Memory 55%[\s\S]*?\/clear me/, "the fresher ctx reading, and saved: ready to clear (#C374: still amber, so the flag is live)");
   assert.match(html, /<span>Ship the sign · Build<\/span><span>⧗ Order paint · Plan<\/span>/, "its cards, queued marked");
   assert.match(html, /data-agent="Checker">[\s\S]*?Door review · Ship/);
   assert.match(html, /data-agent="Scout">[\s\S]*?<span class="idle">Idle<\/span>/, "an agent with only a memory reading still gets a tile");

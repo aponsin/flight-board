@@ -1710,10 +1710,14 @@ function ctxLevel(t){const k=t&&t.tokens;
   if(!t||num(t.pct)==null)return null;
   const p=Math.max(0,Math.min(100,Math.round(t.pct)));
   return {txt:`${p}%`,c:p>=70?"r":p>=40?"a":"g",w:p,tip:`${p}% of its memory used`}}
+// "/clear me" (#C374, the owner in #T991): the keeper's saved flag is never cleared, so after a reset it stayed over a
+// fresh, low reading. A save is only asked for high up (the keeper at 60%, the reset cue over 200k), so a flag beside a
+// green reading is from before the reset and isn't shown.
+function clearMe(t){const L=t&&t.saved?ctxLevel(t):null;return !!L&&L.c!=="g"}
 function renderCtx(){const a=ctxAgents();
   const ORDER=CONFIG.order;
   const names=[...ORDER.filter(n=>a[n]),...Object.keys(a).filter(n=>!ORDER.includes(n)).sort()];
-  const ready=names.filter(n=>a[n].saved);
+  const ready=names.filter(n=>clearMe(a[n]));
   $("ctxnote").textContent=ready.length?`${ready.length} to clear: ${ready.join(", ")}`:"";
   const now=Date.now();
   $("ctx").innerHTML=names.length?names.map(n=>ctxTileHtml(n,a[n],ctxRequest(n),now)).join(""):'<div class="note">No check yet.</div>';
@@ -1732,7 +1736,8 @@ function ctxTileHtml(n,t,req,now){const L=ctxLevel(t)||ctxLevel({pct:0}),c=L.c;
   const st=waiting?"waking…":noAnswer?`${n} didn't answer`:asked?`no new reading: ${n}'s session isn't running`:old?`${dur(now-t.at)} old`:"";
   // ↻ alone, as on cards (#C355, #C361); the label says what it does.
   const ref=old&&!waiting?` <button type="button" class="ctx-ref" data-ctxref="${esc(n)}" aria-label="Refresh ${esc(n)}'s reading" title="Refresh ${esc(n)}'s reading">↻</button>`:"";
-  return `<div class="ctx-t ${c}${t.saved?" saved":""}${old?" stale":""}" title="${esc(n)}: ${esc(L.tip)}${num(t.at)?", read "+dur(now-t.at)+" ago":""}${t.saved?"; saved, ready to clear":""}"><span class="nm">${esc(n)}<span class="pc">${esc(L.txt)}</span></span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${t.saved?'<span class="sv">/clear me</span>':""}${st?`<span class="ctx-line"><span class="ctx-st">${esc(st)}</span>${ref}</span>`:""}</div>`}
+  const sv=clearMe(t);
+  return `<div class="ctx-t ${c}${sv?" saved":""}${old?" stale":""}" title="${esc(n)}: ${esc(L.tip)}${num(t.at)?", read "+dur(now-t.at)+" ago":""}${sv?"; saved, ready to clear":""}"><span class="nm">${esc(n)}<span class="pc">${esc(L.txt)}</span></span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${sv?'<span class="sv">/clear me</span>':""}${st?`<span class="ctx-line"><span class="ctx-st">${esc(st)}</span>${ref}</span>`:""}</div>`}
 function ctxRefreshWrites(n,now){return /^[A-Za-z0-9_-]{1,60}$/.test(String(n))?[{op:"set",path:`ctxRequests/${n}`,data:{at:now}}]:[]}
 const ctxPingText=n=>`Board: refresh ${n}'s memory tile (wake ${n}, then run board-collector)`;
 document.addEventListener("click",async e=>{const r=e.target.closest&&e.target.closest("[data-ctxref]");if(!r||!dbRef)return;
@@ -1914,7 +1919,7 @@ function crewHtml(now=Date.now()){
     const items=(by[n]||[]).slice().sort(openOrder);
     const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1];return `<span>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(notes[n]||"Idle")}</span>`;
     return `<div class="panel crew3-t" data-agent="${esc(n)}"><h3><span>${esc(n)}</span>${md.model||md.effort?`<span class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</span>`:""}</h3>`+
-      (L?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${esc(L.txt)}</span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${m.saved?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
+      (L?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${esc(L.txt)}</span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${clearMe(m)?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
       `<div class="crew3-on">${on}</div></div>`}).join("");
   const tot=logTotals("phase",now),fmt=ms=>ms?dur(ms):"—";
   const rows=PHASES.filter(([k])=>tot[k]).map(([k,label])=>`<tr><td>${esc(label)}</td><td>${fmt(tot[k].work)}</td><td>${fmt(tot[k].busy)}</td><td>${fmt(tot[k].gate)}</td></tr>`).join("");
