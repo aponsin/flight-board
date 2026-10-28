@@ -29,6 +29,12 @@ test("lettered choices in any other message are refused: A) B), 'A:' and 'A (my 
   }
 });
 
+test("Checker on f047a36: ordinary English, '(s)', log lines and a parenthesis in a sentence pass", () => {
+  for (const text of ["The option I recommend is the first.", "Another option a team could use is X.", "Fixed the file(s) and kept (a) the tile.", "Log:\nE: timeout\nF: retry", "A (small) fix shipped.\nB: next", "Plan B is to wait.", "Q: why?\nA: because"]) {
+    assert.equal(say({ kind: "answer", text }), "", text);
+  }
+});
+
 test("plain words and numbered steps pass", () => {
   assert.equal(say({ kind: "answer", text: "Done: 1) push, 2) run the pack, 3) reopen the app." }), "");
   assert.equal(say({ kind: "live", text: "Live in v3.17. A note: Security verified it." }), "");
