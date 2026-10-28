@@ -12,6 +12,6 @@
   "expect": {
     "ack-bare": { "section": "none", "rows": 0 },
     "done-bare": { "section": "none", "rows": 0 },
-    "chose-bare": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager" }
+    "chose-bare": { "section": "waiting-on-manager", "rows": 1, "badge": "with the team" }
   }
 }

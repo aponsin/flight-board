@@ -126,7 +126,7 @@ test("Waiting on Manager: answered asks, then threads whose last word is the own
   const html = b.threadsHtml(T + 10);
   assert.ok(html.indexOf("Question one") > -1, html);
   assert.doesNotMatch(html, /Resolved threads/, "resolved threads have their own place at the end");
-  assert.match(html, /Question one<\/b><span class="t-badge open">waiting on Manager/);
+  assert.match(html, /Question one<\/b><span class="t-badge open">with the team/);
   assert.match(b.resolvedHtml(T + 10), /Reply to: <b class="t-name">New ask[\s\S]*Done one/);
   assert.doesNotMatch(html, /Idea two|Old ask/, "answered threads are the owner's to read, and older resolved ones are out of view");
   const answered = b.threadRows(T + 10).answered;
@@ -187,7 +187,7 @@ test("wake: at once by default; meta/board.wake \"batch\" saves without a ping, 
 test("an initiative carries its thread, folded, marked when Manager owes an answer", () => {
   const b = board({ steps: [], waiting: [], messages: [msg("x", "Owner", "Is this still on?", T)] });
   const html = b.initRow(b.gates(b.enrich({ id: "x", name: "X", status: "active", level: "Quick", skip: ["plan"] })));
-  assert.match(html, /<details class="i-thread" data-id="ith-x"><summary>Thread \(1\)<span class="t-badge open">waiting on Manager/);
+  assert.match(html, /<details class="i-thread" data-id="ith-x"><summary>Thread \(1\)<span class="t-badge open">with the team/);
   assert.match(html, /Is this still on\?/);
 });
 

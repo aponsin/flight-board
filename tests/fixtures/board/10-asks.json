@@ -26,11 +26,11 @@
   },
   "expect": {
     "asked": { "section": "needs-you", "rows": 1, "badge": "waiting on you" },
-    "answered": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager" },
+    "answered": { "section": "waiting-on-manager", "rows": 1, "badge": "with the team" },
     "acked": { "section": "none", "rows": 0 },
     "acted": { "section": "resolved", "rows": 1, "badge": "resolved" },
-    "reopened": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager", "threadUnder": true },
-    "asks-more": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager", "threadUnder": true },
+    "reopened": { "section": "waiting-on-manager", "rows": 1, "badge": "with the team", "threadUnder": true },
+    "asks-more": { "section": "waiting-on-manager", "rows": 1, "badge": "with the team", "threadUnder": true },
     "acked-thanks": { "section": "resolved", "rows": 1, "badge": "resolved" }
   }
 }

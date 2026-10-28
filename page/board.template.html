@@ -39,6 +39,10 @@ section{min-width:0}
 .kind.session{background:var(--accent-soft);color:var(--accent)}
 .kind.later{background:var(--track);color:var(--muted)}
 .kind.answer{background:var(--ok-soft);color:var(--ok)}
+/* A thread's state (#C364): Question as an ask, Building blue, Live green as an answer, Decision as a decision. */
+.kind.building{background:var(--accent-soft);color:var(--accent)}
+.kind.live{background:var(--ok-soft);color:var(--ok)}
+.t-with{margin-top:2px}.c-from{font-size:.8rem;color:var(--muted);margin-right:8px;white-space:nowrap}
 .w-answer{white-space:pre-line}
 /* The item's own text on its own line under the #T number, title and badge (#C234: it ran on after the badge). */
 .w-body,.w-answer{display:block;margin-top:4px}
@@ -436,7 +440,7 @@ table.crew3-ph{margin-top:14px}
       <div class="rsearch" id="tsearch"><div class="sbox"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search threads, to-dos and ideas" autocomplete="off"></div><span class="tstat" id="tstat" role="status"></span></div>
       <div id="tp-you" role="tabpanel" aria-labelledby="tab-you"><div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div></div>
       <div id="tp-later" role="tabpanel" aria-labelledby="tab-later" hidden><div class="waiting" id="later"></div></div>
-      <div id="tp-lead" role="tabpanel" aria-labelledby="tab-lead" hidden><div class="waiting" id="threads"><div class="empty">Nothing waiting on Manager.</div></div></div>
+      <div id="tp-lead" role="tabpanel" aria-labelledby="tab-lead" hidden><div class="waiting" id="threads"><div class="empty">Nothing with the team.</div></div></div>
       <div id="tp-todo" role="tabpanel" aria-labelledby="tab-todo" hidden>
         <div id="todolist"><div class="empty">Nothing on the list yet.</div></div>
         <form class="todo-add" id="todoadd" data-coll="todo"><label class="sr" for="todonew">Add a to-do</label><input id="todonew" maxlength="200" placeholder="Add something to do at some point" autocomplete="off"><button type="submit">Add</button></form>
@@ -506,7 +510,7 @@ function hhmm(t){const d=new Date(t);return d.toLocaleTimeString([], {hour:"2-di
 function dayLabel(t){const d=new Date(t),n=new Date();if(d.toDateString()===n.toDateString())return hhmm(t);return d.toLocaleDateString([], {month:"short",day:"numeric"})+" "+hhmm(t)}
 
 // Where an ask shows in the Threads panel: under "Needs you" while it is open and unanswered (or answered under 2.5 s
-// ago, the "sent" moment), then under "Waiting on Manager" until Manager closes it, with the reply and its thread.
+// ago, the "sent" moment), then under "With the team" until Manager closes it, with the reply and its thread.
 const SENT_MS=2500;
 const answered=(w,now)=>!!(w.response&&w.response.at&&now-w.response.at>SENT_MS);
 // A note that only acknowledges ("ok", "done.", "Thanks!"): it asks Manager nothing (#C268: an Ack with "ok" and a Done
@@ -521,24 +525,26 @@ function needsYou(w,now){return !settled(w)&&!answered(w,now)}
 function onLead(w,now){return !settled(w)&&answered(w,now)}
 // Who something waits on now: the one answer its badge and its section both come from, so they can never disagree
 // (#C236: an answered ask under "Waiting on Manager" still said "waiting on you"). An open ask: "you" (unanswered) or
-// "lead" (answered, not closed). Any other thread: "lead" (the owner's word is the last), "resolved", "answered"
-// (Manager's word is the last: the owner reads it, under Needs you), or null with no messages.
+// "lead" (answered, not closed). Any other thread: "lead" (the owner's word is the last, or it became a card still in
+// flight: #C364), "resolved", "answered" (Manager's word is the last: the owner reads it, under Needs you), or null with
+// no messages.
 function waitsOn(id,now){const it=itemOf(id);
   if(it&&it.coll==="waiting"&&!settled(it.doc))return needsYou(it.doc,now)?"you":"lead";
   if(!threadOf(id).length)return null;
-  return threadOpen(id)?"lead":threadResolved(id)?"resolved":"answered"}
-// The badge for a waitsOn answer: the only place the page writes one.
-function badge(on){return on==="you"?'<span class="t-badge you">waiting on you</span>':on==="lead"?'<span class="t-badge open">waiting on Manager</span>':on==="resolved"?'<span class="t-badge res">resolved</span>':on==="answered"?'<span class="t-badge ">answered</span>':""}
+  return threadOpen(id)?"lead":threadResolved(id)?"resolved":threadState(id)==="building"?"lead":"answered"}
+// The badge for a waitsOn answer: the only place the page writes one. "lead" is the With the team tab (#C364).
+function badge(on){return on==="you"?'<span class="t-badge you">waiting on you</span>':on==="lead"?'<span class="t-badge open">with the team</span>':on==="resolved"?'<span class="t-badge res">resolved</span>':on==="answered"?'<span class="t-badge ">answered</span>':""}
 // Whether an item is drawn with its thread under it: an open ask (either section), a closed one whose thread waits on
 // Manager (a real question after it closed: the ask itself shows, never a second "Reply to" row, #C268), or an
 // initiative in flight. Its thread then stays there (a reply under an item once showed as a card of its own).
 function itemShown(id,now){const it=itemOf(id);if(!it)return false;
   return it.coll==="waiting"?!settled(it.doc)||threadOpen(id):it.coll==="initiatives"?it.doc.status!=="done":false}
 // An ask as a row that opens to its steps, its reply buttons (or the sent line) and its thread.
-// at: the time its age counts from (Waiting on Manager passes the ask's newest word); else when it was asked.
-function askHtml(w,open,at=w.since){const steps=Array.isArray(w.steps)?w.steps:[];
+// at: the time its age counts from (With the team passes the ask's newest word); else when it was asked. sub: a line
+// under its text (With the team's "Manager answering", #C364).
+function askHtml(w,open,at=w.since,sub=""){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
-   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}</div>
+   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${linkify(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
    <span class="age">${num(at)?dur(Date.now()-at)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
@@ -881,6 +887,32 @@ function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"
 // Resolved: its item is done (an ask or idea done, an initiative done), or Manager's last word marked it resolved.
 function threadResolved(id){if(threadOpen(id))return false;const it=itemOf(id),t=threadOf(id),last=t[t.length-1];
   if(last&&last.resolved)return true;if(!it)return false;return it.coll==="initiatives"?it.doc.status==="done":it.coll==="waiting"?settled(it.doc):!!it.doc.done}
+// The cards a thread became (#C364): a card names its thread (thread) or several (threads: []). Indexed once per data
+// update (renderAll makes state.initiatives anew).
+let tcOf=null,tcIx=new Map();
+function threadCards(id){if(tcOf!==state.initiatives){tcOf=state.initiatives;tcIx=new Map();
+    (state.initiatives||[]).forEach(i=>{if(i)new Set([i.thread,...(Array.isArray(i.threads)?i.threads:[])]).forEach(t=>{if(typeof t==="string"&&t)(tcIx.get(t)||tcIx.set(t,[]).get(t)).push(i)})})}
+  return tcIx.get(id)||[]}
+const threadCard=id=>threadCards(id).find(i=>i.status!=="done"&&i.status!=="dropped")||null;
+// A thread's state now, not what it started as (#C364, the owner in #T979): "question" (the owner's word is the last),
+// "building" (it became a card still in flight), "live" (Manager's word says so, or the card it became went live before
+// Manager said), "decision" (Manager asks the owner to pick), else "answer" (Manager's word informs). Manager's messages
+// carry it as kind: answer | live | decision | building.
+const TSTATE={question:"Question",building:"Building",answer:"Answer",live:"Live",decision:"Decision"};
+function threadState(id){const t=threadOf(id),last=t[t.length-1];if(!last)return null;
+  if(threadOpen(id))return "question";if(threadCard(id))return "building";
+  const k=last.from===OWNER?"":String(last.kind||"");
+  if(k==="building")return threadCards(id).some(i=>i.status==="done"&&!i.dropped)?"live":"building";
+  return k==="live"||k==="decision"?k:"answer"}
+// A decision's options, from Manager's last word (as an ask's: {key, label}).
+function threadOptions(id){const t=threadOf(id),last=t[t.length-1];
+  return last&&last.from!==OWNER&&Array.isArray(last.options)?last.options.filter(o=>o&&o.key&&o.label):[]}
+// The owner's pick, as the message it sends: "Chose A: Red"; null for a key the decision doesn't offer.
+function optionText(id,key){const o=threadOptions(id).find(o=>String(o.key)===String(key));return o?`Chose ${o.key}: ${o.label}`:null}
+// What a With the team row says it waits on: Manager's answer, or the card it became, its phase and ETA (the tag opens it).
+function withLine(id){if(threadOpen(id)||itemOf(id)&&itemOf(id).coll==="waiting")return `<div class="w-sub t-with">Manager answering</div>`;const c=threadCard(id);if(!c)return "";
+  const eta=cardEta(c),ph=(PHASES.find(p=>p[0]===(notStarted(c)?BUILD_PHASE:c.phase))||[,c.phase||""])[1];
+  return `<div class="w-sub t-with">→ <a href="#" class="t-ref c-ref" data-tref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>${ph?" · "+esc(ph):""}${eta?" · ~"+hhmm(eta):""}</div>`}
 function threadTitle(id){const it=itemOf(id);if(it)return String(it.coll==="initiatives"?it.doc.name:it.doc.text||id);const f=threadOf(id)[0];return f?String(f.text):id}
 // A thread's number and name (threads/<thread id> {num, title}): the lead numbers threads in the order they opened
 // (scripts/thread-ids.mjs); the owner may rename one here. With no name, a short cut of the item's or first message's text.
@@ -914,7 +946,8 @@ function threadWrites(id,text,files,now,kind,rid){
   const it=itemOf(id);if(it&&it.coll!=="initiatives"&&it.doc.done)out.push({op:"update",path:`${it.coll}/${id}`,data:{done:false,reopenedAt:now}});
   return out}
 // The owner's Close: a message marking the thread resolved, and for an ask or an idea the item closed too. No ping.
-function closeWrites(id,now,rid){const out=[{op:"set",path:`messages/m${now}-${rid}`,data:{thread:id,from:OWNER,text:"Closed.",at:now,resolved:true}}];
+// An Ack on Manager's answer or live word is the same close, said as "Ack." (#C364).
+function closeWrites(id,now,rid,text="Closed."){const out=[{op:"set",path:`messages/m${now}-${rid}`,data:{thread:id,from:OWNER,text,at:now,resolved:true}}];
   const it=itemOf(id);if(it&&it.coll!=="initiatives"&&!it.doc.done)out.push({op:"update",path:`${it.coll}/${id}`,data:{done:true,doneAt:now}});
   return out}
 // The text in a reply box, taken out of it at once: a re-draw while the message is saving can't put it back, and a
@@ -941,8 +974,12 @@ function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&
 // unanswered ask draws it with box false, so its own response box above is the only one. where: the place it is drawn
 // (the same thread can show in two places), for unique ids.
 // hint: a muted line under the box (a closed ask's: writing reopens it, #C288).
-function threadHtml(id,where,{box=true,hint=""}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`;
-  return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${keysHint()}${hint?`<div class="keys">${esc(hint)}</div>`:""}${filesHtml(key)}<div class="btns"><button type="button" data-tsend="${esc(id)}" data-where="${esc(where)}">Send</button>${t.length&&!threadResolved(id)?`<button type="button" data-tclose="${esc(id)}" data-where="${esc(where)}">Close</button>`:""}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}${t.slice().reverse().map(msgHtml).join("")}</div>`}
+// acts: a thread row's buttons follow its state (#C364): an answer or live word an Ack (its close), a decision its
+// options, a building thread none; a question keeps Close.
+function threadHtml(id,where,{box=true,hint="",acts=false}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`,st=acts?threadState(id):null,open=t.length&&!threadResolved(id);
+  const at=`data-where="${esc(where)}"`,opts=st==="decision"?threadOptions(id).map(o=>`<button type="button" class="opt" data-topt="${esc(id)}" data-choice="${esc(o.key)}" ${at}><b>${esc(o.key)}</b> ${esc(o.label)}</button>`).join(""):"";
+  const end=!open||st==="building"?"":st==="answer"||st==="live"?`<button type="button" class="ok" data-tack="${esc(id)}" ${at}>Ack</button>`:`<button type="button" data-tclose="${esc(id)}" ${at}>Close</button>`;
+  return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${box?`<div class="reply" data-reply="${esc(key)}"><label for="${esc(tid)}">${t.length?"Reply in this thread":"Start a thread on this"}</label><textarea id="${esc(tid)}" rows="2"></textarea>${keysHint()}${hint?`<div class="keys">${esc(hint)}</div>`:""}${filesHtml(key)}<div class="btns">${opts}<button type="button" data-tsend="${esc(id)}" ${at}>Send</button>${end}</div><div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div></div>`:""}${t.slice().reverse().map(msgHtml).join("")}</div>`}
 // The thread rows whose item is not on the board (a New thread, or an item since closed): open (the owner's word is the
 // last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their
 // own place at the panel's end (resolvedHtml).
@@ -954,9 +991,11 @@ function lateTag(id,now){if(!threadOpen(id))return"";const at=threadLast(id);
   return now-at>=LATE_MIN*60000?`<span class="late">unanswered ${dur(now-at)}</span>`:""}
 // where: the thread's place on the page, for unique box ids. ask: a card's closed ask (#C288), drawn as the ask it was
 // (its own kind and colour, no "Reply to:"), with a hint that writing reopens it.
-function threadRow(id,now,where="panel",ask=null){
-  const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
-  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(waitsOn(id,now))}${lateTag(id,now)}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{})}</details>`}
+// A thread's kind is its state now (#C364): Question, Building #C356, Answer, Live, Decision; a resolved one keeps the
+// kind it started as. Under With the team, a line says what it waits on (withLine).
+function threadRow(id,now,where="panel",ask=null){const on=waitsOn(id,now),st=ask||on==="resolved"?null:threadState(id),card=st==="building"?threadCard(id):null;
+  const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:st?`<span class="kind ${st}">${TSTATE[st]}${card&&Number.isInteger(card.num)?" #C"+card.num:""}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
+  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${on==="lead"&&!ask?withLine(id):""}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
 function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id,q));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
     answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a))}}
@@ -1013,15 +1052,15 @@ const laterAsks=(now,q=rQuery)=>state.waiting.filter(w=>waitsOn(w.id,now)==="you
 function laterHtml(now,open=new Set()){const q=qOf("later"),later=laterAsks(now,q);
   return later.length?later.map(w=>askHtml(w,open)).join(""):isOn(q)?NO_MATCH:'<div class="empty">Nothing for later.</div>'}
 function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(Date.now());el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply))})}
-// "Waiting on Manager": the asks the owner answered that Manager has not closed (the reply and its thread under each),
+// "With the team" (once "Waiting on Manager"): the asks the owner answered that Manager has not closed (the reply and its thread under each),
 // the threads whose last word is the owner's, and the resolved ones folded at the end.
 // Each ask by its newest word, the owner's reply or a later message in its thread (#C272: a reopened ask sat and dated
 // at its old reply, though the owner had just written), oldest first.
 const newestWord=w=>Math.max(num(w.response&&w.response.at)??0,threadOf(w.id).length?threadLast(w.id):0)||null;
 const leadAsks=(now,q=rQuery)=>state.waiting.filter(w=>waitsOn(w.id,now)==="lead"&&askHit(w,q));
 function threadsHtml(now){const q=qOf("lead"),r=threadRows(now,q),asks=leadAsks(now,q).sort((a,b)=>(newestWord(a)??0)-(newestWord(b)??0));
-  if(!asks.length&&!r.open)return isOn(q)?NO_MATCH:'<div class="empty">Nothing waiting on Manager.</div>';
-  return asks.map(w=>askHtml(w,new Set(),newestWord(w))).join("")+r.open}
+  if(!asks.length&&!r.open)return isOn(q)?NO_MATCH:'<div class="empty">Nothing with the team.</div>';
+  return asks.map(w=>askHtml(w,new Set(),newestWord(w),withLine(w.id))).join("")+r.open}
 // Every fold the owner opened or closed, by what it shows (an ask's row and the same thread's row elsewhere are one fold:
 // "th-" and "ith-" are the thread rows' prefixes), kept across every live re-draw of any part of the page, so a thread
 // that moves from one list to another stays as the owner left it (#C241: it folded shut while the owner read it).
@@ -1045,10 +1084,11 @@ function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threads
   const set=()=>{t.placeholder=ntPlaceholder(mq.matches)};set();if(mq.addEventListener)mq.addEventListener("change",set)})();
 // The new-thread form folds to one line plus Attach (#C351); focus, typed text or a waiting file opens it to the whole form.
 function ntHas(){const f=$("newthread"),t=$("nttext");if(f&&t)f.classList.toggle("has",!!(String(t.value||"").trim()||(pendingFiles.get("new")||[]).length))}
-document.addEventListener("input",e=>{if(e.target&&e.target.id==="nttext")ntHas()});
+document.addEventListener("input",e=>{if(e.target&&e.target.id==="nttext"){ntHas();ntReceiptClear()}});
 // The Threads box's tabs (#C351, the owner's pick B and the change in #T957): each over its own list, with its count.
 // Needs you opens by default; the open tab is this viewer's, for this visit.
-const TABS=[["you","Needs you"],["later","Later"],["lead","Waiting on Manager"],["todo","To-do"],["ideas","Ideas"],["resolved","Resolved, 7 days"]];
+// "Waiting on Manager" is "With the team" (#C364): it holds threads that became cards too.
+const TABS=[["you","Needs you"],["later","Later"],["lead","With the team"],["todo","To-do"],["ideas","Ideas"],["resolved","Resolved, 7 days"]];
 let tab="you";
 function tabCounts(now,q=rQuery){const s=threadSets(now,q);
   return {you:youCount(now,q),later:laterAsks(now,q).length,
@@ -1064,7 +1104,7 @@ function tabMatches(k,now,q){const s=()=>threadSets(now,q);
 // The search row says a search is on (Designer on f1c9f73): the open tab's matches, and Clear.
 function searchStatus(now){if(!searching())return "";const n=tabMatches(tab,now,rQuery);
   return `${n?`${n} match${n>1?"es":""}`:"No matches."} · <button type="button" class="tclear" data-tclear>Clear</button>`}
-// Once a reply counts as sent (SENT_MS), its ask moves from Needs you to Waiting on Manager: both lists and the pills
+// Once a reply counts as sent (SENT_MS), its ask moves from Needs you to With the team: both lists and the pills
 // are drawn again together (#C366: the timer redrew Needs you alone, and the pills kept the old numbers).
 function settleRedraw(){renderWaiting();renderThreads();renderTabs()}
 function renderTabs(){const el=$("ttabs");if(!el)return;const now=Date.now();el.innerHTML=tabsHtml(now);TABS.forEach(([k])=>{const p=$("tp-"+k);if(p)p.hidden=k!==tab});
@@ -1091,9 +1131,15 @@ async function sendThread(btn,id,text,msg,kind,restore,key="th:"+id){
   const now=Date.now();
   try{await applyWrites(threadWrites(id,text,stored,now,kind,Math.random().toString(36).slice(2,8)));(pendingFiles.get(key)||[]).forEach(dropPreview);pendingFiles.delete(key)}
   catch(err){btn.disabled=false;restore();msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead.";return}
-  if(wakeMode()==="batch"){msg.textContent="Saved. Manager reads it at its next check (within 5 minutes).";btn.disabled=false;return}
+  if(wakeMode()==="batch"){if(key==="new"){msg.innerHTML=sentLine(id,"batch")}else msg.textContent="Saved. Manager reads it at its next check (within 5 minutes).";btn.disabled=false;return}
   const pinged=await sendPing(anchor,threadPing(id,text||"(files)",kind));
-  msg.textContent=pinged?"Sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.";btn.disabled=false}
+  if(key==="new"){msg.innerHTML=sentLine(id,pinged?"sent":"unsent",lastPing)}else msg.textContent=pinged?"Sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.";btn.disabled=false}
+// The new thread's receipt (#C364): where it landed, the link opening it; it stays until the owner's next keystroke.
+// how: "sent", "batch" (Manager reads it at its check) or "unsent" (why: the ping's refusal).
+function sentLine(id,how,why=""){const p=trefPlace(id,Date.now()),l=p&&p.tab?(TABS.find(t=>t[0]===p.tab)||[,""])[1]:"With the team";
+  const tail=how==="batch"?". Manager reads it at its next check (within 5 minutes).":how==="unsent"?`. Not sent to Manager (${esc(why)}); Manager picks it up at its next check.`:"";
+  return `<span class="receipt">${how==="sent"?"Sent":"Saved"} · in <a href="#" class="t-ref" data-tref="${esc(id)}">${esc(l)} →</a>${tail}</span>`}
+function ntReceiptClear(){const m=$("ntmsg");if(m&&String(m.innerHTML).startsWith('<span class="receipt">'))m.innerHTML=""}
 // The owner renames a thread: its title only (the number is the lead's). Set the first time, update after.
 function renameWrites(id,title){const t=String(title||"").replace(/\s+/g," ").trim().slice(0,120);if(!t)return [];
   return [{op:threadDoc(id)?"update":"set",path:`threads/${id}`,data:{title:t}}]}
@@ -1142,6 +1188,17 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
   if(!dbRef){if(msg)msg.textContent="Can't save from here.";return}
   b.disabled=true;try{await applyWrites(closeWrites(id,Date.now(),Math.random().toString(36).slice(2,8)));if(msg)msg.textContent="Closed."}
   catch(err){b.disabled=false;if(msg)msg.textContent="Not closed ("+(err&&err.code||"error")+")."}});
+// Ack on Manager's answer or live word (#C364): one click closes the thread, no note, no ping.
+document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tack]");if(!b||b.disabled)return;
+  const id=b.dataset.tack,msg=document.getElementById(`tmsg-${b.dataset.where}-${id}`);
+  if(!dbRef){if(msg)msg.textContent="Can't save from here.";return}
+  b.disabled=true;try{await applyWrites(closeWrites(id,Date.now(),Math.random().toString(36).slice(2,8),"Ack."));if(msg)msg.textContent="Acknowledged."}
+  catch(err){b.disabled=false;if(msg)msg.textContent="Not saved ("+(err&&err.code||"error")+")."}});
+// A decision's option in a thread (#C364): the pick, and anything typed in the box under it, sent as the owner's message.
+document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-topt]");if(!b||b.disabled)return;
+  const id=b.dataset.topt,pick=optionText(id,b.dataset.choice);if(!pick)return;
+  const w=b.dataset.where,ta=document.getElementById(`tnote-${w}-${id}`),msg=document.getElementById(`tmsg-${w}-${id}`),d=takeDraft(ta);
+  sendThread(b,id,d.text?pick+"\n"+d.text:pick,msg,null,d.restore)});
 document.addEventListener("submit",e=>{if(!e.target||e.target.id!=="newthread")return;e.preventDefault();
   const kind="question",d=takeDraft($("nttext"));
   sendThread(e.target.querySelector("button[type=submit]"),"t-"+Date.now(),d.text,$("ntmsg"),kind,d.restore,"new")});
@@ -1265,6 +1322,9 @@ function waitGaps(w){const g=[];if(!w||w.done)return g;
 // thread) and have a thread, newest word first. They sit in the card's Thread fold, so a finished conversation stays by
 // its card and not only in the resolved list, which stops at 50 rows.
 function cardAsks(id,now){return state.waiting.filter(w=>w&&w.initiative===id&&!itemShown(w.id,now)&&threadOf(w.id).length).sort((a,b)=>threadLast(b.id)-threadLast(a.id))}
+// The thread a card came from (#C364): "from #T979", opening it; one per numbered thread it names.
+function cardFrom(i){const ids=[...new Set([i.thread,...(Array.isArray(i.threads)?i.threads:[])])].filter(t=>typeof t==="string"&&threadNum(t));
+  return ids.length?`<span class="c-from">from ${ids.map(t=>`<a href="#" class="t-ref" data-tref="${esc(t)}">#T${threadNum(t)}</a>`).join(", ")}</span>`:""}
 function initRow(i,where){const w=typeof where==="string"?where:"init";
   const ns=notStarted(i), idx=ns?phaseIndex(BUILD_PHASE):phaseIndex(i.phase), stuck=i.status==="stuck", queued=ns||i.status==="queued", times=phaseTimes(i.phaseLog,i.status==="done"?i.doneAt:null);
   const sMs=i.status!=="done"?stepMs(i):null;
@@ -1293,7 +1353,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
-  return `<div class="i-row"><div><div class="i-name">${cardTag(i)}<strong>${esc(i.name)}</strong>${threadTag(i.id)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>
+  return `<div class="i-row"><div><div class="i-name">${cardTag(i)}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>
    ${i.summary?`<div class="w-sub">${esc(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>

@@ -17,9 +17,9 @@
     ]
   },
   "expect": {
-    "card-replied": { "section": "board", "rows": 1, "badge": "waiting on Manager", "threadUnder": true },
-    "t-1793000000000": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager" },
+    "card-replied": { "section": "board", "rows": 1, "badge": "with the team", "threadUnder": true },
+    "t-1793000000000": { "section": "waiting-on-manager", "rows": 1, "badge": "with the team" },
     "t-1793000000001": { "section": "needs-you", "rows": 1, "badge": "answered" },
-    "closed-then-asked": { "section": "waiting-on-manager", "rows": 1, "badge": "waiting on Manager", "replyRow": false, "threadUnder": true }
+    "closed-then-asked": { "section": "waiting-on-manager", "rows": 1, "badge": "with the team", "replyRow": false, "threadUnder": true }
   }
 }

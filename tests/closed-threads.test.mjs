@@ -49,7 +49,7 @@ test("Designer: a closed ask on its card reads as the ask it was: its own kind a
 
 test("the card's own thread and its closed asks, together; no closed asks: the fold as before", () => {
   const b = board({ initRaw: [card], waiting: [done("zoho", "Check your Sent box")], messages: [msg("trace", "Owner", "why?", T), msg("zoho", "Manager", "Safari", T)] });
-  assert.match(b.initRow(b.gates(b.enrich(card))), /<summary>Thread \(1\) · 1 closed ask<span class="t-badge open">waiting on Manager<\/span><\/summary>/, "the card's own badge stays");
+  assert.match(b.initRow(b.gates(b.enrich(card))), /<summary>Thread \(1\) · 1 closed ask<span class="t-badge open">with the team<\/span><\/summary>/, "the card's own badge stays");
   const bare = board({ initRaw: [card] });
   assert.match(bare.initRow(bare.gates(bare.enrich(card))), /<summary>Start a thread<\/summary>/);
   assert.doesNotMatch(bare.initRow(bare.gates(bare.enrich(card))), /closed ask/);

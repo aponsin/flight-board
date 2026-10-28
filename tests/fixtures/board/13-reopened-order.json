@@ -11,6 +11,6 @@
   },
   "expect": {
     "older-answered": { "section": "waiting-on-manager", "position": 1, "age": "10 min ago" },
-    "reopened": { "section": "waiting-on-manager", "rows": 1, "position": 2, "age": "5 min ago", "badge": "waiting on Manager" }
+    "reopened": { "section": "waiting-on-manager", "rows": 1, "position": 2, "age": "5 min ago", "badge": "with the team" }
   }
 }

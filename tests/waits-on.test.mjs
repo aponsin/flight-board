@@ -37,8 +37,8 @@ test("the badge always matches the section: Needs you says waiting on you, Waiti
   assert.equal(badgeOf(renderWaitingHtml([ask]), "ask-pics"), "waiting on you");
   const b = board({ waiting: [{ ...ask, response: { status: "done", note: "here", at: 1000 } }], messages: [msg("ask-pics", "Owner", "here", T), msg("t-9", "Owner", "a new thread", T)] });
   const lead = b.threadsHtml(T);
-  assert.equal(badgeOf(lead, "ask-pics"), "waiting on Manager", "the answered ask, under Waiting on Manager");
-  assert.equal(badgeOf(lead, "t-9"), "waiting on Manager");
+  assert.equal(badgeOf(lead, "ask-pics"), "with the team", "the answered ask, under Waiting on Manager");
+  assert.equal(badgeOf(lead, "t-9"), "with the team");
   assert.doesNotMatch(lead, /waiting on you/, "nothing in Waiting on Manager says it waits on the owner");
   const b2 = board({ messages: [msg("t-4", "Owner", "q", T), msg("t-4", "Manager", "an answer", T + 1)] });
   assert.equal(badgeOf(b2.threadRows(T).answered, "t-4"), "answered", "Manager answered: under Needs you, as answered");

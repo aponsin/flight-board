@@ -39,7 +39,7 @@ test("the tabs and their counts, Needs you first and open, in red when something
   });
   assert.deepEqual(JSON.parse(JSON.stringify(b.tabCounts(T))), { you: 2, later: 1, lead: 2, todo: 1, ideas: 2, resolved: 1 });
   const html = b.tabsHtml(T);
-  assert.deepEqual([...html.matchAll(/data-tab="(\w+)">([^<]+) <span/g)].map((m) => [m[1], m[2]]), [["you", "Needs you"], ["later", "Later"], ["lead", "Waiting on Manager"], ["todo", "To-do"], ["ideas", "Ideas"], ["resolved", "Resolved, 7 days"]]);
+  assert.deepEqual([...html.matchAll(/data-tab="(\w+)">([^<]+) <span/g)].map((m) => [m[1], m[2]]), [["you", "Needs you"], ["later", "Later"], ["lead", "With the team"], ["todo", "To-do"], ["ideas", "Ideas"], ["resolved", "Resolved, 7 days"]]);
   assert.match(html, /id="tab-you" class="ttab on" aria-selected="true"[^>]*>Needs you <span class="tcount hot">2<\/span>/);
   assert.match(html, /id="tab-later" class="ttab" aria-selected="false"[^>]*>Later <span class="tcount">1<\/span>/);
   assert.match(board().tabsHtml(T), /Needs you <span class="tcount">0<\/span>/, "nothing needs the owner: no red");
