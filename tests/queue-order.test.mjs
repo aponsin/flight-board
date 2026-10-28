@@ -107,6 +107,19 @@ test("a long queue on a big board stays fast: 20 cards, 4,000 steps, every card'
   near(b.cardEta(list[19]), now + (60 - 9) * MIN + 17 * 60 * MIN + CHAIN, "and still right: the 20th after s2's build and 17 builds ahead");
 });
 
+test("once per data update: each who's queue is sorted once, and the steps are read once", () => {
+  const list = [card(1, "a", { queuePos: 1 }), card(2, "b", { queuePos: 2 })];
+  const b = queueBoard(list);
+  let reads = 0;
+  b.state.steps = new Proxy([], { get: (t, k) => ((k === "filter" || k === "some") && reads++, t[k]) });
+  const q = b.queueOf("Boardsmith");
+  for (let k = 0; k < 5; k++) { b.cardEta(list[1]); b.gaps(list[1]); }
+  assert.equal(b.queueOf("Boardsmith"), q, "the same sorted queue, not a new sort");
+  assert.equal(reads, 1, "the steps scanned once");
+  b.state.initiatives = [...list];
+  assert.notEqual(b.queueOf("Boardsmith"), q, "a new update: sorted again");
+});
+
 test("Checker on 6531fc5: a started card sorts before the queued ones, place or not", () => {
   const b = queueBoard([card(1, "q", { queuePos: 1 }), card(2, "started", { phase: "build", branch: "s" }), card(3, "q2", { queuePos: 2 })]);
   assert.deepEqual([...b.queueOf("Boardsmith")].map((i) => i.id), ["started", "q", "q2"]);
