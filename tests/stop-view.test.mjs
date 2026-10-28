@@ -116,7 +116,13 @@ test("the hook: the cursor is keyed by role, so a reset (a new transcript, same 
       writeFileSync(t, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
       return spawnSync(process.execPath, [fileURLToPath(new URL("../gate/stop.mjs", import.meta.url)), "--config", cfg], { input: JSON.stringify({ transcript_path: t, stop_hook_active: active }), encoding: "utf8" });
     };
-    const none = hook("s1", turn());
+    // Each turn runs the live owner check (#C394), which finds nothing new: what follows is the mirror's part.
+    const LIVE = [{ type: "assistant", message: { content: [{ type: "tool_use", id: "q1", name: "ArtifactData", input: { url: URL_, action: "query", collection: "messages", query: { where: [["from", "==", "Owner"], ["at", ">", 0]], limit: 100 } } }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "q1", content: "0 documents from collection \"messages\"." }] } }];
+    const asked = hook("s0", turn());
+    assert.equal(asked.status, 2, "the hook itself asks for the live check");
+    assert.match(asked.stderr, /live board check/);
+    const none = hook("s1", turn(LIVE));
     assert.equal(none.status, 0);
     assert.match(JSON.parse(none.stdout).systemMessage, /no board mirror/);
     // A mirror exported 20 minutes ago, one old owner word in it, answered.
@@ -128,7 +134,7 @@ test("the hook: the cursor is keyed by role, so a reset (a new transcript, same 
     const listed = Math.floor(now / 1000) * 1000 - 20 * MIN;
     const stamp = () => { for (const c of ["messages", "waiting"]) for (const f of readdirSync(join(board, "mirror", c))) utimesSync(join(board, "mirror", c, f), listed / 1000, listed / 1000); };
     stamp();
-    assert.equal(hook("s1", turn()).status, 0);
+    assert.equal(hook("s1", turn(LIVE)).status, 0);
     const rec = lastPass(join(board, "stop.json"), "Manager", Date.now());
     assert.ok(rec && Math.abs(rec - listed) < 60e3, "recorded under the role, at the mirror's listing");
     assert.ok(!JSON.parse(readFileSync(join(board, "stop.json"), "utf8")).sessions.s1, "not under the transcript's name");
@@ -136,17 +142,17 @@ test("the hook: the cursor is keyed by role, so a reset (a new transcript, same 
     // before it is outside that window; a cursor keyed by the transcript would fall back to a day back and refuse on it.
     writeFileSync(join(board, "mirror", "messages", "m3.json"), JSON.stringify({ thread: "t-b", from: "Owner", text: "old", at: listed - 3 * 3600e3 }));
     stamp();
-    assert.equal(hook("s2", turn()).status, 0, "the reset keeps the cursor");
+    assert.equal(hook("s2", turn(LIVE)).status, 0, "the reset keeps the cursor");
     // An owner word inside the window refuses, on a reset transcript too.
     writeFileSync(join(board, "mirror", "messages", "m4.json"), JSON.stringify({ thread: "t-c", from: "Owner", text: "still there?", at: listed - 5 * MIN }));
     stamp();
-    const open = hook("s3", turn());
+    const open = hook("s3", turn(LIVE));
     assert.equal(open.status, 2);
     assert.match(open.stderr, /thread t-c "still there\?"/);
     assert.ok(SLACK > 5 * MIN);
     // A forced stop passes, and records only a clean check.
     const before = lastPass(join(board, "stop.json"), "Manager", Date.now());
-    assert.equal(hook("s3", turn(), true).status, 0);
+    assert.equal(hook("s3", turn(LIVE), true).status, 0);
     assert.equal(lastPass(join(board, "stop.json"), "Manager", Date.now()), before, "a refused check on a forced stop records nothing");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

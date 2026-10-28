@@ -13,6 +13,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readLines, sessionRole, currentTurn, turnCalls, lastReply } from "./session.mjs";
 import { writesOf, writeState, home, readMirror, withJournal } from "./gate.mjs";
 import { openOwnerWords, WAIT_MIN } from "./owner-waits.mjs";
+import { turnLive, nextLive, liveAsk, liveSince, livePath, readLive, writeLive } from "./live.mjs";
 import { idText } from "../collector/text.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
@@ -77,9 +78,11 @@ export function boardPings(lines, owner) {
 //   this turn's own writes and the thread pings after the messages' listing;
 // - an open ask (done not true) with the owner's answer, anything but an Ack or "marked done", not written this turn:
 //   from the view, or a reply ping after the asks' listing.
-export function needsYou({ view, pings, writes, owner, now, since }) {
+// live: the owner's messages the lead's live queries returned (gate/live.mjs, #C394), counted like the view's.
+export function needsYou({ view, pings, writes, owner, now, since, live = [] }) {
   const mine = writes.filter((w) => w.collection === "messages" && w.op !== "delete" && w.data && typeof w.data === "object").map((w) => ({ ...w.data, id: w.doc_id }));
-  const msgs = [...(view.docs.messages ?? []), ...mine,
+  const known = new Set((view.docs.messages ?? []).map((m) => m?.id));
+  const msgs = [...(view.docs.messages ?? []), ...live.filter((m) => !known.has(m.id)), ...mine,
     ...pings.filter((p) => p.kind === "thread" && p.at > listedAt(view, "messages")).map((p) => ({ id: `ping-${p.id}-${p.at}`, thread: p.id, from: owner, text: p.text, at: p.at }))];
   const textOf = new Map(msgs.map((m) => [m.id, m.text]));
   const out = openOwnerWords(msgs.filter((m) => m && typeof m.at === "number" && m.at > since), { owner, now, minutes: WAIT_MIN })
@@ -162,11 +165,16 @@ export function replyNotes(text) {
 // clean, is the time to remember for the next turn: the messages' listing in the mirror, which the view is whole up to
 // (never later than now); note, a line for the user when the board couldn't be seen.
 export const stopCheck = (lines, opts) => stopRun(lines, opts).errs;
-export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null }) {
+// live (#C394): { stored, require } — stored, what live.json holds for the lead ({ checkedAt, msgs }); require, whether
+// a turn with no live query is refused (the hook always asks; a caller that passes nothing checks as before). liveNext
+// is what live.json keeps after this turn.
+export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
-  if (role !== config.gate.managerRole) return { errs: [], record: null, note: null };
+  if (role !== config.gate.managerRole) return { errs: [], record: null, note: null, liveNext: null };
   const id = boardId(config);
   const turn = currentTurn(lines);
+  const stored = live?.stored ?? { checkedAt: null, msgs: [] };
+  const fresh = turnLive(turn, config), liveNext = nextLive(stored, fresh, now);
   const writes = turnCalls(turn).filter((c) => c.name === "ArtifactData" && id && String(c.input.url ?? "").includes(id) && WRITES.has(c.input.action))
     .flatMap((c) => { try { return writesOf(c.input); } catch { return []; } });
   const out = [];
@@ -186,10 +194,11 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   for (const t of new Set(asked)) {
     if (!writes.some((w) => w.collection === "messages" && w.op !== "delete" && w.data?.thread === t)) out.push(`the owner wrote in thread ${idText(t)}: answer there (messages {thread: "${idText(t)}", from: "${role}", text, at}), not only here`);
   }
-  if (!view) return { errs: out, record: null, note: "Flight board: no board mirror yet, so the Stop hook couldn't check the board this turn (the Collector's next run makes one)." };
-  const items = needsYou({ view, pings: boardPings(lines, config.owner), writes, owner: config.owner, now, since });
+  if (live?.require && fresh === null) out.push(liveAsk(config, liveSince(stored.checkedAt, now)));
+  if (!view) return { errs: out, record: null, note: "Flight board: no board mirror yet, so the Stop hook couldn't check the board this turn (the Collector's next run makes one).", liveNext };
+  const items = needsYou({ view, pings: boardPings(lines, config.owner), writes, owner: config.owner, now, since, live: liveNext.msgs });
   if (items.length) out.push(needsText(items, role, now));
-  return { errs: out, record: out.length ? null : Math.min(now, listedAt(view, "messages")), note: null };
+  return { errs: out, record: out.length ? null : Math.min(now, listedAt(view, "messages")), note: null, liveNext };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
@@ -213,8 +222,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const key = sessionRole(lines, process.env.FLIGHT_BOARD_ROLE).role || basename(String(input.transcript_path), ".jsonl");
     let view = null;
     try { view = boardView(config); } catch { /* unreadable: as none */ }
-    const { errs, record, note } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view });
+    const lp = livePath(config);
+    const { errs, record, note, liveNext } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true } });
     if (!errs.length && record != null) { try { recordPass(path, key, record); } catch { /* no record: a day back next turn */ } }
+    // The live check's messages are kept even on a refused or second stop: they are what the lead's query saw.
+    if (liveNext) { try { writeLive(lp, key, liveNext); } catch { /* none kept: the next query reads a day back */ } }
     if (input.stop_hook_active) process.exit(0);
     if (errs.length) { process.stderr.write(`Before you finish:\n- ${errs.join("\n- ")}\n`); process.exit(2); }
     if (note) process.stdout.write(JSON.stringify({ systemMessage: note }));
