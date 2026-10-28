@@ -1,0 +1,1 @@
+PASS Quick: #C391 card-refs clock test. dayLabel(t, now) takes the time (default unchanged for other callers); cardBubble passes its now; the test pins a fixed local noon. Suite 544/544 on 3afac24 (on main 42988b3). Mutation (cardBubble's dayLabel without now) fails the bubble test.
