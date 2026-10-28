@@ -87,6 +87,8 @@ test("the badge is the state; the buttons follow it", () => {
   assert.equal(chip("t-q"), '<span class="kind question">Question</span>');
   assert.equal(chip("t-b"), '<span class="kind building">Building<span class="kn"> #C356</span></span>', "the number hides on a phone, where the row's line names the card");
   assert.match(page, /@media \(max-width:600px\)\{\.kind \.kn\{display:none\}\}/);
+  // Designer on 763300d: the muted lines' links in the board's accent, as .steps a, not the browser's bold blue.
+  assert.match(page, /\.t-with a\.t-ref,\.receipt a\.t-ref,\.c-from a\.t-ref\{color:var\(--accent\);text-decoration:underline;text-underline-offset:2px;font-weight:400\}/);
   assert.equal(chip("t-l"), '<span class="kind live">Live</span>');
   assert.equal(chip("t-a"), '<span class="kind answer">Answer</span>');
   assert.equal(chip("t-d"), '<span class="kind decision">Decision</span>');
