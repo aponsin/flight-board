@@ -1,0 +1,1 @@
+PASS Full: v3.21 stack (#C409 2824cc6 signed; #C400 0a30d65+f071dcb, #C407 a833432+9f2ae27) re-signed. range-diff 6c7f9f9..eb25c4b vs 2824cc6..9f2ae27: = for three; 0a30d65 differs only in DECISIONS.md context (#C409's entry kept above #C400's). Quotes stand: #C400 #T1043 A and #T1044 A; #C409 #T1051 B by hook (see 2824cc6's note). Suite 642/642
