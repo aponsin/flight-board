@@ -31,6 +31,13 @@ export function offersChoices(text) {
   const marks = (re) => new Set([...s.matchAll(re)].map((m) => m[1].toUpperCase()));
   return marks(/(?:^|[\s([])([A-Za-z])\)/g).size >= 2 || marks(/(?:^|[\s([])([0-9])\)/g).size >= 2 || /\boption [A-Z0-9]\b/i.test(s);
 }
+// A thread message's choices (#C378): lettered only, "A) … B)", "option A", or two lines that open with a capital letter
+// and ":" or "(" ("A (my pick): …", "B: …").
+export function offersLetteredChoices(text) {
+  const s = String(text ?? "");
+  const marks = (re) => new Set([...s.matchAll(re)].map((m) => m[1].toUpperCase()));
+  return marks(/(?:^|[\s([])([A-Za-z])\)/g).size >= 2 || marks(/^[\s*_]*([A-H])[*_]*\s*[:(]/gm).size >= 2 || /\boption [A-Z]\b/i.test(s);
+}
 function choiceErrors(data, kind) {
   if (kind === "decision") return [];
   const field = FIELDS_WITH_CHOICES.find((f) => typeof data[f] === "string" && offersChoices(data[f]));
@@ -214,6 +221,15 @@ export function writeErrors(w, { config, who, now }) {
     if (op === "set" || "kind" in data) e.push(...choiceErrors(data, kind));
     // Rule 1: a command goes in {text, cmd}, so the owner gets a Copy button.
     if (Array.isArray(data.steps)) data.steps.forEach((s, n) => { if (typeof s === "string" && COMMAND.test(s)) e.push(`steps[${n}] holds a command: write it as {text, cmd}`); });
+  }
+  // A choice in a thread reaches the owner only as buttons (#C378, the owner in t-1793164285052): a new message of kind
+  // "decision" carries at least two options {key, label}, and any other offering lettered choices is refused. Messages
+  // are append-only, so a set is the only write to check. Numbered lines stay free: in an answer they are steps.
+  if (collection === "messages" && op === "set") {
+    const opts = Array.isArray(data.options) ? data.options : [];
+    if (opts.some((o) => !o || !o.key || !o.label)) e.push("each option needs key and label");
+    if (data.kind === "decision" && opts.filter((o) => o && o.key && o.label).length < 2) e.push("a decision needs at least two options {key, label}: the owner picks with a button each");
+    if (data.kind !== "decision" && offersLetteredChoices(data.text)) e.push('text offers choices (A) … B), "A:" lines or "option A"): make it kind "decision" with options, a button each');
   }
   if (collection === "steps" && op === "set") {
     if (!phases.includes(data.phase)) e.push(`unknown phase "${data.phase}" (use ${phases.join(", ")})`);
