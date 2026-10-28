@@ -64,9 +64,30 @@ test("a card live 15+ minutes with no ship times, on its live step or in the log
   assert.deepEqual(run({ initiatives: [c], steps: [live(c.id, T - 16 * MIN)] }, { times: { "1.158.15": { testsMin: 4, deployMin: 2 } } }).lines, [], "in the log");
   assert.deepEqual(run({ initiatives: [c], steps: [live(c.id, T - 30 * HOUR)] }).lines, [], "live over a day ago: history, not a nudge");
   assert.deepEqual(run({ initiatives: [c], steps: [live(c.id, T - 16 * MIN, { who: "Owner" })] }).lines.slice(1), ["NUDGE forward to Owner: ship times for v1.158.15 (#C397): add testsMin and deployMin to its live step, or its row to the release log"], "whoever shipped it");
-  assert.match(run({ initiatives: [c], steps: [live(c.id, T - 16 * MIN, { version: undefined })] }).lines[0], /^NUDGE ship-times-guard \(#C397\): live for 16 min with no ship times; forward:$/, "no version known");
   const once = run({ initiatives: [c], steps: [live(c.id, T - 16 * MIN)] });
   assert.deepEqual(run({ initiatives: [c], steps: [live(c.id, T - 16 * MIN)] }, { now: T + 10 * MIN, state: once.state }).lines, [], "once, then the quiet period");
+});
+
+// Checker's FINDINGS on aaa3add: live steps that can't carry CI times nudged too.
+const late = T - 16 * MIN;
+test("a live start step is no ship: no nudge, even with its end step missing", () => {
+  const c = card("ship-times-guard");
+  assert.deepEqual(run({ initiatives: [c], steps: [live(c.id, late, { kind: "start" })] }).lines, []);
+  assert.deepEqual(run({ initiatives: [c], steps: [live(c.id, late - MIN), live(c.id, late, { kind: "start", who: "Ops" })] }).lines.slice(1), ["NUDGE forward to Release: ship times for v1.158.15 (#C397): add testsMin and deployMin to its live step, or its row to the release log"], "a later start step doesn't hide the end step's ship");
+});
+
+test("a live step with no version, or one versionPattern doesn't take, is no ship (an install, a review): no nudge", () => {
+  const c = card("ship-times-guard");
+  for (const version of [undefined, "", "v3.20", "1.158.15", "installed"]) assert.deepEqual(run({ initiatives: [c], steps: [live(c.id, late, { version, who: "Security" })] }).lines, [], String(version));
+});
+
+test("a card in another repository has no release log: no nudge", () => {
+  const repos = [{ name: "board", idPrefixes: ["board-"] }];
+  const other = fullConfig({ owner: "Sam", collector: { repos } });
+  const go = (k) => nudges({ config: other, docs: { initiatives: [k], waiting: [], messages: [], steps: [live(k.id, late)], ctx: [] }, now: T, state: {} }).lines;
+  assert.deepEqual(go(card("board-keeper")), [], "by id prefix");
+  assert.deepEqual(go(card("keeper-fix", { repo: "board" })), [], "by its repo field");
+  assert.equal(go(card("photos-lightbox")).length, 2, "the team's own repository still nudges");
 });
 
 test("the page shows the log's times for a card whose live step has none, and no 'no ship times' then", () => {

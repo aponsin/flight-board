@@ -13,7 +13,7 @@ import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
-import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf } from "./derive.mjs";
+import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf } from "./derive.mjs";
 import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes } from "./facts.mjs";
 import { evidenceTimes } from "./timings.mjs";
 import { nudges } from "./nudges.mjs";
@@ -195,13 +195,8 @@ export function leastAdvanced(card, tips, derive, config, stacked = () => false)
 // Whether a tip is another card's branch carrying this card's Board-Id: named after one of the board's cards, not this one.
 export const stackedOn = (card, ids) => (h) => { const seg = String(h?.branch ?? "").split("/").pop(); return seg !== card.id && ids.has(seg); };
 
-// The repository a card lives in (#C278): one of collector.repos by the card's own repo field, else the first whose id
-// prefix the card carries; null for the team's own repository (collector.repoPath).
-export function repoOf(card, config) {
-  const repos = config.collector.repos ?? [];
-  if (card.repo) return repos.find((r) => r.name === card.repo) ?? null;
-  return repos.find((r) => (r.idPrefixes ?? []).some((p) => String(card.id).startsWith(p))) ?? null;
-}
+// The repository a card lives in: collector/derive.mjs (the nudges read it too).
+export { repoOf };
 
 // The newest commit on a repository's main line (its last 400) whose Board-Id trailer is exactly the card's id, as a
 // head { branch: main, sha, at, message }, or null. The id goes to git as a fixed string, never a pattern or an option.

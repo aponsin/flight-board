@@ -12,6 +12,14 @@
 // Anything the facts can't show (plan, a card with no branch) is left as declared: derived is null.
 import { idText, lineText } from "./text.mjs";
 
+// The repository a card lives in (#C278): one of collector.repos by the card's own repo field, else the first whose id
+// prefix the card carries; null for the team's own repository (collector.repoPath).
+export function repoOf(card, config) {
+  const repos = config.collector.repos ?? [];
+  if (card.repo) return repos.find((r) => r.name === card.repo) ?? null;
+  return repos.find((r) => (r.idPrefixes ?? []).some((p) => String(card.id).startsWith(p))) ?? null;
+}
+
 // The id a commit's message names in its "Board-Id:" trailer, or null.
 export function boardIdOf(message) {
   const m = /^Board-Id:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*$/im.exec(String(message ?? ""));
