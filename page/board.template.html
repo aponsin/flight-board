@@ -45,6 +45,8 @@ section{min-width:0}
 /* On a phone the chip says Building alone: the row's line under the title names the card. */
 @media (max-width:600px){.kind .kn{display:none}}
 .t-with{margin-top:2px}.c-from{font-size:.8rem;color:var(--muted);margin-right:8px;white-space:nowrap}
+/* A card number's bubble (#C367): one for the page, placed by the script under (or over) the number. */
+.cbub{position:fixed;z-index:60;max-width:min(360px,calc(100vw - 16px));padding:6px 10px;border-radius:8px;background:var(--ink);color:var(--bg);font-size:.8rem;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.18);pointer-events:none}.cbub[hidden]{display:none}
 .t-with a.t-ref,.receipt a.t-ref,.c-from a.t-ref{color:var(--accent);text-decoration:underline;text-underline-offset:2px;font-weight:400}
 .w-answer{white-space:pre-line}
 /* The item's own text on its own line under the #T number, title and badge (#C234: it ran on after the badge). */
@@ -490,6 +492,7 @@ table.crew3-ph{margin-top:14px}
   </div>
 </div>
 
+<div class="cbub" id="cbub" role="tooltip" hidden></div>
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot">
   <div class="lb-inner"><div class="lb-bar"><span id="lb-cap"></span><span class="lb-btns"><button type="button" id="lb-prev" onclick="stepShot(-1)" aria-label="Previous picture">‹ Prev</button><button type="button" id="lb-next" onclick="stepShot(1)" aria-label="Next picture">Next ›</button><button type="button" id="lb-out" onclick="zoomBy(1/1.5)" aria-label="Zoom out">−</button><button type="button" id="lb-in" onclick="zoomBy(1.5)" aria-label="Zoom in">+</button><button type="button" id="lb-close" onclick="closeShot()">Close</button></span></div>
   <div class="lb-scroll" id="lb-scroll"><img id="lb-img" alt=""></div></div>
@@ -688,8 +691,43 @@ function linkify(t){
     return `<a href="${href}" target="_blank" rel="noopener">${clean}</a>${tail}`})
     // A thread's number (#T27) jumps to that thread; a number no thread has stays plain text. Only in the text between
     // the links made above, never inside one (Security: "https://x/a,#T5" once put a link inside an address).
-    .split(/(<a\b[^>]*>[\s\S]*?<\/a>)/).map((part,k)=>k%2?part:part.replace(/(?<![\w\/#&;.=?-])#T(\d{1,6})\b/g,(m,n)=>{const id=threadByNum(Number(n));return id?`<a href="#" class="t-ref" data-tref="${esc(id)}">${m}</a>`:m})).join("");
+    .split(/(<a\b[^>]*>[\s\S]*?<\/a>)/).map((part,k)=>k%2?part:cardLinks(part.replace(/(?<![\w\/#&;.=?-])#T(\d{1,6})\b/g,(m,n)=>{const id=threadByNum(Number(n));return id?`<a href="#" class="t-ref" data-tref="${esc(id)}">${m}</a>`:m}))).join("");
 }
+// A card's number (#C356) in text already escaped becomes a link to the card (#C367, the owner in #T978), as #T does; a
+// number no card has stays text. Messages and asks (through linkify), card summaries and events.
+function cardByNum(n){return (state.initiatives||[]).find(i=>i&&i.num===n)||(state.initRaw||[]).find(i=>i&&i.num===n)||null}
+function cardLinks(html){return String(html).replace(/(?<![\w\/#&;.=?-])#C(\d{1,6})\b/g,(m,n)=>{const c=cardByNum(Number(n));return c?`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${m}</a>`:m})}
+// The bubble over a card's number (#C367): its name, then its phase and who, its ETA (or when it went live) and its next
+// step, cut so it stays two lines.
+function cardBubble(i,now=Date.now()){const done=i.status==="done",cut=(s,n)=>s.length>n?s.slice(0,n-1)+"…":s;
+  const ph=done?(i.dropped?"Dropped":"Live"+(i.version?" "+i.version:"")):notStarted(i)?"Queued":(PHASES.find(p=>p[0]===i.phase)||[,i.phase||""])[1];
+  const eta=done?(num(i.doneAt)?dayLabel(i.doneAt):""):cardEta(i)?dueText(cardEta(i)):"";
+  const next=!done&&i.nextNote?"Next: "+cut(String(i.nextNote),90):"";
+  return `<b>${Number.isInteger(i.num)?"#C"+i.num+" ":""}${esc(i.name||i.id)}</b><br>${esc([ph,!done&&i.who,eta,next].filter(Boolean).join(" · "))}`}
+// A card's number opens it: on the board, or under Done (opened), clearing a cards' search that hides it. null when the
+// board no longer draws it (Done shows the last 24 hours).
+function cardOpen(id){const c=state.initiatives.find(i=>i.id===id);if(!c)return null;
+  if(iQuery&&!initHit(c))setInitSearch("");
+  const done=c.status==="done",el=[...$(done?"doneboard":"board").querySelectorAll("[data-card]")].find(x=>x.dataset.card===id);if(!el)return null;
+  if(done)$("donebox").open=true;
+  if(el.closest("#v2")&&$("v2").hidden)setView("v2");
+  el.scrollIntoView({block:"start",behavior:"smooth"});return el}
+// One bubble for the page, filled from the card on a mouse's hover or a keyboard's focus; a phone's tap goes straight to
+// the card (no hover there).
+const HOVER=()=>typeof window.matchMedia==="function"&&window.matchMedia("(hover:hover)").matches;
+let cbubFor=null;
+function cbubShow(a){const c=state.initiatives.find(i=>i.id===a.dataset.cref),b=$("cbub");if(!c||!b)return;
+  b.innerHTML=cardBubble(c);b.hidden=false;cbubFor=a;a.setAttribute("aria-describedby","cbub");
+  const r=a.getBoundingClientRect(),w=b.offsetWidth,h=b.offsetHeight;let y=r.bottom+6;if(y+h>window.innerHeight-8)y=r.top-h-6;
+  b.style.left=Math.max(8,Math.min(r.left,window.innerWidth-w-8))+"px";b.style.top=Math.max(8,y)+"px"}
+function cbubHide(){const b=$("cbub");if(b)b.hidden=true;if(cbubFor&&cbubFor.removeAttribute)cbubFor.removeAttribute("aria-describedby");cbubFor=null}
+document.addEventListener("mouseover",e=>{if(!HOVER())return;const a=e.target.closest&&e.target.closest("[data-cref]");if(a)cbubShow(a);else if(cbubFor)cbubHide()});
+document.addEventListener("focusin",e=>{const a=e.target.closest&&e.target.closest("[data-cref]");if(a)cbubShow(a);else if(cbubFor)cbubHide()});
+document.addEventListener("focusout",e=>{if(cbubFor&&e.target===cbubFor)cbubHide()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&cbubFor)cbubHide()});
+if(typeof window.addEventListener==="function")window.addEventListener("scroll",()=>{if(cbubFor)cbubHide()},{passive:true});
+document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-cref]");if(!a)return;e.preventDefault();cbubHide();
+  if(!cardOpen(a.dataset.cref))a.title="That card is no longer shown on the board"});
 function safeImg(u){return typeof u==="string"&&(/^\/_blob\/[A-Za-z0-9_-]+$/.test(u)||/^https:\/\/[^\s"'<>]+$/.test(u))?u:null}
 function shotThumb(i,opt){return `<button type="button" class="thumb" data-full="${esc(safeImg(i.url))}" data-cap="${esc((opt?"Option "+opt+" · ":"")+(i.label||""))}"><img src="${esc(safeImg(i.url))}" alt="${esc(i.label||"Screenshot")}" loading="lazy"><span>${esc(i.label||"")}</span></button>`}
 // An open decision's option pictures sit beside their buttons (#C344), not above them; once answered they show above, by option.
@@ -916,7 +954,7 @@ function optionText(id,key){const o=threadOptions(id).find(o=>String(o.key)===St
 // What a With the team row says it waits on: Manager's answer, or the card it became, its phase and ETA (the tag opens it).
 function withLine(id){if(threadOpen(id)||itemOf(id)&&itemOf(id).coll==="waiting")return `<div class="w-sub t-with">Manager answering</div>`;const c=threadCard(id);if(!c)return "";
   const eta=cardEta(c),ph=(PHASES.find(p=>p[0]===(notStarted(c)?BUILD_PHASE:c.phase))||[,c.phase||""])[1];
-  return `<div class="w-sub t-with">→ <a href="#" class="t-ref c-ref" data-tref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>${ph?" · "+esc(ph):""}${eta?" · ~"+hhmm(eta):""}</div>`}
+  return `<div class="w-sub t-with">→ <a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>${ph?" · "+esc(ph):""}${eta?" · ~"+hhmm(eta):""}</div>`}
 function threadTitle(id){const it=itemOf(id);if(it)return String(it.coll==="initiatives"?it.doc.name:it.doc.text||id);const f=threadOf(id)[0];return f?String(f.text):id}
 // A thread's number and name (threads/<thread id> {num, title}): the lead numbers threads in the order they opened
 // (scripts/thread-ids.mjs); the owner may rename one here. With no name, a short cut of the item's or first message's text.
@@ -1357,8 +1395,8 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
-  return `<div class="i-row"><div><div class="i-name">${cardTag(i)}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>
-   ${i.summary?`<div class="w-sub">${esc(i.summary)}</div>`:""}</div>
+  return `<div class="i-row" data-card="${esc(i.id)}"><div><div class="i-name">${cardTag(i)}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>
+   ${i.summary?`<div class="w-sub">${cardLinks(esc(i.summary))}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
    <div class="i-meta">${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${(()=>{const g=gaps(i);return g.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(g.join(" · "))}</span>`:""})()}</div>${thread}</div>`;
@@ -1417,7 +1455,7 @@ document.addEventListener("click",e=>{const x=e.target.closest&&e.target.closest
 function renderFeed(){
   const on=isOn(fQuery),all=[...state.events].sort((a,b)=>(num(b.at)??0)-(num(a.at)??0)),ev=on?all.filter(e=>feedHit(e)):all;
   const none=t=>`<li><span></span><span class="empty" style="padding:0">${t}</span></li>`;
-  $("feed").innerHTML=ev.length?ev.map(e=>`<li><time>${num(e.at)?dayLabel(e.at):""}</time><span>${e.version?`<span class="ver">${esc(e.version)}</span> `:""}${esc(e.text)}</span></li>`).join(""):none(on?"No matches.":"Nothing shipped yet.");
+  $("feed").innerHTML=ev.length?ev.map(e=>`<li><time>${num(e.at)?dayLabel(e.at):""}</time><span>${e.version?`<span class="ver">${esc(e.version)}</span> `:""}${cardLinks(esc(e.text))}</span></li>`).join(""):none(on?"No matches.":"Nothing shipped yet.");
   $("feedcount").textContent=on?`${ev.length} of ${all.length}`:""; $("feedcount").hidden=!on;
 }
 const OPEN_CAP=2*36e5, BOARD_START=String(CONFIG.boardStart||"");

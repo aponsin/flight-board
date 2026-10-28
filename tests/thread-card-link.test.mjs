@@ -90,8 +90,8 @@ test("each With the team row says which: Manager answering, or the card it becam
   assert.match(rowOf(b, "t-q"), /<div class="w-sub t-with">Manager answering<\/div>/);
   assert.match(rowOf(b, "t-qb"), /<div class="w-sub t-with">Manager answering<\/div>/);
   const r = rowOf(b, "t-b");
-  assert.match(r, /<div class="w-sub t-with">→ <a href="#" class="t-ref c-ref" data-tref="card-356">#C356<\/a> · Build · ~\d/, "the tag opens the card");
-  assert.match(rowOf(b, "t-m"), /data-tref="card-358">#C358<\/a> · Checker · ~\d/);
+  assert.match(r, /<div class="w-sub t-with">→ <a href="#" class="t-ref c-ref" data-cref="card-356">#C356<\/a> · Build · ~\d/, "the tag opens the card");
+  assert.match(rowOf(b, "t-m"), /data-cref="card-358">#C358<\/a> · Checker · ~\d/);
   assert.doesNotMatch(rowOf(b, "t-a"), /t-with/, "Needs you rows carry no such line");
 });
 
