@@ -32,7 +32,7 @@ const ask = (s, input, extra = {}) => publishAllowed(input, { rawConfig, manager
 
 test("the lead's publish of exactly the signed page, to this board: allowed, with its reason", () => {
   const s = setup();
-  assert.match(ask(s, call({ url: BOARD, file_path: s.page })), /^Flight board: board-5c782c5\.html is the page the signed board code builds \(aaaaaaaaaaaa\) for this board: published by Manager without asking \(#C409\)\.$/);
+  assert.match(ask(s, call({ url: BOARD, file_path: s.page })), /^Flight board: board-5c782c5\.html is the page the signed board code builds \(aaaaaaaaaaaa\) for this board: published by Manager without asking \(#C409\)\. sha256 [0-9a-f]{64}: after the publish, read the board back and run scripts\/publish-check\.mjs on it with this hash\.$/);
   assert.ok(ask(s, call({ action: "publish", url: BOARD, file_path: s.page })), "action publish, said or not");
   const v = join(s.configDir, "board-v321.html");
   cpSync(s.page, v);

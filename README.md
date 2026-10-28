@@ -204,6 +204,15 @@ refusal it names each file and changes nothing, and those changes go out with th
 its own copy's scan, pushes the commit to `main` (a fast-forward), moves the link with its own copy's
 `scripts/current.mjs`, and prints the page to republish and, when it changed, the prompt to save into the task.
 
+**The lead's publish of the signed page goes without asking** (#C409): `gate/publish.mjs`, a pinned PreToolUse hook
+on Artifact, allows the lead's publish to this board of exactly the page the signed code builds from the current link
+with today's config, and is silent on anything else. It allows a copy of the bytes it checked, in a fresh 0700 folder
+(`.publish-<random>`) in the config's folder, never the file itself, so a change between the check and the publish
+publishes nothing new (#C415); copies older than a day are cleared. Its reason line names the page's sha256: after a
+hook-allowed publish the lead reads the board back (Artifact's read saves it) and runs
+`node scripts/publish-check.mjs <read-back file> <sha256>`, which takes off the app's own document wrapping and
+compares. Anything but `publish check: ok` goes to Security and the owner.
+
 **A page release never waits behind an install pack** (#C412, Security's ruling on plan A). A release built on a
 signed pack S goes out before the owner installs S, when every change to what the owner's install pins on the line
 from the pin is signed (PASS and SECURE) and the release adds none of its own (its pinned files are S's, byte for byte).
