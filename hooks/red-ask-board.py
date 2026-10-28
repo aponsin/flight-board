@@ -4,6 +4,8 @@
 # Manager only (the session titled Manager; the owner, 2026-10-18): when the owner's message this turn asks a question
 # (a "?" in what he typed, a mid-turn message, or a board comment), the reply must also write a waiting/ans-<topic> item,
 # or (board v2 threads, 2026-10-24) answer in a thread: a write to the board's "messages" collection counts as the answer.
+# Any titled session (an agent; #C350): when its context is over 200k tokens, a reset cue (hand off once the work in
+# flight is safe), unless this turn already reset it. The context keeper's 60% cue becomes the fallback.
 import json, re, sys
 RED = re.compile(r"^\s*(?:[-*>]\s*)?(?:\*\*)?\U0001F534", re.M)  # only a line that starts with the red mark is an ask
 try:
@@ -21,14 +23,15 @@ except Exception:
     sys.exit(0)
 # Manager = the session's title in the app (its latest "customTitle"), never a "/pickup Manager" found anywhere in the
 # transcript: that text also turns up quoted (a test file, a pasted message) and once made other roles act as Manager.
-MANAGER = False
+TITLE = ""
 for _l in lines:
     try:
         _e = json.loads(_l)
     except Exception:
         continue
     if isinstance(_e, dict) and isinstance(_e.get("customTitle"), str) and _e["customTitle"].strip():
-        MANAGER = _e["customTitle"].strip() == "Manager"
+        TITLE = _e["customTitle"].strip()
+MANAGER = TITLE == "Manager"
 MID = "The user sent a new message while you were working:"
 def asks(text):
     text = re.sub(r"<system-reminder>.*?</system-reminder>", "", text or "", flags=re.S)
@@ -54,14 +57,28 @@ def texts(content):
         elif c.get("type") == "tool_result":
             out.extend(texts(c.get("content")))
     return out
-red = wrote = question = answered = False
+RESET_AT = 200000
+# A turn that is itself a reset: the owner's /handoff, /clear or /compact, or the keeper's cue alone on its line.
+RESET_CMD = re.compile(r"<command-name>/(?:handoff|clear|compact)</command-name>")
+RESET_CUE = re.compile(r"(?:^|[:>])\s*CONTEXT RESET\s*(?:$|<)", re.M)
+def used(u):
+    if not isinstance(u, dict):
+        return None
+    n = [u.get(k) for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")]
+    return sum(x for x in n if isinstance(x, int) and not isinstance(x, bool) and x >= 0)
+red = wrote = question = answered = cleared = False
+tokens = None  # the latest call's context; a compaction after it leaves none
 for line in reversed(lines):
     try:
         e = json.loads(line)
     except Exception:
         continue
+    if e.get("type") == "system" and e.get("subtype") == "compact_boundary" and tokens is None:
+        tokens = 0
     msg = e.get("message") or {}
     content = msg.get("content")
+    if e.get("type") == "assistant" and tokens is None and not e.get("isSidechain") and isinstance(msg.get("usage"), dict):
+        tokens = used(msg.get("usage"))
     if e.get("type") == "queue-operation" and e.get("reason") == "absorbed_mid_turn" and "?" in str(e.get("content") or ""):
         question = True  # a message the owner typed while the turn was running
         continue
@@ -72,12 +89,16 @@ for line in reversed(lines):
             continue
         if any(asks(t) for t in texts(content)):
             question = True
+        if any(RESET_CMD.search(t) or RESET_CUE.search(t) for t in texts(content)):
+            cleared = True
         break  # start of this turn
     if e.get("type") != "assistant" or not isinstance(content, list):
         continue
     for c in content:
         if c.get("type") == "text" and RED.search(c.get("text") or ""):
             red = True
+        if c.get("type") == "tool_use" and (c.get("name") == "mcp__ccd_session_mgmt__clear_session" or (c.get("name") == "Skill" and re.fullmatch(r"(?:[\w-]+:)?handoff", str((c.get("input") or {}).get("skill") or "")))):
+            cleared = True  # this turn handed off or asked the app to clear it
         if c.get("type") == "tool_use" and c.get("name") == "ArtifactData":
             s = json.dumps(c.get("input") or {})
             writes = any(a in s for a in ('"set"', '"update"', '"batch"'))
@@ -92,6 +113,9 @@ if red and not wrote:
     reasons.append("Your reply has a red ask (🔴) but you wrote nothing to the flight board's 'waiting' collection this turn. Manager: add the waiting item now (ArtifactData set), then finish. Any other agent: don't ask the owner directly; send the question to Manager and remove the 🔴.")
 elif MANAGER and question and not answered:
     reasons.append("The owner asked a question this turn, but you wrote no board answer. Manager: answer in its thread (messages {thread, from: \"Manager\", text, at}); if it has no thread, add waiting/ans-<topic> {kind:\"answer\", question, text, since, done:false}. Then finish.")
+if TITLE and not cleared and tokens is not None and tokens > RESET_AT:
+    # Tokens cut down, as the board's tiles show them: 200,999 reads 200k, over the line all the same.
+    reasons.append(f"Context reset cue: this session's context is at {tokens // 1000}k tokens, over 200k. Once the work in flight is committed and pushed (or at the end of this turn if it is), write your handoff note and reset with /handoff, so the next session starts small.")
 # Two rules left this hook (#C334, the context-tax brief's card A): the memory tile (the Collector writes it from the
 # app's numbers, collector/context.mjs) and the read of the waiting items (the Stop gate, gate/stop.mjs, sees the open
 # asks the owner answered on the board itself). Each made Manager spend a tool call, and its result, every turn.
