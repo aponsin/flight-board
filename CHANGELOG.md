@@ -2,6 +2,9 @@
 
 ## 0.3.4 - Unreleased
 
+### Added
+- Page-only board releases publish without asking the owner (#C409, the owner's B in #T1051): a pinned PreToolUse hook on Artifact allows the lead's publish of exactly the page the signed board code builds, to this board only, and stays silent on everything else. Installed with the gate's hooks.
+
 ### Fixed
 - Typing never waits behind the board (#C408, the owner on page v112: characters in a thread box sometimes showed late). Every db snapshot, of any of the 17 collections, ran a whole redraw, about 525 ms on today's board (8,500 documents, 900+ threads), and a keystroke behind one waited for it. Snapshots now ask for one redraw for a burst (100 ms on), and while the owner typed in any box in the last 1.2 s it waits for the pause. A db event now costs 0.2 ms; a guard test types 200 characters with events arriving and fails at any keystroke waiting over 50 ms. The page's first draw also comes once, not once per collection.
 - A thread's non-image files save through the viewer's own prompt (the `downloads` capability, now one of the page's four): a plain download link did nothing in the artifact viewer. Without the capability a file shows by name only (#C272).

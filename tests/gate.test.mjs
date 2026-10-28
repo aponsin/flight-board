@@ -277,7 +277,8 @@ test("writeErrors is the per-write rule list the batch uses", () => {
 test("the hook entries: the gate on board writes and hand-offs, the Stop check; writing them keeps every other hook and replaces an older one", async () => {
   const { hookEntries, withHooks, shellQuote } = await import("../scripts/hooks.mjs");
   const e = hookEntries("/r/flight-board", "/cfg/board.config.json", "/bin/node");
-  assert.equal(e.PreToolUse.matcher, "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message");
+  assert.equal(e.PreToolUse.matcher, "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact");
+  assert.equal(e.PreToolUse.hooks[1].command, "'/bin/node' '/r/flight-board/gate/publish.mjs' --config '/cfg/board.config.json'", "the publish hook (#C409)");
   assert.equal(e.PreToolUse.hooks[0].command, "'/bin/node' '/r/flight-board/gate/gate.mjs' --config '/cfg/board.config.json'");
   assert.equal(e.Stop.hooks[0].command, "'/bin/node' '/r/flight-board/gate/stop.mjs' --config '/cfg/board.config.json'");
   const other = { matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }] };
@@ -362,7 +363,7 @@ test("hooks --write end to end on a scratch settings file: a pinned copy of the 
     const backup = run.stdout.match(/Backup: (\S*)/)[1];
     assert.match(readFileSync(backup, "utf8"), /board-tests\/write-gate\.mjs/);
     const again = spawnSync(process.execPath, [...args, "--write"], { encoding: "utf8" });
-    assert.match(again.stdout, /replaced 5 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries (the refresh check too): " + again.stdout + again.stderr);
+    assert.match(again.stdout, /replaced 6 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries (the refresh check and the publish hook too): " + again.stdout + again.stderr);
     assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "nope-not-a-commit", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/);
     assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "--output=/tmp/x", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/, "a pin that looks like an option is still just a name");
   } finally { rmSync(dir, { recursive: true, force: true }); }
