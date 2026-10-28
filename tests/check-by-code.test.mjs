@@ -27,7 +27,7 @@ test("before the next run: checking…, with when that run is due; past it, the 
   b.state.derived = derived(now - 20 * MIN);
   assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), `checking… next Collector run ~${hhmm(now + 40 * MIN)}`);
   b.state.derived = derived(now - 70 * MIN);
-  assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), `checking… the Collector's run is late (due ${hhmm(now - 10 * MIN)})`);
+  assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), `checking… Collector run late (due ${hhmm(now - 10 * MIN)})`);
   b.state.derived = [];
   assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), "checking… until the Collector's next run", "no run seen yet");
 });
@@ -45,7 +45,9 @@ test("the late state is marked on the card; the Check button waits while checkin
   b.state.checkRequests = [{ id: "x", at: now - 5 * MIN }];
   b.state.derived = derived(now - 70 * MIN, ["x"]);
   const html = b.initRow(b.gates(b.enrich({ id: "x", num: 351, name: "X", size: "S", level: "Quick", skip: ["plan"], status: "active", createdAt: now - 30 * MIN })));
-  assert.match(html, /<span class="i-checked late">checking… the Collector&#39;s run is late/);
+  // Its own class, not the global .late (nowrap, margin, 600 weight): at 390 px that widened the card (Designer on 091cd53).
+  assert.match(html, /<span class="i-checked is-late">checking… Collector run late \(due /);
+  assert.doesNotMatch(html, /class="(?:[^"]*\s)?late[\s"]/);
   assert.doesNotMatch(html, /data-check=/);
 });
 
