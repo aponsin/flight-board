@@ -4,7 +4,7 @@
 # Manager only (the session titled Manager; the owner, 2026-10-18): when the owner's message this turn asks a question
 # (a "?" in what he typed, a mid-turn message, or a board comment), the reply must also write a waiting/ans-<topic> item,
 # or (board v2 threads, 2026-10-24) answer in a thread: a write to the board's "messages" collection counts as the answer.
-# Any titled session (an agent; #C350): when its context is over 200k tokens, a reset cue (hand off once the work in
+# Any titled session (an agent; #C350): when its context is over 400k tokens (#C384; 200k before), a reset cue (hand off once the work in
 # flight is safe), unless this turn already reset it. The context keeper's 60% cue becomes the fallback.
 import json, re, sys
 RED = re.compile(r"^\s*(?:[-*>]\s*)?(?:\*\*)?\U0001F534", re.M)  # only a line that starts with the red mark is an ask
@@ -57,7 +57,7 @@ def texts(content):
         elif c.get("type") == "tool_result":
             out.extend(texts(c.get("content")))
     return out
-RESET_AT = 200000
+RESET_AT = 400000
 # A turn that is itself a reset: the owner's /handoff, /clear or /compact, or the keeper's cue alone on its line.
 RESET_CMD = re.compile(r"<command-name>/(?:handoff|clear|compact)</command-name>")
 RESET_CUE = re.compile(r"(?:^|[:>])\s*CONTEXT RESET\s*(?:$|<)", re.M)
@@ -115,8 +115,8 @@ if red and not wrote:
 elif MANAGER and question and not answered:
     reasons.append("The owner asked a question this turn, but you wrote no board answer. Manager: answer in its thread (messages {thread, from: \"Manager\", text, at}); if it has no thread, add waiting/ans-<topic> {kind:\"answer\", question, text, since, done:false}. Then finish.")
 if TITLE and not cleared and tokens is not None and tokens > RESET_AT:
-    # Tokens cut down, as the board's tiles show them: 200,999 reads 200k, over the line all the same.
-    reasons.append(f"Context reset cue: this session's context is at {tokens // 1000}k tokens, over 200k. Once the work in flight is committed and pushed (or at the end of this turn if it is), write your handoff note and reset with /handoff, so the next session starts small.")
+    # Tokens cut down: 400,999 reads 400k, over the line all the same.
+    reasons.append(f"Context reset cue: this session's context is at {tokens // 1000}k tokens, over 400k. Once the work in flight is committed and pushed (or at the end of this turn if it is), write your handoff note and reset with /handoff, so the next session starts small.")
 # Two rules left this hook (#C334, the context-tax brief's card A): the memory tile (the Collector writes it from the
 # app's numbers, collector/context.mjs) and the read of the waiting items (the Stop gate, gate/stop.mjs, sees the open
 # asks the owner answered on the board itself). Each made Manager spend a tool call, and its result, every turn.

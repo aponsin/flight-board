@@ -1,6 +1,6 @@
-// Memory tiles in tokens (#C350, the owner's go via Director: context thresholds are in tokens, not percent): a reading
-// with tokens shows them ("439k"), coloured against 200k: green under 100k, amber up to 200k, red over; the bar is full
-// at 200k. A reading without tokens (older collector) keeps today's percentage and its 40/70 colours.
+// Memory tiles (#C384, the owner's ask: back to percent): each tile shows the percent of that agent's own window,
+// green under 40%, amber to 69%, red from 70%, the bar at that percent. The Collector's count (#C350) moves into the
+// tooltip ("439k tokens"); it no longer colours the tile.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -17,28 +17,26 @@ test("tokens read as k (or M), cut down, never rounded up past a line", () => {
   assert.equal(b.fmtTokens(0), "0");
 });
 
-test("a tile with tokens: the number, its colour against 200k, a bar full at 200k", () => {
+test("a tile shows the percent of its window, coloured 40/70; the count plays no part in the colour", () => {
   const now = Date.now(), at = now - 60e3;
-  const cls = (tokens) => /^<div class="ctx-t (\w)/.exec(b.ctxTileHtml("Manager", { pct: 5, tokens, at }, null, now))[1];
-  assert.deepEqual([0, 99999, 100000, 150000, 200000, 200001, 518048].map(cls), ["g", "g", "a", "a", "a", "r", "r"], "the percentage plays no part");
+  const cls = (pct) => /^<div class="ctx-t (\w)/.exec(b.ctxTileHtml("Manager", { pct, tokens: 900000, at }, null, now))[1];
+  assert.deepEqual([0, 39, 40, 69, 70, 100].map(cls), ["g", "g", "a", "a", "r", "r"]);
   const t = b.ctxTileHtml("Manager", { pct: 44, tokens: 439048, at }, null, now);
-  assert.match(t, /<span class="nm">Manager<span class="pc">439k<\/span><\/span>/);
-  assert.match(t, /<i style="width:100%">/, "over 200k: full");
-  assert.match(b.ctxTileHtml("Manager", { pct: 5, tokens: 50000, at }, null, now), /<i style="width:25%">/);
-  assert.match(t, /title="Manager: 439k tokens in its context \(red over 200k\), 44% of its window, read 1 min ago"/);
-  assert.doesNotMatch(t, /44%<\/span>/, "no percentage on the face");
-  const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-  assert.match(page, /\.ctx-t \.pc\{[^}]*text-transform:none\}/, "'439k', not the name's capitals' '439K'");
+  assert.match(t, /<span class="nm">Manager<span class="pc">44%<\/span><\/span>/);
+  assert.match(t, /<i style="width:44%">/);
+  assert.match(t, /title="Manager: 44% of its window \(439k tokens\), read 1 min ago"/);
+  assert.doesNotMatch(t, /439k<\/span>/, "no count on the face");
 });
 
-test("a reading without tokens keeps today's tile: the percentage, green under 40%, amber to 69%, red from 70%", () => {
+test("a reading without a count: the percentage alone; a bad count is left out", () => {
   const now = Date.now(), at = now - 60e3;
   const t = b.ctxTileHtml("Sales", { pct: 52, at }, null, now);
   assert.match(t, /^<div class="ctx-t a"/);
   assert.match(t, /<span class="pc">52%<\/span>/);
   assert.match(t, /<i style="width:52%">/);
-  assert.match(t, /title="Sales: 52% of its memory used, read 1 min ago"/);
-  for (const tokens of [-1, 4.5, "439048", null]) assert.match(b.ctxTileHtml("Sales", { pct: 52, tokens, at }, null, now), /<span class="pc">52%<\/span>/, `tokens ${JSON.stringify(tokens)}: not a count`);
+  assert.match(t, /title="Sales: 52% of its window, read 1 min ago"/);
+  for (const tokens of [-1, 4.5, "439048", null]) assert.match(b.ctxTileHtml("Sales", { pct: 52, tokens, at }, null, now), /title="Sales: 52% of its window, read/, `tokens ${JSON.stringify(tokens)}: not a count`);
+  assert.equal(b.ctxLevel({ tokens: 400000 }), null, "no percentage: no reading to show");
 });
 
 test("the freshest reading carries its tokens; a newer one without tokens counts only once the count is over 2 h old", () => {
@@ -62,13 +60,13 @@ test("an agent's own percent-only write after the Collector's count doesn't hide
   assert.equal(a.Checker.tokens, 350000);
   assert.equal(a.Checker.at, now - 30 * MIN, "the count's own time, so its age shows true");
   assert.equal(a.Checker.saved, true, "the keeper's flag kept");
-  assert.match(b.ctxTileHtml("Checker", a.Checker, null, now), /^<div class="ctx-t r saved"[\s\S]*<span class="pc">350k<\/span>/);
+  assert.match(b.ctxTileHtml("Checker", a.Checker, null, now), /^<div class="ctx-t g saved"[\s\S]*<span class="pc">35%<\/span>/);
   // A newer count from the agent itself (with tokens) still wins.
   b.state.ctx = [{ id: "Checker", pct: 36, tokens: 360000, at: now - MIN }];
   assert.equal(b.ctxAgents(now).Checker.tokens, 360000);
 });
 
-test("Crew's memory line reads the same: tokens with their colour, or the percentage", () => {
+test("Crew's memory line reads the same: the percentage and its colour", () => {
   const now = Date.now();
   Object.assign(b.state, {
     plan: [], ideas: [], threads: [], waiting: [], derived: [], initiatives: [],
@@ -76,7 +74,7 @@ test("Crew's memory line reads the same: tokens with their colour, or the percen
     ctx: [],
   });
   const html = b.crewHtml(now);
-  assert.match(html, /data-agent="Manager">[\s\S]*?<div class="crew3-mem r"><span class="pc">Memory 439k<\/span><span class="ctx-bar"><i style="width:100%"><\/i>/);
+  assert.match(html, /data-agent="Manager">[\s\S]*?<div class="crew3-mem a"><span class="pc">Memory 44%<\/span><span class="ctx-bar"><i style="width:44%"><\/i>/);
   assert.match(html, /data-agent="Sales">[\s\S]*?<div class="crew3-mem a"><span class="pc">Memory 52%<\/span><span class="ctx-bar"><i style="width:52%"><\/i>/);
   const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   assert.match(page, /\.crew3-mem\.g \.pc\{color:var\(--ok\)\}/, "Designer on bcadb2a: green reads green, as amber and red do");

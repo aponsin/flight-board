@@ -39,25 +39,27 @@ test("no read and no tile are asked of Manager any more", () => {
 });
 
 // #C350: the reset cue. A titled session whose context (its latest call's input, cache read and cache written tokens)
-// is over 200k is told to hand off once its work is safe, unless this turn already reset it.
-const big = (lines, { input = 1000, read = 249000, made = 0 } = {}) => {
+// is over 400k (#C384: the owner raised the limit from 200k) is told to hand off once its work is safe, unless this turn
+// already reset it.
+const big = (lines, { input = 1000, read = 449000, made = 0 } = {}) => {
   lines.filter((l) => l.type === "assistant").forEach((l) => { l.message.usage = { input_tokens: input, cache_read_input_tokens: read, cache_creation_input_tokens: made }; });
   return lines;
 };
-test("the reset cue: over 200k tokens a titled session is told to hand off; at 200k or under, nothing", () => {
+test("the reset cue: over 400k tokens a titled session is told to hand off; at 400k or under, nothing", () => {
   const cue = hook(big(turn([], { title: "Boardsmith", text: "go on" })));
-  assert.match(cue, /^Context reset cue: this session's context is at 250k tokens, over 200k\. /);
+  assert.match(cue, /^Context reset cue: this session's context is at 450k tokens, over 400k\. /);
   assert.match(cue, /\/handoff/);
-  assert.equal(hook(big(turn([], { title: "Boardsmith", text: "go on" }), { input: 0, read: 200000 })), "", "200k is amber, not over");
-  assert.match(hook(big(turn([], { title: "Boardsmith", text: "go on" }), { input: 1000, read: 150000, made: 60000 })), /at 211k tokens/, "the three counts together");
+  assert.equal(hook(big(turn([], { title: "Boardsmith", text: "go on" }), { input: 0, read: 400000 })), "", "400k is not over");
+  assert.equal(hook(big(turn([], { title: "Boardsmith", text: "go on" }), { input: 1000, read: 310000 })), "", "311k: tonight's false cue, gone");
+  assert.match(hook(big(turn([], { title: "Boardsmith", text: "go on" }), { input: 1000, read: 350000, made: 60000 })), /at 411k tokens/, "the three counts together");
   assert.equal(hook(big(turn([], { title: "", text: "go on" }))), "", "an untitled session (not an agent) gets no cue");
   const lines = big(turn([], { title: "Boardsmith", text: "go on" }));
   lines.push({ type: "assistant", message: { content: [{ type: "text", text: "and a later call" }], usage: { input_tokens: 5000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } });
   assert.equal(hook(lines), "", "the latest call counts, not the largest");
   const side = turn([], { title: "Boardsmith", text: "go on" });
   side.push({ type: "assistant", isSidechain: true, message: { content: [{ type: "text", text: "a subagent" }], usage: { input_tokens: 5000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } });
-  side[2].message.usage = { input_tokens: 250000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
-  assert.match(hook(side), /at 250k tokens/, "a subagent's call is not this session's context");
+  side[2].message.usage = { input_tokens: 450000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  assert.match(hook(side), /at 450k tokens/, "a subagent's call is not this session's context");
 });
 
 test("the reset cue's guard: a turn that already handed off, cleared or compacted passes", () => {

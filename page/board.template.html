@@ -1687,8 +1687,8 @@ document.addEventListener("submit",async e=>{const c=e.target.dataset&&e.target.
   const doc={text:text.slice(0,200),rank:max+1,area:"Added by "+OWNER,addedAt:Date.now(),done:false};if(kind)doc.kind=kind;
   try{await dbRef.doc(c+"/t"+Date.now()).set(doc);inp.value=""}catch(_){}});
 // Agents' memory: how full each session's context is, from the Collector's readings (ctx/<Role> and meta/context).
-// In tokens when the reading has them (#C350): green under 100k, amber up to 200k, red over, the bar full at 200k;
-// a reading without (an older collector) in percent: green under 40%, amber to 69%, red from 70%.
+// In percent of the agent's own window (#C384, the owner: back from #C350's tokens against 200k): green under 40%, amber
+// to 69%, red from 70%, the bar at that percent; the Collector's count, when there is one, in the tooltip.
 // A dashed red tile means the agent saved its notes and waits for the owner to type /clear in it.
 // The keeper's check (meta "context") still carries the saved / "clear me" flags. A reading older than 2 h is dimmed.
 // Each agent's memory reading: meta/context's, or a fresher ctx/<agent> one. { name: { pct, tokens?, at, saved? } }.
@@ -1700,16 +1700,12 @@ function ctxAgents(now=Date.now()){const m=state.meta.find(d=>d.id==="context")|
     if(!Number.isInteger(d.tokens)&&Number.isInteger(cur.tokens)&&now-cur.at<=CTX_OLD)return;
     const {tokens:_,...rest}=cur;a[d.id]={...rest,pct:d.pct,at:num(d.at),...(d.tokens!==undefined?{tokens:d.tokens}:{})}});
   return a}
-const CTX_TOK=2e5;
 // "439k", "1.2M": cut down, so a count under a line never reads as the line.
 function fmtTokens(t){return t>=1e6?`${Math.floor(t/1e5)/10}M`:t>=1e3?`${Math.floor(t/1e3)}k`:String(t)}
-// A reading's face: { txt, c, w (bar %), tip } in tokens when it has a whole count, else in percent; null with neither.
-function ctxLevel(t){const k=t&&t.tokens;
-  if(Number.isInteger(k)&&k>=0){const c=k>CTX_TOK?"r":k>=1e5?"a":"g";
-    return {txt:fmtTokens(k),c,w:Math.min(100,Math.round(k/CTX_TOK*100)),tip:`${fmtTokens(k)} tokens in its context (${c==="r"?"red over":c==="a"?"amber up to":"green under"} ${c==="g"?"100k":"200k"})${num(t.pct)!=null?`, ${Math.round(t.pct)}% of its window`:""}`}}
-  if(!t||num(t.pct)==null)return null;
-  const p=Math.max(0,Math.min(100,Math.round(t.pct)));
-  return {txt:`${p}%`,c:p>=70?"r":p>=40?"a":"g",w:p,tip:`${p}% of its memory used`}}
+// A reading's face: { txt, c, w (bar %), tip } in percent; null without one.
+function ctxLevel(t){if(!t||num(t.pct)==null)return null;
+  const p=Math.max(0,Math.min(100,Math.round(t.pct))),k=t.tokens;
+  return {txt:`${p}%`,c:p>=70?"r":p>=40?"a":"g",w:p,tip:`${p}% of its window${Number.isInteger(k)&&k>=0?` (${fmtTokens(k)} tokens)`:""}`}}
 // "/clear me" (#C374, the owner in #T991): the keeper's saved flag is never cleared, so after a reset it stayed over a
 // fresh, low reading, and came back once the agent worked high again (Checker on 93b4c08). The keeper writes the count
 // it saw at the save (savedTokens, or savedPct for a reading in percent); a session's context only shrinks when it
