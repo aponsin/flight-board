@@ -1,0 +1,1 @@
+PASS Quick: #C386 thread-always-reply, re-sign on v3.18 (branch board-thread-always-reply-v318, on b347c3c). Range-diff '='; I signed 8c5c5e3. Suite 558/559 (only the clock test, fixed by #C391 on top).
