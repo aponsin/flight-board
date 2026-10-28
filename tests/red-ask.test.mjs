@@ -74,6 +74,15 @@ test("the reset cue's guard: a turn that already handed off, cleared or compacte
   cleared.splice(3, 0, { type: "assistant", message: { content: [{ type: "tool_use", id: "c1", name: "mcp__ccd_session_mgmt__clear_session", input: {} }] } });
   big(cleared);
   assert.equal(hook(cleared), "", "it asked the app to clear it");
+  // Checker's LOW on bcadb2a: clearing another session isn't this session's reset.
+  const other = big(turn([], { title: "Manager", text: "go on" }));
+  other.splice(3, 0, { type: "assistant", message: { content: [{ type: "tool_use", id: "c2", name: "mcp__ccd_session_mgmt__clear_session", input: { session_id: "local_0b7edc70" } }] } });
+  big(other);
+  assert.match(hook(other), /reset cue/, "another session cleared: this one's cue stays");
+  const self = big(turn([], { title: "Manager", text: "go on" }));
+  self.splice(3, 0, { type: "assistant", message: { content: [{ type: "tool_use", id: "c3", name: "mcp__ccd_session_mgmt__clear_session", input: { session_id: "self" } }] } });
+  big(self);
+  assert.equal(hook(self), "", "session_id self: this one");
   const compacted = big(turn([], { title: "Boardsmith", text: "go on" }));
   compacted.push({ type: "system", subtype: "compact_boundary", content: "Conversation compacted" });
   assert.equal(hook(compacted), "", "a compaction after the last call: the old count is gone");
