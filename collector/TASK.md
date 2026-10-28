@@ -35,7 +35,7 @@ Created only with the owner's yes. Its settings:
   the task's title before its first tool call. And `FLIGHT_BOARD_ROLE=Collector` in its settings (below): if the two
   ever disagree, the gate refuses every write, which fails closed and shows. The gate refuses every board write from
   the Collector except `set` of `derived/all` and, when `collector.contextRoles` lists roles, those roles' memory
-  readings: `set ctx/<Role>` and `update meta/context` with only `agents.<Role>`, each exactly `{pct, at}`.
+  readings: `set ctx/<Role>` and `update meta/context` with only `agents.<Role>`, each exactly `{pct, at}` or `{pct, tokens, at}`.
 - **Tools, enforced by permission rules, not by the prompt**: one file, `<dir>/.claude/settings.local.json`, never in
   `~/.claude/settings.json` (and nothing in the pinned install, which stays exactly the signed commit):
 
