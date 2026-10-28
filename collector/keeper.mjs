@@ -3,8 +3,17 @@
 // this file), drops the front matter the app adds, and compares the trimmed prompt's sha256 with the one the owner's
 // install shipped (collector.keeper.promptSha256). Only { ok, at } goes to derived/all; the page shows the owner a red
 // line with the command that copies the prompt file, built from the page's own config.
+// Security's conditions: the file read must be, after realpath, a regular file of at most 64 KB at
+// ~/.claude/scheduled-tasks/<name>/SKILL.md, opened read only and non-blocking. Anything else (a symlink out, a device,
+// a FIFO, too big, unreadable) is "can't tell": nothing reported, so the check is no probe of other files.
 import { createHash } from "node:crypto";
-import { basename } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
+import { homedir } from "node:os";
+import { realpathSync, openSync, fstatSync, readSync, closeSync, constants } from "node:fs";
+
+export const MAX_SKILL = 64 * 1024;
+export const SKILL_PATH = /^~\/\.claude\/scheduled-tasks\/[a-z0-9-]{1,60}\/SKILL\.md$/;
+export const PROMPT_PATH = /^~\/(?:[A-Za-z0-9._-]{1,80}\/){0,6}[A-Za-z0-9._-]{1,80}\.txt$/;
 
 // The prompt as the task holds it: without the "---" front matter block, line ends as \n, trimmed.
 export function promptBody(text) {
@@ -15,14 +24,36 @@ export function promptBody(text) {
 
 export const promptSha = (text) => createHash("sha256").update(promptBody(text), "utf8").digest("hex");
 
-// read: (path) => text, throwing when there's no such file. Returns null when the check is off or the file can't be read
-// (no task saved yet is the install's to say), else { ok, at }.
-export function keeperCheck(config, read, now) {
+const expand = (p, home) => String(p).replace(/^~(?=\/)/, home);
+
+// The task's saved prompt text, or null when it isn't a regular file of at most MAX_SKILL bytes inside
+// <home>/.claude/scheduled-tasks/<name>/SKILL.md after realpath.
+export function readSkill(skill, home = homedir()) {
+  if (!SKILL_PATH.test(String(skill ?? ""))) return null;
+  let fd = null;
+  try {
+    const base = realpathSync(join(home, ".claude", "scheduled-tasks"));
+    const real = realpathSync(expand(skill, home));
+    if (!/^[a-z0-9-]{1,60}\/SKILL\.md$/.test(relative(base, real).split(sep).join("/"))) return null;
+    fd = openSync(real, constants.O_RDONLY | constants.O_NONBLOCK);
+    const st = fstatSync(fd);
+    if (!st.isFile() || st.size > MAX_SKILL) return null;
+    const buf = Buffer.alloc(MAX_SKILL + 1);
+    let n = 0, got;
+    while ((got = readSync(fd, buf, n, buf.length - n, null)) > 0) { n += got; if (n > MAX_SKILL) return null; }
+    return buf.subarray(0, n).toString("utf8");
+  } catch { return null; } finally { if (fd !== null) try { closeSync(fd); } catch { /* closed */ } }
+}
+
+// Returns null when the check is off, the prompt file isn't in the config's own folder (configDir, when given), or the
+// saved prompt can't be read as above; else { ok, at }.
+export function keeperCheck(config, now, { home = homedir(), configDir = null } = {}) {
   const k = config.collector.keeper ?? {};
   if (!k.skill || !k.prompt || !k.promptSha256) return null;
-  let text;
-  try { text = read(k.skill); } catch { return null; }
-  return { ok: promptSha(text) === k.promptSha256, at: now };
+  if (!PROMPT_PATH.test(k.prompt)) return null;
+  if (configDir) { let at = null; try { at = realpathSync(dirname(expand(k.prompt, home))); } catch { /* no folder */ } if (at !== configDir) return null; }
+  const text = readSkill(k.skill, home);
+  return text === null ? null : { ok: promptSha(text) === k.promptSha256, at: now };
 }
 
 // The lead's line when it doesn't match: fixed text and the prompt file's own name (the config's, never the task's).

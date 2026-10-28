@@ -384,7 +384,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   doc.conflicts.push(...guard);
   conflicts.push(...guard);
   // The context keeper's saved prompt against the installed one (#C407): only whether it matches leaves the run.
-  const keeper = keeperCheck(config, (p) => readFileSync(home(p), "utf8"), now);
+  let configDir = null;
+  try { configDir = dirname(realpathSync(process.argv[process.argv.indexOf("--config") + 1])); } catch { /* checked at start */ }
+  const keeper = configDir ? keeperCheck(config, now, { configDir }) : null;
   if (keeper) doc.keeper = keeper;
   const waits = new Set(Object.entries(doc.cards).filter(([, d]) => d.wait).map(([id]) => id));
   const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards, doc.releaseTimes)] };

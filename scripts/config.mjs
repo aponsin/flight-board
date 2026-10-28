@@ -122,13 +122,16 @@ export function checkConfig(c) {
       for (const f of ["versionPattern", "shippedPattern", "liveTag", "candidatePattern"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
       // A path git shows from main: relative, inside the repository, never an option or a ref:path of its own (Security).
       if (k.releaseTimes !== undefined && !(k.releaseTimes === "" || (typeof k.releaseTimes === "string" && k.releaseTimes.length <= 200 && /^[A-Za-z0-9_][A-Za-z0-9._\/-]*$/.test(k.releaseTimes) && !k.releaseTimes.split("/").includes("..")))) out.push("collector.releaseTimes: a path inside the repository, or empty");
-      // Paths the page puts in a shell command for the owner to copy (Security): no spaces, quotes or "..", ~ only first.
+      // Security on #C407: the skill is a scheduled task's SKILL.md and nothing else (no probe of other files); the prompt a
+      // .txt under ~ (the Collector also wants it in the config's own folder) that a shell takes unquoted: no spaces,
+      // quotes or "..". The same patterns as collector/keeper.mjs.
       if (k.keeper !== undefined) {
-        const p = k.keeper, PATH = /^~?[A-Za-z0-9._\/-]{1,300}$/;
+        const p = k.keeper, SKILL = /^~\/\.claude\/scheduled-tasks\/[a-z0-9-]{1,60}\/SKILL\.md$/, PROMPT = /^~\/(?:[A-Za-z0-9._-]{1,80}\/){0,6}[A-Za-z0-9._-]{1,80}\.txt$/;
         if (!p || typeof p !== "object" || Array.isArray(p) || Object.keys(p).some((f) => !["skill", "prompt", "promptSha256"].includes(f))) out.push("collector.keeper: { skill, prompt, promptSha256 }");
         else {
           const set = ["skill", "prompt", "promptSha256"].filter((f) => p[f]);
-          for (const f of ["skill", "prompt"]) if (p[f] && !(typeof p[f] === "string" && PATH.test(p[f]) && !p[f].split("/").includes(".."))) out.push(`collector.keeper.${f}: a file path (letters, digits, . _ - /, ~ first), or empty`);
+          if (p.skill && !(typeof p.skill === "string" && SKILL.test(p.skill))) out.push("collector.keeper.skill: ~/.claude/scheduled-tasks/<task>/SKILL.md, or empty");
+          if (p.prompt && !(typeof p.prompt === "string" && PROMPT.test(p.prompt) && !p.prompt.split("/").some((s) => s === ".." || s === "."))) out.push("collector.keeper.prompt: a .txt file under ~ (letters, digits, . _ - /), or empty");
           if (p.promptSha256 && !/^[0-9a-f]{64}$/.test(String(p.promptSha256))) out.push("collector.keeper.promptSha256: 64 hex digits, or empty");
           if (set.length && set.length < 3) out.push("collector.keeper: skill, prompt and promptSha256 all set, or none");
         }
