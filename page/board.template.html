@@ -1656,9 +1656,13 @@ document.addEventListener("submit",async e=>{const c=e.target.dataset&&e.target.
 // A dashed red tile means the agent saved its notes and waits for the owner to type /clear in it.
 // The keeper's check (meta "context") still carries the saved / "clear me" flags. A reading older than 2 h is dimmed.
 // Each agent's memory reading: meta/context's, or a fresher ctx/<agent> one. { name: { pct, tokens?, at, saved? } }.
-function ctxAgents(){const m=state.meta.find(d=>d.id==="context")||{},a={};
+// A count under 2 h old outlives a newer reading without one (Checker on bcadb2a): agents still write their own tile
+// as {pct, at}, and an agent at 350k of a 1M window would read "35%", green, over the Collector's red 350k.
+function ctxAgents(now=Date.now()){const m=state.meta.find(d=>d.id==="context")||{},a={};
   Object.entries(m.agents||{}).forEach(([n,v])=>{a[n]={...v,at:num(v.at)??num(m.at)}});
-  state.ctx.forEach(d=>{if(!d.id||num(d.pct)==null)return;const cur=a[d.id]||{};if(!num(cur.at)||num(d.at)>cur.at){const {tokens:_,...rest}=cur;a[d.id]={...rest,pct:d.pct,at:num(d.at),...(d.tokens!==undefined?{tokens:d.tokens}:{})}}});
+  state.ctx.forEach(d=>{if(!d.id||num(d.pct)==null)return;const cur=a[d.id]||{};if(num(cur.at)&&!(num(d.at)>cur.at))return;
+    if(!Number.isInteger(d.tokens)&&Number.isInteger(cur.tokens)&&now-cur.at<=CTX_OLD)return;
+    const {tokens:_,...rest}=cur;a[d.id]={...rest,pct:d.pct,at:num(d.at),...(d.tokens!==undefined?{tokens:d.tokens}:{})}});
   return a}
 const CTX_TOK=2e5;
 // "439k", "1.2M": cut down, so a count under a line never reads as the line.

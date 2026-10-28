@@ -41,14 +41,31 @@ test("a reading without tokens keeps today's tile: the percentage, green under 4
   for (const tokens of [-1, 4.5, "439048", null]) assert.match(b.ctxTileHtml("Sales", { pct: 52, tokens, at }, null, now), /<span class="pc">52%<\/span>/, `tokens ${JSON.stringify(tokens)}: not a count`);
 });
 
-test("the freshest reading carries its tokens, and a fresher one without tokens drops an older count", () => {
-  const now = Date.now();
-  b.state.meta = [{ id: "context", at: now - 9e5, agents: { Manager: { pct: 40, tokens: 400000, at: now - 9e5 }, Checker: { pct: 20, tokens: 200500, at: now - 9e5 } } }];
+test("the freshest reading carries its tokens; a newer one without tokens counts only once the count is over 2 h old", () => {
+  const now = Date.now(), H = 3600e3;
+  b.state.meta = [{ id: "context", at: now - 9e5, agents: { Manager: { pct: 40, tokens: 400000, at: now - 9e5 }, Checker: { pct: 20, tokens: 200500, at: now - 3 * H } } }];
   b.state.ctx = [{ id: "Manager", pct: 44, tokens: 439048, at: now - 6e4 }, { id: "Checker", pct: 21, at: now - 6e4 }];
-  const a = b.ctxAgents();
+  const a = b.ctxAgents(now);
   assert.equal(a.Manager.tokens, 439048);
-  assert.equal(a.Checker.tokens, undefined, "Checker's newest reading has no count");
+  assert.equal(a.Checker.tokens, undefined, "Checker's count is 3 h old: its newer percentage shows");
   assert.equal(a.Checker.pct, 21);
+});
+
+// Checker's MEDIUM on bcadb2a: agents still write their own ctx/<Role> as {pct, at} (the steps rule, the Refresh wake).
+// An agent at 350k of a 1M window says "35%", green, while the Collector's count says 350k, red: the count wins while
+// it is under 2 h old, so a self-report never hides it.
+test("an agent's own percent-only write after the Collector's count doesn't hide the count", () => {
+  const now = Date.now(), MIN = 60e3;
+  b.state.meta = [{ id: "context", at: now - 30 * MIN, agents: { Checker: { pct: 35, tokens: 350000, at: now - 30 * MIN, saved: true } } }];
+  b.state.ctx = [{ id: "Checker", pct: 35, at: now - MIN }];
+  const a = b.ctxAgents(now);
+  assert.equal(a.Checker.tokens, 350000);
+  assert.equal(a.Checker.at, now - 30 * MIN, "the count's own time, so its age shows true");
+  assert.equal(a.Checker.saved, true, "the keeper's flag kept");
+  assert.match(b.ctxTileHtml("Checker", a.Checker, null, now), /^<div class="ctx-t r saved"[\s\S]*<span class="pc">350k<\/span>/);
+  // A newer count from the agent itself (with tokens) still wins.
+  b.state.ctx = [{ id: "Checker", pct: 36, tokens: 360000, at: now - MIN }];
+  assert.equal(b.ctxAgents(now).Checker.tokens, 360000);
 });
 
 test("Crew's memory line reads the same: tokens with their colour, or the percentage", () => {
