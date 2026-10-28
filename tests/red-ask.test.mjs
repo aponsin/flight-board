@@ -108,3 +108,48 @@ test("the answer rule: the owner's question needs a board answer, in a thread or
   const builder = hook(turn([], { title: "Builder", text: "/pickup Manager quoted in a test? <command-name>/pickup</command-name><command-args>Manager</command-args>" }));
   assert.doesNotMatch(builder, /asked a question|memory tile/, "Builder isn't Manager");
 });
+
+// #C392: the cue waits one turn while the owner is in the middle of something. Manager's 06:31Z reset threw away the
+// board auto-replies the owner had turned on at 06:30Z. Times are the transcript's own ("now" is its newest entry).
+const at = (iso, lines) => { lines.forEach((l) => { if (l.type !== "custom-title") l.timestamp = iso; }); return lines; };
+const fb = (text, ts) => ({ type: "user", isMeta: true, timestamp: ts, message: { role: "user", content: `Stop hook feedback:\n${text}` } });
+test("the reset cue defers one turn while the owner wrote under 10 minutes ago, or an ask of theirs is open", () => {
+  const owner = at("2026-10-28T06:30:00.000Z", turn([], { title: "Manager", text: "Turn the board's comment auto-replies back on." }));
+  owner.at(-1).timestamp = "2026-10-28T06:31:00.000Z";
+  const cue = hook(big(owner));
+  assert.match(cue, /^Context reset cue: deferred one turn\. This session's context is at 450k tokens, over 400k, but the owner wrote 1 min ago/);
+  assert.match(cue, /"resetting after this" on the board/);
+  assert.match(cue, /reset with \/handoff at the end of the next one/);
+
+  const later = at("2026-10-28T06:30:00.000Z", turn([], { title: "Manager", text: "Turn the board's comment auto-replies back on." }));
+  later.at(-1).timestamp = "2026-10-28T06:41:00.000Z";
+  assert.match(hook(big(later)), /^Context reset cue: this session's context/, "11 minutes on: the cue as before");
+
+  const noTimes = big(turn([], { title: "Boardsmith", text: "go on" }));
+  assert.match(hook(noTimes), /^Context reset cue: this session's context/, "no times in the transcript: as before");
+
+  const asked = at("2026-10-28T05:00:00.000Z", turn([], { title: "Builder", text: "go on" }));
+  asked.at(-1).message.content = [{ type: "text", text: "🔴 Which colour?" }];
+  asked.at(-1).timestamp = "2026-10-28T06:00:00.000Z";
+  assert.match(hook(big(asked)), /deferred one turn.*an ask of the owner's is open/, "a red ask this turn waits on the owner");
+
+  const other = at("2026-10-28T06:30:00.000Z", [{ type: "custom-title", customTitle: "Boardsmith" },
+    { type: "user", message: { content: "<cross-session-message from=\"x\">go on</cross-session-message>" } },
+    { type: "assistant", message: { content: [{ type: "text", text: "ok" }] } }]);
+  assert.match(hook(big(other)), /^Context reset cue: this session's context/, "another session's message isn't the owner's");
+});
+
+test("the deferral is one turn: a deferred cue since the last reset means this one resets", () => {
+  const lines = [
+    { type: "custom-title", customTitle: "Manager" },
+    { type: "user", timestamp: "2026-10-28T06:30:00.000Z", message: { content: "Turn the board's comment auto-replies back on." } },
+    { type: "assistant", timestamp: "2026-10-28T06:30:30.000Z", message: { content: [{ type: "text", text: "Done." }] } },
+    fb("Context reset cue: deferred one turn. This session's context is at 410k tokens…", "2026-10-28T06:30:31.000Z"),
+    { type: "assistant", timestamp: "2026-10-28T06:30:40.000Z", message: { content: [{ type: "text", text: "Wrote it." }] } },
+    { type: "user", timestamp: "2026-10-28T06:32:00.000Z", message: { content: "and the tiles" } },
+    { type: "assistant", timestamp: "2026-10-28T06:32:30.000Z", message: { content: [{ type: "text", text: "Here." }] } },
+  ];
+  assert.match(hook(big(lines)), /^Context reset cue: this session's context is at 450k/);
+  const reset = [...lines.slice(0, 5), { type: "user", timestamp: "2026-10-28T06:31:00.000Z", message: { content: "<command-name>/compact</command-name>" } }, ...lines.slice(5)];
+  assert.match(hook(big(reset)), /deferred one turn/, "a reset since: the next cue may wait again");
+});
