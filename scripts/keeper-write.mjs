@@ -6,11 +6,12 @@
 //   1. the prompt file is the one the pack names (its sha256); the task's file is a regular file of at most 64 KB;
 //   2. the task's front matter (from the first line "---" to the next, inclusive) is kept byte for byte; only the body
 //      after it is replaced by the prompt (none found: STOP);
-//   3. a backup <skill><suffix> is kept (once: a re-run keeps the first); the new file is written beside it with mode 0644
-//      and renamed over the task's file, but only if the task's file still hashes as it did when read;
+//   3. the new file is created beside it (never through an existing entry) with mode 0644 and renamed over the task's
+//      file, but only if the task's file still hashes as it did when read; just before the rename a backup
+//      <skill><suffix> is made, once (a re-run keeps the first; never through an existing entry, a dangling link too);
 //   4. read back, its prompt is the pack's by #C407's promptSha: "keeper prompt: ok", else "keeper prompt: paste pending".
 // The app must not hold the task's Edit form open meanwhile (it could save over the file): the steps say so.
-import { realpathSync, writeFileSync, renameSync, rmSync, existsSync, copyFileSync, chmodSync, openSync, fstatSync, readSync, closeSync, constants } from "node:fs";
+import { realpathSync, writeFileSync, renameSync, rmSync, lstatSync, copyFileSync, chmodSync, openSync, fstatSync, readSync, closeSync, constants } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, dirname, basename } from "node:path";
@@ -55,13 +56,18 @@ export function writeKeeper({ skill, prompt, promptFileSha, suffix, home = homed
   const next = Buffer.from(`${front[0]}\n${body}\n`, "utf8");
   if (next.length > MAX_SKILL) return stop("the new prompt would be over 64 KB");
   const backup = real + suffix;
-  if (!existsSync(backup)) copyFileSync(real, backup);
+  // The temp file is created, never opened if there (Security's LOW on add3bb0: a symlink planted at the name).
   const tmp = join(dirname(real), `.${basename(real)}.${process.pid}.tmp`);
-  writeFileSync(tmp, next, { mode: 0o644 });
+  try { writeFileSync(tmp, next, { mode: 0o644, flag: "wx" }); } catch { return stop(`${tmp} already exists`); }
   chmodSync(tmp, 0o644);
   between();
   const now = readRegular(real, MAX_SKILL);
   if (!now || sha(now) !== sha(before)) { rmSync(tmp, { force: true }); return stop(`${skill} changed while this ran (is its Edit form open in the app?)`); }
+  // The backup once, after the checks: any entry at its name (a dangling symlink too) counts as there, and the copy
+  // never writes over one.
+  let had = true;
+  try { lstatSync(backup); } catch { had = false; }
+  if (!had) try { copyFileSync(real, backup, constants.COPYFILE_EXCL); } catch { rmSync(tmp, { force: true }); return stop(`the backup ${backup} can't be made`); }
   renameSync(tmp, real);
   const after = readRegular(real, MAX_SKILL);
   const ok = !!after && promptSha(after.toString("utf8")) === promptSha(body);

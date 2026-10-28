@@ -78,6 +78,25 @@ test("the task's file changed while it ran (the app's Edit form saved): STOP, th
   assert.deepEqual(readdirSync(s.dir).filter((f) => f.endsWith(".tmp")), []);
 });
 
+// Security's LOWs on add3bb0: no write through an entry planted at the temp or backup name; a STOP leaves no backup.
+test("a symlink planted at the temp name or the backup name is never written through", () => {
+  let s = setup();
+  const target = join(s.home, "victim.txt");
+  writeFileSync(target, "keep me");
+  symlinkSync(target, join(s.dir, `.SKILL.md.${process.pid}.tmp`));
+  assert.match(run(s).lines[0], /already exists; nothing written/);
+  assert.equal(readFileSync(target, "utf8"), "keep me");
+  assert.equal(readFileSync(s.skill, "utf8"), `${FRONT}\n${OLD}`);
+  s = setup();
+  const dangling = join(s.home, "not-yet.txt");
+  symlinkSync(dangling, `${s.skill}.before-v321`);
+  assert.equal(run(s).lines[0], "keeper prompt: ok", "an entry at the backup name counts as the backup");
+  assert.throws(() => readFileSync(dangling), "nothing written through the dangling link");
+  s = setup();
+  run(s, { between: () => writeFileSync(s.skill, `${FRONT}\nsaved by the app\n`) });
+  assert.throws(() => readFileSync(`${s.skill}.before-v321`), "a STOP makes no backup");
+});
+
 test("the CLI: one line per result, exit 0 or 1", () => {
   const s = setup();
   const cli = (args) => spawnSync(process.execPath, [new URL("../scripts/keeper-write.mjs", import.meta.url).pathname, ...args], { encoding: "utf8", env: { ...process.env, HOME: s.home } });
