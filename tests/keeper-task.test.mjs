@@ -110,3 +110,21 @@ test("the keeper still never clears a session or touches Remote Control", () => 
 test("a dry run on a test role is the acceptance, before the live task changes", () => {
   assert.match(doc, /## Dry run \(the acceptance\)[\s\S]*"\/pickup Rehearsal"[\s\S]*Remote Control is on again/);
 });
+
+// #C411 (the stuck-agent watchdog stopped for 18 h and nobody knew): the keeper checks it every run, first, with the
+// tested script under an exact allow rule, and pushes its one line to the owner and Manager.
+test("the watchdog check: step 1 loads PushNotification and runs {{WATCHDOG}}; the step text comes from the config", async () => {
+  const { watchdogStep } = await import("../collector/keeper.mjs");
+  const { fullConfig, checkConfig } = await import("../scripts/config.mjs");
+  assert.match(step(1), /select:[^"]*PushNotification[^"]*"/);
+  assert.match(step(1), /Then the watchdog: \{\{WATCHDOG\}\}\s*$/);
+  assert.match(doc, /`\{\{WATCHDOG\}\}` \(#C411/, "the header says how the lead fills it");
+  const watchdog = { script: "/Users/x/Code/team/scripts/watchdog-watch.mjs", state: "/Users/x/.claude/scheduled-tasks/team-agent-watchdog/state.json", alert: "/Users/x/.claude/scheduled-tasks/team-context-keeper/watchdog-alert.json" };
+  assert.equal(watchdogStep(fullConfig({ collector: { keeper: { watchdog } } })), `run exactly (one Bash call, nothing around it) "node ${watchdog.script} ${watchdog.state} ${watchdog.alert}". If it prints a line, send that exact line as ONE PushNotification (status proactive) and, as its own message, to the session titled "Manager"; if it prints nothing, go on.`);
+  assert.equal(watchdogStep(fullConfig({})), "none.", "no watchdog configured: nothing to run");
+  assert.deepEqual(checkConfig({ collector: { keeper: { watchdog } } }), []);
+  assert.deepEqual(checkConfig({ collector: { keeper: { watchdog: null } } }), []);
+  const BAD = "collector.keeper.watchdog: { script: /…/<name>.mjs, state: /…/<name>.json, alert: /…/<name>.json } (absolute paths), or null";
+  for (const bad of [{ ...watchdog, script: "~/x.mjs" }, { ...watchdog, state: "/a b/state.json" }, { ...watchdog, alert: "/x/../y.json" }, { ...watchdog, script: "/x/y.sh" }, { ...watchdog, state: "/x/$(id).json" }, { ...watchdog, extra: "/x.json" }, { script: watchdog.script }, "node x"])
+    assert.deepEqual(checkConfig({ collector: { keeper: { watchdog: bad } } }), [BAD], JSON.stringify(bad));
+});

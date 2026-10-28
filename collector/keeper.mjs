@@ -56,6 +56,14 @@ export function keeperCheck(config, now, { home = homedir(), configDir = null } 
   return text === null ? null : { ok: promptSha(text) === k.promptSha256, at: now };
 }
 
+// keeper/TASK.md's {{WATCHDOG}} (#C411): the step for collector.keeper.watchdog, or "none." without one. The command is
+// written exactly as the task's allow rule names it.
+export function watchdogStep(config) {
+  const w = config.collector.keeper?.watchdog;
+  if (!w) return "none.";
+  return `run exactly (one Bash call, nothing around it) "node ${w.script} ${w.state} ${w.alert}". If it prints a line, send that exact line as ONE PushNotification (status proactive) and, as its own message, to the session titled "Manager"; if it prints nothing, go on.`;
+}
+
 // The lead's line when it doesn't match: fixed text and the prompt file's own name (the config's, never the task's).
 export function keeperLine(config, check) {
   if (!check || check.ok) return null;

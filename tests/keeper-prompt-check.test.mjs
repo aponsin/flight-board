@@ -93,7 +93,7 @@ test("the lead's line names the prompt file, never the task's text", () => {
 });
 
 test("its config: three fields all set or none; paths a shell can take unquoted; 64 hex", () => {
-  assert.deepEqual(fullConfig({}).collector.keeper, { skill: "", prompt: "", promptSha256: "" });
+  assert.deepEqual(fullConfig({}).collector.keeper, { skill: "", prompt: "", promptSha256: "", watchdog: null });
   assert.deepEqual(checkConfig({ collector: { keeper } }), []);
   assert.deepEqual(checkConfig({ collector: { keeper: { skill: "", prompt: "", promptSha256: "" } } }), []);
   assert.deepEqual(checkConfig({ collector: { keeper: { ...keeper, promptSha256: "" } } }), ["collector.keeper: skill, prompt and promptSha256 all set, or none"]);
@@ -102,7 +102,7 @@ test("its config: three fields all set or none; paths a shell can take unquoted;
   for (const bad of ["~/secret.md", "/etc/passwd", "~/.claude/scheduled-tasks/../settings.json", "~/.claude/scheduled-tasks/a/b/SKILL.md", "~/.claude/scheduled-tasks/A/SKILL.md", "/dev/zero"])
     assert.ok(checkConfig({ collector: { keeper: { ...keeper, skill: bad } } }).includes("collector.keeper.skill: ~/.claude/scheduled-tasks/<task>/SKILL.md, or empty"), bad);
   assert.deepEqual(checkConfig({ collector: { keeper: { ...keeper, promptSha256: "ABC" } } }), ["collector.keeper.promptSha256: 64 hex digits, or empty"]);
-  assert.deepEqual(checkConfig({ collector: { keeper: { ...keeper, extra: 1 } } }), ["collector.keeper: { skill, prompt, promptSha256 }"]);
+  assert.deepEqual(checkConfig({ collector: { keeper: { ...keeper, extra: 1 } } }), ["collector.keeper: { skill, prompt, promptSha256, watchdog }"]);
 });
 
 const board = (keeperDoc, cfg = keeper) => {

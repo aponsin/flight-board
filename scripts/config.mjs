@@ -36,7 +36,8 @@ export const DEFAULTS = {
     refresh: { repos: [], taskId: "board-collector", debounceMin: 10, flightMin: 15 },
     // The context keeper's saved prompt against the one the owner's install shipped (#C407, collector/keeper.mjs): the
     // scheduled task's SKILL.md, the prompt file the owner pastes, and that prompt's sha256 (trimmed). Empty: off.
-    keeper: { skill: "", prompt: "", promptSha256: "" } },
+    // watchdog (#C411): the keeper's watchdog check, { script, state, alert }, or null for none (keeper/TASK.md {{WATCHDOG}}).
+    keeper: { skill: "", prompt: "", promptSha256: "", watchdog: null } },
   // The nudges (collector/nudges.mjs): minutes the owner may wait for an answer; how far past its size's median a step may
   // run (etaHours: the median hours a step takes, by card size); how old a memory reading may get; how long a card may
   // stay unchanged unless its status is one of parked; and the quiet minutes before a nudge is sent again.
@@ -127,8 +128,14 @@ export function checkConfig(c) {
       // quotes or "..". The same patterns as collector/keeper.mjs.
       if (k.keeper !== undefined) {
         const p = k.keeper, SKILL = /^~\/\.claude\/scheduled-tasks\/[a-z0-9-]{1,60}\/SKILL\.md$/, PROMPT = /^~\/(?:[A-Za-z0-9._-]{1,80}\/){0,6}[A-Za-z0-9._-]{1,80}\.txt$/;
-        if (!p || typeof p !== "object" || Array.isArray(p) || Object.keys(p).some((f) => !["skill", "prompt", "promptSha256"].includes(f))) out.push("collector.keeper: { skill, prompt, promptSha256 }");
+        if (!p || typeof p !== "object" || Array.isArray(p) || Object.keys(p).some((f) => !["skill", "prompt", "promptSha256", "watchdog"].includes(f))) out.push("collector.keeper: { skill, prompt, promptSha256, watchdog }");
         else {
+          // #C411: the keeper runs node <script> <state> <alert> under an exact allow rule: absolute paths a shell takes
+          // unquoted, the script a .mjs, the two others .json.
+          const w = p.watchdog, ABS = /^\/(?:[A-Za-z0-9._-]{1,80}\/){1,12}[A-Za-z0-9._-]{1,80}$/;
+          const abs = (v, ext) => typeof v === "string" && ABS.test(v) && v.endsWith(ext) && !v.split("/").some((s) => s === ".." || s === ".");
+          if (w !== undefined && w !== null && !(w && typeof w === "object" && !Array.isArray(w) && Object.keys(w).every((f) => ["script", "state", "alert"].includes(f)) && abs(w.script, ".mjs") && abs(w.state, ".json") && abs(w.alert, ".json")))
+            out.push("collector.keeper.watchdog: { script: /…/<name>.mjs, state: /…/<name>.json, alert: /…/<name>.json } (absolute paths), or null");
           const set = ["skill", "prompt", "promptSha256"].filter((f) => p[f]);
           if (p.skill && !(typeof p.skill === "string" && SKILL.test(p.skill))) out.push("collector.keeper.skill: ~/.claude/scheduled-tasks/<task>/SKILL.md, or empty");
           if (p.prompt && !(typeof p.prompt === "string" && PROMPT.test(p.prompt) && !p.prompt.split("/").some((s) => s === ".." || s === "."))) out.push("collector.keeper.prompt: a .txt file under ~ (letters, digits, . _ - /), or empty");
