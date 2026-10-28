@@ -1,0 +1,1 @@
+PASS Quick: #C395 done-list-search. Done list has its own search (initHit with dQuery): any age, newest first, first 20 plus a count line; no text keeps the last 24 h; donebox hidden only with no done card; the cards' box no longer filters Done; cardOpen clears the right list's search. Suite 568/568.
