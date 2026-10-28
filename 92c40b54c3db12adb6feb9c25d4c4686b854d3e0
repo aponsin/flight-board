@@ -1,0 +1,1 @@
+PASS Quick: #C379 board-keeper-wakes-reset. Pickup test now reads the Messages category under 5,000 (not the total, which carries ~88k overhead); report asks for savedTokens/savedPct; exact sleep 120 permission. Suite 538/538. Docs only; the dry run on Rehearsal is the live acceptance and must pass before the live task changes.
