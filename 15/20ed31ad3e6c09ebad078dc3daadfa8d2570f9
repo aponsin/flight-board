@@ -1,0 +1,1 @@
+PASS Full: #C420 board-state-probe at 1520ed31, one page-only commit on 0703b794, which I signed PASS Full. Probe rows now wrap their details in a .what block for phone width, and not seen shows no since time. CSS and probeHtml markup only; every value is still escaped, and the probe, schema, Worker and install are unchanged. Suite 702/702.
