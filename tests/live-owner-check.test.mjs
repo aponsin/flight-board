@@ -33,8 +33,13 @@ const run = (lines, { v = view(), stored = { checkedAt: null, msgs: [] } } = {})
 test("a Manager turn with no live query is asked for one, from its last check (less 2 min), or a day back", () => {
   const r = run(turn());
   assert.equal(r.errs.length, 1);
-  assert.ok(r.errs[0].startsWith(`live board check (one a turn: pings sent while you work are dropped): ArtifactData query, url ${URL_}, collection "messages", query {"where": [["from","==","Owner"],["at",">",${NOW - DAY}]], "limit": 100}. `), r.errs[0]);
+  assert.ok(r.errs[0].startsWith(`live board check (at most one every 5 min: pings sent while you work are dropped): ArtifactData query, url ${URL_}, collection "messages", query {"where": [["from","==","Owner"],["at",">",${NOW - DAY}]], "limit": 100}. `), r.errs[0]);
   assert.match(run(turn(), { stored: { checkedAt: NOW - 10 * MIN, msgs: [] } }).errs[0], new RegExp(`"at",">",${NOW - 10 * MIN - LIVE_SLACK}\\]`));
+  // Manager's yes to the design: at most one query every 5 minutes; what the last one returned still counts.
+  assert.deepEqual(run(turn(), { stored: { checkedAt: NOW - 4 * MIN, msgs: [] } }).errs, [], "checked 4 min ago: not asked again");
+  assert.equal(run(turn(), { stored: { checkedAt: NOW - 5 * MIN, msgs: [] } }).errs.length, 1, "5 min: asked");
+  const kept = { checkedAt: NOW - 4 * MIN, msgs: [{ id: "m-k", thread: "t-k", from: "Owner", text: "still?", at: NOW - 30 * MIN }] };
+  assert.match(run(turn(), { stored: kept }).errs.join("\n"), /thread t-k "still\?"/, "not asked, but the last check's word still counts");
   assert.deepEqual(run(turn(query([]))).errs, [], "the query ran, nothing came back: clean");
   assert.deepEqual(stopRun(turn(), { config, now: NOW, since: NOW - DAY, view: view() }).errs, [], "a caller that asks nothing of it checks as before");
   assert.deepEqual(run(turn([], { title: "Builder" })).errs, [], "only the lead");

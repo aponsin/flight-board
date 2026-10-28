@@ -16,6 +16,10 @@ export const LIVE_SLACK = 2 * 60e3;
 // What live.json keeps: the last KEEP_DAYS days' owner messages, at most KEEP of them.
 const KEEP_DAYS = 2, KEEP = 300;
 export const LIVE_LIMIT = 100;
+// A turn ending within LIVE_EVERY_MIN of the last check isn't asked again (Manager's yes to the design: at most one
+// query every 5 minutes); what that check returned still counts.
+export const LIVE_EVERY_MIN = 5;
+export const liveDue = (checkedAt, now) => checkedAt == null || now - checkedAt >= LIVE_EVERY_MIN * 60e3;
 
 export const livePath = (config) => join(home(config.gate.stateDir), boardId(config) ?? "no-board", "live.json");
 // { checkedAt, msgs } for a role: checkedAt the last turn whose query was read (null: never), msgs its owner messages.
@@ -39,7 +43,7 @@ const isMsg = (m) => m && typeof m === "object" && typeof m.id === "string" && t
 // The query the gate asks for, as the lead types it.
 export function liveAsk(config, since) {
   const where = JSON.stringify([["from", "==", config.owner], ["at", ">", since]]);
-  return `live board check (one a turn: pings sent while you work are dropped): ArtifactData query, url ${config.artifactUrl}, collection "messages", query {"where": ${where}, "limit": ${LIVE_LIMIT}}. Answer, in its thread, any message it shows that you haven't answered; then finish`;
+  return `live board check (at most one every 5 min: pings sent while you work are dropped): ArtifactData query, url ${config.artifactUrl}, collection "messages", query {"where": ${where}, "limit": ${LIVE_LIMIT}}. Answer, in its thread, any message it shows that you haven't answered; then finish`;
 }
 
 // The documents in a tool result's text: one JSON document per line between the BEGIN and END lines.
