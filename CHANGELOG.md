@@ -3,6 +3,7 @@
 ## 0.3.4 - Unreleased
 
 ### Fixed
+- Typing never waits behind the board (#C408, the owner on page v112: characters in a thread box sometimes showed late). Every db snapshot, of any of the 17 collections, ran a whole redraw, about 525 ms on today's board (8,500 documents, 900+ threads), and a keystroke behind one waited for it. Snapshots now ask for one redraw for a burst (100 ms on), and while the owner typed in any box in the last 1.2 s it waits for the pause. A db event now costs 0.2 ms; a guard test types 200 characters with events arriving and fails at any keystroke waiting over 50 ms. The page's first draw also comes once, not once per collection.
 - A thread's non-image files save through the viewer's own prompt (the `downloads` capability, now one of the page's four): a plain download link did nothing in the artifact viewer. Without the capability a file shows by name only (#C272).
 - Waiting on Manager orders and dates each ask by its newest word, so a reopened ask shows the owner's fresh message, not its old reply (#C272, Designer).
 - The Stop hook owes an answer to an "ok" that came with files, as the page keeps such a reply waiting on Manager; and it reads a note from the page's own separator, so an item whose text says "Note: " no longer starts the note early (#C272, Checker).

@@ -2023,6 +2023,15 @@ function setView(v){view=v==="v3"?"v3":"v2";$("v3").hidden=view!=="v3";$("v2").h
   $("viewlink").textContent=view==="v3"?"Back to the current board":"Try the new layout";
   try{localStorage.setItem("flight-board-view",view)}catch(e){}
   if(view==="v3"){renderNow();renderPlan();renderCrew3()}}
+// Board events while the owner types (#C408): a whole redraw takes about half a second on today's board (8,500 documents,
+// 900+ threads), and every snapshot of any of the 17 collections ran one, so characters typed meanwhile showed late.
+// A snapshot now asks for a redraw: the ones that land together share one, RENDER_BATCH ms on, and while the owner typed
+// in any box in the last TYPE_IDLE ms it waits for the pause. What they type is kept as before (keep, renderWaiting).
+const RENDER_BATCH=100,TYPE_IDLE=1200;let lastTyped=-Infinity,renderDue=null;
+document.addEventListener("input",()=>{lastTyped=Date.now()});
+function renderSoon(){if(renderDue!=null)return;
+  const go=()=>{const wait=lastTyped+TYPE_IDLE-Date.now();if(wait>0){renderDue=setTimeout(go,wait);return}renderDue=null;renderAll()};
+  renderDue=setTimeout(go,RENDER_BATCH)}
 function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3()}
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
@@ -2042,7 +2051,7 @@ setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()
   window.claude.use("comments").then(c=>{commentsRef=c}).catch(()=>{});
   window.claude.use("assets").then(a=>{if(a){assetsRef=a;renderWaiting();renderThreads()}}).catch(()=>{});
   window.claude.use("downloads").then(d=>{if(d){setDownloads(d);renderAll()}}).catch(()=>{});
-  const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderAll();$("synced").textContent="live, updated "+hhmm(Date.now())},
+  const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderSoon();$("synced").textContent="live, updated "+hhmm(Date.now())},
     ()=>{$("dot").classList.remove("on");$("synced").textContent="connection lost, reload"});
   ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings"].forEach(sub);
 })();
