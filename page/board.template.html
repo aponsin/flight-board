@@ -44,6 +44,9 @@ section{min-width:0}
 .kind.live{background:var(--ok-soft);color:var(--ok)}
 /* On a phone the chip says Building alone: the row's line under the title names the card. */
 @media (max-width:600px){.kind .kn{display:none}}
+.t-ping{font:600 .72rem var(--mono);color:var(--accent);background:none;border:1px solid var(--accent);border-radius:999px;padding:1px 8px;margin-left:6px;cursor:pointer}
+.t-ping:disabled{opacity:.6;cursor:default}.t-ping:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.t-pinged{font:400 .72rem var(--mono);color:var(--muted);margin-left:6px}
 .t-with{margin-top:2px}.c-from{font-size:.8rem;color:var(--muted);margin-right:8px;white-space:nowrap}
 /* A card number's bubble (#C367): one for the page, placed by the script under (or over) the number. */
 .cbub{position:fixed;z-index:60;max-width:min(360px,calc(100vw - 16px));padding:6px 10px;border-radius:8px;background:var(--ink);color:var(--bg);font-size:.8rem;line-height:1.4;box-shadow:0 4px 14px rgba(0,0,0,.18);pointer-events:none}.cbub[hidden]{display:none}
@@ -519,7 +522,7 @@ const PHASES=CONFIG.phases;
 const BUILD_PHASE=(CONFIG.collector&&CONFIG.collector.buildPhase)||"build";
 const LIVE_PHASE=(CONFIG.collector&&CONFIG.collector.livePhase)||"live";
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -1086,13 +1089,34 @@ const threadLast=id=>{const t=threadOf(id);return t[t.length-1].at};
 const LATE_MIN=5;
 function lateTag(id,now){if(!threadOpen(id))return"";const at=threadLast(id);
   return now-at>=LATE_MIN*60000?`<span class="late">unanswered ${dur(now-at)}</span>`:""}
+// Ping (#C372, the owner in t-1793156758845): the owner's word the newest, unanswered 10 minutes on, the row offers Ping,
+// which sends Manager the thread again through the reply route and, once sent, records threadPings/<id> {at}. A ping
+// counts only for the owner's newest word (at or after it); it shows "Pinged HH:MM" until Manager answers, and Ping
+// comes back 10 minutes after it. A ping that didn't send records nothing.
+const PING_MIN=10;
+function pingState(id,now){if(!threadOpen(id))return {show:null};const last=threadLast(id);
+  const p=(state.threadPings||[]).find(d=>d&&d.id===id&&num(d.at)!=null&&d.at>=last)||null;
+  const can=now-last>=PING_MIN*60000&&(!p||now-p.at>=PING_MIN*60000);
+  return p?{show:can?"ping":"pinged",at:p.at}:{show:can?"ping":null}}
+function pingHtml(id,now){const s=pingState(id,now);
+  return (s.at!=null?`<span class="t-pinged">Pinged ${hhmm(s.at)}</span>`:"")+(s.show==="ping"?`<button type="button" class="t-ping" data-tping="${esc(id)}" title="Send Manager this thread again">Ping</button>`:"")}
+// "Board ping [<id>]: waiting N min: <first words>": the owner's newest word on one line, cut at a word near 80 characters.
+function threadPingText(id,now){const t=threadOf(id),w=[...t].reverse().find(m=>m.from===OWNER)||t[t.length-1]||{};
+  const s=String(w.text||"").replace(/\s+/g," ").trim();let cut=s;
+  if(s.length>80){cut=s.slice(0,80);const sp=cut.lastIndexOf(" ");cut=(sp>40?cut.slice(0,sp):cut)+"…"}
+  return `Board ping [${id}]: waiting ${Math.floor((now-threadLast(id))/60000)} min: ${cut}`}
+function threadPingWrites(id,now){return /^[A-Za-z0-9_-]{1,100}$/.test(String(id))?[{op:"set",path:`threadPings/${id}`,data:{at:now}}]:[]}
+document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tping]");if(!b)return;e.preventDefault();e.stopPropagation();
+  const id=b.dataset.tping,now=Date.now();if(!dbRef||b.disabled||pingState(id,now).show!=="ping")return;b.disabled=true;
+  const anchor=await prepAnchor(b),sent=await sendPing(anchor,threadPingText(id,now));
+  try{if(sent)await applyWrites(threadPingWrites(id,now));else{b.disabled=false;b.textContent="Not sent";b.title=lastPing||""}}catch(_){b.disabled=false}});
 // where: the thread's place on the page, for unique box ids. ask: a card's closed ask (#C288), drawn as the ask it was
 // (its own kind and colour, no "Reply to:"), with a hint that writing reopens it.
 // A thread's kind is its state now (#C364): Question, Building #C356, Answer, Live, Decision; a resolved one keeps the
 // kind it started as. Under With the team, a line says what it waits on (withLine).
 function threadRow(id,now,where="panel",ask=null){const on=waitsOn(id,now),st=ask||on==="resolved"?null:threadState(id),card=st?threadCardAny(id):null;
   const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:st?`<span class="kind ${st}">${TSTATE[st]}${card&&Number.isInteger(card.num)?`<span class="kn"> #C${card.num}</span>`:""}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
-  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
+  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${ask?"":pingHtml(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
 function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id,q));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
     answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a))}}
@@ -1920,6 +1944,6 @@ setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()
   window.claude.use("downloads").then(d=>{if(d){setDownloads(d);renderAll()}}).catch(()=>{});
   const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderAll();$("synced").textContent="live, updated "+hhmm(Date.now())},
     ()=>{$("dot").classList.remove("on");$("synced").textContent="connection lost, reload"});
-  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests"].forEach(sub);
+  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings"].forEach(sub);
 })();
 </script>
