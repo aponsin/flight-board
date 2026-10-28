@@ -167,7 +167,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
 .probe{margin:0 0 12px;padding:8px 12px}.probe h2{font-size:.9rem;margin:0 0 4px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
-.probe-row{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:.85rem;padding:2px 0}.probe-row .who{font-weight:600;min-width:7em}.probe-row .idle{color:var(--muted)}.probe-row span{white-space:nowrap}
+.probe-row{display:flex;gap:10px;font-size:.85rem;padding:2px 0}.probe-row .who{font-weight:600;flex:0 0 7em}.probe-row .what{display:flex;flex-wrap:wrap;gap:2px 10px;min-width:0}.probe-row .idle{color:var(--muted)}.probe-row .what span{white-space:nowrap}
 .probe .note{margin-top:4px}
 .stuckline div+.deaf{margin-top:6px}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
@@ -2111,13 +2111,14 @@ function probeHtml(s,now=Date.now()){
   const rows=Object.keys(s.agents).filter(r=>/^[A-Za-z0-9_-]{1,60}$/.test(r)).sort().map(r=>{const a=s.agents[r]||{};
     const st=["working","idle","unknown"].includes(a.state)?a.state:"unknown",card=probeCard(s,a.card),tool=typeof a.tool==="string"&&/^[A-Za-z]{1,30}$/.test(a.tool)?a.tool:"";
     const since=isT(a.since)?`since ${hhmm(a.since)}`:"";
-    if(st!=="working")return `<div class="probe-row"><span class="who">${esc(r)}</span><span class="idle">${st==="idle"?"idle":"not seen"}${since?" "+esc(since):""}</span>${card?`<span class="idle">last on ${esc(card)}</span>`:""}</div>`;
-    return `<div class="probe-row"><span class="who">${esc(r)}</span><span>working${card?" on "+esc(card):""}</span>${tool?`<span>${esc(tool)}</span>`:""}${since?`<span>${esc(since)}</span>`:""}</div>`}).join("");
+    if(st==="unknown")return `<div class="probe-row"><span class="who">${esc(r)}</span><span class="what"><span class="idle">not seen</span></span></div>`;
+    if(st==="idle")return `<div class="probe-row"><span class="who">${esc(r)}</span><span class="what"><span class="idle">idle${since?" "+esc(since):""}</span>${card?`<span class="idle">last on ${esc(card)}</span>`:""}</span></div>`;
+    return `<div class="probe-row"><span class="who">${esc(r)}</span><span class="what"><span>working${card?" on "+esc(card):""}</span>${tool?`<span>${esc(tool)}</span>`:""}${since?`<span>${esc(since)}</span>`:""}</span></div>`}).join("");
   const cards=Object.keys(s.cards).filter(id=>{const c=s.cards[id];return c&&typeof c.headSha12==="string"&&/^[0-9a-f]{12}$/.test(c.headSha12)&&c.phase!=="live"}).sort().map(id=>{const c=s.cards[id];
     const ph=typeof c.phase==="string"?(PHASES.find(x=>x[0]===c.phase)||[,""])[1]:"";
     const ci=["queued","running","passed","failed","cancelled"].includes(c.ci)?`CI ${c.ci}${Number.isInteger(c.ciMin)?" "+c.ciMin+" min":""}`:"";
     const signed=Array.isArray(c.signed)?c.signed.filter(p=>typeof p==="string"&&PHASES.some(x=>x[0]===p)).map(p=>PHASES.find(x=>x[0]===p)[1]):[];
-    return `<div class="probe-row"><span class="who">${esc(probeCard(s,id))}</span>${ph?`<span>${esc(ph)}</span>`:""}<span class="idle">${esc(c.headSha12.slice(0,8))}</span>${signed.length?`<span>signed: ${esc(signed.join(", "))}</span>`:""}${ci?`<span>${esc(ci)}</span>`:""}${c.onMain===true?"<span>on main</span>":""}</div>`}).join("");
+    return `<div class="probe-row"><span class="who">${esc(probeCard(s,id))}</span><span class="what">${ph?`<span>${esc(ph)}</span>`:""}<span class="idle">${esc(c.headSha12.slice(0,8))}</span>${signed.length?`<span>signed: ${esc(signed.join(", "))}</span>`:""}${ci?`<span>${esc(ci)}</span>`:""}${c.onMain===true?"<span>on main</span>":""}</span></div>`}).join("");
   return rows+(cards?`<div class="note">Cards by the repository</div>${cards}`:"")}
 function renderProbe(){const el=$("probe");if(!el)return;el.hidden=!probe&&!probeNote;if(el.hidden)return;
   const asof=$("probe-asof");if(probe){asof.dataset.asof=probe.board.at;asof.textContent=asOfText(probe.board.at);asof.classList.toggle("stale",Date.now()-probe.board.at>PROBE_OLD)}else{delete asof.dataset.asof;asof.textContent=""}
