@@ -29,7 +29,9 @@ test("a card's Thread fold holds its closed asks, each with its whole thread, ne
   assert.match(html, /class="thread" data-thread="zoho"/);
   assert.match(html, /data-tsend="zoho"/, "a reply box: the conversation goes on from the card");
   assert.match(html, /#T877/);
-  assert.doesNotMatch(html, /Unrelated|Closed with no thread|Still open/, "another card's ask, an ask with no thread, an open ask (it shows under Needs you)");
+  const fold = html.slice(html.indexOf('<details class="i-thread"'));
+  assert.doesNotMatch(fold, /Unrelated|Closed with no thread|Still open/, "another card's ask, an ask with no thread, an open ask (it shows under Needs you)");
+  assert.match(html, /<span class="ow-line">waiting on you: <a [^>]*data-tref="live">Still open<\/a>/, "#C376: the open ask is named on the card's line, a link to it");
   assert.deepEqual([...b.cardAsks("trace", T)].map((w) => w.id), ["logs", "zoho"]);
 });
 
