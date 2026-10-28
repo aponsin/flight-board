@@ -1,0 +1,1 @@
+PASS Quick: #C426 state-secrets-clear-errors at the new tip. On top of 3b05383: --show refused except over SSH (tested), README step order fixed; suite 716/716.
