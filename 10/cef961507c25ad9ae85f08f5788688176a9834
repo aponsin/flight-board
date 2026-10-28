@@ -1,0 +1,1 @@
+PASS Quick: #C380 thread-hover-title. Thread bubble on hover and focus, every board value escaped (the number is an integer), no bubble for an unknown thread, a click hides it; suite 713/713; mutation check: pass (title unescaped, caught).
