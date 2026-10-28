@@ -1,0 +1,1 @@
+PASS Quick: #C379 keeper-wakes-reset, rebased re-sign (branch board-keeper-wakes-reset-main, on main dfa94b4). Range-diff: a307d81=983b99a, 92c40b5=00bb8e2, both '='; I signed 92c40b5. Suite 544/544 on this tip. The Rehearsal dry run still gates the live keeper task.
