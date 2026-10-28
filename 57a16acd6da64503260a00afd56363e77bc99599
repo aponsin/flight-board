@@ -1,0 +1,1 @@
+PASS Quick: #C386 thread-always-reply. An answered ask always draws its thread box ('Add more for Manager' until the thread has a message); an unanswered ask keeps only its own box. Suite 546/547; the one failure is the known clock test card-refs 'the bubble' (#C391, same on main). Mutation (answeredAsk forced false) fails all 3 new tests.
