@@ -1823,6 +1823,9 @@ function stepsOf(i){const mine=state.steps.filter(e=>e&&e.init===i.id);
   const t=(i.status==="done"||i.status==="dropped")&&state.timings.find(x=>x&&x.id===i.id);
   if(!t||!Array.isArray(t.steps))return mine;
   const seen=new Set(mine.map(e=>e.id));return mine.concat(t.steps.filter(e=>e&&e.init===i.id&&!seen.has(e.id)))}
+// A version's CI times from the release log (#C397: derived/all's releaseTimes, by "x.y.z"), or null.
+function releaseTimesOf(v){const m=/^v?(\d+\.\d+\.\d+)$/.exec(String(v||""));const all=state.derived.find(d=>d&&d.id==="all"),t=all&&all.releaseTimes;
+  return m&&t&&typeof t==="object"&&Object.hasOwn(t,m[1])&&t[m[1]]&&typeof t[m[1]]==="object"?t[m[1]]:null}
 function fromSteps(i){
   const evs=stepsOf(i).filter(e=>e&&e.phase&&num(e.at)!=null).sort((a,b)=>a.at-b.at);
   const skip=new Set(Array.isArray(i.skip)?i.skip:[]);
@@ -1837,7 +1840,9 @@ function fromSteps(i){
   evs.forEach(e=>{const key=e.phase+"|"+(e.who||"")+"|"+(e.wait||"");
     if(e.phase==="live"){out.status="done";out.phase="live";out.doneAt=e.at;if(e.version)out.version=e.version;
       // What the Ship box held: Release copies the ship script's two CI times onto its live step.
-      if(num(e.testsMin)!=null||num(e.deployMin)!=null)out.shipDetail=[num(e.testsMin)!=null?"tests "+Math.round(e.testsMin)+" min":"",num(e.deployMin)!=null?"deploy "+Math.round(e.deployMin)+" min":""].filter(Boolean).join(" · ");return}
+      // None there: the release log's, read by the collector for that version (#C397).
+      const r=num(e.testsMin)!=null||num(e.deployMin)!=null?e:releaseTimesOf(e.version)||{};
+      if(num(r.testsMin)!=null||num(r.deployMin)!=null)out.shipDetail=[num(r.testsMin)!=null?"tests "+Math.round(r.testsMin)+" min":"",num(r.deployMin)!=null?"deploy "+Math.round(r.deployMin)+" min":""].filter(Boolean).join(" · ");return}
     if(e.kind==="end"){const o=open[key];if(o){o.end=e.at;delete open[key]}else log.push({phase:e.phase,who:e.who,start:e.at,end:e.at});return}
     // A second start by the same agent on the same phase closes the first (it never logged an end).
     if(open[key]&&open[key].end==null)open[key].end=e.at;

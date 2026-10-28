@@ -88,6 +88,24 @@ export function mainVersion(line, pattern) {
   return null;
 }
 
+// The release log's CI times (#C397): { "<x.y.z>": { testsMin, deployMin } } from the table in <path> on ref, a row per
+// release; its notes' "candidate run N min" (or "dev run", before candidates) is testsMin and "main run N min" deployMin.
+// Rows without both are skipped, the newest RELEASE_ROWS versions kept; {} when there's no path or no such file.
+const RELEASE_ROWS = 100;
+export function releaseTimes(git, ref, path) {
+  if (!path) return {};
+  let text = "";
+  try { text = git(["show", `${ref}:${path}`]); } catch { return {}; }
+  const rows = [];
+  for (const line of String(text).split("\n")) {
+    const cells = line.split("|").map((s) => s.trim());
+    const v = /^v?(\d+\.\d+\.\d+)$/.exec(cells[2] ?? "");
+    const m = /(?:candidate|dev) run (\d+(?:\.\d+)?) min, main run (\d+(?:\.\d+)?) min/.exec(line);
+    if (v && m) rows.push([v[1], { testsMin: Number(m[1]), deployMin: Number(m[2]) }]);
+  }
+  return Object.fromEntries(rows.slice(-RELEASE_ROWS));
+}
+
 // A response body's first max bytes as text, reading no further (the rest is cancelled) (Security).
 const CAP = 262144;
 async function capped(r, max) {
