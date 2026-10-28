@@ -66,6 +66,12 @@ test("a click opens the card: on the board, or in Done (opened); a search that h
   assert.equal(c.cardOpen("nope"), null);
 });
 
+test("one link colour: #T and #C links in text in the accent, bold in running text (Designer on c131c68)", () => {
+  assert.match(page, /a\.t-ref\{font-weight:600;color:var\(--accent\);text-decoration:underline;text-underline-offset:2px\}/);
+  assert.match(b0().linkify("#C356"), /class="t-ref c-ref"/, "a card's link is a t-ref too");
+});
+const b0 = () => board();
+
 test("wiring: rows carry their card, the click opens it, the bubble shows on hover or focus only", () => {
   const b = board();
   assert.match(b.initRow(b.state.initiatives[0]), /^<div class="i-row"><div data-card="card-a">/, "inside the row: the fixtures reader splits on the row's exact tag");
