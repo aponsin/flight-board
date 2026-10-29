@@ -1983,11 +1983,16 @@ function enrich(i){return liveTyped(byEvidence(withEvidenceTimes(fromSteps(i))),
 // The live state's word over the typed one (#C449): a card it shows building is active, someone else on it is its who,
 // a wait while it builds goes; the phase is already the live one (byEvidence). The typed values stay in typed.
 // An agent working on it at or before build is on it now: not "up next" (byEvidence's guess when the steps trail).
-function liveTyped(out,raw){const cl=typedClashes(raw),on=liveWorkers(out.id),early=phaseIndex(out.phase)<=phaseIndex(BUILD_PHASE);
-  if(!cl.length&&!(on.length&&early&&(out.upNext||!out.who)))return out;
+// The track while the live state reads the card (#C450 (d), the owner's #C448: "Live: Language" with Build lit "Builder ·
+// 2 h" and Language "up next"): the boxes lit are the phases its agents work in now (a reviewer's own, a builder's the
+// card's), never the steps' open ones; an agent in the card's phase is its who, so that box isn't "up next".
+function liveTyped(out,raw){const cl=typedClashes(raw),on=liveWorkers(out.id),early=phaseIndex(out.phase)<=phaseIndex(BUILD_PHASE),L=liveCard(out.id);
+  if(!cl.length&&!L&&!(on.length&&early&&(out.upNext||!out.who)))return out;
   const res={...out};if(cl.length)res.typed=cl;
   for(const k of cl){if(k.field==="status")res.status="active";else if(k.field==="who")res.who=k.live;else if(k.field==="waitingOn")res.waitingOn=null}
   if(on.length&&early){res.upNext=false;if(!res.who)res.who=on[0]}
+  if(L&&out.status!=="done"){const np={};for(const w of on){const k=rolePhase(w)||res.phase;(np[k]=np[k]||[]).push(w)}
+    res.nowPhases=np;if(np[res.phase]){res.upNext=false;res.who=np[res.phase][0]}}
   return res}
 // Each phase's times from the evidence (#C235: the collector's derived/all.times, from git, the notes and the deploy
 // runs): for a phase the evidence shows, its entry takes the place of the steps' (waits stay, and the steps' who stays
@@ -2243,7 +2248,10 @@ function typedClashes(c,now=Date.now()){if(!c||typeof c.id!=="string"||!liveOn(n
   if(early&&b&&typeof c.waitingOn==="string"&&c.waitingOn.trim())out.push({field:"waitingOn",typed:c.waitingOn,live:null});
   return out}
 // A role's review phase, by the config's labels (Checker: checker); a builder's work is its card's phase.
-const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHASE)||[])[0]||null;
+// Else by the role that signs it (#C450 (d): Linguist signs Language, whose label isn't its name): the phase whose
+// notes ref (collector.notes, "refs/notes/linguist") ends in the role's name, as the Collector's reviewerOf reads it.
+const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHASE)||[])[0]
+  ||Object.entries((CONFIG.collector&&CONFIG.collector.notes)||{}).find(([k,ref])=>typeof ref==="string"&&ref.split("/").pop().toLowerCase()===String(n).toLowerCase()&&k!==BUILD_PHASE&&k!==LIVE_PHASE)?.[0]||null;
 // The header stamp: which source the board reads, and how old it is.
 function stampText(now=Date.now()){if(liveOn(now)){const s=Math.max(0,Math.round((now-probe.board.at)/1e3));return "live · "+(s<60?s+" s":dur(s*1e3))}
   const all=state.derived.find(d=>d.id==="all"),at=num(all&&all.at);return at!=null?"from "+hhmm(at):dbSynced?"from "+hhmm(dbSynced):"connecting…"}

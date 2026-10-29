@@ -16,7 +16,8 @@ const reading = (at) => ({
 // #C448 as the owner saw it: typed phase build, steps at build, an L card, a Check pressed, the Collector's run 50 min ago.
 const card = { id: ID, num: 448, name: "Our work editor", status: "active", phase: "build", size: "L", level: "Full", who: "Builder", createdAt: NOW - 2 * H, etaLive: NOW + 18 * MIN };
 function board() {
-  const b = loadNames(["enrich", "gates", "initRow", "probeEvent", "pressCheck", "checkLine", "renderAll"]);
+  const b = loadNames(["enrich", "gates", "initRow", "probeEvent", "pressCheck", "checkLine", "renderAll", "CONFIG"]);
+  b.CONFIG.collector = { notes: { language: "refs/notes/linguist", checker: "refs/notes/checker", security: "refs/notes/security" } };
   Object.assign(b.state, {
     initRaw: [card], steps: [step(ID, "build", "Builder", "start", NOW - 2 * H)], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [],
     checkRequests: [], derived: [{ id: "all", at: NOW - 50 * MIN, cards: { [ID]: { phase: "build", at: NOW - 50 * MIN, evidence: "READY on a1b2c3d4" } } }],
@@ -83,4 +84,22 @@ test("the disagreement opens and closes under the name row by a press; nothing t
   agree.state.initRaw = [{ ...card, phase: "build" }];
   assert.doesNotMatch(row(agree), /<button[^>]*class="evidence/, "no disagreement: a plain flag, nothing to press");
   assert.match(readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8"), /\.evidence\.differs\{border-style:dashed;border-color:var\(--muted\)/);
+});
+
+// (d) Manager, from Checker on this card's own render: the source said "Live: Language" while the track lit Build
+// ("Builder · 2 h", the steps' open start) and Language "up next".
+test("the owner's #C448 case: the track lights Language with Linguist, the reviewer the live state shows; Build isn't current", () => {
+  const b = board();
+  b.probeEvent({ type: "data", result: { payload: reading(NOW - 12e3) } }, {});
+  const html = row(b);
+  assert.match(html, /<div class="step now"[^>]*>Language<small>Linguist/, "Language lit, named");
+  assert.doesNotMatch(html, /class="step[^"]*\bnow\b[^"]*"[^>]*>Build</, "Build not current");
+  assert.doesNotMatch(html, /up next|Builder · /, "no 'up next', no builder's clock");
+  const two = board(), later = reading(NOW - 12e3);
+  later.cards[ID].phase = "checker";
+  two.probeEvent({ type: "data", result: { payload: later } }, {});
+  assert.match(row(two), /<div class="step now"[^>]*>Language<small>Linguist/, "the card on Checker, Linguist still on it: Linguist lights Language (its notes ref), not Checker");
+  const gone = board();
+  gone.probeEvent({ type: "data", result: { payload: { ...reading(NOW - 12e3), agents: {} } } }, {});
+  assert.doesNotMatch(row(gone), /class="step[^"]*\bnow\b[^"]*"[^>]*>Build</, "nobody on it now: the steps' old build start still lights nothing");
 });
