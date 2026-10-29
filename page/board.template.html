@@ -2256,7 +2256,9 @@ const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHA
 // header "live · 1 min": the db's stream had gone quiet with no error). The live state carries the db's last write
 // (board.lastWriteAt, the gate's journal); the page holds data up to dbHeld(), its newest doc `at` or its last receipt,
 // whichever is later. A write the page hasn't received DATA_BEHIND after it was made: the page reads every collection
-// again, and reloads once if that doesn't catch it up. DATA_SLACK covers two clocks a little apart.
+// again, and reloads once if that doesn't catch it up. DATA_SLACK covers two clocks a little apart. The receipt is any
+// collection's: this counts on the streams sharing the db's one connection and going quiet together (Checker), so one
+// stream dying alone while another delivers isn't caught here.
 const DATA_BEHIND=2*60e3,DATA_SLACK=30e3,RELOAD_KEY="flight-board-data-reload",RELOAD_GAP=10*60e3;
 let dbNewest=0,resyncAt=null;
 const dbHeld=()=>Math.max(dbSynced||0,dbNewest)||null;
@@ -2276,9 +2278,11 @@ let resubscribe=null;
 function catchUp(now=Date.now()){if(!dataBehind(now)){resyncAt=null;return null}
   if(resyncAt==null){resyncAt=now;if(resubscribe)resubscribe();return "resubscribed"}
   if(now-resyncAt<DATA_BEHIND)return null;
+  // The guard lives in sessionStorage, as a reload clears the page's own memory; where storage is blocked there is no
+  // guard, so no reload either (Checker: it would reload every ~4 min): the stamp says behind, the re-read stands.
   let last=0;try{last=+sessionStorage.getItem(RELOAD_KEY)||0}catch(e){}
   if(now-last<RELOAD_GAP)return null;
-  try{sessionStorage.setItem(RELOAD_KEY,String(now))}catch(e){}
+  try{sessionStorage.setItem(RELOAD_KEY,String(now))}catch(e){return null}
   try{location.reload()}catch(e){}return "reloaded"}
 const stampLine=(now=Date.now())=>stampText(now)+(probeNote?" · "+probeNote:"");
 let dbSynced=null,dbState="";

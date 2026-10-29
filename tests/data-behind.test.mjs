@@ -42,14 +42,40 @@ test("caught up, or the write under 2 min old: both ages, never the live age alo
   assert.equal(old.stampText(NOW), "live 30 s · data 3 min", "a probe from before lastWriteAt: nothing to compare");
 });
 
+// A page's world with a sessionStorage that survives its reloads (one tab's), and a reload that counts.
+const tab = () => { const kept = new Map(), w = { reloads: 0 };
+  w.globals = { sessionStorage: { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, String(v)) }, location: { reload: () => w.reloads++ } };
+  return w; };
+const behind = (globals, held = NOW - 10 * MIN) => { const b = loadNames(["probeEvent", "received", "catchUp"], globals);
+  b.received([{ id: "s1", at: held }], held); b.probeEvent({ type: "data", result: { payload: reading(NOW - 140e3) } }, {}); return b; };
+
 test("behind: every collection read again first, then one reload if still behind 2 min later", () => {
-  const b = board(NOW - 10 * MIN);
-  b.probeEvent({ type: "data", result: { payload: reading(NOW - 140e3) } }, {});
+  const t = tab(), b = behind(t.globals);
   assert.equal(b.catchUp(NOW), "resubscribed");
   assert.equal(b.catchUp(NOW + 30e3), null, "waits for the re-read");
   assert.equal(b.catchUp(NOW + 2 * MIN), "reloaded");
+  assert.equal(t.reloads, 1);
   const ok = board(NOW - 10 * MIN);
   assert.equal(ok.catchUp(NOW), null, "no live state: nothing to compare");
+});
+
+// Checker on 4f54d883: the guard had no test (without it, a db that stays behind reloads the page every ~2 min).
+test("a db that stays behind reloads the page once per 10 min, never in a loop; storage blocked, it doesn't reload", () => {
+  const t = tab();
+  // At each moment a fresh live reading, still naming the same write the page never gets.
+  const at = (b, now) => { const r = reading(NOW - 140e3); r.board.at = now - 30e3; b.probeEvent({ type: "data", result: { payload: r } }, {}); return b.catchUp(now); };
+  const first = behind(t.globals);
+  at(first, NOW); at(first, NOW + 2 * MIN);
+  const after = behind(t.globals); // the reloaded page, its memory new, the tab's storage kept
+  assert.equal(at(after, NOW + 3 * MIN), "resubscribed");
+  assert.equal(at(after, NOW + 5 * MIN), null, "past the re-read's wait, inside 10 min of the reload: no second one");
+  assert.equal(t.reloads, 1);
+  assert.equal(at(after, NOW + 13 * MIN), "reloaded", "10 min on, one more");
+  assert.equal(t.reloads, 2);
+  const w = { reloads: 0 }, blocked = behind({ sessionStorage: { getItem() { throw new Error("blocked"); }, setItem() { throw new Error("blocked"); } }, location: { reload: () => w.reloads++ } });
+  blocked.catchUp(NOW);
+  assert.equal(blocked.catchUp(NOW + 2 * MIN), null);
+  assert.equal(w.reloads, 0, "no guard to hold: no reload");
 });
 
 test("the Collector: lastWriteAt is the gate journal's newest time, nothing else of it; the state carries it and fits", () => {

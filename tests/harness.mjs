@@ -34,12 +34,13 @@ export function renderWaitingHtml(asks, opts = {}) {
 
 // Loads the board with the named functions exposed (threads and the reply writes, board v2), plus state.
 // The page's own document listeners are kept in `listeners` (type → [fn]), so a test can fire one (a fold's toggle).
-export function loadNames(names) {
+// globals: more of the page's world (a sessionStorage, a location), laid over the default one.
+export function loadNames(names, globals = {}) {
   const els = {};
   const listeners = {};
   const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });
   const document = { getElementById: el, querySelectorAll: () => [], querySelector: () => null, addEventListener(type, fn) { (listeners[type] ||= []).push(fn); }, activeElement: null, createRange: () => ({}) };
-  const ctx = { document, window: {}, console, setInterval() {}, setTimeout() {}, clearTimeout() {}, queueMicrotask() {}, navigator: {}, getSelection: () => ({}), Date, Math, JSON, Number, String, Array, Object, Set, Map, isFinite, URLSearchParams, WeakMap, File };
+  const ctx = { document, window: {}, console, setInterval() {}, setTimeout() {}, clearTimeout() {}, queueMicrotask() {}, navigator: {}, getSelection: () => ({}), Date, Math, JSON, Number, String, Array, Object, Set, Map, isFinite, URLSearchParams, WeakMap, File, ...globals };
   vm.createContext(ctx);
   vm.runInContext(script + `\n;globalThis.__b={state,${names.join(",")}};`, ctx);
   return { ...ctx.__b, els, document, listeners };
