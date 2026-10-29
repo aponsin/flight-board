@@ -1,0 +1,1 @@
+PASS Full (Checker, #C444 card-depends-on, Designer's fix): one waits-on label, links escaped, nothing when none open; gate unchanged since f6a2c7c; 759/759; the LOW (waits on shows dependencies past build) stands, not blocking; Security needed
