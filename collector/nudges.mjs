@@ -15,13 +15,16 @@
 //      release log (releaseTimes); cards in another repository aside. A second line for the lead to forward to whoever
 //      logged the live step.
 //   7. an open card more than an hour past its etaLive, with no open ask tied to it (#C441): every run, no quiet period.
+//   8. a typed field the fresh live state contradicts for TYPED_MIN minutes (#C449, collector/state-schema.mjs's
+//      typedClashes): the card and the field, so a new typed field is caught here and not by the owner.
 // The CONFLICT lines are the collector's own (collector/derive.mjs). Every board value a line names goes through idText
 // (collector/text.mjs): the lines reach a session that can write the board and message the team.
 
 import { idText as q } from "./text.mjs";
 import { repoOf, openAsks } from "./derive.mjs";
+import { typedClashes } from "./state-schema.mjs";
 
-const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10;
+const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10, TYPED_MIN = 5;
 const closed = (k) => k.status === "done" || k.status === "dropped";
 // A branch name from the repository: printed only if it has a branch's plain shape (it goes on to a reviewer), else "?".
 const branchText = (b) => (typeof b === "string" && /^[A-Za-z0-9._/-]{1,100}$/.test(b) ? b : "?");
@@ -47,8 +50,9 @@ function fingerprint(doc) {
 
 // waiting: the cards whose derived state is a wait with a known cause (#C278: queued for a board release, waiting for the
 // install): no step-overdue or unchanged nudge for them. derived: this run's derived cards ({ id: derivePhase's answer }).
-// releaseTimes: the release log's times by version (collector/facts.mjs releaseTimes).
-export function nudges({ config, docs, now, state = {}, waiting = new Set(), derived = {}, releaseTimes = {} }) {
+// releaseTimes: the release log's times by version (collector/facts.mjs releaseTimes). live: the live state's fresh
+// reading (collect.mjs readLiveState), or null.
+export function nudges({ config, docs, now, state = {}, waiting = new Set(), derived = {}, releaseTimes = {}, live = null }) {
   const n = config.nudges, owner = config.owner, firing = [];
   const messages = (docs.messages ?? []).filter((m) => m && typeof m.thread === "string" && typeof m.at === "number");
   const byThread = new Map();
@@ -157,6 +161,24 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     firing.push({ key: `overdue:${card.id}:${card.etaLive}`, every: true, text: `overdue: ${q(card.id)} (ETA ${eta}Z, phase ${q(phase ?? "?")})` });
   }
 
+  // 8. A typed field the live state contradicts, TYPED_MIN minutes on (a minute's lag between a write and the reading is
+  // no clash). Its clock is the run that first saw it; it starts again once the clash stops. No live reading this run:
+  // nothing to compare, and the clocks wait. The field's typed value never leaves (waitingOn is free text). A typed
+  // phase is not one of them: the run's CONFLICT line already says "the card says X, the repository says Y" (Checker).
+  const typedSeen = Object.create(null);
+  if (live) {
+    for (const card of cards.values()) {
+      if (closed(card)) continue;
+      for (const { field } of typedClashes(card, live, config).filter((k) => k.field !== "phase")) {
+        const key = `${card.id}:${field}`, before = Object.hasOwn(state.typedSeen ?? {}, key) ? state.typedSeen[key] : undefined;
+        typedSeen[key] = typeof before === "number" ? before : now;
+        if (now - typedSeen[key] < TYPED_MIN * MIN) continue;
+        const tag = Number.isInteger(card.num) && card.num > 0 ? ` (#C${card.num})` : "";
+        firing.push({ key: `typed:${key}`, text: `${q(card.id)}${tag}: its typed ${field} disagrees with the live state for ${mins(now - typedSeen[key])} min; the board shows the live one, so fix or clear the typed one` });
+      }
+    }
+  } else Object.assign(typedSeen, state.typedSeen ?? {});
+
   // Once, then again only after the quiet period; forgotten when it stops holding.
   const sent = Object.create(null), lines = [];
   for (const f of firing) {
@@ -166,5 +188,5 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     lines.push(`NUDGE ${f.text}`);
     if (f.then) lines.push(`NUDGE ${f.then}`);
   }
-  return { lines, state: { sent, seen, readySeen } };
+  return { lines, state: { sent, seen, readySeen, typedSeen } };
 }
