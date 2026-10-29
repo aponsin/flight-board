@@ -16,22 +16,25 @@ function card(b, steps, fields = {}, derived = null) {
   return b.gates(b.enrich({ id: "x", level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", size: "S", ...fields }));
 }
 
-test("beside 'so far': the size, its expected hours and when that comes due; 'was due' once it has passed", () => {
+// #C450 (the owner on #C448: two ETAs, "Live in 18 min" against "expected L 6 h, due ~09:05 PM"): the ETA box is the
+// card's one ETA; the size's median is a hint only, "(usually 1.5 h for S)", with no due time of its own.
+test("beside 'so far': the size's usual hours, a hint with no due time", () => {
   const b = loadBoard(), now = Date.now();
   const on = card(b, [step("x", "build", "Admin", "start", now - 20 * MIN)], { createdAt: now - 30 * MIN });
-  assert.match(b.initRow(on), new RegExp(`so far · expected S 1\\.5 h, due ~${hhmm(now - 30 * MIN + 1.5 * H)}`));
+  assert.match(b.initRow(on), /so far <span class="usual">\(usually 1\.5 h for S\)<\/span><\/span>/);
   const late = card(b, [step("x", "build", "Admin", "start", now - 3 * H)], { createdAt: now - 4 * H });
-  assert.match(b.initRow(late), new RegExp(`so far · expected S 1\\.5 h, was due ~${hhmm(now - 4 * H + 1.5 * H)}`));
+  assert.doesNotMatch(b.initRow(late), /due ~|expected/, "past it: still no second due time");
   const done = card(b, [step("x", "build", "Admin", "start", now - 3 * H), step("x", "live", "Release", "end", now - H, { version: "v1" })], { createdAt: now - 4 * H, status: "done", doneAt: now - H });
   assert.doesNotMatch(b.initRow(done), /expected/, "a finished card says nothing more");
 });
 
-test("Designer 1: one due time per card; a running tile shows who and how long only", () => {
+test("Designer 1: one ETA per card; a running tile shows who and how long only", () => {
   const b = loadBoard(), now = Date.now();
-  const i = card(b, [step("x", "build", "Admin", "start", now - 20 * MIN)], { createdAt: now - 30 * MIN, size: "M" });
+  const i = card(b, [step("x", "build", "Admin", "start", now - 20 * MIN)], { createdAt: now - 30 * MIN, size: "M", etaLive: now + 2 * H });
   const html = b.initRow(i);
   assert.match(html, /class="step now"[^>]*>Build<small>Admin · 20 min<\/small>/);
-  assert.equal(html.match(/due ~/g).length, 1, "the meta line's only");
+  assert.doesNotMatch(html, /due ~/, "no due time beside the ETA box (#C450)");
+  assert.equal(html.match(/<div class="lbl">Live in<\/div>/g).length, 1, "the ETA box's only");
 });
 
 test("a card nobody has started shows Build queued, not lit; a branch or a build start makes it started", () => {
@@ -41,7 +44,7 @@ test("a card nobody has started shows Build queued, not lit; a branch or a build
   assert.match(html, /class="step now queued"[^>]*>Build<small>queued · Boardsmith<\/small>/, "Designer 3: no time; the header has the ETA (#C370: whose queue, and its place when it has one)");
   assert.doesNotMatch(html, /class="step now"[^>]*>(Plan|Build)<small>Boardsmith/, "nothing lit as if someone were on it");
   assert.match(html, /<span class="state active">Queued<\/span>/);
-  assert.match(html, /<span>Queued 12 min · expected S 1\.5 h once started<\/span>/, "Designer 2: no 'Started', no due");
+  assert.match(html, /<span>Queued 12 min <span class="usual">\(usually 1\.5 h for S\)<\/span><\/span>/, "Designer 2: no 'Started', no due");
   assert.doesNotMatch(html, /Started|due ~/);
   const branched = card(b, [], { phase: "plan", who: "Boardsmith", createdAt: now - 10 * MIN }, { phase: "build", head: { sha: "abc1234", branch: "x" }, firm: false });
   assert.doesNotMatch(b.initRow(branched), /queued/i, "the collector has seen its branch");

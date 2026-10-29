@@ -25,7 +25,7 @@ test("live by the evidence: the card says Live, still open, never stalled, whate
   const html = b.initRow({ ...i, lastStepAt: old });
   assert.match(html, /Live, still open/);
   assert.doesNotMatch(html, /Stalled|up next/);
-  assert.match(html, /class="evidence clash"[^>]*>Repository: Live 1\.104\.1 · steps say Checker</);
+  assert.match(html, /class="evidence differs" title="steps say Checker[^"]*">Repository: Live 1\.104\.1</, "the steps in the hover (#C450)");
 });
 
 test("a review signed by the evidence moves the card on, with no step logged; the next reviewer is up next", () => {
@@ -41,7 +41,7 @@ test("the agent on the evidence's phase is named; agreement shows no clash", () 
   const i = card(b, [...built, step("x", "checker", "Checker", "start", T + 2)], { phase: "checker", evidence: "READY; waiting for checker, security" });
   assert.equal(i.phase, "checker");
   assert.equal(i.who, "Checker");
-  assert.doesNotMatch(b.initRow(i), /evidence clash/);
+  assert.doesNotMatch(b.initRow(i), /evidence differs/);
 });
 
 test("two reviews open at once, the evidence on the earlier one: that reviewer is named", () => {

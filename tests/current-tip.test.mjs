@@ -136,7 +136,7 @@ test("the page: the repository's reading says how old it is, and 'old' in the wa
   assert.match(css, /color:var\(--warn\)/, "the warning colour (passes 4.5:1 with the badges' check)");
   assert.doesNotMatch(css, /opacity/, "never dimmed (Designer: about 2:1 at half opacity)");
   const z = b.evidence({ id: "z", phase: "checker", status: "active" });
-  assert.match(z, /^<span class="evg"><span class="evidence clash"[^>]*>Repository: Checker · 2 branches, fix\/z&lt;b&gt; behind<\/span>/, "a split shows as a conflict, the branch escaped");
+  assert.match(z, /^<span class="evg"><span class="evidence differs" title="2 branches, fix\/z&lt;b&gt; behind · e">Repository: Checker<\/span>/, "a split goes in the hover (#C450), the branch escaped");
   assert.equal(b.asOf(undefined), "", "no reading time, nothing said");
 });
 

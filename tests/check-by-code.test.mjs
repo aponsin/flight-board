@@ -2,7 +2,7 @@
 // said "checking…" for minutes; "let's fix this for good").
 // 1. The Collector works out every card afresh each run (derived/all cards.<id>.at), so a Check request older than
 //    that run is answered: "checked by the Collector HH:MM". Until then the card says when the next run is due (hourly),
-//    never a bare "checking…" that hangs. No ping to the lead.
+//    never a "checking…" that hangs (#C450: none at all). No ping to the lead.
 // 2. A card with an open ask to the owner tied to it: no stall, no "never started", no stale next step or passed ETA;
 //    the card says "Waiting on you" and names the ask, a link to it.
 import test from "node:test";
@@ -21,24 +21,26 @@ test("#C350's state: asked at :12, the Collector ran at :21, no lead stamp → c
   assert.equal(b.checkLine(card, req, now), `checked by the Collector ${hhmm(now - 3 * MIN)}`);
 });
 
-test("before the next run: checking…, with when that run is due; past it, the run is late", () => {
+// Since #C450 (the Collector hourly, the owner watched "checking…" for 5+ min): never "checking…"; what each source
+// is, now (live-state tests: tests/check-live-now.test.mjs).
+test("before the next run: no live state, with when the Collector's run is due; past it, the run is late", () => {
   const now = Date.now(), b = loadNames(NAMES);
   const card = { id: "ctx-tokens", status: "active" };
   b.state.derived = derived(now - 20 * MIN);
-  assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), `checking… next Collector run ~${hhmm(now + 40 * MIN)}`);
+  assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), `No live state · Collector next ${hhmm(now + 40 * MIN)}`);
   b.state.derived = derived(now - 70 * MIN);
-  assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), `checking… Collector run late (due ${hhmm(now - 10 * MIN)})`);
+  assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), `No live state · Collector run late (due ${hhmm(now - 10 * MIN)})`);
   b.state.derived = [];
-  assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), "checking… until the Collector's next run", "no run seen yet");
+  assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), "No live state · Collector not run yet", "no run seen yet");
 });
 
 test("a run that didn't cover the card (not in derived/all) doesn't answer it", () => {
   const now = Date.now(), b = loadNames(NAMES);
   b.state.derived = derived(now - 3 * MIN, ["other"]);
-  assert.match(b.checkLine({ id: "ctx-tokens" }, { at: now - 12 * MIN }, now), /^checking…/);
+  assert.match(b.checkLine({ id: "ctx-tokens" }, { at: now - 12 * MIN }, now), /^No live state · Collector next /);
 });
 
-test("the late state is marked on the card; the Check button waits while checking", () => {
+test("the late state is marked on the card; the Check button stays, to read again", () => {
   const now = Date.now(), b = loadNames(NAMES);
   b.state.steps = [step("x", "build", "Admin", "start", now - 20 * MIN)];
   b.state.waiting = [];
@@ -46,9 +48,9 @@ test("the late state is marked on the card; the Check button waits while checkin
   b.state.derived = derived(now - 70 * MIN, ["x"]);
   const html = b.initRow(b.gates(b.enrich({ id: "x", num: 351, name: "X", size: "S", level: "Quick", skip: ["plan"], status: "active", createdAt: now - 30 * MIN })));
   // Its own class, not the global .late (nowrap, margin, 600 weight): at 390 px that widened the card (Designer on 091cd53).
-  assert.match(html, /<span class="i-checked is-late">checking… Collector run late \(due /);
+  assert.match(html, /<span class="i-checked is-late">No live state · Collector run late \(due /);
   assert.doesNotMatch(html, /class="(?:[^"]*\s)?late[\s"]/);
-  assert.doesNotMatch(html, /data-check=/);
+  assert.match(html, /data-check="x"/, "no live state reads it: the button stays (#C450)");
 });
 
 // 2. Waiting on the owner.

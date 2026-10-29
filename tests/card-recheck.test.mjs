@@ -22,7 +22,7 @@ test("an open card's #C label is its Check button, with a small ↻; a finished 
   const b = loadNames(NAMES);
   const html = b.initRow(card(b));
   // #C376, the owner (t-1793166475210): the label itself is the button, so no ↻ Check pill wraps onto its own line.
-  assert.match(html, /<div class="i-name"><button type="button" class="c-num i-check" data-check="x" aria-label="Check #C351 at the next Collector run" title="Check #C351 at the next Collector run">#C351<span class="i-ic" aria-hidden="true">↻<\/span><\/button> <strong>X<\/strong>/);
+  assert.match(html, /<div class="i-name"><button type="button" class="c-num i-check" data-check="x" aria-label="Check #C351 now: read the live state again, and have the Collector check it at its next run" title="Check #C351 now: read the live state again, and have the Collector check it at its next run">#C351<span class="i-ic" aria-hidden="true">↻<\/span><\/button> <strong>X<\/strong>/);
   assert.equal(html.match(/data-check=/g).length, 1, "one button: no separate pill");
   assert.doesNotMatch(html, />↻ Check</);
   const done = b.initRow(card(b, { status: "done", doneAt: Date.now() - MIN, phase: "live" }));
@@ -36,7 +36,7 @@ test("an open card's #C label is its Check button, with a small ↻; a finished 
 
 test("a card with no number yet keeps the ↻ Check pill", () => {
   const b = loadNames(NAMES);
-  assert.match(b.initRow(card(b, { num: undefined })), /<button type="button" class="i-check" data-check="x" aria-label="Have the Collector check X at its next run">↻ Check<\/button>/);
+  assert.match(b.initRow(card(b, { num: undefined })), /<button type="button" class="i-check" data-check="x" aria-label="Check X now: read the live state again, and have the Collector check it at its next run">↻ Check<\/button>/);
 });
 
 test("a click writes checkRequests/<card id> {at}, and nothing pings the lead", () => {
@@ -52,11 +52,10 @@ test("a lead's own checkedAt still answers a request; one older than the request
   const b = loadNames(NAMES);
   b.state.derived = [];
   assert.equal(b.checkLine({ id: "x", checkedAt: now - 2 * MIN }, { at: now - 5 * MIN }, now), `checked ${hhmm(now - 2 * MIN)}`);
-  assert.match(b.checkLine({ id: "x", checkedAt: now - 9 * MIN }, { at: now - 5 * MIN }, now), /^checking…/, "a stamp older than the request doesn't answer it");
+  assert.match(b.checkLine({ id: "x", checkedAt: now - 9 * MIN }, { at: now - 5 * MIN }, now), /^No live state · /, "a stamp older than the request doesn't answer it");
   const html = b.initRow(card(b, {}, { at: now - 5 * MIN }));
-  assert.match(html, /<span class="i-checked">checking…/);
+  assert.match(html, /<span class="i-checked">No live state · /);
   assert.match(page, /\.i-checked\{font:400 \.75rem var\(--mono\);color:var\(--muted\)\}\s*\.i-checked\.is-late\{color:var\(--warn\)\}/);
-  assert.doesNotMatch(html, /data-check=/, "no second click while it waits");
-  assert.match(html, /<span class="t-numtxt c-num" title="Card number">#C351<\/span>/, "the label stays, as plain text");
+  assert.match(html, /data-check="x"/, "a second click reads the live state again (#C450: nothing waits on the hourly run)");
   assert.match(page, /"timings","ctxRequests","checkRequests"(?:,"\w+")*\]\.forEach\(sub\)/, "the board listens to the requests");
 });

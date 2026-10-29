@@ -42,17 +42,17 @@ test("the owner's case: queued in the db, a branch with commits and Builder on i
   assert.match(b.els.crew.innerHTML, /<span class="ci active">Our work editor<\/span>/, "the tile: no ⧗");
 });
 
-// The whole card, as the board draws it: the words a person reads, and the tooltips. Its class names are code, and the
-// typed note is where the typed value is meant to show.
-const words = (html) => html.replace(/<small class="typed"[^>]*>[^<]*<\/small>/g, "").replace(/ class="[^"]*"/g, "");
+// The whole card, as the board draws it: the words a person reads. Its class names are code, and the source's hover is
+// where the typed value is meant to show (#C450: disagreements in a hover, not inline).
+const words = (html) => html.replace(/ title="[^"]*"/g, "").replace(/ class="[^"]*"/g, "");
 test("no typed field outranks the live state: the owner's case reads neither 'queued' nor 'never started' anywhere on the card", () => {
   const b = board(reading(NOW - 30e3));
   const html = b.initRow(b.state.initiatives[0]);
   assert.doesNotMatch(words(html), /queued|never started/i);
-  assert.match(html, /<small class="typed"[^>]*>typed: queued<\/small>/, "the typed value, as a small note");
+  assert.match(html, /<span class="evidence differs" title="typed: queued">Live: Build<\/span>/, "the typed value, in the source's hover");
   const stale = board(reading(NOW - 4 * MIN)), was = stale.initRow(stale.state.initiatives[0]);
   assert.match(words(was), /queued/i, "a stale reading: the typed status shows as before");
-  assert.doesNotMatch(was, /class="typed"/, "and no note");
+  assert.doesNotMatch(was, /typed: /, "and no typed line");
 });
 
 test("who, waiting on, phase: the live value shows, the typed one in the note; Stalled and an old Next line follow the agent", () => {
@@ -60,7 +60,7 @@ test("who, waiting on, phase: the live value shows, the typed one in the note; S
   const i = b.state.initiatives[0], html = b.initRow(i);
   assert.equal(i.who, "Builder", "who: the agent on it");
   assert.equal(i.waitingOn, null, "a typed wait while it builds is hidden");
-  assert.match(html, /typed: phase plan · who Designer · waiting on Checker&#39;s word|typed: phase plan · who Designer · waiting on Checker's word/);
+  assert.match(html, /title="typed: phase plan · typed: who Designer · typed: waiting on Checker&#39;s word">Live: Build</, "each typed value once, in the hover (the steps' plan is the typed one)");
   assert.doesNotMatch(words(html), /Waiting on <b>Checker|Designer/);
   assert.equal(b.stalled(i), 0, "an agent on it now: not stalled, whatever the steps");
   assert.match(html, /an agent has moved since/, "Builder working since after the Next line: it fades");

@@ -113,8 +113,6 @@ section{min-width:0}
 .step.now.queued::before{content:"⧗ ";}
 .state.queued{background:var(--warn-soft);color:var(--warn)}
 .state.stalled{background:var(--bad-soft);color:var(--bad)}
-/* What was typed on the card where the live state says otherwise (#C449): small and quiet beside the badge. */
-.typed{font-size:.7rem;color:var(--muted);margin-left:6px;min-width:0;overflow-wrap:anywhere}
 .stall{color:var(--bad);font-weight:600}
 .ow-line{color:var(--accent);font-weight:600}
 @media (prefers-reduced-motion:reduce){.step.now{animation:none;box-shadow:inset 0 0 0 2px var(--panel),0 0 0 2px var(--accent)}}
@@ -168,7 +166,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .reply label{font-size:.82rem;color:var(--muted)}
 .reply textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
-.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.clash{border-color:var(--bad);color:var(--bad)}.asof{font:.7rem var(--mono);color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
+.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;cursor:help}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .stuckline .sl-owner{color:var(--warn-ink)}.stuckline.amber{border-color:var(--warn);color:var(--warn-ink)}
 .stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
@@ -1002,15 +1000,26 @@ function derivedOf(id){const all=state.derived.find(d=>d.id==="all"),d=all&&all.
   if(d&&typeof d.head==="string"&&!d.head.startsWith(L.head12)){delete out.head;delete out.readyAt;delete out.waitingFor}
   if(L.phase===LIVE_PHASE&&L.liveVersion)out.version=L.liveVersion;
   return out}
+// The card's one source of stage, with its age (#C450, the owner on #C448: "IN FLIGHT · typed: phase build · Repository:
+// Linguist · steps say Build · as of 2 min ago · checking…", three sources arguing): the live state while it reads the
+// card ("Live: Linguist · 12 s ago"), else the repository's reading ("Repository: Linguist" and its "as of"). What
+// disagrees with it (a typed field, the steps, a second branch) goes in its hover, never inline in red.
 function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const name=k=>(PHASES.find(p=>p[0]===k)||[k,k])[1],label=name(d.phase);
   // Shown by the evidence: a step phase that disagrees is the clash. Shown by the steps: the repository's word is.
   const clash=i.status!=="done"&&(i.byEvidence?i.stepPhase&&i.stepPhase!==d.phase:i.phase&&i.phase!==d.phase);
-  const steps=i.byEvidence&&clash?` · steps say ${esc(name(i.stepPhase))}`:"";
-  // A card on two branches (#C237): the phase is the one behind, named; one card should be one branch.
-  const split=Array.isArray(d.branches)&&d.branches.length>1&&i.status!=="done"?` · ${d.branches.length} branches, ${esc(d.behind||"")} behind`:"";
-  // The flag and its "as of" wrap as one (Designer on live-source: a short title let the flag ride up alone).
-  const flag=`<span class="evidence${clash||split?" clash":""}" title="${esc(d.evidence||"")}">${clash&&!i.byEvidence?"Repository says ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}${steps}${split}</span>`,ao=asOf(d.at);
+  const typed=Array.isArray(i.typed)?i.typed:[],typedPhase=(typed.find(k=>k.field==="phase")||{}).typed;
+  const off=[...typed.map(k=>"typed: "+(k.field==="status"?k.typed:k.field==="waitingOn"?"waiting on "+k.typed:k.field+" "+k.typed)),
+    // The steps' phase once: when it is the typed one, the typed line already says it.
+    ...(clash&&!(i.byEvidence&&i.stepPhase===typedPhase)?[i.byEvidence?"steps say "+name(i.stepPhase):"the card says "+name(i.phase)]:[]),
+    // A card on two branches (#C237): the phase is the one behind, named; one card should be one branch.
+    ...(Array.isArray(d.branches)&&d.branches.length>1&&i.status!=="done"?[`${d.branches.length} branches, ${d.behind||""} behind`]:[])];
+  const live=d.live&&liveOn(),title=[...off,d.evidence||""].filter(Boolean).join(" · ");
+  // The flag and its age wrap as one (Designer on live-source: a short title let the flag ride up alone).
+  const flag=`<span class="evidence${off.length?" differs":""}"${title?` title="${esc(title)}"`:""}>${live?"Live: ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}</span>`;
+  const ao=live?` <small class="asof" title="When the live state last read the Studio">${esc(liveAgeText())}</small>`:asOf(d.at);
   return ao?`<span class="evg">${flag}${ao}</span>`:flag}
+// The live reading's age: "12 s ago", "3 min ago".
+function liveAgeText(now=Date.now()){const s=Math.max(0,Math.round((now-probe.board.at)/1e3));return (s<60?s+" s":dur(s*1e3))+" ago"}
 // How old the repository's reading is (#C237): "as of 12 min ago"; past half an hour it says "· old" in the warning
 // colour, at full contrast (#C265: dimmed, it was hardest to read just when it mattered).
 const ASOF_STALE=30*60e3;
@@ -1548,7 +1557,8 @@ function dependsLine(i){if(!i||i.status==="done"||i.status==="dropped"||!Array.i
 // ↻ Check on a card (#C355, the owner in #T962): a click writes checkRequests/<card id> {at}. It is answered by code
 // (#C376, Director for the owner: #C350 said "checking…" for minutes): each Collector run works the card out afresh
 // (derived/all cards.<id>.at), so a request older than that run reads "checked by the Collector HH:MM". Until then the
-// card says when the next run is due (hourly), or that it is late. No ping to the lead; a lead's checkedAt still counts.
+// card says how old the live state is and when the next run is due (hourly), or that it is late. No ping to the lead; a
+// lead's checkedAt still counts.
 const COLLECTOR_EVERY=60*60e3;
 const checkRequest=id=>(state.checkRequests||[]).find(d=>d&&d.id===id&&num(d.at)!=null)||null;
 function checkWrites(id,now){return /^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/.test(String(id))?[{op:"set",path:`checkRequests/${id}`,data:{at:now}}]:[]}
@@ -1556,21 +1566,28 @@ function checkLine(i,req,now){const lead=num(i.checkedAt),d=derivedOf(i.id),run=
   const byRun=req&&run!=null&&run>=req.at,byLead=lead!=null&&(!req||lead>=req.at);
   if(byRun&&!(byLead&&lead>run))return `checked by the Collector ${hhmm(run)}`;
   if(byLead)return `checked ${hhmm(lead)}`;
-  if(!req)return "";
-  const all=state.derived.find(x=>x.id==="all"),last=num(all&&all.at);
-  if(last==null)return "checking… until the Collector's next run";
-  const due=last+COLLECTOR_EVERY;
-  return due>now?`checking… next Collector run ~${hhmm(due)}`:`checking… Collector run late (due ${hhmm(due)})`}
+  if(!req&&!checkPressed.has(i.id))return "";
+  // Since #C450 (the owner watched "checking… next Collector run ~04:15 PM" for 5+ min on #C448, the Collector now
+  // hourly): what each source is, now. Never "checking…": the click's refetch of the live state is done or failed.
+  return `${liveOn(now)?"Live state "+liveAgeText(now).replace(" ago"," old"):probe?"Live state stale":"No live state"} · ${collectorNext(now)}`}
+function collectorNext(now){const all=state.derived.find(x=>x.id==="all"),last=num(all&&all.at);if(last==null)return "Collector not run yet";
+  const due=last+COLLECTOR_EVERY;return due>now?`Collector next ${hhmm(due)}`:`Collector run late (due ${hhmm(due)})`}
+// ↻ Check while the live state drives the card (#C450): none, since the 60 s reading already says what it shows and how
+// old it is (evidence). A card it doesn't read (no connector, a stale reading, a card not in it) keeps the button: a
+// click refetches the live state now through the connector and still asks the Collector's next run (checkRequests).
+const checkPressed=new Set();
+const checkable=(i,now)=>i.status!=="done"&&!liveCard(i.id,now);
 // The card's #C label is the button (#C376, the owner in t-1793166475210: a separate pill wrapped onto its own line);
-// a card with no number yet keeps the pill. While checking, or once done, the label is plain text.
-const checkable=(i,now)=>i.status!=="done"&&!checkLine(i,checkRequest(i.id),now).startsWith("checking…");
-const checkLabel=i=>`Have the Collector check ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} at its next run`;
-function checkTag(i,now){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="Check #C${i.num} at the next Collector run" title="Check #C${i.num} at the next Collector run">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> `:cardTag(i)}
-function checkHtml(i,now){if(i.status==="done")return "";const line=checkLine(i,checkRequest(i.id),now);
+// a card with no number yet keeps the pill. Once done, or while the live state drives it, the label is plain text.
+const checkLabel=i=>`Check ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} now: read the live state again, and have the Collector check it at its next run`;
+function checkTag(i,now){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}" title="${checkLabel(i)}">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> `:cardTag(i)}
+function checkHtml(i,now){if(i.status==="done"||liveCard(i.id,now))return "";const line=checkLine(i,checkRequest(i.id),now);
   return `${line?`<span class="i-checked${line.includes("run late")?" is-late":""}">${esc(line)}</span>`:""}${checkable(i,now)&&!cardTag(i)?`<button type="button" class="i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}">↻ Check</button>`:""}`}
-document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-check]");if(!b||!dbRef)return;
-  const i=state.initiatives.find(x=>x.id===b.dataset.check),ws=i?checkWrites(i.id,Date.now()):[];if(!ws.length)return;b.disabled=true;
-  try{await applyWrites(ws)}catch(_){b.disabled=false}});
+async function pressCheck(id,now=Date.now()){const ws=checkWrites(id,now);if(!ws.length)return;checkPressed.add(id);
+  await Promise.allSettled([liveMcp?readLiveNow(liveMcp):null,dbRef?applyWrites(ws):null]);renderAll()}
+document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-check]");if(!b||!dbRef&&!liveMcp)return;
+  const i=state.initiatives.find(x=>x.id===b.dataset.check);if(!i)return;b.disabled=true;
+  try{await pressCheck(i.id)}finally{b.disabled=false}});
 function phaseTimes(log,doneAt){const t={};const l=(Array.isArray(log)?log:[]).filter(e=>e&&e.phase&&num(e.start)!=null).sort((a,b)=>a.start-b.start);
   l.forEach((e,k)=>{if(e.wait)return;const next=l[k+1];const en=num(e.end)??(next?next.start:(num(doneAt)??Date.now()));t[e.phase]=(t[e.phase]||0)+Math.max(0,en-e.start)});return t}
 // Waits: time an item sat queued (its agent was busy, wait:"busy") or gated (held by a decision, wait:"gate"),
@@ -1690,12 +1707,14 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const nAt=num(i.nextNoteAt),stale=liveOpen||nAt!=null&&(num(i.lastStepAt)!=null&&i.lastStepAt>nAt||liveWorkers(i.id).some(n=>{const a=liveAgent(n);return !!a&&num(a.since)!=null&&a.since>nAt}));
   const next=i.nextNote?`<span${stale?' style="opacity:.6"':""}>Next: <b>${esc(i.nextNote)}</b>${num(i.nextAt)?` <span data-next="${i.nextAt}">${i.nextAt>Date.now()?"in "+dur(i.nextAt-Date.now()):"due now"}</span>`:""}${nAt!=null?` <span data-ago="${nAt}">(written ${dur(Date.now()-nAt)} ago${stale?"; an agent has moved since":""})</span>`:" (not dated)"}</span>`:"";
   const wait=i.waitingOn&&!liveOpen?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
-  // One due time per card, here (Designer on c6c6e839); a queued card has waited, not started, and is due nothing yet.
-  const started=num(i.createdAt)&&ns?`<span>Queued ${dur(Date.now()-i.createdAt)}${sMs?` · expected ${esc(i.size)} ${sMs/3600e3} h once started`:""}</span>`:num(i.createdAt)?`<span>Started ${dayLabel(i.createdAt)} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-i.createdAt)} so far${sMs?` · expected ${esc(i.size)} ${sMs/3600e3} h, ${dueText(i.createdAt+sMs)}`:""}</span>`:"";
+  // One ETA per card, the ETA box's (#C450, the owner on #C448: "Live in 18 min · around 04:32 PM" against "expected L
+  // 6 h, due ~09:05 PM"): the size's median is only a hint here, "(usually 6 h for L)", with no due time of its own.
+  const usual=sMs?` <span class="usual">(usually ${sMs/3600e3} h for ${esc(i.size)})</span>`:"";
+  const started=num(i.createdAt)&&ns?`<span>Queued ${dur(Date.now()-i.createdAt)}${usual}</span>`:num(i.createdAt)?`<span>Started ${dayLabel(i.createdAt)} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-i.createdAt)} so far${usual}</span>`:"";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
-  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${typedNote(i)}${evidence(i)}${checkHtml(i,Date.now())}</div>
+  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
@@ -2203,7 +2222,7 @@ function liveWorkers(id,now=Date.now()){if(!liveOn(now))return [];
   return Object.keys(probe.agents).filter(n=>{if(n===LEAD_ROLE)return false;const a=liveAgent(n,now);return !!a&&a.state==="working"&&a.card===id}).sort()}
 // No typed field outranks the live state (#C449, state-schema.mjs's typedClashes, copied; the Collector's nudge 8 tells
 // the lead of one that holds): the typed fields a fresh reading contradicts, [{field, typed, live}]. The card shows the
-// live value (live null: the field is hidden) and the typed one only in a small "typed: …" note.
+// live value (live null: the field is hidden) and the typed one only in the source's hover (#C450: evidence).
 function typedClashes(c,now=Date.now()){if(!c||typeof c.id!=="string"||!liveOn(now))return [];
   const L=liveCard(c.id,now),phase=L?L.phase:c.phase,early=phaseIndex(phase)<=phaseIndex(BUILD_PHASE),b=liveBuilding(c.id,now),out=[];
   if(c.status==="queued"&&b)out.push({field:"status",typed:"queued",live:"building"});
@@ -2211,8 +2230,6 @@ function typedClashes(c,now=Date.now()){if(!c||typeof c.id!=="string"||!liveOn(n
   const on=liveWorkers(c.id,now);if(early&&typeof c.who==="string"&&c.who&&on.length&&!on.includes(c.who))out.push({field:"who",typed:c.who,live:on[0]});
   if(early&&b&&typeof c.waitingOn==="string"&&c.waitingOn.trim())out.push({field:"waitingOn",typed:c.waitingOn,live:null});
   return out}
-function typedNote(i){const t=Array.isArray(i.typed)?i.typed:[];
-  return t.length?`<small class="typed" title="Typed on the card; the live state says otherwise">typed: ${esc(t.map(k=>k.field==="status"?k.typed:k.field==="waitingOn"?"waiting on "+k.typed:k.field+" "+k.typed).join(" · "))}</small>`:""}
 // A role's review phase, by the config's labels (Checker: checker); a builder's work is its card's phase.
 const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHASE)||[])[0]||null;
 // The header stamp: which source the board reads, and how old it is.
@@ -2225,7 +2242,9 @@ function renderStamp(){const el=$("synced");if(!el)return;if(dbState){el.textCon
   // (Checker on live-source).
   el.textContent=stampLine();
   if(probeAsk&&liveMcp){const mcp=liveMcp;const b=document.createElement("button");b.type="button";b.className="viewlink";b.id="probe-allow";b.textContent="Allow live";el.append(" · ",b);
-    b.addEventListener("click",()=>{mcp.callTool(STATE_SERVER,STATE_TOOL,null).then(r=>probeEvent({type:"data",result:r},mcp),e=>probeEvent({type:"error",error:e},mcp))},{once:true})}}
+    b.addEventListener("click",()=>{readLiveNow(mcp)},{once:true})}}
+// One read of the live state now, outside the minute's watch: "Allow live" and ↻ Check (#C450). The page's one callTool.
+function readLiveNow(mcp){return mcp.callTool(STATE_SERVER,STATE_TOOL,null).then(r=>probeEvent({type:"data",result:r},mcp),e=>probeEvent({type:"error",error:e},mcp))}
 function probeEvent(ev,mcp){liveMcp=mcp||liveMcp;
   if(ev.type==="data"){const s=ev.result&&ev.result.payload;if(probeFits(s)){probe=s;probeNote="";probeAsk=false}else probeNote="The Studio's state has an unexpected shape; not read."}
   else{const code=ev.error&&ev.error.code;probeAsk=false;
