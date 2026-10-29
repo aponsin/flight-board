@@ -1,0 +1,1 @@
+PASS Quick: #C428 collector-thread-nudge, pinned part for the v3.25 pack. postState tries once more 5 s later on a network failure only, and any status is final; suite 726/726; mutation check: pass (one try only, caught).
