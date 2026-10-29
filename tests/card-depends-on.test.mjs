@@ -61,11 +61,12 @@ test("a build start waits while a dependency is still on plan or build; past bui
   assert.ok(mirrorErrors(w, { config, mirror: mirror(), batch: [w], now }).includes(refusal));
 });
 
-test("the page: 'waits on #Cn' per open dependency, each a link; done ones and unknown ones say nothing", () => {
+test("the page: one 'waits on #Cn, …', a link per open dependency; done ones and unknown ones say nothing", () => {
   const b = loadNames(["dependsLine"]);
   const cards = [card("before", { num: 440 }), card("third", { num: 441, status: "done" }), card("nonum", { name: "No number" }), card("after", { dependsOn: ["before", "third", "nonum", "gone"] })];
   Object.assign(b.state, { initiatives: cards, initRaw: cards });
-  assert.equal(b.dependsLine(cards[3]), `<span class="d-line">waits on <a href="#" class="t-ref c-ref" data-cref="before">#C440</a></span><span class="d-line">waits on <a href="#" class="t-ref c-ref" data-cref="nonum">No number</a></span>`);
+  assert.equal(b.dependsLine(cards[3]), `<span class="d-line">waits on <a href="#" class="t-ref c-ref" data-cref="before">#C440</a>, <a href="#" class="t-ref c-ref" data-cref="nonum">No number</a></span>`, "one label, the links comma-separated (Designer)");
+  assert.equal(b.dependsLine(card("x", { dependsOn: ["third", "gone"] })), "", "every dependency closed or unknown: no label");
   assert.equal(b.dependsLine(card("x")), "", "no dependsOn");
   assert.equal(b.dependsLine(card("x", { dependsOn: "before" })), "", "not a list");
   assert.equal(b.dependsLine({ ...cards[3], status: "done" }), "", "a closed card waits on nothing");
