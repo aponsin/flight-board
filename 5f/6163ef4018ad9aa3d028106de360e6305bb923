@@ -1,0 +1,1 @@
+PASS Full (Checker, #C452 data-behind): lastWriteAt a time only, optional in the schema; the page re-reads then reloads at most once per 10 min, none where storage is blocked; one-connection assumption stated; 782/782; mutation (RELOAD_GAP guard deleted) caught; Security needed on this tip
