@@ -10,9 +10,8 @@ import { join } from "node:path";
 import { fullConfig } from "../scripts/config.mjs";
 import { checkWrites } from "../gate/rules.mjs";
 import { run } from "../gate/gate.mjs";
-import { buildingNow, liveFresh, typedClashes } from "../collector/state-schema.mjs";
-import { nudges } from "../collector/nudges.mjs";
-import { readLiveState, runNudges } from "../collector/collect.mjs";
+import { buildingNow, liveFresh } from "../collector/state-schema.mjs";
+import { readLiveState } from "../collector/collect.mjs";
 import { loadNames } from "./harness.mjs";
 
 const NOW = Date.now(), MIN = 60e3, ID = "our-work-editor";
@@ -23,9 +22,9 @@ const reading = (at, { card = {}, agent = {} } = {}) => ({
 });
 // the owner's 21:32Z case: the db says queued, created 26 min ago, no step logged; the live state has the branch and Builder on it.
 const typed = { id: ID, num: 48, name: "Our work editor", status: "queued", phase: "build", size: "S", who: "Builder", createdAt: NOW - 26 * MIN, level: "Quick", nextNote: "build", nextNoteAt: NOW - 20 * MIN, etaLive: NOW + 3 * 3600e3 };
-function board(live, card = typed) {
-  const b = loadNames(["enrich", "initRow", "probeEvent", "renderCrew", "liveBuilding", "typedClashes", "stalled"]);
-  Object.assign(b.state, { initRaw: [card], steps: [], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [], derived: [{ id: "all", at: NOW - 40 * MIN, cards: {} }] });
+function board(live) {
+  const b = loadNames(["enrich", "initRow", "probeEvent", "renderCrew", "liveBuilding"]);
+  Object.assign(b.state, { initRaw: [typed], steps: [], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [], derived: [{ id: "all", at: NOW - 40 * MIN, cards: {} }] });
   if (live) b.probeEvent({ type: "data", result: { payload: live } }, {});
   b.state.initiatives = b.state.initRaw.map(b.enrich);
   return b;
@@ -40,86 +39,6 @@ test("the owner's case: queued in the db, a branch with commits and Builder on i
   assert.doesNotMatch(html, /Queued \d|never started|queued · Builder/);
   b.renderCrew();
   assert.match(b.els.crew.innerHTML, /<span class="ci active">Our work editor<\/span>/, "the tile: no ⧗");
-});
-
-// The whole card, as the board draws it: the words a person reads, and the tooltips. Its class names are code, and the
-// typed note is where the typed value is meant to show.
-const words = (html) => html.replace(/<small class="typed"[^>]*>[^<]*<\/small>/g, "").replace(/ class="[^"]*"/g, "");
-test("no typed field outranks the live state: the owner's case reads neither 'queued' nor 'never started' anywhere on the card", () => {
-  const b = board(reading(NOW - 30e3));
-  const html = b.initRow(b.state.initiatives[0]);
-  assert.doesNotMatch(words(html), /queued|never started/i);
-  assert.match(html, /<small class="typed"[^>]*>typed: queued<\/small>/, "the typed value, as a small note");
-  const stale = board(reading(NOW - 4 * MIN)), was = stale.initRow(stale.state.initiatives[0]);
-  assert.match(words(was), /queued/i, "a stale reading: the typed status shows as before");
-  assert.doesNotMatch(was, /class="typed"/, "and no note");
-});
-
-test("who, waiting on, phase: the live value shows, the typed one in the note; Stalled and an old Next line follow the agent", () => {
-  const b = board(reading(NOW - 30e3, { agent: {} }), { ...typed, status: "active", who: "Designer", waitingOn: "Checker's word", phase: "plan", lastStepAt: NOW - 50 * MIN, nextNoteAt: NOW - 15 * MIN });
-  const i = b.state.initiatives[0], html = b.initRow(i);
-  assert.equal(i.who, "Builder", "who: the agent on it");
-  assert.equal(i.waitingOn, null, "a typed wait while it builds is hidden");
-  assert.match(html, /typed: phase plan · who Designer · waiting on Checker&#39;s word|typed: phase plan · who Designer · waiting on Checker's word/);
-  assert.doesNotMatch(words(html), /Waiting on <b>Checker|Designer/);
-  assert.equal(b.stalled(i), 0, "an agent on it now: not stalled, whatever the steps");
-  assert.match(html, /an agent has moved since/, "Builder working since after the Next line: it fades");
-  const lead = board(reading(NOW - 30e3, { agent: {} }), { ...typed, status: "active", who: "Builder" });
-  lead.probeEvent({ type: "data", result: { payload: { ...reading(NOW - 30e3), agents: { Manager: { state: "working", lastActivityAt: NOW, tool: "Bash", card: ID, since: NOW - MIN } } } } }, {});
-  assert.equal(lead.typedClashes({ ...typed, status: "active" }).length, 0, "the lead reading a card is no one else on it");
-});
-
-// The Collector's nudge 8: the card and the field, after 5 min, never the typed value.
-test("the Collector tells the lead of a typed field the live state contradicts for 5 min, card and field only", () => {
-  const cfg = fullConfig({ owner: "Sam", collector: { repoPath: "/x" } });
-  const docs = { initiatives: [{ ...typed, waitingOn: "a secret-ish note" }], steps: [], waiting: [], messages: [], ctx: [] };
-  const run1 = nudges({ config: cfg, docs, now: NOW, live: reading(NOW) });
-  assert.deepEqual(run1.lines.filter((l) => /typed/.test(l)), [], "just seen: a write's lag is no clash");
-  const run2 = nudges({ config: cfg, docs, now: NOW + 6 * MIN, state: run1.state, live: reading(NOW + 6 * MIN) });
-  const lines = run2.lines.filter((l) => /typed/.test(l));
-  assert.deepEqual(lines, [
-    `NUDGE ${ID} (#C48): its typed status disagrees with the live state for 6 min; the board shows the live one, so fix or clear the typed one`,
-    `NUDGE ${ID} (#C48): its typed waitingOn disagrees with the live state for 6 min; the board shows the live one, so fix or clear the typed one`,
-  ]);
-  assert.doesNotMatch(lines.join(), /secret-ish/);
-  const gap = nudges({ config: cfg, docs, now: NOW + 3 * MIN, state: run1.state, live: null });
-  assert.equal(gap.state.typedSeen[`${ID}:status`], NOW, "no reading this run: the clock waits");
-  const fixed = nudges({ config: cfg, docs: { ...docs, initiatives: [{ ...typed, status: "active" }] }, now: NOW + 7 * MIN, state: run2.state, live: reading(NOW + 7 * MIN) });
-  assert.equal(Object.hasOwn(fixed.state.typedSeen, `${ID}:status`), false, "fixed: forgotten, so it can come back");
-  assert.deepEqual(nudges({ config: cfg, docs: { ...docs, initiatives: [{ ...typed, status: "done", waitingOn: "x" }] }, now: NOW + 6 * MIN, state: run1.state, live: reading(NOW + 6 * MIN) }).lines.filter((l) => /typed/.test(l)), [], "a closed card");
-  // Wired: the run reads it from the reading the Collector passes, its clocks in nudges.json.
-  const dir = mkdtempSync(join(tmpdir(), "fb-nudge8-"));
-  try {
-    runNudges(dir, cfg, docs, NOW, new Set(), {}, {}, reading(NOW));
-    assert.equal(runNudges(dir, cfg, docs, NOW + 6 * MIN, new Set(), {}, {}, reading(NOW + 6 * MIN)).filter((l) => /typed/.test(l)).length, 2);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("no clash where nothing contradicts: a wait on a card not building; the lead on a card", () => {
-  const cfg = fullConfig({ owner: "Sam", collector: { repoPath: "/x" } });
-  const idle = reading(NOW - 30e3, { card: { headSha12: null }, agent: { card: "other-card" } }), card = { ...typed, status: "active", waitingOn: "Checker's word" };
-  assert.deepEqual(typedClashes(card, idle, cfg), [], "the Collector's rule");
-  assert.equal(board(idle, card).typedClashes(card).length, 0, "the page's");
-  assert.equal(board(idle, card).initRow(board(idle, card).state.initiatives[0]).includes("Waiting on <b>Checker"), true, "the wait shows");
-  const lead = { ...reading(NOW - 30e3), agents: { Manager: { state: "working", lastActivityAt: NOW, tool: "Bash", card: ID, since: NOW - MIN } } };
-  assert.deepEqual(typedClashes({ ...typed, status: "active" }, lead, cfg), [], "the lead reading a card is no one else on it");
-});
-
-test("the page's typedClashes is state-schema.mjs's, case by case", () => {
-  const cfg = fullConfig({ owner: "Sam", collector: { repoPath: "/x" } });
-  const cases = [
-    [typed, reading(NOW - 30e3)],
-    [{ ...typed, status: "active" }, reading(NOW - 30e3)],
-    [{ ...typed, phase: "plan", who: "Designer", waitingOn: "x" }, reading(NOW - 30e3)],
-    [{ ...typed, phase: "checker", who: "Designer", waitingOn: "x" }, reading(NOW - 30e3, { card: { phase: "checker" } })],
-    [typed, reading(NOW - 30e3, { card: { headSha12: null }, agent: { state: "idle" } })],
-    [{ ...typed, who: "Designer" }, reading(NOW - 30e3, { card: { headSha12: null } })],
-    [typed, reading(NOW - 30e3, { card: { onMain: true, phase: "ship" }, agent: { state: "idle" } })],
-  ];
-  for (const [card, live] of cases) {
-    const b = board(live, card);
-    assert.deepEqual(JSON.parse(JSON.stringify(b.typedClashes(card))), typedClashes(card, live, cfg), JSON.stringify(card) + JSON.stringify(live.cards));
-  }
 });
 
 test("either sign alone is enough: the branch, or the agent", () => {

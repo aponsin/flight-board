@@ -113,8 +113,6 @@ section{min-width:0}
 .step.now.queued::before{content:"⧗ ";}
 .state.queued{background:var(--warn-soft);color:var(--warn)}
 .state.stalled{background:var(--bad-soft);color:var(--bad)}
-/* What was typed on the card where the live state says otherwise (#C449): small and quiet beside the badge. */
-.typed{font-size:.7rem;color:var(--muted);margin-left:6px;white-space:nowrap}
 .stall{color:var(--bad);font-weight:600}
 .ow-line{color:var(--accent);font-weight:600}
 @media (prefers-reduced-motion:reduce){.step.now{animation:none;box-shadow:inset 0 0 0 2px var(--panel),0 0 0 2px var(--accent)}}
@@ -1599,7 +1597,7 @@ function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
 // repository explains, or done. Returns minutes.
-function stalled(i){if(!i||i.status!=="active"||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE)||knownWait(i)||ownerWait(i)||liveWorkers(i.id).length)return 0;
+function stalled(i){if(!i||i.status!=="active"||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE)||knownWait(i)||ownerWait(i))return 0;
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];if(log.some(e=>e&&e.wait&&e.end==null))return 0;
   const last=num(i.lastStepAt)??log.reduce((m,e)=>Math.max(m,num(e&&e.end)??num(e&&e.start)??0),0);
   if(!last)return 0;const m=Math.floor((Date.now()-last)/60000);return m>=30?m:0}
@@ -1686,8 +1684,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:ow?"Waiting on you":st?"Stalled":liveBuilding(i.id)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
   const owHtml=ow?`<span class="ow-line">waiting on you: <a href="#" class="t-ref" data-tref="${esc(ow.id)}">${esc(threadName(ow.id))}</a></span>`:"";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
-  // An agent the live state shows working on it since then has moved too (#C449).
-  const nAt=num(i.nextNoteAt),stale=liveOpen||nAt!=null&&(num(i.lastStepAt)!=null&&i.lastStepAt>nAt||liveWorkers(i.id).some(n=>{const a=liveAgent(n);return !!a&&num(a.since)!=null&&a.since>nAt}));
+  const nAt=num(i.nextNoteAt),stale=liveOpen||nAt!=null&&num(i.lastStepAt)!=null&&i.lastStepAt>nAt;
   const next=i.nextNote?`<span${stale?' style="opacity:.6"':""}>Next: <b>${esc(i.nextNote)}</b>${num(i.nextAt)?` <span data-next="${i.nextAt}">${i.nextAt>Date.now()?"in "+dur(i.nextAt-Date.now()):"due now"}</span>`:""}${nAt!=null?` <span data-ago="${nAt}">(written ${dur(Date.now()-nAt)} ago${stale?"; an agent has moved since":""})</span>`:" (not dated)"}</span>`:"";
   const wait=i.waitingOn&&!liveOpen?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
   // One due time per card, here (Designer on c6c6e839); a queued card has waited, not started, and is due nothing yet.
@@ -1695,7 +1692,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
-  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${typedNote(i)}${evidence(i)}${checkHtml(i,Date.now())}</div>
+  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
@@ -1948,12 +1945,9 @@ document.addEventListener("click",async e=>{const r=e.target.closest&&e.target.c
 // {init: <initiative id>, phase: plan|build|language|checker|security|ship|live, who, kind: "start"|"end", at: <ms>, wait?: "busy"|"gate", version?}.
 // The page turns them into phase entries, so Manager no longer has to relay or guess times.
 // A "live" event marks the initiative done. Skips: Security unless level is Full; Linguist when customerText is false.
-function enrich(i){return liveTyped(byEvidence(withEvidenceTimes(fromSteps(i))),i)}
-// The live state's word over the typed one (#C449): a card it shows building is active, someone else on it is its who,
-// a wait while it builds goes; the phase is already the live one (byEvidence). The typed values stay in typed.
-function liveTyped(out,raw){const cl=typedClashes(raw);if(!cl.length)return out;const res={...out,typed:cl};
-  for(const k of cl){if(k.field==="status")res.status="active";else if(k.field==="who")res.who=k.live;else if(k.field==="waitingOn")res.waitingOn=null}
-  return res}
+function enrich(i){return liveStatus(byEvidence(withEvidenceTimes(fromSteps(i))))}
+// The live state's word on status (#C449): a card it shows building is active, whatever the db typed.
+function liveStatus(out){return out.status==="queued"&&liveBuilding(out.id)?{...out,status:"active"}:out}
 // Each phase's times from the evidence (#C235: the collector's derived/all.times, from git, the notes and the deploy
 // runs): for a phase the evidence shows, its entry takes the place of the steps' (waits stay, and the steps' who stays
 // with it); phases it doesn't show (a test, a design talk) keep their steps.
@@ -2193,22 +2187,6 @@ function liveAgent(n,now=Date.now()){if(!liveOn(now)||typeof n!=="string"||!LIVE
 // tile and queued line follow; the typed status counts only without a fresh reading.
 function liveBuilding(id,now=Date.now()){const L=liveCard(id,now);if(L&&!L.onMain)return true;
   return liveOn(now)&&Object.keys(probe.agents).some(n=>{const a=liveAgent(n,now);return !!a&&a.state==="working"&&a.card===id})}
-// The roles working on a card now, the lead aside (state-schema.mjs's workersOn, copied).
-const LEAD_ROLE=(CONFIG.gate&&CONFIG.gate.managerRole)||"Manager";
-function liveWorkers(id,now=Date.now()){if(!liveOn(now))return [];
-  return Object.keys(probe.agents).filter(n=>{if(n===LEAD_ROLE)return false;const a=liveAgent(n,now);return !!a&&a.state==="working"&&a.card===id}).sort()}
-// No typed field outranks the live state (#C449, state-schema.mjs's typedClashes, copied; the Collector's nudge 8 tells
-// the lead of one that holds): the typed fields a fresh reading contradicts, [{field, typed, live}]. The card shows the
-// live value (live null: the field is hidden) and the typed one only in a small "typed: …" note.
-function typedClashes(c,now=Date.now()){if(!c||typeof c.id!=="string"||!liveOn(now))return [];
-  const L=liveCard(c.id,now),phase=L?L.phase:c.phase,early=phaseIndex(phase)<=phaseIndex(BUILD_PHASE),b=liveBuilding(c.id,now),out=[];
-  if(c.status==="queued"&&b)out.push({field:"status",typed:"queued",live:"building"});
-  if(L&&typeof c.phase==="string"&&c.phase&&c.phase!==L.phase)out.push({field:"phase",typed:c.phase,live:L.phase});
-  const on=liveWorkers(c.id,now);if(early&&typeof c.who==="string"&&c.who&&on.length&&!on.includes(c.who))out.push({field:"who",typed:c.who,live:on[0]});
-  if(early&&b&&typeof c.waitingOn==="string"&&c.waitingOn.trim())out.push({field:"waitingOn",typed:c.waitingOn,live:null});
-  return out}
-function typedNote(i){const t=Array.isArray(i.typed)?i.typed:[];
-  return t.length?`<small class="typed" title="Typed on the card; the live state says otherwise">typed: ${esc(t.map(k=>k.field==="status"?k.typed:k.field==="waitingOn"?"waiting on "+k.typed:k.field+" "+k.typed).join(" · "))}</small>`:""}
 // A role's review phase, by the config's labels (Checker: checker); a builder's work is its card's phase.
 const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHASE)||[])[0]||null;
 // The header stamp: which source the board reads, and how old it is.
