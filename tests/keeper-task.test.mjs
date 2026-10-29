@@ -120,7 +120,8 @@ test("the watchdog check: step 1 loads PushNotification and runs {{WATCHDOG}}; t
   assert.match(step(1), /Then the watchdog: \{\{WATCHDOG\}\}\s*$/);
   assert.match(doc, /`\{\{WATCHDOG\}\}` \(#C411/, "the header says how the lead fills it");
   const watchdog = { script: "/Users/x/Code/team/scripts/watchdog-watch.mjs", state: "/Users/x/.claude/scheduled-tasks/team-agent-watchdog/state.json", alert: "/Users/x/.claude/scheduled-tasks/team-context-keeper/watchdog-alert.json" };
-  assert.equal(watchdogStep(fullConfig({ collector: { keeper: { watchdog } } })), `run exactly (one Bash call, nothing around it) "node ${watchdog.script} ${watchdog.state} ${watchdog.alert}". If it prints a line, send that exact line as ONE PushNotification (status proactive) and, as its own message, to the session titled "Manager"; if it prints nothing, go on.`);
+  // #C443: between warnings the script prints "watchdog late, already warned at hh:mm" every run: the summary's, never a push.
+  assert.equal(watchdogStep(fullConfig({ collector: { keeper: { watchdog } } })), `run exactly (one Bash call, nothing around it) "node ${watchdog.script} ${watchdog.state} ${watchdog.alert}". If it prints a line starting with "watchdog late, already warned", don't push or send it: put that exact line in your run summary. Any other line: send that exact line as ONE PushNotification (status proactive) and, as its own message, to the session titled "Manager". If it prints nothing, put "watchdog on time" in your run summary and go on.`);
   assert.equal(watchdogStep(fullConfig({})), "none.", "no watchdog configured: nothing to run");
   assert.deepEqual(checkConfig({ collector: { keeper: { watchdog } } }), []);
   assert.deepEqual(checkConfig({ collector: { keeper: { watchdog: null } } }), []);

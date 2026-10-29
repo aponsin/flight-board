@@ -61,7 +61,9 @@ export function keeperCheck(config, now, { home = homedir(), configDir = null } 
 export function watchdogStep(config) {
   const w = config.collector.keeper?.watchdog;
   if (!w) return "none.";
-  return `run exactly (one Bash call, nothing around it) "node ${w.script} ${w.state} ${w.alert}". If it prints a line, send that exact line as ONE PushNotification (status proactive) and, as its own message, to the session titled "Manager"; if it prints nothing, go on.`;
+  // #C443: between warnings (every 3 h) the script prints "watchdog late, already warned at hh:mm" on each run: that
+  // line goes in the run summary only, never as a push.
+  return `run exactly (one Bash call, nothing around it) "node ${w.script} ${w.state} ${w.alert}". If it prints a line starting with "watchdog late, already warned", don't push or send it: put that exact line in your run summary. Any other line: send that exact line as ONE PushNotification (status proactive) and, as its own message, to the session titled "Manager". If it prints nothing, put "watchdog on time" in your run summary and go on.`;
 }
 
 // The lead's line when it doesn't match: fixed text and the prompt file's own name (the config's, never the task's).
