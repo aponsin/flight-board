@@ -59,7 +59,9 @@ test("past 3 min, without the connector, or with an odd value, the db is the sou
 });
 
 test("the sub-step: an agent working on the card now, in its own review phase, since its turn began; else the steps", () => {
-  const b = board({ live: reading(NOW - 40e3) });
+  const building = reading(NOW - 40e3);
+  building.cards["live-card"].phase = "build";
+  const b = board({ live: building });
   const s = b.liveSubstep("live-card");
   assert.deepEqual([s.who, s.phase, s.at, s.live], ["Checker", "checker", NOW - 40e3 - 4 * MIN, true]);
   const live = reading(NOW - 40e3, { agents: { Checker: { state: "idle", lastActivityAt: NOW - MIN, tool: null, card: "live-card", since: NOW - MIN } } });
