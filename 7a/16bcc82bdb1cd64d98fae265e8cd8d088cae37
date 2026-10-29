@@ -1,0 +1,1 @@
+PASS Quick: live-source (board-state-probe) at 7a16bcc. On top of 12d5c0e: a card live while still open reads Live with no due time, the flag and its as-of wrap together, and the stamp shows the connector note as text (my LOW fixed; set through textContent); suite 734/734.
