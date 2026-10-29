@@ -116,3 +116,44 @@ test("a branch already on main (nothing beyond it) is left as it is", () => {
     assert.equal(tip.sha, shipped);
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
 });
+
+// #C433 (#C400 open for a day): a restack moved a hunk's context (main's 0a30d65 against the READY c3d3220: the same
+// lines added, a neighbouring DECISIONS line changed in between), so git's patch-id, and git cherry, read the READY as
+// never landed. The same files and changed lines (changeId) are the same change.
+function moved() {
+  const r = repo();
+  writeFileSync(join(r.dir, "repo", "notes.md"), "a\nb\nc\nd\ne\n"); r.g(["add", "-A"]); r.g(["commit", "-qm", "notes"]);
+  r.g(["checkout", "-qb", "ctx-card"]);
+  writeFileSync(join(r.dir, "repo", "notes.md"), "a\nb\nNEW\nc\nd\ne\n"); r.g(["add", "-A"]); r.g(["commit", "-qm", "the change\n\nBoard-Id: ctx-card"]);
+  const ready = r.g(["rev-parse", "HEAD"]).trim();
+  r.g(["checkout", "-q", "main"]);
+  writeFileSync(join(r.dir, "repo", "notes.md"), "A\nb\nc\nd\ne\n"); r.g(["add", "-A"]); r.g(["commit", "-qm", "another card's context line"]);
+  writeFileSync(join(r.dir, "repo", "notes.md"), "A\nb\nNEW\nc\nd\ne\n"); r.g(["add", "-A"]); r.g(["commit", "-qm", "the change, restacked"]);
+  const shipped = r.g(["rev-parse", "HEAD"]).trim();
+  r.sync();
+  return { r, ready, shipped };
+}
+
+test("#C433: a READY whose change landed with other context lines (git cherry says '+') reads as the commit on main", () => {
+  const { r, ready, shipped } = moved();
+  try {
+    assert.match(r.g(["cherry", "origin/main", ready]), /^\+ /, "git's patch-id differs: the case #C400 was in");
+    const tip = remoteHeads(r.git, "origin").find((h) => h.branch === "ctx-card");
+    const [t] = settledTips(r.git, "origin", "main", [tip]);
+    assert.deepEqual([t.sha, t.settled, t.branch], [shipped, "ctx-card", "main"]);
+    const config = board(r);
+    const d = inRepo(card("ctx-card"), config.collector.repos[0], { git: r.git, installed: r.main() }, config, 1, new Set(["ctx-card"]));
+    assert.equal(d.phase, "live", d.evidence);
+  } finally { rmSync(r.dir, { recursive: true, force: true }); }
+});
+
+test("#C433: another changed line, even one character, is another change: the card stays held", () => {
+  const { r } = moved();
+  try {
+    r.g(["checkout", "-q", "ctx-card"]);
+    writeFileSync(join(r.dir, "repo", "notes.md"), "a\nb\nNEW!\nc\nd\ne\n"); r.g(["add", "-A"]); r.g(["commit", "-qm", "a rework\n\nBoard-Id: ctx-card"]);
+    r.sync();
+    const tip = remoteHeads(r.git, "origin").find((h) => h.branch === "ctx-card");
+    assert.deepEqual(settledTips(r.git, "origin", "main", [tip]), [tip]);
+  } finally { rmSync(r.dir, { recursive: true, force: true }); }
+});

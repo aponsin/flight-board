@@ -9,6 +9,7 @@ import { realpathSync } from "node:fs";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync, readdirSync, lstatSync, cpSync, readlinkSync } from "node:fs";
 import { sep, basename } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
@@ -213,20 +214,36 @@ export function tipsOnly(remote, shipped) {
 
 // A branch left behind by a rebase or a cherry-pick (#C412, Manager: six live cards read open from stale branches;
 // "done-list-search-v319 is behind", "keeper-pickup-once is behind"): every commit it has beyond main is already on
-// main as the same patch (git cherry: all "-"), so the card's change is the one on main. Such a tip is read as the
-// newest main commit carrying one of its patches; tips that come to the same commit count once. A tip with any commit
-// of its own (a "+") stays as it is, and so does one already on main (nothing beyond it).
+// main as the same change, so the card's change is the one on main. Such a tip is read as the newest main commit
+// carrying one of its changes; tips that come to the same commit count once. A tip with any commit of its own stays as
+// it is, and so does one already on main (nothing beyond it).
+// The same change is the same files and changed lines (changeId), not git's patch-id: a restack that moves a hunk's
+// context (#C433: #C400's c3d3220 against main's 0a30d65 differ only in DECISIONS.md's lines around a hunk) gives another
+// patch-id, so git cherry read the card's READY as never landed and it sat in ship for a day.
+export const MAIN_LOOKBACK = 400;
+const ids = new Map();
+export function changeId(git, sha) {
+  if (!ids.has(sha)) {
+    const d = git(["show", "--format=", "-U0", "--no-color", "--no-ext-diff", sha]);
+    const keep = d.split("\n").filter((l) => /^(\+\+\+ |--- |[+-])/.test(l)).map((l) => l.replace(/\s+/g, ""));
+    ids.set(sha, keep.length ? createHash("sha256").update(keep.join("\n")).digest("hex") : null);
+  }
+  return ids.get(sha);
+}
 export function settledTips(git, remote, main, tips) {
   const out = [], seen = new Set();
   for (const h of tips) {
     let t = h;
     try {
       const lines = (args) => git(args).split("\n").filter(Boolean);
-      const beyond = lines(["cherry", `${remote}/${main}`, h.sha]);
-      if (beyond.length && beyond.every((l) => l.startsWith("- "))) {
-        const on = lines(["cherry", h.sha, `${remote}/${main}`]).filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim());
-        const sha = on[on.length - 1];
-        if (/^[0-9a-f]{40}$/.test(sha ?? "")) {
+      const beyond = lines(["rev-list", h.sha, `^${remote}/${main}`]);
+      if (beyond.length && beyond.every((s) => /^[0-9a-f]{40}$/.test(s))) {
+        const onMain = lines(["rev-list", `--max-count=${MAIN_LOOKBACK}`, `${remote}/${main}`, `^${h.sha}`]).filter((s) => /^[0-9a-f]{40}$/.test(s));
+        const byId = new Map();
+        for (const s of onMain) { const id = changeId(git, s); if (id && !byId.has(id)) byId.set(id, s); }
+        const found = beyond.map((s) => byId.get(changeId(git, s)));
+        if (found.every(Boolean)) {
+          const sha = onMain.find((s) => found.includes(s));
           const [at, message] = git(["log", "-1", "--format=%ct%x1f%B", sha]).split("\x1f");
           t = { branch: main, sha, at: Number(at) * 1000, message: String(message ?? "").replace(/\n+$/, ""), settled: h.branch };
         }
