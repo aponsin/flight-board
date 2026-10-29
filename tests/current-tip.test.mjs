@@ -129,14 +129,14 @@ test("the page: the repository's reading says how old it is, and 'old' in the wa
     y: { phase: "checker", evidence: "e", at: now - 31 * 60e3 },
     z: { phase: "checker", evidence: "e", at: now, branches: ["build/z", "fix/z<b>"], behind: "fix/z<b>" },
   } });
-  assert.match(b.evidence({ id: "x", phase: "checker", status: "active" }), /<\/span> <small class="asof" data-asof="\d+" [^>]*>as of 12 min ago<\/small>$/);
+  assert.match(b.evidence({ id: "x", phase: "checker", status: "active" }), /<\/span> <small class="asof" data-asof="\d+" [^>]*>as of 12 min ago<\/small><\/span>$/);
   assert.match(b.evidence({ id: "y", phase: "checker", status: "active" }), /<small class="asof stale" [^>]*>as of 31 min ago · old</);
   assert.doesNotMatch(b.evidence({ id: "x", phase: "checker", status: "active" }), /old/, "a fresh reading says no more");
   const css = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8").match(/\.asof\.stale\{[^}]*\}/)[0];
   assert.match(css, /color:var\(--warn\)/, "the warning colour (passes 4.5:1 with the badges' check)");
   assert.doesNotMatch(css, /opacity/, "never dimmed (Designer: about 2:1 at half opacity)");
   const z = b.evidence({ id: "z", phase: "checker", status: "active" });
-  assert.match(z, /^<span class="evidence clash"[^>]*>Repository: Checker · 2 branches, fix\/z&lt;b&gt; behind<\/span>/, "a split shows as a conflict, the branch escaped");
+  assert.match(z, /^<span class="evg"><span class="evidence clash"[^>]*>Repository: Checker · 2 branches, fix\/z&lt;b&gt; behind<\/span>/, "a split shows as a conflict, the branch escaped");
   assert.equal(b.asOf(undefined), "", "no reading time, nothing said");
 });
 

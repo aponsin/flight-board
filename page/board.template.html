@@ -52,6 +52,7 @@ section{min-width:0}
 /* A card's running sub-step (#C417): a thin bar under the words (the tick is the median, full at 2×); past 2× the row
    goes amber, its words in --warn-ink (Designer: #9a5700 on --warn-soft is 4.99:1; --warn's 4.33). */
 .nw{white-space:nowrap}
+.evg{display:inline-block;max-width:100%}
 .ss-bar{display:block;position:relative;width:120px;max-width:60%;height:3px;margin:5px 0 1px;border-radius:2px;background:var(--track);overflow:hidden}
 .ss-bar i{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:2px}
 .ss-bar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--muted)}
@@ -1001,7 +1002,9 @@ function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const nam
   const steps=i.byEvidence&&clash?` · steps say ${esc(name(i.stepPhase))}`:"";
   // A card on two branches (#C237): the phase is the one behind, named; one card should be one branch.
   const split=Array.isArray(d.branches)&&d.branches.length>1&&i.status!=="done"?` · ${d.branches.length} branches, ${esc(d.behind||"")} behind`:"";
-  return `<span class="evidence${clash||split?" clash":""}" title="${esc(d.evidence||"")}">${clash&&!i.byEvidence?"Repository says ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}${steps}${split}</span>${asOf(d.at)}`}
+  // The flag and its "as of" wrap as one (Designer on live-source: a short title let the flag ride up alone).
+  const flag=`<span class="evidence${clash||split?" clash":""}" title="${esc(d.evidence||"")}">${clash&&!i.byEvidence?"Repository says ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}${steps}${split}</span>`,ao=asOf(d.at);
+  return ao?`<span class="evg">${flag}${ao}</span>`:flag}
 // How old the repository's reading is (#C237): "as of 12 min ago"; past half an hour it says "· old" in the warning
 // colour, at full contrast (#C265: dimmed, it was hardest to read just when it mattered).
 const ASOF_STALE=30*60e3;
@@ -1646,7 +1649,12 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const iss=i.issues||{};const chips=[["bugs","bugs"],["security","security fixes"],["language","wording fixes"]].map(([k,l])=>{const v=num(iss[k])||0;return `<span class="chip ${v?"":"zero"}">${v} ${l}</span>`}).join(" ");
   const eta=cardEta(i);
   let etaHtml;
+  // Live by the evidence while still open (Designer on live-source: the live state shows this on every ship): no ETA to
+  // be due, its version or "now"; the waits and the missed-fields line are of the stage before, so they go, and the
+  // hand-written Next line fades as one an agent has moved past.
+  const liveOpen=i.status!=="done"&&i.byEvidence&&i.phase===LIVE_PHASE;
   if(i.status==="done") etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"")}</div><div class="lbl">${num(i.doneAt)?dayLabel(i.doneAt):""}</div>`;
+  else if(liveOpen) etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"now")}</div>`;
   else if(eta) etaHtml=`<div class="lbl">Live in</div><div class="big" data-eta="${eta}">${eta>Date.now()?dur(eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(eta)}${derivedEta(i)==null?" (declared)":""}</div>`;
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   const vn=i.status!=="done"?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
@@ -1654,9 +1662,9 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:ow?"Waiting on you":st?"Stalled":"In flight";
   const owHtml=ow?`<span class="ow-line">waiting on you: <a href="#" class="t-ref" data-tref="${esc(ow.id)}">${esc(threadName(ow.id))}</a></span>`:"";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
-  const nAt=num(i.nextNoteAt),stale=nAt!=null&&num(i.lastStepAt)!=null&&i.lastStepAt>nAt;
+  const nAt=num(i.nextNoteAt),stale=liveOpen||nAt!=null&&num(i.lastStepAt)!=null&&i.lastStepAt>nAt;
   const next=i.nextNote?`<span${stale?' style="opacity:.6"':""}>Next: <b>${esc(i.nextNote)}</b>${num(i.nextAt)?` <span data-next="${i.nextAt}">${i.nextAt>Date.now()?"in "+dur(i.nextAt-Date.now()):"due now"}</span>`:""}${nAt!=null?` <span data-ago="${nAt}">(written ${dur(Date.now()-nAt)} ago${stale?"; an agent has moved since":""})</span>`:" (not dated)"}</span>`:"";
-  const wait=i.waitingOn?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
+  const wait=i.waitingOn&&!liveOpen?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
   // One due time per card, here (Designer on c6c6e839); a queued card has waited, not started, and is due nothing yet.
   const started=num(i.createdAt)&&ns?`<span>Queued ${dur(Date.now()-i.createdAt)}${sMs?` · expected ${esc(i.size)} ${sMs/3600e3} h once started`:""}</span>`:num(i.createdAt)?`<span>Started ${dayLabel(i.createdAt)} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-i.createdAt)} so far${sMs?` · expected ${esc(i.size)} ${sMs/3600e3} h, ${dueText(i.createdAt+sMs)}`:""}</span>`:"";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
@@ -1666,7 +1674,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
-   <div class="i-meta">${queueLine(i)}${owHtml}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${(()=>{const g=gaps(i);return g.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(g.join(" · "))}</span>`:""})()}</div>${thread}</div>`;
+   <div class="i-meta">${queueLine(i)}${owHtml}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${(()=>{const g=liveOpen?[]:gaps(i);return g.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(g.join(" · "))}</span>`:""})()}</div>${thread}</div>`;
 }
 // Who is on what: { by: { agent: [open cards] }, names: the roster, then anyone else on a card, notes: meta/crew's idle notes }.
 function crewBy(){
@@ -2155,9 +2163,12 @@ const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHA
 // The header stamp: which source the board reads, and how old it is.
 function stampText(now=Date.now()){if(liveOn(now)){const s=Math.max(0,Math.round((now-probe.board.at)/1e3));return "live · "+(s<60?s+" s":dur(s*1e3))}
   const all=state.derived.find(d=>d.id==="all"),at=num(all&&all.at);return at!=null?"from "+hhmm(at):dbSynced?"from "+hhmm(dbSynced):"connecting…"}
+const stampLine=(now=Date.now())=>stampText(now)+(probeNote?" · "+probeNote:"");
 let dbSynced=null,dbState="";
 function renderStamp(){const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
-  el.textContent=stampText();el.title=probeNote||"";
+  // Why the board reads the db (a lapsed connector, an odd reading) shows as words, not only on hover: a phone has none
+  // (Checker on live-source).
+  el.textContent=stampLine();
   if(probeAsk&&liveMcp){const mcp=liveMcp;const b=document.createElement("button");b.type="button";b.className="viewlink";b.id="probe-allow";b.textContent="Allow live";el.append(" · ",b);
     b.addEventListener("click",()=>{mcp.callTool(STATE_SERVER,STATE_TOOL,null).then(r=>probeEvent({type:"data",result:r},mcp),e=>probeEvent({type:"error",error:e},mcp))},{once:true})}}
 function probeEvent(ev,mcp){liveMcp=mcp||liveMcp;

@@ -15,7 +15,7 @@ const reading = (at, extra = {}) => ({
   agents: { Checker: { state: "working", lastActivityAt: at, tool: "Bash", card: "live-card", since: at - 4 * MIN }, ...extra.agents },
 });
 function board({ live = null, derived = { phase: "build", head: HEAD, readyAt: NOW - 30 * MIN, waitingFor: ["checker", "security"], at: NOW - 40 * MIN } } = {}) {
-  const b = loadNames(["derivedOf", "liveCard", "liveAgent", "liveSubstep", "agentOn", "stampText", "probeEvent", "enrich", "crewHtml", "renderAll"]);
+  const b = loadNames(["derivedOf", "liveCard", "liveAgent", "liveSubstep", "agentOn", "stampText", "probeEvent", "enrich", "crewHtml", "renderAll", "initRow", "stampLine", "evidence"]);
   Object.assign(b.state, {
     initRaw: [], steps: [], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [],
     derived: [{ id: "all", at: NOW - 40 * MIN, cards: { "live-card": derived } }],
@@ -96,4 +96,34 @@ test("the header stamp: 'live · 40 s' while fresh, else 'from hh:mm' (the db's 
   assert.match(b.stampText(NOW), /^live · /, "a passing failure keeps the last reading while it's fresh");
   b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: "x" } } } }, {});
   assert.match(b.stampText(NOW), /^live · /, "an odd payload changes nothing");
+});
+
+// Designer's FINDINGS on 9dfe3934: what the live state shows on every ship, a card live while still open.
+test("a card live while still open: the Live column with its version or 'now', never 'due'; no stale waits or missed fields", () => {
+  const live = reading(NOW - 40e3);
+  Object.assign(live.cards["live-card"], { phase: "live", liveVersion: "1.159.3" });
+  const b = board({ live });
+  Object.assign(b.state.initRaw, []);
+  Object.assign(b.state.initiatives[0], { waitingOn: "Checker and Security", nextNote: "READY at f30fb84c", nextNoteAt: NOW - 9 * 3600e3, createdAt: NOW - 10 * 3600e3, etaLive: NOW - 3600e3 });
+  const row = b.initRow(b.enrich(b.state.initiatives[0]));
+  assert.match(row, /<div class="eta"><div class="lbl">Live<\/div><div class="big">1\.159\.3<\/div>/);
+  assert.doesNotMatch(row, />due</);
+  assert.doesNotMatch(row, /Waiting on <b>|Manager missed/);
+  assert.match(row, /<span style="opacity:.6">Next: <b>READY at f30fb84c<\/b>/, "the hand-written line fades");
+  delete live.cards["live-card"].liveVersion;
+  live.cards["live-card"].liveVersion = null;
+  const c = board({ live });
+  assert.match(c.initRow(c.enrich(c.state.initiatives[0])), /<div class="lbl">Live<\/div><div class="big">now<\/div>/);
+});
+
+test("the repository flag and its 'as of' make one group, so a short title can't strand the 'as of' alone", () => {
+  const b = board({ live: reading(NOW - 40e3) });
+  assert.match(b.evidence(b.enrich(b.state.initiatives[0])), /^<span class="evg"><span class="evidence[^"]*"[^>]*>Repository: [^<]*<\/span> <small class="asof[^"]*"[^>]*>as of [^<]*<\/small><\/span>$/);
+  assert.match(html, /\.evg\{display:inline-block;max-width:100%\}/, "a block that still wraps inside on a phone");
+});
+
+test("the stamp says why it reads the db in words, not only on hover (Checker)", () => {
+  const b = board({ live: reading(NOW - 40e3) });
+  b.probeEvent({ type: "error", error: { code: "needs_reauth" } }, {});
+  assert.match(b.stampLine(NOW), /^from \d\d:\d\d.* · Reconnect Flight Board State in claude\.ai Settings → Connectors to read it live\.$/);
 });
