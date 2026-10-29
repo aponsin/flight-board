@@ -14,11 +14,12 @@
 //      deployMin on its live end step, which names a version (versionPattern), and no row for that version in the
 //      release log (releaseTimes); cards in another repository aside. A second line for the lead to forward to whoever
 //      logged the live step.
+//   7. an open card more than an hour past its etaLive, with no open ask tied to it (#C441): every run, no quiet period.
 // The CONFLICT lines are the collector's own (collector/derive.mjs). Every board value a line names goes through idText
 // (collector/text.mjs): the lines reach a session that can write the board and message the team.
 
 import { idText as q } from "./text.mjs";
-import { repoOf } from "./derive.mjs";
+import { repoOf, openAsks } from "./derive.mjs";
 
 const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10;
 const closed = (k) => k.status === "done" || k.status === "dropped";
@@ -144,11 +145,19 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     });
   }
 
+  // 7. An open card over an hour past its etaLive (#C441: #C379 sat on ship a day past it, unseen): every run, no quiet
+  // period, until it closes or its ETA moves; an open ask tied to it holds it (the owner's, not the lead's to act on).
+  for (const card of cards.values()) {
+    if (closed(card) || typeof card.etaLive !== "number" || now - card.etaLive <= HOUR || openAsks(docs.waiting, card.id).length) continue;
+    const eta = new Date(card.etaLive).toISOString().slice(11, 16), phase = derived[card.id]?.phase ?? card.phase;
+    firing.push({ key: `overdue:${card.id}:${card.etaLive}`, every: true, text: `overdue: ${q(card.id)} (ETA ${eta}Z, phase ${q(phase ?? "?")})` });
+  }
+
   // Once, then again only after the quiet period; forgotten when it stops holding.
   const sent = Object.create(null), lines = [];
   for (const f of firing) {
     const last = Object.hasOwn(state.sent ?? {}, f.key) ? state.sent[f.key] : undefined;
-    if (typeof last === "number" && now - last < n.quietMin * MIN) { sent[f.key] = last; continue; }
+    if (!f.every && typeof last === "number" && now - last < n.quietMin * MIN) { sent[f.key] = last; continue; }
     sent[f.key] = now;
     lines.push(`NUDGE ${f.text}`);
     if (f.then) lines.push(`NUDGE ${f.then}`);

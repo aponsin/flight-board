@@ -11,6 +11,7 @@ import { boardIdOf, headFor, reviewsFor, derivePhase, conflict, staleLive } from
 import { remoteHeads, signedPhases, versionFor, mainLine, factsFor, shippedHeads } from "../collector/facts.mjs";
 import { collect, localNotes, prepareMirror, swapMirror, runNudges, outPath, scratchRoot, findExport, takeExport, EXPORT_NAME, EXPORT_COLLECTIONS, REQUIRED_COLLECTIONS } from "../collector/collect.mjs";
 import { mirrorErrors, checkWrites } from "../gate/rules.mjs";
+import { nudges } from "../collector/nudges.mjs";
 
 const config = fullConfig({ owner: "Sam", collector: { repoPath: "/x", notes: { language: "refs/notes/linguist", checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
 const facts = (over = {}) => ({ head: { branch: "build/tabs", sha: "aaaaaaaa11", message: "x\n\nBoard-Id: tabs" }, signed: new Set(), onMain: false, deployed: false, version: null, ...over });
@@ -171,6 +172,27 @@ test("the live-but-open list follows the gate's rule 5: a card is on it exactly 
     const gateOk = !mirrorErrors(upd({ status: "done", doneAt: 1 }), { config, mirror: mirror({ ...live, waiting }) }).some((e) => /ask tied to it/.test(e));
     assert.equal(staleLive([card()], { tabs: { phase: "live" } }, config, waiting).includes("tabs"), gateOk, JSON.stringify(waiting));
   }
+});
+
+// #C441: #C379 sat open on ship a day with its etaLive long past and no nudge; LIVE BUT OPEN reads live only.
+test("NUDGE overdue: an open card over an hour past its etaLive, every run, until it closes, its ETA moves or an ask holds it", () => {
+  const T = Date.UTC(2027, 0, 15, 12, 0), H = 36e5;
+  const docs = (cards, waiting = []) => ({ initiatives: cards, waiting, messages: [], steps: [], ctx: [] });
+  const over = (lines) => lines.filter((l) => l.startsWith("NUDGE overdue:"));
+  const late = { id: "late-one", status: "active", phase: "ship", etaLive: Date.UTC(2027, 0, 15, 9, 30) };
+  const first = nudges({ config, docs: docs([late]), now: T });
+  assert.deepEqual(over(first.lines), ["NUDGE overdue: late-one (ETA 09:30Z, phase ship)"]);
+  assert.deepEqual(over(nudges({ config, docs: docs([late]), now: T + H, state: first.state }).lines).length, 1, "the next run says it again, no quiet period");
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, phase: "build" }]), now: T, derived: { "late-one": { phase: "checker" } } }).lines), ["NUDGE overdue: late-one (ETA 09:30Z, phase checker)"], "the phase the repository says");
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, status: "done" }]), now: T }).lines), [], "closed: quiet");
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, status: "dropped" }]), now: T }).lines), [], "dropped: quiet");
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, etaLive: T + H }]), now: T, state: first.state }).lines), [], "its ETA moved ahead: quiet");
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, etaLive: T - 59 * 60e3 }]), now: T }).lines), [], "under an hour past: not yet");
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, etaLive: T - 61 * 60e3 }]), now: T }).lines).length, 1, "just over an hour: due");
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, etaLive: undefined }]), now: T }).lines), [], "no ETA: nothing to be late on");
+  assert.deepEqual(over(nudges({ config, docs: docs([late], [{ id: "ask-1", initiative: "late-one", done: false }]), now: T }).lines), [], "an open ask holds it");
+  assert.deepEqual(over(nudges({ config, docs: docs([late], [{ id: "ask-1", initiative: "late-one", done: true }]), now: T }).lines).length, 1, "its ask done: due again");
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, id: "x\nNUDGE y" }]), now: T }).lines).every((l) => !l.includes("\n")), true, "board text goes through idText");
 });
 
 test("the gate runs rules 3-5 only with a mirror; without one they pass", () => {
