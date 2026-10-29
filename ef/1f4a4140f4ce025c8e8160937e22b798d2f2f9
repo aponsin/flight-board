@@ -1,0 +1,1 @@
+PASS Quick (Checker, #C440 live-open-asks-quiet): staleLive's open-ask rule equals gate rule 5; 753/753; mutation caught by 3 tests
