@@ -38,7 +38,8 @@ test("one reply box in every state, always above the messages, which show newest
   assert.ok(before(open, 'data-reply="w2"', "latest words") && before(open, "latest words", "first words"));
   // An answered ask that waits on Manager (a help request; a bare Done settles it, #C268): the "You asked for help" line,
   // then the thread box, then the messages.
-  const b = board({ waiting: [{ id: "w2", kind: "action", text: "Do it", since: T, response: { status: "help", note: "it failed", at: 1000 }, ping: "sent" }], messages: thread });
+  // (The owner's word the newest: Manager's would put it under Needs you, #C451.)
+  const b = board({ waiting: [{ id: "w2", kind: "action", text: "Do it", since: T, response: { status: "help", note: "it failed", at: 1000 }, ping: "sent" }], messages: [msg("w2", "Manager", "first words", T + 1), msg("w2", "Owner", "latest words", T + 2)] });
   const answered = b.threadsHtml(T);
   assert.equal(boxes(answered), 1);
   assert.match(answered, /data-reply="th:w2"/);
@@ -52,7 +53,7 @@ test("one reply box in every state, always above the messages, which show newest
   assert.deepEqual(b.threadOf("w2").map((m) => m.text), ["first words", "latest words"]);
 });
 
-test("an answered ask moves from Needs you to Waiting on Manager, with its reply and thread, until Manager closes it", () => {
+test("an answered ask moves from Needs you to Waiting on Manager, with its reply and thread, until Manager answers or closes it", () => {
   const ask = { id: "ask-pics", kind: "action", text: "Send the pictures", since: T, response: { status: "done", note: "here they are", at: 1000 }, ping: "sent" }; // answered long ago, on the real clock
   const owner = msg("ask-pics", "Owner", "here they are", T);
   assert.doesNotMatch(renderWaitingHtml([ask], { messages: [owner] }), /Send the pictures/, "no longer under Needs you");
@@ -63,7 +64,8 @@ test("an answered ask moves from Needs you to Waiting on Manager, with its reply
   assert.match(html, /You marked this done/);
   assert.match(html, /class="thread" data-thread="ask-pics"/, "the reply sits under the ask");
   b.state.messages.push(msg("ask-pics", "Manager", "Got them", T + 1));
-  assert.match(b.threadsHtml(T), /data-id="ask-pics"/, "Manager answered but hasn't closed it: still waiting on Manager");
+  assert.doesNotMatch(b.threadsHtml(T), /data-id="ask-pics"/, "#C451: Manager answered after the reply: the owner's to read");
+  assert.match(renderWaitingHtml([ask], { messages: b.state.messages }), /Send the pictures[\s\S]*Got them/, "under Needs you, its thread with it");
   b.state.waiting[0] = { ...ask, done: true };
   assert.doesNotMatch(b.threadsHtml(T), /data-id="ask-pics"/, "closed: gone from the section");
   assert.match(b.resolvedHtml(T), /Reply to: <b class="t-name">Send the pictures/, "closed with Manager's word last: resolved, in the Resolved tab");

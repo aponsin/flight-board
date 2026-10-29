@@ -68,10 +68,11 @@ test("a building word with no card in flight, or its card dropped, is Manager's 
 
 test("With the team holds the threads Manager is answering and those that became a card in flight; Needs you the rest", () => {
   const b = board();
-  for (const id of ["t-q", "t-b", "t-m", "t-qb"]) assert.equal(b.waitsOn(id, T), "lead", id);
-  for (const id of ["t-l", "t-lk", "t-a", "t-d"]) assert.equal(b.waitsOn(id, T), "answered", id);
-  assert.deepEqual([...b.youItems(T, "").answered].sort(), ["t-a", "t-d", "t-l", "t-lk"]);
-  assert.equal(b.tabCounts(T, "").lead, 4);
+  for (const id of ["t-q", "t-b", "t-qb"]) assert.equal(b.waitsOn(id, T), "lead", id);
+  // #C451: t-m's card is in flight, but Manager's newest word isn't the card's: the owner's to read.
+  for (const id of ["t-l", "t-lk", "t-a", "t-d", "t-m"]) assert.equal(b.waitsOn(id, T), "answered", id);
+  assert.deepEqual([...b.youItems(T, "").answered].sort(), ["t-a", "t-d", "t-l", "t-lk", "t-m"]);
+  assert.equal(b.tabCounts(T, "").lead, 3);
   assert.equal(JSON.stringify(b.trefPlace("t-b", T)), '{"tab":"lead"}', "a #T link to a building thread opens With the team");
   assert.equal(JSON.stringify(b.trefPlace("t-l", T)), '{"tab":"you"}');
 });

@@ -94,7 +94,7 @@ test("Ping reads as a button beside the status pills, with a ~40 px hit area (De
 // questions are just where he pings): every thread with the team or waiting on him offers Ping, whoever spoke last.
 test("a 'with the team' row for a card in flight, Manager's word last, offers Ping", () => {
   const b = board();
-  b.state.messages.push(msg("t-c389", "Owner", "Why is #C389 still open?", T - 60 * MIN), msg("t-c389", "Manager", "It became a card.", T - 50 * MIN));
+  b.state.messages.push(msg("t-c389", "Owner", "Why is #C389 still open?", T - 60 * MIN), msg("t-c389", "Manager", "It became a card.", T - 50 * MIN, { kind: "building" }));
   b.state.initiatives = [{ id: "keeper-wakes-reset", num: 389, name: "x", status: "active", phase: "build", thread: "t-c389" }];
   const r = row(b, "t-c389");
   assert.match(r, /with the team/);
