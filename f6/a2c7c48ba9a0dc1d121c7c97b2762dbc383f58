@@ -1,0 +1,1 @@
+PASS Full (Checker, #C444 card-depends-on): dependsOn lead-only and shaped; a build start waits while a dependency is on plan or build; page line escaped; step-at guard; 759/759; mutation (lead check removed) caught; one LOW (the page says waits on for a dependency past build); Security needed (the gate is a hook)
