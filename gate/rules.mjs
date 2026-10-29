@@ -476,9 +476,22 @@ export function phaseOverlapErrors(w, { config, mirror, batch = [] }) {
   return [];
 }
 
+// A question to the owner reaches Needs you only as a waiting item (#C433: Manager's message of kind "question" in
+// #C389's thread made none, and the card sat open a day unseen). A new message of kind "question" from anyone but the
+// owner needs an open waiting item for its thread: set in the same batch, or already on the board and not done.
+export function questionAskErrors(w, { config, mirror, batch = [] }) {
+  const { op, collection, data } = w;
+  if (collection !== "messages" || op !== "set" || !data || typeof data !== "object" || data.kind !== "question" || data.from === config.owner) return [];
+  const t = typeof data.thread === "string" ? data.thread : "";
+  const open = (d) => d && typeof d === "object" && !d.done;
+  if (t && batch.some((b) => b.collection === "waiting" && b.doc_id === t && (b.op === "set" || b.op === "update") && open(b.data))) return [];
+  if (t && open((mirror?.docs?.waiting ?? []).find((d) => d && d.id === t))) return [];
+  return [`a question to ${idText(config.owner)} reaches Needs you only as a waiting item: set waiting/${t ? idText(t) : "<thread id>"} {kind, text, since} in the same batch (or send it as a plain message, not kind "question")`];
+}
+
 export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now() }) {
   const { op, collection, doc_id: id, data } = w;
-  if (collection === "messages") return [...threadErrors(w, { mirror, batch, now: at }), ...threadNumberedErrors(w, { mirror, batch })];
+  if (collection === "messages") return [...threadErrors(w, { mirror, batch, now: at }), ...threadNumberedErrors(w, { mirror, batch }), ...questionAskErrors(w, { config, mirror, batch })];
   if (collection === "waiting") {
     const was = op !== "set" && op !== "delete" && data && typeof data === "object" && !("kind" in data) ? (mirror?.docs?.waiting ?? []).find((x) => x.id === id) : null;
     return [...threadNumberedErrors(w, { mirror, batch }), ...(was ? choiceErrors(data, was.kind) : [])];
