@@ -302,11 +302,30 @@ changes none of them):
   and the needs-you counts, and the agent tiles (working on its card; idle, its last card only within 15 min of its last
   activity, else "Idle since hh:mm"). Past 3 min, or without the connector, the board is what the Collector's
   `derived/all` and the steps make it. The header stamp alone says which: "live · 40 s" or "from 14:02". The Collector
-  also gives a fresh reading's phase to the cards it reads (`readLiveState`, `underLive`). A card's status is derived
-  the same way, never typed (#C449, `buildingNow`): while the reading is fresh, a card whose branch has a commit beyond
-  main, or whose agent is working on it, is building (its badge, its agent's tile, no "Queued N min", no "never
-  started"); the typed `status` counts only when the reading is stale. The gate reads the same `state.json` (only a
-  fresh one that fits, `liveFresh`) and refuses `status: "queued"` on a card it shows building. The release tool refuses a page whose `mcp` use goes beyond that one connector and tool
+  also gives a fresh reading's phase to the cards it reads (`readLiveState`, `underLive`). **No typed field
+  outranks the live state** (#C449, `buildingNow`, `typedClashes`): while the reading is fresh, a card whose branch has
+  a commit beyond main, or whose agent is working on it, is building, and each field below that a person types or logs
+  is derived from the live state, or hidden where it contradicts it. The typed value then shows only as a small
+  "typed: queued" note by the badge; with a stale reading, the typed fields show as before. The gate reads the same
+  `state.json` (only a fresh one that fits, `liveFresh`) and refuses `status: "queued"` on a card it shows building. The
+  Collector tells the lead in one NUDGE line when a typed field has disagreed with the live state for over 5 min (nudge
+  8: the card and the field, never the typed value), so the next new field is caught there. The typed or logged fields
+  a card shows about its progress:
+  - **no step logged** (the `steps` collection): "Queued N min", the "queued · Builder" phase box, the queue line and
+    "never started" read it; a card the live state shows building has started.
+  - **`status`**: the badge, the agent's tile (⧗) and the queue; `queued` on a building card shows Building (at or before
+    build) or In flight.
+  - **`phase`**: the phase lights; the live phase shows (as since board-state-probe's follow-up).
+  - **`who`**: the phase box's name; at or before build, an agent working on it (the lead aside) shows instead.
+  - **`waitingOn`**: the "Waiting on" line; hidden while the card builds at or before build.
+  - **`nextNote` / `nextNoteAt`**: the Next line fades as "an agent has moved since" when a step or a live agent's work
+    is newer than it.
+  - **`lastStepAt` and the steps' times**: "Stalled", hidden while an agent works on the card now.
+  - The "Manager missed" line: "never started" goes with no step logged above; its other items (no ETA, ETA passed, no
+    next step, next step over 1 h old, no review level) are about the typed fields themselves and stay.
+  - Shown as typed, with nothing live to check them against: `etaLive` (the declared ETA), `queuePos`, `createdAt`,
+    `size`, `level`, `issues`, `shipDetail` and `shipAt`.
+  The release tool refuses a page whose `mcp` use goes beyond that one connector and tool
   (`PAGE_MCP`, `pageMcpErrors`); the whole declaration a publish carries is `PAGE_DECLARATION`.
 
 **What leaves the Studio** is exactly `collector/state-schema.mjs` (Security's data plan), checked by the script before

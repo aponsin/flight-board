@@ -153,11 +153,11 @@ export function takeExport(src, dir, id) {
 
 // The nudges, with the last run's state next to the mirror (<dir>/nudges.json: what was sent when, and since when each
 // card is unchanged). Returns the NUDGE lines to print.
-export function runNudges(dir, config, docs, now, waiting = new Set(), derived = {}, releaseTimes = {}) {
+export function runNudges(dir, config, docs, now, waiting = new Set(), derived = {}, releaseTimes = {}, live = null) {
   const path = join(dir, "nudges.json");
   let before = {};
   try { before = JSON.parse(readFileSync(path, "utf8")); } catch { /* first run, or a broken file: start afresh */ }
-  const { lines, state } = nudges({ config, docs, now, state: before && typeof before === "object" ? before : {}, waiting, derived, releaseTimes });
+  const { lines, state } = nudges({ config, docs, now, state: before && typeof before === "object" ? before : {}, waiting, derived, releaseTimes, live });
   writeFileSync(path, JSON.stringify(state));
   return lines;
 }
@@ -461,7 +461,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   }
   const now = Date.now();
   const live = await liveBuild(fetch, config.collector.liveUrl, config.collector.liveTag);
-  const { doc, conflicts, versions } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos, liveState: readLiveState(dir, now) });
+  const liveState = readLiveState(dir, now);
+  const { doc, conflicts, versions } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos, liveState });
   const guard = runExpected(dir, mirror.docs.initiatives, doc, versions);
   doc.conflicts.push(...guard);
   conflicts.push(...guard);
@@ -471,7 +472,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const keeper = configDir ? keeperCheck(config, now, { configDir }) : null;
   if (keeper) doc.keeper = keeper;
   const waits = new Set(Object.entries(doc.cards).filter(([, d]) => d.wait).map(([id]) => id));
-  const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards, doc.releaseTimes)] };
+  const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards, doc.releaseTimes, liveState)] };
   const out = outPath(config, dir);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(doc, null, 2));

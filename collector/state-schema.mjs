@@ -102,6 +102,28 @@ export function buildingNow(s, id) {
   if (plain(c) && SHA12.test(c.headSha12 ?? "") && c.onMain === false) return true;
   return Object.values(s.agents).some((a) => plain(a) && a.state === "working" && a.card === id);
 }
+// The roles working on a card now, the lead aside (it reads every card; it builds none).
+export function workersOn(s, id, lead) {
+  if (!plain(s) || !plain(s.agents)) return [];
+  return Object.keys(s.agents).filter((n) => n !== lead && plain(s.agents[n]) && s.agents[n].state === "working" && s.agents[n].card === id).sort();
+}
+// No typed field outranks the live state (#C449): the typed fields of a card's progress that a fresh reading
+// contradicts, as [{ field, typed, live }] (live: what the board shows instead; null: the field is hidden). The page
+// keeps a copy (typedClashes) to show the live value with a small "typed: …" note; the Collector tells the lead when one
+// holds over 5 min (nudge 8). status: queued while building. phase: not the repository's. who: someone else is on it
+// at or before build. waitingOn: a wait while building at or before build.
+export function typedClashes(card, s, config) {
+  if (!plain(card) || typeof card.id !== "string" || !plain(s) || !plain(s.cards)) return [];
+  const id = card.id, out = [], order = (config.phases ?? []).map((p) => p[0]), build = order.indexOf(config.collector.buildPhase);
+  const c = Object.hasOwn(s.cards, id) && plain(s.cards[id]) && SHA12.test(s.cards[id].headSha12 ?? "") && order.includes(s.cards[id].phase) ? s.cards[id] : null;
+  const phase = c ? c.phase : card.phase, early = order.indexOf(phase) <= build, building = buildingNow(s, id);
+  if (card.status === "queued" && building) out.push({ field: "status", typed: "queued", live: "building" });
+  if (c && typeof card.phase === "string" && card.phase && card.phase !== c.phase) out.push({ field: "phase", typed: card.phase, live: c.phase });
+  const on = workersOn(s, id, config.gate?.managerRole);
+  if (early && typeof card.who === "string" && card.who && on.length && !on.includes(card.who)) out.push({ field: "who", typed: card.who, live: on[0] });
+  if (early && building && typeof card.waitingOn === "string" && card.waitingOn.trim()) out.push({ field: "waitingOn", typed: card.waitingOn, live: null });
+  return out;
+}
 
 // A fresh copy of a state that fits, built field by field from the schema (nothing else in the input is carried over),
 // or null when it doesn't fit.
