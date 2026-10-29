@@ -232,7 +232,10 @@ the link runs (the collector's own code, the page) goes live early. So every pac
   command line under `zsh` as the owner would paste it;
 - says, on every step that shows a secret (the connector dialog with its URL, the `secrets --show` output), not to
   screenshot it, or to crop the URL out of the shot (#C426: v3.23's Add-connector screenshot put the URL on the board,
-  so it had to be rotated).
+  so it had to be rotated);
+- says, on its restart step, to restart only when no scheduled run is in progress: in the app's Scheduled tasks, no
+  task shows a run still going (wait for it to finish first). A run the restart cuts stays "running" and blocks every
+  later run of its task (#C427: the watchdog's 21:55Z run sat running for 6 hours, waiting on an approval nobody saw).
 
 **What gates a collector change is Security's review**, not the fence. The fence bounds the session's tool calls, but
 `collect.mjs` is a Node process with the owner's user rights (no sandbox: it fetches from GitHub, asks `gh`, reads the
