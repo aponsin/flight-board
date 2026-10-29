@@ -1,0 +1,1 @@
+PASS Quick: #C433 silent-stalls, release part. settledTips matches by changeId (file headers and changed lines, whitespace out) over up to 400 main commits; merges and empty diffs never settle (fail safe); tested at the tip 926cb24 (744/744).
