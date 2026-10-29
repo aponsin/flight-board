@@ -294,9 +294,22 @@ export function cardStates({ cards, config, repos, now }) {
   return out;
 }
 
+// The board db's last write (#C452, the owner at 23:44Z: "Needs you 0" and no cards in flight while the db held both,
+// the page's stream quiet with no error): the newest `at` in the gate's journal (gate/after.mjs, every write the board
+// applied), as a time only; nothing else of gate.json leaves. null when there is none, or the file isn't this user's.
+export function lastWriteAt(path, now) {
+  const r = readTail(path, 8 * 1024 * 1024);
+  if (!r?.whole) return null;
+  let j;
+  try { j = JSON.parse(r.text)?.journal; } catch { return null; }
+  if (!Array.isArray(j)) return null;
+  const t = j.reduce((m, w) => (plain(w) && Number.isInteger(w.at) && w.at > m && w.at <= now + 60e3 ? w.at : m), 0);
+  return t >= 1577836800000 && t <= 4102444800000 ? t : null;
+}
+
 // The state that leaves, checked against the allowlist before it does.
-export function buildState({ id, now, probe, pageVersion, cards, agents }) {
-  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion) }, cards, agents };
+export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null }) {
+  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite }, cards, agents };
   const errs = stateErrors(s);
   if (errs.length) throw new Error(`the state doesn't fit the plan (${errs.length} problem(s), first: ${errs[0]})`);
   return pickState(s);
@@ -390,7 +403,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try { pageVersion = basename(readlinkSync(join(stateDir, "current"))); } catch { /* no link */ }
   let state;
   try {
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents });
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now) });
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
     writeAtomic(ciPath, JSON.stringify(Object.fromEntries(Object.entries(ciCache).slice(-500))));
     writeAtomic(idsPath, JSON.stringify(Object.fromEntries(Object.entries(changeIds).slice(-5000))));

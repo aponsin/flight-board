@@ -87,15 +87,15 @@ test("the agent tiles: working, its card; idle under 15 min, its last card; past
   assert.match(tiles, /data-agent="Security"[\s\S]*?<span class="idle">Idle since \d\d:\d\d[^<]*<\/span>/);
 });
 
-test("the header stamp: 'live · 40 s' while fresh, else 'from hh:mm' (the db's reading); a lapsed connector says why", () => {
+test("the header stamp: 'live 40 s · …' while fresh, else 'from hh:mm' (the db's reading); a lapsed connector says why", () => {
   const b = board({ live: reading(NOW - 40e3) });
-  assert.match(b.stampText(NOW), /^live · (39|40|41) s$/);
+  assert.match(b.stampText(NOW), /^live (39|40|41) s · no data yet$/, "#C452: the data's age beside it");
   assert.match(b.stampText(NOW + 5 * MIN), /^from \d\d:\d\d/, "stale: the db's");
   assert.match(board().stampText(NOW), /^from \d\d:\d\d/);
   b.probeEvent({ type: "error", error: { code: "server_unavailable" } }, {});
-  assert.match(b.stampText(NOW), /^live · /, "a passing failure keeps the last reading while it's fresh");
+  assert.match(b.stampText(NOW), /^live \d+ s · /, "a passing failure keeps the last reading while it's fresh");
   b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: "x" } } } }, {});
-  assert.match(b.stampText(NOW), /^live · /, "an odd payload changes nothing");
+  assert.match(b.stampText(NOW), /^live \d+ s · /, "an odd payload changes nothing");
 });
 
 // Designer's FINDINGS on 9dfe3934: what the live state shows on every ship, a card live while still open.

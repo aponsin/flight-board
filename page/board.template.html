@@ -2252,9 +2252,34 @@ function typedClashes(c,now=Date.now()){if(!c||typeof c.id!=="string"||!liveOn(n
 // notes ref (collector.notes, "refs/notes/linguist") ends in the role's name, as the Collector's reviewerOf reads it.
 const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHASE)||[])[0]
   ||Object.entries((CONFIG.collector&&CONFIG.collector.notes)||{}).find(([k,ref])=>typeof ref==="string"&&ref.split("/").pop().toLowerCase()===String(n).toLowerCase()&&k!==BUILD_PHASE&&k!==LIVE_PHASE)?.[0]||null;
-// The header stamp: which source the board reads, and how old it is.
-function stampText(now=Date.now()){if(liveOn(now)){const s=Math.max(0,Math.round((now-probe.board.at)/1e3));return "live · "+(s<60?s+" s":dur(s*1e3))}
+// Data behind (#C452, the owner at 23:44Z: "Needs you 0" and "No initiatives in flight" while the db held both, the
+// header "live · 1 min": the db's stream had gone quiet with no error). The live state carries the db's last write
+// (board.lastWriteAt, the gate's journal); the page holds data up to dbHeld(), its newest doc `at` or its last receipt,
+// whichever is later. A write the page hasn't received DATA_BEHIND after it was made: the page reads every collection
+// again, and reloads once if that doesn't catch it up. DATA_SLACK covers two clocks a little apart.
+const DATA_BEHIND=2*60e3,DATA_SLACK=30e3,RELOAD_KEY="flight-board-data-reload",RELOAD_GAP=10*60e3;
+let dbNewest=0,resyncAt=null;
+const dbHeld=()=>Math.max(dbSynced||0,dbNewest)||null;
+// A collection's docs arrived: the newest `at` the page holds (none past a minute ahead of this clock), and when.
+function received(docs,now=Date.now()){docs.forEach(d=>{if(isT(d.at)&&d.at<=now+60e3&&d.at>dbNewest)dbNewest=d.at});dbSynced=now}
+const liveWriteAt=(now=Date.now())=>liveOn(now)&&isT(probe.board.lastWriteAt)?probe.board.lastWriteAt:null;
+function dataBehind(now=Date.now()){const w=liveWriteAt(now);return w!=null&&w>(dbHeld()||0)+DATA_SLACK&&now-w>DATA_BEHIND}
+const ageText=ms=>{const s=Math.max(0,Math.round(ms/1e3));return s<60?s+" s":dur(s*1e3)};
+// The header stamp: which source the board reads, and how old it is; while live, the data's age beside it, never the
+// live age alone (#C452).
+function stampText(now=Date.now()){if(liveOn(now)){const h=dbHeld(),both="live "+ageText(now-probe.board.at)+" · "+(h?"data "+ageText(now-h):"no data yet");
+    return dataBehind(now)?"Board data behind, reloading · "+both:both}
   const all=state.derived.find(d=>d.id==="all"),at=num(all&&all.at);return at!=null?"from "+hhmm(at):dbSynced?"from "+hhmm(dbSynced):"connecting…"}
+// What the page does while its data is behind: every collection read again (resubscribed), then, if it is still behind
+// DATA_BEHIND later, one reload (at most one per RELOAD_GAP, so a db that stays behind can't loop it).
+let resubscribe=null;
+function catchUp(now=Date.now()){if(!dataBehind(now)){resyncAt=null;return null}
+  if(resyncAt==null){resyncAt=now;if(resubscribe)resubscribe();return "resubscribed"}
+  if(now-resyncAt<DATA_BEHIND)return null;
+  let last=0;try{last=+sessionStorage.getItem(RELOAD_KEY)||0}catch(e){}
+  if(now-last<RELOAD_GAP)return null;
+  try{sessionStorage.setItem(RELOAD_KEY,String(now))}catch(e){}
+  try{location.reload()}catch(e){}return "reloaded"}
 const stampLine=(now=Date.now())=>stampText(now)+(probeNote?" · "+probeNote:"");
 let dbSynced=null,dbState="";
 function renderStamp(){const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
@@ -2282,6 +2307,7 @@ function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"
   document.querySelectorAll("[data-next]").forEach(e=>{const t=+e.dataset.next;e.textContent=t>Date.now()?"in "+dur(t-Date.now()):"due now"});
   document.querySelectorAll("[data-asof]").forEach(e=>{const t=+e.dataset.asof;e.textContent=asOfText(t);e.classList.toggle("stale",Date.now()-t>ASOF_STALE)});
   // A live reading that went stale (or fresh again) changes what every card reads: all of it again; else the stamp.
+  catchUp();
   if(liveOn()!==liveWas)renderAll();else renderStamp()}
 $("viewlink").addEventListener("click",()=>setView(view==="v3"?"v2":"v3"));
 document.querySelectorAll("[data-v3]").forEach(b=>b.addEventListener("click",()=>setV3View(b.dataset.v3)));
@@ -2296,9 +2322,14 @@ setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()
   window.claude.use("comments").then(c=>{commentsRef=c}).catch(()=>{});
   window.claude.use("assets").then(a=>{if(a){assetsRef=a;renderWaiting();renderThreads()}}).catch(()=>{});
   window.claude.use("downloads").then(d=>{if(d){setDownloads(d);renderAll()}}).catch(()=>{});
-  const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderSoon();dbSynced=Date.now()},
-    ()=>{$("dot").classList.remove("on");dbState="connection lost, reload";renderStamp()});
-  ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings"].forEach(sub);
+  let subs=[];
+  const sub=(name)=>{subs.push(db.collection(name).onSnapshot(snap=>{const docs=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));state[name==="initiatives"?"initRaw":name]=docs;
+      received(docs);renderSoon()},
+    ()=>{$("dot").classList.remove("on");dbState="connection lost, reload";renderStamp()}))};
+  // Every collection, and again (each stream closed first) when the data is behind (#C452: catchUp).
+  resubscribe=()=>{subs.forEach(u=>{try{if(typeof u==="function")u()}catch(e){}});subs=[];
+    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings"].forEach(sub)};
+  resubscribe();
 })();
 // The Studio's state (#C420), apart from the board's data: kept current by the connector's watch, once a minute.
 (async()=>{

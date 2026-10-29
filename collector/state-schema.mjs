@@ -5,7 +5,7 @@
 // fits a field, and an error never quotes what it refused (a key it doesn't know is "a key that isn't in the plan").
 //
 //   { v: 1,
-//     board:  { boardId, at, probe, pageVersion },
+//     board:  { boardId, at, probe, pageVersion, lastWriteAt? },
 //     cards:  { <card id>: { num, phase, headSha12, signed, onMain, ci, ciMin, liveVersion, at } },
 //     agents: { <role>: { state, lastActivityAt, tool, card, since } } }
 
@@ -42,7 +42,11 @@ const nullOr = (test) => (v) => v === null || test(v);
 const re = (r) => (v) => typeof v === "string" && r.test(v);
 const isId = (v) => re(CARD_ID)(v) && v.length <= CARD_ID_MAX;
 
-const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pageVersion: nullOr(re(SHA12)) };
+// lastWriteAt (#C452): the board db's newest write the gate journaled, so the page can tell its own data is behind.
+const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pageVersion: nullOr(re(SHA12)), lastWriteAt: nullOr(isTime) };
+// Keys a record may leave out (#C452's lastWriteAt: a reading from a probe before it still fits); one that is there is
+// checked like any other.
+const OPTIONAL = new Set(["lastWriteAt"]);
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
   phase: nullOr(re(PHASE)),
@@ -66,7 +70,7 @@ const AGENT = {
 function fields(at, rec, spec, errs) {
   if (!plain(rec)) { errs.push(`${at}: not an object`); return; }
   for (const k of Object.keys(rec)) if (!Object.hasOwn(spec, k)) errs.push(`${at}: a key that isn't in the plan`);
-  for (const [k, ok] of Object.entries(spec)) if (!Object.hasOwn(rec, k)) errs.push(`${at}.${k}: missing`); else if (!ok(rec[k])) errs.push(`${at}.${k}: not allowed`);
+  for (const [k, ok] of Object.entries(spec)) if (!Object.hasOwn(rec, k)) { if (!OPTIONAL.has(k)) errs.push(`${at}.${k}: missing`); } else if (!ok(rec[k])) errs.push(`${at}.${k}: not allowed`);
 }
 
 // The problems with a state, as fixed strings (a card id or a role only once it passed its pattern); [] when it fits.
@@ -129,7 +133,7 @@ export function typedClashes(card, s, config) {
 // or null when it doesn't fit.
 export function pickState(s) {
   if (stateErrors(s).length) return null;
-  const take = (rec, spec) => Object.fromEntries(Object.keys(spec).map((k) => [k, Array.isArray(rec[k]) ? [...rec[k]] : rec[k]]));
+  const take = (rec, spec) => Object.fromEntries(Object.keys(spec).filter((k) => Object.hasOwn(rec, k)).map((k) => [k, Array.isArray(rec[k]) ? [...rec[k]] : rec[k]]));
   const map = (m, spec) => Object.fromEntries(Object.keys(m).sort().map((k) => [k, take(m[k], spec)]));
   return { v: STATE_VERSION, board: take(s.board, BOARD), cards: map(s.cards, CARD), agents: map(s.agents, AGENT) };
 }
