@@ -240,6 +240,9 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .i-asks{margin:8px 0 0;border-top:1px solid var(--line)}.i-asks-h{font-size:.82rem;color:var(--muted);margin:6px 0 2px}.i-asks .w-item .thread{margin-left:0}.i-asks .w-row{padding:10px 0}
 /* A card's closed asks on a phone: the kind and the age on one line, the name under them at full width (#C288). */
 @media (max-width:760px){.i-asks .w-row{grid-template-columns:auto 1fr}.i-asks .w-row>.w-text{grid-column:1/-1;grid-row:2}.i-asks .w-row>.age{justify-self:end}}
+/* A phone (#C430, Designer): every thread row puts its kind and a short age on one line, the title and its body under
+   them at the full width. */
+@media (max-width:480px){.w-row{grid-template-columns:auto 1fr}.w-row>.w-text{grid-column:1/-1;grid-row:2}.w-row>.age{justify-self:end}.age .ago{display:none}}
 .btns button{font:600 .9rem var(--body);border-radius:6px;padding:7px 14px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
 .btns button.ok{background:var(--ok);border-color:var(--ok);color:var(--panel)}
 .btns button.help{color:var(--bad);border-color:var(--bad)}
@@ -398,7 +401,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .ctx-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 8px;margin-bottom:4px}
 .ctx-head h2{font-size:.95rem}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-.livever{font:600 .9rem var(--mono);color:var(--ok);margin-left:10px}
+.livever{font:600 .9rem var(--mono);color:var(--ok);margin-left:10px;white-space:nowrap}
 /* Board v3 (step 2): the Plan view, behind "Try the new layout"; the current board stays the default. */
 #v2:not([hidden]),#v3:not([hidden]){display:contents}
 .viewlink{font:600 .85rem var(--body);color:var(--accent);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
@@ -595,7 +598,7 @@ function itemShown(id,now){const it=itemOf(id);if(!it)return false;
 function askHtml(w,open,at=w.since,sub=""){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
    <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
-   <span class="age">${num(at)?dur(Date.now()-at)+" ago":""} <span class="caret" aria-hidden="true">▸</span></span>`;
+   <span class="age">${num(at)?dur(Date.now()-at)+'<span class="ago"> ago</span>':""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
    return `<details class="w-item" data-id="${esc(w.id)}"${open.has(w.id)?" open":""}><summary class="w-row">${head}</summary>
@@ -1244,7 +1247,7 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
 // kind it started as. Under With the team, a line says what it waits on (withLine).
 function threadRow(id,now,where="panel",ask=null){const on=waitsOn(id,now),st=ask||on==="resolved"?null:threadState(id),card=st?threadCardAny(id):null;
   const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:st?`<span class="kind ${st}">${TSTATE[st]}${card&&Number.isInteger(card.num)?`<span class="kn"> #C${card.num}</span>`:""}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
-  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${ask?"":pingHtml(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))} ago <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
+  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${ask?"":pingHtml(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
 function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id,q));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
     answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a))}}
