@@ -1,0 +1,1 @@
+PASS Quick (Checker, #C450 check-live-now): Check rereads the live state, no 'checking...'; no button while the live state drives the card; one ETA hint; one source, differences in its escaped hover; 775/775; mutation (button always shown) caught
