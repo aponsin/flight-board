@@ -89,3 +89,30 @@ test("Ping reads as a button beside the status pills, with a ~40 px hit area (De
   assert.match(css, /position:relative/);
   assert.match(page, /\.t-ping::after\{content:"";position:absolute;inset:-11px -6px\}/, "the hit area grows, the look doesn't");
 });
+
+// #C433 (the owner's screenshot: #T1015 → #C389 and #T1039 → #C400, "with the team", had no Ping; the Director: his own
+// questions are just where he pings): every thread with the team or waiting on him offers Ping, whoever spoke last.
+test("a 'with the team' row for a card in flight, Manager's word last, offers Ping", () => {
+  const b = board();
+  b.state.messages.push(msg("t-c389", "Owner", "Why is #C389 still open?", T - 60 * MIN), msg("t-c389", "Manager", "It became a card.", T - 50 * MIN));
+  b.state.initiatives = [{ id: "keeper-wakes-reset", num: 389, name: "x", status: "active", phase: "build", thread: "t-c389" }];
+  const r = row(b, "t-c389");
+  assert.match(r, /with the team/);
+  assert.ok(r.includes(PING("t-c389")), r);
+  b.state.initiatives[0].status = "done";
+  assert.equal(b.pingState("t-c389", T).show, null, "its card done, Manager's word last: answered, nothing to ping");
+});
+
+test("the owner's own questions (asks), open or answered and not closed, offer Ping on their row too", () => {
+  const b = board();
+  b.state.waiting = [
+    { id: "w-open", kind: "action", text: "Do you want the new header?", since: T - 30 * MIN },
+    { id: "w-answered", kind: "action", text: "Which?", since: T - 40 * MIN, response: { status: "done", note: "B please, and why so slow?", at: T - 20 * MIN } },
+    { id: "w-closed", kind: "action", text: "Old", since: T - 90 * MIN, done: true },
+  ];
+  for (const id of ["w-open", "w-answered"]) {
+    assert.equal(b.pingState(id, T).show, "ping", id);
+    assert.ok(b.threadRow(id, T, "panel", b.state.waiting.find((w) => w.id === id)).includes(PING(id)), `${id}: the ask's own row`);
+  }
+  assert.equal(b.pingState("w-closed", T).show, null, "a closed ask has nothing to ping");
+});

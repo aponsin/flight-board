@@ -168,6 +168,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
 .evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.clash{border-color:var(--bad);color:var(--bad)}.asof{font:.7rem var(--mono);color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
+.stuckline .sl-owner{color:var(--warn)}.stuckline.amber{border-color:var(--warn);color:var(--warn)}
 .stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
 .stuckline div+.deaf{margin-top:6px}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
@@ -1020,7 +1021,10 @@ function asOf(at,now=Date.now()){if(num(at)==null)return "";const old=now-at>ASO
 function stuckLines(){const m=state.meta.find(d=>d.id==="stuck")||{},lead=(CONFIG.gate&&CONFIG.gate.managerRole)||"Manager";
   return Object.entries(m).filter(([k,v])=>k!=="id"&&v&&typeof v==="object"&&!v.__delete__).sort((a,b)=>(num(a[1].at)??0)-(num(b[1].at)??0))
     .map(([k,v])=>{const id=k.includes(":")?k.slice(k.indexOf(":")+1):k,it=itemOf(id);
-      return `${lead} stuck on ${it?(it.coll==="initiatives"?it.doc.name:it.doc.text)||id:id}: ${v.reason||"refused three times"}`})}
+      // The banner contract (#C433): it ends with the owner's exact action, or says it isn't his. An entry with
+      // neither (one written before the rule) is the lead's.
+      const you=typeof v.you==="string"&&v.you.trim()?v.you.trim():"",owner=typeof v.owner==="string"&&/^[A-Za-z][A-Za-z0-9]{1,23}$/.test(v.owner)?v.owner:lead;
+      return {you:!!you,text:`${lead} stuck on ${it?(it.coll==="initiatives"?it.doc.name:it.doc.text)||id:id}: ${v.reason||"refused three times"} · ${you?"You: "+you:"Nothing for you · owner: "+owner}`}})}
 // The deaf line (#C392): Manager's board pings arm only when the owner's own message carries the board's link, so after
 // a clear Manager missed ~40 board messages. The owner's word with nothing from Manager after it (a thread's newest
 // owner word not closed, or an answered ask not done; the last day's only), DEAF_MIN minutes on, shows here with the
@@ -1039,14 +1043,16 @@ function deafLine(now=Date.now()){const lead=(CONFIG.gate&&CONFIG.gate.managerRo
   for(const w of state.waiting){const at=w&&w.response&&num(w.response.at);if(at==null||settled(w)||open.has(w.id)||at<=(leadAt.get(w.id)??-Infinity))continue;words.push(at)}
   const oldest=Math.min(...words.filter(at=>now-at<864e5));if(!(now-oldest>=min*60000))return "";
   const cmd=`Turn the board's comment auto-replies back on: ${CONFIG.artifactUrl||"<the board's link>"}`;
-  return `<div class="deaf">You wrote, and ${esc(lead)} has said nothing for ${Math.floor((now-oldest)/60000)} min: its board pings may be off. Only you can turn them back on: send ${esc(lead)} this.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}
+  return `<div class="deaf">You wrote, and ${esc(lead)} has said nothing for ${Math.floor((now-oldest)/60000)} min: its board pings may be off, and only you can turn them back on. You: send ${esc(lead)} this.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}
 // The keeper line (#C407): the owner's keeper paste didn't save and nothing said so. The Collector says only whether the
 // task's saved prompt matches the installed one (derived/all.keeper.ok); the command comes from this page's own config.
 function keeperLine(){const all=state.derived.find(d=>d.id==="all"),k=all&&all.keeper,p=CONFIG.collector&&CONFIG.collector.keeper;
   if(!k||k.ok!==false||!p||!p.prompt||!/^~?[A-Za-z0-9._\/-]+$/.test(p.prompt))return "";
   const file=p.prompt.split("/").pop(),task=String(p.skill||"").split("/").slice(-2,-1)[0]||"context keeper",cmd=`pbcopy < ${p.prompt}`;
-  return `<div class="deaf">The context keeper's saved prompt isn't the one your install shipped: its last paste didn't save. Copy ${esc(file)} with this in a terminal, paste it into the ${esc(task)} task's prompt and Save.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}
-function renderStuck(){const el=$("stuck"),l=stuckLines(),d=deafLine()+keeperLine();el.hidden=!l.length&&!d;el.innerHTML=l.map(t=>`<div>${esc(t)}</div>`).join("")+d}
+  return `<div class="deaf">The context keeper's saved prompt isn't the one your install shipped: its last paste didn't save. You: copy ${esc(file)} with this in a terminal, paste it into the ${esc(task)} task's prompt and Save.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}
+// Red only when the owner has something to do (an entry with "You:", the deaf or keeper line); otherwise amber (#C433).
+function renderStuck(){const el=$("stuck"),l=stuckLines(),d=deafLine()+keeperLine();el.hidden=!l.length&&!d;
+  el.innerHTML=l.map(t=>`<div class="${t.you?"sl-you":"sl-owner"}">${esc(t.text)}</div>`).join("")+d;el.classList.toggle("amber",!d&&!l.some(t=>t.you))}
 
 // ---- Threads (board v2) ----
 // Every item is a thread: messages {thread, from: "<owner>" | "<Role>", text, at, assets?, kind?, resolved?}, oldest first.
@@ -1215,7 +1221,8 @@ function threadHtml(id,where,{box=true,hint="",acts=false,ph=""}={}){const t=thr
 // The thread rows whose item is not on the board (a New thread, or an item since closed): open (the owner's word is the
 // last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their
 // own place at the panel's end (resolvedHtml).
-const threadLast=id=>{const t=threadOf(id);return t[t.length-1].at};
+// A thread with no message yet (an ask nobody has written under) is as old as the ask itself (#C433: its row now offers Ping).
+const threadLast=id=>{const t=threadOf(id);if(t.length)return t[t.length-1].at;const it=itemOf(id);return num(it&&it.doc&&it.doc.since)??0};
 // The owner's word unanswered 5 minutes on (#C297): red on the thread's row, any thread a new one included. Only a
 // duration the page works out; never the message's text.
 const LATE_MIN=5;
@@ -1226,7 +1233,10 @@ function lateTag(id,now){if(!threadOpen(id))return"";const at=threadLast(id);
 // (#C396, the owner in #T1030: it waited 10 minutes, before and after a ping). A ping counts only for the owner's newest
 // word (at or after it); it shows "Pinged HH:MM" beside Ping until Manager answers. A ping that didn't send records
 // nothing; a press while one is sending is ignored (the button is disabled).
-function pingState(id,now){if(!threadOpen(id))return {show:null};const last=threadLast(id);
+// Every open thread offers it (#C433, the Director: the owner's own questions and the "with the team" rows, a card in
+// flight with Manager's word last, are just where he pings): "with the team" or "waiting on you"; an answered or a
+// resolved one has nothing to ping.
+function pingState(id,now){const on=waitsOn(id,now);if(on!=="lead"&&on!=="you")return {show:null};const last=threadLast(id);
   const p=(state.threadPings||[]).find(d=>d&&d.id===id&&num(d.at)!=null&&d.at>=last)||null;
   return p?{show:"ping",at:p.at}:{show:"ping"}}
 function pingHtml(id,now){const s=pingState(id,now);
@@ -1247,7 +1257,7 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
 // kind it started as. Under With the team, a line says what it waits on (withLine).
 function threadRow(id,now,where="panel",ask=null){const on=waitsOn(id,now),st=ask||on==="resolved"?null:threadState(id),card=st?threadCardAny(id):null;
   const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:st?`<span class="kind ${st}">${TSTATE[st]}${card&&Number.isInteger(card.num)?`<span class="kn"> #C${card.num}</span>`:""}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
-  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${ask?"":pingHtml(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
+  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${pingHtml(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
 function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id,q));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
     answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a))}}

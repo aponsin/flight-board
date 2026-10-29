@@ -116,7 +116,7 @@ const CMD = "pbcopy &lt; ~/Documents/Team/keeper-prompt-v320.txt";
 test("the page: a red line with the copy command when the saved prompt doesn't match; nothing otherwise", () => {
   const html = board({ ok: false, at: T }).keeperLine();
   assert.match(html, /^<div class="deaf">The context keeper's saved prompt isn't the one your install shipped/);
-  assert.match(html, /Copy keeper-prompt-v320\.txt with this in a terminal, paste it into the team-context-keeper task's prompt and Save\./);
+  assert.match(html, /You: copy keeper-prompt-v320\.txt with this in a terminal, paste it into the team-context-keeper task's prompt and Save\./);
   assert.ok(html.includes(`<code>${CMD}</code>`) && html.includes(`data-copy="${CMD}"`), html);
   assert.equal(board({ ok: true, at: T }).keeperLine(), "");
   assert.equal(board(undefined).keeperLine(), "", "an older Collector: no word");

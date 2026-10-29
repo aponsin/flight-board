@@ -254,8 +254,9 @@ test("Needs you draws its thread rows with the folds as the owner left them (#C2
 test("the stuck line: \"Manager stuck on <item>: <reason>\" for each item the gate stuck on, oldest first; none when cleared", () => {
   const b = loadNames(["stuckLines"]);
   Object.assign(b.state, { waiting: [{ id: "w1", text: "Pick a colour" }], initRaw: [{ id: "x-y", name: "Tabs" }] });
-  b.state.meta.push({ id: "stuck", "waiting:w1": { reason: "no steps", at: 2 }, "initiatives:x-y": { reason: "no ETA", at: 1 }, "steps:s9": { __delete__: true } });
-  assert.deepEqual([...b.stuckLines()], ["Manager stuck on Tabs: no ETA", "Manager stuck on Pick a colour: no steps"]);
+  b.state.meta.push({ id: "stuck", "waiting:w1": { reason: "no steps", at: 2, you: "answer it" }, "initiatives:x-y": { reason: "no ETA", at: 1, owner: "Checker" }, "steps:s9": { __delete__: true } });
+  // #C433's contract: each line ends with the owner's exact action, or says it isn't his.
+  assert.deepEqual(b.stuckLines().map((l) => l.text), ["Manager stuck on Tabs: no ETA · Nothing for you · owner: Checker", "Manager stuck on Pick a colour: no steps · You: answer it"]);
   b.state.meta[0] = { id: "stuck" };
   assert.deepEqual([...b.stuckLines()], []);
 });
