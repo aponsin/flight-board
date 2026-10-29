@@ -1,0 +1,1 @@
+PASS Quick: #C427 restart-orphan-runs part 3 (docs). The README's every-pack rule says to restart only when no scheduled run is in progress; a test holds the text (its anchor checked); CHANGELOG line. Stacked on c984442 (signed).
