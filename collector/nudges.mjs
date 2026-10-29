@@ -147,9 +147,12 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
 
   // 7. An open card over an hour past its etaLive (#C441: #C379 sat on ship a day past it, unseen): every run, no quiet
   // period, until it closes or its ETA moves; an open ask tied to it holds it (the owner's, not the lead's to act on).
+  // A card live by the evidence is LIVE BUT OPEN's (Checker).
   for (const card of cards.values()) {
-    if (closed(card) || typeof card.etaLive !== "number" || now - card.etaLive <= HOUR || openAsks(docs.waiting, card.id).length) continue;
-    const eta = new Date(card.etaLive).toISOString().slice(11, 16), phase = derived[card.id]?.phase ?? card.phase;
+    const phase = derived[card.id]?.phase ?? card.phase;
+    if (closed(card) || typeof card.etaLive !== "number" || now - card.etaLive <= HOUR) continue;
+    if (phase === config.collector.livePhase || openAsks(docs.waiting, card.id).length) continue;
+    const eta = new Date(card.etaLive).toISOString().slice(11, 16);
     firing.push({ key: `overdue:${card.id}:${card.etaLive}`, every: true, text: `overdue: ${q(card.id)} (ETA ${eta}Z, phase ${q(phase ?? "?")})` });
   }
 

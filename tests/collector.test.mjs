@@ -193,7 +193,8 @@ test("NUDGE overdue: an open card over an hour past its etaLive, every run, unti
   assert.deepEqual(over(nudges({ config, docs: docs([late], [{ id: "ask-1", initiative: "late-one", done: false }]), now: T }).lines), [], "an open ask holds it");
   assert.deepEqual(over(nudges({ config, docs: docs([late], [{ id: "ask-1", initiative: "late-one", done: true }]), now: T }).lines).length, 1, "its ask done: due again");
   assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, id: "x\nNUDGE y" }]), now: T }).lines).every((l) => !l.includes("\n")), true, "board text goes through idText");
-});
+  assert.deepEqual(over(nudges({ config, docs: docs([late]), now: T, derived: { "late-one": { phase: "live" } } }).lines), [], "live by the evidence: LIVE BUT OPEN's, not overdue (Checker)");
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, phase: "live" }]), now: T }).lines), [], "the card says live, no derived reading: LIVE BUT OPEN's");});
 
 test("the gate runs rules 3-5 only with a mirror; without one they pass", () => {
   const w = upd({ phase: "build" });
