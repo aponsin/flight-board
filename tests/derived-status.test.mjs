@@ -49,7 +49,7 @@ test("no typed field outranks the live state: the owner's case reads neither 'qu
   const b = board(reading(NOW - 30e3));
   const html = b.initRow(b.state.initiatives[0]);
   assert.doesNotMatch(words(html), /queued|never started/i);
-  assert.match(html, /<span class="evidence differs" title="typed: queued">Live: Build<\/span>/, "the typed value, in the source's hover");
+  assert.match(html, /<button type="button" class="evidence differs" data-evdiff="our-work-editor" aria-expanded="false" title="typed: queued">Live: Build<\/button>/, "the typed value, in the source's hover");
   const stale = board(reading(NOW - 4 * MIN)), was = stale.initRow(stale.state.initiatives[0]);
   assert.match(words(was), /queued/i, "a stale reading: the typed status shows as before");
   assert.doesNotMatch(was, /typed: /, "and no typed line");

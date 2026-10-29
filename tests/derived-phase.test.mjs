@@ -25,7 +25,7 @@ test("live by the evidence: the card says Live, still open, never stalled, whate
   const html = b.initRow({ ...i, lastStepAt: old });
   assert.match(html, /Live, still open/);
   assert.doesNotMatch(html, /Stalled|up next/);
-  assert.match(html, /class="evidence differs" title="steps say Checker[^"]*">Repository: Live 1\.104\.1</, "the steps in the hover (#C450)");
+  assert.match(html, /class="evidence differs" data-evdiff="[^"]*" aria-expanded="false" title="steps say Checker[^"]*">Repository: Live 1\.104\.1</, "the steps in the hover (#C450)");
 });
 
 test("a review signed by the evidence moves the card on, with no step logged; the next reviewer is up next", () => {

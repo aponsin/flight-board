@@ -264,7 +264,7 @@ test("the stuck line: \"Manager stuck on <item>: <reason>\" for each item the ga
 test("a card shows what the repository says, and a conflict mark when it says otherwise", () => {
   const b = loadNames(["evidence"]);
   b.state.derived.push({ id: "all", cards: { x: { phase: "live", version: "1.4.0", evidence: "abc is on main" }, y: { phase: null } } });
-  assert.equal(b.evidence({ id: "x", phase: "build", status: "active" }), '<span class="evidence differs" title="the card says Build · abc is on main">Repository: Live 1.4.0</span>', "the disagreement in the hover (#C450)");
+  assert.equal(b.evidence({ id: "x", phase: "build", status: "active" }), '<button type="button" class="evidence differs" data-evdiff="x" aria-expanded="false" title="the card says Build · abc is on main">Repository: Live 1.4.0</button>', "the disagreement in the hover (#C450)");
   assert.equal(b.evidence({ id: "x", phase: "live", status: "active" }), '<span class="evidence" title="abc is on main">Repository: Live 1.4.0</span>');
   assert.equal(b.evidence({ id: "y", phase: "build" }), "", "nothing known, nothing shown");
   assert.equal(b.evidence({ id: "z", phase: "build" }), "");

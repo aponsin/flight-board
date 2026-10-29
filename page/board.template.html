@@ -166,7 +166,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .reply label{font-size:.82rem;color:var(--muted)}
 .reply textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
-.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;cursor:help}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
+.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .stuckline .sl-owner{color:var(--warn-ink)}.stuckline.amber{border-color:var(--warn);color:var(--warn-ink)}
 .stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
@@ -1003,21 +1003,33 @@ function derivedOf(id){const all=state.derived.find(d=>d.id==="all"),d=all&&all.
 // The card's one source of stage, with its age (#C450, the owner on #C448: "IN FLIGHT · typed: phase build · Repository:
 // Linguist · steps say Build · as of 2 min ago · checking…", three sources arguing): the live state while it reads the
 // card ("Live: Linguist · 12 s ago"), else the repository's reading ("Repository: Linguist" and its "as of"). What
-// disagrees with it (a typed field, the steps, a second branch) goes in its hover, never inline in red.
-function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const name=k=>(PHASES.find(p=>p[0]===k)||[k,k])[1],label=name(d.phase);
+// disagrees with it (a typed field, the steps, a second branch) goes in its hover, never inline in red. On a phone or a
+// keyboard there is no hover (Designer): with a disagreement the flag is a button that shows the same words in a muted
+// line under the card's name row, and hides them on a second press.
+const phaseLabel=k=>(PHASES.find(p=>p[0]===k)||[k,k])[1];
+// What disagrees with the card's source, as words ([] when nothing does).
+function evidenceOff(i,d){if(!d||!d.phase)return [];
   // Shown by the evidence: a step phase that disagrees is the clash. Shown by the steps: the repository's word is.
   const clash=i.status!=="done"&&(i.byEvidence?i.stepPhase&&i.stepPhase!==d.phase:i.phase&&i.phase!==d.phase);
   const typed=Array.isArray(i.typed)?i.typed:[],typedPhase=(typed.find(k=>k.field==="phase")||{}).typed;
-  const off=[...typed.map(k=>"typed: "+(k.field==="status"?k.typed:k.field==="waitingOn"?"waiting on "+k.typed:k.field+" "+k.typed)),
+  return [...typed.map(k=>"typed: "+(k.field==="status"?k.typed:k.field==="waitingOn"?"waiting on "+k.typed:k.field+" "+k.typed)),
     // The steps' phase once: when it is the typed one, the typed line already says it.
-    ...(clash&&!(i.byEvidence&&i.stepPhase===typedPhase)?[i.byEvidence?"steps say "+name(i.stepPhase):"the card says "+name(i.phase)]:[]),
+    ...(clash&&!(i.byEvidence&&i.stepPhase===typedPhase)?[i.byEvidence?"steps say "+phaseLabel(i.stepPhase):"the card says "+phaseLabel(i.phase)]:[]),
     // A card on two branches (#C237): the phase is the one behind, named; one card should be one branch.
-    ...(Array.isArray(d.branches)&&d.branches.length>1&&i.status!=="done"?[`${d.branches.length} branches, ${d.behind||""} behind`]:[])];
+    ...(Array.isArray(d.branches)&&d.branches.length>1&&i.status!=="done"?[`${d.branches.length} branches, ${d.behind||""} behind`]:[])]}
+const evOpen=new Set();
+function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const label=phaseLabel(d.phase),off=evidenceOff(i,d);
   const live=d.live&&liveOn(),title=[...off,d.evidence||""].filter(Boolean).join(" · ");
   // The flag and its age wrap as one (Designer on live-source: a short title let the flag ride up alone).
-  const flag=`<span class="evidence${off.length?" differs":""}"${title?` title="${esc(title)}"`:""}>${live?"Live: ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}</span>`;
+  const text=`${live?"Live: ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}`,t=title?` title="${esc(title)}"`:"";
+  const flag=off.length?`<button type="button" class="evidence differs" data-evdiff="${esc(i.id)}" aria-expanded="${evOpen.has(i.id)}"${t}>${text}</button>`:`<span class="evidence"${t}>${text}</span>`;
   const ao=live?` <small class="asof" title="When the live state last read the Studio">${esc(liveAgeText())}</small>`:asOf(d.at);
   return ao?`<span class="evg">${flag}${ao}</span>`:flag}
+// The disagreement's line, while its flag is pressed open: the hover's words.
+function evidenceLine(i){if(!evOpen.has(i.id))return "";const d=derivedOf(i.id),off=evidenceOff(i,d);
+  return off.length?`<div class="ev-diff" id="evd-${esc(i.id)}">${esc([...off,d.evidence||""].filter(Boolean).join(" · "))}</div>`:""}
+document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-evdiff]");if(!b)return;const id=b.dataset.evdiff;
+  if(evOpen.has(id))evOpen.delete(id);else evOpen.add(id);renderAll()});
 // The live reading's age: "12 s ago", "3 min ago".
 function liveAgeText(now=Date.now()){const s=Math.max(0,Math.round((now-probe.board.at)/1e3));return (s<60?s+" s":dur(s*1e3))+" ago"}
 // How old the repository's reading is (#C237): "as of 12 min ago"; past half an hour it says "· old" in the warning
@@ -1714,7 +1726,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
-  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>
+  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>

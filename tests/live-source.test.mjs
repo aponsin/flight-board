@@ -118,7 +118,7 @@ test("a card live while still open: the Live column with its version or 'now', n
 
 test("the source flag and its age make one group, so a short title can't strand the age alone", () => {
   const b = board({ live: reading(NOW - 40e3) });
-  assert.match(b.evidence(b.enrich(b.state.initiatives[0])), /^<span class="evg"><span class="evidence[^"]*"[^>]*>Live: [^<]*<\/span> <small class="asof[^"]*"[^>]*>40 s ago<\/small><\/span>$/, "the live state, its reading's age (#C450)");
+  assert.match(b.evidence(b.enrich(b.state.initiatives[0])), /^<span class="evg"><(span|button)[^>]*class="evidence[^"]*"[^>]*>Live: [^<]*<\/(span|button)> <small class="asof[^"]*"[^>]*>40 s ago<\/small><\/span>$/, "the live state, its reading's age (#C450)");
   const db = board();
   assert.match(db.evidence(db.enrich(db.state.initiatives[0])), /^<span class="evg"><span class="evidence[^"]*"[^>]*>Repository: [^<]*<\/span> <small class="asof[^"]*"[^>]*>as of [^<]*<\/small><\/span>$/, "else the repository, as of its run");
   assert.match(html, /\.evg\{display:inline-block;max-width:100%\}/, "a block that still wraps inside on a phone");

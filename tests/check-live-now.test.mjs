@@ -4,6 +4,7 @@
 // sources arguing: "IN FLIGHT · typed: phase build · Repository: Linguist · steps say Build · as of 2 min ago · checking…").
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { loadNames, step } from "./harness.mjs";
 
 const NOW = Date.now(), MIN = 60e3, H = 36e5, ID = "rev-card";
@@ -40,7 +41,7 @@ test("a card in review, its live reading stale: ↻ Check reads it now, then one
   assert.doesNotMatch(html, /due ~|expected/, "no second due time");
   assert.match(html, /\(usually 6 h for L\)/, "the size's median, as a hint");
   assert.equal(html.match(/class="evidence/g).length, 1, "one source");
-  assert.match(html, /<span class="evidence differs" title="typed: phase build[^"]*">Live: Language<\/span> <small class="asof"[^>]*>\d+ s ago<\/small>/, "the live state with its age; the typed phase in the hover");
+  assert.match(html, /<button type="button" class="evidence differs" data-evdiff="rev-card" aria-expanded="false" title="typed: phase build[^"]*">Live: Language<\/button> <small class="asof"[^>]*>\d+ s ago<\/small>/, "the live state with its age; the typed phase in the hover");
   assert.doesNotMatch(words(html), /typed|steps say|Repository/, "the disagreements in the hover only");
   assert.doesNotMatch(html, /data-check=/, "the live state drives the card now: no button");
 });
@@ -62,5 +63,24 @@ test("a fresh reading already drives the card: no button and no check line, its 
   b.probeEvent({ type: "data", result: { payload: reading(NOW - 12e3) } }, {});
   const html = row(b);
   assert.doesNotMatch(html, /data-check=|i-checked|checking/);
-  assert.match(html, />Live: Language<\/span> <small class="asof"[^>]*>12 s ago</);
+  assert.match(html, />Live: Language<\/button> <small class="asof"[^>]*>12 s ago</);
+});
+
+// Designer: no hover on a phone or a keyboard, so a disagreement's flag is a button that shows the hover's words in a
+// muted line under the name row, and hides them again; its dashed border in --muted, not --line (1.3:1).
+test("the disagreement opens and closes under the name row by a press; nothing to press without one", () => {
+  const b = board();
+  b.probeEvent({ type: "data", result: { payload: reading(NOW - 12e3) } }, {});
+  const press = () => b.listeners.click.forEach((fn) => fn({ target: { closest: (s) => (s === "[data-evdiff]" ? { dataset: { evdiff: ID } } : null) } }));
+  assert.doesNotMatch(row(b), /class="ev-diff"/, "closed at first");
+  press();
+  const open = row(b);
+  assert.match(open, /aria-expanded="true"/);
+  assert.match(open, /<\/div><div class="ev-diff" id="evd-rev-card">typed: phase build · READY on a1b2c3d4<\/div>/, "under the name row, the hover's words");
+  press();
+  assert.doesNotMatch(row(b), /class="ev-diff"/, "a second press hides it");
+  const agree = board();
+  agree.state.initRaw = [{ ...card, phase: "build" }];
+  assert.doesNotMatch(row(agree), /<button[^>]*class="evidence/, "no disagreement: a plain flag, nothing to press");
+  assert.match(readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8"), /\.evidence\.differs\{border-style:dashed;border-color:var\(--muted\)/);
 });
