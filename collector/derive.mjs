@@ -94,7 +94,13 @@ export function conflict(card, derived, config) {
   return `${idText(card.id)}: the card says ${idText(card.phase)}, the repository says ${idText(derived.phase)} (${lineText(derived.evidence)})${behind ? "" : "; the card is ahead of its evidence"}`;
 }
 
-// The first pass's close-out: every card still marked active whose work is live by the evidence.
-export function staleLive(cards, derivedById, config) {
-  return cards.filter((k) => !closed(k) && derivedById[k.id]?.phase === config.collector.livePhase).map((k) => k.id);
+// The owner's asks tied to a card and still open: the gate's rule 5 refuses to close the card while there is one.
+export function openAsks(waiting, id) {
+  return (waiting ?? []).filter((x) => x.initiative === id && !x.done && !x.response);
+}
+
+// The first pass's close-out: every card still marked active whose work is live by the evidence, and that the lead
+// can close now: one with an open ask tied to it waits for the ask, so it isn't the lead's to act on (#C440).
+export function staleLive(cards, derivedById, config, waiting = []) {
+  return cards.filter((k) => !closed(k) && derivedById[k.id]?.phase === config.collector.livePhase && !openAsks(waiting, k.id).length).map((k) => k.id);
 }

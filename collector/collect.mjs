@@ -386,7 +386,7 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
     if (Object.keys(t).length) times[card.id] = t;
   }
   const conflicts = [...open.map((k) => conflict(k, derived[k.id], config)).filter(Boolean), ...split];
-  const doc = { at: now, cards: derived, times, conflicts, liveButOpen: staleLive(open, derived, config) };
+  const doc = { at: now, cards: derived, times, conflicts, liveButOpen: staleLive(open, derived, config, waiting) };
   // The release log's CI times by version (#C397): the page shows them for a card whose live step has none.
   doc.releaseTimes = releaseTimes(git, `${c.remote}/${c.mainBranch}`, c.releaseTimes);
   // "Live now" from the build the site serves, never from main; main's newest version shows beside it while it deploys.

@@ -113,6 +113,8 @@ test("a whole run: each open card's phase, its conflicts, the live-but-open list
     assert.equal(doc.cards.old, undefined, "done cards aren't read");
     assert.deepEqual(doc.liveButOpen, ["shipped-one"]);
     assert.equal(conflicts.length, 2);
+    const asked = collect({ config: cfg, cards, git: s.git, gh, now: 5, waiting: [{ id: "ask-1", initiative: "shipped-one", done: false }] }).doc;
+    assert.deepEqual(asked.liveButOpen, [], "an open ask tied to it: the run doesn't name it (#C440)");
     const noDeploy = collect({ config: cfg, cards, git: s.git, gh: () => "[]", now: 5 }).doc;
     assert.equal(noDeploy.cards["shipped-one"].phase, "ship", "on main but no successful deploy run: not live");
   } finally { rmSync(s.dir, { recursive: true, force: true }); }
@@ -148,6 +150,27 @@ test("rule 5, case 1: done only with the owner answered, no open ask tied to it,
   assert.match(mirrorErrors(done, { config, mirror: mirror({ ...live, waiting: [{ id: "ask-1", initiative: "tabs", done: false }] }) }).join(), /ask tied to it is still open \(ask-1\)/);
   assert.deepEqual(mirrorErrors(done, { config, mirror: mirror({ ...live, waiting: [{ id: "ask-1", initiative: "tabs", done: false, response: { status: "ok" } }] }) }), []);
   assert.deepEqual(mirrorErrors(upd({ status: "done" }, "unknown"), { config, mirror: mirror() }), [], "no evidence for this card: it passes");
+});
+
+// #C440: LIVE BUT OPEN named a card every hour that the gate wouldn't let the lead close (an owner ask still open).
+test("the live-but-open list skips a live card with an open ask tied to it, and names it again once its last ask is done", () => {
+  const live = { a: { phase: "live" }, b: { phase: "live" } };
+  const asks = [{ id: "ask-1", initiative: "a", done: false }, { id: "ask-2", initiative: "a", done: false }];
+  assert.deepEqual(staleLive([card({ id: "a" }), card({ id: "b" })], live, config, asks), ["b"], "an open ask: not the lead's to close");
+  assert.deepEqual(staleLive([card({ id: "a" })], live, config, [{ ...asks[0], done: true }, asks[1]]), [], "one ask still open");
+  assert.deepEqual(staleLive([card({ id: "a" })], live, config, [{ ...asks[0], done: true }, { ...asks[1], response: { status: "ok" } }]), ["a"], "its last ask done or answered: close it");
+  assert.deepEqual(staleLive([card({ id: "a" })], live, config, [{ id: "ask-3", initiative: "b", done: false }]), ["a"], "another card's ask doesn't hold it");
+});
+
+test("the live-but-open list follows the gate's rule 5: a card is on it exactly when the gate lets it close", () => {
+  const live = { derived: [{ id: "all", cards: { tabs: { phase: "live" } } }] };
+  const cases = [[], [{ id: "x", initiative: "tabs", done: false }], [{ id: "x", initiative: "tabs", done: true }],
+    [{ id: "x", initiative: "tabs", response: { status: "ok" } }], [{ id: "x", initiative: "menu", done: false }],
+    [{ id: "x", initiative: "tabs", done: true }, { id: "y", initiative: "tabs" }]];
+  for (const waiting of cases) {
+    const gateOk = !mirrorErrors(upd({ status: "done", doneAt: 1 }), { config, mirror: mirror({ ...live, waiting }) }).some((e) => /ask tied to it/.test(e));
+    assert.equal(staleLive([card()], { tabs: { phase: "live" } }, config, waiting).includes("tabs"), gateOk, JSON.stringify(waiting));
+  }
 });
 
 test("the gate runs rules 3-5 only with a mirror; without one they pass", () => {

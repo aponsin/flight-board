@@ -3,6 +3,7 @@
 ## 0.3.4 - Unreleased
 
 ### Fixed
+- LIVE BUT OPEN names only a card the lead can close (#C440: "LIVE BUT OPEN (1): watchdog-approvals" every hour while the gate refused its close, two owner asks still open): a live card with an open ask tied to it is left out, by the gate's own rule 5 (`openAsks`: tied to the card, not done, not answered), and named again once its last ask is done. The collector's own code: a board release.
 - The reset cue names the reset (#C434, Manager wrote its handoff and kept working, clearing 140k past the line): after the handoff note, call `clear_session` with session_id "self" as the turn's last action; the deferred cue says the same for the next turn. Pinned: the next pack.
 - A READY that landed on main with other context lines closes on its own (#C433: #C400 sat in ship a day): a restack moved a hunk's context, so git's patch-id (git cherry) read c3d3220 as never landed and the gate refused the manual close. A left-behind branch is now settled by `changeId`: the files and changed lines of each commit, context, line numbers and whitespace out. Another changed line still holds the card. The collector's own code: a board release.
 - A lead's question to the owner always reaches Needs you (#C433: Manager's message of kind "question" in #C389's thread made no waiting item, so the card sat open a day unseen): the gate refuses a new message of kind "question" from anyone but the owner unless its thread has an open waiting item, set in the same batch or already on the board. Pinned: the next pack.
