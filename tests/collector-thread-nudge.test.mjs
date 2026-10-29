@@ -2,13 +2,12 @@
 // export list returned one page of 1000 documents, by id, so the threads (and messages) past it were missing, and a
 // thread its messages name with no threads/<id> in the export read as unnumbered. The task now pages every list; a
 // collection with exactly a full page says the export may be cut, and the unnumbered line waits for a whole one.
-// (2) Right now: an idle agent keeps its last card only while it was active in the last 15 min, else "idle since hh:mm".
+// (2), the idle rule, now in the agent tiles: tests/live-source.test.mjs.
 // (state.mjs's one retry is in board-state.test.mjs, next to its POST.)
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { unnumberedLine, unnumberedThreads, cutCollections, cutLine, EXPORT_PAGE, EXPORT_COLLECTIONS } from "../collector/collect.mjs";
-import { loadNames } from "./harness.mjs";
 
 const T = Date.UTC(2026, 9, 29, 4, 0);
 const thread = (id, num) => ({ id, num, title: id });
@@ -57,35 +56,4 @@ test("the task pages every export list with next_cursor, in its steps and in its
   assert.match(prompt, /for each of: initiatives, waiting, ideas, messages, derived, ctx, plan, threads \([^)]*\), each again with its next_cursor \(query\.cursor, the same out_dir\) until there is none\./);
   assert.match(task, /`threads` \([^)]*\),\s+each again with its `next_cursor` \(`query\.cursor`, the same `out_dir`\) until there is none/);
   assert.match(task, /`NUDGE the board export may be cut`/);
-});
-
-// --- Right now: an idle agent's card ---------------------------------------------------------------------------
-
-const probe = (agents) => ({ v: 1, board: { boardId: "TestBoard42xyz", at: T, probe: null, pageVersion: null }, cards: {}, agents });
-const text = (h) => h.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
-const hhmm = (b, t) => b.hhmm(t);
-
-test("an idle agent shows its last card only while active in the last 15 min; past that, idle since hh:mm", () => {
-  const b = loadNames(["probeHtml", "hhmm"]);
-  const idle = (since, lastActivityAt, card = "leads-gap") => ({ state: "idle", lastActivityAt, tool: null, card, since });
-  const h = text(b.probeHtml(probe({
-    Admin: idle(T - 403 * 6e4, T - 403 * 6e4),          // the Director's case: 403 min idle on leads-gap
-    Builder: idle(T - 5 * 6e4, T - 5 * 6e4),             // 5 min: still its card
-    Checker: idle(T - 20 * 6e4, T - 14 * 6e4),           // the session's own activity is the later: 14 min, its card
-    Demos: idle(T - 15 * 6e4, T - 15 * 6e4),             // exactly 15 min: past
-    Linguist: idle(null, null),                          // no time at all: its name alone
-  }), T));
-  assert.match(h, new RegExp(`Idle: Admin \\(idle since ${hhmm(b, T - 403 * 6e4)}\\), `));
-  assert.match(h, new RegExp(`Builder \\(${hhmm(b, T - 5 * 6e4)}, last leads-gap\\)`));
-  assert.match(h, new RegExp(`Checker \\(${hhmm(b, T - 14 * 6e4)}, last leads-gap\\)`));
-  assert.match(h, new RegExp(`Demos \\(idle since ${hhmm(b, T - 15 * 6e4)}\\)`));
-  assert.match(h, /Linguist(?! \()/);
-  assert.doesNotMatch(h.slice(h.indexOf("Admin"), h.indexOf("Builder")), /leads-gap/, "a stale idle agent shows no card");
-});
-
-test("the idle line's times are checked like every other: an odd one counts as none", () => {
-  const b = loadNames(["probeHtml", "hhmm"]);
-  const h = text(b.probeHtml(probe({ Admin: { state: "idle", lastActivityAt: "<b>", tool: null, card: "<i>x</i>", since: -5 } }), T));
-  assert.match(h, /Idle: Admin$/);
-  assert.doesNotMatch(b.probeHtml(probe({ Admin: { state: "idle", lastActivityAt: T, tool: null, card: "<i>x</i>", since: T } }), T), /<i>/);
 });

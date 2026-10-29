@@ -14,7 +14,6 @@ import { derivePhase, headsFor } from "../collector/derive.mjs";
 import worker, { sha256hex, secretName, RATE_MS, TOOL, WRITES_DEFAULT } from "../worker/state-worker.mjs";
 import { pinnedSha, makeSecrets, workerSecret, secretName as installSecretName, plist, wranglerToml, WRANGLER, WRANGLER_VERSION, secretsStep, Stop, stopLine, stepCommand } from "../scripts/state-install.mjs";
 import { pageMcpErrors, PAGE_MCP, verdict } from "../scripts/board-release.mjs";
-import { loadNames } from "./harness.mjs";
 
 // A release the tool would take, but for what a test changes.
 const releaseGood = { forward: true, notes: { checker: "PASS", security: "SECURE" }, pinned: "a".repeat(40), changed: [], owned: [], capabilities: [] };
@@ -550,38 +549,6 @@ test("Security: a bad cache entry gives only {ci, ciMin}, or is asked again; it 
 
 // --- The page --------------------------------------------------------------------------------------------------
 
-const page = () => loadNames(["probeHtml", "probeFits", "probeEvent", "renderProbe"]);
-
-test("the page: who is working on what, since when, and each card's stage; every value escaped or dropped", () => {
-  const b = page(), s = good();
-  s.agents.Builder = { state: "idle", lastActivityAt: T, tool: null, card: "board-state-probe", since: T - 6e4 };
-  s.agents.Admin = { state: "idle", lastActivityAt: T, tool: null, card: null, since: T - 9e5 };
-  s.agents.Designer = { state: "unknown", lastActivityAt: null, tool: null, card: null, since: null };
-  s.agents.Release = { state: "working", lastActivityAt: T, tool: "Edit", card: null, since: T - 6e4 };
-  const raw = b.probeHtml(s, T), h = raw.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
-  // Designer: " · " between the parts; working first (alphabetical), then one Idle line and one Not seen line.
-  assert.match(h, /Checker\s*working on #C420 · Bash · since \d\d:\d\d/);
-  assert.match(h, /Release\s*working · Edit · since \d\d:\d\d/);
-  assert.match(h, /Idle: Admin \(\d\d:\d\d[^)]*\), Builder \(\d\d:\d\d[^,]*, last #C420\)/);
-  assert.match(h, /Not seen: Designer/);
-  assert.ok(h.indexOf("Checker") < h.indexOf("Release") && h.indexOf("Release") < h.indexOf("Idle:") && h.indexOf("Idle:") < h.indexOf("Not seen:"));
-  assert.match(raw, /<h3 class="probe-sub">From the repository<\/h3>/);
-  assert.match(h, /#C420\s*Build · a1b2c3d4 · CI running 3 min/);
-  assert.doesNotMatch(raw, /data-cref/, "a card not on the board is plain text");
-  // A card on the board is the board's card link.
-  b.state.initiatives = [{ id: "board-state-probe", num: 420 }];
-  assert.match(b.probeHtml(s, T), /<a href="#" class="t-ref c-ref" data-cref="board-state-probe">#C420<\/a>/);
-  // An odd value shows nothing; nothing reaches the page as markup.
-  const odd = good();
-  Object.assign(odd.agents.Checker, { tool: "<img src=x onerror=alert(1)>", card: "<b>x</b>", state: "<script>", since: "now" });
-  odd.cards["board-state-probe"].ci = "<i>";
-  odd.agents["<svg onload=x>"] = { state: "working", lastActivityAt: T, tool: "Bash", card: null, since: T };
-  const oh = b.probeHtml(odd, T);
-  assert.doesNotMatch(oh, /<img|<b>|<script|<i>|<svg|onerror|onload/);
-  assert.match(oh.replace(/<[^>]+>/g, ""), /Not seen: Checker/);
-  assert.equal(b.probeFits({ v: 2 }), false);
-});
-
 test("the release tool pins mcp to Flight Board State / board_state: another connector, tool or call refuses (Security)", () => {
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   assert.deepEqual(pageMcpErrors(html), []);
@@ -626,25 +593,6 @@ test("Checker: a whole day of a change every minute stays under the default budg
   }
   assert.equal(refused, 0);
   assert.ok(WRITES_DEFAULT >= 1440 + 96);
-});
-
-test("the page: the section shows with the connector, says to reconnect when it lapsed, and stays hidden without it", () => {
-  const b = page();
-  b.probeEvent({ type: "data", result: { payload: good() } }, {});
-  assert.equal(b.els.probe.hidden, false);
-  assert.match(b.els["probe-body"].innerHTML, /#C420/);
-  assert.match(b.els["probe-asof"].textContent, /^as of/);
-  b.probeEvent({ type: "error", error: { code: "server_unavailable" } }, {});
-  assert.match(b.els["probe-body"].innerHTML, /#C420/, "a passing failure keeps the last reading");
-  assert.match(b.els["probe-body"].innerHTML, /last reading/);
-  b.probeEvent({ type: "error", error: { code: "needs_reauth" } }, {});
-  assert.doesNotMatch(b.els["probe-body"].innerHTML, /#C420/, "an auth denial takes the data down");
-  assert.match(b.els["probe-body"].innerHTML, /Reconnect Flight Board State/);
-  b.probeEvent({ type: "error", error: { code: "server_not_connected" } }, {});
-  assert.equal(b.els.probe.hidden, true);
-  b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: "x" } } } }, {});
-  assert.equal(b.els.probe.hidden, false);
-  assert.doesNotMatch(b.els["probe-body"].innerHTML, /#C/);
 });
 
 test("the page asks for mcp, and only the Flight Board State connector's board_state", () => {

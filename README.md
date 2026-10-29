@@ -290,11 +290,14 @@ changes none of them):
   when what the page shows changed (a card's phase, head, reviews, main, CI state, version; an agent's state, tool, card,
   since), else every 15 min, and at most `WRITES_PER_DAY` a UTC day (2,000 unless `--writes` says otherwise: more than a
   day of the probe's 1,440 posts, so it only stops a runaway poster); a POST past that is a 429 until midnight UTC.
-- **The page's "Right now" section**, through the owner's claude.ai connector named exactly **Flight Board State** (the
-  `mcp` capability, its `board_state` only; the page reads it once a minute). Working agents each get a row ("working on
-  #C420 · Bash · since 3:25 PM"), then one line for the idle ones and one for those not seen; then each card in flight
-  "From the repository". Without the connector the section stays hidden and the board is what the Collector's
-  `derived/all` makes it. The release tool refuses a page whose `mcp` use goes beyond that one connector and tool
+- **The page reads it as its source of stage** (board-state-probe's follow-up; it had a "Right now" section of its own
+  until then), through the owner's claude.ai connector named exactly **Flight Board State** (the `mcp` capability, its
+  `board_state` only; the page reads it once a minute). While its reading is under 3 min old, every place the page shows
+  stage reads it first: each card's phase lights, its running sub-step (an agent working on it now), Waiting on, the ETA
+  and the needs-you counts, and the agent tiles (working on its card; idle, its last card only within 15 min of its last
+  activity, else "Idle since hh:mm"). Past 3 min, or without the connector, the board is what the Collector's
+  `derived/all` and the steps make it. The header stamp alone says which: "live · 40 s" or "from 14:02". The Collector
+  also gives a fresh reading's phase to the cards it reads (`readLiveState`, `underLive`). The release tool refuses a page whose `mcp` use goes beyond that one connector and tool
   (`PAGE_MCP`, `pageMcpErrors`); the whole declaration a publish carries is `PAGE_DECLARATION`.
 
 **What leaves the Studio** is exactly `collector/state-schema.mjs` (Security's data plan), checked by the script before

@@ -382,3 +382,38 @@ test("unnumberedThreads: a waiting item or a message thread without threads/<id>
   assert.match(unnumberedLine(docs), /^NUDGE 2 thread\(s\) with no number: .*t-1793000000000.*w-new.*scripts\/thread-ids\.mjs/, "a NUDGE line, so step 4 sends it");
   assert.equal(unnumberedLine({}), null);
 });
+
+// board-state-probe's follow-up (the Director with the owner): the live state is the source of stage. A fresh reading
+// (collector/state.mjs's state.json, under 3 min, fitting the schema) gives a card its phase; the run's own reading of
+// the repository keeps the rest, and is the fallback.
+test("with a fresh live state a card takes its phase from it; a moved tip drops the run's READY; none, the run's own", async () => {
+  const { readLiveState, underLive, LIVE_FRESH_MS } = await import("../collector/collect.mjs");
+  const s = scratch();
+  try {
+    const cfg = fullConfig({ owner: "Sam", collector: { repoPath: s.repo, notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
+    const cards = [{ id: "ready-one", status: "active", phase: "build", level: "Full" }, { id: "wip-one", status: "active", phase: "build", level: "Quick" }];
+    const gh = () => "[]";
+    const own = collect({ config: cfg, cards, git: s.git, gh, now: 5 }).doc.cards;
+    assert.equal(own["ready-one"].phase, "security");
+    const liveCard = (phase, head12) => ({ num: null, phase, headSha12: head12, signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: 5 });
+    const liveState = { cards: { "ready-one": liveCard("ship", s.ready.slice(0, 12)) } };
+    const d = collect({ config: cfg, cards, git: s.git, gh, now: 5, liveState }).doc.cards;
+    assert.deepEqual([d["ready-one"].phase, d["ready-one"].phaseFrom, d["ready-one"].head, d["wip-one"].phase], ["ship", "live", own["ready-one"].head, "build"]);
+    assert.deepEqual(d["ready-one"].waitingFor, own["ready-one"].waitingFor, "same tip: the run's reviews stay");
+    const moved = collect({ config: cfg, cards, git: s.git, gh, now: 5, liveState: { cards: { "ready-one": liveCard("build", "ffffffffffff") } } }).doc.cards["ready-one"];
+    assert.deepEqual([moved.phase, moved.readyAt, moved.waitingFor], ["build", undefined, undefined]);
+    assert.equal(underLive(own["ready-one"], liveCard("<b>", "zz")).phase, "security", "an odd live card: the run's own");
+    // readLiveState: the file next to the mirror, fitting the schema, under LIVE_FRESH_MS old; else null.
+    const dir = mkdtempSync(join(tmpdir(), "fb-live-")), now = Date.UTC(2026, 9, 29, 5, 0);
+    const good = { v: 1, board: { boardId: "TestBoard42xyz", at: now - 60e3, probe: null, pageVersion: null }, cards: { "ready-one": { ...liveCard("ship", "a1b2c3d4e5f6"), at: now - 60e3 } }, agents: {} };
+    assert.equal(readLiveState(dir, now), null, "no file");
+    writeFileSync(join(dir, "state.json"), JSON.stringify(good));
+    assert.equal(readLiveState(dir, now).cards["ready-one"].phase, "ship");
+    assert.equal(readLiveState(dir, now - 60e3 + LIVE_FRESH_MS), null, "3 min old: stale");
+    writeFileSync(join(dir, "state.json"), JSON.stringify({ ...good, extra: 1 }));
+    assert.equal(readLiveState(dir, now), null, "off the schema");
+    writeFileSync(join(dir, "state.json"), "{");
+    assert.equal(readLiveState(dir, now), null, "broken");
+    rmSync(dir, { recursive: true, force: true });
+  } finally { rmSync(s.dir, { recursive: true, force: true }); }
+});

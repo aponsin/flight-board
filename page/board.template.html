@@ -168,11 +168,6 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.clash{border-color:var(--bad);color:var(--bad)}.asof{font:.7rem var(--mono);color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
-.probe{margin:0 0 12px;padding:8px 12px}.probe h2{font-size:.9rem;margin:0 0 4px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
-.probe .probe-sub{font:700 .9rem/1.2 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:10px 0 4px}
-.probe-row{display:flex;gap:10px;font-size:.85rem;padding:2px 0}.probe-row .who{font-weight:600;flex:0 0 7em}.probe-row .what{min-width:0}.probe .idle{color:var(--muted)}.probe .nw{white-space:nowrap}
-.probe-line{font-size:.85rem;padding:2px 0;color:var(--muted)}
-.probe .note{margin-top:4px}
 .stuckline div+.deaf{margin-top:6px}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
 .t-msg{margin:6px 0}.t-msg .t-from{font-weight:600}.t-msg .t-at{font-size:.8rem;color:var(--muted)}
@@ -457,7 +452,6 @@ table.crew3-ph{margin-top:14px}
     <div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div>
   </header>
   <div class="stuckline" id="stuck" hidden></div>
-  <section class="panel probe" id="probe" aria-labelledby="h-probe" hidden><h2 id="h-probe">Right now <span class="asof" id="probe-asof"></span></h2><div id="probe-body"></div></section>
   <p style="margin:0"><button type="button" class="viewlink" id="viewlink">Try the new layout</button></p>
 
   <div id="v3" hidden>
@@ -992,7 +986,15 @@ function replyWrites(w,act,note,files,now,choice,rid){
 
 // What the repository says about a card (the collector's derived/all, board v2): its phase and version, and a conflict mark
 // when the card says otherwise. The page only shows it; the collector works it out.
-function derivedOf(id){const all=state.derived.find(d=>d.id==="all");return all&&all.cards&&all.cards[id]||null}
+// The live state is the page's source of stage (board-state-probe's follow-up, the Director with the owner): while its
+// reading is fresh (LIVE_FRESH), a card it reads takes its phase and time from it, on top of derived/all's other fields
+// (times, waits, version). Its tip moved past the collector's: the collector's READY and reviews are of an older commit,
+// so they go. The db is the fallback, never the authority.
+function derivedOf(id){const all=state.derived.find(d=>d.id==="all"),d=all&&all.cards&&all.cards[id]||null,L=liveCard(id);
+  if(!L)return d;const out={...(d||{}),phase:L.phase,at:L.at,firm:true,live:true};
+  if(d&&typeof d.head==="string"&&!d.head.startsWith(L.head12)){delete out.head;delete out.readyAt;delete out.waitingFor}
+  if(L.phase===LIVE_PHASE&&L.liveVersion)out.version=L.liveVersion;
+  return out}
 function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const name=k=>(PHASES.find(p=>p[0]===k)||[k,k])[1],label=name(d.phase);
   // Shown by the evidence: a step phase that disagrees is the clash. Shown by the steps: the repository's word is.
   const clash=i.status!=="done"&&(i.byEvidence?i.stepPhase&&i.stepPhase!==d.phase:i.phase&&i.phase!==d.phase);
@@ -1108,7 +1110,12 @@ function cardLine(id,now=Date.now()){const c=threadCardAny(id);if(!c)return "";
   return `→ ${link}${ph?" · "+esc(ph):""}${eta?" · ~"+hhmm(eta):""}`}
 const SUB_VERB={plan:"planning",build:"building",ship:"shipping"};
 // A card's running sub-step: its newest start step with no end of the same phase after it; null when none runs.
-function liveSubstep(id){let best=null;
+// The live state first: an agent working on the card now is its running sub-step (a reviewer's in its own phase, a
+// builder's in the card's), since the turn it started; the steps are the fallback.
+function liveSubstep(id,now=Date.now()){const L=liveCard(id,now);
+  if(L){const on=Object.keys(probe.agents).sort().map(n=>[n,liveAgent(n,now)]).find(([,a])=>a&&a.state==="working"&&a.card===id&&a.since!=null);
+    if(on)return {init:id,phase:rolePhase(on[0])||L.phase,who:on[0],at:on[1].since,live:true}}
+  let best=null;
   for(const e of state.steps||[])if(e&&e.init===id&&e.kind==="start"&&num(e.at)!=null&&e.phase!==LIVE_PHASE&&(!best||e.at>best.at))best=e;
   if(!best)return null;
   return (state.steps||[]).some(e=>e&&e.init===id&&e.kind==="end"&&e.phase===best.phase&&num(e.at)!=null&&e.at>=best.at)?null:best}
@@ -1667,10 +1674,19 @@ function crewBy(){
   const by=Object.create(null);open.forEach(i=>{const ws=new Set([i.who,...Object.values(i.nowPhases||{}).flat()].filter(Boolean));ws.forEach(w=>{(by[w]=by[w]||[]).push(i)})});
   const ROSTER=CONFIG.roster;
   return {by,names:[...ROSTER,...Object.keys(by).filter(n=>!ROSTER.includes(n)).sort()],notes:(state.meta.find(d=>d.id==="crew")||{}).notes||{}}}
+// What an agent's tile shows: the live state first (board-state-probe's follow-up): working, its card; idle, its last
+// card only while it was active in the last PROBE_FRESH (#C428's rule), else "Idle since hh:mm". Without a fresh
+// reading of it, the db's cards (dbItems) and its idle note.
+function agentOn(n,dbItems,dbNote,now=Date.now()){const la=liveAgent(n,now);if(!la)return {items:dbItems,note:dbNote||"Idle"};
+  const lc=la.card&&state.initiatives.find(i=>i.id===la.card);
+  const items=lc&&(la.state==="working"||la.since!=null&&now-la.since<PROBE_FRESH)?[lc]:[];
+  return {items,note:la.state==="idle"&&la.since!=null?"Idle since "+hhmm(la.since):dbNote||"Idle"}}
 function renderCrew(){
   const {by,names,notes}=crewBy();
-  $("crew").innerHTML=names.map(n=>{const items=(by[n]||[]).sort((a,b)=>(a.status==="queued")-(b.status==="queued"));
-    const body=items.length?items.map(i=>`<span class="ci ${esc(i.status)}">${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name)}</span>`).join(""):`<span class="ci idle">${esc(notes[n]||"Idle")}</span>`;
+  const now=Date.now();
+  $("crew").innerHTML=names.map(n=>{
+    const {items,note}=agentOn(n,(by[n]||[]).sort((a,b)=>(a.status==="queued")-(b.status==="queued")),notes[n],now);
+    const body=items.length?items.map(i=>`<span class="ci ${esc(i.status)}">${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name)}</span>`).join(""):`<span class="ci idle">${esc(note)}</span>`;
     const md=((state.meta.find(d=>d.id==="models")||{}).agents||{})[n];
     return `<div class="crew-row"><span class="who">${esc(n)}${md?`<small class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</small>`:""}</span><span class="crew-items">${body}</span></div>`}).join("");
 }
@@ -2072,8 +2088,8 @@ function crewHtml(now=Date.now()){
   const tiles=names.map(n=>{const md=models[n]||{},m=mem[n];
     const L=m?ctxLevel(m):null,c=L?L.c:"";
     const old=m&&num(m.at)!=null&&now-m.at>72e5;
-    const items=(by[n]||[]).slice().sort(openOrder);
-    const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1];return `<span>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(notes[n]||"Idle")}</span>`;
+    const {items,note}=agentOn(n,(by[n]||[]).slice().sort(openOrder),notes[n],now);
+    const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1];return `<span>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(note)}</span>`;
     return `<div class="panel crew3-t" data-agent="${esc(n)}"><h3><span>${esc(n)}</span>${md.model||md.effort?`<span class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</span>`:""}</h3>`+
       (L?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${esc(L.txt)}</span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${clearMe(m)?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
       `<div class="crew3-on">${on}</div></div>`}).join("");
@@ -2110,62 +2126,58 @@ document.addEventListener("input",()=>{lastTyped=Date.now()});
 function renderSoon(){if(renderDue!=null)return;
   const go=()=>{const wait=lastTyped+TYPE_IDLE-Date.now();if(wait>0){renderDue=setTimeout(go,wait);return}renderDue=null;renderAll()};
   renderDue=setTimeout(go,RENDER_BATCH)}
-// Right now (#C420): the Studio's own state, posted every minute by a script (collector/state.mjs, no model) to the
-// board's state Worker and read here through the viewer's "Flight Board State" connector (the mcp capability): each
-// agent working or idle, on which card, with which tool, since when, and each card's stage by the repository. Ids,
-// enums, numbers and times only; every value is checked before it shows, and one that doesn't fit shows nothing.
-// Without the connector the section stays hidden and the board is as before (the Collector's derived/all).
-// The Worker stores a reading when what shows here changed, else every 15 min (its KV writes are the account's): "as of"
-// is that reading's time, and it goes amber only past PROBE_OLD.
-const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",PROBE_EVERY=60e3,PROBE_OLD=20*60e3,PROBE_FRESH=15*60e3;
-let probe=null,probeNote="",probeAsk=false;
+// The live state (#C420; the page's source of stage since board-state-probe's follow-up, the Director with the owner):
+// the Studio's own state, posted every minute by a script (collector/state.mjs, no model) to the board's state Worker
+// and read here through the viewer's "Flight Board State" connector (the mcp capability): each card's stage by the
+// repository and each agent working or idle, on which card, since when. Ids, enums, numbers and times only; every value
+// is checked before it counts, and one that doesn't fit counts as none. While a reading is under LIVE_FRESH old, the
+// cards' phase lights, sub-steps, waits, ETAs, needs-you counts and the agent tiles read it first; past that, or
+// without the connector, the board reads the Collector's derived/all and the steps as before. Only the header stamp
+// says which: "live · 40 s" or "from 14:02".
+const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",PROBE_EVERY=60e3,LIVE_FRESH=3*60e3,PROBE_FRESH=15*60e3;
+let probe=null,probeNote="",probeAsk=false,liveMcp=null;
 const isT=v=>Number.isInteger(v)&&v>1577836800000&&v<4102444800000;
 const probeFits=s=>!!s&&typeof s==="object"&&s.v===1&&s.board&&isT(s.board.at)&&s.cards&&typeof s.cards==="object"&&s.agents&&typeof s.agents==="object";
-// A card as markup: "#C<num>" (else its id), the board's card link when the card is on the board (Designer).
-function probeCard(s,id){if(typeof id!=="string"||!/^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/.test(id))return "";const c=s.cards[id],txt=c&&Number.isInteger(c.num)?"#C"+c.num:id;
-  return (state.initiatives||[]).some(i=>i.id===id)?`<a href="#" class="t-ref c-ref" data-cref="${esc(id)}">${esc(txt)}</a>`:esc(txt)}
-// Parts of a line, already markup, each kept whole and joined by the board's " · ".
-const probeParts=parts=>parts.filter(Boolean).map(p=>`<span class="nw">${p}</span>`).join(" · ");
-// Working agents first, a row each; then one line for the idle and one for those not seen (Designer: what moves is what
-// the owner looks for). Then each card in flight by the repository.
-function probeHtml(s,now=Date.now()){
-  const roles=Object.keys(s.agents).filter(r=>/^[A-Za-z][A-Za-z0-9]{1,23}$/.test(r)).sort(),ag=r=>s.agents[r]||{};
-  const st=r=>["working","idle","unknown"].includes(ag(r).state)?ag(r).state:"unknown";
-  const at=a=>isT(a.since)?esc(hhmm(a.since)):"",tool=a=>typeof a.tool==="string"&&/^[A-Za-z]{1,30}$/.test(a.tool)?esc(a.tool):"";
-  const working=roles.filter(r=>st(r)==="working").map(r=>{const a=ag(r),card=probeCard(s,a.card),t=at(a);
-    return `<div class="probe-row"><span class="who">${esc(r)}</span><span class="what">${probeParts([`working${card?" on "+card:""}`,tool(a),t?"since "+t:""])}</span></div>`}).join("");
-  // An idle agent keeps its last card only while it was active in the last PROBE_FRESH; past that, "idle since hh:mm"
-  // (#C428, Director: Admin idle 403 min still shown on its card).
-  const idle=roles.filter(r=>st(r)==="idle").map(r=>{const a=ag(r),last=Math.max(isT(a.since)?a.since:0,isT(a.lastActivityAt)?a.lastActivityAt:0);
-    const more=!last?"":now-last<PROBE_FRESH?[esc(hhmm(last)),probeCard(s,a.card)?"last "+probeCard(s,a.card):""].filter(Boolean).join(", "):"idle since "+esc(hhmm(last));
-    return `<span class="nw">${esc(r)}${more?` (${more})`:""}</span>`});
-  const unseen=roles.filter(r=>st(r)==="unknown").map(r=>`<span class="nw">${esc(r)}</span>`);
-  const quiet=(idle.length?`<div class="probe-line">Idle: ${idle.join(", ")}</div>`:"")+(unseen.length?`<div class="probe-line">Not seen: ${unseen.join(", ")}</div>`:"");
-  const cards=Object.keys(s.cards).filter(id=>{const c=s.cards[id];return c&&typeof c.headSha12==="string"&&/^[0-9a-f]{12}$/.test(c.headSha12)&&c.phase!=="live"}).sort().map(id=>{const c=s.cards[id];
-    const ph=typeof c.phase==="string"?(PHASES.find(x=>x[0]===c.phase)||[,""])[1]:"";
-    const ci=["queued","running","passed","failed","cancelled"].includes(c.ci)?`CI ${c.ci}${Number.isInteger(c.ciMin)?" "+c.ciMin+" min":""}`:"";
-    const signed=Array.isArray(c.signed)?c.signed.filter(p=>typeof p==="string"&&PHASES.some(x=>x[0]===p)).map(p=>PHASES.find(x=>x[0]===p)[1]):[];
-    return `<div class="probe-row"><span class="who">${probeCard(s,id)}</span><span class="what">${probeParts([ph?esc(ph):"",`<span class="idle">${esc(c.headSha12.slice(0,8))}</span>`,signed.length?"signed: "+esc(signed.join(", ")):"",ci?esc(ci):"",c.onMain===true?"on main":""])}</span></div>`}).join("");
-  return working+quiet+(cards?`<h3 class="probe-sub">From the repository</h3>${cards}`:"")}
-function renderProbe(){const el=$("probe");if(!el)return;el.hidden=!probe&&!probeNote;if(el.hidden)return;
-  const asof=$("probe-asof");if(probe){asof.dataset.asof=probe.board.at;asof.textContent=asOfText(probe.board.at);asof.classList.toggle("stale",Date.now()-probe.board.at>PROBE_OLD)}else{delete asof.dataset.asof;asof.textContent=""}
-  $("probe-body").innerHTML=(probe?probeHtml(probe):"")+(probeNote?`<div class="note">${esc(probeNote)}${probeAsk?' <button type="button" class="viewlink" id="probe-allow">Allow</button>':""}</div>`:"")}
-function probeEvent(ev,mcp){
-  if(ev.type==="data"){const s=ev.result&&ev.result.payload;if(probeFits(s)){probe=s;probeNote="";probeAsk=false}else probeNote="The Studio's state has an unexpected shape; not shown."}
+const LIVE_ID=/^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/,LIVE_ROLE=/^[A-Za-z][A-Za-z0-9]{1,23}$/;
+const liveOn=(now=Date.now())=>!!probe&&now-probe.board.at>=-60e3&&now-probe.board.at<LIVE_FRESH;
+// A card as the live state reads it: { phase, at, head12, liveVersion }, or null (no fresh reading, an odd value).
+function liveCard(id,now=Date.now()){if(!liveOn(now)||typeof id!=="string"||!LIVE_ID.test(id)||!Object.hasOwn(probe.cards,id))return null;
+  const c=probe.cards[id];if(!c||typeof c!=="object"||!PHASES.some(p=>p[0]===c.phase)||typeof c.headSha12!=="string"||!/^[0-9a-f]{12}$/.test(c.headSha12))return null;
+  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null}}
+// An agent as the live state reads it: { state: working|idle, card, since: its last activity }, or null.
+function liveAgent(n,now=Date.now()){if(!liveOn(now)||typeof n!=="string"||!LIVE_ROLE.test(n)||!Object.hasOwn(probe.agents,n))return null;
+  const a=probe.agents[n];if(!a||!["working","idle"].includes(a.state))return null;
+  const card=typeof a.card==="string"&&LIVE_ID.test(a.card)?a.card:null;
+  const since=a.state==="working"?(isT(a.since)?a.since:null):Math.max(isT(a.since)?a.since:0,isT(a.lastActivityAt)?a.lastActivityAt:0)||null;
+  return {state:a.state,card,since}}
+// A role's review phase, by the config's labels (Checker: checker); a builder's work is its card's phase.
+const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHASE)||[])[0]||null;
+// The header stamp: which source the board reads, and how old it is.
+function stampText(now=Date.now()){if(liveOn(now)){const s=Math.max(0,Math.round((now-probe.board.at)/1e3));return "live · "+(s<60?s+" s":dur(s*1e3))}
+  const all=state.derived.find(d=>d.id==="all"),at=num(all&&all.at);return at!=null?"from "+hhmm(at):dbSynced?"from "+hhmm(dbSynced):"connecting…"}
+let dbSynced=null,dbState="";
+function renderStamp(){const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
+  el.textContent=stampText();el.title=probeNote||"";
+  if(probeAsk&&liveMcp){const mcp=liveMcp;const b=document.createElement("button");b.type="button";b.className="viewlink";b.id="probe-allow";b.textContent="Allow live";el.append(" · ",b);
+    b.addEventListener("click",()=>{mcp.callTool(STATE_SERVER,STATE_TOOL,null).then(r=>probeEvent({type:"data",result:r},mcp),e=>probeEvent({type:"error",error:e},mcp))},{once:true})}}
+function probeEvent(ev,mcp){liveMcp=mcp||liveMcp;
+  if(ev.type==="data"){const s=ev.result&&ev.result.payload;if(probeFits(s)){probe=s;probeNote="";probeAsk=false}else probeNote="The Studio's state has an unexpected shape; not read."}
   else{const code=ev.error&&ev.error.code;probeAsk=false;
-    if(["needs_reauth"].includes(code)){probe=null;probeNote=`Reconnect ${STATE_SERVER} in claude.ai Settings → Connectors to see this live.`}
+    if(["needs_reauth"].includes(code)){probe=null;probeNote=`Reconnect ${STATE_SERVER} in claude.ai Settings → Connectors to read it live.`}
     else if(["server_not_connected","selection_required","server_not_found"].includes(code)){probe=null;probeNote=""}
     else if(code==="approval_required"){probe=null;probeNote=`${STATE_SERVER} needs your approval for this page.`;probeAsk=true}
     else if(["not_in_manifest","blocked_by_policy","not_granted","capability_disabled","capability_removed","consent_required","user_changed"].includes(code)){probe=null;probeNote=""}
-    else probeNote=probe?"Couldn't refresh just now; showing the last reading.":""}
-  renderProbe();
-  const b=$("probe-allow");if(b)b.addEventListener("click",()=>{mcp.callTool(STATE_SERVER,STATE_TOOL,null).then(r=>probeEvent({type:"data",result:r},mcp),e=>probeEvent({type:"error",error:e},mcp))},{once:true})}
-function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderProbe()}
+    else probeNote=probe?"Couldn't refresh just now; reading the last one while it's fresh.":""}
+  renderSoon()}
+function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();liveWas=liveOn();renderStamp()}
+let liveWas=false;
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});
   document.querySelectorAll("[data-next]").forEach(e=>{const t=+e.dataset.next;e.textContent=t>Date.now()?"in "+dur(t-Date.now()):"due now"});
-  document.querySelectorAll("[data-asof]").forEach(e=>{const t=+e.dataset.asof;e.textContent=asOfText(t);e.classList.toggle("stale",Date.now()-t>ASOF_STALE)});}
+  document.querySelectorAll("[data-asof]").forEach(e=>{const t=+e.dataset.asof;e.textContent=asOfText(t);e.classList.toggle("stale",Date.now()-t>ASOF_STALE)});
+  // A live reading that went stale (or fresh again) changes what every card reads: all of it again; else the stamp.
+  if(liveOn()!==liveWas)renderAll();else renderStamp()}
 $("viewlink").addEventListener("click",()=>setView(view==="v3"?"v2":"v3"));
 document.querySelectorAll("[data-v3]").forEach(b=>b.addEventListener("click",()=>setV3View(b.dataset.v3)));
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-v3view")}catch(e){}if(v==="plan"||v==="crew")setV3View(v)})();
@@ -2174,13 +2186,13 @@ setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()
 
 (async()=>{
   const db=window.claude&&await window.claude.use("db");
-  if(!db){$("synced").textContent="offline: open in Claude to see live data";return}
+  if(!db){dbState="offline: open in Claude to see live data";renderStamp();return}
   $("dot").classList.add("on"); dbRef=db; renderWaiting();
   window.claude.use("comments").then(c=>{commentsRef=c}).catch(()=>{});
   window.claude.use("assets").then(a=>{if(a){assetsRef=a;renderWaiting();renderThreads()}}).catch(()=>{});
   window.claude.use("downloads").then(d=>{if(d){setDownloads(d);renderAll()}}).catch(()=>{});
-  const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderSoon();$("synced").textContent="live, updated "+hhmm(Date.now())},
-    ()=>{$("dot").classList.remove("on");$("synced").textContent="connection lost, reload"});
+  const sub=(name)=>db.collection(name).onSnapshot(snap=>{state[name==="initiatives"?"initRaw":name]=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));renderSoon();dbSynced=Date.now()},
+    ()=>{$("dot").classList.remove("on");dbState="connection lost, reload";renderStamp()});
   ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings"].forEach(sub);
 })();
 // The Studio's state (#C420), apart from the board's data: kept current by the connector's watch, once a minute.

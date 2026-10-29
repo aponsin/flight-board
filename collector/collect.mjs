@@ -26,6 +26,7 @@ import { planReadings, writeContext } from "./context.mjs";
 import { runMark, localMain, localShips } from "./refresh.mjs";
 import { allocate } from "../scripts/thread-ids.mjs";
 import { refreshPickups } from "./pickup.mjs";
+import { stateErrors } from "./state-schema.mjs";
 
 // The folder this run's code really lives in (the current link resolved, by Node, to a pinned copy).
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -298,7 +299,28 @@ export function inRepo(card, r, use, config, now, ids = new Set()) {
 
 // live: liveBuild()'s answer for this run (null when there is no liveUrl or it couldn't be read). repos: { name: { git,
 // installed } } for the collector.repos read this run.
-export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null, repos = {} }) {
+// The live state is the board's source of stage (board-state-probe's follow-up, the Director with the owner): the
+// minute script's last reading (<dir>/state.json, collector/state.mjs), when it fits the schema and is under LIVE_FRESH_MS
+// old, or null. A card it reads takes its phase from it, never from this run's derivation; the run still reads the
+// repository for what only it gives (times, waits, versions, READY dispatch), and stays the fallback when the live state
+// is old or gone.
+export const LIVE_FRESH_MS = 3 * 60e3;
+export function readLiveState(dir, now) {
+  let s;
+  try { s = JSON.parse(readFileSync(join(dir, "state.json"), "utf8")); } catch { return null; }
+  if (stateErrors(s).length || now - s.board.at >= LIVE_FRESH_MS || s.board.at - now > 60e3) return null;
+  return s;
+}
+// A card's derived reading under the live one: the live phase; a tip that moved past this run's makes its READY and
+// reviews an older commit's, so they go (as on the page).
+export function underLive(d, l) {
+  if (!l || typeof l.phase !== "string" || !/^[0-9a-f]{12}$/.test(l.headSha12 ?? "")) return d;
+  const out = { ...d, phase: l.phase, phaseFrom: "live" };
+  if (typeof d.head === "string" && !d.head.startsWith(l.headSha12)) { delete out.readyAt; delete out.waitingFor; }
+  return out;
+}
+
+export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null, repos = {}, liveState = null }) {
   const c = config.collector;
   const cfg = { ...config, collector: { ...c, notes: localNotes(c.notes) } };
   const line = mainLine(git, c.remote, c.mainBranch);
@@ -317,7 +339,7 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   for (const card of open) {
     const r = repoOf(card, config);
     if (r) { derived[card.id] = inRepo(card, r, repos[r.name], config, now, ids); continue; }
-    derived[card.id] = phaseOf(card);
+    derived[card.id] = underLive(phaseOf(card), liveState?.cards?.[card.id]);
     const tips = tipsOf[card.id];
     // A stacked follow-up set aside (#C358) is no second branch to split.
     if (tips.length > 1 && (derived[card.id].branches?.length ?? 1) > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
@@ -422,7 +444,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   }
   const now = Date.now();
   const live = await liveBuild(fetch, config.collector.liveUrl, config.collector.liveTag);
-  const { doc, conflicts, versions } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos });
+  const { doc, conflicts, versions } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos, liveState: readLiveState(dir, now) });
   const guard = runExpected(dir, mirror.docs.initiatives, doc, versions);
   doc.conflicts.push(...guard);
   conflicts.push(...guard);
