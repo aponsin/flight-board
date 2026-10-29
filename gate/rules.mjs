@@ -7,6 +7,7 @@ import { PLAN, planWriteErrors, planMirrorErrors, initiativePlanErrors } from ".
 import { idText } from "../collector/text.mjs";
 import { contextRoles, contextWriteErrors, isContextWrite } from "../collector/context.mjs";
 import { mechanicalClass } from "./traffic.mjs";
+import { buildingNow } from "../collector/state-schema.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 let page;
@@ -357,7 +358,15 @@ export function ownerWordErrors(w, { config, who, seen, batch = [] }) {
 // A whole tool call to the board. state: { refusals: { item: n }, stuck: { item: { reason, at } } }.
 // Returns { errors, state, stuckNow }: stuckNow names an item refused STUCK_AFTER times in a row, for the stuck line.
 // seen: the board as the gate last saw it however old (ownerWordErrors).
-export function checkWrites(writes, { config, who, now, state, mirror = null, seen = mirror }) {
+// A card's status is derived from the live state (#C449): while a fresh reading (live, gate/gate.mjs's from state.json)
+// shows it building, a branch with commits beyond main or an agent on it, no write calls it queued.
+export function queuedLiveErrors(w, { live }) {
+  const { op, collection, doc_id: id, data } = w;
+  if (collection !== "initiatives" || op === "delete" || !data || typeof data !== "object" || data.status !== "queued" || !buildingNow(live, id)) return [];
+  return [`status: the live state shows ${idText(id)} building (its branch has commits beyond main, or an agent is on it); its status is derived, not queued`];
+}
+
+export function checkWrites(writes, { config, who, now, state, mirror = null, seen = mirror, live = null }) {
   const next = { refusals: { ...(state?.refusals ?? {}) }, stuck: { ...(state?.stuck ?? {}) } };
   for (const c of COUNTERS) if (state?.[c.key]) next[c.key] = state[c.key];
   // A session with no role (no title, no FLIGHT_BOARD_ROLE) writes nothing, the stuck line included (Security).
@@ -376,7 +385,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null, se
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
-    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now, who })];
+    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now, who }), ...queuedLiveErrors(w, { live })];
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }

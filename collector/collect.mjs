@@ -27,7 +27,7 @@ import { planReadings, writeContext } from "./context.mjs";
 import { runMark, localMain, localShips } from "./refresh.mjs";
 import { allocate } from "../scripts/thread-ids.mjs";
 import { refreshPickups } from "./pickup.mjs";
-import { stateErrors } from "./state-schema.mjs";
+import { liveFresh, LIVE_FRESH_MS } from "./state-schema.mjs";
 
 // The folder this run's code really lives in (the current link resolved, by Node, to a pinned copy).
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -321,12 +321,11 @@ export function inRepo(card, r, use, config, now, ids = new Set()) {
 // old, or null. A card it reads takes its phase from it, never from this run's derivation; the run still reads the
 // repository for what only it gives (times, waits, versions, READY dispatch), and stays the fallback when the live state
 // is old or gone.
-export const LIVE_FRESH_MS = 3 * 60e3;
+export { LIVE_FRESH_MS };
 export function readLiveState(dir, now) {
   let s;
   try { s = JSON.parse(readFileSync(join(dir, "state.json"), "utf8")); } catch { return null; }
-  if (stateErrors(s).length || now - s.board.at >= LIVE_FRESH_MS || s.board.at - now > 60e3) return null;
-  return s;
+  return liveFresh(s, now) ? s : null;
 }
 // A card's derived reading under the live one: the live phase; a tip that moved past this run's makes its READY and
 // reviews an older commit's, so they go (as on the page). Only a phase the config names is taken, so none that doesn't

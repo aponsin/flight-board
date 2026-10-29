@@ -1496,7 +1496,7 @@ function dueText(t){return `${t<Date.now()?"was due":"due"} ~${hhmm(t)}`}
 // A card nobody has started (#C348): open, at build or before, with no build start logged and no branch the collector
 // has seen. It shows Build queued with its ETA, never a phase lit as if someone were on it.
 function notStarted(i){if(!i||i.status==="done"||i.dropped||phaseIndex(i.phase)>phaseIndex(BUILD_PHASE))return false;
-  const d=derivedOf(i.id);if(d&&d.head||typeof i.branch==="string"&&i.branch)return false;
+  const d=derivedOf(i.id);if(d&&d.head||typeof i.branch==="string"&&i.branch||liveBuilding(i.id))return false;
   return !buildStarted(i.id)}
 // The cards with a build start logged, indexed once per data update (Checker's FINDINGS on 88e525a: notStarted scanned
 // every step, and queueOf's sort asked it at every comparison).
@@ -1592,7 +1592,7 @@ function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
   if(!i.nextNote)g.push("no next step");else if(!kw&&num(i.nextNoteAt)&&now-i.nextNoteAt>36e5)g.push("next step over 1 h old");
   if(!i.level)g.push("no review level");
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];
-  if(!kw&&!num(i.lastStepAt)&&!log.length){if(num(i.createdAt)&&now-i.createdAt>9e5&&!waitingTurn(i))g.push("never started")}
+  if(!kw&&!num(i.lastStepAt)&&!log.length&&!liveBuilding(i.id)){if(num(i.createdAt)&&now-i.createdAt>9e5&&!waitingTurn(i))g.push("never started")}
   return g}
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
@@ -1681,7 +1681,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   const vn=i.status!=="done"?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
   const st=stalled(i),ow=i.status!=="done"?ownerWait(i):null;
-  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:ow?"Waiting on you":st?"Stalled":"In flight";
+  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:ow?"Waiting on you":st?"Stalled":liveBuilding(i.id)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
   const owHtml=ow?`<span class="ow-line">waiting on you: <a href="#" class="t-ref" data-tref="${esc(ow.id)}">${esc(threadName(ow.id))}</a></span>`:"";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
   const nAt=num(i.nextNoteAt),stale=liveOpen||nAt!=null&&num(i.lastStepAt)!=null&&i.lastStepAt>nAt;
@@ -1945,7 +1945,9 @@ document.addEventListener("click",async e=>{const r=e.target.closest&&e.target.c
 // {init: <initiative id>, phase: plan|build|language|checker|security|ship|live, who, kind: "start"|"end", at: <ms>, wait?: "busy"|"gate", version?}.
 // The page turns them into phase entries, so Manager no longer has to relay or guess times.
 // A "live" event marks the initiative done. Skips: Security unless level is Full; Linguist when customerText is false.
-function enrich(i){return byEvidence(withEvidenceTimes(fromSteps(i)))}
+function enrich(i){return liveStatus(byEvidence(withEvidenceTimes(fromSteps(i))))}
+// The live state's word on status (#C449): a card it shows building is active, whatever the db typed.
+function liveStatus(out){return out.status==="queued"&&liveBuilding(out.id)?{...out,status:"active"}:out}
 // Each phase's times from the evidence (#C235: the collector's derived/all.times, from git, the notes and the deploy
 // runs): for a phase the evidence shows, its entry takes the place of the steps' (waits stay, and the steps' who stays
 // with it); phases it doesn't show (a test, a design talk) keep their steps.
@@ -2173,13 +2175,18 @@ const liveOn=(now=Date.now())=>!!probe&&now-probe.board.at>=-60e3&&now-probe.boa
 // A card as the live state reads it: { phase, at, head12, liveVersion }, or null (no fresh reading, an odd value).
 function liveCard(id,now=Date.now()){if(!liveOn(now)||typeof id!=="string"||!LIVE_ID.test(id)||!Object.hasOwn(probe.cards,id))return null;
   const c=probe.cards[id];if(!c||typeof c!=="object"||!PHASES.some(p=>p[0]===c.phase)||typeof c.headSha12!=="string"||!/^[0-9a-f]{12}$/.test(c.headSha12))return null;
-  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null}}
+  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,onMain:c.onMain===true,liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null}}
 // An agent as the live state reads it: { state: working|idle, card, since: its last activity }, or null.
 function liveAgent(n,now=Date.now()){if(!liveOn(now)||typeof n!=="string"||!LIVE_ROLE.test(n)||!Object.hasOwn(probe.agents,n))return null;
   const a=probe.agents[n];if(!a||!["working","idle"].includes(a.state))return null;
   const card=typeof a.card==="string"&&LIVE_ID.test(a.card)?a.card:null;
   const since=a.state==="working"?(isT(a.since)?a.since:null):Math.max(isT(a.since)?a.since:0,isT(a.lastActivityAt)?a.lastActivityAt:0)||null;
   return {state:a.state,card,since}}
+// Building by the live state (#C449, collector/state-schema.mjs's buildingNow, copied: the page can't import it): a
+// fresh reading shows the card's branch with a commit beyond main, or an agent working on it. The card's status, badge,
+// tile and queued line follow; the typed status counts only without a fresh reading.
+function liveBuilding(id,now=Date.now()){const L=liveCard(id,now);if(L&&!L.onMain)return true;
+  return liveOn(now)&&Object.keys(probe.agents).some(n=>{const a=liveAgent(n,now);return !!a&&a.state==="working"&&a.card===id})}
 // A role's review phase, by the config's labels (Checker: checker); a builder's work is its card's phase.
 const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHASE)||[])[0]||null;
 // The header stamp: which source the board reads, and how old it is.

@@ -14,6 +14,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { checkWrites, refusalText } from "./rules.mjs";
 import { readLines, sessionRole } from "./session.mjs";
 import { mechanicalClass, refusal } from "./traffic.mjs";
+import { liveFresh } from "../collector/state-schema.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"]);
@@ -164,7 +165,11 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
     const seen = m ? withJournal(m, state.journal) : null;
     const mirror = m && now - m.at < config.gate.mirrorMaxAgeMin * 60e3 ? seen : null;
     // The owner's words are looked up however old the mirror is (#C337): an old mirror's owner message is still theirs.
-    const out = checkWrites(writes, { config, who, now, state, mirror, seen });
+    // The live state's last reading (#C449, collector/state.mjs's state.json beside the mirror): only a fresh one that
+    // fits counts; none, an old one or an odd one is no reading, and the typed status stands.
+    let live = null;
+    try { const s = JSON.parse(readFileSync(join(dir, "state.json"), "utf8")); live = liveFresh(s, now) ? s : null; } catch { /* none */ }
+    const out = checkWrites(writes, { config, who, now, state, mirror, seen, live });
     // The journal and the known cards are written by gate/after.mjs once the board applied the write (a write the
     // gate lets through can still be refused, at the app's consent card or by a stale pin: Security).
     save(out.state);

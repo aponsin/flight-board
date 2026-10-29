@@ -89,6 +89,20 @@ export function stateErrors(s) {
   return errs;
 }
 
+// A reading the board counts (board-state-probe's follow-up): it fits, and is under LIVE_FRESH_MS old (at most a minute
+// ahead of this clock). The Collector and the gate both read state.json through this; the page keeps a copy (liveOn).
+export const LIVE_FRESH_MS = 3 * 60e3;
+export const liveFresh = (s, now) => !stateErrors(s).length && now - s.board.at < LIVE_FRESH_MS && s.board.at - now <= 60e3;
+// Building by the live state (#C449): the card's branch has a commit beyond main, or an agent is working on it. Its
+// status is derived from this, never typed; the typed one counts only without a fresh reading. The page keeps a copy
+// (liveBuilding); the gate refuses status "queued" on a card this says is building.
+export function buildingNow(s, id) {
+  if (!plain(s) || !plain(s.cards) || !plain(s.agents)) return false;
+  const c = Object.hasOwn(s.cards, id) ? s.cards[id] : null;
+  if (plain(c) && SHA12.test(c.headSha12 ?? "") && c.onMain === false) return true;
+  return Object.values(s.agents).some((a) => plain(a) && a.state === "working" && a.card === id);
+}
+
 // A fresh copy of a state that fits, built field by field from the schema (nothing else in the input is carried over),
 // or null when it doesn't fit.
 export function pickState(s) {

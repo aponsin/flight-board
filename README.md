@@ -302,7 +302,11 @@ changes none of them):
   and the needs-you counts, and the agent tiles (working on its card; idle, its last card only within 15 min of its last
   activity, else "Idle since hh:mm"). Past 3 min, or without the connector, the board is what the Collector's
   `derived/all` and the steps make it. The header stamp alone says which: "live · 40 s" or "from 14:02". The Collector
-  also gives a fresh reading's phase to the cards it reads (`readLiveState`, `underLive`). The release tool refuses a page whose `mcp` use goes beyond that one connector and tool
+  also gives a fresh reading's phase to the cards it reads (`readLiveState`, `underLive`). A card's status is derived
+  the same way, never typed (#C449, `buildingNow`): while the reading is fresh, a card whose branch has a commit beyond
+  main, or whose agent is working on it, is building (its badge, its agent's tile, no "Queued N min", no "never
+  started"); the typed `status` counts only when the reading is stale. The gate reads the same `state.json` (only a
+  fresh one that fits, `liveFresh`) and refuses `status: "queued"` on a card it shows building. The release tool refuses a page whose `mcp` use goes beyond that one connector and tool
   (`PAGE_MCP`, `pageMcpErrors`); the whole declaration a publish carries is `PAGE_DECLARATION`.
 
 **What leaves the Studio** is exactly `collector/state-schema.mjs` (Security's data plan), checked by the script before
