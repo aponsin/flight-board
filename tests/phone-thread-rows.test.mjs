@@ -30,5 +30,9 @@ test("a thread row's age keeps 'ago' in its own span, so a phone can drop it and
 
 test("the header's 'Live now: v…' never breaks", () => {
   assert.match(css, /\.livever\{[^}]*white-space:nowrap/);
-  assert.match(css.match(/@media \(max-width:480px\)\{([^\n]*)\}/)[1], /\.livever\{display:block;margin-left:0\}/, "a phone: under the title, so the title stays on one line (Designer)");
+  // A phone: under the title, so the title stays on one line (Designer). The base .livever rule comes later in the
+  // sheet, so the phone's must outrank it ("h1 .livever"), or the base margin wins and the line sits 10 px in.
+  assert.match(css.match(/@media \(max-width:480px\)\{([^\n]*)\}/)[1], /(^|\})h1 \.livever\{display:block;margin-left:0\}/);
+  assert.ok(css.indexOf(".livever{font:") > css.indexOf("@media (max-width:480px)"), "the base rule is the later one: the phone's needs the h1");
+  assert.match(html, /<h1>[^<]*<span class="livever"/, "the version is inside the h1");
 });
