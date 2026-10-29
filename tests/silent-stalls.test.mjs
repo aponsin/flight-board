@@ -78,6 +78,15 @@ test("the page: a 'You:' line is red; owner-only lines are amber, and an old ent
   assert.equal(amber, false, "the owner has a move: red");
 });
 
+// Designer on 13706b03: --warn (#a85f00) on the light page is 4.47:1, under 4.5 for .9rem text; the words take
+// --warn-ink as #C417's did, and the border keeps --warn.
+test("the amber banner's words use --warn-ink; its border stays --warn", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(page, /\.stuckline \.sl-owner\{color:var\(--warn-ink\)\}/);
+  assert.match(page, /\.stuckline\.amber\{border-color:var\(--warn\);color:var\(--warn-ink\)\}/);
+});
+
 // --- #C420's follow-up (the Director): the live state's onMain reads a restacked READY as landed, as the Collector does.
 
 test("the live state: a tip whose change landed with other context lines is on main, read as the main commit", async () => {

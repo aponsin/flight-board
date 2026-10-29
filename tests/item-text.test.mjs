@@ -11,7 +11,8 @@ test("every ask kind puts its text in a block after the badge, never on the badg
     const w = { id: `w-${kind}`, kind, text: "One sitting, two steps.", since: T, ...extra };
     Object.assign(b.state, { threads: [{ id: w.id, num: 4, title: "Ask" }], waiting: [w], messages: [] });
     const html = b.askHtml(w, new Set());
-    assert.match(html, /waiting on you<\/span>(?:<div class="w-sub">[^<]*<\/div>)?<div class="(?:w-body|w-answer)">One sitting, two steps\./, kind);
+    // Ping (#C433) sits on the badge's line; the text is still its own block after it.
+    assert.match(html, /waiting on you<\/span>(?:<button type="button" class="t-ping"[^>]*>Ping<\/button>)?(?:<div class="w-sub">[^<]*<\/div>)?<div class="(?:w-body|w-answer)">One sitting, two steps\./, kind);
   }
 });
 

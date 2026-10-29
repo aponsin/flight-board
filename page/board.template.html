@@ -168,7 +168,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
 .evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.clash{border-color:var(--bad);color:var(--bad)}.asof{font:.7rem var(--mono);color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
-.stuckline .sl-owner{color:var(--warn)}.stuckline.amber{border-color:var(--warn);color:var(--warn)}
+.stuckline .sl-owner{color:var(--warn-ink)}.stuckline.amber{border-color:var(--warn);color:var(--warn-ink)}
 .stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
 .stuckline div+.deaf{margin-top:6px}
 .thread{margin:4px 16px 10px 44px;border-left:3px solid var(--line);padding-left:10px}
@@ -598,7 +598,7 @@ function itemShown(id,now){const it=itemOf(id);if(!it)return false;
 // under its text (With the team's "Manager answering", #C364).
 function askHtml(w,open,at=w.since,sub=""){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
-   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
+   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${pingHtml(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
    <span class="age">${num(at)?dur(Date.now()-at)+'<span class="ago"> ago</span>':""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.

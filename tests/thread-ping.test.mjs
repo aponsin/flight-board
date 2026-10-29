@@ -116,3 +116,18 @@ test("the owner's own questions (asks), open or answered and not closed, offer P
   }
   assert.equal(b.pingState("w-closed", T).show, null, "a closed ask has nothing to ping");
 });
+
+// Designer on 13706b03: With the team, Needs you and Later draw asks with askHtml, not threadRow; an open ask's own row
+// there offers Ping too (an answered "Manager answering" ask had none).
+test("an ask drawn as an ask row (askHtml) offers Ping while it waits on the team or the owner", () => {
+  const b = loadNames(["askHtml", "pingState"]), now = Date.now();
+  Object.assign(b.state, { steps: [], derived: [], todo: [], ideas: [], initRaw: [], initiatives: [], threads: [], messages: [], threadPings: [],
+    waiting: [
+      { id: "w-answered", kind: "answer", text: "On the title row.", question: "Where was Ping missing?", since: now - 40 * MIN, response: { status: "done", note: "Phone, please", at: now - 20 * MIN } },
+      { id: "w-closed", kind: "action", text: "Old", since: now - 90 * MIN, done: true },
+    ] });
+  const ask = (id) => b.askHtml(b.state.waiting.find((w) => w.id === id), new Set());
+  assert.equal(b.pingState("w-answered", now).show, "ping");
+  assert.ok(ask("w-answered").includes(PING("w-answered")), ask("w-answered"));
+  assert.ok(!ask("w-closed").includes("data-tping"), "a closed ask: no Ping");
+});
