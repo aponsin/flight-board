@@ -1,0 +1,1 @@
+PASS Quick: #C434 manager-deaf-fix-2 part 3 (pinned, v3.26). Both reset cues in red-ask-board.py end by naming clear_session self as the turn's last action, which the hook's own guard (line 117) already reads as the reset; a test on each cue. Text only; suite 751/751 by Boardsmith.
