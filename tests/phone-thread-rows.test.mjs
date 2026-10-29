@@ -30,4 +30,5 @@ test("a thread row's age keeps 'ago' in its own span, so a phone can drop it and
 
 test("the header's 'Live now: v…' never breaks", () => {
   assert.match(css, /\.livever\{[^}]*white-space:nowrap/);
+  assert.match(css.match(/@media \(max-width:480px\)\{([^\n]*)\}/)[1], /\.livever\{display:block;margin-left:0\}/, "a phone: under the title, so the title stays on one line (Designer)");
 });
