@@ -1534,6 +1534,11 @@ function queueLabel(i){if(!i.who)return "queued";const k=qPos(i)<Infinity?queueO
 function queueLine(i){if(!i.who||!isQueued(i))return "";const q=queueOf(i.who);if(!q.includes(i)||q.length<2)return "";
   const at=c=>c===i?"<b>this</b>":`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>${isQueued(c)?"":phaseIndex(c.phase)>phaseIndex(BUILD_PHASE)?" (in review)":" (building)"}`;
   return `<span class="q-line">${esc(i.who)}&#39;s queue: ${q.map(at).join(" → ")}</span>`}
+// What an open card waits on (#C444, initiatives.dependsOn, the lead's): "waits on #C440" per dependency still open,
+// each a link to it; a closed one, or one the board doesn't hold, says nothing.
+function dependsLine(i){if(!i||i.status==="done"||i.status==="dropped"||!Array.isArray(i.dependsOn))return "";
+  return i.dependsOn.map(id=>(state.initRaw||[]).find(c=>c&&c.id===id)).filter(c=>c&&c.status!=="done"&&c.status!=="dropped")
+    .map(c=>`<span class="d-line">waits on <a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a></span>`).join("")}
 // ↻ Check on a card (#C355, the owner in #T962): a click writes checkRequests/<card id> {at}. It is answered by code
 // (#C376, Director for the owner: #C350 said "checking…" for minutes): each Collector run works the card out afresh
 // (derived/all cards.<id>.at), so a request older than that run reads "checked by the Collector HH:MM". Until then the
@@ -1687,7 +1692,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
-   <div class="i-meta">${queueLine(i)}${owHtml}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${(()=>{const g=liveOpen?[]:gaps(i);return g.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(g.join(" · "))}</span>`:""})()}</div>${thread}</div>`;
+   <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${(()=>{const g=liveOpen?[]:gaps(i);return g.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(g.join(" · "))}</span>`:""})()}</div>${thread}</div>`;
 }
 // Who is on what: { by: { agent: [open cards] }, names: the roster, then anyone else on a card, notes: meta/crew's idle notes }.
 function crewBy(){

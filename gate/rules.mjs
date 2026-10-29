@@ -203,6 +203,14 @@ export function writeErrors(w, { config, who, now }) {
     if (["batch", "bump"].some((f) => f in data) && !who.manager) e.push(`batch and bump: only ${config.gate.managerRole} marks how a card ships`);
     if (marks.includes("batch") && !(typeof data.batch === "string" && /^[a-z0-9-]{1,40}$/.test(data.batch))) e.push("batch: a short name (a-z, 0-9 and -, up to 40)");
     if (marks.includes("bump") && !["patch", "minor", "major"].includes(data.bump)) e.push("bump: patch, minor or major");
+    // What a card waits on (#C444): the lead's, set or cleared; other cards' ids, each once (dependsOnErrors reads it).
+    if ("dependsOn" in data) {
+      if (!who.manager) e.push(`dependsOn: only ${config.gate.managerRole} says what a card waits on`);
+      else if (!data.dependsOn?.__delete__) {
+        const d = data.dependsOn;
+        if (!Array.isArray(d) || !d.length || d.length > 10 || new Set(d).size !== d.length || d.some((x) => idText(x) !== x || x === id)) e.push("dependsOn: a list of 1 to 10 other cards' ids, each once");
+      }
+    }
   }
   if (collection === "waiting") {
     // Rule 7: an agent's passing state ("needs the user") goes down the nudge path; it never becomes an item.
@@ -467,6 +475,38 @@ export function threadNumberedErrors(w, { mirror, batch = [] }) {
   return [`thread ${idText(t)} has no number yet: set threads/${idText(t)} {num: meta/${THREAD_SEQ}.next, title} and move meta/${THREAD_SEQ} in the same batch (scripts/thread-ids.mjs); only the lead numbers threads, so if that isn't you, ask it to number this one first`];
 }
 
+// A time a Date can hold (gate-step-at-guard, as the collector's #C442): a step written past the gate with a time
+// outside ±8.64e15 or not finite is no step here, so its message can't stop the gate. hh:mm from the UTC parts, since
+// toISOString gives an expanded year (-271821-…) at the bound and a slice cuts the wrong digits.
+const validTime = (t) => Number.isFinite(t) && Math.abs(t) <= 8.64e15;
+const hhmmUtc = (t) => { const d = new Date(t); return [d.getUTCHours(), d.getUTCMinutes()].map((x) => String(x).padStart(2, "0")).join(":"); };
+
+// What a card waits on (#C444): a build start on a card is refused while a card it names in dependsOn is still on plan
+// or build (any phase up to collector.buildPhase), by the repository's reading (derived/all) over the card's own. A
+// closed dependency, or one the board doesn't have, holds nothing; dependsOn set or cleared in the same batch counts.
+// Skipped when the export has no cards.
+export function dependsOnErrors(w, { config, mirror, batch = [] }) {
+  const { op, collection, data } = w;
+  const cards = mirror?.docs?.initiatives;
+  if (collection !== "steps" || op !== "set" || !data || data.kind !== "start" || data.wait || data.phase !== config.collector.buildPhase || !Array.isArray(cards)) return [];
+  const card = data.init;
+  let list = cards.find((k) => k && k.id === card)?.dependsOn;
+  for (const b of batch) if (b.collection === "initiatives" && b.doc_id === card && b.op !== "delete" && b.data && "dependsOn" in b.data) list = b.data.dependsOn?.__delete__ ? null : b.data.dependsOn;
+  if (!Array.isArray(list)) return [];
+  const order = config.phases.map((p) => p[0]), upTo = order.indexOf(config.collector.buildPhase);
+  const derived = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards ?? {};
+  const e = [];
+  for (const dep of list) {
+    const k = cards.find((x) => x && x.id === dep);
+    if (!k || k.status === "done" || k.status === "dropped") continue;
+    const phase = derived[dep]?.phase ?? k.phase, at = order.indexOf(phase);
+    if (at < 0 || at > upTo) continue;
+    const num = Number.isInteger(k.num) && k.num > 0 ? ` (#C${k.num})` : "";
+    e.push(`${idText(card)} waits on ${idText(dep)}${num}, still on ${idText(phase)}: its build starts once that one is past build`);
+  }
+  return e;
+}
+
 // One open phase per card (Build and Checker once both lit on one card because a build step was never ended). Starting
 // a review while build is open, or ship while anything is open, is refused; reviews overlap each other, and a build may
 // start while a review is open (a fix round after FINDINGS is real work while the review waits). An open step is a
@@ -478,14 +518,14 @@ export function phaseOverlapErrors(w, { config, mirror, batch = [] }) {
   const c = config.collector, reviews = new Set(Object.keys(c.notes ?? {}));
   const card = data.init;
   const evs = [...mirror.docs.steps, ...batch.filter((b) => b !== w && b.collection === "steps" && b.op === "set").map((b) => b.data)]
-    .filter((e) => e && e.init === card && e.phase && typeof e.at === "number" && !e.wait && e.phase !== c.livePhase).sort((a, b) => a.at - b.at);
+    .filter((e) => e && e.init === card && e.phase && validTime(e.at) && !e.wait && e.phase !== c.livePhase).sort((a, b) => a.at - b.at);
   const open = new Map();
   for (const e of evs) { const key = `${e.phase}|${e.who ?? ""}`; if (e.kind === "start") open.set(key, e); else if (e.kind === "end") open.delete(key); }
   const readyAt = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards?.[card]?.readyAt;
   const live = [...open.values()].filter((e) => !(e.phase === c.buildPhase && typeof readyAt === "number" && readyAt >= e.at));
   const label = (p) => (config.phases.find((x) => x[0] === p) ?? [p, p])[1];
   // Board text (who wrote the step, its phase) reaches the writer only as a plain id (Security).
-  const since = (e) => `${idText(label(e.phase))} is still open by ${e.who ? idText(e.who) : "someone"} since ${new Date(e.at).toISOString().slice(11, 16)} UTC: end it first`;
+  const since = (e) => `${idText(label(e.phase))} is still open by ${e.who ? idText(e.who) : "someone"} since ${hhmmUtc(e.at)} UTC: end it first`;
   const build = live.find((e) => e.phase === c.buildPhase);
   if (reviews.has(data.phase) && build) return [since(build)];
   if (data.phase === c.shipPhase) { const any = live.find((e) => e.phase !== c.shipPhase); if (any) return [since(any)]; }
@@ -512,7 +552,7 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
     const was = op !== "set" && op !== "delete" && data && typeof data === "object" && !("kind" in data) ? (mirror?.docs?.waiting ?? []).find((x) => x.id === id) : null;
     return [...threadNumberedErrors(w, { mirror, batch }), ...(was ? choiceErrors(data, was.kind) : [])];
   }
-  if (collection === "steps") return phaseOverlapErrors(w, { config, mirror, batch });
+  if (collection === "steps") return [...phaseOverlapErrors(w, { config, mirror, batch }), ...dependsOnErrors(w, { config, mirror, batch })];
   if (collection === PLAN) return planMirrorErrors(w, { mirror, batch });
   // Every card links to the plan node it serves (board v3); a new card can't go without one, mirror or not.
   const planned = collection === "initiatives" ? initiativePlanErrors(w, { mirror, batch }) : [];

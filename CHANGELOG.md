@@ -2,7 +2,11 @@
 
 ## 0.3.4 - Unreleased
 
+### Added
+- Cards declare what they wait on (#C444, goal 2 of 10-28): `dependsOn: ["<card id>", …]` on a card, the lead's alone (the gate refuses it, set or cleared, from anyone else; 1 to 10 other cards' ids, each once). The gate refuses a build start on the card while a dependency is still open on plan or build, by the repository's reading; the page shows "waits on #C440" per open dependency. Gate part pinned: the next pack.
+
 ### Fixed
+- A step time no date can hold no longer stops the gate (gate-step-at-guard, as #C442): the one-open-phase rule skips a step whose `at` isn't finite or is past ±8.64e15, and its "since hh:mm UTC" comes from the UTC parts. Pinned: the next pack.
 - An `etaLive` no date can hold (not finite, or past ±8.64e15) skips that card's overdue line instead of stopping the whole collector run (#C442, Security: a write that skipped the gate); the ETA's hh:mm comes from its UTC hours and minutes, so a year past 9999 or before 0 no longer cuts the wrong digits. The collector's own code: a board release.
 - An open card past its ETA is nudged (#C441: #C379 sat open on ship a day past its etaLive, and LIVE BUT OPEN reads live only): every run, `NUDGE overdue: <card> (ETA <hh:mm>Z, phase <phase>)` for an open card more than an hour past its `etaLive`, with the phase the repository says, until it closes or its ETA moves; an open ask tied to it holds it (`openAsks`, #C440), and a card live by the evidence is LIVE BUT OPEN's (Checker). No quiet period. The collector's own code: a board release.
 - LIVE BUT OPEN names only a card the lead can close (#C440: "LIVE BUT OPEN (1): watchdog-approvals" every hour while the gate refused its close, two owner asks still open): a live card with an open ask tied to it is left out, by the gate's own rule 5 (`openAsks`: tied to the card, not done, not answered), and named again once its last ask is done. The collector's own code: a board release.
