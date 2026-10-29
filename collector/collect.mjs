@@ -76,6 +76,19 @@ import { EXPORT_NAME, EXPORT_COLLECTIONS } from "./export.mjs";
 // or no numbered thread yet.
 export const REQUIRED_COLLECTIONS = EXPORT_COLLECTIONS.filter((c) => c !== "plan" && c !== "threads");
 
+// An export list returns one page of at most EXPORT_PAGE documents, by id, and says when more exist (next_cursor). A
+// collection that came back with exactly a whole number of pages was most likely cut (#C428: threads and messages at
+// 1000 each, so 85 numbered threads read as unnumbered and the newest messages went unseen). Paging every list (step 1)
+// makes it whole; until then one NUDGE line says so, and the unnumbered-thread line waits.
+export const EXPORT_PAGE = 1000;
+export function cutCollections(docs, page = EXPORT_PAGE) {
+  return EXPORT_COLLECTIONS.filter((c) => Array.isArray(docs[c]) && docs[c].length > 0 && docs[c].length % page === 0);
+}
+export function cutLine(docs) {
+  const cut = cutCollections(docs);
+  return cut.length ? `NUDGE the board export may be cut: ${cut.map((c) => `${c} (${docs[c].length})`).join(", ")} came back with exactly a full page; each list must be read again with its next_cursor until there is none (collector/TASK.md step 1). Until then the run reads part of the board.` : null;
+}
+
 // Threads with no number yet (a waiting item, or a thread its messages open, with no threads/<id> {num}): the owner's
 // own new threads come in through the page, and only the lead numbers. One NUDGE line, every run until they're numbered,
 // so a new thread never sits without its #T (#C227). The lead runs scripts/thread-ids.mjs; the collector writes nothing.
@@ -84,6 +97,8 @@ export function unnumberedThreads(docs) {
   return batches.flat().filter((w) => w.collection === "threads" && Number.isInteger(w.data?.num)).map((w) => w.doc_id);
 }
 export function unnumberedLine(docs) {
+  // A cut export (below) is missing numbered threads, not numbers: no line until the export is whole (#C428).
+  if (cutCollections(docs).some((c) => c === "threads" || c === "messages" || c === "waiting")) return null;
   const loose = unnumberedThreads(docs);
   return loose.length ? `NUDGE ${loose.length} thread(s) with no number: ${loose.map(idText).join(", ")}. Number them now (scripts/thread-ids.mjs, meta/threadSeq pinned).` : null;
 }
@@ -427,7 +442,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   if (kl) console.log(kl);
   if (doc.liveButOpen.length) console.log(`LIVE BUT OPEN (${doc.liveButOpen.length}): ${doc.liveButOpen.map(idText).join(", ")}`);
   for (const line of nudged.lines) console.log(line);
-  const loose = unnumberedLine(mirror.docs);
+  const cut = cutLine(mirror.docs), loose = unnumberedLine(mirror.docs);
+  if (cut) console.log(cut);
   if (loose) console.log(loose);
   for (const line of writeContext(dir, dirname(out), config, Date.now())) console.log(line);
   // Last, once the board's work is written: every role's pickup digest in the refresh repositories that ship one (#C338).

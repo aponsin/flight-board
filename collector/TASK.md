@@ -147,7 +147,10 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
    `/flight-board-export` (a scheduled run saves an export without asking only into its own scratchpad), so the documents
    go to that folder and never into this session:
    - one ArtifactData `list` per collection, with `query.limit` 1000: `initiatives`, `waiting`, `ideas`, `messages`,
-     `derived`, `ctx`, `plan`, `threads` (`plan` and `threads` may be empty: a board with none yet exports no folder);
+     `derived`, `ctx`, `plan`, `threads` (`plan` and `threads` may be empty: a board with none yet exports no folder),
+     each again with its `next_cursor` (`query.cursor`, the same `out_dir`) until there is none: a list returns at most
+     1000 documents, and a cut one reads part of the board (#C428: numbered threads read as unnumbered, the newest
+     messages unseen). Step 2 prints a `NUDGE the board export may be cut` line when a collection has exactly a full page;
    - one ArtifactData `query` of `steps`, with `query.where` `[["at", ">=", <the Steps since time>]]` and
      `query.limit` 1000, again with each `next_cursor` until there is none.
 

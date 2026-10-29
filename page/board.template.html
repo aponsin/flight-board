@@ -2117,7 +2117,7 @@ function renderSoon(){if(renderDue!=null)return;
 // Without the connector the section stays hidden and the board is as before (the Collector's derived/all).
 // The Worker stores a reading when what shows here changed, else every 15 min (its KV writes are the account's): "as of"
 // is that reading's time, and it goes amber only past PROBE_OLD.
-const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",PROBE_EVERY=60e3,PROBE_OLD=20*60e3;
+const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",PROBE_EVERY=60e3,PROBE_OLD=20*60e3,PROBE_FRESH=15*60e3;
 let probe=null,probeNote="",probeAsk=false;
 const isT=v=>Number.isInteger(v)&&v>1577836800000&&v<4102444800000;
 const probeFits=s=>!!s&&typeof s==="object"&&s.v===1&&s.board&&isT(s.board.at)&&s.cards&&typeof s.cards==="object"&&s.agents&&typeof s.agents==="object";
@@ -2134,7 +2134,11 @@ function probeHtml(s,now=Date.now()){
   const at=a=>isT(a.since)?esc(hhmm(a.since)):"",tool=a=>typeof a.tool==="string"&&/^[A-Za-z]{1,30}$/.test(a.tool)?esc(a.tool):"";
   const working=roles.filter(r=>st(r)==="working").map(r=>{const a=ag(r),card=probeCard(s,a.card),t=at(a);
     return `<div class="probe-row"><span class="who">${esc(r)}</span><span class="what">${probeParts([`working${card?" on "+card:""}`,tool(a),t?"since "+t:""])}</span></div>`}).join("");
-  const idle=roles.filter(r=>st(r)==="idle").map(r=>{const a=ag(r),card=probeCard(s,a.card),t=at(a),more=[t,card?"last "+card:""].filter(Boolean).join(", ");return `<span class="nw">${esc(r)}${more?` (${more})`:""}</span>`});
+  // An idle agent keeps its last card only while it was active in the last PROBE_FRESH; past that, "idle since hh:mm"
+  // (#C428, Director: Admin idle 403 min still shown on its card).
+  const idle=roles.filter(r=>st(r)==="idle").map(r=>{const a=ag(r),last=Math.max(isT(a.since)?a.since:0,isT(a.lastActivityAt)?a.lastActivityAt:0);
+    const more=!last?"":now-last<PROBE_FRESH?[esc(hhmm(last)),probeCard(s,a.card)?"last "+probeCard(s,a.card):""].filter(Boolean).join(", "):"idle since "+esc(hhmm(last));
+    return `<span class="nw">${esc(r)}${more?` (${more})`:""}</span>`});
   const unseen=roles.filter(r=>st(r)==="unknown").map(r=>`<span class="nw">${esc(r)}</span>`);
   const quiet=(idle.length?`<div class="probe-line">Idle: ${idle.join(", ")}</div>`:"")+(unseen.length?`<div class="probe-line">Not seen: ${unseen.join(", ")}</div>`:"");
   const cards=Object.keys(s.cards).filter(id=>{const c=s.cards[id];return c&&typeof c.headSha12==="string"&&/^[0-9a-f]{12}$/.test(c.headSha12)&&c.phase!=="live"}).sort().map(id=>{const c=s.cards[id];
