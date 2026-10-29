@@ -1,0 +1,1 @@
+PASS Quick: #C430 phone-thread-rows. Under 480 px each thread row puts its kind and age on one line and the title under them; the age's ' ago' is hidden on a phone (the text is unchanged otherwise); the version line goes under the title; the phone rules come after the base .w-row rule; suite 737/737. Designer LOOK-OK first.
