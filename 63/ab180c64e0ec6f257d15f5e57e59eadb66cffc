@@ -1,0 +1,1 @@
+PASS Quick (Checker, #C442 overdue-eta-guard): a non-finite or out-of-range etaLive is skipped and the run goes on; hh:mm from UTC parts; 754/754; mutation (bound removed) caught
