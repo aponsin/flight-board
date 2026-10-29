@@ -361,6 +361,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null, se
   const stuckWrite = writes.find((w) => w.collection === "meta" && w.doc_id === "stuck");
   // The stuck line can't be wiped wholesale: only the lead may set or delete the whole document; others update entries.
   if (stuckWrite && stuckWrite.op !== "update" && !who.manager) errors.push(`meta/stuck: only ${config.gate.managerRole} may ${stuckWrite.op} the whole stuck line; update one item's entry instead`);
+  if (stuckWrite) errors.push(...stuckBannerErrors(stuckWrite));
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
@@ -379,7 +380,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null, se
     for (const [key, errs] of perItem) {
       if (!errs.length) continue;
       next.refusals[key] = (next.refusals[key] ?? 0) + 1;
-      if (next.refusals[key] >= STUCK_AFTER && !next.stuck[key]) stuckNow = { item: key, reason: errs[0] };
+      if (next.refusals[key] >= STUCK_AFTER && !next.stuck[key]) stuckNow = { item: key, reason: errs[0], owner: ROLE_WORD.test(String(who.role ?? "")) ? who.role : config.gate.managerRole };
     }
   } else {
     for (const key of perItem.keys()) delete next.refusals[key];
@@ -388,6 +389,21 @@ export function checkWrites(writes, { config, who, now, state, mirror = null, se
   // The stuck write itself: what it adds is recorded, so the item's next good write must clear it.
   if (stuckWrite && !errors.length) for (const [key, v] of Object.entries(stuckWrite.data ?? {})) if (v && !v.__delete__) next.stuck[key] = { reason: String(v.reason ?? ""), at: now };
   return { errors, state: next, stuckNow };
+}
+
+// The banner contract (#C433, the Director): every red banner tells the owner what to do, or that it isn't his. Each
+// stuck entry set carries exactly one of you (the owner's exact action: the page shows it red, "You: …") or owner (the
+// agent it waits on: amber, "Nothing for you · owner: …"), beside reason and at. Taking an entry off needs neither.
+const ROLE_WORD = /^[A-Za-z][A-Za-z0-9]{1,23}$/;
+export function stuckBannerErrors(w) {
+  if (w.op === "delete" || !w.data || typeof w.data !== "object") return [];
+  const e = [];
+  for (const [k, v] of Object.entries(w.data)) {
+    if (!v || typeof v !== "object" || v.__delete__) continue;
+    const you = typeof v.you === "string" && v.you.trim().length > 0 && v.you.length <= 300, owner = typeof v.owner === "string" && ROLE_WORD.test(v.owner);
+    if (you === owner) e.push(`meta/stuck ${idText(k)}: give exactly one of "you": "<the owner's exact action>" (a red banner) or "owner": "<the agent it waits on>" (amber, nothing for the owner)`);
+  }
+  return e;
 }
 
 // The items a write to meta/stuck takes off the line: each one set to {"__delete__": true}, or all of them by a delete.
@@ -400,7 +416,7 @@ function stuckClears(w, stuck = {}) {
 // The refusal's text, with the stuck instruction on the third refusal in a row.
 export function refusalText(errors, stuckNow, now) {
   let t = `Flight board refused this write. Fix and resend:\n- ${errors.join("\n- ")}\n`;
-  if (stuckNow) t += `\nThird refusal in a row for ${stuckNow.item}. Show it on the board now (this write always passes):\n  ArtifactData update meta/stuck {"${stuckNow.item}": {"reason": ${JSON.stringify(stuckNow.reason)}, "at": ${now}}}\n`;
+  if (stuckNow) t += `\nThird refusal in a row for ${stuckNow.item}. Show it on the board now (this write always passes):\n  ArtifactData update meta/stuck {"${stuckNow.item}": {"reason": ${JSON.stringify(stuckNow.reason)}, "at": ${now}, "owner": "${stuckNow.owner}"}}\n(If the owner must act, put "you": "<the exact action>" in place of "owner".)\n`;
   return t;
 }
 

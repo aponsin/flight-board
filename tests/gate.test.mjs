@@ -124,9 +124,10 @@ test("rule 8: three refusals in a row for one item ask for the stuck line; that 
   let state = {};
   let r;
   for (let n = 1; n <= 3; n++) { r = checkWrites([bad], { config, who: lead, now, state }); state = r.state; assert.equal(!!r.stuckNow, n === 3, `refusal ${n}`); }
-  assert.deepEqual(r.stuckNow, { item: "waiting:w", reason: "no steps" });
-  assert.match(refusalText(r.errors, r.stuckNow, now), /Third refusal in a row for waiting:w[\s\S]*update meta\/stuck \{"waiting:w": \{"reason": "no steps"/);
-  r = checkWrites([{ op: "update", collection: "meta", doc_id: "stuck", data: { "waiting:w": { reason: "no steps", at: now } } }], { config, who: lead, now, state });
+  assert.deepEqual(r.stuckNow, { item: "waiting:w", reason: "no steps", owner: lead.role });
+  // The banner contract (#C433): the write it asks for names whose move it is.
+  assert.match(refusalText(r.errors, r.stuckNow, now), /Third refusal in a row for waiting:w[\s\S]*update meta\/stuck \{"waiting:w": \{"reason": "no steps", "at": \d+, "owner": "Manager"\}\}\n\(If the owner must act, put "you"/);
+  r = checkWrites([{ op: "update", collection: "meta", doc_id: "stuck", data: { "waiting:w": { reason: "no steps", at: now, owner: "Manager" } } }], { config, who: lead, now, state });
   assert.deepEqual(r.errors, []);
   state = r.state;
   const good = ask({ kind: "action", text: "Do", steps: ["Open it"] });
@@ -311,7 +312,7 @@ test("Checker: only the lead may set or delete the whole of meta/context or meta
   ok(one({ op: "set", collection: "meta", doc_id: "context", data: { at: now, agents: {} } }, lead));
   has(checkWrites([{ op: "delete", collection: "meta", doc_id: "stuck" }], { config, who: checker, now, state: {} }).errors, "only Manager may delete the whole stuck line");
   has(checkWrites([{ op: "set", collection: "meta", doc_id: "stuck", data: {} }], { config, who: checker, now, state: {} }).errors, "only Manager may set");
-  assert.deepEqual(checkWrites([{ op: "update", collection: "meta", doc_id: "stuck", data: { "waiting:w": { reason: "r", at: now } } }], { config, who: checker, now, state: {} }).errors, []);
+  assert.deepEqual(checkWrites([{ op: "update", collection: "meta", doc_id: "stuck", data: { "waiting:w": { reason: "r", at: now, owner: "Checker" } } }], { config, who: checker, now, state: {} }).errors, []);
   assert.deepEqual(checkWrites([{ op: "delete", collection: "meta", doc_id: "stuck" }], { config, who: lead, now, state: {} }).errors, []);
 });
 

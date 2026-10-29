@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, renameSync, readdirSync, lstatSync, openSy
 import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
@@ -237,16 +238,47 @@ function versionAfter(git, sha, ref, pattern) {
   return null;
 }
 
+// A commit's change, context out (#C433, as collector/collect.mjs's changeId, copied, never imported: this file is pinned
+// and the collector moves with the link; a test holds the two equal): its files and changed lines, whitespace and line
+// numbers out. ids: { sha: id } kept from run to run by the caller, so each commit is read once.
+export const MAIN_LOOKBACK = 400;
+export function changeId(git, sha, ids = {}) {
+  if (!Object.hasOwn(ids, sha)) {
+    const d = git(["show", "--format=", "-U0", "--no-color", "--no-ext-diff", sha]);
+    const keep = d.split("\n").filter((l) => /^(\+\+\+ |--- |[+-])/.test(l)).map((l) => l.replace(/\s+/g, ""));
+    ids[sha] = keep.length ? createHash("sha256").update(keep.join("\n")).digest("hex") : null;
+  }
+  return ids[sha];
+}
+// Where a tip's change landed on main when the tip itself isn't there (a restack, a cherry-pick: #C400's READY sat in
+// ship a day): the newest main commit carrying one of its changes, when every commit it has beyond main is on main as
+// the same change; else null.
+export function landedOn(git, ref, sha, ids = {}) {
+  try {
+    const lines = (args) => git(args).split("\n").filter((s) => /^[0-9a-f]{40}$/.test(s));
+    const beyond = lines(["rev-list", sha, `^${ref}`]);
+    if (!beyond.length) return null;
+    const onMain = lines(["rev-list", `--max-count=${MAIN_LOOKBACK}`, ref, `^${sha}`]), byId = new Map();
+    for (const s of onMain) { const id = changeId(git, s, ids); if (id && !byId.has(id)) byId.set(id, s); }
+    const found = beyond.map((s) => byId.get(changeId(git, s, ids)));
+    return found.every(Boolean) ? onMain.find((s) => found.includes(s)) : null;
+  } catch { return null; }
+}
+
 // One card: its phase by the evidence (the declared one when the repository shows nothing), and the facts beside it.
+// A tip whose change landed on main as other commits (landedOn) is read as the main commit that carries it.
 export function cardState(card, repo, config, now) {
   const declared = config.phases.some((p) => p[0] === card.phase) ? card.phase : null;
   const base = { num: Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? card.num : null, phase: declared, headSha12: null, signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: now };
   if (!repo) return base;
   const tips = headsFor(card.id, repo.tips.filter((h) => h.branch !== repo.main));
-  const head = tips[0];
-  if (!head) return base;
-  const signed = Object.entries(repo.notes).filter(([, ref]) => ok(() => repo.git(["notes", `--ref=${ref}`, "show", head.sha]))).map(([p]) => p).sort();
-  const onMain = ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, `${repo.remote}/${repo.main}`]));
+  const tip = tips[0];
+  if (!tip) return base;
+  const signed = Object.entries(repo.notes).filter(([, ref]) => ok(() => repo.git(["notes", `--ref=${ref}`, "show", tip.sha]))).map(([p]) => p).sort();
+  const mainRef = `${repo.remote}/${repo.main}`;
+  const landed = ok(() => repo.git(["merge-base", "--is-ancestor", tip.sha, mainRef])) ? null : landedOn(repo.git, mainRef, tip.sha, repo.ids);
+  const head = landed ? { ...tip, sha: landed } : tip;
+  const onMain = !!landed || ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, mainRef]));
   const deployed = onMain && !!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed }, cfg);
@@ -323,10 +355,14 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const local = Object.fromEntries(Object.entries(notes).map(([p, ref]) => [p, `refs/notes/flight-board/${ref.slice("refs/notes/".length)}`]));
     let tips = [];
     try { tips = remoteTips(git, remote); } catch { /* an empty clone */ }
-    return { git, gh: run(path)("gh", 15_000), remote, main, notes: local, tips };
+    return { git, gh: run(path)("gh", 15_000), remote, main, notes: local, tips, ids: changeIds };
   };
   // Finished CI runs, kept by commit from run to run (the newest 500).
   const ciPath = join(stateDir, id, "ci-cache.json");
+  // Each commit's change id (landedOn), kept from run to run (the newest 5000): a commit is read once, not every minute.
+  const idsPath = join(stateDir, id, "change-ids.json");
+  let changeIds = {};
+  try { const r = readTail(idsPath, 2 * 1024 * 1024); const o = r?.whole ? JSON.parse(r.text) : null; if (plain(o)) changeIds = Object.fromEntries(Object.entries(o).filter(([k, v]) => /^[0-9a-f]{40}$/.test(k) && (v === null || /^[0-9a-f]{64}$/.test(String(v))))); } catch { /* start afresh */ }
   let ciCache = {};
   try { const r = readTail(ciPath, 1024 * 1024); const o = r?.whole ? JSON.parse(r.text) : null; if (plain(o)) ciCache = Object.fromEntries(Object.entries(o).filter(([k]) => /^[0-9a-f]{40}$/.test(k)).map(([k, v]) => [k, ciEntry(v)]).filter(([, v]) => v)); } catch { /* start afresh */ }
   // A repository git can't read gives no tips: its cards stay as declared.
@@ -357,6 +393,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents });
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
     writeAtomic(ciPath, JSON.stringify(Object.fromEntries(Object.entries(ciCache).slice(-500))));
+    writeAtomic(idsPath, JSON.stringify(Object.fromEntries(Object.entries(changeIds).slice(-5000))));
   } catch (e) { console.error(`state: ${String(e.message).split("\n")[0]}`); process.exit(1); }
   if (process.argv.includes("--no-post")) { console.log(`state: written, ${Object.keys(state.cards).length} card(s), ${Object.keys(state.agents).length} agent(s), not posted`); process.exit(0); }
   const secrets = readSecrets(secretsDir(stateDir, id));
