@@ -194,7 +194,13 @@ test("NUDGE overdue: an open card over an hour past its etaLive, every run, unti
   assert.deepEqual(over(nudges({ config, docs: docs([late], [{ id: "ask-1", initiative: "late-one", done: true }]), now: T }).lines).length, 1, "its ask done: due again");
   assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, id: "x\nNUDGE y" }]), now: T }).lines).every((l) => !l.includes("\n")), true, "board text goes through idText");
   assert.deepEqual(over(nudges({ config, docs: docs([late]), now: T, derived: { "late-one": { phase: "live" } } }).lines), [], "live by the evidence: LIVE BUT OPEN's, not overdue (Checker)");
-  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, phase: "live" }]), now: T }).lines), [], "the card says live, no derived reading: LIVE BUT OPEN's");});
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, phase: "live" }]), now: T }).lines), [], "the card says live, no derived reading: LIVE BUT OPEN's");
+  // #C442 (Security): an etaLive no Date can hold (a write that skipped the gate) is skipped, and the run goes on.
+  for (const etaLive of [-8.64e15 - 1, -1e16, Number.NaN, -Infinity]) {
+    const r = nudges({ config, docs: docs([{ ...late, etaLive }, { ...late, id: "late-two" }]), now: T });
+    assert.deepEqual(over(r.lines), ["NUDGE overdue: late-two (ETA 09:30Z, phase ship)"], `etaLive ${etaLive}: that card skipped, the next still nudged`);
+  }
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, etaLive: -8.64e15 }]), now: T }).lines), ["NUDGE overdue: late-one (ETA 00:00Z, phase ship)"], "the bound itself is a date");});
 
 test("the gate runs rules 3-5 only with a mirror; without one they pass", () => {
   const w = upd({ phase: "build" });

@@ -3,6 +3,7 @@
 ## 0.3.4 - Unreleased
 
 ### Fixed
+- An `etaLive` no date can hold (not finite, or past ±8.64e15) skips that card's overdue line instead of stopping the whole collector run (#C442, Security: a write that skipped the gate); the ETA's hh:mm comes from its UTC hours and minutes, so a year past 9999 or before 0 no longer cuts the wrong digits. The collector's own code: a board release.
 - An open card past its ETA is nudged (#C441: #C379 sat open on ship a day past its etaLive, and LIVE BUT OPEN reads live only): every run, `NUDGE overdue: <card> (ETA <hh:mm>Z, phase <phase>)` for an open card more than an hour past its `etaLive`, with the phase the repository says, until it closes or its ETA moves; an open ask tied to it holds it (`openAsks`, #C440), and a card live by the evidence is LIVE BUT OPEN's (Checker). No quiet period. The collector's own code: a board release.
 - LIVE BUT OPEN names only a card the lead can close (#C440: "LIVE BUT OPEN (1): watchdog-approvals" every hour while the gate refused its close, two owner asks still open): a live card with an open ask tied to it is left out, by the gate's own rule 5 (`openAsks`: tied to the card, not done, not answered), and named again once its last ask is done. The collector's own code: a board release.
 - The reset cue names the reset (#C434, Manager wrote its handoff and kept working, clearing 140k past the line): after the handoff note, call `clear_session` with session_id "self" as the turn's last action; the deferred cue says the same for the next turn. Pinned: the next pack.
