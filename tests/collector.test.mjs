@@ -402,7 +402,9 @@ test("with a fresh live state a card takes its phase from it; a moved tip drops 
     assert.deepEqual(d["ready-one"].waitingFor, own["ready-one"].waitingFor, "same tip: the run's reviews stay");
     const moved = collect({ config: cfg, cards, git: s.git, gh, now: 5, liveState: { cards: { "ready-one": liveCard("build", "ffffffffffff") } } }).doc.cards["ready-one"];
     assert.deepEqual([moved.phase, moved.readyAt, moved.waitingFor], ["build", undefined, undefined]);
-    assert.equal(underLive(own["ready-one"], liveCard("<b>", "zz")).phase, "security", "an odd live card: the run's own");
+    assert.equal(underLive(own["ready-one"], liveCard("<b>", "zz"), cfg.phases).phase, "security", "an odd live card: the run's own");
+    assert.equal(underLive(own["ready-one"], liveCard("nophase", s.ready.slice(0, 12)), cfg.phases).phase, "security", "a phase the config doesn't name is never written (Security)");
+    assert.equal(collect({ config: cfg, cards, git: s.git, gh, now: 5, liveState: { cards: { "ready-one": liveCard("nophase", s.ready.slice(0, 12)) } } }).doc.cards["ready-one"].phase, "security");
     // readLiveState: the file next to the mirror, fitting the schema, under LIVE_FRESH_MS old; else null.
     const dir = mkdtempSync(join(tmpdir(), "fb-live-")), now = Date.UTC(2026, 9, 29, 5, 0);
     const good = { v: 1, board: { boardId: "TestBoard42xyz", at: now - 60e3, probe: null, pageVersion: null }, cards: { "ready-one": { ...liveCard("ship", "a1b2c3d4e5f6"), at: now - 60e3 } }, agents: {} };

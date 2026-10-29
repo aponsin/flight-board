@@ -312,9 +312,10 @@ export function readLiveState(dir, now) {
   return s;
 }
 // A card's derived reading under the live one: the live phase; a tip that moved past this run's makes its READY and
-// reviews an older commit's, so they go (as on the page).
-export function underLive(d, l) {
-  if (!l || typeof l.phase !== "string" || !/^[0-9a-f]{12}$/.test(l.headSha12 ?? "")) return d;
+// reviews an older commit's, so they go (as on the page). Only a phase the config names is taken, so none that doesn't
+// exist is ever written to derived/all (Security).
+export function underLive(d, l, phases) {
+  if (!l || !phases.some((p) => p[0] === l.phase) || !/^[0-9a-f]{12}$/.test(l.headSha12 ?? "")) return d;
   const out = { ...d, phase: l.phase, phaseFrom: "live" };
   if (typeof d.head === "string" && !d.head.startsWith(l.headSha12)) { delete out.readyAt; delete out.waitingFor; }
   return out;
@@ -339,7 +340,7 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   for (const card of open) {
     const r = repoOf(card, config);
     if (r) { derived[card.id] = inRepo(card, r, repos[r.name], config, now, ids); continue; }
-    derived[card.id] = underLive(phaseOf(card), liveState?.cards?.[card.id]);
+    derived[card.id] = underLive(phaseOf(card), liveState?.cards?.[card.id], config.phases);
     const tips = tipsOf[card.id];
     // A stacked follow-up set aside (#C358) is no second branch to split.
     if (tips.length > 1 && (derived[card.id].branches?.length ?? 1) > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
