@@ -52,6 +52,8 @@ test("the reset cue: over 400k tokens a titled session is told to hand off; at 4
   const cue = hook(big(turn([], { title: "Boardsmith", text: "go on" })));
   assert.match(cue, /^Context reset cue: this session's context is at 450k tokens, over 400k\. /);
   assert.match(cue, /\/handoff/);
+  // #C434 (Manager handed off and kept working, clearing 140k past the line): the cue names the clear as the turn's last act.
+  assert.match(cue, /after the handoff note, call mcp__ccd_session_mgmt__clear_session with session_id "self" as the last action of the turn \(nothing after it\)\./);
   assert.equal(hook(big(turn([], { title: "Boardsmith", text: "go on" }), { input: 0, read: 400000 })), "", "400k is not over");
   assert.equal(hook(big(turn([], { title: "Boardsmith", text: "go on" }), { input: 1000, read: 310000 })), "", "311k: tonight's false cue, gone");
   assert.match(hook(big(turn([], { title: "Boardsmith", text: "go on" }), { input: 1000, read: 350000, made: 60000 })), /at 411k tokens/, "the three counts together");
@@ -199,6 +201,7 @@ test("the reset cue defers one turn while the owner wrote under 10 minutes ago, 
   assert.match(cue, /^Context reset cue: deferred one turn\. This session's context is at 450k tokens, over 400k, but the owner wrote 1 min ago/);
   assert.match(cue, /"resetting after this" on the board/);
   assert.match(cue, /reset with \/handoff at the end of the next one/);
+  assert.match(cue, /call mcp__ccd_session_mgmt__clear_session with session_id "self" as the last action of the turn/, "#C434: the deferred cue names the clear too");
 
   const later = at("2026-10-28T06:30:00.000Z", turn([], { title: "Manager", text: "Turn the board's comment auto-replies back on." }));
   later.at(-1).timestamp = "2026-10-28T06:41:00.000Z";

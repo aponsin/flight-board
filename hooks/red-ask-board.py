@@ -186,13 +186,16 @@ except Exception:
 fresh = now is not None and owner_at is not None and now - owner_at < OWNER_FRESH_MS
 pending = red or (question and not answered)
 LIMIT = f"{RESET_AT // 1000}k"
+# The reset itself, named (#C434: Manager wrote the handoff and kept working, clearing 140k past the line): the clear is
+# the turn's last action, and this hook reads that call as the turn's reset (cleared, above).
+CLEAR_ACT = "after the handoff note, call mcp__ccd_session_mgmt__clear_session with session_id \"self\" as the last action of the turn (nothing after it)."
 if TITLE and not cleared and tokens is not None and tokens > RESET_AT:
     # Tokens cut down: 600,999 reads 600k, over the line all the same.
     if (fresh or pending) and not deferred:
         why = f"the owner wrote {int((now - owner_at) // 60000)} min ago" if fresh else "an ask of the owner's is open"
-        reasons.append(f"Context reset cue: deferred one turn. This session's context is at {tokens // 1000}k tokens, over {LIMIT}, but {why}, so don't reset now: a reset now loses what the owner just set up (the board's auto-replies too). Write \"{DEFER_MARK}\" on the board now (a message in the thread you're answering, from you), finish this turn, and reset with /handoff at the end of the next one.")
+        reasons.append(f"Context reset cue: deferred one turn. This session's context is at {tokens // 1000}k tokens, over {LIMIT}, but {why}, so don't reset now: a reset now loses what the owner just set up (the board's auto-replies too). Write \"{DEFER_MARK}\" on the board now (a message in the thread you're answering, from you), finish this turn, and reset with /handoff at the end of the next one: {CLEAR_ACT}")
     else:
-        reasons.append(f"Context reset cue: this session's context is at {tokens // 1000}k tokens, over {LIMIT}. Once the work in flight is committed and pushed (or at the end of this turn if it is), write your handoff note and reset with /handoff, so the next session starts small.")
+        reasons.append(f"Context reset cue: this session's context is at {tokens // 1000}k tokens, over {LIMIT}. Once the work in flight is committed and pushed (or at the end of this turn if it is), write your handoff note and reset with /handoff, so the next session starts small: {CLEAR_ACT}")
 # The live memory tile (#C392, the owner's ask; Manager's pick A): the Collector's tile is as old as its last run (it read
 # 34% at 06:12Z while Manager was at 43% at 06:30Z). This hook knows the context every turn, so it asks the agent to
 # write ctx/<Role> itself, but only when the tile is CTX_STALE_MIN old or CTX_DRIFT points off: far below #C334's
