@@ -1535,9 +1535,12 @@ function queueLine(i){if(!i.who||!isQueued(i))return "";const q=queueOf(i.who);i
   const at=c=>c===i?"<b>this</b>":`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>${isQueued(c)?"":phaseIndex(c.phase)>phaseIndex(BUILD_PHASE)?" (in review)":" (building)"}`;
   return `<span class="q-line">${esc(i.who)}&#39;s queue: ${q.map(at).join(" → ")}</span>`}
 // What an open card waits on (#C444, initiatives.dependsOn, the lead's): one "waits on #C440, #C441" with a link per
-// dependency still open (Designer: one label, not one per item); a closed one, or one the board doesn't hold, says nothing.
+// dependency that still holds its build (Designer: one label, not one per item): open and on plan or build, the
+// repository's phase over the card's, as the gate's dependsOnErrors reads it (Checker). Past build, closed, or a card
+// the board doesn't hold, it says nothing.
+const holdsBuild=c=>{const d=derivedOf(c.id),k=phaseIndex((d&&d.phase)||c.phase);return k>=0&&k<=phaseIndex(BUILD_PHASE)};
 function dependsLine(i){if(!i||i.status==="done"||i.status==="dropped"||!Array.isArray(i.dependsOn))return "";
-  const links=i.dependsOn.map(id=>(state.initRaw||[]).find(c=>c&&c.id===id)).filter(c=>c&&c.status!=="done"&&c.status!=="dropped")
+  const links=i.dependsOn.map(id=>(state.initRaw||[]).find(c=>c&&c.id===id)).filter(c=>c&&c.status!=="done"&&c.status!=="dropped"&&holdsBuild(c))
     .map(c=>`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>`);
   return links.length?`<span class="d-line">waits on ${links.join(", ")}</span>`:""}
 // ↻ Check on a card (#C355, the owner in #T962): a click writes checkRequests/<card id> {at}. It is answered by code

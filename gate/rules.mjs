@@ -182,6 +182,8 @@ export function writeErrors(w, { config, who, now }) {
       else if (op !== "update" || data.done === true) e.push("clearing the response reopens the ask: not with done, and as an update");
     }
   }
+  // A card's delete is the lead's (#C444, Security): it would clear dependsOn, batch and bump around their rule.
+  if (collection === "initiatives" && op === "delete" && !who.manager) e.push(`only ${config.gate.managerRole} deletes a card`);
   if (op === "delete" || !data || typeof data !== "object") return e;
   e.push(...timeErrors(data, now));
   const rules = pageRules();
@@ -200,12 +202,13 @@ export function writeErrors(w, { config, who, now }) {
     // feature or bigger (bump); the Collector works out the versions from them.
     const marks = ["batch", "bump"].filter((f) => f in data && !data[f]?.__delete__);
     // Clearing one is the lead's too (Checker on c3d3220).
-    if (["batch", "bump"].some((f) => f in data) && !who.manager) e.push(`batch and bump: only ${config.gate.managerRole} marks how a card ships`);
+    // A non-lead's set of the whole card is checked against the board's copy instead (leadFieldErrors, #C444).
+    if (["batch", "bump"].some((f) => f in data) && !who.manager && op !== "set") e.push(`batch and bump: only ${config.gate.managerRole} marks how a card ships`);
     if (marks.includes("batch") && !(typeof data.batch === "string" && /^[a-z0-9-]{1,40}$/.test(data.batch))) e.push("batch: a short name (a-z, 0-9 and -, up to 40)");
     if (marks.includes("bump") && !["patch", "minor", "major"].includes(data.bump)) e.push("bump: patch, minor or major");
     // What a card waits on (#C444): the lead's, set or cleared; other cards' ids, each once (dependsOnErrors reads it).
     if ("dependsOn" in data) {
-      if (!who.manager) e.push(`dependsOn: only ${config.gate.managerRole} says what a card waits on`);
+      if (!who.manager) { if (op !== "set") e.push(`dependsOn: only ${config.gate.managerRole} says what a card waits on`); }
       else if (!data.dependsOn?.__delete__) {
         const d = data.dependsOn;
         if (!Array.isArray(d) || !d.length || d.length > 10 || new Set(d).size !== d.length || d.some((x) => idText(x) !== x || x === id)) e.push("dependsOn: a list of 1 to 10 other cards' ids, each once");
@@ -373,7 +376,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null, se
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
-    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now })];
+    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now, who })];
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
@@ -545,8 +548,27 @@ export function questionAskErrors(w, { config, mirror, batch = [] }) {
   return [`a question to ${idText(config.owner)} reaches Needs you only as a waiting item: set waiting/${t ? idText(t) : "<thread id>"} {kind, text, since} in the same batch (or send it as a plain message, not kind "question")`];
 }
 
-export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now() }) {
+// The lead's card fields (#C444, Security: a whole-card set or a delete cleared them around their rule): a non-lead's
+// set of a card carries dependsOn, batch and bump exactly as the board has them (none, for a new card); with no copy of
+// the board to check against, it carries none of them. Board values reach the writer only as ids.
+const LEAD_FIELDS = [["dependsOn", "changes what a card waits on"], ["batch", "changes it"], ["bump", "changes it"]];
+export function leadFieldErrors(w, { config, who = {}, mirror }) {
   const { op, collection, doc_id: id, data } = w;
+  if (collection !== "initiatives" || op !== "set" || who.manager || !data || typeof data !== "object") return [];
+  const cards = mirror?.docs?.initiatives, was = Array.isArray(cards) ? cards.find((k) => k && k.id === id) ?? {} : null;
+  const shown = (v) => (v === undefined ? "none" : (Array.isArray(v) ? v : [v]).map((x) => `"${idText(x)}"`).join(", "));
+  const e = [];
+  for (const [f, what] of LEAD_FIELDS) {
+    if (!was) { if (f in data) e.push(`${f}: only ${config.gate.managerRole} ${what}; with no copy of the board to check it against, a set can't carry it`); continue; }
+    if (JSON.stringify(data[f]) !== JSON.stringify(was[f])) e.push(`${f}: only ${config.gate.managerRole} ${what}; a set carries it as the board has it (${shown(was[f])})`);
+  }
+  return e;
+}
+
+export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now(), who = {} }) {
+  const { op, collection, doc_id: id, data } = w;
+  const lead = leadFieldErrors(w, { config, who, mirror });
+  if (lead.length) return lead;
   if (collection === "messages") return [...threadErrors(w, { mirror, batch, now: at }), ...threadNumberedErrors(w, { mirror, batch }), ...questionAskErrors(w, { config, mirror, batch })];
   if (collection === "waiting") {
     const was = op !== "set" && op !== "delete" && data && typeof data === "object" && !("kind" in data) ? (mirror?.docs?.waiting ?? []).find((x) => x.id === id) : null;
