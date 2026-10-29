@@ -1,0 +1,1 @@
+PASS Quick: #C433 silent-stalls, pinned part for the v3.26 pack. stuckBannerErrors needs exactly one of you or owner on each stuck entry set; the refusal text carries a role-checked owner; state.mjs landedOn reads a landed change as on main, its change-ids cache checked when read and capped at 5000; suite 749/749; mutation check: pass (neither field allowed, caught).
