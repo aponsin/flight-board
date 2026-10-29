@@ -285,14 +285,21 @@ export function readSecrets(dir, uid = process.getuid()) {
   } catch { return null; }
 }
 
-// The POST: https only, no redirect, 15 s at most. Its one line says the Worker's status, never the token.
-export async function postState(fetchImpl, secrets, id, state) {
+// The POST: https only, no redirect, 15 s at most. Its one line says the Worker's status, never the token. One that
+// can't reach the Worker tries once more RETRY_MS later (#C428: a passing network blip left the panel a minute stale);
+// an answer, any status, is final. Both tries end well inside launchd's minute.
+export const RETRY_MS = 5_000;
+export async function postState(fetchImpl, secrets, id, state, wait = (ms) => new Promise((r) => setTimeout(r, ms))) {
   const body = JSON.stringify(state);
   if (Buffer.byteLength(body) > MAX_BYTES) return "state: not posted (over 64 KB)";
-  try {
-    const r = await fetchImpl(`${secrets.url}/b/${id}/state`, { method: "POST", redirect: "error", headers: { authorization: `Bearer ${secrets.token}`, "content-type": "application/json" }, body, signal: AbortSignal.timeout(15_000) });
-    return r.status === 204 ? "state: posted" : `state: the Worker answered ${Number(r.status)}`;
-  } catch { return "state: the Worker could not be reached"; }
+  for (let k = 0; k < 2; k++) {
+    if (k) await wait(RETRY_MS);
+    try {
+      const r = await fetchImpl(`${secrets.url}/b/${id}/state`, { method: "POST", redirect: "error", headers: { authorization: `Bearer ${secrets.token}`, "content-type": "application/json" }, body, signal: AbortSignal.timeout(15_000) });
+      return `${r.status === 204 ? "state: posted" : `state: the Worker answered ${Number(r.status)}`}${k ? " (on the second try)" : ""}`;
+    } catch { /* tried below, once */ }
+  }
+  return "state: the Worker could not be reached (tried twice)";
 }
 
 const writeAtomic = (path, text) => { const tmp = `${path}.${process.pid}.part`; writeFileSync(tmp, text, { mode: 0o600, flag: "wx" }); renameSync(tmp, path); };

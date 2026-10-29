@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { stateErrors, pickState, toolClass, MAX_BYTES } from "../collector/state-schema.mjs";
-import { cardIn, activity, agentStates, appSessions, lastEntries, readTail, readSecrets, buildState, phaseOf, headsFor as headsForProbe, cardState, postState, ciReader, WORKING_QUIET_MS } from "../collector/state.mjs";
+import { cardIn, activity, agentStates, appSessions, lastEntries, readTail, readSecrets, buildState, phaseOf, headsFor as headsForProbe, cardState, postState, ciReader, WORKING_QUIET_MS, RETRY_MS } from "../collector/state.mjs";
 import { derivePhase, headsFor } from "../collector/derive.mjs";
 import worker, { sha256hex, secretName, RATE_MS, TOOL, WRITES_DEFAULT } from "../worker/state-worker.mjs";
 import { pinnedSha, makeSecrets, workerSecret, secretName as installSecretName, plist, wranglerToml, WRANGLER, WRANGLER_VERSION, secretsStep, Stop, stopLine, stepCommand } from "../scripts/state-install.mjs";
@@ -339,7 +339,29 @@ test("the probe's POST: the token in the header only; its line never holds it", 
   assert.ok(!seen.opt.body.includes(TOKEN));
   const refused = await postState(async () => ({ status: 401 }), { url: "https://w.example", token: TOKEN }, BOARD, good());
   assert.ok(!refused.includes(TOKEN) && /401/.test(refused));
-  assert.ok(!(await postState(async () => { throw new Error(TOKEN); }, { url: "https://w.example", token: TOKEN }, BOARD, good())).includes(TOKEN));
+  assert.ok(!(await postState(async () => { throw new Error(TOKEN); }, { url: "https://w.example", token: TOKEN }, BOARD, good(), async () => {})).includes(TOKEN));
+});
+
+// #C428: a Worker that can't be reached is tried once more, RETRY_MS later; an answer of any status is never retried.
+test("the probe's POST tries once more when the Worker can't be reached, and only then", async () => {
+  const secrets = { url: "https://w.example", token: TOKEN }, waits = [];
+  const wait = async (ms) => { waits.push(ms); };
+  const flaky = (answers) => { let n = 0; const f = async () => { const a = answers[n++]; if (a instanceof Error) throw a; return a; }; f.calls = () => n; return f; };
+  let f = flaky([new Error("ECONNRESET"), { status: 204 }]);
+  assert.equal(await postState(f, secrets, BOARD, good(), wait), "state: posted (on the second try)");
+  assert.equal(f.calls(), 2); assert.deepEqual(waits, [RETRY_MS]);
+  f = flaky([new Error("ENOTFOUND"), new Error("ENOTFOUND"), { status: 204 }]);
+  assert.equal(await postState(f, secrets, BOARD, good(), wait), "state: the Worker could not be reached (tried twice)");
+  assert.equal(f.calls(), 2, "never a third try");
+  for (const status of [401, 500]) {
+    waits.length = 0; f = flaky([{ status }, { status: 204 }]);
+    assert.equal(await postState(f, secrets, BOARD, good(), wait), `state: the Worker answered ${status}`);
+    assert.equal(f.calls(), 1, `${status} is an answer: no retry`); assert.deepEqual(waits, []);
+  }
+  waits.length = 0; f = flaky([{ status: 204 }]);
+  assert.equal(await postState(f, secrets, BOARD, good(), wait), "state: posted");
+  assert.deepEqual(waits, [], "no wait when the first try lands");
+  assert.ok(RETRY_MS + 2 * 15_000 < 60_000, "both tries end inside launchd's minute");
 });
 
 // --- The owner's install ---------------------------------------------------------------------------------------
