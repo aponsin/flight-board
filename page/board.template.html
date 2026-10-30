@@ -1244,10 +1244,11 @@ function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&
 // (the same thread can show in two places), for unique ids.
 // hint: a muted line under the box (a closed ask's: writing reopens it, #C288).
 // acts: a thread row's buttons follow its state (#C364): an answer or live word an Ack (its close), a decision its
-// options, a building thread none; a question keeps Close.
+// options; a question keeps Close, and so does a building thread (#C460, the owner's #T1150: #T1145, its card in flight,
+// had no button at all, so he couldn't clear it).
 function threadHtml(id,where,{box=true,hint="",acts=false,ph=""}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`,st=acts?threadState(id):null,open=t.length&&!threadResolved(id);
   const at=`data-where="${esc(where)}"`,opts=st==="decision"?threadOptions(id).map(o=>`<button type="button" class="opt" data-topt="${esc(id)}" data-choice="${esc(o.key)}" ${at}><b>${esc(o.key)}</b> ${esc(o.label)}</button>`).join(""):"";
-  const end=!open||st==="building"?"":st==="answer"||st==="live"?`<button type="button" class="ok" data-tack="${esc(id)}" ${at}>Ack</button>`:`<button type="button" data-tclose="${esc(id)}" ${at}>Close</button>`;
+  const end=!open?"":st==="answer"||st==="live"?`<button type="button" class="ok" data-tack="${esc(id)}" ${at}>Ack</button>`:`<button type="button" data-tclose="${esc(id)}" ${at}>Close</button>`;
   return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${box?cmpWrap(key,`${opts||end?`<div class="cchoice btns">${opts}${end}</div>`:""}${cmpBox(key,tid,{ph:t.length?(NARROW()?"Reply":"Reply to Manager"):ph||"Start a thread on this",send:`<button type="button" class="ok" data-tsend="${esc(id)}" ${at} data-csend>Send</button>`})}${hint?`<div class="keys">${esc(hint)}</div>`:""}<div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div>`):""}${t.slice().reverse().map(msgHtml).join("")}</div>`}
 // The thread rows whose item is not on the board (a New thread, or an item since closed): open (the owner's word is the
 // last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their

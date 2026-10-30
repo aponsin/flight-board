@@ -120,7 +120,8 @@ test("the badge is the state; the buttons follow it", () => {
   assert.ok(!has("t-d", "data-tack"), "a decision is picked, not acked");
   for (const id of ["t-b", "t-m"]) {
     assert.ok(has(id, "data-tsend"), `${id}: the owner can still write`);
-    for (const a of ["data-tack", "data-tclose", "data-topt"]) assert.ok(!has(id, a), `${id}: building shows no ${a}`);
+    for (const a of ["data-tack", "data-topt"]) assert.ok(!has(id, a), `${id}: building shows no ${a}`);
+    assert.ok(has(id, "data-tclose"), `${id}: building keeps Close, so the owner can clear it (#C460)`);
   }
   assert.ok(has("t-q", "data-tclose"), "a question keeps Close");
 });

@@ -9,7 +9,7 @@ const T = 1_800_000_000_000, MIN = 60e3;
 const msg = (thread, from, text, at, extra = {}) => ({ id: `m${at}${from}${thread}`, thread, from, text, at, ...extra });
 const card = { id: "card-9", num: 900, name: "In flight", size: "S", status: "active", phase: "build", thread: "t-c", etaLive: T + 36e5, createdAt: T - 60 * MIN };
 function board(messages) {
-  const b = loadNames(["waitsOn", "youItems", "tabCounts", "threadsHtml", "threadRow", "renderWaiting", "trefPlace"]);
+  const b = loadNames(["waitsOn", "youItems", "tabCounts", "threadsHtml", "threadRow", "renderWaiting", "trefPlace", "closeWrites"]);
   Object.assign(b.state, {
     steps: [], derived: [], todo: [], ideas: [], threads: [], initRaw: [card], initiatives: [card],
     // The #T1104 case: an answer item, acked with a note (a question in it, so it isn't settled), done false.
@@ -51,6 +51,20 @@ test("#T1145: a card in flight whose newest word is Manager's answer stays with 
   assert.ok(b.threadsHtml(T).includes(b.threadRow("t-c", T)), "under With the team");
   assert.match(b.threadRow("t-c", T), /<span class="kind building">Building<span class="kn"> #C900<\/span><\/span>/);
   assert.equal(board(t1145.slice(0, 4)).waitsOn("t-c", T), "lead", "the owner's word the newest: with the team, as before");
+});
+
+// #C460 too: #T1145 had no button at all. Its Close clears it; Manager closes one for the owner with update {resolved:
+// true} on the thread's newest message (the only one the page reads it from), never on an older one of the owner's.
+test("#T1145: the owner can Close a thread whose card is in flight, and Manager can close it on the newest message", () => {
+  const b = board(t1145);
+  assert.match(b.threadRow("t-c", T), /data-tclose="t-c"/);
+  const w = b.closeWrites("t-c", T, "x1");
+  assert.equal(JSON.stringify(w), JSON.stringify([{ op: "set", path: `messages/m${T}-x1`, data: { thread: "t-c", from: "Owner", text: "Closed.", at: T, resolved: true } }]), "a thread with no item: one message, no item write");
+  assert.equal(board([...t1145, w[0].data]).waitsOn("t-c", T), "resolved");
+  const mgr = t1145.map((m, i) => (i === t1145.length - 1 ? { ...m, resolved: true } : m));
+  assert.equal(board(mgr).waitsOn("t-c", T), "resolved", "Manager's resolved on the newest message closes it");
+  const older = t1145.map((m, i) => (i === 3 ? { ...m, resolved: true } : m));
+  assert.equal(board(older).waitsOn("t-c", T), "lead", "resolved on an older message of the owner's doesn't");
 });
 
 test("a card in flight: Manager's decision the newest is the owner's to pick, under Needs you", () => {
