@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { loadNames, renderWaitingHtml } from "./harness.mjs";
 
 // A text box in a box with the given buttons, and a key press in it.
-function press(key, { value = "hi", shift = false, meta = false, ctrl = false, composing = false, buttons = [{ sel: "[data-tsend]" }], inBox = true } = {}) {
+function press(key, { value = "hi", shift = false, meta = false, ctrl = false, alt = false, composing = false, buttons = [{ sel: "[data-tsend]" }], inBox = true } = {}) {
   const found = (sel) => buttons.find((b) => sel.split(",").includes(b.sel)) ?? null;
   const box = { querySelector: (sel) => found(sel), querySelectorAll: (sel) => (sel === ".btns button" ? buttons.filter((b) => b.sel.startsWith(".btns button")) : []) };
   const target = { tagName: "TEXTAREA", value, closest: () => (inBox ? box : null) };
-  return { key, target, shiftKey: shift, metaKey: meta, ctrlKey: ctrl, altKey: false, isComposing: composing, keyCode: 13 };
+  return { key, target, shiftKey: shift, metaKey: meta, ctrlKey: ctrl, altKey: alt, isComposing: composing, keyCode: 13 };
 }
 
 test("Enter sends like the chat app; Shift+Enter and ⌘/Ctrl+Enter add a line; nothing while composing or empty", () => {
@@ -21,7 +21,14 @@ test("Enter sends like the chat app; Shift+Enter and ⌘/Ctrl+Enter add a line; 
   const done = { sel: ".btns button.ok" };
   assert.equal(enterKey(press("Enter", { buttons: [done, { sel: ".btns button.help" }] })).act, "none", "Done or 'Something went wrong': Enter never guesses (Checker)");
   assert.equal(enterKey(press("Enter", { buttons: [done, { sel: ".btns button.help" }], meta: true })).act, "line", "⌘+Enter still adds a line there");
-  assert.equal(enterKey(press("Enter", { shift: true })), null, "Shift+Enter: the browser's own new line");
+  // #C463 (the owner's #T1158): Option+Enter and Shift+Enter add a line too, by the page itself, never left to the
+  // browser (Option+Enter added none in the app), in every box, whatever its buttons.
+  assert.equal(enterKey(press("Enter", { alt: true })).act, "line", "Option+Enter");
+  assert.equal(enterKey(press("Enter", { shift: true })).act, "line", "Shift+Enter");
+  assert.equal(enterKey(press("Enter", { alt: true, buttons: [done, { sel: ".btns button.help" }] })).act, "line", "Option+Enter in a box with two outcomes");
+  assert.equal(enterKey(press("Enter", { shift: true, buttons: [{ sel: "[data-csend]" }] })).act, "line", "Shift+Enter in a compact box");
+  assert.equal(enterKey(press("Enter", { alt: true, value: "" })).act, "line", "an empty box takes a line too");
+  assert.equal(enterKey(press("Enter", { alt: true, composing: true })), null, "never while composing");
   assert.equal(enterKey(press("Enter", { meta: true })).act, "line");
   assert.equal(enterKey(press("Enter", { ctrl: true })).act, "line");
   assert.equal(enterKey(press("Enter", { composing: true })), null, "an input method composing");

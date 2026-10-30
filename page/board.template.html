@@ -883,10 +883,11 @@ function oneAction(box){return !!box.querySelector("[data-tsend],button[type=sub
 // What a key press in a box does: "send" with the button to press, "line", "none", or null (not ours: the browser's own).
 function enterKey(e){
   const t=e.target;
-  if(e.key!=="Enter"||!t||t.tagName!=="TEXTAREA"||e.isComposing||e.keyCode===229||e.altKey)return null;
+  if(e.key!=="Enter"||!t||t.tagName!=="TEXTAREA"||e.isComposing||e.keyCode===229)return null;
   const box=t.closest&&t.closest(".reply,.newthread");if(!box)return null;
-  if(e.shiftKey)return null;
-  if(e.metaKey||e.ctrlKey)return {act:"line"};
+  // #C463 (the owner's #T1158): Option+Enter and Shift+Enter add a line as ⌘/Ctrl+Enter do, by the page itself (in the
+  // app Option+Enter added none).
+  if(e.metaKey||e.ctrlKey||e.altKey||e.shiftKey)return {act:"line"};
   // A compact box (#C368): Enter presses its own Send, whatever the choices above it.
   const cs=box.querySelector("[data-csend]");
   if(cs)return !cs.disabled&&t.value.trim()?{act:"send",button:cs}:{act:"none"};
