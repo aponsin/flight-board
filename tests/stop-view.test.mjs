@@ -91,6 +91,7 @@ test("an ask's reply is owed only until the team answers in its thread (cwm-doma
   assert.deepEqual(check(lines(NOW - 20 * MIN), view({ waiting: [{ ...ask, response: { status: "help", at: NOW - 20 * MIN } }], messages: [msg("cwm", "Manager", NOW - 10 * MIN)] })), [], "the reply on the item, then Manager's answer");
   assert.match(check(lines(NOW - 20 * MIN, NOW - 6 * MIN), answered).join(), /ask cwm "asked for help/, "a help after that answer is owed again");
   assert.match(check(lines(NOW - 20 * MIN), view({ waiting: [ask], messages: [msg("cwm", "Owner", NOW - 10 * MIN)] })).join(), /ask cwm/, "the owner's own word doesn't answer it");
+  assert.match(check(lines(NOW - 20 * MIN), view({ waiting: [ask], messages: [msg("cwm", "Checker", NOW - 10 * MIN)] })).join(), /ask cwm/, "another role's note doesn't either: the lead's only (Security's LOW)");
 });
 
 test("Security: ids through idText, texts on one line without tags and 80 characters at most, 20 things at most", () => {

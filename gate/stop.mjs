@@ -80,7 +80,7 @@ export function boardPings(lines, owner) {
 //   from the view, or a reply ping after the asks' listing.
 // live: the owner's messages the lead's live queries returned (gate/live.mjs, #C394), counted like the view's. liveAsks:
 // the waiting items they returned with the owner's reply (#C406), each over the view's copy when its reply is newer.
-export function needsYou({ view, pings, writes, owner, now, since, live = [], liveAsks = [] }) {
+export function needsYou({ view, pings, writes, owner, lead, now, since, live = [], liveAsks = [] }) {
   const mine = writes.filter((w) => w.collection === "messages" && w.op !== "delete" && w.data && typeof w.data === "object").map((w) => ({ ...w.data, id: w.doc_id }));
   const known = new Set((view.docs.messages ?? []).map((m) => m?.id));
   const msgs = [...(view.docs.messages ?? []), ...live.filter((m) => !known.has(m.id)), ...mine,
@@ -105,10 +105,11 @@ export function needsYou({ view, pings, writes, owner, now, since, live = [], li
     else owed.set(p.id, { what: p.what, text: asks.get(p.id)?.text ?? p.text.replace(/"\..*$/, ""), at: p.at });
   }
   // #C460 (cwm-domain-name, "help on: …" at every stop after the team had answered in its thread): a reply is owed only
-  // while it is newer than the team's newest word in the ask's thread (the view, the journal, the live reads, this turn).
-  const teamAt = new Map();
-  for (const m of msgs) if (m && typeof m.thread === "string" && m.from !== owner && typeof m.at === "number" && m.at > (teamAt.get(m.thread) ?? -Infinity)) teamAt.set(m.thread, m.at);
-  for (const [id, o] of owed) if (!written.has(id) && !(teamAt.get(id) > o.at)) out.push({ kind: "ask", id, text: `${o.what} on: ${o.text ?? id}`, at: o.at });
+  // while it is newer than the lead's newest word in the ask's thread (the view, the journal, the live reads, this turn).
+  // The lead's only (Security's LOW on 4de1202f): another role's note in the thread doesn't answer the owner.
+  const leadAt = new Map();
+  for (const m of msgs) if (m && typeof m.thread === "string" && m.from === lead && lead !== owner && typeof m.at === "number" && m.at > (leadAt.get(m.thread) ?? -Infinity)) leadAt.set(m.thread, m.at);
+  for (const [id, o] of owed) if (!written.has(id) && !(leadAt.get(id) > o.at)) out.push({ kind: "ask", id, text: `${o.what} on: ${o.text ?? id}`, at: o.at });
   return out.sort((a, b) => a.at - b.at);
 }
 
@@ -208,11 +209,11 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   // With no mirror, the live check's finds still count (they need none); the rest of the board waits for one.
   if (!view) {
     const bare = { docs: { messages: [], waiting: [] }, at: now, atBy: {} };
-    const items = liveNext.msgs.length || liveNext.asks.length ? needsYou({ view: bare, pings: [], writes, owner: config.owner, now, since, live: liveNext.msgs, liveAsks: liveNext.asks }) : [];
+    const items = liveNext.msgs.length || liveNext.asks.length ? needsYou({ view: bare, pings: [], writes, owner: config.owner, lead: role, now, since, live: liveNext.msgs, liveAsks: liveNext.asks }) : [];
     if (items.length) out.push(needsText(items, role, now));
     return { errs: out, record: null, note: "Flight board: no board mirror yet, so the Stop hook couldn't check the board this turn (the Collector's next run makes one).", liveNext };
   }
-  const items = needsYou({ view, pings: boardPings(lines, config.owner), writes, owner: config.owner, now, since, live: liveNext.msgs, liveAsks: liveNext.asks });
+  const items = needsYou({ view, pings: boardPings(lines, config.owner), writes, owner: config.owner, lead: role, now, since, live: liveNext.msgs, liveAsks: liveNext.asks });
   if (items.length) out.push(needsText(items, role, now));
   return { errs: out, record: out.length ? null : Math.min(now, listedAt(view, "messages")), note: null, liveNext };
 }
