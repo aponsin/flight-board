@@ -1,0 +1,1 @@
+PASS Full: 4de1202f plus a Close button on a thread whose card is in flight (no Ack or options); 790/790; mutation check: pass (building end blanked again: last-word-needs-you fails)
