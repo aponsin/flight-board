@@ -6,9 +6,10 @@
 // taken as counted.
 export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
 
+// The known kinds only (Security on 505d4901: a junk key would clear the refusal while no chip shows it).
 export function issueTotal(issues) {
   if (!issues || typeof issues !== "object") return 0;
-  return Object.values(issues).reduce((s, v) => s + (Number.isInteger(v) && v >= 0 ? v : 0), 0);
+  return ISSUE_KINDS.reduce((s, k) => s + (Number.isInteger(issues[k]) && issues[k] >= 0 ? issues[k] : 0), 0);
 }
 
 function reviewPhases(config) {

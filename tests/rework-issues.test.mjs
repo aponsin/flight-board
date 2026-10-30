@@ -45,6 +45,7 @@ test("the gate refuses the lead's next update until the count goes up with issue
   assert.match(e, /^#C465 went back for rework \(FINDINGS by Designer at \d\d:\d\d UTC\): record it in this update: issues with a higher total than its 0 \(bugs, security, language, design, owner\) and issuesAt: now in ms/);
   assert.equal(errs({ issues: { design: 2 } }).length, 1, "issuesAt is needed too");
   assert.equal(errs({ issues: { bugs: 0 }, issuesAt: NOW }).length, 1, "the total must go up");
+  assert.equal(errs({ issues: { ...card.issues, junk: 5 }, issuesAt: NOW }).length, 1, "only the known kinds count (Security on 505d4901)");
   assert.equal(errs({ issues: { ...card.issues, design: 2, owner: 1 }, issuesAt: NOW - 34 * MIN, nextNote: "x" }).length, 0, "counted: anything goes");
   assert.equal(errs({ issues: { design: 1 }, issuesAt: NOW - 36 * MIN }).length, 1, "an issuesAt before the finding");
   assert.equal(errs({ nextNote: "x" }, mirror(card, steps.slice(0, 3))).length, 0, "no signal: no rule");
