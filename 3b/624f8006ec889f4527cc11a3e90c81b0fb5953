@@ -1,0 +1,1 @@
+PASS Full: 786776ef plus Security's LOW: only the lead's own word (lead = the session's role, which stopRun limits to the lead) quiets an owed ask; 790/790; mutation check: pass (any non-owner counted again: stop-view fails)
