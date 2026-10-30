@@ -1,0 +1,1 @@
+PASS Quick: keeper step 2 lists 100, keeps any of {{FOLDERS}}, names a missing role in the report's last field; 787/787; mutation check: pass (missing rule removed: keeper-task test fails)
