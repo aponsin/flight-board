@@ -104,7 +104,11 @@ export function needsYou({ view, pings, writes, owner, now, since, live = [], li
     if (p.what === "acknowledged" || p.what === "marked done") owed.delete(p.id);
     else owed.set(p.id, { what: p.what, text: asks.get(p.id)?.text ?? p.text.replace(/"\..*$/, ""), at: p.at });
   }
-  for (const [id, o] of owed) if (!written.has(id)) out.push({ kind: "ask", id, text: `${o.what} on: ${o.text ?? id}`, at: o.at });
+  // #C460 (cwm-domain-name, "help on: …" at every stop after the team had answered in its thread): a reply is owed only
+  // while it is newer than the team's newest word in the ask's thread (the view, the journal, the live reads, this turn).
+  const teamAt = new Map();
+  for (const m of msgs) if (m && typeof m.thread === "string" && m.from !== owner && typeof m.at === "number" && m.at > (teamAt.get(m.thread) ?? -Infinity)) teamAt.set(m.thread, m.at);
+  for (const [id, o] of owed) if (!written.has(id) && !(teamAt.get(id) > o.at)) out.push({ kind: "ask", id, text: `${o.what} on: ${o.text ?? id}`, at: o.at });
   return out.sort((a, b) => a.at - b.at);
 }
 

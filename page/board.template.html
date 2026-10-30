@@ -583,14 +583,17 @@ function onLead(w,now){return !settled(w)&&answered(w,now)}
 // flight: #C364), "resolved", "answered" (Manager's word is the last: the owner reads it, under Needs you), or null with
 // no messages.
 // #C451 (the owner on #T1104: an answer he acked with a note, then two Manager answers in its thread, under With the
-// team): the lead's word the newest is the owner's to read, under Needs you, on an answered ask (newer than the reply)
-// and on a card in flight (its Building chip kept). The "building" word itself hands the thread to the team.
+// team): the lead's word the newest is the owner's to read, under Needs you, on an answered ask (newer than the reply).
+// #C460 (the owner's #T1150 on #T1145: a card in flight, Manager's answer the newest, asking nothing, sat under Needs you
+// with no Ack to clear it): a card in flight keeps its thread with the team, its Building chip kept, unless Manager's
+// newest word is a decision for the owner to pick.
 function leadLast(id,after=0){const t=threadOf(id),last=t[t.length-1];
   return !!last&&last.from!==OWNER&&!last.resolved&&last.kind!=="building"&&(num(last.at)??0)>after}
+function leadDecides(id){const t=threadOf(id),last=t[t.length-1];return leadLast(id)&&last.kind==="decision"}
 function waitsOn(id,now){const it=itemOf(id);
   if(it&&it.coll==="waiting"&&!settled(it.doc))return needsYou(it.doc,now)||leadLast(id,num(it.doc.response&&it.doc.response.at)??0)?"you":"lead";
   if(!threadOf(id).length)return null;
-  return threadOpen(id)?"lead":threadResolved(id)?"resolved":threadState(id)==="building"&&!leadLast(id)?"lead":"answered"}
+  return threadOpen(id)?"lead":threadResolved(id)?"resolved":threadState(id)==="building"&&!leadDecides(id)?"lead":"answered"}
 // The badge for a waitsOn answer: the only place the page writes one. "lead" is the With the team tab (#C364).
 function badge(on){return on==="you"?'<span class="t-badge you">waiting on you</span>':on==="lead"?'<span class="t-badge open">with the team</span>':on==="resolved"?'<span class="t-badge res">resolved</span>':on==="answered"?'<span class="t-badge ">answered</span>':""}
 // Whether an item is drawn with its thread under it: an open ask (either section), a closed one whose thread waits on
