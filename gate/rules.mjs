@@ -8,6 +8,7 @@ import { idText } from "../collector/text.mjs";
 import { contextRoles, contextWriteErrors, isContextWrite } from "../collector/context.mjs";
 import { mechanicalClass } from "./traffic.mjs";
 import { buildingNow } from "../collector/state-schema.mjs";
+import { reworkOwed, issueTotal, signalText, ISSUE_KINDS } from "../collector/rework.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 let page;
@@ -606,6 +607,14 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
       const jumped = order.slice(from + 1, to).filter((p) => !skip.has(p) && past < to);
       if (jumped.length) e.push(`${was.phase} → ${data.phase} skips ${jumped.join(", ")}: add it to skip, or give phaseReason`);
     }
+  }
+  // #C468 (the owner's #T1170): a rework the lead hasn't counted holds the lead's next write of the card until the same
+  // write raises its issues' total and sets issuesAt (collector/rework.mjs; the Collector's REWORK nudge says the same).
+  if (who.manager && was) {
+    const s = [...(mirror.docs.steps ?? []), ...batch.filter((b) => b.collection === "steps" && b.op === "set" && b.data).map((b) => b.data)];
+    const owed = reworkOwed(was, s, config);
+    const counted = issueTotal(now.issues) > issueTotal(was.issues) && Number.isFinite(data.issuesAt) && data.issuesAt >= (owed?.at ?? 0) && data.issuesAt <= at + 60e3;
+    if (owed && !counted) e.push(`${Number.isInteger(was.num) ? `#C${was.num}` : idText(id)} went back for rework (${signalText(owed, idText)}): record it in this update: issues with a higher total than its ${issueTotal(was.issues)} (${ISSUE_KINDS.join(", ")}) and issuesAt: now in ms`);
   }
   // Rule 4: one card per owner in the lane phases (build, test); reviews and shipping queue many.
   const lanes = new Set(config.collector.lanePhases ?? []);

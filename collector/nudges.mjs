@@ -23,6 +23,7 @@
 import { idText as q } from "./text.mjs";
 import { repoOf, openAsks } from "./derive.mjs";
 import { typedClashes } from "./state-schema.mjs";
+import { reworkOwed, signalText } from "./rework.mjs";
 
 const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10, TYPED_MIN = 5;
 const closed = (k) => k.status === "done" || k.status === "dropped";
@@ -83,6 +84,12 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     const card = cards.get(s.init), median = n.etaHours[card?.size];
     if (!card || closed(card) || waiting.has(card.id) || typeof median !== "number") continue;
     if (now - s.at > n.stepFactor * median * HOUR) firing.push({ key: `step:${key}`, text: `${q(s.who)} on ${q(s.init)} (${q(s.phase)}): open ${hours(now - s.at)} h, over ${n.stepFactor}× the ${q(card.size)} median of ${median} h` });
+  }
+
+  // 2b. A rework not counted yet (#C468): the gate holds the lead's next write of the card until it is.
+  for (const card of cards.values()) {
+    const owed = reworkOwed(card, docs.steps, config);
+    if (owed) firing.push({ key: `rework:${card.id}:${owed.at}`, text: `REWORK ${Number.isInteger(card.num) ? `#C${card.num}` : q(card.id)}: record its issues (${signalText(owed, q)}): a higher total and issuesAt, in your next update of it` });
   }
 
   // 3. A working role's memory reading too old.

@@ -49,7 +49,8 @@ test("not yet at 9 minutes; never with an open review step (by card id or #C num
 test("a review round that ended in FINDINGS on this READY waits on the owner's fix, never a dispatch (Checker)", () => {
   const d = { tabs: derive(card, ["language", "security"]) };
   const round = [step("tabs", "checker", "start", T - 9 * MIN), step("tabs", "checker", "end", T - 4 * MIN), { ...step("tabs", "build", "start", T - 3 * MIN), who: "Builder" }];
-  assert.deepEqual(run({ steps: round }, d, T + 19 * MIN).lines, [], "30 min after READY: Checker's FINDINGS, the owner fixing");
+  // #C468: the round's rework (a build start after the review) is the lead's to count, never a dispatch.
+  assert.deepEqual(run({ steps: round }, d, T + 19 * MIN).lines.map((l) => l.replace(/\(.*$/, "")), ["NUDGE REWORK #C12: record its issues "], "30 min after READY: Checker's FINDINGS, the owner fixing");
   assert.deepEqual(run({ steps: [step("C12", "checker", "start", T - 9 * MIN), step("C12", "checker", "end", T - 4 * MIN)] }, d).lines, [], "logged by card number");
   const old = [step("tabs", "checker", "start", T - 60 * MIN), step("tabs", "checker", "end", T - 50 * MIN)];
   assert.deepEqual(run({ steps: old }, d).lines.length, 2, "a round on an older commit is not one on this READY");

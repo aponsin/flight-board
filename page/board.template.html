@@ -1699,6 +1699,10 @@ function cardAsks(id,now){return state.waiting.filter(w=>w&&w.initiative===id&&!
 // The thread a card came from (#C364): "from #T979", opening it; one per numbered thread it names.
 function cardFrom(i){const ids=[...new Set([i.thread,...(Array.isArray(i.threads)?i.threads:[])])].filter(t=>typeof t==="string"&&threadNum(t));
   return ids.length?`<span class="c-from">from ${ids.map(t=>`<a href="#" class="t-ref" data-tref="${esc(t)}">#T${threadNum(t)}</a>`).join(", ")}</span>`:""}
+// A card's issue chips: what sent it back, by kind (#C468, the owner's #T1170: #C465 went back to build for Designer's two
+// findings and his own menu decision, and its chips said 0 bugs, 0 security fixes, 0 wording fixes).
+const ISSUE_KINDS=[["bugs","bugs"],["security","security fixes"],["language","wording fixes"],["design","design fixes"],["owner","owner changes"]];
+function issueChips(i){const iss=i.issues||{};return ISSUE_KINDS.map(([k,l])=>{const v=num(iss[k])||0;return `<span class="chip ${v?"":"zero"}">${v} ${l}</span>`}).join(" ")}
 function initRow(i,where){const w=typeof where==="string"?where:"init";
   const ns=notStarted(i), idx=ns?phaseIndex(BUILD_PHASE):phaseIndex(i.phase), stuck=i.status==="stuck", queued=ns||i.status==="queued", times=phaseTimes(i.phaseLog,i.status==="done"?i.doneAt:null);
   const sMs=i.status!=="done"?stepMs(i):null;
@@ -1709,7 +1713,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
     const t=(ns&&n===idx)?`<small>${esc(queueLabel(i))}</small>`:(n===idx&&i.upNext&&!stuck&&i.status!=="done")?`<small>up next</small>`:(np&&n!==idx)?`<small>${esc(np.join(", "))}${times[k]?" · "+dur(times[k]):""}</small>`:(n===idx&&i.status!=="done"&&i.who)?`<small>${esc(i.who)}${times[k]?" · "+dur(times[k]):""}</small>`:times[k]?`<small>${dur(times[k])}</small>`:skip.includes(k)?"<small>not needed</small>":(i.status==="done"||n<idx)&&k!==LIVE_PHASE?'<small class="norec">no record</small>':"<small>&nbsp;</small>";// While Release ships: an estimate from past ships (tests ~7 min, then deploy, ~10 min in all), labelled "est.".
     const sm=k==="ship"&&n===idx&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
     const sd=sm!=null?`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`:k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";return pre+`<div class="${c}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}">${esc(l)}${t}${sd}</div>`}).join("");
-  const iss=i.issues||{};const chips=[["bugs","bugs"],["security","security fixes"],["language","wording fixes"]].map(([k,l])=>{const v=num(iss[k])||0;return `<span class="chip ${v?"":"zero"}">${v} ${l}</span>`}).join(" ");
+  const chips=issueChips(i);
   const eta=cardEta(i);
   let etaHtml;
   // Live by the evidence while still open (Designer on live-source: the live state shows this on every ship): no ETA to
