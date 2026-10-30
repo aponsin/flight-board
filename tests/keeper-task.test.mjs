@@ -102,6 +102,35 @@ test("the report names what was picked up and what didn't reset, and asks for #C
   assert.match(step(8), /for each reset sent that isn't picked up yet \(not reset\), set saved with savedTokens and savedPct/, "#C401: only the ones still owed a pickup");
 });
 
+// #C456 (#T1147): at 13:00Z on 2026-10-30 the keeper measured 3 of 15 agents. ~95 finished scheduled-task runs filled
+// the list, and the seven agents idle since 01:51Z sat at places 84-91, past limit 50. And its one-folder filter never
+// kept Boardsmith, whose folder is the board's own repository. Now limit 100, any of the team's folders, and a role it
+// can't find is named in the report instead of silently left out.
+test("the keeper lists 100 sessions, keeps any of the team's folders, and reports a role it didn't find", () => {
+  assert.match(step(2), /list_sessions \(limit 100;/);
+  assert.doesNotMatch(prompt, /limit 50/);
+  assert.match(step(2), /whose cwd contains one of: \{\{FOLDERS\}\}/);
+  assert.doesNotMatch(doc, /\{\{FOLDER\}\}/, "the one-folder placeholder is gone everywhere, the dry run's included");
+  assert.match(doc, /`\{\{FOLDERS\}\}` \(#C456/, "the header says how the lead fills it");
+  assert.match(step(2), /A title in that list with no such session is missing/);
+  assert.match(step(8), /\| missing: <Title>, … \(or none\)\. Update the board's/, "the report's last field");
+  assert.match(step(8), /"all" lists every session measured/);
+});
+
+// The keeper's step 2 as a rule, on the 19:31Z list's shape: helper runs first, the idle agents far down.
+const keep = (list, folders, roles) => list.filter((s) => !s.isArchived && folders.some((f) => s.cwd.includes(f)) && roles.includes(s.title));
+test("on a crowded list: limit 50 loses the idle agents, limit 100 keeps them, and Boardsmith is kept by its folder", () => {
+  const roles = ["Manager", "Security", "Boardsmith"], folders = ["team", "flight-board"];
+  const runs = Array.from({ length: 82 }, (_, i) => ({ title: i % 2 ? "Collector" : "Team: context keeper", cwd: "/Users/x/Code/team", isArchived: false }));
+  const list = [{ title: "Manager", cwd: "/Users/x/Code/team" }, { title: "Boardsmith", cwd: "/Users/x/Code/flight-board" }, ...runs, { title: "Security", cwd: "/Users/x/Code/team" }].map((s) => ({ isArchived: false, ...s }));
+  const found = (n) => keep(list.slice(0, n), folders, roles).map((s) => s.title).join();
+  assert.equal(found(50), "Manager,Boardsmith", "Security is past place 50");
+  assert.equal(found(100), "Manager,Boardsmith,Security");
+  assert.equal(keep(list, ["team"], roles).map((s) => s.title).join(), "Manager,Security", "the old one-folder filter drops Boardsmith");
+  const missing = roles.filter((r) => !keep(list.slice(0, 50), folders, roles).some((s) => s.title === r));
+  assert.equal(missing.join(), "Security", "what the report's missing field would name at limit 50");
+});
+
 test("the keeper still never clears a session or touches Remote Control", () => {
   assert.match(prompt, /Never clear a session yourself, never touch Remote Control/);
   assert.doesNotMatch(prompt, /clear_session|set_remote_control/);
