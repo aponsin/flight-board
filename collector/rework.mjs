@@ -22,9 +22,19 @@ export function reworkOwed(card, steps, config) {
   if (!card || card.status === "done" || card.status === "dropped") return null;
   const reviews = reviewPhases(config), build = config.collector.buildPhase;
   const own = (Array.isArray(steps) ? steps : []).filter((s) => s && s.init === card.id && Number.isFinite(s.at) && !s.wait);
-  const firstReview = Math.min(...own.filter((s) => reviews.has(s.phase)).map((s) => s.at));
-  const signals = own.filter((s) => (s.kind === "end" && reviews.has(s.phase) && /^FINDINGS\b/.test(String(s.note ?? ""))) || (s.kind === "start" && s.phase === build && s.at > firstReview))
-    .map((s) => ({ at: s.at, kind: s.phase === build ? "build" : "findings", who: s.who }));
+  // Oldest first. A build start after a review is a signal only when no FINDINGS came since the build start before it:
+  // a FINDINGS already stands for that rework (Checker on 505d4901: Manager counts it, then the fix starts).
+  const signals = [];
+  let reviewed = false, findingsSince = false;
+  for (const s of own.slice().sort((a, b) => a.at - b.at)) {
+    if (reviews.has(s.phase)) {
+      reviewed = true;
+      if (s.kind === "end" && /^FINDINGS\b/.test(String(s.note ?? ""))) { signals.push({ at: s.at, kind: "findings", who: s.who }); findingsSince = true; }
+    } else if (s.kind === "start" && s.phase === build) {
+      if (reviewed && !findingsSince) signals.push({ at: s.at, kind: "build", who: s.who });
+      findingsSince = false;
+    }
+  }
   if (!signals.length) return null;
   const last = signals.reduce((a, b) => (b.at > a.at ? b : a));
   if (Number.isFinite(card.issuesAt) ? card.issuesAt >= last.at : issueTotal(card.issues) > 0) return null;

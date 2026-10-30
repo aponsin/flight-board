@@ -33,6 +33,18 @@ test("the signals: a FINDINGS review end, or a build start after a review step; 
   assert.equal(reworkOwed(card, steps.map((s) => ({ ...s, init: "other" })), config), null, "another card's steps");
 });
 
+// Checker's FINDINGS on 505d4901: the normal order is FINDINGS, Manager counts it on the nudge, then the builder starts
+// the fix. That build start is the same rework, never a second one to count.
+test("one rework is owed once: a build start after a FINDINGS already counted owes nothing more", () => {
+  const T = NOW - 60 * MIN, counted = { ...card, issues: { design: 2 }, issuesAt: T + 25 * MIN };
+  const order = [step("build", "start", "Builder", T), step("checker", "end", "Designer", T + 20 * MIN, { note: "FINDINGS 1-2" }), step("build", "start", "Builder", T + 30 * MIN)];
+  assert.equal(reworkOwed(counted, order, config), null);
+  assert.equal(mirrorErrors(upd({ nextNote: "fixing" }), { config, mirror: mirror(counted, order), now: NOW, who: MANAGER }).filter((x) => /rework/.test(x)).length, 0, "the gate lets Manager's next write through");
+  assert.equal(reworkOwed({ ...card }, order, config)?.at, T + 20 * MIN, "not yet counted: owed once, as the FINDINGS");
+  const again = [...order, step("checker", "start", "Checker", T + 40 * MIN), step("build", "start", "Builder", T + 50 * MIN)];
+  assert.equal(reworkOwed(counted, again, config)?.kind, "build", "a later build start with no FINDINGS of its own is a new rework");
+});
+
 test("recorded: issuesAt at or after the signal; a card counted before this rule (issues, no issuesAt) is taken as counted", () => {
   assert.equal(reworkOwed({ ...card, issues: { design: 2 }, issuesAt: NOW - 30 * MIN }, steps, config), null);
   assert.ok(reworkOwed({ ...card, issues: { design: 2 }, issuesAt: NOW - 50 * MIN }, steps, config), "counted before this finding");

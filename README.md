@@ -331,7 +331,8 @@ changes none of them):
     `size`, `level`, `issues`, `shipDetail` and `shipAt`. `issues` counts what sent the card back, one chip each:
     `bugs`, `security` (security fixes), `language` (wording fixes), `design` (design fixes) and `owner` (owner
     changes: the owner decided or changed something mid-build) (#C468). A rework is counted by the lead: a review's
-    end whose note starts `FINDINGS`, or a second build start on a card that already has a review step, makes the
+    end whose note starts `FINDINGS`, or a second build start on a card that already has a review step with no
+    `FINDINGS` since the build start before it (that fix is the same rework), makes the
     Collector say `REWORK #C…: record its issues`, and the gate refuses the lead's next write of that card until it
     raises the issues' total and sets `issuesAt` (now, ms) in the same write (`collector/rework.mjs`). A card counted
     before this rule (issues, no `issuesAt`) is taken as counted. Reviewers write no card fields.
