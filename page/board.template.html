@@ -564,7 +564,7 @@ const PHASES=CONFIG.phases;
 const BUILD_PHASE=(CONFIG.collector&&CONFIG.collector.buildPhase)||"build";
 const LIVE_PHASE=(CONFIG.collector&&CONFIG.collector.livePhase)||"live";
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingQueue:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -912,8 +912,16 @@ async function prepAnchor(btn){
   // Must run while the button is still in the page: the db write re-renders the list and detaches it.
   try{if(!commentsRef)return null;return await commentsRef.anchorFor(btn.closest("details")||btn)}catch(err){lastPing="anchor: "+(err&&(err.code||err.message)||"error");return null}
 }
-async function pingManager(anchor,id,r){return sendPing(anchor,pingText(state.waiting.find(x=>x.id===id)||{},id,r))}
-async function sendPing(anchor,text){
+async function pingManager(anchor,id,r){return sendPing(anchor,pingText(state.waiting.find(x=>x.id===id)||{},id,r),id)}
+// ref: the item the ping is about (a thread's or an ask's id). A send the app refuses is kept as pingQueue/<ref>-<time>
+// {ref, at, why} (#C509: every Ping and new thread one night said "Not sent (refused: upstream_error)"); the ping relay
+// (collector/PING-RELAY.md, every minute) tells Manager's session and stamps relayedAt, and the item then says "Sent
+// another way". Only the id and the reason go: Manager reads the words on the board.
+async function sendPing(anchor,text,ref){
+  const ok=await trySend(anchor,text);
+  if(!ok&&typeof ref==="string"&&PING_REF.test(ref))try{await applyWrites(pingQueueWrites(ref,lastPing,Date.now()))}catch(_){}
+  return ok}
+async function trySend(anchor,text){
   try{
     if(!anchor){if(!lastPing)lastPing="no anchor";return false}
     if(!commentsRef){lastPing="comments not available in this view";return false}
@@ -923,6 +931,13 @@ async function sendPing(anchor,text){
     return true;
   }catch(err){lastPing="refused: "+(err&&(err.code||err.message)||"error");return false}
 }
+const PING_REF=/^[A-Za-z0-9_-]{1,100}$/;
+function pingQueueWrites(ref,why,now){return PING_REF.test(String(ref))?[{op:"set",path:`pingQueue/${ref}-${now}`,data:{ref,at:now,why:String(why||"").slice(0,120)}}]:[]}
+// How a ping about ref went another way: "relayed" once the relay stamped it, "pending" while one waits; else null.
+function relayOf(ref){const q=(state.pingQueue||[]).filter(d=>d&&d.ref===ref&&num(d.at)!=null);if(!q.length)return null;
+  return q.some(d=>num(d.relayedAt)!=null&&d.relayedAt>=d.at)&&!q.some(d=>num(d.relayedAt)==null&&d.at>Math.max(...q.map(x=>num(x.relayedAt)||0)))?"relayed":"pending"}
+// The words for a ping that didn't go: what the relay did with it.
+const unsentText=(ref,why)=>{const r=relayOf(ref);return r==="relayed"?"Sent another way.":r==="pending"?`Not sent to Manager (${why}); sending another way…`:`Not sent to Manager (${why}); Manager picks it up at its next check.`};
 function pingText(w,id,r){
   const what=r.status==="chose"?"chose "+r.choice:r.status==="ok"?"said OK":r.status==="change"?"asked for changes":r.status==="done"?"marked done":r.status==="ack"?"acknowledged":"asked for help";
   const fs=(Array.isArray(r.files)?r.files:[]).filter(f=>f&&blobId(f.id));
@@ -931,7 +946,7 @@ function pingText(w,id,r){
 function replyBox(w){
   const r=w.response;
   if(r&&r.status){const lbl=r.status==="ack"?"You acknowledged this":r.status==="done"?"You marked this done":r.status==="chose"?"You chose "+(r.choice||""):r.status==="ok"?"You said OK":r.status==="change"?"You asked for changes":"You asked for help";
-    return `<div class="reply sent ${r.status}">${lbl}${num(r.at)?" "+dur(Date.now()-r.at)+" ago":""}${r.note?`: “${esc(r.note)}”`:""}.${sentFiles(r)} ${r.status==="ack"&&!r.note?"":w.ping==="sent"?"Sent to Manager.":w.ping?`Not sent to Manager (${esc(w.ping)}); it picks it up at its next check.`:"Sending to Manager…"}</div>`}
+    return `<div class="reply sent ${r.status}">${lbl}${num(r.at)?" "+dur(Date.now()-r.at)+" ago":""}${r.note?`: “${esc(r.note)}”`:""}.${sentFiles(r)} ${r.status==="ack"&&!r.note?"":w.ping==="sent"?"Sent to Manager.":w.ping?unsentText(w.id,esc(w.ping)):"Sending to Manager…"}</div>`}
   // The owner's A (#C368, #T980): the choices as chips above the compact box; the box keeps its own Send, which sends the
   // note as the "with a note" outcome: Something else (a decision), Change something (an approval), Something went
   // wrong (an action), or a follow-up (an answer, whose Ack is its choice).
@@ -969,7 +984,7 @@ async function onReply(e){
     const bare=act==="ack"&&!response.note&&!stored.length;
     const pinged=bare?false:await pingManager(anchor,id,response);
     if(bare){msg.textContent="Acknowledged.";setTimeout(settleRedraw,2600);return}
-    msg.textContent=(pinged?"Saved and sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.")+longLine(lp,NOTE_MAX);
+    msg.textContent=(pinged?"Saved and sent to Manager.":"Saved. "+unsentText(id,lastPing))+longLine(lp,NOTE_MAX);
     try{await dbRef.doc("waiting/"+id).update({ping:pinged?"sent":lastPing})}catch(_){}
     setTimeout(settleRedraw,2600)}
   catch(err){unattach();btn.disabled=false;msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead."}
@@ -1291,8 +1306,8 @@ function threadPingText(id,now){const t=threadOf(id),w=[...t].reverse().find(m=>
 function threadPingWrites(id,now){return /^[A-Za-z0-9_-]{1,100}$/.test(String(id))?[{op:"set",path:`threadPings/${id}`,data:{at:now}}]:[]}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tping]");if(!b)return;e.preventDefault();e.stopPropagation();
   const id=b.dataset.tping,now=Date.now();if(!dbRef||b.disabled||pingState(id,now).show!=="ping")return;b.disabled=true;
-  lastPing="";const anchor=await prepAnchor(b),sent=await sendPing(anchor,threadPingText(id,now));
-  try{if(sent)await applyWrites(threadPingWrites(id,now));else{b.disabled=false;b.textContent="Not sent";b.title=lastPing||""}}catch(_){b.disabled=false}});
+  lastPing="";const anchor=await prepAnchor(b),sent=await sendPing(anchor,threadPingText(id,now),id);
+  try{if(sent)await applyWrites(threadPingWrites(id,now));else{b.disabled=false;b.textContent="Sending another way…";b.title=lastPing||""}}catch(_){b.disabled=false}});
 // where: the thread's place on the page, for unique box ids. ask: a card's closed ask (#C288), drawn as the ask it was
 // (its own kind and colour, no "Reply to:"), with a hint that writing reopens it.
 // A thread's kind is its state now (#C364): Question, Building #C356, Answer, Live, Decision; a resolved one keeps the
@@ -1441,12 +1456,12 @@ async function sendThread(btn,id,text,msg,kind,restore,key="th:"+id){
   const long=longLine(lp,MAXT);
   if(wakeMode()==="batch"){if(key==="new"){msg.innerHTML=sentLine(id,"batch")+esc(long)}else msg.textContent="Saved. Manager reads it at its next check (within 5 minutes)."+long;btn.disabled=false;return}
   // The ping is cut shorter still (1,900): a cut text says so first, so the auto-reply never reads the cut as the whole.
-  const pinged=await sendPing(anchor,threadPing(id,lp.cut?`(long text, cut${lp.name?`; the full text is attached as ${lp.name}`:""}) ${lp.text}`:text||"(files)",kind));
-  if(key==="new"){msg.innerHTML=sentLine(id,pinged?"sent":"unsent",lastPing)+esc(long)}else msg.textContent=(pinged?"Sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.")+long;btn.disabled=false}
+  const pinged=await sendPing(anchor,threadPing(id,lp.cut?`(long text, cut${lp.name?`; the full text is attached as ${lp.name}`:""}) ${lp.text}`:text||"(files)",kind),id);
+  if(key==="new"){msg.innerHTML=sentLine(id,pinged?"sent":"unsent",lastPing)+esc(long)}else msg.textContent=(pinged?"Sent to Manager.":"Saved. "+unsentText(id,lastPing))+long;btn.disabled=false}
 // The new thread's receipt (#C364): where it landed, the link opening it; it stays until the owner's next keystroke.
 // how: "sent", "batch" (Manager reads it at its check) or "unsent" (why: the ping's refusal).
 function sentLine(id,how,why=""){const p=trefPlace(id,Date.now()),l=p&&p.tab?(TABS.find(t=>t[0]===p.tab)||[,""])[1]:"With the team";
-  const tail=how==="batch"?". Manager reads it at its next check (within 5 minutes).":how==="unsent"?`. Not sent to Manager (${esc(why)}); Manager picks it up at its next check.`:"";
+  const tail=how==="batch"?". Manager reads it at its next check (within 5 minutes).":how==="unsent"?". "+unsentText(id,esc(why)):"";
   return `<span class="receipt">${how==="sent"?"Sent":"Saved"} · in <a href="#" class="t-ref" data-tref="${esc(id)}">${esc(l)} →</a>${tail}</span>`}
 function ntReceiptClear(){const m=$("ntmsg");if(m&&String(m.innerHTML).startsWith('<span class="receipt">'))m.innerHTML=""}
 // The owner renames a thread: its title only (the number is the lead's). Set the first time, update after.
@@ -2450,7 +2465,7 @@ setInterval(()=>{tick();if(!held&&document.querySelector("[data-shipat]"))render
     ()=>{$("dot").classList.remove("on");dbState="connection lost, reload";renderStamp()}))};
   // Every collection, and again (each stream closed first) when the data is behind (#C452: catchUp).
   resubscribe=()=>{subs.forEach(u=>{try{if(typeof u==="function")u()}catch(e){}});subs=[];
-    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings"].forEach(sub)};
+    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings","pingQueue"].forEach(sub)};
   resubscribe();
 })();
 // The Studio's state (#C420), apart from the board's data: kept current by the connector's watch, once a minute.

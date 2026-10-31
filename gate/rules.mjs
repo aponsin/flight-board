@@ -87,6 +87,20 @@ export const threadNumErrors = (writes, seen = 0) => numErrors(writes, seen, COU
 
 // The scheduled collector's fixed session title (collector/TASK.md).
 export const COLLECTOR_ROLE = "Collector";
+// The ping relay (#C509, collector/PING-RELAY.md: its session titled "Ping relay") tells the lead of the pings the app
+// refused, and stamps each pingQueue/<id> it told of with relayedAt; nothing else. Any agent's pingQueue write is that
+// stamp only: the page writes the queue itself, and no agent can make a ping look relayed when it wasn't sent on, or
+// change what it is about (Security).
+export const PING_RELAY_ROLE = "Ping relay";
+export function pingQueueErrors(w, now) {
+  const { op, collection, doc_id: id, data } = w;
+  if (collection !== "pingQueue") return null;
+  if (op !== "update") return [`pingQueue/${id}: only its relayedAt is stamped (update), never set or deleted: the page writes the queue`];
+  const keys = data && typeof data === "object" ? Object.keys(data) : [];
+  if (keys.length !== 1 || keys[0] !== "relayedAt") return [`pingQueue/${id}: exactly {relayedAt} is written, nothing else`];
+  if (!Number.isInteger(data.relayedAt) || data.relayedAt > now + 60e3 || data.relayedAt < now - 864e5) return [`pingQueue/${id}: relayedAt is \`date +%s000\` now`];
+  return [];
+}
 // A memory reading the Collector may write: only when the team listed roles for it (collector.contextRoles).
 const collectorMemory = (w, config) => contextRoles(config).length > 0 && isContextWrite(w);
 const TIME_FIELDS = ["at", "since", "nextNoteAt"];
@@ -112,6 +126,9 @@ export function writeErrors(w, { config, who, now }) {
   const phases = config.phases.map((p) => p[0]);
   // An edit in place (ArtifactData str_replace) leaves the gate blind to the field's new value: write the whole field.
   if (op === "str_replace") return [`a text edit in place can't be checked: write the whole field with update instead`];
+  const pq = pingQueueErrors(w, now);
+  if (pq) return pq;
+  if (who.role === PING_RELAY_ROLE) return [`the ${PING_RELAY_ROLE} only stamps pingQueue/<id> relayedAt`];
   // The scheduled collector (its session titled "Collector", collector/TASK.md) sets derived/all and, for the roles in
   // collector.contextRoles, their memory readings (ctx/<Role> and meta/context agents.<Role>, exactly {pct, at} or {pct, tokens, at}:
   // collector/context.mjs), and nothing else (Security): whatever its run reads, it can't change a card, an ask, a
