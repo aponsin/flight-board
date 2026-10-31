@@ -68,8 +68,8 @@ test("a sent ping is recorded as threadPings/<id> {at}; only a thread id makes a
   const b = board();
   assert.deepEqual(JSON.parse(JSON.stringify(b.threadPingWrites("t-q", T))), [{ op: "set", path: "threadPings/t-q", data: { at: T } }]);
   assert.deepEqual(JSON.parse(JSON.stringify(b.threadPingWrites("../meta/x", T))), []);
-  assert.match(page, /"timings","ctxRequests","checkRequests","threadPings"\]\.forEach\(sub\)/, "the page reads the pings");
-  assert.match(page, /threadPings:\[\]\}/);
+  assert.match(page, /"timings","ctxRequests","checkRequests","threadPings","pingThreads"\]\.forEach\(sub\)/, "the page reads the pings");
+  assert.match(page, /threadPings:\[\],pingThreads:\[\]\}/);
 });
 
 test("pressing Ping sends first and records only what was sent; the row doesn't open", () => {
@@ -77,7 +77,7 @@ test("pressing Ping sends first and records only what was sent; the row doesn't 
   assert.ok(h.length > 0 && page.includes('closest("[data-tping]")'));
   const body = h.slice(0, 700);
   assert.match(body, /e\.preventDefault\(\)/, "a button in the row's summary must not fold it open");
-  assert.match(body, /prepAnchor\(b\)[\s\S]*sendPing\(anchor,threadPingText\(id,now\)\)[\s\S]*if\(sent\)await applyWrites\(threadPingWrites\(id,now\)\)/);
+  assert.match(body, /prepAnchor\(b\)[\s\S]*sendPing\(anchor,threadPingText\(id,now\),id\)[\s\S]*if\(sent\)await applyWrites\(threadPingWrites\(id,now\)\)/);
   assert.match(body, /pingState\(id,now\)\.show!=="ping"/, "re-checked on press: a double click sends once");
   assert.match(body, /lastPing="";const anchor=await prepAnchor\(b\)/, "Checker on 7b85ba9: 'Not sent' names this press's reason, never an older one");
 });

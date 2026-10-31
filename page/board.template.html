@@ -464,6 +464,7 @@ table.crew3-ph{margin-top:14px}
     <div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div>
   </header>
   <div class="shipline" id="shipline" role="status" hidden></div>
+  <div class="stuckline" id="threadsfull" role="status" hidden></div>
   <div class="stuckline" id="stuck" hidden></div>
   <p style="margin:0"><button type="button" class="viewlink" id="viewlink">Try the new layout</button></p>
 
@@ -564,7 +565,7 @@ const PHASES=CONFIG.phases;
 const BUILD_PHASE=(CONFIG.collector&&CONFIG.collector.buildPhase)||"build";
 const LIVE_PHASE=(CONFIG.collector&&CONFIG.collector.livePhase)||"live";
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -913,17 +914,41 @@ async function prepAnchor(btn){
   // Must run while the button is still in the page: the db write re-renders the list and detaches it.
   try{if(!commentsRef)return null;return await commentsRef.anchorFor(btn.closest("details")||btn)}catch(err){lastPing="anchor: "+(err&&(err.code||err.message)||"error");return null}
 }
-async function pingManager(anchor,id,r){return sendPing(anchor,pingText(state.waiting.find(x=>x.id===id)||{},id,r))}
-async function sendPing(anchor,text){
+async function pingManager(anchor,id,r){return sendPing(anchor,pingText(state.waiting.find(x=>x.id===id)||{},id,r),id)}
+// One comment thread per board item (#C509: from 2026-10-30 01:50Z every Ping and new thread said "Not sent (refused:
+// upstream_error)". The page opened a new comment thread for every send, and the artifact held 1,000, its limit). ref:
+// the item a send is about (a thread's, an ask's, an idea's id). Its first send opens a thread and keeps its id as
+// pingThreads/<ref> {threadId, at}; every later one replies into it. A thread deleted in the comment panel opens anew.
+const PING_REF=/^[A-Za-z0-9_-]{1,100}$/,THREAD_ID=/^[A-Za-z0-9_-]{8,80}$/;
+function pingThreadOf(ref){const d=PING_REF.test(String(ref||""))&&(state.pingThreads||[]).find(x=>x&&x.id===ref);return d&&THREAD_ID.test(String(d.threadId||""))?d.threadId:null}
+async function sendPing(anchor,text,ref){let opening=false;
   try{
-    if(!anchor){if(!lastPing)lastPing="no anchor";return false}
     if(!commentsRef){lastPing="comments not available in this view";return false}
     const can=await commentsRef.canSendToClaude();
     if(can!=="available"){lastPing="send to Claude: "+can;return false}
-    await commentsRef.sendToClaude({anchor,text});
+    const known=pingThreadOf(ref);
+    if(known){try{await commentsRef.sendToClaude({threadId:known,text});return true}catch(err){if(!(err&&err.code==="not_found"))throw err}}
+    if(!anchor){if(!lastPing)lastPing="no anchor";return false}
+    opening=true;const r=await commentsRef.sendToClaude({anchor,text});
+    if(threadsFull){threadsFull=null;renderThreadsFull()}
+    if(PING_REF.test(String(ref||""))&&r&&THREAD_ID.test(String(r.threadId||"")))try{await applyWrites([{op:"set",path:`pingThreads/${ref}`,data:{threadId:r.threadId,at:Date.now()}}])}catch(_){}
     return true;
-  }catch(err){lastPing="refused: "+(err&&(err.code||err.message)||"error");return false}
+  }catch(err){const c=err&&(err.code||err.message)||"error";lastPing="refused: "+c;
+    // A new thread refused this way is the artifact's thread limit (comments.d.ts: upstream_error, "the artifact's thread
+    // or reply limit"): said at once, never silent again.
+    if(opening&&c==="upstream_error"){threadsFull=Date.now();renderThreadsFull()}
+    return false}
 }
+// The comment threads' guard (#C509). Full: a send that opens a thread was refused upstream_error (cleared by the next
+// one that goes). Nearly full: the page can't list comment threads (the capability is write-only), so it counts the
+// ones it opened since Manager's last count, meta/commentThreads {count, at} (set after each cleanup in the panel):
+// count plus pingThreads opened since at; THREADS_NEAR or more says so.
+const THREADS_NEAR=900;let threadsFull=null;
+function threadsCount(){const m=(state.meta||[]).find(d=>d&&d.id==="commentThreads");if(!m||!Number.isInteger(m.count)||num(m.at)==null)return null;
+  return m.count+(state.pingThreads||[]).filter(d=>d&&num(d.at)!=null&&d.at>m.at).length}
+function renderThreadsFull(){const el=$("threadsfull");if(!el)return;const n=threadsCount(),near=n!=null&&n>=THREADS_NEAR;
+  el.hidden=!threadsFull&&!near;el.classList.toggle("amber",!threadsFull&&near);
+  el.textContent=threadsFull?"The board's comment threads are full: Send to Claude can't open a new one, so pings and new threads aren't reaching Manager. Delete old resolved threads in the board's comment panel (the board reads nothing from them).":near?`The board's comment threads are nearly full (${n} of about 1,000): delete old resolved ones in the board's comment panel before sends stop.`:""}
 function pingText(w,id,r){
   const what=r.status==="chose"?"chose "+r.choice:r.status==="ok"?"said OK":r.status==="change"?"asked for changes":r.status==="done"?"marked done":r.status==="ack"?"acknowledged":"asked for help";
   const fs=(Array.isArray(r.files)?r.files:[]).filter(f=>f&&blobId(f.id));
@@ -1297,7 +1322,7 @@ function threadPingText(id,now){const t=threadOf(id),w=[...t].reverse().find(m=>
 function threadPingWrites(id,now){return /^[A-Za-z0-9_-]{1,100}$/.test(String(id))?[{op:"set",path:`threadPings/${id}`,data:{at:now}}]:[]}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tping]");if(!b)return;e.preventDefault();e.stopPropagation();
   const id=b.dataset.tping,now=Date.now();if(!dbRef||b.disabled||pingState(id,now).show!=="ping")return;b.disabled=true;
-  lastPing="";const anchor=await prepAnchor(b),sent=await sendPing(anchor,threadPingText(id,now));
+  lastPing="";const anchor=await prepAnchor(b),sent=await sendPing(anchor,threadPingText(id,now),id);
   try{if(sent)await applyWrites(threadPingWrites(id,now));else{b.disabled=false;b.textContent="Not sent";b.title=lastPing||""}}catch(_){b.disabled=false}});
 // where: the thread's place on the page, for unique box ids. ask: a card's closed ask (#C288), drawn as the ask it was
 // (its own kind and colour, no "Reply to:"), with a hint that writing reopens it.
@@ -1447,7 +1472,7 @@ async function sendThread(btn,id,text,msg,kind,restore,key="th:"+id){
   const long=longLine(lp,MAXT);
   if(wakeMode()==="batch"){if(key==="new"){msg.innerHTML=sentLine(id,"batch")+esc(long)}else msg.textContent="Saved. Manager reads it at its next check (within 5 minutes)."+long;btn.disabled=false;return}
   // The ping is cut shorter still (1,900): a cut text says so first, so the auto-reply never reads the cut as the whole.
-  const pinged=await sendPing(anchor,threadPing(id,lp.cut?`(long text, cut${lp.name?`; the full text is attached as ${lp.name}`:""}) ${lp.text}`:text||"(files)",kind));
+  const pinged=await sendPing(anchor,threadPing(id,lp.cut?`(long text, cut${lp.name?`; the full text is attached as ${lp.name}`:""}) ${lp.text}`:text||"(files)",kind),id);
   if(key==="new"){msg.innerHTML=sentLine(id,pinged?"sent":"unsent",lastPing)+esc(long)}else msg.textContent=(pinged?"Sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.")+long;btn.disabled=false}
 // The new thread's receipt (#C364): where it landed, the link opening it; it stays until the owner's next keystroke.
 // how: "sent", "batch" (Manager reads it at its check) or "unsent" (why: the ping's refusal).
@@ -1967,7 +1992,7 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
   // "Let's start": asks Manager to start on an idea (a talk, a build or an assessment); Manager turns it into an initiative.
   if(b.dataset.td==="start"){const t=list[i],anchor=await prepAnchor(b);
     try{await dbRef.doc(c+"/"+t.id).update({startAt:Date.now()});let ok=false;
-      try{if(anchor&&commentsRef&&await commentsRef.canSendToClaude()==="available"){await commentsRef.sendToClaude({anchor,text:`Board idea [${t.id}]: let's start this (${t.kind||"idea"}): "${t.text}".`.slice(0,1900)});ok=true}}catch(_){}
+      try{ok=await sendPing(anchor,`Board idea [${t.id}]: let's start this (${t.kind||"idea"}): "${t.text}".`.slice(0,1900),t.id)}catch(_){}
       if(!ok)await dbRef.doc(c+"/"+t.id).update({startPing:"not sent"})}catch(_){b.disabled=false}
     return}
   try{if(b.dataset.td==="done")await dbRef.doc(c+"/"+list[i].id).update({done:true,doneAt:Date.now()});
@@ -2036,7 +2061,7 @@ const ctxPingText=n=>`Board: refresh ${n}'s memory tile (wake ${n}, then run boa
 document.addEventListener("click",async e=>{const r=e.target.closest&&e.target.closest("[data-ctxref]");if(!r||!dbRef)return;
   const n=r.dataset.ctxref,ws=ctxRefreshWrites(n,Date.now());if(!ws.length)return;r.disabled=true;
   const anchor=await prepAnchor(r);
-  try{await applyWrites(ws);await sendPing(anchor,ctxPingText(n))}catch(_){r.disabled=false}});
+  try{await applyWrites(ws);await sendPing(anchor,ctxPingText(n),`ctx-${n}`)}catch(_){r.disabled=false}});
 // Steps: each agent logs its own step as it happens, one document per event in "steps":
 // {init: <initiative id>, phase: plan|build|language|checker|security|ship|live, who, kind: "start"|"end", at: <ms>, wait?: "busy"|"gate", version?}.
 // The page turns them into phase entries, so Manager no longer has to relay or guess times.
@@ -2428,7 +2453,7 @@ function renderShipLine(){const el=$("shipline");if(!el)return;const s=shipNow()
 // and drawing it in the page would push his row down: it shows as a pill beside the bar instead, fixed, moving nothing.
 // The page's own line takes over at the next full redraw.
 function renderShipNote(){const el=$("shipnote");if(!el)return;const on=!!held&&!!shipNow();el.hidden=!on;el.textContent=on?"Don't restart: shipping":""}
-function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();liveWas=liveOn();renderStamp();drawnIds=heldIds()}
+function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();liveWas=liveOn();renderStamp();drawnIds=heldIds()}
 let liveWas=false;
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
@@ -2457,7 +2482,7 @@ setInterval(()=>{tick();if(!held&&document.querySelector("[data-shipat]"))render
     ()=>{$("dot").classList.remove("on");dbState="connection lost, reload";renderStamp()}))};
   // Every collection, and again (each stream closed first) when the data is behind (#C452: catchUp).
   resubscribe=()=>{subs.forEach(u=>{try{if(typeof u==="function")u()}catch(e){}});subs=[];
-    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings"].forEach(sub)};
+    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings","pingThreads"].forEach(sub)};
   resubscribe();
 })();
 // The Studio's state (#C420), apart from the board's data: kept current by the connector's watch, once a minute.
