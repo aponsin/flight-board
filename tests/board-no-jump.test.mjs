@@ -111,6 +111,23 @@ test("the pointer resting on a list while a card moves on, no message: the bar s
   assert.equal(p.els.holdbar.hidden, true);
 });
 
+test("a ship starting while held shows at once, as a pill that moves nothing; it goes when the ship ends (#C505, Checker)", async () => {
+  const p = await page();
+  p.say(); p.runTo(p.now + 500);
+  p.document.activeElement = p.box;
+  p.ctx.__live = (state) => ({ v: 1, board: { at: p.now - 10e3 }, cards: { "c-1": { phase: "ship", headSha12: "a1b2c3d4e5f6" } }, agents: { Release: { state, card: "c-1", since: p.now - 60e3 } } });
+  vm.runInContext('state.initRaw=[{id:"c-1",num:499,status:"active"}];probeEvent({type:"data",result:{payload:__live("working")}})', p.ctx);
+  p.runTo(p.now + 500);
+  assert.equal(p.renders, 1, "still held: nothing redrawn");
+  assert.equal(p.els.shipnote.hidden, false);
+  assert.equal(p.els.shipnote.textContent, "Don't restart: shipping");
+  vm.runInContext('probeEvent({type:"data",result:{payload:__live("idle")}})', p.ctx);
+  p.runTo(p.now + 500);
+  assert.equal(p.els.shipnote.hidden, true, "the ship over: the pill goes");
+  p.document.activeElement = null; p.fire("focusout"); p.runTo(p.now + 1);
+  assert.equal(p.els.shipnote.hidden, true, "after the hold, the page's own line is the one");
+});
+
 test("a phone: a touch holds for 4 s of stillness, then the redraw comes by itself", async () => {
   const p = await page();
   p.fire("touchstart", { target: p.inList });
