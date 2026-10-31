@@ -1594,16 +1594,18 @@ function checkLine(i,req,now){const lead=num(i.checkedAt),d=derivedOf(i.id),run=
   return `${liveOn(now)?"Live state "+liveAgeText(now).replace(" ago"," old"):probe?"Live state stale":"No live state"} · ${collectorNext(now)}`}
 function collectorNext(now){const all=state.derived.find(x=>x.id==="all"),last=num(all&&all.at);if(last==null)return "Collector not run yet";
   const due=last+COLLECTOR_EVERY;return due>now?`Collector next ${hhmm(due)}`:`Collector run late (due ${hhmm(due)})`}
-// ↻ Check while the live state drives the card (#C450): none, since the 60 s reading already says what it shows and how
-// old it is (evidence). A card it doesn't read (no connector, a stale reading, a card not in it) keeps the button: a
-// click refetches the live state now through the connector and still asks the Collector's next run (checkRequests).
+// ↻ Check on every open card, whatever the live state reads (#C495, the owner: "the whole check thing is for me to have
+// an easy to ask 'hey what's going with this initiative, anything stuck?'"; #C450 had taken it off a card the live state
+// drives, so only cards with no branch kept it). A click refetches the live state now through the connector and asks
+// the Collector's next run (checkRequests), which the lead is told of. While the live state drives the card its source
+// line already says how old it is, so the check line is left out there.
 const checkPressed=new Set();
-const checkable=(i,now)=>i.status!=="done"&&!liveCard(i.id,now);
+const checkable=(i,now)=>i.status!=="done"&&i.status!=="dropped";
 // The card's #C label is the button (#C376, the owner in t-1793166475210: a separate pill wrapped onto its own line);
-// a card with no number yet keeps the pill. Once done, or while the live state drives it, the label is plain text.
+// a card with no number yet keeps the pill. Once done, the label is plain text.
 const checkLabel=i=>`Check ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} now: read the live state again, and have the Collector check it at its next run`;
 function checkTag(i,now){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}" title="${checkLabel(i)}">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> `:cardTag(i)}
-function checkHtml(i,now){if(i.status==="done"||liveCard(i.id,now))return "";const line=checkLine(i,checkRequest(i.id),now);
+function checkHtml(i,now){if(!checkable(i,now))return "";const line=liveCard(i.id,now)?"":checkLine(i,checkRequest(i.id),now);
   return `${line?`<span class="i-checked${line.includes("run late")?" is-late":""}">${esc(line)}</span>`:""}${checkable(i,now)&&!cardTag(i)?`<button type="button" class="i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}">↻ Check</button>`:""}`}
 async function pressCheck(id,now=Date.now()){const ws=checkWrites(id,now);if(!ws.length)return;checkPressed.add(id);
   await Promise.allSettled([liveMcp?readLiveNow(liveMcp):null,dbRef?applyWrites(ws):null]);renderAll()}

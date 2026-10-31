@@ -44,7 +44,8 @@ test("a card in review, its live reading stale: ↻ Check reads it now, then one
   assert.equal(html.match(/class="evidence/g).length, 1, "one source");
   assert.match(html, /<button type="button" class="evidence differs" data-evdiff="rev-card" aria-expanded="false" title="typed: phase build[^"]*">Live: Language<\/button> <small class="asof"[^>]*>\d+ s ago<\/small>/, "the live state with its age; the typed phase in the hover");
   assert.doesNotMatch(words(html), /typed|steps say|Repository/, "the disagreements in the hover only");
-  assert.doesNotMatch(html, /data-check=/, "the live state drives the card now: no button");
+  assert.match(html, /data-check="rev-card"/, "the live state drives the card now, and the button stays (#C495)");
+  assert.doesNotMatch(html, /i-checked/, "its source line says the age: no check line beside it");
 });
 
 test("without the connector, a press says what each source is: no live state, the Collector's next run", async () => {
@@ -58,12 +59,13 @@ test("without the connector, a press says what each source is: no live state, th
   assert.match(html, /<span class="evidence"[^>]*>Repository: Build<\/span> <small class="asof/, "the repository, as of its run (agreeing with the steps: no hover mark)");
 });
 
-test("a fresh reading already drives the card: no button and no check line, its age on the source", () => {
+test("a fresh reading already drives the card: the button (#C495), no check line, its age on the source", () => {
   const b = board();
   b.state.checkRequests = [{ id: ID, at: NOW - 3 * MIN }];
   b.probeEvent({ type: "data", result: { payload: reading(NOW - 12e3) } }, {});
   const html = row(b);
-  assert.doesNotMatch(html, /data-check=|i-checked|checking/);
+  assert.match(html, /<button type="button" class="c-num i-check" data-check="rev-card"[^>]*>#C448<span class="i-ic" aria-hidden="true">↻<\/span><\/button>/);
+  assert.doesNotMatch(html, /i-checked|checking/);
   assert.match(html, />Live: Language<\/button> <small class="asof"[^>]*>12 s ago</);
 });
 
