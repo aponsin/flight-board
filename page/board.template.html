@@ -1669,13 +1669,41 @@ function shipQueue(){const all=state.derived.find(d=>d.id==="all"),cards=all&&al
 function versionNote(i){const d=derivedOf(i.id);if(!d||!d.phase||d.firm===false&&d.phase!==BUILD_PHASE)return "";
   if(d.phase===LIVE_PHASE)return d.version?`Live in <b>v${esc(d.version)}</b>`:"Live";
   if(d.phase===SHIP_PHASE&&d.version)return `Deploying <b>v${esc(d.version)}</b>`;
-  const e=d.expected&&typeof d.expected==="object"&&/^\d+\.\d+\.\d+$/.test(String(d.expected.version))?d.expected:null;
+  const X=expectedNow(),x=X?X[i.id]:d.expected;
+  const e=x&&typeof x==="object"&&/^\d+\.\d+\.\d+$/.test(String(x.version))?x:null;
   // After the two above: a card already on main while its run finishes shows its version, not "shipping now".
-  if(d.shipping)return e&&e.shipping?`Shipping now: <b>v${e.version}</b>`:"<b>Shipping now</b>";
+  if(X?!!(e&&e.shipping):d.shipping)return e&&e.shipping?`Shipping now: <b>v${e.version}</b>`:"<b>Shipping now</b>";
   if(d.phase===SHIP_PHASE){if(e&&Number.isInteger(e.place)&&e.place>0)return `Next: <b>v${e.version}</b> (${expectedTail(e)})`;
     const k=shipQueue().indexOf(i.id);return k>=0?`Queued (${k+1})`:""}
   if(d.phase===BUILD_PHASE||d.phase==="test")return "Building";
   return e&&e.earliest?`In review · then after the queue: <b>v${e.version}</b> at the earliest`:"In review"}
+// The ship in flight by the live state (#C508: #C500 shipped as v1.168.11 while its card said "Next: v1.168.12 (2nd)"
+// and #C501's "Next: v1.168.11 (1st)"). Release shipped out of READY order, and the run took a minute, between two of
+// the Collector's runs, so its export still had the old queue. The live state comes every minute: the ship role working
+// on a card in the ship phase that isn't on main is the run on now. When the export doesn't already have that card
+// shipping, the page plans again from it, as collector/expected.mjs would with that run: the card (and its batch) ships
+// in the next version after the newest known, and the rest of the queue, then the cards in review, count on from it.
+function liveRun(now=Date.now()){const a=liveAgent(SHIP_ROLE,now);if(!a||a.state!=="working"||!a.card)return null;
+  const L=liveCard(a.card,now);return L&&L.phase===SHIP_PHASE&&!L.onMain?a.card:null}
+const BUMP3=["patch","minor","major"],bumpV=(v,b)=>{const [x,y,z]=verParts(v);return b==="major"?`${x+1}.0.0`:b==="minor"?`${x}.${y+1}.0`:`${x}.${y}.${z+1}`};
+// exp: the export's expected versions ({ id: expected }); run: the card shipping now; base: the newest version known;
+// runBump: its bump when it isn't in the queue. Returns the expected versions as expected.mjs gives them with that run.
+function replan(exp,run,base,runBump="patch"){const out={},groups=[];
+  Object.entries(exp).filter(([,e])=>e&&Number.isInteger(e.place)).sort((a,b)=>a[1].place-b[1].place||(a[0]<b[0]?-1:1))
+    .forEach(([id,e])=>{let g=groups.find(o=>o.place===e.place);if(!g)groups.push(g={place:e.place,ids:[],bump:BUMP3.includes(e.bump)?e.bump:"patch"});g.ids.push(id)});
+  const mine=groups.find(g=>g.ids.includes(run))||{ids:[run],bump:BUMP3.includes(runBump)?runBump:"patch"};
+  let v=bumpV(base,mine.bump);mine.ids.forEach(id=>{out[id]={version:v,shipping:true}});
+  groups.filter(g=>g!==mine).forEach((g,n)=>{v=bumpV(v,g.bump);g.ids.forEach(id=>{out[id]={version:v,place:n+1,with:g.ids.filter(o=>o!==id),bump:g.bump}})});
+  Object.entries(exp).forEach(([id,e])=>{if(e&&e.earliest&&!out[id]){const b=BUMP3.includes(e.bump)?e.bump:"patch";out[id]={version:bumpV(v,b),earliest:true,bump:b}}});
+  return out}
+// The page's expected versions now: null while the export's own hold (no run by the live state, or the one it has).
+function expectedNow(now=Date.now()){const run=liveRun(now);if(!run)return null;
+  const all=state.derived.find(d=>d.id==="all"),cards=all&&all.cards||{};if(cards[run]&&cards[run].shipping)return null;
+  const exp={},vs=[all&&all.live&&all.live.version];
+  Object.entries(cards).forEach(([id,c])=>{if(!c)return;vs.push(c.version);if(c.expected&&typeof c.expected==="object"){if(c.expected.shipping)vs.push(c.expected.version);else exp[id]=c.expected}});
+  const known=vs.filter(v=>/^v?\d+\.\d+\.\d+$/.test(String(v||"")));if(!known.length)return null;
+  const base=String(known.reduce((a,b)=>verCmp(a,b)>=0?a:b)).replace(/^v/,""),card=state.initRaw.find(i=>i&&i.id===run);
+  return replan(exp,run,base,card&&card.bump)}
 // "2nd, with #C392" · "3rd · minor: a feature": the place, the batch's other cards the board holds, a bump past a patch.
 function expectedTail(e){const mates=(Array.isArray(e.with)?e.with:[]).map(id=>(state.initRaw||[]).find(c=>c&&c.id===id)).filter(Boolean)
     .map(c=>`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>`);
