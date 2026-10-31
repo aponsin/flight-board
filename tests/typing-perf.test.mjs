@@ -2,7 +2,7 @@
 // late). Profiled on today's board (the mirror: about 7,000 steps, 2,000 messages, 1,000 threads, 960 asks) in Chrome:
 // a keystroke's own handlers take under 1 ms, but every db snapshot, of any of the 17 collections, ran renderAll(),
 // about 525 ms (median; p95 618), and a keystroke behind one waited for it. Snapshots now ask for one redraw for a burst,
-// and it waits while the owner types. The guard: 200 characters typed with events arriving, the page's real script, a
+// and it waits while the owner types in a box with text. The guard: 200 characters typed with events arriving, the page's real script, a
 // clock of its own, renderAll costing what it costs today; no keystroke may wait over 50 ms.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -42,7 +42,9 @@ async function page() {
     }
     now = Math.max(now, until);
   };
-  const type = () => { for (const fn of listeners.input ?? []) fn({ target: { id: "tnote-panel-t-1", tagName: "TEXTAREA", value: "x" } }); };
+  // A keystroke comes from the focused box, which has text (#C517: only that holds a redraw).
+  const box = { id: "tnote-panel-t-1", tagName: "TEXTAREA", value: "x" };
+  const type = () => { document.activeElement = box; for (const fn of listeners.input ?? []) fn({ target: box }); };
   const fire = (name) => subs[name]?.({ docs: [{ id: "d1", data: () => ({ at: now }) }] });
   return { subs, runTo, type, fire, get now() { return now; }, get renders() { return renders; } };
 }
