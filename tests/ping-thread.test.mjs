@@ -21,7 +21,7 @@ function board({ fail = null } = {}) {
       sends.push(target);
       const code = typeof refuse === "function" ? refuse(target) : refuse;
       if (code) { const e = new Error("no"); e.code = code; throw e; }
-      return { threadId: target.threadId ?? TID, commentId: "c1" };
+      return { threadId: target.threadId ?? target.anchor?.id ?? TID, commentId: "c1" };
     },
   };
   const b = loadNames(["sendPing", "pingThreadOf", "threadsCount", "renderThreadsFull", "set:(d,c)=>{dbRef=d;commentsRef=c}"]);
@@ -68,16 +68,36 @@ test("a new thread refused upstream_error says the threads are full, at once; th
   assert.equal(b.els.threadsfull.hidden, true);
 });
 
-test("a reply refused upstream_error is not the thread limit; another refusal isn't either", async () => {
-  const { b } = board({ fail: "upstream_error" });
-  b.state.pingThreads = [{ id: "t-1", threadId: TID, at: T }];
-  assert.equal(await b.sendPing({ a: 1 }, "x", "t-1"), false);
+test("a kept thread at its reply limit (upstream_error) gets one new thread, kept in its place (Checker)", async () => {
+  const NEW = "11111111-2222-3333-4444-555555555555";
+  const { b, writes, sends } = board({ fail: (t) => (t.threadId ? "upstream_error" : null) });
+  b.state.pingThreads = [{ id: "ctx-Builder", threadId: TID, at: T }];
+  assert.equal(await b.sendPing({ a: 1, id: NEW }, "x", "ctx-Builder"), true);
+  assert.equal(sends.length, 2, "the reply, then one new thread");
+  assert.ok(sends[1].anchor);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].path, "pingThreads/ctx-Builder");
+  assert.equal(writes[0].data.threadId, NEW, "the new thread's id replaces the old one");
   b.renderThreadsFull();
-  assert.equal(b.els.threadsfull.hidden, true);
+  assert.equal(b.els.threadsfull.hidden, true, "not full: the new thread opened");
+  const full = board({ fail: "upstream_error" });
+  full.b.state.pingThreads = [{ id: "t-1", threadId: TID, at: T }];
+  assert.equal(await full.b.sendPing({ a: 1 }, "x", "t-1"), false);
+  assert.equal(full.sends.length, 2, "one retry only");
+  full.b.renderThreadsFull();
+  assert.equal(full.b.els.threadsfull.hidden, false, "the new one refused too: said");
   const r = board({ fail: "rate_limited" });
   await r.b.sendPing({ a: 1 }, "x", "t-2");
   r.b.renderThreadsFull();
   assert.equal(r.b.els.threadsfull.hidden, true);
+});
+
+test("a shell that stops answering (canSendToClaude refused upstream_error) is not the thread limit", async () => {
+  const { b } = board();
+  b.set({ doc: () => ({ set: async () => {} }) }, { canSendToClaude: async () => { const e = new Error("no"); e.code = "upstream_error"; throw e; }, sendToClaude: async () => ({}) });
+  assert.equal(await b.sendPing({ a: 1 }, "x", "t-1"), false);
+  b.renderThreadsFull();
+  assert.equal(b.els.threadsfull.hidden, true);
 });
 
 test("nearly full: Manager's count after a cleanup plus the threads opened since; 900 or more warns", () => {

@@ -927,7 +927,9 @@ async function sendPing(anchor,text,ref){let opening=false;
     const can=await commentsRef.canSendToClaude();
     if(can!=="available"){lastPing="send to Claude: "+can;return false}
     const known=pingThreadOf(ref);
-    if(known){try{await commentsRef.sendToClaude({threadId:known,text});return true}catch(err){if(!(err&&err.code==="not_found"))throw err}}
+    // A kept thread gone (not_found) or at its reply limit (upstream_error, Checker: the memory pings repeat many times a
+    // day) gets one new thread, from the same gesture; its id replaces the old one.
+    if(known){try{await commentsRef.sendToClaude({threadId:known,text});return true}catch(err){if(!(err&&(err.code==="not_found"||err.code==="upstream_error")))throw err}}
     if(!anchor){if(!lastPing)lastPing="no anchor";return false}
     opening=true;const r=await commentsRef.sendToClaude({anchor,text});
     if(threadsFull){threadsFull=null;renderThreadsFull()}
