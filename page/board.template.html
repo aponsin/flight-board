@@ -167,6 +167,8 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .reply textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
 .evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
+.shipline{margin:0;padding:8px 12px;border:1px solid var(--warn);border-radius:8px;background:var(--warn-soft);color:var(--warn-ink);font-size:.9rem}
+.shipline b{font-weight:700}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .stuckline .sl-owner{color:var(--warn-ink)}.stuckline.amber{border-color:var(--warn);color:var(--warn-ink)}
 .stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
@@ -460,6 +462,7 @@ table.crew3-ph{margin-top:14px}
     <h1>{{TITLE}}<span class="livever" id="livever"></span></h1>
     <div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div>
   </header>
+  <div class="shipline" id="shipline" role="status" hidden></div>
   <div class="stuckline" id="stuck" hidden></div>
   <p style="margin:0"><button type="button" class="viewlink" id="viewlink">Try the new layout</button></p>
 
@@ -2371,7 +2374,20 @@ function probeEvent(ev,mcp){liveMcp=mcp||liveMcp;
     else if(["not_in_manifest","blocked_by_policy","not_granted","capability_disabled","capability_removed","consent_required","user_changed"].includes(code)){probe=null;probeNote=""}
     else probeNote=probe?"Couldn't refresh just now; reading the last one while it's fresh.":""}
   renderSoon()}
-function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();liveWas=liveOn();renderStamp();drawnIds=heldIds()}
+// A ship running now (#C505: both of 2026-10-30's install restarts stopped Release mid-ship): the ship role working on
+// a card in the ship phase, by a fresh live state, or an open card the Collector reads as shipping now (its run's
+// candidate branch names it). { id, version } or null. scripts/restart-check.mjs asks the same of the machine itself.
+const SHIP_ROLE="Release";
+function shipNow(now=Date.now()){const a=liveAgent(SHIP_ROLE,now),L=a&&a.state==="working"&&a.card?liveCard(a.card,now):null;
+  const open=new Set(state.initRaw.filter(i=>i&&i.status!=="done"&&i.status!=="dropped").map(i=>i.id));
+  const byRun=[...open].find(id=>{const d=derivedOf(id);return !!d&&d.shipping===true});
+  const id=L&&L.phase===SHIP_PHASE?a.card:byRun||null;if(!id)return null;
+  const d=derivedOf(id),e=d&&d.expected&&d.expected.shipping&&/^\d+\.\d+\.\d+$/.test(String(d.expected.version))?d.expected.version:null;
+  return {id,version:e}}
+function renderShipLine(){const el=$("shipline");if(!el)return;const s=shipNow();el.hidden=!s;if(!s){el.innerHTML="";return}
+  const i=state.initRaw.find(x=>x&&x.id===s.id),n=i&&Number.isInteger(i.num)?`#C${i.num}`:esc(s.id);
+  el.innerHTML=`<b>Don't restart: shipping.</b> ${esc(SHIP_ROLE)} is shipping ${s.version?`<b>v${esc(s.version)}</b> `:""}(${n}); closing the agents now would stop it halfway.`}
+function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();liveWas=liveOn();renderStamp();drawnIds=heldIds()}
 let liveWas=false;
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
