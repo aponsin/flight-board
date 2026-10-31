@@ -13,6 +13,13 @@ test("tonight's case: picked up before the first check, then 14k, 26k, 37k, 52k:
   assert.equal(decide([w(14_000), w(26_000), w(37_000), w(52_000)]), "picked-up");
 });
 
+test("a fresh session seen working, then idle, was picked up: no second /pickup (Checker)", () => {
+  assert.equal(decide([w(14_000), i(null)]), "picked-up");
+  assert.equal(decide([w(600_000), i(null)]), "send", "the old session working, then cleared and idle: send");
+  assert.equal(decide([w(600_000), w(580_000), i(0)]), "send");
+  assert.equal(decide([i(0), i(0)]), "send", "an idle reading reads 0: it is no fresh session seen working");
+});
+
 test("the rule as before: idle and cleared sends; working and fresh is picked up; none listed is 0", () => {
   assert.equal(decide([w(300_000), i(1_200)]), "send");
   assert.equal(decide([i(null)]), "send");
@@ -21,9 +28,10 @@ test("the rule as before: idle and cleared sends; working and fresh is picked up
 
 test("not yet cleared waits: a big session working, steady or shrinking, or growing from a high start", () => {
   assert.equal(decide([w(300_000), w(301_000)]), "wait", "growing, but from a start no fresh session has");
-  assert.equal(decide([w(20_000), w(20_000)]), "wait", "not growing");
-  assert.equal(decide([w(20_000), w(30_000), w(25_000)]), "wait", "not at every check");
-  assert.equal(decide([w(20_000), i(30_000), w(40_000)]), "wait", "an idle reading between");
+  assert.equal(decide([w(300_000), w(300_000)]), "wait", "not growing");
+  assert.equal(decide([w(300_000), w(320_000), w(310_000)]), "wait", "not at every check");
+  assert.equal(decide([w(300_000), i(300_000), w(320_000)]), "wait", "an idle reading between");
+  assert.equal(decide([w(20_000)]), "wait", "one low reading alone is no pickup yet");
   assert.equal(decide([]), "wait");
 });
 
