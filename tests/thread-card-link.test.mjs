@@ -68,12 +68,11 @@ test("a building word with no card in flight, or its card dropped, is Manager's 
 
 test("With the team holds the threads Manager is answering and those that became a card in flight; Needs you the rest", () => {
   const b = board();
-  // #C460: t-m's card is in flight and Manager's newest word answers, asking nothing: with the team (no Ack to clear it
-  // under Needs you).
-  for (const id of ["t-q", "t-b", "t-qb", "t-m"]) assert.equal(b.waitsOn(id, T), "lead", id);
-  for (const id of ["t-l", "t-lk", "t-a", "t-d"]) assert.equal(b.waitsOn(id, T), "answered", id);
-  assert.deepEqual([...b.youItems(T, "").answered].sort(), ["t-a", "t-d", "t-l", "t-lk"]);
-  assert.equal(b.tabCounts(T, "").lead, 4);
+  // #C510 (over #C460): t-m's card is in flight and Manager's newest word answers: the owner's to read, under Needs you.
+  for (const id of ["t-q", "t-b", "t-qb"]) assert.equal(b.waitsOn(id, T), "lead", id);
+  for (const id of ["t-l", "t-lk", "t-a", "t-d", "t-m"]) assert.equal(b.waitsOn(id, T), "answered", id);
+  assert.deepEqual([...b.youItems(T, "").answered].sort(), ["t-a", "t-d", "t-l", "t-lk", "t-m"]);
+  assert.equal(b.tabCounts(T, "").lead, 3);
   assert.equal(JSON.stringify(b.trefPlace("t-b", T)), '{"tab":"lead"}', "a #T link to a building thread opens With the team");
   assert.equal(JSON.stringify(b.trefPlace("t-l", T)), '{"tab":"you"}');
 });
@@ -118,11 +117,11 @@ test("the badge is the state; the buttons follow it", () => {
   assert.match(d, /data-topt="t-d" data-choice="A" data-where="panel"><b>A<\/b> Red<\/button>/);
   assert.match(d, /data-choice="B" data-where="panel"><b>B<\/b> Blue &lt;b&gt;<\/button>/, "escaped");
   assert.ok(!has("t-d", "data-tack"), "a decision is picked, not acked");
-  for (const id of ["t-b", "t-m"]) {
-    assert.ok(has(id, "data-tsend"), `${id}: the owner can still write`);
-    for (const a of ["data-tack", "data-topt"]) assert.ok(!has(id, a), `${id}: building shows no ${a}`);
-    assert.ok(has(id, "data-tclose"), `${id}: building keeps Close, so the owner can clear it (#C460)`);
-  }
+  assert.ok(has("t-b", "data-tsend"), "t-b: the owner can still write");
+  for (const a of ["data-tack", "data-topt"]) assert.ok(!has("t-b", a), `t-b: building with no answer to read shows no ${a}`);
+  assert.ok(has("t-b", "data-tclose"), "t-b: building keeps Close, so the owner can clear it (#C460)");
+  assert.ok(has("t-m", "data-tack") && !has("t-m", "data-tclose"), "t-m: Manager's answer to read: Ack, which puts it back with the team (#C510)");
+  assert.match(rowOf(b, "t-m"), /<span class="kind building">/, "t-m keeps its Building chip");
   assert.ok(has("t-q", "data-tclose"), "a question keeps Close");
 });
 
@@ -133,7 +132,7 @@ test("Ack closes the thread with one click, no note; an option sends the owner's
   assert.equal(b.closeWrites("t-a", T, "x1")[0].data.text, "Closed.", "Close unchanged");
   assert.equal(b.optionText("t-d", "B"), "Chose B: Blue <b>");
   assert.equal(b.optionText("t-d", "Z"), null, "not one of its options");
-  assert.match(page, /closest\("\[data-tack\]"\)[\s\S]{0,400}closeWrites\(id,Date\.now\(\),Math\.random\(\)\.toString\(36\)\.slice\(2,8\),"Ack\."\)/);
+  assert.match(page, /closest\("\[data-tack\]"\)[\s\S]{0,400}threadState\(id\)==="building"\?ackWrites\(id,now,rid\):closeWrites\(id,now,rid,"Ack\."\)/);
   assert.match(page, /closest\("\[data-topt\]"\)[\s\S]{0,400}optionText\(id,b\.dataset\.choice\)[\s\S]{0,300}sendThread\(b,id,/);
 });
 

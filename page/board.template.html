@@ -594,15 +594,16 @@ function onLead(w,now){return !settled(w)&&answered(w,now)}
 // #C451 (the owner on #T1104: an answer he acked with a note, then two Manager answers in its thread, under With the
 // team): the lead's word the newest is the owner's to read, under Needs you, on an answered ask (newer than the reply).
 // #C460 (the owner's #T1150 on #T1145: a card in flight, Manager's answer the newest, asking nothing, sat under Needs you
-// with no Ack to clear it): a card in flight keeps its thread with the team, its Building chip kept, unless Manager's
-// newest word is a decision for the owner to pick.
+// with no Ack to clear it) gave such a thread an Ack. #C510 (the owner: "your answers are leaving the thread with the team
+// and not in my section"): #C460 had also kept it with the team, so Manager's answers never reached him. A card in flight
+// keeps its thread with the team, its Building chip kept, until Manager's word is the newest: then it is the owner's to
+// read, under Needs you with an Ack, and his Ack (ackWrites) puts it back with the team.
 function leadLast(id,after=0){const t=threadOf(id),last=t[t.length-1];
   return !!last&&last.from!==OWNER&&!last.resolved&&last.kind!=="building"&&(num(last.at)??0)>after}
-function leadDecides(id){const t=threadOf(id),last=t[t.length-1];return leadLast(id)&&last.kind==="decision"}
 function waitsOn(id,now){const it=itemOf(id);
   if(it&&it.coll==="waiting"&&!settled(it.doc))return needsYou(it.doc,now)||leadLast(id,num(it.doc.response&&it.doc.response.at)??0)?"you":"lead";
   if(!threadOf(id).length)return null;
-  return threadOpen(id)?"lead":threadResolved(id)?"resolved":threadState(id)==="building"&&!leadDecides(id)?"lead":"answered"}
+  return threadOpen(id)?"lead":threadResolved(id)?"resolved":threadState(id)==="building"&&!leadLast(id)?"lead":"answered"}
 // The badge for a waitsOn answer: the only place the page writes one. "lead" is the With the team tab (#C364).
 function badge(on){return on==="you"?'<span class="t-badge you">waiting on you</span>':on==="lead"?'<span class="t-badge open">with the team</span>':on==="resolved"?'<span class="t-badge res">resolved</span>':on==="answered"?'<span class="t-badge ">answered</span>':""}
 // Whether an item is drawn with its thread under it: an open ask (either section), a closed one whose thread waits on
@@ -1115,8 +1116,10 @@ function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"
   const i=state.initRaw.find(x=>x.id===id);if(i)return {coll:"initiatives",doc:i};
   const d=state.ideas.find(x=>x.id===id);if(d)return {coll:"ideas",doc:d};return null}
 // Resolved: its item is done (an ask or idea done, an initiative done), or Manager's last word marked it resolved.
+// An owner's Ack on a building thread (#C510, ackWrites) is resolved for Manager's gates (nothing for it to answer) but
+// leaves the thread with the team while its card is in flight.
 function threadResolved(id){if(threadOpen(id))return false;const it=itemOf(id),t=threadOf(id),last=t[t.length-1];
-  if(last&&last.resolved)return true;if(!it)return false;return it.coll==="initiatives"?it.doc.status==="done":it.coll==="waiting"?settled(it.doc):!!it.doc.done}
+  if(last&&last.resolved&&!(last.kind==="ack"&&threadCard(id)))return true;if(!it)return false;return it.coll==="initiatives"?it.doc.status==="done":it.coll==="waiting"?settled(it.doc):!!it.doc.done}
 // The cards a thread became (#C364): a card names its thread (thread) or several (threads: []). Indexed once per data
 // update (renderAll makes state.initiatives anew).
 let tcOf=null,tcIx=new Map();
@@ -1226,6 +1229,9 @@ function threadWrites(id,text,files,now,kind,rid){
   return out}
 // The owner's Close: a message marking the thread resolved, and for an ask or an idea the item closed too. No ping.
 // An Ack on Manager's answer or live word is the same close, said as "Ack." (#C364).
+// The owner's Ack on a building thread (#C510): read, nothing to answer (resolved, so Manager's gates and the owner push
+// pass it by), the thread and its item left as they are: it goes back with the team while its card is in flight.
+function ackWrites(id,now,rid){return [{op:"set",path:`messages/m${now}-${rid}`,data:{thread:id,from:OWNER,text:"Ack.",at:now,resolved:true,kind:"ack"}}]}
 function closeWrites(id,now,rid,text="Closed."){const out=[{op:"set",path:`messages/m${now}-${rid}`,data:{thread:id,from:OWNER,text,at:now,resolved:true}}];
   const it=itemOf(id);if(it&&it.coll!=="initiatives"&&!it.doc.done)out.push({op:"update",path:`${it.coll}/${id}`,data:{done:true,doneAt:now}});
   return out}
@@ -1258,7 +1264,7 @@ function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&
 // had no button at all, so he couldn't clear it).
 function threadHtml(id,where,{box=true,hint="",acts=false,ph=""}={}){const t=threadOf(id),key="th:"+id,tid=`tnote-${where}-${id}`,st=acts?threadState(id):null,open=t.length&&!threadResolved(id);
   const at=`data-where="${esc(where)}"`,opts=st==="decision"?threadOptions(id).map(o=>`<button type="button" class="opt" data-topt="${esc(id)}" data-choice="${esc(o.key)}" ${at}><b>${esc(o.key)}</b> ${esc(o.label)}</button>`).join(""):"";
-  const end=!open?"":st==="answer"||st==="live"?`<button type="button" class="ok" data-tack="${esc(id)}" ${at}>Ack</button>`:`<button type="button" data-tclose="${esc(id)}" ${at}>Close</button>`;
+  const end=!open?"":st==="answer"||st==="live"||st==="building"&&leadLast(id)?`<button type="button" class="ok" data-tack="${esc(id)}" ${at}>Ack</button>`:`<button type="button" data-tclose="${esc(id)}" ${at}>Close</button>`;
   return `<div class="thread" data-thread="${esc(id)}">${threadHead(id,where)}${box?cmpWrap(key,`${opts||end?`<div class="cchoice btns">${opts}${end}</div>`:""}${cmpBox(key,tid,{ph:t.length?(NARROW()?"Reply":"Reply to Manager"):ph||"Start a thread on this",send:`<button type="button" class="ok" data-tsend="${esc(id)}" ${at} data-csend>Send</button>`})}${hint?`<div class="keys">${esc(hint)}</div>`:""}<div class="msg" id="tmsg-${esc(where)}-${esc(id)}" role="status"></div>`):""}${t.slice().reverse().map(msgHtml).join("")}</div>`}
 // The thread rows whose item is not on the board (a New thread, or an item since closed): open (the owner's word is the
 // last: waiting on Manager) and answered (Manager's is: the owner reads, replies or closes it). Resolved ones have their
@@ -1501,7 +1507,8 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tack]");if(!b||b.disabled)return;
   const id=b.dataset.tack,msg=document.getElementById(`tmsg-${b.dataset.where}-${id}`);
   if(!dbRef){if(msg)msg.textContent="Can't save from here.";return}
-  b.disabled=true;try{await applyWrites(closeWrites(id,Date.now(),Math.random().toString(36).slice(2,8),"Ack."));if(msg)msg.textContent="Acknowledged."}
+  const now=Date.now(),rid=Math.random().toString(36).slice(2,8);
+  b.disabled=true;try{await applyWrites(threadState(id)==="building"?ackWrites(id,now,rid):closeWrites(id,now,rid,"Ack."));if(msg)msg.textContent="Acknowledged."}
   catch(err){b.disabled=false;if(msg)msg.textContent="Not saved ("+(err&&err.code||"error")+")."}});
 // A decision's option in a thread (#C364): the pick, and anything typed in the box under it, sent as the owner's message.
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-topt]");if(!b||b.disabled)return;
