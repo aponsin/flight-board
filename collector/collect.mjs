@@ -15,7 +15,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
 import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf } from "./derive.mjs";
-import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes } from "./facts.mjs";
+import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor } from "./facts.mjs";
 import { evidenceTimes } from "./timings.mjs";
 import { nudges } from "./nudges.mjs";
 import { ownerPush } from "./owner-push.mjs";
@@ -256,6 +256,35 @@ export function settledTips(git, remote, main, tips) {
 // The evidence says so when a tip was read from main this way.
 export const settledNote = (h, d) => (h?.settled ? { ...d, evidence: `${d.evidence}; ${lineText(h.settled, 60)} was rebased: its change is on main as ${String(h.sha).slice(0, 12)}` } : d);
 
+// A READY a later READY of the same card replaced (#C494, Manager: the gate refused closing #C479 as live, "the repository
+// says ship (READY at 0e4536fa)": demos/yogamason-makaan-words-v2, the same change rebased with its CHANGELOG block
+// resolved again, shipped, so no changeId matched). A card's re-cut is a branch whose last segment is "<id>-v<N>", unless
+// that name is a card on the board itself.
+export const recutOf = (id, ids) => (h) => {
+  const seg = String(h?.branch ?? "").split("/").pop();
+  return seg.startsWith(`${id}-v`) && /^\d{1,4}$/.test(seg.slice(id.length + 2)) && !ids.has(seg);
+};
+// The card's newest tip per re-cut branch.
+export function recutsFor(id, heads, ids) {
+  const tips = new Map();
+  for (const h of heads.filter(recutOf(id, ids))) if (!tips.has(h.branch) || (h.at ?? 0) > (tips.get(h.branch).at ?? 0)) tips.set(h.branch, h);
+  return [...tips.values()];
+}
+// A tip not on main is superseded once a newer commit of the same card (one of its tips, or a re-cut's) is on main: that
+// one shipped instead. A re-cut is never a tip of its own (no second branch to split); it stands in only when every tip
+// is superseded. A tip newer than what shipped is new work and stays. { tips, superseded: [{ ...tip, by }] }
+export function unsuperseded(git, ref, tips, recuts) {
+  const on = new Map();
+  const onMain = (h) => { if (!on.has(h.sha)) on.set(h.sha, isAncestor(git, h.sha, ref)); return on.get(h.sha); };
+  const shipped = [...tips, ...recuts].filter(onMain);
+  if (!shipped.length) return { tips, superseded: [] };
+  const by = shipped.reduce((a, b) => ((b.at ?? 0) > (a.at ?? 0) ? b : a));
+  const gone = tips.filter((h) => !onMain(h) && (h.at ?? 0) < (by.at ?? 0));
+  const kept = tips.filter((h) => !gone.includes(h));
+  return { tips: kept.length ? kept : [by], superseded: gone.map((h) => ({ ...h, by })) };
+}
+export const supersededNote = (gone, d) => (gone.length ? { ...d, evidence: `${d.evidence}; ${gone.map((h) => `${lineText(h.branch, 60)} at ${String(h.sha).slice(0, 8)} is superseded: ${lineText(h.by.branch, 60)} at ${String(h.by.sha).slice(0, 8)} is on main`).join("; ")}` } : d);
+
 // The card's phase from each of its branches' tips: the least advanced one (live only when every tip is deployed),
 // naming the branch behind when there are several. derive(head) is derivePhase for that head.
 // A stacked follow-up (#C358): a tip found by the card's Board-Id on another card's branch (one named after a card on the
@@ -303,7 +332,8 @@ export function inRepo(card, r, use, config, now, ids = new Set()) {
   const cfg = { ...config, collector: { ...c, remote, mainBranch: main, notes: localNotes(r.notes) } };
   let heads = [];
   try { heads = remoteHeads(use.git, remote); } catch { /* an empty clone */ }
-  const live = settledTips(use.git, remote, main, headsFor(card.id, heads.filter((h) => h.branch !== main)));
+  const work = heads.filter((h) => h.branch !== main);
+  const { tips: live, superseded } = unsuperseded(use.git, `${remote}/${main}`, settledTips(use.git, remote, main, headsFor(card.id, work)), settledTips(use.git, remote, main, recutsFor(card.id, work, ids)));
   // A branch deleted after it merged leaves only its Board-Id trailer on main (#C281).
   const tips = live.length ? live : [trailerOnMain(use.git, remote, main, card.id)].filter(Boolean);
   const derive = (h) => {
@@ -311,7 +341,7 @@ export function inRepo(card, r, use, config, now, ids = new Set()) {
     const d = settledNote(h, derivePhase(card, facts, cfg));
     return d.phase === c.shipPhase ? { ...d, wait: facts.onMain ? "install" : "release" } : d;
   };
-  return { ...leastAdvanced(card, tips, derive, config, stackedOn(card, ids)), repo: r.name, at: now };
+  return { ...supersededNote(superseded, leastAdvanced(card, tips, derive, config, stackedOn(card, ids))), repo: r.name, at: now };
 }
 
 // live: liveBuild()'s answer for this run (null when there is no liveUrl or it couldn't be read). repos: { name: { git,
@@ -349,14 +379,20 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const derived = {}, split = [], tipsOf = {};
   const work = heads.filter((h) => h.branch !== c.mainBranch && !(c.candidatePattern && new RegExp(c.candidatePattern).test(h.branch)));
   const ids = new Set(cards.map((k) => k.id));
+  const supersededOf = {};
   const phaseOf = (card) => {
-    const tips = tipsOf[card.id] = settledTips(git, c.remote, c.mainBranch, headsFor(card.id, work));
-    return { ...leastAdvanced(card, tips, (h) => settledNote(h, derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg)), config, stackedOn(card, ids)), at: now };
+    const settle = (list) => settledTips(git, c.remote, c.mainBranch, list);
+    const { tips, superseded } = unsuperseded(git, `${c.remote}/${c.mainBranch}`, settle(headsFor(card.id, work)), settle(recutsFor(card.id, work, ids)));
+    tipsOf[card.id] = tips; supersededOf[card.id] = superseded;
+    return { ...supersededNote(superseded, leastAdvanced(card, tips, (h) => settledNote(h, derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg)), config, stackedOn(card, ids))), at: now };
   };
   for (const card of open) {
     const r = repoOf(card, config);
     if (r) { derived[card.id] = inRepo(card, r, repos[r.name], config, now, ids); continue; }
-    derived[card.id] = underLive(phaseOf(card), liveState?.cards?.[card.id], config.phases);
+    // The minute script (collector/state.mjs, pinned) knows nothing of a superseded READY: its reading of one isn't taken.
+    const d = phaseOf(card), l = liveState?.cards?.[card.id];
+    const stale = supersededOf[card.id].some((h) => typeof l?.headSha12 === "string" && l.headSha12.length === 12 && h.sha.startsWith(l.headSha12));
+    derived[card.id] = stale ? d : underLive(d, l, config.phases);
     const tips = tipsOf[card.id];
     // A stacked follow-up set aside (#C358) is no second branch to split.
     if (tips.length > 1 && (derived[card.id].branches?.length ?? 1) > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
