@@ -31,6 +31,11 @@ with everyone else, so nobody sent the pickups, and every reset session sat idle
 owner saw the laptop go blank. Now the run that cues a reset waits for it and sends `/pickup <Role>` itself (a message
 in also brings Remote Control back). Others first, the lead last, Director never in a wave with the lead.
 
+The lead's own clear (#C498, the owner's pick A: Manager cleared itself at 02:52Z and sat idle with Remote Control off
+until Director sent /pickup by hand; this task runs hourly): the stop hook's reset cue has Manager send Steward
+"PICKUP WATCH Manager" just before it clears, and Steward checks each minute and sends "/pickup Manager" once Manager is
+idle and cleared (its brief's rule). Step 4 stays the backstop.
+
 ## Prompt
 
 ```

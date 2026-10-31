@@ -189,6 +189,12 @@ LIMIT = f"{RESET_AT // 1000}k"
 # The reset itself, named (#C434: Manager wrote the handoff and kept working, clearing 140k past the line): the clear is
 # the turn's last action, and this hook reads that call as the turn's reset (cleared, above).
 CLEAR_ACT = "after the handoff note, call mcp__ccd_session_mgmt__clear_session with session_id \"self\" as the last action of the turn (nothing after it)."
+# Manager's own clear asks for its pickup (#C498, the owner's pick A: Manager cleared itself at 02:52Z and sat idle with
+# Remote Control off until Director sent /pickup by hand at 02:57Z; the keeper runs hourly). Steward watches for Manager
+# going idle and sends "/pickup Manager"; the keeper's step 4 stays the backstop.
+BUDDY, WATCH = "Steward", "PICKUP WATCH Manager"
+if MANAGER:
+    CLEAR_ACT = f"after the handoff note, send the session titled \"{BUDDY}\" exactly \"{WATCH}\" (SendMessage, nothing else in it), so it picks you up once you're idle; then call mcp__ccd_session_mgmt__clear_session with session_id \"self\" as the last action of the turn (nothing after it)."
 if TITLE and not cleared and tokens is not None and tokens > RESET_AT:
     # Tokens cut down: 600,999 reads 600k, over the line all the same.
     if (fresh or pending) and not deferred:

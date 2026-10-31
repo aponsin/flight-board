@@ -67,6 +67,21 @@ test("the reset cue: over 400k tokens a titled session is told to hand off; at 4
   assert.match(hook(side), /at 450k tokens/, "a subagent's call is not this session's context");
 });
 
+// #C498 (the owner's pick A): Manager cleared itself at 02:52Z and sat idle with Remote Control off until Director sent
+// /pickup by hand; the keeper runs hourly. Manager's cue has it ask Steward to watch, before the clear.
+test("Manager's reset cue asks Steward to pick it up, before the clear; nobody else's does", () => {
+  const order = /send the session titled "Steward" exactly "PICKUP WATCH Manager" \(SendMessage, nothing else in it\), so it picks you up once you're idle; then call mcp__ccd_session_mgmt__clear_session with session_id "self" as the last action of the turn \(nothing after it\)\./;
+  const cue = hook(big(turn([], { title: "Manager", text: "go on" })));
+  assert.match(cue, /^Context reset cue: this session's context is at 450k tokens/);
+  assert.match(cue, order);
+  const deferred = turn([], { title: "Manager", text: "go on" });
+  deferred.splice(1, 0, { type: "user", timestamp: new Date().toISOString(), message: { content: [{ type: "text", text: "[Artifact comment sent to Claude]\n> do the thing" }] } });
+  const later = hook(big(deferred));
+  assert.match(later, /deferred one turn/);
+  assert.match(later, order, "a deferred cue names it too");
+  for (const title of ["Boardsmith", "Steward", "Checker"]) assert.doesNotMatch(hook(big(turn([], { title, text: "go on" }))), /PICKUP WATCH/, `${title}: the keeper picks it up, as before`);
+});
+
 test("the reset cue's guard: a turn that already handed off, cleared or compacted passes", () => {
   const t = (text) => hook(big(turn([], { title: "Boardsmith", text })));
   assert.equal(t("<command-name>/handoff</command-name>"), "", "the owner typed /handoff");
