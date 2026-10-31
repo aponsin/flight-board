@@ -1,0 +1,1 @@
+PASS Quick: #C504 board-no-jump. FINDINGS 1 fixed by option (a): any held redraw shows the bar ('N new: show', else 'Updated: show'), so a card moving on under a resting pointer is never silent. While a box has focus, nothing re-orders and the box keeps its focus, empty or not. Suite 816/816. Mutation (the silent bar put back): two tests fail, restored.
