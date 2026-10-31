@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
+import { shippedBase, fetchBranches } from "./after-ship.mjs";
 
 // The folder this run's code lives in: the pinned copy <install root>/<full sha>, whose sha is the board's probe.
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -306,10 +307,14 @@ export function cardState(card, repo, config, now) {
   const tips = headsFor(card.id, repo.tips.filter((h) => h.branch !== repo.main));
   const tip = tips[0];
   if (!tip) return base;
-  const signed = Object.entries(repo.notes).filter(([, ref]) => ok(() => repo.git(["notes", `--ref=${ref}`, "show", tip.sha]))).map(([p]) => p).sort();
+  const signedOn = (sha) => Object.entries(repo.notes).filter(([, ref]) => ok(() => repo.git(["notes", `--ref=${ref}`, "show", sha]))).map(([p]) => p).sort();
   const mainRef = `${repo.remote}/${repo.main}`;
   const landed = ok(() => repo.git(["merge-base", "--is-ancestor", tip.sha, mainRef])) ? null : landedOn(repo.git, mainRef, tip.sha, repo.ids);
-  const head = landed ? { ...tip, sha: landed } : tip;
+  // A tip with commits after the card's shipped one (#C527, collector/after-ship.mjs) is read as that commit, with its
+  // sign-offs.
+  const after = landed ? null : shippedBase(repo.git, mainRef, tip.sha, { id: card.id, branch: tip.branch, pattern: repo.shippedPattern ?? "" });
+  const signed = signedOn(after ? after.sha : tip.sha);
+  const head = landed ? { ...tip, sha: landed } : after ? { ...tip, sha: after.sha } : tip;
   const onMain = !!landed || ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, mainRef]));
   const deployed = onMain && !!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
@@ -396,7 +401,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const run = (cwd) => (bin, timeout) => (args) => execFileSync(bin, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout, maxBuffer: 64 * 1024 * 1024 });
   const repoAt = (path, remote, main, notes) => {
     const git = run(path)("git", 30_000);
-    if (fetchIt) { try { git(["fetch", "-q", remote]); git(["fetch", "-q", remote, "+refs/notes/*:refs/notes/flight-board/*"]); } catch { /* read what is here */ } }
+    if (fetchIt) { try { git(fetchBranches(remote)); git(["fetch", "-q", remote, "+refs/notes/*:refs/notes/flight-board/*"]); } catch { /* read what is here */ } }
     const local = Object.fromEntries(Object.entries(notes).map(([p, ref]) => [p, `refs/notes/flight-board/${ref.slice("refs/notes/".length)}`]));
     let tips = [];
     try { tips = remoteTips(git, remote); } catch { /* an empty clone */ }
@@ -416,7 +421,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const r = repoAt(home(c.repoPath), c.remote, c.mainBranch, c.notes);
     let live = null;
     if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { /* none */ } }
-    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern };
+    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern };
   }
   for (const x of c.repos) {
     let installed = null;

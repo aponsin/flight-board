@@ -16,6 +16,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
 import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf } from "./derive.mjs";
 import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor } from "./facts.mjs";
+import { shippedBase, afterShipText, fetchBranches } from "./after-ship.mjs";
 import { evidenceTimes } from "./timings.mjs";
 import { nudges } from "./nudges.mjs";
 import { ownerPush } from "./owner-push.mjs";
@@ -257,6 +258,20 @@ export function settledTips(git, remote, main, tips) {
 // The evidence says so when a tip was read from main this way.
 export const settledNote = (h, d) => (h?.settled ? { ...d, evidence: `${d.evidence}; ${lineText(h.settled, 60)} was rebased: its change is on main as ${String(h.sha).slice(0, 12)}` } : d);
 
+// A tip with commits after the card's shipped one (#C527, collector/after-ship.mjs) is read as that shipped commit, with
+// afterShip { tip, extra } for the evidence.
+export function afterShipTips(git, ref, tips, id, pattern) {
+  return tips.map((h) => {
+    if (h.settled) return h;
+    const b = shippedBase(git, ref, h.sha, { id, branch: h.branch, pattern });
+    if (!b) return h;
+    let at = h.at, message = "";
+    try { const [t, m] = git(["log", "-1", "--format=%ct%x1f%B", b.sha]).split("\x1f"); at = Number(t) * 1000; message = String(m ?? "").replace(/\n+$/, ""); } catch { /* keep the tip's time */ }
+    return { branch: h.branch, sha: b.sha, at, message, afterShip: { tip: h.sha, extra: b.extra } };
+  });
+}
+export const afterShipNote = (h, d) => (h?.afterShip ? { ...d, evidence: `${d.evidence}; ${afterShipText(lineText(h.branch, 60), h.afterShip.tip, h.afterShip.extra)}` } : d);
+
 // A READY a later READY of the same card replaced (#C494, Manager: the gate refused closing #C479 as live, "the repository
 // says ship (READY at 0e4536fa)": demos/yogamason-makaan-words-v2, the same change rebased with its CHANGELOG block
 // resolved again, shipped, so no changeId matched). A card's re-cut is a branch whose last segment is "<id>-v<N>", unless
@@ -334,12 +349,13 @@ export function inRepo(card, r, use, config, now, ids = new Set()) {
   let heads = [];
   try { heads = remoteHeads(use.git, remote); } catch { /* an empty clone */ }
   const work = heads.filter((h) => h.branch !== main);
-  const { tips: live, superseded } = unsuperseded(use.git, `${remote}/${main}`, settledTips(use.git, remote, main, headsFor(card.id, work)), settledTips(use.git, remote, main, recutsFor(card.id, work, ids)));
+  const settle = (list) => afterShipTips(use.git, `${remote}/${main}`, settledTips(use.git, remote, main, list), card.id, r.shippedPattern ?? "");
+  const { tips: live, superseded } = unsuperseded(use.git, `${remote}/${main}`, settle(headsFor(card.id, work)), settle(recutsFor(card.id, work, ids)));
   // A branch deleted after it merged leaves only its Board-Id trailer on main (#C281).
   const tips = live.length ? live : [trailerOnMain(use.git, remote, main, card.id)].filter(Boolean);
   const derive = (h) => {
     const facts = factsFor(use.git, h, { config: cfg, line: [], deployed: use.installed ?? null });
-    const d = settledNote(h, derivePhase(card, facts, cfg));
+    const d = afterShipNote(h, settledNote(h, derivePhase(card, facts, cfg)));
     return d.phase === c.shipPhase ? { ...d, wait: facts.onMain ? "install" : "release" } : d;
   };
   return { ...supersededNote(superseded, leastAdvanced(card, tips, derive, config, stackedOn(card, ids))), repo: r.name, at: now };
@@ -382,10 +398,10 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const ids = new Set(cards.map((k) => k.id));
   const supersededOf = {};
   const phaseOf = (card) => {
-    const settle = (list) => settledTips(git, c.remote, c.mainBranch, list);
+    const settle = (list) => afterShipTips(git, `${c.remote}/${c.mainBranch}`, settledTips(git, c.remote, c.mainBranch, list), card.id, c.shippedPattern);
     const { tips, superseded } = unsuperseded(git, `${c.remote}/${c.mainBranch}`, settle(headsFor(card.id, work)), settle(recutsFor(card.id, work, ids)));
     tipsOf[card.id] = tips; supersededOf[card.id] = superseded;
-    return { ...supersededNote(superseded, leastAdvanced(card, tips, (h) => settledNote(h, derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg)), config, stackedOn(card, ids))), at: now };
+    return { ...supersededNote(superseded, leastAdvanced(card, tips, (h) => afterShipNote(h, settledNote(h, derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg))), config, stackedOn(card, ids))), at: now };
   };
   for (const card of open) {
     const r = repoOf(card, config);
@@ -476,7 +492,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const mirror = readMirror(join(dir, "mirror"));
   if (!mirror?.docs.initiatives) { console.error(`Collector: no mirror at ${join(dir, "mirror")}: export the board first (collector/TASK.md, step 1).`); process.exit(1); }
   if (!process.argv.includes("--no-fetch")) {
-    git(["fetch", "-q", config.collector.remote]);
+    git(fetchBranches(config.collector.remote));
     git(["fetch", "-q", config.collector.remote, "+refs/notes/*:refs/notes/flight-board/*"]);
   }
   // The other repositories (#C278), each from its own clone: fetched like the team's, and what's installed read from its
@@ -488,7 +504,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       if (!existsSync(at)) continue;
       const rgit = (args) => execFileSync("git", args, { cwd: at, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
       if (!process.argv.includes("--no-fetch")) {
-        rgit(["fetch", "-q", r.remote ?? "origin"]);
+        rgit(fetchBranches(r.remote ?? "origin"));
         rgit(["fetch", "-q", r.remote ?? "origin", "+refs/notes/*:refs/notes/flight-board/*"]);
       }
       let installed = null;
