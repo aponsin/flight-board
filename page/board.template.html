@@ -2243,7 +2243,10 @@ const heldIds=()=>new Set([...state.messages.filter(m=>m.from!==OWNER).map(m=>"m
 // How many of the team's messages and asks came in since the hold began.
 function heldNew(){if(!held)return 0;let n=0;heldIds().forEach(k=>{if(!held.seen.has(k))n++});return n}
 function hold(now=Date.now()){if(!held)held={seen:drawnIds||heldIds()};
-  const n=heldNew(),b=$("holdbar");if(b){b.hidden=!n;b.textContent=n?`${n} new: show`:""}
+  // Any held redraw shows the bar (Checker: a card moving on, a step or an ETA, held under a resting pointer with no
+  // sign while the header stamp said fresh): the count when the team wrote, else "Updated". A hold only ever starts
+  // when a redraw was due, so the bar always means something changed.
+  const n=heldNew(),b=$("holdbar");if(b){b.hidden=false;b.textContent=n?`${n} new: show`:"Updated: show"}
   // A phone's reading has no "leave": look again once it has been still for READ_IDLE.
   if(readDue==null&&!boxFocused()&&!overList){const w=readAt+READ_IDLE-now;if(w>0)readDue=setTimeout(()=>{readDue=null;release()},w)}}
 // The ids the page had drawn at its last redraw (renderAll sets it): the hold counts from there, not from the first

@@ -43,7 +43,7 @@ async function page() {
   const msgs = [];
   const say = (from = "Manager") => { msgs.push({ id: "m" + msgs.length, data: () => ({ thread: "t-1", from, text: "hi", at: now }) }); subs.messages({ docs: msgs }); };
   const box = { tagName: "TEXTAREA", id: "tnote-panel-t-1", closest: () => null };
-  return { ctx, document, els, runTo, fire, inList, outside, say, box, get now() { return now; }, get renders() { return renders; } };
+  return { ctx, document, els, subs, runTo, fire, inList, outside, say, box, get now() { return now; }, get renders() { return renders; } };
 }
 
 test("a reply box focused: a new message neither redraws nor moves anything; the bar counts it; leaving the box draws it once", async () => {
@@ -67,7 +67,7 @@ test("the owner's own message isn't counted as new", async () => {
   p.document.activeElement = p.box;
   const owner = vm.runInContext("OWNER", p.ctx);
   p.say(owner); p.runTo(p.now + 500);
-  assert.equal(p.els.holdbar.hidden, true, "the owner's own message: no bar");
+  assert.equal(p.els.holdbar.textContent, "Updated: show", "the owner's own message: not counted as new");
   p.say("Checker"); p.runTo(p.now + 500);
   assert.equal(p.els.holdbar.textContent, "1 new: show", "only the team's message counts");
 });
@@ -96,6 +96,19 @@ test("the pointer over a list holds; off the lists, one redraw", async () => {
   p.say(); p.runTo(p.now + 500);
   p.fire("pointerout", { pointerType: "mouse", relatedTarget: null }); p.runTo(p.now + 1);
   assert.equal(p.renders, 2, "the pointer leaving the window counts as off");
+});
+
+test("the pointer resting on a list while a card moves on, no message: the bar says Updated (Checker)", async () => {
+  const p = await page();
+  p.fire("pointerover", { pointerType: "mouse", target: p.inList });
+  p.subs.initiatives({ docs: [{ id: "c-1", data: () => ({ name: "A card", status: "active", phase: "checker" }) }] });
+  p.runTo(p.now + 30_000);
+  assert.equal(p.renders, 0, "held while the pointer rests");
+  assert.equal(p.els.holdbar.hidden, false, "but never without a sign");
+  assert.equal(p.els.holdbar.textContent, "Updated: show");
+  p.els.holdbar.on.click();
+  assert.equal(p.renders, 1);
+  assert.equal(p.els.holdbar.hidden, true);
 });
 
 test("a phone: a touch holds for 4 s of stillness, then the redraw comes by itself", async () => {
