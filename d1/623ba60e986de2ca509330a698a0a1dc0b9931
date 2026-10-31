@@ -1,0 +1,1 @@
+PASS Quick: #C508 board-expected-version-shipping, re-signed after the rebase onto main 9a8e5d00. range-diff against f23a43dc's stack: every patch identical. Suite 832/832 on the stack top ce99e6c9.
