@@ -128,6 +128,9 @@ export function writeErrors(w, { config, who, now }) {
   // a card's history: both are the lead's alone, so no agent can make a card look shipped or rewrite its record (Security).
   if (collection === "timings" && !who.manager) return [`only ${config.gate.managerRole} archives steps (scripts/steps-archive.mjs)`];
   if (collection === "steps" && op === "delete" && !who.manager) return [`only ${config.gate.managerRole} deletes steps (scripts/steps-archive.mjs); log a new step instead`];
+  // Which comment thread the owner's pings for an item go to (#C509): the board's page alone writes pingThreads/<ref>, so
+  // no agent can point an item's pings at another thread (#C515, Security). The lead included: the page repairs its own.
+  if (collection === "pingThreads") return [`only the board's page writes pingThreads (where the owner's pings go); no agent does`];
   // Thread numbers (#T27) and names: threads/<thread id> {num, title} and the counter meta/threadSeq {next} are the lead's
   // alone (scripts/thread-ids.mjs allocates them). The owner renames a thread from the page, which writes only a title.
   if (collection === "threads" || (collection === "meta" && id === THREAD_SEQ)) {
