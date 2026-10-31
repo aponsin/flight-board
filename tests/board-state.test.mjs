@@ -220,10 +220,10 @@ test("the probe: the card a session is on is an exact board id or a #C number of
 test("the probe: working mid-turn, idle at a turn's end or after a quiet quarter hour; the tool as its class; since", () => {
   const prompt = entry("user", "go", T), use = entry("assistant", [{ type: "tool_use", name: "mcp__x__send", input: {} }], T + 1000, { stop_reason: "tool_use" });
   const result = entry("user", [{ type: "tool_result", content: "secret Alice" }], T + 2000), done = entry("assistant", [{ type: "text", text: "done" }], T + 3000, { stop_reason: "end_turn" });
-  assert.deepEqual(activity([prompt, use, result], { mtimeMs: T + 2000, now: T + 5000, ids, nums }), { state: "working", tool: "mcp", card: null, since: T, prompt: null });
-  assert.deepEqual(activity([prompt, use, result, done], { mtimeMs: T + 3000, now: T + 5000, ids, nums }), { state: "idle", tool: "mcp", card: null, since: T + 3000, prompt: null });
+  assert.deepEqual(activity([prompt, use, result], { mtimeMs: T + 2000, now: T + 5000, ids, nums }), { state: "working", tool: "mcp", card: null, since: T, prompt: null, promptTool: null });
+  assert.deepEqual(activity([prompt, use, result, done], { mtimeMs: T + 3000, now: T + 5000, ids, nums }), { state: "idle", tool: "mcp", card: null, since: T + 3000, prompt: null, promptTool: null });
   assert.equal(activity([prompt, use], { mtimeMs: T, now: T + WORKING_QUIET_MS + 1, ids, nums }).state, "idle");
-  assert.deepEqual(activity([], { mtimeMs: T, now: T, ids, nums }), { state: "unknown", tool: null, card: null, since: null, prompt: null });
+  assert.deepEqual(activity([], { mtimeMs: T, now: T, ids, nums }), { state: "unknown", tool: null, card: null, since: null, prompt: null, promptTool: null });
 });
 
 // A home folder with the app's session files and transcripts, for agentStates and appSessions.
