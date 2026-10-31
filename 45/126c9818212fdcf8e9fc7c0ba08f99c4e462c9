@@ -1,0 +1,1 @@
+PASS Quick: #C504 board-no-jump, re-signed after the rebase onto main 9a8e5d00. range-diff against 399f1974's stack: every patch identical. Suite 832/832 on the stack top ce99e6c9.
