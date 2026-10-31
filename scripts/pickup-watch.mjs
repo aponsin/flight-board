@@ -5,8 +5,8 @@
 // It prints one word and does that:
 //   send       - idle with Messages under FRESH: the session cleared and sits there; send "/pickup <Role>" once, stop.
 //   picked-up  - someone already picked it up; stop. Working under FRESH, or (#C498's follow-up: Manager was picked up
-//                before the first check, and Steward then read 14k, 26k, 37k, 52k and waited out all ten minutes) working
-//                and its Messages growing at every check from a start under LOW_START: a fresh session filling up.
+//                before the first check, and Steward then read 14k, 26k, 37k, 52k and waited out all ten minutes) seen
+//                working under LOW_START at an earlier check: a fresh session (before its clear the lead reads far more).
 //   wait       - not cleared yet: wait 60 s again.
 //   give-up    - MAX_CHECKS checks done: leave it to the keeper's hourly step 4.
 import { realpathSync } from "node:fs";
@@ -19,10 +19,11 @@ export function decide(readings) {
   const rs = Array.isArray(readings) ? readings.filter((r) => r && (r.state === "idle" || r.state === "working")) : [];
   if (!rs.length) return "wait";
   const last = rs[rs.length - 1], t = tokensOf(last);
+  // A fresh session seen working at an earlier check was a pickup (Checker: an idle session reads 0, so its pickup turn
+  // ending would read as "cleared" and send a second /pickup). Before its clear the lead reads far above LOW_START.
+  if (rs.slice(0, -1).some((r) => r.state === "working" && tokensOf(r) < LOW_START)) return "picked-up";
   if (last.state === "idle" && t < FRESH) return "send";
   if (last.state === "working" && t < FRESH) return "picked-up";
-  // Growing at every check from a low start: two readings at least, all working, each above the one before.
-  if (rs.length >= 2 && tokensOf(rs[0]) < LOW_START && rs.every((r) => r.state === "working") && rs.every((r, k) => k === 0 || tokensOf(r) > tokensOf(rs[k - 1]))) return "picked-up";
   return rs.length >= MAX_CHECKS ? "give-up" : "wait";
 }
 
