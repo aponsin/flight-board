@@ -237,6 +237,11 @@ the link runs (the collector's own code, the page) goes live early. So every pac
 - writes every command in its steps file out in full, ready to paste: never a command held in a shell variable (`$S`
   is one word in zsh, the Mac's shell, so v3.23's `S="node …"` shortcut ran nothing), and its rehearsal runs each step's
   command line under `zsh` as the owner would paste it;
+- checks its install script's hash with a line that doesn't depend on spacing, and that names a failed check only when
+  the check failed: `if [ "$(shasum -a 256 <file> | cut -c1-64)" = <hash> ]; then sh <file>; else echo 'CHECK FAILED:
+  nothing installed'; fi`, all on one line (#C515: copying v3.35's `echo "<hash>  <file>" | shasum -a 256 -c -`
+  squeezed its two spaces into one, and shasum found no checksum line). With `&& sh … || echo`, a pack that stops
+  on its own would also print CHECK FAILED;
 - says, on every step that shows a secret (the connector dialog with its URL, the `secrets --show` output), not to
   screenshot it, or to crop the URL out of the shot (#C426: v3.23's Add-connector screenshot put the URL on the board,
   so it had to be rotated);
