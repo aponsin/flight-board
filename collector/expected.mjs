@@ -5,7 +5,8 @@
 // is a version of its own. Each version is a patch on the one before unless a card in it is marked bump "minor" (a
 // feature) or "major": the largest wins. A card still in review comes after the queue, "at the earliest".
 // The guard keeps each card's last prediction from the queue and says CONFLICT when a card ships in another version,
-// when one batch's cards ship in two, or when a ship's bump isn't its cards'.
+// when one batch's cards ship in two, or when a ship's bump isn't its cards'. The lead settles a card's other version
+// with versionOk: "<the version it went out in>" on the card (#C536).
 import { repoOf, closed } from "./derive.mjs";
 import { idText } from "./text.mjs";
 
@@ -76,7 +77,7 @@ export function expectedVersions({ cards, derived, live, runOf = {}, config }) {
 }
 
 const ref = (k) => (Number.isInteger(k.num) ? `#C${k.num}` : idText(k.id));
-const broken = (k, got, due, now) => `${ref(k)} ${now ? "is shipping" : "shipped"} in v${got} but was due in v${due} (the order changed after it was predicted, or the bump differed). Manager: say which is right.`;
+const broken = (k, got, due, now) => `${ref(k)} ${now ? "is shipping" : "shipped"} in v${got} but was due in v${due} (the order changed after it was predicted, or the bump differed). Manager: say which is right; versionOk: "${got}" on the card settles it.`;
 
 // Crossed versions (#C508: #C500 shipped as v1.168.11 while #C501, still queued, said v1.168.11 and #C500 v1.168.12):
 // a card waiting (in the queue or in review) whose version isn't past the run's on now, or two places in the queue on one
@@ -113,7 +114,14 @@ export function guardExpected({ cards, derived, expected, versions = [], state =
   for (const [id, e] of Object.entries(expected)) if (open.has(id) && Number.isInteger(e.place)) due[id] = e.version;
   // A card that left the queue without shipping (back in review after a fix, Checker on c3d3220) owes no old place.
   for (const id of Object.keys(due)) if (!derived[id]?.version && !derived[id]?.shipping && !Number.isInteger(expected[id]?.place)) delete due[id];
-  const lines = [...open.keys()].filter((id) => broke[id]).map((id) => broke[id]);
+  // The lead's answer (#C536: "#C525 shipped in v1.172.0 but was due in v1.171.1" every run while it waited on the owner):
+  // versionOk on the card, the version it went out in, drops its broken-prediction line while it matches. Another version
+  // (it ships again) or none brings the line back.
+  const accepted = (id) => {
+    const ok = parts(open.get(id)?.versionOk), got = derived[id]?.version ?? (expected[id]?.shipping ? expected[id].version : null);
+    return !!ok && !!parts(got) && cmp(open.get(id).versionOk, got) === 0;
+  };
+  const lines = [...open.keys()].filter((id) => broke[id] && !accepted(id)).map((id) => broke[id]);
   lines.push(...crossedVersions(expected, open));
   // A batch is one version.
   const batches = new Map();

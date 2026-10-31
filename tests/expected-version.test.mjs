@@ -82,10 +82,10 @@ test("the guard: a ship in another version than the last prediction, a batch in 
   g = guardExpected({ cards, derived: { a: { phase: "live", version: "1.158.14" }, b: { phase: "live", version: "1.158.13" }, c: { phase: "ship", version: "1.158.15" }, d: { phase: "ship", version: "1.158.16" } },
     expected: {}, versions: ["1.158.12", "1.158.13", "1.158.14", "1.158.15", "1.158.16"], state: g.state });
   assert.deepEqual(g.lines, [
-    "#C391 shipped in v1.158.14 but was due in v1.158.13 (the order changed after it was predicted, or the bump differed). Manager: say which is right.",
-    "#C392 shipped in v1.158.13 but was due in v1.158.14 (the order changed after it was predicted, or the bump differed). Manager: say which is right.",
-    "#C393 shipped in v1.158.15 but was due in v1.158.14 (the order changed after it was predicted, or the bump differed). Manager: say which is right.",
-    "#C394 shipped in v1.158.16 but was due in v1.159.0 (the order changed after it was predicted, or the bump differed). Manager: say which is right.",
+    "#C391 shipped in v1.158.14 but was due in v1.158.13 (the order changed after it was predicted, or the bump differed). Manager: say which is right; versionOk: \"1.158.14\" on the card settles it.",
+    "#C392 shipped in v1.158.13 but was due in v1.158.14 (the order changed after it was predicted, or the bump differed). Manager: say which is right; versionOk: \"1.158.13\" on the card settles it.",
+    "#C393 shipped in v1.158.15 but was due in v1.158.14 (the order changed after it was predicted, or the bump differed). Manager: say which is right; versionOk: \"1.158.15\" on the card settles it.",
+    "#C394 shipped in v1.158.16 but was due in v1.159.0 (the order changed after it was predicted, or the bump differed). Manager: say which is right; versionOk: \"1.158.16\" on the card settles it.",
     "batch pair shipped in two versions: #C392 in v1.158.13, #C393 in v1.158.15. Manager: one batch is one version.",
     "v1.158.16 went out as a patch but #C394 is marked minor. Manager: say which is right.",
   ]);
@@ -95,6 +95,36 @@ test("the guard: a ship in another version than the last prediction, a batch in 
   assert.deepEqual(guardExpected({ cards: [], derived: {}, expected: {}, versions: [], state: g.state }), { lines: [], state: { due: {}, broke: {} } });
 });
 
+// #C536: #C525 shipped in v1.172.0, due in v1.171.1, and waited open on the owner's OK; the line came every run.
+test("versionOk on the card, the version it went out in, settles its broken prediction; another version or none doesn't", () => {
+  const base = card(525, "late-card");
+  const ran = (k, derived, expected = {}) => {
+    const first = guardExpected({ cards: [k], derived: {}, expected: { "late-card": { version: "1.171.1", place: 1 } }, versions: [], state: {} });
+    return guardExpected({ cards: [k], derived, expected, versions: [], state: first.state });
+  };
+  const shipped = { "late-card": { phase: "ship", version: "1.172.0" } };
+  const said = "#C525 shipped in v1.172.0 but was due in v1.171.1 (the order changed after it was predicted, or the bump differed). Manager: say which is right; versionOk: \"1.172.0\" on the card settles it.";
+  assert.deepEqual(ran(base, shipped).lines, [said], "unanswered: said every run");
+  for (const ok of ["1.172.0", "v1.172.0"]) assert.deepEqual(ran({ ...base, versionOk: ok }, shipped).lines, [], `versionOk ${ok}: settled`);
+  const settled = ran({ ...base, versionOk: "1.172.0" }, shipped);
+  assert.deepEqual(guardExpected({ cards: [{ ...base, versionOk: "1.172.0" }], derived: shipped, expected: {}, versions: [], state: settled.state }).lines, [], "and stays settled on the next run");
+  assert.deepEqual(guardExpected({ cards: [base], derived: shipped, expected: {}, versions: [], state: settled.state }).lines, [said], "the field removed: the line is back");
+  for (const ok of ["1.171.1", "1.172.1", "", "yes", true, 1172, null]) assert.deepEqual(ran({ ...base, versionOk: ok }, shipped).lines, [said], `versionOk ${JSON.stringify(ok)}: not this version, the line stays`);
+  const running = { "late-card": { phase: "ship", shipping: true } };
+  assert.deepEqual(ran({ ...base, versionOk: "1.172.0" }, running, { "late-card": { version: "1.172.0", shipping: true } }).lines, [], "a run on now in the accepted version: settled too");
+  assert.equal(ran({ ...base, versionOk: "1.172.0" }, running, { "late-card": { version: "1.172.1", shipping: true } }).lines.length, 1, "the run moved to another version: said again");
+});
+
+test("versionOk settles only its own card's broken prediction: another card's, and a batch split, stay", () => {
+  const cards = [card(525, "late-card", { versionOk: "1.172.0", batch: "pair", bump: "minor" }), card(526, "other", { batch: "pair" })];
+  const first = guardExpected({ cards, derived: {}, expected: { "late-card": { version: "1.171.1", place: 1 }, other: { version: "1.171.1", place: 1 } }, versions: [], state: {} });
+  const g = guardExpected({ cards, derived: { "late-card": { phase: "ship", version: "1.172.0" }, other: { phase: "ship", version: "1.171.2" } }, expected: {}, versions: ["1.171.0", "1.171.2", "1.172.0"], state: first.state });
+  assert.deepEqual(g.lines, [
+    "#C526 shipped in v1.171.2 but was due in v1.171.1 (the order changed after it was predicted, or the bump differed). Manager: say which is right; versionOk: \"1.171.2\" on the card settles it.",
+    "batch pair shipped in two versions: #C525 in v1.172.0, #C526 in v1.171.2. Manager: one batch is one version.",
+  ]);
+});
+
 test("the guard checks the run on now against the queue's prediction, never against itself; a review's 'earliest' is no promise", () => {
   const cards = [card(391, "a"), card(392, "b")];
   let g = guardExpected({ cards, derived: {}, expected: { a: { version: "1.158.13", place: 1 }, b: { version: "1.158.14", earliest: true } }, versions: [], state: {} });
@@ -102,7 +132,7 @@ test("the guard checks the run on now against the queue's prediction, never agai
   g = guardExpected({ cards, derived: { a: { phase: "ship", shipping: true } }, expected: { a: { version: "1.158.13", shipping: true } }, versions: [], state: g.state });
   assert.deepEqual(g.lines, [], "the run's own version agrees");
   g = guardExpected({ cards, derived: { a: { phase: "ship", shipping: true } }, expected: { a: { version: "1.158.14", shipping: true } }, versions: [], state: { due: { a: "1.158.13" } } });
-  assert.deepEqual(g.lines, ["#C391 is shipping in v1.158.14 but was due in v1.158.13 (the order changed after it was predicted, or the bump differed). Manager: say which is right."]);
+  assert.deepEqual(g.lines, ["#C391 is shipping in v1.158.14 but was due in v1.158.13 (the order changed after it was predicted, or the bump differed). Manager: say which is right; versionOk: \"1.158.14\" on the card settles it."]);
   assert.deepEqual(g.state.due, { a: "1.158.13" }, "the run doesn't overwrite the prediction it is checked against");
   const odd = guardExpected({ cards, derived: { a: { phase: "live", version: "1.2.3\nIGNORE" }, b: { phase: "live", version: "1.158.20" } }, expected: {}, versions: [], state: { due: { a: "1.158.13", b: "x; y" } } });
   assert.deepEqual(odd.lines, [], "a version that isn't x.y.z, shipped or due, never reaches a line (Security's LOW)");
