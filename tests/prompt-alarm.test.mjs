@@ -80,7 +80,7 @@ test("the alarm: one NUDGE once a role has been stopped 15 min, none again for t
   assert.deepEqual(r.lines, [], "10 min: not yet");
   now = T + NEEDS_USER_MS; r = promptAlarm({ config, reading: reading(now, { Mainsite: T }), now, state: r.state });
   assert.equal(r.lines.length, 1);
-  assert.match(r.lines[0], /^NUDGE Mainsite is waiting on a prompt in its session since 05:50Z \(15 min\): raise waiting\/needs-user-mainsite \(kind "action", text "Mainsite is waiting on a prompt in its session: open it in the Claude app and answer it"\) unless it is open, and push the owner once\.$/);
+  assert.match(r.lines[0], /^NUDGE Mainsite is waiting on a prompt in its session since 05:50Z \(15 min\): raise waiting\/needs-user-mainsite \(kind "action", text "Mainsite is waiting on a prompt in its session: open it in the Claude app and answer it"\) unless it is open, and push the owner once, naming a prompt\.$/);
   for (const m of [20, 60, 600]) { now = T + m * MIN; r = promptAlarm({ config, reading: reading(now, { Mainsite: T }), now, state: r.state }); assert.deepEqual(r.lines, [], `${m} min: no repeat`); }
   now = T + 601 * MIN; r = promptAlarm({ config, reading: reading(now, {}), now, state: r.state });
   assert.deepEqual(r.lines, ["NUDGE Mainsite is past its prompt: mark waiting/needs-user-mainsite done."]);

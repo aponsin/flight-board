@@ -241,7 +241,8 @@ the link runs (the collector's own code, the page) goes live early. So every pac
   the check failed: `if [ "$(shasum -a 256 <file> | cut -c1-64)" = <hash> ]; then sh <file>; else echo 'CHECK FAILED:
   nothing installed'; fi`, all on one line (#C515: copying v3.35's `echo "<hash>  <file>" | shasum -a 256 -c -`
   squeezed its two spaces into one, and shasum found no checksum line). With `&& sh … || echo`, a pack that stops
-  on its own would also print CHECK FAILED;
+  on its own would also print CHECK FAILED. `<file>` is the same `~/` path in both places (v3.36's rehearsal: a line
+  that checked `/Users/<owner>/…` but ran `~/…` passes on one account and runs nothing on another);
 - says, on every step that shows a secret (the connector dialog with its URL, the `secrets --show` output), not to
   screenshot it, or to crop the URL out of the shot (#C426: v3.23's Add-connector screenshot put the URL on the board,
   so it had to be rotated);

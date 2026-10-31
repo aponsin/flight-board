@@ -6,13 +6,23 @@
 // reading that is missing, broken or stale says nothing and changes nothing.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { LIVE_FRESH_MS, ROLE } from "./state-schema.mjs";
+import { LIVE_FRESH_MS, ROLE, TOOLS } from "./state-schema.mjs";
 
 export const NEEDS_USER_MS = 15 * 60e3;
-const isTime = (v) => Number.isInteger(v) && v >= 1577836800000 && v <= 4102444800000;
-const plain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+export const isTime = (v) => Number.isInteger(v) && v >= 1577836800000 && v <= 4102444800000;
+export const plain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 export const askId = (role) => `needs-user-${role.toLowerCase()}`;
 const hhmm = (t) => new Date(t).toISOString().slice(11, 16) + "Z";
+
+// What the prompt is, from the probe's tool class (#C529, reading.tools): a few fixed words, never anything from the
+// reading itself but a class name the enum knows. Missing or unknown: "a prompt".
+const NAMED = { AskUserQuestion: "a question", mcp: "an app or site approval", Bash: "a command approval", Edit: "a file-edit approval", Write: "a file-edit approval", NotebookEdit: "a file-edit approval", WebFetch: "a web approval", WebSearch: "a web approval" };
+export function promptName(cls) {
+  if (Object.hasOwn(NAMED, cls)) return NAMED[cls];
+  return TOOLS.includes(cls) && cls !== "Agent" ? `a ${cls} approval` : "a prompt";
+}
+// The tool class the reading gives for a role, or null.
+export const toolOf = (reading, role) => (plain(reading?.tools) && Object.hasOwn(reading.tools, role) ? reading.tools[role] : null);
 
 // reading: the parsed waiting-prompt.json (or null); state: { <role>: <since> } of the stops already sent.
 export function promptAlarm({ config, reading, now, state = {} }) {
@@ -29,7 +39,8 @@ export function promptAlarm({ config, reading, now, state = {} }) {
   for (const [role, since] of Object.entries(stopped).sort(([a], [b]) => a.localeCompare(b))) {
     if (next[role] === since || now - since < NEEDS_USER_MS) continue;
     next[role] = since;
-    lines.push(`NUDGE ${role} is waiting on a prompt in its session since ${hhmm(since)} (${Math.floor((now - since) / 60e3)} min): raise waiting/${askId(role)} (kind "action", text "${role} is waiting on a prompt in its session: open it in the Claude app and answer it") unless it is open, and push the owner once.${role === lead ? ` (It is ${lead} itself: the keeper or Steward relays this.)` : ""}`);
+    const what = promptName(toolOf(reading, role));
+    lines.push(`NUDGE ${role} is waiting on ${what} in its session since ${hhmm(since)} (${Math.floor((now - since) / 60e3)} min): raise waiting/${askId(role)} (kind "action", text "${role} is waiting on ${what} in its session: open it in the Claude app and answer it") unless it is open, and push the owner once, naming ${what}.${role === lead ? ` (It is ${lead} itself: the keeper or Steward relays this.)` : ""}`);
   }
   return { lines, state: next };
 }
