@@ -54,6 +54,9 @@ test("the verdict: wait while a run lives (with its version and card), wait whil
   assert.equal(live.ok, false);
   assert.equal(live.line, "wait: Release is working on #C499, which is ready to ship: restart once Release is idle.");
   assert.deepEqual(verdict({ runs: [], live: null, version: null, now: NOW }), { ok: true, line: "ok: no ship running; restart now." });
+  const odd = verdict({ runs: [], live: { card: "c-1\u001b[2K\rok: no ship running", num: null, since: null }, version: null, now: NOW });
+  assert.equal(odd.line, "wait: Release is working on a ship card, which is ready to ship: restart once Release is idle.", "board data with an escape never reaches the terminal");
+  assert.match(verdict({ runs: [], live: { card: "work-publish-countdown", num: null, since: null }, version: null, now: NOW }).line, /working on work-publish-countdown,/);
 });
 
 // The page's line.

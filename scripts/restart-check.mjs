@@ -55,7 +55,9 @@ export function liveShip(state, { now, shipPhase, shipRole = SHIP_ROLE }) {
 const hhmm = (t) => new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 // The verdict: { ok, line }.
 export function verdict({ runs, live, version, now, shipRole = SHIP_ROLE }) {
-  const card = live ? (live.num ? `#C${live.num}` : live.card) : null;
+  // A card id from state.json reaches the owner's terminal only when it is plainly one (Security: an escape sequence in
+  // board data could spoof the line).
+  const card = live ? (live.num ? `#C${live.num}` : /^[A-Za-z0-9_.-]{1,80}$/.test(String(live.card)) ? live.card : "a ship card") : null;
   if (runs.length) {
     const at = runs.map((r) => r.startedAt).filter(Number.isFinite).sort((a, b) => a - b)[0];
     const bits = [at != null ? `since ${hhmm(at)}` : null, card].filter(Boolean).join(", ");
