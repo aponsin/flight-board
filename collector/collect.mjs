@@ -267,10 +267,12 @@ export function afterShipTips(git, ref, tips, id, pattern) {
     if (!b) return h;
     let at = h.at, message = "";
     try { const [t, m] = git(["log", "-1", "--format=%ct%x1f%B", b.sha]).split("\x1f"); at = Number(t) * 1000; message = String(m ?? "").replace(/\n+$/, ""); } catch { /* keep the tip's time */ }
-    return { branch: h.branch, sha: b.sha, at, message, afterShip: { tip: h.sha, extra: b.extra } };
+    return { branch: h.branch, sha: b.sha, at, message, afterShip: { tip: h.sha, extra: b.extra, at: h.at } };
   });
 }
-export const afterShipNote = (h, d) => (h?.afterShip ? { ...d, evidence: `${d.evidence}; ${afterShipText(lineText(h.branch, 60), h.afterShip.tip, h.afterShip.extra)}` } : d);
+// The derived card carries afterShip { branch, tip, extra, at (the tip's commit time) } beside the evidence, for the
+// nudge that catches a READY logged on those extra commits (#C534, collector/nudges.mjs 9).
+export const afterShipNote = (h, d) => (h?.afterShip ? { ...d, afterShip: { branch: h.branch, ...h.afterShip }, evidence: `${d.evidence}; ${afterShipText(lineText(h.branch, 60), h.afterShip.tip, h.afterShip.extra)}` } : d);
 
 // A READY a later READY of the same card replaced (#C494, Manager: the gate refused closing #C479 as live, "the repository
 // says ship (READY at 0e4536fa)": demos/yogamason-makaan-words-v2, the same change rebased with its CHANGELOG block

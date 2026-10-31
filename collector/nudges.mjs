@@ -17,6 +17,9 @@
 //   7. an open card more than an hour past its etaLive, with no open ask tied to it (#C441): every run, no quiet period.
 //   8. a typed field the fresh live state contradicts for TYPED_MIN minutes (#C449, collector/state-schema.mjs's
 //      typedClashes): the card and the field, so a new typed field is caught here and not by the owner.
+//   9. a READY on commits after the card's ship (#C534): the repository reads the branch as "extra commits after ship"
+//      (#C527: no commit after the ship carries the card's Board-Id), yet a build end step was logged at or after the
+//      tip's commit. A rework hiding from the board; a second line for the lead to forward to whoever logged it.
 // The CONFLICT lines are the collector's own (collector/derive.mjs). Every board value a line names goes through idText
 // (collector/text.mjs): the lines reach a session that can write the board and message the team.
 
@@ -185,6 +188,21 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
       }
     }
   } else Object.assign(typedSeen, state.typedSeen ?? {});
+
+  // 9. A READY the board can't see (#C534, Checker on #C527): the card's branch reads as extra commits after its ship, and
+  // a build end step for the card came at or after the tip's commit. Keyed by the tip, so a new tip is a new nudge.
+  for (const [id, d] of Object.entries(derived)) {
+    const card = cards.get(id), a = d?.afterShip;
+    if (!card || closed(card) || !a || !/^[0-9a-f]{40}$/.test(a.tip ?? "") || typeof a.at !== "number") continue;
+    const num = Number.isInteger(card.num) && card.num > 0 ? `C${card.num}` : null, tag = num ? ` (#${num})` : "";
+    const ready = (docs.steps ?? []).filter((s) => s && (s.init === id || (num && s.init === num)) && s.phase === config.collector.buildPhase && s.kind === "end" && typeof s.at === "number" && s.at >= a.at).sort((x, y) => y.at - x.at)[0];
+    if (!ready) continue;
+    firing.push({
+      key: `aftership:${id}:${a.tip}`,
+      text: `${q(id)}${tag}: READY logged after its ship, but ${branchText(a.branch)} at ${a.tip.slice(0, 8)} has no "Board-Id: ${q(id)}" commit since the ship, so the board reads it as ${Number.isInteger(a.extra) ? a.extra : "?"} extra commits after ship, not a new review; forward:`,
+      then: `forward to ${q(ready.who || "its builder")}: a rework after ${q(id)}${tag} shipped needs a commit with "Board-Id: ${q(id)}" (or its own branch and sub-card), or the board never shows it READY`,
+    });
+  }
 
   // Once, then again only after the quiet period; forgotten when it stops holding.
   const sent = Object.create(null), lines = [];
