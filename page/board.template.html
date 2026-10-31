@@ -406,6 +406,9 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 /* Board v3 (step 2): the Plan view, behind "Try the new layout"; the current board stays the default. */
 #v2:not([hidden]),#v3:not([hidden]){display:contents}
 .viewlink{font:600 .85rem var(--body);color:var(--accent);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
+.holdwrap{position:fixed;top:10px;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:30}
+.holdbar{pointer-events:auto;font:600 .85rem var(--body);color:var(--panel);background:var(--accent);border:0;border-radius:999px;padding:6px 14px;min-height:32px;box-shadow:0 2px 8px rgba(0,0,0,.18);cursor:pointer}
+.holdbar:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 ul.plan{list-style:none;margin:0;padding:0}
 ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(--line)}
 .pn{padding:6px 0}
@@ -476,6 +479,7 @@ table.crew3-ph{margin-top:14px}
   </section>
   </div>
 
+  <div class="holdwrap" role="status"><button type="button" class="holdbar" id="holdbar" hidden></button></div>
   <div id="v2">
 
   <section aria-labelledby="h-ctx">
@@ -1368,7 +1372,9 @@ function restoreFolds(el,open){el.querySelectorAll("details[data-id]").forEach(d
 // (the part's own scroll too: the owner's strip scrolls on its own).
 function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id)),drafts={};
   el.querySelectorAll("textarea[id]").forEach(t=>{if(t.value)drafts[t.id]=t.value});
-  const focus=document.activeElement&&document.activeElement.id&&drafts[document.activeElement.id]!=null?document.activeElement.id:null;
+  // The box with focus keeps it, empty or not (#C504: an empty one lost it, and the owner's next click could land on the
+  // row that had moved into its place).
+  const a=document.activeElement,focus=a&&a.id&&(drafts[a.id]!=null||a.tagName==="TEXTAREA"&&typeof el.contains==="function"&&el.contains(a))?a.id:null;
   const y=window.scrollY,inner=el.scrollTop;
   draw();restoreFolds(el,open);
   if(el.scrollTop!==inner)el.scrollTop=inner;if(window.scrollY!==y)window.scrollTo(0,y);
@@ -2218,8 +2224,50 @@ function setView(v){view=v==="v3"?"v3":"v2";$("v3").hidden=view!=="v3";$("v2").h
 const RENDER_BATCH=100,TYPE_IDLE=1200;let lastTyped=-Infinity,renderDue=null;
 document.addEventListener("input",()=>{lastTyped=Date.now()});
 function renderSoon(){if(renderDue!=null)return;
-  const go=()=>{const wait=lastTyped+TYPE_IDLE-Date.now();if(wait>0){renderDue=setTimeout(go,wait);return}renderDue=null;renderAll()};
+  const go=()=>{const wait=lastTyped+TYPE_IDLE-Date.now();if(wait>0){renderDue=setTimeout(go,wait);return}renderDue=null;
+    if(holding())hold();else renderAnchored()};
   renderDue=setTimeout(go,RENDER_BATCH)}
+// The board holds still while the owner reads or answers (#C504: he wrote in the wrong thread, as the board "keeps moving
+// around as answers come in"). While a box on the page has focus, the pointer is over a list, or (a phone) the page was
+// touched or scrolled in the last READ_IDLE ms, a redraw waits, so nothing re-orders or moves under him. What came in
+// meanwhile shows as one small bar, "N new: show" (new messages from the team and new asks; the owner's own don't count);
+// a click on it, or the owner done (the box left, the pointer off the lists, the phone still), draws it all, with the row
+// he was on kept where it was on the screen. His own clicks still redraw at once: this holds the board's events only.
+const READ_IDLE=4000,HOLD_LISTS="#ownerpart,#board,#feed";
+let overList=false,readAt=-Infinity,lastRow=null,held=null,readDue=null;
+const inLists=t=>!!(t&&t.closest&&t.closest(HOLD_LISTS));
+const boxFocused=()=>{const a=document.activeElement;return !!a&&a.tagName==="TEXTAREA"};
+function holding(now=Date.now()){return boxFocused()||overList||now-readAt<READ_IDLE}
+const heldIds=()=>new Set([...state.messages.filter(m=>m.from!==OWNER).map(m=>"m/"+m.id),...state.waiting.map(w=>"w/"+w.id)]);
+// How many of the team's messages and asks came in since the hold began.
+function heldNew(){if(!held)return 0;let n=0;heldIds().forEach(k=>{if(!held.seen.has(k))n++});return n}
+function hold(now=Date.now()){if(!held)held={seen:drawnIds||heldIds()};
+  const n=heldNew(),b=$("holdbar");if(b){b.hidden=!n;b.textContent=n?`${n} new: show`:""}
+  // A phone's reading has no "leave": look again once it has been still for READ_IDLE.
+  if(readDue==null&&!boxFocused()&&!overList){const w=readAt+READ_IDLE-now;if(w>0)readDue=setTimeout(()=>{readDue=null;release()},w)}}
+// The ids the page had drawn at its last redraw (renderAll sets it): the hold counts from there, not from the first
+// event it held, whose docs are already in state.
+let drawnIds=null,selfScroll=0,touchy=false;
+function release(){if(!held||holding())return;renderAnchored()}
+// Draws everything now, keeping the row the owner is on (the box he's in, else the row under the pointer) where it was.
+function renderAnchored(){const row=(document.activeElement&&document.activeElement.closest&&document.activeElement.closest("details[data-id]"))||(lastRow&&lastRow.isConnected?lastRow:null);
+  const key=row?foldKey(row):null,top=row?row.getBoundingClientRect().top:0;
+  held=null;const b=$("holdbar");if(b){b.hidden=true;b.textContent=""}
+  selfScroll=Date.now()+200;renderAll();
+  if(key==null)return;
+  const all=[...document.querySelectorAll("details[data-id]")].filter(d=>foldKey(d)===key&&d.offsetParent!==null);
+  const same=all.find(d=>d.dataset.id===row.dataset.id)||all[0];
+  if(same){lastRow=same;const dy=same.getBoundingClientRect().top-top;if(Math.abs(dy)>=1)window.scrollBy(0,dy)}}
+document.addEventListener("pointerover",e=>{touchy=e.pointerType==="touch";if(touchy)return;const was=overList;overList=inLists(e.target);
+  const r=e.target&&e.target.closest?e.target.closest("details[data-id]"):null;if(r)lastRow=r;if(was&&!overList)release()});
+document.addEventListener("pointerout",e=>{if(e.pointerType!=="touch"&&!e.relatedTarget&&overList){overList=false;release()}});
+// A touch, or a scroll after one (the page's own scrolls on a redraw don't count; a mouse's scroll is the pointer's).
+const read=e=>{touchy=true;readAt=Date.now();if(e&&e.target&&e.target.closest){const r=e.target.closest("details[data-id]");if(r)lastRow=r}};
+document.addEventListener("touchstart",read,{passive:true});
+document.addEventListener("scroll",()=>{if(touchy&&Date.now()>selfScroll)readAt=Date.now()},{passive:true});
+document.addEventListener("focusin",e=>{const r=e.target&&e.target.closest?e.target.closest("details[data-id]"):null;if(r)lastRow=r});
+document.addEventListener("focusout",()=>{setTimeout(release,0)});
+(()=>{const b=$("holdbar");if(!b)return;b.addEventListener("mousedown",e=>e.preventDefault());b.addEventListener("click",()=>renderAnchored())})();
 // The live state (#C420; the page's source of stage since board-state-probe's follow-up, the Director with the owner):
 // the Studio's own state, posted every minute by a script (collector/state.mjs, no model) to the board's state Worker
 // and read here through the viewer's "Flight Board State" connector (the mcp capability): each card's stage by the
@@ -2319,7 +2367,7 @@ function probeEvent(ev,mcp){liveMcp=mcp||liveMcp;
     else if(["not_in_manifest","blocked_by_policy","not_granted","capability_disabled","capability_removed","consent_required","user_changed"].includes(code)){probe=null;probeNote=""}
     else probeNote=probe?"Couldn't refresh just now; reading the last one while it's fresh.":""}
   renderSoon()}
-function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();liveWas=liveOn();renderStamp()}
+function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();liveWas=liveOn();renderStamp();drawnIds=heldIds()}
 let liveWas=false;
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
@@ -2328,12 +2376,12 @@ function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"
   document.querySelectorAll("[data-asof]").forEach(e=>{const t=+e.dataset.asof;e.textContent=asOfText(t);e.classList.toggle("stale",Date.now()-t>ASOF_STALE)});
   // A live reading that went stale (or fresh again) changes what every card reads: all of it again; else the stamp.
   catchUp();
-  if(liveOn()!==liveWas)renderAll();else renderStamp()}
+  if(liveOn()!==liveWas)renderSoon();else renderStamp()}
 $("viewlink").addEventListener("click",()=>setView(view==="v3"?"v2":"v3"));
 document.querySelectorAll("[data-v3]").forEach(b=>b.addEventListener("click",()=>setV3View(b.dataset.v3)));
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-v3view")}catch(e){}if(v==="plan"||v==="crew")setV3View(v)})();
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-view")}catch(e){}if(typeof location!=="undefined"&&location.hash==="#v3")v="v3";if(v==="v3")setView("v3")})();
-setInterval(()=>{tick();if(document.querySelector("[data-shipat]"))renderBoard()},15000);tick();renderAll();
+setInterval(()=>{tick();if(!held&&document.querySelector("[data-shipat]"))renderBoard()},15000);tick();renderAll();
 
 (async()=>{
   const db=window.claude&&await window.claude.use("db");
