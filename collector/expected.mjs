@@ -78,6 +78,23 @@ export function expectedVersions({ cards, derived, live, runOf = {}, config }) {
 const ref = (k) => (Number.isInteger(k.num) ? `#C${k.num}` : idText(k.id));
 const broken = (k, got, due, now) => `${ref(k)} ${now ? "is shipping" : "shipped"} in v${got} but was due in v${due} (the order changed after it was predicted, or the bump differed). Manager: say which is right.`;
 
+// Crossed versions (#C508: #C500 shipped as v1.168.11 while #C501, still queued, said v1.168.11 and #C500 v1.168.12):
+// a card waiting (in the queue or in review) whose version isn't past the run's on now, or two places in the queue on one
+// version. Neither can come from one expectedVersions run; a line here means its inputs disagreed (a run the candidate
+// branch doesn't name, a version known twice). open: Map(id → card). Returns the lines.
+export function crossedVersions(expected, open) {
+  const lines = [], mine = Object.entries(expected).filter(([id, e]) => open.has(id) && parts(e?.version));
+  const run = mine.filter(([, e]) => e.shipping), wait = mine.filter(([, e]) => !e.shipping);
+  const top = run.length ? run.map(([, e]) => e.version).reduce((a, b) => (cmp(a, b) >= 0 ? a : b)) : null;
+  if (top) for (const [id, e] of wait) if (cmp(e.version, top) <= 0)
+    lines.push(`${ref(open.get(id))} waits for v${e.version} but ${run.map(([r]) => ref(open.get(r))).join(", ")} ships now in v${top}: the versions crossed. Manager: check the run and the queue.`);
+  const at = new Map();
+  for (const [id, e] of wait) if (Number.isInteger(e.place)) (at.get(e.version) ?? at.set(e.version, new Map()).get(e.version)).set(e.place, id);
+  for (const [v, places] of at) if (places.size > 1)
+    lines.push(`${[...places.values()].map((id) => ref(open.get(id))).join(" and ")} are both due in v${v} from two places in the queue: the versions crossed. Manager: check the queue.`);
+  return lines;
+}
+
 // One run of the guard. expected: this run's expectedVersions; versions: the versions the main line names, oldest first;
 // state: the last run's ({ due: { id: version }, broke: { id: line } }). Only a queue place is a prediction (the run's
 // own version would always agree with itself; a review's is "at the earliest"). A broken one is said every run while
@@ -97,6 +114,7 @@ export function guardExpected({ cards, derived, expected, versions = [], state =
   // A card that left the queue without shipping (back in review after a fix, Checker on c3d3220) owes no old place.
   for (const id of Object.keys(due)) if (!derived[id]?.version && !derived[id]?.shipping && !Number.isInteger(expected[id]?.place)) delete due[id];
   const lines = [...open.keys()].filter((id) => broke[id]).map((id) => broke[id]);
+  lines.push(...crossedVersions(expected, open));
   // A batch is one version.
   const batches = new Map();
   for (const k of open.values()) if (typeof k.batch === "string" && k.batch && parts(derived[k.id]?.version)) (batches.get(k.batch) ?? batches.set(k.batch, []).get(k.batch)).push(k);
