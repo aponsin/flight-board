@@ -1,0 +1,1 @@
+PASS Quick: #C524 rearm ask's 'type: <line>' step gets a Copy block (same .cmd markup and click handler as a step's cmd), only when rearm===true and no own cmd; line escaped in code and data-copy; note after the link not copied. No new reach: agents could already put a cmd Copy on any ask. Suite 855/855; mutation spot-check (rearm truthy) fails rearm-copy 1/5, restored.
