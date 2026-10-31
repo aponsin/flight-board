@@ -408,7 +408,8 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 /* Board v3 (step 2): the Plan view, behind "Try the new layout"; the current board stays the default. */
 #v2:not([hidden]),#v3:not([hidden]){display:contents}
 .viewlink{font:600 .85rem var(--body);color:var(--accent);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
-.holdwrap{position:fixed;top:10px;left:0;right:0;display:flex;justify-content:center;pointer-events:none;z-index:30}
+.holdwrap{position:fixed;top:10px;left:0;right:0;display:flex;flex-wrap:wrap;justify-content:center;gap:8px;padding:0 16px;pointer-events:none;z-index:30}
+.shipnote{font:700 .85rem var(--body);color:var(--warn-ink);background:var(--warn-soft);border:1px solid var(--warn);border-radius:999px;padding:6px 14px;box-shadow:0 2px 8px rgba(0,0,0,.18)}
 .holdbar{pointer-events:auto;font:600 .85rem var(--body);color:var(--panel);background:var(--accent);border:0;border-radius:999px;padding:6px 14px;min-height:32px;box-shadow:0 2px 8px rgba(0,0,0,.18);cursor:pointer}
 .holdbar:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 @media (pointer:coarse){.holdbar{min-height:44px;padding:10px 18px}}
@@ -483,7 +484,7 @@ table.crew3-ph{margin-top:14px}
   </section>
   </div>
 
-  <div class="holdwrap" role="status"><button type="button" class="holdbar" id="holdbar" hidden></button></div>
+  <div class="holdwrap" role="status"><span class="shipnote" id="shipnote" hidden></span><button type="button" class="holdbar" id="holdbar" hidden></button></div>
   <div id="v2">
 
   <section aria-labelledby="h-ctx">
@@ -2250,6 +2251,7 @@ function hold(now=Date.now()){if(!held)held={seen:drawnIds||heldIds()};
   // sign while the header stamp said fresh): the count when the team wrote, else "Updated". A hold only ever starts
   // when a redraw was due, so the bar always means something changed.
   const n=heldNew(),b=$("holdbar");if(b){b.hidden=false;b.textContent=n?`${n} new: show`:"Updated: show"}
+  renderShipNote();
   // A phone's reading has no "leave": look again once it has been still for READ_IDLE.
   if(readDue==null&&!boxFocused()&&!overList){const w=readAt+READ_IDLE-now;if(w>0)readDue=setTimeout(()=>{readDue=null;release()},w)}}
 // The ids the page had drawn at its last redraw (renderAll sets it): the hold counts from there, not from the first
@@ -2259,7 +2261,7 @@ function release(){if(!held||holding())return;renderAnchored()}
 // Draws everything now, keeping the row the owner is on (the box he's in, else the row under the pointer) where it was.
 function renderAnchored(){const row=(document.activeElement&&document.activeElement.closest&&document.activeElement.closest("details[data-id]"))||(lastRow&&lastRow.isConnected?lastRow:null);
   const key=row?foldKey(row):null,top=row?row.getBoundingClientRect().top:0;
-  held=null;const b=$("holdbar");if(b){b.hidden=true;b.textContent=""}
+  held=null;const b=$("holdbar");if(b){b.hidden=true;b.textContent=""}renderShipNote();
   selfScroll=Date.now()+200;renderAll();
   if(key==null)return;
   const all=[...document.querySelectorAll("details[data-id]")].filter(d=>foldKey(d)===key&&d.offsetParent!==null);
@@ -2387,6 +2389,10 @@ function shipNow(now=Date.now()){const a=liveAgent(SHIP_ROLE,now),L=a&&a.state==
 function renderShipLine(){const el=$("shipline");if(!el)return;const s=shipNow();el.hidden=!s;if(!s){el.innerHTML="";return}
   const i=state.initRaw.find(x=>x&&x.id===s.id),n=i&&Number.isInteger(i.num)?`#C${i.num}`:esc(s.id);
   el.innerHTML=`<b>Don't restart: shipping.</b> ${esc(SHIP_ROLE)} is shipping ${s.version?`<b>v${esc(s.version)}</b> `:""}(${n}); closing the agents now would stop it halfway.`}
+// While a hold is on, the ship line can't wait for it (Checker: the owner may be reading the install steps right then),
+// and drawing it in the page would push his row down: it shows as a pill beside the bar instead, fixed, moving nothing.
+// The page's own line takes over at the next full redraw.
+function renderShipNote(){const el=$("shipnote");if(!el)return;const on=!!held&&!!shipNow();el.hidden=!on;el.textContent=on?"Don't restart: shipping":""}
 function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();liveWas=liveOn();renderStamp();drawnIds=heldIds()}
 let liveWas=false;
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
