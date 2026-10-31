@@ -1,0 +1,1 @@
+PASS Quick: #C498 follow-up, pickup-watch, rebased onto main 89105ad1 on build/pickup-watch-growing-2. range-diff: both commits identical (=) to bd816b97, which I signed (FINDINGS 1 fixed there). Diff over main: scripts/pickup-watch.mjs + tests/pickup-watch.test.mjs only. Suite 850/850. Its allow rule comes in the v3.35 pack, for Security.
