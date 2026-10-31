@@ -609,6 +609,14 @@ function itemShown(id,now){const it=itemOf(id);if(!it)return false;
 // An ask as a row that opens to its steps, its reply buttons (or the sent line) and its thread.
 // at: the time its age counts from (With the team passes the ask's newest word); else when it was asked. sub: a line
 // under its text (With the team's "Manager answering", #C364).
+// The line a step tells the owner to type (#C524: Manager's rearm ask, "type: watch the flight board <the board's link>"):
+// what follows "type:", up to the end of its first link (a note after the link isn't the line), else to the step's end.
+function typeLine(text){const m=String(text||"").match(/\btype:\s*(\S[^\n]*)/);if(!m)return "";const r=m[1].trim(),u=r.match(/^.*?https?:\/\/[^\s)]+/);
+  return (u?u[0].replace(/[.,;:]+$/,""):r)}
+// On a rearm ask (rearm: true), each such step gets the line with a Copy button, as a step's cmd does (the click handler's
+// fallback selects that code).
+const typeCopy=(w,s)=>{const t=w&&w.rearm===true&&!(s&&s.cmd)?typeLine(typeof s==="string"?s:s&&s.text):"";
+  return t?`<div class="cmd"><code>${esc(t)}</code><button type="button" class="copy" data-copy="${esc(t)}">Copy</button></div>`:""};
 function askHtml(w,open,at=w.since,sub=""){const steps=Array.isArray(w.steps)?w.steps:[];
    const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
    <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${pingHtml(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
@@ -616,7 +624,7 @@ function askHtml(w,open,at=w.since,sub=""){const steps=Array.isArray(w.steps)?w.
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
    return `<details class="w-item" data-id="${esc(w.id)}"${open.has(w.id)?" open":""}><summary class="w-row">${head}</summary>
-   <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}</li>`:`<li>${linkify(s&&s.text||"")}${s&&s.cmd?`<div class="cmd"><code>${esc(s.cmd)}</code><button type="button" class="copy" data-copy="${esc(s.cmd)}">Copy</button></div>`:""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length||answeredAsk(w)?threadHtml(w.id,"wait",{box:answeredAsk(w),ph:"Add more for Manager"}):""}</details>`}
+   <ol class="steps">${steps.map(s=>typeof s==="string"?`<li>${linkify(s)}${typeCopy(w,s)}</li>`:`<li>${linkify(s&&s.text||"")}${typeCopy(w,s)}${s&&s.cmd?`<div class="cmd"><code>${esc(s.cmd)}</code><button type="button" class="copy" data-copy="${esc(s.cmd)}">Copy</button></div>`:""}</li>`).join("")}</ol>${shots(w)}${w.expect?`<div class="expect">You should see: ${esc(w.expect)}</div>`:""}${replyBox(w)}${threadOf(w.id).length||answeredAsk(w)?threadHtml(w.id,"wait",{box:answeredAsk(w),ph:"Add more for Manager"}):""}</details>`}
 // Once the owner has answered an ask, its thread's box is always there to add more (#C386, the owner in t-1793166144265:
 // a chosen decision, with the team, had no box until its thread had a message).
 const answeredAsk=w=>!!(w.response&&w.response.status);
