@@ -1,0 +1,1 @@
+PASS Full: #C505 restart-safe-check, re-signed after the rebase onto main 9a8e5d00. range-diff against 83a87d83's stack: every patch identical. Suite 832/832 on the stack top ce99e6c9. Needs Security on this sha.
