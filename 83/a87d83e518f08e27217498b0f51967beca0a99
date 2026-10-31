@@ -1,0 +1,1 @@
+PASS Full: #C505 restart-safe-check, re-signed on 83a87d83 (one commit on f7db0b5e, which I signed). Security's LOW: a card id from state.json reaches the terminal only when it is plain ([A-Za-z0-9_.-], up to 80), else 'a ship card'; test with an escape sequence. Suite 826/826. Needs Security on this sha.
