@@ -9,6 +9,8 @@
 // It writes <stateDir>/<board>/state.json (0600) and POSTs the same to the state Worker with the board's token
 // (<stateDir>/<board>/state-secrets/secrets.json, 0600 in a 0700 folder, made by the owner's install). What leaves is
 // exactly collector/state-schema.mjs's allowlist. It prints one line, never a token, a path secret or transcript text.
+// Beside it, <stateDir>/<board>/waiting-prompt.json (0600, never posted): { at, roles: { <role>: <since> } }, the roles
+// stopped on a prompt in their session (promptSince), for the Collector's alarm (collector/prompt-alarm.mjs, #C526).
 import { readFileSync, writeFileSync, renameSync, readdirSync, lstatSync, openSync, fstatSync, readSync, closeSync, realpathSync, readlinkSync, constants } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
@@ -113,20 +115,36 @@ export function cardIn(entries, ids, nums) {
   return null;
 }
 
-// One role's activity from its transcript's last entries: { state, tool, card, since }.
+// A turn stopped on a call the person must answer (#C526: Mainsite's site approval sat from 05:50Z to 15:49Z, read as
+// idle): mid-turn and quiet over WORKING_QUIET_MS, with a tool call since the last prompt that has no result. A subagent
+// call (Agent) may run that long on its own, so it never counts. The time of the first such call, else null.
+export function promptSince(entries, { mtimeMs, now }) {
+  const last = entries.at(-1);
+  if (!last || now - mtimeMs <= WORKING_QUIET_MS) return null;
+  if (!(last.type === "user" || (last.type === "assistant" && last.message.stop_reason === "tool_use"))) return null;
+  const turn = entries.slice(entries.findLastIndex(isPrompt) + 1);
+  const answered = new Set(turn.filter((e) => e.type === "user").flatMap((e) => blocks(e).filter((b) => b.type === "tool_result").map((b) => b.tool_use_id)));
+  const open = turn.filter((e) => e.type === "assistant").flatMap((e) => blocks(e).filter((b) => b.type === "tool_use" && !answered.has(b.id)).map((b) => ({ b, e })));
+  if (!open.length || open.some(({ b }) => toolClass(b.name) === "Agent")) return null;
+  return timeOf(open[0].e);
+}
+
+// One role's activity from its transcript's last entries: { state, tool, card, since, prompt } (prompt: promptSince's
+// time; it stays on this machine, never in the state that leaves).
 export function activity(entries, { mtimeMs, now, ids, nums }) {
   const last = entries.at(-1);
-  if (!last) return { state: "unknown", tool: null, card: null, since: null };
+  if (!last) return { state: "unknown", tool: null, card: null, since: null, prompt: null };
   const midTurn = last.type === "user" || (last.type === "assistant" && last.message.stop_reason === "tool_use");
   const state = midTurn && now - mtimeMs <= WORKING_QUIET_MS ? "working" : "idle";
   let tool = null;
   for (let k = entries.length - 1; k >= 0 && !tool; k--) if (entries[k].type === "assistant") tool = toolClass(blocks(entries[k]).filter((b) => b.type === "tool_use").at(-1)?.name);
   const since = state === "working" ? timeOf(entries.findLast(isPrompt)) : timeOf(entries.findLast((e) => e.type === "assistant"));
-  return { state, tool, card: cardIn(entries, ids, nums), since };
+  return { state, tool, card: cardIn(entries, ids, nums), since, prompt: promptSince(entries, { mtimeMs, now }) };
 }
 
-// Every roster role's agent, from its newest open session titled exactly as the role.
-export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = process.getuid() }) {
+// Every roster role's agent, from its newest open session titled exactly as the role. prompts, when given, gets each
+// role stopped on a prompt and since when (promptSince): the local waiting-prompt.json, not the state.
+export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = process.getuid(), prompts = null }) {
   const out = {};
   for (const role of roles.filter((r) => ROLE.test(r))) {
     const s = sessions.filter((x) => x.title === role).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))[0];
@@ -135,6 +153,7 @@ export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = pr
     const tail = p ? readTail(p, TAIL_BYTES, uid) : null;
     const a = tail ? activity(lastEntries(tail), { mtimeMs: tail.mtimeMs, now, ids, nums }) : { state: "unknown", tool: null, card: null, since: null };
     out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, since: a.since };
+    if (prompts && a.prompt != null) prompts[role] = a.prompt;
   }
   return out;
 }
@@ -398,13 +417,16 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const ids = new Set(cards.filter((k) => !closed(k)).map((k) => k.id));
   const nums = new Map(cards.filter((k) => Number.isInteger(k.num) && ids.has(k.id)).map((k) => [k.num, k.id]));
   const sessions = appSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
-  const agents = agentStates({ roles: config.roster, sessions, homeDir: homedir(), now, ids, nums });
+  const prompts = {};
+  const agents = agentStates({ roles: config.roster, sessions, homeDir: homedir(), now, ids, nums, prompts });
   let pageVersion = null;
   try { pageVersion = basename(readlinkSync(join(stateDir, "current"))); } catch { /* no link */ }
   let state;
   try {
     state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now) });
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
+    // The roles stopped on a prompt (#C526), for the Collector's alarm: roles and times only, on this machine only.
+    writeAtomic(join(stateDir, id, "waiting-prompt.json"), JSON.stringify({ at: now, roles: prompts }));
     writeAtomic(ciPath, JSON.stringify(Object.fromEntries(Object.entries(ciCache).slice(-500))));
     writeAtomic(idsPath, JSON.stringify(Object.fromEntries(Object.entries(changeIds).slice(-5000))));
   } catch (e) { console.error(`state: ${String(e.message).split("\n")[0]}`); process.exit(1); }

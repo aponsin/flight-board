@@ -19,6 +19,7 @@ import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion,
 import { evidenceTimes } from "./timings.mjs";
 import { nudges } from "./nudges.mjs";
 import { ownerPush } from "./owner-push.mjs";
+import { runPromptAlarm } from "./prompt-alarm.mjs";
 import { derivePlan } from "./plan-state.mjs";
 import { expectedVersions, guardExpected } from "./expected.mjs";
 import { keeperCheck, keeperLine } from "./keeper.mjs";
@@ -508,7 +509,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const keeper = configDir ? keeperCheck(config, now, { configDir }) : null;
   if (keeper) doc.keeper = keeper;
   const waits = new Set(Object.entries(doc.cards).filter(([, d]) => d.wait).map(([id]) => id));
-  const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards, doc.releaseTimes, liveState)] };
+  const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runPromptAlarm(dir, config, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards, doc.releaseTimes, liveState)] };
   const out = outPath(config, dir);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(doc, null, 2));
