@@ -1,0 +1,1 @@
+PASS Full: #C515 gate refuses every agent write (set/update/delete, lead included) to pingThreads; placed after the collector check, so the collector is refused too. No script or doc has an agent write pingThreads (page only, via its own db). npm test 844/844; mutation spot-check (rule removed): gate-pingthreads.test fails 2/3, restored. Needs Security.
