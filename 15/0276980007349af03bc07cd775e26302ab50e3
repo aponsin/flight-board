@@ -1,0 +1,1 @@
+PASS Quick (Checker, 2026-11-02): #C613 pill text var(--panel): contrast 5.0 and 6.5 to 1 light, 9.0 and 6.7 to 1 dark; wraps within the header. 1042/1042 at a9b2fb9.
