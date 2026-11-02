@@ -1,0 +1,1 @@
+PASS Quick: #C581 Verifying status for a live-by-evidence card with checkAt; diff read (template + its test only, no pinned file), npm test 925/925 green.
