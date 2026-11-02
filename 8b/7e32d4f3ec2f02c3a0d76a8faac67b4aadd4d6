@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C591 cardsCheckedAt (fresh read only) and gh CI back-off; chip red 5 min after. Mutation on the 5-min guard caught by cards-checked.test. Note: the back-off covers CI calls only, not the deploy-workflow gh call. 996/996 at the stack tip.
