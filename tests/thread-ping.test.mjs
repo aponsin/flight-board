@@ -68,8 +68,8 @@ test("a sent ping is recorded as threadPings/<id> {at}; only a thread id makes a
   const b = board();
   assert.deepEqual(JSON.parse(JSON.stringify(b.threadPingWrites("t-q", T))), [{ op: "set", path: "threadPings/t-q", data: { at: T } }]);
   assert.deepEqual(JSON.parse(JSON.stringify(b.threadPingWrites("../meta/x", T))), []);
-  assert.match(page, /"timings","ctxRequests","checkRequests","threadPings","pingThreads"\]\.forEach\(sub\)/, "the page reads the pings");
-  assert.match(page, /threadPings:\[\],pingThreads:\[\]\}/);
+  assert.match(page, /"timings","ctxRequests","checkRequests","threadPings","pingThreads"(?:,"agentPrs","approvals")?\]\.forEach\(sub\)/, "the page reads the pings (and, since #C554, the agent's pull requests and the owner's approvals)");
+  assert.match(page, /threadPings:\[\],pingThreads:\[\](?:,agentPrs:\[\],approvals:\[\])?\}/);
 });
 
 test("pressing Ping sends first and records only what was sent; the row doesn't open", () => {

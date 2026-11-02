@@ -451,6 +451,32 @@ table.crew3-ph{margin-top:14px}
 .now-res{display:flex;gap:8px;padding:4px 0;font-size:.92rem}
 .plan-ideas{margin-top:16px;border-top:1px solid var(--line);padding-top:10px}
 .plan-ideas h3{font:700 1rem var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+/* The agent's pull requests (#C554): the ones that need the owner's Approve, one row each. */
+.gprs{border-bottom:1px solid var(--line)}
+.gp-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:12px 16px 8px}
+.gp-head h3{font:700 1.05rem var(--display);letter-spacing:.06em;text-transform:uppercase;margin:0}
+.gp-count{font:600 .72rem var(--mono);padding:2px 8px;border-radius:999px;background:var(--bad-soft);color:var(--bad)}
+.gp-sub{color:var(--muted);font-size:.85rem}
+.gp-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 12px;align-items:start;padding:10px 16px;border-top:1px solid var(--line)}
+.gp-num{font:700 1.1rem var(--display);color:var(--accent);text-decoration:none}
+.gp-main{min-width:0;display:flex;flex-direction:column;gap:5px}
+.gp-title{font-weight:600;overflow-wrap:anywhere}
+.gp-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:.82rem;color:var(--muted)}
+.gp-meta code{font:500 .78rem var(--mono)}
+.gp-tag{font:600 .68rem var(--mono);padding:2px 7px;border-radius:999px;background:var(--track);color:var(--muted)}
+.gp-tag.ok{background:var(--ok-soft);color:var(--ok)}
+.gp-tag.warn{background:var(--warn-soft);color:var(--warn-ink)}
+.gp-tag.bad{background:var(--bad-soft);color:var(--bad)}
+.gp-note{padding:5px 9px;border-radius:6px;background:var(--warn-soft);color:var(--warn-ink);font-size:.85rem}
+.gp-act{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.gp-act button{font:600 .9rem var(--body);border-radius:6px;padding:7px 16px;cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:var(--panel);white-space:nowrap}
+.gp-act button:disabled{opacity:.55;cursor:default}
+.gp-act a{font-size:.8rem;color:var(--muted)}
+.gp-done{padding:8px 16px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem}
+.gp-done summary{cursor:pointer}
+.gp-done button{font:600 .8rem var(--body);border-radius:6px;padding:3px 10px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);margin-left:8px}
+.gp-foot{padding:8px 16px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem}
+@media (max-width:560px){.gp-row{grid-template-columns:auto minmax(0,1fr)}.gp-act{grid-column:1/-1;align-items:stretch}.gp-act button{width:100%}}
 </style>
 
 <div class="wrap">
@@ -495,7 +521,7 @@ table.crew3-ph{margin-top:14px}
       <form class="newthread" id="newthread" data-reply="new"><label class="nt-label" for="nttext">Start a thread</label><div class="cbox"><div id="ntfiles"></div><textarea id="nttext" rows="1" placeholder="Ask Manager something, or share an idea"></textarea><div class="cbar"><div class="keys" data-keys></div><span class="cbtns btns"><span id="ntattach"></span><button type="submit" class="ok">Send</button></span></div></div><div class="msg" id="ntmsg" role="status"></div></form>
       <div class="ttabs" id="ttabs" role="tablist" aria-label="Threads and lists"></div>
       <div class="rsearch" id="tsearch"><div class="sbox"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search threads, to-dos and ideas" autocomplete="off"></div><span class="tstat" id="tstat" role="status"></span></div>
-      <div id="tp-you" role="tabpanel" aria-labelledby="tab-you"><div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div></div>
+      <div id="tp-you" role="tabpanel" aria-labelledby="tab-you"><div class="gprs" id="agentprs" hidden></div><div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div></div>
       <div id="tp-later" role="tabpanel" aria-labelledby="tab-later" hidden><div class="waiting" id="later"></div></div>
       <div id="tp-lead" role="tabpanel" aria-labelledby="tab-lead" hidden><div class="waiting" id="threads"><div class="empty">Nothing with the team.</div></div></div>
       <div id="tp-todo" role="tabpanel" aria-labelledby="tab-todo" hidden>
@@ -559,7 +585,7 @@ const PHASES=CONFIG.phases;
 const BUILD_PHASE=(CONFIG.collector&&CONFIG.collector.buildPhase)||"build";
 const LIVE_PHASE=(CONFIG.collector&&CONFIG.collector.livePhase)||"live";
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[],agentPrs:[],approvals:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -651,6 +677,44 @@ function renderWaiting(){
   el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply));
   el.querySelectorAll("details.w-item").forEach(d=>d.addEventListener("toggle",()=>{if(d.open)closedAnswers.delete(d.dataset.id);else closedAnswers.add(d.dataset.id)}));
 }
+
+// The agent's pull requests (#C554, gate/agent-prs.mjs): the ones that need the owner's Approve. agentPrs/pr<n> is the team's entry
+// (Reviewer's signature on a head, checks, Release's merge); approvals/pr<n> is the owner's button, the page's alone.
+// An approval counts for the head it names: a push after it leaves it standing for the old head, and the row asks again.
+// Only a signed head is listed (waiting on Reviewer, or review failed: nothing for the owner to do); one approved on the
+// board or on GitHub for the current head is listed apart, with its Withdraw.
+const PR_AGENT=String((CONFIG&&CONFIG.prAgent)||"The agent");
+const PR_HEX=/^[0-9a-f]{7,40}$/,PR_ID=/^pr[1-9][0-9]{0,6}$/,PR_URL=/^https:\/\/github\.com\/[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}\/pull\/[1-9][0-9]{0,6}$/;
+function prRows(prs,apps){
+  const by=new Map((apps||[]).filter(a=>a&&typeof a.id==="string").map(a=>[a.id,a])),need=[],approved=[];
+  for(const p of prs||[]){
+    if(!p||!PR_ID.test(String(p.id))||p.merged===true||!PR_HEX.test(String(p.head||"")))continue;
+    if(!(p.signedHead===p.head&&p.review!=="failed"))continue;
+    const a=by.get(p.id),board=!!a&&a.head===p.head,gh=p.ghApproved===p.head;
+    if(board||gh)approved.push({p,a:board?a:null});
+    else need.push({p,again:!!a,was:a&&PR_HEX.test(String(a.head||""))?a.head:null})}
+  const n=r=>Number(String(r.p.id).slice(2));
+  return {need:need.sort((x,y)=>n(x)-n(y)),approved:approved.sort((x,y)=>n(x)-n(y))}}
+function renderAgentPrs(now=Date.now()){
+  const el=$("agentprs");if(!el)return;
+  const {need,approved}=prRows(state.agentPrs,state.approvals);
+  if(!need.length&&!approved.length){el.hidden=true;el.innerHTML="";return}
+  const h7=s=>esc(String(s).slice(0,7)),link=p=>PR_URL.test(String(p.url||""))?p.url:null;
+  const num=p=>{const u=link(p),t="#"+Number(String(p.id).slice(2));return u?`<a class="gp-num" href="${esc(u)}" target="_blank" rel="noopener">${t}</a>`:`<span class="gp-num">${t}</span>`};
+  const checks=p=>({green:'<span class="gp-tag ok">Checks green</span>',running:'<span class="gp-tag warn">Checks running</span>',failed:'<span class="gp-tag bad">Checks failed</span>'})[p.checks]||"";
+  const age=p=>Number.isFinite(p.signedAt)?`, ${dur(now-p.signedAt)} ago`:"";
+  const row=({p,again,was})=>`<div class="gp-row" data-pr="${esc(p.id)}">${num(p)}<div class="gp-main"><div class="gp-title">${esc(p.title||p.id)}</div><div class="gp-meta"><span class="gp-tag ok">Reviewer signed</span><span>at <code>${h7(p.head)}</code>${age(p)}</span>${checks(p)}</div>${again&&was?`<div class="gp-note">${esc(PR_AGENT)} pushed after your approval of <code>${h7(was)}</code>; Reviewer re-signed the new commit. Approve it again to ship it.</div>`:""}</div><div class="gp-act"><button type="button" data-gpa="1" data-n="${Number(String(p.id).slice(2))}" data-head="${esc(p.head)}">${again?"Approve again":"Approve"}</button>${link(p)?`<a href="${esc(link(p))}" target="_blank" rel="noopener">Open on GitHub ↗</a>`:""}</div></div>`;
+  const done=({p,a})=>`<div class="gp-meta" data-pr="${esc(p.id)}"><span>${num(p)}</span><span>${esc(p.title||p.id)}</span><span>${a?`You, ${esc(new Date(a.at).toISOString().slice(11,16))}Z`:"Approved on GitHub"}, <code>${h7(p.head)}</code></span>${a?`<button type="button" data-gpw="1" data-n="${Number(String(p.id).slice(2))}">Withdraw</button>`:""}</div>`;
+  el.hidden=false;
+  el.innerHTML=`<div class="gp-head"><h3>${esc(PR_AGENT)}'s pull requests</h3>${need.length?`<span class="gp-count">${need.length} to approve</span>`:""}<span class="gp-sub">Release merges approved ones when the next ship starts</span></div>${need.map(row).join("")}${approved.length?`<details class="gp-done"><summary>${approved.length} approved: merge at the next ship</summary>${approved.map(done).join("")}</details>`:""}<div class="gp-foot">Approve here, not Merge on GitHub: an approval made now merges when the next ship starts.</div>`;
+  el.querySelectorAll("[data-gpa],[data-gpw]").forEach(b=>b.addEventListener("click",onAgentPr))}
+async function onAgentPr(e){
+  const b=e.currentTarget,n=Number(b.dataset.n);
+  if(!dbRef||!Number.isInteger(n)||n<1)return;
+  const w=b.dataset.gpw?[{op:"delete",path:`approvals/pr${n}`}]:PR_HEX.test(String(b.dataset.head||""))?[{op:"set",path:`approvals/pr${n}`,data:{number:n,head:b.dataset.head,at:Date.now(),by:OWNER}}]:null;
+  if(!w)return;
+  const was=b.textContent;b.disabled=true;
+  try{await applyWrites(w)}catch(_){b.disabled=false;b.textContent="Not saved: try again";setTimeout(()=>{b.textContent=was},4000)}}
 
 let dbRef=null, commentsRef=null, lastPing="";
 // File attachments on replies: Attach, paste or drop; kept here until the reply is sent, then stored
@@ -1023,7 +1087,7 @@ function longPaste(text,max,now,attach=true){const s=String(text||"").trim();if(
 function attachLong(key,lp){if(!lp.name||typeof File!=="function")return ()=>{};const f=new File([lp.full],lp.name,{type:"text/plain"});
   pendingFiles.set(key,[...(pendingFiles.get(key)||[]),f]);return ()=>{const l=pendingFiles.get(key)||[],k=l.indexOf(f);if(k>=0)l.splice(k,1)}}
 const longLine=(lp,max)=>!lp.cut?"":lp.name?` Your text was over ${max} characters: it went cut, with the full text attached as ${lp.name}.`:` Your text was over ${max} characters: it went cut; send the rest in a second message.`;
-async function applyWrites(ws){for(const w of ws){const d=dbRef.doc(w.path);if(w.op==="set")await d.set(w.data);else await d.update(w.data)}renderOwn();wakeLead(ws)}
+async function applyWrites(ws){for(const w of ws){const d=dbRef.doc(w.path);if(w.op==="set")await d.set(w.data);else if(w.op==="delete")await d.delete();else await d.update(w.data)}renderOwn();wakeLead(ws)}
 // The owner's word reaches the lead's session through the state Worker (#C580, gate/wake.mjs): a message of theirs, or
 // an answer to an ask that needs more than an Ack or a Done, sends board_wake {kind} once the write is saved. Never text,
 // never a reason to fail the write: a viewer without the connector, a refused call or no connector at all changes nothing.
@@ -2449,7 +2513,7 @@ function shipNow(now=Date.now()){const a=liveAgent(SHIP_ROLE,now),L=a&&a.state==
 function renderShipLine(){const el=$("shipline");if(!el)return;const s=shipNow();el.hidden=!s;if(!s){el.innerHTML="";return}
   const i=state.initRaw.find(x=>x&&x.id===s.id),n=i&&Number.isInteger(i.num)?`#C${i.num}`:esc(s.id);
   el.innerHTML=`<b>Don't restart: shipping.</b> ${esc(SHIP_ROLE)} is shipping ${s.version?`<b>v${esc(s.version)}</b> `:""}(${n}); closing the agents now would stop it halfway.`}
-function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();liveWas=liveOn();renderStamp()}
+function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();renderAgentPrs();liveWas=liveOn();renderStamp()}
 let liveWas=false;
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
@@ -2478,7 +2542,7 @@ setInterval(()=>{tick();if(!typingText()&&document.querySelector("[data-shipat]"
     ()=>{$("dot").classList.remove("on");dbState="connection lost, reload";renderStamp()}))};
   // Every collection, and again (each stream closed first) when the data is behind (#C452: catchUp).
   resubscribe=()=>{subs.forEach(u=>{try{if(typeof u==="function")u()}catch(e){}});subs=[];
-    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings","pingThreads"].forEach(sub)};
+    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings","pingThreads","agentPrs","approvals"].forEach(sub)};
   resubscribe();
 })();
 // The Studio's state (#C420), apart from the board's data: kept current by the connector's watch, once a minute.

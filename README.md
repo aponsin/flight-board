@@ -94,6 +94,17 @@ At the top of the new layout, whatever the tab, sit what needs you and the "Star
 It sits behind "Try the new layout" (or `#v3` in the link); the current board stays the default, and the choice is
 remembered in that browser only.
 
+## Approving the prospecting agent's pull requests from the board
+
+(#C554, the owner's A on #T1361.) The owner approves a Reviewer-signed pull request of the prospecting agent's with a button on the board, and Release merges it at the next ship's start. The board lists only what needs the owner: the "<agent>'s pull requests" panel (the config's `prAgent` names the agent) at the top of the You tab, one row per pull request with a head Reviewer signed and no approval for that head, each with **Approve** (or **Approve again** after a push, with the note "<agent> pushed after your approval of `<old head>`; Reviewer re-signed the new commit"). Pull requests waiting on Reviewer or with a failed review aren't listed. The ones already approved for the current head sit apart under "N approved: merge at the next ship", each with Withdraw.
+
+Two collections carry it (`gate/agent-prs.mjs`):
+
+- `agentPrs/pr<number>`: the team's entry for one open pull request. `{number, title, url, head}` are required; `signedHead, signedAt, review (ok|failed|pending)` are Reviewer's alone (the lead may write them), `checks (green|running|failed)`, `ghApproved` (the commit the owner approved on GitHub) and `merged` are Reviewer's or Release's, `at` is when it was last looked at. Reviewer writes the entry when it signs, and rewrites `head` and `signedHead` as the agent pushes; Release sets `merged: true` (or deletes the entry) after the merge. `url` is the pull request's own `https://github.com/<owner>/<repo>/pull/<number>`; the title is one line of at most 120 characters, shown escaped.
+- `approvals/pr<number>`: `{number, head, at, by}`, the owner's button, **the page's alone**: the gate refuses every session's write to it, the lead included, so only the owner's click (or Withdraw, a delete) changes it. An approval counts **for the head it names**.
+
+Release's rule at the start of a ship, before it merges anything of ours: merge pull request `<n>` only when Reviewer signed its current head (`agentPrs/pr<n>`: `signedHead` is the pull request's current head, `review` isn't `failed`), the checks are green, **and** the owner approved that same head, either on the board (`approvals/pr<n>.head` is the pull request's current head) or on GitHub with his own account (`ghApproved`, or his approval on the current head by `gh`). An approval of an older head is none; never during a running ship; never Merge on the owner's behalf from GitHub's button.
+
 ## Tests
 
 `npm test` runs every rule's test. Each rule also had a mutation check: break the rule on purpose, a test must fail, restore.
