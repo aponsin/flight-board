@@ -106,11 +106,16 @@ test("the version line: the pack name (or the installed code) and the page's com
 });
 
 // #C611: Today, 7 days, 30 days and Plan week on one row on a laptop (Plan week wrapped under the three), 2x2 on a phone.
-test("the Time spent tiles: four columns, two by two on a phone", () => {
+test("the Time spent tiles: as many 110px+ columns as fit (four on a laptop, two by two narrow), long words break", () => {
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-  assert.match(html, /\.totals\{display:grid;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
-  assert.match(html, /@media \(max-width:560px\)\{\.totals\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}\}/);
-  assert.doesNotMatch(html, /\.totals\{[^}]*repeat\(3,/, "no three-column grid left");
+  assert.match(html, /\.totals\{display:grid;grid-template-columns:repeat\(auto-fit,minmax\(110px,1fr\)\)/);
+  assert.match(html, /\.tot\{[^}]*overflow-wrap:anywhere/, "BOARDSMITH never overflows a tile");
+  assert.doesNotMatch(html, /\.totals\{[^}]*repeat\((3|4),/, "no fixed column count left");
+});
+
+test("the header's right block is left-aligned on a phone, where it wraps under the title", () => {
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(html, /@media \(max-width:600px\)\{\.hdr-right\{align-items:flex-start;text-align:left\}\}/);
 });
 
 test("the build stamps the page's commit and the pack name into the header; only well-formed ones", async () => {

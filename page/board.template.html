@@ -25,6 +25,7 @@ header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-
 h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;margin:0}
 /* The Manager chip sits at the header's top right, above the clock; with no room beside the title the whole block wraps below it. */
 .hdr-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:100%;text-align:right}
+@media (max-width:600px){.hdr-right{align-items:flex-start;text-align:left}}
 .clock{font:600 1rem var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .live-dot.on{background:var(--ok)}
@@ -154,10 +155,10 @@ details.done-list summary{cursor:pointer;color:var(--muted);padding:10px 16px}
 @media (max-width:760px){.feedpanel{min-height:0}.feedwrap{flex:none;height:26rem}}
 .ver{font:600 .78rem var(--mono);color:var(--ok)}
 .usage{padding:14px 16px;display:flex;flex-direction:column;gap:14px}
-/* #C611: the four tiles (Today, 7 days, 30 days, Plan week) in one row on a laptop; two by two on a phone. */
-.totals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
-@media (max-width:560px){.totals{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.tot{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+/* #C611: the four tiles (Today, 7 days, 30 days, Plan week) in one row on a laptop; two by two where there is no room (a
+   narrow window, a phone): tiles at least 110px wide (Designer), a long word breaks rather than overflows. */
+.totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.tot{border:1px solid var(--line);border-radius:8px;padding:8px 10px;overflow-wrap:anywhere}
 .tot .n{font:600 1.15rem var(--mono);font-variant-numeric:tabular-nums}
 .tot .l{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .tot.plan.amber{border-color:var(--warn);background:var(--warn-soft)}.tot.plan.amber .n{color:var(--warn-ink)}
