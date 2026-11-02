@@ -20,6 +20,9 @@
 //   9. a READY on commits after the card's ship (#C534): the repository reads the branch as "extra commits after ship"
 //      (#C527: no commit after the ship carries the card's Board-Id), yet a build end step was logged at or after the
 //      tip's commit. A rework hiding from the board; a second line for the lead to forward to whoever logged it.
+//  10. an idle agent with work waiting (#C574): a role the fresh live state has idle for IDLE_MIN minutes or more, with a
+//      card queued for it (status queued, who the role). One line per role, "IDLE WITH WORK: <Role> #C<n>, …", so the
+//      lead re-sends its next card (Builder and Boardsmith sat idle with queued cards after a lead reset).
 // The CONFLICT lines are the collector's own (collector/derive.mjs). Every board value a line names goes through idText
 // (collector/text.mjs): the lines reach a session that can write the board and message the team.
 
@@ -28,7 +31,7 @@ import { repoOf, openAsks } from "./derive.mjs";
 import { typedClashes } from "./state-schema.mjs";
 import { reworkOwed, signalText } from "./rework.mjs";
 
-const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10, TYPED_MIN = 5;
+const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10, TYPED_MIN = 5, IDLE_MIN = 10;
 const closed = (k) => k.status === "done" || k.status === "dropped";
 // A branch name from the repository: printed only if it has a branch's plain shape (it goes on to a reviewer), else "?".
 const branchText = (b) => (typeof b === "string" && /^[A-Za-z0-9._/-]{1,100}$/.test(b) ? b : "?");
@@ -202,6 +205,24 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
       text: `${q(id)}${tag}: READY logged after its ship, but ${branchText(a.branch)} at ${a.tip.slice(0, 8)} has no "Board-Id: ${q(id)}" commit since the ship, so the board reads it as ${Number.isInteger(a.extra) ? a.extra : "?"} extra commits after ship, not a new review; forward:`,
       then: `forward to ${q(ready.who || "its builder")}: a rework after ${q(id)}${tag} shipped needs a commit with "Board-Id: ${q(id)}" (or its own branch and sub-card), or the board never shows it READY`,
     });
+  }
+
+  // 10. An idle agent with a queued card (#C574). Only a fresh reading says idle: "unknown" and no reading say nothing.
+  // The lead is never named (it reads every card; it builds none). Keyed by the role and its cards, so a new queued card
+  // is a new nudge.
+  if (live && live.agents && typeof live.agents === "object") {
+    const lead = config.gate?.managerRole, byRole = new Map();
+    for (const card of cards.values()) {
+      const role = card.who;
+      if (card.status !== "queued" || typeof role !== "string" || role === lead || !Object.hasOwn(live.agents, role)) continue;
+      const a = live.agents[role];
+      if (a?.state !== "idle" || typeof a.since !== "number" || now - a.since < IDLE_MIN * MIN) continue;
+      byRole.set(role, [...(byRole.get(role) ?? []), card]);
+    }
+    for (const [role, list] of byRole) {
+      const names = list.sort((x, y) => (Number.isInteger(x.num) ? x.num : Infinity) - (Number.isInteger(y.num) ? y.num : Infinity)).map((k) => (Number.isInteger(k.num) && k.num > 0 ? `#C${k.num}` : q(k.id)));
+      firing.push({ key: `idle:${role}:${names.join(",")}`, text: `IDLE WITH WORK: ${q(role)} ${names.join(", ")} (idle ${mins(now - live.agents[role].since)} min): send its next card` });
+    }
   }
 
   // Once, then again only after the quiet period; forgotten when it stops holding.
