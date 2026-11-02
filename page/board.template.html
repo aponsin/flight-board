@@ -21,7 +21,7 @@
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);padding:20px 16px 40px}
 .wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
-header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px}
+header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px}
 h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;margin:0}
 /* The Manager chip sits at the header's top right, above the clock; with no room beside the title the whole block wraps below it. */
 .hdr-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:100%;text-align:right}
@@ -29,6 +29,8 @@ h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;
 .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .live-dot.on{background:var(--ok)}
 .mgr-chip{display:inline-block;font:600 .72rem var(--mono);padding:2px 8px;border-radius:999px;white-space:normal}
+.mgr-chip[hidden]{display:none}
+.boardver{font:600 .75rem var(--mono);color:var(--muted);margin-top:6px}
 .mgr-chip.ok{background:var(--ok-soft);color:var(--ok)}.mgr-chip.warn{background:var(--warn-soft);color:var(--warn-ink)}.mgr-chip.bad{background:var(--bad-soft);color:var(--bad)}
 .t-seen{font:.7rem var(--mono);color:var(--muted);text-align:right}
 h2{font:700 1.15rem/1.2 var(--display);letter-spacing:.06em;text-transform:uppercase;margin:0 0 10px;color:var(--muted)}
@@ -495,7 +497,7 @@ table.crew3-ph{margin-top:14px}
 
 <div class="wrap">
   <header>
-    <h1>{{TITLE}}<span class="livever" id="livever"></span></h1>
+    <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div></div>
     <div class="hdr-right"><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div></div>
   </header>
   <div class="shipline" id="shipline" role="status" hidden></div>
@@ -2522,9 +2524,17 @@ function managerChip(now=Date.now()){if(!liveOn(now)||!Object.hasOwn(probe.board
   // before it carries no key, and the chip says nothing of cards.
   const hasCards=Object.hasOwn(b,"cardsCheckedAt"),cc=isT(b.cardsCheckedAt)?b.cardsCheckedAt:null;
   if(hasCards&&(cc==null||b.at-cc>CARDS_STALE))return {cls:"bad",text:cc==null?"Cards not checked":`Cards not checked since ${hhmm(cc)}`};
-  const open=ownerUnanswered(),cards=hasCards?` · cards checked ${hhmm(cc)}`:"";
-  if(open&&isT(b.wakeSeenAt)&&b.wakeSeenAt>=open.at)return {cls:"warn",text:`seen your ${hhmm(open.at)} message · answer coming${cards}`};
-  return {cls:"ok",text:(open?"Manager listening":`Manager listening · caught up ${hhmm(alive)}`)+cards}}
+  // #C606: the chip says Manager's state alone; the Studio's check is the header stamp's "Studio checked …", so the probe's
+  // reading is shown once, not here too.
+  const open=ownerUnanswered();
+  if(open&&isT(b.wakeSeenAt)&&b.wakeSeenAt>=open.at)return {cls:"warn",text:`seen your ${hhmm(open.at)} message · answer coming`};
+  return {cls:"ok",text:"Manager listening"}}
+// #C609: "Board v3.45 · page c647307" under the title. The page's commit and the pack's name are stamped when the page is built
+// (scripts/build-page.mjs; the pack name only when Release passes BOARD_PACK); with no pack name the board's own part is the
+// installed code the live probe reports (its pinned copy's first 7 characters). A part that isn't there is left out.
+function boardVerText(pack,commit,installed){const p=/^v\d+\.\d+[a-z]?$/.test(pack||"")?pack:"",c=/^[0-9a-f]{7,12}$/.test(commit||"")?commit:"",i=/^[0-9a-f]{12}$/.test(installed||"")?installed.slice(0,7):"";
+  return [p||i?"Board "+(p||i):"",c?"page "+c:""].filter(Boolean).join(" · ")}
+function renderBoardVer(){const el=$("boardver");if(!el)return;const t=boardVerText(el.dataset.pack,el.dataset.commit,liveOn(Date.now())&&probe&&probe.board?probe.board.pageVersion:null);el.hidden=!t;el.textContent=t}
 function renderManagerChip(){const el=$("mgrchip");if(!el)return;const c=managerChip();el.hidden=!c;if(c){el.className="mgr-chip "+c.cls;el.textContent=c.text}}
 // Under the owner's message: "seen" once the watch has handled a wake at or after it; the time is the wake's, shown on the
 // newest such message (the older ones are before it, with no time of their own).
@@ -2548,7 +2558,7 @@ function dataBehind(now=Date.now()){const w=liveWriteAt(now);return w!=null&&w>(
 const ageText=ms=>{const s=Math.max(0,Math.round(ms/1e3));return s<60?s+" s":dur(s*1e3)};
 // The header stamp: which source the board reads, and how old it is; while live, the data's age beside it, never the
 // live age alone (#C452).
-function stampText(now=Date.now()){if(liveOn(now)){const h=dbHeld(),both="live "+ageText(now-probe.board.at)+" · "+(h?"data "+ageText(now-h):"no data yet");
+function stampText(now=Date.now()){if(liveOn(now)){const h=dbHeld(),both="Studio checked "+ageText(now-probe.board.at)+" ago · "+(h?"Data "+ageText(now-h):"no data yet");
     return dataBehind(now)?"Board data behind, reloading · "+both:both}
   const all=state.derived.find(d=>d.id==="all"),at=num(all&&all.at);return at!=null?"from "+hhmm(at):dbSynced?"from "+hhmm(dbSynced):"connecting…"}
 // What the page does while its data is behind: every collection read again (resubscribed), then, if it is still behind
@@ -2565,7 +2575,7 @@ function catchUp(now=Date.now()){if(!dataBehind(now)){resyncAt=null;return null}
   try{location.reload()}catch(e){}return "reloaded"}
 const stampLine=(now=Date.now())=>stampText(now)+(probeNote?" · "+probeNote:"");
 let dbSynced=null,dbState="";
-function renderStamp(){renderManagerChip();const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
+function renderStamp(){renderManagerChip();renderBoardVer();const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
   // Why the board reads the db (a lapsed connector, an odd reading) shows as words, not only on hover: a phone has none
   // (Checker on live-source).
   el.textContent=stampLine();
