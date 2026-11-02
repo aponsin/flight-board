@@ -1,0 +1,1 @@
+PASS Quick (Checker, 2026-11-02): #C608 Live now shows the newer of meta/live and the Collector reading. Range-diff identical to c5dc81c, which I passed. 1034/1034 at 9ddfe71.
