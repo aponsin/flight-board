@@ -147,3 +147,15 @@ test("a failed wake (error result, throw, or no connector) falls back to the com
     assert.equal(sends.length, 1);
   }
 });
+
+test("a card's #C ↻ press writes the owner's status-check message in its thread and wakes the lead", async () => {
+  const writes = [], calls = [];
+  const w = loadNames(["pressCheck", "set:(d,m)=>{dbRef=d;liveMcp=m}"]);
+  w.set({ doc: (path) => ({ set: async (data) => writes.push({ path, data }), update: async (data) => writes.push({ path, data }) }) }, { callTool: async (...a) => { calls.push(a); return { content: [] }; } });
+  await w.pressCheck("card-x", T);
+  assert.deepEqual(writes.map((x) => x.path.split("/")[0]), ["checkRequests", "messages"]);
+  const m = writes[1].data;
+  assert.equal(m.thread, "card-x");
+  assert.equal(m.text, "Status check please.");
+  assert.ok(calls.some((c) => c[1] === "board_wake" && c[2].kind === "message"), "the message wakes the lead");
+});
