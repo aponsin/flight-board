@@ -1,0 +1,1 @@
+PASS Full: #C554, this commit's own diff over 47d99b8d (the gate's approvals and agentPrs rules, the page's panel); 47d99b8d is #C580's and is signed separately
