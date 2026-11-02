@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C617 board truth, scope (1)-(3) as the card now reads; parts (4)-(6) split to #C619-#C621. Suite 1061/1061; real ship titles parse; mutation check (cut-title ellipsis dropped, 2 tests fail): pass.
