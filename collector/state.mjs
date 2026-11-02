@@ -226,7 +226,7 @@ export function remoteTips(git, remote) {
 // The CI run on a commit: { ci, ciMin }, from gh's newest run on it.
 export function ciOf(gh, sha, now) {
   let runs = [];
-  try { runs = JSON.parse(gh(["run", "list", "--commit", sha, "--limit", "1", "--json", "status,conclusion,createdAt,updatedAt"])); } catch { return { ci: "none", ciMin: null }; }
+  try { runs = JSON.parse(gh(["run", "list", "--commit", sha, "--limit", "1", "--json", "status,conclusion,createdAt,updatedAt"])); } catch { return { ci: "none", ciMin: null, failed: true }; }
   const r = Array.isArray(runs) ? runs[0] : null;
   if (!plain(r)) return { ci: "none", ciMin: null };
   const status = String(r.status ?? ""), conclusion = String(r.conclusion ?? "");
@@ -244,14 +244,22 @@ export const MAX_CI_CALLS = 10;
 // neither override a card's other fields nor stop every run); anything else is asked again.
 const FINISHED = ["passed", "failed", "cancelled"];
 export const ciEntry = (v) => (v && FINISHED.includes(v.ci) && (v.ciMin === null || (Number.isInteger(v.ciMin) && v.ciMin >= 0 && v.ciMin <= 10000)) ? { ci: v.ci, ciMin: v.ciMin } : null);
-export function ciReader(gh, now, cache) {
+// Back-off (#C591): a gh call that fails (GitHub's rate limit answers an error, and gh's stderr is not read here) stops
+// every gh call until backoff.until, then tries again; each failure in a row doubles the wait, from BACKOFF_MIN_MS to
+// BACKOFF_MAX_MS, and one success clears it. backoff: { until, wait }, kept from run to run by the caller.
+export const BACKOFF_MIN_MS = 60e3, BACKOFF_MAX_MS = 30 * 60e3;
+const wholeMs = (v) => (Number.isInteger(v) && v >= 0 && v <= 4102444800000 ? v : 0);
+export const backoffOf = (v) => ({ until: wholeMs(v?.until), wait: Math.min(BACKOFF_MAX_MS, Math.max(BACKOFF_MIN_MS, wholeMs(v?.wait))) });
+export function ciReader(gh, now, cache, backoff = { until: 0, wait: BACKOFF_MIN_MS }) {
   let calls = 0;
   return (sha) => {
     const kept = ciEntry(cache[sha]);
     if (kept) return kept;
-    if (calls >= MAX_CI_CALLS) return { ci: "none", ciMin: null };
+    if (calls >= MAX_CI_CALLS || now < backoff.until) return { ci: "none", ciMin: null };
     calls++;
     const r = ciOf(gh, sha, now);
+    if (r.failed) { backoff.until = now + backoff.wait; backoff.wait = Math.min(BACKOFF_MAX_MS, backoff.wait * 2); }
+    else { backoff.until = 0; backoff.wait = BACKOFF_MIN_MS; }
     if (FINISHED.includes(r.ci)) cache[sha] = { ci: r.ci, ciMin: r.ciMin };
     return { ci: r.ci, ciMin: r.ciMin };
   };
@@ -356,9 +364,17 @@ export function wakeTimes(dir, now) {
   return { wakeAlive: time(ALIVE_FILE), wakeSeen: time(SEEN_FILE) };
 }
 
+// When the cards were last checked (#C591): this run's time when every repository was read fresh (repo.fresh, not false),
+// else the last time that was so (a repository GitHub could not be reached for leaves the time behind, and the page's chip
+// goes red at 5 minutes). none when there never was one.
+export function cardsCheckedAt(repoList, now, before) {
+  if (repoList.every((r) => r.fresh !== false)) return now;
+  return Number.isInteger(before) && before >= 1577836800000 && before <= now ? before : null;
+}
+
 // The state that leaves, checked against the allowlist before it does.
-export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null }) {
-  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen }, cards, agents };
+export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null }) {
+  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked }, cards, agents };
   const errs = stateErrors(s);
   if (errs.length) throw new Error(`the state doesn't fit the plan (${errs.length} problem(s), first: ${errs[0]})`);
   return pickState(s);
@@ -426,11 +442,13 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const run = (cwd) => (bin, timeout) => (args) => execFileSync(bin, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout, maxBuffer: 64 * 1024 * 1024 });
   const repoAt = (path, remote, main, notes) => {
     const git = run(path)("git", 30_000);
-    if (fetchIt) { try { git(fetchBranches(remote)); git(["fetch", "-q", remote, "+refs/notes/*:refs/notes/flight-board/*"]); } catch { /* read what is here */ } }
+    // fresh: this run read the repository as GitHub has it now (#C591): the fetch and the tips both worked.
+    let fresh = true;
+    if (fetchIt) { try { git(fetchBranches(remote)); git(["fetch", "-q", remote, "+refs/notes/*:refs/notes/flight-board/*"]); } catch { fresh = false; /* read what is here */ } }
     const local = Object.fromEntries(Object.entries(notes).map(([p, ref]) => [p, `refs/notes/flight-board/${ref.slice("refs/notes/".length)}`]));
     let tips = [];
-    try { tips = remoteTips(git, remote); } catch { /* an empty clone */ }
-    return { git, gh: run(path)("gh", 15_000), remote, main, notes: local, tips, ids: changeIds };
+    try { tips = remoteTips(git, remote); } catch { fresh = false; /* an empty clone */ }
+    return { git, gh: run(path)("gh", 15_000), remote, main, notes: local, tips, ids: changeIds, fresh };
   };
   // Finished CI runs, kept by commit from run to run (the newest 500).
   const ciPath = join(stateDir, id, "ci-cache.json");
@@ -438,6 +456,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const idsPath = join(stateDir, id, "change-ids.json");
   let changeIds = {};
   try { const r = readTail(idsPath, 2 * 1024 * 1024); const o = r?.whole ? JSON.parse(r.text) : null; if (plain(o)) changeIds = Object.fromEntries(Object.entries(o).filter(([k, v]) => /^[0-9a-f]{40}$/.test(k) && (v === null || /^[0-9a-f]{64}$/.test(String(v))))); } catch { /* start afresh */ }
+  // gh's back-off after a failed call (#C591), kept from run to run.
+  const backoffPath = join(stateDir, id, "gh-backoff.json");
+  let backoff = backoffOf(null);
+  try { const r = readTail(backoffPath, 4096); if (r?.whole) backoff = backoffOf(JSON.parse(r.text)); } catch { /* none */ }
   let ciCache = {};
   try { const r = readTail(ciPath, 1024 * 1024); const o = r?.whole ? JSON.parse(r.text) : null; if (plain(o)) ciCache = Object.fromEntries(Object.entries(o).filter(([k]) => /^[0-9a-f]{40}$/.test(k)).map(([k, v]) => [k, ciEntry(v)]).filter(([, v]) => v)); } catch { /* start afresh */ }
   // A repository git can't read gives no tips: its cards stay as declared.
@@ -446,7 +468,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const r = repoAt(home(c.repoPath), c.remote, c.mainBranch, c.notes);
     let live = null;
     if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { /* none */ } }
-    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern };
+    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern };
   }
   for (const x of c.repos) {
     let installed = null;
@@ -465,8 +487,14 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   let pageVersion = null;
   try { pageVersion = basename(readlinkSync(join(stateDir, "current"))); } catch { /* no link */ }
   let state;
+  const checkedPath = join(stateDir, id, "cards-checked.json");
+  let checkedBefore = null;
+  try { const r = readTail(checkedPath, 4096); if (r?.whole) checkedBefore = JSON.parse(r.text)?.at; } catch { /* none */ }
+  const cardsChecked = cardsCheckedAt(Object.values(repos), now, checkedBefore);
   try {
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), ...wakeTimes(join(stateDir, id), now) });
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, ...wakeTimes(join(stateDir, id), now) });
+    writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
+    writeAtomic(backoffPath, JSON.stringify(backoff));
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
     // The roles stopped on a prompt (#C526), for the Collector's alarm and the watchdog (#C529): roles, times and tool
     // classes only, on this machine only.

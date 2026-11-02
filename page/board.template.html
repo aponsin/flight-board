@@ -2461,15 +2461,19 @@ const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHA
 // (board.wakeAliveAt) and the last wake it handled (board.wakeSeenAt). Times only. A heartbeat more than WAKE_ALIVE_MAX
 // older than the probe's own reading, or none, is "not listening"; a probe from before this carries neither key, and the
 // chip stays hidden. A message is answered once anyone but the owner wrote after it in its thread.
-const WAKE_ALIVE_MAX=3*60e3;
+const WAKE_ALIVE_MAX=3*60e3,CARDS_STALE=5*60e3;
 function ownerUnanswered(){const own=state.messages.filter(m=>m&&m.from===OWNER&&isT(m.at)).sort((a,b)=>b.at-a.at)[0];
   return own&&!state.messages.some(m=>m&&m.thread===own.thread&&m.from!==OWNER&&isT(m.at)&&m.at>own.at)?own:null}
 function managerChip(now=Date.now()){if(!liveOn(now)||!Object.hasOwn(probe.board,"wakeAliveAt"))return null;
   const b=probe.board,alive=isT(b.wakeAliveAt)?b.wakeAliveAt:null;
   if(alive==null||b.at-alive>WAKE_ALIVE_MAX)return {cls:"bad",text:alive==null?"Manager not listening · say wake up the team":`Manager not listening since ${hhmm(alive)} · say wake up the team`};
-  const open=ownerUnanswered();
-  if(open&&isT(b.wakeSeenAt)&&b.wakeSeenAt>=open.at)return {cls:"warn",text:`seen your ${hhmm(open.at)} message · answer coming`};
-  return {cls:"ok",text:open?"Manager listening":`Manager listening · caught up ${hhmm(alive)}`}}
+  // #C591: the probe's last full read of the repositories (board.cardsCheckedAt); red 5 minutes after it. A probe from
+  // before it carries no key, and the chip says nothing of cards.
+  const hasCards=Object.hasOwn(b,"cardsCheckedAt"),cc=isT(b.cardsCheckedAt)?b.cardsCheckedAt:null;
+  if(hasCards&&(cc==null||b.at-cc>CARDS_STALE))return {cls:"bad",text:cc==null?"Cards not checked":`Cards not checked since ${hhmm(cc)}`};
+  const open=ownerUnanswered(),cards=hasCards?` · cards checked ${hhmm(cc)}`:"";
+  if(open&&isT(b.wakeSeenAt)&&b.wakeSeenAt>=open.at)return {cls:"warn",text:`seen your ${hhmm(open.at)} message · answer coming${cards}`};
+  return {cls:"ok",text:(open?"Manager listening":`Manager listening · caught up ${hhmm(alive)}`)+cards}}
 function renderManagerChip(){const el=$("mgrchip");if(!el)return;const c=managerChip();el.hidden=!c;if(c){el.className="mgr-chip "+c.cls;el.textContent=c.text}}
 // Under the owner's message: "seen" once the watch has handled a wake at or after it; the time is the wake's, shown on the
 // newest such message (the older ones are before it, with no time of their own).
