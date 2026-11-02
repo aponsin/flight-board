@@ -2323,7 +2323,11 @@ function gates(i){
   return out;
 }
 // A card given up ("dropped", with dropReason) is closed like a done one, and says so.
-const asShown=i=>i&&i.status==="dropped"?{...i,status:"done",dropped:true}:i;
+// #C617: a card whose commits are live by the probe's reading (the tip on main and deployed, or in the installed pack) shows as done
+// at once, before anyone writes it (the page writes nothing: the lead's CLOSE line does); a card with a check still to run
+// (checkAt, Verifying) keeps waiting for it.
+const closeableNow=i=>!!i&&typeof i.id==="string"&&i.status!=="done"&&i.status!=="dropped"&&!Number.isFinite(i.checkAt)&&(l=>!!l&&l.onMain&&l.phase===LIVE_PHASE)(liveCard(i.id));
+const asShown=i=>i&&i.status==="dropped"?{...i,status:"done",dropped:true}:closeableNow(i)?{...i,status:"done",doneByEvidence:true}:i;
 // Board v3, the Plan view (step 2; board-brief section 9): the plan's outline, each node with the state the collector
 // worked out (derived/all's plan: done, in progress, gated, next), each objective with its bar and chip against its due
 // day, replaced nodes struck through with when and why, the cards serving each node, and the ideas not in the plan yet

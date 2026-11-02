@@ -267,21 +267,43 @@ export function ciReader(gh, now, cache, backoff = { until: 0, wait: BACKOFF_MIN
   };
 }
 
-// #C617: the ship runs on now, from GitHub's own run titles. Release's ship run is titled "vX: <branch>@<sha>"; the title is read
-// here, and only its branch and sha ever matter (they pick the card; nothing of the title leaves). One gh call a minute, in the
-// same back-off as the CI reads. null when gh can't be asked (the cards then say nothing of shipping, never "not shipping").
-export const SHIP_TITLE = /^v\d{1,4}\.\d{1,4}\.\d{1,4}: ([A-Za-z0-9._/-]{1,100})@([0-9a-f]{7,40})$/;
+// #C617: the ship runs on now, from GitHub's own runs. A ship run is titled "vX.Y.Z: <branch>@<sha>[, <branch>@<sha> ...]": a ship
+// combines every signed branch, and GitHub cuts a long title with "…" (a branch may keep only a short sha, the last may lose its
+// end). Every "branch@sha" pair is read from the title, the cut ones too; and when the repository's shippedPattern is set the same
+// pairs are read, whole, from the run's own commit subjects (git log -5 of its head sha, as the Collector's shipping() does for the
+// candidate branch), so a cut title doesn't hide a branch. Only the branch and the sha ever matter (they pick the card; nothing of
+// a title leaves). One gh call a minute, in a back-off of its own. null when gh can't be asked (the cards then say nothing of
+// shipping, never "not shipping").
+const SHIP_HEAD = /^v\d{1,4}\.\d{1,4}\.\d{1,4}: (.+)$/;
+const SHIP_PAIR = /^([A-Za-z0-9._/-]{1,100})[@＠]([0-9a-f]{4,40})…?$/;
+export const SHIP_TITLE = SHIP_HEAD;
+export function shipTitlePairs(title) {
+  const m = SHIP_HEAD.exec(String(title ?? ""));
+  if (!m) return [];
+  return m[1].split(/,\s*/).map((p) => SHIP_PAIR.exec(p.trim())).filter(Boolean).map((p) => ({ branch: p[1], sha: p[2] }));
+}
 const RUNNING = ["in_progress", "queued", "waiting", "pending", "requested"];
-export function shipRuns(gh, now, backoff = { until: 0, wait: BACKOFF_MIN_MS }) {
+export function shipRuns(gh, now, backoff = { until: 0, wait: BACKOFF_MIN_MS }, { git = null, shippedPattern = "" } = {}) {
   if (now < backoff.until) return null;
   let runs;
-  try { runs = JSON.parse(gh(["run", "list", "--limit", "30", "--json", "status,displayTitle"])); } catch { backoff.until = now + backoff.wait; backoff.wait = Math.min(BACKOFF_MAX_MS, backoff.wait * 2); return null; }
+  try { runs = JSON.parse(gh(["run", "list", "--limit", "30", "--json", "status,displayTitle,headSha"])); } catch { backoff.until = now + backoff.wait; backoff.wait = Math.min(BACKOFF_MAX_MS, backoff.wait * 2); return null; }
   if (!Array.isArray(runs)) return null;
   backoff.until = 0; backoff.wait = BACKOFF_MIN_MS;
-  return runs.filter((r) => plain(r) && RUNNING.includes(String(r.status))).map((r) => SHIP_TITLE.exec(String(r.displayTitle ?? ""))).filter(Boolean).map((m) => ({ branch: m[1], sha: m[2] }));
+  const out = [];
+  for (const r of runs.filter((x) => plain(x) && RUNNING.includes(String(x.status)) && SHIP_HEAD.test(String(x.displayTitle ?? "")))) {
+    out.push(...shipTitlePairs(r.displayTitle));
+    if (git && shippedPattern && /^[0-9a-f]{40}$/.test(String(r.headSha ?? ""))) {
+      try {
+        const re = new RegExp(shippedPattern, "g");
+        for (const s of git(["log", "-5", "--format=%s", r.headSha]).split("\n")) for (const m of s.matchAll(re)) if (m[1] && /^[0-9a-f]{7,40}$/.test(m[2] ?? "")) out.push({ branch: m[1], sha: m[2] });
+      } catch { /* the title's pairs stand */ }
+    }
+  }
+  return out;
 }
-// Whether a ship run is for this card's tip: its branch is the tip's (whole or the last part) or its sha starts either commit.
-export const shipsCard = (ships, tip, head) => ships.some((s) => s.branch === tip.branch || s.branch === String(tip.branch).split("/").pop() || tip.sha.startsWith(s.sha) || head.sha.startsWith(s.sha));
+// Whether a ship run is for this card's tip: its branch is the tip's, whole ("admin/x" and "build/x" are two cards), or its sha
+// (7 characters at least: a cut title's short sha alone names nothing) starts the tip or the head.
+export const shipsCard = (ships, tip, head) => ships.some((s) => s.branch === tip.branch || (s.sha.length >= 7 && (tip.sha.startsWith(s.sha) || head.sha.startsWith(s.sha))));
 
 // The version a commit went live in: the first subject naming one (versionPattern), from the commit itself on along
 // the main line's first parents that descend from it.
@@ -543,6 +565,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const backoffPath = join(stateDir, id, "gh-backoff.json");
   let backoff = backoffOf(null);
   try { const r = readTail(backoffPath, 4096); if (r?.whole) backoff = backoffOf(JSON.parse(r.text)); } catch { /* none */ }
+  // The ship-run read's own back-off (a good run-list read must not clear the CI reads' one: Security's note on 47cdc89), kept
+  // for this run only: a failure waits a minute, and the next minute asks again.
+  const shipBackoff = { until: 0, wait: BACKOFF_MIN_MS };
   let ciCache = {};
   try { const r = readTail(ciPath, 1024 * 1024); const o = r?.whole ? JSON.parse(r.text) : null; if (plain(o)) ciCache = Object.fromEntries(Object.entries(o).filter(([k]) => /^[0-9a-f]{40}$/.test(k)).map(([k, v]) => [k, ciEntry(v)]).filter(([, v]) => v)); } catch { /* start afresh */ }
   // A repository git can't read gives no tips: its cards stay as declared.
@@ -551,7 +576,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const r = repoAt(home(c.repoPath), c.remote, c.mainBranch, c.notes);
     let live = null;
     if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { /* none */ } }
-    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), ships: shipRuns(r.gh, now, backoff), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern };
+    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern };
   }
   for (const x of c.repos) {
     let installed = null;
