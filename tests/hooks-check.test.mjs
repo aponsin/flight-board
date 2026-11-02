@@ -62,6 +62,30 @@ test("only a pinned copy is imported: a planted folder outside the install root 
   assert.equal(isPinnedCopy(join(root, "nope"), root), false);
 });
 
+test("the owner's real settings shapes (Checker on 3ede5a0): ~/ expands, the current link and an install copy pass, another repository's hooks are skipped", async () => {
+  const home = mkdtempSync(join(tmpdir(), "home-"));
+  const root = join(home, ".flight-board", "install");
+  const copy = join(root, SHA_NEW);
+  mkdirSync(join(copy, "scripts"), { recursive: true });
+  copyFileSync(join(here, "scripts", "config.mjs"), join(copy, "scripts", "config.mjs"));
+  symlinkSync(copy, join(home, ".flight-board", "current"));
+  const other = join(home, "Documents", "Code", "other-repo");
+  mkdirSync(join(other, "scripts"), { recursive: true });
+  writeFileSync(join(other, "scripts", "watchdog-a.mjs"), "// not flight-board\n");
+  const settings = [
+    `node ~/.flight-board/current/scripts/pickup-watch.mjs`,
+    `node '${join(root, SHA_NEW)}/gate/gate.mjs' --config '/c.json'`,
+    `node ${other}/scripts/watchdog-a.mjs`,
+  ].join("\n");
+  const roots = pinnedRoots([settings], home);
+  assert.deepEqual(roots, [join(home, ".flight-board", "current"), other, copy].sort(), "~ is the home folder, and no root is just '/.flight-board/current'");
+  assert.equal(roots.includes("/.flight-board/current"), false);
+  const r = report(await dryRun(roots, config, root));
+  assert.equal(r.ok, true, r.lines.join("\n"));
+  assert.match(r.lines.join("\n"), new RegExp(`skipped ${other.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: no scripts/config.mjs`));
+  assert.equal(r.checked, 2, "the current link and the install copy were checked");
+});
+
 test("the command: exit 1 naming the stale copy, 0 when all accept, 2 with nothing to check", () => {
   const { root, old, cur } = installRoot();
   const work = mkdtempSync(join(tmpdir(), "pack-"));

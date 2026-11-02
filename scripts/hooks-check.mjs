@@ -13,10 +13,11 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 
 // The folders of the flight-board scripts a text runs: the path before /gate|collector|scripts|worker/<file>.mjs. Quotes
 // around a path (hooks.mjs shellQuote) are not part of it.
-const SCRIPT = /(\/[^\s'"`]+?)\/(?:gate|collector|scripts|worker)\/[A-Za-z0-9._-]+\.mjs/g;
-export function pinnedRoots(texts) {
+// A leading "~/" is the home folder (the settings write ~/.flight-board/current/…), not the "/" after it.
+const SCRIPT = /((?:~)?\/[^\s'"`]+?)\/(?:gate|collector|scripts|worker)\/[A-Za-z0-9._-]+\.mjs/g;
+export function pinnedRoots(texts, home = homedir()) {
   const roots = new Set();
-  for (const t of texts) for (const m of String(t).matchAll(SCRIPT)) roots.add(m[1]);
+  for (const t of texts) for (const m of String(t).matchAll(SCRIPT)) roots.add(m[1].startsWith("~/") ? join(home, m[1].slice(2)) : m[1]);
   return [...roots].sort();
 }
 
@@ -36,9 +37,11 @@ export function isPinnedCopy(root, installRoot = INSTALL_ROOT, uid = process.get
 export async function dryRun(roots, config, installRoot = INSTALL_ROOT) {
   const out = [];
   for (const root of roots) {
-    if (!isPinnedCopy(root, installRoot)) { out.push({ root, problems: ["not a pinned copy (<install root>/<signed commit>): not imported"] }); continue; }
     const file = join(root, "scripts", "config.mjs");
+    // A folder with no config check is not a flight-board copy (the owner's other repositories' hooks): skipped, and not
+    // imported, only looked for. One that has a config check but is not a pinned copy fails and is never imported.
     if (!existsSync(file)) { out.push({ root, problems: ["no scripts/config.mjs there: nothing to check it against"], skipped: true }); continue; }
+    if (!isPinnedCopy(root, installRoot)) { out.push({ root, problems: ["not a pinned copy (<install root>/<signed commit>): not imported"] }); continue; }
     try {
       const { checkConfig } = await import(pathToFileURL(realpathSync(file)).href);
       out.push({ root, problems: checkConfig(config) });
