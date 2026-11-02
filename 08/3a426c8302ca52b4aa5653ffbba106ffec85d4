@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C583 WAKE for a roster role with no open session and work waiting, one ROSTER missing line for the rest, once per spell; never the lead. Mutation on the work split caught by wake-roles.test. 1024/1024 at 46d97a0.
