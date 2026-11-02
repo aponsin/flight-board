@@ -192,14 +192,17 @@ export function asksOwnerWithoutItem(reply, owner) {
   const asks = new RegExp(`\\b${name}\\b[^.\\n]{0,40}\\b(?:to|should|must|needs to|has to|please)\\s+${verbs}\\b|\\b(?:needs|needing|waiting on|asks|asking)\\s+${name}\\b|\\b${name},?\\s+please\\b`, "gi");
   // A request, not a negated status line ("nothing is waiting on <owner>", "no need for <owner> to approve it", "nothing
   // needs <owner> now"): a negation earlier in the same sentence, before the match, clears it (Checker on 46d97a0).
-  const NEGATED = /\b(?:nothing|nobody|no|not|none|never|without|neither|nor|n't)\b|n't\b/i;
+  // In front of the match: a negation word. Inside it: only the set forms that negate the request itself ("doesn't need
+  // to", "has not been asked to"), not any "never" in a relative clause ("<owner>, who never sleeps, needs to approve").
+  const NEG_BEFORE = /\b(?:nothing|nobody|no one|none|no need|not|never|without|neither|nor|isn't|aren't)\b/i;
+  const NEG_INSIDE = /\b(?:doesn't|does not|don't|do not|needn't|need not|no need|has not been|hasn't been|have not been|haven't been|is not asked|isn't asked|not asked)\b/i;
   const requested = [...text.matchAll(asks)].some((m) => {
     // Only a negation right in front (the three words before the match) or inside it governs it: "Not urgent, but waiting on
     // <owner>" is still a request (Checker on 650d96f).
     const sentence = text.slice(0, m.index).split(/[.\n;!?]/).pop();
     const clause = sentence.split(/[,:]|\b(?:but|however|though|and|yet)\b/i).pop();
     const near = clause.trim().split(/\s+/).filter(Boolean).slice(-3).join(" ");
-    return !NEGATED.test(`${near} ${m[0]}`);
+    return !(NEG_BEFORE.test(near) || NEG_INSIDE.test(m[0]));
   });
   if (!requested) return false;
   return !/#[TC]\d{1,6}\b|\bt-\d{6,}\b|\bNeeds[- ]you item\b/i.test(text);

@@ -39,6 +39,9 @@ test("no ask is listed from a board export older than 2 h, or from none (an item
   assert.equal(mirrorFresh(0, T), false, "no files: no export");
   assert.equal(mirrorFresh(T + 10 * MIN, T), false, "from the future");
   assert.equal(mirrorFresh(NaN, T), false);
+  // The config's own limit (gate.mirrorMaxAgeMin, 75 by default) is what the probe passes (Checker on 650d96f).
+  assert.equal(mirrorFresh(T - 74 * MIN, T, 75 * MIN), true);
+  assert.equal(mirrorFresh(T - 76 * MIN, T, 75 * MIN), false);
 });
 
 test("an ask keeps the time it was first seen, and a new one is fresh", () => {
@@ -74,7 +77,8 @@ test("a reply that asks the owner for something names a card or #T item, or is r
   for (const r of clear) assert.equal(asksOwnerWithoutItem(r, "Pat"), false, r);
   assert.equal(asksOwnerWithoutItem("Nothing else is open. Builder needs Pat to approve the font.", "Pat"), true, "a negation in an earlier sentence clears nothing");
   // A negation far from the request clears nothing (Checker on 650d96f).
-  for (const r of ["Not urgent, but waiting on Pat.", "No rush at all, but Builder needs Pat to approve the font.", "Not blocked on the build; still waiting on Pat to decide."]) assert.equal(asksOwnerWithoutItem(r, "Pat"), true, r);
+  for (const r of ["Not urgent, but waiting on Pat.", "No rush at all, but Builder needs Pat to approve the font.", "Not blocked on the build; still waiting on Pat to decide.",
+    "Nothing else is open, but Pat needs to approve the font.", "Builder is done, no rush: Pat should decide A or B.", "If the tests do not pass, Pat needs to approve the rollback.", "Pat, who never sleeps, needs to approve the font."]) assert.equal(asksOwnerWithoutItem(r, "Pat"), true, r);
   const fine = ["Pat needs to approve the font download (#T1401).", "Waiting on Pat: #C591 is live.", "Stack 1 is READY; Pat's sitting installs it.", "Done.", "Pat chose B on #T1353.", "Pat needs to approve it: Needs-you item t-1793164285052."];
   for (const r of fine) assert.equal(asksOwnerWithoutItem(r, "Pat"), false, r);
   assert.equal(asksOwnerWithoutItem("", "Pat"), false);

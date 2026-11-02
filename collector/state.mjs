@@ -398,7 +398,7 @@ export function pinnedScript(path, sha256, uid = process.getuid()) {
 export const scriptMatches = (path, sha256, uid) => pinnedScript(path, sha256, uid) !== null;
 // How old the board export may be for the asks (#C584): the answer gate's own 2 h.
 export const MIRROR_STALE_MS = 2 * 3600e3;
-export const mirrorFresh = (exportedAt, now) => Number.isFinite(exportedAt) && exportedAt > 0 && exportedAt <= now + 60e3 && now - exportedAt <= MIRROR_STALE_MS;
+export const mirrorFresh = (exportedAt, now, maxMs = MIRROR_STALE_MS) => Number.isFinite(exportedAt) && exportedAt > 0 && exportedAt <= now + 60e3 && now - exportedAt <= maxMs;
 // The usage tile (#C595): the spend script run once a day (python3 -I -, its text on stdin, its --json rows only), kept in
 // <dir>/usage.json between runs. The week is the config's: usageResetAt is any one weekly reset, so the week now runs from
 // the last one to the next, and the script is asked for that span (--since); week % is its weighted total over usageQuota,
@@ -571,10 +571,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   // Questions for the owner that never became a Needs-you item (#C584), for the lead to write from the wake watch's line.
   const waitingDocs = [], wdir = join(stateDir, id, "mirror", "waiting");
   let waitingKnown = false, exportedAt = 0;
-  try { waitingKnown = true; for (const f of readdirSync(wdir)) { if (!f.endsWith(".json")) continue; const r = readTail(join(wdir, f), 64 * 1024); if (!r?.whole) continue; exportedAt = Math.max(exportedAt, r.mtimeMs); try { const d = JSON.parse(r.text); if (plain(d)) waitingDocs.push(d); } catch { /* skip it */ } } } catch { waitingKnown = false; /* no export of the waiting items yet: no ask is listed on a guess */ }
+  try { waitingKnown = true; exportedAt = lstatSync(wdir).mtimeMs; for (const f of readdirSync(wdir)) { if (!f.endsWith(".json")) continue; const r = readTail(join(wdir, f), 64 * 1024); if (!r?.whole) continue; exportedAt = Math.max(exportedAt, r.mtimeMs); try { const d = JSON.parse(r.text); if (plain(d)) waitingDocs.push(d); } catch { /* skip it */ } } } catch { waitingKnown = false; /* no export of the waiting items yet: no ask is listed on a guess */ }
   // The export is the Collector's, on demand (#C594): an item the lead wrote after it isn't in it. No ask is listed from an
   // export older than MIRROR_STALE_MS, or the lead would be told to write an item that already exists (Checker on 46d97a0).
-  if (waitingKnown && !mirrorFresh(exportedAt, now)) waitingKnown = false;
+  if (waitingKnown && !mirrorFresh(exportedAt, now, config.gate.mirrorMaxAgeMin * 60e3)) waitingKnown = false;
   const asksPath = join(dir, "owner-asks.json");
   let asksBefore = null;
   try { const r = readTail(asksPath, 64 * 1024); if (r?.whole) asksBefore = JSON.parse(r.text); } catch { /* none */ }
