@@ -57,6 +57,17 @@ test("Live now comes from the live site's build; deploying shows while main name
   assert.equal(old.liveText(), "Live now: 1.104.0", "no reading yet: the lead's meta/live as before");
 });
 
+// #C608: the Collector's reading said v1.180.0 while Release's meta/live said v1.182.4.
+test("Live now shows the newer of meta/live (Release, per ship) and the Collector's reading", () => {
+  const withMeta = (live, version) => { const b = board([], {}, live); b.state.meta = [{ id: "live", version }]; b.state.events = []; return b; };
+  assert.equal(withMeta({ version: "1.180.0", commit: "0653ff6", mainVersion: "1.180.0" }, "v1.182.4").liveText(), "Live now: v1.182.4", "a ship newer than the reading");
+  assert.equal(withMeta({ version: "1.180.0", commit: "0653ff6", mainVersion: "1.183.0" }, "1.182.4").liveText(), "Live now: v1.182.4 · deploying v1.183.0", "no v prefix; main still ahead");
+  assert.equal(withMeta({ version: "1.182.4", commit: "0653ff6", mainVersion: "1.182.4" }, "v1.180.0").liveText(), "Live now: v1.182.4", "the reading newer: it stays");
+  assert.equal(withMeta({ version: "1.182.4", commit: "0653ff6", mainVersion: "1.182.4" }, "v1.182.4").liveText(), "Live now: v1.182.4", "the same");
+  assert.equal(withMeta({ version: "1.9.0", commit: "0653ff6", mainVersion: "1.9.0" }, "v1.10.0").liveText(), "Live now: v1.10.0", "compared as numbers, not text");
+  assert.equal(withMeta({ version: "1.180.0", commit: "0653ff6", mainVersion: "1.180.0" }, "soon").liveText(), "Live now: v1.180.0", "a meta/live that is no version is ignored");
+});
+
 test("the collector reads the live build from its tag, and main's newest version from the main line", async () => {
   const page = (html, ok = true) => async () => new Response(html, { status: ok ? 200 : 500 });
   const tag = config.collector.liveTag;
