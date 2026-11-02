@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { home } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, ALIVE_MAX_MS, MAX_RUN_MS } from "../gate/wake.mjs";
-import { RESET_FILE, RESET_SEEN_FILE, resetPending, resetSeen, resetLine } from "../gate/reset.mjs";
+import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine } from "../gate/reset.mjs";
 
 // One look: the heartbeat, then the line to print, or null. Marks the wake seen only once it is returned.
 export function tick(dir, now, pid = process.pid) {
@@ -28,10 +28,18 @@ export function tick(dir, now, pid = process.pid) {
 // The roles the probe asked to reset (#C592, gate/reset.mjs) that this watch has not printed yet; marks them printed.
 function resetLines(dir) {
   const read = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
+  const out = [];
   const asked = read(RESET_FILE), seen = read(RESET_SEEN_FILE), roles = resetPending(asked, seen);
-  if (!roles.length) return [];
-  writeAtomic(join(dir, RESET_SEEN_FILE), JSON.stringify(resetSeen(asked, seen, roles)));
-  return roles.map(resetLine);
+  if (roles.length) { writeAtomic(join(dir, RESET_SEEN_FILE), JSON.stringify(resetSeen(asked, seen, roles))); out.push(...roles.map(resetLine)); }
+  // Roles with no open session (#C583): "WAKE <role>" for those with work, one "ROSTER missing" line for the rest.
+  const wasked = read(WAKE_ROLES_FILE), wseen = read(WAKE_ROLES_SEEN_FILE);
+  const wake = resetPending(wasked, wseen, "roles"), missing = resetPending(wasked, wseen, "missing");
+  if (wake.length || missing.length) {
+    writeAtomic(join(dir, WAKE_ROLES_SEEN_FILE), JSON.stringify(resetSeen(wasked, resetSeen(wasked, wseen, wake, "roles"), missing, "missing")));
+    out.push(...wake.map(roleWakeLine));
+    if (missing.length) out.push(missingLine(missing));
+  }
+  return out;
 }
 
 // The watch is ending (its planned stop before the Monitor's 30 minutes, or a signal): the heartbeat goes with it, but only

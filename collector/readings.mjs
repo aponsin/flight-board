@@ -27,10 +27,24 @@ export function ctxReadings({ tokens, resetAt, now, window = WINDOW_TOKENS }) {
 // The roles to send CONTEXT RESET to: over resetAt now and not asked since they last came back under it. before is the
 // file kept from run to run, { roles: { <role>: <time asked> } }; the next one keeps only roles still over.
 export function resetAsks(ctx, before, now) {
+  return askOnce(Object.entries(ctx).filter(([, c]) => c.over).map(([role]) => role), before, now);
+}
+
+// Roles to wake after a crash, a restart or a reset (#C583). A roster role with no open session is missing; of those, the
+// ones with work (wake-by-need: a card of theirs, not closed, queued or active) are to be woken, and the rest are only
+// reported as missing, so the lead isn't asked to start sessions nobody needs. cards: [{ who, status }] of the board's export.
+// { wake: [roles], missing: [roles] }, sorted; the lead is never in either (it is the one reading this).
+export function wakeNeeds({ roster, agents, cards, lead = "" }) {
+  const busy = new Set(cards.filter((c) => c && typeof c.who === "string" && ["queued", "active"].includes(c.status)).map((c) => c.who));
+  const missing = roster.filter((r) => ROLE.test(r) && r !== lead && !Object.hasOwn(agents, r)).sort();
+  return { wake: missing.filter((r) => busy.has(r)), missing: missing.filter((r) => !busy.has(r)) };
+}
+// What to ask for now, once per spell: roles asked since they were last seen are not asked again. before: the file kept,
+// { roles: { <role>: <time asked> } }; the next one keeps only roles still wanted. { roles, fresh }.
+export function askOnce(wanted, before, now) {
   const asked = before && typeof before.roles === "object" && before.roles && !Array.isArray(before.roles) ? before.roles : {};
   const roles = {}, fresh = [];
-  for (const [role, c] of Object.entries(ctx)) {
-    if (!c.over) continue;
+  for (const role of wanted) {
     const t = Object.hasOwn(asked, role) ? asked[role] : null;
     if (Number.isInteger(t) && t > 0 && t <= now) roles[role] = t;
     else { roles[role] = now; fresh.push(role); }

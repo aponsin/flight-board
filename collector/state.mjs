@@ -22,7 +22,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
-import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading } from "./readings.mjs";
+import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, wakeNeeds, askOnce } from "./readings.mjs";
 
 // The folder this run's code lives in: the pinned copy <install root>/<full sha>, whose sha is the board's probe.
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -559,6 +559,12 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const resets = resetAsks(Object.fromEntries(Object.entries(ctx).filter(([role]) => role !== config.gate.managerRole)), resetBefore, now);
   const dir = join(stateDir, id);
   const spend = usageTile({ scriptText: pinnedScript(c.usageScript, c.usageScriptSha256), dir, roster: config.roster, now, quota: c.usageQuota, resetAt: c.usageResetAt, run: (args, input) => execFileSync("python3", args, { input, encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 60_000, maxBuffer: 16 * 1024 * 1024 }) });
+  // Roles to wake (#C583): no open session and work waiting (wake-by-need), asked once per spell; the rest reported missing.
+  const wakePath = join(dir, "wake-roles.json");
+  let wakeBefore = null;
+  try { const r = readTail(wakePath, 16 * 1024); if (r?.whole) wakeBefore = JSON.parse(r.text); } catch { /* none */ }
+  const needs = wakeNeeds({ roster: config.roster, agents, cards: cards.filter((k) => !closed(k)), lead: config.gate.managerRole });
+  const wakeAsk = askOnce(needs.wake, wakeBefore, now), missingAsk = askOnce(needs.missing, { roles: wakeBefore?.missing }, now);
   let pageVersion = null;
   try { pageVersion = basename(readlinkSync(join(stateDir, "current"))); } catch { /* no link */ }
   let state;
@@ -572,6 +578,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, ctx, stuck, usage: spend.tile, ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
     writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
+    writeAtomic(wakePath, JSON.stringify({ at: now, roles: wakeAsk.roles, missing: missingAsk.roles }));
     // For the lead's Stop hook (collector/refresh.mjs, #C594): the cards whose typed phase the repository contradicts. Only
     // when every repository was read fresh; a half-read minute asks for nothing.
     writeAtomic(join(dir, "phase-clashes.json"), JSON.stringify({ at: now, ids: cardsChecked === now ? phaseClashIds(cards.filter((k) => !closed(k)), cardsNow) : [] }));
