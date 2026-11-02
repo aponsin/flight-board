@@ -118,6 +118,19 @@ test("the header's right block is left-aligned on a phone, where it wraps under 
   assert.match(html, /@media \(max-width:600px\)\{\.hdr-right\{align-items:flex-start;text-align:left\}\}/);
 });
 
+// #C618: the version line sits in the header's right block, under the clock, not under the title (it saves a line of height).
+test("the version line is in the header's right block after the clock, not under the title; it stays hidden when empty", () => {
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  const header = html.match(/<header>([\s\S]*?)<\/header>/)[1];
+  const left = header.match(/<div class="hdr-left">([\s\S]*?)<\/div>\s*<div class="hdr-right">/)[1];
+  const right = header.match(/<div class="hdr-right">([\s\S]*)<\/div>\s*$/)[1];
+  assert.ok(!left.includes("boardver"), "not under the title");
+  assert.ok(right.indexOf('class="clock"') >= 0 && right.indexOf('class="clock"') < right.indexOf('id="boardver"'), "after the clock in the right block");
+  assert.match(right, /id="boardver"[^>]* hidden>/);
+  assert.match(html, /\.boardver\[hidden\]\{display:none\}/, "a hidden line takes no room");
+  assert.doesNotMatch(html, /\.boardver\{[^}]*margin-top/, "the right block's gap spaces it");
+});
+
 test("the build stamps the page's commit and the pack name into the header; only well-formed ones", async () => {
   const { buildPage } = await import("../scripts/build-page.mjs");
   const template = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");

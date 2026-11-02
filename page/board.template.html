@@ -34,7 +34,8 @@ h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;
 .rb{display:inline-block;max-width:100%;margin-top:8px;font:700 .8rem var(--mono);padding:3px 10px;border-radius:12px;color:var(--panel)}
 .rb[hidden]{display:none}
 .rb.ok{background:var(--ok)}.rb.bad{background:var(--bad)}
-.boardver{font:600 .75rem var(--mono);color:var(--muted);margin-top:6px}
+.boardver{font:600 .75rem var(--mono);color:var(--muted)}
+.boardver[hidden]{display:none}
 .mgr-chip.ok{background:var(--ok-soft);color:var(--ok)}.mgr-chip.warn{background:var(--warn-soft);color:var(--warn-ink)}.mgr-chip.bad{background:var(--bad-soft);color:var(--bad)}
 .t-seen{font:.7rem var(--mono);color:var(--muted);text-align:right}
 h2{font:700 1.15rem/1.2 var(--display);letter-spacing:.06em;text-transform:uppercase;margin:0 0 10px;color:var(--muted)}
@@ -503,8 +504,8 @@ table.crew3-ph{margin-top:14px}
 
 <div class="wrap">
   <header>
-    <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="rb" id="restartbadge" role="status" hidden></div><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div></div>
-    <div class="hdr-right"><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div></div>
+    <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="rb" id="restartbadge" role="status" hidden></div></div>
+    <div class="hdr-right"><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div></div>
   </header>
   <div class="shipline" id="shipline" role="status" hidden></div>
   <div class="stuckline" id="threadsfull" role="status" hidden></div>
