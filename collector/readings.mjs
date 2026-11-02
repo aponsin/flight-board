@@ -70,6 +70,20 @@ export function askSince(list, before, now) {
   return { asks, fresh: asks.filter((a) => !had.has(a.card)) };
 }
 
+// What the cards' own evidence says no one has to remember to write (#C617; gate/reset.mjs prints it): ship, a card whose tip has
+// every sign-off its level needs (its phase is the ship phase), is not on main and no ship run is on it; close, a card whose
+// commits are live (the live phase: on main and deployed, or in the installed pack) while it is still open. A card waiting on its
+// done test (hold: a set of ids with a checkAt, #C581) is not asked to close. [{ kind, card, sha }], by card, at most `max`.
+export function boardTruth({ states, shipPhase, livePhase, hold = new Set(), max = 20 }) {
+  const items = [];
+  for (const [card, s] of Object.entries(states ?? {}).sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+    if (!s || typeof s !== "object" || !/^[0-9a-f]{12}$/.test(String(s.headSha12 ?? ""))) continue;
+    if (s.phase === shipPhase && s.onMain === false && s.shipping !== true) items.push({ kind: "ship", card, sha: s.headSha12 });
+    else if (s.phase === livePhase && s.onMain === true && !hold.has(card)) items.push({ kind: "close", card, sha: s.headSha12 });
+  }
+  return items.slice(0, max);
+}
+
 // A role stuck (#C593): working on one prompt over STEP_MS (the same step, the turn's start unmoved), or stopped on a call
 // the owner must answer over USER_MS (promptSince from the transcript). { <role>: { kind, card, since } }; the lead and
 // the idle are never stuck on a step.

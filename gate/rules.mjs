@@ -392,6 +392,17 @@ export function queuedLiveErrors(w, { live }) {
   return [`status: the live state shows ${idText(id)} building (its branch has commits beyond main, or an agent is on it); its status is derived, not queued`];
 }
 
+// #C617: a live step closes its card. Tonight 16 cards stayed open hours after their step said live: a live step is refused
+// unless the same batch sets that card's status to done (or the board already holds it done).
+export function liveStepErrors(w, { config, mirror, batch = [] }) {
+  const { op, collection, data } = w;
+  if (collection !== "steps" || op !== "set" || !data || typeof data !== "object" || data.phase !== config.collector.livePhase || typeof data.init !== "string" || !data.init) return [];
+  const done = (d) => d && (d.status === "done");
+  if (batch.some((b) => b.collection === "initiatives" && b.doc_id === data.init && b.op !== "delete" && b.data && done(b.data))) return [];
+  if (done((mirror?.docs?.initiatives ?? []).find((k) => k && k.id === data.init))) return [];
+  return [`a ${config.collector.livePhase} step closes its card: set initiatives/${idText(data.init)} {status: "done"} in the same batch`];
+}
+
 export function checkWrites(writes, { config, who, now, state, mirror = null, seen = mirror, live = null }) {
   const next = { refusals: { ...(state?.refusals ?? {}) }, stuck: { ...(state?.stuck ?? {}) } };
   for (const c of COUNTERS) if (state?.[c.key]) next[c.key] = state[c.key];
@@ -411,7 +422,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null, se
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
-    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now, who, live }), ...queuedLiveErrors(w, { live })];
+    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now, who, live }), ...queuedLiveErrors(w, { live }), ...liveStepErrors(w, { config, mirror, batch: writes })];
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }

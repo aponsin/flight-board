@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { home } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, ALIVE_MAX_MS, MAX_RUN_MS } from "../gate/wake.mjs";
-import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine } from "../gate/reset.mjs";
+import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine, TRUTH_FILE, TRUTH_SEEN_FILE, SHIP_ROLE, truthPending, truthSeen, truthLine } from "../gate/reset.mjs";
 
 // One look: the heartbeat, then the line to print, or null. Marks the wake seen only once it is returned.
 export function tick(dir, now, pid = process.pid, roster = null) {
@@ -45,6 +45,11 @@ function resetLines(dir, roster = null) {
   const asks = read(ASKS_FILE), pending = asksPending(asks, read(ASKS_SEEN_FILE)).filter((a) => onRoster(a.role));
   if (pending.length || (asks && !sameSeen(asks, read(ASKS_SEEN_FILE)))) writeAtomic(join(dir, ASKS_SEEN_FILE), JSON.stringify(asksSeen(asks)));
   out.push(...pending.map(askLine));
+  // What the probe found true of the cards (#C617): "SHIP <card>" (signed, not on main: Release is to ship it) and "CLOSE <card>"
+  // (live, still open), once per card and tip. A SHIP line is printed only when the roster has the ship role.
+  const truth = read(TRUTH_FILE), tseen = read(TRUTH_SEEN_FILE), todo = truthPending(truth, tseen).filter((a) => a.kind !== "ship" || onRoster(SHIP_ROLE));
+  if (todo.length || (truth && JSON.stringify(truthSeen(truth)) !== JSON.stringify(tseen ?? { items: {} }))) writeAtomic(join(dir, TRUTH_SEEN_FILE), JSON.stringify(truthSeen(truth)));
+  out.push(...todo.map(truthLine));
   return out;
 }
 const sameSeen = (asks, seen) => JSON.stringify(asksSeen(asks)) === JSON.stringify(seen ?? { asks: {} });

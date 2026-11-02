@@ -34,6 +34,21 @@ export function asksPending(asked, seen) {
 // The seen file after printing: the listed asks only, so one that comes back is printed again.
 export const asksSeen = (asked) => ({ asks: Object.fromEntries(askList(asked).map((a) => [a.card, a.since])) });
 export const askLine = (a) => `ASK ${a.role} ${a.card}: ${a.role} is waiting on the owner and has no Needs-you item; write one`;
+// What the probe finds true of the cards that no one has to remember to write (#C617), board-truth.json { at, items: [{ kind, card,
+// sha }] }, printed once per card, kind and tip (board-truth-seen.json { items: { "<kind> <card>": <sha> } }); gone from the file,
+// forgotten. ship: every sign-off its level needs is on the tip and it is not on main (Release is to ship it); close: its commits are
+// live (on main and deployed, or in the installed pack) while the card is open (status done, with its live step, is to be written).
+export const TRUTH_FILE = "board-truth.json", TRUTH_SEEN_FILE = "board-truth-seen.json";
+export const TRUTH_KINDS = ["ship", "close"], SHIP_ROLE = "Release";
+const truthList = (f) => (Array.isArray(f?.items) ? f.items.filter((a) => a && TRUTH_KINDS.includes(a.kind) && CARD.test(String(a.card)) && /^[0-9a-f]{12}$/.test(String(a.sha))) : []);
+export function truthPending(asked, seen) {
+  const s = seen && typeof seen.items === "object" && seen.items && !Array.isArray(seen.items) ? seen.items : {};
+  return truthList(asked).filter((a) => s[`${a.kind} ${a.card}`] !== a.sha);
+}
+export const truthSeen = (asked) => ({ items: Object.fromEntries(truthList(asked).map((a) => [`${a.kind} ${a.card}`, a.sha])) });
+export const truthLine = (a) => (a.kind === "ship"
+  ? `SHIP ${a.card}: every sign-off its level needs is on ${a.sha.slice(0, 7)} and it is not on main; tell ${SHIP_ROLE} to ship it`
+  : `CLOSE ${a.card}: its commits are live (on main and deployed, or in the installed pack); write its live step and set status done in the same batch`);
 export const resetLine = (role) => `CONTEXT RESET ${role}: past the reset limit; save its notes and clear it`;
 export const wakeLine = (role) => `WAKE ${role}: no open session and it has work; wake it`;
 export const missingLine = (roles) => `ROSTER missing: ${roles.join(", ")} (no open session, no work waiting)`;

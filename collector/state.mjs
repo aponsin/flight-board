@@ -22,7 +22,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
-import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, wakeNeeds, askOnce, ownerAsks, askSince } from "./readings.mjs";
+import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, wakeNeeds, askOnce, ownerAsks, askSince, boardTruth } from "./readings.mjs";
 
 // The folder this run's code lives in: the pinned copy <install root>/<full sha>, whose sha is the board's probe.
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -267,6 +267,22 @@ export function ciReader(gh, now, cache, backoff = { until: 0, wait: BACKOFF_MIN
   };
 }
 
+// #C617: the ship runs on now, from GitHub's own run titles. Release's ship run is titled "vX: <branch>@<sha>"; the title is read
+// here, and only its branch and sha ever matter (they pick the card; nothing of the title leaves). One gh call a minute, in the
+// same back-off as the CI reads. null when gh can't be asked (the cards then say nothing of shipping, never "not shipping").
+export const SHIP_TITLE = /^v\d{1,4}\.\d{1,4}\.\d{1,4}: ([A-Za-z0-9._/-]{1,100})@([0-9a-f]{7,40})$/;
+const RUNNING = ["in_progress", "queued", "waiting", "pending", "requested"];
+export function shipRuns(gh, now, backoff = { until: 0, wait: BACKOFF_MIN_MS }) {
+  if (now < backoff.until) return null;
+  let runs;
+  try { runs = JSON.parse(gh(["run", "list", "--limit", "30", "--json", "status,displayTitle"])); } catch { backoff.until = now + backoff.wait; backoff.wait = Math.min(BACKOFF_MAX_MS, backoff.wait * 2); return null; }
+  if (!Array.isArray(runs)) return null;
+  backoff.until = 0; backoff.wait = BACKOFF_MIN_MS;
+  return runs.filter((r) => plain(r) && RUNNING.includes(String(r.status))).map((r) => SHIP_TITLE.exec(String(r.displayTitle ?? ""))).filter(Boolean).map((m) => ({ branch: m[1], sha: m[2] }));
+}
+// Whether a ship run is for this card's tip: its branch is the tip's (whole or the last part) or its sha starts either commit.
+export const shipsCard = (ships, tip, head) => ships.some((s) => s.branch === tip.branch || s.branch === String(tip.branch).split("/").pop() || tip.sha.startsWith(s.sha) || head.sha.startsWith(s.sha));
+
 // The version a commit went live in: the first subject naming one (versionPattern), from the commit itself on along
 // the main line's first parents that descend from it.
 function versionAfter(git, sha, ref, pattern) {
@@ -330,7 +346,7 @@ export function cardState(card, repo, config, now) {
   const deployed = onMain && !!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed }, cfg);
-  return { ...base, phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(() => { const r = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null; return r ? { ci: r.ci, ciMin: r.ciMin } : {}; })(), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null };
+  return { ...base, phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(() => { const r = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null; return r ? { ci: r.ci, ciMin: r.ciMin } : {}; })(), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(Array.isArray(repo.ships) ? { shipping: !onMain && shipsCard(repo.ships, tip, head) } : {}) };
 }
 
 export function cardStates({ cards, config, repos, now }) {
@@ -535,7 +551,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const r = repoAt(home(c.repoPath), c.remote, c.mainBranch, c.notes);
     let live = null;
     if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { /* none */ } }
-    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern };
+    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), ships: shipRuns(r.gh, now, backoff), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern };
   }
   for (const x of c.repos) {
     let installed = null;
@@ -597,6 +613,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // For the lead's Stop hook (collector/refresh.mjs, #C594): the cards whose typed phase the repository contradicts. Only
     // when every repository was read fresh; a half-read minute asks for nothing.
     writeAtomic(join(dir, "phase-clashes.json"), JSON.stringify({ at: now, ids: cardsChecked === now ? phaseClashIds(cards.filter((k) => !closed(k)), cardsNow) : [] }));
+    // The cards' own evidence for the lead's watch (#C617: SHIP and CLOSE lines); only from a minute with every repository read
+    // fresh, and the file keeps its last list through a half-read one.
+    if (cardsChecked === now) writeAtomic(join(dir, "board-truth.json"), JSON.stringify({ at: now, items: boardTruth({ states: cardsNow, shipPhase: c.shipPhase, livePhase: c.livePhase, hold: new Set(cards.filter((k) => Number.isFinite(k.checkAt)).map((k) => k.id)) }) }));
     if (spend.save) writeAtomic(join(dir, "usage.json"), JSON.stringify(spend.save));
     writeAtomic(backoffPath, JSON.stringify(backoff));
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));

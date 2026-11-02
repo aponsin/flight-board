@@ -6,7 +6,7 @@
 //
 //   { v: 1,
 //     board:  { boardId, at, probe, pageVersion, lastWriteAt?, wakeAliveAt?, wakeSeenAt?, cardsCheckedAt? },
-//     cards:  { <card id>: { num, phase, headSha12, signed, onMain, ci, ciMin, liveVersion, at } },
+//     cards:  { <card id>: { num, phase, headSha12, signed, onMain, ci, ciMin, liveVersion, shipping?, at } },
 //     agents: { <role>: { state, lastActivityAt, tool, card, since } } }
 
 export const STATE_VERSION = 1;
@@ -47,7 +47,9 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // Keys a record may leave out (#C452's lastWriteAt: a reading from a probe before it still fits); one that is there is
 // checked like any other. #C590: wakeAliveAt is the wake watch's heartbeat time, wakeSeenAt the last wake it handled:
 // times only, for the page's "Manager listening" chip.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt"]);
+// #C617: a card's shipping flag (a GitHub run titled "vX: <branch>@<sha>" is running for its tip); a probe from before it
+// leaves it out, and a state with it still fits.
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "shipping"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -58,6 +60,7 @@ const CARD = {
   ci: (v) => CI_STATES.includes(v),
   ciMin: nullOr((v) => Number.isInteger(v) && v >= 0 && v <= 10000),
   liveVersion: nullOr(re(VERSION)),
+  shipping: (v) => typeof v === "boolean",
   at: isTime,
 };
 const AGENT = {
