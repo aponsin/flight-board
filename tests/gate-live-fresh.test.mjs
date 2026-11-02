@@ -25,8 +25,9 @@ test("a fresh live reading short of live refuses, whatever the export says, and 
 
 test("a live state that doesn't list the card, or lists it unreadably, leaves the export to decide", () => {
   assert.match(mirrorErrors(done, { config, mirror: mirror("ship"), live: { cards: {}, agents: {} } }).join(), /not live/);
-  assert.match(mirrorErrors(done, { config, mirror: mirror("ship"), live: state({ ...at, phase: "nonsense" }) }).join(), /not live/, "a phase the config doesn't name");
+  assert.deepEqual(mirrorErrors(done, { config, mirror: mirror("live"), live: state({ ...at, phase: "nonsense" }) }), [], "a phase the config doesn't name: the export (live) decides");
   assert.match(mirrorErrors(done, { config, mirror: mirror("ship"), live: state({ headSha12: "short", phase: "live" }) }).join(), /not live/, "no head");
+  assert.deepEqual(mirrorErrors(done, { config, mirror: mirror("live"), live: state({ headSha12: "short", phase: "ship" }) }), [], "no head: the export (live) decides");
   assert.equal(liveCard(JSON.parse('{"cards":{"__proto__":{"phase":"live","headSha12":"aaaaaaaa1111"}},"agents":{}}'), "constructor", config), null, "own keys only");
   assert.equal(liveCard(null, "tabs", config), null);
 });
