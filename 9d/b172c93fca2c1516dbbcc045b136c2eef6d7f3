@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C607 tip. Only a close that landed counts: turnCalls({succeeded}) pairs each tool_use with its tool_result and drops a missing result, is_error, a refusal or a conflict (fails toward still owed). Mutation (succeeded off) caught by live-owner-check.test. Built on stack 2's f6e48c4. 1029/1029.
