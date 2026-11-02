@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C587 hooks-check runs each pinned copy's own checkConfig against the written config and fails on any problem; exits 2 when nothing was checked. Not pinned. 1024/1024 at 46d97a0.
