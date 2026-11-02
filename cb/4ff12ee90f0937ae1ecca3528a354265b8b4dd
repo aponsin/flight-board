@@ -1,0 +1,1 @@
+PASS Full: #C554 the merge routine reads every check from GitHub on the current head; the approval time guarded; npm test green
