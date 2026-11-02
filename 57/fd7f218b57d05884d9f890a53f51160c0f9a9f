@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C592/#C593/#C595 probe readings; its retry-every-minute and lead-reset findings are fixed in 31670635 on the same stack; ship only together with it. 999/999 at 3167063.
