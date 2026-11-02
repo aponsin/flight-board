@@ -1738,6 +1738,11 @@ function checkLine(i,req,now){const lead=num(i.checkedAt),d=derivedOf(i.id),run=
   return `${liveOn(now)?"Live state "+liveAgeText(now).replace(" ago"," old"):probe?"Live state stale":"No live state"} · ${collectorNext(now)}`}
 function collectorNext(now){const all=state.derived.find(x=>x.id==="all"),last=num(all&&all.at);if(last==null)return "Collector not run yet";
   const due=last+COLLECTOR_EVERY;return due>now?`Collector next ${hhmm(due)}`:`Collector run late (due ${hhmm(due)})`}
+// A card live by the evidence and not yet marked done is waiting on its done test (#C581, the owner: "right now it looks
+// broken"): it says "Verifying" and when the next check is due, from the Collector's last run. Never a past time as a promise.
+function verifyLine(now){const all=state.derived.find(x=>x.id==="all"),last=num(all&&all.at);
+  if(last==null)return "verifying: next check not scheduled yet";
+  const due=last+COLLECTOR_EVERY;return due>now?`verifying: done check around ${hhmm(due)}`:"verifying: done check due now"}
 // ↻ Check on every open card, whatever the live state reads (#C495, the owner: "the whole check thing is for me to have
 // an easy to ask 'hey what's going with this initiative, anything stuck?'"; #C450 had taken it off a card the live state
 // drives, so only cards with no branch kept it). A click refetches the live state now through the connector and asks
@@ -1899,12 +1904,12 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   // hand-written Next line fades as one an agent has moved past.
   const liveOpen=i.status!=="done"&&i.byEvidence&&i.phase===LIVE_PHASE;
   if(i.status==="done") etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"")}</div><div class="lbl">${num(i.doneAt)?dayLabel(i.doneAt):""}</div>`;
-  else if(liveOpen) etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"now")}</div>`;
+  else if(liveOpen) etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"now")}</div><div class="lbl">${esc(verifyLine(Date.now()))}</div>`;
   else if(eta) etaHtml=`<div class="lbl">Live in</div><div class="big" data-eta="${eta}">${eta>Date.now()?dur(eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(eta)}${derivedEta(i)==null?" (declared)":""}</div>`;
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   const vn=i.status!=="done"?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
   const st=stalled(i),ow=i.status!=="done"?ownerWait(i):null;
-  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:ow?"Waiting on you":st?"Stalled":liveBuilding(i.id)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
+  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Verifying":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:ow?"Waiting on you":st?"Stalled":liveBuilding(i.id)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
   const owHtml=ow?`<span class="ow-line">waiting on you: <a href="#" class="t-ref" data-tref="${esc(ow.id)}">${esc(threadName(ow.id))}</a></span>`:"";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
   // An agent the live state shows working on it since then has moved too (#C449).

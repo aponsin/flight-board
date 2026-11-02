@@ -20,7 +20,7 @@
   "expect": {
     "queued": { "section": "board", "rows": 1, "phase": "Ship", "version": "Queued (1)" },
     "shipping": { "section": "board", "rows": 1, "phase": "Ship", "version": "Shipping now" },
-    "live": { "section": "board", "rows": 1, "status": "Live, still open", "version": "Live in v1.2.3" },
+    "live": { "section": "board", "rows": 1, "status": "Verifying", "version": "Live in v1.2.3" },
     "gated": { "section": "board", "rows": 1, "gated": true },
     "gate-pick": { "section": "needs-you", "rows": 1, "badge": "waiting on you" }
   }

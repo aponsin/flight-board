@@ -23,8 +23,15 @@ test("live by the evidence: the card says Live, still open, never stalled, whate
   assert.equal(b.stalled({ ...i, lastStepAt: old }), 0);
   assert.ok(b.stalled({ ...i, byEvidence: false, lastStepAt: old }) > 0, "the same card by its steps alone would stall");
   const html = b.initRow({ ...i, lastStepAt: old });
-  assert.match(html, /Live, still open/);
-  assert.doesNotMatch(html, /Stalled|up next/);
+  assert.match(html, /Verifying/);
+  assert.doesNotMatch(html, /Live, still open|Stalled|up next/);
+  assert.match(html, /verifying: done check (around \d\d:\d\d( [AP]M)?|due now)/, "when the done test runs (#C581)");
+  const now = Date.now();
+  b.state.derived = [{ id: "all", at: now - 10 * 60e3 }];
+  assert.match(b.verifyLine(now), /^verifying: done check around \d\d:\d\d( [AP]M)?$/, "a run 10 min ago: the next is ahead");
+  b.state.derived = [{ id: "all", at: now - 2 * 3600e3 }];
+  assert.equal(b.verifyLine(now), "verifying: done check due now", "a run two hours ago: overdue, no past time promised");
+  assert.equal(loadBoard().verifyLine(Date.now()), "verifying: next check not scheduled yet", "no Collector run yet: no time promised");
   assert.match(html, /class="evidence differs" data-evdiff="[^"]*" aria-expanded="false" title="steps say Checker[^"]*">Repository: Live 1\.104\.1</, "the steps in the hover (#C450)");
 });
 

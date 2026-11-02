@@ -11,7 +11,7 @@ export function loadBoard({ els = null } = {}) {
   const document = { getElementById: el, querySelectorAll: () => [], querySelector: () => null, addEventListener() {}, activeElement: null, createRange: () => ({}) };
   const ctx = { document, window: {}, console, setInterval() {}, setTimeout() {}, clearTimeout() {}, queueMicrotask() {}, navigator: {}, getSelection: () => ({}), Date, Math, JSON, Number, String, Array, Object, Set, Map, isFinite, URLSearchParams };
   vm.createContext(ctx);
-  vm.runInContext(script + "\n;globalThis.__b={state,enrich,gates,initRow,linkify,phaseIndex,PHASES,waitBoxes,phaseTimes,renderAll,replyBox,dur,askText,gaps,waitGaps,liveGap,stalled,fileCheck,pingText};", ctx);
+  vm.runInContext(script + "\n;globalThis.__b={state,enrich,gates,initRow,linkify,phaseIndex,PHASES,waitBoxes,phaseTimes,renderAll,replyBox,dur,askText,gaps,waitGaps,liveGap,stalled,fileCheck,pingText,verifyLine};", ctx);
   return ctx.__b;
 }
 // A step event, as agents log them.
