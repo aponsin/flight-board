@@ -169,6 +169,27 @@ test("every control of the panel shows keyboard focus, and Withdraw and the summ
   assert.match(css, /\.gp-done summary\{padding:6px 0\}/);
 });
 
+test("an approval with a bad time never stops the page's draw (Checker on 97f141c5)", () => {
+  const bb = loadNames(["renderAgentPrs"], {});
+  bb.state.agentPrs = [pr(31), pr(32), pr(33)];
+  bb.state.approvals = [app(31, H1, { at: "never" }), app(32, H1, { at: NaN }), app(33, H1, { at: 1e300 })];
+  bb.renderAgentPrs(NOW);
+  const html = bb.els.agentprs.innerHTML;
+  assert.equal([...html.matchAll(/data-gpw="1"/g)].length, 3, "all three approved rows drew, each with Withdraw");
+  assert.doesNotMatch(html, /Invalid|NaN/);
+});
+
+test("the README holds the routine Release follows: the head from gh at the merge, Reviewer's real sign-off, green checks, the owner's approval of that head; and the accepted browser risk", () => {
+  const md = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  const sec = md.slice(md.indexOf("## Approving the prospecting agent's pull requests"), md.indexOf("## Tests"));
+  assert.match(sec, /gh pr view <n> --json headRefOid/);
+  assert.match(sec, /Every check below must name exactly `H`; `agentPrs\.head` is never the source/);
+  assert.match(sec, /`agentPrs\.signedHead` and `review` are display only/);
+  assert.match(sec, /commit_id` equals `H`/);
+  assert.match(sec, /Residual risk, outside the gate/);
+  assert.doesNotMatch(sec, /ghApproved/);
+});
+
 test("the panel is hidden with nothing to show, and no count while only approved ones are left", () => {
   const bb = loadNames(["renderAgentPrs"], {});
   bb.renderAgentPrs(NOW);
