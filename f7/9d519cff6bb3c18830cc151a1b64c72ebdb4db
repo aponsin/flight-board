@@ -1,0 +1,1 @@
+PASS Quick: #C576 re-cut on main 2e6d10c2 (build/search-card-number-v2); range-diff against the signed bb9f7df8 is identical. npm test: 914 pass, 0 fail.
