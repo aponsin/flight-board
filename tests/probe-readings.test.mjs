@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, STEP_MS, USER_MS, WEEK_MS } from "../collector/readings.mjs";
-import { usageTile, buildState } from "../collector/state.mjs";
+import { usageTile, nextReset, buildState } from "../collector/state.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
 import { resetPending, resetSeen, resetLine } from "../gate/reset.mjs";
 import { tick } from "../scripts/wake-watch.mjs";
@@ -89,6 +89,27 @@ test("the usage script runs once a day, keeps its rows, and a failing script lea
   assert.equal(c.ran, false);
   assert.equal(c.tile.top[0].pct, 50, "the last rows stand");
   assert.equal(usageTile({ script: "", dir: mkdtempSync(join(tmpdir(), "usage-")), roster: [], now: T, run }).tile, null, "no script, no tile");
+});
+
+test("the week is the config's: the script is asked from the last reset, week % and pace come from quota and reset, a new week runs again", () => {
+  const dir = mkdtempSync(join(tmpdir(), "usage-"));
+  const calls = [];
+  const run = (args) => { calls.push(args); return JSON.stringify({ total_weighted: 650, rows: [{ source: "Manager", share: 1 }] }); };
+  const reset = "2027-01-15T17:00Z";
+  const nextAt = Date.parse(reset) + 7 * 24 * 3600e3;
+  const now = nextAt - 3.5 * 24 * 3600e3;
+  assert.equal(nextReset(reset, now), nextAt, "any one reset anchors every week");
+  assert.equal(nextReset(reset, Date.parse(reset) - 1), Date.parse(reset));
+  assert.equal(nextReset("", now), null);
+  const a = usageTile({ script: "/s/spend.py", dir, roster: ["Manager"], now, run, quota: 1000, resetAt: reset });
+  assert.equal(calls[0][4], new Date(nextAt - WEEK_MS).toISOString().slice(0, 16), "since the last reset");
+  assert.deepEqual([a.tile.weekPct, a.tile.pace, a.tile.level], [65, 130, "amber"], "65% used at half the week: 1.3x");
+  writeFileSync(join(dir, "usage.json"), JSON.stringify({ ranAt: now, rows: a.rows, total: a.total, resetsAt: a.resetsAt }));
+  assert.equal(usageTile({ script: "/s/spend.py", dir, roster: ["Manager"], now: now + 3600e3, run, quota: 1000, resetAt: reset }).ran, false);
+  assert.equal(calls.length, 1);
+  const rolled = usageTile({ script: "/s/spend.py", dir, roster: ["Manager"], now: nextAt + 3600e3, run, quota: 1000, resetAt: reset });
+  assert.equal(rolled.ran, true, "the week turned: run again at once");
+  assert.equal(usageTile({ script: "/s/spend.py", dir: mkdtempSync(join(tmpdir(), "usage-")), roster: ["Manager"], now, run, quota: 0, resetAt: reset }).tile.weekPct, null, "no quota, no percent");
 });
 
 test("the state carries ctx, stuck and usage only as the schema allows", () => {

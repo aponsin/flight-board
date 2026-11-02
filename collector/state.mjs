@@ -387,25 +387,35 @@ export function phaseClashIds(cards, states) {
 }
 
 // The usage tile (#C595): the spend script run once a day (python3 -I, read-only, its --json rows only), kept in
-// <dir>/usage.json between runs; the week's plan reading, { weekPct, resetsAt }, from <dir>/usage-plan.json when someone
-// with the app's usage numbers wrote it. A script that fails leaves the last tile. { tile, ran } (ran: it ran this time).
-export const USAGE_EVERY_MS = 24 * 3600e3;
-export function usageTile({ script, dir, roster, now, run }) {
+// <dir>/usage.json between runs. The week is the config's: usageResetAt is any one weekly reset, so the week now runs from
+// the last one to the next, and the script is asked for that span (--since); week % is its weighted total over usageQuota,
+// and pace follows from how much of the week is gone. Nothing needs the app or a model. A script that fails leaves the last
+// tile; a week that rolled over runs it again at once. { tile, ran, rows, total, resetsAt } (ran: it ran this time).
+export const USAGE_EVERY_MS = 24 * 3600e3, WEEK_SPAN_MS = 7 * 24 * 3600e3;
+export function nextReset(anchorIso, now) {
+  const a = Date.parse(anchorIso ?? "");
+  if (!Number.isFinite(a)) return null;
+  return now < a ? a : a + Math.ceil((now - a + 1) / WEEK_SPAN_MS) * WEEK_SPAN_MS;
+}
+export function usageTile({ script, dir, roster, now, run, quota = 0, resetAt = "" }) {
   const read = (name) => { const r = readTail(join(dir, name), 64 * 1024); try { return r?.whole ? JSON.parse(r.text) : null; } catch { return null; } };
-  const kept = read("usage.json"), plan = read("usage-plan.json");
-  const fresh = plain(kept) && Number.isInteger(kept.ranAt) && kept.ranAt <= now && now - kept.ranAt < USAGE_EVERY_MS && Array.isArray(kept.rows);
-  let rows = fresh ? kept.rows : null, ran = false;
+  const kept = read("usage.json");
+  const resetsAt = nextReset(resetAt, now);
+  const fresh = plain(kept) && Number.isInteger(kept.ranAt) && kept.ranAt <= now && now - kept.ranAt < USAGE_EVERY_MS && Array.isArray(kept.rows) && (kept.resetsAt ?? null) === resetsAt;
+  let rows = fresh ? kept.rows : null, total = fresh ? kept.total : null, ran = false;
   if (!rows && script) {
     try {
-      const since = new Date(now - 7 * 24 * 3600e3).toISOString().slice(0, 16);
+      const since = new Date(resetsAt ? resetsAt - WEEK_SPAN_MS : now - WEEK_SPAN_MS).toISOString().slice(0, 16);
       const out = JSON.parse(run(["-I", script, "--json", "--since", since]));
       rows = Array.isArray(out?.rows) ? out.rows.map((r) => ({ source: String(r?.source ?? "").slice(0, 80), share: r?.share })) : null;
+      total = Number.isFinite(out?.total_weighted) && out.total_weighted >= 0 ? out.total_weighted : null;
       ran = rows !== null;
     } catch { /* the last tile stays */ }
   }
-  if (!rows) rows = plain(kept) && Array.isArray(kept.rows) ? kept.rows : null;
-  if (!rows) return { tile: null, ran: false, rows: null };
-  return { tile: usageReading({ rows, roster, plan: plain(plan) ? plan : null, now }), ran, rows };
+  if (!rows && plain(kept) && Array.isArray(kept.rows)) { rows = kept.rows; total = kept.total ?? null; }
+  if (!rows) return { tile: null, ran: false, rows: null, total: null, resetsAt };
+  const plan = quota > 0 && resetsAt && Number.isFinite(total) ? { weekPct: (total / quota) * 100, resetsAt } : null;
+  return { tile: usageReading({ rows, roster, plan, now }), ran, rows, total, resetsAt };
 }
 
 // The state that leaves, checked against the allowlist before it does.
@@ -529,7 +539,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try { const r = readTail(resetPath, 16 * 1024); if (r?.whole) resetBefore = JSON.parse(r.text); } catch { /* none */ }
   const resets = resetAsks(ctx, resetBefore, now);
   const dir = join(stateDir, id);
-  const spend = usageTile({ script: c.usageScript, dir, roster: config.roster, now, run: (args) => execFileSync("python3", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 60_000, maxBuffer: 16 * 1024 * 1024 }) });
+  const spend = usageTile({ script: c.usageScript, dir, roster: config.roster, now, quota: c.usageQuota, resetAt: c.usageResetAt, run: (args) => execFileSync("python3", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 60_000, maxBuffer: 16 * 1024 * 1024 }) });
   let pageVersion = null;
   try { pageVersion = basename(readlinkSync(join(stateDir, "current"))); } catch { /* no link */ }
   let state;
@@ -546,7 +556,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // For the lead's Stop hook (collector/refresh.mjs, #C594): the cards whose typed phase the repository contradicts. Only
     // when every repository was read fresh; a half-read minute asks for nothing.
     writeAtomic(join(dir, "phase-clashes.json"), JSON.stringify({ at: now, ids: cardsChecked === now ? phaseClashIds(cards.filter((k) => !closed(k)), cardsNow) : [] }));
-    if (spend.ran) writeAtomic(join(dir, "usage.json"), JSON.stringify({ ranAt: now, rows: spend.rows }));
+    if (spend.ran) writeAtomic(join(dir, "usage.json"), JSON.stringify({ ranAt: now, rows: spend.rows, total: spend.total, resetsAt: spend.resetsAt }));
     writeAtomic(backoffPath, JSON.stringify(backoff));
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
     // The roles stopped on a prompt (#C526), for the Collector's alarm and the watchdog (#C529): roles, times and tool
