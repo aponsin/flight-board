@@ -105,6 +105,14 @@ test("the version line: the pack name (or the installed code) and the page's com
   assert.equal(b.boardVerText("<b>x</b>", "{{PAGE_COMMIT}}", "nonsense"), "", "an unfilled placeholder or odd text shows nothing");
 });
 
+// #C611: Today, 7 days, 30 days and Plan week on one row on a laptop (Plan week wrapped under the three), 2x2 on a phone.
+test("the Time spent tiles: four columns, two by two on a phone", () => {
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(html, /\.totals\{display:grid;grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(html, /@media \(max-width:560px\)\{\.totals\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}\}/);
+  assert.doesNotMatch(html, /\.totals\{[^}]*repeat\(3,/, "no three-column grid left");
+});
+
 test("the build stamps the page's commit and the pack name into the header; only well-formed ones", async () => {
   const { buildPage } = await import("../scripts/build-page.mjs");
   const template = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
