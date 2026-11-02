@@ -2076,10 +2076,15 @@ function renderUsage(){
 function usageNoteText(start,tok){return "Agent minutes count time between reported steps (a step left open counts 2 h at most)."+(start?` The board started on ${start}, so that day is partial.`:"")+(tok?` About ${(tok/1e6).toFixed(1)}M tokens in the last 7 days (approximate).`:" Tokens are approximate, per day.")}
 // "Live now" is what the live site serves (the collector reads its build tag: derived/all.live), and "deploying" while
 // main names a newer version. Without that reading, the lead's meta/live as before.
-function liveText(){const all=state.derived.find(d=>d.id==="all"),l=all&&all.live;
-  if(l&&typeof l.version==="string"&&l.version){const ahead=typeof l.mainVersion==="string"&&verCmp(l.mainVersion,l.version)>0;
-    return "Live now: v"+l.version+(ahead?" · deploying v"+l.mainVersion:"")}
-  const m=state.meta.find(d=>d.id==="live");const gap=liveGap(m,state.events);return m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
+// #C608: the newer of the two. derived/all.live is only the Collector's (it showed v1.180.0 while v1.182.4 was live), and
+// Release writes meta/live on every ship, so a ship newer than the Collector's last reading shows at once.
+function liveText(){const all=state.derived.find(d=>d.id==="all"),l=all&&all.live,m=state.meta.find(d=>d.id==="live");
+  const lv=l&&typeof l.version==="string"&&l.version?l.version:"",mv=m&&typeof m.version==="string"&&/^v?\d+\.\d+\.\d+$/.test(m.version)?m.version:"";
+  if(lv&&!(mv&&verCmp(mv,lv)>0)){const ahead=typeof l.mainVersion==="string"&&verCmp(l.mainVersion,lv)>0;
+    return "Live now: v"+lv+(ahead?" · deploying v"+l.mainVersion:"")}
+  if(lv&&mv){const mn=mv.replace(/^v/,""),ahead=typeof l.mainVersion==="string"&&verCmp(l.mainVersion,mn)>0;
+    return "Live now: v"+mn+(ahead?" · deploying v"+l.mainVersion:"")}
+  const gap=liveGap(m,state.events);return m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
 function renderLive(){$("livever").textContent=liveText()}
 // The last 7 days from every card's phaseLog, summed by "who" (the agent) or "phase": { key: { work, busy, gate } } in ms.
 function logTotals(key,now=Date.now()){
