@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { home } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, ALIVE_MAX_MS, MAX_RUN_MS } from "../gate/wake.mjs";
-import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine } from "../gate/reset.mjs";
+import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine } from "../gate/reset.mjs";
 
 // One look: the heartbeat, then the line to print, or null. Marks the wake seen only once it is returned.
 export function tick(dir, now, pid = process.pid) {
@@ -39,8 +39,13 @@ function resetLines(dir) {
     out.push(...wake.map(roleWakeLine));
     if (missing.length) out.push(missingLine(missing));
   }
+  // A question for the owner with no Needs-you item (#C584): "ASK <role> <card>", once per card.
+  const asks = read(ASKS_FILE), pending = asksPending(asks, read(ASKS_SEEN_FILE));
+  if (pending.length || (asks && !sameSeen(asks, read(ASKS_SEEN_FILE)))) writeAtomic(join(dir, ASKS_SEEN_FILE), JSON.stringify(asksSeen(asks)));
+  out.push(...pending.map(askLine));
   return out;
 }
+const sameSeen = (asks, seen) => JSON.stringify(asksSeen(asks)) === JSON.stringify(seen ?? { asks: {} });
 
 // The watch is ending (its planned stop before the Monitor's 30 minutes, or a signal): the heartbeat goes with it, but only
 // if it is this process's own. The end of the process ends the Monitor, which starts a lead turn, and that turn's Stop check

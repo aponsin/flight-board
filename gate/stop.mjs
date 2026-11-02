@@ -181,6 +181,18 @@ export const stopCheck = (lines, opts) => stopRun(lines, opts).errs;
 // is what live.json keeps after this turn.
 // wake (#C580): { hasWake, aliveAt, command } — whether the probe polls the Worker's wake counter, the wake watch's
 // heartbeat, and the command that arms it; null asks nothing (a caller that passes nothing checks as before).
+// A reply that asks the owner for something (#C584, Director's miss 2: an agent's question for them died in chat) must name
+// the card or #T item it lives on. A request is the owner's name near a verb that asks something of them ("<owner> to
+// approve", "needs <owner> to", "waiting on <owner>", "<owner>, please"); a reference is #T<n>, #C<n> or a thread id.
+// Narrow on purpose: a status line that merely names the owner is not a request.
+export function asksOwnerWithoutItem(reply, owner) {
+  const text = String(reply ?? ""), name = String(owner ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!name || !text) return false;
+  const verbs = "(?:approve|decide|choose|pick|answer|confirm|install|paste|run|click|sign|download|allow|reply|respond|say)";
+  const asks = new RegExp(`\\b${name}\\b[^.\\n]{0,40}\\b(?:to|should|must|needs to|has to|please)\\s+${verbs}\\b|\\b(?:needs|needing|waiting on|asks|asking)\\s+${name}\\b|\\b${name},?\\s+please\\b`, "i");
+  if (!asks.test(text)) return false;
+  return !/#[TC]\d{1,6}\b|\bt-\d{6,}\b|\bNeeds[- ]you item\b/i.test(text);
+}
 export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null, wake = null }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
   if (role !== config.gate.managerRole) return { errs: [], record: null, note: null, liveNext: null };
@@ -194,6 +206,7 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   const reply = lastReply(turn);
   const said = (config.gate.verdictWords ?? []).filter((w) => new RegExp(`(^|[^A-Za-z])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^A-Za-z]|$)`, "i").test(reply));
   if (said.length && !writes.length) out.push(`your reply says "${said[0]}" but this turn wrote nothing to the board: write it there first (the item, its step, or the event)`);
+  if (asksOwnerWithoutItem(reply, config.owner)) out.push(`your reply asks ${idText(config.owner)} for something but names no card or #T item: write it as a Needs-you item on the board (a waiting document), and name its #T here; a request left in chat alone never reaches them`);
   const text = ownTurnText(turn);
   const asked = threadPings(text, config.owner);
   // A button reply with a note is the owner's word in that item's thread too: the page writes the note there (#C268:

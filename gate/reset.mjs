@@ -22,6 +22,18 @@ export function resetSeen(asked, seen, roles, key = "roles") {
   for (const r of roles) out[r] = a[r];
   return { ...(seen && typeof seen === "object" ? seen : {}), [key]: out };
 }
+// A question for the owner with no Needs-you item (#C584), owner-asks.json { at, asks: [{ card, role, since }] }: printed
+// once per card and first-seen time (owner-asks-seen.json { asks: { <card>: <since> } }); gone from the file, forgotten.
+export const ASKS_FILE = "owner-asks.json", ASKS_SEEN_FILE = "owner-asks-seen.json";
+const CARD = /^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/;
+const askList = (f) => (Array.isArray(f?.asks) ? f.asks.filter((a) => a && CARD.test(String(a.card)) && ROLE.test(String(a.role)) && Number.isInteger(a.since)) : []);
+export function asksPending(asked, seen) {
+  const s = seen && typeof seen.asks === "object" && seen.asks && !Array.isArray(seen.asks) ? seen.asks : {};
+  return askList(asked).filter((a) => s[a.card] !== a.since);
+}
+// The seen file after printing: the listed asks only, so one that comes back is printed again.
+export const asksSeen = (asked) => ({ asks: Object.fromEntries(askList(asked).map((a) => [a.card, a.since])) });
+export const askLine = (a) => `ASK ${a.role} ${a.card}: ${a.role} is waiting on the owner and has no Needs-you item; write one`;
 export const resetLine = (role) => `CONTEXT RESET ${role}: past the reset limit; save its notes and clear it`;
 export const wakeLine = (role) => `WAKE ${role}: no open session and it has work; wake it`;
 export const missingLine = (roles) => `ROSTER missing: ${roles.join(", ")} (no open session, no work waiting)`;

@@ -1,7 +1,7 @@
 // The probe's own readings, without a model (#C592 keeper, #C593 watchdog, #C595 usage): pure functions over what
 // collector/state.mjs already reads from the transcripts and the app's session files. Numbers, times and enums come out
 // (collector/state-schema.mjs's ctx, stuck and usage); no text of a transcript or a title does.
-import { ROLE } from "./state-schema.mjs";
+import { ROLE, CARD_ID } from "./state-schema.mjs";
 
 // A role in the last assistant entry's usage fields: the tokens its next turn is sent with. Null without one.
 export function contextTokens(entries) {
@@ -50,6 +50,24 @@ export function askOnce(wanted, before, now) {
     else { roles[role] = now; fresh.push(role); }
   }
   return { roles, fresh: fresh.sort() };
+}
+
+// An agent's question for the owner that never became a Needs-you item (#C584, Director's miss 2: Builder's font-download ask
+// and four of Boardsmith's questions died in chat): an open card whose waitingOn is the owner, with no open waiting item
+// naming the card. [{ card, role }] sorted by card; role is the card's who (an agent, never the owner). The lead writes the
+// item from the line the wake watch prints.
+export function ownerAsks({ cards, waiting, owner }) {
+  const same = (a, b) => typeof a === "string" && typeof b === "string" && a.trim().toLowerCase() === b.trim().toLowerCase();
+  const open = new Set((Array.isArray(waiting) ? waiting : []).filter((w) => w && typeof w === "object" && !w.done && typeof w.initiative === "string").map((w) => w.initiative));
+  return cards.filter((c) => c && typeof c.id === "string" && CARD_ID.test(c.id) && same(c.waitingOn, owner) && typeof c.who === "string" && ROLE.test(c.who) && !same(c.who, owner) && !open.has(c.id))
+    .map((c) => ({ card: c.id, role: c.who })).sort((a, b) => (a.card < b.card ? -1 : 1));
+}
+// The asks to write down, each with the time it was first seen (kept while it stays listed): before is the file kept,
+// { asks: [{ card, role, since }] }. { asks, fresh } (fresh: those new this run).
+export function askSince(list, before, now) {
+  const had = new Map((Array.isArray(before?.asks) ? before.asks : []).filter((a) => a && typeof a.card === "string" && Number.isInteger(a.since) && a.since > 0 && a.since <= now).map((a) => [a.card, a.since]));
+  const asks = list.map((a) => ({ ...a, since: had.get(a.card) ?? now }));
+  return { asks, fresh: asks.filter((a) => !had.has(a.card)) };
 }
 
 // A role stuck (#C593): working on one prompt over STEP_MS (the same step, the turn's start unmoved), or stopped on a call
