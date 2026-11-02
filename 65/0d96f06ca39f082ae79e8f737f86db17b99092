@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C584 negated all-clears pass the Stop rule; no ask from a board export older than 2 h (mirrorFresh, boundaries tested). Its over-broad negation is narrowed in 8b18388: ship together. 1028/1028 at 8b18388.
