@@ -1,0 +1,1 @@
+PASS Quick: #C567's gate commit on its v3 line (the code change of build/gate-live-from-version-commit-v3, tip a94b5960, signed). Identical to a715cca, which I reviewed in the 6696b8e3 and 062b3f98 range (range-diff =); later commits on the line change tests only. npm test at the line's stacked tip be10ce98: 921 pass, 0 fail.
