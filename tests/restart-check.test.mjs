@@ -3,6 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { elapsedMs, shipRuns, runVersion, liveShip, verdict, LIVE_FRESH } from "../scripts/restart-check.mjs";
+import { readFileSync } from "node:fs";
 import { loadNames } from "./harness.mjs";
 
 const NOW = 1_800_000_000_000;
@@ -134,6 +135,14 @@ test("a command more than 45 s old, a non-command tool, or the lead's own comman
   assert.equal(pill(restartBoard({ agents: { Builder: bash(60e3, { card: "c-1" }) } })).text, "Safe to restart");
   assert.equal(pill(restartBoard({ agents: { Builder: bash(5e3, { card: "c-1", tool: "Edit" }) } })).text, "Safe to restart");
   assert.equal(pill(restartBoard({ agents: { Manager: bash(5e3, { card: "c-1" }) } })).text, "Safe to restart");
+});
+
+test("the pill's text takes the panel colour (readable on the green and the red in both themes) and wraps rather than overflows", () => {
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  const rule = html.match(/\n\.rb\{([^}]*)\}/)[1];
+  assert.match(rule, /color:var\(--panel\)/);
+  assert.match(rule, /max-width:100%/);
+  assert.doesNotMatch(rule, /color:#fff/);
 });
 
 test("no fresh live reading: no pill (the page never says safe when it can't know)", () => {
