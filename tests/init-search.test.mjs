@@ -49,6 +49,21 @@ test("what a card matches: #C exactly, name, summary, next step, who, phase, #T 
   assert.equal(b.initHit(ts, ""), true);
 });
 
+// #C576: the owner typed "559" and got "No matches" while #C559 was open.
+test("a card's number in any form finds it: 356, C356, c356, #C356; with other words, both", () => {
+  const b = board(), [ts, wf, pot] = b.state.initiatives;
+  for (const q of ["356", "C356", "c356", "#C356", " #c356 "]) assert.equal(b.initHit(ts, q), true, q);
+  for (const q of ["35", "C35", "#C3560", "3560"]) assert.equal(b.initHit(ts, q), false, q);
+  assert.equal(b.initHit(wf, "356"), false, "another card's number");
+  assert.equal(b.initHit(ts, "C356 search box"), true, "the number and a phrase in its text");
+  assert.equal(b.initHit(ts, "C356 tile map"), false, "the number, but not the words");
+  assert.equal(b.initHit(wf, "C356 tile map"), false, "the words, but not the number");
+  assert.equal(b.initHit(pot, "#T958"), true, "#T still finds its thread");
+  const map = card("map-size", 341, { summary: "after #C356's box, a 356 px map" });
+  assert.equal(b.initHit(map, "356"), true, "a bare number may also be in a card's text");
+  assert.equal(b.initHit(map, "C356"), false, "C356 is the card's number only");
+});
+
 // #C395: Done has its own box now (tests/done-search.test.mjs), so this one leaves Done alone.
 test("searching filters the open cards (not Done: it has its own box); the count reads N of M; nothing found says so", () => {
   const b = board();
