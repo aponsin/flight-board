@@ -1,0 +1,1 @@
+PASS Quick: #C567 re-cut on main 2e6d10c2 (build/gate-live-from-version-commit-v2, 3 commits); range-diff against the signed 062b3f98 is identical. npm test: 918 pass and 1 fail in an untouched timing test (queue-order 'a long queue … stays fast', 183 ms while two suites ran at once), which passed alone in 4 ms.
