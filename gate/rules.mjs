@@ -7,7 +7,7 @@ import { PLAN, planWriteErrors, planMirrorErrors, initiativePlanErrors } from ".
 import { idText } from "../collector/text.mjs";
 import { contextRoles, contextWriteErrors, isContextWrite } from "../collector/context.mjs";
 import { mechanicalClass } from "./traffic.mjs";
-import { buildingNow } from "../collector/state-schema.mjs";
+import { buildingNow, liveCard } from "../collector/state-schema.mjs";
 import { reworkOwed, issueTotal, signalText, ISSUE_KINDS } from "../collector/rework.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
@@ -389,7 +389,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null, se
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
-    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now, who }), ...queuedLiveErrors(w, { live })];
+    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now, who, live }), ...queuedLiveErrors(w, { live })];
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
@@ -578,7 +578,7 @@ export function leadFieldErrors(w, { config, who = {}, mirror }) {
   return e;
 }
 
-export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now(), who = {} }) {
+export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now(), who = {}, live = null }) {
   const { op, collection, doc_id: id, data } = w;
   const lead = leadFieldErrors(w, { config, who, mirror });
   if (lead.length) return lead;
@@ -635,7 +635,10 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
     if (thread.length && thread[thread.length - 1].from === config.owner) e.push(`${config.owner}'s last message in its thread is unanswered`);
     const asks = (mirror.docs.waiting ?? []).filter((x) => x.initiative === id && !x.done && !x.response);
     if (asks.length) e.push(`an ask tied to it is still open (${asks.map((x) => x.id).join(", ")})`);
-    if (data.status === "done" && derived?.phase && derived.phase !== config.collector.livePhase) e.push(`the repository says ${derived.phase}, not ${config.collector.livePhase} (${derived.evidence})`);
+    // A fresh live reading outranks the export (#C567): the export lags a deploy by up to a collector run.
+    const fresh = liveCard(live, id, config);
+    const repo = fresh ? { phase: fresh.phase, evidence: `the live state: ${fresh.headSha12} ${fresh.onMain ? "is on" : "is not on"} ${config.collector.mainBranch}` } : derived;
+    if (data.status === "done" && repo?.phase && repo.phase !== config.collector.livePhase) e.push(`the repository says ${repo.phase}, not ${config.collector.livePhase} (${repo.evidence})`);
   }
   return e;
 }

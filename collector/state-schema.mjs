@@ -106,6 +106,15 @@ export function buildingNow(s, id) {
   if (plain(c) && SHA12.test(c.headSha12 ?? "") && c.onMain === false) return true;
   return Object.values(s.agents).some((a) => plain(a) && a.state === "working" && a.card === id);
 }
+// A card's reading in a fresh live state (#C567): { phase, headSha12, onMain } when the state lists it with a head and a
+// phase the config names, else null. The gate takes it over the Collector's last export for "done": the export is only
+// as new as its run (an hour at most), the state's reading under LIVE_FRESH_MS.
+export function liveCard(s, id, config) {
+  if (!plain(s) || !plain(s.cards) || !Object.hasOwn(s.cards, id)) return null;
+  const c = s.cards[id];
+  if (!plain(c) || !SHA12.test(c.headSha12 ?? "") || !(config.phases ?? []).some((p) => p[0] === c.phase)) return null;
+  return { phase: c.phase, headSha12: c.headSha12, onMain: c.onMain === true };
+}
 // The roles working on a card now, the lead aside (it reads every card; it builds none).
 export function workersOn(s, id, lead) {
   if (!plain(s) || !plain(s.agents)) return [];
