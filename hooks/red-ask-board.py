@@ -83,6 +83,7 @@ def used(u):
     n = [u.get(k) for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")]
     return sum(x for x in n if isinstance(x, int) and not isinstance(x, bool) and x >= 0)
 red = wrote = question = answered = cleared = False
+closed = set()  # waiting items this turn marked done or deleted (#C582)
 tokens = None  # the latest call's context; a compaction after it leaves none
 for line in reversed(lines):
     try:
@@ -119,6 +120,15 @@ for line in reversed(lines):
         if c.get("type") == "tool_use" and c.get("name") == "ArtifactData":
             s = json.dumps(c.get("input") or {})
             writes = any(a in s for a in ('"set"', '"update"', '"batch"'))
+            try:
+                _w = _in.get("writes") if _in.get("action") == "batch" else [_in]
+                for _x in _w if isinstance(_w, list) else []:
+                    if isinstance(_x, dict) and _x.get("collection") == "waiting" and isinstance(_x.get("doc_id"), str):
+                        _d = _x.get("data") if isinstance(_x.get("data"), dict) else {}
+                        if _x.get("action") == "delete" or _x.get("op") == "delete" or _d.get("done") is True or isinstance(_d.get("doneAt"), (int, float)):
+                            closed.add(_x["doc_id"])
+            except Exception:
+                pass
             if '"waiting"' in s and writes:
                 wrote = True
                 if '"ans-' in s:
@@ -249,6 +259,34 @@ def tile_ask():
 # Security's LOW on 7692ec0: the tile is a nicety; an exception in it never drops the hook's other verdicts.
 try:
     tile_ask()
+except Exception:
+    pass
+# Answered but still open (#C582, the owner's go): Manager only. The owner replied to a waiting item (the page stamps
+# respondedAt beside its response) and it is neither done nor doneAt, so the reply sits unread or unacted. The turn doesn't
+# end until Manager closes each one (done:true, doneAt) or acts on it and says so on its thread. Read from the board's
+# mirror, so an item closed in the last few minutes may still show; closing it this turn counts at once.
+def answered_open():
+    out = []
+    fb = os.path.join(os.path.expanduser("~"), ".flight-board")
+    for p in sorted(glob.glob(os.path.join(glob.escape(fb), "*", "mirror", "waiting", "*.json"))):
+        w = read_json(p)
+        if not w:
+            continue
+        i = os.path.basename(p)[:-5]
+        r = w.get("respondedAt")
+        if i in closed or not isinstance(w.get("response"), dict) or not num(r) or w.get("done") is True or isinstance(w.get("doneAt"), (int, float)):
+            continue
+        t = read_json(os.path.join(os.path.dirname(os.path.dirname(p)), "threads", i + ".json")) or {}
+        n = t.get("num")
+        title = re.sub(r"\s+", " ", str(t.get("title") or w.get("text") or w.get("question") or i)).strip()[:80]
+        out.append((r, ("#T%d " % n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else "") + title + " [" + i + "]"))
+    return [x[1] for x in sorted(out)]
+try:
+    if MANAGER:
+        _open = answered_open()
+        if _open:
+            _names = "; ".join(_open[:5]) + ("; and %d more" % (len(_open) - 5) if len(_open) > 5 else "")
+            reasons.append("The owner answered %d waiting item%s that %s still open: %s. Manager: act on each answer, then close it (ArtifactData update waiting/<id> {done: true, doneAt}), or say on its thread what is left. Then finish." % (len(_open), "" if len(_open) == 1 else "s", "is" if len(_open) == 1 else "are", _names))
 except Exception:
     pass
 # Two rules left this hook (#C334, the context-tax brief's card A): the memory tile (the Collector writes it from the
