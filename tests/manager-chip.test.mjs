@@ -52,7 +52,7 @@ const chip = (b) => JSON.parse(JSON.stringify(b.managerChip(Date.now())));
 test("the chip: green caught up, amber for a seen unanswered message, red when the heartbeat is stale or none, hidden on an older probe", () => {
   const now = Date.now();
   let b = page({ wakeAliveAt: now - 5e3, wakeSeenAt: now - 10 * MIN }, []);
-  assert.deepEqual(chip(b), { cls: "ok", text: `Manager listening · caught up ${hh(now - 5e3)}` });
+  assert.deepEqual(chip(b), { cls: "ok", text: "Manager listening" }, "#C606: the state alone, no times");
   const msg = (from, at, thread = "t1") => ({ id: `m${at}`, thread, from, text: "hi", at });
   b = page({ wakeAliveAt: now - 5e3, wakeSeenAt: now - MIN }, []);
   b.state.messages = [msg(owner(b), now - 2 * MIN)];
@@ -91,4 +91,27 @@ test("the Manager chip is in the header's right block above the clock, and that 
   assert.ok(!clock.includes("mgrchip"), "not inline after the stamp");
   assert.match(html, /header\{[^}]*flex-wrap:wrap/, "the header wraps");
   assert.match(html, /\.hdr-right\{[^}]*max-width:100%/, "the block never outgrows the phone");
+  assert.match(html, /\.mgr-chip\[hidden\]\{display:none\}/, "a hidden chip takes no room (Checker's nit)");
+});
+
+// #C609: "Board v3.45 · page c647307" under the title; each part only when it is real.
+test("the version line: the pack name (or the installed code) and the page's commit; a part that isn't real is left out", () => {
+  const b = loadNames(["boardVerText"]);
+  assert.equal(b.boardVerText("v3.45", "c647307", "9db172c93fca"), "Board v3.45 · page c647307", "the stamped pack name wins");
+  assert.equal(b.boardVerText("", "c647307", "9db172c93fca"), "Board 9db172c · page c647307", "no pack name: the installed code from the probe");
+  assert.equal(b.boardVerText("", "c647307", null), "page c647307");
+  assert.equal(b.boardVerText("v3.45", "", null), "Board v3.45");
+  assert.equal(b.boardVerText("", "", null), "");
+  assert.equal(b.boardVerText("<b>x</b>", "{{PAGE_COMMIT}}", "nonsense"), "", "an unfilled placeholder or odd text shows nothing");
+});
+
+test("the build stamps the page's commit and the pack name into the header; only well-formed ones", async () => {
+  const { buildPage } = await import("../scripts/build-page.mjs");
+  const template = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  const config = JSON.parse(readFileSync(new URL("../board.config.example.json", import.meta.url), "utf8"));
+  const html = buildPage(template, config, { commit: "c647307", pack: "v3.46" });
+  assert.match(html, /id="boardver" data-pack="v3\.46" data-commit="c647307"/);
+  const plain = buildPage(template, config);
+  assert.match(plain, /id="boardver" data-pack="" data-commit=""/, "no stamp: empty, and the line stays hidden");
+  assert.match(buildPage(template, config, { commit: '"><script>', pack: "v3.4; x" }), /data-pack="" data-commit=""/, "odd values are dropped");
 });

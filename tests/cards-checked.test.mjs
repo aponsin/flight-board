@@ -64,10 +64,10 @@ test("the chip goes red 5 minutes after the cards were last checked, and says wh
     b.set({ v: 1, board: { at: now, wakeAliveAt: now - 5e3, wakeSeenAt: null, ...extra }, cards: {}, agents: {} });
     return JSON.parse(JSON.stringify(b.managerChip(now)));
   };
-  assert.deepEqual(make({ cardsCheckedAt: now - 30e3 }), { cls: "ok", text: `Manager listening · caught up ${hh(now - 5e3)} · cards checked ${hh(now - 30e3)}` });
+  assert.deepEqual(make({ cardsCheckedAt: now - 30e3 }), { cls: "ok", text: "Manager listening" }, "#C606: fresh cards add nothing to the chip (the header stamp says when the Studio checked)");
   assert.equal(make({ cardsCheckedAt: now - 5 * MIN + 5e3 }).cls, "ok", "inside 5 minutes");
   assert.deepEqual(make({ cardsCheckedAt: now - 6 * MIN }), { cls: "bad", text: `Cards not checked since ${hh(now - 6 * MIN)}` });
   assert.deepEqual(make({ cardsCheckedAt: null }), { cls: "bad", text: "Cards not checked" });
-  assert.equal(make({}).text, `Manager listening · caught up ${hh(now - 5e3)}`, "a probe from before #C591 says nothing of cards");
+  assert.equal(make({}).text, "Manager listening", "a probe from before #C591 says nothing of cards");
   assert.equal(make({ cardsCheckedAt: now - 6 * MIN, wakeAliveAt: null }).text, "Manager not listening · say wake up the team", "the Manager's red comes first");
 });
