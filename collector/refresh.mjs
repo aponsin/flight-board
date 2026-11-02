@@ -94,7 +94,7 @@ export function ownerEvents(lines) {
 
 // The reason to start the collector now, or null. Pure: everything comes in.
 // run: { startedAt, finishedAt } (ms or null); refs: { repo: sha } now; baseline: { repo: sha } as of the last run.
-export function decide({ lead, stopActive, now, run = {}, refs = {}, baseline = {}, events = [], askedAt = null, debounceMin = 10, flightMin = 15 }) {
+export function decide({ lead, stopActive, now, run = {}, refs = {}, baseline = {}, events = [], askedAt = null, debounceMin = 10, flightMin = 15, clashes = [], clashAsked = null }) {
   if (!lead || stopActive) return null;
   if (Number.isFinite(askedAt) && now - askedAt < debounceMin * 60e3) return null;
   const started = Number.isFinite(run.startedAt) ? run.startedAt : null;
@@ -109,7 +109,27 @@ export function decide({ lead, stopActive, now, run = {}, refs = {}, baseline = 
   if (done.length) why.push(`marked done: ${done.join(", ")}`);
   if (events.some((e) => e.kind === "refresh" && e.at > since)) why.push("the owner asked for a refresh");
   if (events.some((e) => e.kind === "ready" && e.at > since)) why.push("a READY came in");
+  const clash = clashReason(clashes, clashAsked, now);
+  if (clash) why.push(clash);
   return why.length ? why.join("; ") : null;
+}
+
+// A card's phase on the board differs from the repository's (#C594, found by the every-minute probe, which writes
+// phase-clashes.json): the collector is what brings them together, so this asks for a run, and is the only clock-free
+// reason. The same set is asked for again only after CLASH_AGAIN_MIN (a run that did not mend it is not asked for every
+// debounce). Ids go through idText; none, or an odd entry, is no reason.
+export const CLASH_FRESH_MS = 5 * 60e3, CLASH_AGAIN_MIN = 60;
+export const clashKey = (ids) => [...ids].sort().join(",");
+export function clashReason(ids, asked, now) {
+  const clean = [...new Set((Array.isArray(ids) ? ids : []).map(idText).filter((x) => x !== "?"))].sort();
+  if (!clean.length) return null;
+  if (asked && asked.key === clashKey(clean) && Number.isFinite(asked.at) && now - asked.at < CLASH_AGAIN_MIN * 60e3) return null;
+  return `phase differs from the repository: ${clean.join(", ")}`;
+}
+// The probe's file as the ids it names, or none when it is old (the probe stopped) or odd.
+export function clashIds(file, now) {
+  if (!file || typeof file !== "object" || !Number.isFinite(file.at) || now - file.at > CLASH_FRESH_MS || file.at - now > 60e3 || !Array.isArray(file.ids)) return [];
+  return file.ids.filter((x) => typeof x === "string").slice(0, 10);
 }
 
 // What --prepare notes at a run's start: its time and each refresh repo's origin/main then. git(path) gives a sha or null;
@@ -150,8 +170,12 @@ export function main(input, { config, env = process.env, now = Date.now(), git, 
   const { refs } = runMark(null, r.repos, git, ships);
   const { baseline, save } = baselineFor(state, Number.isFinite(startedAt) ? startedAt : null, refs, markRefs);
   const askedAt = save ? null : state?.askedAt ?? null;
-  const why = decide({ lead: true, stopActive: false, now, run: { startedAt, finishedAt }, refs, baseline, events: ownerEvents(lines), askedAt, debounceMin: r.debounceMin, flightMin: r.flightMin });
-  const next = { ...(save ?? state), ...(why ? { askedAt: now } : askedAt != null ? { askedAt } : {}) };
+  let clashes = [];
+  try { clashes = clashIds(JSON.parse(read(join(dir, "phase-clashes.json"), "utf8")), now); } catch { /* no probe file */ }
+  const clashAsked = state?.clashAsked ?? null;
+  const why = decide({ lead: true, stopActive: false, now, run: { startedAt, finishedAt }, refs, baseline, events: ownerEvents(lines), askedAt, debounceMin: r.debounceMin, flightMin: r.flightMin, clashes, clashAsked });
+  const asksClash = !!why && !!clashReason(clashes, clashAsked, now);
+  const next = { ...(save ?? state), ...(why ? { askedAt: now } : askedAt != null ? { askedAt } : {}), ...(asksClash ? { clashAsked: { key: clashKey([...new Set(clashes.map(idText).filter((x) => x !== "?"))]), at: now } } : clashAsked ? { clashAsked } : {}) };
   if (save || why) write(join(dir, "refresh.json"), next);
   return why ? `Start the collector now: call mcp__scheduled-tasks__run_scheduled_task with taskId ${r.taskId}, once (${why}). Then finish.` : null;
 }

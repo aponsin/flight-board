@@ -374,6 +374,18 @@ export function cardsCheckedAt(repoList, now, before) {
   return Number.isInteger(before) && before >= 1577836800000 && before <= now ? before : null;
 }
 
+// The cards whose phase the repository shows differently from the typed one (#C594): the board's export has one, the probe
+// reads another from the card's tip and sign-offs (the card has a head, so it is evidence, not the declared phase echoed).
+// The collector run is for these; the clock is not. Ids only, sorted, at most 10.
+export function phaseClashIds(cards, states) {
+  const out = [];
+  for (const card of cards) {
+    const s = Object.hasOwn(states, card.id) ? states[card.id] : null;
+    if (s && s.headSha12 && typeof card.phase === "string" && card.phase && card.phase !== s.phase) out.push(card.id);
+  }
+  return out.sort().slice(0, 10);
+}
+
 // The usage tile (#C595): the spend script run once a day (python3 -I, read-only, its --json rows only), kept in
 // <dir>/usage.json between runs; the week's plan reading, { weekPct, resetsAt }, from <dir>/usage-plan.json when someone
 // with the app's usage numbers wrote it. A script that fails leaves the last tile. { tile, ran } (ran: it ran this time).
@@ -525,10 +537,15 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   let checkedBefore = null;
   try { const r = readTail(checkedPath, 4096); if (r?.whole) checkedBefore = JSON.parse(r.text)?.at; } catch { /* none */ }
   const cardsChecked = cardsCheckedAt(Object.values(repos), now, checkedBefore);
+  let cardsNow;
   try {
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, ctx, stuck, usage: spend.tile, ...wakeTimes(join(stateDir, id), now) });
+    cardsNow = cardStates({ cards, config, repos, now });
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, ctx, stuck, usage: spend.tile, ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
     writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
+    // For the lead's Stop hook (collector/refresh.mjs, #C594): the cards whose typed phase the repository contradicts. Only
+    // when every repository was read fresh; a half-read minute asks for nothing.
+    writeAtomic(join(dir, "phase-clashes.json"), JSON.stringify({ at: now, ids: cardsChecked === now ? phaseClashIds(cards.filter((k) => !closed(k)), cardsNow) : [] }));
     if (spend.ran) writeAtomic(join(dir, "usage.json"), JSON.stringify({ ranAt: now, rows: spend.rows }));
     writeAtomic(backoffPath, JSON.stringify(backoff));
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
