@@ -86,6 +86,25 @@ test("a button-only reply the mirror hasn't seen, found by the waiting query, is
   assert.deepEqual(run(turnWith([doc("z", { kind: "decision", text: "z", respondedAt: NOW - MIN, done: true, response: { at: NOW - MIN, status: "chose", choice: "B" } })]), { stored }).errs, [], "a done item is owed nothing");
 });
 
+// #C607: the four items the Manager closed (done:true, doneAt after respondedAt) were listed on every later turn: the kept
+// copy had no done, and the live query never returns a closed document again.
+test("an ask the lead closed stays closed in the kept copy: not listed on the turns after", () => {
+  const ids = ["c554-picks-1793601593123", "c572-card-ok-1793601764395", "c581-look-1793602326200", "c580-prompt-test-1793601118149"];
+  const kept = ids.map((id, n) => ({ id, respondedAt: NOW - (20 - n) * MIN, response: { at: NOW - (20 - n) * MIN, status: n === 3 ? "help" : "chose", ...(n === 3 ? {} : { choice: "A" }), note: "" }, text: `item ${n}`, since: NOW - HOUR }));
+  const stored = { checkedAt: NOW - 2 * MIN, msgs: [], asks: kept };
+  const close = (id, n) => ({ type: "assistant", message: { content: [{ type: "tool_use", id: `w${n}`, name: "ArtifactData", input: { url: URL_, action: "update", collection: "waiting", doc_id: id, data: { done: true, doneAt: NOW - MIN }, if_version: 2 } }] } });
+  const since = NOW - 2 * MIN - LIVE_SLACK, w = [["from", "==", "Owner"], ["at", ">", since]];
+  const checked = [...query([], { where: w }), ...waitingQ([], { since })];
+  assert.equal(run(turn(checked), { stored }).errs.length, 1, "before it acts: all four owed");
+  const r = run(turn([...ids.map(close), ...checked]), { stored });
+  assert.deepEqual(r.errs, [], "the turn that closes them");
+  assert.ok(r.liveNext.asks.every((a) => a.done === true), "kept as done");
+  assert.deepEqual(run(turn(checked), { stored: r.liveNext }).errs, [], "and the next turn lists none");
+  const half = run(turn([close(ids[0], 9), ...checked]), { stored });
+  assert.deepEqual(half.liveNext.asks.filter((a) => !a.done).map((a) => a.id).sort(), ids.slice(1).sort(), "only the one it closed");
+  assert.match(run(turn(checked), { stored: half.liveNext }).errs.join("\n"), /3 things need you/);
+});
+
 test("a check with only one of its two queries is half done: what it found counts, checkedAt stays, both are asked again", () => {
   const stored = { checkedAt: NOW - 2 * MIN, msgs: [] }, since = NOW - 2 * MIN - LIVE_SLACK;
   const msgsOnly = run(turn(query([], { where: [["from", "==", "Owner"], ["at", ">", since]] })), { stored });
