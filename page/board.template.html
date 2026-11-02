@@ -2114,8 +2114,11 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
   const list=listOpen(c),i=list.findIndex(t=>t.id===b.dataset.id);if(i<0)return;b.disabled=true;
   // "Let's start": asks Manager to start on an idea (a talk, a build or an assessment); Manager turns it into an initiative.
   if(b.dataset.td==="start"){const t=list[i],anchor=await prepAnchor(b);
-    try{await dbRef.doc(c+"/"+t.id).update({startAt:Date.now()});let ok=false;
-      try{ok=await sendPing(anchor,`Board idea [${t.id}]: let's start this (${t.kind||"idea"}): "${t.text}".`.slice(0,1900),t.id)}catch(_){}
+    // The ask is the owner's message in the idea's thread (#C589): a wake carries no text, so the lead finds it there; the
+    // comment (sendPing) is only the fallback when no wake got through.
+    try{const now=Date.now(),text=`Let's start this (${t.kind||"idea"}): "${t.text}".`;
+      await applyWrites([{op:"update",path:c+"/"+t.id,data:{startAt:now}},...threadWrites(t.id,text,[],now,undefined,Math.random().toString(36).slice(2,8))]);let ok=false;
+      try{ok=await sendPing(anchor,`Board idea [${t.id}]: ${text}`.slice(0,1900),t.id)}catch(_){}
       if(!ok)await dbRef.doc(c+"/"+t.id).update({startPing:"not sent"})}catch(_){b.disabled=false}
     return}
   try{if(b.dataset.td==="done")await dbRef.doc(c+"/"+list[i].id).update({done:true,doneAt:Date.now()});
@@ -2186,8 +2189,11 @@ function ctxTileHtml(n,t,req,now){const L=ctxLevel(t)||ctxLevel({pct:0}),c=L.c;
 function ctxRefreshWrites(n,now){return /^[A-Za-z0-9_-]{1,60}$/.test(String(n))?[{op:"set",path:`ctxRequests/${n}`,data:{at:now}}]:[]}
 const ctxPingText=n=>`Board: refresh ${n}'s memory tile (wake ${n}, then run board-collector)`;
 document.addEventListener("click",async e=>{const r=e.target.closest&&e.target.closest("[data-ctxref]");if(!r||!dbRef)return;
-  const n=r.dataset.ctxref,ws=ctxRefreshWrites(n,Date.now());if(!ws.length)return;r.disabled=true;
+  const now=Date.now(),n=r.dataset.ctxref,ws=ctxRefreshWrites(n,now);if(!ws.length)return;r.disabled=true;
   const anchor=await prepAnchor(r);
+  // The ask is the owner's message in the tile's thread (ctx-<role>, #C589): a wake carries no text, so the lead reads it
+  // there; the comment is the fallback when no wake got through.
+  ws.push(...threadWrites(`ctx-${n}`,ctxPingText(n),[],now,undefined,Math.random().toString(36).slice(2,8)));
   try{await applyWrites(ws);await sendPing(anchor,ctxPingText(n),`ctx-${n}`)}catch(_){r.disabled=false}});
 // Steps: each agent logs its own step as it happens, one document per event in "steps":
 // {init: <initiative id>, phase: plan|build|language|checker|security|ship|live, who, kind: "start"|"end", at: <ms>, wait?: "busy"|"gate", version?}.
