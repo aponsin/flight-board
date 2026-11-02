@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C584 probe lists open cards waiting on the owner with no Needs-you item, wake watch prints ASK once; Stop hook refuses an owner ask without a card or #T item. My negation and stale-export findings are fixed in 650d96f and 8b18388 on this stack: ship together. 1028/1028 at 8b18388.
