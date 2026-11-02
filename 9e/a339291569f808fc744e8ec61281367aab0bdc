@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C589 a send the wake carries posts no comment; the comment is the fallback. Same as 6efb02a; its lost-ask finding is fixed in 4468d6e on this stack, so ship them together. 1010/1010 at 4468d6e.
