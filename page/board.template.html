@@ -1023,7 +1023,16 @@ function longPaste(text,max,now,attach=true){const s=String(text||"").trim();if(
 function attachLong(key,lp){if(!lp.name||typeof File!=="function")return ()=>{};const f=new File([lp.full],lp.name,{type:"text/plain"});
   pendingFiles.set(key,[...(pendingFiles.get(key)||[]),f]);return ()=>{const l=pendingFiles.get(key)||[],k=l.indexOf(f);if(k>=0)l.splice(k,1)}}
 const longLine=(lp,max)=>!lp.cut?"":lp.name?` Your text was over ${max} characters: it went cut, with the full text attached as ${lp.name}.`:` Your text was over ${max} characters: it went cut; send the rest in a second message.`;
-async function applyWrites(ws){for(const w of ws){const d=dbRef.doc(w.path);if(w.op==="set")await d.set(w.data);else await d.update(w.data)}renderOwn()}
+async function applyWrites(ws){for(const w of ws){const d=dbRef.doc(w.path);if(w.op==="set")await d.set(w.data);else await d.update(w.data)}renderOwn();wakeLead(ws)}
+// The owner's word reaches the lead's session through the state Worker (#C580, gate/wake.mjs): a message of theirs, or
+// an answer to an ask that needs more than an Ack or a Done, sends board_wake {kind} once the write is saved. Never text,
+// never a reason to fail the write: a viewer without the connector, a refused call or no connector at all changes nothing.
+function wakeKind(ws){
+  if(ws.some(w=>/^messages\//.test(w.path)&&w.data&&w.data.from===OWNER&&w.data.resolved!==true))return "message";
+  if(ws.some(w=>/^waiting\//.test(w.path)&&w.data&&w.data.response&&!(["ack","done"].includes(w.data.response.status)&&!String(w.data.response.note||"").trim()&&!(w.data.response.files||[]).length)))return "answer";
+  return null}
+function wakeLead(ws){const kind=wakeKind(ws);if(!kind||!liveMcp)return;
+  try{Promise.resolve(liveMcp.callTool(STATE_SERVER,WAKE_TOOL,{kind},{cache:false})).catch(()=>{})}catch(_){}}
 // A button reply on an ask (unchanged for every kind), as the writes it makes. Board v2: a bare Ack on
 // an answer closes it (case 6: 22 acked answers stayed open); a note, whatever the button, also goes in the item's thread
 // as the owner's message, so a question in a Done note waits for Manager instead of closing with the item (case 10).
@@ -2336,7 +2345,7 @@ document.addEventListener("focusin",onRow);
 // cards' phase lights, sub-steps, waits, ETAs, needs-you counts and the agent tiles read it first; past that, or
 // without the connector, the board reads the Collector's derived/all and the steps as before. Only the header stamp
 // says which: "live · 40 s" or "from 14:02".
-const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",PROBE_EVERY=60e3,LIVE_FRESH=3*60e3,PROBE_FRESH=15*60e3;
+const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",WAKE_TOOL="board_wake",PROBE_EVERY=60e3,LIVE_FRESH=3*60e3,PROBE_FRESH=15*60e3;
 let probe=null,probeNote="",probeAsk=false,liveMcp=null;
 const isT=v=>Number.isInteger(v)&&v>1577836800000&&v<4102444800000;
 const probeFits=s=>!!s&&typeof s==="object"&&s.v===1&&s.board&&isT(s.board.at)&&s.cards&&typeof s.cards==="object"&&s.agents&&typeof s.agents==="object";

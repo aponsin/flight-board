@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
+import { wakePaths, readWakeFile, nextWakeFile } from "../gate/wake.mjs";
 
 // The folder this run's code lives in: the pinned copy <install root>/<full sha>, whose sha is the board's probe.
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -384,6 +385,19 @@ export async function postState(fetchImpl, secrets, id, state, wait = (ms) => ne
   return "state: the Worker could not be reached (tried twice)";
 }
 
+// The owner's latest wake (#C580, gate/wake.mjs): GET /b/<board id>/wake with the board's token, https only, no redirect,
+// 10 s at most. { seq, at } or null; one line for the log, never the token. Kept apart from the state POST, so a state
+// that didn't post (the Worker's rate limit, a heartbeat's 204) never hides a wake.
+export async function getWake(fetchImpl, secrets, id) {
+  try {
+    const r = await fetchImpl(`${secrets.url}/b/${id}/wake`, { method: "GET", redirect: "error", headers: { authorization: `Bearer ${secrets.token}` }, signal: AbortSignal.timeout(10_000) });
+    if (r.status !== 200) return { wake: null, line: `wake: the Worker answered ${Number(r.status)}` };
+    const j = await r.json();
+    const wake = { seq: j?.seq, at: j?.at };
+    return nextWakeFile(wake, null) ? { wake, line: null } : { wake: null, line: "wake: the Worker's answer isn't a counter" };
+  } catch { return { wake: null, line: "wake: the Worker could not be reached" }; }
+}
+
 const writeAtomic = (path, text) => { const tmp = `${path}.${process.pid}.part`; writeFileSync(tmp, text, { mode: 0o600, flag: "wx" }); renameSync(tmp, path); };
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
@@ -452,4 +466,12 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   if (process.argv.includes("--no-post")) { console.log(`state: written, ${Object.keys(state.cards).length} card(s), ${Object.keys(state.agents).length} agent(s), not posted`); process.exit(0); }
   const secrets = readSecrets(secretsDir(stateDir, id));
   console.log(secrets ? await postState(fetch, secrets, id, state) : "state: written, not posted (no secrets from the owner's install, or they are open to others)");
+  // The owner's wake counter (#C580) into wake.json, for the lead's wake watch: only when it changed. A Worker that has no
+  // wake route yet (an older deploy: 404) leaves no file, so the lead's Stop hook never asks for a watch it can't use.
+  if (secrets) {
+    const got = await getWake(fetch, secrets, id), p = wakePaths(join(stateDir, id));
+    const next = got.wake ? nextWakeFile(got.wake, readWakeFile(p.wake)) : null;
+    if (next) { try { writeAtomic(p.wake, next); console.log(`wake: #${got.wake.seq}`); } catch { console.log("wake: wake.json could not be written"); } }
+    else if (got.line) console.log(got.line);
+  }
 }

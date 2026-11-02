@@ -2,7 +2,8 @@
 // minute) and serves it to the board page as a read-only remote MCP tool, board_state. Many boards, one Worker; it runs
 // on the owner's own Cloudflare account, deployed by the owner from the pinned copy (scripts/state-install.mjs).
 //   POST /b/<board id>/state   Authorization: Bearer <token>   (the state, at most 64 KB, once per 30 s)
-//   POST /mcp/<path>           JSON-RPC: initialize, tools/list, tools/call board_state, ping
+//   GET  /b/<board id>/wake    Authorization: Bearer <token>   ({ seq, at } of the owner's latest wake, #C580)
+//   POST /mcp/<path>           JSON-RPC: initialize, tools/list, tools/call board_state or board_wake, ping
 // Each board has one Worker secret, BOARD_<16 hex of sha256(board id)> = {"token": sha256(token), "path": sha256(path)}:
 // the Worker holds hashes only, and compares them in constant time. A POST is checked field by field against
 // collector/state-schema.mjs and stored as pickState() of it; the tool answers pickState() of what is stored, never the
@@ -31,6 +32,20 @@ export const TOOL = {
   description: "The flight board's latest state from the Studio: each open card's stage and each agent's current activity. Ids, enums, numbers and times only.",
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+};
+
+// board_wake (#C580): the board's page calls it when the owner writes a message or answers an ask. It stores only a
+// counter and a time, never text: { seq, at, day, writes } under w:<secret name>. The Studio's probe reads the counter
+// (GET /b/<board id>/wake, the board's token) once a minute and wakes the lead's session from there; the Worker never
+// reaches a session itself. Calls within WAKE_RATE_MS of the last one count as that one, so a burst is one wake.
+export const WAKE_RATE_MS = 10_000, WAKE_WRITES_DEFAULT = 500;
+export const WAKE_KINDS = ["message", "answer"];
+export const WAKE_TOOL = {
+  name: "board_wake",
+  title: "Board wake",
+  description: "Tells the Studio that the owner wrote on the board (a message or an answer), so the lead's session looks at it. Carries no text: only the kind.",
+  inputSchema: { type: "object", properties: { kind: { type: "string", enum: WAKE_KINDS } }, required: ["kind"], additionalProperties: false },
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
 };
 
 const enc = new TextEncoder();
@@ -128,7 +143,41 @@ async function boardState(env, name) {
   return { content: [{ type: "text", text: JSON.stringify(s) }], structuredContent: s };
 }
 
-async function mcp(request, env, path) {
+async function readWake(env, name) {
+  try {
+    const w = JSON.parse((await env.STATE.get(`w:${name}`)) ?? "null");
+    return Number.isInteger(w?.seq) && w.seq >= 0 && Number.isFinite(w.at) ? w : { seq: 0, at: 0 };
+  } catch { return { seq: 0, at: 0 }; }
+}
+
+// The tool's answer: the counter after this call. Inside WAKE_RATE_MS of the last wake it writes nothing and answers with
+// that wake; past the day's budget (a [vars] value, WAKE_WRITES_DEFAULT when unset) it is refused until midnight UTC.
+async function boardWake(env, name, args, now) {
+  const keys = args && typeof args === "object" && !Array.isArray(args) ? Object.keys(args) : null;
+  if (!keys || keys.some((k) => k !== "kind") || !WAKE_KINDS.includes(args.kind)) return { content: [{ type: "text", text: "kind: message or answer" }], isError: true };
+  const w = await readWake(env, name);
+  const out = (x, extra = {}) => ({ content: [{ type: "text", text: JSON.stringify({ seq: x.seq, ...extra }) }], structuredContent: { seq: x.seq, ...extra } });
+  if (w.seq > 0 && now - w.at < WAKE_RATE_MS) return out(w, { collapsed: true });
+  const day = new Date(now).toISOString().slice(0, 10), budget = Number.parseInt(env.WAKE_WRITES_PER_DAY ?? "", 10);
+  const writes = w.day === day && Number.isInteger(w.writes) ? w.writes : 0;
+  if (writes >= (Number.isInteger(budget) && budget > 0 ? budget : WAKE_WRITES_DEFAULT)) return { content: [{ type: "text", text: "wake budget used up today" }], isError: true };
+  const next = { seq: w.seq + 1, at: now, day, writes: writes + 1 };
+  await env.STATE.put(`w:${name}`, JSON.stringify(next));
+  return out(next);
+}
+
+// The probe's read: { seq, at } of the latest wake, 0 and 0 when there is none. The board's token, as for the state POST.
+async function getWake(request, env, boardId) {
+  const name = await secretName(boardId);
+  const s = boardSecret(env, name);
+  if (!s) return bare(404);
+  const m = /^Bearer ([0-9a-f]{64})$/.exec(request.headers.get("authorization") ?? "");
+  if (!m || !sameHex(await sha256hex(m[1]), s.token)) return bare(401);
+  const w = await readWake(env, name);
+  return json(200, { seq: w.seq, at: w.at });
+}
+
+async function mcp(request, env, path, now) {
   const name = await boardForPath(env, path);
   if (!name) return bare(404);
   if (request.method !== "POST") return bare(405, { allow: "POST" });
@@ -147,8 +196,9 @@ async function mcp(request, env, path) {
       return ok({ protocolVersion: PROTOCOLS.includes(asked) ? asked : PROTOCOLS[0], capabilities: { tools: { listChanged: false } }, serverInfo: { name: "flight-board-state", version: "1" } });
     }
     case "ping": return ok({});
-    case "tools/list": return ok({ tools: [TOOL] });
+    case "tools/list": return ok({ tools: [TOOL, WAKE_TOOL] });
     case "tools/call":
+      if (msg.params?.name === WAKE_TOOL.name) return ok(await boardWake(env, name, msg.params?.arguments, now));
       if (msg.params?.name !== TOOL.name) return json(200, rpcError(id, -32602, "unknown tool"));
       return ok(await boardState(env, name));
     default: return json(200, rpcError(id, -32601, "method not found"));
@@ -160,8 +210,10 @@ export default {
     const url = new URL(request.url);
     let m = /^\/b\/([A-Za-z0-9-]{1,64})\/state$/.exec(url.pathname);
     if (m && request.method === "POST" && !url.search) return postState(request, env, m[1], now);
+    m = /^\/b\/([A-Za-z0-9-]{1,64})\/wake$/.exec(url.pathname);
+    if (m && request.method === "GET" && !url.search) return getWake(request, env, m[1]);
     m = /^\/mcp\/([0-9a-f]{32})$/.exec(url.pathname);
-    if (m && !url.search) return mcp(request, env, m[1]);
+    if (m && !url.search) return mcp(request, env, m[1], now);
     return bare(404);
   },
 };

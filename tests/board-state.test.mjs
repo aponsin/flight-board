@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { stateErrors, pickState, toolClass, MAX_BYTES } from "../collector/state-schema.mjs";
 import { cardIn, activity, agentStates, appSessions, lastEntries, readTail, readSecrets, buildState, phaseOf, headsFor as headsForProbe, cardState, postState, ciReader, WORKING_QUIET_MS, RETRY_MS } from "../collector/state.mjs";
 import { derivePhase, headsFor } from "../collector/derive.mjs";
-import worker, { sha256hex, secretName, RATE_MS, TOOL, WRITES_DEFAULT } from "../worker/state-worker.mjs";
+import worker, { sha256hex, secretName, RATE_MS, TOOL, WAKE_TOOL, WRITES_DEFAULT } from "../worker/state-worker.mjs";
 import { pinnedSha, makeSecrets, workerSecret, secretName as installSecretName, plist, wranglerToml, WRANGLER, WRANGLER_VERSION, secretsStep, Stop, stopLine, stepCommand } from "../scripts/state-install.mjs";
 import { pageMcpErrors, PAGE_MCP, verdict } from "../scripts/board-release.mjs";
 
@@ -196,7 +196,7 @@ test("the Worker: initialize, tools/list (board_state, read-only, no arguments),
   assert.deepEqual(init.result.capabilities, { tools: { listChanged: false } });
   assert.equal((await worker.fetch(rpc({ jsonrpc: "2.0", method: "notifications/initialized" }), env, {}, T)).status, 202);
   const list = await go({ jsonrpc: "2.0", id: 2, method: "tools/list" });
-  assert.deepEqual(list.result.tools, [TOOL]);
+  assert.deepEqual(list.result.tools, [TOOL, WAKE_TOOL]);
   assert.equal(TOOL.annotations.readOnlyHint, true);
   assert.deepEqual((await go({ jsonrpc: "2.0", id: 3, method: "ping" })).result, {});
   assert.equal((await go({ jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "write_state" } })).error.message, "unknown tool");
@@ -549,10 +549,10 @@ test("Security: a bad cache entry gives only {ci, ciMin}, or is asked again; it 
 
 // --- The page --------------------------------------------------------------------------------------------------
 
-test("the release tool pins mcp to Flight Board State / board_state: another connector, tool or call refuses (Security)", () => {
+test("the release tool pins mcp to Flight Board State / board_state and board_wake: another connector, tool or call refuses (Security)", () => {
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   assert.deepEqual(pageMcpErrors(html), []);
-  assert.deepEqual(PAGE_MCP, { servers: [{ server: "Flight Board State", tools: ["board_state"] }] });
+  assert.deepEqual(PAGE_MCP, { servers: [{ server: "Flight Board State", tools: ["board_state", "board_wake"] }] });
   for (const bad of [
     html.replace('const STATE_SERVER="Flight Board State"', 'const STATE_SERVER="Gmail"'),
     html.replace('STATE_TOOL="board_state"', 'STATE_TOOL="send_message"'),
@@ -561,6 +561,11 @@ test("the release tool pins mcp to Flight Board State / board_state: another con
     html.replace("if(!mcp)return;", "if(!mcp)return;mcp.server(\"Gmail\");"),
     html + '<script>const STATE_SERVER="Gmail",STATE_TOOL="x"</script>',
     html.replace("mcp.callTool(STATE_SERVER,STATE_TOOL,null)", 'mcp["callTool"]("Gmail","send_message",{})'),
+    // #C580: board_wake is called, never watched; its name is the page's constant; no call may name another tool.
+    html.replace('WAKE_TOOL="board_wake"', 'WAKE_TOOL="send_message"'),
+    html.replace("liveMcp.callTool(STATE_SERVER,WAKE_TOOL,", "liveMcp.watchTool(STATE_SERVER,WAKE_TOOL,"),
+    html.replace("liveMcp.callTool(STATE_SERVER,WAKE_TOOL,", 'liveMcp.callTool(STATE_SERVER,"board_wake",'),
+    html.replace("liveMcp.callTool(STATE_SERVER,WAKE_TOOL,", 'liveMcp.callTool("Gmail",WAKE_TOOL,'),
   ]) {
     assert.ok(pageMcpErrors(bad).length, "refused");
     assert.match(verdict({ ...releaseGood, mcpErrors: pageMcpErrors(bad) }).refusals.join(), /mcp capability is the owner's/);
@@ -595,10 +600,11 @@ test("Checker: a whole day of a change every minute stays under the default budg
   assert.ok(WRITES_DEFAULT >= 1440 + 96);
 });
 
-test("the page asks for mcp, and only the Flight Board State connector's board_state", () => {
+test("the page asks for mcp, and only the Flight Board State connector's board_state and board_wake", () => {
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-  assert.match(html, /const STATE_SERVER="Flight Board State",STATE_TOOL="board_state"/);
-  assert.equal([...html.matchAll(/watchTool\(|callTool\(/g)].length, 2);
+  assert.match(html, /const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",WAKE_TOOL="board_wake"/);
+  assert.equal([...html.matchAll(/watchTool\(|callTool\(/g)].length, 3);
   assert.match(html, /watchTool\(STATE_SERVER,STATE_TOOL,null,/);
   assert.match(html, /callTool\(STATE_SERVER,STATE_TOOL,null\)/);
+  assert.match(html, /callTool\(STATE_SERVER,WAKE_TOOL,\{kind\},\{cache:false\}\)/);
 });

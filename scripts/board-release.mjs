@@ -31,25 +31,29 @@ export const NOTES = { security: "refs/notes/security", checker: "refs/notes/che
 // The release tool and what it runs are the owner's too (Security): a release can't loosen the next one.
 export const RELEASE_ENTRIES = ["scripts/board-release.mjs", "scripts/current.mjs", "scripts/scan.mjs"];
 // The capabilities the board page is published with; a new one is the owner's (README, "The page").
-// mcp (#C420): the Studio's state through the owner's "Flight Board State" connector, its board_state tool only.
+// mcp (#C420, #C580): the Studio's state through the owner's "Flight Board State" connector: board_state (read) and
+// board_wake (the owner's word reaching the lead's session), those two tools only.
 export const PAGE_CAPABILITIES = ["db", "comments", "assets", "downloads", "mcp"];
-// The whole declaration the page is published with: mcp exactly this one connector and tool (Security). The publish hook
-// passes no capabilities at all, so only a publish the owner approves can declare them; this says what that one is.
-export const PAGE_MCP = { servers: [{ server: "Flight Board State", tools: ["board_state"] }] };
+// The whole declaration the page is published with: mcp exactly this one connector and these two tools (Security). The
+// publish hook passes no capabilities at all, so only a publish the owner approves can declare them; this says what that
+// one is.
+export const PAGE_MCP = { servers: [{ server: "Flight Board State", tools: ["board_state", "board_wake"] }] };
 export const PAGE_DECLARATION = { db: {}, comments: {}, assets: {}, downloads: true, mcp: PAGE_MCP };
 // The page's connector calls, each against PAGE_MCP: the names as the page's one constant line, and every callTool,
-// watchTool, server, describeTool or listTools call made with exactly those two constants; a call by a bracketed name
+// watchTool, server, describeTool or listTools call made with exactly those constants (board_wake only by callTool: it
+// writes, so it is never watched); a call by a bracketed name
 // (mcp["callTool"]) refuses. [] when it fits. A scan, not a proof (an alias of the namespace would slip it): the real gate
 // is the declaration the page is published with, which only a publish the owner approves can set (Security).
 export function pageMcpErrors(html) {
   const s = String(html ?? ""), e = [];
-  const { server, tools: [tool] } = PAGE_MCP.servers[0];
+  const { server, tools: [tool, wake] } = PAGE_MCP.servers[0];
   if (/\[\s*["'`](callTool|watchTool|server|describeTool|listTools|invalidate)["'`]\s*\]/.test(s)) e.push(`the page calls an mcp method by a bracketed name`);
-  const decl = [...s.matchAll(/const STATE_SERVER="([^"]*)",STATE_TOOL="([^"]*)"/g)];
+  const decl = [...s.matchAll(/const STATE_SERVER="([^"]*)",STATE_TOOL="([^"]*)"(?:,WAKE_TOOL="([^"]*)")?/g)];
   if (/\bmcp\b/.test(s) && /claude\.use\(\s*["'`]mcp/.test(s)) {
-    if (decl.length !== 1 || decl[0][1] !== server || decl[0][2] !== tool) e.push(`the page's mcp names aren't exactly ${server} / ${tool}`);
+    if (decl.length !== 1 || decl[0][1] !== server || decl[0][2] !== tool || decl[0][3] !== wake) e.push(`the page's mcp names aren't exactly ${server} / ${tool} / ${wake}`);
     for (const m of s.matchAll(/\.(callTool|watchTool|server|describeTool|listTools|invalidate)\s*\(([^)]*)/g)) {
-      if (!/^(callTool|watchTool)$/.test(m[1]) || !/^\s*STATE_SERVER\s*,\s*STATE_TOOL\s*[,)]?/.test(m[2] + ")")) e.push(`the page calls mcp.${m[1]} beyond ${server} / ${tool}`);
+      const args = m[2] + ")", read = /^\s*STATE_SERVER\s*,\s*STATE_TOOL\s*[,)]?/.test(args), write = m[1] === "callTool" && /^\s*STATE_SERVER\s*,\s*WAKE_TOOL\s*[,)]?/.test(args);
+      if (!/^(callTool|watchTool)$/.test(m[1]) || !(read || write)) e.push(`the page calls mcp.${m[1]} beyond ${server} / ${tool} / ${wake}`);
     }
   }
   return e;

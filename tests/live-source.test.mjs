@@ -25,9 +25,9 @@ function board({ live = null, derived = { phase: "build", head: HEAD, readyAt: N
   return b;
 }
 
-test("the Right now panel is gone: no section, no renderer; the connector's one watch and one call stay", () => {
+test("the Right now panel is gone: no section, no renderer; the connector's one watch and its two calls stay (board_state, and #C580's board_wake)", () => {
   assert.doesNotMatch(html, /id="probe"|Right now <|probeHtml|renderProbe/);
-  assert.equal([...html.matchAll(/watchTool\(|callTool\(/g)].length, 2);
+  assert.equal([...html.matchAll(/watchTool\(|callTool\(/g)].length, 3);
 });
 
 test("a fresh live reading gives a card its phase and time; the db's other fields stay", () => {

@@ -7,7 +7,7 @@
 // - the board holds something that needs the lead: the owner's word unanswered, or an ask the owner answered (needsYou).
 // Exit 2 sends the reason back, so the lead writes it and finishes. A second stop in a row (stop_hook_active) passes.
 import { realpathSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readLines, sessionRole, currentTurn, turnCalls, lastReply } from "./session.mjs";
@@ -15,6 +15,7 @@ import { writesOf, writeState, home, readMirror, withJournal } from "./gate.mjs"
 import { openOwnerWords, WAIT_MIN } from "./owner-waits.mjs";
 import { turnLive, nextLive, liveAsk, liveSince, livePath, readLive, writeLive, liveDue } from "./live.mjs";
 import { idText } from "../collector/text.mjs";
+import { wakePaths, watchAsk, readWakeFile } from "./wake.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const DAY = 864e5;
@@ -178,7 +179,9 @@ export const stopCheck = (lines, opts) => stopRun(lines, opts).errs;
 // live (#C394): { stored, require } — stored, what live.json holds for the lead ({ checkedAt, msgs }); require, whether
 // a turn with no live query is refused (the hook always asks; a caller that passes nothing checks as before). liveNext
 // is what live.json keeps after this turn.
-export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null }) {
+// wake (#C580): { hasWake, aliveAt, command } — whether the probe polls the Worker's wake counter, the wake watch's
+// heartbeat, and the command that arms it; null asks nothing (a caller that passes nothing checks as before).
+export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null, wake = null }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
   if (role !== config.gate.managerRole) return { errs: [], record: null, note: null, liveNext: null };
   const id = boardId(config);
@@ -207,6 +210,9 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   // The check, once a minute (#C556, liveDue); a cut-short or half-done one is asked again whenever: its checkedAt didn't
   // move, and what it missed may be the owner's.
   if (live?.require && (fresh === null ? liveDue(stored.checkedAt, now) : !fresh.complete)) out.push(liveAsk(config, liveSince(stored.checkedAt, now), fresh !== null));
+  // The wake watch (#C580): the owner's board messages reach the lead through it, so a turn can't end while it is off.
+  const wakeAsk = wake ? watchAsk({ ...wake, now }) : null;
+  if (wakeAsk) out.push(wakeAsk);
   // With no mirror, the live check's finds still count (they need none); the rest of the board waits for one.
   if (!view) {
     const bare = { docs: { messages: [], waiting: [] }, at: now, atBy: {} };
@@ -217,6 +223,16 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   const items = needsYou({ view, pings: boardPings(lines, config.owner), writes, owner: config.owner, lead: role, now, since, live: liveNext.msgs, liveAsks: liveNext.asks });
   if (items.length) out.push(needsText(items, role, now));
   return { errs: out, record: out.length ? null : Math.min(now, listedAt(view, "messages")), note: null, liveNext };
+}
+
+// The wake watch's state for the ask: wake.json there (the probe polls the Worker), the heartbeat's time, and the command
+// that arms the watch from this very copy of the code.
+export function wakeState(config, configPath) {
+  const p = wakePaths(join(home(config.gate.stateDir), boardId(config) ?? "no-board"));
+  let aliveAt = null;
+  try { const a = JSON.parse(readFileSync(p.alive, "utf8")); aliveAt = Number.isFinite(a?.at) ? a.at : null; } catch { /* none */ }
+  const script = join(dirname(dirname(fileURLToPath(import.meta.url))), "scripts", "wake-watch.mjs");
+  return { hasWake: readWakeFile(p.wake) !== null, aliveAt, command: `node ${script} --config ${configPath}` };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
@@ -241,7 +257,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let view = null;
     try { view = boardView(config); } catch { /* unreadable: as none */ }
     const lp = livePath(config);
-    const { errs, record, note, liveNext } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true } });
+    const { errs, record, note, liveNext } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true }, wake: wakeState(config, process.argv[at + 1]) });
     if (!errs.length && record != null) { try { recordPass(path, key, record); } catch { /* no record: a day back next turn */ } }
     // The live check's messages are kept even on a refused or second stop: they are what the lead's query saw.
     if (liveNext) { try { writeLive(lp, key, liveNext); } catch { /* none kept: the next query reads a day back */ } }

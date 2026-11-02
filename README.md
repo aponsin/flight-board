@@ -303,6 +303,18 @@ changes none of them):
   when what the page shows changed (a card's phase, head, reviews, main, CI state, version; an agent's state, tool, card,
   since), else every 15 min, and at most `WRITES_PER_DAY` a UTC day (2,000 unless `--writes` says otherwise: more than a
   day of the probe's 1,440 posts, so it only stops a runaway poster); a POST past that is a 429 until midnight UTC.
+- **The owner's word wakes the lead** (#C580; the app's auto mode refuses most comment auto-replies, so the owner's board
+  messages waited). When the owner saves a message of theirs, or an answer that needs more than an Ack or a Done, the page
+  calls the connector's second tool, `board_wake {kind: "message" | "answer"}` (a call, never a watch). The Worker keeps
+  only a counter and a time, `{seq, at}`, with no text; calls within 10 s are one wake, and at most `WAKE_WRITES_PER_DAY`
+  (500) count a UTC day. The probe reads it once a minute (`GET /b/<board id>/wake`, the board's token) into
+  `<stateDir>/<board>/wake.json`, and `scripts/wake-watch.mjs --config <board.config.json>`, which the lead runs as a
+  Monitor (`timeout_ms` 1800000), prints one line, `WAKE #<n>: …`, for each new count, which starts a lead turn within
+  about a minute. The lead's Stop hook asks for that Monitor while `wake.json` exists and the watch's heartbeat
+  (`wake-watch.alive.json`) is missing or older than a minute, so a Monitor that expired is armed again at the lead's next
+  turn end. The hourly owner-push stays as the fallback for a missed wake. Needs: the Worker redeployed, the page
+  published with the two-tool `mcp` manifest (the owner's publish), the state probe's launchd job re-installed from the
+  new pinned copy, and the connector reloaded in claude.ai.
 - **The page reads it as its source of stage** (board-state-probe's follow-up; it had a "Right now" section of its own
   until then), through the owner's claude.ai connector named exactly **Flight Board State** (the `mcp` capability, its
   `board_state` only; the page reads it once a minute). While its reading is under 3 min old, every place the page shows
