@@ -1,0 +1,1 @@
+PASS Quick (Checker, 2026-11-02): #C613 tip. Any non-lead agent on a Bash call under 15 s old reads Not now, in any phase, per Manager's choice, with a DECISIONS entry and a tooltip saying it is an estimate. Note: the live reading refreshes about once a minute, so the 15 s window catches commands only sometimes. 1042/1042.
