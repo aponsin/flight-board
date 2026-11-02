@@ -205,7 +205,11 @@ test("the live tile: asked when the board's tile is 5+ points off or 30+ min old
   const win = tileHome("Manager", { pct: 40, tokens: 140000, at: now - 40 * 60e3 });
   try {
     assert.match(hook(at1(175000), win, { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "350000" }), /your context is 50% of its window \(175k tokens\)/);
-    assert.match(hook(at1(175000), win, { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "bogus" }), /your context is 88% of its window/, "an unreadable window falls back to the tile's");
+    // Checker: "²" is a digit to str.isdigit() but not to int(); it must fall back, not kill the hook.
+    for (const bad of ["bogus", "²", "³50000", "٣٥٠٠٠٠", "50000", "3000000", " 350000"]) {
+      const h = tileHome("Manager", { pct: 40, tokens: 140000, at: now - 40 * 60e3 });
+      try { assert.match(hook(at1(175000), h, { CLAUDE_CODE_AUTO_COMPACT_WINDOW: bad }), /your context is 88% of its window/, `${JSON.stringify(bad)}: an unreadable window falls back to the tile's`); } finally { rmSync(h, { recursive: true, force: true }); }
+    }
   } finally { rmSync(win, { recursive: true, force: true }); }
   const none = tileHome("Manager", null);
   try { assert.doesNotMatch(hook(at1(430000, "Collector"), none), /Memory tile/, "no tile for the role on this machine: never asked"); } finally { rmSync(none, { recursive: true, force: true }); }
