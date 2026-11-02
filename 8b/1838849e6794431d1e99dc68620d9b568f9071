@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): stack 2 tip. #C584 a negation clears an owner ask only within the 3 words before it in its own clause, or inside it; my five lines now refuse except the relative-clause edge ("Pat, who never sleeps, needs to approve"), accepted. Mutation (negation anywhere in the sentence) caught by owner-asks.test. 1028/1028.
