@@ -33,8 +33,20 @@ test("the pickup is the script's word, from readings taken after the cue (not id
 });
 
 test("a Manager already under the script's low start is left alone (its reset turn would read as a pickup)", () => {
-  assert.match(step(4), /"Messages" category \(none listed counts as 0\)\. Under 60,000: it is fresh already; send nothing/);
+  assert.match(step(4), /only on a real reading: its context status is "ok" and the tokens of its "Messages" category are under 60,000/);
+  assert.match(step(4), /it is fresh already; send nothing/);
   assert.equal(LOW_START, 60_000, "step 4's number is the script's LOW_START");
+});
+
+// Checker on ce13435f: an idle Manager whose process has stopped reports its context unavailable (no categories, read as
+// 0), which would pass "under 60,000" and skip the reset every morning. No reading is not a fresh session.
+test("a context that isn't 'ok' is no reading: the reset goes ahead, never skipped on a zero", () => {
+  assert.match(step(4), /a category not listed counts as 0 only when the status is "ok"/);
+  assert.match(step(4), /A status that isn't "ok" .* is no reading: reset anyway, never skip on it/);
+  const skips = ({ status, messages }) => status === "ok" && messages < LOW_START;
+  assert.equal(skips({ status: "ok", messages: 14_674 }), true, "a real small reading: fresh already");
+  assert.equal(skips({ status: "ok", messages: 310_000 }), false, "a full lead: reset");
+  assert.equal(skips({ status: "unavailable", messages: 0 }), false, "idle overnight, process stopped: reset anyway");
 });
 
 test("Manager records its own pickedAt, so the keeper's hourly step 4 doesn't pick it up again", () => {
