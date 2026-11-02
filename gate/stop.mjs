@@ -194,8 +194,12 @@ export function asksOwnerWithoutItem(reply, owner) {
   // needs <owner> now"): a negation earlier in the same sentence, before the match, clears it (Checker on 46d97a0).
   const NEGATED = /\b(?:nothing|nobody|no|not|none|never|without|neither|nor|n't)\b|n't\b/i;
   const requested = [...text.matchAll(asks)].some((m) => {
+    // Only a negation right in front (the three words before the match) or inside it governs it: "Not urgent, but waiting on
+    // <owner>" is still a request (Checker on 650d96f).
     const sentence = text.slice(0, m.index).split(/[.\n;!?]/).pop();
-    return !NEGATED.test(sentence + m[0]);
+    const clause = sentence.split(/[,:]|\b(?:but|however|though|and|yet)\b/i).pop();
+    const near = clause.trim().split(/\s+/).filter(Boolean).slice(-3).join(" ");
+    return !NEGATED.test(`${near} ${m[0]}`);
   });
   if (!requested) return false;
   return !/#[TC]\d{1,6}\b|\bt-\d{6,}\b|\bNeeds[- ]you item\b/i.test(text);

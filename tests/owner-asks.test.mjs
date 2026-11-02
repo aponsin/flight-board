@@ -73,6 +73,8 @@ test("a reply that asks the owner for something names a card or #T item, or is r
   const clear = ["Nothing is waiting on Pat.", "Stack 1 is signed; nothing needs Pat now.", "Release ships it; no need for Pat to approve anything.", "No one is waiting on Pat. Pat doesn't need to approve it.", "Pat has not been asked to decide."];
   for (const r of clear) assert.equal(asksOwnerWithoutItem(r, "Pat"), false, r);
   assert.equal(asksOwnerWithoutItem("Nothing else is open. Builder needs Pat to approve the font.", "Pat"), true, "a negation in an earlier sentence clears nothing");
+  // A negation far from the request clears nothing (Checker on 650d96f).
+  for (const r of ["Not urgent, but waiting on Pat.", "No rush at all, but Builder needs Pat to approve the font.", "Not blocked on the build; still waiting on Pat to decide."]) assert.equal(asksOwnerWithoutItem(r, "Pat"), true, r);
   const fine = ["Pat needs to approve the font download (#T1401).", "Waiting on Pat: #C591 is live.", "Stack 1 is READY; Pat's sitting installs it.", "Done.", "Pat chose B on #T1353.", "Pat needs to approve it: Needs-you item t-1793164285052."];
   for (const r of fine) assert.equal(asksOwnerWithoutItem(r, "Pat"), false, r);
   assert.equal(asksOwnerWithoutItem("", "Pat"), false);
