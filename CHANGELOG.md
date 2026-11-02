@@ -6,6 +6,9 @@
 - The Collector's fence refused the whole config, so no run exported since v3.40 (#C586, Checker): the fence is pinned in the Collector's settings, and v3.29's pin predates `gate.keeperRole`, which the config check of that copy treats as an unknown field. The pack that follows moves the fence and the memory hook to a current signed copy; #C587 makes every pack dry-run each pinned hook against the config it wrote.
 - The lead's session id lives in one place (#C586, Director): the config's `gate.managerSession` (`local_` and a UUID, or empty), next to `managerRole`. The fence sends only to it (`--send-to` is the fallback while the config has none, and is ignored when it differs), and the release tool renders the Collector's prompt with it (`leadOf`), so a new lead session is one config change, not four edited files (the Collector's task, the reminder task, the fence's `--send-to`). Pinned parts (fence, config check): the next pack.
 
+### Changed
+- The board's version line moves to the header's right side (#C618): "Board v3.46 · page a9b2fb9" sits under the clock instead of under the title, which saves a line of height; a hidden line takes no room.
+
 ### Added
 - One thread per question (#C597): the lead turns an answer into a decision in place instead of opening a second item. `update {kind: "decision", options, response: {__delete__: true}}` is allowed on an answer the owner already replied to (kind, options, text and the cleared response only; two options at least), and options on an ask that isn't a decision, with no kind named, are refused (they drew no buttons). The wording of any other answered ask stays frozen. Pinned part (the gate): the next pack.
 - The token stack (the owner: nothing a script can do runs on a model). The every-minute probe takes over the mechanical work of the keeper, the watchdog and the collector's clock; the Worker carries it as numbers, times and enums only, checked against the same allowlist at both ends.
