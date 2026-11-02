@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C587 hooks-check expands a leading ~/ and skips a root with no scripts/config.mjs (never imported) before the pinned check. On the owner's real settings: 2 pinned copies ok, the other repository's watchdog root skipped, exit 0. 1028/1028 at 8b18388.
