@@ -1,0 +1,1 @@
+PASS Full: #C586 gate.managerSession in the config; the fence and the release tool take it before the settings flag. The fence validates the config first and refuses on a bad id. 962/962 green; mutation (flag before config) caught. The settings re-pin and config line are the install pack, not this commit.
