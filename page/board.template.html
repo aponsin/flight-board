@@ -1723,8 +1723,8 @@ function dependsLine(i){if(!i||i.status==="done"||i.status==="dropped"||!Array.i
 // ↻ Check on a card (#C355, the owner in #T962): a click writes checkRequests/<card id> {at}. It is answered by code
 // (#C376, Director for the owner: #C350 said "checking…" for minutes): each Collector run works the card out afresh
 // (derived/all cards.<id>.at), so a request older than that run reads "checked by the Collector HH:MM". Until then the
-// card says how old the live state is and when the next run is due (hourly), or that it is late. No ping to the lead; a
-// lead's checkedAt still counts.
+// card says how old the live state is and when the next run is due (hourly), or that it is late. Since #C589 the click
+// also writes a status-check message in the card's thread (pressCheck), which wakes the lead; a lead's checkedAt still counts.
 const COLLECTOR_EVERY=60*60e3;
 const checkRequest=id=>(state.checkRequests||[]).find(d=>d&&d.id===id&&num(d.at)!=null)||null;
 function checkWrites(id,now){return /^[A-Za-z0-9][A-Za-z0-9_-]{0,100}$/.test(String(id))?[{op:"set",path:`checkRequests/${id}`,data:{at:now}}]:[]}
@@ -1751,7 +1751,11 @@ const checkLabel=i=>`Check ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id
 function checkTag(i,now){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}" title="${checkLabel(i)}">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> `:cardTag(i)}
 function checkHtml(i,now){if(!checkable(i,now))return "";const line=liveCard(i.id,now)?"":checkLine(i,checkRequest(i.id),now);
   return `${line?`<span class="i-checked${line.includes("run late")?" is-late":""}">${esc(line)}</span>`:""}${checkable(i,now)&&!cardTag(i)?`<button type="button" class="i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}">↻ Check</button>`:""}`}
-async function pressCheck(id,now=Date.now()){const ws=checkWrites(id,now);if(!ws.length)return;checkPressed.add(id);
+// #C589 (the owner): the button also writes "Status check please." into the card's thread as the owner's message, so the
+// write itself wakes the lead (wakeKind: an owner's message) and it checks the card and answers there.
+const CHECK_ASK="Status check please.";
+async function pressCheck(id,now=Date.now()){const ws=checkWrites(id,now);if(!ws.length)return;
+  ws.push(...threadWrites(id,CHECK_ASK,[],now,undefined,Math.random().toString(36).slice(2,8)));checkPressed.add(id);
   await Promise.allSettled([liveMcp?readLiveNow(liveMcp):null,dbRef?applyWrites(ws):null]);renderAll()}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-check]");if(!b||!dbRef&&!liveMcp)return;
   const i=state.initiatives.find(x=>x.id===b.dataset.check);if(!i)return;b.disabled=true;
