@@ -10,15 +10,28 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { home } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, ALIVE_MAX_MS, MAX_RUN_MS } from "../gate/wake.mjs";
+import { RESET_FILE, RESET_SEEN_FILE, resetPending, resetSeen, resetLine } from "../gate/reset.mjs";
 
 // One look: the heartbeat, then the line to print, or null. Marks the wake seen only once it is returned.
 export function tick(dir, now, pid = process.pid) {
   const p = wakePaths(dir);
   writeAtomic(p.alive, JSON.stringify({ at: now, pid }));
+  const lines = resetLines(dir);
   const wake = readWakeFile(p.wake), seen = readWakeFile(p.seen);
-  if (!wakePending(wake, seen)) return null;
-  writeAtomic(p.seen, JSON.stringify({ seq: wake.seq, at: wake.at }));
-  return wakeLine(wake);
+  if (wakePending(wake, seen)) {
+    writeAtomic(p.seen, JSON.stringify({ seq: wake.seq, at: wake.at }));
+    lines.unshift(wakeLine(wake));
+  }
+  return lines.length ? lines.join("\n") : null;
+}
+
+// The roles the probe asked to reset (#C592, gate/reset.mjs) that this watch has not printed yet; marks them printed.
+function resetLines(dir) {
+  const read = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
+  const asked = read(RESET_FILE), seen = read(RESET_SEEN_FILE), roles = resetPending(asked, seen);
+  if (!roles.length) return [];
+  writeAtomic(join(dir, RESET_SEEN_FILE), JSON.stringify(resetSeen(asked, seen, roles)));
+  return roles.map(resetLine);
 }
 
 // The watch is ending (its planned stop before the Monitor's 30 minutes, or a signal): the heartbeat goes with it, but only

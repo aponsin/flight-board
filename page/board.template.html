@@ -151,6 +151,8 @@ details.done-list summary{cursor:pointer;color:var(--muted);padding:10px 16px}
 .tot{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 .tot .n{font:600 1.15rem var(--mono);font-variant-numeric:tabular-nums}
 .tot .l{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.tot.plan.amber{border-color:var(--warn);background:var(--warn-soft)}.tot.plan.amber .n{color:var(--warn-ink)}
+.tot.plan.red{border-color:var(--bad);background:var(--bad-soft)}.tot.plan.red .n{color:var(--bad)}
 .chart-wrap{overflow-x:auto;position:relative}
 .ctip{position:absolute;max-width:240px;background:var(--ink);color:var(--panel);font:400 .78rem/1.35 var(--mono);padding:6px 8px;border-radius:6px;pointer-events:none;z-index:2}
 rect.hit{cursor:pointer}
@@ -1203,7 +1205,11 @@ function keeperLine(){const all=state.derived.find(d=>d.id==="all"),k=all&&all.k
   const file=p.prompt.split("/").pop(),task=String(p.skill||"").split("/").slice(-2,-1)[0]||"context keeper",cmd=`pbcopy < ${p.prompt}`;
   return `<div class="deaf">The context keeper's saved prompt isn't the one your install shipped: its last paste didn't save. You: copy ${esc(file)} with this in a terminal, paste it into the ${esc(task)} task's prompt and Save.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}
 // Red only when the owner has something to do (an entry with "You:", the deaf or keeper line); otherwise amber (#C433).
-function renderStuck(){const el=$("stuck"),l=stuckLines(),d=deafLine()+keeperLine();el.hidden=!l.length&&!d;
+// A role the probe finds stuck (#C593): waiting on the owner over 15 min (red, the owner's to answer), or on one step over 45
+// min (the lead's to look at). The probe's reading, no model; it clears when the role moves on.
+function liveStuckLines(now=Date.now()){return liveStuck(now).map(k=>{const at=new Date(k.since).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  return k.kind==="user"?{you:true,text:`${k.role} has been waiting on you since ${at}${k.card?` (${k.card})`:""}.`}:{you:false,text:`${k.role} has been on one step since ${at}${k.card?` (${k.card})`:""}.`}})}
+function renderStuck(){const el=$("stuck"),l=[...stuckLines(),...liveStuckLines()],d=deafLine()+keeperLine();el.hidden=!l.length&&!d;
   el.innerHTML=l.map(t=>`<div class="${t.you?"sl-you":"sl-owner"}">${esc(t.text)}</div>`).join("")+d;el.classList.toggle("amber",!d&&!l.some(t=>t.you))}
 
 // ---- Threads (board v2) ----
@@ -2010,6 +2016,11 @@ function agentMinutesByDay(){
 let onlySeries=null;
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("#legend button");if(!b)return;
   onlySeries=b.id==="showall"||b.dataset.series===onlySeries?null:b.dataset.series;renderUsage()});
+// The usage tile (#C595): the plan's week and its pace from the probe's daily spend run, amber from 1.3x pace and red from
+// 1.6x, and the top sources by share. Empty without a reading.
+function planTile(){const u=liveUsage();if(!u)return "";
+  const pace=u.pace==null?"":` · ${(u.pace/100).toFixed(1)}x pace`,top=u.top.map(t=>`${esc(t.src)} ${t.pct}%`).join(", ");
+  return `<div class="tot plan ${u.level}"><div class="l">Plan week</div><div class="n">${u.weekPct==null?"–":u.weekPct+"%"}</div><div class="l">${u.weekPct==null?"no plan reading":"used"}${pace}</div>${top?`<div class="l">${top}</div>`:""}</div>`}
 function renderUsage(){
   const am=agentMinutesByDay();
   const byDay={};state.usage.filter(u=>u.day).forEach(u=>{byDay[u.day]={...u}});
@@ -2020,7 +2031,7 @@ function renderUsage(){
   const lastN=n=>days.filter(u=>(Date.parse(today)-Date.parse(u.day))/864e5<n);
   const fmt=m=>m>=120?(m/60).toFixed(1)+" h":Math.round(m)+" min";
   const tile=(l,arr)=>{const t=sum(arr,"agentMin")+sum(arr,"runnerMin")+sum(arr,"actionsMin");const usd=sum(arr,"actionsUsd");return `<div class="tot"><div class="l">${l}</div><div class="n">${fmt(t)}</div><div class="l">${usd?"$"+usd.toFixed(2)+" Actions":"$0 Actions"}</div></div>`};
-  $("totals").innerHTML=tile("Today",lastN(1))+tile("7 days",lastN(7))+tile("30 days",lastN(30));
+  $("totals").innerHTML=tile("Today",lastN(1))+tile("7 days",lastN(7))+tile("30 days",lastN(30))+planTile();
   const show=days.slice(-14);
   if(!show.length){$("chart").innerHTML='<div class="note">No usage logged yet. Manager adds one line per day.</div>';return}
   const W=Math.max(320,show.length*34+40),H=150,pad=28,bw=18;
@@ -2113,6 +2124,10 @@ function ctxAgents(now=Date.now()){const m=state.meta.find(d=>d.id==="context")|
   state.ctx.forEach(d=>{if(!d.id||num(d.pct)==null)return;const cur=a[d.id]||{};if(num(cur.at)&&!(num(d.at)>cur.at))return;
     if(!Number.isInteger(d.tokens)&&Number.isInteger(cur.tokens)&&now-cur.at<=CTX_OLD)return;
     const {tokens:_,...rest}=cur;a[d.id]={...rest,pct:d.pct,at:num(d.at),...(d.tokens!==undefined?{tokens:d.tokens}:{})}});
+  // The probe's own reading (#C592, no model): each role's context from its transcript, a minute old at most; a fresher one
+  // than the tile's replaces its count and keeps its saved flags.
+  Object.entries(liveCtx(now)).forEach(([n,v])=>{const cur=a[n]||{};if(num(cur.at)&&!(v.at>cur.at))return;
+    a[n]={...cur,pct:v.pct,tokens:v.tokens,at:v.at}});
   return a}
 // "439k", "1.2M": cut down, so a count under a line never reads as the line.
 function fmtTokens(t){return t>=1e6?`${Math.floor(t/1e5)/10}M`:t>=1e3?`${Math.floor(t/1e3)}k`:String(t)}
@@ -2427,6 +2442,17 @@ const liveOn=(now=Date.now())=>!!probe&&now-probe.board.at>=-60e3&&now-probe.boa
 function liveCard(id,now=Date.now()){if(!liveOn(now)||typeof id!=="string"||!LIVE_ID.test(id)||!Object.hasOwn(probe.cards,id))return null;
   const c=probe.cards[id];if(!c||typeof c!=="object"||!PHASES.some(p=>p[0]===c.phase)||typeof c.headSha12!=="string"||!/^[0-9a-f]{12}$/.test(c.headSha12))return null;
   return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,onMain:c.onMain===true,liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null}}
+// The probe's context readings (#C592), { <role>: { pct, tokens, at } } of a fresh state; none otherwise, and a bad entry is
+// skipped. Its stuck roles (#C593) as [{ role, kind, card, since }], and its usage tile (#C595) or null.
+const isPct=v=>Number.isInteger(v)&&v>=0&&v<=100;
+function liveCtx(now=Date.now()){const out={};if(!liveOn(now)||!probe.ctx||typeof probe.ctx!=="object")return out;
+  Object.keys(probe.ctx).forEach(n=>{const v=probe.ctx[n];if(LIVE_ROLE.test(n)&&v&&isPct(v.pct)&&isT(v.at)&&Number.isInteger(v.tokens)&&v.tokens>=0)out[n]={pct:v.pct,tokens:v.tokens,at:v.at}});
+  return out}
+function liveStuck(now=Date.now()){if(!liveOn(now)||!probe.stuck||typeof probe.stuck!=="object")return [];
+  return Object.keys(probe.stuck).filter(n=>LIVE_ROLE.test(n)).map(n=>({role:n,...probe.stuck[n]})).filter(k=>(k.kind==="step"||k.kind==="user")&&isT(k.since)).sort((a,b)=>a.since-b.since)}
+function liveUsage(now=Date.now()){const u=liveOn(now)&&probe.usage;if(!u||typeof u!=="object"||!isT(u.at)||!["ok","amber","red"].includes(u.level)||!Array.isArray(u.top))return null;
+  return {weekPct:Number.isInteger(u.weekPct)?u.weekPct:null,pace:Number.isInteger(u.pace)?u.pace:null,level:u.level,
+    top:u.top.filter(t=>t&&LIVE_ROLE.test(t.src)&&isPct(t.pct)).slice(0,5)}}
 // An agent as the live state reads it: { state: working|idle, card, since: its last activity }, or null.
 function liveAgent(n,now=Date.now()){if(!liveOn(now)||typeof n!=="string"||!LIVE_ROLE.test(n)||!Object.hasOwn(probe.agents,n))return null;
   const a=probe.agents[n];if(!a||!["working","idle"].includes(a.state))return null;

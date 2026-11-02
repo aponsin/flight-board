@@ -68,6 +68,18 @@ const AGENT = {
   since: nullOr(isTime),
 };
 
+// The probe's own readings, numbers and enums only (#C592, #C593, #C595); a state from a probe before them still fits.
+//   ctx:   { <role>: { pct, tokens, at, over } }     each role's context from its transcript's usage fields; over: past resetAt
+//   stuck: { <role>: { kind, card, since } }          a role stuck on one step, or waiting on the owner (kind: step | user)
+//   usage: { at, weekPct, pace, level, top: [{ src, pct }] }   pace in hundredths (130 = 1.3x); src a role, "scheduled" or "other"
+export const EXTRA_KEYS = ["ctx", "stuck", "usage"];
+export const STUCK_KINDS = ["step", "user"], USAGE_LEVELS = ["ok", "amber", "red"], MAX_TOP = 5;
+const whole = (lo, hi) => (v) => Number.isInteger(v) && v >= lo && v <= hi;
+const CTX = { pct: whole(0, 100), tokens: nullOr(whole(0, 5e6)), at: isTime, over: (v) => typeof v === "boolean" };
+const STUCK = { kind: (v) => STUCK_KINDS.includes(v), card: nullOr(isId), since: isTime };
+const USAGE = { at: isTime, weekPct: nullOr(whole(0, 1000)), pace: nullOr(whole(0, 10000)), level: (v) => USAGE_LEVELS.includes(v), top: (v) => Array.isArray(v) && v.length <= MAX_TOP };
+const USAGE_TOP = { src: re(ROLE), pct: whole(0, 100) };
+
 // One record against its fields: exactly those keys, each value passing. The errors name only the schema's own words.
 function fields(at, rec, spec, errs) {
   if (!plain(rec)) { errs.push(`${at}: not an object`); return; }
@@ -79,9 +91,24 @@ function fields(at, rec, spec, errs) {
 export function stateErrors(s) {
   const errs = [];
   if (!plain(s)) return ["the state: not an object"];
-  for (const k of Object.keys(s)) if (!["v", "board", "cards", "agents"].includes(k)) errs.push("the state: a key that isn't in the plan");
+  for (const k of Object.keys(s)) if (!["v", "board", "cards", "agents", ...EXTRA_KEYS].includes(k)) errs.push("the state: a key that isn't in the plan");
   if (s.v !== STATE_VERSION) errs.push("v: not 1");
   fields("board", s.board, BOARD, errs);
+  for (const [name, spec] of [["ctx", CTX], ["stuck", STUCK]]) {
+    if (!Object.hasOwn(s, name)) continue;
+    if (!plain(s[name])) { errs.push(`${name}: not an object`); continue; }
+    const keys = Object.keys(s[name]);
+    if (keys.length > MAX_AGENTS) errs.push(`${name}: more than ${MAX_AGENTS}`);
+    for (const k of keys.slice(0, MAX_AGENTS)) {
+      if (!re(ROLE)(k)) { errs.push(`${name}: a key that isn't a role`); continue; }
+      fields(`${name}.${k}`, s[name][k], spec, errs);
+    }
+  }
+  if (Object.hasOwn(s, "usage")) {
+    fields("usage", s.usage, USAGE, errs);
+    const top = plain(s.usage) && Array.isArray(s.usage.top) ? s.usage.top : [];
+    top.forEach((t, k) => fields(`usage.top.${k}`, t, USAGE_TOP, errs));
+  }
   for (const [name, max, keyOk, spec] of [["cards", MAX_CARDS, isId, CARD], ["agents", MAX_AGENTS, re(ROLE), AGENT]]) {
     const m = s[name];
     if (!plain(m)) { errs.push(`${name}: not an object`); continue; }
@@ -146,5 +173,9 @@ export function pickState(s) {
   if (stateErrors(s).length) return null;
   const take = (rec, spec) => Object.fromEntries(Object.keys(spec).filter((k) => Object.hasOwn(rec, k)).map((k) => [k, Array.isArray(rec[k]) ? [...rec[k]] : rec[k]]));
   const map = (m, spec) => Object.fromEntries(Object.keys(m).sort().map((k) => [k, take(m[k], spec)]));
-  return { v: STATE_VERSION, board: take(s.board, BOARD), cards: map(s.cards, CARD), agents: map(s.agents, AGENT) };
+  const out = { v: STATE_VERSION, board: take(s.board, BOARD), cards: map(s.cards, CARD), agents: map(s.agents, AGENT) };
+  if (Object.hasOwn(s, "ctx")) out.ctx = map(s.ctx, CTX);
+  if (Object.hasOwn(s, "stuck")) out.stuck = map(s.stuck, STUCK);
+  if (Object.hasOwn(s, "usage")) out.usage = { ...take(s.usage, USAGE), top: s.usage.top.map((t) => take(t, USAGE_TOP)) };
+  return out;
 }

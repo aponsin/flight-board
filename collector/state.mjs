@@ -22,6 +22,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
+import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading } from "./readings.mjs";
 
 // The folder this run's code lives in: the pinned copy <install root>/<full sha>, whose sha is the board's probe.
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -146,19 +147,19 @@ export function promptTool(entries, opts) {
 // promptSince's time, promptTool its class; they stay on this machine, never in the state that leaves).
 export function activity(entries, { mtimeMs, now, ids, nums }) {
   const last = entries.at(-1);
-  if (!last) return { state: "unknown", tool: null, card: null, since: null, prompt: null, promptTool: null };
+  if (!last) return { state: "unknown", tool: null, card: null, since: null, prompt: null, promptTool: null, tokens: null };
   const midTurn = last.type === "user" || (last.type === "assistant" && last.message.stop_reason === "tool_use");
   const state = midTurn && now - mtimeMs <= WORKING_QUIET_MS ? "working" : "idle";
   let tool = null;
   for (let k = entries.length - 1; k >= 0 && !tool; k--) if (entries[k].type === "assistant") tool = toolClass(blocks(entries[k]).filter((b) => b.type === "tool_use").at(-1)?.name);
   const since = state === "working" ? timeOf(entries.findLast(isPrompt)) : timeOf(entries.findLast((e) => e.type === "assistant"));
-  return { state, tool, card: cardIn(entries, ids, nums), since, prompt: promptSince(entries, { mtimeMs, now }), promptTool: promptTool(entries, { mtimeMs, now }) };
+  return { state, tool, card: cardIn(entries, ids, nums), since, prompt: promptSince(entries, { mtimeMs, now }), promptTool: promptTool(entries, { mtimeMs, now }), tokens: contextTokens(entries) };
 }
 
 // Every roster role's agent, from its newest open session titled exactly as the role. prompts, when given, gets each
 // role stopped on a prompt and since when (promptSince), and tools, when given, that prompt's tool class (promptTool):
 // the local waiting-prompt.json, not the state.
-export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = process.getuid(), prompts = null, tools = null }) {
+export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = process.getuid(), prompts = null, tools = null, tokens = null }) {
   const out = {};
   for (const role of roles.filter((r) => ROLE.test(r))) {
     const s = sessions.filter((x) => x.title === role).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))[0];
@@ -169,6 +170,7 @@ export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = pr
     out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, since: a.since };
     if (prompts && a.prompt != null) prompts[role] = a.prompt;
     if (tools && a.promptTool != null) tools[role] = a.promptTool;
+    if (tokens && a.tokens != null) tokens[role] = a.tokens;
   }
   return out;
 }
@@ -372,9 +374,31 @@ export function cardsCheckedAt(repoList, now, before) {
   return Number.isInteger(before) && before >= 1577836800000 && before <= now ? before : null;
 }
 
+// The usage tile (#C595): the spend script run once a day (python3 -I, read-only, its --json rows only), kept in
+// <dir>/usage.json between runs; the week's plan reading, { weekPct, resetsAt }, from <dir>/usage-plan.json when someone
+// with the app's usage numbers wrote it. A script that fails leaves the last tile. { tile, ran } (ran: it ran this time).
+export const USAGE_EVERY_MS = 24 * 3600e3;
+export function usageTile({ script, dir, roster, now, run }) {
+  const read = (name) => { const r = readTail(join(dir, name), 64 * 1024); try { return r?.whole ? JSON.parse(r.text) : null; } catch { return null; } };
+  const kept = read("usage.json"), plan = read("usage-plan.json");
+  const fresh = plain(kept) && Number.isInteger(kept.ranAt) && kept.ranAt <= now && now - kept.ranAt < USAGE_EVERY_MS && Array.isArray(kept.rows);
+  let rows = fresh ? kept.rows : null, ran = false;
+  if (!rows && script) {
+    try {
+      const since = new Date(now - 7 * 24 * 3600e3).toISOString().slice(0, 16);
+      const out = JSON.parse(run(["-I", script, "--json", "--since", since]));
+      rows = Array.isArray(out?.rows) ? out.rows.map((r) => ({ source: String(r?.source ?? "").slice(0, 80), share: r?.share })) : null;
+      ran = rows !== null;
+    } catch { /* the last tile stays */ }
+  }
+  if (!rows) rows = plain(kept) && Array.isArray(kept.rows) ? kept.rows : null;
+  if (!rows) return { tile: null, ran: false, rows: null };
+  return { tile: usageReading({ rows, roster, plan: plain(plan) ? plan : null, now }), ran, rows };
+}
+
 // The state that leaves, checked against the allowlist before it does.
-export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null }) {
-  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked }, cards, agents };
+export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, ctx = null, stuck = null, usage = null }) {
+  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}) };
   const errs = stateErrors(s);
   if (errs.length) throw new Error(`the state doesn't fit the plan (${errs.length} problem(s), first: ${errs[0]})`);
   return pickState(s);
@@ -482,8 +506,18 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const ids = new Set(cards.filter((k) => !closed(k)).map((k) => k.id));
   const nums = new Map(cards.filter((k) => Number.isInteger(k.num) && ids.has(k.id)).map((k) => [k.num, k.id]));
   const sessions = appSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
-  const prompts = {}, tools = {};
-  const agents = agentStates({ roles: config.roster, sessions, homeDir: homedir(), now, ids, nums, prompts, tools });
+  const prompts = {}, tools = {}, tokens = {};
+  const agents = agentStates({ roles: config.roster, sessions, homeDir: homedir(), now, ids, nums, prompts, tools, tokens });
+  // The roles' context, who is stuck, and the usage tile (#C592, #C593, #C595); a role past resetAt is asked to reset once
+  // (context-reset.json, which the lead's wake watch prints), and asked again only after it came back under.
+  const ctx = ctxReadings({ tokens, resetAt: config.resetAt, now });
+  const stuck = stuckReadings({ agents, prompts, now, lead: config.gate.managerRole });
+  const resetPath = join(stateDir, id, "context-reset.json");
+  let resetBefore = null;
+  try { const r = readTail(resetPath, 16 * 1024); if (r?.whole) resetBefore = JSON.parse(r.text); } catch { /* none */ }
+  const resets = resetAsks(ctx, resetBefore, now);
+  const dir = join(stateDir, id);
+  const spend = usageTile({ script: c.usageScript, dir, roster: config.roster, now, run: (args) => execFileSync("python3", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 60_000, maxBuffer: 16 * 1024 * 1024 }) });
   let pageVersion = null;
   try { pageVersion = basename(readlinkSync(join(stateDir, "current"))); } catch { /* no link */ }
   let state;
@@ -492,8 +526,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try { const r = readTail(checkedPath, 4096); if (r?.whole) checkedBefore = JSON.parse(r.text)?.at; } catch { /* none */ }
   const cardsChecked = cardsCheckedAt(Object.values(repos), now, checkedBefore);
   try {
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, ...wakeTimes(join(stateDir, id), now) });
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, ctx, stuck, usage: spend.tile, ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
+    writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
+    if (spend.ran) writeAtomic(join(dir, "usage.json"), JSON.stringify({ ranAt: now, rows: spend.rows }));
     writeAtomic(backoffPath, JSON.stringify(backoff));
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
     // The roles stopped on a prompt (#C526), for the Collector's alarm and the watchdog (#C529): roles, times and tool

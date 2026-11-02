@@ -24,6 +24,9 @@ export const changeKey = (s) => JSON.stringify([
   Object.entries(s.cards).map(([id, c]) => [id, c.num, c.phase, c.headSha12, c.signed, c.onMain, c.ci, c.liveVersion]),
   Object.entries(s.agents).map(([r, a]) => [r, a.state, a.tool, a.card, a.since]),
   s.board.probe, s.board.pageVersion,
+  Object.entries(s.ctx ?? {}).map(([r, c]) => [r, Math.floor(c.pct / 5), c.over]),
+  Object.entries(s.stuck ?? {}).map(([r, k]) => [r, k.kind, k.card, k.since]),
+  s.usage ? [s.usage.weekPct, s.usage.pace, s.usage.level, s.usage.top.map((t) => [t.src, t.pct])] : null,
 ]);
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const TOOL = {

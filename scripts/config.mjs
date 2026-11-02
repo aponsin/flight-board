@@ -27,12 +27,13 @@ export const DEFAULTS = {
   // how such a subject names each branch it shipped and its commit (groups: branch, sha), for branches deleted since.
   // candidatePattern: the name of a ship run's own branch, which exists only while the run is on and whose commits name
   // what it ships (shippedPattern); empty for none. releaseTimes: the release log in the repository, read on main for each
-  // version's CI times (#C397, collector/facts.mjs releaseTimes); empty for none. liveUrl: the live site the board's "Live now" reads (https, or empty for none); liveTag: how its page names the
+  // version's CI times (#C397, collector/facts.mjs releaseTimes); empty for none. usageScript: the spend-by-source script
+  // the probe runs once a day for the usage tile (#C595). liveUrl: the live site the board's "Live now" reads (https, or empty for none); liveTag: how its page names the
   // build it serves (groups: version, commit). contextRoles: the roles whose memory tiles the collector reads from the app,
   // each from the session titled exactly as the role (collector/context.mjs); empty for none. repos: other repositories
   // whose cards the collector reads (#C278): [{ name, path (a clone of its own), mainBranch, remote, notes: {phase: ref},
   // idPrefixes (card ids it holds; a card's own repo field wins), installedLink (the link whose commit is what's installed) }].
-  collector: { contextRoles: [], repos: [], repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", releaseTimes: "docs/RELEASE-TIMES.md", liveUrl: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
+  collector: { contextRoles: [], repos: [], repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", releaseTimes: "docs/RELEASE-TIMES.md", liveUrl: "", usageScript: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
     // Runs on demand (collector/refresh.mjs): the checkouts whose origin/main moving means a ship (local refs, no fetch), the
     // scheduled task the lead is told to run, the quiet minutes after a run (or an ask) and how long a run may take.
     refresh: { repos: [], taskId: "board-collector", debounceMin: 10, flightMin: 15 },
@@ -151,6 +152,7 @@ export function checkConfig(c) {
           if (set.length && set.length < 3) out.push("collector.keeper: skill, prompt and promptSha256 all set, or none");
         }
       }
+      if (k.usageScript !== undefined && !(k.usageScript === "" || (typeof k.usageScript === "string" && /^\/[A-Za-z0-9._\/-]{1,200}\.py$/.test(k.usageScript) && !k.usageScript.split("/").some((s) => s === ".." || s === ".")))) out.push("collector.usageScript: an absolute path to a .py file (#C595, the probe runs it daily, read-only), or empty");
       if (k.liveUrl !== undefined && !(k.liveUrl === "" || (typeof k.liveUrl === "string" && k.liveUrl.length <= 300 && /^https:\/\/[^\s/?#]+(\/[^\s]*)?$/.test(k.liveUrl)))) out.push("collector.liveUrl: an https address, or empty");
       if (k.contextRoles !== undefined && !(Array.isArray(k.contextRoles) && k.contextRoles.length <= 40 && k.contextRoles.every((r) => typeof r === "string" && /^[A-Za-z0-9_-]{1,60}$/.test(r)))) out.push("collector.contextRoles: a list of up to 40 role names (letters, digits, _ and -), each a session's exact title");
       if (k.repos !== undefined) {
