@@ -41,7 +41,10 @@ export function nextWakeFile(answer, current) {
 // restarted its count) counts as new too, and resets what is seen.
 export const wakePending = (wake, seen) => !!wake && wake.seq > 0 && (!seen || wake.seq !== seen.seq || wake.at !== seen.at);
 
-export const wakeLine = (wake) => `WAKE #${wake.seq}: the owner wrote on the board; read it now (messages and answered asks)`;
+// A path as one shell word: the lead runs the arming command as given (Security on 47d99b8d).
+export const shQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
+export const wakeLine =(wake) => `WAKE #${wake.seq}: the owner wrote on the board; read it now (messages and answered asks)`;
 
 // The Stop hook's ask. hasWake: wake.json exists (the probe polls the Worker, so the wake path is on). aliveAt: the
 // heartbeat's time, or null.

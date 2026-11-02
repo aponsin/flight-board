@@ -15,7 +15,7 @@ import { writesOf, writeState, home, readMirror, withJournal } from "./gate.mjs"
 import { openOwnerWords, WAIT_MIN } from "./owner-waits.mjs";
 import { turnLive, nextLive, liveAsk, liveSince, livePath, readLive, writeLive, liveDue } from "./live.mjs";
 import { idText } from "../collector/text.mjs";
-import { wakePaths, watchAsk, readWakeFile } from "./wake.mjs";
+import { wakePaths, watchAsk, readWakeFile, shQuote } from "./wake.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const DAY = 864e5;
@@ -232,7 +232,7 @@ export function wakeState(config, configPath) {
   let aliveAt = null;
   try { const a = JSON.parse(readFileSync(p.alive, "utf8")); aliveAt = Number.isFinite(a?.at) ? a.at : null; } catch { /* none */ }
   const script = join(dirname(dirname(fileURLToPath(import.meta.url))), "scripts", "wake-watch.mjs");
-  return { hasWake: readWakeFile(p.wake) !== null, aliveAt, command: `node ${script} --config ${configPath}` };
+  return { hasWake: readWakeFile(p.wake) !== null, aliveAt, command: `node ${shQuote(script)} --config ${shQuote(configPath)}` };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {

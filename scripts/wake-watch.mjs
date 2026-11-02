@@ -4,7 +4,7 @@
 // last printed, wake-seen.json), nothing else, and stops by itself before the Monitor's 30 minutes are up. Its
 // heartbeat (wake-watch.alive.json) is what the lead's Stop hook looks at to ask for a re-arm. Nothing here reads the board
 // or the transcript: counters and times only.
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
@@ -19,6 +19,17 @@ export function tick(dir, now, pid = process.pid) {
   if (!wakePending(wake, seen)) return null;
   writeAtomic(p.seen, JSON.stringify({ seq: wake.seq, at: wake.at }));
   return wakeLine(wake);
+}
+
+// The watch is ending (its planned stop before the Monitor's 30 minutes, or a signal): the heartbeat goes with it, but only
+// if it is this process's own. The end of the process ends the Monitor, which starts a lead turn, and that turn's Stop check
+// must find no watch running, or it would ask for nothing and the lead would sit unwatched (Checker on 47d99b8d).
+export function endWatch(dir, pid = process.pid) {
+  const p = wakePaths(dir);
+  try {
+    const a = JSON.parse(readFileSync(p.alive, "utf8"));
+    if (a?.pid === pid) unlinkSync(p.alive);
+  } catch { /* none, or not ours */ }
 }
 
 // Another watch alive: a fresh heartbeat of another process that still exists.
@@ -48,8 +59,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let line = null;
     try { line = tick(dir, now); } catch { /* a file that can't be written this time: the next look tries again */ }
     if (line) console.log(line);
-    if (now - start >= MAX_RUN_MS) process.exit(0);
+    if (now - start >= MAX_RUN_MS) { endWatch(dir); process.exit(0); }
   };
+  for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { endWatch(dir); process.exit(0); });
   loop();
   setInterval(loop, POLL_MS);
 }

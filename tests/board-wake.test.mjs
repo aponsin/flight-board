@@ -11,8 +11,8 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import worker, { sha256hex, secretName, WAKE_TOOL, WAKE_RATE_MS, WAKE_WRITES_DEFAULT, TOOL } from "../worker/state-worker.mjs";
 import { getWake } from "../collector/state.mjs";
-import { parseWake, nextWakeFile, wakePending, wakeLine, watchAsk, wakePaths, ALIVE_MAX_MS } from "../gate/wake.mjs";
-import { tick, otherWatchAlive } from "../scripts/wake-watch.mjs";
+import { parseWake, nextWakeFile, wakePending, wakeLine, watchAsk, wakePaths, shQuote, ALIVE_MAX_MS } from "../gate/wake.mjs";
+import { tick, otherWatchAlive, endWatch } from "../scripts/wake-watch.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 import { stopRun, wakeState } from "../gate/stop.mjs";
 
@@ -200,6 +200,49 @@ test("the watch run as the Monitor runs it: prints a wake line, nothing else, an
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
+// Checker on 47d99b8d: the watch's planned exit ends the Monitor, which starts a lead turn; that turn's Stop check must
+// find the watch gone and ask to arm it again, or the lead sits unwatched.
+test("the watch's end takes its own heartbeat with it, so the turn its exit starts is asked to re-arm", () => {
+  const dir = dirOf();
+  try {
+    const p = wakePaths(dir);
+    writeFileSync(p.wake, '{"seq":0,"at":0}');
+    tick(dir, T, 111);
+    assert.equal(watchAsk({ hasWake: true, aliveAt: JSON.parse(readFileSync(p.alive, "utf8")).at, now: T + 3e3, command: cmd }), null, "running: no ask");
+    endWatch(dir, 222);
+    assert.ok(existsSync(p.alive), "another process's end never removes this heartbeat");
+    endWatch(dir, 111);
+    assert.equal(existsSync(p.alive), false, "its own end removes it");
+    const aliveAt = (() => { try { return JSON.parse(readFileSync(p.alive, "utf8")).at; } catch { return null; } })();
+    assert.match(watchAsk({ hasWake: true, aliveAt, now: T + 3e3, command: cmd }), /^Wake watch: /, "3 s later the Stop check asks");
+    endWatch(dir, 111);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("run as the Monitor runs it, a stop signal removes the heartbeat before the process ends", async () => {
+  const home = dirOf();
+  try {
+    const cfgPath = join(home, "board.config.json");
+    writeFileSync(cfgPath, JSON.stringify({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", gate: { stateDir: join(home, "state") } }));
+    const dir = join(home, "state", "TestBoard01");
+    mkdirSync(dir, { recursive: true });
+    const child = spawn(process.execPath, [fileURLToPath(new URL("../scripts/wake-watch.mjs", import.meta.url)), "--config", cfgPath], { stdio: ["ignore", "pipe", "pipe"] });
+    for (let i = 0; i < 40 && !existsSync(join(dir, "wake-watch.alive.json")); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.ok(existsSync(join(dir, "wake-watch.alive.json")), "running");
+    const closed = new Promise((r) => child.on("close", r));
+    child.kill("SIGTERM");
+    await closed;
+    assert.equal(existsSync(join(dir, "wake-watch.alive.json")), false);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+test("shQuote: a path is one shell word, whatever it holds", () => {
+  assert.equal(shQuote("/a/b"), "'/a/b'");
+  assert.equal(shQuote("/a b/c"), "'/a b/c'");
+  assert.equal(shQuote("it's"), `'it'\\''s'`);
+  assert.equal(shQuote("$(x) `y` ;"), "'$(x) `y` ;'");
+});
+
 // --- the lead's Stop hook ---
 
 const URL_ = "https://claude.ai/" + "artifact/TestBoard01";
@@ -234,7 +277,8 @@ test("wakeState reads the state folder: wake.json there, the heartbeat's time, a
     const s0 = wakeState(cfg, "/c/board.config.json");
     assert.equal(s0.hasWake, false);
     assert.equal(s0.aliveAt, null);
-    assert.match(s0.command, /^node \/.*\/scripts\/wake-watch\.mjs --config \/c\/board\.config\.json$/);
+    assert.match(s0.command, /^node '\/.*\/scripts\/wake-watch\.mjs' --config '\/c\/board\.config\.json'$/);
+    assert.equal(wakeState(cfg, "/c d/it's.json").command.endsWith(` --config '/c d/it'\\''s.json'`), true, "a space and a quote in the path stay one word");
     writeFileSync(join(dir, "wake.json"), '{"seq":0,"at":0}');
     writeFileSync(join(dir, "wake-watch.alive.json"), JSON.stringify({ at: T, pid: 1 }));
     const s1 = wakeState(cfg, "/c/board.config.json");
