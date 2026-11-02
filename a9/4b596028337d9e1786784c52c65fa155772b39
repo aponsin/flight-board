@@ -1,0 +1,1 @@
+PASS Quick: #C567 re-cut on main f79d519c (build/gate-live-from-version-commit-v3); range-diff against the signed faf1d780 is identical (3 commits). npm test at the stacked tip be10ce98: 921 pass, 0 fail.
