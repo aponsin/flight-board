@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C588 the Stop gate and collector ask block with JSON on stdout, exit 0. Same as 62d0474; reverting it to exit 2 fails refresh.test and stop-view.test. 1010/1010 at 4468d6e.
