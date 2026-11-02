@@ -84,6 +84,8 @@ export function renderPrompt(template, values) {
 }
 // The config the owner installed: the gate's pinned hook names it. The lead: the collector's fence sends only to it.
 export const configFromSettings = (text) => /gate\/gate\.mjs'? --config '([^']+)'/.exec(String(text ?? ""))?.[1] ?? null;
+// The lead's session (#C586): the config's gate.managerSession first; the fence's --send-to only while the config has none.
+export const leadOf = (config, settingsText) => config?.gate?.managerSession || leadFromSettings(settingsText);
 export const leadFromSettings = (text) => /collector\/fence\.mjs'? [^"]*?--send-to ([A-Za-z0-9_-]{1,100})/.exec(String(text ?? ""))?.[1] ?? null;
 
 const signed = (notes) => /^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim()) && /^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim());
@@ -160,7 +162,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const config = fullConfig(raw);
     const stateDir = join(home(config.gate.stateDir), boardId(config) ?? "no-board");
     const collectorSettings = join(stateDir, ".claude/settings.local.json");
-    const lead = leadFromSettings(existsSync(collectorSettings) ? readFileSync(collectorSettings, "utf8") : "");
+    const lead = leadOf(config, existsSync(collectorSettings) ? readFileSync(collectorSettings, "utf8") : "");
     const link = join(homedir(), ".flight-board", "current"), before = linkedCommit(link);
 
     // The facts, from origin and from the commit's own snapshot.
