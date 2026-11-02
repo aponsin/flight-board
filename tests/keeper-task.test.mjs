@@ -17,12 +17,17 @@ test("the run that cues a reset waits for it and sends the pickup itself", () =>
   assert.match(step(6), /"not reset"/);
 });
 
-test("the lead is never in the wave: cued last, after the wave is picked up, and picked up the same way", () => {
+// #C559: the lead compacts itself (well under the limit) and the morning task clears it daily, so this task never cues it.
+test("the lead is never cued or reset by this task: step 7 is gone, step 3 still measures it, step 4 still picks it up", () => {
   assert.match(step(5), /except Manager/);
-  assert.match(step(7), /^Manager last, and only after the wave/);
-  assert.match(step(7), /report \(step 8\) first, [^"]*"pickup sent"[^"]*, then exactly "CONTEXT RESET"/, "the cue is the last message it gets");
-  assert.match(step(7), /"\/pickup Manager"/);
-  assert.ok(prompt.indexOf("7. Manager last") > prompt.indexOf("6. Pick the wave back up"));
+  assert.match(step(7), /^Manager is never cued or reset by this task \(#C559\)/);
+  assert.doesNotMatch(prompt, /Manager last/);
+  assert.doesNotMatch(prompt, /exactly "CONTEXT RESET", then wait/, "no cue to the lead");
+  assert.doesNotMatch(step(7), /send (it|Manager) exactly|CONTEXT RESET/i);
+  assert.match(step(7), /Step 3 still measures it, so its tile and the report's "all" list stay true/);
+  assert.match(step(7), /step 4 stays the backstop that picks it up if it sits cleared/);
+  assert.match(step(8), /"all" lists every session measured, by tokens descending, Manager included/);
+  assert.doesNotMatch(step(8), /Manager's own reset cue/);
 });
 
 test("Director is never measured, cued or messaged, so never reset in a wave with the lead", () => {
@@ -48,7 +53,6 @@ test("a pickup from an earlier run skips a session picked up since its reset (pi
   assert.match(step(4), /A missing pickedAt still gets the pickup \(an agent that reset itself on its own cue\)/);
   assert.doesNotMatch(step(4), /Never send it to a session with no saved entry/, "a self-reset has no saved entry (Checker on c70dfb1)");
   assert.match(step(8), /for each pickup sent, set pickedAt to now \(milliseconds\) and delete its saved, savedTokens and savedPct/);
-  assert.match(step(7), /with Manager listed under "pickup sent" \(it is picked up next\)/, "the lead's own pickup gets a pickedAt too");
   assert.match(doc, /`\{\{BOARD\}\}` \(the board's link/);
 });
 
@@ -86,9 +90,8 @@ test("no ArtifactData allow rule: one can't be limited to a get (Security on c70
 });
 
 // #C399 (the owner's 600k in #T1038): the limit is the config's resetAt, filled in where the lead saves the prompt.
-test("the reset limit is the config's resetAt ({{RESET_AT}}), or 80% of a 200k window; the lead's the same; no number left", () => {
+test("the reset limit is the config's resetAt ({{RESET_AT}}), or 80% of a 200k window; no number left", () => {
   assert.match(step(5), /\{\{RESET_AT\}\} tokens or more \(or 80% of a 200k window\)/);
-  assert.match(step(7), /at \{\{RESET_AT\}\} tokens or more/);
   assert.doesNotMatch(prompt, /\d00,000 tokens/, "no limit written into the prompt itself");
   assert.match(doc, /`\{\{RESET_AT\}\}` \(board\.config\.json's `resetAt`/);
 });
