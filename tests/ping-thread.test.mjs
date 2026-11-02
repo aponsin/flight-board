@@ -124,3 +124,26 @@ test("every send names its item, so each item keeps one thread", () => {
   assert.equal((page.match(/commentsRef\.sendToClaude\(/g) || []).length, 2, "only sendPing calls the app");
   assert.match(page, /renderShipLine\(\);renderThreadsFull\(\);/);
 });
+
+// #C589: a send that board_wake carries posts no comment; the comment is the fallback for a failed or absent wake.
+function wakeBoard(callTool) {
+  const sends = [], calls = [];
+  const w = loadNames(["sendPing", "set:(d,c,m)=>{dbRef=d;commentsRef=c;liveMcp=m}"]);
+  w.set({ doc: () => ({ set: async () => {}, update: async () => {} }) }, { canSendToClaude: async () => "available", sendToClaude: async (t) => { sends.push(t); return { threadId: TID }; } }, callTool && { callTool: async (...a) => { calls.push(a); return callTool(...a); } });
+  return { w, sends, calls };
+}
+
+test("a send is carried by board_wake and posts no comment", async () => {
+  const { w, sends, calls } = wakeBoard(async () => ({ content: [] }));
+  assert.equal(await w.sendPing({ a: 1 }, "x", "ctx-Builder"), true);
+  assert.equal(sends.length, 0);
+  assert.equal(calls[0][1], "board_wake");
+});
+
+test("a failed wake (error result, throw, or no connector) falls back to the comment", async () => {
+  for (const cb of [async () => ({ isError: true }), async () => { throw new Error("down"); }, null]) {
+    const { w, sends } = wakeBoard(cb);
+    assert.equal(await w.sendPing({ a: 1 }, "x", "t-1"), true);
+    assert.equal(sends.length, 1);
+  }
+});

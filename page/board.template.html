@@ -997,8 +997,14 @@ async function pingManager(anchor,id,r){return sendPing(anchor,pingText(state.wa
 // pingThreads/<ref> {threadId, at}; every later one replies into it. A thread deleted in the comment panel opens anew.
 const PING_REF=/^[A-Za-z0-9_-]{1,100}$/,THREAD_ID=/^[A-Za-z0-9_-]{8,80}$/;
 function pingThreadOf(ref){const d=PING_REF.test(String(ref||""))&&(state.pingThreads||[]).find(x=>x&&x.id===ref);return d&&THREAD_ID.test(String(d.threadId||""))?d.threadId:null}
+// #C589: board_wake does the waking, so a send that the wake carries posts no comment (the panel filled with "Claude didn't
+// reply here"). The comment is the fallback, only for a wake that failed or has no connector. The text of a ping is on the
+// board already (the message, the answer, ctxRequests/<n>, startAt): the lead reads it there.
+async function wakeOk(kind="message"){if(!liveMcp)return false;
+  try{const r=await liveMcp.callTool(STATE_SERVER,WAKE_TOOL,{kind},{cache:false});return !(r&&r.isError)}catch(_){return false}}
 async function sendPing(anchor,text,ref){let opening=false;
   try{
+    if(await wakeOk())return true;
     if(!commentsRef){lastPing="comments not available in this view";return false}
     const can=await commentsRef.canSendToClaude();
     if(can!=="available"){lastPing="send to Claude: "+can;return false}
@@ -1105,8 +1111,7 @@ function wakeKind(ws){
   if(ws.some(w=>/^messages\//.test(w.path)&&w.data&&w.data.from===OWNER&&w.data.resolved!==true))return "message";
   if(ws.some(w=>/^waiting\//.test(w.path)&&w.data&&w.data.response&&!(["ack","done"].includes(w.data.response.status)&&!String(w.data.response.note||"").trim()&&!(w.data.response.files||[]).length)))return "answer";
   return null}
-function wakeLead(ws){const kind=wakeKind(ws);if(!kind||!liveMcp)return;
-  try{Promise.resolve(liveMcp.callTool(STATE_SERVER,WAKE_TOOL,{kind},{cache:false})).catch(()=>{})}catch(_){}}
+function wakeLead(ws){const kind=wakeKind(ws);if(kind)wakeOk(kind)}
 // A button reply on an ask (unchanged for every kind), as the writes it makes. Board v2: a bare Ack on
 // an answer closes it (case 6: 22 acked answers stayed open); a note, whatever the button, also goes in the item's thread
 // as the owner's message, so a question in a Done note waits for Manager instead of closing with the item (case 10).

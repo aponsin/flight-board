@@ -307,8 +307,10 @@ test("the page wakes the lead for the owner's message or a real answer, and for 
 });
 
 test("the page's wake call never reaches the write, never throws, and sends only the kind", () => {
-  const fn = html.match(/function wakeLead\(ws\)\{[\s\S]*?\n/)[0] + html.match(/function wakeLead\(ws\)\{[\s\S]*?\n(.*\n)/)[1];
+  // #C589: wakeOk is the one place the call is made; it never throws, and wakeLead leaves its answer unread.
+  const fn = html.match(/async function wakeOk\([^\n]*\n[^\n]*\n/)[0];
   assert.match(fn, /liveMcp\.callTool\(STATE_SERVER,WAKE_TOOL,\{kind\},\{cache:false\}\)/);
-  assert.match(fn, /catch\(_\)\{\}/);
+  assert.match(fn, /catch\(_\)\{return false\}/);
+  assert.match(html, /function wakeLead\(ws\)\{const kind=wakeKind\(ws\);if\(kind\)wakeOk\(kind\)\}/);
   assert.match(html, /async function applyWrites\(ws\)\{[^\n]*renderOwn\(\);wakeLead\(ws\)\}/, "after the writes are saved, not before");
 });
