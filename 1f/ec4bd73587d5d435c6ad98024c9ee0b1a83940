@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C607 the Stop hook keeps an ask the lead closed (waiting done:true) as done in its kept live copy. Its refused-write gap is fixed in 9db172c on this branch: ship together. 1029/1029 at 9db172c.
