@@ -40,7 +40,9 @@ export function offersChoices(text) {
 export function offersLetteredChoices(text) {
   const s = String(text ?? "");
   const ab = (re) => { const m = new Set([...s.matchAll(re)].map((x) => x[1])); return m.has("A") && m.has("B"); };
-  return ab(/(?:^|[\s([])([A-H])\)/g) || ab(/^[\s*_]*([A-H])[*_]*\s*(?:\([^)\n]*\))?\s*:/gm) || /\boption [A-H]\b/.test(s);
+  // Also on one line (#C585: "A: Reviewer reviews it now … B: hold it until the pause lifts. I'd pick A."): an "A:" and a
+  // "B:" each opening a clause, after the start or whitespace, with a space after the colon.
+  return ab(/(?:^|[\s([])([A-H])\)/g) || ab(/^[\s*_]*([A-H])[*_]*\s*(?:\([^)\n]*\))?\s*:/gm) || ab(/(?:^|\s)([A-H])\s*(?:\([^)\n]*\))?:\s/g) || /\boption [A-H]\b/.test(s);
 }
 function choiceErrors(data, kind) {
   if (kind === "decision") return [];
