@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
 import { checkWrites } from "../gate/rules.mjs";
-import { shipRuns, shipsCard, cardState, SHIP_TITLE } from "../collector/state.mjs";
+import { shipRuns, shipsCard, shipTitlePairs, cardState, SHIP_TITLE } from "../collector/state.mjs";
 import { boardTruth } from "../collector/readings.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
 import { truthPending, truthSeen, truthLine, TRUTH_FILE, TRUTH_SEEN_FILE } from "../gate/reset.mjs";
@@ -75,14 +75,40 @@ test("shipRuns: gh failing is none, never 'not shipping', and backs off like the
   assert.equal(shipRuns(() => JSON.stringify({ runs: [] }), T + 62e3), null);
 });
 
-test("a run is for a card when its branch is the tip's (whole or last part) or its sha starts the tip or head", () => {
+test("a run is for a card when its branch is the tip's, whole, or its sha (7 characters at least) starts the tip or head", () => {
   const tip = { branch: "build/live-now", sha: "c5dc81c0" + "0".repeat(32) }, head = { sha: "9db172c9" + "0".repeat(32) };
   assert.equal(shipsCard([{ branch: "build/live-now", sha: "1111111" }], tip, head), true);
-  assert.equal(shipsCard([{ branch: "live-now", sha: "1111111" }], tip, head), true, "the last part");
+  assert.equal(shipsCard([{ branch: "live-now", sha: "1111111" }], tip, head), false, "the last part alone is another card's (Checker): admin/x and build/x are two");
+  assert.equal(shipsCard([{ branch: "admin/live-now", sha: "1111111" }], tip, head), false);
   assert.equal(shipsCard([{ branch: "elsewhere", sha: "c5dc81c" }], tip, head), true, "the tip's sha");
   assert.equal(shipsCard([{ branch: "elsewhere", sha: "9db172c" }], tip, head), true, "the head's sha");
+  assert.equal(shipsCard([{ branch: "elsewhere", sha: "c5dc" }], tip, head), false, "a cut title's 4-character sha names nothing alone");
   assert.equal(shipsCard([{ branch: "elsewhere", sha: "1111111" }], tip, head), false);
   assert.equal(shipsCard([], tip, head), false);
+});
+
+// Checker's finding on 47cdc89: real ship titles combine branches and GitHub cuts them with "…".
+test("shipTitlePairs reads every branch@sha of a combined or cut title (real titles)", () => {
+  assert.deepEqual(shipTitlePairs("v1.186.0: admin/replace-photo-upload@1211a47c3b8c66a886d9677d318feb30…"), [{ branch: "admin/replace-photo-upload", sha: "1211a47c3b8c66a886d9677d318feb30" }]);
+  assert.deepEqual(shipTitlePairs("v1.183.0: build/contact-dup-phone@c6db…, build/gbp-kit@1534…"), [{ branch: "build/contact-dup-phone", sha: "c6db" }, { branch: "build/gbp-kit", sha: "1534" }]);
+  assert.deepEqual(shipTitlePairs("v1.186.0: build/a@aaaaaaa, build/b@bbbbbbb, build/c-d@ccccccc"), [{ branch: "build/a", sha: "aaaaaaa" }, { branch: "build/b", sha: "bbbbbbb" }, { branch: "build/c-d", sha: "ccccccc" }]);
+  assert.deepEqual(shipTitlePairs("v1.186.0: build/a＠aaaaaaa, build/b@bb"), [{ branch: "build/a", sha: "aaaaaaa" }], "the full-width @; a part cut to nothing is dropped");
+  assert.deepEqual(shipTitlePairs("v1.186.0: build/cut-branch-na…"), [], "a branch cut before its @");
+  assert.deepEqual(shipTitlePairs("deploy to prod"), []);
+  assert.deepEqual(shipTitlePairs(undefined), []);
+});
+
+test("shipRuns adds the pairs from the run's own commit subjects (whole, never cut), and a cut title still marks its first card", () => {
+  const head = "9".repeat(40), subjects = ["v1.186.0: build/contact-dup-phone@c6dbaaaaaaa, build/gbp-kit@1534bbbbbbb, build/third@ddddddd", "base commit"].join("\n");
+  const gh = runsGh([{ status: "in_progress", displayTitle: "v1.186.0: build/contact-dup-phone@c6db…", headSha: head }, { status: "completed", displayTitle: "v1.185.0: old@eeeeeee", headSha: "8".repeat(40) }]);
+  const asked = [];
+  const git = (args) => { asked.push(args); return subjects; };
+  const got = shipRuns(gh, T, undefined, { git, shippedPattern: "([A-Za-z0-9._/-]+)@([0-9a-f]{7,40})" });
+  assert.deepEqual(asked, [["log", "-5", "--format=%s", head]], "the git call is the run's head, argv only; a finished run is not read");
+  assert.deepEqual(got.map((s) => s.branch), ["build/contact-dup-phone", "build/contact-dup-phone", "build/gbp-kit", "build/third"]);
+  assert.equal(shipsCard(got, { branch: "build/third", sha: "d".repeat(40) }, { sha: "d".repeat(40) }), true, "a branch the title lost");
+  assert.deepEqual(shipRuns(gh, T, undefined, { git: () => { throw new Error("no clone"); }, shippedPattern: "([a-z/]+)@([0-9a-f]{7,40})" }).map((s) => s.branch), ["build/contact-dup-phone"], "no git: the title's pairs stand");
+  assert.deepEqual(shipRuns(gh, T, undefined, { git, shippedPattern: "" }).map((s) => s.branch), ["build/contact-dup-phone"], "no shippedPattern: the title only");
 });
 
 function scratch() {
@@ -135,7 +161,34 @@ test("boardTruth: ship for a signed tip off main with no run; close for a live o
   assert.equal(boardTruth({ states: Object.fromEntries(Array.from({ length: 30 }, (_, n) => [`card-${String(n).padStart(2, "0")}`, st("ship")])), shipPhase: "ship", livePhase: "live" }).length, 20, "at most 20");
 });
 
-test("the watch prints SHIP and CLOSE once per card and tip, again for a new tip, and forgets what left the list", () => {
+test("a CLOSE line repeats every 10 minutes until the card leaves the list (status done); a SHIP line is printed once per tip", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fb-truth-repeat-"));
+  const write = (items) => writeFileSync(join(dir, TRUTH_FILE), JSON.stringify({ at: T, items }));
+  const roster = ["Manager", "Release"], MIN = 60e3;
+  write([{ kind: "ship", card: "board-x", sha: "a1b2c3d4e5f6" }, { kind: "close", card: "board-y", sha: "b1b2c3d4e5f6" }]);
+  const first = tick(dir, T, 1, roster);
+  assert.match(first, /SHIP board-x/); assert.match(first, /CLOSE board-y/);
+  assert.equal(tick(dir, T + 5 * MIN, 1, roster), null, "five minutes on: nothing");
+  assert.equal(tick(dir, T + 9 * MIN + 59e3, 1, roster), null, "just under ten minutes");
+  const again = tick(dir, T + 10 * MIN, 1, roster);
+  assert.equal(again.split("\n").length, 1, "ten minutes: the CLOSE line only");
+  assert.match(again, /^CLOSE board-y/);
+  assert.equal(tick(dir, T + 15 * MIN, 1, roster), null, "the clock restarts at each print");
+  assert.match(tick(dir, T + 20 * MIN, 1, roster), /^CLOSE board-y/, "and again ten minutes after that");
+  assert.match(tick(dir, T + 30 * MIN, 1, roster), /^CLOSE board-y/, "for as long as the card stays open");
+  write([{ kind: "ship", card: "board-x", sha: "a1b2c3d4e5f6" }]);
+  assert.equal(tick(dir, T + 41 * MIN, 1, roster), null, "the card's status is done: no more CLOSE lines, and SHIP is not repeated");
+  write([{ kind: "ship", card: "board-x", sha: "a1b2c3d4e5f6" }, { kind: "close", card: "board-y", sha: "b1b2c3d4e5f6" }]);
+  assert.match(tick(dir, T + 42 * MIN, 1, roster), /^CLOSE board-y/, "a card that comes back is asked at once");
+  assert.equal(JSON.parse(readFileSync(join(dir, TRUTH_SEEN_FILE), "utf8")).items["close board-y"].at, T + 42 * MIN, "the seen file keeps the print time");
+  // an older seen file (the sha alone) reads as printed long ago
+  writeFileSync(join(dir, TRUTH_SEEN_FILE), JSON.stringify({ items: { "close board-y": "b1b2c3d4e5f6", "ship board-x": "a1b2c3d4e5f6" } }));
+  const old = tick(dir, T + 43 * MIN, 1, roster);
+  assert.match(old, /^CLOSE board-y/);
+  assert.equal(old.includes("SHIP"), false);
+});
+
+test("the watch prints SHIP and CLOSE for a new tip, and forgets what left the list", () => {
   const dir = mkdtempSync(join(tmpdir(), "fb-truth-watch-"));
   const write = (items) => writeFileSync(join(dir, TRUTH_FILE), JSON.stringify({ at: T, items }));
   write([{ kind: "ship", card: "board-x", sha: "a1b2c3d4e5f6" }, { kind: "close", card: "board-y", sha: "b1b2c3d4e5f6" }]);
@@ -165,7 +218,7 @@ test("no SHIP line when the roster has no Release; CLOSE still prints; odd entri
 
 // ---- the page: the card says it from the live state
 function page(card, probeCard, agents = {}) {
-  const b = loadNames(["liveCard", "versionNote", "versionNoteBase", "liveRun", "shipNow", "probeEvent"]);
+  const b = loadNames(["liveCard", "versionNote", "versionNoteBase", "liveRun", "shipNow", "probeEvent", "asShown", "closeableNow"]);
   b.state.initRaw = [{ id: card, num: 617, status: "active" }];
   b.state.derived = [{ id: "all", cards: {} }];
   b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - 20e3 }, cards: { [card]: { headSha12: "a1b2c3d4e5f6", onMain: false, ...probeCard } }, agents } } });
@@ -179,6 +232,22 @@ test("the card says Shipping now, Signed waiting for Release, or Waiting for <ro
   assert.equal(page("board-x", { phase: "security" }).versionNote({ id: "board-x" }), "Waiting for Security");
   assert.equal(page("board-x", { phase: "build" }).versionNote({ id: "board-x" }), "Building", "building says what it did before");
   assert.equal(page("board-x", { phase: "ship", onMain: true }).versionNote({ id: "board-x" }), "", "on main: the export's word (deploying, live)");
+});
+
+test("a card whose commits are live by the probe's reading shows as done at once; one with a check to run, or off main, does not", () => {
+  const b = page("board-x", { phase: "live", onMain: true });
+  b.state.initRaw = [{ id: "board-x", status: "active" }];
+  const shown = (i) => JSON.parse(JSON.stringify(loadAsShown(b, i)));
+  function loadAsShown(bb, i) { return bb.asShown(i); }
+  assert.equal(shown({ id: "board-x", status: "active" }).status, "done");
+  assert.equal(shown({ id: "board-x", status: "active" }).doneByEvidence, true);
+  assert.equal(shown({ id: "board-x", status: "queued" }).status, "done");
+  assert.equal(shown({ id: "board-x", status: "active", checkAt: Date.now() + 3e5 }).status, "active", "Verifying: waits for its check");
+  assert.equal(shown({ id: "board-x", status: "done" }).doneByEvidence, undefined, "already done: as it is");
+  assert.equal(shown({ id: "board-x", status: "dropped" }).dropped, true, "dropped: as before");
+  assert.equal(shown({ id: "board-y", status: "active" }).status, "active", "a card the probe doesn't list");
+  assert.equal(page("board-x", { phase: "live", onMain: false }).asShown({ id: "board-x", status: "active" }).status, "active", "not on main");
+  assert.equal(page("board-x", { phase: "ship", onMain: true }).asShown({ id: "board-x", status: "active" }).status, "active", "on main but not deployed: still shipping");
 });
 
 test("a ship run the probe read counts as a ship now for the restart pill and the Don't-restart line", () => {

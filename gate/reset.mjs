@@ -41,11 +41,28 @@ export const askLine = (a) => `ASK ${a.role} ${a.card}: ${a.role} is waiting on 
 export const TRUTH_FILE = "board-truth.json", TRUTH_SEEN_FILE = "board-truth-seen.json";
 export const TRUTH_KINDS = ["ship", "close"], SHIP_ROLE = "Release";
 const truthList = (f) => (Array.isArray(f?.items) ? f.items.filter((a) => a && TRUTH_KINDS.includes(a.kind) && CARD.test(String(a.card)) && /^[0-9a-f]{12}$/.test(String(a.sha))) : []);
-export function truthPending(asked, seen) {
-  const s = seen && typeof seen.items === "object" && seen.items && !Array.isArray(seen.items) ? seen.items : {};
-  return truthList(asked).filter((a) => s[`${a.kind} ${a.card}`] !== a.sha);
+// A CLOSE line repeats every CLOSE_AGAIN_MS until the card is no longer listed (its status done: the probe reads the export), so a
+// line the lead missed can't sit for hours (the lead, 23:50Z); a SHIP line is printed once per tip. The seen file keeps { sha, at }
+// per "<kind> <card>" (an older file kept the sha alone: read as printed at 0).
+export const CLOSE_AGAIN_MS = 10 * 60e3;
+const seenItems = (seen) => (seen && typeof seen.items === "object" && seen.items && !Array.isArray(seen.items) ? seen.items : {});
+const seenEntry = (v) => (typeof v === "string" ? { sha: v, at: 0 } : v && typeof v === "object" && typeof v.sha === "string" ? { sha: v.sha, at: Number.isInteger(v.at) ? v.at : 0 } : null);
+export function truthPending(asked, seen, now = Date.now()) {
+  const s = seenItems(seen);
+  return truthList(asked).filter((a) => {
+    const e = seenEntry(s[`${a.kind} ${a.card}`]);
+    return !e || e.sha !== a.sha || (a.kind === "close" && now - e.at >= CLOSE_AGAIN_MS);
+  });
 }
-export const truthSeen = (asked) => ({ items: Object.fromEntries(truthList(asked).map((a) => [`${a.kind} ${a.card}`, a.sha])) });
+// The seen file after a look: the listed items only (one that comes back is printed again), each with the time it was last printed.
+export function truthSeen(asked, seen = null, printed = [], now = Date.now()) {
+  const s = seenItems(seen), out = {};
+  for (const a of truthList(asked)) {
+    const key = `${a.kind} ${a.card}`, e = seenEntry(s[key]);
+    out[key] = printed.some((p) => p.kind === a.kind && p.card === a.card) ? { sha: a.sha, at: now } : e && e.sha === a.sha ? e : { sha: a.sha, at: now };
+  }
+  return { items: out };
+}
 export const truthLine = (a) => (a.kind === "ship"
   ? `SHIP ${a.card}: every sign-off its level needs is on ${a.sha.slice(0, 7)} and it is not on main; tell ${SHIP_ROLE} to ship it`
   : `CLOSE ${a.card}: its commits are live (on main and deployed, or in the installed pack); write its live step and set status done in the same batch`);

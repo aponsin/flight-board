@@ -16,7 +16,7 @@ import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, res
 export function tick(dir, now, pid = process.pid, roster = null) {
   const p = wakePaths(dir);
   writeAtomic(p.alive, JSON.stringify({ at: now, pid }));
-  const lines = resetLines(dir, roster);
+  const lines = resetLines(dir, roster, now);
   const wake = readWakeFile(p.wake), seen = readWakeFile(p.seen);
   if (wakePending(wake, seen)) {
     writeAtomic(p.seen, JSON.stringify({ seq: wake.seq, at: wake.at }));
@@ -26,7 +26,7 @@ export function tick(dir, now, pid = process.pid, roster = null) {
 }
 
 // The roles the probe asked to reset (#C592, gate/reset.mjs) that this watch has not printed yet; marks them printed.
-function resetLines(dir, roster = null) {
+function resetLines(dir, roster = null, now = Date.now()) {
   // Only roster roles are ever named (Security: a planted file in the state folder must not make the lead wake or reset a role the team does not have).
   const onRoster = (r) => !roster || roster.includes(r);
   const read = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
@@ -47,8 +47,9 @@ function resetLines(dir, roster = null) {
   out.push(...pending.map(askLine));
   // What the probe found true of the cards (#C617): "SHIP <card>" (signed, not on main: Release is to ship it) and "CLOSE <card>"
   // (live, still open), once per card and tip. A SHIP line is printed only when the roster has the ship role.
-  const truth = read(TRUTH_FILE), tseen = read(TRUTH_SEEN_FILE), todo = truthPending(truth, tseen).filter((a) => a.kind !== "ship" || onRoster(SHIP_ROLE));
-  if (todo.length || (truth && JSON.stringify(truthSeen(truth)) !== JSON.stringify(tseen ?? { items: {} }))) writeAtomic(join(dir, TRUTH_SEEN_FILE), JSON.stringify(truthSeen(truth)));
+  const truth = read(TRUTH_FILE), tseen = read(TRUTH_SEEN_FILE), due = truthPending(truth, tseen, now), todo = due.filter((a) => a.kind !== "ship" || onRoster(SHIP_ROLE));
+  const nextSeen = truthSeen(truth, tseen, due, now);
+  if (JSON.stringify(nextSeen) !== JSON.stringify(tseen ?? { items: {} })) writeAtomic(join(dir, TRUTH_SEEN_FILE), JSON.stringify(nextSeen));
   out.push(...todo.map(truthLine));
   return out;
 }
