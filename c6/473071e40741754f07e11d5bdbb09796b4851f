@@ -1,0 +1,1 @@
+PASS Quick (Checker, 2026-11-02): #C606 the Manager chip moves to a .hdr-right block at the header's top right, above the clock; same text and logic; the chip keeps its own font. Built on stack 2's tip f6e48c4: ship with or after it. Nit: .mgr-chip's display:inline-block overrides [hidden] (pre-existing), so a hidden chip still takes a few px above the clock. 1029/1029.
