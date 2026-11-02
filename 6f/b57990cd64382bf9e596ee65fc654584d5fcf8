@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C594 phase clashes ask for a collector run, once per set per hour, only on a fully fresh read. Mutation on the head guard caught by phase-clash.test. 999/999 at 3167063.
