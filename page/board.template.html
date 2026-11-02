@@ -1822,7 +1822,15 @@ function shipQueue(){const all=state.derived.find(d=>d.id==="all"),cards=all&&al
 // The Collector's expected version (#C400, collector/expected.mjs) names the version each one ships in: "Shipping now:
 // v1.158.15", "Next: v1.158.16 (2nd, with #C392)", "In review · then after the queue: v1.159.1 at the earliest". Without
 // one (no version known yet) the note says what it did before.
-function versionNote(i){const d=derivedOf(i.id);if(!d||!d.phase||d.firm===false&&d.phase!==BUILD_PHASE)return "";
+// #C617: the live state says it first, no model between: a ship run for the card's tip is on now ("Shipping now"); a tip with every
+// sign-off its level needs that is not on main is "Signed, waiting for Release"; one with a reviewer missing names that role
+// ("Waiting for Checker"). Only a card on a branch the probe reads (a head) and not yet on main; the rest as before.
+function versionNote(i){const base=versionNoteBase(i),L=liveCard(i.id);if(!L||L.onMain)return base;
+  if(L.shipping)return /Shipping now/.test(base)?base:"<b>Shipping now</b>";
+  if(L.phase===SHIP_PHASE){if(liveRun()===i.id)return base;return `Signed, waiting for ${esc(SHIP_ROLE)}`+(base?` · ${base}`:"")}
+  const p=PHASES.find(x=>x[0]===L.phase);if(!p||[BUILD_PHASE,"test",LIVE_PHASE,"plan"].includes(L.phase))return base;
+  return `Waiting for ${esc(p[1])}`+(base&&base!=="In review"?` · ${base}`:"")}
+function versionNoteBase(i){const d=derivedOf(i.id);if(!d||!d.phase||d.firm===false&&d.phase!==BUILD_PHASE)return "";
   if(d.phase===LIVE_PHASE)return d.version?`Live in <b>v${esc(d.version)}</b>`:"Live";
   if(d.phase===SHIP_PHASE&&d.version)return `Deploying <b>v${esc(d.version)}</b>`;
   const X=expectedNow(),x=X?X[i.id]:d.expected;
@@ -2480,7 +2488,7 @@ const liveOn=(now=Date.now())=>!!probe&&now-probe.board.at>=-60e3&&now-probe.boa
 // A card as the live state reads it: { phase, at, head12, liveVersion }, or null (no fresh reading, an odd value).
 function liveCard(id,now=Date.now()){if(!liveOn(now)||typeof id!=="string"||!LIVE_ID.test(id)||!Object.hasOwn(probe.cards,id))return null;
   const c=probe.cards[id];if(!c||typeof c!=="object"||!PHASES.some(p=>p[0]===c.phase)||typeof c.headSha12!=="string"||!/^[0-9a-f]{12}$/.test(c.headSha12))return null;
-  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,onMain:c.onMain===true,liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null}}
+  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,onMain:c.onMain===true,shipping:c.shipping===true,liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null}}
 // The probe's context readings (#C592), { <role>: { pct, tokens, at } } of a fresh state; none otherwise, and a bad entry is
 // skipped. Its stuck roles (#C593) as [{ role, kind, card, since }], and its usage tile (#C595) or null.
 const isPct=v=>Number.isInteger(v)&&v>=0&&v<=100;
@@ -2611,7 +2619,9 @@ const SHIP_ROLE="Release";
 function shipNow(now=Date.now()){const a=liveAgent(SHIP_ROLE,now),L=a&&a.state==="working"&&a.card?liveCard(a.card,now):null;
   const open=new Set(state.initRaw.filter(i=>i&&i.status!=="done"&&i.status!=="dropped").map(i=>i.id));
   const byRun=[...open].find(id=>{const d=derivedOf(id);return !!d&&d.shipping===true});
-  const id=L&&L.phase===SHIP_PHASE?a.card:byRun||null;if(!id)return null;
+  // #C617: a ship run for the card's tip, by the probe's reading of GitHub's run titles, comes first.
+  const byProbe=[...open].find(id=>{const P=liveCard(id,now);return !!P&&P.shipping&&!P.onMain});
+  const id=byProbe||(L&&L.phase===SHIP_PHASE?a.card:byRun)||null;if(!id)return null;
   const d=derivedOf(id),e=d&&d.expected&&d.expected.shipping&&/^\d+\.\d+\.\d+$/.test(String(d.expected.version))?d.expected.version:null;
   return {id,version:e}}
 // #C613: the pill under the title, from the live state alone (no fresh reading: no pill, the page never says "safe" it can't
