@@ -13,12 +13,12 @@ const HOOK = fileURLToPath(new URL("../hooks/red-ask-board.py", import.meta.url)
 // The hook's verdict on a turn: "" when it lets the turn end, else its reason.
 // HOME is a fresh folder unless a test passes one (#C392: the hook reads ~/.flight-board), so the machine's own board
 // never leaks in.
-export function hook(lines, home = null) {
+export function hook(lines, home = null, env = {}) {
   const dir = mkdtempSync(join(tmpdir(), "fb-redask-"));
   try {
     const path = join(dir, "s.jsonl");
     writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
-    const r = spawnSync("python3", [HOOK], { input: JSON.stringify({ transcript_path: path }), encoding: "utf8", env: { ...process.env, HOME: home ?? dir } });
+    const r = spawnSync("python3", [HOOK], { input: JSON.stringify({ transcript_path: path }), encoding: "utf8", env: { ...process.env, CLAUDE_CODE_AUTO_COMPACT_WINDOW: "", ...env, HOME: home ?? dir } });
     assert.equal(r.status, 0, r.stderr);
     return r.stdout.trim() ? JSON.parse(r.stdout).reason : "";
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -201,6 +201,12 @@ test("the live tile: asked when the board's tile is 5+ points off or 30+ min old
   try { assert.match(hook(at1(430000), old), /says 43%, 31 min old/, "the same number, but 31 min old"); } finally { rmSync(old, { recursive: true, force: true }); }
   const small = tileHome("Builder", { pct: 50, tokens: 100000, at: now - 40 * 60e3 });
   try { assert.match(hook(at1(120000, "Builder"), small), /your context is 60% of its window/, "a 200k window, from 100k at 50%"); } finally { rmSync(small, { recursive: true, force: true }); }
+  // #C577: Manager's session runs with CLAUDE_CODE_AUTO_COMPACT_WINDOW=350000: 175k tokens is 50%, not 88% of 200k.
+  const win = tileHome("Manager", { pct: 40, tokens: 140000, at: now - 40 * 60e3 });
+  try {
+    assert.match(hook(at1(175000), win, { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "350000" }), /your context is 50% of its window \(175k tokens\)/);
+    assert.match(hook(at1(175000), win, { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "bogus" }), /your context is 88% of its window/, "an unreadable window falls back to the tile's");
+  } finally { rmSync(win, { recursive: true, force: true }); }
   const none = tileHome("Manager", null);
   try { assert.doesNotMatch(hook(at1(430000, "Collector"), none), /Memory tile/, "no tile for the role on this machine: never asked"); } finally { rmSync(none, { recursive: true, force: true }); }
 });

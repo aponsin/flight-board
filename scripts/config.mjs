@@ -18,7 +18,7 @@ export const DEFAULTS = {
   automationLabel: "Automation",
   // The write gate (gate/): the lead role, item ids that are passing agent states (never items), the words that make a
   // reply a verdict, where the gate keeps its state and the board's mirror, and how old a mirror may be.
-  gate: { managerRole: "Manager", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 75 },
+  gate: { managerRole: "Manager", keeperRole: "Context keeper", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 75 },
   // The collector (collector/): the team's repository and how its work shows there. notes: each review phase and the git
   // notes ref its sign-off is written to. deployWorkflow: the CI workflow whose successful run on the main branch means
   // live. lanePhases: the phases where one owner holds one card at a time (reviews and shipping queue). versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
@@ -99,6 +99,7 @@ export function checkConfig(c) {
     else {
       for (const k of Object.keys(g)) if (!Object.hasOwn(DEFAULTS.gate, k)) out.push(`gate: unknown field "${k}" (known: ${Object.keys(DEFAULTS.gate).join(", ")})`);
       if (g.managerRole !== undefined && !(typeof g.managerRole === "string" && NAME.test(g.managerRole))) out.push("gate.managerRole: a role name");
+      if (g.keeperRole !== undefined && !(typeof g.keeperRole === "string" && NAME.test(g.keeperRole))) out.push("gate.keeperRole: a role name");
       for (const k of ["transientPrefixes", "verdictWords"]) if (g[k] !== undefined && !(Array.isArray(g[k]) && g[k].every((w) => typeof w === "string" && w.trim().length >= 2 && w.length <= 60))) out.push(`gate.${k}: a list of short strings`);
       if (g.stateDir !== undefined && !(typeof g.stateDir === "string" && g.stateDir.length > 0)) out.push("gate.stateDir: a folder path");
       if (g.mirrorMaxAgeMin !== undefined && !(Number.isInteger(g.mirrorMaxAgeMin) && g.mirrorMaxAgeMin > 0)) out.push("gate.mirrorMaxAgeMin: whole minutes");

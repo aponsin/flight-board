@@ -230,6 +230,10 @@ def tile_ask():
             tile = r
     if tile:
         size = 1000000 if tile["tokens"] * 100 / tile["pct"] > 600000 else 200000
+        # #C577: a session started with CLAUDE_CODE_AUTO_COMPACT_WINDOW (Manager's 350k) works its % from that window.
+        _w = os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "")
+        if _w.isdigit() and 100000 <= int(_w) <= 2000000:
+            size = int(_w)
         pct = min(100, round(tokens * 100 / size))
         ms = int(time.time() * 1000)
         asked = read_json(os.path.join(fb, "ctx-asks", TITLE + ".json"))

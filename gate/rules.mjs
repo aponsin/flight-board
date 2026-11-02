@@ -149,13 +149,15 @@ export function writeErrors(w, { config, who, now }) {
     if (!who.role) e.push("no role for this session: give it its role as its title");
     else if (id !== who.role) e.push(`ctx/${id} is ${id}'s own tile; this session is ${who.role}`);
   }
+  // The context keeper (#C577, gate.keeperRole) updates every role's entry in meta/context, as the lead may; nothing else in it.
+  const keeper = who.role !== null && who.role !== undefined && who.role === config.gate.keeperRole;
   // A set or delete would replace or remove every role's entry: only the lead may.
   if (collection === "meta" && id === "context" && (op === "set" || op === "delete") && !who.manager) e.push(`meta/context: only ${config.gate.managerRole} may ${op} the whole document; update agents.${who.role ?? "<you>"} instead`);
   if (collection === "meta" && id === "context" && op === "update" && !who.manager) {
     const agents = data && typeof data === "object" ? Object.keys(data.agents ?? {}) : [];
     const others = Object.keys(data ?? {}).filter((k) => k !== "agents" && k !== "at");
     if (!who.role) e.push("no role for this session: give it its role as its title");
-    else if (agents.some((a) => a !== who.role) || others.length) e.push(`meta/context: ${who.role} may write only agents.${who.role}`);
+    else if ((!keeper && agents.some((a) => a !== who.role)) || others.length) e.push(`meta/context: ${who.role} may write only agents.${who.role}`);
   }
   // The log (#C335, gate/traffic.mjs): mechanical messages land here instead of with the lead. Each session writes its
   // own entries, once, exactly {from, kind, text, at}; only the lead deletes.

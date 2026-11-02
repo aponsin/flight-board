@@ -98,6 +98,16 @@ test("rule 6, case 7: ctx/<Role> only from that role's session; meta/context age
   ok(one({ op: "update", collection: "meta", doc_id: "context", data: { at: now, agents: { Release: { saved: true }, Builder: { pct: 3 } } } }, lead));
 });
 
+// #C577: the context keeper writes agents.<Role> for every role; nothing else in meta/context, and not the whole document.
+test("the context keeper updates every role's entry in meta/context, and nothing beyond it", () => {
+  const keeper = { role: "Context keeper", manager: false };
+  ok(one({ op: "update", collection: "meta", doc_id: "context", data: { at: now, agents: { Release: { pct: 41 }, Manager: { pct: 12 }, Builder: { pct: 3 } } } }, keeper));
+  has(one({ op: "update", collection: "meta", doc_id: "context", data: { agents: { Release: { pct: 41 } }, stuck: true } }, keeper), "may write only agents.");
+  has(one({ op: "set", collection: "meta", doc_id: "context", data: { agents: {} } }, keeper), "only Manager may set");
+  has(one({ op: "set", collection: "ctx", doc_id: "Release", data: { pct: 40, at: now } }, keeper), "Release's own tile");
+  has(one({ op: "update", collection: "meta", doc_id: "context", data: { agents: { Manager: { pct: 41 } } } }, { role: "Release", manager: false }), "only agents.Release");
+});
+
 test("the role is the session's title, never a /pickup in the talk; a title and FLIGHT_BOARD_ROLE that disagree refuse", () => {
   const lines = [{ type: "user", message: { content: "/pickup Manager" } }, { type: "custom-title", customTitle: "Release" }];
   assert.equal(sessionRole(lines).role, "Release");
