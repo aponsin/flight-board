@@ -3,6 +3,7 @@
 ## 0.3.4 - Unreleased
 
 ### Added
+- The answer gate (#C582, the owner's go): the red-ask Stop hook also holds the lead's turn while a waiting item the owner answered is still open (`respondedAt` set, no `done`, no `doneAt`, read from the board's mirror), naming each as "#T<n> <title> [id]" (five, then a count). Closing it this turn (done, doneAt, or a delete, in `waiting`) counts at once; no other agent is ever held. The hook is the owner's install copy in `~/.claude/hooks`: the next pack.
 - Cards declare what they wait on (#C444, goal 2 of 10-28): `dependsOn: ["<card id>", …]` on a card, the lead's alone (the gate refuses it, set or cleared, from anyone else; 1 to 10 other cards' ids, each once). The gate refuses a build start on the card while a dependency is still open on plan or build, by the repository's reading; the page shows one "waits on #C440, #C441" naming those that still hold its build (Designer, Checker). The lead's card fields can't be cleared around their rule (Security): another role's whole-card set carries `dependsOn`, `batch` and `bump` exactly as the board has them, and only the lead deletes a card. Gate part pinned: the next pack.
 
 ### Fixed
