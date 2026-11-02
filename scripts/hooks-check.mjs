@@ -6,8 +6,9 @@
 // config but left the Collector's fence on a copy that refuses it as an unknown field, and no hook said so: every hook
 // answers a config it can't read with silence. Exit 0: every copy accepts it; 1: a copy refuses it (each line named);
 // 2: nothing to check.
-import { readFileSync, existsSync, realpathSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { readFileSync, existsSync, realpathSync, statSync } from "node:fs";
+import { resolve, join, basename } from "node:path";
+import { homedir } from "node:os";
 import { pathToFileURL, fileURLToPath } from "node:url";
 
 // The folders of the flight-board scripts a text runs: the path before /gate|collector|scripts|worker/<file>.mjs. Quotes
@@ -19,10 +20,23 @@ export function pinnedRoots(texts) {
   return [...roots].sort();
 }
 
+// Only a pinned copy is ever imported (Security: a line in a file an agent can edit must not get a folder of its choosing
+// run as the owner): the root's real path is exactly <install root>/<40 hex>, a directory this user owns.
+export const INSTALL_ROOT = join(homedir(), ".flight-board", "install");
+export function isPinnedCopy(root, installRoot = INSTALL_ROOT, uid = process.getuid()) {
+  try {
+    const real = realpathSync(root), base = realpathSync(installRoot);
+    if (real !== join(base, basename(real)) || !/^[0-9a-f]{40}$/.test(basename(real))) return false;
+    const st = statSync(real);
+    return st.isDirectory() && st.uid === uid;
+  } catch { return false; }
+}
+
 // For each root: its checkConfig's problems with this config, or why it couldn't be asked. [{ root, problems }].
-export async function dryRun(roots, config) {
+export async function dryRun(roots, config, installRoot = INSTALL_ROOT) {
   const out = [];
   for (const root of roots) {
+    if (!isPinnedCopy(root, installRoot)) { out.push({ root, problems: ["not a pinned copy (<install root>/<signed commit>): not imported"] }); continue; }
     const file = join(root, "scripts", "config.mjs");
     if (!existsSync(file)) { out.push({ root, problems: ["no scripts/config.mjs there: nothing to check it against"], skipped: true }); continue; }
     try {
@@ -53,7 +67,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try { config = JSON.parse(readFileSync(resolve(configPath), "utf8")); } catch (e) { console.error(`CHECK FAILED the config: ${String(e.message).split("\n")[0]}`); process.exit(1); }
   const texts = [];
   for (const f of files) { try { texts.push(readFileSync(resolve(f), "utf8")); } catch { console.error(`CHECK FAILED cannot read ${f}`); process.exit(1); } }
-  const { lines, ok, checked } = report(await dryRun(pinnedRoots(texts), config));
+  const { lines, ok, checked } = report(await dryRun(pinnedRoots(texts), config, process.env.FLIGHT_BOARD_INSTALL_ROOT || INSTALL_ROOT));
   for (const l of lines) console.log(l);
   if (!checked) { console.error("CHECK FAILED no pinned hook found in those files: nothing was checked"); process.exit(2); }
   console.log(ok ? `hooks check: ${checked} pinned cop${checked > 1 ? "ies accept" : "y accepts"} the config` : "hooks check: FAILED");

@@ -28,6 +28,20 @@ test("a role is asked once per spell, and again after it was back", () => {
   assert.deepEqual(askOnce(["Checker"], { roles: {} }, T + 180e3).fresh, ["Checker"], "gone again: asked again");
 });
 
+test("with the config's roster the watch names only roster roles: a planted file can't wake or reset a stranger", () => {
+  const dir = mkdtempSync(join(tmpdir(), "roster-"));
+  writeFileSync(join(dir, "context-reset.json"), JSON.stringify({ at: T, roles: { Builder: T, Stranger: T } }));
+  writeFileSync(join(dir, "wake-roles.json"), JSON.stringify({ at: T, roles: { Checker: T, Intruder: T }, missing: { Mallory: T } }));
+  writeFileSync(join(dir, "owner-asks.json"), JSON.stringify({ at: T, asks: [{ card: "a-card", role: "Builder", since: T }, { card: "b-card", role: "Eve", since: T }] }));
+  const out = tick(dir, T, 1, ["Builder", "Checker"]).split("\n");
+  assert.equal(out.length, 3);
+  assert.ok(out.some((l) => l.startsWith("CONTEXT RESET Builder")));
+  assert.ok(out.some((l) => l.startsWith("WAKE Checker")));
+  assert.ok(out.some((l) => l.startsWith("ASK Builder a-card")));
+  assert.equal(out.some((l) => /Stranger|Intruder|Mallory|Eve/.test(l)), false);
+  assert.match(tick(mkdtempSync(join(tmpdir(), "roster-")), T, 1, ["Builder"]) ?? "none", /none/);
+});
+
 test("the wake watch prints WAKE lines and one ROSTER line, once", () => {
   const dir = mkdtempSync(join(tmpdir(), "wake-roles-"));
   assert.equal(tick(dir, T), null);

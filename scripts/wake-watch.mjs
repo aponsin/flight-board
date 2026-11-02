@@ -13,10 +13,10 @@ import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, A
 import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine } from "../gate/reset.mjs";
 
 // One look: the heartbeat, then the line to print, or null. Marks the wake seen only once it is returned.
-export function tick(dir, now, pid = process.pid) {
+export function tick(dir, now, pid = process.pid, roster = null) {
   const p = wakePaths(dir);
   writeAtomic(p.alive, JSON.stringify({ at: now, pid }));
-  const lines = resetLines(dir);
+  const lines = resetLines(dir, roster);
   const wake = readWakeFile(p.wake), seen = readWakeFile(p.seen);
   if (wakePending(wake, seen)) {
     writeAtomic(p.seen, JSON.stringify({ seq: wake.seq, at: wake.at }));
@@ -26,21 +26,23 @@ export function tick(dir, now, pid = process.pid) {
 }
 
 // The roles the probe asked to reset (#C592, gate/reset.mjs) that this watch has not printed yet; marks them printed.
-function resetLines(dir) {
+function resetLines(dir, roster = null) {
+  // Only roster roles are ever named (Security: a planted file in the state folder must not make the lead wake or reset a role the team does not have).
+  const onRoster = (r) => !roster || roster.includes(r);
   const read = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
   const out = [];
-  const asked = read(RESET_FILE), seen = read(RESET_SEEN_FILE), roles = resetPending(asked, seen);
+  const asked = read(RESET_FILE), seen = read(RESET_SEEN_FILE), roles = resetPending(asked, seen).filter(onRoster);
   if (roles.length) { writeAtomic(join(dir, RESET_SEEN_FILE), JSON.stringify(resetSeen(asked, seen, roles))); out.push(...roles.map(resetLine)); }
   // Roles with no open session (#C583): "WAKE <role>" for those with work, one "ROSTER missing" line for the rest.
   const wasked = read(WAKE_ROLES_FILE), wseen = read(WAKE_ROLES_SEEN_FILE);
-  const wake = resetPending(wasked, wseen, "roles"), missing = resetPending(wasked, wseen, "missing");
+  const wake = resetPending(wasked, wseen, "roles").filter(onRoster), missing = resetPending(wasked, wseen, "missing").filter(onRoster);
   if (wake.length || missing.length) {
     writeAtomic(join(dir, WAKE_ROLES_SEEN_FILE), JSON.stringify(resetSeen(wasked, resetSeen(wasked, wseen, wake, "roles"), missing, "missing")));
     out.push(...wake.map(roleWakeLine));
     if (missing.length) out.push(missingLine(missing));
   }
   // A question for the owner with no Needs-you item (#C584): "ASK <role> <card>", once per card.
-  const asks = read(ASKS_FILE), pending = asksPending(asks, read(ASKS_SEEN_FILE));
+  const asks = read(ASKS_FILE), pending = asksPending(asks, read(ASKS_SEEN_FILE)).filter((a) => onRoster(a.role));
   if (pending.length || (asks && !sameSeen(asks, read(ASKS_SEEN_FILE)))) writeAtomic(join(dir, ASKS_SEEN_FILE), JSON.stringify(asksSeen(asks)));
   out.push(...pending.map(askLine));
   return out;
@@ -83,7 +85,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const loop = () => {
     const now = Date.now();
     let line = null;
-    try { line = tick(dir, now); } catch { /* a file that can't be written this time: the next look tries again */ }
+    try { line = tick(dir, now, process.pid, config.roster); } catch { /* a file that can't be written this time: the next look tries again */ }
     if (line) console.log(line);
     if (now - start >= MAX_RUN_MS) { endWatch(dir); process.exit(0); }
   };
