@@ -117,6 +117,9 @@ section{min-width:0}
 .state.queued{background:var(--warn-soft);color:var(--warn)}
 .state.stalled{background:var(--bad-soft);color:var(--bad)}
 .stall{color:var(--bad);font-weight:600}
+.step.verifying{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent);border-style:dashed}
+.step.verifying::before{content:"◷ ";}
+.verify-line b{color:var(--ink);font-weight:600}.verify-line.late,.verify-line.late b{color:var(--warn-ink);font-weight:600}
 .ow-line{color:var(--accent);font-weight:600}
 @media (prefers-reduced-motion:reduce){.step.now{animation:none;box-shadow:inset 0 0 0 2px var(--panel),0 0 0 2px var(--accent)}}
 .step small{display:block;font-weight:400;opacity:.85;overflow:hidden;text-overflow:ellipsis}.step small.norec{color:var(--muted);font-style:italic}
@@ -1792,6 +1795,11 @@ function stalled(i){if(!i||i.status!=="active"||i.who===OWNER||(i.byEvidence&&i.
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];if(log.some(e=>e&&e.wait&&e.end==null))return 0;
   const last=num(i.lastStepAt)??log.reduce((m,e)=>Math.max(m,num(e&&e.end)??num(e&&e.start)??0),0);
   if(!last)return 0;const m=Math.floor((Date.now()-last)/60000);return m>=30?m:0}
+// Verifying (#C581): live by the evidence while its done test is still open, with the check's due time in the card's own
+// checkAt (Manager sets it when the pack is installed). Calm while it is due; "check overdue" in amber once it passes.
+function verifying(i){return !!i&&i.status!=="done"&&!!i.byEvidence&&i.phase===LIVE_PHASE&&num(i.checkAt)!=null}
+function verifyLine(i,now=Date.now()){if(!verifying(i))return "";const late=now>=i.checkAt;
+  return `<span class="verify-line${late?" late":""}">Live · <b>${late?"check overdue "+dur(now-i.checkAt):"checking at "+hhmm(i.checkAt)}</b>${late?"":` (in ${dur(i.checkAt-now)})`}</span>`}
 // A card's version is the repository's, never written by hand (#C211): live or deploying, the version it went out in;
 // in the ship run on now (its candidate branch names it), shipping now; signed and waiting, its place in the queue
 // (signed cards by when they went READY); else what it is in.
@@ -1890,7 +1898,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
     // A phase nobody has started says "up next" instead of pulsing as if someone were on it.
     const t=(ns&&n===idx)?`<small>${esc(queueLabel(i))}</small>`:(n===idx&&i.upNext&&!stuck&&i.status!=="done")?`<small>up next</small>`:(np&&n!==idx)?`<small>${esc(np.join(", "))}${times[k]?" · "+dur(times[k]):""}</small>`:(n===idx&&i.status!=="done"&&i.who)?`<small>${esc(i.who)}${times[k]?" · "+dur(times[k]):""}</small>`:times[k]?`<small>${dur(times[k])}</small>`:skip.includes(k)?"<small>not needed</small>":(i.status==="done"||n<idx)&&k!==LIVE_PHASE?'<small class="norec">no record</small>':"<small>&nbsp;</small>";// While Release ships: an estimate from past ships (tests ~7 min, then deploy, ~10 min in all), labelled "est.".
     const sm=k==="ship"&&n===idx&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
-    const sd=sm!=null?`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`:k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";return pre+`<div class="${c}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}">${esc(l)}${t}${sd}</div>`}).join("");
+    const sd=sm!=null?`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`:k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";const vf=k===LIVE_PHASE&&n===idx&&verifying(i);return pre+`<div class="${vf?"step verifying":c}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:t}${sd}</div>`}).join("");
   const chips=issueChips(i);
   const eta=cardEta(i);
   let etaHtml;
@@ -1904,7 +1912,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   const vn=i.status!=="done"?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
   const st=stalled(i),ow=i.status!=="done"?ownerWait(i):null;
-  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:ow?"Waiting on you":st?"Stalled":liveBuilding(i.id)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
+  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":verifying(i)?"Verifying":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:ow?"Waiting on you":st?"Stalled":liveBuilding(i.id)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
   const owHtml=ow?`<span class="ow-line">waiting on you: <a href="#" class="t-ref" data-tref="${esc(ow.id)}">${esc(threadName(ow.id))}</a></span>`:"";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
   // An agent the live state shows working on it since then has moved too (#C449).
@@ -1918,11 +1926,11 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
-  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
+  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
-   <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${(()=>{const g=liveOpen?[]:gaps(i);return g.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(g.join(" · "))}</span>`:""})()}</div>${thread}</div>`;
+   <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${(()=>{const g=liveOpen?[]:gaps(i);return g.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(g.join(" · "))}</span>`:""})()}</div>${thread}</div>`;
 }
 // Who is on what: { by: { agent: [open cards] }, names: the roster, then anyone else on a card, notes: meta/crew's idle notes }.
 function crewBy(){
