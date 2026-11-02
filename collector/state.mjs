@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
-import { wakePaths, readWakeFile, nextWakeFile } from "../gate/wake.mjs";
+import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 
 // The folder this run's code lives in: the pinned copy <install root>/<full sha>, whose sha is the board's probe.
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -345,9 +345,20 @@ export function lastWriteAt(path, now) {
   return t >= 1577836800000 && t <= 4102444800000 ? t : null;
 }
 
+// The lead's wake watch as two times (#C590): its heartbeat (wake-watch.alive.json) and the last wake it handled
+// (wake-seen.json, the wake's own time). Times only; a missing, odd or future time is none.
+export function wakeTimes(dir, now) {
+  const time = (name) => {
+    const r = readTail(join(dir, name), 4096);
+    if (!r?.whole) return null;
+    try { const t = JSON.parse(r.text)?.at; return Number.isInteger(t) && t >= 1577836800000 && t <= now + 60e3 ? t : null; } catch { return null; }
+  };
+  return { wakeAlive: time(ALIVE_FILE), wakeSeen: time(SEEN_FILE) };
+}
+
 // The state that leaves, checked against the allowlist before it does.
-export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null }) {
-  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite }, cards, agents };
+export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null }) {
+  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen }, cards, agents };
   const errs = stateErrors(s);
   if (errs.length) throw new Error(`the state doesn't fit the plan (${errs.length} problem(s), first: ${errs[0]})`);
   return pickState(s);
@@ -455,7 +466,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try { pageVersion = basename(readlinkSync(join(stateDir, "current"))); } catch { /* no link */ }
   let state;
   try {
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now) });
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardStates({ cards, config, repos, now }), agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
     // The roles stopped on a prompt (#C526), for the Collector's alarm and the watchdog (#C529): roles, times and tool
     // classes only, on this machine only.

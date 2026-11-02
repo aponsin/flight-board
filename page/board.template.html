@@ -26,6 +26,9 @@ h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;
 .clock{font:600 1rem var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .live-dot.on{background:var(--ok)}
+.mgr-chip{display:inline-block;font:600 .72rem var(--mono);padding:2px 8px;border-radius:999px;white-space:normal}
+.mgr-chip.ok{background:var(--ok-soft);color:var(--ok)}.mgr-chip.warn{background:var(--warn-soft);color:var(--warn-ink)}.mgr-chip.bad{background:var(--bad-soft);color:var(--bad)}
+.t-seen{font:.7rem var(--mono);color:var(--muted);text-align:right}
 h2{font:700 1.15rem/1.2 var(--display);letter-spacing:.06em;text-transform:uppercase;margin:0 0 10px;color:var(--muted)}
 section{min-width:0}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px}
@@ -486,7 +489,7 @@ table.crew3-ph{margin-top:14px}
 <div class="wrap">
   <header>
     <h1>{{TITLE}}<span class="livever" id="livever"></span></h1>
-    <div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div>
+    <div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span> <span class="mgr-chip" id="mgrchip" hidden></span></div>
   </header>
   <div class="shipline" id="shipline" role="status" hidden></div>
   <div class="stuckline" id="threadsfull" role="status" hidden></div>
@@ -1361,7 +1364,7 @@ function fitBox(t){if(!t||t.tagName!=="TEXTAREA"||!t.style)return;cmpHas(t);
   if(top<t.scrollTop)t.scrollTop=top;else if(top+lh>t.scrollTop+t.clientHeight)t.scrollTop=top+lh-t.clientHeight}
 document.addEventListener("input",e=>fitBox(e.target));
 function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&blobId(f.id));
-  return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${askText(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}</div>`}
+  return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${askText(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}${seenTick(m)}</div>`}
 // A thread: its reply box at the top, then the messages, newest first (display only: threadOf stays oldest first). An
 // unanswered ask draws it with box false, so its own response box above is the only one. where: the place it is drawn
 // (the same thread can show in two places), for unique ids.
@@ -2454,6 +2457,25 @@ function typedClashes(c,now=Date.now()){if(!c||typeof c.id!=="string"||!liveOn(n
 // notes ref (collector.notes, "refs/notes/linguist") ends in the role's name, as the Collector's reviewerOf reads it.
 const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHASE)||[])[0]
   ||Object.entries((CONFIG.collector&&CONFIG.collector.notes)||{}).find(([k,ref])=>typeof ref==="string"&&ref.split("/").pop().toLowerCase()===String(n).toLowerCase()&&k!==BUILD_PHASE&&k!==LIVE_PHASE)?.[0]||null;
+// The Manager chip and the "seen" ticks (#C590). The probe carries two times from the Studio: the wake watch's heartbeat
+// (board.wakeAliveAt) and the last wake it handled (board.wakeSeenAt). Times only. A heartbeat more than WAKE_ALIVE_MAX
+// older than the probe's own reading, or none, is "not listening"; a probe from before this carries neither key, and the
+// chip stays hidden. A message is answered once anyone but the owner wrote after it in its thread.
+const WAKE_ALIVE_MAX=3*60e3;
+function ownerUnanswered(){const own=state.messages.filter(m=>m&&m.from===OWNER&&isT(m.at)).sort((a,b)=>b.at-a.at)[0];
+  return own&&!state.messages.some(m=>m&&m.thread===own.thread&&m.from!==OWNER&&isT(m.at)&&m.at>own.at)?own:null}
+function managerChip(now=Date.now()){if(!liveOn(now)||!Object.hasOwn(probe.board,"wakeAliveAt"))return null;
+  const b=probe.board,alive=isT(b.wakeAliveAt)?b.wakeAliveAt:null;
+  if(alive==null||b.at-alive>WAKE_ALIVE_MAX)return {cls:"bad",text:alive==null?"Manager not listening · say wake up the team":`Manager not listening since ${hhmm(alive)} · say wake up the team`};
+  const open=ownerUnanswered();
+  if(open&&isT(b.wakeSeenAt)&&b.wakeSeenAt>=open.at)return {cls:"warn",text:`seen your ${hhmm(open.at)} message · answer coming`};
+  return {cls:"ok",text:open?"Manager listening":`Manager listening · caught up ${hhmm(alive)}`}}
+function renderManagerChip(){const el=$("mgrchip");if(!el)return;const c=managerChip();el.hidden=!c;if(c){el.className="mgr-chip "+c.cls;el.textContent=c.text}}
+// Under the owner's message: "seen" once the watch has handled a wake at or after it; the time is the wake's, shown on the
+// newest such message (the older ones are before it, with no time of their own).
+function seenTick(m,now=Date.now()){if(m.from!==OWNER||!liveOn(now)||!isT(probe.board.wakeSeenAt)||!isT(m.at)||m.at>probe.board.wakeSeenAt)return "";
+  const newest=!state.messages.some(x=>x&&x.from===OWNER&&isT(x.at)&&x.at>m.at&&x.at<=probe.board.wakeSeenAt);
+  return `<div class="t-seen">${newest?"seen "+hhmm(probe.board.wakeSeenAt):"seen"}</div>`}
 // Data behind (#C452, the owner at 23:44Z: "Needs you 0" and "No initiatives in flight" while the db held both, the
 // header "live · 1 min": the db's stream had gone quiet with no error). The live state carries the db's last write
 // (board.lastWriteAt, the gate's journal); the page holds data up to dbHeld(), its newest doc `at` or its last receipt,
@@ -2488,7 +2510,7 @@ function catchUp(now=Date.now()){if(!dataBehind(now)){resyncAt=null;return null}
   try{location.reload()}catch(e){}return "reloaded"}
 const stampLine=(now=Date.now())=>stampText(now)+(probeNote?" · "+probeNote:"");
 let dbSynced=null,dbState="";
-function renderStamp(){const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
+function renderStamp(){renderManagerChip();const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
   // Why the board reads the db (a lapsed connector, an odd reading) shows as words, not only on hover: a phone has none
   // (Checker on live-source).
   el.textContent=stampLine();
