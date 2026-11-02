@@ -2,7 +2,7 @@
 // "seen" ticks under the owner's messages read them.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadNames } from "./harness.mjs";
@@ -79,4 +79,16 @@ test("a 'seen' tick under the owner's messages the watch has handled: the time o
   assert.equal(b.seenTick(c), `<div class="t-seen">seen ${hh(now - MIN)}</div>`);
   assert.equal(b.seenTick(late), "", "after the last wake it handled");
   assert.equal(b.seenTick(mgr), "", "only the owner's");
+});
+
+// #C606: the chip sits at the header's top right (first in the right block, above the clock), not inline after the stamp.
+test("the Manager chip is in the header's right block above the clock, and that block wraps below the title on a phone", () => {
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  const header = html.match(/<header>([\s\S]*?)<\/header>/)[1];
+  const right = header.match(/<div class="hdr-right">([\s\S]*)<\/div>\s*$/)[1];
+  assert.ok(right.indexOf('id="mgrchip"') >= 0 && right.indexOf('id="mgrchip"') < right.indexOf('class="clock"'), "chip first in the right block");
+  const clock = header.match(/<div class="clock">([\s\S]*?)<\/div>/)[1];
+  assert.ok(!clock.includes("mgrchip"), "not inline after the stamp");
+  assert.match(html, /header\{[^}]*flex-wrap:wrap/, "the header wraps");
+  assert.match(html, /\.hdr-right\{[^}]*max-width:100%/, "the block never outgrows the phone");
 });

@@ -23,6 +23,8 @@ body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);padding:20
 .wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
 header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 16px}
 h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;margin:0}
+/* The Manager chip sits at the header's top right, above the clock; with no room beside the title the whole block wraps below it. */
+.hdr-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:100%;text-align:right}
 .clock{font:600 1rem var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
 .live-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
 .live-dot.on{background:var(--ok)}
@@ -494,7 +496,7 @@ table.crew3-ph{margin-top:14px}
 <div class="wrap">
   <header>
     <h1>{{TITLE}}<span class="livever" id="livever"></span></h1>
-    <div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span> <span class="mgr-chip" id="mgrchip" hidden></span></div>
+    <div class="hdr-right"><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div></div>
   </header>
   <div class="shipline" id="shipline" role="status" hidden></div>
   <div class="stuckline" id="threadsfull" role="status" hidden></div>
