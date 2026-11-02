@@ -376,7 +376,18 @@ export function ownerWordErrors(w, { config, who, seen, batch = [] }) {
   if (op === "set" && answered) return [`waiting/${id} holds the owner's answer: never set over it (${config.gate.managerRole} reopens an ask with update {response: {__delete__: true}})`];
   // Its wording is frozen once answered (Security: the Stop hook reads "chose A on: <its text>", so new text would put
   // words in the owner's mouth): only closing it (done, doneAt) and the lead's response clear (writeErrors) change it.
-  if (op === "update" && answered && data && typeof data === "object" && Object.keys(data).some((k) => !["done", "doneAt", "response"].includes(k))) return ["the owner answered this ask: its wording is frozen; open a new ask for another question"];
+  // #C597, one thread per question: the lead may turn an answered answer into a decision in place, in the one update that also
+  // clears the owner's response (nothing of theirs is left for new words to be read as): kind decision, its options (two at
+  // least, each with key and label) and the text and respondedAt that go with it. The owner's reply stays in the thread.
+  const converts = who.manager && doc?.kind === "answer" && data && typeof data === "object" && data.kind === "decision" && data.response && typeof data.response === "object" && data.response.__delete__ === true;
+  if (op === "update" && answered && converts) {
+    const opts = Array.isArray(data.options) ? data.options.filter((o) => o && o.key && o.label) : [];
+    const keys = Object.keys(data).filter((k) => !["done", "doneAt", "response", "kind", "options", "text", "respondedAt"].includes(k));
+    if (opts.length < 2) return ["a decision needs at least two options {key, label}: the owner picks with a button each"];
+    if (keys.length) return [`turning an answered answer into a decision changes only kind, options, text and the response it clears (not ${keys.map(idText).join(", ")})`];
+    return [];
+  }
+  if (op === "update" && answered && data && typeof data === "object" && Object.keys(data).some((k) => !["done", "doneAt", "response"].includes(k))) return ["the owner answered this ask: its wording is frozen; open a new ask for another question (or, to turn an answer into a decision in place, update {kind: \"decision\", options, response: {__delete__: true}})"];
   if (op === "delete" && answered && !who.manager) return [`only ${config.gate.managerRole} deletes an ask the owner answered`];
   return [];
 }
@@ -607,7 +618,9 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
   if (collection === "messages") return [...threadErrors(w, { mirror, batch, now: at }), ...threadNumberedErrors(w, { mirror, batch }), ...questionAskErrors(w, { config, mirror, batch })];
   if (collection === "waiting") {
     const was = op !== "set" && op !== "delete" && data && typeof data === "object" && !("kind" in data) ? (mirror?.docs?.waiting ?? []).find((x) => x.id === id) : null;
-    return [...threadNumberedErrors(w, { mirror, batch }), ...(was ? choiceErrors(data, was.kind) : [])];
+    // #C597: options on an existing ask that isn't a decision, with no kind named, draw no buttons: name the kind.
+    const orphan = was && was.kind !== "decision" && Array.isArray(data.options) ? [`options show as buttons only on kind "decision": this ask is ${idText(was.kind ?? "of no kind")}; update {kind: "decision", options} to turn it into a decision in place`] : [];
+    return [...threadNumberedErrors(w, { mirror, batch }), ...(was ? choiceErrors(data, was.kind) : []), ...orphan];
   }
   if (collection === "steps") return [...phaseOverlapErrors(w, { config, mirror, batch }), ...dependsOnErrors(w, { config, mirror, batch })];
   if (collection === PLAN) return planMirrorErrors(w, { mirror, batch });
