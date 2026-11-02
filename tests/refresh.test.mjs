@@ -126,7 +126,8 @@ test("the hook: the lead only, state from the collector's files, its ask remembe
     const fresh = transcript("Manager", user("refresh", Date.now() - 60e3));
     writeFileSync(join(state, "export-since.json"), JSON.stringify({ at: Date.now() - 30 * MIN }));
     const r = hook(JSON.stringify({ transcript_path: fresh }));
-    assert.equal(r.status, 2, r.stderr); assert.match(r.stderr, /taskId board-collector/);
+    assert.equal(r.status, 0, r.stderr); assert.equal(r.stderr, "", "nothing on stderr: the app reads exit 2 and some phrases as a missing script");
+    assert.equal(JSON.parse(r.stdout).decision, "block"); assert.match(JSON.parse(r.stdout).reason, /taskId board-collector/);
     assert.equal(hook("not json").status, 0);
     assert.equal(hook("{}", ["--config", join(dir, "missing.json")]).status, 0);
   } finally { rmSync(dir, { recursive: true, force: true }); }

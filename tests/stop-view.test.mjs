@@ -139,8 +139,10 @@ test("the hook: the cursor is keyed by role, so a reset (a new transcript, same 
       { type: "assistant", message: { content: [{ type: "tool_use", id: "q2", name: "ArtifactData", input: { url: URL_, action: "query", collection: "waiting", query: { where: [["respondedAt", ">", 0]], limit: 100 } } }] } },
       { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "q2", content: "0 documents from collection \"waiting\"." }] } }];
     const asked = hook("s0", turn());
-    assert.equal(asked.status, 2, "the hook itself asks for the live check");
-    assert.match(asked.stderr, /live board check/);
+    assert.equal(asked.status, 0, "a refusal is a JSON block, exit 0 (#C588)");
+    assert.equal(asked.stderr, "");
+    assert.equal(JSON.parse(asked.stdout).decision, "block");
+    assert.match(JSON.parse(asked.stdout).reason, /live board check/, "the hook itself asks for the live check");
     const none = hook("s1", turn(LIVE));
     assert.equal(none.status, 0);
     assert.match(JSON.parse(none.stdout).systemMessage, /no board mirror/);
@@ -166,8 +168,8 @@ test("the hook: the cursor is keyed by role, so a reset (a new transcript, same 
     writeFileSync(join(board, "mirror", "messages", "m4.json"), JSON.stringify({ thread: "t-c", from: "Owner", text: "still there?", at: listed - 5 * MIN }));
     stamp();
     const open = hook("s3", turn(LIVE));
-    assert.equal(open.status, 2);
-    assert.match(open.stderr, /thread t-c "still there\?"/);
+    assert.equal(open.status, 0);
+    assert.match(JSON.parse(open.stdout).reason, /thread t-c "still there\?"/);
     assert.ok(SLACK > 5 * MIN);
     // A forced stop passes, and records only a clean check.
     const before = lastPass(join(board, "stop.json"), "Manager", Date.now());

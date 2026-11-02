@@ -209,6 +209,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const config = fullConfig(raw);
     reason = main(JSON.parse(readFileSync(0, "utf8")), { config, git: localMain, ships: localShips(config.collector.candidatePattern) });
   } catch { process.exit(0); }
-  if (reason) { process.stderr.write(reason + "\n"); process.exit(2); }
+  // A JSON block on stdout, exit 0 (#C588): the app lets an exit 2 through when its text reads as a missing script.
+  if (reason) { process.stdout.write(JSON.stringify({ decision: "block", reason })); process.exit(0); }
   process.exit(0);
 }

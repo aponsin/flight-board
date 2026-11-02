@@ -262,7 +262,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // The live check's messages are kept even on a refused or second stop: they are what the lead's query saw.
     if (liveNext) { try { writeLive(lp, key, liveNext); } catch { /* none kept: the next query reads a day back */ } }
     if (input.stop_hook_active) process.exit(0);
-    if (errs.length) { process.stderr.write(`Before you finish:\n- ${errs.join("\n- ")}\n`); process.exit(2); }
+    // A refusal is a JSON block on stdout with exit 0 (#C588), as the red-ask hook does: the app read exit 2 with a phrase
+    // like "can't open" in the stderr text (an unanswered thread quoted in the refusal) as a missing script and let the stop
+    // through, so the refusal never reached the lead.
+    if (errs.length) { process.stdout.write(JSON.stringify({ decision: "block", reason: `Before you finish:\n- ${errs.join("\n- ")}` })); process.exit(0); }
     if (note) process.stdout.write(JSON.stringify({ systemMessage: note }));
     process.exit(0);
   });
