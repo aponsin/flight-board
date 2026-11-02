@@ -13,9 +13,9 @@ reads 0 Messages, so "idle and under 5,000" would send a second /pickup to a Man
 The script's "picked-up" reads a working session under 60,000 Messages tokens at an earlier check as a pickup, so the
 task skips a Manager already that small before the reset (it is fresh already, and its reset turn would read as one).
 
-A "CONTEXT RESET" turn gets no reset cue from the board's stop hook, so Manager doesn't send Steward "PICKUP WATCH
-Manager" for it: this task is the only one sending the pickup. If Steward watches anyway, the script's "picked-up" stops
-the second sender.
+Steward may send "/pickup Manager" too (#C498: it does for Manager's own clears, and may for this one). Whichever
+sender is second sees a Manager already picked up: this task's script reads "picked-up" and sends nothing more, so the
+pickup goes out once either way.
 
 The task's permissions allow Bash for exactly the command `sleep 60` (an exact rule) and for the pickup-watch script
 under the same rule Steward holds, `Bash(node ~/.flight-board/current/scripts/pickup-watch.mjs *)`, never Bash in
