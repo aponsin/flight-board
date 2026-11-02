@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, STEP_MS, USER_MS, WEEK_MS } from "../collector/readings.mjs";
 import { createHash } from "node:crypto";
 import { checkConfig } from "../scripts/config.mjs";
-import { usageTile, nextReset, scriptMatches, buildState } from "../collector/state.mjs";
+import { usageTile, nextReset, scriptMatches, pinnedScript, buildState } from "../collector/state.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
 import { resetPending, resetSeen, resetLine } from "../gate/reset.mjs";
 import { tick } from "../scripts/wake-watch.mjs";
@@ -78,34 +78,35 @@ test("usage: top five as shares by role, scheduled and other; pace from the plan
 
 test("the usage script runs once a day, keeps its rows, and a failing script leaves the last tile", () => {
   const dir = mkdtempSync(join(tmpdir(), "usage-"));
-  const calls = [];
-  const run = (args) => { calls.push(args); return JSON.stringify({ rows: [{ source: "Manager", share: 0.5 }, { source: "scheduled: x", share: 0.5 }] }); };
-  const a = usageTile({ script: "/s/spend.py", scriptOk: true, dir, roster: ["Manager"], now: T, run });
+  const calls = [], inputs = [];
+  const run = (args, input) => { calls.push(args); inputs.push(input); return JSON.stringify({ rows: [{ source: "Manager", share: 0.5 }, { source: "scheduled: x", share: 0.5 }] }); };
+  const a = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: T, run });
   assert.ok(a.save && a.save.ranAt);
-  assert.deepEqual(calls[0].slice(0, 3), ["-I", "/s/spend.py", "--json"]);
+  assert.deepEqual(calls[0].slice(0, 3), ["-I", "-", "--json"], "the script comes on stdin, never by its path");
+  assert.equal(inputs[0], "print(1)", "the bytes that were checked are the bytes run");
   writeFileSync(join(dir, "usage.json"), JSON.stringify({ ranAt: T, rows: a.rows }));
-  const b = usageTile({ script: "/s/spend.py", scriptOk: true, dir, roster: ["Manager"], now: T + 3600e3, run });
+  const b = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: T + 3600e3, run });
   assert.equal(b.save, null);
   assert.equal(calls.length, 1, "not again within a day");
   // A failing script is tried again after an hour, then two, to a day: not every minute (Checker).
   const bad = []; const fail = () => { bad.push(1); throw new Error("no"); };
   const at = T + 25 * 3600e3, kept = { ranAt: T, rows: a.rows, total: null, resetsAt: null };
   writeFileSync(join(dir, "usage.json"), JSON.stringify(kept));
-  const c = usageTile({ script: "/s/spend.py", scriptOk: true, dir, roster: ["Manager"], now: at, run: fail });
+  const c = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: at, run: fail });
   assert.equal(bad.length, 1);
   assert.equal(c.tile.top[0].pct, 50, "the last rows stand");
   assert.deepEqual([c.save.failUntil, c.save.wait], [at + 3600e3, 7200e3]);
   writeFileSync(join(dir, "usage.json"), JSON.stringify(c.save));
-  for (let m = 1; m < 60; m++) usageTile({ script: "/s/spend.py", scriptOk: true, dir, roster: ["Manager"], now: at + m * 60e3, run: fail });
+  for (let m = 1; m < 60; m++) usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: at + m * 60e3, run: fail });
   assert.equal(bad.length, 1, "59 more minutes: not one more try");
-  const d = usageTile({ script: "/s/spend.py", scriptOk: true, dir, roster: ["Manager"], now: at + 3600e3, run: fail });
+  const d = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: at + 3600e3, run: fail });
   assert.equal(bad.length, 2, "an hour on: tried again");
   assert.deepEqual([d.save.failUntil, d.save.wait], [at + 3600e3 + 7200e3, 4 * 3600e3], "and the wait doubles");
   // A script that isn't the pinned one is never run.
-  const unpinned = usageTile({ script: "/s/spend.py", scriptOk: false, dir: mkdtempSync(join(tmpdir(), "usage-")), roster: ["Manager"], now: T, run });
+  const unpinned = usageTile({ scriptText: null, dir: mkdtempSync(join(tmpdir(), "usage-")), roster: ["Manager"], now: T, run });
   assert.equal(unpinned.tile, null);
   assert.equal(calls.length, 1, "run was never called for it");
-  assert.equal(usageTile({ script: "", dir: mkdtempSync(join(tmpdir(), "usage-")), roster: [], now: T, run }).tile, null, "no script, no tile");
+  assert.equal(usageTile({ scriptText: null, dir: mkdtempSync(join(tmpdir(), "usage-")), roster: [], now: T, run }).tile, null, "no script, no tile");
 });
 
 test("the pinned script: its sha256 is the config's, or it is not run; a script needs its pin in the config", () => {
@@ -113,6 +114,8 @@ test("the pinned script: its sha256 is the config's, or it is not run; a script 
   const file = join(dir, "spend.py");
   writeFileSync(file, "print('x')\n");
   const sha = createHash("sha256").update("print('x')\n").digest("hex");
+  assert.equal(pinnedScript(file, sha), "print('x')\n", "the checked text is what comes back to be run");
+  assert.equal(pinnedScript(file, "0".repeat(64)), null, "another hash: nothing to run");
   assert.equal(scriptMatches(file, sha), true);
   assert.equal(scriptMatches(file, "0".repeat(64)), false, "another file's hash");
   assert.equal(scriptMatches(file, ""), false, "no pin, no run");
@@ -141,15 +144,16 @@ test("the week is the config's: the script is asked from the last reset, week % 
   assert.equal(nextReset(reset, now), nextAt, "any one reset anchors every week");
   assert.equal(nextReset(reset, Date.parse(reset) - 1), Date.parse(reset));
   assert.equal(nextReset("", now), null);
-  const a = usageTile({ script: "/s/spend.py", scriptOk: true, dir, roster: ["Manager"], now, run, quota: 1000, resetAt: reset });
+  assert.equal(nextReset(new Date(nextAt + 28 * 24 * 3600e3).toISOString(), now), nextAt, "an anchor weeks ahead folds back to the next reset");
+  const a = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now, run, quota: 1000, resetAt: reset });
   assert.equal(calls[0][4], new Date(nextAt - WEEK_MS).toISOString().slice(0, 16), "since the last reset");
   assert.deepEqual([a.tile.weekPct, a.tile.pace, a.tile.level], [65, 130, "amber"], "65% used at half the week: 1.3x");
   writeFileSync(join(dir, "usage.json"), JSON.stringify({ ranAt: now, rows: a.rows, total: a.total, resetsAt: a.resetsAt }));
-  assert.equal(usageTile({ script: "/s/spend.py", scriptOk: true, dir, roster: ["Manager"], now: now + 3600e3, run, quota: 1000, resetAt: reset }).save, null);
+  assert.equal(usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: now + 3600e3, run, quota: 1000, resetAt: reset }).save, null);
   assert.equal(calls.length, 1);
-  const rolled = usageTile({ script: "/s/spend.py", scriptOk: true, dir, roster: ["Manager"], now: nextAt + 3600e3, run, quota: 1000, resetAt: reset });
+  const rolled = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: nextAt + 3600e3, run, quota: 1000, resetAt: reset });
   assert.ok(rolled.save && rolled.save.ranAt, "the week turned: run again at once");
-  assert.equal(usageTile({ script: "/s/spend.py", scriptOk: true, dir: mkdtempSync(join(tmpdir(), "usage-")), roster: ["Manager"], now, run, quota: 0, resetAt: reset }).tile.weekPct, null, "no quota, no percent");
+  assert.equal(usageTile({ scriptText: "print(1)", dir: mkdtempSync(join(tmpdir(), "usage-")), roster: ["Manager"], now, run, quota: 0, resetAt: reset }).tile.weekPct, null, "no quota, no percent");
 });
 
 test("the state carries ctx, stuck and usage only as the schema allows", () => {

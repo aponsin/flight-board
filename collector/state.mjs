@@ -388,26 +388,31 @@ export function phaseClashIds(cards, states) {
 
 // The pinned script: the file's sha256 is the config's (Security, as for the keeper's prompt), read as a regular file of this
 // user's and never followed through a link. False without either, or on any difference.
-export function scriptMatches(path, sha256, uid = process.getuid()) {
-  if (!path || !/^[0-9a-f]{64}$/.test(String(sha256 ?? ""))) return false;
+// The bytes read are the bytes run (python3 -I - on stdin), so the file can't be swapped between the check and the run
+// (Security). The script's text when it is the pinned one, else null.
+export function pinnedScript(path, sha256, uid = process.getuid()) {
+  if (!path || !/^[0-9a-f]{64}$/.test(String(sha256 ?? ""))) return null;
   const r = readTail(path, 1024 * 1024, uid);
-  return !!r?.whole && createHash("sha256").update(r.text, "utf8").digest("hex") === sha256;
+  return r?.whole && createHash("sha256").update(r.text, "utf8").digest("hex") === sha256 ? r.text : null;
 }
-// The usage tile (#C595): the spend script run once a day (python3 -I, read-only, its --json rows only), kept in
+export const scriptMatches = (path, sha256, uid) => pinnedScript(path, sha256, uid) !== null;
+// The usage tile (#C595): the spend script run once a day (python3 -I -, its text on stdin, its --json rows only), kept in
 // <dir>/usage.json between runs. The week is the config's: usageResetAt is any one weekly reset, so the week now runs from
 // the last one to the next, and the script is asked for that span (--since); week % is its weighted total over usageQuota,
 // and pace follows from how much of the week is gone. Nothing needs the app or a model. A script that fails leaves the last
 // tile; a week that rolled over runs it again at once. A run that fails is not tried again for an hour, then two, and so on
-// to a day (failUntil, wait: Checker found it retrying every minute), and a script that isn't the pinned one (scriptOk, its
-// sha256 against collector.usageScriptSha256, Security) is never run. { tile, save, rows, total, resetsAt }: save is the
-// usage.json to write (null: nothing changed).
+// to a day (failUntil, wait: Checker found it retrying every minute), and a script that isn't the pinned one (scriptText is
+// null: its sha256 against collector.usageScriptSha256, Security) is never run. The week % uses the total as of the last run,
+// up to a day old, against today's clock: the pace reads a little low late in the day. { tile, save, rows, total, resetsAt }:
+// save is the usage.json to write (null: nothing changed).
 export const USAGE_EVERY_MS = 24 * 3600e3, WEEK_SPAN_MS = 7 * 24 * 3600e3, USAGE_RETRY_MIN_MS = 3600e3;
 export function nextReset(anchorIso, now) {
   const a = Date.parse(anchorIso ?? "");
   if (!Number.isFinite(a)) return null;
-  return now < a ? a : a + Math.ceil((now - a + 1) / WEEK_SPAN_MS) * WEEK_SPAN_MS;
+  // The next reset after now, whichever side of it the anchor is on: an anchor weeks ahead folds back by whole weeks.
+  return a + Math.ceil((now - a + 1) / WEEK_SPAN_MS) * WEEK_SPAN_MS;
 }
-export function usageTile({ script, scriptOk = false, dir, roster, now, run, quota = 0, resetAt = "" }) {
+export function usageTile({ scriptText = null, dir, roster, now, run, quota = 0, resetAt = "" }) {
   const read = (name) => { const r = readTail(join(dir, name), 64 * 1024); try { return r?.whole ? JSON.parse(r.text) : null; } catch { return null; } };
   const kept = read("usage.json");
   const resetsAt = nextReset(resetAt, now);
@@ -415,10 +420,10 @@ export function usageTile({ script, scriptOk = false, dir, roster, now, run, quo
   const failUntil = plain(kept) && Number.isInteger(kept.failUntil) && kept.failUntil > 0 ? kept.failUntil : 0;
   const wait = plain(kept) && Number.isInteger(kept.wait) ? Math.min(USAGE_EVERY_MS, Math.max(USAGE_RETRY_MIN_MS, kept.wait)) : USAGE_RETRY_MIN_MS;
   let rows = fresh ? kept.rows : null, total = fresh ? kept.total : null, save = null;
-  if (!rows && script && scriptOk && now >= failUntil) {
+  if (!rows && typeof scriptText === "string" && now >= failUntil) {
     try {
       const since = new Date(resetsAt ? resetsAt - WEEK_SPAN_MS : now - WEEK_SPAN_MS).toISOString().slice(0, 16);
-      const out = JSON.parse(run(["-I", script, "--json", "--since", since]));
+      const out = JSON.parse(run(["-I", "-", "--json", "--since", since], scriptText));
       rows = Array.isArray(out?.rows) ? out.rows.map((r) => ({ source: String(r?.source ?? "").slice(0, 80), share: r?.share })) : null;
       total = Number.isFinite(out?.total_weighted) && out.total_weighted >= 0 ? out.total_weighted : null;
     } catch { rows = null; }
@@ -553,7 +558,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   // The lead is never cued to reset by the probe (TEAM.md: the lead hands off on its own, when idle over its limit).
   const resets = resetAsks(Object.fromEntries(Object.entries(ctx).filter(([role]) => role !== config.gate.managerRole)), resetBefore, now);
   const dir = join(stateDir, id);
-  const spend = usageTile({ script: c.usageScript, scriptOk: scriptMatches(c.usageScript, c.usageScriptSha256), dir, roster: config.roster, now, quota: c.usageQuota, resetAt: c.usageResetAt, run: (args) => execFileSync("python3", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 60_000, maxBuffer: 16 * 1024 * 1024 }) });
+  const spend = usageTile({ scriptText: pinnedScript(c.usageScript, c.usageScriptSha256), dir, roster: config.roster, now, quota: c.usageQuota, resetAt: c.usageResetAt, run: (args, input) => execFileSync("python3", args, { input, encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 60_000, maxBuffer: 16 * 1024 * 1024 }) });
   let pageVersion = null;
   try { pageVersion = basename(readlinkSync(join(stateDir, "current"))); } catch { /* no link */ }
   let state;

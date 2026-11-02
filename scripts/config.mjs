@@ -153,7 +153,7 @@ export function checkConfig(c) {
           if (set.length && set.length < 3) out.push("collector.keeper: skill, prompt and promptSha256 all set, or none");
         }
       }
-      if (k.usageScript !== undefined && !(k.usageScript === "" || (typeof k.usageScript === "string" && /^\/[A-Za-z0-9._\/-]{1,200}\.py$/.test(k.usageScript) && !k.usageScript.split("/").some((s) => s === ".." || s === ".")))) out.push("collector.usageScript: an absolute path to a .py file (#C595, the probe runs it daily, read-only), or empty");
+      if (k.usageScript !== undefined && !(k.usageScript === "" || (typeof k.usageScript === "string" && /^\/[A-Za-z0-9._\/-]{1,200}\.py$/.test(k.usageScript) && !k.usageScript.split("/").some((s) => s === ".." || s === ".")))) out.push("collector.usageScript: an absolute path to a .py file (#C595, the probe runs it daily, only if its sha256 is usageScriptSha256), or empty");
       if (k.usageScriptSha256 !== undefined && !(k.usageScriptSha256 === "" || /^[0-9a-f]{64}$/.test(String(k.usageScriptSha256)))) out.push("collector.usageScriptSha256: 64 hex digits (the script's sha256), or empty");
       if (k.usageScript && !/^[0-9a-f]{64}$/.test(String(k.usageScriptSha256 ?? ""))) out.push("collector.usageScript needs collector.usageScriptSha256: the probe runs only the script it was pinned to");
       if (k.usageQuota !== undefined && !(Number.isInteger(k.usageQuota) && k.usageQuota >= 0 && k.usageQuota <= 1e12)) out.push("collector.usageQuota: the week's quota in the spend script's weighted tokens (whole number), or 0 for none");
