@@ -117,10 +117,25 @@ function restartBoard({ agents = {}, cards = { "c-1": { phase: "ship", headSha12
 const bash = (ago, extra = {}) => ({ state: "working", tool: "Bash", lastActivityAt: Date.now() - ago, since: Date.now() - 5 * 60e3, ...extra });
 const pill = (b) => { b.renderRestart(); return { hidden: b.els.restartbadge.hidden, cls: b.els.restartbadge.className, text: b.els.restartbadge.textContent }; };
 
-test("Safe to restart when nothing runs: agents idle, or working on something other than a command in the ship phase", () => {
+test("Safe to restart when nothing runs: agents idle, between commands (a command over 15 s old off the ship phase), or on another tool", () => {
   assert.deepEqual(pill(restartBoard({ agents: { Release: { state: "idle", card: null, lastActivityAt: Date.now() - 5 * 60e3 } } })), { hidden: false, cls: "rb ok", text: "Safe to restart" });
-  const b = restartBoard({ agents: { Builder: bash(5e3, { card: "c-2" }) }, cards: { "c-2": { phase: "build", headSha12: "a1b2c3d4e5f6" } } });
-  assert.equal(pill(b).text, "Safe to restart", "a builder's command on a build card is ordinary work");
+  const build = { "c-2": { phase: "build", headSha12: "a1b2c3d4e5f6" } };
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(20e3, { card: "c-2" }) }, cards: build })).text, "Safe to restart", "a builder's command 20 s ago: between commands");
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(5e3, { card: "c-2", tool: "Edit" }) }, cards: build })).text, "Safe to restart", "an edit is not a push");
+});
+
+// Checker's finding on 787b376: Builder, Boardsmith and Checker push from the build, test and checker phases.
+test("Not now while any agent but the lead runs a command in the last 15 s, in any phase (choice c)", () => {
+  const build = { "c-2": { phase: "build", headSha12: "a1b2c3d4e5f6" } };
+  assert.deepEqual(pill(restartBoard({ agents: { Builder: bash(10e3, { card: "c-2" }) }, cards: build })), { hidden: false, cls: "rb bad", text: "Not now: Builder is running a command" });
+  assert.equal(pill(restartBoard({ agents: { Checker: bash(10e3, { card: null }) } })).text, "Not now: Checker is running a command", "no card needed");
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(10e3, { card: "c-2" }), Checker: bash(2e3, { card: "c-2" }) }, cards: build })).text, "Not now: Builder is running a command", "the first by name");
+});
+
+test("the pill's tooltip says it is an estimate from each agent's last tool, not the command", () => {
+  const b = restartBoard({ agents: { Builder: bash(10e3, { card: "c-1" }) } });
+  b.renderRestart();
+  assert.match(b.els.restartbadge.title, /estimate from each agent's last tool call.*not from the command/);
 });
 
 test("Not now while a ship runs, Release is on a command, or another agent runs one on a ship-phase card", () => {

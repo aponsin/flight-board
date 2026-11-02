@@ -2617,17 +2617,22 @@ function shipNow(now=Date.now()){const a=liveAgent(SHIP_ROLE,now),L=a&&a.state==
 // know). Not now: a ship running (shipNow), Release on a command (a publish or push with no ship card), or any other
 // agent on a command (its last tool is Bash, within CMD_FRESH) while its card is in the ship phase. The probe sees the tool's
 // class, not the command, so "mid-push or mid-install" is this approximation. A scheduled task running is not in the probe.
-const CMD_FRESH=45e3;
+// Any other agent on a command in the last CMD_NOW (the owner's choice c via Manager, Checker's finding): a push or an install
+// in flight shows as a Bash call a few seconds old; older than that it is between commands.
+const CMD_FRESH=45e3,CMD_NOW=15e3;
 function restartState(now=Date.now()){if(!liveOn(now))return null;
   const s=shipNow(now);if(s)return {ok:false,why:`Release is shipping${s.version?` v${s.version}`:""}`};
-  for(const n of Object.keys(probe.agents).sort()){if(n===LEAD_ROLE)continue;const la=liveAgent(n,now),a=probe.agents[n];
-    if(!la||la.state!=="working"||!a||a.tool!=="Bash"||!isT(a.lastActivityAt)||now-a.lastActivityAt>CMD_FRESH)continue;
-    const L=la.card?liveCard(la.card,now):null;
+  const roles=Object.keys(probe.agents).filter(n=>n!==LEAD_ROLE).sort(),cmd=n=>{const la=liveAgent(n,now),a=probe.agents[n];
+    return la&&la.state==="working"&&a&&a.tool==="Bash"&&isT(a.lastActivityAt)?{la,age:now-a.lastActivityAt}:null};
+  for(const n of roles){const c=cmd(n);if(!c||c.age>CMD_FRESH)continue;
+    const L=c.la.card?liveCard(c.la.card,now):null;
     if(n===SHIP_ROLE)return {ok:false,why:`${n} is publishing`};
     if(L&&L.phase===SHIP_PHASE)return {ok:false,why:`${n} is pushing or installing`}}
+  for(const n of roles){const c=cmd(n);if(c&&c.age<=CMD_NOW)return {ok:false,why:`${n} is running a command`}}
   return {ok:true,why:""}}
+const RESTART_TIP="An estimate from each agent's last tool call (and how recent it was), not from the command itself.";
 function renderRestart(){const el=$("restartbadge");if(!el)return;const r=restartState();el.hidden=!r;if(!r)return;
-  el.className="rb "+(r.ok?"ok":"bad");el.textContent=r.ok?"Safe to restart":"Not now: "+r.why}
+  el.className="rb "+(r.ok?"ok":"bad");el.textContent=r.ok?"Safe to restart":"Not now: "+r.why;el.title=RESTART_TIP}
 function renderShipLine(){const el=$("shipline");if(!el)return;const s=shipNow();el.hidden=!s;if(!s){el.innerHTML="";return}
   const i=state.initRaw.find(x=>x&&x.id===s.id),n=i&&Number.isInteger(i.num)?`#C${i.num}`:esc(s.id);
   el.innerHTML=`<b>Don't restart: shipping.</b> ${esc(SHIP_ROLE)} is shipping ${s.version?`<b>v${esc(s.version)}</b> `:""}(${n}); closing the agents now would stop it halfway.`}
