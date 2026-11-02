@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C585 the gate refuses resolved:true on the lead's answer to the owner's newest message, and a resolve older than the owner's newest word. Mutation on the update rule caught by resolve-answers.test. 1010/1010 at 4468d6e.
