@@ -7,6 +7,7 @@ import { PLAN, planWriteErrors, planMirrorErrors, initiativePlanErrors } from ".
 import { idText } from "../collector/text.mjs";
 import { contextRoles, contextWriteErrors, isContextWrite } from "../collector/context.mjs";
 import { mechanicalClass } from "./traffic.mjs";
+import { approvalWriteErrors, agentPrWriteErrors } from "./agent-prs.mjs";
 import { buildingNow, liveCard } from "../collector/state-schema.mjs";
 import { reworkOwed, issueTotal, signalText, ISSUE_KINDS } from "../collector/rework.mjs";
 
@@ -177,6 +178,10 @@ export function writeErrors(w, { config, who, now }) {
   }
   // The plan (board v3, gate/plan.mjs): the lead's alone, never deleted, every field checked.
   if (collection === PLAN) return [...e, ...planWriteErrors(w, { who, config, now })];
+  // The agent's pull requests (#C554, gate/agent-prs.mjs): the owner's approval is the page's alone, no session writes it; the
+  // pull requests' entries are Reviewer's, Release's and the lead's, each field checked.
+  if (collection === "approvals") return approvalWriteErrors({ id });
+  if (collection === "agentPrs") return [...e, ...agentPrWriteErrors(w, { who, config, now })];
   // The owner's words are the page's alone (#C337, Security: since #C334 the Stop hook puts them in the lead's refusal
   // with a hook's weight): no session writes a message from the owner, nor an ask's response. The lead may only clear a
   // response, to reopen an ask that isn't done (Manager: an owner's pick that was really a question).
