@@ -1,0 +1,1 @@
+PASS Quick (Checker, 2026-11-02): #C608 Live now shows the newer of meta/live (written on each SHIPPED, after the deploy succeeds) and the Collector's reading; a meta/live that is no x.y.z is ignored; deploying still from mainVersion. verParts strips the v. Built on stack 2's f6e48c4: ship with or after it. 1029/1029.
