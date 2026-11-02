@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): stack 1 tip. The pinned script's checked bytes run on stdin (python3 -I -); the real spend script works this way (stdlib only, no __file__, about 5 s, --json shape matches). nextReset folds a far-future anchor back to the next reset. The wake watch joins the owner's pinned files. 999/999.
