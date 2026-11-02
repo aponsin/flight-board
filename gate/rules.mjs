@@ -338,6 +338,13 @@ const STUCK_AFTER = 3;
 // - only the lead deletes a message, one the gate can see and that isn't the owner's.
 // An ask the owner answered (a response on it) is never set over nor reworded, and only the lead deletes it: the lead
 // reopens it with the response clear only.
+// The time of the owner's newest message in a thread, from the board as the gate saw it and this call's earlier sets; null
+// when they have none there.
+function ownerLast(seen, batch, thread, owner, others = false) {
+  const docs = [...(seen?.docs?.messages ?? []), ...batch.filter((b) => b.collection === "messages" && b.op === "set" && !(b.data?.resolved === true && others)).map((b) => ({ id: b.doc_id, ...(b.data ?? {}) }))];
+  const at = docs.filter((d) => d.thread === thread && (d.from === owner) !== others && Number.isFinite(d.at)).map((d) => d.at);
+  return at.length ? Math.max(...at) : null;
+}
 export function ownerWordErrors(w, { config, who, seen, batch = [] }) {
   const { op, collection, doc_id: id, data } = w;
   if (collection !== "messages" && collection !== "waiting") return [];
@@ -346,6 +353,12 @@ export function ownerWordErrors(w, { config, who, seen, batch = [] }) {
   if (collection === "messages") {
     const owners = doc?.from === config.owner;
     if (op === "set" && doc) return [`messages/${id} is already on the board: a new message gets a new id`];
+    // An answer is not resolved before the owner has read it (#C585: on 11-01 an answer was marked resolved and hidden
+    // before they saw it). A lead message set with resolved: true into a thread whose newest owner message it answers, or an
+    // update resolving a lead message older than the owner's newest word in its thread, is refused; the lead resolves the
+    // thread once the owner has replied.
+    if (who.manager && op === "set" && data?.resolved === true && typeof data.thread === "string" && data.from !== config.owner && ownerLast(seen, batch, data.thread, config.owner) !== null && ownerLast(seen, batch, data.thread, config.owner) >= (ownerLast(seen, batch, data.thread, config.owner, true) ?? -Infinity)) return [`a message that answers the owner isn't set resolved: they haven't read it yet; resolve the thread after they reply (${idText(data.thread)})`];
+    if (who.manager && op === "update" && data?.resolved === true && doc && doc.from !== config.owner && typeof doc.thread === "string" && Number.isFinite(doc.at) && (ownerLast(seen, batch, doc.thread, config.owner) ?? -Infinity) > doc.at) return [`the owner's newest message in ${idText(doc.thread)} is still unanswered: answer it before marking the thread resolved`];
     if (op === "update") {
       const keys = data && typeof data === "object" ? Object.keys(data) : [];
       if (!who.manager || !keys.length || keys.some((k) => k !== "resolved") || data.resolved !== true) return [`a message is never changed: only ${config.gate.managerRole} marks a thread resolved (update {resolved: true})`];
