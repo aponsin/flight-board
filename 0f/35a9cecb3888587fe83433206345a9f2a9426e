@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): #C589 the card's check button writes the owner's status-check message in the card's thread. Same as 47fac55. 1010/1010 at 4468d6e.
