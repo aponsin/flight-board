@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-02): stack 1 tip. Spend script pinned by sha256 and retried after 1 h then doubling (reproduced: runs at minutes 0, 60, 180 over 6 h, not every minute); the lead is never cued to reset (mutation caught by probe-readings.test); CHANGELOG has #C590 to #C595. 999/999.
