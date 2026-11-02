@@ -104,3 +104,40 @@ test("no line when Release is idle, works on a card in review, or a shipping car
     assert.equal(b.els.shipline.hidden, true);
   }
 });
+
+// #C613: the pill under the title (placement C). Green Safe to restart, red Not now: <what>, nothing without a fresh reading.
+function restartBoard({ agents = {}, cards = { "c-1": { phase: "ship", headSha12: "a1b2c3d4e5f6" } }, derived = {}, fresh = true } = {}) {
+  const b = loadNames(["shipNow", "restartState", "renderRestart", "probeEvent"]);
+  b.state.initRaw = [{ id: "c-1", num: 499, status: "active" }, { id: "c-2", num: 500, status: "active" }];
+  b.state.derived = [{ id: "all", cards: derived }];
+  b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - (fresh ? 20e3 : 20 * 60e3) }, cards, agents } } });
+  return b;
+}
+const bash = (ago, extra = {}) => ({ state: "working", tool: "Bash", lastActivityAt: Date.now() - ago, since: Date.now() - 5 * 60e3, ...extra });
+const pill = (b) => { b.renderRestart(); return { hidden: b.els.restartbadge.hidden, cls: b.els.restartbadge.className, text: b.els.restartbadge.textContent }; };
+
+test("Safe to restart when nothing runs: agents idle, or working on something other than a command in the ship phase", () => {
+  assert.deepEqual(pill(restartBoard({ agents: { Release: { state: "idle", card: null, lastActivityAt: Date.now() - 5 * 60e3 } } })), { hidden: false, cls: "rb ok", text: "Safe to restart" });
+  const b = restartBoard({ agents: { Builder: bash(5e3, { card: "c-2" }) }, cards: { "c-2": { phase: "build", headSha12: "a1b2c3d4e5f6" } } });
+  assert.equal(pill(b).text, "Safe to restart", "a builder's command on a build card is ordinary work");
+});
+
+test("Not now while a ship runs, Release is on a command, or another agent runs one on a ship-phase card", () => {
+  assert.equal(pill(restartBoard({ agents: { Release: { state: "working", card: "c-1", since: Date.now() - 60e3 } } })).text, "Not now: Release is shipping");
+  assert.equal(pill(restartBoard({ derived: { "c-2": { phase: "ship", shipping: true, expected: { version: "1.169.0", shipping: true } } } })).text, "Not now: Release is shipping v1.169.0");
+  const rel = pill(restartBoard({ agents: { Release: bash(10e3, { card: "c-2" }) }, cards: { "c-2": { phase: "live", headSha12: "a1b2c3d4e5f6" } } }));
+  assert.deepEqual(rel, { hidden: false, cls: "rb bad", text: "Not now: Release is publishing" });
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(10e3, { card: "c-1" }) } })).text, "Not now: Builder is pushing or installing");
+});
+
+test("a command more than 45 s old, a non-command tool, or the lead's own command is not a reason", () => {
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(60e3, { card: "c-1" }) } })).text, "Safe to restart");
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(5e3, { card: "c-1", tool: "Edit" }) } })).text, "Safe to restart");
+  assert.equal(pill(restartBoard({ agents: { Manager: bash(5e3, { card: "c-1" }) } })).text, "Safe to restart");
+});
+
+test("no fresh live reading: no pill (the page never says safe when it can't know)", () => {
+  assert.equal(pill(restartBoard({ fresh: false, agents: { Builder: bash(5e3, { card: "c-1" }) } })).hidden, true);
+  const b = loadNames(["restartState", "renderRestart"]);
+  assert.equal(b.restartState(), null);
+});

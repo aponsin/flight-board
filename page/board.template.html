@@ -31,6 +31,9 @@ h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;
 .live-dot.on{background:var(--ok)}
 .mgr-chip{display:inline-block;font:600 .72rem var(--mono);padding:2px 8px;border-radius:999px;white-space:normal}
 .mgr-chip[hidden]{display:none}
+.rb{display:inline-block;margin-top:8px;font:700 .8rem var(--mono);padding:3px 10px;border-radius:999px;color:#fff}
+.rb[hidden]{display:none}
+.rb.ok{background:var(--ok)}.rb.bad{background:var(--bad)}
 .boardver{font:600 .75rem var(--mono);color:var(--muted);margin-top:6px}
 .mgr-chip.ok{background:var(--ok-soft);color:var(--ok)}.mgr-chip.warn{background:var(--warn-soft);color:var(--warn-ink)}.mgr-chip.bad{background:var(--bad-soft);color:var(--bad)}
 .t-seen{font:.7rem var(--mono);color:var(--muted);text-align:right}
@@ -500,7 +503,7 @@ table.crew3-ph{margin-top:14px}
 
 <div class="wrap">
   <header>
-    <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div></div>
+    <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="rb" id="restartbadge" role="status" hidden></div><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div></div>
     <div class="hdr-right"><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div></div>
   </header>
   <div class="shipline" id="shipline" role="status" hidden></div>
@@ -2583,7 +2586,7 @@ function catchUp(now=Date.now()){if(!dataBehind(now)){resyncAt=null;return null}
   try{location.reload()}catch(e){}return "reloaded"}
 const stampLine=(now=Date.now())=>stampText(now)+(probeNote?" · "+probeNote:"");
 let dbSynced=null,dbState="";
-function renderStamp(){renderManagerChip();renderBoardVer();const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
+function renderStamp(){renderManagerChip();renderBoardVer();renderRestart();const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
   // Why the board reads the db (a lapsed connector, an odd reading) shows as words, not only on hover: a phone has none
   // (Checker on live-source).
   el.textContent=stampLine();
@@ -2610,6 +2613,21 @@ function shipNow(now=Date.now()){const a=liveAgent(SHIP_ROLE,now),L=a&&a.state==
   const id=L&&L.phase===SHIP_PHASE?a.card:byRun||null;if(!id)return null;
   const d=derivedOf(id),e=d&&d.expected&&d.expected.shipping&&/^\d+\.\d+\.\d+$/.test(String(d.expected.version))?d.expected.version:null;
   return {id,version:e}}
+// #C613: the pill under the title, from the live state alone (no fresh reading: no pill, the page never says "safe" it can't
+// know). Not now: a ship running (shipNow), Release on a command (a publish or push with no ship card), or any other
+// agent on a command (its last tool is Bash, within CMD_FRESH) while its card is in the ship phase. The probe sees the tool's
+// class, not the command, so "mid-push or mid-install" is this approximation. A scheduled task running is not in the probe.
+const CMD_FRESH=45e3;
+function restartState(now=Date.now()){if(!liveOn(now))return null;
+  const s=shipNow(now);if(s)return {ok:false,why:`Release is shipping${s.version?` v${s.version}`:""}`};
+  for(const n of Object.keys(probe.agents).sort()){if(n===LEAD_ROLE)continue;const la=liveAgent(n,now),a=probe.agents[n];
+    if(!la||la.state!=="working"||!a||a.tool!=="Bash"||!isT(a.lastActivityAt)||now-a.lastActivityAt>CMD_FRESH)continue;
+    const L=la.card?liveCard(la.card,now):null;
+    if(n===SHIP_ROLE)return {ok:false,why:`${n} is publishing`};
+    if(L&&L.phase===SHIP_PHASE)return {ok:false,why:`${n} is pushing or installing`}}
+  return {ok:true,why:""}}
+function renderRestart(){const el=$("restartbadge");if(!el)return;const r=restartState();el.hidden=!r;if(!r)return;
+  el.className="rb "+(r.ok?"ok":"bad");el.textContent=r.ok?"Safe to restart":"Not now: "+r.why}
 function renderShipLine(){const el=$("shipline");if(!el)return;const s=shipNow();el.hidden=!s;if(!s){el.innerHTML="";return}
   const i=state.initRaw.find(x=>x&&x.id===s.id),n=i&&Number.isInteger(i.num)?`#C${i.num}`:esc(s.id);
   el.innerHTML=`<b>Don't restart: shipping.</b> ${esc(SHIP_ROLE)} is shipping ${s.version?`<b>v${esc(s.version)}</b> `:""}(${n}); closing the agents now would stop it halfway.`}
