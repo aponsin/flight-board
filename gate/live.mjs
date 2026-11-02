@@ -19,6 +19,12 @@ const KEEP_DAYS = 2, KEEP = 300;
 export const LIVE_LIMIT = 100;
 // Every lead turn runs it (#C406): #C394's 5-minute throttle let a turn end unchecked a minute after a check, and Manager
 // missed the owner's 18:03Z reply for ~10 min. The owner's A in #T1037 was one query per turn.
+// Then at most once a minute (#C556, the usage cuts the owner OK'd: 62% of the lead's board calls were reads, many of
+// them this check): a turn ending under LIVE_EVERY after the last whole check isn't asked again, so a burst of turns
+// costs one check. The owner accepted up to a minute's wait; a reply waits one turn more at most, never #C394's ten.
+export const LIVE_EVERY = 60e3;
+// Whether this turn owes the check: none whole yet, the last one LIVE_EVERY old, or one stamped ahead of this clock.
+export const liveDue = (checkedAt, now) => checkedAt == null || now - checkedAt >= LIVE_EVERY || checkedAt > now;
 
 export const livePath = (config) => join(home(config.gate.stateDir), boardId(config) ?? "no-board", "live.json");
 // { checkedAt, msgs, asks } for a role: checkedAt the last turn whose check was read whole (null: never), msgs its owner
@@ -51,7 +57,7 @@ const LIVE_MAX = 1000;
 // cut short or half done, so it is asked again with the largest page.
 export function liveAsk(config, since, cut = false) {
   const where = JSON.stringify([["from", "==", config.owner], ["at", ">", since]]), replied = JSON.stringify([["respondedAt", ">", since]]);
-  const why = cut ? "your last one came back cut short (its limit filled, or more pages) or without both queries, so it doesn't count yet; run both again" : "every turn: pings sent while you work are dropped";
+  const why = cut ? "your last one came back cut short (its limit filled, or more pages) or without both queries, so it doesn't count yet; run both again" : "once a minute: pings sent while you work are dropped";
   const limit = cut ? LIVE_MAX : LIVE_LIMIT;
   return `live board check (${why}): two ArtifactData queries, url ${config.artifactUrl}: collection "messages", query {"where": ${where}, "limit": ${limit}}; and collection "waiting", query {"where": ${replied}, "limit": ${limit}}. Answer, in its thread, any message they show that you haven't answered, and act on any reply; then finish`;
 }

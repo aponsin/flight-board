@@ -13,7 +13,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readLines, sessionRole, currentTurn, turnCalls, lastReply } from "./session.mjs";
 import { writesOf, writeState, home, readMirror, withJournal } from "./gate.mjs";
 import { openOwnerWords, WAIT_MIN } from "./owner-waits.mjs";
-import { turnLive, nextLive, liveAsk, liveSince, livePath, readLive, writeLive } from "./live.mjs";
+import { turnLive, nextLive, liveAsk, liveSince, livePath, readLive, writeLive, liveDue } from "./live.mjs";
 import { idText } from "../collector/text.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
@@ -204,8 +204,9 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   for (const t of new Set(asked)) {
     if (!writes.some((w) => w.collection === "messages" && w.op !== "delete" && w.data?.thread === t)) out.push(`the owner wrote in thread ${idText(t)}: answer there (messages {thread: "${idText(t)}", from: "${role}", text, at}), not only here`);
   }
-  // Every turn runs the check (#C406); a cut-short or half-done one is asked again: its checkedAt didn't move.
-  if (live?.require && (fresh === null || !fresh.complete)) out.push(liveAsk(config, liveSince(stored.checkedAt, now), fresh !== null));
+  // The check, once a minute (#C556, liveDue); a cut-short or half-done one is asked again whenever: its checkedAt didn't
+  // move, and what it missed may be the owner's.
+  if (live?.require && (fresh === null ? liveDue(stored.checkedAt, now) : !fresh.complete)) out.push(liveAsk(config, liveSince(stored.checkedAt, now), fresh !== null));
   // With no mirror, the live check's finds still count (they need none); the rest of the board waits for one.
   if (!view) {
     const bare = { docs: { messages: [], waiting: [] }, at: now, atBy: {} };
