@@ -219,7 +219,10 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   // #C607: an ask the lead marked done (waiting update/set done:true) stays done in the kept copy: the live query reads only
   // replies newer than the last check, so it never returns the closed document again, and the copy kept from before the
   // lead acted listed it as owed on every later turn.
-  const closed = new Set(writes.filter((w) => w.collection === "waiting" && w.op !== "delete" && w.data?.done === true).map((w) => w.doc_id));
+  // Only a write that landed counts (Security): a refused, conflicting or failed one leaves the item open on the board.
+  const landed = turnCalls(turn, { succeeded: true }).filter((c) => c.name === "ArtifactData" && id && String(c.input.url ?? "").includes(id) && WRITES.has(c.input.action))
+    .flatMap((c) => { try { return writesOf(c.input); } catch { return []; } });
+  const closed = new Set(landed.filter((w) => w.collection === "waiting" && w.op !== "delete" && w.data?.done === true).map((w) => w.doc_id));
   if (closed.size) liveNext.asks = liveNext.asks.map((a) => (closed.has(a.id) ? { ...a, done: true } : a));
   const out = [];
   const reply = lastReply(turn);

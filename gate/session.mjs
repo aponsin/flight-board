@@ -45,11 +45,26 @@ export function turnText(turn, role) {
 }
 
 // The tool calls the assistant made this turn: [{ name, input }].
-export function turnCalls(turn) {
-  const out = [];
+// succeeded: only the calls whose result came back without an error, a refusal or a conflict (a write the gate refused, an
+// if_version conflict or a failed batch landed nothing).
+const FAILED = /refused|conflict|nothing is written|writes nothing|not committed|blocked/i;
+export function turnCalls(turn, { succeeded = false } = {}) {
+  const out = [], results = new Map();
+  for (const l of turn) {
+    if (l?.type !== "user" || !Array.isArray(l.message?.content)) continue;
+    for (const p of l.message.content) if (p?.type === "tool_result") results.set(p.tool_use_id, p);
+  }
   for (const l of turn) {
     if (l?.type !== "assistant" || !Array.isArray(l.message?.content)) continue;
-    for (const p of l.message.content) if (p?.type === "tool_use") out.push({ name: p.name, input: p.input ?? {} });
+    for (const p of l.message.content) {
+      if (p?.type !== "tool_use") continue;
+      if (succeeded) {
+        const r = results.get(p.id);
+        const text = typeof r?.content === "string" ? r.content : Array.isArray(r?.content) ? r.content.map((c) => c?.text ?? "").join(" ") : "";
+        if (!r || r.is_error || FAILED.test(text)) continue;
+      }
+      out.push({ name: p.name, input: p.input ?? {} });
+    }
   }
   return out;
 }

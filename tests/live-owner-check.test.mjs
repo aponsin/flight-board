@@ -92,15 +92,28 @@ test("an ask the lead closed stays closed in the kept copy: not listed on the tu
   const ids = ["c554-picks-1793601593123", "c572-card-ok-1793601764395", "c581-look-1793602326200", "c580-prompt-test-1793601118149"];
   const kept = ids.map((id, n) => ({ id, respondedAt: NOW - (20 - n) * MIN, response: { at: NOW - (20 - n) * MIN, status: n === 3 ? "help" : "chose", ...(n === 3 ? {} : { choice: "A" }), note: "" }, text: `item ${n}`, since: NOW - HOUR }));
   const stored = { checkedAt: NOW - 2 * MIN, msgs: [], asks: kept };
-  const close = (id, n) => ({ type: "assistant", message: { content: [{ type: "tool_use", id: `w${n}`, name: "ArtifactData", input: { url: URL_, action: "update", collection: "waiting", doc_id: id, data: { done: true, doneAt: NOW - MIN }, if_version: 2 } }] } });
+  const closeCall = (id, n) => ({ type: "assistant", message: { content: [{ type: "tool_use", id: `w${n}`, name: "ArtifactData", input: { url: URL_, action: "update", collection: "waiting", doc_id: id, data: { done: true, doneAt: NOW - MIN }, if_version: 2 } }] } });
+  const answer = (n, content, error = false) => ({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: `w${n}`, content, ...(error ? { is_error: true } : {}) }] } });
+  const close = (id, n, content = 'Database update committed: "waiting"/x. The document is now at version 3.') => [closeCall(id, n), answer(n, content)];
   const since = NOW - 2 * MIN - LIVE_SLACK, w = [["from", "==", "Owner"], ["at", ">", since]];
   const checked = [...query([], { where: w }), ...waitingQ([], { since })];
   assert.equal(run(turn(checked), { stored }).errs.length, 1, "before it acts: all four owed");
-  const r = run(turn([...ids.map(close), ...checked]), { stored });
+  const r = run(turn([...ids.flatMap(close), ...checked]), { stored });
   assert.deepEqual(r.errs, [], "the turn that closes them");
   assert.ok(r.liveNext.asks.every((a) => a.done === true), "kept as done");
   assert.deepEqual(run(turn(checked), { stored: r.liveNext }).errs, [], "and the next turn lists none");
-  const half = run(turn([close(ids[0], 9), ...checked]), { stored });
+  // Security: a write that never landed (no result, an error, the gate's refusal, a version conflict, a failed batch) closes nothing.
+  for (const [what, parts] of [
+    ["no result", [closeCall(ids[0], 5)]],
+    ["an error", [closeCall(ids[0], 5), answer(5, "boom", true)]],
+    ["a gate refusal", [closeCall(ids[0], 5), answer(5, "Flight board refused this write: not yours")]],
+    ["a version conflict", [closeCall(ids[0], 5), answer(5, "Write failed: version conflict, nothing is written; current version 4")]],
+  ]) {
+    const f = run(turn([...parts, ...checked]), { stored });
+    assert.ok(f.liveNext.asks.every((a) => !a.done), `${what}: nothing marked done`);
+    assert.match(run(turn(checked), { stored: f.liveNext }).errs.join("\n"), /4 things need you/, `${what}: still owed`);
+  }
+  const half = run(turn([...close(ids[0], 9), ...checked]), { stored });
   assert.deepEqual(half.liveNext.asks.filter((a) => !a.done).map((a) => a.id).sort(), ids.slice(1).sort(), "only the one it closed");
   assert.match(run(turn(checked), { stored: half.liveNext }).errs.join("\n"), /3 things need you/);
 });
