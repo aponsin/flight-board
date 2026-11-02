@@ -11,6 +11,7 @@ import { ownerAsks, askSince } from "../collector/readings.mjs";
 import { asksPending, asksSeen, askLine } from "../gate/reset.mjs";
 import { tick } from "../scripts/wake-watch.mjs";
 import { stopRun, asksOwnerWithoutItem } from "../gate/stop.mjs";
+import { mirrorFresh } from "../collector/state.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 
 const T = 1_800_000_000_000, MIN = 60e3;
@@ -29,6 +30,15 @@ test("a card waiting on the owner with no open Needs-you item is listed, once an
   assert.deepEqual(ownerAsks({ cards, waiting, owner: "Pat" }), [{ card: "font-download", role: "Builder" }], "a closed item doesn't count");
   assert.deepEqual(ownerAsks({ cards: [], waiting: [], owner: "Pat" }), []);
   assert.deepEqual(ownerAsks({ cards, waiting: "x", owner: "Pat" }).map((a) => a.card), ["font-download", "has-item"], "an odd export is no item");
+});
+
+test("no ask is listed from a board export older than 2 h, or from none (an item written since isn't in it)", () => {
+  assert.equal(mirrorFresh(T - 60 * MIN, T), true);
+  assert.equal(mirrorFresh(T - 120 * MIN, T), true, "the answer gate's own limit, inclusive");
+  assert.equal(mirrorFresh(T - 121 * MIN, T), false);
+  assert.equal(mirrorFresh(0, T), false, "no files: no export");
+  assert.equal(mirrorFresh(T + 10 * MIN, T), false, "from the future");
+  assert.equal(mirrorFresh(NaN, T), false);
 });
 
 test("an ask keeps the time it was first seen, and a new one is fresh", () => {
@@ -59,6 +69,10 @@ test("the wake watch prints ASK once per card, and again when it comes back", ()
 test("a reply that asks the owner for something names a card or #T item, or is refused", () => {
   const no = ["Pat needs to approve the font download.", "Waiting on Pat.", "Needs Pat to install v3.44 first.", "Pat, please confirm the sitting.", "pat should decide A or B."];
   for (const r of no) assert.equal(asksOwnerWithoutItem(r, "Pat"), true, r);
+  // Manager's all-clear lines (Checker on 46d97a0): a negated mention is a status, not a request.
+  const clear = ["Nothing is waiting on Pat.", "Stack 1 is signed; nothing needs Pat now.", "Release ships it; no need for Pat to approve anything.", "No one is waiting on Pat. Pat doesn't need to approve it.", "Pat has not been asked to decide."];
+  for (const r of clear) assert.equal(asksOwnerWithoutItem(r, "Pat"), false, r);
+  assert.equal(asksOwnerWithoutItem("Nothing else is open. Builder needs Pat to approve the font.", "Pat"), true, "a negation in an earlier sentence clears nothing");
   const fine = ["Pat needs to approve the font download (#T1401).", "Waiting on Pat: #C591 is live.", "Stack 1 is READY; Pat's sitting installs it.", "Done.", "Pat chose B on #T1353.", "Pat needs to approve it: Needs-you item t-1793164285052."];
   for (const r of fine) assert.equal(asksOwnerWithoutItem(r, "Pat"), false, r);
   assert.equal(asksOwnerWithoutItem("", "Pat"), false);
