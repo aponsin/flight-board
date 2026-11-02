@@ -1,5 +1,6 @@
 // The collector's fence, a PreToolUse hook on every tool (matcher "*") for the collector's scheduled run only, in the
-// state folder's settings: node <pinned install>/collector/fence.mjs --config <board.config.json> --send-to <session id> || exit 2
+// state folder's settings: node <pinned install>/collector/fence.mjs --config <board.config.json> [--send-to <session id>] || exit 2
+// The lead's session is the config's gate.managerSession (#C586); --send-to is the fallback while the config has none.
 // It lets through exactly the calls collector/TASK.md's steps make and refuses everything else (exit 2), whatever the
 // permission mode decides: a run in auto mode can't be steered by board text into any other call (Security). It never
 // grants: it only refuses, so it can't raise what the settings allow. Any failure refuses (the "|| exit 2" covers a
@@ -155,7 +156,7 @@ export function main(argv, stdin) {
   const install = dirname(dirname(fileURLToPath(import.meta.url)));
   const config = fullConfig(raw), id = boardId(config);
   const plan = id ? readPlan(join(home(config.gate.stateDir), id)) : null;
-  const spec = fenceSpec({ config, configPath, install, current: currentLink(install), sendTo: opt("--send-to"), uid: process.getuid(), usageIds: Object.values(plan?.roles ?? {}) });
+  const spec = fenceSpec({ config, configPath, install, current: currentLink(install), sendTo: config.gate.managerSession || opt("--send-to"), uid: process.getuid(), usageIds: Object.values(plan?.roles ?? {}) });
   return decide(JSON.parse(stdin), spec);
 }
 
