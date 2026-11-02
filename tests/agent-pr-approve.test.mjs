@@ -40,7 +40,7 @@ test("the gate: only Reviewer (or the lead) signs: signedHead, signedAt, review;
   assert.deepEqual(errs({ collection: "agentPrs", doc_id: "pr301", data: entry(301, sign) }, reviewer), []);
   assert.deepEqual(errs({ collection: "agentPrs", doc_id: "pr301", data: entry(301, sign) }, lead), []);
   assert.match(errs({ collection: "agentPrs", doc_id: "pr301", data: entry(301, sign) }, release)[0], /signedHead, signedAt, review: only Reviewer signs a pull request/);
-  assert.deepEqual(errs({ op: "update", collection: "agentPrs", doc_id: "pr301", data: { checks: "green", ghApproved: H1, merged: false, at: NOW } }, release), []);
+  assert.deepEqual(errs({ op: "update", collection: "agentPrs", doc_id: "pr301", data: { checks: "green", merged: false, at: NOW } }, release), []);
   assert.match(errs({ op: "update", collection: "agentPrs", doc_id: "pr301", data: { review: "ok" } }, release)[0], /only Reviewer signs/);
 });
 
@@ -62,7 +62,10 @@ test("the gate: a pull request entry's fields are each checked", () => {
   assert.match(bad(entry(301, { review: "great" })), /review: ok, failed, pending/);
   assert.match(bad(entry(301, { checks: "blue" })), /checks: green, running, failed/);
   assert.match(bad(entry(301, { merged: "yes" })), /merged: true or false/);
-  assert.deepEqual(errs({ op: "update", collection: "agentPrs", doc_id: "pr301", data: { signedHead: null, ghApproved: { __delete__: true } } }, reviewer), [], "signedHead and ghApproved can be cleared");
+  assert.deepEqual(errs({ op: "update", collection: "agentPrs", doc_id: "pr301", data: { signedHead: null } }, reviewer), [], "signedHead can be cleared");
+  // Security on 97f141c5 (HIGH): no field a session writes may stand in for the owner's approval, so there is none.
+  for (const who of [reviewer, release, lead]) assert.match(errs({ collection: "agentPrs", doc_id: "pr301", data: entry(301, { ghApproved: H1 }) }, who)[0], /not ghApproved/, `${who.role}: a GitHub approval is not a board field`);
+  assert.match(errs({ op: "update", collection: "agentPrs", doc_id: "pr301", data: { approved: true } }, lead)[0], /not approved/);
   assert.deepEqual(errs({ op: "delete", collection: "agentPrs", doc_id: "pr301" }, release), [], "a merged or closed pull request's entry can go");
   assert.match(errs({ op: "delete", collection: "agentPrs", doc_id: "pr301" }, builder)[0], /written by/);
   assert.ok(PR_ID.test("pr1") && !PR_ID.test("pr01") && !PR_ID.test("pr"), "the id shape");
@@ -117,13 +120,17 @@ test("a pull request needs him only with a head Reviewer signed: not an older on
   assert.equal(b.prRows([{ id: "301", head: H1, signedHead: H1 }, { id: "pr0", head: H1, signedHead: H1 }, null, undefined], []).need.length, 0, "an odd id or entry is skipped");
 });
 
-test("an approval counts for its head: on the board or on GitHub for the current head, never for an older one", () => {
+test("an approval counts for its head, and only the owner's own from the board: never an older head, never a field a session wrote", () => {
   const one = (p, apps) => b.prRows([p], apps);
   assert.equal(one(pr(5), [app(5, H1)]).approved.length, 1, "the board's approval of this head");
   assert.equal(one(pr(5), [app(5, H1)]).need.length, 0);
-  assert.equal(one(pr(5, { ghApproved: H1 }), []).approved.length, 1, "approved on GitHub for this head");
-  assert.equal(one(pr(5, { ghApproved: H1 }), [])  .approved[0].a, null, "no Withdraw for one given on GitHub");
-  assert.equal(one(pr(5, { ghApproved: H2 }), []).need.length, 1, "a GitHub approval of an older head is none");
+  assert.equal(one(pr(5), [app(5, H1)]).approved[0].a.head, H1, "with its Withdraw");
+  // Security on 97f141c5 (HIGH): an entry that says the owner approved on GitHub (any such field) changes nothing here.
+  for (const extra of [{ ghApproved: H1 }, { approved: true }, { approvedHead: H1 }, { ghApproved: true }]) {
+    const r = one(pr(5, extra), []);
+    assert.equal(r.need.length, 1, JSON.stringify(extra));
+    assert.equal(r.approved.length, 0, JSON.stringify(extra));
+  }
   const stale = one(pr(5), [app(5, H2)]);
   assert.equal(stale.need.length, 1);
   assert.equal(stale.need[0].again, true);
@@ -151,6 +158,15 @@ test("the panel: a count, a button per row ('Approve again' after a push), the s
   assert.match(html, /You, 02:31Z, <code>4f2a9c1<\/code>[\s\S]*data-gpw="1" data-n="298">Withdraw/);
   assert.match(html, /Approve here, not Merge on GitHub/);
   assert.match(html, /href="https:\/\/github\.com\/example-org\/example-repo\/pull\/301" target="_blank" rel="noopener">Open on GitHub/);
+});
+
+test("every control of the panel shows keyboard focus, and Withdraw and the summary are tap-sized (Designer on 97f141c5)", () => {
+  const css = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8").match(/<style>([\s\S]*?)<\/style>/)[1];
+  for (const sel of [".gp-act button:focus-visible", ".gp-act a:focus-visible", ".gp-num:focus-visible", ".gp-done button:focus-visible"]) assert.ok(css.includes(sel), sel);
+  assert.match(css, /\.gp-act button:focus-visible[^{]*\{outline:2px solid var\(--accent\);outline-offset:2px\}/);
+  assert.match(css, /\.gp-done summary:focus-visible\{outline:2px solid var\(--accent\);outline-offset:-2px\}/);
+  assert.match(css, /\.gp-done button\{[^}]*min-height:36px;display:inline-flex/);
+  assert.match(css, /\.gp-done summary\{padding:6px 0\}/);
 });
 
 test("the panel is hidden with nothing to show, and no count while only approved ones are left", () => {

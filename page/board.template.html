@@ -474,7 +474,11 @@ table.crew3-ph{margin-top:14px}
 .gp-act a{font-size:.8rem;color:var(--muted)}
 .gp-done{padding:8px 16px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem}
 .gp-done summary{cursor:pointer}
-.gp-done button{font:600 .8rem var(--body);border-radius:6px;padding:3px 10px;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);margin-left:8px}
+.gp-done button{font:600 .8rem var(--body);border-radius:6px;padding:3px 12px;min-height:36px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);margin-left:8px}
+.gp-done summary{padding:6px 0}
+/* Keyboard focus on every control of the panel, as the board's other controls (Designer on 97f141c5). */
+.gp-act button:focus-visible,.gp-act a:focus-visible,.gp-num:focus-visible,.gp-done button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.gp-done summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .gp-foot{padding:8px 16px 12px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem}
 @media (max-width:560px){.gp-row{grid-template-columns:auto minmax(0,1fr)}.gp-act{grid-column:1/-1;align-items:stretch}.gp-act button{width:100%}}
 </style>
@@ -681,8 +685,9 @@ function renderWaiting(){
 // The agent's pull requests (#C554, gate/agent-prs.mjs): the ones that need the owner's Approve. agentPrs/pr<n> is the team's entry
 // (Reviewer's signature on a head, checks, Release's merge); approvals/pr<n> is the owner's button, the page's alone.
 // An approval counts for the head it names: a push after it leaves it standing for the old head, and the row asks again.
-// Only a signed head is listed (waiting on Reviewer, or review failed: nothing for the owner to do); one approved on the
-// board or on GitHub for the current head is listed apart, with its Withdraw.
+// Only a signed head is listed (waiting on Reviewer, or review failed: nothing for the owner to do); one the owner approved
+// on the board for the current head is listed apart, with its Withdraw. Only his own approval counts here: no field a
+// session writes stands in for it (Security on 97f141c5: Release checks a GitHub approval itself, at the merge).
 const PR_AGENT=String((CONFIG&&CONFIG.prAgent)||"The agent");
 const PR_HEX=/^[0-9a-f]{7,40}$/,PR_ID=/^pr[1-9][0-9]{0,6}$/,PR_URL=/^https:\/\/github\.com\/[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}\/pull\/[1-9][0-9]{0,6}$/;
 function prRows(prs,apps){
@@ -690,8 +695,8 @@ function prRows(prs,apps){
   for(const p of prs||[]){
     if(!p||!PR_ID.test(String(p.id))||p.merged===true||!PR_HEX.test(String(p.head||"")))continue;
     if(!(p.signedHead===p.head&&p.review!=="failed"))continue;
-    const a=by.get(p.id),board=!!a&&a.head===p.head,gh=p.ghApproved===p.head;
-    if(board||gh)approved.push({p,a:board?a:null});
+    const a=by.get(p.id),board=!!a&&a.head===p.head;
+    if(board)approved.push({p,a});
     else need.push({p,again:!!a,was:a&&PR_HEX.test(String(a.head||""))?a.head:null})}
   const n=r=>Number(String(r.p.id).slice(2));
   return {need:need.sort((x,y)=>n(x)-n(y)),approved:approved.sort((x,y)=>n(x)-n(y))}}
@@ -704,7 +709,7 @@ function renderAgentPrs(now=Date.now()){
   const checks=p=>({green:'<span class="gp-tag ok">Checks green</span>',running:'<span class="gp-tag warn">Checks running</span>',failed:'<span class="gp-tag bad">Checks failed</span>'})[p.checks]||"";
   const age=p=>Number.isFinite(p.signedAt)?`, ${dur(now-p.signedAt)} ago`:"";
   const row=({p,again,was})=>`<div class="gp-row" data-pr="${esc(p.id)}">${num(p)}<div class="gp-main"><div class="gp-title">${esc(p.title||p.id)}</div><div class="gp-meta"><span class="gp-tag ok">Reviewer signed</span><span>at <code>${h7(p.head)}</code>${age(p)}</span>${checks(p)}</div>${again&&was?`<div class="gp-note">${esc(PR_AGENT)} pushed after your approval of <code>${h7(was)}</code>; Reviewer re-signed the new commit. Approve it again to ship it.</div>`:""}</div><div class="gp-act"><button type="button" data-gpa="1" data-n="${Number(String(p.id).slice(2))}" data-head="${esc(p.head)}">${again?"Approve again":"Approve"}</button>${link(p)?`<a href="${esc(link(p))}" target="_blank" rel="noopener">Open on GitHub ↗</a>`:""}</div></div>`;
-  const done=({p,a})=>`<div class="gp-meta" data-pr="${esc(p.id)}"><span>${num(p)}</span><span>${esc(p.title||p.id)}</span><span>${a?`You, ${esc(new Date(a.at).toISOString().slice(11,16))}Z`:"Approved on GitHub"}, <code>${h7(p.head)}</code></span>${a?`<button type="button" data-gpw="1" data-n="${Number(String(p.id).slice(2))}">Withdraw</button>`:""}</div>`;
+  const done=({p,a})=>`<div class="gp-meta" data-pr="${esc(p.id)}"><span>${num(p)}</span><span>${esc(p.title||p.id)}</span><span>You, ${esc(new Date(a.at).toISOString().slice(11,16))}Z, <code>${h7(p.head)}</code></span><button type="button" data-gpw="1" data-n="${Number(String(p.id).slice(2))}">Withdraw</button></div>`;
   el.hidden=false;
   el.innerHTML=`<div class="gp-head"><h3>${esc(PR_AGENT)}'s pull requests</h3>${need.length?`<span class="gp-count">${need.length} to approve</span>`:""}<span class="gp-sub">Release merges approved ones when the next ship starts</span></div>${need.map(row).join("")}${approved.length?`<details class="gp-done"><summary>${approved.length} approved: merge at the next ship</summary>${approved.map(done).join("")}</details>`:""}<div class="gp-foot">Approve here, not Merge on GitHub: an approval made now merges when the next ship starts.</div>`;
   el.querySelectorAll("[data-gpa],[data-gpw]").forEach(b=>b.addEventListener("click",onAgentPr))}

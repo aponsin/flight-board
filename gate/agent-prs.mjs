@@ -1,14 +1,14 @@
 // The agent's pull requests on the board (#C554): the owner approves a Reviewer-signed pull request with
 // a button on the board; Release merges it at the next ship's start.
 //   agentPrs/pr<number>   what the board shows for one open pull request, written by the team: Reviewer (its review and
-//                        signature) and Release (checks, merged, an approval the owner gave on GitHub), and the lead.
+//                        signature) and Release (checks, merged), and the lead. No field carries a GitHub approval: Release checks one itself.
 //   approvals/pr<number> { number, head, at, by }: the owner's button, the page's alone. No session writes it, the
 //                        lead included (it is the owner's go for a merge; the gate is what keeps an agent from giving it).
 // An approval counts for the head it names: Release merges a pull request only when that head is the pull request's
 // current head. A push after the approval leaves it standing for the old head, and the board asks again.
 export const PR_ID = /^pr[1-9][0-9]{0,6}$/;
 const HEX = /^[0-9a-f]{7,40}$/;
-export const PR_FIELDS = ["number", "title", "url", "head", "signedHead", "signedAt", "review", "checks", "ghApproved", "merged", "at"];
+export const PR_FIELDS = ["number", "title", "url", "head", "signedHead", "signedAt", "review", "checks", "merged", "at"];
 // A field only Reviewer (or the lead) writes: the signature itself.
 export const SIGN_FIELDS = ["signedHead", "signedAt", "review"];
 export const REVIEWS = ["ok", "failed", "pending"], CHECKS = ["green", "running", "failed"];
@@ -44,7 +44,7 @@ export function agentPrWriteErrors(w, { who, config, now }) {
     const m = typeof data.url === "string" ? URL_RE.exec(data.url) : null;
     if (!m || Number(m[1]) !== n) e.push(`url: the pull request's own GitHub address (https://github.com/<owner>/<repo>/pull/${n})`);
   }
-  for (const f of ["head", "signedHead", "ghApproved"]) {
+  for (const f of ["head", "signedHead"]) {
     if (!(f in data)) continue;
     const v = data[f];
     if (v === null && f !== "head") continue;
