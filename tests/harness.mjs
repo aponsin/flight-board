@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const script = html.match(/<script>([\s\S]*?)<\/script>/)[1], templateScript = script;
 // els: a Map to keep each element by id, so a test can read what a render wrote; by default every lookup is a new one.
 export function loadBoard({ els = null } = {}) {
   const fresh = () => ({ innerHTML: "", textContent: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });
@@ -35,7 +35,9 @@ export function renderWaitingHtml(asks, opts = {}) {
 // Loads the board with the named functions exposed (threads and the reply writes, board v2), plus state.
 // The page's own document listeners are kept in `listeners` (type → [fn]), so a test can fire one (a fold's toggle).
 // globals: more of the page's world (a sessionStorage, a location), laid over the default one.
-export function loadNames(names, globals = {}) {
+// pageHtml: a built page (buildPage with a config) to load in place of the template.
+export function loadNames(names, globals = {}, pageHtml = null) {
+  const script = pageHtml ? pageHtml.match(/<script>([\s\S]*?)<\/script>/)[1] : templateScript;
   const els = {};
   const listeners = {};
   const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });
