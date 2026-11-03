@@ -1,0 +1,3 @@
+PASS Quick (Checker, 2026-11-03): #C643 build/board-fast-threads-v2 bb47426. Thread tests 37/37; mutation check: pass (the else-branch RMAX removed fails the boundary test).
+
+Checker's verdict, recorded by checker, 2026-11-03T19:30:00Z
