@@ -2,36 +2,49 @@
 // had left under the same name (`settings.local.json.before-v351`, 26 Oct): the pack kept an existing backup (`[ -e b ] || cp`),
 // then compared the live file with it. Two rules keep that from happening again:
 //   1. a backup's name carries the full dotted version: `.before-v3.51`, never `.before-v351` (v3.5.1 and v3.51 share that name);
-//   2. a pack never compares with a backup (cmp, diff, sed, shasum, grep, node on a `.before-` path): it compares with an input
-//      the pack hash-checks (`ok "$FILE" HASH`). A line that must read a backup anyway says why with `# pack-lint: ok <reason>`.
-// Creating a backup (`[ -e b ] || cp -p x b`), restoring one (`cp -p b x`) and naming one in a message or a comment are fine.
-// Usage: node scripts/pack-lint.mjs <pack.sh>...   (exit 1 with one line per problem)
+//   2. a pack uses a backup in three ways only, and compares with an input the pack hash-checks (`ok "$FILE" HASH`) instead.
+//      An allow list: any other line naming `.before-` fails, whatever the command (cmp, diff, sed, awk, cat, python, a variable
+//      assignment, a diff inside an echo, a command continued onto the next line with `\`). The three ways:
+//        - make one:    [ -e "$F.before-v3.51" ] || cp -p "$F" "$F.before-v3.51"
+//        - restore one: cp -p "$F.before-v3.51" "$F"
+//        - name one in a plain message: echo "... $F.before-v3.51 ..."  (no `$(` or backtick in the message)
+//      A line that must read one anyway says why with `# pack-lint: ok <reason>` (a mark with no reason does not count).
+// Comments are not linted. Usage: node scripts/pack-lint.mjs <pack.sh>...   (exit 1 with one line per problem)
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const UNDOTTED = /\.before-v\d+(?![\d.])/;
-const READER = /(?:^|[\s|;&(`$])(?:cmp|diff|sed|shasum|sum|grep|node)\b/;
 const MARK = /#\s*pack-lint:\s*ok\s+\S/;
+const ALLOWED = [
+  /\[ -e "[^"]*\.before-[^"]*" \] \|\| cp -p "[^"]*" "[^"]*\.before-[^"]*"/g,
+  /cp -p "[^"]*\.before-[^"]*" "[^"]*"/g,
+  /echo "(?:[^"$`\\]|\$(?!\()|\\.)*"/g,
+];
+
+// The pack's lines with each `\`-continued command joined onto its first line: [{ n, line }].
+function logicalLines(text) {
+  const out = [];
+  let cur = null;
+  String(text).split("\n").forEach((raw, i) => {
+    cur = cur ? { n: cur.n, line: cur.line + " " + raw.trim() } : { n: i + 1, line: raw.trim() };
+    if (cur.line.endsWith("\\")) { cur.line = cur.line.slice(0, -1); return; }
+    out.push(cur); cur = null;
+  });
+  if (cur) out.push(cur);
+  return out;
+}
 
 // The problems in a pack's text, as { line, rule, text }.
 export function lintPack(text) {
   const out = [];
-  String(text).split("\n").forEach((raw, n) => {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) return;
-    const code = MARK.test(line) ? "" : line;
-    if (UNDOTTED.test(line)) out.push({ line: n + 1, rule: "a backup name without the dotted version (.before-v3.51, not .before-v351)", text: line });
-    if (code && code.includes(".before-") && READER.test(stripCopies(code))) out.push({ line: n + 1, rule: "compares with a backup, not with a hash-checked input", text: line });
-  });
+  for (const { n, line } of logicalLines(text)) {
+    if (!line || line.startsWith("#") || !line.includes(".before-")) continue;
+    if (UNDOTTED.test(line)) out.push({ line: n, rule: "a backup name without the dotted version (.before-v3.51, not .before-v351)", text: line });
+    if (MARK.test(line)) continue;
+    const rest = ALLOWED.reduce((s, re) => s.replace(re, ""), line);
+    if (rest.includes(".before-")) out.push({ line: n, rule: "uses a backup other than to make or restore it or name it in a plain message (compare with a hash-checked input)", text: line });
+  }
   return out;
-}
-
-// A line without its backup creations and restores (`[ -e b ] || cp -p x b`, `cp -p b x`) and without a message's text.
-function stripCopies(code) {
-  return code
-    .replace(/\[ -e "[^"]*\.before-[^"]*" \] \|\| cp -p "[^"]*" "[^"]*\.before-[^"]*"/g, "")
-    .replace(/cp -p "[^"]*\.before-[^"]*" "[^"]*"/g, "")
-    .replace(/echo "[^"]*"/g, "");
 }
 
 const here = (() => { try { return realpathSync(fileURLToPath(import.meta.url)); } catch { return ""; } })();

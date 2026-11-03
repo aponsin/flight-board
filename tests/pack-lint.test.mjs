@@ -27,7 +27,7 @@ const REISSUE = [
 
 test("the first v3.51 issue fails on both rules; the re-issue is clean", () => {
   const rules = lintPack(FIRST).map((p) => p.line + ":" + p.rule.split(" ")[0]);
-  assert.deepEqual(rules, ["2:a", "5:a", "5:compares"], "the creation line is an undotted name only; the sed line is an undotted name and a read");
+  assert.deepEqual(rules, ["2:a", "5:a", "5:uses"], "the creation line is an undotted name only; the sed line is an undotted name and a read");
   assert.deepEqual(lintPack(REISSUE), []);
 });
 
@@ -42,9 +42,13 @@ test("a dotted backup may be made, restored, named in a message or a comment", (
 });
 
 test("a read of a backup fails, whatever the tool; a marked line with a reason passes", () => {
-  for (const tool of ['cmp -s "$F" "$F.before-v3.51"', 'diff "$F" "$F.before-v3.51"', 'shasum -a 256 "$F.before-v3.51"', 'grep -q x "$F.before-v3.51"', 'B="$F.before-v3.51" node -e "1"']) {
-    assert.deepEqual(lintPack(tool).map((p) => p.rule.slice(0, 8)), ["compares"], tool);
+  for (const tool of ['cmp -s "$F" "$F.before-v3.51"', 'diff "$F" "$F.before-v3.51"', 'shasum -a 256 "$F.before-v3.51"', 'grep -q x "$F.before-v3.51"', 'B="$F.before-v3.51" node -e "1"',
+    // Checker's: every one of these read a backup and passed the first version of the lint.
+    'awk 1 "$F.before-v3.51"', 'cat "$F.before-v3.51" | wc -c', 'python3 -c 1 "$F.before-v3.51"', 'X=$(head -1 "$F.before-v3.51")', 'echo "$(diff "$F" "$F.before-v3.51")"',
+    'diff "$F" \\\n  "$F.before-v3.51"', 'echo `cat "$F.before-v3.51"`']) {
+    assert.deepEqual(lintPack(tool).map((p) => p.rule.slice(0, 4)), ["uses"], tool);
   }
+  assert.equal(lintPack('diff "$F" \\\n  "$F.before-v3.51"')[0].line, 1, "a continued command is reported at its first line");
   assert.deepEqual(lintPack('diff "$F" "$F.before-v3.51" # pack-lint: ok the backup is made by this run just above'), []);
   assert.equal(lintPack('diff "$F" "$F.before-v3.51" # pack-lint: ok').length, 1, "a mark with no reason does not count");
 });
@@ -55,5 +59,5 @@ test("a pack with no backups is clean, and the CLI exits 1 on a problem and 0 on
   writeFileSync(bad, FIRST); writeFileSync(good, REISSUE);
   const run = (f) => { try { return { code: 0, out: execFileSync("node", ["scripts/pack-lint.mjs", f], { encoding: "utf8" }) }; } catch (e) { return { code: e.status, out: String(e.stdout) }; } };
   assert.equal(run(good).code, 0); assert.match(run(good).out, /clean/);
-  assert.equal(run(bad).code, 1); assert.match(run(bad).out, /bad\.sh:5: compares with a backup/);
+  assert.equal(run(bad).code, 1); assert.match(run(bad).out, /bad\.sh:5: uses a backup/);
 });
