@@ -22,7 +22,7 @@ test("an open card's #C label is its Check button, with a small ↻; a finished 
   const b = loadNames(NAMES);
   const html = b.initRow(card(b));
   // #C376, the owner (t-1793166475210): the label itself is the button, so no ↻ Check pill wraps onto its own line.
-  assert.match(html, /<div class="i-name"><button type="button" class="c-num i-check" data-check="x" aria-label="Check #C351 now: read the live state again, and have the Collector check it at its next run" title="Check #C351 now: read the live state again, and have the Collector check it at its next run">#C351<span class="i-ic" aria-hidden="true">↻<\/span><\/button> <strong>X<\/strong>/);
+  assert.match(html, /<div class="i-name"><button type="button" class="c-num i-check" data-check="x" aria-label="Check #C351 now: read the live state again, and have the Collector check it at its next run" title="Check #C351 now: read the live state again, and have the Collector check it at its next run">#C351<span class="i-ic" aria-hidden="true">↻<\/span><\/button> <span class="c-repo"[^>]*>Platform<\/span> <strong>X<\/strong>/); // #C648: the repository badge follows the number
   assert.equal(html.match(/data-check=/g).length, 1, "one button: no separate pill");
   assert.doesNotMatch(html, />↻ Check</);
   const done = b.initRow(card(b, { status: "done", doneAt: Date.now() - MIN, phase: "live" }));
