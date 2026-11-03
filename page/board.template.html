@@ -132,6 +132,7 @@ section{min-width:0}
 .ow-line{color:var(--accent);font-weight:600}
 @media (prefers-reduced-motion:reduce){.step.now{animation:none;box-shadow:inset 0 0 0 2px var(--panel),0 0 0 2px var(--accent)}}
 .step small{display:block;font-weight:400;opacity:.85;overflow:hidden;text-overflow:ellipsis}.step small.norec{color:var(--muted);font-style:italic}
+.step.done.norec{background:var(--warn-soft);color:var(--warn-ink)}.step.norec small.norec{color:inherit}
 /* The phase in progress carries the most detail (who, time, ship estimate): give it room. */
 .track>.step.now{flex:2.2 1 0}
 .track>.step,.track>.wait{display:flex;flex-direction:column;justify-content:center;min-height:2.6rem}
@@ -1918,7 +1919,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
     // A phase nobody has started says "up next" instead of pulsing as if someone were on it.
     const t=(ns&&n===idx)?`<small>${esc(queueLabel(i))}</small>`:(n===idx&&i.upNext&&!stuck&&i.status!=="done")?`<small>up next</small>`:(np&&n!==idx)?`<small>${esc(np.join(", "))}${times[k]?" · "+dur(times[k]):""}</small>`:(n===idx&&i.status!=="done"&&i.who)?`<small>${esc(i.who)}${times[k]?" · "+dur(times[k]):""}</small>`:times[k]?`<small>${dur(times[k])}</small>`:skip.includes(k)?"<small>not needed</small>":ev.has(k)&&n!==idx?'<small class="seen">in the repo</small>':(i.status==="done"||n<idx)&&k!==LIVE_PHASE?'<small class="norec">no record</small>':"<small>&nbsp;</small>";// While Release ships: an estimate from past ships (tests ~7 min, then deploy, ~10 min in all), labelled "est.".
     const sm=k==="ship"&&n===idx&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
-    const sd=sm!=null?`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`:k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";const vf=k===LIVE_PHASE&&n===idx&&verifying(i);return pre+`<div class="${vf?"step verifying":c}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:t}${sd}</div>`}).join("");
+    const sd=sm!=null?`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`:k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";const vf=k===LIVE_PHASE&&n===idx&&verifying(i);return pre+`<div class="${vf?"step verifying":c+(t.includes('class="norec"')?" norec":"")}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:t}${sd}</div>`}).join("");
   const chips=issueChips(i);
   const eta=cardEta(i);
   let etaHtml;
