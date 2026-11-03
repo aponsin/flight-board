@@ -1,0 +1,3 @@
+PASS Full (Checker, 2026-11-03): #C621 fix, branch names always card-id shaped. Mutation check: pass (idShape always true fails one-row-per-branch.test).
+
+Checker's verdict, recorded by checker, 2026-11-03T18:43:42.640Z
