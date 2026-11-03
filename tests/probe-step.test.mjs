@@ -46,11 +46,12 @@ test("--probe-step: merges a sealed delta, derives from the mirror, writes deriv
     put(exp, "derived", "all", { at });
     const first = probe(s);
     assert.equal(first.status, 0, first.stderr + first.stdout);
-    assert.match(first.stdout, /merged a delta export \(2 written, 0 removed, 0 old steps dropped\)/);
+    assert.match(first.stdout, /merged a delta export \(1 written, 0 removed, 0 old steps dropped\)/);
     assert.ok(existsSync(join(s.dir, "mirror", "initiatives", "new-card.json")), "the delta is in the mirror");
     assert.ok(existsSync(join(s.dir, "mirror", "initiatives", "old-card.json")), "and the rest stays");
     const derived = JSON.parse(readFileSync(join(s.out, "derived-all.json"), "utf8"));
     assert.ok(Object.keys(derived.cards).includes("new-card") && Object.keys(derived.cards).includes("old-card"), "derived from the merged mirror");
+    assert.deepEqual(JSON.parse(readFileSync(join(s.dir, "mirror", "derived", "all.json"), "utf8")), derived, "the gate reads the mirror's derived/all: the probe puts what it derived there (#C655)");
     assert.equal(readDeltaState(s.dir).at, at);
     assert.ok(JSON.parse(readFileSync(join(s.dir, "derive-run.json"), "utf8")).at > 0);
     assert.equal(existsSync(exp), false, "the merged export is gone");

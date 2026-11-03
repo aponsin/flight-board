@@ -12,7 +12,7 @@ import { leadOf, leadFromSettings } from "../scripts/board-release.mjs";
 
 const URL_ = "https://claude.ai/" + "artifact/TestBoard01";
 const ID = "local_0a1b2c3d-1111-2222-3333-444455556666", OTHER = "local_ffffffff-1111-2222-3333-444455556666";
-const base = { artifactUrl: URL_, collector: { repoPath: "/srv/repo", outDir: "/srv/fb/TestBoard01-out" } };
+const base = { artifactUrl: URL_, artifactSlug: "11111111-2222-4333-8444-555555555555", collector: { repoPath: "/srv/repo", outDir: "/srv/fb/TestBoard01-out" } };
 
 test("gate.managerSession is a session id or empty; the default is empty", () => {
   assert.equal(fullConfig(base).gate.managerSession, "");

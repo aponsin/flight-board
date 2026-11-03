@@ -30,7 +30,7 @@ import { runMark, localMain, localShips } from "./refresh.mjs";
 import { allocate } from "../scripts/thread-ids.mjs";
 import { refreshPickups } from "./pickup.mjs";
 import { liveFresh, LIVE_FRESH_MS } from "./state-schema.mjs";
-import { sealed, deltaPlan, dropTombstones, queryLines, readDeltaState, writeDeltaState, writeStamp, mergeDelta, driftLines, deriveDue, saveLines, DERIVE_FILE, LINE_START } from "./delta.mjs";
+import { sealed, deltaPlan, dropTombstones, queryLines, readDeltaState, writeDeltaState, writeStamp, mergeDelta, driftLines, deriveDue, saveLines, explodePages, lay, readSweepReport, advanceSweep, SWEEP_DIR, DERIVE_FILE, LINE_START } from "./delta.mjs";
 
 // The folder this run's code really lives in (the current link resolved, by Node, to a pinned copy).
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -69,7 +69,7 @@ export function swapMirror(dir, id) {
   return true;
 }
 
-// A scheduled run saves its export (ArtifactData out_dir) without a prompt only inside its session's scratchpad, so
+// A scheduled run saves its export pages (the Write tool; once ArtifactData's out_dir) without a prompt only inside its session's scratchpad, so
 // the board is exported there, into a folder named EXPORT_NAME, and step 2 takes it from there: the newest one made since
 // --prepare, found under the scratchpads of runs in this working folder. The run never types a path the permission
 // rules would have to match.
@@ -127,7 +127,7 @@ export function findExport(root, since, uid, mode = null) {
     try { st = lstatSync(p); real = realpathSync(p); } catch { continue; }
     if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== uid || !real.startsWith(root + sep)) continue;
     if (Math.max(st.birthtimeMs || 0, st.ctimeMs) < since) continue;
-    if (mode) { if (!sealed(p, mode, REQUIRED_COLLECTIONS)) continue; }
+    if (mode) { if (!sealed(p)) continue; }
     else if (!REQUIRED_COLLECTIONS.every((c) => { try { const cs = lstatSync(join(p, c)); return cs.isDirectory() && !cs.isSymbolicLink(); } catch { return false; } })) continue;
     if (!best || st.mtimeMs > best.at) best = { path: real, at: st.mtimeMs };
   }
@@ -162,35 +162,49 @@ const readJson = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } ca
 // merge, "delta" or "full" when it merged one (with counts and the drift lines).
 export function mergeRun({ dir, id, uid = process.getuid(), now = Date.now(), base = "/private/tmp" }) {
   const mark = readJson(join(dir, "export-since.json"));
-  if (!mark || !Number.isFinite(mark.at) || (mark.mode !== "delta" && mark.mode !== "full")) return { did: null };
+  if (!mark || !Number.isFinite(mark.at) || (mark.mode !== "delta" && mark.mode !== "sweep")) return { did: null };
   const state = readDeltaState(dir);
   if (state && state.lastPrepare === mark.at) return { did: null };
   const found = findExport(scratchRoot(dir, uid, base), mark.at, uid, mark.mode);
   if (!found) return { did: null };
-  const mirror = join(dir, "mirror");
+  const mirror = join(dir, "mirror"), stage = join(dir, SWEEP_DIR);
+  const seeded = existsSync(mirror) && state !== null;
   // A delta has no mirror to be laid over: it is not the board (the plan never asks for one), so nothing is taken and no state is
-  // written; the next plan, finding no mirror, is a full read (Checker).
-  if (mark.mode === "delta" && !existsSync(mirror)) return { did: null };
-  const kept = { at: mark.at, fullAt: state?.fullAt ?? null, lastPrepare: mark.at };
-  if (mark.mode === "delta" && existsSync(mirror)) {
-    const counts = mergeDelta(mirror, found, { at: mark.at, now });
-    rmSync(found, { recursive: true, force: true });
-    writeDeltaState(dir, kept);
-    return { did: "delta", ...counts, lines: [] };
+  // written; the next plan, finding no mirror, starts a sweep (Checker).
+  if (mark.mode === "delta" && !seeded) return { did: null };
+  // The run saved its documents as pages: cut them into the <id>.json files, the delta's and the sweep page's apart.
+  explodePages(found);
+  explodePages(join(found, SWEEP_DIR));
+  const adv = advanceSweep(state, mark, readSweepReport(found));
+  const staging = adv.sweep !== null || adv.done;
+  // A sweep that begins here starts from an empty staging folder; one going on keeps what its earlier pages laid.
+  if (mark.sweep?.fresh && (!state?.sweep || state.sweep.startedAt !== mark.sweep.startedAt)) {
+    guard(stage, id, SWEEP_DIR);
+    rmSync(stage, { recursive: true, force: true });
   }
-  // A full read (or a delta with no mirror to add to, which the plan never asks for): the whole board replaces the mirror.
-  takeExport(found, dir, id);
-  const lines = mark.mode === "full" && state && existsSync(mirror) ? driftLines(mirror, join(dir, "mirror.next")) : [];
-  dropTombstones(join(dir, "mirror.next"));
-  // A collection that came back with exactly whole pages was most likely cut (#C428): the run is told, as it always was.
-  const next = join(dir, "mirror.next"), counted = {};
-  for (const c of EXPORT_COLLECTIONS) { try { counted[c] = readdirSync(join(next, c)).filter((f) => f.endsWith(".json")); } catch { /* none exported */ } }
-  const cut = cutLine(counted);
-  if (cut) lines.push(cut);
+  if (staging) mkdirSync(stage, { recursive: true });
+  const counts = { merged: 0, removed: 0, pruned: 0 };
+  // The page first, then the delta over it: a document changed after its page was read must end as the delta has it.
+  if (staging && adv.matched) counts.merged += lay(stage, join(found, SWEEP_DIR)).merged;
+  if (staging) lay(stage, found);
+  if (seeded) { const c = mergeDelta(mirror, found, { at: mark.at, now }); counts.merged += c.merged; counts.removed += c.removed; counts.pruned += c.pruned; }
+  rmSync(found, { recursive: true, force: true });
+  if (!adv.done) {
+    writeDeltaState(dir, { at: mark.at, fullAt: state?.fullAt ?? null, lastPrepare: mark.at, sweep: adv.sweep });
+    return { did: seeded ? "delta" : "sweep", ...counts, lines: [] };
+  }
+  // The last page is in: the staging folder is the whole board. What the deltas built is compared with it (MIRROR DRIFT), and it
+  // replaces the mirror, so a document the deltas missed or a hard delete is healed.
+  const lines = seeded ? driftLines(mirror, stage) : [];
+  dropTombstones(stage);
+  const next = join(dir, "mirror.next");
+  guard(next, id, "mirror.next");
+  rmSync(next, { recursive: true, force: true });
+  renameSync(stage, next);
   swapMirror(dir, id);
   writeStamp(mirror, mark.at, now);
-  writeDeltaState(dir, { ...kept, fullAt: mark.at });
-  return { did: "full", merged: 0, removed: 0, pruned: 0, lines };
+  writeDeltaState(dir, { at: mark.at, fullAt: adv.startedAt, lastPrepare: mark.at, sweep: null });
+  return { did: "sweep", ...counts, lines };
 }
 
 // The nudges, with the last run's state next to the mirror (<dir>/nudges.json: what was sent when, and since when each
@@ -523,19 +537,18 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       mkdirSync(dir, { recursive: true });
       // With the refresh repos' origin/main now: the baseline the lead's refresh check compares against (collector/refresh.mjs).
       // With the code this run started with (the current link resolved): step 2 must run the same (#C223).
-      // #C642: a delta since the last merged run, or the nightly full read; the probe merges what the run saves
+      // #C642, #C655: a delta since the last merged run, plus one page of the sweep; the probe merges what the run saves
       // (collector/merge.mjs), and says which it was by the mode written here.
       const startedAt = Date.now();
-      const plan = deltaPlan({ now: startedAt, state: readDeltaState(dir), hasMirror: existsSync(join(dir, "mirror")), hour: new Date(startedAt).getHours(), requireUpdatedAt: config.gate?.requireUpdatedAt === true });
-      writeFileSync(join(dir, "export-since.json"), JSON.stringify({ ...runMark(startedAt, config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern)), code: CODE, mode: plan.mode }));
+      const plan = deltaPlan({ now: startedAt, state: readDeltaState(dir), hasMirror: existsSync(join(dir, "mirror")), requireUpdatedAt: config.gate?.requireUpdatedAt === true });
+      writeFileSync(join(dir, "export-since.json"), JSON.stringify({ ...runMark(startedAt, config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern)), code: CODE, mode: plan.mode, sweep: plan.sweep }));
       console.log(`Export the board into: your scratchpad folder + /${EXPORT_NAME}`);
       for (const line of queryLines(plan)) console.log(line);
-      if (plan.mode === "full") console.log(`Steps since: ${startedAt - STEPS_DAYS * 864e5}`);
       process.exit(0);
     } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
   }
   // #C642: the probe merges the Collector's deltas into the mirror (collector/merge.mjs), then derives from it here, with no
-  // export of its own to take (--from-mirror). A run that exported a delta or a nightly read is merged only by the probe:
+  // export of its own to take (--from-mirror). A run that exported a delta or a sweep page is merged only by the probe:
   // taking it here as the whole board would replace the mirror with part of it.
   // --probe-step is the probe's once-a-minute call (collector/state.mjs spawns it, so the pinned probe imports none of this): merge
   // what the Collector's last run saved, then derive from the mirror when the merge changed it or the last derive is old.
@@ -561,7 +574,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let since = Infinity, mark = {};
     try { mark = JSON.parse(readFileSync(join(dir, "export-since.json"), "utf8")); since = mark.at; } catch { /* no --prepare yet */ }
     if (!sameCode(mark, CODE)) throw new Error("the collector's code changed between step 1 and step 2 (the current link moved): run step 1 again");
-    if (mark.mode) throw new Error("this run exported a delta or a nightly read: the probe merges it (collector/merge.mjs); the run writes derived/all and stops");
+    if (mark.mode) throw new Error("this run exported a delta or a sweep page: the probe merges it (collector/merge.mjs); the run writes derived/all and stops");
     // Only this run's export: none since --prepare is an error, never an old mirror passed off as fresh (Security).
     const found = Number.isFinite(since) ? findExport(scratchRoot(process.cwd(), process.getuid()), since, process.getuid()) : null;
     if (!found) throw new Error("no complete board export since --prepare in this run's scratchpad: run step 1 again");
@@ -611,6 +624,15 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const partial = `${out}.${process.pid}.part`;
   writeFileSync(partial, JSON.stringify(doc, null, 2));
   renameSync(partial, out);
+  // The gate reads derived/all from the mirror. The run no longer exports it (the sweep and the deltas leave `derived` out), so
+  // the probe puts the one it just derived there: what the run will publish is what the gate reads.
+  if (fromMirror) {
+    const dd = join(dir, "mirror", "derived");
+    mkdirSync(dd, { recursive: true });
+    const tmp = join(dd, `all.json.${process.pid}.part`);
+    writeFileSync(tmp, JSON.stringify(doc, null, 2));
+    renameSync(tmp, join(dd, "all.json"));
+  }
   console.log(`Derived ${Object.keys(doc.cards).length} open card(s) into ${out}.`);
   for (const line of conflicts) console.log(`CONFLICT ${line}`);
   const kl = keeperLine(config, keeper);

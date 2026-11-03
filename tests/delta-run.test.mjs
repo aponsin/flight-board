@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { mergeRun, scratchRoot, EXPORT_NAME } from "../collector/collect.mjs";
-import { MUTABLE, OVERLAP_MS, readStamp, readDeltaState, writeDeltaState, writeStamp, deriveDue, deriveLines, saveLines, DERIVE_EVERY_MS, DERIVE_FILE } from "../collector/delta.mjs";
+import { MUTABLE, OVERLAP_MS, SWEEP_STAGES, readStamp, readDeltaState, writeDeltaState, writeStamp, deriveDue, deriveLines, saveLines, DERIVE_EVERY_MS, DERIVE_FILE } from "../collector/delta.mjs";
 import { readMirror, TOMBSTONED } from "../gate/gate.mjs";
 import { writeErrors, checkWrites, updatedAtErrors, STAMPED, STAMP_WINDOW_MS, isDeletion } from "../gate/rules.mjs";
 import { linesOf, linesPending, linesSeen, LINES_MAX, LINE_MAX } from "../gate/reset.mjs";
@@ -17,103 +17,144 @@ const put = (root, c, id, doc) => { mkdirSync(join(root, c), { recursive: true }
 const read = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 // A board folder, its scratch root (the Collector runs in the board folder, so its scratchpads sit under it) and a run's export.
+// The run saves pages (<collection>/q1.page.json for a delta, sweep/<collection>/p1.page.json for a sweep page), the sweep
+// report and the seal; the probe cuts the pages into documents.
+const pageFile = (exp, rel, docs) => { mkdirSync(join(exp, ...rel.split("/").slice(0, -1)), { recursive: true }); writeFileSync(join(exp, ...rel.split("/")), JSON.stringify({ docs: Object.entries(docs).map(([id, data]) => ({ id, data })) })); };
 function board() {
-  const base = mkdtempSync(join(tmpdir(), "c642-"));
+  const base = mkdtempSync(join(tmpdir(), "c655-"));
   const dir = join(base, "state", "Board01");
   mkdirSync(dir, { recursive: true });
   const root = scratchRoot(dir, uid, join(base, "tmp"));
-  const run = (name, { mode, at, docs = {}, seal = true }) => {
-    writeFileSync(join(dir, "export-since.json"), JSON.stringify({ at, refs: {}, mode }));
+  // sweep: the mark's page ({startedAt, fresh, stage, cursor}); pageDocs: what that page holds; next: the report's cursor.
+  const run = (name, { mode = "delta", at, docs = {}, sweep = null, pageDocs = {}, next = null, seal = true }) => {
+    const collection = sweep ? SWEEP_STAGES[sweep.stage].collection : null;
+    writeFileSync(join(dir, "export-since.json"), JSON.stringify({ at, refs: {}, mode, sweep: sweep ? { fresh: false, cursor: null, ...sweep, collection, limit: 1 } : null }));
     const exp = join(root, name, "scratchpad", EXPORT_NAME);
-    for (const [c, list] of Object.entries(docs)) for (const [id, d] of Object.entries(list)) put(exp, c, id, d);
-    if (seal) put(exp, "derived", "all", { at });
+    mkdirSync(exp, { recursive: true });
+    for (const [c, list] of Object.entries(docs)) pageFile(exp, `${c}/q1.page.json`, list);
+    if (sweep) { pageFile(exp, `sweep/${collection}/p1.page.json`, pageDocs); writeFileSync(join(exp, "sweep-next.json"), JSON.stringify({ collection, next })); }
+    if (seal) put(exp, "derived", "all", { version: null });
     return exp;
   };
   return { base, dir, root, run, merge: (now = NOW) => mergeRun({ dir, id: "Board01", uid, now, base: join(base, "tmp") }), done: () => rmSync(base, { recursive: true, force: true }) };
 }
+const stageName = (i) => SWEEP_STAGES[i].collection;
 
-test("mergeRun: a full read makes the mirror and the state; a delta after it is laid over; the same run is never merged twice", async () => {
+test("mergeRun: a sweep seeds the mirror page by page, with the deltas laid over its pages; the board is the mirror only when the last page is in", async () => {
   const b = board();
   try {
-    const t0 = NOW - 3600e3;
-    b.run("s1", { mode: "full", at: t0, docs: { initiatives: { a: { name: "a" }, b: { name: "b" } }, waiting: { w: { text: "w" } }, steps: { s: { at: t0 - 5 } } } });
-    for (const c of ["ideas", "messages", "ctx"]) put(join(b.root, "s1", "scratchpad", EXPORT_NAME), c, "x", { at: t0 });
-    const full = b.merge();
-    assert.equal(full.did, "full");
-    assert.deepEqual(full.lines, [], "the first read has nothing to compare with");
-    assert.equal(read(join(b.dir, "mirror", "initiatives", "a.json")).name, "a");
-    assert.deepEqual(readStamp(join(b.dir, "mirror")), { at: t0, mergedAt: NOW });
-    assert.deepEqual(readDeltaState(b.dir), { at: t0, fullAt: t0, lastPrepare: t0 });
-    assert.equal(b.merge().did, null, "the same run: nothing to merge again");
-    // Even if its export is still there (a folder that could not be removed), a run already merged is not merged again.
-    b.run("s1", { mode: "full", at: t0, docs: { initiatives: { a: { name: "again" } } } });
-    for (const c of ["waiting", "ideas", "messages", "ctx", "steps"]) put(join(b.root, "s1", "scratchpad", EXPORT_NAME), c, "x", { at: t0 });
-    assert.equal(b.merge().did, null, "the same run's export, left behind");
-    assert.equal(read(join(b.dir, "mirror", "initiatives", "a.json")).name, "a");
-    // The next run, a delta that edits a, removes w, adds c.
+    const t0 = NOW - 7200e3, tick = (n) => t0 + n * 60e3;
+    put(join(b.dir, "sweep"), "initiatives", "left-over", { name: "an earlier sweep" });
+    // Run 1 starts the sweep (no mirror, no delta): the first page of initiatives holds a and b, and says more follow.
+    b.run("r1", { mode: "sweep", at: tick(0), sweep: { startedAt: tick(0), fresh: true, stage: 0 }, pageDocs: { a: { name: "a-page" }, b: { name: "b" } }, next: "k1" });
+    const one = b.merge(tick(1));
+    assert.equal(one.did, "sweep");
+    assert.equal(existsSync(join(b.dir, "mirror")), false, "no mirror until the sweep is whole");
+    assert.equal(read(join(b.dir, "sweep", "initiatives", "a.json")).name, "a-page");
+    assert.equal(existsSync(join(b.dir, "sweep", "initiatives", "left-over.json")), false, "a new sweep starts from an empty staging folder");
+    assert.deepEqual(readDeltaState(b.dir), { at: tick(0), fullAt: null, lastPrepare: tick(0), sweep: { startedAt: tick(0), stage: 0, cursor: "k1", runs: 1 } });
+    assert.equal(b.merge(tick(1)).did, null, "the same run is never merged twice");
+    // Run 2: the page at k1 ends initiatives; a delta says a changed after its page was read (the delta wins).
     await new Promise((r) => setTimeout(r, 15));
-    const t1 = NOW - 1800e3;
-    const exp = b.run("s2", { mode: "delta", at: t1, docs: { initiatives: { a: { name: "a2", updatedAt: t1 }, c: { name: "c", updatedAt: t1 } }, waiting: { w: { deleted: true, updatedAt: t1 } } } });
-    const delta = b.merge(NOW + 1000);
+    b.run("r2", { mode: "sweep", at: tick(1), docs: { initiatives: { a: { name: "a-delta", updatedAt: tick(1) } } }, sweep: { startedAt: tick(0), stage: 0, cursor: "k1" }, pageDocs: { a: { name: "a-page-older" }, c: { name: "c" } }, next: null });
+    assert.equal(b.merge(tick(2)).did, "sweep");
+    assert.equal(read(join(b.dir, "sweep", "initiatives", "a.json")).name, "a-delta");
+    assert.deepEqual(readDeltaState(b.dir).sweep, { startedAt: tick(0), stage: 1, cursor: null, runs: 2 });
+    // The rest of the stages, one page each; the last is the steps. A tombstone on a page is not kept.
+    for (let s = 1; s < SWEEP_STAGES.length; s++) {
+      await new Promise((r) => setTimeout(r, 15));
+      const last = s === SWEEP_STAGES.length - 1;
+      b.run(`r${s + 2}`, { mode: "sweep", at: tick(s + 1), sweep: { startedAt: tick(0), stage: s }, pageDocs: { [`d${s}`]: { n: s }, gone: { deleted: true, updatedAt: s } }, next: null });
+      const out = b.merge(tick(s + 2));
+      assert.equal(out.did, "sweep");
+      if (!last) assert.equal(existsSync(join(b.dir, "mirror")), false);
+    }
+    // The whole board is the mirror now: every stage's page, no staging folder, no tombstone, a stamp, a state without a sweep.
+    assert.equal(existsSync(join(b.dir, "sweep")), false);
+    assert.equal(read(join(b.dir, "mirror", "initiatives", "a.json")).name, "a-delta");
+    assert.equal(read(join(b.dir, "mirror", "initiatives", "c.json")).name, "c");
+    for (let s = 1; s < SWEEP_STAGES.length; s++) {
+      assert.equal(read(join(b.dir, "mirror", stageName(s), `d${s}.json`)).n, s);
+      // Only the collections edited in place have tombstones (steps, messages and ctx keep every document as written).
+      assert.equal(existsSync(join(b.dir, "mirror", stageName(s), "gone.json")), !MUTABLE.includes(stageName(s)), `${stageName(s)}: a tombstone is not kept`);
+    }
+    assert.equal(existsSync(join(b.dir, "mirror", "derived")), false, "the probe's derive makes derived/all, the seal is not a document");
+    const end = tick(SWEEP_STAGES.length);
+    assert.deepEqual(readStamp(join(b.dir, "mirror")), { at: end, mergedAt: tick(SWEEP_STAGES.length + 1) });
+    assert.deepEqual(readDeltaState(b.dir), { at: end, fullAt: tick(0), lastPrepare: end, sweep: null });
+    // The next run is a delta over the mirror.
+    await new Promise((r) => setTimeout(r, 15));
+    b.run("rd", { at: end + 60e3, docs: { initiatives: { a: { name: "a2", updatedAt: end + 1 }, c: { deleted: true, updatedAt: end + 2 } } } });
+    const delta = b.merge(end + 120e3);
     assert.equal(delta.did, "delta");
-    assert.deepEqual([delta.merged, delta.removed], [3, 1], "a, c and the sealing derived/all written, and the tombstone removed w");
     assert.equal(read(join(b.dir, "mirror", "initiatives", "a.json")).name, "a2");
-    assert.equal(read(join(b.dir, "mirror", "initiatives", "b.json")).name, "b", "untouched");
-    assert.equal(existsSync(join(b.dir, "mirror", "waiting", "w.json")), false);
-    assert.equal(existsSync(exp), false, "the merged export is removed, so nothing takes it twice");
-    assert.deepEqual(readDeltaState(b.dir), { at: t1, fullAt: t0, lastPrepare: t1 }, "the next delta starts from this run");
-    assert.equal(readStamp(join(b.dir, "mirror")).at, t1);
+    assert.equal(existsSync(join(b.dir, "mirror", "initiatives", "c.json")), false);
+    assert.equal(delta.removed, 1);
+    assert.equal(existsSync(join(b.dir, "sweep")), false, "no sweep going: no staging folder");
   } finally { b.done(); }
 });
 
-test("mergeRun: an export without its seal is not merged (the run is still listing); a run older than the mark never counts", () => {
+test("mergeRun: an export without its seal is not merged (the run is still reading); a mark with no mode, or mode off, never counts", () => {
   const b = board();
   try {
     writeDeltaState(b.dir, { at: NOW - 7200e3, fullAt: NOW - 7200e3, lastPrepare: NOW - 7200e3 });
     mkdirSync(join(b.dir, "mirror", "initiatives"), { recursive: true });
-    b.run("half", { mode: "delta", at: NOW - 1800e3, docs: { steps: { s: { at: NOW - 1700e3 } } }, seal: false });
-    assert.equal(b.merge().did, null, "derived/all.json is listed last: not there yet");
-    put(join(b.root, "half", "scratchpad", EXPORT_NAME), "derived", "all", { at: 1 });
+    b.run("half", { at: NOW - 1800e3, docs: { steps: { s: { at: NOW - 1700e3 } } }, seal: false });
+    assert.equal(b.merge().did, null, "derived/all.json is saved last: not there yet");
+    put(join(b.root, "half", "scratchpad", EXPORT_NAME), "derived", "all", { version: 2 });
     assert.equal(b.merge().did, "delta");
-    // A mark with no mode (the older run) is left to collect.mjs's own step.
+    // A mark with no mode (the older run) is left to collect.mjs's own step; mode off reads nothing.
+    for (const mode of ["off", "full"]) {
+      const exp = b.run(`m-${mode}`, { mode, at: NOW - 600e3, docs: { initiatives: { x: { name: "x" } } } });
+      assert.equal(b.merge().did, null, `a sealed export marked ${mode}`);
+      assert.equal(existsSync(join(b.dir, "mirror", "initiatives", "x.json")), false);
+      assert.equal(existsSync(exp), true);
+    }
     writeFileSync(join(b.dir, "export-since.json"), JSON.stringify({ at: NOW - 600e3, refs: {} }));
     assert.equal(b.merge().did, null);
   } finally { b.done(); }
 });
 
-test("mergeRun: a nightly read that differs from the merged mirror prints MIRROR DRIFT and then replaces the mirror", async () => {
+test("mergeRun: a sweep that ends over a mirror the deltas built prints MIRROR DRIFT for what they missed, and then replaces the mirror", () => {
   const b = board();
   try {
-    const t0 = NOW - 7200e3;
+    const t0 = NOW - 7200e3, last = SWEEP_STAGES.length - 1;
     mkdirSync(join(b.dir, "mirror", "initiatives"), { recursive: true });
     put(join(b.dir, "mirror"), "initiatives", "ok", { name: "ok", updatedAt: 1 });
     put(join(b.dir, "mirror"), "initiatives", "stale", { name: "stale" });
     put(join(b.dir, "mirror"), "initiatives", "hard-deleted", { name: "gone" });
     put(join(b.dir, "mirror"), "waiting", "w", { text: "w" });
-    put(join(b.dir, "mirror"), "ideas", "x", { at: NOW });
     writeStamp(join(b.dir, "mirror"), t0, t0);
-    writeDeltaState(b.dir, { at: t0, fullAt: t0 - 86400e3, lastPrepare: t0 });
-    const exp = b.run("night", { mode: "full", at: NOW - 600e3, docs: { initiatives: { ok: { name: "ok", updatedAt: 1 }, stale: { name: "edited by a writer with no stamp" } }, waiting: { w: { text: "w" } } } });
-    for (const c of ["ideas", "messages", "ctx", "steps"]) put(exp, c, "x", { at: NOW });
+    writeDeltaState(b.dir, { at: t0, fullAt: t0 - 4 * 86400e3, lastPrepare: t0, sweep: { startedAt: t0, stage: last, cursor: null, runs: 40 } });
+    // The staging folder holds the earlier pages: the board as the sweep read it.
+    put(join(b.dir, "sweep"), "initiatives", "ok", { name: "ok", updatedAt: 1 });
+    put(join(b.dir, "sweep"), "initiatives", "stale", { name: "edited by a writer with no stamp" });
+    put(join(b.dir, "sweep"), "waiting", "w", { text: "w" });
+    b.run("end", { mode: "sweep", at: NOW - 600e3, sweep: { startedAt: t0, stage: last }, pageDocs: { s1: { at: NOW } }, next: null });
     const out = b.merge();
-    assert.equal(out.did, "full");
+    assert.equal(out.did, "sweep");
     assert.equal(out.lines.length, 1);
     assert.match(out.lines[0], /^MIRROR DRIFT initiatives: changed with no newer updatedAt 1 \(stale\); deleted on the board, still in the mirror 1 \(hard-deleted\)/);
-    assert.equal(read(join(b.dir, "mirror", "initiatives", "stale.json")).name, "edited by a writer with no stamp", "the full read is the mirror now");
+    assert.equal(read(join(b.dir, "mirror", "initiatives", "stale.json")).name, "edited by a writer with no stamp", "the sweep is the mirror now");
     assert.equal(existsSync(join(b.dir, "mirror", "initiatives", "hard-deleted.json")), false);
-    assert.equal(readDeltaState(b.dir).fullAt, NOW - 600e3);
-    assert.ok(readStamp(join(b.dir, "mirror")).at === NOW - 600e3);
+    assert.equal(existsSync(join(b.dir, "sweep")), false);
+    assert.equal(readDeltaState(b.dir).fullAt, t0, "a sweep is dated by its start");
+    assert.equal(readDeltaState(b.dir).sweep, null);
+    assert.equal(readStamp(join(b.dir, "mirror")).at, NOW - 600e3);
   } finally { b.done(); }
 });
 
-test("a full read holding a tombstone: mergeRun leaves it out of the mirror, and readMirror shows no card for it (Checker)", () => {
+test("a sweep holding a tombstone: mergeRun leaves it out of the mirror, and readMirror shows no card for it (Checker)", () => {
   const b = board();
   try {
-    const t0 = NOW - 600e3;
-    const exp = b.run("night", { mode: "full", at: t0, docs: { initiatives: { live: { name: "live", updatedAt: 1 }, dead: { deleted: true, updatedAt: 2 } }, waiting: { gone: { deleted: true, updatedAt: 3 } }, plan: { p: { deleted: true, updatedAt: 4 } } } });
-    for (const c of ["ideas", "messages", "ctx", "steps"]) put(exp, c, "x", { at: NOW });
-    const out = b.merge();
-    assert.equal(out.did, "full");
+    const last = SWEEP_STAGES.length - 1;
+    writeDeltaState(b.dir, { at: NOW - 900e3, fullAt: null, lastPrepare: NOW - 900e3, sweep: { startedAt: NOW - 900e3, stage: last, cursor: null, runs: 9 } });
+    put(join(b.dir, "sweep"), "initiatives", "live", { name: "live", updatedAt: 1 });
+    put(join(b.dir, "sweep"), "initiatives", "dead", { deleted: true, updatedAt: 2 });
+    put(join(b.dir, "sweep"), "waiting", "gone", { deleted: true, updatedAt: 3 });
+    put(join(b.dir, "sweep"), "plan", "p", { deleted: true, updatedAt: 4 });
+    b.run("end", { mode: "sweep", at: NOW - 600e3, sweep: { startedAt: NOW - 900e3, stage: last }, pageDocs: { x: { at: NOW } }, next: null });
+    assert.equal(b.merge().did, "sweep");
     for (const [c, id] of [["initiatives", "dead"], ["waiting", "gone"], ["plan", "p"]]) assert.equal(existsSync(join(b.dir, "mirror", c, `${id}.json`)), false, `${c}/${id} tombstone is not kept`);
     assert.equal(existsSync(join(b.dir, "mirror", "initiatives", "live.json")), true);
     const m = readMirror(join(b.dir, "mirror"));
@@ -134,28 +175,40 @@ test("the constants are tied: the gate's tombstoned collections are the collecto
   assert.match(updatedAtErrors(w("update", "waiting", "x", { updatedAt: NOW - STAMP_WINDOW_MS - 1000 }), NOW)[0] ?? "", new RegExp(`more than ${STAMP_WINDOW_MS / 60e3} minutes old`), "the message derives its minutes from the constant");
 });
 
-test("mergeRun: a delta marked while no mirror exists takes nothing and writes no state (it would otherwise pass as a whole read)", () => {
+test("mergeRun: a delta marked while no mirror exists takes nothing and writes no state (it would otherwise pass as the whole board)", () => {
   const b = board();
   try {
     const t1 = NOW - 600e3;
     const exp = b.run("lonely", { mode: "delta", at: t1, docs: { initiatives: { a: { name: "a", updatedAt: t1 } } } });
     assert.equal(b.merge().did, null);
     assert.equal(existsSync(join(b.dir, "mirror")), false, "no mirror made from a delta");
-    assert.equal(readDeltaState(b.dir), null, "no state, so the next run plans a full read");
+    assert.equal(existsSync(join(b.dir, "sweep")), false);
+    assert.equal(readDeltaState(b.dir), null, "no state, so the next run plans a sweep");
     assert.equal(existsSync(exp), true, "the export is left where it was");
   } finally { b.done(); }
 });
 
-test("a nightly read with a collection of exactly whole pages is reported as cut, as it always was", () => {
+test("mergeRun: a delta while a sweep goes lands in the mirror and in the staging folder; a page that is not the planned one is not laid", () => {
   const b = board();
   try {
-    const exp = b.run("full", { mode: "full", at: NOW - 600e3, docs: { initiatives: { a: { name: "a" } }, waiting: { w: { text: "w" } } } });
-    for (const c of ["ideas", "ctx", "steps"]) put(exp, c, "x", { at: NOW });
-    for (let i = 0; i < 1000; i++) put(exp, "messages", `m${i}`, { at: NOW, text: "x" });
-    const out = b.merge();
-    assert.equal(out.did, "full");
-    assert.equal(out.lines.length, 1);
-    assert.match(out.lines[0], /^NUDGE the board export may be cut: messages \(1000\) came back with exactly a full page/);
+    const t0 = NOW - 3600e3;
+    mkdirSync(join(b.dir, "mirror", "initiatives"), { recursive: true });
+    put(join(b.dir, "mirror"), "initiatives", "m", { name: "m", updatedAt: 1 });
+    writeStamp(join(b.dir, "mirror"), t0, t0);
+    writeDeltaState(b.dir, { at: t0, fullAt: t0 - 99e6, lastPrepare: t0, sweep: { startedAt: t0 - 600e3, stage: 0, cursor: "k1", runs: 1 } });
+    // A run whose page is for another cursor (the state moved on): its delta counts, its page does not, and the sweep stays.
+    b.run("odd", { mode: "sweep", at: NOW - 900e3, docs: { initiatives: { n: { name: "n", updatedAt: NOW - 950e3 } } }, sweep: { startedAt: t0 - 600e3, stage: 0, cursor: "k0" }, pageDocs: { stray: { name: "stray" } }, next: null });
+    assert.equal(b.merge().did, "delta");
+    assert.equal(read(join(b.dir, "mirror", "initiatives", "n.json")).name, "n");
+    assert.equal(read(join(b.dir, "sweep", "initiatives", "n.json")).name, "n");
+    assert.equal(existsSync(join(b.dir, "sweep", "initiatives", "stray.json")), false, "not the planned page");
+    assert.deepEqual(readDeltaState(b.dir).sweep, { startedAt: t0 - 600e3, stage: 0, cursor: "k1", runs: 2 });
+    // A run of another collection's report is not laid either.
+    b.run("odd2", { mode: "sweep", at: NOW - 300e3, sweep: { startedAt: t0 - 600e3, stage: 0, cursor: "k1" }, pageDocs: { stray2: {} }, next: "k2" });
+    writeFileSync(join(b.root, "odd2", "scratchpad", EXPORT_NAME, "sweep-next.json"), JSON.stringify({ collection: "waiting", next: "k2" }));
+    b.merge();
+    assert.equal(existsSync(join(b.dir, "sweep", "initiatives", "stray2.json")), false);
+    assert.equal(readDeltaState(b.dir).sweep.cursor, "k1", "the cursor did not move");
   } finally { b.done(); }
 });
 

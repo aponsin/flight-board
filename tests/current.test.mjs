@@ -103,7 +103,7 @@ test("currentLink: only a link to <install root>/<full commit> holding the colle
 });
 
 test("the fence lets the two steps run from the pinned copy or the current link, and nothing else", () => {
-  const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", collector: { outDir: "/srv/out" } });
+  const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", artifactSlug: "11111111-2222-4333-8444-555555555555", collector: { outDir: "/srv/out" } });
   const install = `/srv/fb/install/${A}`, current = "/srv/fb/current";
   const run = (command, spec) => decide({ session_id: "s1", cwd: spec.cwd, tool_name: "Bash", tool_input: { command } }, spec);
   const withLink = fenceSpec({ config, configPath: "/c.json", install, current, sendTo: "lead", uid: 501 });

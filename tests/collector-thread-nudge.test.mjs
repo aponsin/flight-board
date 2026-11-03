@@ -50,11 +50,13 @@ test("the cut check: a whole number of pages of any exported collection, none fo
   assert.ok(EXPORT_COLLECTIONS.includes("threads") && EXPORT_COLLECTIONS.includes("messages"));
 });
 
-test("the task pages every export list with next_cursor, in its steps and in its prompt", () => {
+test("the task pages every delta query with nextCursor and reads ONE sweep page, in its steps and in its prompt (#C655)", () => {
   const prompt = readFileSync(new URL("../collector/PROMPT.txt", import.meta.url), "utf8");
   const task = readFileSync(new URL("../collector/TASK.md", import.meta.url), "utf8");
-  assert.match(prompt, /for each of: initiatives, waiting, ideas, messages, ctx, plan, threads \([^)]*\), each again with its next_cursor \(query\.cursor, the same out_dir\) until there is none/);
-  assert.match(prompt, /with each next_cursor \(query\.cursor, the same where, the same out_dir\) until there is none/, "a delta query pages too");
-  assert.match(task, /`threads` \([^)]*\),\s+each again with its `next_cursor` \(`query\.cursor`, the same `out_dir`\) until there is none/);
-  assert.match(task, /`NUDGE the board export may be cut`/);
+  assert.match(prompt, /and again with each nextCursor \(cursor, the same where\) until there is none/, "a delta query pages");
+  assert.match(prompt, /read ONE page only and do not follow nextCursor/, "a sweep page is one page: the probe holds the cursor");
+  assert.match(prompt, /"next": <the nextCursor the answer gave, or null when it gave none>/, "and the run says where it ended");
+  assert.match(task, /again with each `nextCursor`\s+\(`cursor`, the same where\) until there is none/);
+  assert.match(task, /ONE page, never the next/);
+  assert.match(task, /`Export\/sweep-next\.json` always says where it ended/);
 });

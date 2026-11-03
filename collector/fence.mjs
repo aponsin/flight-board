@@ -10,13 +10,18 @@ import { join, dirname, resolve, basename } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { EXPORT_NAME, EXPORT_COLLECTIONS } from "./export.mjs";
-import { LIST_TOOL, USAGE_TOOL, META_FILE, ctxFile, contextRoles, contextWriteErrors, readPlan } from "./context.mjs";
+import { EXPORT_NAME, READ_COLLECTIONS, CURSOR, fileErrors } from "./export.mjs";
+import { LIST_TOOL, USAGE_TOOL, contextRoles, readPlan } from "./context.mjs";
 
 export const MESSAGE_MAX = 4096;
+// The most the run may write of a page (about 100 KB a page is planned, collector/delta.mjs SWEEP_STAGES) and of derived/all.
+export const PAGE_MAX = 400 * 1024;
+export const DERIVED_MAX = 200 * 1024;
 const SESSION = /^[A-Za-z0-9_-]{1,100}$/;
 const FREE = new Set(["ToolSearch", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
-const QUERY_KEYS = new Set(["limit", "cursor", "where", "order_by"]);
+// The claude-artifacts server's tools the run may call, on the board's own slug only (#C655).
+export const DB_TOOLS = { list: "mcp__claude-artifacts__db_list", query: "mcp__claude-artifacts__db_query", get: "mcp__claude-artifacts__db_get", write: "mcp__claude-artifacts__db_write" };
+const PAGE_NAME = /^[A-Za-z0-9_-]{1,60}$/;
 const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
 
 // The collector's code may run from the fence's own pinned copy or from the current link (#C223): <install root>/../current,
@@ -39,19 +44,18 @@ export function fenceSpec({ config, configPath, install, current = null, sendTo,
   const id = boardId(config);
   if (!id) throw new Error("the config has no board link");
   if (!config.collector.outDir) throw new Error("collector.outDir is empty");
+  if (!config.artifactSlug) throw new Error("the config has no artifactSlug");
   if (!SESSION.test(String(sendTo ?? ""))) throw new Error("--send-to: a session id");
   const commands = [install, current].filter(Boolean).flatMap((dir) => {
     const collect = `node ${dir}/collector/collect.mjs --config ${configPath}`;
     return [`${collect} --prepare`, collect];
   });
   return {
-    url: config.artifactUrl,
+    slug: config.artifactSlug,
     cwd: join(home(config.gate.stateDir), id),
     commands,
     derivedFile: join(home(config.collector.outDir), "derived-all.json"),
     roles: contextRoles(config),
-    ctxFile: (role) => join(home(config.collector.outDir), ctxFile(role)),
-    metaFile: join(home(config.collector.outDir), META_FILE),
     usageIds,
     sendTo,
     uid,
@@ -87,7 +91,14 @@ export function decide(input, spec, read = readJson) {
     if (!spec.commands.includes(t.command)) return "Bash: only the two collect.mjs commands, exactly as the steps write them (from the pinned copy or the current link)";
     return null;
   }
-  if (tool === "ArtifactData") return artifactData(t, spec, session, read);
+  if (Object.values(DB_TOOLS).includes(tool)) return dbCall(tool, t, spec, read);
+  if (tool === "Write") return writeCall(t, spec, session);
+  if (tool === "Read") {
+    // The one file the run publishes: the probe's derived-all.json, so it can copy it into the db_write below.
+    const extra = onlyKeys(t, ["file_path", "offset", "limit", "allow_large"]);
+    if (extra.length) return `Read: unexpected ${extra.join(", ")}`;
+    return t.file_path === spec.derivedFile ? null : "Read: the collector's derived-all.json only";
+  }
   // Memory readings (collector/context.mjs): the session list once, then get_usage of each session --prepare planned.
   if (tool === LIST_TOOL || tool === USAGE_TOOL) {
     if (!spec.roles.length) return `${tool}: collector.contextRoles is empty`;
@@ -107,43 +118,74 @@ export function decide(input, spec, read = readJson) {
   return `${String(tool)}: not one of the collector's steps`;
 }
 
-function artifactData(t, spec, session, read) {
-  if (t.url !== spec.url) return "ArtifactData: this board only";
-  const pads = scratchpads(spec, session);
-  const inPad = (dir, name) => pads.some((p) => dir === `${p}/${name}`);
-  const write = ["action", "url", "collection", "doc_id", "file_path", "if_version"];
-  const keys = { list: ["action", "url", "collection", "query", "out_dir"], query: ["action", "url", "collection", "query", "out_dir"], get: ["action", "url", "collection", "doc_id", "out_dir"], set: write, update: write }[t.action];
-  if (!keys) return `ArtifactData: ${String(t.action)} is not one of the steps`;
-  const extra = onlyKeys(t, keys);
-  if (extra.length) return `ArtifactData: unexpected ${extra.join(", ")}`;
-  if (t.action === "list" || t.action === "query") {
-    if (!EXPORT_COLLECTIONS.includes(t.collection)) return "ArtifactData: only the exported collections";
-    if (t.query !== undefined && !(plain(t.query) && onlyKeys(t.query, [...QUERY_KEYS]).length === 0)) return "ArtifactData: query takes limit, cursor, where and order_by only";
-    if (!inPad(t.out_dir, EXPORT_NAME)) return `ArtifactData: export into this session's scratchpad + /${EXPORT_NAME} only`;
-    return null;
+// The board's database tools (#C655), on the board's own slug and nothing else. db_list and db_query read an exported
+// collection: one page (limit up to 1000) at the cursor the plan or the last page gave; db_query only with one condition,
+// "at" or "updatedAt" at or after a time, as the plan wrote it. db_get reads derived/all (its version); db_write sets
+// derived/all, one document, inline, at most DERIVED_MAX bytes. Nothing else: no delete, no merge, no other path.
+function dbCall(tool, t, spec, read) {
+  if (t.slug !== spec.slug) return "the board database: this board only";
+  if (tool === DB_TOOLS.get) {
+    const extra = onlyKeys(t, ["slug", "path"]);
+    if (extra.length) return `db_get: unexpected ${extra.join(", ")}`;
+    return t.path === "derived/all" ? null : "db_get: derived/all only";
   }
-  if (t.if_version !== undefined && !Number.isInteger(t.if_version)) return "ArtifactData: if_version a whole number";
-  if (t.collection === "ctx" || (t.collection === "meta" && t.doc_id === "context")) return memoryWrite(t, spec, pads, read);
-  if (t.collection !== "derived" || t.doc_id !== "all") return "ArtifactData: derived/all only";
-  if (t.action === "update") return "ArtifactData: derived/all: set only";
-  if (t.action === "get") return inPad(t.out_dir, "derived-version") ? null : "ArtifactData: get into this session's scratchpad + /derived-version only";
-  if (t.file_path !== spec.derivedFile) return "ArtifactData: set derived/all from the collector's output file only";
+  if (tool === DB_TOOLS.write) return dbWrite(t, spec, read);
+  const query = tool === DB_TOOLS.query;
+  const extra = onlyKeys(t, query ? ["slug", "collection", "limit", "cursor", "where"] : ["slug", "collection", "limit", "cursor"]);
+  if (extra.length) return `${query ? "db_query" : "db_list"}: unexpected ${extra.join(", ")}`;
+  if (!READ_COLLECTIONS.includes(t.collection)) return "the board database: only the exported collections";
+  if (!(Number.isInteger(t.limit) && t.limit >= 1 && t.limit <= 1000)) return "the board database: limit a whole number from 1 to 1000";
+  if (t.cursor !== undefined && !(typeof t.cursor === "string" && CURSOR.test(t.cursor))) return "the board database: cursor as the board gave it";
+  if (query && t.where !== undefined) {
+    const w = t.where;
+    const one = Array.isArray(w) && w.length === 1 && plain(w[0]) && onlyKeys(w[0], ["field", "op", "value"]).length === 0;
+    if (!one || !["at", "updatedAt"].includes(w[0].field) || w[0].op !== ">=" || !(Number.isFinite(w[0].value) && w[0].value >= 0)) return "db_query: where is one condition, at or updatedAt >= a time";
+  }
   return null;
 }
 
-// ctx/<Role> set and meta/context update, each from its own file in collector.outDir, whose content is checked too; and
-// the get of meta/context into the scratchpad for its version.
-function memoryWrite(t, spec, pads, read) {
-  if (!spec.roles.length) return "ArtifactData: collector.contextRoles is empty";
-  const meta = t.collection === "meta";
-  if (t.action === "get") return meta && pads.some((p) => t.out_dir === `${p}/context-version`) ? null : "ArtifactData: get meta/context into this session's scratchpad + /context-version only";
-  if (meta ? t.action !== "update" : t.action !== "set") return meta ? "ArtifactData: meta/context: update only" : "ArtifactData: ctx/<Role>: set only";
-  if (!meta && !spec.roles.includes(t.doc_id)) return `ArtifactData: ctx/${t.doc_id} is not in collector.contextRoles`;
-  if (t.file_path !== (meta ? spec.metaFile : spec.ctxFile(t.doc_id))) return "ArtifactData: a memory write comes from its own file in collector.outDir only";
-  let data;
-  try { data = read(t.file_path); } catch { return "ArtifactData: can't read the memory file"; }
-  const errs = contextWriteErrors({ op: t.action, collection: t.collection, doc_id: t.doc_id, data }, spec.roles, spec.now);
-  return errs.length ? `ArtifactData: ${errs.join("; ")}` : null;
+// The same value whatever the order of an object's keys (a copy typed back may reorder them).
+const canon = (v) => (Array.isArray(v) ? v.map(canon) : plain(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
+
+function dbWrite(t, spec, read) {
+  const extra = onlyKeys(t, ["slug", "ops"]);
+  if (extra.length) return `db_write: unexpected ${extra.join(", ")}`;
+  if (!Array.isArray(t.ops) || t.ops.length !== 1 || !plain(t.ops[0])) return "db_write: one operation";
+  const op = t.ops[0];
+  const bad = onlyKeys(op, ["op", "path", "data", "ifVersion"]);
+  if (bad.length) return `db_write: unexpected ${bad.join(", ")}`;
+  if (op.op !== "set" || op.path !== "derived/all") return "db_write: set derived/all only";
+  if (op.ifVersion !== undefined && !(Number.isInteger(op.ifVersion) && op.ifVersion >= 1)) return "db_write: ifVersion a whole number";
+  if (!plain(op.data)) return "db_write: derived/all is an object";
+  if (Buffer.byteLength(JSON.stringify(op.data), "utf8") > DERIVED_MAX) return `db_write: derived/all at most ${DERIVED_MAX} bytes`;
+  // What goes to the board is the probe's file, whole: nothing typed into it, nothing left out.
+  let file;
+  try { file = read(spec.derivedFile); } catch { return "db_write: can't read the collector's derived-all.json"; }
+  return JSON.stringify(canon(file)) === JSON.stringify(canon(op.data)) ? null : "db_write: derived/all must be exactly the collector's derived-all.json";
+}
+
+// The Write tool (#C655): the pages, the sweep report and the seal in this session's export folder, nowhere else, each checked
+// for its shape (collector/export.mjs fileErrors). A page is <collection>/<name>.page.json (a delta) or sweep/<collection>/<name>.page.json.
+function writeCall(t, spec, session) {
+  const extra = onlyKeys(t, ["file_path", "content"]);
+  if (extra.length) return `Write: unexpected ${extra.join(", ")}`;
+  if (typeof t.file_path !== "string" || typeof t.content !== "string") return "Write: a file_path and content";
+  if (Buffer.byteLength(t.content, "utf8") > PAGE_MAX) return `Write: at most ${PAGE_MAX} bytes`;
+  for (const pad of scratchpads(spec, session)) {
+    const root = `${pad}/${EXPORT_NAME}/`;
+    if (!t.file_path.startsWith(root)) continue;
+    const parts = t.file_path.slice(root.length).split("/");
+    const [first, second, third] = parts;
+    let kind = null;
+    if (parts.length === 1 && first === "sweep-next.json") kind = "report";
+    else if (parts.length === 2 && first === "derived" && second === "all.json") kind = "seal";
+    else if (parts.length === 2 && READ_COLLECTIONS.includes(first) && second.endsWith(".page.json") && PAGE_NAME.test(second.slice(0, -10))) kind = "page";
+    else if (parts.length === 3 && first === "sweep" && READ_COLLECTIONS.includes(second) && third.endsWith(".page.json") && PAGE_NAME.test(third.slice(0, -10))) kind = "page";
+    if (!kind) return `Write: only the export's pages, sweep-next.json and derived/all.json, in this session's scratchpad + /${EXPORT_NAME}`;
+    const errs = fileErrors(kind, t.content);
+    return errs.length ? `Write: ${errs.join("; ")}` : null;
+  }
+  return `Write: this session's scratchpad + /${EXPORT_NAME} only`;
 }
 
 // The hook: read the call, decide, refuse with exit 2. Every failure on the way refuses too.
