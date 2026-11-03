@@ -29,7 +29,7 @@
 import { idText as q } from "./text.mjs";
 import { repoOf, openAsks } from "./derive.mjs";
 import { typedClashes } from "./state-schema.mjs";
-import { reworkOwed, signalText } from "./rework.mjs";
+import { reworkOwed, signalText, halfLive } from "./rework.mjs";
 
 const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10, TYPED_MIN = 5, IDLE_MIN = 10;
 const closed = (k) => k.status === "done" || k.status === "dropped";
@@ -223,6 +223,18 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
       const names = list.sort((x, y) => (Number.isInteger(x.num) ? x.num : Infinity) - (Number.isInteger(y.num) ? y.num : Infinity)).map((k) => (Number.isInteger(k.num) && k.num > 0 ? `#C${k.num}` : q(k.id)));
       firing.push({ key: `idle:${role}:${names.join(",")}`, text: `IDLE WITH WORK: ${q(role)} ${names.join(", ")} (idle ${mins(now - live.agents[role].since)} min): send its next card` });
     }
+  }
+
+  // 11. A half-live card (#C635): live or done while a doneWhen line of it has no end step carrying its index (the gate refuses
+  // the move, so this is a card written around it, or lines added after). Keyed by the lines left, so closing one is news.
+  for (const card of cards.values()) {
+    if (card.status === "dropped" || !Array.isArray(card.doneWhen) || !card.doneWhen.length) continue;
+    const phase = derived[card.id]?.phase ?? card.phase;
+    if (card.status !== "done" && phase !== config.collector.livePhase) continue;
+    const open = halfLive(card, docs.steps ?? []);
+    if (!open.length) continue;
+    const tag = Number.isInteger(card.num) && card.num > 0 ? ` (#C${card.num})` : "";
+    firing.push({ key: `halflive:${card.id}:${open.join(",")}`, text: `HALF-LIVE ${q(card.id)}${tag}: ${card.status === "done" ? "done" : "live"} with ${open.length} doneWhen line(s) that have no end step (lines ${open.join(", ")}): log each step, or take the line off the card` });
   }
 
   // Once, then again only after the quiet period; forgotten when it stops holding.

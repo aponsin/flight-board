@@ -9,7 +9,7 @@ import { contextRoles, contextWriteErrors, isContextWrite } from "../collector/c
 import { mechanicalClass } from "./traffic.mjs";
 import { approvalWriteErrors, agentPrWriteErrors } from "./agent-prs.mjs";
 import { buildingNow, liveCard } from "../collector/state-schema.mjs";
-import { reworkOwed, issueTotal, signalText, ISSUE_KINDS } from "../collector/rework.mjs";
+import { reworkOwed, issueTotal, signalText, ISSUE_KINDS, DONE_WHEN_MAX, halfLive } from "../collector/rework.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 let page;
@@ -221,6 +221,9 @@ export function writeErrors(w, { config, who, now }) {
     if (["batch", "bump"].some((f) => f in data) && !who.manager && op !== "set") e.push(`batch and bump: only ${config.gate.managerRole} marks how a card ships`);
     if (marks.includes("batch") && !(typeof data.batch === "string" && /^[a-z0-9-]{1,40}$/.test(data.batch))) e.push("batch: a short name (a-z, 0-9 and -, up to 40)");
     if (marks.includes("bump") && !["patch", "minor", "major"].includes(data.bump)) e.push("bump: patch, minor or major");
+    // What must be true for the card to be done (#C635): optional lines, each closed by an end step carrying its index.
+    if ("doneWhen" in data && !data.doneWhen?.__delete__ && !(Array.isArray(data.doneWhen) && data.doneWhen.length >= 1 && data.doneWhen.length <= DONE_WHEN_MAX && data.doneWhen.every((l) => typeof l === "string" && l.trim() && l.length <= 300)))
+      e.push(`doneWhen: a list of 1 to ${DONE_WHEN_MAX} lines of text, each up to 300 characters`);
     // What a card waits on (#C444): the lead's, set or cleared; other cards' ids, each once (dependsOnErrors reads it).
     if ("dependsOn" in data) {
       if (!who.manager) { if (op !== "set") e.push(`dependsOn: only ${config.gate.managerRole} says what a card waits on`); }
@@ -269,6 +272,8 @@ export function writeErrors(w, { config, who, now }) {
     if (!phases.includes(data.phase)) e.push(`unknown phase "${data.phase}" (use ${phases.join(", ")})`);
     if (!["start", "end"].includes(data.kind)) e.push("kind must be start or end");
     if (!data.init || !data.who || typeof data.at !== "number") e.push("a step needs init, who and at");
+    // A step that closes one of its card's doneWhen lines (#C635): an end step with that line's index.
+    if ("doneWhen" in data && !(data.kind === "end" && Number.isInteger(data.doneWhen) && data.doneWhen >= 0 && data.doneWhen < DONE_WHEN_MAX)) e.push(`doneWhen: the index (0 to ${DONE_WHEN_MAX - 1}) of the card's line this step closes, on an end step`);
   }
   return e;
 }
@@ -684,6 +689,14 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
   if (data.status === "dropped" && !String(data.dropReason ?? was?.dropReason ?? "").trim()) e.push('a dropped card needs dropReason (why it was given up)');
   // A card that names its branch keeps it (#C237): naming another is a second branch.
   if (typeof was?.branch === "string" && was.branch && typeof data.branch === "string" && data.branch !== was.branch) e.push(`${SECOND_BRANCH} (this card's branch is ${was.branch})`);
+  // Rule 5b (#C635): no half-live. A card that lists what must be true for it to be done (doneWhen) does not go live or done
+  // while any line has no end step carrying its index; a card without doneWhen is unaffected.
+  const goesLive = (data.phase === config.collector.livePhase && was?.phase !== config.collector.livePhase) || (data.status === "done" && !shut(was ?? {}));
+  if (goesLive && Array.isArray(now.doneWhen) && now.doneWhen.length) {
+    const s = [...(mirror.docs.steps ?? []), ...batch.filter((b) => b.collection === "steps" && b.op === "set" && b.data).map((b) => b.data)];
+    const open = halfLive(now, s);
+    if (open.length) e.push(`${Number.isInteger(was?.num) ? `#C${was.num}` : idText(id)} has doneWhen lines with no step: ${open.join(", ")} (of 0 to ${now.doneWhen.length - 1}): log an end step with doneWhen set to each of those indexes first`);
+  }
   if ((data.status === "done" || data.status === "dropped") && !shut(was ?? {})) {
     const thread = (mirror.docs.messages ?? []).filter((m) => m.thread === id && typeof m.at === "number").sort((a, b) => a.at - b.at);
     if (thread.length && thread[thread.length - 1].from === config.owner) e.push(`${config.owner}'s last message in its thread is unanswered`);

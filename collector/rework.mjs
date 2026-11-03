@@ -41,6 +41,17 @@ export function reworkOwed(card, steps, config) {
   return last;
 }
 
+// No half-live (#C635): a card may list what must be true for it to be done (doneWhen, lines of text); each line is closed by
+// an end step of that card with doneWhen set to the line's index. halfLive gives the indexes with no such step (steps of the
+// card's id or its #C number are read as given: the caller passes the steps it has).
+export const DONE_WHEN_MAX = 20;
+export function halfLive(card, steps) {
+  if (!card || !Array.isArray(card.doneWhen) || !card.doneWhen.length) return [];
+  const num = Number.isInteger(card.num) && card.num > 0 ? `C${card.num}` : null;
+  const closed = new Set((steps ?? []).filter((s) => s && s.kind === "end" && Number.isInteger(s.doneWhen) && (s.init === card.id || (num && s.init === num))).map((s) => s.doneWhen));
+  return card.doneWhen.map((_, i) => i).filter((i) => !closed.has(i));
+}
+
 const hhmm = (t) => new Date(t).toISOString().slice(11, 16);
 // What the signal was, for the nudge and the refusal: "FINDINGS by Designer at 20:52 UTC". who goes through the caller's
 // idText.
