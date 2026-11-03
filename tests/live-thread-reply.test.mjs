@@ -44,12 +44,29 @@ test("without the live message the export-only gate refuses the reply (the old b
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test("a thread the lead's live check found an owner message in takes the lead's reply, whatever the export holds", () => {
+// The reply the gate's own refusal asks for: the message with the thread's number (threads/<id> and meta/threadSeq moved) in one
+// batch. The export holds threads 1 (x), so this one is 2.
+const numberedReply = (transcript, now) => ({ tool_name: "ArtifactData", transcript_path: transcript, tool_input: { url: URL_, action: "batch", writes: [
+  { op: "set", collection: "threads", doc_id: THREAD, data: { num: 2, title: "Hook install" } },
+  { op: "set", collection: "meta", doc_id: "threadSeq", data: { next: 3 }, if_version: 4 },
+  { op: "set", collection: "messages", doc_id: `m${now}-r`, data: { thread: THREAD, from: "Manager", text: "Done, thanks.", at: now } }] } });
+
+test("a thread the lead's live check found an owner message in takes the lead's reply, numbered in the same batch, whatever the export holds", () => {
   const now = Date.now(), { root, transcript } = board(now, true);
   try {
     const config = fullConfig({ artifactUrl: URL_, gate: { stateDir: root, mirrorMaxAgeMin: 60 } });
-    const out = run(reply(transcript, now), { config, env: {}, now });
-    assert.doesNotMatch(out.block ?? "", /no item on the board, no thread with messages/);
+    const bare = run(reply(transcript, now), { config, env: {}, now });
+    assert.doesNotMatch(bare.block ?? "", /no item on the board, no thread with messages/);
+    assert.match(bare.block ?? "", /has no number yet: set threads\//, "the refusal is now the true, actionable one: number the thread");
+    assert.deepEqual(run(numberedReply(transcript, now), { config, env: {}, now }), {}, "with its number in the batch the reply goes through");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("without the live message the same numbered batch is still refused", () => {
+  const now = Date.now(), { root, transcript } = board(now, false);
+  try {
+    const config = fullConfig({ artifactUrl: URL_, gate: { stateDir: root, mirrorMaxAgeMin: 60 } });
+    assert.match(run(numberedReply(transcript, now), { config, env: {}, now }).block ?? "", /no item on the board, no thread with messages/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
