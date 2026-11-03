@@ -162,6 +162,7 @@ export function main(input, { config, env = process.env, now = Date.now(), git, 
   const lead = role === config.gate.managerRole;
   if (!lead || input?.stop_hook_active) return null;
   const r = config.collector.refresh;
+  if (r.off === true) return null;
   const dir = join(home(config.gate.stateDir), boardId(config) ?? "no-board");
   let startedAt = null, markRefs = null, state = null;
   try { const m = JSON.parse(read(join(dir, "export-since.json"), "utf8")); startedAt = m.at; markRefs = m.refs ?? null; } catch { /* never ran */ }

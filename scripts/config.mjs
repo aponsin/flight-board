@@ -41,7 +41,8 @@ export const DEFAULTS = {
   collector: { contextRoles: [], repos: [], repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", releaseTimes: "docs/RELEASE-TIMES.md", liveUrl: "", usageScript: "", usageScriptSha256: "", usageQuota: 0, usageResetAt: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
     // Runs on demand (collector/refresh.mjs): the checkouts whose origin/main moving means a ship (local refs, no fetch), the
     // scheduled task the lead is told to run, the quiet minutes after a run (or an ask) and how long a run may take.
-    refresh: { repos: [], taskId: "board-collector", debounceMin: 10, flightMin: 15 },
+    // off: true retires the on-demand run (#C641): the Stop hook never asks the lead to start the collector.
+    refresh: { repos: [], taskId: "board-collector", debounceMin: 10, flightMin: 15, off: false },
     // The context keeper's saved prompt against the one the owner's install shipped (#C407, collector/keeper.mjs): the
     // scheduled task's SKILL.md, the prompt file the owner pastes, and that prompt's sha256 (trimmed). Empty: off.
     // watchdog (#C411): the keeper's watchdog check, { script, state, alert }, or null for none (keeper/TASK.md {{WATCHDOG}}).
@@ -198,6 +199,7 @@ export function checkConfig(c) {
           for (const f of Object.keys(r)) if (!Object.hasOwn(DEFAULTS.collector.refresh, f)) out.push(`collector.refresh: unknown field "${f}" (known: ${Object.keys(DEFAULTS.collector.refresh).join(", ")})`);
           if (r.repos !== undefined && !(Array.isArray(r.repos) && r.repos.length <= 10 && r.repos.every((p) => typeof p === "string" && p.length > 0 && p.length <= 300 && !/[\n\0]/.test(p)))) out.push("collector.refresh.repos: a list of checkout folders");
           if (r.taskId !== undefined && !/^[a-z0-9][a-z0-9-]{0,60}$/.test(String(r.taskId))) out.push("collector.refresh.taskId: a scheduled task id");
+          if (r.off !== undefined && typeof r.off !== "boolean") out.push("collector.refresh.off: true or false");
           for (const f of ["debounceMin", "flightMin"]) if (r[f] !== undefined && !(Number.isInteger(r[f]) && r[f] >= 1 && r[f] <= 240)) out.push(`collector.refresh.${f}: whole minutes, 1 to 240`);
         }
       }

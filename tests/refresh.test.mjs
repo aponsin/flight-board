@@ -76,7 +76,7 @@ test("the baseline: kept for the same run; a newer run's refs replace it", () =>
 });
 
 test("the hook: the lead only, state from the collector's files, its ask remembered; a non-lead or a broken input lets the turn end", async () => {
-  const { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, utimesSync } = await import("node:fs");
+  const { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, utimesSync, existsSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { spawnSync } = await import("node:child_process");
@@ -87,7 +87,7 @@ test("the hook: the lead only, state from the collector's files, its ask remembe
     const raw = { artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", gate: { stateDir: dir }, collector: { repoPath: "/r", outDir: join(dir, "out"), refresh: { repos: ["/x/team-app"] } } };
     assert.deepEqual(checkConfig(raw), []);
     const config = fullConfig(raw);
-    assert.deepEqual(config.collector.refresh, { repos: ["/x/team-app"], taskId: "board-collector", debounceMin: 10, flightMin: 15 });
+    assert.deepEqual(config.collector.refresh, { repos: ["/x/team-app"], taskId: "board-collector", debounceMin: 10, flightMin: 15, off: false });
     const state = join(dir, "TestBoard01");
     mkdirSync(state, { recursive: true }); mkdirSync(join(dir, "out"));
     writeFileSync(join(state, "export-since.json"), JSON.stringify({ at: T - 30 * MIN }));
@@ -118,6 +118,17 @@ test("the hook: the lead only, state from the collector's files, its ask remembe
     assert.match(main({ transcript_path: lead }, opts()), /refresh/, "the same turn end, held the first time");
     rmSync(join(state, "refresh.json"));
     assert.equal(main({ transcript_path: lead }, { ...opts(), config: fullConfig({ ...raw, collector: { ...raw.collector, refresh: { repos: [], debounceMin: 45 } } }) }), null, "debounceMin from the config: the run 30 minutes ago is too recent");
+    // #C641: refresh.off retires the on-demand run: the same asks (an owner refresh, a ship, a READY) start nothing, and nothing is saved.
+    const offConfig = fullConfig({ ...raw, collector: { ...raw.collector, refresh: { repos: ["/x/team-app"], off: true } } });
+    assert.deepEqual(checkConfig({ ...raw, collector: { ...raw.collector, refresh: { off: true } } }), []);
+    assert.match(checkConfig({ ...raw, collector: { ...raw.collector, refresh: { off: "yes" } } }).join(), /collector\.refresh\.off: true or false/);
+    rmSync(join(state, "refresh.json"), { force: true });
+    assert.equal(main({ transcript_path: lead }, { ...opts(), config: offConfig }), null, "off: the owner's refresh starts nothing");
+    sha = "c".repeat(40);
+    assert.equal(main({ transcript_path: lead }, { ...opts(), config: offConfig }), null, "off: a ship starts nothing");
+    assert.equal(existsSync(join(state, "refresh.json")), false, "off: nothing recorded");
+    assert.match(main({ transcript_path: lead }, opts()), /refresh/, "on again: asked as before");
+    rmSync(join(state, "refresh.json"), { force: true });
     // The command line: exit 2 with the reason; exit 0 on anything broken.
     const cfg = join(dir, "board.config.json");
     writeFileSync(cfg, JSON.stringify({ ...raw, collector: { ...raw.collector, refresh: { repos: [] } } }));
