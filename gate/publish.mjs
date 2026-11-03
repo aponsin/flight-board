@@ -73,24 +73,27 @@ export function publishVerdict(input, { rawConfig, managerRole, configDir, curre
     if (error || !role || role !== managerRole) return null;
     path = t.file_path;
   }
-  if (typeof path !== "string" || !path || !configDir || !current) return null;
+  if (typeof path !== "string" || !path || !current || (!files && !configDir)) return null;
   let real;
   try { real = realpathSync(path); } catch { return null; }
-  if (dirname(real) !== configDir || !PAGE_NAME.test(basename(real))) return null;
+  // The old tool's page must be a board page in the config's folder. The claude-artifacts server's publish_files is checked by
+  // its bytes alone (#C652, Manager: "the page's bytes against the signed build's hash, not the folder it comes from"): the file
+  // may sit anywhere the session can read, such as its scratchpad, and only the very page the signed code builds passes.
+  if (!files && (dirname(real) !== configDir || !PAGE_NAME.test(basename(real)))) return null;
   const file = readCapped(real, MAX_PAGE);
   if (!file) return null;
   let built;
   try { built = buildPage(readFileSync(join(current, "page", "board.template.html"), "utf8"), rawConfig); } catch { return null; }
   if (sha(file) !== sha(built)) return null;
   // The page's sha256 rides in the reason (#C415): the lead reads the board back and checks it (scripts/publish-check.mjs).
-  return { bytes: file, name: basename(real), input: t, withPath: (p) => (files ? { ...t, files: [{ ...t.files[0], path: p }] } : { ...t, file_path: p }), reason: `Flight board: ${basename(real)} is the page the signed board code builds (${basename(current).slice(0, 12)}) for this board: published by ${role} without asking (#C409). sha256 ${sha(file)}: after the publish, read the board back and run scripts/publish-check.mjs on it with this hash.` };
+  return { bytes: file, name: files ? "index.html" : basename(real), copyDir: files ? dirname(real) : configDir, input: t, withPath: (p) => (files ? { ...t, files: [{ ...t.files[0], path: p }] } : { ...t, file_path: p }), reason: `Flight board: ${basename(real)} is the page the signed board code builds (${basename(current).slice(0, 12)}) for this board: published by ${role} without asking (#C409). sha256 ${sha(file)}: after the publish, read the board back and run scripts/publish-check.mjs on it with this hash.` };
 }
 
 // A page change on the board through the claude-artifacts server (#C652) that is not a byte-verified signed page is denied:
 // publish_version, edit_version, copy_file and an unverified publish_files would put a page the signed code did not build in
 // front of the owner's browser, with its db and state connector. The old Artifact tool kept the app's consent card instead;
 // the new tools had no hook at all.
-export const PAGE_DENIED = "Flight board: a page change on the board's artifact must be the page the signed board code builds (board-<commit>.html or board-v<NNN>.html, in the board config's folder, sent with publish_files as the only file, index.html); this one is not. Build it with scripts/build-page.mjs, or ask Manager.";
+export const PAGE_DENIED = "Flight board: a page change on the board's artifact must be the page the signed board code builds (the very bytes scripts/build-page.mjs builds from the signed copy and today's config, sent with publish_files as the only file, index.html); this one is not. Build it with scripts/build-page.mjs, or ask Manager.";
 export const pageDenied = (input, rawConfig) => classify(input, rawConfig)?.kind === "page";
 
 // #C409's race (#C415, Security's first part): between this hook's check and the publish, the file could be changed.
@@ -134,7 +137,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       const lines = input?.transcript_path ? readLines(input.transcript_path) : [];
       const managerRole = fullConfig(rawConfig).gate.managerRole;
       const v = publishVerdict(input, { rawConfig, managerRole, configDir, current, lines, envRole: process.env.FLIGHT_BOARD_ROLE });
-      const updatedInput = v ? verifiedCopy(v, configDir) : null;
+      const updatedInput = v ? verifiedCopy(v, v.copyDir ?? configDir) : null;
       if (v && updatedInput) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: v.reason, updatedInput } }));
       else if (pageDenied(input, rawConfig)) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: PAGE_DENIED } }));
     } catch { /* silence */ }

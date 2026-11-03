@@ -131,9 +131,18 @@ test("publish_files that is not exactly that is not allowed: another page, anoth
   const edited = join(s.configDir, "board-1234567.html");
   writeFileSync(edited, buildPage(template, rawConfig) + "<script>steal()</script>");
   assert.equal(verdict(s, files(edited)), null, "one byte off the build");
-  const away = join(s.root, "board-5c782c5.html");
+  // Manager's answer on #C652: the page's bytes against the signed build's hash, not the folder or the name it comes from.
+  const away = join(s.root, "my page.html");
   cpSync(s.page, away);
-  assert.equal(verdict(s, files(away)), null, "outside the config's folder");
+  assert.ok(verdict(s, files(away)), "outside the config's folder, under any name: the bytes are the signed page's, so it passes");
+  assert.equal(verdict(s, files(away)).copyDir, s.root, "the verified copy is made beside the file given, where the session can read it");
+  const awayEdited = join(s.root, "edited.html");
+  writeFileSync(awayEdited, buildPage(template, rawConfig) + "<script>steal()</script>");
+  assert.equal(verdict(s, files(awayEdited)), null, "one byte off the build, anywhere");
+  const link = join(s.root, "link.html");
+  symlinkSync(edited, link);
+  assert.equal(verdict(s, files(link)), null, "a link is read through to the bytes it points at");
+  assert.equal(publishVerdict({ tool_name: "Artifact", tool_input: { url: BOARD, file_path: away } }, { rawConfig, managerRole: "Manager", configDir: s.configDir, current: s.current, lines: [{ customTitle: "Manager" }] }), null, "the old tool still needs a board page in the config's folder");
   assert.equal(verdict(s, files(s.page, {}, { as: "other.html" })), null, "not index.html");
   assert.equal(verdict(s, files(s.page, {}, { uri: "file:///x" })), null, "a field of the file entry that is not as or path");
   for (const extra of [{ remove: ["a.js"] }, { mode: "replace" }, { icon: "x" }, { title: "T" }, { contract: "0.0.0" }, { capabilities: {} }, { force: true }]) assert.equal(verdict(s, files(s.page, extra)), null, Object.keys(extra)[0]);
@@ -163,9 +172,18 @@ test("the hook as the app runs it: an allow with the copy for a signed page, a d
   const out = JSON.parse(yes.stdout).hookSpecificOutput;
   assert.equal(out.permissionDecision, "allow");
   const copy = out.updatedInput.files[0].path;
-  assert.match(copy, /\.publish-[A-Za-z0-9]{6}\/board-0000000\.html$/);
+  assert.match(copy, /\.publish-[A-Za-z0-9]{6}\/index\.html$/);
   assert.equal(readFileSync(copy, "utf8"), readFileSync(signed, "utf8"), "the copy is the page that was checked");
   assert.deepEqual(readdirSync(s.configDir).filter((d) => d.startsWith(".publish-")).length, 1);
+  // A signed page in a folder of its own (a session's scratchpad), under any name: allowed, and the copy is made beside it.
+  const scratch = join(s.root, "scratch");
+  mkdirSync(scratch);
+  const elsewhere = join(scratch, "board page.html");
+  writeFileSync(elsewhere, readFileSync(signed));
+  const there = JSON.parse(hook(files(elsewhere)).stdout).hookSpecificOutput;
+  assert.equal(there.permissionDecision, "allow");
+  assert.equal(there.updatedInput.files[0].path.startsWith(scratch + "/.publish-"), true, "beside the file given");
+  assert.equal(readFileSync(there.updatedInput.files[0].path, "utf8"), readFileSync(signed, "utf8"));
   const bad = join(s.configDir, "board-1111111.html");
   writeFileSync(bad, buildPage(readFileSync(join(pin, "page", "board.template.html"), "utf8"), rawConfig) + "<script>steal()</script>");
   for (const input of [files(bad), { tool_name: mk("publish_version"), tool_input: { slug: UUID, content: "<!DOCTYPE html><title>x</title>" } }, { tool_name: mk("edit_version"), tool_input: { slug: UUID, base_version: "1", edits: [{ old_text: "a", new_text: "b" }] } }, { tool_name: mk("copy_file"), tool_input: { slug: UUID } }]) {
