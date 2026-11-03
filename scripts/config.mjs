@@ -27,7 +27,7 @@ export const DEFAULTS = {
   // The write gate (gate/): the lead role, item ids that are passing agent states (never items), the words that make a
   // reply a verdict, where the gate keeps its state and the board's mirror, and how old a mirror may be.
   // cardOwners: names besides the roster that may own a card (the owner's own cards); the gate refuses any other `who` (#C633).
-  gate: { managerRole: "Manager", managerSession: "", cardOwners: [], keeperRole: "Context keeper", reviewerRole: "Reviewer", releaseRole: "Release", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 75 },
+  gate: { managerRole: "Manager", managerSession: "", cardOwners: [], keeperRole: "Context keeper", reviewerRole: "Reviewer", releaseRole: "Release", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 75, requireUpdatedAt: false },
   // The collector (collector/): the team's repository and how its work shows there. notes: each review phase and the git
   // notes ref its sign-off is written to. deployWorkflow: the CI workflow whose successful run on the main branch means
   // live. lanePhases: the phases where one owner holds one card at a time (reviews and shipping queue). versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
@@ -134,6 +134,7 @@ export function checkConfig(c) {
       for (const k of ["transientPrefixes", "verdictWords"]) if (g[k] !== undefined && !(Array.isArray(g[k]) && g[k].every((w) => typeof w === "string" && w.trim().length >= 2 && w.length <= 60))) out.push(`gate.${k}: a list of short strings`);
       if (g.stateDir !== undefined && !(typeof g.stateDir === "string" && g.stateDir.length > 0)) out.push("gate.stateDir: a folder path");
       if (g.mirrorMaxAgeMin !== undefined && !(Number.isInteger(g.mirrorMaxAgeMin) && g.mirrorMaxAgeMin > 0)) out.push("gate.mirrorMaxAgeMin: whole minutes");
+      if (g.requireUpdatedAt !== undefined && typeof g.requireUpdatedAt !== "boolean") out.push("gate.requireUpdatedAt: true or false");
     }
   }
   if (c.collector !== undefined) {

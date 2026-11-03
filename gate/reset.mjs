@@ -79,6 +79,15 @@ export const truthLine = (a) => (a.kind === "ship"
 // is the last run any did, or this run's when there are too few cards to say; with none before, the clock starts at the first
 // empty run. The page's chip goes red EVIDENCE_STALE_MS later, and the probe writes no-evidence.json { since } so the lead's
 // watch prints one NOEVIDENCE line per outage (the seen file keeps the since it printed); evidence back clears both.
+// The lines the derive step finds for the lead (#C642): the Collector reads and sends nothing, so the probe derives from the mirror
+// and writes collector-lines.json { at, lines }, which the lead's watch prints once per batch (the seen file keeps the batch's at).
+// Only the line kinds the Collector used to send are shown, a few and short: the file is on disk, a planted one says nothing more.
+export const LINES_FILE = "collector-lines.json", LINES_SEEN_FILE = "collector-lines-seen.json";
+export const LINE_KINDS = /^(CONFLICT|LIVE BUT OPEN|NUDGE|KEEPER|MIRROR DRIFT)\b/;
+export const LINES_MAX = 20, LINE_MAX = 600;
+export const linesOf = (f) => (Number.isInteger(f?.at) && Array.isArray(f.lines) ? f.lines.filter((l) => typeof l === "string" && LINE_KINDS.test(l)).slice(0, LINES_MAX).map((l) => l.slice(0, LINE_MAX)) : []);
+export const linesPending = (file, seen) => (Number.isInteger(file?.at) && file.at !== seen?.at ? linesOf(file) : []);
+export const linesSeen = (file) => ({ at: file.at });
 export const NOEVIDENCE_FILE = "no-evidence.json", NOEVIDENCE_SEEN_FILE = "no-evidence-seen.json";
 export const EVIDENCE_STALE_MS = 10 * 60e3, EVIDENCE_MIN_CARDS = 3;
 // Only cards before ship count (skip: the ship and live phases): a card past its merge usually has no branch left to show (Checker

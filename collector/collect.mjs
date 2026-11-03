@@ -25,11 +25,12 @@ import { derivePlan } from "./plan-state.mjs";
 import { expectedVersions, guardExpected } from "./expected.mjs";
 import { keeperCheck, keeperLine } from "./keeper.mjs";
 import { idText, lineText } from "./text.mjs";
-import { planReadings, writeContext } from "./context.mjs";
+import { writeContext } from "./context.mjs";
 import { runMark, localMain, localShips } from "./refresh.mjs";
 import { allocate } from "../scripts/thread-ids.mjs";
 import { refreshPickups } from "./pickup.mjs";
 import { liveFresh, LIVE_FRESH_MS } from "./state-schema.mjs";
+import { sealed, deltaPlan, queryLines, readDeltaState, writeDeltaState, writeStamp, mergeDelta, driftLines, deriveDue, saveLines, DERIVE_FILE, LINE_START } from "./delta.mjs";
 
 // The folder this run's code really lives in (the current link resolved, by Node, to a pinned copy).
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -100,9 +101,9 @@ export function unnumberedThreads(docs) {
   const { batches } = allocate({ threads: docs.threads ?? [], messages: docs.messages ?? [], waiting: docs.waiting ?? [], seq: null });
   return batches.flat().filter((w) => w.collection === "threads" && Number.isInteger(w.data?.num)).map((w) => w.doc_id);
 }
-export function unnumberedLine(docs) {
+export function unnumberedLine(docs, checkCut = true) {
   // A cut export (below) is missing numbered threads, not numbers: no line until the export is whole (#C428).
-  if (cutCollections(docs).some((c) => c === "threads" || c === "messages" || c === "waiting")) return null;
+  if (checkCut && cutCollections(docs).some((c) => c === "threads" || c === "messages" || c === "waiting")) return null;
   const loose = unnumberedThreads(docs);
   return loose.length ? `NUDGE ${loose.length} thread(s) with no number: ${loose.map(idText).join(", ")}. Number them now (scripts/thread-ids.mjs, meta/threadSeq pinned).` : null;
 }
@@ -115,7 +116,9 @@ export function scratchRoot(cwd, uid, base = "/private/tmp") {
 }
 // This run's export: the newest <root>/<session>/scratchpad/EXPORT_NAME made after --prepare (`since`, ms), a real
 // folder of this user's whose resolved path stays under the root, holding every collection. Null when there is none.
-export function findExport(root, since, uid) {
+// mode (#C642): "delta" or "full" for a run that lists `derived` last, so derived/all.json says it is whole (collector/delta.mjs
+// sealed); none for the older run that checks only the required collections.
+export function findExport(root, since, uid, mode = null) {
   let best = null, sessions = [];
   try { sessions = readdirSync(root); } catch { return null; }
   for (const s of sessions) {
@@ -124,7 +127,8 @@ export function findExport(root, since, uid) {
     try { st = lstatSync(p); real = realpathSync(p); } catch { continue; }
     if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== uid || !real.startsWith(root + sep)) continue;
     if (Math.max(st.birthtimeMs || 0, st.ctimeMs) < since) continue;
-    if (!REQUIRED_COLLECTIONS.every((c) => { try { const cs = lstatSync(join(p, c)); return cs.isDirectory() && !cs.isSymbolicLink(); } catch { return false; } })) continue;
+    if (mode) { if (!sealed(p, mode, REQUIRED_COLLECTIONS)) continue; }
+    else if (!REQUIRED_COLLECTIONS.every((c) => { try { const cs = lstatSync(join(p, c)); return cs.isDirectory() && !cs.isSymbolicLink(); } catch { return false; } })) continue;
     if (!best || st.mtimeMs > best.at) best = { path: real, at: st.mtimeMs };
   }
   return best?.path ?? null;
@@ -151,6 +155,33 @@ export function takeExport(src, dir, id) {
     }
   }
   return n;
+}
+
+const readJson = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
+// The probe's merge (#C642), one look. dir: <stateDir>/<board id>; id: the board id. Returns { did, ... }: did is null when there was nothing whole to
+// merge, "delta" or "full" when it merged one (with counts and the drift lines).
+export function mergeRun({ dir, id, uid = process.getuid(), now = Date.now(), base = "/private/tmp" }) {
+  const mark = readJson(join(dir, "export-since.json"));
+  if (!mark || !Number.isFinite(mark.at) || (mark.mode !== "delta" && mark.mode !== "full")) return { did: null };
+  const state = readDeltaState(dir);
+  if (state && state.lastPrepare === mark.at) return { did: null };
+  const found = findExport(scratchRoot(dir, uid, base), mark.at, uid, mark.mode);
+  if (!found) return { did: null };
+  const mirror = join(dir, "mirror");
+  const kept = { at: mark.at, fullAt: state?.fullAt ?? null, lastPrepare: mark.at };
+  if (mark.mode === "delta" && existsSync(mirror)) {
+    const counts = mergeDelta(mirror, found, { at: mark.at, now });
+    rmSync(found, { recursive: true, force: true });
+    writeDeltaState(dir, kept);
+    return { did: "delta", ...counts, lines: [] };
+  }
+  // A full read (or a delta with no mirror to add to, which the plan never asks for): the whole board replaces the mirror.
+  takeExport(found, dir, id);
+  const lines = mark.mode === "full" && state && existsSync(mirror) ? driftLines(mirror, join(dir, "mirror.next")) : [];
+  swapMirror(dir, id);
+  writeStamp(mirror, mark.at, now);
+  writeDeltaState(dir, { ...kept, fullAt: mark.at });
+  return { did: "full", merged: 0, removed: 0, pruned: 0, lines };
 }
 
 // The nudges, with the last run's state next to the mirror (<dir>/nudges.json: what was sent when, and since when each
@@ -483,17 +514,45 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       mkdirSync(dir, { recursive: true });
       // With the refresh repos' origin/main now: the baseline the lead's refresh check compares against (collector/refresh.mjs).
       // With the code this run started with (the current link resolved): step 2 must run the same (#C223).
-      writeFileSync(join(dir, "export-since.json"), JSON.stringify({ ...runMark(Date.now(), config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern)), code: CODE }));
+      // #C642: a delta since the last merged run, or the nightly full read; the probe merges what the run saves
+      // (collector/merge.mjs), and says which it was by the mode written here.
+      const startedAt = Date.now();
+      const plan = deltaPlan({ now: startedAt, state: readDeltaState(dir), hasMirror: existsSync(join(dir, "mirror")), hour: new Date(startedAt).getHours() });
+      writeFileSync(join(dir, "export-since.json"), JSON.stringify({ ...runMark(startedAt, config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern)), code: CODE, mode: plan.mode }));
       console.log(`Export the board into: your scratchpad folder + /${EXPORT_NAME}`);
-      console.log(`Steps since: ${Date.now() - STEPS_DAYS * 864e5}`);
-      for (const line of planReadings(dir, config, Date.now())) console.log(line);
+      for (const line of queryLines(plan)) console.log(line);
+      if (plan.mode === "full") console.log(`Steps since: ${startedAt - STEPS_DAYS * 864e5}`);
       process.exit(0);
     } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
   }
-  try {
+  // #C642: the probe merges the Collector's deltas into the mirror (collector/merge.mjs), then derives from it here, with no
+  // export of its own to take (--from-mirror). A run that exported a delta or a nightly read is merged only by the probe:
+  // taking it here as the whole board would replace the mirror with part of it.
+  // --probe-step is the probe's once-a-minute call (collector/state.mjs spawns it, so the pinned probe imports none of this): merge
+  // what the Collector's last run saved, then derive from the mirror when the merge changed it or the last derive is old.
+  const probeStep = process.argv.includes("--probe-step");
+  const lines = [];
+  if (probeStep) {
+    let merged = null, last = null;
+    try { merged = mergeRun({ dir, id: boardId(config) }); } catch (e) { console.log(`merge failed: ${String(e.message).split("\n")[0].slice(0, 160)}`); }
+    if (merged?.did) console.log(`merged a ${merged.did} export (${merged.merged} written, ${merged.removed} removed, ${merged.pruned} old steps dropped)`);
+    lines.push(...(merged?.lines ?? []));
+    // A merge makes the next derive due, whichever call makes it (the probe merges first and derives after posting its state).
+    if (merged?.did) writeFileSync(join(dir, DERIVE_FILE), JSON.stringify({ at: 0 }));
+    try { last = JSON.parse(readFileSync(join(dir, DERIVE_FILE), "utf8")).at; } catch { /* none yet */ }
+    if (process.argv.includes("--merge-only") || !deriveDue({ merged: merged?.did, last, now: Date.now(), outExists: existsSync(outPath(config, dir)) })) {
+      if (saveLines(dir, lines, Date.now())) console.log(`${lines.length} line(s) for the lead's watch`);
+      process.exit(0);
+    }
+  }
+  const fromMirror = probeStep || process.argv.includes("--from-mirror");
+  // From here the probe's derive prints the lead's lines (CONFLICT, NUDGE, ...) into the lines it saves, and the rest to its log.
+  if (probeStep) { const log = console.log; console.log = (...a) => { const l = a.join(" "); if (LINE_START.test(l)) lines.push(l); else log(l); }; }
+  if (!fromMirror) try {
     let since = Infinity, mark = {};
     try { mark = JSON.parse(readFileSync(join(dir, "export-since.json"), "utf8")); since = mark.at; } catch { /* no --prepare yet */ }
     if (!sameCode(mark, CODE)) throw new Error("the collector's code changed between step 1 and step 2 (the current link moved): run step 1 again");
+    if (mark.mode) throw new Error("this run exported a delta or a nightly read: the probe merges it (collector/merge.mjs); the run writes derived/all and stops");
     // Only this run's export: none since --prepare is an error, never an old mirror passed off as fresh (Security).
     const found = Number.isFinite(since) ? findExport(scratchRoot(process.cwd(), process.getuid()), since, process.getuid()) : null;
     if (!found) throw new Error("no complete board export since --prepare in this run's scratchpad: run step 1 again");
@@ -539,17 +598,25 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const nudged = { lines: [...runOwnerPush(dir, config, mirror.docs, now), ...runPromptAlarm(dir, config, now), ...runNudges(dir, config, mirror.docs, now, waits, doc.cards, doc.releaseTimes, liveState)] };
   const out = outPath(config, dir);
   mkdirSync(dirname(out), { recursive: true });
-  writeFileSync(out, JSON.stringify(doc, null, 2));
+  // Written whole and moved into place: the run that publishes derived/all reads this file while the probe may be writing the next.
+  const partial = `${out}.${process.pid}.part`;
+  writeFileSync(partial, JSON.stringify(doc, null, 2));
+  renameSync(partial, out);
   console.log(`Derived ${Object.keys(doc.cards).length} open card(s) into ${out}.`);
   for (const line of conflicts) console.log(`CONFLICT ${line}`);
   const kl = keeperLine(config, keeper);
   if (kl) console.log(kl);
   if (doc.liveButOpen.length) console.log(`LIVE BUT OPEN (${doc.liveButOpen.length}): ${doc.liveButOpen.map(idText).join(", ")}`);
   for (const line of nudged.lines) console.log(line);
-  const cut = cutLine(mirror.docs), loose = unnumberedLine(mirror.docs);
+  // A mirror built from deltas was never listed in pages: a count that is a whole number of them says nothing (#C642).
+  const cut = fromMirror ? null : cutLine(mirror.docs), loose = unnumberedLine(mirror.docs, !fromMirror);
   if (cut) console.log(cut);
   if (loose) console.log(loose);
-  for (const line of writeContext(dir, dirname(out), config, Date.now())) console.log(line);
+  if (!fromMirror) for (const line of writeContext(dir, dirname(out), config, Date.now())) console.log(line);
   // Last, once the board's work is written: every role's pickup digest in the refresh repositories that ship one (#C338).
   for (const line of refreshPickups(config.collector.refresh.repos, { remote: config.collector.remote, main: config.collector.mainBranch })) console.log(line);
+  if (probeStep) {
+    writeFileSync(join(dir, DERIVE_FILE), JSON.stringify({ at: Date.now() }));
+    saveLines(dir, lines, Date.now());
+  }
 }
