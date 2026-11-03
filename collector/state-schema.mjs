@@ -49,7 +49,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // times only, for the page's "Manager listening" chip.
 // #C617: a card's shipping flag (a GitHub run titled "vX: <branch>@<sha>" is running for its tip); a probe from before it
 // leaves it out, and a state with it still fits.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "shipping"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "shipping", "asOf"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -74,13 +74,14 @@ const AGENT = {
 // The probe's own readings, numbers and enums only (#C592, #C593, #C595); a state from a probe before them still fits.
 //   ctx:   { <role>: { pct, tokens, at, over } }     each role's context from its transcript's usage fields; over: past resetAt
 //   stuck: { <role>: { kind, card, since } }          a role stuck on one step, or waiting on the owner (kind: step | user)
-//   usage: { at, weekPct, pace, level, top: [{ src, pct }] }   pace in hundredths (130 = 1.3x); src a role, "scheduled" or "other"
+//   usage: { at, asOf?, weekPct, pace, level, top: [{ src, pct }] }   pace in hundredths (130 = 1.3x); src a role, "scheduled" or "other";
+//          asOf (#C623, optional): when the spend script last ran, the time the numbers are of (at is the probe's clock)
 export const EXTRA_KEYS = ["ctx", "stuck", "usage"];
 export const STUCK_KINDS = ["step", "user"], USAGE_LEVELS = ["ok", "amber", "red"], MAX_TOP = 5;
 const whole = (lo, hi) => (v) => Number.isInteger(v) && v >= lo && v <= hi;
 const CTX = { pct: whole(0, 100), tokens: nullOr(whole(0, 5e6)), at: isTime, over: (v) => typeof v === "boolean" };
 const STUCK = { kind: (v) => STUCK_KINDS.includes(v), card: nullOr(isId), since: isTime };
-const USAGE = { at: isTime, weekPct: nullOr(whole(0, 1000)), pace: nullOr(whole(0, 10000)), level: (v) => USAGE_LEVELS.includes(v), top: (v) => Array.isArray(v) && v.length <= MAX_TOP };
+const USAGE = { at: isTime, asOf: isTime, weekPct: nullOr(whole(0, 1000)), pace: nullOr(whole(0, 10000)), level: (v) => USAGE_LEVELS.includes(v), top: (v) => Array.isArray(v) && v.length <= MAX_TOP };
 const USAGE_TOP = { src: re(ROLE), pct: whole(0, 100) };
 
 // One record against its fields: exactly those keys, each value passing. The errors name only the schema's own words.
