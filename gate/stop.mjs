@@ -74,7 +74,11 @@ export function boardPings(lines, owner) {
   return out;
 }
 
-// What needs the lead now: [{ kind: "thread" | "ask", id, text, at }], oldest first.
+// #C627: a thread the export lists no numbered threads/<id> doc for (the export has threads, none for this id): the gate takes
+// the lead's reply there only with the number in the same batch, so the ask says so instead of the lead trying a bare reply.
+const unnumbered = (view, id) => Array.isArray(view.docs.threads) && typeof id === "string" && !/^t-\d{13}$/.test(id) && !view.docs.threads.some((d) => d && d.id === id && Number.isInteger(d.num) && d.num > 0 && typeof d.title === "string" && d.title.trim() !== "");
+
+// What needs the lead now: [{ kind: "thread" | "ask", id, text, at, unnumbered? }], oldest first.
 // - a thread whose newest message since `since` is the owner's, WAIT_MIN minutes on (owner-waits.mjs), from the view,
 //   this turn's own writes and the thread pings after the messages' listing;
 // - an open ask (done not true) with the owner's answer, anything but an Ack or "marked done", not written this turn:
@@ -88,7 +92,7 @@ export function needsYou({ view, pings, writes, owner, lead, now, since, live = 
     ...pings.filter((p) => p.kind === "thread" && p.at > listedAt(view, "messages")).map((p) => ({ id: `ping-${p.id}-${p.at}`, thread: p.id, from: owner, text: p.text, at: p.at }))];
   const textOf = new Map(msgs.map((m) => [m.id, m.text]));
   const out = openOwnerWords(msgs.filter((m) => m && typeof m.at === "number" && m.at > since), { owner, now, minutes: WAIT_MIN })
-    .map((w) => ({ kind: "thread", id: w.thread, text: textOf.get(w.id), at: w.at }));
+    .map((w) => ({ kind: "thread", id: w.thread, text: textOf.get(w.id), at: w.at, ...(unnumbered(view, w.thread) ? { unnumbered: true } : {}) }));
   const written = new Set(writes.filter((w) => w.collection === "waiting").map((w) => w.doc_id));
   const asks = new Map((view.docs.waiting ?? []).map((d) => [d.id, d]));
   for (const a of liveAsks) {
@@ -124,7 +128,8 @@ const brief = (t) => {
 export function needsText(items, lead, now) {
   const shown = items.slice(0, MAX_SHOWN).map((i) => `${i.kind} ${idText(i.id)} "${brief(i.text)}" (${Math.max(0, Math.round((now - i.at) / 60e3))} min)`);
   const more = items.length > MAX_SHOWN ? `; and ${items.length - MAX_SHOWN} more` : "";
-  const how = [items.some((i) => i.kind === "thread") && `answer in its thread (messages {thread, from: "${lead}", text, at})`, items.some((i) => i.kind === "ask") && "act on each ask and mark it done (waiting update done:true, if_version)"].filter(Boolean).join("; ");
+  const num = items.filter((i) => i.kind === "thread" && i.unnumbered).slice(0, 3).map((i) => idText(i.id));
+  const how = [items.some((i) => i.kind === "thread") && `answer in its thread (messages {thread, from: "${lead}", text, at})${num.length ? `; ${num.join(", ")} ${num.length === 1 ? "has" : "have"} no number yet, so number ${num.length === 1 ? "it" : "them"} in the same batch (threads/<id> {num, title} and meta/threadSeq) or the gate refuses the reply` : ""}`, items.some((i) => i.kind === "ask") && "act on each ask and mark it done (waiting update done:true, if_version)"].filter(Boolean).join("; ");
   return `Board: ${items.length} ${items.length === 1 ? "thing needs" : "things need"} you: ${shown.join("; ")}${more}. To finish: ${how}.`;
 }
 
