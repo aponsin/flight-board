@@ -107,3 +107,19 @@ test("nudges: a card in a known wait gets no step-overdue or unchanged nudge", (
   assert.match(nudges({ config, docs: { ...docs, steps: [] }, now, state: first.state }).lines.join("\n"), /unchanged/);
   assert.equal(nudges({ config, docs: { ...docs, steps: [] }, now, state: first.state, waiting: new Set(["board-queued"]) }).lines.join("\n"), "");
 });
+
+// #C632: the board's cards no longer start with the listed id prefix and carry no repo field: the Collector finds them in the
+// repository whose branches name them (as the probe does), and a card with no branch anywhere stays the team's own.
+test("a card with no repo field and no listed prefix is read in the repository that has its branch", () => {
+  const s = scratchBoard();
+  try {
+    const config = fullConfig({ collector: { repoPath: "/srv/team", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, repos: [{ ...BOARD, idPrefixes: ["zzz-"] }] } });
+    const none = (args) => { if (args[0] === "for-each-ref") return ""; if (args[0] === "log") return ""; throw new Error("no repo"); };
+    const cards = ["board-queued", "board-review", "menu-fix"].map((id) => ({ id, status: "active", phase: "build", level: "Full" }));
+    const { doc } = collect({ config, cards, git: none, gh: () => "[]", now: 5, repos: { "flight-board": { git: s.git, installed: s.installed } } });
+    assert.deepEqual([doc.cards["board-queued"].repo, doc.cards["board-queued"].phase, doc.cards["board-queued"].wait], ["flight-board", "ship", "release"]);
+    assert.deepEqual([doc.cards["board-review"].repo, doc.cards["board-review"].phase], ["flight-board", "security"]);
+    assert.equal(doc.cards["menu-fix"].phase, null, "no branch anywhere: the team's own repository, as declared");
+    assert.equal(doc.cards["menu-fix"].repo, undefined);
+  } finally { rmSync(s.dir, { recursive: true, force: true }); }
+});

@@ -46,7 +46,7 @@ export function expectedVersions({ cards, derived, live, runOf = {}, config }) {
   const known = [live?.version, live?.mainVersion, ...Object.values(runOf).map(runVersion)].filter((v) => parts(v));
   if (!known.length) return {};
   const base = known.reduce((a, b) => (cmp(a, b) >= 0 ? a : b));
-  const open = cards.filter((k) => k && !closed(k) && derived[k.id] && !repoOf(k, config));
+  const open = cards.filter((k) => k && !closed(k) && derived[k.id] && !repoOf(k, config) && !derived[k.id].repo);
   const out = {};
   for (const k of open) {
     const d = derived[k.id], v = runVersion(runOf[k.id]);

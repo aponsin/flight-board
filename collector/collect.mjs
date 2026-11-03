@@ -406,7 +406,16 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
     return { ...supersededNote(superseded, leastAdvanced(card, tips, (h) => afterShipNote(h, settledNote(h, derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg))), config, stackedOn(card, ids))), at: now };
   };
   for (const card of open) {
-    const r = repoOf(card, config);
+    let r = repoOf(card, config);
+    // #C632: a card with no repo field and no listed prefix whose branch is not in the team's own repository but is in
+    // another listed one belongs there (the probe, collector/state.mjs, reads it the same way).
+    if (!r && !card.repo && !headsFor(card.id, work).length) {
+      r = (config.collector.repos ?? []).find((x) => {
+        const use = repos[x.name];
+        if (!use?.git) return false;
+        try { return headsFor(card.id, remoteHeads(use.git, x.remote ?? "origin").filter((h) => h.branch !== (x.mainBranch ?? "main"))).length > 0; } catch { return false; }
+      }) ?? null;
+    }
     if (r) { derived[card.id] = inRepo(card, r, repos[r.name], config, now, ids); continue; }
     // The minute script (collector/state.mjs, pinned) knows nothing of a superseded READY: its reading of one isn't taken.
     const d = phaseOf(card), l = liveState?.cards?.[card.id];
@@ -430,7 +439,7 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const times = {};
   const recent = cards.filter((k) => closed(k) && Number.isFinite(k.doneAt) && k.doneAt > now - STEPS_DAYS * 864e5);
   for (const card of [...open, ...recent]) {
-    if (repoOf(card, config)) continue; // the evidence times read the team's repository only
+    if (repoOf(card, config) || derived[card.id]?.repo) continue; // the evidence times read the team's repository only
     const d = derived[card.id] ?? phaseOf(card);
     const head = tipsOf[card.id].find((h) => h.sha === d.head);
     if (!head) continue;
