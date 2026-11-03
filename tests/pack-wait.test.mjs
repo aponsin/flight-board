@@ -80,10 +80,13 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
     mkdirSync(join(H, ".flight-board/AbCdEfGh123/.claude"), { recursive: true });
     writeFileSync(join(H, ".flight-board/AbCdEfGh123/.claude/settings.local.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '${H}/x/collector/fence.mjs' --send-to Manager` }] }] } }));
     writeFileSync(join(H, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: `node '${H}/.flight-board/install/${B}/gate/gate.mjs' --config '${cfg}'` }] }] } }));
-    const run = (sha) => { try { return { ok: true, out: execFileSync(process.execPath, [join(REPO, "scripts/board-release.mjs"), sha, "--dry-run"], { env: { ...process.env, HOME: H, FLIGHT_BOARD_REPO: W }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; } catch (e) { return { ok: false, out: `${e.stdout}${e.stderr}` }; } };
+    const run = (sha, pack = "v3.51") => { try { return { ok: true, out: execFileSync(process.execPath, [join(REPO, "scripts/board-release.mjs"), sha, "--dry-run"], { env: { ...process.env, HOME: H, FLIGHT_BOARD_REPO: W, BOARD_PACK: pack }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; } catch (e) { return { ok: false, out: `${e.stdout}${e.stderr}` }; } };
     const good = run(P);
     assert.ok(good.ok, good.out);
     assert.match(good.out, new RegExp(`pinned changes since ${B.slice(0, 12)} are the waiting pack's only: ${Sx.slice(0, 12)}, signed`));
+    // #C609: no pack label (no BOARD_PACK, no pack-label file beside the config) is no page: the release refuses.
+    const unlabelled = run(P, "");
+    assert.ok(!unlabelled.ok && /the page has no pack label: set BOARD_PACK=vN\.NN/.test(unlabelled.out), unlabelled.out);
     // A signed pinned change on top is the newest waiting pack itself (Security: "the newest one if all its pinned
     // ancestors are also signed"); it goes to main, and its pinned code still waits for the owner's install.
     const P2 = commit("gate/gate.mjs", "a newer pack"); sign(P2);

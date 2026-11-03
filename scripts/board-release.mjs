@@ -26,6 +26,7 @@ import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { OWNER_ENTRIES, TASK_FILE, importClosure, pinnedCommit, linkedCommit } from "./current.mjs";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
+import { packLabel } from "./pack-label.mjs";
 
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
 // The release tool and what it runs are the owner's too (Security): a release can't loosen the next one.
@@ -212,8 +213,13 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const page = join(out, `board-${sha.slice(0, 7)}.html`), promptPath = join(out, `collector-prompt-${sha.slice(0, 7)}.txt`);
     let built = true;
     if (v.ok) {
-      try { execFileSync(process.execPath, [join(tmp, "scripts/build-page.mjs"), configPath, page], { stdio: ["ignore", "pipe", "pipe"] }); }
-      catch (e) { built = false; v.refusals.push(`the page didn't build: ${String(e.stderr ?? e.message).trim().split("\n")[0]}`); }
+      // The installed pack's label goes on the page (#C609): BOARD_PACK or the pack-label file beside the config. None: no page (Version 147 nearly went out with an empty one).
+      const pack = packLabel(process.env, out);
+      if (!pack) { built = false; v.refusals.push(`the page has no pack label: set BOARD_PACK=vN.NN (the installed pack) or write it in ${join(out, "pack-label")}`); }
+      else {
+        try { execFileSync(process.execPath, [join(tmp, "scripts/build-page.mjs"), configPath, page], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, BOARD_PACK: pack } }); }
+        catch (e) { built = false; v.refusals.push(`the page didn't build: ${String(e.stderr ?? e.message).trim().split("\n")[0]}`); }
+      }
     }
 
     line(!v.refusals.some((r) => /PASS|SECURE/.test(r)), `sign-offs on ${sha}: Checker "${String(notes.checker ?? "none").split("\n")[0]}", Security "${String(notes.security ?? "none").split("\n")[0]}"`);
