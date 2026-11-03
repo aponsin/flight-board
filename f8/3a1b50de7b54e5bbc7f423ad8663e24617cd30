@@ -1,0 +1,1 @@
+PASS Quick: #C648 repo badge, re-based on main b58e510; range-diff 076b123 = f83a1b5 (identical patch, my PASS on 076b123 carries). Suite 1197/1197 green (capped) on this tip. Condition: pack v3.54 writes repos {platform: the team's name, builders: [the board's builder]} into the live config.
