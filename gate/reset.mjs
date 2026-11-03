@@ -4,6 +4,7 @@
 //                       are "WAKE <role>"; the rest are one "ROSTER missing: …" line, so a short roster is never silent
 // Each file's seen twin (reset-seen.json, wake-roles-seen.json) has the same shape and holds what the watch has printed. A
 // role is printed again only when its asked time changes (the probe forgets a role once it is back). Roles and times only.
+import { readFileSync } from "node:fs";
 import { ROLE } from "../collector/state-schema.mjs";
 
 export const RESET_FILE = "context-reset.json", RESET_SEEN_FILE = "reset-seen.json";
@@ -88,6 +89,52 @@ export function evidenceAt(cards, now, before) {
 export const noEvidenceSince = (at, now) => (Number.isInteger(at) && now - at > EVIDENCE_STALE_MS ? at : null);
 export const noEvidencePending = (asked, seen) => Number.isInteger(asked?.since) && asked.since !== seen?.since;
 export const noEvidenceLine = (since) => `NOEVIDENCE: the probe's card checks found no branch for any open card since ${new Date(since).toISOString().slice(11, 16)} UTC; the cards' evidence (phase tiles, READY, ship) is blind: read the probe's log and the repository lookup`;
+// Dispatch is mechanical (#C631, the owner's A): an active card whose owner (a roster role, not the lead) has been idle
+// DISPATCH_IDLE_MS with nothing to wait for (no open ask on the card, no waitingOn that names someone else) is dispatched: level 1 the
+// moment it holds, and the owner's own `wake-watch --role <Role> --once` (a background Bash that blocks until then) prints one
+// DISPATCH line and exits, which wakes the idle session; level 2 when it still holds DISPATCH_LATE_MS after level 1, and the
+// lead's watch prints one DISPATCH-LATE line. The probe writes dispatch.json { at, items: [{ card, role, level, since }] } (ids,
+// times and levels only); dispatch-state.json keeps when each pair first held (a pair that stops holding is forgotten, so a new
+// stall starts again at level 1); each watch keeps what it printed in its seen file.
+export const DISPATCH_FILE = "dispatch.json", DISPATCH_STATE_FILE = "dispatch-state.json", DISPATCH_LATE_SEEN_FILE = "dispatch-late-seen.json";
+export const DISPATCH_IDLE_MS = 15 * 60e3, DISPATCH_LATE_MS = 30 * 60e3;
+export const dispatchSeenFile = (role) => `dispatch-seen-${role}.json`, dispatchPidFile = (role) => `dispatch-watch-${role}.json`;
+const pairKey = (role, card) => `${role} ${card}`;
+export function dispatchItems({ cards, agents, asked = new Set(), roster = [], lead = "", now, before = null }) {
+  const first = before && typeof before.items === "object" && before.items && !Array.isArray(before.items) ? before.items : {};
+  const items = [], kept = {};
+  for (const card of cards ?? []) {
+    const role = card?.who, a = agents && Object.hasOwn(agents, role) ? agents[role] : null;
+    if (card?.status !== "active" || typeof role !== "string" || role === lead || !roster.includes(role) || !CARD.test(String(card.id))) continue;
+    if (!a || a.state !== "idle") continue;
+    const idleSince = Number.isFinite(a.since) ? a.since : a.lastActivityAt;
+    if (!Number.isFinite(idleSince) || now - idleSince < DISPATCH_IDLE_MS) continue;
+    if (asked.has(card.id)) continue;
+    if (typeof card.waitingOn === "string" && card.waitingOn.trim() && !card.waitingOn.trim().startsWith(role)) continue;
+    const k = pairKey(role, card.id), since = Number.isInteger(first[k]) && first[k] <= now ? first[k] : now;
+    kept[k] = since;
+    items.push({ card: card.id, role, level: now - since >= DISPATCH_LATE_MS ? 2 : 1, since });
+  }
+  items.sort((x, y) => (x.role + x.card < y.role + y.card ? -1 : 1));
+  return { items, state: { items: kept } };
+}
+// The level-1 items of a role the role's watch has not printed (the seen file keeps "card since" per card); the lead's late ones likewise.
+const dispatchSeenItems = (seen) => (seen && typeof seen.items === "object" && seen.items && !Array.isArray(seen.items) ? seen.items : {});
+const dispatchList = (f) => (Array.isArray(f?.items) ? f.items.filter((i) => i && CARD.test(String(i.card)) && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(String(i.role)) && [1, 2].includes(i.level) && Number.isInteger(i.since)) : []);
+export const dispatchPending = (asked, seen, { role = null, level }) => dispatchList(asked).filter((i) => i.level >= level && (role === null || i.role === role) && dispatchSeenItems(seen)[i.card] !== i.since);
+export const dispatchSeen = (seen, printed) => ({ items: { ...dispatchSeenItems(seen), ...Object.fromEntries(printed.map((i) => [i.card, i.since])) } });
+export const dispatchLine = (i) => `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now`;
+export const dispatchLateLine = (i) => `DISPATCH-LATE ${i.card}: ${i.role} was woken at ${new Date(i.since).toISOString().slice(11, 16)} UTC and nothing has moved in 30 minutes; look at it`;
+// Whether a role's dispatch watch is running: its pid file names a live process and was beaten within DISPATCH_ALIVE_MS.
+export const DISPATCH_ALIVE_MS = 90e3;
+export function dispatchWatchAlive(file, now, kill = (pid) => process.kill(pid, 0)) {
+  try {
+    const a = JSON.parse(readFileSync(file, "utf8"));
+    if (!Number.isInteger(a?.pid) || !Number.isFinite(a.at) || now - a.at > DISPATCH_ALIVE_MS || a.at > now + 5_000) return false;
+    kill(a.pid);
+    return true;
+  } catch (e) { return e?.code === "EPERM"; }
+}
 export const resetLine = (role) => `CONTEXT RESET ${role}: past the reset limit; save its notes and clear it`;
 export const wakeLine = (role) => `WAKE ${role}: no open session and it has work; wake it`;
 export const missingLine = (roles) => `ROSTER missing: ${roles.join(", ")} (no open session, no work waiting)`;

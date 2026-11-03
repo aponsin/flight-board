@@ -15,7 +15,8 @@ import { writesOf, writeState, home, readMirror, withJournal } from "./gate.mjs"
 import { openOwnerWords, WAIT_MIN } from "./owner-waits.mjs";
 import { turnLive, nextLive, liveAsk, liveSince, livePath, readLive, writeLive, liveDue } from "./live.mjs";
 import { idText } from "../collector/text.mjs";
-import { wakePaths, watchAsk, readWakeFile, shQuote } from "./wake.mjs";
+import { wakePaths, watchAsk, readWakeFile, shQuote, writeAtomic } from "./wake.mjs";
+import { DISPATCH_FILE, dispatchPidFile, dispatchWatchAlive } from "./reset.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const DAY = 864e5;
@@ -212,9 +213,20 @@ export function asksOwnerWithoutItem(reply, owner) {
   if (!requested) return false;
   return !/#[TC]\d{1,6}\b|\bt-\d{6,}\b|\bNeeds[- ]you item\b/i.test(text);
 }
-export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null, wake = null }) {
+// dispatch (#C631): { on, alive, askedAt, command } for a roster role other than the lead — whether the probe dispatches (dispatch.json
+// exists), whether the role's own watch (a background Bash) is running, when this hook last asked, and the command that arms it.
+// The ask is made at most every DISPATCH_ASK_GAP_MS, so a session that can't run a background command is not stopped for ever.
+export const DISPATCH_ASK_GAP_MS = 10 * 60e3;
+export const dispatchAsk = ({ on, alive, askedAt, command }, now) =>
+  on && !alive && !(Number.isFinite(askedAt) && askedAt <= now + 5_000 && now - askedAt < DISPATCH_ASK_GAP_MS)
+    ? `Dispatch watch: the board wakes you through it when a card of yours waits and you are idle, and it isn't running. Arm it now (Bash with run_in_background true and no timeout): ${command}. When it ends it has printed a DISPATCH line: act on it, then arm it again.`
+    : null;
+export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null, wake = null, dispatch = null }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
-  if (role !== config.gate.managerRole) return { errs: [], record: null, note: null, liveNext: null };
+  if (role !== config.gate.managerRole) {
+    const ask = dispatch && role && config.roster.includes(role) ? dispatchAsk(dispatch, now) : null;
+    return { errs: ask ? [ask] : [], record: null, note: null, liveNext: null, dispatchAsked: !!ask };
+  }
   const id = boardId(config);
   const turn = currentTurn(lines);
   const stored = live?.stored ?? { checkedAt: null, msgs: [], asks: [] };
@@ -265,6 +277,17 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   return { errs: out, record: out.length ? null : Math.min(now, listedAt(view, "messages")), note: null, liveNext };
 }
 
+// An owner's dispatch state for the ask (#C631): dispatch.json there (the probe dispatches), the role's watch running (its pid file
+// beaten and the process alive), when this hook last asked (dispatch-asked-<Role>.json), and the command that arms the watch.
+export function dispatchState(config, configPath, role, now) {
+  const dir = join(home(config.gate.stateDir), boardId(config) ?? "no-board");
+  const on = (() => { try { readFileSync(join(dir, DISPATCH_FILE), "utf8"); return true; } catch { return false; } })();
+  let askedAt = null;
+  try { const a = JSON.parse(readFileSync(join(dir, `dispatch-asked-${role}.json`), "utf8")); askedAt = Number.isFinite(a?.at) ? a.at : null; } catch { /* never */ }
+  const script = join(dirname(dirname(fileURLToPath(import.meta.url))), "scripts", "wake-watch.mjs");
+  return { on, alive: dispatchWatchAlive(join(dir, dispatchPidFile(role)), now), askedAt, command: `node ${shQuote(script)} --config ${shQuote(configPath)} --role ${shQuote(role)} --once` };
+}
+
 // The wake watch's state for the ask: wake.json there (the probe polls the Worker), the heartbeat's time, and the command
 // that arms the watch from this very copy of the code.
 export function wakeState(config, configPath) {
@@ -297,7 +320,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let view = null;
     try { view = boardView(config); } catch { /* unreadable: as none */ }
     const lp = livePath(config);
-    const { errs, record, note, liveNext } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true }, wake: wakeState(config, process.argv[at + 1]) });
+    const sessionRoleName = sessionRole(lines, process.env.FLIGHT_BOARD_ROLE).role;
+    let dispatch = null;
+    if (sessionRoleName && sessionRoleName !== config.gate.managerRole && config.roster.includes(sessionRoleName)) { try { dispatch = dispatchState(config, process.argv[at + 1], sessionRoleName, now); } catch { /* none: no ask */ } }
+    const { errs, record, note, liveNext, dispatchAsked } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true }, wake: wakeState(config, process.argv[at + 1]), dispatch });
+    if (dispatchAsked && !input.stop_hook_active) { try { writeAtomic(join(home(config.gate.stateDir), boardId(config) ?? "no-board", `dispatch-asked-${sessionRoleName}.json`), JSON.stringify({ at: now })); } catch { /* asks again */ } }
     if (!errs.length && record != null) { try { recordPass(path, key, record); } catch { /* no record: a day back next turn */ } }
     // The live check's messages are kept even on a refused or second stop: they are what the lead's query saw.
     if (liveNext) { try { writeLive(lp, key, liveNext); } catch { /* none kept: the next query reads a day back */ } }

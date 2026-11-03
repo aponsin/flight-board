@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { home } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, ALIVE_MAX_MS, MAX_RUN_MS } from "../gate/wake.mjs";
-import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine, TRUTH_FILE, TRUTH_SEEN_FILE, SHIP_ROLE, truthPending, truthSeen, truthLine, NOEVIDENCE_FILE, NOEVIDENCE_SEEN_FILE, noEvidencePending, noEvidenceLine } from "../gate/reset.mjs";
+import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine, TRUTH_FILE, TRUTH_SEEN_FILE, SHIP_ROLE, truthPending, truthSeen, truthLine, NOEVIDENCE_FILE, NOEVIDENCE_SEEN_FILE, noEvidencePending, noEvidenceLine, DISPATCH_FILE, DISPATCH_LATE_SEEN_FILE, dispatchSeenFile, dispatchPidFile, dispatchPending, dispatchSeen, dispatchLine, dispatchLateLine, dispatchWatchAlive } from "../gate/reset.mjs";
 
 // One look: the heartbeat, then the line to print, or null. Marks the wake seen only once it is returned.
 export function tick(dir, now, pid = process.pid, roster = null) {
@@ -23,6 +23,17 @@ export function tick(dir, now, pid = process.pid, roster = null) {
     lines.unshift(wakeLine(wake));
   }
   return lines.length ? lines.join("\n") : null;
+}
+
+// One look of an owner's watch (#C631): the pid file's beat, then the DISPATCH line for the role's newest unprinted level-1 item,
+// or null. Marks it printed only once it is returned. The role must be on the roster and not the lead (the caller checks).
+export function roleTick(dir, role, now, pid = process.pid) {
+  writeAtomic(join(dir, dispatchPidFile(role)), JSON.stringify({ pid, at: now }));
+  const read = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
+  const seen = read(dispatchSeenFile(role)), due = dispatchPending(read(DISPATCH_FILE), seen, { role, level: 1 });
+  if (!due.length) return null;
+  writeAtomic(join(dir, dispatchSeenFile(role)), JSON.stringify(dispatchSeen(seen, due)));
+  return due.map(dispatchLine).join("\n");
 }
 
 // The roles the probe asked to reset (#C592, gate/reset.mjs) that this watch has not printed yet; marks them printed.
@@ -55,6 +66,9 @@ function resetLines(dir, roster = null, now = Date.now()) {
   const blind = read(NOEVIDENCE_FILE), blindSeen = read(NOEVIDENCE_SEEN_FILE);
   if (noEvidencePending(blind, blindSeen)) { writeAtomic(join(dir, NOEVIDENCE_SEEN_FILE), JSON.stringify({ since: blind.since })); out.push(noEvidenceLine(blind.since)); }
   else if (blind && !Number.isInteger(blind.since) && blindSeen?.since != null) writeAtomic(join(dir, NOEVIDENCE_SEEN_FILE), JSON.stringify({ since: null }));
+  // A dispatched card nothing has moved on for 30 minutes (#C631): one DISPATCH-LATE line per card and spell, for the roster's roles.
+  const late = dispatchPending(read(DISPATCH_FILE), read(DISPATCH_LATE_SEEN_FILE), { level: 2 }).filter((i) => onRoster(i.role));
+  if (late.length) { writeAtomic(join(dir, DISPATCH_LATE_SEEN_FILE), JSON.stringify(dispatchSeen(read(DISPATCH_LATE_SEEN_FILE), late))); out.push(...late.map(dispatchLateLine)); }
   return out;
 }
 const sameSeen = (asks, seen) => JSON.stringify(asksSeen(asks)) === JSON.stringify(seen ?? { asks: {} });
@@ -91,6 +105,25 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const id = boardId(config);
   if (!id) { console.error("wake-watch: the config has no board link"); process.exit(1); }
   const dir = join(home(config.gate.stateDir), id), start = Date.now();
+  const ri = process.argv.indexOf("--role");
+  if (ri > 0) {
+    // An owner's watch (#C631): node wake-watch.mjs --config <cfg> --role <Role> --once, run by the owner as a background Bash with no
+    // timeout. It blocks, beating its pid file, until the probe dispatches a card to the role; it prints that DISPATCH line and
+    // exits, and the exit wakes the idle session. Roster roles other than the lead only.
+    const role = process.argv[ri + 1];
+    if (!process.argv.includes("--once") || !config.roster.includes(role) || role === config.gate.managerRole) { console.error("wake-watch: --role <a roster role other than the lead> --once"); process.exit(1); }
+    const pidFile = join(dir, dispatchPidFile(role));
+    if (dispatchWatchAlive(pidFile, start) && (() => { try { return JSON.parse(readFileSync(pidFile, "utf8")).pid !== process.pid; } catch { return false; } })()) { console.log(`wake-watch: ${role}'s watch is already running; nothing to arm`); process.exit(0); }
+    const stop = () => { try { if (JSON.parse(readFileSync(pidFile, "utf8")).pid === process.pid) unlinkSync(pidFile); } catch { /* none, or not ours */ } };
+    const look = () => {
+      let line = null;
+      try { line = roleTick(dir, role, Date.now(), process.pid); } catch { /* try again next time */ }
+      if (line) { console.log(line); stop(); process.exit(0); }
+    };
+    for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { stop(); process.exit(0); });
+    look();
+    setInterval(look, POLL_MS);
+  } else {
   if (otherWatchAlive(dir, start)) { console.log("wake-watch: another watch is already running; nothing to arm"); process.exit(0); }
   const loop = () => {
     const now = Date.now();
@@ -102,4 +135,5 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { endWatch(dir); process.exit(0); });
   loop();
   setInterval(loop, POLL_MS);
+  }
 }
