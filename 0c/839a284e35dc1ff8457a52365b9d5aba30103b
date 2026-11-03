@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-03): #C617, replay of signed 47cdc89 onto main 6be7537 + #C618 d09ff10 (range-diff: CHANGELOG context only); covered by the review of tip 7f5eb8b.
