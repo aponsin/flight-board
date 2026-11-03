@@ -100,7 +100,7 @@ export const STAMP_WINDOW_MS = 15 * 60e3;
 export function updatedAtErrors(w, now) {
   const { op, collection, doc_id: id, data } = w;
   if (!STAMPED.includes(collection)) return [];
-  if (op === "delete") return [`${collection}/${id}: don't delete it; update it with {deleted: true, updatedAt: <ms from the clock>} so the Collector's next read sees it go (the nightly read removes the tombstone)`];
+  if (op === "delete") return [`${collection}/${id}: don't delete it; update it with {deleted: true, updatedAt: <ms from the clock>} so the Collector's next read sees it go`];
   if (op !== "set" && op !== "update") return [];
   const at = data && typeof data === "object" ? data.updatedAt : undefined;
   if (typeof at !== "number" || !Number.isInteger(at)) return [`${collection}/${id}: add updatedAt (ms, read the clock: python3 -c "import time;print(int(time.time()*1000))") to the data; the Collector reads only what changed since its last run`];

@@ -48,7 +48,7 @@ export function deltaPlan({ now, state, hasMirror, hour }) {
 
 // The lines the run reads: one per query (the field and the time written out, so the model types no condition of its own).
 export function queryLines(plan) {
-  if (plan.mode === "full") return ["Mode: full. Export the board whole, as the steps say."];
+  if (plan.mode === "full") return ["Mode: full."];
   return [`Mode: delta, since ${plan.since}.`, ...plan.queries.map((q) => `Query ${q.collection}: where [["${q.field}", ">=", ${q.since}]]`)];
 }
 

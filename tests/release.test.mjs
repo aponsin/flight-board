@@ -86,7 +86,8 @@ test("the prompt: the repository's template with the team's values filled in; a 
   assert.match(text, /^You are the Collector\. With config \/srv\/team\/board\.config\.json and the board https:\/\/example\.com\/board,/);
   assert.match(text, /node \/srv\/fb\/current\/collector\/collect\.mjs --config \/srv\/team\/board\.config\.json --prepare/);
   assert.match(text, /file_path \/srv\/fb\/out\/derived-all\.json/);
-  assert.match(text, /Message only Manager, by its session id local_lead-1\./);
+  assert.match(text, /Send no messages and call no session tool: the probe works the board out and tells Manager\./);
+  assert.ok(!text.includes("local_lead-1"), "the Collector is given no session to message");
   assert.ok(!text.includes("{{"));
   assert.throws(() => renderPrompt("x {{NOPE}} y", values), /NOPE/);
   assert.throws(() => renderPrompt("x {{LEAD}}", { ...values, LEAD: "" }), /LEAD/);
