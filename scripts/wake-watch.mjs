@@ -48,7 +48,7 @@ function resetLines(dir, roster = null, now = Date.now()) {
   // What the probe found true of the cards (#C617): "SHIP <card>" (signed, not on main: Release is to ship it) and "CLOSE <card>"
   // (live, still open), once per card and tip. A SHIP line is printed only when the roster has the ship role.
   const truth = read(TRUTH_FILE), tseen = read(TRUTH_SEEN_FILE), due = truthPending(truth, tseen, now), todo = due.filter((a) => a.kind !== "ship" || onRoster(SHIP_ROLE));
-  const nextSeen = truthSeen(truth, tseen, due, now);
+  const nextSeen = truthSeen(truth, tseen, todo, now);
   if (JSON.stringify(nextSeen) !== JSON.stringify(tseen ?? { items: {} })) writeAtomic(join(dir, TRUTH_SEEN_FILE), JSON.stringify(nextSeen));
   out.push(...todo.map(truthLine));
   return out;
