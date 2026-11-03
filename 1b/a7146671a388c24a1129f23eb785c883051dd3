@@ -1,0 +1,3 @@
+PASS Quick (Checker, 2026-11-03): #C634 task-prompts-no-ids, build/task-prompts-no-ids-v2 1ba7146. Test 6/6 on the installed prompts; mutation check: pass (a Collector prompt with a local_ id in a scratch HOME fails it).
+
+Checker's verdict, recorded by checker, 2026-11-03T18:52:00Z
