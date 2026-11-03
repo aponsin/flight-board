@@ -73,3 +73,25 @@ test("the page reads seen from a fresh live state, keeps only phases it has, and
   assert.deepEqual(seen({}), [], "a probe without it: nothing seen");
   assert.deepEqual(seen({ seen: "build" }), []);
 });
+
+// The tile row of a card in the checker phase, as the page draws it (steps silent for every phase).
+function tiles(probeCard) {
+  const b = loadNames(["initRow", "liveCard", "probeEvent"]);
+  Object.assign(b.state, { steps: [], derived: [], todo: [], ideas: [], waiting: [], messages: [], threads: [] });
+  const card = { id: "board-x", num: 620, name: "X", size: "S", status: "active", phase: "checker", createdAt: Date.now() - 6e4, etaLive: Date.now() + 36e5 };
+  Object.assign(b.state, { initRaw: [card], initiatives: [card] });
+  if (probeCard) b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - 20e3 }, cards: { "board-x": { headSha12: "a1b2c3d4e5f6", onMain: false, phase: "checker", ...probeCard } }, agents: {} } } });
+  const row = b.initRow(card);
+  return (label) => new RegExp(`<div class="(step[^"]*)"[^>]*>${label}(<small[^>]*>[^<]*</small>)`).exec(row);
+}
+
+test("a past phase with evidence is lit 'in the repo'; with nothing behind it, the tile is amber 'no record'", () => {
+  const tile = tiles({ seen: ["build", "checker", "security"] });
+  assert.match(tile("Build")[0], /class="step done"[^>]*>Build<small class="seen">in the repo/);
+  assert.match(tile("Security")[1], /^step done seen$/, "ahead of the card's phase but seen: lit");
+  assert.match(tile("Security")[2], /in the repo/);
+  const bare = tiles(null);
+  assert.match(bare("Build")[1], /^step done norec$/, "nothing behind it: the tile itself is flagged");
+  assert.match(bare("Build")[2], /class="norec">no record/);
+  assert.doesNotMatch(bare("Security")[1], /done/, "an ahead phase with no evidence stays plain");
+});
