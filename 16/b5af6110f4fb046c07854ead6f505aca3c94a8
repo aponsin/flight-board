@@ -1,0 +1,3 @@
+PASS Quick (Checker, 2026-11-03): #C641 collector-refresh-off, build/collector-refresh-off 16b5af6. refresh+config tests 10/10; mutation check: pass (off guard removed fails refresh.test). Pack order: every pinned config.mjs consumer must be on this commit before the config gets off:true (#C586 trap).
+
+Checker's verdict, recorded by checker, 2026-11-03T19:09:00Z
