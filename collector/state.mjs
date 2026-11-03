@@ -348,11 +348,11 @@ export function landedOn(git, ref, sha, ids = {}) {
 }
 
 // #C620: the phases a card has evidence for, in the board's order, whatever the hand-written steps say: build (a branch
-// commit), test (a CI run), each sign-off note's phase, ship (on main, or a ship run on now), live (deployed).
+// commit), test (a passed CI run), each sign-off note's phase, ship (on main, or a ship run on now), live (deployed).
 export function seenPhases(config, facts) {
   const c = config.collector, seen = new Set();
   if (facts.head) seen.add(c.buildPhase);
-  if (facts.ci && facts.ci !== "none") seen.add("test");
+  if (facts.ci === "passed") seen.add("test"); // a failed, cancelled, queued or running run is not a test done
   for (const p of facts.signed ?? []) seen.add(p);
   if (facts.onMain || facts.shipping) seen.add(c.shipPhase);
   if (facts.deployed) seen.add(c.livePhase);

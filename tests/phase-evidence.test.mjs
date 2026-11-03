@@ -17,7 +17,8 @@ test("seenPhases: only what exists, in the board's order", () => {
   assert.deepEqual(seenPhases(cfg, {}), [], "nothing exists: nothing seen");
   assert.deepEqual(seenPhases(cfg, { head: true }), ["build"]);
   assert.deepEqual(seenPhases(cfg, { head: true, ci: "none" }), ["build"], "no CI run is no test evidence");
-  assert.deepEqual(seenPhases(cfg, { head: true, ci: "failed", signed: ["security", "checker"] }), ["build", "test", "checker", "security"]);
+  for (const ci of ["failed", "running", "queued", "cancelled"]) assert.deepEqual(seenPhases(cfg, { head: true, ci }), ["build"], `a ${ci} run is not a test done`);
+  assert.deepEqual(seenPhases(cfg, { head: true, ci: "passed", signed: ["security", "checker"] }), ["build", "test", "checker", "security"]);
   assert.deepEqual(seenPhases(cfg, { head: true, shipping: true }), ["build", "ship"]);
   assert.deepEqual(seenPhases(cfg, { head: true, onMain: true, deployed: true }), ["build", "ship", "live"]);
 });
@@ -75,10 +76,10 @@ test("the page reads seen from a fresh live state, keeps only phases it has, and
 });
 
 // The tile row of a card in the checker phase, as the page draws it (steps silent for every phase).
-function tiles(probeCard) {
+function tiles(probeCard, phase = "checker") {
   const b = loadNames(["initRow", "liveCard", "probeEvent"]);
   Object.assign(b.state, { steps: [], derived: [], todo: [], ideas: [], waiting: [], messages: [], threads: [] });
-  const card = { id: "board-x", num: 620, name: "X", size: "S", status: "active", phase: "checker", createdAt: Date.now() - 6e4, etaLive: Date.now() + 36e5 };
+  const card = { id: "board-x", num: 620, name: "X", size: "S", status: "active", phase, createdAt: Date.now() - 6e4, etaLive: Date.now() + 36e5 };
   Object.assign(b.state, { initRaw: [card], initiatives: [card] });
   if (probeCard) b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - 20e3 }, cards: { "board-x": { headSha12: "a1b2c3d4e5f6", onMain: false, phase: "checker", ...probeCard } }, agents: {} } } });
   const row = b.initRow(card);
@@ -86,6 +87,9 @@ function tiles(probeCard) {
 }
 
 test("a past phase with evidence is lit 'in the repo'; with nothing behind it, the tile is amber 'no record'", () => {
+  const ahead = tiles({ seen: ["build", "test", "checker"] }, "build"); // a card at build: Test and Checker are ahead of it
+  assert.match(ahead("Test")[1], /^step done seen$/);
+  assert.match(ahead("Checker")[0], /class="step done seen"[^>]*>Checker<small class="seen">in the repo/);
   const tile = tiles({ seen: ["build", "checker", "security"] });
   assert.match(tile("Build")[0], /class="step done"[^>]*>Build<small class="seen">in the repo/);
   assert.match(tile("Security")[1], /^step done seen$/, "ahead of the card's phase but seen: lit");
