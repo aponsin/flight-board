@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-03): #C620 re-cut onto main 1afe6bd: range-diff 98209ae = signed dcfac67; 26926e4/d5a0aa5 = dd4cac0/23e4a52 but for the CHANGELOG order and OPTIONAL gaining asOf (#C623). Suite 1095/1095 (one earlier run had tests/fixtures.test.mjs fail at file level with no detail; it passes alone and in the rerun).
