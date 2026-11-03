@@ -112,7 +112,7 @@ Two collections carry it (`gate/agent-prs.mjs`):
 
 Merge only when all four hold, else leave it and say which failed. An approval of an older head is none. Never during a running ship; never the Merge button on the owner's behalf. After the merge, set `agentPrs/pr<n>.merged` to `true` (or delete the entry).
 
-**Residual risk, outside the gate** (Security's MEDIUM 4): the gate hooks only `ArtifactData`. A session with a browser signed in to claude.ai as the owner (the built-in browser, Claude in Chrome) could open the board and click Approve, which the gate cannot see. The routine above still needs Reviewer's real sign-off and green checks on `H`, so such a click alone cannot merge a pull request Reviewer did not sign. Whether to also refuse browser tools aimed at the board's own address (a PreToolUse rule) is the owner's call, through Manager; until he asks for it, this is the accepted risk.
+**Residual risk, outside the gate** (Security's MEDIUM 4): the gate hooks the board's database and page tools (`ArtifactData` and `Artifact`, and the claude-artifacts server's `db_write`, `db_str_replace` and page tools), not a browser. A session with a browser signed in to claude.ai as the owner (the built-in browser, Claude in Chrome) could open the board and click Approve, which the gate cannot see. The routine above still needs Reviewer's real sign-off and green checks on `H`, so such a click alone cannot merge a pull request Reviewer did not sign. Whether to also refuse browser tools aimed at the board's own address (a PreToolUse rule) is the owner's call, through Manager; until he asks for it, this is the accepted risk.
 
 ## Tests
 

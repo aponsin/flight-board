@@ -2,7 +2,9 @@
 // the old ones, saw nothing: a db_write on the board skipped the write gate, a publish skipped the signed-page check. Every
 // hook now reads both vocabularies through gate/tools.mjs. Fictional board, roles and ids; the UUID and the link are built from
 // parts (the repository's scan refuses a literal artifact link).
-import test from "node:test";
+import nodeTest from "node:test";
+// A runaway mutant must fail in seconds, not eat the machine (it once grew to 90 GB): a timeout on every test, and a heap cap on the child node.
+const test = (name, fn) => nodeTest(name, { timeout: 30000 }, fn);
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, realpathSync, symlinkSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -145,7 +147,8 @@ function setup() {
   return { root, configDir, current, page };
 }
 const files = (path, extra = {}, f = {}) => ({ tool_name: mk("publish_files"), tool_input: { slug: UUID, base_version: "1", files: [{ as: "index.html", path, ...f }], ...extra } });
-const verdict = (s, input, role = "Boardsmith", extra = {}) => publishVerdict(input, { rawConfig, managerRole: "Manager", configDir: s.configDir, current: s.current, lines: [{ customTitle: role }], ...extra });
+// A failed assertion prints the verdict it got: the page bytes are hidden from that (non-enumerable), or the diff of a multi-megabyte page ate 90 GB when a mutant let a verdict through.
+const verdict = (s, input, role = "Boardsmith", extra = {}) => { const v = publishVerdict(input, { rawConfig, managerRole: "Manager", configDir: s.configDir, current: s.current, lines: [{ customTitle: role }], ...extra }); if (v) for (const k of ["bytes", "withPath"]) Object.defineProperty(v, k, { value: v[k], enumerable: false }); return v; };
 
 test("publish_files of exactly the signed page, as the only file, to this board: allowed for a roster role, with the page's hash", () => {
   const s = setup();
@@ -197,7 +200,7 @@ test("the hook as the app runs it: an allow with the copy for a signed page, a d
   symlinkSync(pin, join(install, "..", "current"));
   const transcript = join(s.root, "t.jsonl");
   writeFileSync(transcript, JSON.stringify({ customTitle: "Boardsmith" }) + "\n");
-  const hook = (input) => spawnSync(process.execPath, [join(pin, "gate", "publish.mjs"), "--config", join(s.configDir, "board.config.json")], { input: JSON.stringify({ ...input, transcript_path: transcript }), encoding: "utf8", env: { ...process.env, FLIGHT_BOARD_ROLE: "" } });
+  const hook = (input) => spawnSync(process.execPath, ["--max-old-space-size=256", join(pin, "gate", "publish.mjs"), "--config", join(s.configDir, "board.config.json")], { input: JSON.stringify({ ...input, transcript_path: transcript }), encoding: "utf8", env: { ...process.env, FLIGHT_BOARD_ROLE: "" }, timeout: 20000, maxBuffer: 1 << 20 });
   const signed = join(s.configDir, "board-0000000.html");
   writeFileSync(signed, buildPage(readFileSync(join(pin, "page", "board.template.html"), "utf8"), rawConfig));
   const yes = hook(files(signed));
