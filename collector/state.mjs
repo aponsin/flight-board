@@ -650,6 +650,18 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const installed = installedSha(home(x.installedLink ?? ""));
     repos[x.name] = { ...repoAt(home(x.path), x.remote ?? "origin", x.mainBranch ?? "main", x.notes), gh: null, live: installed, versionPattern: null };
   }
+  // #C642: what the Collector's last run saved is merged into the mirror first, so this minute reads the board as of that run. The merge
+  // and the derive after it are collect.mjs --probe-step, a child process (the collector's code is the release's, not this pinned file's).
+  const probeStep = (extra) => {
+    try { return execFileSync(process.execPath, [join(CODE, "collector", "collect.mjs"), "--config", process.argv[at + 1], "--probe-step", ...extra, ...(fetchIt ? ["--no-fetch"] : [])], { cwd: join(stateDir, id), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 150_000, maxBuffer: 16 * 1024 * 1024 }).trim(); }
+    catch (e) { return `probe step failed: ${String(e.message).split("\n")[0].slice(0, 160)}`; }
+  };
+  const merged = probeStep(["--merge-only"]);
+  if (merged) console.log(`state: ${merged.split("\n").join(" / ")}`);
+  // The mirror's own stamp (collector/delta.mjs _at.json): when the last merged run began.
+  const stampAt = () => { try { const s = JSON.parse(readFileSync(join(stateDir, id, "mirror", "_at.json"), "utf8")); return Number.isFinite(s?.at) ? s.at : 0; } catch { return 0; } };
+  // The derive step, after the state is posted (it asks GitHub, which can take a while): when a merge changed the mirror or the last one is 10 minutes old.
+  const deriveStep = () => { const out = probeStep([]); if (out) console.log(`state: ${out.split("\n").join(" / ")}`); };
   // The cards on the last export; the agents from the app's files.
   const cards = [];
   const mdir = join(stateDir, id, "mirror", "initiatives");
@@ -679,7 +691,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   // Questions for the owner that never became a Needs-you item (#C584), for the lead to write from the wake watch's line.
   const waitingDocs = [], wdir = join(stateDir, id, "mirror", "waiting");
   let waitingKnown = false, exportedAt = 0;
-  try { waitingKnown = true; exportedAt = lstatSync(wdir).mtimeMs; for (const f of readdirSync(wdir)) { if (!f.endsWith(".json")) continue; const r = readTail(join(wdir, f), 64 * 1024); if (!r?.whole) continue; exportedAt = Math.max(exportedAt, r.mtimeMs); try { const d = JSON.parse(r.text); if (plain(d)) waitingDocs.push(d); } catch { /* skip it */ } } } catch { waitingKnown = false; /* no export of the waiting items yet: no ask is listed on a guess */ }
+  try { waitingKnown = true; exportedAt = Math.max(lstatSync(wdir).mtimeMs, stampAt()); for (const f of readdirSync(wdir)) { if (!f.endsWith(".json")) continue; const r = readTail(join(wdir, f), 64 * 1024); if (!r?.whole) continue; exportedAt = Math.max(exportedAt, r.mtimeMs); try { const d = JSON.parse(r.text); if (plain(d)) waitingDocs.push(d); } catch { /* skip it */ } } } catch { waitingKnown = false; /* no export of the waiting items yet: no ask is listed on a guess */ }
   // The export is the Collector's, on demand (#C594): an item the lead wrote after it isn't in it. No ask is listed from an
   // export older than MIRROR_STALE_MS, or the lead would be told to write an item that already exists (Checker on 46d97a0).
   if (waitingKnown && !mirrorFresh(exportedAt, now, config.gate.mirrorMaxAgeMin * 60e3)) waitingKnown = false;
@@ -733,7 +745,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     writeAtomic(ciPath, JSON.stringify(Object.fromEntries(Object.entries(ciCache).slice(-500))));
     writeAtomic(idsPath, JSON.stringify(Object.fromEntries(Object.entries(changeIds).slice(-5000))));
   } catch (e) { console.error(`state: ${String(e.message).split("\n")[0]}`); process.exit(1); }
-  if (process.argv.includes("--no-post")) { console.log(`state: written, ${Object.keys(state.cards).length} card(s), ${Object.keys(state.agents).length} agent(s), not posted`); process.exit(0); }
+  if (process.argv.includes("--no-post")) { console.log(`state: written, ${Object.keys(state.cards).length} card(s), ${Object.keys(state.agents).length} agent(s), not posted`); if (!process.argv.includes("--no-derive")) deriveStep(); process.exit(0); }
   const secrets = readSecrets(secretsDir(stateDir, id));
   console.log(secrets ? await postState(fetch, secrets, id, state) : "state: written, not posted (no secrets from the owner's install, or they are open to others)");
   // The owner's wake counter (#C580) into wake.json, for the lead's wake watch: only when it changed. A Worker that has no
@@ -744,4 +756,5 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     if (next) { try { writeAtomic(p.wake, next); console.log(`wake: #${got.wake.seq}`); } catch { console.log("wake: wake.json could not be written"); } }
     else if (got.line) console.log(got.line);
   }
+  deriveStep();
 }

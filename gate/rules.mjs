@@ -92,7 +92,22 @@ export const threadNumErrors = (writes, seen = 0) => numErrors(writes, seen, COU
 export const COLLECTOR_ROLE = "Collector";
 // A memory reading the Collector may write: only when the team listed roles for it (collector.contextRoles).
 const collectorMemory = (w, config) => contextRoles(config).length > 0 && isContextWrite(w);
-const TIME_FIELDS = ["at", "since", "nextNoteAt"];
+const TIME_FIELDS = ["at", "since", "nextNoteAt", "updatedAt"];
+// The collections edited in place (#C642): the Collector reads only what changed since its last run, and the board can filter on
+// a document's own fields only, so each write to one of them says when it was made, and a delete is a tombstone.
+export const STAMPED = ["initiatives", "waiting", "ideas", "threads", "plan"];
+export const STAMP_WINDOW_MS = 15 * 60e3;
+export function updatedAtErrors(w, now) {
+  const { op, collection, doc_id: id, data } = w;
+  if (!STAMPED.includes(collection)) return [];
+  if (op === "delete") return [`${collection}/${id}: don't delete it; update it with {deleted: true, updatedAt: <ms from the clock>} so the Collector's next read sees it go (the nightly read removes the tombstone)`];
+  if (op !== "set" && op !== "update") return [];
+  const at = data && typeof data === "object" ? data.updatedAt : undefined;
+  if (typeof at !== "number" || !Number.isInteger(at)) return [`${collection}/${id}: add updatedAt (ms, read the clock: python3 -c "import time;print(int(time.time()*1000))") to the data; the Collector reads only what changed since its last run`];
+  if (at < now - STAMP_WINDOW_MS) return [`${collection}/${id}: updatedAt is more than 15 minutes old (${at}): read the clock when you write, don't copy an earlier value`];
+  if (data.deleted !== undefined && data.deleted !== true) return [`${collection}/${id}: deleted is true or left out`];
+  return [];
+}
 // A step written as plain text that holds a command: the owner can't copy it. Commands go in {text, cmd}.
 const COMMAND = /`[^`]+`|(^|[\s:])(npm|npx|git|gh|node|python3?|cd|curl|brew|sudo|wrangler|bash|zsh)\s+[^\s]/;
 
@@ -115,6 +130,7 @@ export function writeErrors(w, { config, who, now }) {
   const phases = config.phases.map((p) => p[0]);
   // An edit in place (ArtifactData str_replace) leaves the gate blind to the field's new value: write the whole field.
   if (op === "str_replace") return [`a text edit in place can't be checked: write the whole field with update instead`];
+  if (config.gate.requireUpdatedAt) e.push(...updatedAtErrors(w, now));
   // The scheduled collector (its session titled "Collector", collector/TASK.md) sets derived/all and, for the roles in
   // collector.contextRoles, their memory readings (ctx/<Role> and meta/context agents.<Role>, exactly {pct, at} or {pct, tokens, at}:
   // collector/context.mjs), and nothing else (Security): whatever its run reads, it can't change a card, an ask, a

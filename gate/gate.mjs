@@ -91,6 +91,11 @@ export function readMirror(dir) {
       atBy[c] = Math.max(atBy[c] ?? 0, t);
     }
   }
+  // A mirror built from deltas (#C642) says in _at.json when its last run began: it holds every change up to then, so that
+  // is how current it is, however long ago its newest file was written. The files' own times stay for each document.
+  let stamp = null;
+  try { const s = JSON.parse(readFileSync(join(dir, "_at.json"), "utf8")); if (Number.isFinite(s?.at) && s.at > 0) stamp = s.at; } catch { /* a mirror from a whole export: its files' times */ }
+  if (stamp !== null) { at = Math.max(at, stamp); for (const c of Object.keys(docs)) atBy[c] = Math.max(atBy[c] ?? 0, stamp); }
   return { docs, at, atBy, atDoc };
 }
 
