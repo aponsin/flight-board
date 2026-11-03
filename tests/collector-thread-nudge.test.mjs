@@ -53,7 +53,8 @@ test("the cut check: a whole number of pages of any exported collection, none fo
 test("the task pages every export list with next_cursor, in its steps and in its prompt", () => {
   const prompt = readFileSync(new URL("../collector/PROMPT.txt", import.meta.url), "utf8");
   const task = readFileSync(new URL("../collector/TASK.md", import.meta.url), "utf8");
-  assert.match(prompt, /for each of: initiatives, waiting, ideas, messages, derived, ctx, plan, threads \([^)]*\), each again with its next_cursor \(query\.cursor, the same out_dir\) until there is none\./);
+  assert.match(prompt, /for each of: initiatives, waiting, ideas, messages, ctx, plan, threads \([^)]*\), each again with its next_cursor \(query\.cursor, the same out_dir\) until there is none/);
+  assert.match(prompt, /with each next_cursor \(query\.cursor, the same where, the same out_dir\) until there is none/, "a delta query pages too");
   assert.match(task, /`threads` \([^)]*\),\s+each again with its `next_cursor` \(`query\.cursor`, the same `out_dir`\) until there is none/);
   assert.match(task, /`NUDGE the board export may be cut`/);
 });

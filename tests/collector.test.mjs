@@ -340,7 +340,7 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /\*\*Session title\*\*: exactly `Collector`/);
   assert.match(doc, /enforced by permission rules, not by the prompt/);
   assert.match(doc, /"Bash\(node <full path of the current link>\/collector\/collect\.mjs --config <full path to board\.config\.json> --prepare\)"/);
-  assert.match(doc, /"Bash\(node <full path of the current link>\/collector\/collect\.mjs --config <full path to board\.config\.json>\)"/);
+  assert.doesNotMatch(doc, /"Bash\(node <full path of the current link>\/collector\/collect\.mjs --config <full path to board\.config\.json>\)"/, "the run only plans (--prepare): the probe merges and derives (#C642)");
   assert.match(doc, /no wildcards/);
   assert.match(doc, /\*\*Mode: Auto\*\*/);
   assert.match(doc, /Never\s+Accept edits or Bypass/);
@@ -349,13 +349,14 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /`out_dir` this session's scratchpad folder followed by\s+`\/flight-board-export`/, "the export goes to the run's scratchpad (the save test)");
   assert.match(doc, /Never read the exported files/);
   assert.match(doc, /The after-ship run is \*\*this same task\*\*/);
-  assert.match(doc, /`ctx`, `plan`[^;]*;[\s\S]*`query` of `steps`/, "the export takes the memory tiles, the plan and the last days' steps for the nudges");
+  assert.match(doc, /`ctx`,\s+`plan`,[^;]*;[\s\S]*`query` of `steps`/, "a full read takes the memory tiles, the plan and the last days' steps for the nudges");
+  assert.match(doc, /Query <collection>: where <condition>/, "a delta run queries each collection by its time field");
   assert.match(doc, /`NUDGE` line/);
   const settings = JSON.parse(doc.match(/```json\n([\s\S]*?)\n  ```/)[1].replace(/^  /gm, ""));
-  assert.deepEqual(settings.permissions.allow.slice(3), ["Read(/<full path of collector.outDir>/ctx-*.json)", "Read(/<full path of collector.outDir>/meta-context.json)", "ArtifactData", "ToolSearch", "mcp__ccd_session_mgmt__send_message", "mcp__ccd_session_mgmt__list_sessions", "mcp__ccd_session_mgmt__get_usage", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"], "the memory files and the two read-only session tools (#C274), nothing else");
-  assert.deepEqual(settings.hooks.PostToolUse.map((h) => h.matcher), ["mcp__ccd_session_mgmt__list_sessions|mcp__ccd_session_mgmt__get_usage"], "the memory hook on those two tools only");
-  assert.match(settings.hooks.PostToolUse[0].hooks[0].command, /<full path of the pinned install>\/collector\/context\.mjs' --config/, "pinned like the fence");
-  assert.equal(settings.permissions.allow[2], "Read(/<full path of collector.outDir>/derived-all.json)", "the one file the run reads: step 2's output, outside the run's folder (Security)");
+  assert.deepEqual(settings.permissions.allow.slice(1), ["Read(/<full path of collector.outDir>/derived-all.json)", "ArtifactData", "ToolSearch", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"], "no session tool and no memory file: the run only reads the board (#C642)");
+  assert.equal(settings.hooks.PostToolUse, undefined, "no memory hook: the probe reads every role's context");
+  assert.deepEqual(settings.hooks.PreToolUse.map((h) => h.matcher), ["*"], "the fence alone");
+  assert.equal(settings.permissions.allow[1], "Read(/<full path of collector.outDir>/derived-all.json)", "the one file the run reads: the probe's output, outside the run's folder (Security)");
   assert.ok(settings.permissions.deny.includes("Read(/<full path of gate.stateDir/board id>/**)"), "the run's own folder denied to Read whole (Security)");
   for (const r of ["cat", "less", "grep", "rg", "find", "sed", "awk", "jq", "python3", "node -e"]) assert.ok(settings.permissions.deny.includes(`Bash(${r}:*)`), `the shell's ${r}`);
   assert.ok(!settings.permissions.deny.includes("Read"), "no bare Read deny: it blocks the set from file (the first run)");
@@ -363,18 +364,19 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.ok(!settings.permissions.deny.includes("mcp__ccd_session_mgmt__send_message"));
   assert.match(doc, /never with cd, &&, or anything added or/, "the commands run exactly as allowed (Security)");
   assert.match(doc, /Never pass the document inline/);
-  assert.match(doc, /`get` `derived\/all` with `out_dir` this session's scratchpad folder followed by\s+`\/derived-version`/, "derived/all's text never enters the session (Security), saved in the run's scratchpad, where the fence allows it");
+  assert.match(doc, /`if_version` the version step 2's last list showed/, "derived/all's text never enters the session (Security): the version comes from the derived list, saved in the run's scratchpad");
   assert.match(doc, /\*\*Folder\*\*: the board's own state folder/, "exports are saved only inside the run's folder (trial 2)");
   assert.equal(settings.permissions.additionalDirectories, undefined, "everything is inside the run's folder");
   assert.match(doc, /must start with `\/\/`, the absolute form/);
-  assert.ok(settings.permissions.allow.slice(0, 2).every((r) => r.startsWith("Bash(node <full path of the current link>/collector/collect.mjs --config ") && !r.includes("*")), "the two node commands, whole, by full path");
+  assert.ok(settings.permissions.allow.slice(0, 1).every((r) => r.startsWith("Bash(node <full path of the current link>/collector/collect.mjs --config ") && r.endsWith(" --prepare)") && !r.includes("*")), "the one node command, whole, by full path");
   for (const d of ["Grep", "Glob", "Agent", "SendMessage", "Bash(head:*)", "Bash(tail:*)", "Bash(git:*)", "Bash(npm:*)"]) assert.ok(settings.permissions.deny.includes(d), d);
   assert.equal(settings.permissions.defaultMode, "default");
   assert.ok(settings.permissions.deny.some((r) => r.startsWith("Read(//private/tmp/claude-<uid>/")) && settings.permissions.deny.some((r) => r.startsWith("Read(//tmp/claude-<uid>/")), "the run's own scratchpad denied to Read (Security)");
-  assert.match(doc, /`session_id` the lead's session id/, "a scheduled run reaches another session only by its id, through send_message");
+  assert.doesNotMatch(doc, /`session_id` the lead's session id/, "the run messages no one (#C642): the probe's lines reach the lead through its wake watch");
+  assert.match(doc, /Send no messages and call no session tool/);
   assert.match(doc, /a correct run asks for nothing\. Any prompt means something is wrong: answer Deny/);
   assert.deepEqual(settings.env, { FLIGHT_BOARD_ROLE: "Collector" });
-  assert.match(doc, /the four steps below, written out in full \(the task can't Read this file\)/);
+  assert.match(doc, /the three steps below, written out in full\s+\(the task can't Read this file\)/);
 });
 
 test("the output goes to collector.outDir when set (outside the state folder the run works in), else <dir>/out", () => {

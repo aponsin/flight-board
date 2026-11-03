@@ -45,6 +45,11 @@ test("mergeRun: a full read makes the mirror and the state; a delta after it is 
     assert.deepEqual(readStamp(join(b.dir, "mirror")), { at: t0, mergedAt: NOW });
     assert.deepEqual(readDeltaState(b.dir), { at: t0, fullAt: t0, lastPrepare: t0 });
     assert.equal(b.merge().did, null, "the same run: nothing to merge again");
+    // Even if its export is still there (a folder that could not be removed), a run already merged is not merged again.
+    b.run("s1", { mode: "full", at: t0, docs: { initiatives: { a: { name: "again" } } } });
+    for (const c of ["waiting", "ideas", "messages", "ctx", "steps"]) put(join(b.root, "s1", "scratchpad", EXPORT_NAME), c, "x", { at: t0 });
+    assert.equal(b.merge().did, null, "the same run's export, left behind");
+    assert.equal(read(join(b.dir, "mirror", "initiatives", "a.json")).name, "a");
     // The next run, a delta that edits a, removes w, adds c.
     await new Promise((r) => setTimeout(r, 15));
     const t1 = NOW - 1800e3;
@@ -98,6 +103,19 @@ test("mergeRun: a nightly read that differs from the merged mirror prints MIRROR
     assert.equal(existsSync(join(b.dir, "mirror", "initiatives", "hard-deleted.json")), false);
     assert.equal(readDeltaState(b.dir).fullAt, NOW - 600e3);
     assert.ok(readStamp(join(b.dir, "mirror")).at === NOW - 600e3);
+  } finally { b.done(); }
+});
+
+test("a nightly read with a collection of exactly whole pages is reported as cut, as it always was", () => {
+  const b = board();
+  try {
+    const exp = b.run("full", { mode: "full", at: NOW - 600e3, docs: { initiatives: { a: { name: "a" } }, waiting: { w: { text: "w" } } } });
+    for (const c of ["ideas", "ctx", "steps"]) put(exp, c, "x", { at: NOW });
+    for (let i = 0; i < 1000; i++) put(exp, "messages", `m${i}`, { at: NOW, text: "x" });
+    const out = b.merge();
+    assert.equal(out.did, "full");
+    assert.equal(out.lines.length, 1);
+    assert.match(out.lines[0], /^NUDGE the board export may be cut: messages \(1000\) came back with exactly a full page/);
   } finally { b.done(); }
 });
 
