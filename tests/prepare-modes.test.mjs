@@ -9,17 +9,17 @@ import { OVERLAP_MS, writeDeltaState, writeStamp } from "../collector/delta.mjs"
 const COLLECT = new URL("../collector/collect.mjs", import.meta.url).pathname;
 const run = (args, cwd) => spawnSync(process.execPath, [COLLECT, ...args], { cwd, encoding: "utf8", timeout: 60_000 });
 
-function setup() {
+function setup(gate = {}) {
   const base = mkdtempSync(join(tmpdir(), "c642-prep-"));
   const state = join(base, "state"), dir = join(state, "Board01");
   mkdirSync(dir, { recursive: true });
   const cfg = join(base, "board.config.json");
-  writeFileSync(cfg, JSON.stringify({ owner: "Sam", artifactUrl: ["https:", "", "claude.ai", "artifact", "Board01"].join("/"), gate: { stateDir: state }, collector: { repoPath: "/nowhere", outDir: join(base, "out") } }));
+  writeFileSync(cfg, JSON.stringify({ owner: "Sam", artifactUrl: ["https:", "", "claude.ai", "artifact", "Board01"].join("/"), gate: { stateDir: state, ...gate }, collector: { repoPath: "/nowhere", outDir: join(base, "out") } }));
   return { base, dir, cfg, done: () => rmSync(base, { recursive: true, force: true }) };
 }
 
 test("--prepare with no mirror asks for the whole board; with a merged mirror it asks for the delta since the last merged run, field by field", () => {
-  const s = setup();
+  const s = setup({ requireUpdatedAt: true });
   try {
     const first = run(["--config", s.cfg, "--prepare"], s.dir);
     assert.equal(first.status, 0, first.stderr);
@@ -44,6 +44,22 @@ test("--prepare with no mirror asks for the whole board; with a merged mirror it
     assert.equal(JSON.parse(readFileSync(join(s.dir, "export-since.json"), "utf8")).mode, "delta");
     assert.ok(!next.stdout.includes("Read memory"), "no memory reads: the probe reads every role's context");
   } finally { s.done(); }
+});
+
+test("--prepare plans a full read whenever gate.requireUpdatedAt is not true, mirror or not (the pack order is enforced in code)", () => {
+  for (const gate of [{}, { requireUpdatedAt: false }]) {
+    const s = setup(gate);
+    try {
+      mkdirSync(join(s.dir, "mirror", "initiatives"), { recursive: true });
+      const ran = Date.now() - 30 * 60e3;
+      writeDeltaState(s.dir, { at: ran, fullAt: Date.now() - 2 * 3600e3, lastPrepare: ran });
+      writeStamp(join(s.dir, "mirror"), ran, ran);
+      const out = run(["--config", s.cfg, "--prepare"], s.dir);
+      assert.equal(out.status, 0, out.stderr);
+      assert.match(out.stdout, /Mode: full\./);
+      assert.equal(JSON.parse(readFileSync(join(s.dir, "export-since.json"), "utf8")).mode, "full");
+    } finally { s.done(); }
+  }
 });
 
 test("collect.mjs without --from-mirror refuses to take a delta or a nightly read as the whole board; the mirror is left as it was", () => {

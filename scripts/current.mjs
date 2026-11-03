@@ -22,7 +22,7 @@ export const NOTES_REF = "refs/notes/security";
 // Stop hook (hooks/red-ask-board.py, #C329) runs from the copy an install pack puts in ~/.claude/hooks: the owner's too.
 // The state probe (#C420, Security's condition A): launchd runs the pinned copy's collector/state.mjs, and the owner
 // deploys the Worker and makes its secrets from that copy, so a board release changes none of them.
-export const OWNER_ENTRIES = ["gate/gate.mjs", "gate/after.mjs", "gate/stop.mjs", "collector/refresh.mjs", "collector/fence.mjs", "collector/context.mjs", "scripts/hooks.mjs", "hooks/red-ask-board.py", "gate/digest.mjs", "collector/state.mjs", "worker/state-worker.mjs", "scripts/state-install.mjs", "scripts/wake-watch.mjs"];
+export const OWNER_ENTRIES = ["gate/gate.mjs", "gate/after.mjs", "gate/stop.mjs", "collector/refresh.mjs", "collector/fence.mjs", "collector/context.mjs", "scripts/hooks.mjs", "hooks/red-ask-board.py", "gate/digest.mjs", "collector/state.mjs", "collector/collect.mjs", "worker/state-worker.mjs", "scripts/state-install.mjs", "scripts/wake-watch.mjs"];
 export const TASK_FILE = "collector/TASK.md";
 
 // The files `entries` load, themselves included: every relative static import, followed. read(path) gives a file's

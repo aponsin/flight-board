@@ -96,7 +96,9 @@ const TIME_FIELDS = ["at", "since", "nextNoteAt", "updatedAt"];
 // The collections edited in place (#C642): the Collector reads only what changed since its last run, and the board can filter on
 // a document's own fields only, so each write to one of them says when it was made, and a delete is a tombstone.
 export const STAMPED = ["initiatives", "waiting", "ideas", "threads", "plan"];
-export const STAMP_WINDOW_MS = 15 * 60e3;
+// Under the delta read's overlap (collector/delta.mjs OVERLAP_MS, 5 minutes): a write stamped inside this window is always inside
+// the next delta's `since`, so it is never missed (Checker; tests/delta-run.test.mjs ties the two constants).
+export const STAMP_WINDOW_MS = 4 * 60e3;
 export function updatedAtErrors(w, now) {
   const { op, collection, doc_id: id, data } = w;
   if (!STAMPED.includes(collection)) return [];
@@ -104,7 +106,7 @@ export function updatedAtErrors(w, now) {
   if (op !== "set" && op !== "update") return [];
   const at = data && typeof data === "object" ? data.updatedAt : undefined;
   if (typeof at !== "number" || !Number.isInteger(at)) return [`${collection}/${id}: add updatedAt (ms, read the clock: python3 -c "import time;print(int(time.time()*1000))") to the data; the Collector reads only what changed since its last run`];
-  if (at < now - STAMP_WINDOW_MS) return [`${collection}/${id}: updatedAt is more than 15 minutes old (${at}): read the clock when you write, don't copy an earlier value`];
+  if (at < now - STAMP_WINDOW_MS) return [`${collection}/${id}: updatedAt is more than ${STAMP_WINDOW_MS / 60e3} minutes old (${at}): read the clock when you write, don't copy an earlier value`];
   if (data.deleted !== undefined && data.deleted !== true) return [`${collection}/${id}: deleted is true or left out`];
   return [];
 }

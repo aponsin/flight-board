@@ -30,7 +30,7 @@ import { runMark, localMain, localShips } from "./refresh.mjs";
 import { allocate } from "../scripts/thread-ids.mjs";
 import { refreshPickups } from "./pickup.mjs";
 import { liveFresh, LIVE_FRESH_MS } from "./state-schema.mjs";
-import { sealed, deltaPlan, queryLines, readDeltaState, writeDeltaState, writeStamp, mergeDelta, driftLines, deriveDue, saveLines, DERIVE_FILE, LINE_START } from "./delta.mjs";
+import { sealed, deltaPlan, dropTombstones, queryLines, readDeltaState, writeDeltaState, writeStamp, mergeDelta, driftLines, deriveDue, saveLines, DERIVE_FILE, LINE_START } from "./delta.mjs";
 
 // The folder this run's code really lives in (the current link resolved, by Node, to a pinned copy).
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -168,6 +168,9 @@ export function mergeRun({ dir, id, uid = process.getuid(), now = Date.now(), ba
   const found = findExport(scratchRoot(dir, uid, base), mark.at, uid, mark.mode);
   if (!found) return { did: null };
   const mirror = join(dir, "mirror");
+  // A delta has no mirror to be laid over: it is not the board (the plan never asks for one), so nothing is taken and no state is
+  // written; the next plan, finding no mirror, is a full read (Checker).
+  if (mark.mode === "delta" && !existsSync(mirror)) return { did: null };
   const kept = { at: mark.at, fullAt: state?.fullAt ?? null, lastPrepare: mark.at };
   if (mark.mode === "delta" && existsSync(mirror)) {
     const counts = mergeDelta(mirror, found, { at: mark.at, now });
@@ -178,6 +181,7 @@ export function mergeRun({ dir, id, uid = process.getuid(), now = Date.now(), ba
   // A full read (or a delta with no mirror to add to, which the plan never asks for): the whole board replaces the mirror.
   takeExport(found, dir, id);
   const lines = mark.mode === "full" && state && existsSync(mirror) ? driftLines(mirror, join(dir, "mirror.next")) : [];
+  dropTombstones(join(dir, "mirror.next"));
   // A collection that came back with exactly whole pages was most likely cut (#C428): the run is told, as it always was.
   const next = join(dir, "mirror.next"), counted = {};
   for (const c of EXPORT_COLLECTIONS) { try { counted[c] = readdirSync(join(next, c)).filter((f) => f.endsWith(".json")); } catch { /* none exported */ } }
@@ -522,7 +526,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       // #C642: a delta since the last merged run, or the nightly full read; the probe merges what the run saves
       // (collector/merge.mjs), and says which it was by the mode written here.
       const startedAt = Date.now();
-      const plan = deltaPlan({ now: startedAt, state: readDeltaState(dir), hasMirror: existsSync(join(dir, "mirror")), hour: new Date(startedAt).getHours() });
+      const plan = deltaPlan({ now: startedAt, state: readDeltaState(dir), hasMirror: existsSync(join(dir, "mirror")), hour: new Date(startedAt).getHours(), requireUpdatedAt: config.gate?.requireUpdatedAt === true });
       writeFileSync(join(dir, "export-since.json"), JSON.stringify({ ...runMark(startedAt, config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern)), code: CODE, mode: plan.mode }));
       console.log(`Export the board into: your scratchpad folder + /${EXPORT_NAME}`);
       for (const line of queryLines(plan)) console.log(line);

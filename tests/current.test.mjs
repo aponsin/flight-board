@@ -28,8 +28,8 @@ test("importClosure: the owner's install is everything its entry points load; at
   const read = (f) => { try { return readFileSync(new URL(`../${f}`, import.meta.url), "utf8"); } catch { return null; } };
   const owned = importClosure(OWNER_ENTRIES, read);
   for (const f of ["collector/context.mjs", "collector/export.mjs", "collector/fence.mjs", "collector/refresh.mjs", "collector/text.mjs", "gate/after.mjs", "gate/gate.mjs", "gate/plan.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs", "scripts/config.mjs"]) assert.ok(owned.includes(f), f);
-  // The collector's own code is no longer pinned: the fence takes its two constants from collector/export.mjs (#C278).
-  for (const f of ["collector/collect.mjs", "collector/derive.mjs", "collector/facts.mjs", "collector/nudges.mjs", "collector/plan-state.mjs", "collector/timings.mjs"]) assert.ok(!owned.includes(f), f);
+  // The probe runs the install's own collect.mjs as a child (#C642), so it and everything it loads are pinned with the owner's install.
+  for (const f of ["collector/collect.mjs", "collector/delta.mjs", "collector/derive.mjs", "collector/facts.mjs", "collector/nudges.mjs", "collector/plan-state.mjs", "collector/timings.mjs"]) assert.ok(owned.includes(f), f);
   assert.ok(NAME_C === EXPORT_NAME && COLLECTIONS_C === EXPORT_COLLECTIONS, "collect.mjs re-exports the fence's own values: they can't drift apart");
   assert.ok(!owned.includes("collector/TASK.md") && !owned.includes("page/board.template.html"));
   const files = { "a.mjs": 'import { x } from "./b/c.mjs";\nexport { y } from "../z.mjs";\nimport fs from "node:fs";', "b/c.mjs": 'import "./d.mjs";\nimport { a } from "../a.mjs";', "z.mjs": "", "b/d.mjs": null };
