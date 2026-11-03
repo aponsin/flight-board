@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { boardId, checkConfig, fullConfig } from "../scripts/config.mjs";
 import { COUNTERS } from "./rules.mjs";
 import { writesOf, home, writeState, OVERLAY } from "./gate.mjs";
+import { dbWritesOf } from "./tools.mjs";
 
 // Every write the gate sees, delete included (the overlay drops a deleted document: Checker).
 const WRITES = new Set(["set", "update", "delete", "batch"]);
@@ -31,12 +32,15 @@ export function afterWrite(state, writes, now = Date.now()) {
 export function after(input, { config }) {
   const id = boardId(config);
   const t = input?.tool_input ?? {};
-  if (input?.tool_name !== "ArtifactData" || !id || !String(t.url ?? "").includes(id) || !WRITES.has(t.action)) return null;
+  // The old tool, or the claude-artifacts server's db_write / db_str_replace (#C652).
+  const old = input?.tool_name === "ArtifactData" && id && String(t.url ?? "").includes(id) && WRITES.has(t.action);
+  const writes = old ? writesOf(t) : dbWritesOf(input?.tool_name, t, config);
+  if (!id || !writes.length) return null;
   const dir = join(home(config.gate.stateDir), id);
   const path = join(dir, "gate.json");
   let state = {};
   try { state = JSON.parse(readFileSync(path, "utf8")); } catch { /* first run */ }
-  const next = afterWrite(state, writesOf(t));
+  const next = afterWrite(state, writes);
   if (next === state) return state;
   writeState(path, next);
   return next;

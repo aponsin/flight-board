@@ -1,0 +1,78 @@
+// The board's tools by name (#C652). The app replaced ArtifactData and Artifact with the claude-artifacts server's tools
+// (mcp__claude-artifacts__db_write, db_str_replace, db_query, publish_files, ...), and every hook that named the old ones went
+// blind: a db_write on the board skipped the write gate, a publish skipped the signed-page check. This one module knows both
+// vocabularies; the gate, the PostToolUse journal, the Stop gate and the live check read the tools through it.
+//
+// A call is about the board when its slug is the board's: the id in artifactUrl, or the artifact's UUID in config.artifactSlug
+// (the new tools take the UUID, or a whole link). What a call on the board is:
+//   - db_write / db_str_replace: board writes, mapped onto the old { op, collection, doc_id, data, if_version } the rules read;
+//   - publish_version / publish_files / edit_version / copy_file: a page change (gate/publish.mjs allows a byte-verified signed
+//     page and denies the rest);
+//   - a read or a comment tool (OPEN): nothing to check;
+//   - anything else under the prefix, an unknown name too: refused. A new tool that writes is shut until someone reads it.
+export const PREFIX = "mcp__claude-artifacts__";
+export const DB_WRITE = `${PREFIX}db_write`, DB_STR_REPLACE = `${PREFIX}db_str_replace`, DB_QUERY = `${PREFIX}db_query`;
+export const PAGE_TOOLS = new Set(["publish_version", "publish_files", "edit_version", "copy_file"].map((n) => PREFIX + n));
+// Reads, and the comment and pin tools, which change nothing the gate protects.
+export const OPEN_TOOLS = new Set(["get_artifact", "read_artifact", "list_artifacts", "list_files", "read_file", "list_assets", "read_asset", "describe_capabilities", "describe_type", "list_types", "read_declaration", "read_comments", "db_get", "db_list", "db_query", "db_profiles", "db_rules_get", "db_usage", "db_whoami", "guide", "watch", "unwatch", "reply_comment", "reply_shared_comment", "resolve_comment", "pin_artifact", "unpin_artifact"].map((n) => PREFIX + n));
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (s) => UUID.test(String(s ?? ""));
+
+// Whether a slug (or link) names the board: the id in its link, or its UUID.
+export function isBoardSlug(value, config) {
+  if (typeof value !== "string" || !value) return false;
+  const id = /artifact\/([A-Za-z0-9-]+)$/.exec(String(config?.artifactUrl ?? ""))?.[1];
+  const uuid = String(config?.artifactSlug ?? "").toLowerCase();
+  const v = value.trim();
+  if (id && (v === id || v.endsWith(`/${id}`))) return true;
+  return !!uuid && isUuid(uuid) && (v.toLowerCase() === uuid || v.toLowerCase().endsWith(`/${uuid}`));
+}
+
+// The artifact a tool call is aimed at: its slug, and for a copy its source too.
+const aimedAt = (t) => [t?.slug, t?.url, t?.from_url].filter((v) => typeof v === "string" && v);
+export const aimsAtBoard = (t, config) => aimedAt(t).some((v) => isBoardSlug(v, config));
+
+const OPS = { set: "set", merge: "update", update: "update", delete: "delete" };
+// db_write's ops as the old write list, or null when any op is not one the gate can read (the call is then refused).
+export function dbWriteOps(t) {
+  if (!Array.isArray(t?.ops) || !t.ops.length) return null;
+  const out = [];
+  for (const o of t.ops) {
+    const op = o && typeof o === "object" ? OPS[o.op] : undefined;
+    const parts = typeof o?.path === "string" ? o.path.split("/") : [];
+    if (!op || parts.length < 2 || parts.some((p) => !p)) return null;
+    if (op !== "delete" && (!o.data || typeof o.data !== "object" || Array.isArray(o.data))) return null;
+    out.push({ op, collection: parts.slice(0, -1).join("/"), doc_id: parts[parts.length - 1], data: op === "delete" ? null : o.data, if_version: o.ifVersion });
+  }
+  return out;
+}
+// db_str_replace: a text edit in place, which the rules refuse whole (the gate never sees the field's new value).
+export function dbStrReplaceOps(t) {
+  const parts = typeof t?.path === "string" ? t.path.split("/") : [];
+  if (parts.length < 2 || parts.some((p) => !p) || typeof t.field !== "string" || !t.field) return null;
+  return [{ op: "str_replace", collection: parts.slice(0, -1).join("/"), doc_id: parts[parts.length - 1], data: { [t.field]: t.new_str }, if_version: t.ifVersion }];
+}
+
+// What a call on the board is: null (not about the board, or nothing to check), { kind: "db", writes }, { kind: "page" },
+// or { kind: "refuse", why }. The old ArtifactData is left to the callers that already read it.
+export function classify(input, config) {
+  const name = input?.tool_name;
+  if (typeof name !== "string" || !name.startsWith(PREFIX)) return null;
+  const t = input.tool_input ?? {};
+  if (!aimsAtBoard(t, config)) return null;
+  if (name === DB_WRITE || name === DB_STR_REPLACE) {
+    const writes = name === DB_WRITE ? dbWriteOps(t) : dbStrReplaceOps(t);
+    return writes ? { kind: "db", writes } : { kind: "refuse", why: `${name.slice(PREFIX.length)} on the board, in a shape the gate cannot read (ops as {op: set|merge|update|delete, path: "collection/id", data}, or a path and a field)` };
+  }
+  if (PAGE_TOOLS.has(name)) return { kind: "page" };
+  if (OPEN_TOOLS.has(name)) return null;
+  return { kind: "refuse", why: `${name.slice(PREFIX.length)} on the board: the gate does not know this tool, so it is shut until someone reads it` };
+}
+
+// The board writes in one call of the new tools: [] when it is not one (or not readable). For the PostToolUse journal and the Stop
+// gate, which read a call after the fact; the old ArtifactData stays with the code that already reads it.
+export function dbWritesOf(name, t, config) {
+  const c = classify({ tool_name: name, tool_input: t }, config);
+  return c?.kind === "db" ? c.writes : [];
+}

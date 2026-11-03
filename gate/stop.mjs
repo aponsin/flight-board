@@ -15,6 +15,7 @@ import { writesOf, writeState, home, readMirror, withJournal } from "./gate.mjs"
 import { openOwnerWords, WAIT_MIN } from "./owner-waits.mjs";
 import { turnLive, nextLive, liveAsk, liveSince, livePath, readLive, writeLive, liveDue } from "./live.mjs";
 import { idText } from "../collector/text.mjs";
+import { dbWritesOf } from "./tools.mjs";
 import { wakePaths, watchAsk, readWakeFile, shQuote, writeAtomic } from "./wake.mjs";
 import { DISPATCH_FILE, dispatchPidFile, dispatchWatchAlive } from "./reset.mjs";
 
@@ -231,14 +232,14 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   const turn = currentTurn(lines);
   const stored = live?.stored ?? { checkedAt: null, msgs: [], asks: [] };
   const fresh = turnLive(turn, config, liveSince(stored.checkedAt, now)), liveNext = nextLive(stored, fresh, now);
-  const writes = turnCalls(turn).filter((c) => c.name === "ArtifactData" && id && String(c.input.url ?? "").includes(id) && WRITES.has(c.input.action))
-    .flatMap((c) => { try { return writesOf(c.input); } catch { return []; } });
+  // The board writes of a call: the old ArtifactData, or the claude-artifacts server's db_write / db_str_replace (#C652).
+  const boardWrites = (c) => c.name === "ArtifactData" ? (id && String(c.input.url ?? "").includes(id) && WRITES.has(c.input.action) ? writesOf(c.input) : []) : dbWritesOf(c.name, c.input, config);
+  const writes = turnCalls(turn).flatMap((c) => { try { return boardWrites(c); } catch { return []; } });
   // #C607: an ask the lead marked done (waiting update/set done:true) stays done in the kept copy: the live query reads only
   // replies newer than the last check, so it never returns the closed document again, and the copy kept from before the
   // lead acted listed it as owed on every later turn.
   // Only a write that landed counts (Security): a refused, conflicting or failed one leaves the item open on the board.
-  const landed = turnCalls(turn, { succeeded: true }).filter((c) => c.name === "ArtifactData" && id && String(c.input.url ?? "").includes(id) && WRITES.has(c.input.action))
-    .flatMap((c) => { try { return writesOf(c.input); } catch { return []; } });
+  const landed = turnCalls(turn, { succeeded: true }).flatMap((c) => { try { return boardWrites(c); } catch { return []; } });
   const closed = new Set(landed.filter((w) => w.collection === "waiting" && w.op !== "delete" && w.data?.done === true).map((w) => w.doc_id));
   if (closed.size) liveNext.asks = liveNext.asks.map((a) => (closed.has(a.id) ? { ...a, done: true } : a));
   const out = [];

@@ -190,7 +190,7 @@ test("the live tile: asked when the board's tile is 5+ points off or 30+ min old
   try {
     const r = hook(at1(390000), home);
     assert.match(r, /^Memory tile: your context is 39% of its window \(390k tokens\); the board's tile says 34%, 18 min old\. /);
-    assert.match(r, /ArtifactData get ctx\/Manager for its version, then set ctx\/Manager \{"pct": 39, "tokens": 390000, "at": \d{13}\}/);
+    assert.match(r, /db_get ctx\/Manager for its version, then db_write set ctx\/Manager \{"pct": 39, "tokens": 390000, "at": \d{13}\}/);
     assert.equal(hook(at1(391000), home), "", "asked already: the next turn, still 39%, says nothing");
     assert.equal(hook(at1(420000), home).includes("Memory tile"), false, "3 points on from what it last asked: nothing");
     assert.match(hook(at1(440000), home), /Memory tile: your context is 44%/, "5 points on from what it last asked");
@@ -259,4 +259,18 @@ test("the deferral is one turn: a deferred cue since the last reset means this o
   assert.match(hook(big(lines)), /^Context reset cue: this session's context is at 450k/);
   const reset = [...lines.slice(0, 5), { type: "user", timestamp: "2026-10-28T06:31:00.000Z", message: { content: "<command-name>/compact</command-name>" } }, ...lines.slice(5)];
   assert.match(hook(big(reset)), /deferred one turn/, "a reset since: the next cue may wait again");
+});
+
+// #C652: the app replaced ArtifactData with the claude-artifacts server's db_write; a waiting item written with it counts.
+test("a db_write to waiting/<id> is the board write a red ask needs; a write elsewhere is not", () => {
+  const red = (inputs) => [
+    { type: "custom-title", customTitle: "Manager" },
+    { type: "user", message: { content: [{ type: "text", text: "go on" }] } },
+    { type: "assistant", message: { content: inputs.map((input, n) => ({ type: "tool_use", id: `t${n}`, name: "mcp__claude-artifacts__db_write", input })) } },
+    { type: "assistant", message: { content: [{ type: "text", text: "🔴 Pick one: A or B?" }] } },
+  ];
+  assert.match(hook(red([])), /wrote nothing to the flight board's 'waiting' collection/);
+  assert.doesNotMatch(hook(red([{ slug: "x", ops: [{ op: "set", path: "waiting/pick", data: { text: "Pick", done: false } }] }])), /wrote nothing/);
+  assert.match(hook(red([{ slug: "x", ops: [{ op: "set", path: "steps/s", data: { at: 1 } }] }])), /wrote nothing/, "a write elsewhere is not the waiting item");
+  assert.match(hook(red([{ slug: "x", ops: [{ op: "delete", path: "waiting/pick" }] }])), /wrote nothing/, "a delete is not a write of the item");
 });

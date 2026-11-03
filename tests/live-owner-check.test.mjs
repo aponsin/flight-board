@@ -38,8 +38,8 @@ const run = (lines, { v = view(), stored = { checkedAt: null, msgs: [] } } = {})
 test("a Manager turn with no live query is asked for one, from its last check (less 2 min), or a day back", () => {
   const r = run(turn());
   assert.equal(r.errs.length, 1);
-  assert.ok(r.errs[0].startsWith(`live board check (once a minute: pings sent while you work are dropped): two ArtifactData queries, url ${URL_}: collection "messages", query {"where": [["from","==","Owner"],["at",">",${NOW - DAY}]], "limit": 100}; and collection "waiting", query {"where": [["respondedAt",">",${NOW - DAY}]], "limit": 100}. `), r.errs[0]);
-  assert.match(run(turn(), { stored: { checkedAt: NOW - 10 * MIN, msgs: [] } }).errs[0], new RegExp(`"at",">",${NOW - 10 * MIN - LIVE_SLACK}\\][^]*"respondedAt",">",${NOW - 10 * MIN - LIVE_SLACK}\\]`));
+  assert.ok(r.errs[0].startsWith(`live board check (once a minute: pings sent while you work are dropped): two db_query calls, slug ${URL_}: collection "messages", where [{"field":"from","op":"==","value":"Owner"},{"field":"at","op":">","value":${NOW - DAY}}], limit 100; and collection "waiting", where [{"field":"respondedAt","op":">","value":${NOW - DAY}}], limit 100. `), r.errs[0]);
+  assert.match(run(turn(), { stored: { checkedAt: NOW - 10 * MIN, msgs: [] } }).errs[0], new RegExp(`"field":"at","op":">","value":${NOW - 10 * MIN - LIVE_SLACK}\\}\\][^]*"field":"respondedAt","op":">","value":${NOW - 10 * MIN - LIVE_SLACK}\\}\\]`));
   const kept = { checkedAt: NOW - 4 * MIN, msgs: [{ id: "m-k", thread: "t-k", from: "Owner", text: "still?", at: NOW - 30 * MIN }] };
   assert.match(run(turn(both([], { where: [["from", "==", "Owner"], ["at", ">", NOW - 6 * MIN]] })), { stored: kept }).errs.join("\n"), /thread t-k "still\?"/, "the last check's word still counts");
   assert.deepEqual(run(turn(both([]))).errs, [], "both queries ran, nothing came back: clean");
@@ -60,7 +60,7 @@ test("the live check once a minute (#C556): a turn a minute or more after the la
   assert.equal(LIVE_EVERY, MIN, "a minute, never #C394's five");
   const reply = doc("m-r", { thread: "ship-15-push", from: "Owner", text: "go", at: NOW - 1 * MIN });
   const stored = { checkedAt: NOW - 2 * MIN, msgs: [] };
-  assert.match(run(turn(), { stored }).errs[0], new RegExp(`^live board check \\(once a minute[^]*"at",">",${NOW - 2 * MIN - LIVE_SLACK}\\]`), "the reply came a minute after the check: the turn can't end without looking");
+  assert.match(run(turn(), { stored }).errs[0], new RegExp(`^live board check \\(once a minute[^]*"field":"at","op":">","value":${NOW - 2 * MIN - LIVE_SLACK}\\}\\]`), "the reply came a minute after the check: the turn can't end without looking");
   const looked = run(turn(both([reply], { where: [["from", "==", "Owner"], ["at", ">", NOW - 2 * MIN - LIVE_SLACK]] })), { stored });
   assert.deepEqual(looked.liveNext.msgs.map((m) => m.id), ["m-r"], "and the look finds it");
   assert.equal(looked.liveNext.checkedAt, NOW);
@@ -234,7 +234,7 @@ test("a cut-short result (its limit filled, or more pages) keeps its messages bu
     assert.ok(r.liveNext.msgs.length >= 1, `${label}: its messages are kept`);
     assert.equal(r.errs.filter((e) => e.startsWith("live board check")).length, 1, `${label}: asked again though checked 4 min ago`);
   }
-  assert.match(run(turn(query([owner], { where, limit: 1 })), { stored }).errs.find((e) => e.startsWith("live board check")), /cut short.*"limit": 1000/, "the ask says why and asks for more");
+  assert.match(run(turn(query([owner], { where, limit: 1 })), { stored }).errs.find((e) => e.startsWith("live board check")), /cut short.*limit 1000/, "the ask says why and asks for more");
   assert.equal(turnLive(turn(both([owner], { where, limit: 2 })), config, since).complete, true, "fewer than its limit: complete");
 });
 

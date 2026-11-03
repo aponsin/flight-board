@@ -4,6 +4,9 @@ export const DEFAULTS = {
   title: "Flight Board",
   owner: "Owner",
   artifactUrl: "",
+  // The artifact's UUID (#C652): the claude-artifacts server's tools take it (or a whole link) as the slug, so the gate knows a
+  // call on the board by it as well as by the id in artifactUrl. Empty: only calls naming the id or the link are the board's.
+  artifactSlug: "",
   // An agent's context, in tokens, past which it is cued to reset (#C399, the owner's 600k in #T1038): the red-ask hook
   // reads it from this file, and the context keeper's prompt is filled with it ({{RESET_AT}}), so a new limit is a
   // config change, never a re-sign.
@@ -80,7 +83,8 @@ export function checkConfig(c) {
   if (!c || typeof c !== "object" || Array.isArray(c)) return ["the config must be a JSON object"];
   for (const k of Object.keys(c)) if (!KEYS.includes(k)) out.push(`unknown field "${k}" (known: ${KEYS.join(", ")})`);
   for (const k of ["title", "owner"]) if (c[k] !== undefined && !(typeof c[k] === "string" && NAME.test(c[k]))) out.push(`${k}: 1 to 60 characters, no < > { } or line breaks`);
-  if (c.artifactUrl !== undefined && c.artifactUrl !== "" && !/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+$/.test(String(c.artifactUrl))) out.push("artifactUrl: a claude.ai artifact link, or empty");
+  if (c.artifactSlug !== undefined && c.artifactSlug !== "" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(c.artifactSlug))) out.push("artifactSlug: the artifact's UUID, or empty");
+  if (c.artifactUrl !== undefined && c.artifactUrl !== "" &&!/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+$/.test(String(c.artifactUrl))) out.push("artifactUrl: a claude.ai artifact link, or empty");
   if (c.resetAt !== undefined && !(Number.isInteger(c.resetAt) && c.resetAt >= 100000 && c.resetAt <= 2000000)) out.push("resetAt: whole tokens, 100,000 to 2,000,000");
   if (c.phases !== undefined) {
     if (!Array.isArray(c.phases) || c.phases.length < 2) out.push("phases: at least two [key, label] pairs");

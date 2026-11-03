@@ -15,6 +15,7 @@ import { checkWrites, refusalText } from "./rules.mjs";
 import { readLines, sessionRole } from "./session.mjs";
 import { mechanicalClass, refusal } from "./traffic.mjs";
 import { liveFresh } from "../collector/state-schema.mjs";
+import { classify } from "./tools.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"]);
@@ -167,9 +168,12 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
   const { role, error: roleError } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
   const who = { role, manager: role === config.gate.managerRole };
 
-  if (input?.tool_name === "ArtifactData" && id && String(t.url ?? "").includes(id) && WRITES.has(t.action)) {
+  // The claude-artifacts server's tools (#C652): a refused call stops here; a page change is publish.mjs's to allow or deny.
+  const call = classify(input, config);
+  if (call?.kind === "refuse") return { block: `Flight board refused this call: ${call.why}.\n` };
+  if (call?.kind === "db" || (input?.tool_name === "ArtifactData" && id && String(t.url ?? "").includes(id) && WRITES.has(t.action))) {
     if (roleError) return { block: `Flight board refused this write: ${roleError}\n` };
-    const writes = writesOf(t);
+    const writes = call ? call.writes : writesOf(t);
     // Rules 3-5 read the mirror the collector keeps; a stale one skips them (fail open) with a note.
     const m = readMirror(join(dir, "mirror"));
     // ...with every write the gate let through since its export laid over it.

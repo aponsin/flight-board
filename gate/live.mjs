@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { home, writeState } from "./gate.mjs";
 import { boardId } from "../scripts/config.mjs";
+import { DB_QUERY, isBoardSlug } from "./tools.mjs";
 
 const DAY = 864e5;
 // The owner's clock may be a little behind the hook's: the next query starts this much before the last one.
@@ -57,15 +58,41 @@ const LIVE_MAX = 1000;
 // and the waiting items the owner replied to (a button with no note writes no message). cut: the turn's check came back
 // cut short or half done, so it is asked again with the largest page.
 export function liveAsk(config, since, cut = false) {
-  const where = JSON.stringify([["from", "==", config.owner], ["at", ">", since]]), replied = JSON.stringify([["respondedAt", ">", since]]);
+  const where = JSON.stringify([{ field: "from", op: "==", value: config.owner }, { field: "at", op: ">", value: since }]), replied = JSON.stringify([{ field: "respondedAt", op: ">", value: since }]);
   const why = cut ? "your last one came back cut short (its limit filled, or more pages) or without both queries, so it doesn't count yet; run both again" : "once a minute: pings sent while you work are dropped";
   const limit = cut ? LIVE_MAX : LIVE_LIMIT;
-  return `live board check (${why}): two ArtifactData queries, url ${config.artifactUrl}: collection "messages", query {"where": ${where}, "limit": ${limit}}; and collection "waiting", query {"where": ${replied}, "limit": ${limit}}. Answer, in its thread, any message they show that you haven't answered, and act on any reply; then finish`;
+  return `live board check (${why}): two db_query calls, slug ${config.artifactUrl}: collection "messages", where ${where}, limit ${limit}; and collection "waiting", where ${replied}, limit ${limit}. Answer, in its thread, any message they show that you haven't answered, and act on any reply; then finish`;
 }
 
 // A tool result's page: its documents (one JSON document per line between the BEGIN and END lines) and whether it says
 // more exist (a next_cursor line outside them).
 export function resultPage(text) {
+  // The claude-artifacts server's db_query (#C652): a summary line {"count", "nextCursor"} (a cursor says more exist), then the
+  // documents, one JSON object per line, between an opening tag and the closing tag of the same random name.
+  const tag = /<(untrusted-document-[A-Za-z0-9]+)>/.exec(String(text));
+  if (tag) {
+    const docs = [], lines = String(text).split("\n");
+    let inside = false, more = false;
+    for (const raw of lines) {
+      let line = raw;
+      if (!inside) {
+        const at = line.indexOf(`<${tag[1]}>`);
+        if (at < 0) { if (/"nextCursor":"[^"]+"/.test(line)) more = true; continue; }
+        if (/"nextCursor":"[^"]+"/.test(line.slice(0, at))) more = true;
+        inside = true; line = line.slice(at + tag[1].length + 2);
+      }
+      const end = line.indexOf(`</${tag[1]}>`);
+      if (end >= 0) { line = line.slice(0, end); inside = false; }
+      if (line.startsWith("{")) {
+        try {
+          const d = JSON.parse(line);
+          if (d && typeof d.id === "string" && d.data && typeof d.data === "object") docs.push({ ...d.data, id: d.id });
+        } catch { /* not a document */ }
+      }
+      if (!inside) break;
+    }
+    return { docs, more };
+  }
   const docs = [];
   let inside = false, more = false;
   for (const line of String(text).split("\n")) {
@@ -83,6 +110,18 @@ export function resultPage(text) {
 export const resultDocs = (text) => resultPage(text).docs;
 const resultText = (c) => (typeof c === "string" ? c : Array.isArray(c) ? c.filter((p) => p?.type === "text").map((p) => p.text ?? "").join("\n") : "");
 
+// db_query's input (#C652: slug, collection, where as {field, op, value} entries or an object of equalities, limit, orderBy,
+// cursor) as the old ArtifactData query liveQuery reads. Anything it cannot read is left in a shape liveQuery refuses.
+export function asOldQuery(i, config) {
+  const where = Array.isArray(i.where) ? i.where.map((w) => (w && typeof w === "object" && !Array.isArray(w) ? [w.field, w.op, w.value] : w))
+    : i.where && typeof i.where === "object" ? Object.entries(i.where).map(([f, v]) => [f, "==", v]) : [];
+  const url = isBoardSlug(i.slug, config) ? config.artifactUrl : String(i.slug ?? "");
+  const query = { where };
+  if (i.limit !== undefined) query.limit = i.limit;
+  if (i.orderBy !== undefined) query.order_by = i.orderBy;
+  if (i.cursor !== undefined) query.cursor = i.cursor;
+  return { action: "query", url, collection: i.collection, query };
+}
 const isEq = (op) => op === "==" || op === "eq";
 const isGt = (op) => op === ">" || op === "gt";
 // Whether a call is one of the two queries the gate asks for (Checker's FINDINGS on 5b07a2c): ArtifactData query of
@@ -119,8 +158,8 @@ export function turnLive(turn, config, since) {
   for (const l of turn) {
     if (l?.type !== "assistant" || !Array.isArray(l.message?.content)) continue;
     for (const p of l.message.content) {
-      if (p?.type !== "tool_use" || p.name !== "ArtifactData") continue;
-      const q = liveQuery(p.input ?? {}, config, id, since);
+      if (p?.type !== "tool_use" || (p.name !== "ArtifactData" && p.name !== DB_QUERY)) continue;
+      const q = liveQuery(p.name === DB_QUERY ? asOldQuery(p.input ?? {}, config) : p.input ?? {}, config, id, since);
       if (q) asked.set(p.id, q);
     }
   }
