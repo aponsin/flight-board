@@ -1,0 +1,1 @@
+PASS Full: #C652 publish hook stamps the rebuilt page with the pack-label file's label (never the hook's env) and no commit, as build-page from the pinned copy; fails closed when the label is missing or stale. Suite 1187/1187 green (capped). Mutation check: pass (label from env, commit stamped: both killed). Rides pack v3.54; Full card: needs Security too.
