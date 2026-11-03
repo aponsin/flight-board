@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, STEP_MS, USER_MS, WEEK_MS } from "../collector/readings.mjs";
 import { createHash } from "node:crypto";
 import { checkConfig } from "../scripts/config.mjs";
-import { usageTile, nextReset, scriptMatches, pinnedScript, buildState } from "../collector/state.mjs";
+import { usageTile, nextReset, scriptMatches, pinnedScript, buildState, USAGE_EVERY_MS } from "../collector/state.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
 import { resetPending, resetSeen, resetLine } from "../gate/reset.mjs";
 import { tick } from "../scripts/wake-watch.mjs";
@@ -76,7 +76,7 @@ test("usage: top five as shares by role, scheduled and other; pace from the plan
   assert.equal(usageReading({ rows: "x", roster, plan: null, now: T }).top.length, 0);
 });
 
-test("the usage script runs once a day, keeps its rows, and a failing script leaves the last tile", () => {
+test("the usage script runs every five minutes, keeps its rows, and a failing script leaves the last tile", () => {
   const dir = mkdtempSync(join(tmpdir(), "usage-"));
   const calls = [], inputs = [];
   const run = (args, input) => { calls.push(args); inputs.push(input); return JSON.stringify({ rows: [{ source: "Manager", share: 0.5 }, { source: "scheduled: x", share: 0.5 }] }); };
@@ -85,23 +85,37 @@ test("the usage script runs once a day, keeps its rows, and a failing script lea
   assert.deepEqual(calls[0].slice(0, 3), ["-I", "-", "--json"], "the script comes on stdin, never by its path");
   assert.equal(inputs[0], "print(1)", "the bytes that were checked are the bytes run");
   writeFileSync(join(dir, "usage.json"), JSON.stringify({ ranAt: T, rows: a.rows }));
-  const b = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: T + 3600e3, run });
+  const b = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: T + USAGE_EVERY_MS - 1, run });
   assert.equal(b.save, null);
-  assert.equal(calls.length, 1, "not again within a day");
-  // A failing script is tried again after an hour, then two, to a day: not every minute (Checker).
+  assert.equal(calls.length, 1, "not again within five minutes");
+  assert.equal(b.asOf, T, "the tile is of the last run");
+  const again = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: T + USAGE_EVERY_MS, run });
+  assert.equal(again.save.ranAt, T + USAGE_EVERY_MS, "five minutes on: read again");
+  assert.equal(again.asOf, T + USAGE_EVERY_MS);
+  assert.equal(calls.length, 2);
+  calls.pop(); inputs.pop();
+  // A failing script is tried again after 10 minutes, then 20, to a day: not every minute (Checker), and the tile keeps the
+  // last good run's time, so it ages and the page greys it.
   const bad = []; const fail = () => { bad.push(1); throw new Error("no"); };
   const at = T + 25 * 3600e3, kept = { ranAt: T, rows: a.rows, total: null, resetsAt: null };
   writeFileSync(join(dir, "usage.json"), JSON.stringify(kept));
   const c = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: at, run: fail });
   assert.equal(bad.length, 1);
   assert.equal(c.tile.top[0].pct, 50, "the last rows stand");
-  assert.deepEqual([c.save.failUntil, c.save.wait], [at + 3600e3, 7200e3]);
+  assert.equal(c.asOf, T, "and they are of the last good run, not of now");
+  assert.equal(c.tile.asOf, T);
+  assert.deepEqual([c.save.failUntil, c.save.wait], [at + 600e3, 1200e3]);
   writeFileSync(join(dir, "usage.json"), JSON.stringify(c.save));
-  for (let m = 1; m < 60; m++) usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: at + m * 60e3, run: fail });
-  assert.equal(bad.length, 1, "59 more minutes: not one more try");
-  const d = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: at + 3600e3, run: fail });
-  assert.equal(bad.length, 2, "an hour on: tried again");
-  assert.deepEqual([d.save.failUntil, d.save.wait], [at + 3600e3 + 7200e3, 4 * 3600e3], "and the wait doubles");
+  for (let m = 1; m < 10; m++) usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: at + m * 60e3, run: fail });
+  assert.equal(bad.length, 1, "9 more minutes: not one more try");
+  const d = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: at + 600e3, run: fail });
+  assert.equal(bad.length, 2, "ten minutes on: tried again");
+  assert.deepEqual([d.save.failUntil, d.save.wait], [at + 600e3 + 1200e3, 2400e3], "and the wait doubles");
+  let wait = d.save.wait;
+  for (let k = 0; k < 12; k++) wait = Math.min(24 * 3600e3, wait * 2);
+  assert.equal(wait, 24 * 3600e3, "up to a day");
+  writeFileSync(join(dir, "usage.json"), JSON.stringify({ ...d.save, wait: 24 * 3600e3 }));
+  assert.equal(usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: at + 10 * 3600e3, run: fail }).save?.wait ?? 24 * 3600e3, 24 * 3600e3, "the wait stops doubling at a day, not at the refresh rhythm");
   // A script that isn't the pinned one is never run.
   const unpinned = usageTile({ scriptText: null, dir: mkdtempSync(join(tmpdir(), "usage-")), roster: ["Manager"], now: T, run });
   assert.equal(unpinned.tile, null);
@@ -149,7 +163,7 @@ test("the week is the config's: the script is asked from the last reset, week % 
   assert.equal(calls[0][4], new Date(nextAt - WEEK_MS).toISOString().slice(0, 16), "since the last reset");
   assert.deepEqual([a.tile.weekPct, a.tile.pace, a.tile.level], [65, 130, "amber"], "65% used at half the week: 1.3x");
   writeFileSync(join(dir, "usage.json"), JSON.stringify({ ranAt: now, rows: a.rows, total: a.total, resetsAt: a.resetsAt }));
-  assert.equal(usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: now + 3600e3, run, quota: 1000, resetAt: reset }).save, null);
+  assert.equal(usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: now + 60e3, run, quota: 1000, resetAt: reset }).save, null);
   assert.equal(calls.length, 1);
   const rolled = usageTile({ scriptText: "print(1)", dir, roster: ["Manager"], now: nextAt + 3600e3, run, quota: 1000, resetAt: reset });
   assert.ok(rolled.save && rolled.save.ranAt, "the week turned: run again at once");

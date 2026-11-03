@@ -168,6 +168,7 @@ details.done-list summary{cursor:pointer;color:var(--muted);padding:10px 16px}
 .tot .l{font-size:.75rem;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .tot.plan.amber{border-color:var(--warn);background:var(--warn-soft)}.tot.plan.amber .n{color:var(--warn-ink)}
 .tot.plan.red{border-color:var(--bad);background:var(--bad-soft)}.tot.plan.red .n{color:var(--bad)}
+.tot.plan.stale{border-color:var(--line);border-style:dashed;background:transparent}.tot.plan.stale .n{color:var(--muted)}.tot.plan .plan-age{text-transform:none;letter-spacing:0}
 .chart-wrap{overflow-x:auto;position:relative}
 .ctip{position:absolute;max-width:240px;background:var(--ink);color:var(--panel);font:400 .78rem/1.35 var(--mono);padding:6px 8px;border-radius:6px;pointer-events:none;z-index:2}
 rect.hit{cursor:pointer}
@@ -2066,9 +2067,15 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
   onlySeries=b.id==="showall"||b.dataset.series===onlySeries?null:b.dataset.series;renderUsage()});
 // The usage tile (#C595): the plan's week and its pace from the probe's daily spend run, amber from 1.3x pace and red from
 // 1.6x, and the top sources by share. Empty without a reading.
+// #C623: the tile says how old its numbers are (asOf, when the spend script last ran; the probe's clock if the state has none)
+// and turns grey past PLAN_STALE (15 minutes): a script that stopped must not read as a live 24% at 31% used. Grey replaces
+// amber and red, and the tick keeps it true between data updates.
+const PLAN_STALE=15*60e3;
+function planAt(u){return u.asOf==null?u.at:u.asOf}
+function planAge(u,now=Date.now()){return "as of "+dur(Math.max(0,now-planAt(u)))+" ago"}
 function planTile(){const u=liveUsage();if(!u)return "";
-  const pace=u.pace==null?"":` · ${(u.pace/100).toFixed(1)}x pace`,top=u.top.map(t=>`${esc(t.src)} ${t.pct}%`).join(", ");
-  return `<div class="tot plan ${u.level}"><div class="l">Plan week</div><div class="n">${u.weekPct==null?"–":u.weekPct+"%"}</div><div class="l">${u.weekPct==null?"no plan reading":"used"}${pace}</div>${top?`<div class="l">${top}</div>`:""}</div>`}
+  const pace=u.pace==null?"":` · ${(u.pace/100).toFixed(1)}x pace`,top=u.top.map(t=>`${esc(t.src)} ${t.pct}%`).join(", "),old=Date.now()-planAt(u)>PLAN_STALE;
+  return `<div class="tot plan ${old?"stale":u.level}" data-plan-at="${planAt(u)}" data-plan-level="${u.level}"><div class="l">Plan week</div><div class="n">${u.weekPct==null?"–":u.weekPct+"%"}</div><div class="l">${u.weekPct==null?"no plan reading":"used"}${pace}</div>${top?`<div class="l">${top}</div>`:""}<div class="l plan-age" data-plan-age>${planAge(u)}</div></div>`}
 function renderUsage(){
   const am=agentMinutesByDay();
   const byDay={};state.usage.filter(u=>u.day).forEach(u=>{byDay[u.day]={...u}});
@@ -2514,7 +2521,7 @@ function liveCtx(now=Date.now()){const out={};if(!liveOn(now)||!probe.ctx||typeo
 function liveStuck(now=Date.now()){if(!liveOn(now)||!probe.stuck||typeof probe.stuck!=="object")return [];
   return Object.keys(probe.stuck).filter(n=>LIVE_ROLE.test(n)).map(n=>({role:n,...probe.stuck[n]})).filter(k=>(k.kind==="step"||k.kind==="user")&&isT(k.since)).sort((a,b)=>a.since-b.since)}
 function liveUsage(now=Date.now()){const u=liveOn(now)&&probe.usage;if(!u||typeof u!=="object"||!isT(u.at)||!["ok","amber","red"].includes(u.level)||!Array.isArray(u.top))return null;
-  return {weekPct:Number.isInteger(u.weekPct)?u.weekPct:null,pace:Number.isInteger(u.pace)?u.pace:null,level:u.level,
+  return {at:u.at,asOf:isT(u.asOf)&&u.asOf<=u.at?u.asOf:null,weekPct:Number.isInteger(u.weekPct)?u.weekPct:null,pace:Number.isInteger(u.pace)?u.pace:null,level:u.level,
     top:u.top.filter(t=>t&&LIVE_ROLE.test(t.src)&&isPct(t.pct)).slice(0,5)}}
 // An agent as the live state reads it: { state: working|idle, card, since: its last activity }, or null.
 function liveAgent(n,now=Date.now()){if(!liveOn(now)||typeof n!=="string"||!LIVE_ROLE.test(n)||!Object.hasOwn(probe.agents,n))return null;
@@ -2669,6 +2676,8 @@ function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
   document.querySelectorAll("[data-ago]").forEach(e=>{e.textContent=e.textContent.replace(/written [^;)]*ago/,"written "+dur(Date.now()-(+e.dataset.ago))+" ago")});
   document.querySelectorAll("[data-next]").forEach(e=>{const t=+e.dataset.next;e.textContent=t>Date.now()?"in "+dur(t-Date.now()):"due now"});
+  document.querySelectorAll("[data-plan-at]").forEach(e=>{const t=+e.dataset.planAt,old=Date.now()-t>PLAN_STALE,a=e.querySelector("[data-plan-age]");
+    e.classList.toggle("stale",old);e.classList.toggle(e.dataset.planLevel,!old);if(a)a.textContent="as of "+dur(Math.max(0,Date.now()-t))+" ago"});
   document.querySelectorAll("[data-asof]").forEach(e=>{const t=+e.dataset.asof;e.textContent=asOfText(t);e.classList.toggle("stale",Date.now()-t>ASOF_STALE)});
   // A live reading that went stale (or fresh again) changes what every card reads: all of it again; else the stamp.
   catchUp();

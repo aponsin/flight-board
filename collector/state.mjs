@@ -437,16 +437,17 @@ export const scriptMatches = (path, sha256, uid) => pinnedScript(path, sha256, u
 // How old the board export may be for the asks (#C584): the answer gate's own 2 h.
 export const MIRROR_STALE_MS = 2 * 3600e3;
 export const mirrorFresh = (exportedAt, now, maxMs = MIRROR_STALE_MS) => Number.isFinite(exportedAt) && exportedAt > 0 && exportedAt <= now + 60e3 && now - exportedAt <= maxMs;
-// The usage tile (#C595): the spend script run once a day (python3 -I -, its text on stdin, its --json rows only), kept in
-// <dir>/usage.json between runs. The week is the config's: usageResetAt is any one weekly reset, so the week now runs from
+// The usage tile (#C595): the spend script run every USAGE_EVERY_MS (python3 -I -, its text on stdin, its --json rows only; it
+// reads the transcripts in about 2 s), kept in <dir>/usage.json between runs. It ran once a day until #C623 (the tile read 24%
+// at 31% used, with no age shown). The week is the config's: usageResetAt is any one weekly reset, so the week now runs from
 // the last one to the next, and the script is asked for that span (--since); week % is its weighted total over usageQuota,
 // and pace follows from how much of the week is gone. Nothing needs the app or a model. A script that fails leaves the last
-// tile; a week that rolled over runs it again at once. A run that fails is not tried again for an hour, then two, and so on
-// to a day (failUntil, wait: Checker found it retrying every minute), and a script that isn't the pinned one (scriptText is
-// null: its sha256 against collector.usageScriptSha256, Security) is never run. The week % uses the total as of the last run,
-// up to a day old, against today's clock: the pace reads a little low late in the day. { tile, save, rows, total, resetsAt }:
-// save is the usage.json to write (null: nothing changed).
-export const USAGE_EVERY_MS = 24 * 3600e3, WEEK_SPAN_MS = 7 * 24 * 3600e3, USAGE_RETRY_MIN_MS = 3600e3;
+// tile, which then ages (asOf is the last good run; the page greys the tile past 15 minutes); a week that rolled over runs it
+// again at once. A run that fails is not tried again for 10 minutes, then 20, and so on to a day (failUntil, wait: Checker found
+// it retrying every minute), and a script that isn't the pinned one (scriptText is null: its sha256 against
+// collector.usageScriptSha256, Security) is never run. { tile, save, rows, total, resetsAt, asOf }: save is the usage.json to
+// write (null: nothing changed).
+export const USAGE_EVERY_MS = 5 * 60e3, WEEK_SPAN_MS = 7 * 24 * 3600e3, USAGE_RETRY_MIN_MS = 10 * 60e3, USAGE_RETRY_MAX_MS = 24 * 3600e3;
 export function nextReset(anchorIso, now) {
   const a = Date.parse(anchorIso ?? "");
   if (!Number.isFinite(a)) return null;
@@ -459,7 +460,7 @@ export function usageTile({ scriptText = null, dir, roster, now, run, quota = 0,
   const resetsAt = nextReset(resetAt, now);
   const fresh = plain(kept) && Number.isInteger(kept.ranAt) && kept.ranAt <= now && now - kept.ranAt < USAGE_EVERY_MS && Array.isArray(kept.rows) && (kept.resetsAt ?? null) === resetsAt;
   const failUntil = plain(kept) && Number.isInteger(kept.failUntil) && kept.failUntil > 0 ? kept.failUntil : 0;
-  const wait = plain(kept) && Number.isInteger(kept.wait) ? Math.min(USAGE_EVERY_MS, Math.max(USAGE_RETRY_MIN_MS, kept.wait)) : USAGE_RETRY_MIN_MS;
+  const wait = plain(kept) && Number.isInteger(kept.wait) ? Math.min(USAGE_RETRY_MAX_MS, Math.max(USAGE_RETRY_MIN_MS, kept.wait)) : USAGE_RETRY_MIN_MS;
   let rows = fresh ? kept.rows : null, total = fresh ? kept.total : null, save = null;
   if (!rows && typeof scriptText === "string" && now >= failUntil) {
     try {
@@ -469,12 +470,15 @@ export function usageTile({ scriptText = null, dir, roster, now, run, quota = 0,
       total = Number.isFinite(out?.total_weighted) && out.total_weighted >= 0 ? out.total_weighted : null;
     } catch { rows = null; }
     if (rows) save = { ranAt: now, rows, total, resetsAt };
-    else save = { ranAt: plain(kept) && Number.isInteger(kept.ranAt) ? kept.ranAt : null, rows: plain(kept) && Array.isArray(kept.rows) ? kept.rows : null, total: plain(kept) ? kept.total ?? null : null, resetsAt: plain(kept) ? kept.resetsAt ?? null : null, failUntil: now + wait, wait: Math.min(USAGE_EVERY_MS, wait * 2) };
+    else save = { ranAt: plain(kept) && Number.isInteger(kept.ranAt) ? kept.ranAt : null, rows: plain(kept) && Array.isArray(kept.rows) ? kept.rows : null, total: plain(kept) ? kept.total ?? null : null, resetsAt: plain(kept) ? kept.resetsAt ?? null : null, failUntil: now + wait, wait: Math.min(USAGE_RETRY_MAX_MS, wait * 2) };
   }
   if (!rows && plain(kept) && Array.isArray(kept.rows)) { rows = kept.rows; total = kept.total ?? null; }
-  if (!rows) return { tile: null, save, rows: null, total: null, resetsAt };
+  if (!rows) return { tile: null, save, rows: null, total: null, resetsAt, asOf: null };
+  // The time the numbers are of: this run's, or the last good one kept (a failed run, or one still to come, leaves it).
+  const ranAt = Number.isInteger(save?.ranAt) ? save.ranAt : plain(kept) && Number.isInteger(kept.ranAt) ? kept.ranAt : null;
+  const asOf = ranAt !== null && ranAt <= now ? ranAt : null;
   const plan = quota > 0 && resetsAt && Number.isFinite(total) ? { weekPct: (total / quota) * 100, resetsAt } : null;
-  return { tile: usageReading({ rows, roster, plan, now }), save, rows, total, resetsAt };
+  return { tile: usageReading({ rows, roster, plan, now, asOf }), save, rows, total, resetsAt, asOf };
 }
 
 // The state that leaves, checked against the allowlist before it does.
