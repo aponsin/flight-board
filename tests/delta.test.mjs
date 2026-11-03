@@ -20,23 +20,26 @@ test("every exported collection has a delta field or is read whole: appended one
 
 test("the plan: a delta since the last run's start less the overlap; a full read with no state, no mirror, or a night a day on", () => {
   const state = { at: NOW - 30 * 60e3, fullAt: NOW - 2 * 3600e3 };
-  const p = deltaPlan({ now: NOW, state, hasMirror: true, hour: 14 });
+  const p = deltaPlan({ now: NOW, state, hasMirror: true, hour: 14, requireUpdatedAt: true });
   assert.equal(p.mode, "delta");
   assert.equal(p.since, state.at - OVERLAP_MS);
   assert.equal(p.queries.length, 8);
   assert.deepEqual(p.queries.find((q) => q.collection === "steps"), { collection: "steps", field: "at", since: p.since });
   assert.deepEqual(p.queries.find((q) => q.collection === "waiting"), { collection: "waiting", field: "updatedAt", since: p.since });
-  assert.equal(deltaPlan({ now: NOW, state: null, hasMirror: true, hour: 14 }).mode, "full", "nothing merged yet");
-  assert.equal(deltaPlan({ now: NOW, state, hasMirror: false, hour: 14 }).mode, "full", "no mirror to add to");
+  assert.equal(deltaPlan({ now: NOW, state: null, hasMirror: true, hour: 14, requireUpdatedAt: true }).mode, "full", "nothing merged yet");
+  assert.equal(deltaPlan({ now: NOW, state, hasMirror: false, hour: 14, requireUpdatedAt: true }).mode, "full", "no mirror to add to");
   const old = { at: NOW - 30 * 60e3, fullAt: NOW - 25 * 3600e3 };
-  assert.equal(deltaPlan({ now: NOW, state: old, hasMirror: true, hour: 14 }).mode, "delta", "a day old but daytime: wait for the night");
-  assert.equal(deltaPlan({ now: NOW, state: old, hasMirror: true, hour: 3 }).mode, "full", "a day old, at night");
+  assert.equal(deltaPlan({ now: NOW, state: old, hasMirror: true, hour: 14, requireUpdatedAt: true }).mode, "delta", "a day old but daytime: wait for the night");
+  assert.equal(deltaPlan({ now: NOW, state: old, hasMirror: true, hour: 3, requireUpdatedAt: true }).mode, "full", "a day old, at night");
+  // The pack order is enforced in code (Checker): until the gate stamps every write, every run is a full read.
+  for (const requireUpdatedAt of [false, undefined, "yes", 1]) assert.equal(deltaPlan({ now: NOW, state, hasMirror: true, hour: 14, requireUpdatedAt }).mode, "full", `requireUpdatedAt ${String(requireUpdatedAt)}`);
+  assert.equal(deltaPlan({ now: NOW, state, hasMirror: true, hour: 14 }).mode, "full", "not given");
   assert.equal(fullDue({ now: NOW, fullAt: NOW - 31 * 3600e3, hasMirror: true, hour: 14 }), true, "30 hours, whatever the hour");
   assert.equal(fullDue({ now: NOW, fullAt: NOW - 3600e3, hasMirror: true, hour: 3 }), false, "an hour ago: not again");
 });
 
 test("the lines the run reads write each condition out, so the model types none of its own", () => {
-  const lines = queryLines(deltaPlan({ now: NOW, state: { at: NOW - 1800e3, fullAt: NOW }, hasMirror: true, hour: 10 }));
+  const lines = queryLines(deltaPlan({ now: NOW, state: { at: NOW - 1800e3, fullAt: NOW }, hasMirror: true, hour: 10, requireUpdatedAt: true }));
   assert.match(lines[0], /^Mode: delta, since \d+\.$/);
   assert.ok(lines.includes(`Query steps: where [["at", ">=", ${NOW - 1800e3 - OVERLAP_MS}]]`));
   assert.ok(lines.some((l) => /^Query initiatives: where \[\["updatedAt", ">=", \d+\]\]$/.test(l)));

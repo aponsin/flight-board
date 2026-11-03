@@ -4,9 +4,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { mergeRun, scratchRoot, EXPORT_NAME } from "../collector/collect.mjs";
-import { readStamp, readDeltaState, writeDeltaState, writeStamp, deriveDue, deriveLines, saveLines, DERIVE_EVERY_MS, DERIVE_FILE } from "../collector/delta.mjs";
-import { readMirror } from "../gate/gate.mjs";
-import { writeErrors, checkWrites, updatedAtErrors, STAMPED } from "../gate/rules.mjs";
+import { MUTABLE, OVERLAP_MS, readStamp, readDeltaState, writeDeltaState, writeStamp, deriveDue, deriveLines, saveLines, DERIVE_EVERY_MS, DERIVE_FILE } from "../collector/delta.mjs";
+import { readMirror, TOMBSTONED } from "../gate/gate.mjs";
+import { writeErrors, checkWrites, updatedAtErrors, STAMPED, STAMP_WINDOW_MS } from "../gate/rules.mjs";
 import { linesOf, linesPending, linesSeen, LINES_MAX, LINE_MAX } from "../gate/reset.mjs";
 import { tick } from "../scripts/wake-watch.mjs";
 import { fullConfig, checkConfig } from "../scripts/config.mjs";
@@ -106,6 +106,46 @@ test("mergeRun: a nightly read that differs from the merged mirror prints MIRROR
   } finally { b.done(); }
 });
 
+test("a full read holding a tombstone: mergeRun leaves it out of the mirror, and readMirror shows no card for it (Checker)", () => {
+  const b = board();
+  try {
+    const t0 = NOW - 600e3;
+    const exp = b.run("night", { mode: "full", at: t0, docs: { initiatives: { live: { name: "live", updatedAt: 1 }, dead: { deleted: true, updatedAt: 2 } }, waiting: { gone: { deleted: true, updatedAt: 3 } }, plan: { p: { deleted: true, updatedAt: 4 } } } });
+    for (const c of ["ideas", "messages", "ctx", "steps"]) put(exp, c, "x", { at: NOW });
+    const out = b.merge();
+    assert.equal(out.did, "full");
+    for (const [c, id] of [["initiatives", "dead"], ["waiting", "gone"], ["plan", "p"]]) assert.equal(existsSync(join(b.dir, "mirror", c, `${id}.json`)), false, `${c}/${id} tombstone is not kept`);
+    assert.equal(existsSync(join(b.dir, "mirror", "initiatives", "live.json")), true);
+    const m = readMirror(join(b.dir, "mirror"));
+    assert.deepEqual(m.docs.initiatives.map((d) => d.id), ["live"]);
+    // A tombstone left in a mirror by some other way is no card either.
+    put(join(b.dir, "mirror"), "waiting", "left", { deleted: true, updatedAt: 5 });
+    assert.deepEqual(readMirror(join(b.dir, "mirror")).docs.waiting.map((d) => d.id), []);
+    // Outside the five edited collections the word means nothing: steps keep every document.
+    put(join(b.dir, "mirror"), "steps", "odd", { deleted: true, at: 1 });
+    assert.deepEqual(readMirror(join(b.dir, "mirror")).docs.steps.map((d) => d.id).sort(), ["odd", "x"].sort());
+  } finally { b.done(); }
+});
+
+test("the constants are tied: the gate's tombstoned collections are the collector's mutable ones; the stamp window is inside the overlap", () => {
+  assert.deepEqual([...TOMBSTONED].sort(), [...MUTABLE].sort(), "gate/gate.mjs does not import the collector, so this test ties the two lists");
+  assert.ok(STAMP_WINDOW_MS <= OVERLAP_MS, "a write stamped up to the window ago must still fall inside the next delta's overlap");
+  assert.ok(STAMP_WINDOW_MS > 0);
+  assert.match(updatedAtErrors(w("update", "waiting", "x", { updatedAt: NOW - STAMP_WINDOW_MS - 1000 }), NOW)[0] ?? "", new RegExp(`more than ${STAMP_WINDOW_MS / 60e3} minutes old`), "the message derives its minutes from the constant");
+});
+
+test("mergeRun: a delta marked while no mirror exists takes nothing and writes no state (it would otherwise pass as a whole read)", () => {
+  const b = board();
+  try {
+    const t1 = NOW - 600e3;
+    const exp = b.run("lonely", { mode: "delta", at: t1, docs: { initiatives: { a: { name: "a", updatedAt: t1 } } } });
+    assert.equal(b.merge().did, null);
+    assert.equal(existsSync(join(b.dir, "mirror")), false, "no mirror made from a delta");
+    assert.equal(readDeltaState(b.dir), null, "no state, so the next run plans a full read");
+    assert.equal(existsSync(exp), true, "the export is left where it was");
+  } finally { b.done(); }
+});
+
 test("a nightly read with a collection of exactly whole pages is reported as cut, as it always was", () => {
   const b = board();
   try {
@@ -189,14 +229,15 @@ test("gate.requireUpdatedAt is a config switch, off by default, a boolean when g
   assert.deepEqual(checkConfig({ owner: "Sam", gate: { requireUpdatedAt: true } }).filter((p) => /requireUpdatedAt/.test(p)), []);
 });
 
-test("updatedAt: a set or update of initiatives, waiting, ideas, threads or plan needs the clock's time, within 15 minutes; off, nothing changes", () => {
+test("updatedAt: a set or update of initiatives, waiting, ideas, threads or plan needs the clock's time, within 4 minutes; off, nothing changes", () => {
   assert.deepEqual(STAMPED, ["initiatives", "waiting", "ideas", "threads", "plan"]);
   for (const c of STAMPED) {
     assert.match(updatedAtErrors(w("update", c, "x", { text: "t" }), NOW)[0], /add updatedAt \(ms, read the clock/, c);
     assert.deepEqual(updatedAtErrors(w("update", c, "x", { text: "t", updatedAt: NOW - 1000 }), NOW), [], c);
     assert.deepEqual(updatedAtErrors(w("set", c, "x", { text: "t", updatedAt: NOW - 1000 }), NOW), [], c);
   }
-  assert.match(updatedAtErrors(w("update", "waiting", "x", { updatedAt: NOW - 16 * 60e3 }), NOW)[0], /more than 15 minutes old/);
+  assert.match(updatedAtErrors(w("update", "waiting", "x", { updatedAt: NOW - 5 * 60e3 }), NOW)[0], /more than 4 minutes old/);
+  assert.deepEqual(updatedAtErrors(w("update", "waiting", "x", { updatedAt: NOW - 3 * 60e3 }), NOW), [], "3 minutes is inside the window");
   assert.match(updatedAtErrors(w("update", "waiting", "x", { updatedAt: "now" }), NOW)[0], /add updatedAt/);
   assert.match(updatedAtErrors(w("update", "waiting", "x", { updatedAt: NOW - 5.5 }), NOW)[0], /add updatedAt/, "a whole number");
   for (const c of ["steps", "messages", "ctx", "meta", "derived"]) assert.deepEqual(updatedAtErrors(w("update", c, "x", { text: "t" }), NOW), [], `${c} has its own at or none`);

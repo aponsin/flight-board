@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { spawnSync, execFileSync } from "node:child_process";
 import { scratchRoot, EXPORT_NAME } from "../collector/collect.mjs";
@@ -85,24 +86,20 @@ test("--probe-step --merge-only merges and makes the derive due, but derives not
 test("the pinned probe reaches the collector's code only by a child process: merge first, derive after the state is posted", () => {
   const src = readFileSync(new URL("../collector/state.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(src, /from "\.\/(collect|delta)\.mjs"/, "state.mjs imports none of the release's collector files: the owner's pinned install stays what Security signed");
-  assert.match(src, /collectorEntry\(join\(stateDir, "current"\)\), "--config", process\.argv\[at \+ 1\], "--probe-step", \.\.\.extra/);
+  assert.match(src, /\[collectorEntry\(\), "--config", process\.argv\[at \+ 1\], "--probe-step", \.\.\.extra/);
   const merge = src.indexOf('probeStep(["--merge-only"])'), cards = src.indexOf("// The cards on the last export"), post = src.indexOf("await postState(fetch"), derive = src.lastIndexOf("deriveStep();");
   assert.ok(merge > 0 && merge < cards, "the mirror is merged before this minute reads its cards");
   assert.ok(derive > post, "the derive runs after the state is posted, which it must not delay");
   assert.match(src, /\.\.\.\(fetchIt \? \["--no-fetch"\] : \[\]\)/, "the probe has just fetched: the derive does not fetch again");
 });
 
-test("collectorEntry: the current link's copy when it names a commit beside this install, else the install's own; never a link elsewhere", () => {
-  const A = "a".repeat(40), B = "b".repeat(40), C = "c".repeat(40);
-  const code = `/home/u/.flight-board/install/${A}`;
-  const yes = () => true, no = () => false;
-  const link = (target) => () => { if (target === null) throw new Error("no link"); return target; };
-  assert.equal(collectorEntry("/l", code, link(`/home/u/.flight-board/install/${B}`), yes), `/home/u/.flight-board/install/${B}/collector/collect.mjs`, "a release moved the link: its code runs");
-  assert.equal(collectorEntry("/l", code, link(`/home/u/.flight-board/install/${A}`), yes), `${code}/collector/collect.mjs`, "the link on this install");
-  assert.equal(collectorEntry("/l", code, link(null), yes), `${code}/collector/collect.mjs`, "no link");
-  assert.equal(collectorEntry("/l", code, link(`/elsewhere/install/${C}`), yes), `${code}/collector/collect.mjs`, "a link into another folder is not trusted");
-  assert.equal(collectorEntry("/l", code, link(`/home/u/.flight-board/install/not-a-commit`), yes), `${code}/collector/collect.mjs`, "a link that names no commit");
-  assert.equal(collectorEntry("/l", code, link(`/home/u/.flight-board/install/${B}`), no), `${code}/collector/collect.mjs`, "the linked copy has no collector file");
+test("collectorEntry: always the install's own collect.mjs, never the current link's copy (Security, #C420 condition A)", () => {
+  const code = `/home/u/.flight-board/install/${"a".repeat(40)}`;
+  assert.equal(collectorEntry(code), `${code}/collector/collect.mjs`);
+  assert.equal(collectorEntry(), fileURLToPath(new URL("../collector/collect.mjs", import.meta.url)), "the default is this install's own code, the file beside state.mjs");
+  assert.equal(collectorEntry.length <= 1, true, "it takes no link and no existence check to be fooled by");
+  const src = readFileSync(new URL("../collector/state.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /collectorEntry\([^)]*current/, "no call hands it the current link");
 });
 
 test("lines the derive finds reach the lead: a nudge-worthy card is saved for the wake watch, once", () => {

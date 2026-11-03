@@ -70,6 +70,9 @@ export function withLiveMessages(mirror, msgs) {
 // or null. at: its newest file; atBy: each collection's, when that collection was listed (an export lists one after
 // another); atDoc: { collection: { id: time } }, when each document was listed. A file that doesn't parse (half written)
 // is no document and moves none of them (#C347).
+// The collections whose deletions are tombstones (collector/delta.mjs MUTABLE; a test ties the two lists, because the gate does not
+// import the collector's code).
+export const TOMBSTONED = ["initiatives", "waiting", "ideas", "threads", "plan"];
 export function readMirror(dir) {
   if (!existsSync(dir)) return null;
   const docs = {}, atBy = {}, atDoc = {};
@@ -85,6 +88,8 @@ export function readMirror(dir) {
       const t = statSync(path).mtimeMs;
       let doc;
       try { doc = { id: f.slice(0, -5), ...JSON.parse(readFileSync(path, "utf8")) }; } catch { continue; /* half written */ }
+      // A deleted document of the five edited collections (a tombstone, #C642) is no card, wherever it was left (Checker).
+      if (doc.deleted === true && TOMBSTONED.includes(c)) continue;
       docs[c].push(doc);
       atDoc[c][doc.id] = t;
       at = Math.max(at, t);

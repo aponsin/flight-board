@@ -38,9 +38,11 @@ export function fullDue({ now, fullAt, hasMirror, hour }) {
 }
 
 // What --prepare tells the run: the mode, and for a delta the `since` of the whole run (the last merged run's start less the overlap).
-export function deltaPlan({ now, state, hasMirror, hour }) {
+// A delta read finds a changed document only by its own updatedAt, so it is planned only once the gate requires that stamp
+// (config.gate.requireUpdatedAt true: the pack's order is enforced here, in code); until then every run is a full read.
+export function deltaPlan({ now, state, hasMirror, hour, requireUpdatedAt = false }) {
   const lastAt = Number.isFinite(state?.at) ? state.at : null;
-  const full = lastAt === null || fullDue({ now, fullAt: state?.fullAt, hasMirror, hour });
+  const full = requireUpdatedAt !== true || lastAt === null || fullDue({ now, fullAt: state?.fullAt, hasMirror, hour });
   if (full) return { mode: "full", since: null, queries: [] };
   const since = Math.max(0, lastAt - OVERLAP_MS);
   return { mode: "delta", since, queries: [...APPENDED, ...MUTABLE].map((collection) => ({ collection, field: deltaField(collection), since })) };
@@ -77,6 +79,14 @@ function* docsOf(root, collection) {
 }
 
 export const isTombstone = (collection, d) => MUTABLE.includes(collection) && d.deleted === true;
+
+// A full export holds the tombstones of every deletion ever made ({deleted: true, updatedAt}); the drift check reads them, and
+// then they go: a tombstone left in the mirror would come back as a card on every read (Checker). Returns how many went.
+export function dropTombstones(dir) {
+  let n = 0;
+  for (const c of MUTABLE) for (const [f, d] of docsOf(dir, c)) if (isTombstone(c, d)) { rmSync(join(dir, c, f), { force: true }); n++; }
+  return n;
+}
 
 // Lays a delta export over the mirror: each document replaces its file, a tombstone removes it, and the mirror's stamp
 // says what the mirror now holds (changes up to `at`, the run's start). Steps older than STEPS_KEEP_DAYS go. Returns counts.

@@ -376,15 +376,12 @@ export function installedSha(link, code = CODE, readlink = readlinkSync) {
   if (target === null || !sha(target)) return null;
   return sha(code) && dirname(code) === dirname(target) ? sha(code) : sha(target);
 }
-// The collector's code the probe's merge and derive run (#C642): the current link's copy when the link names a commit beside this
-// install (the code a board release moved, which Checker and Security signed; the owner's pinned set stays small, #C278), else this
-// install's own. Always a child process, never an import. The link's target is compared as written, as installedSha does.
-export function collectorEntry(link, code = CODE, readlink = readlinkSync, isFile = (p) => { try { return lstatSync(p).isFile(); } catch { return false; } }) {
-  const own = join(code, "collector", "collect.mjs");
-  let target = null;
-  try { target = readlink(link); } catch { /* no link */ }
-  const linked = target !== null && /^[0-9a-f]{40}$/.test(basename(String(target))) && dirname(String(target)) === dirname(code) ? join(String(target), "collector", "collect.mjs") : null;
-  return linked && isFile(linked) ? linked : own;
+// The collector's code the probe's merge and derive run (#C642): always this install's own copy, never the current link's
+// (Security, BLOCKING: the child runs unsandboxed with the probe's environment, secrets and network, so it must be code the
+// owner's install pinned and Security compared with its commit, #C420 condition A; collector/collect.mjs and what it imports
+// are in OWNER_ENTRIES now). A child process, never an import.
+export function collectorEntry(code = CODE) {
+  return join(code, "collector", "collect.mjs");
 }
 // One card: its phase by the evidence (the declared one when the repository shows nothing), and the facts beside it.
 // A tip whose change landed on main as other commits (landedOn) is read as the main commit that carries it.
@@ -663,7 +660,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   // #C642: what the Collector's last run saved is merged into the mirror first, so this minute reads the board as of that run. The merge
   // and the derive after it are collect.mjs --probe-step, a child process (the collector's code is the release's, not this pinned file's).
   const probeStep = (extra) => {
-    try { return execFileSync(process.execPath, [collectorEntry(join(stateDir, "current")), "--config", process.argv[at + 1], "--probe-step", ...extra, ...(fetchIt ? ["--no-fetch"] : [])], { cwd: join(stateDir, id), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 150_000, maxBuffer: 16 * 1024 * 1024 }).trim(); }
+    try { return execFileSync(process.execPath, [collectorEntry(), "--config", process.argv[at + 1], "--probe-step", ...extra, ...(fetchIt ? ["--no-fetch"] : [])], { cwd: join(stateDir, id), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 150_000, maxBuffer: 16 * 1024 * 1024 }).trim(); }
     catch (e) { return `probe step failed: ${String(e.message).split("\n")[0].slice(0, 160)}`; }
   };
   const merged = probeStep(["--merge-only"]);
