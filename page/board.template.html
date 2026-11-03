@@ -2559,7 +2559,7 @@ const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHA
 // (board.wakeAliveAt) and the last wake it handled (board.wakeSeenAt). Times only. A heartbeat more than WAKE_ALIVE_MAX
 // older than the probe's own reading, or none, is "not listening"; a probe from before this carries neither key, and the
 // chip stays hidden. A message is answered once anyone but the owner wrote after it in its thread.
-const WAKE_ALIVE_MAX=3*60e3,CARDS_STALE=5*60e3;
+const WAKE_ALIVE_MAX=3*60e3,CARDS_STALE=5*60e3,EVIDENCE_STALE=10*60e3;
 function ownerUnanswered(){const own=state.messages.filter(m=>m&&m.from===OWNER&&isT(m.at)).sort((a,b)=>b.at-a.at)[0];
   return own&&!state.messages.some(m=>m&&m.thread===own.thread&&m.from!==OWNER&&isT(m.at)&&m.at>own.at)?own:null}
 function managerChip(now=Date.now()){if(!liveOn(now)||!Object.hasOwn(probe.board,"wakeAliveAt"))return null;
@@ -2569,6 +2569,10 @@ function managerChip(now=Date.now()){if(!liveOn(now)||!Object.hasOwn(probe.board
   // before it carries no key, and the chip says nothing of cards.
   const hasCards=Object.hasOwn(b,"cardsCheckedAt"),cc=isT(b.cardsCheckedAt)?b.cardsCheckedAt:null;
   if(hasCards&&(cc==null||b.at-cc>CARDS_STALE))return {cls:"bad",text:cc==null?"Cards not checked":`Cards not checked since ${hhmm(cc)}`};
+  // #C632: the probe's evidence self-check (board.evidenceAt, the last time an open card past plan showed a branch commit);
+  // red 10 minutes after it, so a probe that reads nothing for every card can't pass as quiet.
+  const ev=isT(b.evidenceAt)?b.evidenceAt:null;
+  if(Object.hasOwn(b,"evidenceAt")&&ev!=null&&b.at-ev>EVIDENCE_STALE)return {cls:"bad",text:`Card checks found nothing since ${hhmm(ev)}`};
   // #C606: the chip says Manager's state alone; the Studio's check is the header stamp's "Studio checked …", so the probe's
   // reading is shown once, not here too.
   const open=ownerUnanswered();

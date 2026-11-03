@@ -5,7 +5,7 @@
 // fits a field, and an error never quotes what it refused (a key it doesn't know is "a key that isn't in the plan").
 //
 //   { v: 1,
-//     board:  { boardId, at, probe, pageVersion, lastWriteAt?, wakeAliveAt?, wakeSeenAt?, cardsCheckedAt? },
+//     board:  { boardId, at, probe, pageVersion, lastWriteAt?, wakeAliveAt?, wakeSeenAt?, cardsCheckedAt?, evidenceAt? },
 //     cards:  { <card id>: { num, phase, headSha12, signed, onMain, ci, ciMin, liveVersion, shipping?, seen?, at } },
 //     agents: { <role>: { state, lastActivityAt, tool, card, since, by? } } }   by (#C633, optional): "title" when the role's
 //             session was found by its title because the config holds no session id for it
@@ -44,14 +44,14 @@ const re = (r) => (v) => typeof v === "string" && r.test(v);
 const isId = (v) => re(CARD_ID)(v) && v.length <= CARD_ID_MAX;
 
 // lastWriteAt (#C452): the board db's newest write the gate journaled, so the page can tell its own data is behind.
-const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pageVersion: nullOr(re(SHA12)), lastWriteAt: nullOr(isTime), wakeAliveAt: nullOr(isTime), wakeSeenAt: nullOr(isTime), cardsCheckedAt: nullOr(isTime) };
+const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pageVersion: nullOr(re(SHA12)), lastWriteAt: nullOr(isTime), wakeAliveAt: nullOr(isTime), wakeSeenAt: nullOr(isTime), cardsCheckedAt: nullOr(isTime), evidenceAt: nullOr(isTime) };
 // Keys a record may leave out (#C452's lastWriteAt: a reading from a probe before it still fits); one that is there is
 // checked like any other. #C590: wakeAliveAt is the wake watch's heartbeat time, wakeSeenAt the last wake it handled:
 // times only, for the page's "Manager listening" chip.
 // #C617: a card's shipping flag (a GitHub run titled "vX: <branch>@<sha>" is running for its tip); a probe from before it
 // leaves it out, and a state with it still fits.
 // #C620: seen is the phases the repository shows evidence of (a commit, a CI run, a sign-off, main, a deploy); optional too.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "shipping", "asOf", "seen", "by"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "shipping", "asOf", "seen", "by"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),

@@ -73,6 +73,21 @@ export const truthLine = (a) => (a.kind === "ship"
   : a.kind === "gap"
   ? `GAP ${a.card}: no ${a.miss.split(" ").map((m) => (m === "eta" ? "ETA" : m)).join(" and no ")}; write ${a.miss.split(" ").map((m) => (m === "eta" ? "etaLive" : "who")).join(" and ")} on the card`
   : `CLOSE ${a.card}: its commits are live (on main and deployed, or in the installed pack); write its live step and set status done in the same batch`);
+// The probe's evidence self-check (#C632): with EVIDENCE_MIN_CARDS or more open cards past plan and not one of them showing a
+// branch commit (headSha12), the probe is reading nothing (the day every flight-board card went to the wrong repository). evidenceAt
+// is the last run any did, or this run's when there are too few cards to say; with none before, the clock starts at the first
+// empty run. The page's chip goes red EVIDENCE_STALE_MS later, and the probe writes no-evidence.json { since } so the lead's
+// watch prints one NOEVIDENCE line per outage (the seen file keeps the since it printed); evidence back clears both.
+export const NOEVIDENCE_FILE = "no-evidence.json", NOEVIDENCE_SEEN_FILE = "no-evidence-seen.json";
+export const EVIDENCE_STALE_MS = 10 * 60e3, EVIDENCE_MIN_CARDS = 3;
+export function evidenceAt(cards, now, before) {
+  const built = Object.values(cards ?? {}).filter((c) => c && typeof c.phase === "string" && c.phase !== "plan");
+  if (built.length < EVIDENCE_MIN_CARDS || built.some((c) => c.headSha12)) return now;
+  return Number.isInteger(before) && before >= 1577836800000 && before <= now ? before : now;
+}
+export const noEvidenceSince = (at, now) => (Number.isInteger(at) && now - at > EVIDENCE_STALE_MS ? at : null);
+export const noEvidencePending = (asked, seen) => Number.isInteger(asked?.since) && asked.since !== seen?.since;
+export const noEvidenceLine = (since) => `NOEVIDENCE: the probe's card checks found no branch for any open card since ${new Date(since).toISOString().slice(11, 16)} UTC; the cards' evidence (phase tiles, READY, ship) is blind: read the probe's log and the repository lookup`;
 export const resetLine = (role) => `CONTEXT RESET ${role}: past the reset limit; save its notes and clear it`;
 export const wakeLine = (role) => `WAKE ${role}: no open session and it has work; wake it`;
 export const missingLine = (roles) => `ROSTER missing: ${roles.join(", ")} (no open session, no work waiting)`;

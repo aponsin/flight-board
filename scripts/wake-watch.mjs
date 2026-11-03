@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { home } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, ALIVE_MAX_MS, MAX_RUN_MS } from "../gate/wake.mjs";
-import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine, TRUTH_FILE, TRUTH_SEEN_FILE, SHIP_ROLE, truthPending, truthSeen, truthLine } from "../gate/reset.mjs";
+import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine, TRUTH_FILE, TRUTH_SEEN_FILE, SHIP_ROLE, truthPending, truthSeen, truthLine, NOEVIDENCE_FILE, NOEVIDENCE_SEEN_FILE, noEvidencePending, noEvidenceLine } from "../gate/reset.mjs";
 
 // One look: the heartbeat, then the line to print, or null. Marks the wake seen only once it is returned.
 export function tick(dir, now, pid = process.pid, roster = null) {
@@ -51,6 +51,10 @@ function resetLines(dir, roster = null, now = Date.now()) {
   const nextSeen = truthSeen(truth, tseen, todo, now);
   if (JSON.stringify(nextSeen) !== JSON.stringify(tseen ?? { items: {} })) writeAtomic(join(dir, TRUTH_SEEN_FILE), JSON.stringify(nextSeen));
   out.push(...todo.map(truthLine));
+  // The probe finds no branch for any open card (#C632): one NOEVIDENCE line per outage; the seen file is cleared when it ends.
+  const blind = read(NOEVIDENCE_FILE), blindSeen = read(NOEVIDENCE_SEEN_FILE);
+  if (noEvidencePending(blind, blindSeen)) { writeAtomic(join(dir, NOEVIDENCE_SEEN_FILE), JSON.stringify({ since: blind.since })); out.push(noEvidenceLine(blind.since)); }
+  else if (blind && !Number.isInteger(blind.since) && blindSeen?.since != null) writeAtomic(join(dir, NOEVIDENCE_SEEN_FILE), JSON.stringify({ since: null }));
   return out;
 }
 const sameSeen = (asks, seen) => JSON.stringify(asksSeen(asks)) === JSON.stringify(seen ?? { asks: {} });
