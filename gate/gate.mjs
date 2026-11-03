@@ -54,6 +54,17 @@ export function writesOf(t) {
   return [{ op: t.action, collection: t.collection, doc_id: t.doc_id, data: load(t), if_version: t.if_version }];
 }
 
+// The owner's messages the lead's own live check found (gate/live.mjs keeps them in live.json, the Stop gate counts them), laid over
+// a mirror that has not exported them yet (#C627): the owner wrote "all done" in a thread whose ask the lead had deleted, the
+// Stop gate asked for a reply there, and rule 10 refused one because the export (up to a collector run old) held no message in
+// it. A message already in the mirror is not added twice; a mirror without messages, or no live ones, is returned as it was.
+export function withLiveMessages(mirror, msgs) {
+  if (!mirror || !Array.isArray(msgs) || !msgs.length) return mirror;
+  const have = new Set((mirror.docs.messages ?? []).map((d) => d.id));
+  const add = msgs.filter((m) => m && typeof m.id === "string" && typeof m.thread === "string" && !have.has(m.id)).map((m) => ({ id: m.id, thread: m.thread, from: m.from, at: m.at, text: typeof m.text === "string" ? m.text : "" }));
+  return add.length ? { ...mirror, docs: { ...mirror.docs, messages: [...(mirror.docs.messages ?? []), ...add] } } : mirror;
+}
+
 // The board's mirror: { docs: { collection: [ {id, ...data} ] }, at, atBy, atDoc } from an ArtifactData export (out_dir),
 // or null. at: its newest file; atBy: each collection's, when that collection was listed (an export lists one after
 // another); atDoc: { collection: { id: time } }, when each document was listed. A file that doesn't parse (half written)
@@ -162,7 +173,9 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
     // Rules 3-5 read the mirror the collector keeps; a stale one skips them (fail open) with a note.
     const m = readMirror(join(dir, "mirror"));
     // ...with every write the gate let through since its export laid over it.
-    const seen = m ? withJournal(m, state.journal) : null;
+    let liveMsgs = [];
+    try { const j = JSON.parse(readFileSync(join(dir, "live.json"), "utf8")); if (j && typeof j === "object" && Array.isArray(j[who.role]?.msgs)) liveMsgs = j[who.role].msgs; } catch { /* none */ }
+    const seen = m ? withLiveMessages(withJournal(m, state.journal), liveMsgs) : null;
     const mirror = m && now - m.at < config.gate.mirrorMaxAgeMin * 60e3 ? seen : null;
     // The owner's words are looked up however old the mirror is (#C337): an old mirror's owner message is still theirs.
     // The live state's last reading (#C449, collector/state.mjs's state.json beside the mirror): only a fresh one that
