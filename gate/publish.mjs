@@ -132,21 +132,26 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   let raw = "";
   process.stdin.on("data", (c) => (raw += c));
   process.stdin.on("end", () => {
-    try {
-      const input = JSON.parse(raw);
-      const lines = input?.transcript_path ? readLines(input.transcript_path) : [];
-      const managerRole = fullConfig(rawConfig).gate.managerRole;
-      const v = publishVerdict(input, { rawConfig, managerRole, configDir, current, lines, envRole: process.env.FLIGHT_BOARD_ROLE });
-      const updatedInput = v ? verifiedCopy(v, v.copyDir ?? configDir) : null;
-      if (v && updatedInput) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: v.reason, updatedInput } }));
-      else if (pageDenied(input, rawConfig)) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: PAGE_DENIED } }));
-    } catch {
-      // A throw must not hand a page tool back to the app's own permission check (Security): on the board's page tools, deny.
-      try {
-        const input = JSON.parse(raw);
-        if (pageDenied(input, rawConfig)) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: PAGE_DENIED } }));
-      } catch { /* silence */ }
-    }
+    const out = hookResponse(raw, { rawConfig, configDir, current, envRole: process.env.FLIGHT_BOARD_ROLE });
+    if (out) process.stdout.write(out);
     process.exit(0);
   });
+}
+
+// The hook's whole answer to one call, as the text for stdout ("" is silence). verdictOf is the check, a parameter only so a
+// test can make it throw.
+export function hookResponse(raw, { rawConfig, configDir, current, envRole }, verdictOf = publishVerdict) {
+  const deny = () => JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: PAGE_DENIED } });
+  try {
+    const input = JSON.parse(raw);
+    const lines = input?.transcript_path ? readLines(input.transcript_path) : [];
+    const managerRole = fullConfig(rawConfig).gate.managerRole;
+    const v = verdictOf(input, { rawConfig, managerRole, configDir, current, lines, envRole });
+    const updatedInput = v ? verifiedCopy(v, v.copyDir ?? configDir) : null;
+    if (v && updatedInput) return JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: v.reason, updatedInput } });
+    return pageDenied(input, rawConfig) ? deny() : "";
+  } catch {
+    // A throw must not hand a page tool back to the app's own permission check (Security): on the board's page tools, deny.
+    try { return pageDenied(JSON.parse(raw), rawConfig) ? deny() : ""; } catch { return ""; }
+  }
 }

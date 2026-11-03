@@ -16,7 +16,7 @@ import { after } from "../gate/after.mjs";
 import { stopCheck } from "../gate/stop.mjs";
 import { turnLive, resultPage, asOldQuery } from "../gate/live.mjs";
 import { classify, dbWriteOps, isBoardSlug, PREFIX, OPEN_TOOLS, PAGE_TOOLS } from "../gate/tools.mjs";
-import { publishVerdict, pageDenied } from "../gate/publish.mjs";
+import { publishVerdict, pageDenied, hookResponse, PAGE_DENIED } from "../gate/publish.mjs";
 import { buildPage } from "../scripts/build-page.mjs";
 
 const BOARD = "https://claude.ai/" + "artifact/TestBoard01";
@@ -230,6 +230,21 @@ test("the hook as the app runs it: an allow with the copy for a signed page, a d
   assert.deepEqual([other.status, other.stdout], [0, ""], "another artifact: silence");
   const old = hook({ tool_name: "Artifact", tool_input: { url: BOARD, file_path: bad, action: "delete" } });
   assert.deepEqual([old.status, old.stdout], [0, ""], "the old tool keeps the app's consent: silence");
+});
+
+test("a throw in the hook's check denies a page tool on the board (never the app's own prompt), and is silence for anything else", () => {
+  const ctx = { rawConfig, configDir: "/nowhere", current: null, envRole: "" };
+  const boom = () => { throw new Error("check failed"); };
+  const call = (tool_name, slug) => JSON.stringify({ tool_name, tool_input: { slug } });
+  for (const name of PAGE_TOOLS) {
+    const out = JSON.parse(hookResponse(call(name, UUID), ctx, boom)).hookSpecificOutput;
+    assert.deepEqual([out.permissionDecision, out.permissionDecisionReason], ["deny", PAGE_DENIED], name);
+    assert.equal(JSON.parse(hookResponse(call(name, BOARD + "/"), ctx, boom)).hookSpecificOutput.permissionDecision, "deny", `${name}, by a link variant`);
+    assert.equal(hookResponse(call(name, OTHER), ctx, boom), "", `${name} on another artifact`);
+  }
+  assert.equal(hookResponse(call(mk("db_write"), UUID), ctx, boom), "", "not a page tool: the write gate's");
+  assert.equal(hookResponse("not json", ctx, boom), "", "unreadable input");
+  assert.equal(JSON.parse(hookResponse(call(mk("publish_files"), UUID), ctx, () => null)).hookSpecificOutput.permissionDecision, "deny", "an unverified page without a throw is denied too");
 });
 
 // ---- the journal, the Stop gate and the live check ----
