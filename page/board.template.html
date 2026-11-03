@@ -313,6 +313,8 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .tstat{font:400 .78rem var(--mono);color:var(--muted);white-space:nowrap}
 .tclear{font:600 .78rem var(--mono);color:var(--accent);background:none;border:0;padding:0;cursor:pointer}
 .tclear:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.tmore{font:600 .78rem var(--mono);color:var(--accent);background:none;border:0;padding:12px 0;min-height:44px;cursor:pointer}
+.tmore:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .reply.drop,.newthread.drop{outline:2px dashed var(--accent);outline-offset:4px;border-radius:6px}
 .sentfiles a{color:inherit}.filesave{display:inline-flex;align-items:center;min-height:32px;padding:4px 2px;font:inherit;color:var(--accent);background:none;border:0;text-decoration:underline;cursor:pointer}.filesave:disabled{opacity:.6;cursor:progress}.savenote{color:var(--muted);margin-left:4px}.savenote:empty{display:none}.fsep{color:var(--muted)}
 .reply.sent{padding:8px 10px;border-radius:6px;font-size:.9rem;background:var(--ok-soft);color:var(--ok)}
@@ -1244,11 +1246,20 @@ function renderStuck(){const el=$("stuck"),l=[...stuckLines(),...liveStuckLines(
 const MAXT=2000, WEEK=7*864e5;
 // Oldest first by time; a message that names the one it answers (after: <message id>) always comes after it, whatever
 // the two clocks said (the lead's answer stamped a little before the owner's message still follows it).
-function threadOf(id){const t=state.messages.filter(m=>m&&m.thread===id&&num(m.at)!=null),by=new Map(t.map(m=>[m.id,m]));
+// The messages by thread, indexed once per data update (#C643: every threadOf scanned all 13k messages, and a tab switch
+// asks for every thread's state: 1.6 s on the live board). Rebuilt when the list is another one or has another length;
+// renderAll clears it.
+let msgIxOf=null,msgIxLen=-1,msgIx=new Map(),msgSorted=new Map();
+function msgIndex(){const ms=state.messages;if(msgIxOf!==ms||msgIxLen!==ms.length){msgIxOf=ms;msgIxLen=ms.length;msgIx=new Map();msgSorted=new Map();
+    for(const m of ms)if(m&&typeof m.thread==="string"&&num(m.at)!=null)(msgIx.get(m.thread)||msgIx.set(m.thread,[]).get(m.thread)).push(m)}
+  return msgIx}
+// A thread's messages are ordered once per data update too; callers read the list, none changes it.
+function threadOf(id){const ix=msgIndex(),done=msgSorted.get(id);if(done)return done;
+  const t=(ix.get(id)||[]).slice(),by=new Map(t.map(m=>[m.id,m]));
   const key=new Map();const k=(m,seen=new Set())=>{if(key.has(m))return key.get(m);let v=m.at;const p=m.after&&by.get(m.after);
     if(p&&!seen.has(p)){seen.add(m);v=Math.max(v,k(p,seen)+1)}key.set(m,v);return v};
-  return t.sort((a,b)=>k(a)-k(b)||a.at-b.at)}
-function threadIds(){return [...new Set(state.messages.filter(m=>m&&typeof m.thread==="string"&&num(m.at)!=null).map(m=>m.thread))]}
+  t.sort((a,b)=>k(a)-k(b)||a.at-b.at);msgSorted.set(id,t);return t}
+function threadIds(){return [...msgIndex().keys()]}
 // Open: the owner's word is the last, unless it only acknowledges an ask that is settled (#C268).
 function threadOpen(id){const t=threadOf(id),last=t[t.length-1];if(!last||last.from!==OWNER||last.resolved)return false;
   const it=itemOf(id);return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
@@ -1462,15 +1473,25 @@ const qText=new Map();
 function textOnce(k,build){let v=qText.get(k);if(v===undefined){v=String(build()).toLowerCase();qText.set(k,v)}return v}
 function threadText(id){return textOnce("t:"+id,()=>{const n=threadNum(id);return [threadName(id),n?"#T"+n:"",threadTitle(id),...threadOf(id).map(m=>m.text||"")].join("\n")})}
 // "#T77" alone finds exactly #T77, never #T770 (#C288: a #T link opens its thread through this search).
-function resolvedMatches(q,now){const s=String(q||"").trim().toLowerCase(),all=resolvedIds(now),n=/^#t(\d{1,6})$/.exec(s);
-  return n?all.filter(id=>threadNum(id)===Number(n[1])):s?all.filter(id=>threadText(id).includes(s)):all.filter(id=>now-threadLast(id)<WEEK)}
+// older (#C643, "Show older"): with no search, the whole history instead of the last 7 days.
+function resolvedMatches(q,now,older=false){const s=String(q||"").trim().toLowerCase(),all=resolvedIds(now),n=/^#t(\d{1,6})$/.exec(s);
+  return n?all.filter(id=>threadNum(id)===Number(n[1])):s?all.filter(id=>threadText(id).includes(s)):older?all:all.filter(id=>now-threadLast(id)<WEEK)}
 // The search that draws a resolved thread the page doesn't show now (older than 7 days, or past the list's 50 rows), so
 // its #T link can open it; null when it isn't a resolved thread with a number.
 function tRefQuery(id,now){const n=threadNum(id);return n&&resolvedIds(now).includes(id)?"#T"+n:null}
+// The list shows the newest RMAX rows; "Show older" adds RMAX more, and once the last 7 days are all shown, the older
+// threads (#C643). A new search starts over at RMAX.
 const RMAX=50;
-function rlistHtml(now,q){const hits=resolvedMatches(q,now);
-  if(!hits.length)return `<div class="empty">${String(q||"").trim()?"No matches.":"None in the last 7 days. Search finds older ones."}</div>`;
-  return hits.slice(0,RMAX).map(id=>threadRow(id,now)).join("")+(hits.length>RMAX?`<div class="empty">${hits.length-RMAX} more: narrow the search.</div>`:"")}
+let rShown=RMAX,rOlder=false;
+function rlistHtml(now,q){const hits=resolvedMatches(q,now,rOlder),on=String(q||"").trim();
+  if(!hits.length)return `<div class="empty">${on?"No matches.":"None in the last 7 days. Search finds older ones."}</div>`;
+  const left=hits.length-rShown,more=left>0||(!on&&!rOlder&&resolvedMatches("",now,true).length>hits.length);
+  return hits.slice(0,rShown).map(id=>threadRow(id,now)).join("")+(more?`<div class="empty"><button type="button" class="tmore" data-rmore>${left>0?`Show ${Math.min(RMAX,left)} more`:"Show older"}</button>${left>0?` (${left} left)`:""}</div>`:"")}
+// The button is redrawn with the list, so focus moves to the first row it added (the button, when nothing was added): a
+// keyboard or screen-reader user keeps their place (Designer).
+document.addEventListener("click",e=>{if(e.target.closest&&e.target.closest("[data-rmore]")){const had=document.querySelectorAll("#resolved .w-item").length;
+  if(resolvedMatches(rQuery,Date.now(),rOlder).length>rShown)rShown+=RMAX;else rOlder=true;renderResolved();
+  const t=document.querySelectorAll("#resolved .w-item > summary")[had]||document.querySelector("#resolved [data-rmore]");if(t&&t.focus)t.focus()}});
 // The Resolved tab (#C351): its list, no fold; its count is on the tab, and its search is the box over every tab (#C356).
 function resolvedHtml(now,q=qOf("resolved")){return `<div id="rlist">${rlistHtml(now,q)}</div>`}
 function renderResolved(){const el=$("resolved");keep(el,()=>{el.innerHTML=resolvedHtml(Date.now())})}
@@ -1492,7 +1513,7 @@ const searching=()=>isOn(rQuery);
 const NO_MATCH='<div class="empty">No matches.</div>';
 const SEARCH_WAIT=150;
 let searchTimer=null;
-function searchNow(q){clearTimeout(searchTimer);rQuery=String(q??"");const box=$("rsearch");if(box&&box.value!==rQuery)box.value=rQuery;
+function searchNow(q){clearTimeout(searchTimer);rQuery=String(q??"");rShown=RMAX;rOlder=false;const box=$("rsearch");if(box&&box.value!==rQuery)box.value=rQuery;
   renderTab(tab);const st=$("tstat");if(st)st.innerHTML=searchStatus(Date.now())}
 function setSearch(q){clearTimeout(searchTimer);searchTimer=setTimeout(()=>searchNow(q),SEARCH_WAIT)}
 // One tab's list drawn again.
@@ -2696,7 +2717,7 @@ function renderRestart(){const el=$("restartbadge");if(!el)return;const r=restar
 function renderShipLine(){const el=$("shipline");if(!el)return;const s=shipNow();el.hidden=!s;if(!s){el.innerHTML="";return}
   const i=state.initRaw.find(x=>x&&x.id===s.id),n=i&&Number.isInteger(i.num)?`#C${i.num}`:esc(s.id);
   el.innerHTML=`<b>Don't restart: shipping.</b> ${esc(SHIP_ROLE)} is shipping ${s.version?`<b>v${esc(s.version)}</b> `:""}(${n}); closing the agents now would stop it halfway.`}
-function renderAll(){qText.clear();state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();renderAgentPrs();liveWas=liveOn();renderStamp()}
+function renderAll(){qText.clear();msgIxOf=null;state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();renderAgentPrs();liveWas=liveOn();renderStamp()}
 let liveWas=false;
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});

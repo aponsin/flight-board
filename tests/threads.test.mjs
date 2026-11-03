@@ -14,7 +14,7 @@ const msg = (thread, from, text, at, extra = {}) => ({ id: `m${at}`, thread, fro
 
 test("a thread: its own messages only, oldest first and newest last", () => {
   const b = board({ messages: [msg("a", "Manager", "second", T + 2), msg("b", "Owner", "other", T + 1), msg("a", "Owner", "first", T + 1), { thread: "a", from: "Owner", text: "no time" }] });
-  assert.deepEqual(b.threadOf("a").map((m) => m.text), ["first", "second"]);
+  assert.deepEqual([...b.threadOf("a")].map((m) => m.text), ["first", "second"]);
 });
 
 test("case 5: Manager's answer shows in the thread under the ask, not only in a comment the board never shows", () => {
@@ -50,7 +50,7 @@ test("one reply box in every state, always above the messages, which show newest
   assert.ok(before(alone, 'data-reply="th:w2"', "latest words") && before(alone, "latest words", "first words"));
   assert.equal(boxes(b.threadHtml("w2", "panel", { box: false })), 0);
   // Display only: the thread itself stays oldest first, so the last word (open or answered) is still the newest.
-  assert.deepEqual(b.threadOf("w2").map((m) => m.text), ["first words", "latest words"]);
+  assert.deepEqual([...b.threadOf("w2")].map((m) => m.text), ["first words", "latest words"]);
 });
 
 test("an answered ask moves from Needs you to Waiting on Manager, with its reply and thread, until Manager answers or closes it", () => {
