@@ -368,14 +368,17 @@ export function seenPhases(config, facts) {
 // #C621: a card with two or more branch tips also carries `branches`, each tip read on its own (tipState), so the page can
 // draw one row per branch; the card's own fields stay those of its newest tip.
 export const MAX_BRANCH_ROWS = 6;
-const branchName = (branch, taken, n) => {
+// A branch's name for the state: its last path segment when that is a card-id shape (5 parts of 16 characters, 40 in all), else
+// the segment with "-2", "-3" ... when a twin took it and that still fits, else branch-N. Every name that leaves is a card id
+// shape, because one the schema refuses would stop the whole state from posting (#C621, Checker).
+const idShape = (name) => CARD_ID.test(name) && name.length <= CARD_ID_MAX;
+export function branchName(branch, taken, n) {
   const last = String(branch).split("/").pop().toLowerCase();
-  const base = CARD_ID.test(last) && last.length <= CARD_ID_MAX - 3 ? last : `branch-${n + 1}`;
-  let name = base, k = 2;
-  while (taken.has(name)) name = `${base}-${k++}`;
+  let name = [last, ...[2, 3, 4, 5, 6].map((k) => `${last}-${k}`)].find((c) => idShape(c) && !taken.has(c));
+  for (let k = n + 1; !name; k += 6) if (!taken.has(`branch-${k}`)) name = `branch-${k}`;
   taken.add(name);
   return name;
-};
+}
 function tipState(card, tip, repo, config, now, declared) {
   const signedOn = (sha) => Object.entries(repo.notes).filter(([, ref]) => ok(() => repo.git(["notes", `--ref=${ref}`, "show", sha]))).map(([p]) => p).sort();
   const mainRef = `${repo.remote}/${repo.main}`;

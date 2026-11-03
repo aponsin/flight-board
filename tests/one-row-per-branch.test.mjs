@@ -6,7 +6,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { cardState } from "../collector/state.mjs";
+import { cardState, branchName } from "../collector/state.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
 import { changeKey } from "../worker/state-worker.mjs";
 import { loadNames } from "./harness.mjs";
@@ -50,6 +50,21 @@ test("a card with one branch has no branches field; a branch name is the last pa
   assert.equal(Object.hasOwn(one, "branches"), false);
   const twin = cardState({ id: "two-parts", num: 1 }, repo({ tips: repo().tips.map((h) => (h.branch === "build/route" ? { ...h, branch: "admin/picker" } : h)) }), cfg, T);
   assert.deepEqual(twin.branches.map((b) => b.name), ["picker", "picker-2"]);
+});
+
+test("a twin of a 5-part or 40-character name never leaves a name the schema refuses (Checker's finding)", () => {
+  const taken = new Set();
+  assert.equal(branchName("build/hero-wide-on-small-phones", taken, 0), "hero-wide-on-small-phones");
+  assert.equal(branchName("admin/hero-wide-on-small-phones", taken, 1), "branch-2", "a 6th part would not fit a card id: branch-N");
+  assert.equal(branchName("build/abcdefghijklmnop-abcdefghijklmnop-abcdefg", new Set(), 0), "branch-1", "over 40 characters");
+  assert.equal(branchName("x/Not An Id!", new Set(["branch-1"]), 0), "branch-7", "a taken branch-N moves on");
+  const two = new Set(); assert.deepEqual([branchName("a/fix", two, 0), branchName("b/fix", two, 1), branchName("c/fix", two, 2)], ["fix", "fix-2", "fix-3"]);
+  // End to end: two tips whose last segments are the same 5-part name still make a state that fits.
+  const { repo } = scratch();
+  const twins = repo().tips.map((h) => (h.branch === "build/picker" ? { ...h, branch: "build/hero-wide-on-small-phones" } : h.branch === "build/route" ? { ...h, branch: "admin/hero-wide-on-small-phones" } : h));
+  const s = cardState({ id: "two-parts", num: 610 }, repo({ tips: twins }), cfg, T);
+  assert.deepEqual(s.branches.map((b) => b.name), ["hero-wide-on-small-phones", "branch-2"]);
+  assert.deepEqual(stateErrors({ v: 1, board: { boardId: "TestBoard01", at: T, probe: null, pageVersion: null }, agents: {}, cards: { "two-parts": s } }), []);
 });
 
 test("the schema: branches is optional, 2 to 6 records, each with the card's fields and a unique id-shaped name", () => {
