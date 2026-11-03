@@ -1,0 +1,3 @@
+PASS Full (Checker, 2026-11-03): build/one-row-per-branch 656d932 (#C621 Full + #C638 Quick). Suite 1146/1146. Pack lint is an allow list; awk/cat/python3/$(head)/echo $(diff)/continued diff all caught.
+
+Checker's verdict, recorded by checker, 2026-11-03T18:43:42.640Z
