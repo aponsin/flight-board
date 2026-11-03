@@ -215,7 +215,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     if (v.ok) {
       // The installed pack's label goes on the page (#C609): BOARD_PACK or the pack-label file beside the config. None: no page (Version 147 nearly went out with an empty one).
       const pack = packLabel(process.env, out);
-      if (!pack) { built = false; v.refusals.push(`the page has no pack label: set BOARD_PACK=vN.NN (the installed pack) or write it in ${join(out, "pack-label")}`); }
+      if (!pack) { built = false; v.refusals.push(`the page has no pack label: set BOARD_PACK=vN.NN (the installed pack; two numbers, v3.5.1 is not a label) or write it in ${join(out, "pack-label")}`); }
       else {
         try { execFileSync(process.execPath, [join(tmp, "scripts/build-page.mjs"), configPath, page], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, BOARD_PACK: pack } }); }
         catch (e) { built = false; v.refusals.push(`the page didn't build: ${String(e.stderr ?? e.message).trim().split("\n")[0]}`); }

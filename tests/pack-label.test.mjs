@@ -16,6 +16,9 @@ test("the label: BOARD_PACK first, then the pack-label file beside the config; a
     assert.equal(packLabel({ BOARD_PACK: bad }, "/cfg", missing), null, `variable ${JSON.stringify(bad)}`);
     assert.equal(packLabel({}, "/cfg", file(bad)), null, `file ${JSON.stringify(bad)}`);
   }
+  // Checker: a variable that is set but is no label never falls back to the file (a three-part name went out as the older pack's).
+  assert.equal(packLabel({ BOARD_PACK: "v3.5.1" }, "/cfg", file("v3.50\n")), null);
+  assert.equal(packLabel({ BOARD_PACK: "oops" }, "/cfg", file("v3.50\n")), null);
   assert.equal(packLabel({}, "/cfg", missing), null, "no variable and no file");
   assert.equal(packLabel(undefined, "/cfg", missing), null);
 });

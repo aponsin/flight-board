@@ -8,6 +8,7 @@ import { join } from "node:path";
 export const PACK_LABEL = /^v\d+\.\d+[a-z]?$/;
 export function packLabel(env, configDir, read = (p) => readFileSync(p, "utf8")) {
   const fromEnv = String(env?.BOARD_PACK ?? "").trim();
-  if (PACK_LABEL.test(fromEnv)) return fromEnv;
+  // A variable that is set but is no label is an error, never a reason to read the file (Checker: v3.5.1 fell back to an older pack's v3.50).
+  if (fromEnv) return PACK_LABEL.test(fromEnv) ? fromEnv : null;
   try { const fromFile = String(read(join(configDir, "pack-label"))).trim(); return PACK_LABEL.test(fromFile) ? fromFile : null; } catch { return null; }
 }
