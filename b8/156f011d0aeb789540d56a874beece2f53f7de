@@ -1,0 +1,3 @@
+PASS Full (Checker, 2026-11-03): #C621 one-row-per-branch, under build/one-row-per-branch 656d932; finding (twin 5-part names froze the state) fixed in 07cdb0b.
+
+Checker's verdict, recorded by checker, 2026-11-03T18:43:42.640Z
