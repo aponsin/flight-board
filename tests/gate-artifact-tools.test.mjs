@@ -305,3 +305,19 @@ test("dbWriteOps maps the new shape onto the old", () => {
     { op: "delete", collection: "a", doc_id: "d", data: null, if_version: undefined },
   ]);
 });
+
+test("the page stamped the documented way (the pack label, no commit) is the signed page; unstamped, wrongly stamped or commit-stamped are not (#C652, v3.53 page refused)", () => {
+  const s = setup();
+  writeFileSync(join(s.configDir, "pack-label"), "v3.53\n");
+  const put = (name, html) => { const p = join(s.configDir, name); writeFileSync(p, html); return p; };
+  const stamped = put("board-v353.html", buildPage(template, rawConfig, { pack: "v3.53" }));
+  assert.ok(buildPage(template, rawConfig, { pack: "v3.53" }).includes('data-pack="v3.53"'), "the fixture carries the label");
+  assert.ok(verdict(s, files(stamped)), "stamped with the pack-label file's label: allowed");
+  assert.equal(verdict(s, files(put("board-aaaaaaa.html", buildPage(template, rawConfig)))), null, "unstamped while a label is installed");
+  assert.equal(verdict(s, files(put("board-bbbbbbb.html", buildPage(template, rawConfig, { pack: "v3.52" })))), null, "another pack's label");
+  assert.equal(verdict(s, files(put("board-ccccccc.html", buildPage(template, rawConfig, { pack: "v3.53", commit: "9c135b4" })))), null, "a commit in the stamp");
+  // The hook's own environment never supplies the label: only the file beside the config does.
+  const saved = process.env.BOARD_PACK;
+  process.env.BOARD_PACK = "v3.99";
+  try { assert.ok(verdict(s, files(stamped)), "BOARD_PACK in the hook's environment is ignored"); } finally { if (saved === undefined) delete process.env.BOARD_PACK; else process.env.BOARD_PACK = saved; }
+});

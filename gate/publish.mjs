@@ -17,6 +17,7 @@ import { dirname, basename, join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { buildPage } from "../scripts/build-page.mjs";
+import { packLabel } from "../scripts/pack-label.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 import { currentLink } from "../collector/fence.mjs";
 import { readLines, sessionRole } from "./session.mjs";
@@ -83,7 +84,10 @@ export function publishVerdict(input, { rawConfig, managerRole, configDir, curre
   const file = readCapped(real, MAX_PAGE);
   if (!file) return null;
   let built;
-  try { built = buildPage(readFileSync(join(current, "page", "board.template.html"), "utf8"), rawConfig); } catch { return null; }
+  // Stamped as scripts/build-page.mjs stamps a page built from the pinned copy (#C645): the pack from the config folder's
+  // pack-label file (never the hook's environment) and no commit (the pinned copy is no repository). Unstamped, no page built
+  // the documented way could match (#C652, v3.53 page refused).
+  try { built = buildPage(readFileSync(join(current, "page", "board.template.html"), "utf8"), rawConfig, { pack: packLabel({}, configDir) ?? undefined }); } catch { return null; }
   if (sha(file) !== sha(built)) return null;
   // The page's sha256 rides in the reason (#C415): the lead reads the board back and checks it (scripts/publish-check.mjs).
   return { bytes: file, name: files ? "index.html" : basename(real), copyDir: files ? dirname(real) : configDir, input: t, withPath: (p) => (files ? { ...t, files: [{ ...t.files[0], path: p }] } : { ...t, file_path: p }), reason: `Flight board: ${basename(real)} is the page the signed board code builds (${basename(current).slice(0, 12)}) for this board: published by ${role} without asking (#C409). sha256 ${sha(file)}: after the publish, read the board back and run scripts/publish-check.mjs on it with this hash.` };
