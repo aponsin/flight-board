@@ -1805,8 +1805,10 @@ function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
   return g}
 // A card's row goes red (#C619, the owner: "cards that are missing timing or owners") for the two gaps that leave nobody and nothing
 // to hold the card to: no owner, no ETA. The other gaps stay a line of text. A card held on purpose (a parked status such as
-// paused, or waiting on the owner or on a named wait) has no ETA anyone can give, so its row stays plain (Checker).
-function heldOnPurpose(i){return !!i&&(((CONFIG.nudges||{}).parked||[]).includes(i.status)||(typeof i.waitingOn==="string"&&!!i.waitingOn.trim())||!!ownerWait(i))}
+// paused or parked, or waiting on the owner) has no ETA anyone can give, so its row stays plain (Checker). waitingOn is the
+// lead's routine "next is" field ("Boardsmith", "Checker, Security; then …"): only the owner's name there is a hold.
+function heldOnPurpose(i){if(!i)return false;const w=typeof i.waitingOn==="string"?i.waitingOn.trim().toLowerCase():"",o=String(OWNER||"").trim().toLowerCase();
+  return i.status==="parked"||((CONFIG.nudges||{}).parked||[]).includes(i.status)||(!!o&&(w===o||w.startsWith(o+":")))||!!ownerWait(i)}
 function gapRed(g,i){return (g.includes("no owner")||g.includes("no ETA"))&&!heldOnPurpose(i)}
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the

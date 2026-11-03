@@ -76,11 +76,17 @@ export function askSince(list, before, now) {
 // done test (hold: a set of ids with a checkAt, #C581) is not asked to close. gap (#C619): an open card with no owner (`who`) or
 // no ETA (`etaLive`), the fields the lead is to fill; `miss` names what is missing ("owner", "eta" or "owner eta") and a card
 // with a different miss is a new line. A card held on purpose is never listed (Checker: a paused card has no ETA anyone can give,
-// and every line starts a lead turn): its status is one of `parked` (config nudges.parked), it is queued, or it names what it
-// waits on (`waitingOn`). The page's own exclusions that need its derived state (up next between phases, a known wait, a live
-// worker) the probe cannot see. [{ kind, card, sha } | { kind: "gap", card, miss }], ship and close first, then gaps, each by
-// card, at most `max`.
-export function boardTruth({ states, shipPhase, livePhase, hold = new Set(), cards = [], parked = [], max = 20 }) {
+// and every line starts a lead turn): its status is one of `parked` (config nudges.parked) or "parked", it is queued, or it
+// waits on the owner (`waitingOn` is the owner's name, alone or before a colon; any other text there is the lead's routine
+// "next is" field and holds nothing, Checker). The page's own exclusions that need its derived state (up next between
+// phases, a known wait, a live worker) the probe cannot see. [{ kind, card, sha } | { kind: "gap", card, miss }], ship and
+// close first, then gaps, each by card, at most `max`.
+export const HELD_STATUS = "parked";
+export const waitsOnOwner = (waitingOn, owner) => {
+  const w = typeof waitingOn === "string" ? waitingOn.trim().toLowerCase() : "", o = typeof owner === "string" ? owner.trim().toLowerCase() : "";
+  return !!o && (w === o || w.startsWith(o + ":"));
+};
+export function boardTruth({ states, shipPhase, livePhase, hold = new Set(), cards = [], parked = [], owner = "", max = 20 }) {
   const items = [];
   for (const [card, s] of Object.entries(states ?? {}).sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     if (!s || typeof s !== "object" || !/^[0-9a-f]{12}$/.test(String(s.headSha12 ?? ""))) continue;
@@ -89,7 +95,7 @@ export function boardTruth({ states, shipPhase, livePhase, hold = new Set(), car
   }
   const gaps = [];
   for (const c of Array.isArray(cards) ? cards : []) {
-    if (!c || typeof c !== "object" || typeof c.id !== "string" || !CARD_ID.test(c.id) || c.status === "done" || c.status === "dropped" || c.status === "queued" || parked.includes(c.status) || (typeof c.waitingOn === "string" && c.waitingOn.trim())) continue;
+    if (!c || typeof c !== "object" || typeof c.id !== "string" || !CARD_ID.test(c.id) || c.status === "done" || c.status === "dropped" || c.status === "queued" || c.status === HELD_STATUS || parked.includes(c.status) || waitsOnOwner(c.waitingOn, owner)) continue;
     const miss = [typeof c.who === "string" && c.who.trim() ? "" : "owner", Number.isFinite(c.etaLive) ? "" : "eta"].filter(Boolean).join(" ");
     if (miss) gaps.push({ kind: "gap", card: c.id, miss });
   }

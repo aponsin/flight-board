@@ -45,15 +45,21 @@ test("boardTruth leaves out done and dropped cards and entries that are not card
 test("a card held on purpose is never listed: a parked status, queued, or one that names what it waits on (Checker: easy-yes-brief33)", () => {
   const cards = [
     { id: "paused-one", status: "paused", who: "Checker" },
+    { id: "parked-one", status: "parked", who: "Checker" },
     { id: "queued-one", status: "queued" },
-    { id: "waiting-one", status: "active", who: "Builder", waitingOn: "the owner's answer" },
+    { id: "owner-wait", status: "active", who: "Builder", waitingOn: "Owner" },
+    { id: "owner-ask", status: "active", who: "Builder", waitingOn: "owner: which colour?" },
     { id: "blank-wait", status: "active", who: "Builder", waitingOn: "  " },
-    { id: "plain", status: "active", who: "Builder" },
+    { id: "next-is", status: "active", waitingOn: "Boardsmith" },
+    { id: "next-is-many", status: "active", who: "Builder", waitingOn: "Checker, Security; then pack v3.47" },
+    { id: "ownership", status: "active", who: "Builder", waitingOn: "Ownership" },
   ];
-  assert.deepEqual(boardTruth({ states: {}, shipPhase: "ship", livePhase: "live", cards, parked: ["paused"] }), [
+  assert.deepEqual(boardTruth({ states: {}, shipPhase: "ship", livePhase: "live", cards, parked: ["paused"], owner: "Owner" }), [
     { kind: "gap", card: "blank-wait", miss: "eta" },
-    { kind: "gap", card: "plain", miss: "eta" },
-  ]);
+    { kind: "gap", card: "next-is", miss: "owner eta" },
+    { kind: "gap", card: "next-is-many", miss: "eta" },
+    { kind: "gap", card: "ownership", miss: "eta" },
+  ],"the lead's routine waitingOn holds nothing; only the owner's name does, a parked or paused status, and queued");
   assert.deepEqual(boardTruth({ states: {}, shipPhase: "ship", livePhase: "live", cards: [{ id: "paused-one", status: "paused" }], parked: [] }).map((a) => a.card), ["paused-one"], "parked is the config's list");
 });
 
@@ -127,8 +133,11 @@ test("a card held on purpose (paused, or waiting on a named wait) keeps a plain 
   const paused = mk({ status: "paused", who: "Checker" });
   assert.ok([...b.gaps(paused)].includes("no ETA"), "the gap is still named");
   assert.doesNotMatch(row(b, paused), /gap-red/);
-  const waiting = mk({ status: "active", who: "Builder", waitingOn: "the owner" });
-  assert.doesNotMatch(row(b, waiting), /gap-red/);
+  assert.doesNotMatch(row(b, mk({ status: "parked", who: "Checker" })), /gap-red/, "parked");
+  assert.doesNotMatch(row(b, mk({ status: "active", who: "Builder", waitingOn: "Owner" })), /gap-red/, "waiting on the owner");
+  assert.doesNotMatch(row(b, mk({ status: "active", who: "Builder", waitingOn: "Owner: which colour?" })), /gap-red/, "the owner's question");
+  assert.match(row(b, mk({ status: "active", who: "Builder", waitingOn: "Builder" })), /gap-red/, "the lead's routine next-is field holds nothing");
+  assert.match(row(b, mk({ status: "active", waitingOn: "Boardsmith" })), /gap-red/, "no owner, waiting on Boardsmith: red");
   assert.match(row(b, mk({ status: "active", who: "Builder" })), /gap-red/, "the same card, not held: red");
 });
 
