@@ -49,6 +49,11 @@ test("evidenceAt: now when enough open cards past plan are too few to say or one
   assert.equal(evidenceAt(blind, NOW, NOW - 12 * MIN), NOW - 12 * MIN, "nothing: the last time stays");
   assert.equal(evidenceAt(blind, NOW, null), NOW, "no earlier time: the clock starts now");
   assert.equal(evidenceAt(blind, NOW, NOW + MIN), NOW, "a time in the future is none");
+  // Checker on 25f2bb8: cards past their merge (ship, live) usually have no branch left, so they are not evidence either way.
+  const past = { a: c("live"), b: c("live"), d: c("ship"), e: c("live") };
+  assert.equal(evidenceAt(past, NOW, NOW - 30 * MIN, ["ship", "live"]), NOW, "live-but-open cards on a quiet evening: nothing to say");
+  assert.equal(evidenceAt({ ...past, f: c("build"), g: c("test") }, NOW, NOW - 30 * MIN, ["ship", "live"]), NOW, "two before ship are too few");
+  assert.equal(evidenceAt({ ...past, f: c("build"), g: c("test"), h: c("checker") }, NOW, NOW - 30 * MIN, ["ship", "live"]), NOW - 30 * MIN, "three before ship and none shows a commit");
   assert.equal(noEvidenceSince(NOW - 11 * MIN, NOW), NOW - 11 * MIN);
   assert.equal(noEvidenceSince(NOW - 9 * MIN, NOW), null);
   assert.equal(EVIDENCE_STALE_MS, 10 * MIN);

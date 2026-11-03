@@ -79,7 +79,7 @@ export const plistLabel = (id) => `com.flight-board.state.${id}`;
 // error" (the v3.50 install stopped on it with the job unloaded and the probe silent): so wait, up to WAIT_MS, until the job is
 // no longer there (launchctl print fails), then bootstrap, and once more after a pause if it still answers an error.
 // launchctl, sleep and the clock are the caller's, so the test needs no launchd.
-export const BOOT_WAIT_MS = 10_000, BOOT_POLL_MS = 500, BOOT_RETRY_MS = 2_000;
+export const BOOT_WAIT_MS = 10_000, BOOT_POLL_MS = 500, BOOT_RETRY_MS = 2_000, BOOT_CONFIRM_LOOKS = 3;
 export function reloadJob({ target, domain, file, launchctl, sleep, now = Date.now }) {
   try { launchctl(["bootout", target], "ignore"); } catch { /* not loaded yet */ }
   const until = now() + BOOT_WAIT_MS;
@@ -91,6 +91,13 @@ export function reloadJob({ target, domain, file, launchctl, sleep, now = Date.n
   try { launchctl(["bootstrap", domain, file], "inherit"); } catch {
     sleep(BOOT_RETRY_MS);
     launchctl(["bootstrap", domain, file], "inherit");
+  }
+  // Never report a job that is not there (#C636: the v3.50 re-run printed "runs every minute" and left it unloaded): the job
+  // must answer launchctl print, a few looks over a second and a half, or the step stops.
+  for (let look = 0; ; look++) {
+    try { launchctl(["print", target], "ignore"); return; } catch { /* not there yet */ }
+    if (look >= BOOT_CONFIRM_LOOKS) throw new Error(`the job ${target} is not loaded after the bootstrap (launchctl print cannot find it)`);
+    sleep(BOOT_POLL_MS);
   }
 }
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);

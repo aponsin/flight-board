@@ -667,7 +667,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const evidencePath = join(stateDir, id, "evidence.json");
     let evidenceBefore = null;
     try { const r = readTail(evidencePath, 4096); if (r?.whole) evidenceBefore = JSON.parse(r.text)?.at; } catch { /* none */ }
-    const evidence = evidenceAt(cardsNow, now, evidenceBefore);
+    const evidence = evidenceAt(cardsNow, now, evidenceBefore, [c.shipPhase, c.livePhase]);
     writeAtomic(evidencePath, JSON.stringify({ at: evidence }));
     writeAtomic(join(stateDir, id, NOEVIDENCE_FILE), JSON.stringify({ since: noEvidenceSince(evidence, now), at: now }));
     // #C631: dispatch is mechanical. Only with the waiting items known and fresh (an ask nobody can see is no reason to wake an owner).

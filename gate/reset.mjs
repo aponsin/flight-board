@@ -81,8 +81,10 @@ export const truthLine = (a) => (a.kind === "ship"
 // watch prints one NOEVIDENCE line per outage (the seen file keeps the since it printed); evidence back clears both.
 export const NOEVIDENCE_FILE = "no-evidence.json", NOEVIDENCE_SEEN_FILE = "no-evidence-seen.json";
 export const EVIDENCE_STALE_MS = 10 * 60e3, EVIDENCE_MIN_CARDS = 3;
-export function evidenceAt(cards, now, before) {
-  const built = Object.values(cards ?? {}).filter((c) => c && typeof c.phase === "string" && c.phase !== "plan");
+// Only cards before ship count (skip: the ship and live phases): a card past its merge usually has no branch left to show (Checker
+// on 25f2bb8: three live-but-open cards on a quiet evening would have raised the alarm).
+export function evidenceAt(cards, now, before, skip = []) {
+  const built = Object.values(cards ?? {}).filter((c) => c && typeof c.phase === "string" && c.phase !== "plan" && !skip.includes(c.phase));
   if (built.length < EVIDENCE_MIN_CARDS || built.some((c) => c.headSha12)) return now;
   return Number.isInteger(before) && before >= 1577836800000 && before <= now ? before : now;
 }
