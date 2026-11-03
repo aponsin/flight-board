@@ -74,6 +74,26 @@ export const secretName = (id) => `BOARD_${sha256(id).slice(0, 16)}`;
 
 const xml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[c]));
 export const plistLabel = (id) => `com.flight-board.state.${id}`;
+
+// Load the job afresh. launchctl bootout returns before the job is gone, and a bootstrap that races it answers "5: Input/output
+// error" (the v3.50 install stopped on it with the job unloaded and the probe silent): so wait, up to WAIT_MS, until the job is
+// no longer there (launchctl print fails), then bootstrap, and once more after a pause if it still answers an error.
+// launchctl, sleep and the clock are the caller's, so the test needs no launchd.
+export const BOOT_WAIT_MS = 10_000, BOOT_POLL_MS = 500, BOOT_RETRY_MS = 2_000;
+export function reloadJob({ target, domain, file, launchctl, sleep, now = Date.now }) {
+  try { launchctl(["bootout", target], "ignore"); } catch { /* not loaded yet */ }
+  const until = now() + BOOT_WAIT_MS;
+  for (;;) {
+    try { launchctl(["print", target], "ignore"); } catch { break; }
+    if (now() >= until) break;
+    sleep(BOOT_POLL_MS);
+  }
+  try { launchctl(["bootstrap", domain, file], "inherit"); } catch {
+    sleep(BOOT_RETRY_MS);
+    launchctl(["bootstrap", domain, file], "inherit");
+  }
+}
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 // The launchd job: the pinned copy's state.mjs, every 60 s, its one line per run to a log in the board's state folder.
 export function plist({ id, node, script, config, log }) {
   if (!/^[A-Za-z0-9-]{1,64}$/.test(id)) throw new Error("not a board id");
@@ -226,8 +246,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       const agents = join(homedir(), "Library", "LaunchAgents"), file = join(agents, `${plistLabel(id)}.plist`);
       mkdirSync(agents, { recursive: true });
       atomic(file, plist({ id, node: process.execPath, script: join(CODE, "collector", "state.mjs"), config: realpathSync(opt("--config")), log: join(home(config.gate.stateDir), id, "state.log") }));
-      try { execFileSync("launchctl", ["bootout", `gui/${process.getuid()}/${plistLabel(id)}`], { stdio: "ignore" }); } catch { /* not loaded yet */ }
-      execFileSync("launchctl", ["bootstrap", `gui/${process.getuid()}`, file], { stdio: "inherit" });
+      reloadJob({ target: `gui/${process.getuid()}/${plistLabel(id)}`, domain: `gui/${process.getuid()}`, file, launchctl: (args, stdio) => execFileSync("launchctl", args, { stdio }), sleep: sleepSync });
       console.log(`state: the probe runs every minute from ${CODE.slice(-40, -28)} (${file})`);
     } else throw new Stop("usage: state-install.mjs whoami|kv|worker|deploy|secrets|launchd --config <board.config.json> [--kv <id>] [--account <id>] [--writes <n>] [--url <https address>] [--rotate] [--show]", cmd("whoami"));
   } catch (e) {
