@@ -83,6 +83,7 @@ section{min-width:0}
 .w-body,.w-answer{display:block;margin-top:4px}
 .w-item:not([open]) .w-answer{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .gaps{color:var(--bad);font-weight:600;font-size:.85rem}
+.i-row.gap-red{background:var(--bad-soft);box-shadow:inset 4px 0 0 var(--bad)}
 .c-num{font:600 .75rem var(--mono);color:var(--muted);margin-right:6px}
 .w-text{min-width:0}
 .pgap{display:block;height:.5em}.optk{font-weight:700}
@@ -1794,11 +1795,17 @@ function ownerWait(i,now=Date.now()){return i&&i.id?(state.waiting||[]).find(w=>
 function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
   if(i.status==="done"){const shipped=(Array.isArray(i.phaseLog)?i.phaseLog:[]).some(e=>e&&e.phase==="ship"&&!e.wait);if(shipped&&!i.shipDetail)g.push("no ship times");return g}
   const eta=cardEta(i);if(!eta)g.push("no ETA");else if(eta<now&&!ownerWait(i,now))g.push("ETA passed");
+  // No owner (#C619): nobody named on an open card, and nobody working it by the live state; not while it waits in a known
+  // wait, is up next between phases, or is queued behind a busy agent (which has its own who).
+  if(!i.who&&!i.upNext&&!knownWait(i)&&i.status!=="queued"&&!liveWorkers(i.id).length)g.push("no owner");
   if(!i.nextNote)g.push("no next step");else if(!kw&&num(i.nextNoteAt)&&now-i.nextNoteAt>36e5)g.push("next step over 1 h old");
   if(!i.level)g.push("no review level");
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];
   if(!kw&&!num(i.lastStepAt)&&!log.length&&!liveBuilding(i.id)){if(num(i.createdAt)&&now-i.createdAt>9e5&&!waitingTurn(i))g.push("never started")}
   return g}
+// A card's row goes red (#C619, the owner: "cards that are missing timing or owners") for the two gaps that leave nobody and nothing
+// to hold the card to: no owner, no ETA. The other gaps stay a line of text.
+function gapRed(g){return g.includes("no owner")||g.includes("no ETA")}
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
 // repository explains, or done. Returns minutes.
@@ -1945,11 +1952,12 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
-  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
+  const gp=liveOpen?[]:gaps(i),red=gapRed(gp);
+  return `<div class="i-row${red?" gap-red":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    <div class="track">${steps}</div>
-   <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${(()=>{const g=liveOpen?[]:gaps(i);return g.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(g.join(" · "))}</span>`:""})()}</div>${thread}</div>`;
+   <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}</div>${thread}</div>`;
 }
 // Who is on what: { by: { agent: [open cards] }, names: the roster, then anyone else on a card, notes: meta/crew's idle notes }.
 function crewBy(){

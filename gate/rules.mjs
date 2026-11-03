@@ -205,7 +205,8 @@ export function writeErrors(w, { config, who, now }) {
     if (op === "set" && data.status !== "done") {
       if (!data.name) e.push("no name");
       if (!data.size) e.push("no size");
-      for (const g of rules.gaps({ status: "active", ...data })) if (!/stalled|never started|over 1 h old|ETA passed/.test(g)) e.push(g);
+      // "no owner" (#C619) is the page's red row and the probe's GAP line, not a refusal: a card is written before it is handed to anyone.
+      for (const g of rules.gaps({ status: "active", ...data })) if (!/stalled|never started|over 1 h old|ETA passed|no owner/.test(g)) e.push(g);
     }
     if (op === "update" && "nextNote" in data && typeof data.nextNoteAt !== "number" && !(data.nextNote && data.nextNote.__delete__)) e.push("nextNote set without nextNoteAt");    // The board shows the repository's version (#C211); a hand-written one only went stale. Removing it is fine.
     if ((op === "set" || op === "update") && "plannedVersion" in data && !(data.plannedVersion && data.plannedVersion.__delete__)) e.push("plannedVersion is retired: the board shows the version the repository ships it in");

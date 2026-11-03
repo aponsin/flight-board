@@ -73,15 +73,25 @@ export function askSince(list, before, now) {
 // What the cards' own evidence says no one has to remember to write (#C617; gate/reset.mjs prints it): ship, a card whose tip has
 // every sign-off its level needs (its phase is the ship phase), is not on main and no ship run is on it; close, a card whose
 // commits are live (the live phase: on main and deployed, or in the installed pack) while it is still open. A card waiting on its
-// done test (hold: a set of ids with a checkAt, #C581) is not asked to close. [{ kind, card, sha }], by card, at most `max`.
-export function boardTruth({ states, shipPhase, livePhase, hold = new Set(), max = 20 }) {
+// done test (hold: a set of ids with a checkAt, #C581) is not asked to close. gap (#C619): an open card with no owner (`who`) or
+// no ETA (`etaLive`), the fields the lead is to fill; `miss` names what is missing ("owner", "eta" or "owner eta") and a card
+// with a different miss is a new line. [{ kind, card, sha } | { kind: "gap", card, miss }], ship and close first, then gaps,
+// each by card, at most `max`.
+export function boardTruth({ states, shipPhase, livePhase, hold = new Set(), cards = [], max = 20 }) {
   const items = [];
   for (const [card, s] of Object.entries(states ?? {}).sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
     if (!s || typeof s !== "object" || !/^[0-9a-f]{12}$/.test(String(s.headSha12 ?? ""))) continue;
     if (s.phase === shipPhase && s.onMain === false && s.shipping !== true) items.push({ kind: "ship", card, sha: s.headSha12 });
     else if (s.phase === livePhase && s.onMain === true && !hold.has(card)) items.push({ kind: "close", card, sha: s.headSha12 });
   }
-  return items.slice(0, max);
+  const gaps = [];
+  for (const c of Array.isArray(cards) ? cards : []) {
+    if (!c || typeof c !== "object" || typeof c.id !== "string" || !CARD_ID.test(c.id) || c.status === "done" || c.status === "dropped") continue;
+    const miss = [typeof c.who === "string" && c.who.trim() ? "" : "owner", Number.isFinite(c.etaLive) ? "" : "eta"].filter(Boolean).join(" ");
+    if (miss) gaps.push({ kind: "gap", card: c.id, miss });
+  }
+  gaps.sort((a, b) => (a.card < b.card ? -1 : 1));
+  return [...items, ...gaps].slice(0, max);
 }
 
 // A role stuck (#C593): working on one prompt over STEP_MS (the same step, the turn's start unmoved), or stopped on a call
