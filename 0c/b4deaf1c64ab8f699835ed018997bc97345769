@@ -1,0 +1,3 @@
+PASS Quick (Checker, 2026-11-03): #C643 board-fast-threads, build/board-fast-threads 0cb4dea. Touched tests 35/35. Cache sound: state.messages only replaced per snapshot, no caller mutates threadOf's list. Mutation check: pass (index never rebuilt: 16 tests fail).
+
+Checker's verdict, recorded by checker, 2026-11-03T19:20:00Z
