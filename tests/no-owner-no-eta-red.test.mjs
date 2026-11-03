@@ -20,7 +20,7 @@ test("boardTruth lists an open card with no owner, no ETA or neither, by card, a
     { id: "zed", status: "active", who: "Builder", etaLive: T },
     { id: "no-owner", status: "active", who: "", etaLive: T },
     { id: "no-eta", status: "active", who: "Builder" },
-    { id: "neither", status: "queued" },
+    { id: "neither", status: "active" },
     { id: "blank-owner", status: "active", who: "  ", etaLive: T },
     { id: "bad-eta", status: "active", who: "Builder", etaLive: "soon" },
   ];
@@ -40,6 +40,21 @@ test("boardTruth leaves out done and dropped cards and entries that are not card
   const many = Array.from({ length: 30 }, (_, n) => ({ id: `card-${String(n).padStart(2, "0")}`, status: "active" }));
   assert.equal(boardTruth({ states: {}, shipPhase: "ship", livePhase: "live", cards: many }).length, 20);
   assert.deepEqual(boardTruth({ states: {}, shipPhase: "ship", livePhase: "live" }), [], "no cards given: no gaps");
+});
+
+test("a card held on purpose is never listed: a parked status, queued, or one that names what it waits on (Checker: easy-yes-brief33)", () => {
+  const cards = [
+    { id: "paused-one", status: "paused", who: "Checker" },
+    { id: "queued-one", status: "queued" },
+    { id: "waiting-one", status: "active", who: "Builder", waitingOn: "the owner's answer" },
+    { id: "blank-wait", status: "active", who: "Builder", waitingOn: "  " },
+    { id: "plain", status: "active", who: "Builder" },
+  ];
+  assert.deepEqual(boardTruth({ states: {}, shipPhase: "ship", livePhase: "live", cards, parked: ["paused"] }), [
+    { kind: "gap", card: "blank-wait", miss: "eta" },
+    { kind: "gap", card: "plain", miss: "eta" },
+  ]);
+  assert.deepEqual(boardTruth({ states: {}, shipPhase: "ship", livePhase: "live", cards: [{ id: "paused-one", status: "paused" }], parked: [] }).map((a) => a.card), ["paused-one"], "parked is the config's list");
 });
 
 // ---- the lead's watch
@@ -101,6 +116,20 @@ test("a card with an owner and an ETA keeps a plain row; a card with no ETA goes
   const noEta = mk({ etaLive: undefined });
   assert.ok([...b.gaps(noEta)].includes("no ETA"));
   assert.match(row(b, noEta), /class="i-row gap-red"/);
+});
+
+test("a card held on purpose (paused, or waiting on a named wait) keeps a plain row though its gaps are named", () => {
+  const b = loadNames(["gaps", "initRow", "enrich", "gates", "CONFIG"]);
+  const now = Date.now();
+  // The built page carries the full config (nudges.parked defaults to ["paused"]); the harness's bare template does not.
+  b.CONFIG.nudges.parked = ["paused"];
+  const mk = (fields) => { b.state.steps = []; b.state.waiting = []; return b.gates(b.enrich({ id: "x", level: "Quick", customerText: false, skip: ["plan"], name: "X", nextNote: "n", nextNoteAt: now, phase: "build", ...fields })); };
+  const paused = mk({ status: "paused", who: "Checker" });
+  assert.ok([...b.gaps(paused)].includes("no ETA"), "the gap is still named");
+  assert.doesNotMatch(row(b, paused), /gap-red/);
+  const waiting = mk({ status: "active", who: "Builder", waitingOn: "the owner" });
+  assert.doesNotMatch(row(b, waiting), /gap-red/);
+  assert.match(row(b, mk({ status: "active", who: "Builder" })), /gap-red/, "the same card, not held: red");
 });
 
 test("only the two gaps that leave a card without a name or a time go red; the others stay a line of text", () => {

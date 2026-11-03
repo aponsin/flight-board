@@ -83,7 +83,7 @@ section{min-width:0}
 .w-body,.w-answer{display:block;margin-top:4px}
 .w-item:not([open]) .w-answer{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .gaps{color:var(--bad);font-weight:600;font-size:.85rem}
-.i-row.gap-red{background:var(--bad-soft);box-shadow:inset 4px 0 0 var(--bad)}
+.i-row.gap-red{background:color-mix(in srgb,var(--bad-soft) 55%,var(--panel));box-shadow:inset 4px 0 0 var(--bad)}
 .c-num{font:600 .75rem var(--mono);color:var(--muted);margin-right:6px}
 .w-text{min-width:0}
 .pgap{display:block;height:.5em}.optk{font-weight:700}
@@ -1804,8 +1804,10 @@ function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
   if(!kw&&!num(i.lastStepAt)&&!log.length&&!liveBuilding(i.id)){if(num(i.createdAt)&&now-i.createdAt>9e5&&!waitingTurn(i))g.push("never started")}
   return g}
 // A card's row goes red (#C619, the owner: "cards that are missing timing or owners") for the two gaps that leave nobody and nothing
-// to hold the card to: no owner, no ETA. The other gaps stay a line of text.
-function gapRed(g){return g.includes("no owner")||g.includes("no ETA")}
+// to hold the card to: no owner, no ETA. The other gaps stay a line of text. A card held on purpose (a parked status such as
+// paused, or waiting on the owner or on a named wait) has no ETA anyone can give, so its row stays plain (Checker).
+function heldOnPurpose(i){return !!i&&(((CONFIG.nudges||{}).parked||[]).includes(i.status)||(typeof i.waitingOn==="string"&&!!i.waitingOn.trim())||!!ownerWait(i))}
+function gapRed(g,i){return (g.includes("no owner")||g.includes("no ETA"))&&!heldOnPurpose(i)}
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
 // repository explains, or done. Returns minutes.
@@ -1952,7 +1954,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
-  const gp=liveOpen?[]:gaps(i),red=gapRed(gp);
+  const gp=liveOpen?[]:gaps(i),red=gapRed(gp,i);
   return `<div class="i-row${red?" gap-red":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>

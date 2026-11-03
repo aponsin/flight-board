@@ -640,7 +640,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     writeAtomic(join(dir, "phase-clashes.json"), JSON.stringify({ at: now, ids: cardsChecked === now ? phaseClashIds(cards.filter((k) => !closed(k)), cardsNow) : [] }));
     // The cards' own evidence for the lead's watch (#C617: SHIP and CLOSE lines); only from a minute with every repository read
     // fresh, and the file keeps its last list through a half-read one.
-    if (cardsChecked === now) writeAtomic(join(dir, "board-truth.json"), JSON.stringify({ at: now, items: boardTruth({ states: cardsNow, shipPhase: c.shipPhase, livePhase: c.livePhase, hold: new Set(cards.filter((k) => Number.isFinite(k.checkAt)).map((k) => k.id)), cards: cards.filter((k) => !closed(k)) }) }));
+    if (cardsChecked === now) writeAtomic(join(dir, "board-truth.json"), JSON.stringify({ at: now, items: boardTruth({ states: cardsNow, shipPhase: c.shipPhase, livePhase: c.livePhase, hold: new Set(cards.filter((k) => Number.isFinite(k.checkAt)).map((k) => k.id)), cards: cards.filter((k) => !closed(k)), parked: config.nudges.parked }) }));
     if (spend.save) writeAtomic(join(dir, "usage.json"), JSON.stringify(spend.save));
     writeAtomic(backoffPath, JSON.stringify(backoff));
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
