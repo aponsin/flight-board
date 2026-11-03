@@ -64,7 +64,7 @@ export function appSessions(root, uid = process.getuid()) {
       let s;
       try { s = JSON.parse(r.text); } catch { continue; }
       if (!plain(s) || s.isArchived === true || typeof s.title !== "string" || !UUID.test(String(s.cliSessionId ?? "")) || typeof s.cwd !== "string" || !s.cwd.startsWith("/")) continue;
-      out.push({ title: s.title, transcript: s.cliSessionId, cwd: s.cwd, at: Number.isFinite(s.lastActivityAt) ? Math.round(s.lastActivityAt) : null });
+      out.push({ id: f.slice(0, -5), title: s.title, transcript: s.cliSessionId, cwd: s.cwd, at: Number.isFinite(s.lastActivityAt) ? Math.round(s.lastActivityAt) : null });
     }
   }
   return out;
@@ -156,18 +156,21 @@ export function activity(entries, { mtimeMs, now, ids, nums }) {
   return { state, tool, card: cardIn(entries, ids, nums), since, prompt: promptSince(entries, { mtimeMs, now }), promptTool: promptTool(entries, { mtimeMs, now }), tokens: contextTokens(entries) };
 }
 
-// Every roster role's agent, from its newest open session titled exactly as the role. prompts, when given, gets each
+// Every roster role's agent, from the session whose id the config holds for it (sessionIds, #C633), never from a recency
+// list; a role with no id there is found by its newest open session titled exactly as the role and marked by: "title". A
+// role whose id is set but is not among the open sessions has no agent. prompts, when given, gets each
 // role stopped on a prompt and since when (promptSince), and tools, when given, that prompt's tool class (promptTool):
 // the local waiting-prompt.json, not the state.
-export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = process.getuid(), prompts = null, tools = null, tokens = null }) {
+export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = process.getuid(), prompts = null, tools = null, tokens = null, sessionIds = {} }) {
   const out = {};
   for (const role of roles.filter((r) => ROLE.test(r))) {
-    const s = sessions.filter((x) => x.title === role).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))[0];
+    const byId = Object.hasOwn(sessionIds, role) && sessionIds[role];
+    const s = byId ? sessions.find((x) => x.id === byId) : sessions.filter((x) => x.title === role).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))[0];
     if (!s) continue;
     const p = transcriptPath(homeDir, s.cwd, s.transcript);
     const tail = p ? readTail(p, TAIL_BYTES, uid) : null;
     const a = tail ? activity(lastEntries(tail), { mtimeMs: tail.mtimeMs, now, ids, nums }) : { state: "unknown", tool: null, card: null, since: null };
-    out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, since: a.since };
+    out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, since: a.since, ...(byId ? {} : { by: "title" }) };
     if (prompts && a.prompt != null) prompts[role] = a.prompt;
     if (tools && a.promptTool != null) tools[role] = a.promptTool;
     if (tokens && a.tokens != null) tokens[role] = a.tokens;
@@ -610,7 +613,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const nums = new Map(cards.filter((k) => Number.isInteger(k.num) && ids.has(k.id)).map((k) => [k.num, k.id]));
   const sessions = appSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
   const prompts = {}, tools = {}, tokens = {};
-  const agents = agentStates({ roles: config.roster, sessions, homeDir: homedir(), now, ids, nums, prompts, tools, tokens });
+  const agents = agentStates({ roles: config.roster, sessionIds: { ...config.rosterSessions, ...(config.gate.managerSession ? { [config.gate.managerRole]: config.gate.managerSession } : {}) }, sessions, homeDir: homedir(), now, ids, nums, prompts, tools, tokens });
   // The roles' context, who is stuck, and the usage tile (#C592, #C593, #C595); a role past resetAt is asked to reset once
   // (context-reset.json, which the lead's wake watch prints), and asked again only after it came back under.
   const ctx = ctxReadings({ tokens, resetAt: config.resetAt, now });

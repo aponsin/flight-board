@@ -47,7 +47,7 @@ test("agentStates: tools gets each stopped role's prompt class beside prompts; t
   const agents = agentStates({ roles: ["Mainsite"], sessions: [{ title: "Mainsite", transcript: id, cwd, at: T }], homeDir, now: T + 60 * MIN, ids: new Set(), nums: new Map(), prompts, tools });
   assert.deepEqual(prompts, { Mainsite: T });
   assert.deepEqual(tools, { Mainsite: "mcp" });
-  assert.deepEqual(Object.keys(agents.Mainsite).sort(), ["card", "lastActivityAt", "since", "state", "tool"]);
+  assert.deepEqual(Object.keys(agents.Mainsite).sort(), ["by", "card", "lastActivityAt", "since", "state", "tool"]);
 });
 
 test("promptName: a few fixed words per class; anything else is just 'a prompt'", () => {

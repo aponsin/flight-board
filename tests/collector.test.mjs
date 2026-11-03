@@ -136,6 +136,16 @@ test("rule 3: a card's phase moves forward only; a jump past a phase needs it sk
   assert.deepEqual(mirrorErrors(upd({ phase: "build" }, "new-card"), { config, mirror: mirror() }), [], "a card the mirror doesn't know");
 });
 
+test("rule 4b: a card's owner is a roster role or a listed card owner (#C633)", () => {
+  const withRoles = fullConfig({ roster: ["Manager", "Builder", "Boardsmith"], gate: { cardOwners: ["Pat"] }, collector: config.collector });
+  const m = mirror({ initiatives: [{ id: "tabs", status: "active", phase: "plan", who: "Pat" }] });
+  assert.deepEqual(mirrorErrors(upd({ who: "Boardsmith" }), { config: withRoles, mirror: m }), [], "a roster role");
+  assert.deepEqual(mirrorErrors(upd({ who: "Pat" }, "other"), { config: withRoles, mirror: m }), [], "a listed card owner");
+  assert.match(mirrorErrors(upd({ who: "Steward" }), { config: withRoles, mirror: m })[0], /who "Steward" is not on the roster \(Manager, Builder, Boardsmith, Pat\)/);
+  assert.deepEqual(mirrorErrors(upd({ who: "Pat" }), { config: fullConfig({ roster: ["Manager"], collector: config.collector }), mirror: m }), [], "an owner the card already has is left alone");
+  assert.deepEqual(mirrorErrors(upd({ phase: "build" }), { config: withRoles, mirror: m }), [], "a write that doesn't name an owner");
+});
+
 test("rule 4: one card per role per build or review phase", () => {
   assert.match(mirrorErrors(upd({ phase: "build", who: "Builder" }, "other"), { config, mirror: mirror({ initiatives: [...mirror().docs.initiatives, { id: "other", status: "active", phase: "plan" }] }) })[0], /menu is on build for Builder: has it moved on\? Update menu first/);
   assert.deepEqual(mirrorErrors(upd({ phase: "ship", who: "Release" }, "other"), { config, mirror: mirror() }), [], "ship isn't a lane");

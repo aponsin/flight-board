@@ -11,6 +11,9 @@ export const DEFAULTS = {
   phases: [["plan", "Plan"], ["build", "Build"], ["test", "Test"], ["language", "Language"], ["checker", "Checker"], ["security", "Security"], ["ship", "Ship"], ["live", "Live"]],
   roster: ["Manager", "Builder", "Checker", "Security", "Release"],
   order: ["Manager", "Builder", "Checker", "Security", "Release"],
+  // Each roster role's session id (#C633): the Collector finds a role's agent by it, never by the newest session with the
+  // role's title. A role with no id here is found by title and the tile says so.
+  rosterSessions: {},
   skips: [{ phase: "security", unlessLevel: "Full" }, { phase: "language", whenFalse: "customerText" }],
   boardStart: "",
   // The agent whose pull requests the owner approves from the board (#C554): its name, as the panel and its note say it.
@@ -20,7 +23,8 @@ export const DEFAULTS = {
   automationLabel: "Automation",
   // The write gate (gate/): the lead role, item ids that are passing agent states (never items), the words that make a
   // reply a verdict, where the gate keeps its state and the board's mirror, and how old a mirror may be.
-  gate: { managerRole: "Manager", managerSession: "", keeperRole: "Context keeper", reviewerRole: "Reviewer", releaseRole: "Release", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 75 },
+  // cardOwners: names besides the roster that may own a card (the owner's own cards); the gate refuses any other `who` (#C633).
+  gate: { managerRole: "Manager", managerSession: "", cardOwners: [], keeperRole: "Context keeper", reviewerRole: "Reviewer", releaseRole: "Release", transientPrefixes: [], verdictWords: ["shipped", "is live", "decided", "go ahead"], stateDir: "~/.flight-board", mirrorMaxAgeMin: 75 },
   // The collector (collector/): the team's repository and how its work shows there. notes: each review phase and the git
   // notes ref its sign-off is written to. deployWorkflow: the CI workflow whose successful run on the main branch means
   // live. lanePhases: the phases where one owner holds one card at a time (reviews and shipping queue). versionPattern: how a main-branch commit's subject names the version it shipped (first group). shippedPattern:
@@ -86,6 +90,14 @@ export function checkConfig(c) {
     }
   }
   for (const k of ["roster", "order"]) if (c[k] !== undefined && !(Array.isArray(c[k]) && c[k].every((r) => typeof r === "string" && NAME.test(r)))) out.push(`${k}: a list of role names`);
+  if (c.rosterSessions !== undefined) {
+    const rs = c.rosterSessions;
+    if (!rs || typeof rs !== "object" || Array.isArray(rs)) out.push("rosterSessions: { role: session id }");
+    else for (const [role, sid] of Object.entries(rs)) {
+      if (!(c.roster ?? DEFAULTS.roster).includes(role)) out.push(`rosterSessions.${role}: not a roster role`);
+      if (!(typeof sid === "string" && /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(sid))) out.push(`rosterSessions.${role}: a session id (local_ and a UUID)`);
+    }
+  }
   const phaseKeys = (c.phases ?? DEFAULTS.phases).map((p) => p?.[0]);
   if (c.skips !== undefined) {
     if (!Array.isArray(c.skips)) out.push("skips: a list");
@@ -109,6 +121,7 @@ export function checkConfig(c) {
       if (g.managerSession !== undefined && !(typeof g.managerSession === "string" && /^(?:local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/.test(g.managerSession))) out.push("gate.managerSession: a session id (local_ and a UUID), or empty");
       if (g.keeperRole !== undefined && !(typeof g.keeperRole === "string" && NAME.test(g.keeperRole))) out.push("gate.keeperRole: a role name");
       for (const k of ["reviewerRole", "releaseRole"]) if (g[k] !== undefined && !(typeof g[k] === "string" && NAME.test(g[k]))) out.push(`gate.${k}: a role name`);
+      if (g.cardOwners !== undefined && !(Array.isArray(g.cardOwners) && g.cardOwners.every((w) => typeof w === "string" && NAME.test(w)))) out.push("gate.cardOwners: a list of names");
       for (const k of ["transientPrefixes", "verdictWords"]) if (g[k] !== undefined && !(Array.isArray(g[k]) && g[k].every((w) => typeof w === "string" && w.trim().length >= 2 && w.length <= 60))) out.push(`gate.${k}: a list of short strings`);
       if (g.stateDir !== undefined && !(typeof g.stateDir === "string" && g.stateDir.length > 0)) out.push("gate.stateDir: a folder path");
       if (g.mirrorMaxAgeMin !== undefined && !(Number.isInteger(g.mirrorMaxAgeMin) && g.mirrorMaxAgeMin > 0)) out.push("gate.mirrorMaxAgeMin: whole minutes");

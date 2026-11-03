@@ -85,6 +85,10 @@ test("the agent tiles: working, its card; idle under 15 min, its last card; past
   assert.equal(JSON.stringify(board().agentOn("Checker", db, "", NOW)), JSON.stringify({ items: db, note: "Idle" }), "no live state");
   const tiles = b.crewHtml(NOW);
   assert.match(tiles, /data-agent="Security"[\s\S]*?<span class="idle">Idle since \d\d:\d\d[^<]*<\/span>/);
+  // #C633: a role found by its title (the config holds no session id for it) says so on its tile; one found by id doesn't.
+  const t = board({ live: reading(NOW - 40e3, { agents: { Builder: idle(5 * MIN), Security: { ...idle(403 * MIN), by: "title" } } }) }).crewHtml(NOW);
+  assert.match(t.slice(t.indexOf('data-agent="Security"')), /^[^]*?found by title/);
+  assert.doesNotMatch(t.slice(0, t.indexOf('data-agent="Security"')), /found by title/);
 });
 
 test("the header stamp: 'live 40 s · …' while fresh, else 'from hh:mm' (the db's reading); a lapsed connector says why", () => {

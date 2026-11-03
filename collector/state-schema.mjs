@@ -7,7 +7,8 @@
 //   { v: 1,
 //     board:  { boardId, at, probe, pageVersion, lastWriteAt?, wakeAliveAt?, wakeSeenAt?, cardsCheckedAt? },
 //     cards:  { <card id>: { num, phase, headSha12, signed, onMain, ci, ciMin, liveVersion, shipping?, seen?, at } },
-//     agents: { <role>: { state, lastActivityAt, tool, card, since } } }
+//     agents: { <role>: { state, lastActivityAt, tool, card, since, by? } } }   by (#C633, optional): "title" when the role's
+//             session was found by its title because the config holds no session id for it
 
 export const STATE_VERSION = 1;
 // A POST's body at most (the Worker refuses a longer one before reading it).
@@ -50,7 +51,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C617: a card's shipping flag (a GitHub run titled "vX: <branch>@<sha>" is running for its tip); a probe from before it
 // leaves it out, and a state with it still fits.
 // #C620: seen is the phases the repository shows evidence of (a commit, a CI run, a sign-off, main, a deploy); optional too.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "shipping", "asOf", "seen"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "shipping", "asOf", "seen", "by"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -71,6 +72,7 @@ const AGENT = {
   tool: nullOr((v) => TOOLS.includes(v) || v === "mcp" || v === "other"),
   card: nullOr(isId),
   since: nullOr(isTime),
+  by: (v) => v === "title",
 };
 
 // The probe's own readings, numbers and enums only (#C592, #C593, #C595); a state from a probe before them still fits.

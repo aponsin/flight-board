@@ -2437,7 +2437,7 @@ function crewHtml(now=Date.now()){
     const old=m&&num(m.at)!=null&&now-m.at>72e5;
     const {items,note}=agentOn(n,(by[n]||[]).slice().sort(openOrder),notes[n],now);
     const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1];return `<span>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(note)}</span>`;
-    return `<div class="panel crew3-t" data-agent="${esc(n)}"><h3><span>${esc(n)}</span>${md.model||md.effort?`<span class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</span>`:""}</h3>`+
+    return `<div class="panel crew3-t" data-agent="${esc(n)}"><h3><span>${esc(n)}</span>${md.model||md.effort?`<span class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</span>`:""}${liveAgent(n,now)&&probe.agents[n].by==="title"?'<span class="mdl" title="No session id for this role in the config: its agent is the newest session with this title">found by title</span>':""}</h3>`+
       (L?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${esc(L.txt)}</span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${clearMe(m)?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
       `<div class="crew3-on">${on}</div></div>`}).join("");
   const tot=logTotals("phase",now),fmt=ms=>ms?dur(ms):"—";

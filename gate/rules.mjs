@@ -673,6 +673,13 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
     const other = cards.find((k) => k.id !== id && !shut(k) && k.who === now.who && k.phase === now.phase);
     if (other) e.push(`${other.id} is on ${now.phase} for ${now.who}: has it moved on? Update ${other.id} first`);
   }
+  // Rule 4b (#C633): a card's owner is a roster role (or a name the config lists as a card owner); a write that gives it any
+  // other owner is refused, so a card never sits with someone the wake and the memory tiles don't know. An owner a card
+  // already has is left alone.
+  if (typeof data.who === "string" && data.who.trim() && data.who !== was?.who) {
+    const owners = [...(config.roster ?? []), ...(config.gate.cardOwners ?? [])];
+    if (!owners.includes(data.who)) e.push(`who "${idText(data.who)}" is not on the roster (${owners.map(idText).join(", ")}): add it to roster in the config, or give the card to one of these`);
+  }
   // A card given up closes as "dropped" with its reason; it needs no live evidence.
   if (data.status === "dropped" && !String(data.dropReason ?? was?.dropReason ?? "").trim()) e.push('a dropped card needs dropReason (why it was given up)');
   // A card that names its branch keeps it (#C237): naming another is a second branch.

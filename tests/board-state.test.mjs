@@ -249,11 +249,11 @@ test("the probe: each roster role's newest open session, read to ids and enums; 
   session(3, "Ops: Alice's leads", [entry("user", leak, T)]);
   session(4, "Builder", [entry("assistant", [{ type: "text", text: leak }], T - 5e3, { stop_reason: "end_turn" })]);
   const sessions = appSessions(root);
-  assert.ok(sessions.every((s) => Object.keys(s).sort().join() === "at,cwd,title,transcript"), "nothing else of a session file is kept");
+  assert.ok(sessions.every((s) => Object.keys(s).sort().join() === "at,cwd,id,title,transcript"), "nothing else of a session file is kept");
   const agents = agentStates({ roles: ["Checker", "Builder", "Release"], sessions, homeDir, now: T, ids, nums });
   assert.deepEqual(agents, {
-    Checker: { state: "working", lastActivityAt: T - 1, tool: "Bash", card: "board-state-probe", since: T - 60e3 },
-    Builder: { state: "idle", lastActivityAt: T - 4, tool: null, card: null, since: T - 5e3 },
+    Checker: { state: "working", lastActivityAt: T - 1, tool: "Bash", card: "board-state-probe", since: T - 60e3, by: "title" },
+    Builder: { state: "idle", lastActivityAt: T - 4, tool: null, card: null, since: T - 5e3, by: "title" },
   });
   const s = buildState({ id: BOARD, now: T, probe: "e".repeat(40), pageVersion: null, cards: {}, agents });
   assert.doesNotMatch(JSON.stringify(s), /Alice|06 12|sk-ant|Ops/);
