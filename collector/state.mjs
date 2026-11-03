@@ -363,6 +363,17 @@ export function seenPhases(config, facts) {
   return config.phases.map((p) => p[0]).filter((p) => seen.has(p));
 }
 
+// What is installed from a repository whose installedLink moves with every board release (#C639, after #C621 was told to close
+// while only on main): the link follows main, but the hooks and this job stay on the pinned copy until the owner installs
+// a pack. When this run's own code is a pinned copy (<install root>/<40 hex>) beside the link's target, that copy is what is
+// installed; any other run (a checkout, another install root) reads the link as before. null when nothing is installed.
+export function installedSha(link, code = CODE, readlink = readlinkSync) {
+  let target = null;
+  try { target = readlink(link); } catch { /* no link: nothing installed */ }
+  const sha = (p) => { const s = basename(String(p)); return /^[0-9a-f]{40}$/.test(s) ? s : null; };
+  if (target === null || !sha(target)) return null;
+  return sha(code) && dirname(code) === dirname(target) ? sha(code) : sha(target);
+}
 // One card: its phase by the evidence (the declared one when the repository shows nothing), and the facts beside it.
 // A tip whose change landed on main as other commits (landedOn) is read as the main commit that carries it.
 // #C621: a card with two or more branch tips also carries `branches`, each tip read on its own (tipState), so the page can
@@ -634,8 +645,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern };
   }
   for (const x of c.repos) {
-    let installed = null;
-    try { const s = basename(readlinkSync(home(x.installedLink ?? ""))); installed = /^[0-9a-f]{40}$/.test(s) ? s : null; } catch { /* nothing installed */ }
+    const installed = installedSha(home(x.installedLink ?? ""));
     repos[x.name] = { ...repoAt(home(x.path), x.remote ?? "origin", x.mainBranch ?? "main", x.notes), gh: null, live: installed, versionPattern: null };
   }
   // The cards on the last export; the agents from the app's files.
