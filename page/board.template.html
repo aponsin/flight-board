@@ -1490,7 +1490,8 @@ function rlistHtml(now,q){const hits=resolvedMatches(q,now,rOlder),on=String(q||
 // The button is redrawn with the list, so focus moves to the first row it added (the button, when nothing was added): a
 // keyboard or screen-reader user keeps their place (Designer).
 document.addEventListener("click",e=>{if(e.target.closest&&e.target.closest("[data-rmore]")){const had=document.querySelectorAll("#resolved .w-item").length;
-  if(resolvedMatches(rQuery,Date.now(),rOlder).length>rShown)rShown+=RMAX;else rOlder=true;renderResolved();
+  if(resolvedMatches(rQuery,Date.now(),rOlder).length>rShown)rShown+=RMAX;
+  else{rOlder=true;if(resolvedMatches(rQuery,Date.now(),false).length>=rShown)rShown+=RMAX}renderResolved();
   const t=document.querySelectorAll("#resolved .w-item > summary")[had]||document.querySelector("#resolved [data-rmore]");if(t&&t.focus)t.focus()}});
 // The Resolved tab (#C351): its list, no fold; its count is on the tab, and its search is the box over every tab (#C356).
 function resolvedHtml(now,q=qOf("resolved")){return `<div id="rlist">${rlistHtml(now,q)}</div>`}

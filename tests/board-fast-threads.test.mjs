@@ -12,11 +12,11 @@ const T = 1_800_000_000_000, DAY = 864e5;
 const NAMES = ["tabCounts", "tabsHtml", "resolvedHtml", "showTab", "threadOf", "threadIds", "searchNow"];
 // The page's clock is the test's: the click handler reads Date.now().
 class FakeDate extends Date { static now() { return T; } }
-function board(n = 500, per = 30) {
+function board(n = 500, per = 30, gap = 0.4) {
   const b = loadNames(NAMES, { Date: FakeDate });
   const messages = [], threads = [];
   for (let i = 0; i < n; i++) {
-    const id = `t-${1_799_000_000_000 + i}`, at0 = T - (i + 1) * 0.4 * DAY;
+    const id = `t-${1_799_000_000_000 + i}`, at0 = T - (i + 1) * gap * DAY;
     threads.push({ id, num: 100 + i, title: `Thread ${i}` });
     for (let k = 0; k < per; k++) messages.push({ id: `m${i}-${k}`, thread: id, from: k % 2 ? "Manager" : "Owner", text: `message ${k} of thread ${i}`, at: at0 + k * 1000, ...(k === per - 1 ? { resolved: true } : {}) });
   }
@@ -71,4 +71,15 @@ test("Show older: a 44 px tap target of its own, and focus moves to the first ro
   assert.match(page, /\.tmore\{[^}]*padding:12px 0;min-height:44px/);
   assert.match(page, /<button type="button" class="tmore" data-rmore>/);
   assert.match(page, /renderResolved\(\);\s*const t=document\.querySelectorAll\("#resolved \.w-item > summary"\)\[had\]\|\|document\.querySelector\("#resolved \[data-rmore\]"\);if\(t&&t\.focus\)t\.focus\(\)/);
+});
+
+// Checker on 1ca3806: the last 7 days exactly fill the rows shown (50): Show older must add rows, not only relabel.
+test("Show older when the week fills the rows shown: the click adds older rows", () => {
+  const b = board(80, 3, 7 / 50.5);
+  const click = () => b.listeners.click.forEach((f) => f({ target: { closest: (s) => (s === "[data-rmore]" ? {} : null) } }));
+  const rows = (html) => (html.match(/<details class="w-item"/g) || []).length;
+  assert.equal(rows(b.resolvedHtml(T)), 50);
+  assert.match(b.resolvedHtml(T), /data-rmore>Show older</);
+  click();
+  assert.equal(rows(b.resolvedHtml(T)), 80, "the older ones are shown at once");
 });
