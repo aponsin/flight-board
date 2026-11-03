@@ -178,6 +178,11 @@ export function mergeRun({ dir, id, uid = process.getuid(), now = Date.now(), ba
   // A full read (or a delta with no mirror to add to, which the plan never asks for): the whole board replaces the mirror.
   takeExport(found, dir, id);
   const lines = mark.mode === "full" && state && existsSync(mirror) ? driftLines(mirror, join(dir, "mirror.next")) : [];
+  // A collection that came back with exactly whole pages was most likely cut (#C428): the run is told, as it always was.
+  const next = join(dir, "mirror.next"), counted = {};
+  for (const c of EXPORT_COLLECTIONS) { try { counted[c] = readdirSync(join(next, c)).filter((f) => f.endsWith(".json")); } catch { /* none exported */ } }
+  const cut = cutLine(counted);
+  if (cut) lines.push(cut);
   swapMirror(dir, id);
   writeStamp(mirror, mark.at, now);
   writeDeltaState(dir, { ...kept, fullAt: mark.at });

@@ -751,6 +751,19 @@ async function onAgentPr(e){
   try{await applyWrites(w)}catch(_){b.disabled=false;b.textContent="Not saved: try again";setTimeout(()=>{b.textContent=was},4000)}}
 
 let dbRef=null, commentsRef=null, lastPing="";
+// The Collector reads only what changed since its last run (#C642), and the board filters on a document's own fields, so every write
+// from this page to a collection edited in place says when it was made, and a delete is a tombstone ({deleted:true, updatedAt}); the
+// readers below leave tombstones out. The same rule binds the agents at the gate (gate/rules.mjs updatedAtErrors).
+const STAMPED=["initiatives","waiting","ideas","threads","plan"];
+const isTombstone=(coll,d)=>STAMPED.includes(coll)&&!!d&&d.deleted===true;
+function stampedDb(db){
+  return {collection:(n)=>db.collection(n),doc:(path)=>{
+    const d=db.doc(path);
+    if(!STAMPED.includes(String(path).split("/")[0]))return d;
+    return {get:(...a)=>d.get(...a),onSnapshot:(...a)=>d.onSnapshot(...a),
+      set:(x,...r)=>d.set({...x,updatedAt:Date.now()},...r),
+      update:(x,...r)=>d.update({...x,updatedAt:Date.now()},...r),
+      delete:()=>d.update({deleted:true,updatedAt:Date.now()})}}}}
 // File attachments on replies: Attach, paste or drop; kept here until the reply is sent, then stored
 // as board assets and listed on the reply as response.files [{id,name,type,size}]; the ping names each id for Manager.
 let assetsRef=null;
@@ -2750,12 +2763,12 @@ setInterval(()=>{tick();if(!typingText()&&document.querySelector("[data-shipat]"
 (async()=>{
   const db=window.claude&&await window.claude.use("db");
   if(!db){dbState="offline: open in Claude to see live data";renderStamp();return}
-  $("dot").classList.add("on"); dbRef=db; renderWaiting();
+  $("dot").classList.add("on"); dbRef=stampedDb(db); renderWaiting();
   window.claude.use("comments").then(c=>{commentsRef=c}).catch(()=>{});
   window.claude.use("assets").then(a=>{if(a){assetsRef=a;renderWaiting();renderThreads()}}).catch(()=>{});
   window.claude.use("downloads").then(d=>{if(d){setDownloads(d);renderAll()}}).catch(()=>{});
   let subs=[];
-  const sub=(name)=>{subs.push(db.collection(name).onSnapshot(snap=>{const docs=snap.docs.map(d=>({id:d.id,...(d.data()||{})}));state[name==="initiatives"?"initRaw":name]=docs;
+  const sub=(name)=>{subs.push(db.collection(name).onSnapshot(snap=>{const docs=snap.docs.map(d=>({id:d.id,...(d.data()||{})})).filter(d=>!isTombstone(name,d));state[name==="initiatives"?"initRaw":name]=docs;
       received(docs);renderSoon()},
     ()=>{$("dot").classList.remove("on");dbState="connection lost, reload";renderStamp()}))};
   // Every collection, and again (each stream closed first) when the data is behind (#C452: catchUp).
