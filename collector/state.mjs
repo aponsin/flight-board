@@ -365,13 +365,18 @@ export function seenPhases(config, facts) {
 
 // One card: its phase by the evidence (the declared one when the repository shows nothing), and the facts beside it.
 // A tip whose change landed on main as other commits (landedOn) is read as the main commit that carries it.
-export function cardState(card, repo, config, now) {
-  const declared = config.phases.some((p) => p[0] === card.phase) ? card.phase : null;
-  const base = { num: Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? card.num : null, phase: declared, headSha12: null, signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: now };
-  if (!repo) return base;
-  const tips = headsFor(card.id, repo.tips.filter((h) => h.branch !== repo.main));
-  const tip = tips[0];
-  if (!tip) return base;
+// #C621: a card with two or more branch tips also carries `branches`, each tip read on its own (tipState), so the page can
+// draw one row per branch; the card's own fields stay those of its newest tip.
+export const MAX_BRANCH_ROWS = 6;
+const branchName = (branch, taken, n) => {
+  const last = String(branch).split("/").pop().toLowerCase();
+  const base = CARD_ID.test(last) && last.length <= CARD_ID_MAX - 3 ? last : `branch-${n + 1}`;
+  let name = base, k = 2;
+  while (taken.has(name)) name = `${base}-${k++}`;
+  taken.add(name);
+  return name;
+};
+function tipState(card, tip, repo, config, now, declared) {
   const signedOn = (sha) => Object.entries(repo.notes).filter(([, ref]) => ok(() => repo.git(["notes", `--ref=${ref}`, "show", sha]))).map(([p]) => p).sort();
   const mainRef = `${repo.remote}/${repo.main}`;
   const landed = ok(() => repo.git(["merge-base", "--is-ancestor", tip.sha, mainRef])) ? null : landedOn(repo.git, mainRef, tip.sha, repo.ids);
@@ -387,7 +392,22 @@ export function cardState(card, repo, config, now) {
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
   const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed });
-  return { ...base, phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(ci ? { ci: ci.ci, ciMin: ci.ciMin } : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(shipping === null ? {} : { shipping }), seen };
+  return { phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(ci ? { ci: ci.ci, ciMin: ci.ciMin } : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(shipping === null ? {} : { shipping }), seen };
+}
+export function cardState(card, repo, config, now) {
+  const declared = config.phases.some((p) => p[0] === card.phase) ? card.phase : null;
+  const base = { num: Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? card.num : null, phase: declared, headSha12: null, signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: now };
+  if (!repo) return base;
+  const tips = headsFor(card.id, repo.tips.filter((h) => h.branch !== repo.main));
+  const tip = tips[0];
+  if (!tip) return base;
+  const one = tipState(card, tip, repo, config, now, declared);
+  const out = { ...base, ...one };
+  if (tips.length > 1) {
+    const taken = new Set();
+    out.branches = tips.slice(0, MAX_BRANCH_ROWS).map((t, n) => ({ name: branchName(t.branch, taken, n), ci: "none", ciMin: null, ...(t === tip ? one : tipState(card, t, repo, config, now, declared)) }));
+  }
+  return out;
 }
 
 export function cardStates({ cards, config, repos, now }) {

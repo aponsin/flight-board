@@ -6,14 +6,14 @@
 //
 //   { v: 1,
 //     board:  { boardId, at, probe, pageVersion, lastWriteAt?, wakeAliveAt?, wakeSeenAt?, cardsCheckedAt?, evidenceAt? },
-//     cards:  { <card id>: { num, phase, headSha12, signed, onMain, ci, ciMin, liveVersion, shipping?, seen?, at } },
+//     cards:  { <card id>: { num, phase, headSha12, signed, onMain, ci, ciMin, liveVersion, shipping?, seen?, branches?, at } },
 //     agents: { <role>: { state, lastActivityAt, tool, card, since, by? } } }   by (#C633, optional): "title" when the role's
 //             session was found by its title because the config holds no session id for it
 
 export const STATE_VERSION = 1;
 // A POST's body at most (the Worker refuses a longer one before reading it).
 export const MAX_BYTES = 65536;
-export const MAX_CARDS = 200, MAX_AGENTS = 40, MAX_SIGNED = 10;
+export const MAX_CARDS = 200, MAX_AGENTS = 40, MAX_SIGNED = 10, MAX_BRANCHES = 6;
 
 // The tool an agent last called, as a class: one of these names, "mcp" for any mcp__ tool, else "other".
 export const TOOLS = ["Agent", "Artifact", "ArtifactComments", "ArtifactData", "AskUserQuestion", "Bash", "Edit", "Glob", "Grep", "Monitor", "NotebookEdit", "Read", "ScheduleWakeup", "SendMessage", "Skill", "TaskStop", "ToolSearch", "WebFetch", "WebSearch", "Workflow", "Write"];
@@ -51,7 +51,10 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C617: a card's shipping flag (a GitHub run titled "vX: <branch>@<sha>" is running for its tip); a probe from before it
 // leaves it out, and a state with it still fits.
 // #C620: seen is the phases the repository shows evidence of (a commit, a CI run, a sign-off, main, a deploy); optional too.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "shipping", "asOf", "seen", "by"]);
+// #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
+// id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
+// lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "shipping", "asOf", "seen", "by", "branches"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -64,8 +67,11 @@ const CARD = {
   liveVersion: nullOr(re(VERSION)),
   shipping: (v) => typeof v === "boolean",
   seen: (v) => Array.isArray(v) && v.length <= MAX_SIGNED + 4 && v.every(re(PHASE)) && new Set(v).size === v.length,
+  branches: (v) => Array.isArray(v) && v.length >= 2 && v.length <= MAX_BRANCHES,
   at: isTime,
 };
+const { num: _n, at: _a, branches: _b, ...BRANCH_FIELDS } = CARD;
+const BRANCH = { name: isId, ...BRANCH_FIELDS };
 const AGENT = {
   state: (v) => AGENT_STATES.includes(v),
   lastActivityAt: nullOr(isTime),
@@ -125,6 +131,10 @@ export function stateErrors(s) {
     for (const k of keys.slice(0, max)) {
       if (!keyOk(k)) { errs.push(`${name}: a key that isn't an id`); continue; }
       fields(`${name}.${k}`, m[k], spec, errs);
+      if (name === "cards" && plain(m[k]) && Array.isArray(m[k].branches)) {
+        m[k].branches.slice(0, MAX_BRANCHES).forEach((b, n) => fields(`cards.${k}.branches.${n}`, b, BRANCH, errs));
+        if (new Set(m[k].branches.map((b) => b?.name)).size !== m[k].branches.length) errs.push(`cards.${k}.branches: a name twice`);
+      }
     }
   }
   return errs;
@@ -181,7 +191,9 @@ export function pickState(s) {
   if (stateErrors(s).length) return null;
   const take = (rec, spec) => Object.fromEntries(Object.keys(spec).filter((k) => Object.hasOwn(rec, k)).map((k) => [k, Array.isArray(rec[k]) ? [...rec[k]] : rec[k]]));
   const map = (m, spec) => Object.fromEntries(Object.keys(m).sort().map((k) => [k, take(m[k], spec)]));
-  const out = { v: STATE_VERSION, board: take(s.board, BOARD), cards: map(s.cards, CARD), agents: map(s.agents, AGENT) };
+  const cards = map(s.cards, CARD);
+  for (const [k, c] of Object.entries(cards)) if (Array.isArray(c.branches)) c.branches = s.cards[k].branches.map((b) => take(b, BRANCH));
+  const out = { v: STATE_VERSION, board: take(s.board, BOARD), cards, agents: map(s.agents, AGENT) };
   if (Object.hasOwn(s, "ctx")) out.ctx = map(s.ctx, CTX);
   if (Object.hasOwn(s, "stuck")) out.stuck = map(s.stuck, STUCK);
   if (Object.hasOwn(s, "usage")) out.usage = { ...take(s.usage, USAGE), top: s.usage.top.map((t) => take(t, USAGE_TOP)) };

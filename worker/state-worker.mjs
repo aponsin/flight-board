@@ -21,7 +21,7 @@ export const HEARTBEAT_MS = 15 * 60e3, WRITES_DEFAULT = 2000;
 // What the page shows, without the times that move on every run (board.at, each card's at, lastActivityAt) and the
 // numbers that tick (ciMin).
 export const changeKey = (s) => JSON.stringify([
-  Object.entries(s.cards).map(([id, c]) => [id, c.num, c.phase, c.headSha12, c.signed, c.onMain, c.ci, c.liveVersion]),
+  Object.entries(s.cards).map(([id, c]) => [id, c.num, c.phase, c.headSha12, c.signed, c.onMain, c.ci, c.liveVersion, c.branches ? c.branches.map((b) => [b.name, b.phase, b.headSha12, b.signed, b.onMain, b.ci, b.liveVersion]) : null]),
   Object.entries(s.agents).map(([r, a]) => [r, a.state, a.tool, a.card, a.since]),
   s.board.probe, s.board.pageVersion,
   Object.entries(s.ctx ?? {}).map(([r, c]) => [r, Math.floor(c.pct / 5), c.over]),

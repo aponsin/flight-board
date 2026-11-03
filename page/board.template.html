@@ -138,6 +138,9 @@ section{min-width:0}
 .track>.step.now{flex:2.2 1 0}
 .track>.step,.track>.wait{display:flex;flex-direction:column;justify-content:center;min-height:2.6rem}
 .track>.step small,.track>.wait small{white-space:nowrap}
+.br-tracks{grid-column:1/-1;display:flex;flex-direction:column;gap:3px}
+.br-name{font:600 .72rem var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.br-track{margin-bottom:5px}
 .i-meta{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:.88rem}
 .i-meta b{color:var(--ink);font-weight:600}
 .chip{font:600 .75rem var(--mono);padding:1px 6px;border-radius:4px;background:var(--warn-soft);color:var(--warn)}
@@ -1960,10 +1963,11 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
   const gp=liveOpen?[]:gaps(i),red=gapRed(gp,i);
+  const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip):"";
   return `<div class="i-row${red?" gap-red":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
-   <div class="track">${steps}</div>
+   ${br?`<div class="br-tracks">${br}</div>`:`<div class="track">${steps}</div>`}
    <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}</div>${thread}</div>`;
 }
 // Who is on what: { by: { agent: [open cards] }, names: the roster, then anyone else on a card, notes: meta/crew's idle notes }.
@@ -2513,7 +2517,23 @@ const liveOn=(now=Date.now())=>!!probe&&now-probe.board.at>=-60e3&&now-probe.boa
 // A card as the live state reads it: { phase, at, head12, liveVersion }, or null (no fresh reading, an odd value).
 function liveCard(id,now=Date.now()){if(!liveOn(now)||typeof id!=="string"||!LIVE_ID.test(id)||!Object.hasOwn(probe.cards,id))return null;
   const c=probe.cards[id];if(!c||typeof c!=="object"||!PHASES.some(p=>p[0]===c.phase)||typeof c.headSha12!=="string"||!/^[0-9a-f]{12}$/.test(c.headSha12))return null;
-  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,onMain:c.onMain===true,shipping:c.shipping===true,seen:Array.isArray(c.seen)?c.seen.filter(k=>PHASES.some(p=>p[0]===k)):[],liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null}}
+  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,onMain:c.onMain===true,shipping:c.shipping===true,seen:Array.isArray(c.seen)?c.seen.filter(k=>PHASES.some(p=>p[0]===k)):[],liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null,branches:liveBranches(c.branches)}}
+// A card's branch records (#C621): each tip read on its own, an odd one skipped; fewer than two good ones is none.
+function liveBranches(list){if(!Array.isArray(list))return [];const names=new Set();
+  const out=list.slice(0,6).filter(b=>b&&typeof b==="object"&&typeof b.name==="string"&&LIVE_ID.test(b.name)&&!names.has(b.name)&&PHASES.some(p=>p[0]===b.phase)&&typeof b.headSha12==="string"&&/^[0-9a-f]{12}$/.test(b.headSha12)&&(names.add(b.name),true))
+    .map(b=>({name:b.name,phase:b.phase,onMain:b.onMain===true,seen:Array.isArray(b.seen)?b.seen.filter(k=>PHASES.some(p=>p[0]===k)):[]}));
+  return out.length>1?out:[]}
+// #C621: one track per branch of a card, each lit from that branch's own phase and evidence, so one row never lights two
+// phases (the steps carry no branch, so a card with two branches takes its tiles from the probe alone). The branch's phase is
+// the one tile "now"; before it done; after it a phase the repository shows (seen) is "done seen"; a skipped phase is skipped.
+function branchTracks(branches,skip){return branches.map(b=>{const idx=phaseIndex(b.phase),ev=new Set(b.seen);
+  const tiles=PHASES.map(([k,l],n)=>{let c="step",t="<small>&nbsp;</small>";
+    if(skip.includes(k)&&n!==idx){c+=" skip";t="<small>not needed</small>"}
+    else if(n<idx){c+=" done"}
+    else if(n===idx){c+=b.onMain&&k===LIVE_PHASE?" done":" now"}
+    else if(ev.has(k)){c+=" done seen";t='<small class="seen">in the repo</small>'}
+    return `<div class="${c}" title="${esc(l)}">${esc(l)}${t}</div>`}).join("");
+  return `<div class="br-name" title="Branch ${esc(b.name)}">${esc(b.name)}</div><div class="track br-track" data-branch="${esc(b.name)}">${tiles}</div>`}).join("")}
 // The probe's context readings (#C592), { <role>: { pct, tokens, at } } of a fresh state; none otherwise, and a bad entry is
 // skipped. Its stuck roles (#C593) as [{ role, kind, card, since }], and its usage tile (#C595) or null.
 const isPct=v=>Number.isInteger(v)&&v>=0&&v<=100;
