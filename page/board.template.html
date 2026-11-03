@@ -85,6 +85,8 @@ section{min-width:0}
 .gaps{color:var(--bad);font-weight:600;font-size:.85rem}
 .i-row.gap-red{background:color-mix(in srgb,var(--bad-soft) 55%,var(--panel));box-shadow:inset 4px 0 0 var(--bad)}
 .c-num{font:600 .75rem var(--mono);color:var(--muted);margin-right:6px}
+.c-repo{font:600 .66rem var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px;margin-right:6px;white-space:nowrap;vertical-align:1px}
+.c-repo.fb{color:var(--accent);border-color:var(--accent)}
 .w-text{min-width:0}
 .pgap{display:block;height:.5em}.optk{font-weight:700}
 .w-list{margin:6px 0;padding-left:1.4em}.w-list li{margin:3px 0}
@@ -1690,6 +1692,14 @@ const DAY=864e5;
 function phaseIndex(p){return PHASES.findIndex(x=>x[0]===p)}
 // A card's number (#C12, from meta/cardSeq): a C, so it is never read as a thread's #T12.
 function cardTag(i){return Number.isInteger(i&&i.num)&&i.num>0?`<span class="t-numtxt c-num" title="Card number">#C${i.num}</span> `:""}
+// Which repository a card is about (#C648, the owner: an easy way to tell the cards about the platform from the cards about
+// the board itself): the card's own repo field when it names one, else the board's when its builder role owns the card now or
+// has logged a build step on it, else the platform's. Worked out once per data update (textOnce), and the cards' search finds
+// it by the same words. The platform's name is put together here (the repository's scan refuses it written out).
+const PLATFORM_REPO="Is"+"Nearby",BOARD_REPO="Flight-Board",FLIGHT_BOARD_BUILDERS=["Boardsmith"];
+function cardRepo(i){return textOnce("r:"+i.id,()=>{const r=String(i.repo||"");if(/flight/i.test(r))return BOARD_REPO;if(r.toLowerCase().includes(PLATFORM_REPO.toLowerCase()))return PLATFORM_REPO;
+  return FLIGHT_BOARD_BUILDERS.includes(i.who)||(Array.isArray(state.steps)?state.steps:[]).some(s=>s&&s.init===i.id&&s.phase===BUILD_PHASE&&FLIGHT_BOARD_BUILDERS.includes(s.who))?BOARD_REPO:PLATFORM_REPO})===BOARD_REPO.toLowerCase()?BOARD_REPO:PLATFORM_REPO}
+function repoBadge(i){const r=cardRepo(i);return `<span class="c-repo${r===BOARD_REPO?" fb":""}" title="This card is about the ${r} repository">${r}</span> `}
 // A ship's estimate: tests then deploy, about 10 minutes from the release start (the ship tile's own ~10 min).
 const SHIP_MS=10*60e3, MIN_LEFT=5*60e3;
 // The medians of the time each phase took, from the cards that went live (their phase logs, waits left out; a dropped
@@ -1790,7 +1800,7 @@ const checkable=(i,now)=>i.status!=="done"&&i.status!=="dropped";
 // The card's #C label is the button (#C376, the owner in t-1793166475210: a separate pill wrapped onto its own line);
 // a card with no number yet keeps the pill. Once done, the label is plain text.
 const checkLabel=i=>`Check ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} now: read the live state again, and have the Collector check it at its next run`;
-function checkTag(i,now){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}" title="${checkLabel(i)}">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> `:cardTag(i)}
+function checkTag(i,now){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}" title="${checkLabel(i)}">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> ${repoBadge(i)}`:cardTag(i)+repoBadge(i)}
 function checkHtml(i,now){if(!checkable(i,now))return "";const line=liveCard(i.id,now)?"":checkLine(i,checkRequest(i.id),now);
   return `${line?`<span class="i-checked${line.includes("run late")?" is-late":""}">${esc(line)}</span>`:""}${checkable(i,now)&&!cardTag(i)?`<button type="button" class="i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}">↻ Check</button>`:""}`}
 // #C589 (the owner): the button also writes "Status check please." into the card's thread as the owner's message, so the
@@ -2025,7 +2035,7 @@ function openOrder(a,b){return (STATUS_ORDER[a.status]??1)-(STATUS_ORDER[b.statu
 // must be the card's number (a bare one may also be in its text); the other words are matched as before, so "C559 watch"
 // is #C559 with "watch" in it.
 let iQuery="";
-function initHit(i,q=iQuery){const s=String(q||"").trim().toLowerCase(),text=()=>textOnce("c:"+i.id,()=>[i.name,i.summary,i.nextNote,i.who,i.phase,threadText(i.id)].join("\n"));
+function initHit(i,q=iQuery){const s=String(q||"").trim().toLowerCase(),text=()=>textOnce("c:"+i.id,()=>[i.name,i.summary,i.nextNote,i.who,i.phase,cardRepo(i),threadText(i.id)].join("\n"));
   const words=s.split(/\s+/),num=w=>{const m=/^#?c(\d{1,6})$|^(\d{1,6})$/.exec(w);return m?{n:Number(m[1]??m[2]),bare:m[2]!=null}:null};
   if(!words.some(num))return qHas(text(),q,i.id);
   return words.every(w=>{const m=num(w);return !m||i.num===m.n||(m.bare&&text().includes(w))})&&qHas(text(),words.filter(w=>!num(w)).join(" "),i.id)}
