@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { mergeRun, scratchRoot, EXPORT_NAME } from "../collector/collect.mjs";
 import { MUTABLE, OVERLAP_MS, readStamp, readDeltaState, writeDeltaState, writeStamp, deriveDue, deriveLines, saveLines, DERIVE_EVERY_MS, DERIVE_FILE } from "../collector/delta.mjs";
 import { readMirror, TOMBSTONED } from "../gate/gate.mjs";
-import { writeErrors, checkWrites, updatedAtErrors, STAMPED, STAMP_WINDOW_MS } from "../gate/rules.mjs";
+import { writeErrors, checkWrites, updatedAtErrors, STAMPED, STAMP_WINDOW_MS, isDeletion } from "../gate/rules.mjs";
 import { linesOf, linesPending, linesSeen, LINES_MAX, LINE_MAX } from "../gate/reset.mjs";
 import { tick } from "../scripts/wake-watch.mjs";
 import { fullConfig, checkConfig } from "../scripts/config.mjs";
@@ -256,7 +256,30 @@ test("updatedAt: a delete of those collections is refused and names the tombston
   assert.ok(JSON.stringify(batch).includes("add updatedAt"), "one bad write refuses the batch");
 });
 
-test("updatedAt is in the gate's time checks: a time in the future or a rounded one is refused like at and since", () => {
+test("a tombstone is a delete for every rule that guards a delete (Security): a role can't remove a card or a thread with {deleted: true}", () => {
+  const manager = { role: "Manager", manager: true };
+  const tomb = (collection, id, extra = {}) => w("update", collection, id, { deleted: true, updatedAt: NOW - 10, ...extra });
+  const errs = (write, by) => writeErrors(write, { config: cfg(true), who: by, now: NOW }).join("|");
+  // isDeletion: a delete, or a set/update with deleted: true in a collection edited in place; nothing else.
+  assert.equal(isDeletion(w("delete", "steps", "x")), true);
+  assert.equal(isDeletion(tomb("initiatives", "c")), true);
+  assert.equal(isDeletion(w("set", "threads", "t", { deleted: true, updatedAt: NOW })), true);
+  for (const write of [w("update", "initiatives", "c", { deleted: false, updatedAt: NOW }), w("update", "initiatives", "c", { text: "t" }), w("update", "steps", "s", { deleted: true }), w("update", "initiatives", "c")]) assert.equal(isDeletion(write), false, JSON.stringify(write));
+  // A card: only the lead deletes it, so only the lead tombstones it.
+  assert.match(errs(tomb("initiatives", "card-one"), who), /only Manager deletes a card/);
+  assert.doesNotMatch(errs(tomb("initiatives", "card-one"), manager), /deletes a card/);
+  assert.doesNotMatch(errs(w("update", "initiatives", "card-one", { text: "t", updatedAt: NOW - 10 }), who), /deletes a card/, "an ordinary update is untouched");
+  // A thread: its number is kept for good, for the lead too; others may not touch it at all.
+  assert.match(errs(tomb("threads", "t-1"), manager), /a thread number is kept for good/);
+  assert.match(errs(tomb("threads", "t-1"), who), /only Manager numbers and names threads/);
+  assert.doesNotMatch(errs(w("update", "threads", "t-1", { title: "renamed", updatedAt: NOW - 10 }), manager), /kept for good/, "a rename is untouched");
+  // The plan is never deleted.
+  assert.match(errs(tomb("plan", "n1"), manager), /never deleted/);
+  // The ideas and waiting collections keep their own rules (anyone may drop an ask nobody answered).
+  assert.doesNotMatch(errs(tomb("ideas", "i"), who), /deletes a card|kept for good|never deleted/);
+});
+
+test("updatedAt is in the gate's time checks:a time in the future or a rounded one is refused like at and since", () => {
   const e = writeErrors(w("update", "waiting", "x", { text: "t", updatedAt: NOW + 3600e3 }), { config: cfg(true), who, now: NOW });
   assert.ok(e.some((m) => /updatedAt is in the future/.test(m)), e.join("|"));
 });

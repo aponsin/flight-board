@@ -17,7 +17,7 @@ const del = (v) => v && typeof v === "object" && v.__delete__ === true;
 export function planWriteErrors(w, { who, config, now = Date.now() }) {
   const { op, doc_id: id, data } = w;
   if (!who.manager) return [`only ${config.gate.managerRole} writes the plan`];
-  if (op === "delete") return ["a plan node is never deleted: replace it (replacedBy, changedAt, why) and add the new node"];
+  if (op === "delete" || ((op === "set" || op === "update") && data && typeof data === "object" && data.deleted === true)) return ["a plan node is never deleted (nor tombstoned with deleted: true): replace it (replacedBy, changedAt, why) and add the new node"];
   if (op === "batch" || !data || typeof data !== "object") return [];
   const e = [];
   if (!ID.test(String(id))) e.push("a node id: lower case letters, digits and -, at most 80");

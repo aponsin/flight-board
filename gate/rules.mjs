@@ -99,6 +99,10 @@ export const STAMPED = ["initiatives", "waiting", "ideas", "threads", "plan"];
 // Under the delta read's overlap (collector/delta.mjs OVERLAP_MS, 5 minutes): a write stamped inside this window is always inside
 // the next delta's `since`, so it is never missed (Checker; tests/delta-run.test.mjs ties the two constants).
 export const STAMP_WINDOW_MS = 4 * 60e3;
+// With gate.requireUpdatedAt a delete of these collections is written as the tombstone `update {deleted: true, updatedAt}`, and
+// everything downstream reads that document as gone. So every rule that guards a delete guards the tombstone too: a set or update
+// of these collections with deleted: true is a delete (Security: any role could otherwise remove a card or a thread).
+export const isDeletion = (w) => w.op === "delete" || ((w.op === "set" || w.op === "update") && STAMPED.includes(w.collection) && !!w.data && typeof w.data === "object" && w.data.deleted === true);
 export function updatedAtErrors(w, now) {
   const { op, collection, doc_id: id, data } = w;
   if (!STAMPED.includes(collection)) return [];
@@ -156,7 +160,7 @@ export function writeErrors(w, { config, who, now }) {
   // alone (scripts/thread-ids.mjs allocates them). The owner renames a thread from the page, which writes only a title.
   if (collection === "threads" || (collection === "meta" && id === THREAD_SEQ)) {
     if (!who.manager) return [`${collection}/${id}: only ${config.gate.managerRole} numbers and names threads (the owner renames one from the board)`];
-    if (op === "delete") return [`${collection}/${id}: a thread number is kept for good`];
+    if (isDeletion(w)) return [`${collection}/${id}: a thread number is kept for good`];
     if (collection === "threads" && data?.num !== undefined && !(Number.isInteger(data.num) && data.num > 0)) return [`num: a whole number from 1`];
     if (collection === "threads" && data?.title !== undefined && !(typeof data.title === "string" && data.title.trim() && data.title.length <= 120)) return [`title: 1 to 120 characters`];
     if (collection === "meta" && !(Number.isInteger(data?.next) && data.next > 1)) return [`meta/${THREAD_SEQ}: next is a whole number above 1`];
@@ -215,7 +219,7 @@ export function writeErrors(w, { config, who, now }) {
     }
   }
   // A card's delete is the lead's (#C444, Security): it would clear dependsOn, batch and bump around their rule.
-  if (collection === "initiatives" && op === "delete" && !who.manager) e.push(`only ${config.gate.managerRole} deletes a card`);
+  if (collection === "initiatives" && isDeletion(w) && !who.manager) e.push(`only ${config.gate.managerRole} deletes a card`);
   if (op === "delete" || !data || typeof data !== "object") return e;
   e.push(...timeErrors(data, now));
   const rules = pageRules();
