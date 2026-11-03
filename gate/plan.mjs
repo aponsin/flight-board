@@ -7,7 +7,7 @@
 export const PLAN = "plan";
 export const KINDS = ["objective", "milestone", "step"];
 export const STATES = ["open", "done"];
-const FIELDS = ["parent", "order", "text", "kind", "outcome", "measure", "due", "waitsOn", "state", "evidence", "replacedBy", "changedAt", "why", "decisionThread", "note"];
+const FIELDS = ["parent", "order", "text", "kind", "outcome", "measure", "due", "waitsOn", "state", "evidence", "replacedBy", "changedAt", "why", "decisionThread", "note", "updatedAt"];
 const ID = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const text = (v, max) => typeof v === "string" && v.trim().length > 0 && v.length <= max;

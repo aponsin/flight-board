@@ -75,6 +75,33 @@ test("Security: an answered ask's wording is frozen (only done and doneAt may ch
   assert.equal(call({ op: "delete", collection: "waiting", doc_id: "w-b" }, ops), "", "an unanswered ask: as before");
 });
 
+// #C642 (Checker): with gate.requireUpdatedAt every write to an ask carries updatedAt, so the answered-ask lists must take it, and the
+// lead's tombstone; a tombstone stays the lead's alone.
+const on = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", owner: "Owner", gate: { requireUpdatedAt: true } });
+const callOn = (w, who) => checkWrites([w], { config: on, who, now: NOW, state: {}, mirror: null, seen }).errors.join(" | ");
+const stamp = { updatedAt: NOW - 1000 };
+
+test("with the updatedAt gate on, an answered ask can still be closed, reopened, converted and (by the lead) tombstoned", () => {
+  const upd = (data) => ({ op: "update", collection: "waiting", doc_id: "w-a", data: { ...stamp, ...data } });
+  assert.equal(callOn(upd({ done: true, doneAt: NOW }), lead), "", "close");
+  assert.equal(callOn(upd({ done: true, doneAt: NOW }), ops), "", "close, any role");
+  assert.equal(callOn(upd({ response: { __delete__: true } }), lead), "", "reopen");
+  assert.equal(callOn(upd({ deleted: true }), lead), "", "the lead's tombstone");
+  const asAnswer = { ...seen, docs: { ...seen.docs, waiting: [{ id: "w-a", kind: "answer", text: "Why?", since: NOW - 9e5, done: false, response: { status: "ok", text: "because" }, respondedAt: NOW - 6e5 }] } };
+  const convert = upd({ kind: "decision", options: [{ key: "A", label: "A" }, { key: "B", label: "B" }], text: "Pick again", respondedAt: NOW, response: { __delete__: true } });
+  assert.equal(checkWrites([convert], { config: on, who: lead, now: NOW, state: {}, mirror: null, seen: asAnswer }).errors.join(" | "), "", "convert answer to decision");
+  assert.match(callOn(upd({ deleted: true }), ops), /only Manager deletes an ask the owner answered/, "a tombstone is the lead's alone");
+  assert.match(callOn(upd({ text: "Ship main?" }), lead), /its wording is frozen/, "the wording stays frozen");
+  assert.match(callOn({ op: "update", collection: "waiting", doc_id: "w-a", data: { done: true, doneAt: NOW } }, lead), /add updatedAt/, "and the stamp is still required");
+});
+
+test("with the updatedAt gate on, a plan write carries updatedAt (it is a known plan field); without it the gate asks for it", () => {
+  const plan = (data) => ({ op: "set", collection: "plan", doc_id: "n1", data });
+  const errsOn = (data) => callOn(plan(data), lead);
+  assert.doesNotMatch(errsOn({ text: "Ship it", kind: "goal", order: 1, ...stamp }), /unknown field|updatedAt/);
+  assert.match(errsOn({ text: "Ship it", kind: "goal", order: 1 }), /add updatedAt/);
+});
+
 test("the lead marks a thread resolved, the owner's included; nobody else, and nothing more in the update", () => {
   assert.equal(call({ op: "update", collection: "messages", doc_id: "m-owner", data: { resolved: true } }, lead), "");
   assert.match(call({ op: "update", collection: "messages", doc_id: "m-owner", data: { resolved: false } }, lead), /a message is never changed/, "Security: resolved true only");

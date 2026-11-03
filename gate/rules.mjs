@@ -410,13 +410,13 @@ export function ownerWordErrors(w, { config, who, seen, batch = [] }) {
   const converts = who.manager && doc?.kind === "answer" && data && typeof data === "object" && data.kind === "decision" && data.response && typeof data.response === "object" && data.response.__delete__ === true;
   if (op === "update" && answered && converts) {
     const opts = Array.isArray(data.options) ? data.options.filter((o) => o && o.key && o.label) : [];
-    const keys = Object.keys(data).filter((k) => !["done", "doneAt", "response", "kind", "options", "text", "respondedAt"].includes(k));
+    const keys = Object.keys(data).filter((k) => !["done", "doneAt", "response", "kind", "options", "text", "respondedAt", "updatedAt"].includes(k));
     if (opts.length < 2) return ["a decision needs at least two options {key, label}: the owner picks with a button each"];
     if (keys.length) return [`turning an answered answer into a decision changes only kind, options, text and the response it clears (not ${keys.map(idText).join(", ")})`];
     return [];
   }
-  if (op === "update" && answered && data && typeof data === "object" && Object.keys(data).some((k) => !["done", "doneAt", "response"].includes(k))) return ["the owner answered this ask: its wording is frozen; open a new ask for another question (or, to turn an answer into a decision in place, update {kind: \"decision\", options, response: {__delete__: true}})"];
-  if (op === "delete" && answered && !who.manager) return [`only ${config.gate.managerRole} deletes an ask the owner answered`];
+  if (op === "update" && answered && data && typeof data === "object" && Object.keys(data).some((k) => !["done", "doneAt", "response", "updatedAt", "deleted"].includes(k))) return ["the owner answered this ask: its wording is frozen; open a new ask for another question (or, to turn an answer into a decision in place, update {kind: \"decision\", options, response: {__delete__: true}})"];
+  if (isDeletion(w) && answered && !who.manager) return [`only ${config.gate.managerRole} deletes an ask the owner answered`];
   return [];
 }
 
