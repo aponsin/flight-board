@@ -347,6 +347,18 @@ export function landedOn(git, ref, sha, ids = {}) {
   } catch { return null; }
 }
 
+// #C620: the phases a card has evidence for, in the board's order, whatever the hand-written steps say: build (a branch
+// commit), test (a CI run), each sign-off note's phase, ship (on main, or a ship run on now), live (deployed).
+export function seenPhases(config, facts) {
+  const c = config.collector, seen = new Set();
+  if (facts.head) seen.add(c.buildPhase);
+  if (facts.ci && facts.ci !== "none") seen.add("test");
+  for (const p of facts.signed ?? []) seen.add(p);
+  if (facts.onMain || facts.shipping) seen.add(c.shipPhase);
+  if (facts.deployed) seen.add(c.livePhase);
+  return config.phases.map((p) => p[0]).filter((p) => seen.has(p));
+}
+
 // One card: its phase by the evidence (the declared one when the repository shows nothing), and the facts beside it.
 // A tip whose change landed on main as other commits (landedOn) is read as the main commit that carries it.
 export function cardState(card, repo, config, now) {
@@ -368,7 +380,10 @@ export function cardState(card, repo, config, now) {
   const deployed = onMain && !!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed }, cfg);
-  return { ...base, phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(() => { const r = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null; return r ? { ci: r.ci, ciMin: r.ciMin } : {}; })(), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(Array.isArray(repo.ships) ? { shipping: !onMain && shipsCard(repo.ships, tip, head) } : {}) };
+  const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
+  const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
+  const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed });
+  return { ...base, phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(ci ? { ci: ci.ci, ciMin: ci.ciMin } : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(shipping === null ? {} : { shipping }), seen };
 }
 
 export function cardStates({ cards, config, repos, now }) {
