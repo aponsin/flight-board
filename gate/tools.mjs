@@ -17,23 +17,40 @@ export const PAGE_TOOLS = new Set(["publish_version", "publish_files", "edit_ver
 export const OPEN_TOOLS = new Set(["get_artifact", "read_artifact", "list_artifacts", "list_files", "read_file", "list_assets", "read_asset", "describe_capabilities", "describe_type", "list_types", "read_declaration", "read_comments", "db_get", "db_list", "db_query", "db_profiles", "db_rules_get", "db_usage", "db_whoami", "guide", "watch", "unwatch", "reply_comment", "reply_shared_comment", "resolve_comment", "pin_artifact", "unpin_artifact"].map((n) => PREFIX + n));
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-export const isUuid = (s) => UUID.test(String(s ?? ""));
+const UUID_IN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+export const isUuid =(s) => UUID.test(String(s ?? ""));
 
-// Whether a slug (or link) names the board: the id in its link, or its UUID.
+// The same server may be registered under another name (Security): a tool whose name ends in one of the write or page tools is
+// read as the claude-artifacts one. Anything else keeps its own name.
+const SUFFIXED = /^mcp__.+__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)$/;
+export const normName = (name) => {
+  if (typeof name !== "string" || name.startsWith(PREFIX)) return name;
+  const m = SUFFIXED.exec(name);
+  return m ? PREFIX + m[1] : name;
+};
+
+// Whether a slug (or link) names the board: it CONTAINS the id (case-sensitive) or the UUID (any case), so a trailing slash, a
+// query, a fragment or an upper-case UUID is still the board. Fails closed, as the old `.includes(id)` did (Security).
 export function isBoardSlug(value, config) {
   if (typeof value !== "string" || !value) return false;
   const id = /artifact\/([A-Za-z0-9-]+)$/.exec(String(config?.artifactUrl ?? ""))?.[1];
   const uuid = String(config?.artifactSlug ?? "").toLowerCase();
-  const v = value.trim();
-  if (id && (v === id || v.endsWith(`/${id}`))) return true;
-  return !!uuid && isUuid(uuid) && (v.toLowerCase() === uuid || v.toLowerCase().endsWith(`/${uuid}`));
+  if (id && value.includes(id)) return true;
+  if (!uuid || !isUuid(uuid)) {
+    // No UUID in the config (Security): a slug that is any UUID could be the board, so it is treated as the board's, and the
+    // gate refuses or checks it. Only a board with a link and no UUID is in this state; the pack writes artifactSlug.
+    return !!id && UUID_IN.test(value);
+  }
+  return value.toLowerCase().includes(uuid);
 }
 
 // The artifact a tool call is aimed at: its slug, and for a copy its source too.
 const aimedAt = (t) => [t?.slug, t?.url, t?.from_url].filter((v) => typeof v === "string" && v);
 export const aimsAtBoard = (t, config) => aimedAt(t).some((v) => isBoardSlug(v, config));
 
-const OPS = { set: "set", merge: "update", update: "update", delete: "delete" };
+// merge is not here: db_write's merge CREATES a missing document, and the rules check a new document only on "set" (Security).
+// Agents use set (create) or update (must exist). Exactly collection/id: a deeper path names a collection no rule knows.
+const OPS = { set: "set", update: "update", delete: "delete" };
 // db_write's ops as the old write list, or null when any op is not one the gate can read (the call is then refused).
 export function dbWriteOps(t) {
   if (!Array.isArray(t?.ops) || !t.ops.length) return null;
@@ -41,7 +58,7 @@ export function dbWriteOps(t) {
   for (const o of t.ops) {
     const op = o && typeof o === "object" ? OPS[o.op] : undefined;
     const parts = typeof o?.path === "string" ? o.path.split("/") : [];
-    if (!op || parts.length < 2 || parts.some((p) => !p)) return null;
+    if (!op || parts.length !== 2 || parts.some((p) => !p)) return null;
     if (op !== "delete" && (!o.data || typeof o.data !== "object" || Array.isArray(o.data))) return null;
     out.push({ op, collection: parts.slice(0, -1).join("/"), doc_id: parts[parts.length - 1], data: op === "delete" ? null : o.data, if_version: o.ifVersion });
   }
@@ -50,20 +67,20 @@ export function dbWriteOps(t) {
 // db_str_replace: a text edit in place, which the rules refuse whole (the gate never sees the field's new value).
 export function dbStrReplaceOps(t) {
   const parts = typeof t?.path === "string" ? t.path.split("/") : [];
-  if (parts.length < 2 || parts.some((p) => !p) || typeof t.field !== "string" || !t.field) return null;
+  if (parts.length !== 2 || parts.some((p) => !p) || typeof t.field !== "string" || !t.field) return null;
   return [{ op: "str_replace", collection: parts.slice(0, -1).join("/"), doc_id: parts[parts.length - 1], data: { [t.field]: t.new_str }, if_version: t.ifVersion }];
 }
 
 // What a call on the board is: null (not about the board, or nothing to check), { kind: "db", writes }, { kind: "page" },
 // or { kind: "refuse", why }. The old ArtifactData is left to the callers that already read it.
 export function classify(input, config) {
-  const name = input?.tool_name;
+  const name = normName(input?.tool_name);
   if (typeof name !== "string" || !name.startsWith(PREFIX)) return null;
   const t = input.tool_input ?? {};
   if (!aimsAtBoard(t, config)) return null;
   if (name === DB_WRITE || name === DB_STR_REPLACE) {
     const writes = name === DB_WRITE ? dbWriteOps(t) : dbStrReplaceOps(t);
-    return writes ? { kind: "db", writes } : { kind: "refuse", why: `${name.slice(PREFIX.length)} on the board, in a shape the gate cannot read (ops as {op: set|merge|update|delete, path: "collection/id", data}, or a path and a field)` };
+    return writes ? { kind: "db", writes } : { kind: "refuse", why: `${name.slice(PREFIX.length)} on the board, in a shape the gate cannot read (ops as {op: set|update|delete, path: "collection/id", data}; merge is refused because it creates a missing document unchecked: use set to create, update to change; or a path and a field)` };
   }
   if (PAGE_TOOLS.has(name)) return { kind: "page" };
   if (OPEN_TOOLS.has(name)) return null;

@@ -36,8 +36,23 @@ test("the config knows the artifact's UUID, and only a UUID", () => {
 
 test("a call is the board's by its UUID, its whole link or its id; another artifact's is not", () => {
   for (const slug of [UUID, UUID.toUpperCase(), BOARD, "TestBoard01"]) assert.equal(isBoardSlug(slug, cfg), true, slug);
-  for (const slug of [OTHER, "", undefined, BOARD + "x", "https://example.com/" + UUID.slice(1)]) assert.equal(isBoardSlug(slug, cfg), false, String(slug));
-  assert.equal(isBoardSlug(UUID, fullConfig({ artifactUrl: BOARD })), false, "a config with no UUID cannot know it");
+  for (const slug of [OTHER, "", undefined, "https://example.com/" + UUID.slice(1), "testboard01"]) assert.equal(isBoardSlug(slug, cfg), false, String(slug));
+});
+
+test("Security: a link variant is still the board's: a trailing slash, a query, a fragment, an upper-case UUID, a longer id", () => {
+  for (const slug of [BOARD + "/", BOARD + "?x=1", BOARD + "#top", "  " + BOARD + " ", UUID + "/", UUID + "?x=1", UUID.toUpperCase() + "#f", BOARD + "x", "https://claude.ai/code/artifact/" + UUID]) {
+    assert.equal(isBoardSlug(slug, cfg), true, JSON.stringify(slug));
+    assert.match(gate(mk("db_write"), write([{ op: "set", path: "initiatives/x", data: NEEDS }], slug)).block ?? "", /no ETA/, `gated: ${slug}`);
+    assert.equal(pageDenied({ tool_name: mk("publish_version"), tool_input: { slug } }, cfg), true, `page: ${slug}`);
+  }
+});
+
+test("Security: a config with a link and no UUID treats any UUID-shaped slug as the board's (fail closed); with neither, nothing is", () => {
+  const noUuid = fullConfig({ artifactUrl: BOARD });
+  assert.equal(isBoardSlug(UUID, noUuid), true);
+  assert.equal(isBoardSlug(OTHER, noUuid), true);
+  assert.equal(isBoardSlug("some-name", noUuid), false);
+  assert.equal(isBoardSlug(UUID, fullConfig({})), false, "no board at all");
 });
 
 test("db_write on the board is checked by the same rules as ArtifactData: refused with the reasons, by UUID or by link", () => {
@@ -56,8 +71,26 @@ test("a write posted as the owner is refused for any session, as it is through A
   assert.match(gate(mk("db_write"), write([{ op: "update", path: "waiting/w1", data: { response: { key: "A" } } }]), "Builder").block ?? "", /only the board's page writes it/);
 });
 
-test("db_write: merge is an update, a path is collection/id, each op of a batch is checked, a text edit in place is refused", () => {
-  assert.match(gate(mk("db_write"), write([{ op: "merge", path: "initiatives/x", data: { nextNote: "n" } }])).block ?? "", /nextNoteAt/, "merge read as update");
+test("Security: merge is refused (it creates a missing document unchecked), and a path is exactly collection/id", () => {
+  for (const ops of [[{ op: "merge", path: "waiting/new1", data: { title: "t" } }], [{ op: "set", path: "steps/s", data: { init: "x" } }, { op: "merge", path: "initiatives/x", data: {} }], [{ op: "set", path: "waiting/x/y", data: {} }], [{ op: "update", path: "waiting/x/y/z", data: {} }]]) {
+    assert.match(gate(mk("db_write"), write(ops)).block ?? "", /shape the gate cannot read/, JSON.stringify(ops));
+  }
+  assert.match(gate(mk("db_write"), write([{ op: "merge", path: "waiting/new1", data: {} }])).block ?? "", /use set to create, update to change/);
+  assert.match(gate(mk("db_str_replace"), { slug: UUID, path: "a/b/c", field: "f", new_str: "" }).block ?? "", /shape the gate cannot read/);
+});
+
+test("Security: a server registered under another name is read the same; the hooks match it", async () => {
+  const other = "mcp__renamed-server__";
+  assert.match(gate(other + "db_write", write([{ op: "set", path: "initiatives/x", data: NEEDS }])).block ?? "", /no ETA/);
+  assert.equal(pageDenied({ tool_name: other + "publish_files", tool_input: { slug: UUID } }, cfg), true);
+  assert.equal(classify({ tool_name: other + "copy_file", tool_input: { slug: UUID } }, cfg).kind, "page");
+  assert.equal(classify({ tool_name: other + "db_get", tool_input: { slug: UUID } }, cfg), null, "only the writers are read under another name");
+  const { hookEntries } = await import("../scripts/hooks.mjs");
+  const e = JSON.stringify(hookEntries("/x", "/y/board.config.json"));
+  assert.match(e, /mcp__\.\*__\(db_write\|db_str_replace\|publish_version/);
+});
+
+test("db_write: a path is collection/id, each op of a batch is checked, a text edit in place is refused", () => {
   const two = gate(mk("db_write"), write([{ op: "set", path: "steps/s", data: { init: "x", phase: "build", who: "A", kind: "start", at: now } }, { op: "set", path: "initiatives/x", data: NEEDS }]));
   assert.match(two.block ?? "", /initiatives\/x/, "the second op is the one refused");
   assert.match(gate(mk("db_str_replace"), { slug: UUID, path: "waiting/d1", field: "text", old_str: "x", new_str: "" }).block ?? "", /./, "an edit in place the gate cannot see is refused");
@@ -84,7 +117,7 @@ test("any other claude-artifacts tool on the board is refused, known writers and
     assert.deepEqual(gate(mk(name), { slug: OTHER }), {}, `${name} on another artifact`);
   }
   assert.match(gate(mk("copy_asset"), { slug: OTHER, from_url: UUID }).block ?? "", /shut until/, "a copy out of the board's assets");
-  assert.deepEqual(gate("mcp__another-server__db_write", { slug: UUID }), {}, "another server's tools are not this gate's");
+  assert.deepEqual(gate("mcp__another-server__something_else", { slug: UUID }), {}, "another server's other tools are not this gate's");
 });
 
 test("the page tools are publish.mjs's: the gate passes them, and the hook denies each one that is not a verified page", () => {
@@ -249,8 +282,8 @@ test("a result's documents are read only between its own tag, and the old tool's
 });
 
 test("dbWriteOps maps the new shape onto the old", () => {
-  assert.deepEqual(dbWriteOps(write([{ op: "merge", path: "a/b/c", data: { k: 1 }, ifVersion: 3 }, { op: "delete", path: "a/d" }])), [
-    { op: "update", collection: "a/b", doc_id: "c", data: { k: 1 }, if_version: 3 },
+  assert.deepEqual(dbWriteOps(write([{ op: "update", path: "a/c", data: { k: 1 }, ifVersion: 3 }, { op: "delete", path: "a/d" }])), [
+    { op: "update", collection: "a", doc_id: "c", data: { k: 1 }, if_version: 3 },
     { op: "delete", collection: "a", doc_id: "d", data: null, if_version: undefined },
   ]);
 });

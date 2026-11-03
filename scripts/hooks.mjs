@@ -24,9 +24,9 @@ export function hookEntries(repo, configPath, node = process.execPath) {
     // each hook answers only its own tools.
     // The claude-artifacts server's tools too (#C652): the app replaced ArtifactData and Artifact with them, and a matcher that
     // names the old two lets every board write and page publish by the new ones pass unchecked.
-    PreToolUse: { matcher: "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*", hooks: [{ type: "command", command: cmd("gate.mjs") }, { type: "command", command: cmd("publish.mjs") }] },
+    PreToolUse: { matcher: "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*|mcp__.*__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)", hooks: [{ type: "command", command: cmd("gate.mjs") }, { type: "command", command: cmd("publish.mjs") }] },
     // After a board write the board applied: what the gate must remember from it (the thread counter).
-    PostToolUse: { matcher: "ArtifactData|mcp__claude-artifacts__db_write|mcp__claude-artifacts__db_str_replace", hooks: [{ type: "command", command: cmd("after.mjs") }] },
+    PostToolUse: { matcher: "ArtifactData|mcp__.*__(db_write|db_str_replace)", hooks: [{ type: "command", command: cmd("after.mjs") }] },
     // The lead's turn end: the gate's checks, then "start the collector now" when a card moved since its last run.
     Stop: { hooks: [{ type: "command", command: cmd("stop.mjs") }, { type: "command", command: cmd("refresh.mjs", "collector") }] },
     // The lead's turn start: one line of the mechanical messages logged since its last prompt (#C335).

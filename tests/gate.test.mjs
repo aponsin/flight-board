@@ -288,8 +288,8 @@ test("writeErrors is the per-write rule list the batch uses", () => {
 test("the hook entries: the gate on board writes and hand-offs, the Stop check; writing them keeps every other hook and replaces an older one", async () => {
   const { hookEntries, withHooks, shellQuote } = await import("../scripts/hooks.mjs");
   const e = hookEntries("/r/flight-board", "/cfg/board.config.json", "/bin/node");
-  assert.equal(e.PreToolUse.matcher, "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*", "#C652: the claude-artifacts server's tools too");
-  assert.equal(e.PostToolUse.matcher, "ArtifactData|mcp__claude-artifacts__db_write|mcp__claude-artifacts__db_str_replace", "#C652: its writes are journalled");
+  assert.equal(e.PreToolUse.matcher, "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*|mcp__.*__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)", "#C652: the claude-artifacts server's tools too");
+  assert.equal(e.PostToolUse.matcher, "ArtifactData|mcp__.*__(db_write|db_str_replace)", "#C652: its writes are journalled");
   assert.equal(e.PreToolUse.hooks[1].command, "'/bin/node' '/r/flight-board/gate/publish.mjs' --config '/cfg/board.config.json'", "the publish hook (#C409)");
   assert.equal(e.PreToolUse.hooks[0].command, "'/bin/node' '/r/flight-board/gate/gate.mjs' --config '/cfg/board.config.json'");
   assert.equal(e.Stop.hooks[0].command, "'/bin/node' '/r/flight-board/gate/stop.mjs' --config '/cfg/board.config.json'");

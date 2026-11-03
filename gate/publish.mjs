@@ -20,7 +20,7 @@ import { buildPage } from "../scripts/build-page.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 import { currentLink } from "../collector/fence.mjs";
 import { readLines, sessionRole } from "./session.mjs";
-import { PREFIX, classify, isBoardSlug } from "./tools.mjs";
+import { PREFIX, classify, isBoardSlug, normName } from "./tools.mjs";
 
 export const PAGE_NAME = /^board-(?:[0-9a-f]{7,40}|v\d{1,4})\.html$/;
 export const MAX_PAGE = 8 * 1024 * 1024;
@@ -50,7 +50,7 @@ export function publishAllowed(input, ctx) { return publishVerdict(input, ctx)?.
 
 // The same, with what the allow needs: { reason, bytes (the verified page), name, input (the call's own fields) }.
 export function publishVerdict(input, { rawConfig, managerRole, configDir, current, lines, envRole = "" }) {
-  const files = input?.tool_name === PUBLISH_FILES; // the claude-artifacts server's publish (#C652)
+  const files = normName(input?.tool_name) === PUBLISH_FILES; // the claude-artifacts server's publish (#C652)
   if (input?.tool_name !== "Artifact" && !files) return null;
   const t = input.tool_input;
   if (!t || typeof t !== "object" || Array.isArray(t)) return null;
@@ -140,7 +140,13 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       const updatedInput = v ? verifiedCopy(v, v.copyDir ?? configDir) : null;
       if (v && updatedInput) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", permissionDecisionReason: v.reason, updatedInput } }));
       else if (pageDenied(input, rawConfig)) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: PAGE_DENIED } }));
-    } catch { /* silence */ }
+    } catch {
+      // A throw must not hand a page tool back to the app's own permission check (Security): on the board's page tools, deny.
+      try {
+        const input = JSON.parse(raw);
+        if (pageDenied(input, rawConfig)) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: PAGE_DENIED } }));
+      } catch { /* silence */ }
+    }
     process.exit(0);
   });
 }
