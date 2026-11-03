@@ -1,0 +1,1 @@
+PASS Full (Checker, 2026-11-03): #C623 usage-tile-fresh a63685d = signed 1cd5274 plus one CSS line (.tot.plan.stale .plan-age in ink, 600; outranks .tot .l), Designer's finding. No logic change.
