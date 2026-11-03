@@ -59,7 +59,8 @@ export function truthSeen(asked, seen = null, printed = [], now = Date.now()) {
   const s = seenItems(seen), out = {};
   for (const a of truthList(asked)) {
     const key = `${a.kind} ${a.card}`, e = seenEntry(s[key]);
-    out[key] = printed.some((p) => p.kind === a.kind && p.card === a.card) ? { sha: a.sha, at: now } : e && e.sha === a.sha ? e : { sha: a.sha, at: now };
+    if (printed.some((p) => p.kind === a.kind && p.card === a.card)) out[key] = { sha: a.sha, at: now };
+    else if (e && e.sha === a.sha) out[key] = e;
   }
   return { items: out };
 }

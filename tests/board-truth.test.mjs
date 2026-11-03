@@ -216,6 +216,14 @@ test("no SHIP line when the roster has no Release; CLOSE still prints; odd entri
   assert.ok(TRUTH_SEEN_FILE);
 });
 
+test("a SHIP line held back while Release is off the roster prints once Release is back on it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fb-truth-held-"));
+  writeFileSync(join(dir, TRUTH_FILE), JSON.stringify({ at: T, items: [{ kind: "ship", card: "board-x", sha: "a1b2c3d4e5f6" }] }));
+  assert.equal(tick(dir, T, 1, ["Manager", "Builder"]), null, "held back");
+  assert.match(tick(dir, T + 5000, 1, ["Manager", "Release"]), /^SHIP board-x/, "printed once Release is on the roster");
+  assert.equal(tick(dir, T + 10000, 1, ["Manager", "Release"]), null, "then once");
+});
+
 // ---- the page: the card says it from the live state
 function page(card, probeCard, agents = {}) {
   const b = loadNames(["liveCard", "versionNote", "versionNoteBase", "liveRun", "shipNow", "probeEvent", "asShown", "closeableNow"]);
