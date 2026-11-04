@@ -43,9 +43,19 @@ test("B: a thread silent for 14+ days and tied to nothing open is archived; rece
   const cards = [{ id: "c1", status: "active", summary: "Follows thread t-card" }, { id: "c2", status: "done", summary: "Follows thread t-done" }];
   const p = planMessages({ messages, waiting, cards, now: NOW });
   assert.deepEqual(p.threads, ["t-done", "t-old"], "an answered ask or a done card does not hold a thread");
-  assert.deepEqual(p.kept, { recent: 1, tied: 2 });
+  assert.deepEqual(p.kept, { recent: 1, tied: 2, owner: 0 });
   assert.deepEqual([p.deleted, p.added, p.freed], [3, 2, 1]);
   assert.deepEqual(p.archive["t-old"].map((m) => m.id), ["t-old-m1", "t-old-m2"], "oldest first");
+});
+
+test("B: a thread holding the owner's message stays (the gate never deletes it, so its batch would fail whole); the dry list says so", () => {
+  const messages = [msg("t-own", 1, ago(30)), msg("t-own", 2, ago(29), { from: "Sam" }), msg("t-old", 1, ago(30))];
+  const p = planMessages({ messages, now: NOW, owner: "Sam" });
+  assert.deepEqual(p.threads, ["t-old"]);
+  assert.deepEqual(p.kept, { recent: 0, tied: 0, owner: 1 });
+  assert.deepEqual(planMessages({ messages, now: NOW }).threads, ["t-old", "t-own"], "no owner named: nothing is kept for it");
+  assert.match(dryReport({ cards: [], steps: [], timings: [], messages, waiting: [], now: NOW, owner: "Sam" }), /1 holding the owner's messages\)/);
+  assert.match(dryReport({ cards: [], steps: [], timings: [], messages, waiting: [], now: NOW }), /no --owner given/);
 });
 
 test("B: the batches write each thread's line before its deletes, in batches of at most 49, and every delete carries ifVersion 1", () => {
@@ -86,19 +96,22 @@ test("dryReport names each piece and the days of growth it buys; the CLI writes 
     put("messages", "t-q-m2", { thread: "t-q", at: now - 29 * DAY, from: "Manager", text: "ho" });
     const script = new URL("../scripts/doc-cap.mjs", import.meta.url).pathname;
     const go = (...a) => spawnSync(process.execPath, [script, ...a], { encoding: "utf8" });
-    const dry = go("dry", join(dir, "mirror"));
+    put("messages", "t-own-m1", { thread: "t-own", at: now - 30 * DAY, from: "Sam", text: "the owner's word" });
+    const dry = go("dry", join(dir, "mirror"), "--owner", "Sam");
     assert.match(dry.stdout, /A\. steps of closed cards: 1 card\(s\), 2 steps deleted, 1 timings added, 1 documents freed/);
     assert.match(dry.stdout, /B\. messages of quiet threads: 1 thread\(s\), 2 messages archived to a file and deleted, 1 lines added, 1 documents freed/);
     assert.match(dry.stdout, /Total freed: 2 documents/);
     assert.deepEqual(readdirSync(dir), ["mirror"], "dry writes nothing");
     const out = join(dir, "out");
     assert.equal(go("steps", join(dir, "mirror"), out).status, 0);
-    const m = go("messages", join(dir, "mirror"), out);
+    assert.equal(go("messages", join(dir, "mirror"), out).status, 2, "messages without --owner is refused");
+    const m = go("messages", join(dir, "mirror"), out, "--owner", "Sam");
     assert.match(m.stdout, /messages-archive-\d+\.json \(written first: keep it\)/);
     const files = readdirSync(out).sort();
     assert.ok(files.includes("steps-batch-1.json") && files.includes("messages-batch-1.json") && files.some((f) => /^messages-archive-\d+\.json$/.test(f)));
     const archive = JSON.parse(readFileSync(join(out, files.find((f) => f.startsWith("messages-archive-"))), "utf8"));
     assert.deepEqual(archive.threads["t-q"].map((x) => x.text), ["hi", "ho"]);
+    assert.deepEqual(Object.keys(archive.threads), ["t-q"], "the thread holding the owner's word is not archived");
     assert.equal(go("restore", join(out, files.find((f) => f.startsWith("messages-archive-"))), join(dir, "back")).status, 0);
     assert.ok(readdirSync(join(dir, "back")).includes("restore-batch-1.json"));
     assert.equal(go("bogus", dir).status, 2);

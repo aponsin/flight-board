@@ -2,9 +2,9 @@
 // grow. This is the lead's tool, never the page's or an agent's, and it deletes nothing by itself: it reads the collector's
 // mirror and prints what it WOULD archive (dry), or writes the db_write batches that do it, for the lead to send one at a time
 // after the owner's yes on the dry numbers.
-//   node scripts/doc-cap.mjs dry <mirror folder> [--days 14]
+//   node scripts/doc-cap.mjs dry <mirror folder> [--days 14] [--owner <name>]
 //   node scripts/doc-cap.mjs steps <mirror folder> <out folder> [--days 14]        (A: steps of closed cards -> timings/<card>)
-//   node scripts/doc-cap.mjs messages <mirror folder> <out folder> [--days 14]     (B: messages of quiet threads -> a local file)
+//   node scripts/doc-cap.mjs messages <mirror folder> <out folder> --owner <name> [--days 14]   (B: messages of quiet threads -> a local file; a thread holding the owner's message stays)
 //   node scripts/doc-cap.mjs restore <archive file> <out folder>                   (puts a messages archive back)
 // Rules: only closed cards' steps; only threads silent for --days and tied to nothing open (no open ask and no card that is not
 // done names the thread); a message archive is written to the out folder BEFORE any delete batch, byte for byte as the mirror
@@ -32,15 +32,17 @@ export function planSteps({ cards, steps, timings = [], now, days = DAYS }) {
 
 // B: the messages of threads silent for `days` and tied to nothing open. messages: [{ id, thread, at, ... }], threads, waiting,
 // cards: the mirror's documents ({ id, ...data }). Returns { archive: { threadId: [doc] }, threads, deleted, added, freed, kept }.
-export function planMessages({ messages, waiting = [], cards = [], now, days = DAYS }) {
+export function planMessages({ messages, waiting = [], cards = [], now, days = DAYS, owner = null }) {
   const byThread = new Map();
   for (const m of messages) if (m && typeof m.id === "string" && THREAD_ID.test(m.id) && typeof m.thread === "string" && THREAD_ID.test(m.thread)) (byThread.get(m.thread) ?? byThread.set(m.thread, []).get(m.thread)).push(m);
   const open = [...waiting.filter((w) => w && w.done !== true), ...cards.filter((c) => c && c.status !== "done" && c.status !== "dropped")].map((d) => JSON.stringify(d));
-  const archive = {}, kept = { recent: 0, tied: 0 };
+  const archive = {}, kept = { recent: 0, tied: 0, owner: 0 };
   for (const [tid, list] of byThread) {
     const newest = Math.max(...list.map((m) => num(m.at) ?? 0));
     if (!newest || now - newest < days * DAY) { kept.recent++; continue; }
     if (open.some((s) => s.includes(tid))) { kept.tied++; continue; }
+    // The gate never deletes the owner's message (ownerWordErrors), so a thread holding one would fail its whole batch: it stays.
+    if (typeof owner === "string" && owner && list.some((m) => m.from === owner)) { kept.owner++; continue; }
     archive[tid] = list.sort((a, b) => (num(a.at) ?? 0) - (num(b.at) ?? 0) || (a.id < b.id ? -1 : 1));
   }
   const threads = Object.keys(archive).sort();
@@ -74,13 +76,13 @@ export function restoreOps(file) {
   return batches;
 }
 
-export function dryReport({ cards, steps, timings, messages, waiting, now, days = DAYS }) {
-  const a = planSteps({ cards, steps, timings, now, days }), b = planMessages({ messages, waiting, cards, now, days });
+export function dryReport({ cards, steps, timings, messages, waiting, now, days = DAYS, owner = null }) {
+  const a = planSteps({ cards, steps, timings, now, days }), b = planMessages({ messages, waiting, cards, now, days, owner });
   const freed = a.freed + b.freed;
   return [
     `Dry list (nothing is written), cut at ${days} days:`,
     `A. steps of closed cards: ${a.cards} card(s), ${a.deleted} steps deleted, ${a.added} timings added, ${a.freed} documents freed`,
-    `B. messages of quiet threads: ${b.threads.length} thread(s), ${b.deleted} messages archived to a file and deleted, ${b.added} lines added, ${b.freed} documents freed (kept: ${b.kept.recent} recent, ${b.kept.tied} tied to something open)`,
+    `B. messages of quiet threads: ${b.threads.length} thread(s), ${b.deleted} messages archived to a file and deleted, ${b.added} lines added, ${b.freed} documents freed (kept: ${b.kept.recent} recent, ${b.kept.tied} tied to something open, ${b.kept.owner} holding the owner's messages${owner ? "" : "; no --owner given, so none were kept for that"})`,
     `Total freed: ${freed} documents, about ${(freed / OPS_PER_DAY).toFixed(1)} days of growth at ${OPS_PER_DAY} a day.`,
   ].join("\n");
 }
@@ -89,6 +91,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const args = process.argv.slice(2);
   const at = args.indexOf("--days");
   const days = at >= 0 ? Number(args.splice(at, 2)[1]) : DAYS;
+  const oat = args.indexOf("--owner");
+  const owner = oat >= 0 ? String(args.splice(oat, 2)[1] ?? "") : "";
   const [cmd, dir, out] = args;
   const now = Date.now();
   const read = (c) => readCollection(dir, c);
@@ -96,14 +100,15 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const usage = () => { console.error("Usage: node scripts/doc-cap.mjs dry <mirror> | steps <mirror> <out> | messages <mirror> <out> | restore <archive file> <out>  [--days 14]"); process.exit(2); };
   if (!cmd || !dir || !(days >= 0)) usage();
   if (cmd === "dry") {
-    console.log(dryReport({ cards: read("initiatives"), steps: read("steps"), timings: read("timings"), messages: read("messages"), waiting: read("waiting"), now, days }));
+    console.log(dryReport({ cards: read("initiatives"), steps: read("steps"), timings: read("timings"), messages: read("messages"), waiting: read("waiting"), now, days, owner }));
   } else if (cmd === "steps" && out) {
     const p = planSteps({ cards: read("initiatives"), steps: read("steps"), timings: read("timings"), now, days });
     mkdirSync(out, { recursive: true });
     p.ops.forEach((b, k) => write(`steps-batch-${k + 1}.json`, b));
     console.log(`${p.cards} card(s), ${p.ops.length} batch(es) of db_write ops in ${out}, ${p.freed} documents freed. Send each in order, one db_write at a time.`);
   } else if (cmd === "messages" && out) {
-    const p = planMessages({ messages: read("messages"), waiting: read("waiting"), cards: read("initiatives"), now, days });
+    if (!owner) { console.error("messages needs --owner <the owner's name>: the gate never deletes their messages, so a thread holding one is kept"); process.exit(2); }
+    const p = planMessages({ messages: read("messages"), waiting: read("waiting"), cards: read("initiatives"), now, days, owner });
     if (!p.threads.length) { console.log("No quiet thread to archive."); process.exit(0); }
     mkdirSync(out, { recursive: true });
     const file = `messages-archive-${now}.json`;

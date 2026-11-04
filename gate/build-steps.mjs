@@ -56,6 +56,11 @@ export function openElsewhere(steps, role, except) {
   return card;
 }
 
+// Board text reaches an agent only as a plain id (Security nit on #C654): collector/text.mjs's idText, copied so this file
+// still imports nothing (a test holds the two equal).
+const ID = /^[A-Za-z0-9_.~:@+-]{1,64}$/;
+export const plainId = (v) => (typeof v === "string" && ID.test(v) ? v : "?");
+
 export const startWrite =(cardId, role, now) => `db_write set steps/${cardId}-build-start-${now} {"at": ${now}, "init": "${cardId}", "kind": "start", "phase": "build", "who": "${role}"} (the real clock: node -e "console.log(Date.now())")`;
 export const endWrite = (cardId, role, now) => `db_write set steps/${cardId}-build-end-${now} {"at": ${now}, "init": "${cardId}", "kind": "end", "phase": "build", "who": "${role}"} (the real clock: node -e "console.log(Date.now())")`;
 
@@ -67,7 +72,7 @@ export function commitError({ num, role, mirror, now, maxAgeMs }) {
   if (!card || typeof card.id !== "string") return null;
   const b = buildState(mirror, role, card.id);
   if (!b.steps || b.started !== null) return null;
-  return `Flight board refused this commit: it is tagged #C${num} (card ${card.id}) but ${role} has no plain build start step on that card, so the board would show it idle. A start with a wait (busy) means not started. Write the start first: ${startWrite(card.id, role, now)}. Then commit again.`;
+  return `Flight board refused this commit: it is tagged #C${num} (card ${plainId(card.id)}) but ${role} has no plain build start step on that card, so the board would show it idle. A start with a wait (busy) means not started. Write the start first: ${startWrite(plainId(card.id), role, now)}. Then commit again.`;
 }
 
 // A READY message about a card the sender started: refused until the sender's end step exists after that start. A card the
@@ -80,7 +85,7 @@ export function readyError({ text, role, mirror, now, maxAgeMs }) {
     if (!card || typeof card.id !== "string" || seen.has(card.id)) continue;
     seen.add(card.id);
     const b = buildState(mirror, role, card.id);
-    if (b.steps && b.started !== null && !b.ended) return `Not sent. This is READY for card ${card.id} but ${role} has no build end step after its start. Write the end first: ${endWrite(card.id, role, now)}. Then send READY again.`;
+    if (b.steps && b.started !== null && !b.ended) return `Not sent. This is READY for card ${plainId(card.id)} but ${role} has no build end step after its start. Write the end first: ${endWrite(plainId(card.id), role, now)}. Then send READY again.`;
   }
   return null;
 }

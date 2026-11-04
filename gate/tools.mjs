@@ -90,6 +90,14 @@ export function assetError(t) {
     if (bad.length) return why(`a file entry has ${bad.join(", ")}`);
     if (typeof f.name !== "string" || !ASSET_EXT.test(f.name)) return why("a file name is not a picture or a PDF");
     if (typeof f.path !== "string" || !f.path.startsWith("/")) return why("a file path is not an absolute path");
+    // Security R1 (#C654): the client uploads the PATH, so the picture-or-PDF test is on it too, and a path into a hidden
+    // folder or file (.env*, ~/.ssh, ~/.claude, .git, ~/.flight-board) or under a Library folder is refused whatever its name:
+    // an extension alone is no wall (cp .env.local x.png), so the location is the part that holds.
+    if (!ASSET_EXT.test(f.path)) return why("a file path is not a picture or a PDF");
+    const parts = f.path.split("/");
+    if (parts.some((p) => p === ".." || p === "." )) return why("a file path has a . or .. segment");
+    if (parts.some((p) => p.startsWith("."))) return why("a file path goes through a hidden file or folder");
+    if (parts.some((p) => p === "Library")) return why("a file path is under a Library folder");
   }
   return null;
 }
