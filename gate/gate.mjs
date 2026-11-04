@@ -156,11 +156,35 @@ export function handOff(text) {
   return { ids: [...new Set(ids)], work };
 }
 
-export function checkHandOff(text, { known, fresh }) {
+// #C673: new build work goes under an OPEN card. By recipient (Manager): a send to a builder role that names a card in ship or live,
+// or done or dropped, is refused (Manager sent new work under #C668 while it sat in ship, so no card showed it). A send to anyone
+// else (reviewers, Release, Ops, Designer, Linguist, ...) is not checked, and a send that says "rebase" is the legitimate case on a
+// signed-but-unreleased card. A recipient the gate cannot name (an id or a name it does not know) is not checked.
+export const BUILDER_ROLES = ["Builder", "Boardsmith", "Admin", "Demos", "Mainsite", "Steward"];
+export const REBASE = /\brebas(e|es|ed|ing)\b/i;
+// The role a send is addressed to: its session id (config.rosterSessions) or its name, any case. Null when unknown.
+export function recipientRole(to, config) {
+  const s = String(to ?? "").trim();
+  if (!s) return null;
+  const sessions = { ...(config.rosterSessions ?? {}), ...(config.gate?.managerSession ? { [config.gate.managerRole]: config.gate.managerSession } : {}) };
+  const byId = Object.entries(sessions).find(([, sid]) => sid === s);
+  if (byId) return byId[0];
+  return (config.roster ?? []).find((r) => r.toLowerCase() === s.toLowerCase()) ?? null;
+}
+// cards: Map id -> { phase, status, derivedPhase }; shipPhases: [the ship phase, the live phase].
+export const finishedCard = (c, shipPhases) => !!c && (c.status === "done" || c.status === "dropped" || shipPhases.includes(c.phase) || shipPhases.includes(c.derivedPhase));
+
+export function checkHandOff(text, { known, fresh, cards = null, shipPhases = [], role = null }) {
   const { ids, work } = handOff(text);
   if (!work) return { errors: [], note: null };
   if (!ids.length) return { errors: ["this hands out work but names no card: write \"board id <id>\" (create the card first if it has none)"], note: null };
   const missing = ids.filter((id) => !known.has(id));
+  // The card ids come out of the text first: an id can hold the word ("rebase-fix").
+  const prose = ids.reduce((s, id) => s.split(id).join(" "), String(text).toLowerCase());
+  if (!missing.length && fresh && cards && BUILDER_ROLES.includes(role) && !REBASE.test(prose)) {
+    const done = ids.filter((id) => finishedCard(cards.get(id), shipPhases));
+    if (done.length) return { errors: [`card ${done.join(", ")} is already in ship, live or done: open a new card and name that one (create it first: initiatives/<id>, then send naming its id)`], note: null };
+  }
   if (!missing.length) return { errors: [], note: null };
   if (!fresh) return { errors: [], note: `the board's mirror is stale; couldn't check card ${missing.join(", ")} exists` };
   return { errors: [`no card ${missing.join(", ")} on the board: create it first (initiatives/<id>), then send`], note: null };
@@ -220,7 +244,10 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
     const mirror = readMirror(join(dir, "mirror"));
     const fresh = !!mirror && now - mirror.at < config.gate.mirrorMaxAgeMin * 60e3;
     const known = new Set([...(state.known ?? []), ...((mirror?.docs.initiatives ?? []).map((d) => d.id))]);
-    const r = checkHandOff(t.message ?? t.text ?? "", { known, fresh });
+    const seenM = mirror ? withJournal(mirror, state.journal) : null;
+    const derivedAll = (seenM?.docs.derived ?? []).find((d) => d.id === "all")?.cards ?? {};
+    const cards = seenM ? new Map((seenM.docs.initiatives ?? []).map((d) => [d.id, { phase: d.phase, status: d.status, derivedPhase: derivedAll[d.id]?.phase }])) : null;
+    const r = checkHandOff(t.message ?? t.text ?? "", { known, fresh, cards, shipPhases: [config.collector.shipPhase, config.collector.livePhase].filter(Boolean), role: recipientRole(t.to ?? t.session_id ?? t.sessionId, config) });
     if (r.errors.length) return { block: `Not sent. ${r.errors.join(" ")}\n` };
     return r.note ? { note: r.note } : {};
   }
