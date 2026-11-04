@@ -2,7 +2,7 @@
 // commits and ids. The batch is what the role applies as is, so the gate must accept every op of it.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -36,6 +36,8 @@ test("cardsNamed: only by a subject that starts #C<num>:, a Board-Id trailer, or
   assert.deepEqual(r.named[1].commits, ["cccccccc"], "'#C702: fit Builder's #C703 Worker' names 702 only");
   assert.deepEqual(r.named[3].commits, ["77777777", "88888888"], "the ship commit names the card of the commit at its sha");
   assert.deepEqual(r.unmatched.map((u) => u.sha), ["eeeeeeee"], "a citation that is no open card is listed, a branch that is no card is not");
+  assert.equal(r.unmatched[0].missing, false, "a closed card is on the board: not missing");
+  assert.equal(cardsNamed([{ sha: "5".repeat(40), subject: "#C799: no such card", body: "" }], cards).unmatched[0].missing, true, "a card the board does not hold is missing");
   assert.deepEqual(cardsNamed([{ sha: "1".repeat(40), subject: "#C1234567: is not card 123456", body: "" }], [card("big", 123456)]).named, [], "a longer number is another number");
   assert.deepEqual(cardsNamed([], cards).named, []);
   assert.deepEqual(cardsNamed(undefined, cards).named, []);
@@ -43,7 +45,8 @@ test("cardsNamed: only by a subject that starts #C<num>:, a Board-Id trailer, or
   assert.deepEqual(noPattern.named.map((n) => n.card.id), ["menu-fix", "tabs-fix", "note-fix", "bystander"], "bystander is also named by its own trailer");
   assert.deepEqual(cardsNamed([{ sha: "9".repeat(40), subject: "v1.0.0: x/y@9999999", body: "" }, { sha: "2".repeat(40), subject: "x", body: "" }], cards, "(").named, [], "a bad pattern names nothing");
   assert.deepEqual(cardsNamed([{ sha: "4".repeat(40), subject: "Docs", body: "We drop the Board-Id: menu-fix line when squashing" }], cards).named, [], "a trailer is a line of its own");
-  const byBranch =cardsNamed([{ sha: "3".repeat(40), subject: "v1.0.0: build/note-fix@3030303", body: "" }], cards, PATTERN);
+  assert.deepEqual(cardsNamed([{ sha: "6".repeat(40), subject: "notes: see #C575: done", body: "" }], [card("worker-card", 575)]).named, [], "'#C575:' in the middle of a subject names nothing (the anchor)");
+  const byBranch = cardsNamed([{ sha: "3".repeat(40), subject: "v1.0.0: build/note-fix@3030303", body: "" }], cards, PATTERN);
   assert.deepEqual(byBranch.named.map((n) => n.card.id), ["note-fix"], "a branch whose last segment is the card id names it");
 });
 
@@ -64,7 +67,8 @@ test("shipBatch: a ship END step per signed named card, exact; the card update o
   assert.doesNotMatch(JSON.stringify(r.ops), /shippedAt/, "shippedAt is the probe's");
   const full = shipBatch({ version: "1.200.0", sha: "9".repeat(40), commits, cards, config, now: NOW, versions: { "menu-fix": 7, "tabs-fix": 3, bystander: 2 }, derived });
   assert.equal(full.left.length, 1, "only the unsigned card is left");
-  assert.equal(full.ops.find((o) => o.path === "initiatives/tabs-fix").data.phase, undefined, "a card two steps behind keeps what the repository derives");
+  assert.equal(full.ops.find((o) => o.path === "initiatives/tabs-fix").data.phase, "ship", "a card several phases behind (a Quick one on checker) moves to ship too, the repository reading ship or later");
+  assert.equal(shipBatch({ version: "1.200.0", sha: "9".repeat(40), commits, cards: [...cards.slice(0, 1), card("tabs-fix", 702, { phase: "live" }), ...cards.slice(2)], config, now: NOW, versions: { "menu-fix": 7, "tabs-fix": 3, bystander: 2 }, derived }).ops.find((o) => o.path === "initiatives/tabs-fix").data.phase, undefined, "a card already on or past ship keeps its phase");
   assert.equal(full.ops.length, 6);
   const none = shipBatch({ version: "1.200.0", sha: "9".repeat(40), commits, cards, config, now: NOW, versions: { "menu-fix": 7 } });
   assert.deepEqual(none.ops, [], "with no reading of the repository nothing is a ship");
@@ -90,6 +94,8 @@ test("shipBatch --partial: a build step with the note and the card's nextNote; t
   assert.match(menu[1].data.nextNote, /holds part of this card/);
   assert.ok(!r.ops.some((o) => o.path === `steps/menu-fix-ship-end-${NOW}`));
   assert.ok(r.ops.some((o) => o.path === `steps/tabs-fix-ship-end-${NOW}`), "the other cards ship as usual");
+  assert.deepEqual(r.badPartial, [], "every --partial id is named");
+  assert.deepEqual(shipBatch({ version: "1.200.0", sha: "9".repeat(40), commits, cards, config, now: NOW, versions: {}, derived, partial: ["menu-fx", "note-fix"] }).badPartial, ["menu-fx"], "a typo is reported, not ignored");
   const noVer = shipBatch({ version: "1.200.0", sha: "9".repeat(40), commits, cards, config, now: NOW, versions: {}, derived: {}, partial: ["menu-fix"] });
   assert.equal(noVer.ops.length, 1);
   assert.match(noVer.left.join("\n"), /menu-fix: its card \(nextNote\) is not in this batch/);
@@ -132,7 +138,7 @@ test("parseVersions: a map or a db_query list; anything else is null; bad versio
 });
 
 // A scratch repository, a mirror and a config on disk, for the command line.
-function rig({ derivedCards = derived, mirrorCards = cards } = {}) {
+function rig({ derivedCards = derived, mirrorCards = cards, absent = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "fb-shipbatch-"));
   const run = (cmd, args) => spawnSync(cmd, args, { cwd: dir, encoding: "utf8" });
   run("git", ["init", "-q", "-b", "main"]);
@@ -141,7 +147,8 @@ function rig({ derivedCards = derived, mirrorCards = cards } = {}) {
   const base = run("git", ["rev-parse", "HEAD"]).stdout.trim();
   commit("#C701: the menu follows the order");
   commit("#C702: fit Builder's #C703 Worker");
-  commit("#C799: a card the board does not have");
+  commit("#C704: already closed");
+  if (absent) commit("#C799: a card the board does not have");
   const head = run("git", ["rev-parse", "HEAD"]).stdout.trim();
   const state = join(dir, "state");
   const boardUrl = "https://claude.ai/" + "artifact/TestBoard01";
@@ -168,7 +175,7 @@ test("the command line prints the batch for a commit range and saves it; unmatch
   assert.deepEqual(call.ops.map((o) => o.path).sort(), ["initiatives/menu-fix", "initiatives/tabs-fix", `steps/menu-fix-ship-end-${call.ops[0].data.at}`, `steps/tabs-fix-ship-end-${call.ops[0].data.at}`].sort());
   assert.equal(call.ops.find((o) => o.path === "initiatives/menu-fix").ifVersion, 4);
   assert.equal(JSON.parse(readFileSync(out, "utf8")).ops.length, 4, "saved");
-  assert.match(r.stderr, /unmatched: commit \w{8} cites #C799, which is no open card on the board/);
+  assert.match(r.stderr, /unmatched: commit \w{8} cites #C704, which is no open card on the board/, "a closed card is only listed");
   assert.doesNotMatch(r.stdout, /note-fix/, "#C703 is cited, not named");
 });
 
@@ -201,17 +208,38 @@ test("the command line stops without --versions, on an empty versions file, and 
 
 test("the command line stops when the mirror is older than gate.mirrorMaxAgeMin, and with no mirror", () => {
   const { dir, ship } = rig();
-  const stale = ship(["--versions", join(dir, "versions.json")], { now: Date.now() + 76 * 60e3 });
-  assert.equal(stale.status, 1);
-  assert.match(stale.stderr, /^STOP: the mirror of the board was last written \d+ minutes ago \(more than gate.mirrorMaxAgeMin, 75\)/);
-  assert.equal(stale.stdout, "");
-  const fresh = ship(["--versions", join(dir, "versions.json")], { now: Date.now() + 60 * 60e3 });
+  const fresh = ship(["--versions", join(dir, "versions.json")]);
   assert.equal(fresh.status, 0, fresh.stderr);
+  // The CARDS are old while derived/all (rewritten every collector run) is new: that mirror is stale (Checker: it passed, with a
+  // card made after the cards were last written missing). A back-dated --now does not make it fresh: the clock is the real one.
+  const cdir = join(dir, "state", "TestBoard01", "mirror", "initiatives"), old = new Date(Date.now() - 7 * 3600e3);
+  for (const f of readdirSync(cdir)) utimesSync(join(cdir, f), old, old);
+  const stale = ship(["--versions", join(dir, "versions.json")]);
+  assert.equal(stale.status, 1);
+  assert.match(stale.stderr, /^STOP: the mirror's cards were last written 4\d\d minutes ago \(more than gate.mirrorMaxAgeMin, 75\)/);
+  assert.equal(stale.stdout, "");
+  const backdated = ship(["--versions", join(dir, "versions.json")], { now: Date.now() - 7 * 3600e3 });
+  assert.equal(backdated.status, 1, "a back-dated --now does not rescue an old mirror");
+  const emptyDir = rig({ mirrorCards: [] });
+  assert.match(emptyDir.ship(["--versions", join(emptyDir.dir, "versions.json")]).stderr, /^STOP: the mirror's cards were last written never/, "no card file at all is stale");
   const other = rig();
   writeFileSync(other.cfg, JSON.stringify({ artifactUrl: "https://claude.ai/" + "artifact/Elsewhere99", artifactSlug: config.artifactSlug, owner: "Sam", roster: config.roster, gate: { stateDir: join(other.dir, "state") } }));
   const none = other.ship(["--versions", join(other.dir, "versions.json")]);
   assert.equal(none.status, 1);
   assert.match(none.stderr, /^STOP: no mirror of the board/);
+});
+
+test("the command line stops on a citation of a card the mirror does not hold, and on a --partial id no commit names", () => {
+  const a = rig({ absent: true });
+  const r = a.ship(["--versions", join(a.dir, "versions.json")]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /^STOP: commit \w{8} cites #C799: the mirror holds no such card \(it is behind, or the citation is wrong\)/);
+  assert.equal(r.stdout, "");
+  const { dir, ship } = rig();
+  const typo = ship(["--versions", join(dir, "versions.json"), "--partial", "menu-fx"]);
+  assert.equal(typo.status, 1);
+  assert.match(typo.stderr, /^STOP: --partial names menu-fx, which no commit of the range names/);
+  assert.equal(typo.stdout, "");
 });
 
 test("the command line: a card the repository does not put on ship is left out with its reason", () => {

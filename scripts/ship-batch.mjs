@@ -51,7 +51,8 @@ export function cardsNamed(commits, cards, shippedPattern = "") {
     if (n.id !== null && byId.has(n.id)) found.add(n.id);
     const cites = [n.num !== null ? `#C${n.num}` : null, n.id].filter(Boolean);
     const open = [...found].filter((id) => !closed(byId.get(id)));
-    if (!open.length && !(n.via && n.num === null && !byId.has(n.id))) unmatched.push({ sha: n.sha.slice(0, 8), cite: cites.join(" / ") });
+    // missing: the board's mirror holds no such card at all (a closed card is fine and only listed).
+    if (!open.length && !(n.via && n.num === null && !byId.has(n.id))) unmatched.push({ sha: n.sha.slice(0, 8), cite: cites.join(" / "), missing: found.size === 0 });
     for (const id of open) { const l = hits.get(id) ?? []; const s = n.sha.slice(0, 8); if (!l.includes(s)) hits.set(id, [...l, s]); }
   }
   const seen = new Set();
@@ -74,6 +75,8 @@ export function shipBatch({ version, sha, commits, cards, config, now, who = "Re
   const short = String(sha ?? "").slice(0, 8);
   const part = new Set(partial);
   const r = cardsNamed(commits, cards, c.shippedPattern ?? "");
+  // A --partial id that no commit of the range names is a typo, never to be ignored (the real card would get a full ship step).
+  const badPartial = [...part].filter((id) => !r.named.some((n) => n.card.id === id));
   for (const { card } of r.named) {
     if (part.has(card.id)) {
       const note = `v${version} (${short}) holds part of this card; the rest is not on ${c.mainBranch} yet.`;
@@ -89,12 +92,13 @@ export function shipBatch({ version, sha, commits, cards, config, now, who = "Re
     ops.push(step(card, c.shipPhase, "end", who, now));
     // The waiting for the install is the page's to show from the repository (phase ship alone, no wait field): the line says only what shipped.
     const data = { nextNote: `v${version} (${short}) is on ${c.mainBranch}.`, nextNoteAt: now, updatedAt: now };
-    // The phase moves only one step, to ship; a card further behind keeps what the repository derives (the gate refuses a skip).
-    if (order.indexOf(card.phase) === ship - 1) data.phase = c.shipPhase;
+    // The phase moves to ship from any phase before it (a Quick card skips reviews): the repository's reading, required above, is
+    // ship or later, which is what the gate asks for a jump.
+    if (order.indexOf(card.phase) < ship) data.phase = c.shipPhase;
     if (versions[card.id] === undefined) { left.push(`${card.id}: its card (nextNote${data.phase ? ", phase" : ""}) is not in this batch: no version given for it`); continue; }
     ops.push({ op: "update", path: `initiatives/${card.id}`, data, ifVersion: versions[card.id] });
   }
-  return { ops, left, named, unmatched: r.unmatched };
+  return { ops, left, named, unmatched: r.unmatched, badPartial };
 }
 
 // The closing batch after an install is verified. input: { cards (the pack's, open ones only count), watch (ids that stay open),
@@ -157,11 +161,13 @@ if (process.argv[1] && (await import("node:fs")).realpathSync(process.argv[1]) =
     const dir = join(String(config.gate.stateDir).replace(/^~(?=\/|$)/, homedir()), boardId(config) ?? "no-board", "mirror");
     const now = arg("now") ? Number(arg("now")) : Date.now();
     if (!Number.isFinite(now) || now <= 0) fail("--now is a time in ms");
-    // The cards are the gate's mirror: a mirror older than gate.mirrorMaxAgeMin may lack the cards of this very ship, so it stops.
+    // The cards are the gate's mirror: a mirror whose CARDS are older than gate.mirrorMaxAgeMin may lack the cards of this very
+    // ship, so it stops. The age is the cards' own (the newest card file, or the delta stamp), never the mirror's newest file of
+    // any collection (the collector rewrites derived/all every run), and it is measured against the real clock, not --now.
     const mirror = readMirror(dir);
     if (!mirror || !Array.isArray(mirror.docs.initiatives)) fail(`no mirror of the board at ${dir}`);
-    const maxMin = config.gate.mirrorMaxAgeMin;
-    if (!(now - mirror.at < maxMin * 60e3)) fail(`the mirror of the board was last written ${Math.round((now - mirror.at) / 60e3)} minutes ago (more than gate.mirrorMaxAgeMin, ${maxMin}): wait for the collector's next run, then run this again`);
+    const maxMin = config.gate.mirrorMaxAgeMin, cardsAt = mirror.atBy?.initiatives ?? 0, realNow = Date.now();
+    if (!(realNow - cardsAt < maxMin * 60e3)) fail(`the mirror's cards were last written ${cardsAt ? Math.round((realNow - cardsAt) / 60e3) + " minutes ago" : "never"} (more than gate.mirrorMaxAgeMin, ${maxMin}): wait for the collector's next run, then run this again`);
     const cards = mirror.docs.initiatives;
     const derived = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards ?? {};
     if (!arg("versions")) fail(VERSIONS_HELP);
@@ -182,6 +188,11 @@ if (process.argv[1] && (await import("node:fs")).realpathSync(process.argv[1]) =
     }
     // A card named but with no version is a card left out of the batch: stop, naming them, rather than print half of it. (A card the
     // pack keeps open or leaves to its lead is on purpose and is not one of these.)
+    // A citation of a card the mirror does not hold at all means the mirror is behind (or the citation is wrong): stop too, rather
+    // than ship around it. A closed card is only listed.
+    const absent = (r.unmatched ?? []).filter((u) => u.missing && /#C\d/.test(u.cite));
+    if (absent.length) fail(`${absent.map((u) => `commit ${u.sha} cites ${u.cite}`).join("; ")}: the mirror holds no such card (it is behind, or the citation is wrong): wait for the collector's next run, then run this again`);
+    if ((r.badPartial ?? []).length) fail(`--partial names ${r.badPartial.join(", ")}, which no commit of the range names (a typo?)`);
     const missing = r.left.filter((l) => /no version given/.test(l)).map((l) => l.split(":")[0]);
     if (missing.length) fail(`no version for ${missing.join(", ")}: add them to the versions file (the query above), then run this again`);
     const call = JSON.stringify(asCall(config.artifactSlug || config.artifactUrl, r.ops), null, 2);

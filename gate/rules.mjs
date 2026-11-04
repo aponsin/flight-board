@@ -786,6 +786,14 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
     const owners = [...(config.roster ?? []), ...(config.gate.cardOwners ?? [])];
     if (!owners.includes(data.who)) e.push(`who "${idText(data.who)}" is not on the roster (${owners.map(idText).join(", ")}): add it to roster in the config, or give the card to one of these`);
   }
+  // Rule 4c (#C663, Security): a card's release notes (version, liveVersion) count as evidence that it shipped (gate/card-rules.mjs),
+  // so only the release role and the lead write them: any other role's update {phase: "ship", version: "9.9.9"} would move a
+  // card past its reviews. A value the card already has is left alone.
+  if (!who.manager && typeof who.role === "string" && who.role && who.role !== config.gate.releaseRole) {
+    for (const f of ["version", "liveVersion"]) {
+      if (f in data && data[f] !== was?.[f] && !(data[f] && typeof data[f] === "object" && data[f].__delete__ && was?.[f] === undefined)) e.push(`${f}: only ${config.gate.releaseRole} and ${config.gate.managerRole} write a card's ${f} (it is the evidence that the card shipped): ask ${config.gate.releaseRole}`);
+    }
+  }
   // A card given up closes as "dropped" with its reason; it needs no live evidence.
   if (data.status === "dropped" && !safeText(data.dropReason ?? was?.dropReason ?? "", 1e6).trim()) e.push('a dropped card needs dropReason (why it was given up)');
   // A card that names its branch keeps it (#C237): naming another is a second branch.

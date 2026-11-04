@@ -81,6 +81,19 @@ test("past build only with a build end step; this batch's end step counts; a car
   assert.deepEqual(gate(upd({ phase: "test" }), board([card()], [step({ kind: "end", wait: "busy" })])).filter((x) => /build end step/.test(x)).length, 1, "a busy end closes no work");
 });
 
+test("#C663 (Security): only Release and the lead write a card's version or liveVersion, so a version cannot move a card past its reviews", () => {
+  const m = board([card({ phase: "security" })], [step({ kind: "end" })]);
+  const lie = upd({ phase: "ship", version: "9.9.9" });
+  const refused = gate(lie, m, { who });
+  assert.ok(refused.some((x) => /version: only Release and Manager write a card's version/.test(x)), "Builder's version is refused");
+  assert.ok(refused.some((x) => /liveVersion|version/.test(x)));
+  assert.ok(gate(upd({ liveVersion: "9.9.9" }), board([card()]), { who }).some((x) => /liveVersion: only Release and Manager/.test(x)), "liveVersion too");
+  assert.deepEqual(gate(upd({ version: "1.2.3" }), board([card({ version: "1.2.3" })]), { who }), [], "a value the card already has is left alone");
+  assert.deepEqual(gate(upd({ version: "1.2.3" }), board([card({ phase: "ship" })]), { who: { role: "Release", manager: false } }).filter((x) => /version/.test(x)), [], "Release writes it");
+  assert.deepEqual(gate(upd({ version: "1.2.3" }), board([card({ phase: "ship" })]), { who: { role: "Manager", manager: true } }).filter((x) => /only Release/.test(x)), [], "the lead writes it");
+  assert.deepEqual(gate(upd({ version: "1.2.3" }), board([card({ phase: "ship" })]), { who: {} }).filter((x) => /only Release/.test(x)), [], "no role known: not this rule's");
+});
+
 test("ship only with a commit on main or a release note", () => {
   const withEnd = [step({ kind: "end" })];
   const m = board([card({ phase: "security" })], withEnd);
