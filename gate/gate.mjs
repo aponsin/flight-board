@@ -240,7 +240,14 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   process.stdin.on("data", (c) => (raw += c));
   process.stdin.on("end", () => {
     let r = {};
-    try { r = run(JSON.parse(raw), { config }); } catch (e) { process.stderr.write(`Flight board gate could not read the call: ${e.message}\n`); process.exit(0); }
+    let input = null;
+    try { input = JSON.parse(raw); r = run(input, { config }); } catch (e) {
+      // A throw in the gate is never the way past it (Security, #C662): a call on the artifact tools (a board write is one) that
+      // the gate could not check is refused, naming the error. Anything else the gate cannot read still passes, as before.
+      const t = typeof input?.tool_name === "string" ? input.tool_name : "";
+      if (input && (t === "ArtifactData" || t.startsWith("mcp__claude-artifacts__"))) { process.stderr.write(`Flight board refused this call: the gate could not check it (${String(e?.message ?? "error").slice(0, 120)}).\n`); process.exit(2); }
+      process.stderr.write(`Flight board gate could not read the call: ${e.message}\n`); process.exit(0);
+    }
     if (r.block) { process.stderr.write(r.block); process.exit(2); }
     if (r.note) process.stderr.write(`Flight board gate: ${r.note}\n`);
     process.exit(0);

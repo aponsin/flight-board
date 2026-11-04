@@ -11,7 +11,7 @@ import { approvalWriteErrors, agentPrWriteErrors } from "./agent-prs.mjs";
 import { buildingNow, liveCard } from "../collector/state-schema.mjs";
 import { openElsewhere, buildState } from "./build-steps.mjs";
 import { reworkOwed, issueTotal, signalText, ISSUE_KINDS, DONE_WHEN_MAX, halfLive } from "../collector/rework.mjs";
-import { fieldProblems, stepProblems } from "./card-rules.mjs";
+import { fieldProblems, stepProblems, safeText } from "./card-rules.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 let page;
@@ -260,13 +260,16 @@ export function writeErrors(w, { config, who, now }) {
   if (collection === "waiting") {
     // Rule 7: an agent's passing state ("needs the user") goes down the nudge path; it never becomes an item.
     if (op === "set" && (config.gate.transientPrefixes ?? []).some((p) => String(id).startsWith(p))) e.push(`"${id}" is a passing agent state: it goes to the nudges, never to the board as an item`);
-    if (op === "set") {
+    // An ask's words are text (#C662, Security): the page's own gap checks run regexes over them, and an object there threw.
+    const odd = ["text", "title", "question", "kind", "initiative"].filter((f) => data[f] !== undefined && data[f] !== null && typeof data[f] !== "string");
+    for (const f of odd) e.push(`${f}: must be text, not ${Array.isArray(data[f]) ? "a list" : typeof data[f]} (${safeText(data[f])})`);
+    if (op === "set" && !odd.length) {
       if (!data.kind) e.push("no kind");
       if (typeof data.since !== "number") e.push("no since (when it was asked)");
       // The page's "no screenshots" reads the template's own config: rule 1's look (lookErrors, the team's) decides instead.
       for (const g of rules.waitGaps({ ...data, done: false })) if (g !== "no screenshots") e.push(g);
     }
-    if ((op === "set" || op === "update") && "kind" in data && !["decision", "action", "answer"].includes(data.kind)) e.push(`kind "${data.kind}" is not drawn: use decision, action or answer`);
+    if ((op === "set" || op === "update") && "kind" in data && !["decision", "action", "answer"].includes(data.kind)) e.push(`kind ${JSON.stringify(safeText(data.kind))} is not drawn: use decision, action or answer`);
     const kind = data.kind;
     if (Array.isArray(data.options)) {
       if (op === "set" ? kind !== "decision" : "kind" in data && kind !== "decision") e.push('options show as buttons only on kind "decision"');
@@ -276,7 +279,7 @@ export function writeErrors(w, { config, who, now }) {
     if (op === "set" && kind === "decision" && !data.done) {
       const opts = Array.isArray(data.options) ? data.options.filter((o) => o && o.key && o.label) : [];
       if (opts.length < 2) e.push("a decision needs at least two options {key, label}");
-      if (!String(data.text ?? "").trim()) e.push("a decision needs its context in text");
+      if (!safeText(data.text ?? "", 1e6).trim()) e.push("a decision needs its context in text");
     }
     // Choices need buttons (#C227). An update that doesn't name the kind is checked against the mirror's (mirrorErrors).
     if (op === "set" || "kind" in data) e.push(...choiceErrors(data, kind));
@@ -295,7 +298,7 @@ export function writeErrors(w, { config, who, now }) {
   // A card's phase is one of config.phases (#C661): a phase the board does not list (Manager once wrote "install" on nine cards)
   // gives the page no place for the card, so it showed as queued with Build lit. Waiting for the install is "ship": the collector's derived wait shows it (the page's KNOWN_WAITS).
   if (collection === "initiatives" && data && typeof data === "object" && data.phase !== undefined && data.phase !== null && !phases.includes(data.phase)) {
-    e.push(`unknown phase ${JSON.stringify(String(data.phase).slice(0, 40))} on a card (use ${phases.join(", ")}): a card waiting for the install stays on "ship": the board shows "Waiting for install" itself, from the repository, so write phase "ship" and no wait field`);
+    e.push(`unknown phase ${JSON.stringify(safeText(data.phase))} on a card (use ${phases.join(", ")}): a card waiting for the install stays on "ship": the board shows "Waiting for install" itself, from the repository, so write phase "ship" and no wait field`);
   }
   // The card schema (#C662, gate/card-rules.mjs): a field the schema does not name, and a typed field (status, who, size, level,
   // wait, kind, phase) outside its list or set to null, are refused with the field's name. A phase the board does not list is
@@ -304,7 +307,7 @@ export function writeErrors(w, { config, who, now }) {
     for (const p of fieldProblems(data, config, { only: data })) if (p.code !== "value:phase") e.push(p.text);
   }
   if (collection === "steps" && op === "set") {
-    if (!phases.includes(data.phase)) e.push(`unknown phase "${data.phase}" (use ${phases.join(", ")})`);
+    if (!phases.includes(data.phase)) e.push(`unknown phase ${JSON.stringify(safeText(data.phase))} (use ${phases.join(", ")})`);
     if (!["start", "end"].includes(data.kind)) e.push("kind must be start or end");
     if (!data.init || !data.who || typeof data.at !== "number") e.push("a step needs init, who and at");
     // A step that closes one of its card's doneWhen lines (#C635): an end step with that line's index.
@@ -767,7 +770,7 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
     if (!owners.includes(data.who)) e.push(`who "${idText(data.who)}" is not on the roster (${owners.map(idText).join(", ")}): add it to roster in the config, or give the card to one of these`);
   }
   // A card given up closes as "dropped" with its reason; it needs no live evidence.
-  if (data.status === "dropped" && !String(data.dropReason ?? was?.dropReason ?? "").trim()) e.push('a dropped card needs dropReason (why it was given up)');
+  if (data.status === "dropped" && !safeText(data.dropReason ?? was?.dropReason ?? "", 1e6).trim()) e.push('a dropped card needs dropReason (why it was given up)');
   // A card that names its branch keeps it (#C237): naming another is a second branch.
   if (typeof was?.branch === "string" && was.branch && typeof data.branch === "string" && data.branch !== was.branch) e.push(`${SECOND_BRANCH} (this card's branch is ${was.branch})`);
   // Rule 5b (#C635): no half-live. A card that lists what must be true for it to be done (doneWhen) does not go live or done

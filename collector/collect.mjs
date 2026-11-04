@@ -534,7 +534,11 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   for (const card of open) {
     const d = derived[card.id];
     if (!d) continue;
-    const red = cardProblems(card, { steps, derived: d, live: liveState, config }).map((p) => lineText(p.text, 240)).slice(0, RED_MAX);
+    // Each card in its own try: one stored card the rules cannot read (a value of an odd shape) is a red line of its own, never
+    // a run that stops for every card (Security, #C662).
+    let red;
+    try { red = cardProblems(card, { steps, derived: d, live: liveState, config }).map((p) => lineText(p.text, 240)).slice(0, RED_MAX); }
+    catch { red = ["this card has a field the card rules cannot read: rewrite its fields as plain text"]; }
     if (red.length) d.red = red;
   }
   // Each phase's times from the evidence (#C235), for open cards and those closed in the last STEPS_DAYS days.

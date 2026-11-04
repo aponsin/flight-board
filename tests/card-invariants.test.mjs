@@ -7,7 +7,7 @@ import vm from "node:vm";
 import { readFileSync } from "node:fs";
 import { fullConfig, checkConfig } from "../scripts/config.mjs";
 import { writeErrors, mirrorErrors } from "../gate/rules.mjs";
-import { CARD_KEYS, allowedFor, fieldProblems, stepProblems, cardProblems, newProblems } from "../gate/card-rules.mjs";
+import { CARD_KEYS, allowedFor, fieldProblems, stepProblems, cardProblems, newProblems, safeText } from "../gate/card-rules.mjs";
 import { collect } from "../collector/collect.mjs";
 
 const config = fullConfig({ owner: "Sam", roster: ["Manager", "Builder", "Checker"], collector: { repoPath: "/x", deployWorkflow: "CI" } });
@@ -21,14 +21,14 @@ const gate = (w, m, extra = {}) => [...writeErrors(w, { config, who, now: NOW })
 const codes = (list) => list.map((p) => p.code);
 
 test("the config lists the values of a card's typed fields, checkConfig accepts it, and a bad list is named", () => {
-  assert.deepEqual(allowedFor("status", config), ["queued", "active", "paused", "done", "dropped"]);
+  assert.deepEqual(allowedFor("status", config), ["queued", "active", "paused", "parked", "stuck", "done", "dropped"]);
   assert.deepEqual(allowedFor("wait", config), [], "no card carries a wait");
   assert.deepEqual(allowedFor("phase", config), config.phases.map((p) => p[0]));
   assert.deepEqual(allowedFor("who", config), ["Manager", "Builder", "Checker", "Sam"], "the roster, the card owners and the owner");
   assert.deepEqual(checkConfig({ cardFields: { size: ["XS", "S"] } }), []);
   assert.match(checkConfig({ cardFields: { colour: ["red"] } })[0], /unknown field "colour"/);
   assert.match(checkConfig({ cardFields: { size: "S" } })[0], /cardFields\.size: a list/);
-  assert.equal(fullConfig({ cardFields: { size: ["S"] } }).cardFields.status.length, 5, "the other lists keep their defaults");
+  assert.equal(fullConfig({ cardFields: { size: ["S"] } }).cardFields.status.length, 7, "the other lists keep their defaults");
 });
 
 test("invariant 6: a field the card schema does not name is refused, and the refusal names it", () => {
@@ -86,14 +86,22 @@ test("ship only with a commit on main or a release note", () => {
   const m = board([card({ phase: "security" })], withEnd);
   const e = gate(upd({ phase: "ship" }), m);
   assert.equal(e.length, 1);
-  assert.match(e[0], /phase: #C700 is on ship but no commit of it is on main and it names no release version/);
+  assert.match(e[0], /phase: #C700 is on ship but it has no ship step, no commit on main and no release version, and the repository does not show it signed/);
   assert.deepEqual(gate(upd({ phase: "ship", version: "1.2.3" }), m), [], "a release note");
   assert.deepEqual(gate(upd({ phase: "ship" }), board([card({ phase: "security" })], withEnd, { menu: { phase: "ship", onMain: true } })), [], "the export says it is on main");
-  assert.equal(gate(upd({ phase: "ship" }), board([card({ phase: "security" })], withEnd, { menu: { phase: "ship" } })).length, 1, "signed but not on main is not shipped");
+  // Checker 1: a signed card waiting for Release is on ship by the repository's own reading (every review signed, not on main
+  // yet), and a ship step (Release logged its start) is evidence too; neither makes a card live.
+  assert.deepEqual(gate(upd({ phase: "ship" }), board([card({ phase: "security" })], withEnd, { menu: { phase: "ship" } })), [], "signed, waiting for Release: ship reads clean");
+  assert.deepEqual(gate(upd({ phase: "ship" }), board([card({ phase: "security" })], [...withEnd, step({ id: "r", phase: "ship", who: "Release" })])), [], "a ship step");
+  assert.equal(gate(upd({ phase: "live" }), board([card({ phase: "ship" })], withEnd, { menu: { phase: "ship" } })).length, 1, "signed is not live");
+  assert.deepEqual(gate(upd({ phase: "live" }), board([card({ phase: "ship" })], withEnd, { menu: { phase: "ship", onMain: true } })), [], "on main by the export: live reads clean");
+  assert.equal(gate(upd({ phase: "live" }), board([card({ phase: "ship" })], [...withEnd, step({ id: "r", phase: "ship", who: "Release" })])).length, 0, "a ship step in the mirror covers live too");
+  assert.deepEqual(codes(cardProblems(card({ phase: "ship" }), { steps: withEnd, derived: { phase: "ship" }, config })), [], "the probe draws no red line for it");
+  assert.equal(codes(cardProblems(card({ phase: "ship" }), { steps: withEnd, derived: { phase: "checker" }, config })).length, 1, "but one for a card the repository has not signed");
   const head = "a".repeat(12);
   const live = { version: 1, board: { boardId: "TestBoard01", at: NOW, probe: null, pageVersion: null }, cards: { menu: { phase: "ship", headSha12: head, onMain: true } }, agents: {} };
-  assert.deepEqual(stepProblems(card({ phase: "ship" }), { steps: withEnd, live, config }), [], "so does a fresh live reading (a reading the schema accepts)", { skip: false });
-  assert.match(gate(upd({ phase: "live" }), board([card({ phase: "ship" })], withEnd))[0], /on live but no commit/);
+  assert.deepEqual(stepProblems(card({ phase: "ship" }), { steps: withEnd, live, config }), [], "so does a fresh live reading (a reading the schema accepts)");
+  assert.match(gate(upd({ phase: "live" }), board([card({ phase: "ship" })], withEnd))[0], /on live but it has no ship step, no commit on main and no release version/);
 });
 
 test("a write is refused only for a problem it brings in: a card already broken can still be fixed or touched", () => {
@@ -119,7 +127,7 @@ test("the probe writes a red line for each open card that breaks a rule, and non
   const red = (id) => doc.cards[id]?.red ?? [];
   assert.match(red("a647").join(), /#C647 is on checker, past build, but has no build end step/);
   assert.match(red("a640").join(), /#C640 is queued but has a start step on build/);
-  assert.match(red("a649").join(), /#C649 is on ship but no commit of it is on main/);
+  assert.match(red("a649").join(), /#C649 is on ship but it has no ship step, no commit on main and no release version/);
   assert.deepEqual(red("clean"), []);
   assert.equal(doc.cards.old, undefined, "a closed card gets no reading, so no line");
   for (const id of ["a647", "a640", "a649"]) assert.ok(red(id).every((l) => l.length <= 240) && red(id).length <= 3, id);
@@ -150,6 +158,102 @@ test("derivePhase says onMain for a card whose commit is on main (the ship rule'
   assert.equal(derivePhase(card(), facts({ onMain: true }), config).onMain, true, "on main, not deployed: ship");
   assert.equal(derivePhase(card(), facts({ onMain: true, deployed: true }), config).onMain, true, "live");
   assert.equal(derivePhase(card(), facts({}), config).onMain, undefined, "READY and signed but not on main");
+});
+
+test("Checker 3: a build end older than the mirror's week of steps is stood in for by the repository's reading", () => {
+  const c = card({ phase: "checker" });
+  assert.equal(codes(stepProblems(c, { steps: [], config })).join(), "no-build-end", "no step and no reading");
+  assert.deepEqual(stepProblems(c, { steps: [], derived: { phase: "checker", readyAt: NOW - 20 * 24 * HOUR }, config }), [], "READY by the repository");
+  assert.deepEqual(stepProblems(c, { steps: [], derived: { phase: "security" }, config }), [], "a phase past build by the repository");
+  assert.equal(codes(stepProblems(c, { steps: [], derived: { phase: "build" }, config })).join(), "no-build-end", "the repository still says build");
+});
+
+test("Checker 2: parked and stuck are statuses, and so is anything nudges.parked lists", () => {
+  for (const s of ["parked", "stuck", "paused"]) assert.deepEqual(gate(upd({ status: s }), board([card()])), [], s);
+  assert.match(gate(upd({ status: "snoozed" }), board([card()])).join(), /status: "snoozed" is not allowed/);
+  const own = fullConfig({ nudges: { parked: ["snoozed"] }, roster: ["Manager", "Builder", "Checker"], collector: { repoPath: "/x", deployWorkflow: "CI" } });
+  assert.ok(allowedFor("status", own).includes("snoozed"), "the config's parked statuses");
+  assert.deepEqual(fieldProblems(card({ status: "snoozed" }), own), []);
+});
+
+// Security on b24f872: a field holding {"toString":1,"valueOf":1} made String(v) throw inside the gate, and the CLI let a throwing
+// call through unchecked, every other op of the same db_write with it. The text helper never converts; the CLI refuses a throw
+// on an artifact tool; the probe reads each card in its own try.
+const ODD = JSON.parse('{"toString":1,"valueOf":1}');
+const UUID = ["11ff6eeb", "bfd4", "4ffa", "96ed", "8a144a6b7f97"].join("-");
+const BOARD_URL = "https://claude.ai/" + "artifact/TestBoard01";
+
+test("safeText never converts a value with String(): an object that cannot be converted, a cycle and a symbol-less list read as text", () => {
+  assert.throws(() => String(ODD), "the shape really throws");
+  assert.equal(safeText(ODD), '{"toString":1,"valueOf":1}');
+  assert.equal(safeText("x".repeat(100)).length, 40);
+  assert.equal(safeText(undefined), "undefined");
+  const cyc = {}; cyc.self = cyc;
+  assert.equal(safeText(cyc), "object");
+  assert.equal(safeText(null), "null");
+});
+
+test("an object in a typed field is refused as text-not-object, never thrown on, for every typed field and a step's fields", () => {
+  for (const f of ["phase", "status", "who", "size", "level", "wait", "kind"]) {
+    let errs;
+    assert.doesNotThrow(() => { errs = gate(upd({ [f]: ODD }), board([card()])); }, f);
+    assert.ok(errs.length >= 1, `${f}: refused`);
+    assert.match(errs.join(), new RegExp(`${f === "phase" ? "unknown phase" : `${f}: must be text, not an object`}`), f);
+    assert.deepEqual(codes(fieldProblems({ ...card(), [f]: ODD }, config)).filter((c) => c.endsWith(`:${f}`)).length, 1, `${f}: one problem in the list`);
+  }
+  for (const f of ["phase", "kind", "init", "who", "at"]) {
+    assert.doesNotThrow(() => writeErrors({ op: "set", collection: "steps", doc_id: "s1", data: { id: "s1", init: "menu", phase: "build", kind: "start", who: "Builder", at: NOW - HOUR, [f]: ODD } }, { config, who, now: NOW }), `step ${f}`);
+  }
+  assert.doesNotThrow(() => writeErrors({ op: "set", collection: "waiting", doc_id: "w", data: { kind: ODD, text: ODD, updatedAt: NOW } }, { config, who, now: NOW }), "a waiting item");
+  assert.doesNotThrow(() => gate(upd({ status: "dropped", dropReason: ODD }), board([card()])), "dropReason");
+  assert.doesNotThrow(() => writeErrors({ op: "set", collection: "waiting", doc_id: "w", data: { kind: "decision", text: ODD, options: [{ key: "a", label: "A" }, { key: "b", label: "B" }], updatedAt: NOW } }, { config, who, now: NOW }), "a decision's text");
+  assert.doesNotThrow(() => cardProblems(card({ num: ODD, phase: "checker" }), { steps: [], config }), "a card number that is an object");
+});
+
+test("the gate's CLI refuses an object in each typed field (exit 2), and refuses a call it cannot check on an artifact tool", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "fb-inv-"));
+  const cfgFile = join(dir, "board.config.json");
+  writeFileSync(cfgFile, JSON.stringify({ artifactUrl: BOARD_URL, artifactSlug: UUID, owner: "Sam", roster: ["Manager", "Builder"], gate: { stateDir: dir } }));
+  const cli = (input, role = "Builder") => spawnSync("node", ["--max-old-space-size=512", new URL("../gate/gate.mjs", import.meta.url).pathname, "--config", cfgFile], { input: JSON.stringify(input), encoding: "utf8", timeout: 20000, env: { ...process.env, FLIGHT_BOARD_ROLE: role } });
+  const dbWrite = (ops, slug = UUID) => ({ tool_name: "mcp__claude-artifacts__db_write", tool_input: { slug, ops } });
+  for (const f of ["phase", "status", "who", "size", "level", "wait", "kind"]) {
+    const r = cli(dbWrite([{ op: "update", path: "initiatives/menu", data: { updatedAt: Date.now() - 4321, [f]: ODD } }]));
+    assert.equal(r.status, 2, `${f}: ${r.stderr}`);
+  }
+  // Shapes that still make a rule throw (an object where the gate reads text in an op, a message or an ask): fail closed on an
+  // artifact tool, open on anything else, and an unrelated op in the same call is not let through with it.
+  for (const ops of [
+    [{ op: ODD, path: "initiatives/x", data: { name: "n" } }],
+    [{ op: "set", path: "messages/m1", data: { text: ODD, thread: ODD, from: ODD, to: ODD, at: 1 } }],
+    [{ op: "set", path: "waiting/w1", data: { text: ODD, title: ODD, kind: "decision", options: ODD, initiative: ODD } }],
+    [{ op: "set", path: "threads/t1", data: { num: 1, title: "ok" } }, { op: ODD, path: "initiatives/x", data: { name: "n" } }],
+  ]) {
+    const thrown = cli(dbWrite(ops));
+    assert.equal(thrown.status, 2, thrown.stderr);
+    assert.match(thrown.stderr, /could not check it|refused|Flight board/);
+  }
+  const other = cli({ tool_name: { toString: 1 }, tool_input: { slug: ODD } });
+  assert.equal(other.status, 0, "a call that is not on an artifact tool still passes when unreadable");
+  assert.equal(cli({ tool_name: "Bash", tool_input: { command: "ls" } }).status, 0);
+});
+
+test("the probe reads each open card in its own try: one card with an object field is a red line, the others are still read", () => {
+  const cards = [card({ id: "odd", num: 660, status: ODD }), card({ id: "fine", num: 661, phase: "checker" })];
+  const git = () => "";
+  let out;
+  assert.doesNotThrow(() => { out = collect({ config, cards, git, gh: () => "[]", now: NOW, steps: [] }).doc; });
+  assert.match((out.cards.odd.red ?? []).join(), /status: must be text, not an object/);
+  assert.match((out.cards.fine.red ?? []).join(), /#C661 is on checker/, "the next card is still read");
+  // A card whose rules throw anyway (a getter that does): its own red line, and the run goes on.
+  const boom = card({ id: "boom", num: 662 });
+  Object.defineProperty(boom, "phase", { enumerable: true, get() { throw new Error("unreadable"); } });
+  assert.doesNotThrow(() => { out = collect({ config, cards: [boom, card({ id: "fine", num: 661, phase: "checker" })], git, gh: () => "[]", now: NOW, steps: [] }).doc; });
+  assert.match((out.cards.boom?.red ?? []).join(), /cannot read/, "its own red line");
+  assert.match((out.cards.fine.red ?? []).join(), /#C661/, "the others are still read");
 });
 
 test("cardProblems is the one list: fields first, then the steps", () => {

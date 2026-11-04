@@ -14,12 +14,22 @@ export const CARD_KEYS = new Set([
   "deployMin", "testsMin", "parent", "dropReason", "shipDetail", "doneWhen", "depends", "dependsOn", "batch", "deleted",
 ]);
 const TYPED = ["phase", "status", "wait", "who", "size", "level", "kind"];
+// Board text for a message, never String(v) or a template on a value from a write: a parsed object whose toString and valueOf are
+// not functions throws on conversion, and a throw in the gate must never be the way past it (Security, #C662). Cut to max.
+export function safeText(v, max = 40) {
+  try {
+    if (typeof v === "string") return v.slice(0, max);
+    return String(JSON.stringify(v) ?? typeof v).slice(0, max);
+  } catch { return typeof v; }
+}
 const gone = (v) => !!v && typeof v === "object" && v.__delete__ === true;
 
 // The allowed values of a typed field, from the config (phase and who from the phases and the roster).
 export function allowedFor(field, config) {
   if (field === "phase") return config.phases.map((p) => p[0]);
   if (field === "who") return [...(config.roster ?? []), ...(config.gate?.cardOwners ?? []), ...(config.owner ? [config.owner] : [])];
+  // A status the page reads as typed: the config's list, plus the statuses nudges.parked holds on purpose (configurable).
+  if (field === "status") return [...new Set([...(config.cardFields?.status ?? []), ...(config.nudges?.parked ?? [])])];
   return config.cardFields?.[field] ?? [];
 }
 
@@ -37,7 +47,8 @@ export function fieldProblems(card, config, { only = null } = {}) {
     if (!(f in card) || (only && gone(only[f]))) continue;
     const v = card[f], list = allowedFor(f, config);
     if (v === null) out.push({ code: `null:${f}`, text: `${f}: null is not a value (${list.length ? `use ${list.join(", ")}` : "no value is allowed on a card"}); remove the field with {"__delete__": true}` });
-    else if (!list.includes(v)) out.push({ code: `value:${f}`, text: `${f}: ${JSON.stringify(String(v).slice(0, 40))} is not allowed (${list.length ? `use ${list.join(", ")}` : "no card carries this field; remove it with {\"__delete__\": true}"})` });
+    else if (typeof v !== "string") out.push({ code: `type:${f}`, text: `${f}: must be text, not ${Array.isArray(v) ? "a list" : typeof v === "object" ? "an object" : typeof v} (${safeText(v)})${list.length ? `; use ${list.join(", ")}` : ""}` });
+    else if (!list.includes(v)) out.push({ code: `value:${f}`, text: `${f}: ${JSON.stringify(safeText(v))} is not allowed (${list.length ? `use ${list.join(", ")}` : "no card carries this field; remove it with {\"__delete__\": true}"})` });
   }
   return out;
 }
@@ -50,21 +61,28 @@ export function stepProblems(card, { steps = [], derived = null, live = null, co
   const at = (p) => order.indexOf(p), build = at(c.buildPhase);
   // A step names its card by id or by number (C700, as halfLive reads it).
   const mine = (Array.isArray(steps) ? steps : []).filter((s) => s && (s.init === card.id || (Number.isInteger(card.num) && s.init === `C${card.num}`)) && !s.wait);
-  const label = card.num ? `#C${card.num}` : idText(card.id);
+  const label = Number.isInteger(card.num) ? `#C${card.num}` : idText(card.id);
   if (card.status === "queued") {
     if (card.phase !== undefined && card.phase !== null && at(card.phase) > build) out.push({ code: "queued-phase", text: `status: ${label} is queued but its phase is ${idText(card.phase)}, past ${c.buildPhase}: a queued card is in ${order.slice(0, build + 1).join(" or ")}` });
     const worked = mine.filter((s) => at(s.phase) >= build).sort((a, b) => (a.at ?? 0) - (b.at ?? 0))[0];
     if (worked) out.push({ code: "queued-step", text: `status: ${label} is queued but has a ${idText(worked.kind)} step on ${idText(worked.phase)} (${idText(worked.who ?? "someone")}): a queued card has no step of its own; mark it active, or start it with "wait": "busy"` });
   }
   const skipsBuild = Array.isArray(card.skip) && card.skip.includes(c.buildPhase);
-  if (card.phase && at(card.phase) > build && card.status !== "dropped" && !skipsBuild && !mine.some((s) => s.kind === "end" && s.phase === c.buildPhase)) {
+  // The mirror keeps only a week of steps, so an older build end is gone from it: the repository's own reading that the work is
+  // READY or further (a ready time, or a phase past build) stands for it.
+  const readBy = derived && typeof derived === "object" && (Number.isFinite(derived.readyAt) || (derived.phase && at(derived.phase) > build));
+  if (card.phase && at(card.phase) > build && card.status !== "dropped" && !skipsBuild && !readBy && !mine.some((s) => s.kind === "end" && s.phase === c.buildPhase)) {
     out.push({ code: "no-build-end", text: `phase: ${label} is on ${idText(card.phase)}, past ${c.buildPhase}, but has no ${c.buildPhase} end step: log steps/${idText(card.id)}-${c.buildPhase}-end-<now> first` });
   }
   if ((card.phase === c.shipPhase || card.phase === c.livePhase) && card.status !== "dropped") {
     const fresh = liveCard(live, card.id, config);
     const onMain = (fresh && fresh.onMain === true) || derived?.onMain === true || derived?.phase === c.livePhase;
     const note = [card.version, card.liveVersion].some((v) => typeof v === "string" && v.trim());
-    if (!onMain && !note) out.push({ code: `no-ship-evidence:${card.phase}`, text: `phase: ${label} is on ${idText(card.phase)} but no commit of it is on ${c.mainBranch} and it names no release version: ship needs one of the two` });
+    // Ship is also evidenced by a ship-phase step (Release logged its start), and, for phase ship only, by the repository's own
+    // reading "ship": every review signed, not on main yet, a card waiting for Release (collector/derive.mjs).
+    const shipStep = mine.some((s) => s.phase === c.shipPhase);
+    const signed = card.phase === c.shipPhase && derived?.phase === c.shipPhase;
+    if (!onMain && !note && !shipStep && !signed) out.push({ code: `no-ship-evidence:${card.phase}`, text: `phase: ${label} is on ${idText(card.phase)} but it has no ${c.shipPhase} step, no commit on ${c.mainBranch} and no release version${card.phase === c.shipPhase ? ", and the repository does not show it signed" : ""}: ${c.shipPhase} needs one of them` });
   }
   return out;
 }

@@ -70,7 +70,7 @@ export const DEFAULTS = {
   // The values a card's typed fields may hold (#C662, gate/card-rules.mjs): the gate refuses a write outside them and the probe
   // writes a red line for a card already outside them. phase and who come from phases and the roster, so only these are listed.
   // wait and kind: no card carries either (a wait lives on a step), so their lists are empty.
-  cardFields: { status: ["queued", "active", "paused", "done", "dropped"], size: ["XS", "S", "M", "L", "XL"], level: ["Quick", "Full", "None"], wait: [], kind: [] },
+  cardFields: { status: ["queued", "active", "paused", "parked", "stuck", "done", "dropped"], size: ["XS", "S", "M", "L", "XL"], level: ["Quick", "Full", "None"], wait: [], kind: [] },
   // The owner's decisions (gate rules 1 and 11, #C344): a decision is a look decision, needing a picture per option, when
   // its text or title names one of lookWords (a whole word, a plural too), or its card's lane (its who, or whoever built
   // it) is one of visualLanes (the team's roles: none by default). offBoard: wording that sends the owner off the board
