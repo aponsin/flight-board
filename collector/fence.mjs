@@ -1,27 +1,25 @@
 // The collector's fence, a PreToolUse hook on every tool (matcher "*") for the collector's scheduled run only, in the
-// state folder's settings: node <pinned install>/collector/fence.mjs --config <board.config.json> [--send-to <session id>] || exit 2
-// The lead's session is the config's gate.managerSession (#C586); --send-to is the fallback while the config has none.
+// state folder's settings: node <pinned install>/collector/fence.mjs --config <board.config.json> || exit 2
+// The same file is the PostToolUse hook of the board's read tools (db_list, db_query, db_get): it records what the board
+// answered, in the run's scratchpad, so the model copies nothing (#C656, Security R1).
 // It lets through exactly the calls collector/TASK.md's steps make and refuses everything else (exit 2), whatever the
 // permission mode decides: a run in auto mode can't be steered by board text into any other call (Security). It never
 // grants: it only refuses, so it can't raise what the settings allow. Any failure refuses (the "|| exit 2" covers a
 // crash or a missing file, which a hook would otherwise let pass). Paths and links compare as exact strings.
-import { readFileSync, readlinkSync, existsSync } from "node:fs";
+import { readFileSync, readlinkSync, existsSync, mkdirSync, writeFileSync, renameSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { join, dirname, resolve, basename } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { EXPORT_NAME, READ_COLLECTIONS, CURSOR, fileErrors } from "./export.mjs";
-import { LIST_TOOL, USAGE_TOOL, contextRoles, readPlan } from "./context.mjs";
+import { EXPORT_NAME, READ_COLLECTIONS, CURSOR, DOC_ID, CALLS_DIR } from "./export.mjs";
 
-export const MESSAGE_MAX = 4096;
-// The most the run may write of a page (about 100 KB a page is planned, collector/delta.mjs SWEEP_STAGES) and of derived/all.
-export const PAGE_MAX = 400 * 1024;
+// The most the run may publish as derived/all.
 export const DERIVED_MAX = 200 * 1024;
 const SESSION = /^[A-Za-z0-9_-]{1,100}$/;
 const FREE = new Set(["ToolSearch", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
 // The claude-artifacts server's tools the run may call, on the board's own slug only (#C655).
 export const DB_TOOLS = { list: "mcp__claude-artifacts__db_list", query: "mcp__claude-artifacts__db_query", get: "mcp__claude-artifacts__db_get", write: "mcp__claude-artifacts__db_write" };
-const PAGE_NAME = /^[A-Za-z0-9_-]{1,60}$/;
 const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
 
 // The collector's code may run from the fence's own pinned copy or from the current link (#C223): <install root>/../current,
@@ -39,13 +37,12 @@ export function currentLink(install) {
 
 // What one run may do, from the config and the fence's own command line: never from the call.
 // install: the pinned copy this file runs from; current: currentLink(install) or null; configPath: exactly as the
-// task's prompt types it. usageIds: the sessions --prepare planned to read (collector/context.mjs); now: the clock.
-export function fenceSpec({ config, configPath, install, current = null, sendTo, uid, usageIds = [], now = Date.now() }) {
+// task's prompt types it.
+export function fenceSpec({ config, configPath, install, current = null, uid }) {
   const id = boardId(config);
   if (!id) throw new Error("the config has no board link");
   if (!config.collector.outDir) throw new Error("collector.outDir is empty");
   if (!config.artifactSlug) throw new Error("the config has no artifactSlug");
-  if (!SESSION.test(String(sendTo ?? ""))) throw new Error("--send-to: a session id");
   const commands = [install, current].filter(Boolean).flatMap((dir) => {
     const collect = `node ${dir}/collector/collect.mjs --config ${configPath}`;
     return [`${collect} --prepare`, collect];
@@ -55,11 +52,7 @@ export function fenceSpec({ config, configPath, install, current = null, sendTo,
     cwd: join(home(config.gate.stateDir), id),
     commands,
     derivedFile: join(home(config.collector.outDir), "derived-all.json"),
-    roles: contextRoles(config),
-    usageIds,
-    sendTo,
     uid,
-    now,
   };
 }
 
@@ -76,7 +69,7 @@ const onlyKeys = (input, keys) => Object.keys(input).filter((k) => !keys.include
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 // The reason a call is refused, or null when the fence lets it through. Pure but for read: the hook's input, the spec,
-// and the memory files a tile write sends (their shape is checked here as well as by the gate).
+// and the probe's derived-all.json a db_write must equal.
 export function decide(input, spec, read = readJson) {
   if (!plain(input)) return "no hook input";
   const { tool_name: tool, tool_input: t, session_id: session, cwd } = input;
@@ -92,28 +85,11 @@ export function decide(input, spec, read = readJson) {
     return null;
   }
   if (Object.values(DB_TOOLS).includes(tool)) return dbCall(tool, t, spec, read);
-  if (tool === "Write") return writeCall(t, spec, session);
   if (tool === "Read") {
     // The one file the run publishes: the probe's derived-all.json, so it can copy it into the db_write below.
     const extra = onlyKeys(t, ["file_path", "offset", "limit", "allow_large"]);
     if (extra.length) return `Read: unexpected ${extra.join(", ")}`;
     return t.file_path === spec.derivedFile ? null : "Read: the collector's derived-all.json only";
-  }
-  // Memory readings (collector/context.mjs): the session list once, then get_usage of each session --prepare planned.
-  if (tool === LIST_TOOL || tool === USAGE_TOOL) {
-    if (!spec.roles.length) return `${tool}: collector.contextRoles is empty`;
-    const extra = onlyKeys(t, tool === LIST_TOOL ? ["limit"] : ["session_id"]);
-    if (extra.length) return `${tool}: unexpected ${extra.join(", ")}`;
-    if (tool === LIST_TOOL) return t.limit === undefined || (Number.isInteger(t.limit) && t.limit >= 1 && t.limit <= 200) ? null : `${tool}: limit a whole number from 1 to 200`;
-    return spec.usageIds.includes(t.session_id) ? null : `${tool}: only a session --prepare planned to read`;
-  }
-  if (tool === "mcp__ccd_session_mgmt__send_message") {
-    const extra = onlyKeys(t, ["session_id", "message"]);
-    if (extra.length) return `send_message: unexpected ${extra.join(", ")}`;
-    if (t.session_id !== spec.sendTo) return "send_message: only to the lead's session";
-    if (typeof t.message !== "string" || t.message.length === 0) return "send_message: a message";
-    if (Buffer.byteLength(t.message, "utf8") > MESSAGE_MAX) return `send_message: at most ${MESSAGE_MAX} bytes`;
-    return null;
   }
   return `${String(tool)}: not one of the collector's steps`;
 }
@@ -144,7 +120,7 @@ function dbCall(tool, t, spec, read) {
   return null;
 }
 
-// The same value whatever the order of an object's keys (a copy typed back may reorder them).
+// The same value whatever the order of an object's keys (the copy typed into the write may reorder them).
 const canon = (v) => (Array.isArray(v) ? v.map(canon) : plain(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
 
 function dbWrite(t, spec, read) {
@@ -164,31 +140,81 @@ function dbWrite(t, spec, read) {
   return JSON.stringify(canon(file)) === JSON.stringify(canon(op.data)) ? null : "db_write: derived/all must be exactly the collector's derived-all.json";
 }
 
-// The Write tool (#C655): the pages, the sweep report and the seal in this session's export folder, nowhere else, each checked
-// for its shape (collector/export.mjs fileErrors). A page is <collection>/<name>.page.json (a delta) or sweep/<collection>/<name>.page.json.
-function writeCall(t, spec, session) {
-  const extra = onlyKeys(t, ["file_path", "content"]);
-  if (extra.length) return `Write: unexpected ${extra.join(", ")}`;
-  if (typeof t.file_path !== "string" || typeof t.content !== "string") return "Write: a file_path and content";
-  if (Buffer.byteLength(t.content, "utf8") > PAGE_MAX) return `Write: at most ${PAGE_MAX} bytes`;
-  for (const pad of scratchpads(spec, session)) {
-    const root = `${pad}/${EXPORT_NAME}/`;
-    if (!t.file_path.startsWith(root)) continue;
-    const parts = t.file_path.slice(root.length).split("/");
-    const [first, second, third] = parts;
-    let kind = null;
-    if (parts.length === 1 && first === "sweep-next.json") kind = "report";
-    else if (parts.length === 2 && first === "derived" && second === "all.json") kind = "seal";
-    else if (parts.length === 2 && READ_COLLECTIONS.includes(first) && second.endsWith(".page.json") && PAGE_NAME.test(second.slice(0, -10))) kind = "page";
-    else if (parts.length === 3 && first === "sweep" && READ_COLLECTIONS.includes(second) && third.endsWith(".page.json") && PAGE_NAME.test(third.slice(0, -10))) kind = "page";
-    if (!kind) return `Write: only the export's pages, sweep-next.json and derived/all.json, in this session's scratchpad + /${EXPORT_NAME}`;
-    const errs = fileErrors(kind, t.content);
-    return errs.length ? `Write: ${errs.join("; ")}` : null;
+// What the board answered (#C656, Security R1). The run reads the board with db_list, db_query and db_get, and a model that
+// retyped what it read into a file would put its own errors, or an injected line, into the mirror the gate trusts (an owner's
+// message relabelled, an answered ask dropped). So the model copies nothing: this file is also the PostToolUse hook of those
+// three tools, and it records the answer itself, from tool_response, in the run's scratchpad. The probe takes the documents from
+// those records (collector/delta.mjs ingestCalls) and the model cannot write a file at all.
+//
+// The text the tool answers with: a summary object, then the documents between <untrusted-document-NAME> tags, one JSON object a
+// line, NAME random for each answer, so only the closing tag with the same NAME ends the data (a document that contains a
+// closing tag of another name is still data). An answer that does not parse whole, whose count is not the documents it holds,
+// or that holds a document without its data (one too large to send) is no record: the probe then has nothing to take.
+const texts = (v, out = [], depth = 0) => {
+  if (typeof v === "string") out.push(v);
+  else if (depth < 6 && Array.isArray(v)) for (const x of v) texts(x, out, depth + 1);
+  else if (depth < 6 && plain(v)) for (const k of ["text", "content", "result", "output"]) if (k in v) texts(v[k], out, depth + 1);
+  return out;
+};
+export function parseAnswer(response, kind) {
+  const all = texts(response).join("\n");
+  const open = /<untrusted-document-([A-Za-z0-9]+)>/.exec(all);
+  const head = (open ? all.slice(0, open.index) : all).trim();
+  let summary;
+  try { summary = JSON.parse(head); } catch { return { error: "the summary is not JSON" }; }
+  if (!plain(summary)) return { error: "the summary is not an object" };
+  const docs = [];
+  if (open) {
+    const close = `</untrusted-document-${open[1]}>`;
+    const start = open.index + open[0].length, end = all.indexOf(close, start);
+    if (end < 0) return { error: "no closing tag" };
+    for (const line of all.slice(start, end).split("\n")) {
+      if (!line.trim()) continue;
+      let d;
+      try { d = JSON.parse(line); } catch { return { error: "a document is not JSON" }; }
+      docs.push(d);
+    }
   }
-  return `Write: this session's scratchpad + /${EXPORT_NAME} only`;
+  if (kind === "get") {
+    if (summary.exists === false) return { version: null };
+    if (!Number.isInteger(summary.version) || summary.version < 1) return { error: "no version" };
+    return { version: summary.version };
+  }
+  if (!Number.isInteger(summary.count) || summary.count !== docs.length) return { error: "the count is not the documents" };
+  const next = summary.nextCursor === undefined || summary.nextCursor === "" ? null : summary.nextCursor;
+  if (next !== null && !(typeof next === "string" && CURSOR.test(next))) return { error: "the next cursor is not the board's characters" };
+  const out = [];
+  for (const d of docs) {
+    if (!plain(d) || typeof d.id !== "string" || !DOC_ID.test(d.id) || !plain(d.data)) return { error: "a document has no id or no data" };
+    out.push({ id: d.id, data: d.data });
+  }
+  return { docs: out, next };
 }
 
-// The hook: read the call, decide, refuse with exit 2. Every failure on the way refuses too.
+// The file a PostToolUse hook writes for one answer, or an error. kind of the tool: list, query or get. The seal is the answer
+// to db_get of derived/all: the run reads it last, so its file is the newest.
+export function captureOf(input, spec, token) {
+  const { tool_name: tool, tool_input: t, session_id: session } = input;
+  const kind = Object.entries(DB_TOOLS).find(([, v]) => v === tool)?.[0];
+  if (!["list", "query", "get"].includes(kind)) return { skip: true };
+  const why = decide(input, spec);
+  if (why) return { error: why };
+  const a = parseAnswer(input.tool_response, kind);
+  if (a.error) return { error: a.error };
+  const base = `${scratchpads(spec, session)[0]}/${EXPORT_NAME}`;
+  if (kind === "get") return { path: `${base}/derived/all.json`, content: JSON.stringify({ version: a.version }) };
+  const record = { tool: kind, collection: t.collection, limit: t.limit, cursor: t.cursor ?? null, where: kind === "query" ? t.where ?? null : null, docs: a.docs, next: a.next };
+  return { path: `${base}/${CALLS_DIR}/${token}.json`, content: JSON.stringify(record) };
+}
+
+function save(path, content) {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const tmp = `${path}.${process.pid}.part`;
+  writeFileSync(tmp, content, { mode: 0o600 });
+  renameSync(tmp, path);
+}
+
+// The hook: read the call, decide, refuse with exit 2. Every failure on the way refuses too. A PostToolUse call records the answer.
 export function main(argv, stdin) {
   const opt = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
   const configPath = opt("--config");
@@ -196,21 +222,21 @@ export function main(argv, stdin) {
   const problems = checkConfig(raw);
   if (problems.length) throw new Error(problems.join("; "));
   const install = dirname(dirname(fileURLToPath(import.meta.url)));
-  const config = fullConfig(raw), id = boardId(config);
-  const plan = id ? readPlan(join(home(config.gate.stateDir), id)) : null;
-  const spec = fenceSpec({ config, configPath, install, current: currentLink(install), sendTo: config.gate.managerSession || opt("--send-to"), uid: process.getuid(), usageIds: Object.values(plan?.roles ?? {}) });
-  return decide(JSON.parse(stdin), spec);
+  const config = fullConfig(raw);
+  const spec = fenceSpec({ config, configPath, install, current: currentLink(install), uid: process.getuid() });
+  const input = JSON.parse(stdin);
+  if (input?.hook_event_name === "PostToolUse") {
+    const r = captureOf(input, spec, `${Date.now()}-${randomBytes(4).toString("hex")}`);
+    if (r.error) return `could not record the board's answer: ${r.error}`;
+    if (r.path) save(r.path, r.content);
+    return null;
+  }
+  return decide(input, spec);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
-  let reason, tool = null;
-  try {
-    const raw = readFileSync(0, "utf8");
-    try { tool = JSON.parse(raw)?.tool_name ?? null; } catch { /* main reports it */ }
-    reason = main(process.argv.slice(2), raw);
-  } catch (e) { reason = `fence error: ${e?.message ?? e}`; }
-  // A refused memory read costs only that run's tiles (#C278): the run goes on with the export; anything else stops it.
-  const next = tool === LIST_TOOL || tool === USAGE_TOOL ? "Skip the memory reads and go on with the export" : "Stop the run and tell the lead";
-  if (reason) { process.stderr.write(`Refused by the collector's fence: ${reason}. ${next}.\n`); process.exit(2); }
+  let reason;
+  try { reason = main(process.argv.slice(2), readFileSync(0, "utf8")); } catch (e) { reason = `fence error: ${e?.message ?? e}`; }
+  if (reason) { process.stderr.write(`Refused by the collector's fence: ${reason}. Stop the run and tell the lead.\n`); process.exit(2); }
   process.exit(0);
 }

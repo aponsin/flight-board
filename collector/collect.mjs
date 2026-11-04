@@ -30,7 +30,7 @@ import { runMark, localMain, localShips } from "./refresh.mjs";
 import { allocate } from "../scripts/thread-ids.mjs";
 import { refreshPickups } from "./pickup.mjs";
 import { liveFresh, LIVE_FRESH_MS } from "./state-schema.mjs";
-import { sealed, deltaPlan, dropTombstones, queryLines, readDeltaState, writeDeltaState, writeStamp, mergeDelta, driftLines, deriveDue, saveLines, explodePages, lay, readSweepReport, advanceSweep, SWEEP_DIR, DERIVE_FILE, LINE_START } from "./delta.mjs";
+import { sealed, deltaPlan, dropTombstones, queryLines, readDeltaState, writeDeltaState, writeStamp, mergeDelta, driftLines, deriveDue, saveLines, explodePages, ingestCalls, lay, readSweepReport, advanceSweep, SWEEP_DIR, DERIVE_FILE, LINE_START } from "./delta.mjs";
 
 // The folder this run's code really lives in (the current link resolved, by Node, to a pinned copy).
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -172,7 +172,9 @@ export function mergeRun({ dir, id, uid = process.getuid(), now = Date.now(), ba
   // A delta has no mirror to be laid over: it is not the board (the plan never asks for one), so nothing is taken and no state is
   // written; the next plan, finding no mirror, starts a sweep (Checker).
   if (mark.mode === "delta" && !seeded) return { did: null };
-  // The run saved its documents as pages: cut them into the <id>.json files, the delta's and the sweep page's apart.
+  // The fence's hook recorded the board's answers (the run copies nothing): sort them into the delta's pages and the sweep
+  // page, then cut the pages into the <id>.json files.
+  ingestCalls(found, mark);
   explodePages(found);
   explodePages(join(found, SWEEP_DIR));
   const adv = advanceSweep(state, mark, readSweepReport(found));
@@ -541,7 +543,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       // (collector/merge.mjs), and says which it was by the mode written here.
       const startedAt = Date.now();
       const plan = deltaPlan({ now: startedAt, state: readDeltaState(dir), hasMirror: existsSync(join(dir, "mirror")), requireUpdatedAt: config.gate?.requireUpdatedAt === true });
-      writeFileSync(join(dir, "export-since.json"), JSON.stringify({ ...runMark(startedAt, config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern)), code: CODE, mode: plan.mode, sweep: plan.sweep }));
+      writeFileSync(join(dir, "export-since.json"), JSON.stringify({ ...runMark(startedAt, config.collector.refresh.repos, localMain, localShips(config.collector.candidatePattern)), code: CODE, mode: plan.mode, sweep: plan.sweep, queries: plan.queries }));
       console.log(`Export the board into: your scratchpad folder + /${EXPORT_NAME}`);
       for (const line of queryLines(plan)) console.log(line);
       process.exit(0);

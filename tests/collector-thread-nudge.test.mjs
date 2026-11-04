@@ -55,8 +55,9 @@ test("the task pages every delta query with nextCursor and reads ONE sweep page,
   const task = readFileSync(new URL("../collector/TASK.md", import.meta.url), "utf8");
   assert.match(prompt, /and again with each nextCursor \(cursor, the same where\) until there is none/, "a delta query pages");
   assert.match(prompt, /read ONE page only and do not follow nextCursor/, "a sweep page is one page: the probe holds the cursor");
-  assert.match(prompt, /"next": <the nextCursor the answer gave, or null when it gave none>/, "and the run says where it ended");
+  assert.match(prompt, /You save nothing and copy nothing/, "a hook records each answer, the model copies none (Security R1)");
+  assert.doesNotMatch(prompt, /Write tool|page file|sweep-next/, "no file written by the run");
   assert.match(task, /again with each `nextCursor`\s+\(`cursor`, the same where\) until there is none/);
   assert.match(task, /ONE page, never the next/);
-  assert.match(task, /`Export\/sweep-next\.json` always says where it ended/);
+  assert.match(task, /the probe keeps the cursor from the record/);
 });

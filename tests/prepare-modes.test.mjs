@@ -48,6 +48,7 @@ test("--prepare with no mirror starts a sweep (first page, no delta); with a mer
     assert.ok(!next.stdout.includes("Sweep"), "no sweep going, none due");
     assert.equal(mark(s.dir).mode, "delta");
     assert.equal(mark(s.dir).sweep, null);
+    assert.deepEqual(mark(s.dir).queries.map((q) => [q.collection, q.field, q.since]), ["steps", "messages", "ctx", "initiatives", "waiting", "ideas", "threads", "plan"].map((c) => [c, ["steps", "messages", "ctx"].includes(c) ? "at" : "updatedAt", ran - OVERLAP_MS]), "the mark carries the queries, so the probe knows which recorded calls the plan asked for");
     assert.ok(!next.stdout.includes("Read memory"), "no memory reads: the probe reads every role's context");
   } finally { s.done(); }
 });

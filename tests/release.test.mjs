@@ -54,7 +54,7 @@ test("#C653 (Security): the publish hook and the page build it runs are the owne
 test("#C278 (Security): the fence takes only collector/export.mjs, which imports nothing; the pinned set is exactly this list", () => {
   const read = (f) => { try { return readFileSync(new URL(`../${f}`, import.meta.url), "utf8"); } catch { return null; } };
   assert.doesNotMatch(read("collector/export.mjs"), /^\s*(import|export\s.*\sfrom)\b/m, "export.mjs imports nothing");
-  assert.deepEqual(importClosure(["collector/fence.mjs"], read), ["collector/context.mjs", "collector/export.mjs", "collector/fence.mjs", "scripts/config.mjs"]);
+  assert.deepEqual(importClosure(["collector/fence.mjs"], read), ["collector/export.mjs", "collector/fence.mjs", "scripts/config.mjs"]);
   // A new import from a pinned file into the collector's code re-pins it, and this list says so.
   assert.deepEqual(importClosure([...OWNER_ENTRIES, ...RELEASE_ENTRIES], read), [
     "collector/after-ship.mjs", "collector/collect.mjs", "collector/context.mjs", "collector/delta.mjs", "collector/derive.mjs", "collector/expected.mjs", "collector/export.mjs", "collector/facts.mjs", "collector/fence.mjs", "collector/keeper.mjs", "collector/nudges.mjs", "collector/owner-push.mjs", "collector/pickup.mjs", "collector/plan-state.mjs", "collector/prompt-alarm.mjs", "collector/readings.mjs", "collector/refresh.mjs", "collector/rework.mjs", "collector/state-schema.mjs", "collector/state.mjs", "collector/text.mjs", "collector/timings.mjs",

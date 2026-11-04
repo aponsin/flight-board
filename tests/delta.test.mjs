@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, symlinkSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { MUTABLE, APPENDED, OVERLAP_MS, SWEEP_STAGES, SWEEP_CYCLE_MS, SWEEP_EVERY, STEPS_KEEP_DAYS, deltaField, deltaPlan, queryLines, sealed, mergeDelta, readStamp, writeStamp, driftLines, isTombstone, explodePages, lay, readSweep, readSweepReport, advanceSweep } from "../collector/delta.mjs";
+import { MUTABLE, APPENDED, OVERLAP_MS, SWEEP_STAGES, SWEEP_CYCLE_MS, SWEEP_EVERY, STEPS_KEEP_DAYS, deltaField, deltaPlan, queryLines, sealed, mergeDelta, readStamp, writeStamp, driftLines, isTombstone, explodePages, ingestCalls, lay, readSweep, readSweepReport, advanceSweep } from "../collector/delta.mjs";
 import { READ_COLLECTIONS, EXPORT_COLLECTIONS } from "../collector/export.mjs";
 
 const NOW = Date.UTC(2026, 10, 3, 20, 0, 0) + 12345;
@@ -66,7 +66,11 @@ test("the plan: a sweep starts when the last is three days old; a going sweep re
   // Seeding (no mirror): a page every run, and the delta since the sweep began.
   const seeding = deltaPlan({ now: NOW, state: { at: NOW - 600e3, fullAt: null, sweep: { startedAt: NOW - 3600e3, stage: 1, cursor: null, runs: 3 } }, hasMirror: false, requireUpdatedAt: true });
   assert.equal(seeding.mode, "sweep");
-  assert.equal(seeding.since, NOW - 3600e3 - OVERLAP_MS);
+  assert.equal(seeding.since, NOW - 600e3 - OVERLAP_MS, "the last merged run, not the sweep's start (Checker: run 44 would read 21 hours)");
+  for (const k of [1, 10, 44]) {
+    const late = deltaPlan({ now: NOW + k * 1800e3, state: { at: NOW + (k - 1) * 1800e3, fullAt: null, sweep: { startedAt: NOW - 3600e3, stage: 1, cursor: null, runs: k } }, hasMirror: false, requireUpdatedAt: true });
+    assert.equal(late.since, NOW + (k - 1) * 1800e3 - OVERLAP_MS, `run ${k} reaches back to the last merged run only`);
+  }
   assert.equal(seeding.queries.length, 8);
   assert.equal(seeding.sweep.collection, "waiting");
 });
@@ -86,7 +90,9 @@ test("the lines the run reads write each condition and the sweep page out, so th
   assert.match(lines[0], /^Mode: sweep, since \d+\.$/);
   assert.ok(lines.includes(`Query steps: where [{"field": "at", "op": ">=", "value": ${NOW - 1800e3 - OVERLAP_MS}}]`));
   assert.ok(lines.some((l) => /^Query initiatives: where \[\{"field": "updatedAt", "op": ">=", "value": \d+\}\]$/.test(l)));
-  assert.ok(lines.includes(`Sweep steps: limit 300, cursor cur_1=, where [{"field": "at", "op": ">=", "value": ${NOW - STEPS_KEEP_DAYS * 864e5}}]`));
+  assert.ok(lines.includes(`Sweep steps: limit 300, cursor cur_1=, where [{"field": "at", "op": ">=", "value": ${NOW - 3600e3 - STEPS_KEEP_DAYS * 864e5}}]`), "the steps filter is pinned to the sweep's start, so the cursor keeps its meaning (Checker)");
+  const later = queryLines(deltaPlan({ now: NOW + 7200e3, state: { at: NOW, fullAt: NOW, sweep: { startedAt: NOW - 3600e3, stage: 7, cursor: "cur_1=", runs: 0 } }, hasMirror: true, requireUpdatedAt: true }));
+  assert.equal(later.find((l) => l.startsWith("Sweep steps")), lines.find((l) => l.startsWith("Sweep steps")), "the same line two hours on");
   assert.deepEqual(queryLines({ mode: "off" }), ["Mode: off."]);
   assert.deepEqual(queryLines(deltaPlan({ now: NOW, state: null, hasMirror: false, requireUpdatedAt: true })), ["Mode: sweep, no delta.", "Sweep initiatives: limit 150, cursor none"]);
 });
@@ -273,4 +279,83 @@ test("driftLines: a tombstone on the board with the document still in the mirror
     assert.equal(lines.length, 1);
     assert.match(lines[0], /MIRROR DRIFT waiting: deleted on the board, still in the mirror 1 \(x\)/);
   } finally { rmSync(mirror, { recursive: true, force: true }); rmSync(full, { recursive: true, force: true }); }
+});
+
+// The fence's hook records each answer of the board (collector/fence.mjs); the probe takes the documents from those records.
+const rec = (root, token, over = {}) => { mkdirSync(join(root, "calls"), { recursive: true }); writeFileSync(join(root, "calls", `${token}.json`), JSON.stringify({ tool: "query", collection: "initiatives", limit: 200, cursor: null, where: null, docs: [], next: null, ...over })); };
+const W = (field, value) => [{ field, op: ">=", value }];
+const T1 = "1793750000001-aaaaaaaa", T2 = "1793750000002-bbbbbbbb", T3 = "1793750000003-cccccccc", T4 = "1793750000004-dddddddd";
+
+test("ingestCalls: a recorded answer to a call the plan asked for becomes a delta page or the sweep page; every other answer is ignored", () => {
+  const root = tmp();
+  try {
+    const mark = { queries: [{ collection: "initiatives", field: "updatedAt", since: 500 }, { collection: "steps", field: "at", since: 500 }], sweep: { collection: "waiting", limit: 100, cursor: "k1", startedAt: 1 } };
+    rec(root, T1, { collection: "initiatives", where: W("updatedAt", 500), docs: [{ id: "a", data: { name: "A" } }] });
+    rec(root, T2, { collection: "initiatives", where: W("updatedAt", 500), cursor: "next1", docs: [{ id: "b", data: { name: "B" } }] });
+    rec(root, T3, { tool: "list", collection: "waiting", limit: 100, cursor: "k1", docs: [{ id: "w", data: { text: "w" } }], next: "k2" });
+    // Not asked for: another time, another collection, another cursor, another limit, a list of a delta collection, a bad record.
+    rec(root, "1793750000005-eeeeeeee", { collection: "initiatives", where: W("updatedAt", 1), docs: [{ id: "x", data: {} }] });
+    rec(root, "1793750000006-ffffffff", { collection: "ideas", where: W("updatedAt", 500), docs: [{ id: "x", data: {} }] });
+    rec(root, "1793750000007-00000000", { tool: "list", collection: "waiting", limit: 100, cursor: "other", docs: [{ id: "x", data: {} }] });
+    rec(root, "1793750000008-11111111", { tool: "list", collection: "waiting", limit: 99, cursor: "k1", docs: [{ id: "x", data: {} }] });
+    rec(root, "1793750000009-22222222", { tool: "list", collection: "initiatives", limit: 200, docs: [{ id: "x", data: {} }] });
+    rec(root, "1793750000010-33333333", { collection: "initiatives", where: W("updatedAt", 500), docs: [{ id: "../x", data: {} }] });
+    rec(root, "1793750000011-44444444", { collection: "initiatives", where: W("updatedAt", 500), docs: [{ id: "y", data: [1] }] });
+    rec(root, "1793750000012-55555555", { collection: "initiatives", where: W("updatedAt", 500), next: "a b", docs: [] });
+    rec(root, "1793750000013-66666666", { collection: "derived", where: W("updatedAt", 500), docs: [] });
+    writeFileSync(join(root, "calls", "1793750000014-77777777.json"), "{not json");
+    writeFileSync(join(root, "calls", "stray.json"), JSON.stringify({}));
+    assert.deepEqual(ingestCalls(root, mark), { delta: 2, sweep: true });
+    assert.equal(existsSync(join(root, "calls")), false, "the records are removed once sorted");
+    explodePages(root);
+    explodePages(join(root, "sweep"));
+    assert.deepEqual(names(root, "initiatives"), ["a.json", "b.json"]);
+    assert.deepEqual(names(join(root, "sweep"), "waiting"), ["w.json"]);
+    assert.deepEqual(readSweepReport(root), { collection: "waiting", next: "k2" });
+    assert.equal(existsSync(join(root, "ideas")), false);
+    assert.equal(existsSync(join(root, "sweep", "initiatives")), false);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("ingestCalls: the steps sweep page matches by its own time; the sweep's latest answer wins; no calls folder, no mark: nothing", () => {
+  const root = tmp();
+  try {
+    const mark = { queries: [{ collection: "steps", field: "at", since: 500 }], sweep: { collection: "steps", limit: 300, cursor: null, since: 900, startedAt: 1 } };
+    rec(root, T1, { collection: "steps", limit: 300, where: W("at", 900), docs: [{ id: "s1", data: { at: 1 } }], next: "n1" });
+    rec(root, T2, { collection: "steps", limit: 300, where: W("at", 900), docs: [{ id: "s2", data: { at: 2 } }], next: null });
+    rec(root, T3, { collection: "steps", limit: 200, where: W("at", 500), docs: [{ id: "d1", data: { at: 3 } }] });
+    rec(root, T4, { tool: "list", collection: "steps", limit: 300, docs: [{ id: "s3", data: {} }] });
+    assert.deepEqual(ingestCalls(root, mark), { delta: 1, sweep: true });
+    explodePages(root);
+    explodePages(join(root, "sweep"));
+    assert.deepEqual(names(join(root, "sweep"), "steps"), ["s2.json"], "the later answer replaces the earlier one");
+    assert.deepEqual(names(root, "steps"), ["d1.json"]);
+    assert.deepEqual(readSweepReport(root), { collection: "steps", next: null });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+  const none = tmp();
+  try {
+    assert.deepEqual(ingestCalls(none, { queries: [], sweep: null }), { delta: 0, sweep: false });
+    rec(none, T1, { collection: "initiatives", where: W("updatedAt", 5), docs: [{ id: "a", data: {} }] });
+    assert.deepEqual(ingestCalls(none, {}), { delta: 0, sweep: false }, "a mark with no plan takes nothing");
+    assert.deepEqual(ingestCalls(none, null), { delta: 0, sweep: false });
+    assert.equal(existsSync(join(none, "initiatives")), false);
+  } finally { rmSync(none, { recursive: true, force: true }); }
+});
+
+test("sealed: the seal must be newer than every recorded answer, so a read made after the seal is not merged", () => {
+  const root = tmp();
+  try {
+    rec(root, T1, { collection: "initiatives" });
+    put(root, "derived", "all", { version: 3 });
+    const seal = join(root, "derived", "all.json"), call = join(root, "calls", `${T1}.json`);
+    const at = (p, s) => utimesSync(p, s, s);
+    at(call, 1000); at(seal, 2000);
+    assert.equal(sealed(root), true, "the seal came last");
+    at(seal, 500);
+    assert.equal(sealed(root), false, "a read after the seal");
+    at(seal, 1000);
+    assert.equal(sealed(root), true);
+    rmSync(join(root, "calls"), { recursive: true });
+    assert.equal(sealed(root), true, "no records: only the seal");
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });

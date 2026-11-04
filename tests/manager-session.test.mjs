@@ -29,7 +29,7 @@ test("the release tool's lead: the config's session first, the fence's --send-to
   assert.equal(leadOf(fullConfig(base), ""), null);
 });
 
-test("the fence sends to the config's session; --send-to is the fallback; neither refuses", () => {
+test("the fence sends nothing, whatever the config or --send-to says (Security R2); a retired --send-to is ignored", () => {
   const dir = mkdtempSync(join(tmpdir(), "fence-ms-"));
   try {
     const fence = new URL("../collector/fence.mjs", import.meta.url).pathname;
@@ -38,12 +38,12 @@ test("the fence sends to the config's session; --send-to is the fallback; neithe
     const send = (to) => ({ session_id: "sess-0001", cwd: join(dir, "TestBoard01"), tool_name: "mcp__ccd_session_mgmt__send_message", tool_input: { session_id: to, message: "NUDGE: x" } });
     const run = (config, to, extra = []) => spawnSync(process.execPath, [fence, "--config", config, ...extra], { input: JSON.stringify(send(to)), encoding: "utf8" });
     const withId = cfg({ managerSession: ID });
-    assert.equal(run(withId, ID).status, 0, "no --send-to at all: the config's id");
-    assert.equal(run(withId, ID, ["--send-to", OTHER]).status, 0, "a retired --send-to in the settings is ignored");
-    assert.equal(run(withId, OTHER, ["--send-to", OTHER]).status, 2, "the retired id is no longer the lead's");
+    assert.equal(run(withId, ID).status, 2, "not even to the lead's session");
+    assert.equal(run(withId, ID, ["--send-to", OTHER]).status, 2);
+    assert.equal(run(withId, OTHER, ["--send-to", OTHER]).status, 2);
     const without = cfg({});
-    assert.equal(run(without, OTHER, ["--send-to", OTHER]).status, 0, "no config id: --send-to, as before");
-    assert.equal(run(without, OTHER).status, 2, "neither");
+    assert.equal(run(without, OTHER, ["--send-to", OTHER]).status, 2);
+    assert.equal(run(without, OTHER).status, 2);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

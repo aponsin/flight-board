@@ -7,7 +7,7 @@
 // applyWrites) and a delete is a tombstone: {deleted: true, updatedAt}.
 import { readFileSync, writeFileSync, readdirSync, lstatSync, mkdirSync, renameSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { EXPORT_COLLECTIONS, CURSOR } from "./export.mjs";
+import { EXPORT_COLLECTIONS, READ_COLLECTIONS, CURSOR, DOC_ID, CALLS_DIR } from "./export.mjs";
 
 // Edited in place, with no one time field of their own: they carry updatedAt (a write without it is refused).
 export const MUTABLE = ["initiatives", "waiting", "ideas", "threads", "plan"];
@@ -61,14 +61,16 @@ export function deltaPlan({ now, state, hasMirror, requireUpdatedAt = false }) {
   const sweptAt = Number.isFinite(state?.fullAt) ? state.fullAt : null;
   let sweep = state?.sweep ?? null, fresh = false;
   if (!sweep && (!seeded || sweptAt === null || now - sweptAt >= SWEEP_CYCLE_MS || sweptAt > now + 60e3)) { sweep = { startedAt: now, stage: 0, cursor: null, runs: 0 }; fresh = true; }
-  const ref = seeded ? lastAt : sweep && !fresh ? sweep.startedAt : null;
+  // Every merged delta is laid over the staging folder too, so while seeding the next one reaches back only to the last merged
+  // run (the sweep's start only before any), never to the sweep's start (Checker: run 44 would read 21 hours).
+  const ref = seeded ? lastAt : sweep && !fresh ? Math.max(sweep.startedAt, lastAt ?? 0) : null;
   const since = ref === null ? null : Math.max(0, ref - OVERLAP_MS);
   const queries = since === null ? [] : [...APPENDED, ...MUTABLE].map((collection) => ({ collection, field: deltaField(collection), since }));
   const page = sweep && (!seeded || fresh || sweep.runs % SWEEP_EVERY === 0);
   const stage = page ? SWEEP_STAGES[sweep.stage] : null;
   return {
     mode: page ? "sweep" : "delta", since, queries,
-    sweep: page ? { startedAt: sweep.startedAt, fresh, stage: sweep.stage, collection: stage.collection, limit: stage.limit, cursor: sweep.cursor, ...(stage.since ? { since: Math.max(0, now - STEPS_KEEP_DAYS * 864e5) } : {}) } : null,
+    sweep: page ? { startedAt: sweep.startedAt, fresh, stage: sweep.stage, collection: stage.collection, limit: stage.limit, cursor: sweep.cursor, ...(stage.since ? { since: Math.max(0, sweep.startedAt - STEPS_KEEP_DAYS * 864e5) } : {}) } : null,
   };
 }
 
@@ -86,10 +88,16 @@ export function queryLines(plan) {
 const regular = (p) => { try { const s = lstatSync(p); return s.isFile() && !s.isSymbolicLink(); } catch { return false; } };
 const directory = (p) => { try { const s = lstatSync(p); return s.isDirectory() && !s.isSymbolicLink(); } catch { return false; } };
 
-// An export is whole when its last step landed: the run reads the version of derived/all last and saves it as
-// derived/all.json (the seal). Nothing else is required: a delta or a sweep page that matched nothing saves no file.
+// An export is whole when its last step landed: the run reads derived/all last (db_get), and the fence's hook records its
+// version as derived/all.json (the seal). It must be newer than every recorded answer: a seal from before a later read is no
+// seal. Nothing else is required: a delta or a sweep page that matched nothing records an answer with no documents.
 export function sealed(exportDir) {
-  return regular(join(exportDir, "derived", "all.json"));
+  const seal = join(exportDir, "derived", "all.json");
+  if (!regular(seal)) return false;
+  const dir = join(exportDir, CALLS_DIR);
+  if (!directory(dir)) return true;
+  const at = lstatSync(seal).mtimeMs;
+  return readdirSync(dir).every((f) => { try { return lstatSync(join(dir, f)).mtimeMs <= at; } catch { return true; } });
 }
 
 const readDoc = (p) => { try { const d = JSON.parse(readFileSync(p, "utf8")); return d !== null && typeof d === "object" && !Array.isArray(d) ? d : null; } catch { return null; } };
@@ -104,6 +112,37 @@ function* docsOf(root, collection) {
     const d = readDoc(join(dir, f));
     if (d) yield [f, d];
   }
+}
+
+// The answers the fence's hook recorded (<export>/calls/<token>.json, collector/fence.mjs captureOf), sorted into the pages the
+// merge takes. The model copied none of it: a record is the board's own answer to a call the run made. A record is used only
+// when its call is one the plan asked for: a delta query (the collection and the time the plan wrote) or the sweep page (the
+// collection, limit, cursor, and for steps the time, of the mark). The sweep's latest answer wins; any other call is ignored.
+const plainObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+const whereIs = (w, field, value) => Array.isArray(w) && w.length === 1 && plainObj(w[0]) && w[0].field === field && w[0].op === ">=" && w[0].value === value;
+const goodCall = (c) => plainObj(c) && (c.tool === "list" || c.tool === "query") && READ_COLLECTIONS.includes(c.collection) && Number.isInteger(c.limit)
+  && (c.cursor === null || (typeof c.cursor === "string" && CURSOR.test(c.cursor))) && (c.next === null || (typeof c.next === "string" && CURSOR.test(c.next)))
+  && Array.isArray(c.docs) && c.docs.every((d) => plainObj(d) && typeof d.id === "string" && DOC_ID.test(d.id) && plainObj(d.data));
+const savePage = (path, docs) => { mkdirSync(join(path, ".."), { recursive: true }); writeAtomic(path, JSON.stringify({ docs })); };
+export function ingestCalls(found, mark) {
+  const dir = join(found, CALLS_DIR);
+  if (!directory(dir)) return { delta: 0, sweep: false };
+  const queries = Array.isArray(mark?.queries) ? mark.queries : [], s = mark?.sweep ?? null;
+  let n = 0, sweep = null;
+  for (const f of readdirSync(dir).filter((x) => /^[0-9]{10,}-[0-9a-f]{8}\.json$/.test(x)).sort()) {
+    const c = regular(join(dir, f)) ? readDoc(join(dir, f)) : null;
+    if (!goodCall(c)) continue;
+    const isSweep = s && c.collection === s.collection && c.limit === s.limit && (c.cursor ?? null) === (s.cursor ?? null)
+      && (s.since === undefined ? c.tool === "list" : c.tool === "query" && whereIs(c.where, "at", s.since));
+    if (isSweep) { sweep = c; continue; }
+    if (c.tool === "query" && queries.some((q) => q.collection === c.collection && whereIs(c.where, q.field, q.since))) savePage(join(found, c.collection, `c${n++}.page.json`), c.docs);
+  }
+  if (sweep) {
+    savePage(join(found, SWEEP_DIR, sweep.collection, "p1.page.json"), sweep.docs);
+    writeAtomic(join(found, SWEEP_REPORT), JSON.stringify({ collection: sweep.collection, next: sweep.next }));
+  }
+  rmSync(dir, { recursive: true, force: true });
+  return { delta: n, sweep: Boolean(sweep) };
 }
 
 export const isTombstone = (collection, d) => MUTABLE.includes(collection) && d.deleted === true;

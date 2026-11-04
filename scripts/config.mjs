@@ -87,7 +87,7 @@ export function checkConfig(c) {
   if (!c || typeof c !== "object" || Array.isArray(c)) return ["the config must be a JSON object"];
   for (const k of Object.keys(c)) if (!KEYS.includes(k)) out.push(`unknown field "${k}" (known: ${KEYS.join(", ")})`);
   for (const k of ["title", "owner"]) if (c[k] !== undefined && !(typeof c[k] === "string" && NAME.test(c[k]))) out.push(`${k}: 1 to 60 characters, no < > { } or line breaks`);
-  if (c.artifactSlug !== undefined && c.artifactSlug !== "" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(c.artifactSlug))) out.push("artifactSlug: the artifact's UUID, or empty");
+  if (c.artifactSlug !== undefined && c.artifactSlug !== "" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(c.artifactSlug))) out.push("artifactSlug: the artifact's UUID in lower case, or empty");
   if (c.artifactUrl !== undefined && c.artifactUrl !== "" &&!/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+$/.test(String(c.artifactUrl))) out.push("artifactUrl: a claude.ai artifact link, or empty");
   if (c.resetAt !== undefined && !(Number.isInteger(c.resetAt) && c.resetAt >= 100000 && c.resetAt <= 2000000)) out.push("resetAt: whole tokens, 100,000 to 2,000,000");
   if (c.phases !== undefined) {

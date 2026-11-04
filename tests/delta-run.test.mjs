@@ -212,6 +212,32 @@ test("mergeRun: a delta while a sweep goes lands in the mirror and in the stagin
   } finally { b.done(); }
 });
 
+test("mergeRun takes the documents from the fence's records of the board's answers, byte for byte, and the seal last (Security R1)", () => {
+  const b = board();
+  try {
+    const t0 = NOW - 3600e3, since = t0 - OVERLAP_MS;
+    mkdirSync(join(b.dir, "mirror", "waiting"), { recursive: true });
+    put(join(b.dir, "mirror"), "waiting", "ask-1", { text: "old", updatedAt: 1 });
+    writeStamp(join(b.dir, "mirror"), t0, t0);
+    writeDeltaState(b.dir, { at: t0, fullAt: t0, lastPrepare: t0, sweep: null });
+    const mark = { at: NOW - 600e3, refs: {}, mode: "delta", sweep: null, queries: [{ collection: "waiting", field: "updatedAt", since }, { collection: "messages", field: "at", since }] };
+    writeFileSync(join(b.dir, "export-since.json"), JSON.stringify(mark));
+    const exp = join(b.root, "rec", "scratchpad", EXPORT_NAME);
+    mkdirSync(join(exp, "calls"), { recursive: true });
+    const owner = { from: "owner", text: "Go with option A", at: NOW - 700e3 };
+    const answered = { text: "which?", updatedAt: NOW - 650e3, response: { choice: "A", text: "chose A" } };
+    const call = (token, over) => writeFileSync(join(exp, "calls", `${token}.json`), JSON.stringify({ tool: "query", limit: 200, cursor: null, next: null, ...over }));
+    call("1793750000001-aaaaaaaa", { collection: "messages", where: [{ field: "at", op: ">=", value: since }], docs: [{ id: "m1", data: owner }] });
+    call("1793750000002-bbbbbbbb", { collection: "waiting", where: [{ field: "updatedAt", op: ">=", value: since }], docs: [{ id: "ask-1", data: answered }] });
+    put(exp, "derived", "all", { version: 4 });
+    const out = b.merge();
+    assert.equal(out.did, "delta");
+    assert.deepEqual(read(join(b.dir, "mirror", "messages", "m1.json")), owner, "the owner's message arrives as the board has it");
+    assert.deepEqual(read(join(b.dir, "mirror", "waiting", "ask-1.json")), answered, "and the answered ask with its response");
+    assert.equal(existsSync(exp), false);
+  } finally { b.done(); }
+});
+
 test("readMirror: a delta-built mirror is as current as its stamp says, however old its newest file; a mirror without a stamp is as before", () => {
   const b = board();
   try {
