@@ -88,7 +88,17 @@ export function reviewsFor(card, config) {
 
 // { phase, head, version, evidence } (in review, also waitingFor and branch) for one card, or { phase: null } when the facts say nothing.
 // facts: { head: {branch, sha, message} | null, signed: Set of phases with a note on head.sha, onMain, deployed, version }
+// #C671: and `reviews` { phase: ms } when the head carries sign-off notes: each review the repository shows signed on the
+// head, at the note's time, so the board needs no hand-logged end step for it (the page counts it as one, the gate too).
 export function derivePhase(card, facts, config) {
+  const d = phaseFromFacts(card, facts, config);
+  const at = facts?.signedAt;
+  if (!facts?.head || !at || typeof at !== "object") return d;
+  const reviews = {};
+  for (const p of Object.keys(config.collector.notes)) if (facts.signed?.has(p) && Number.isFinite(at[p])) reviews[p] = at[p];
+  return Object.keys(reviews).length ? { ...d, reviews } : d;
+}
+function phaseFromFacts(card, facts, config) {
   const c = config.collector;
   if (!facts.head) return { phase: null, evidence: "no branch or Board-Id commit for this card" };
   const head = facts.head.sha;

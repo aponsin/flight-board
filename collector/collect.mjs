@@ -443,7 +443,7 @@ export function readLiveState(dir, now) {
 export function underLive(d, l, phases) {
   if (!l || !phases.some((p) => p[0] === l.phase) || !/^[0-9a-f]{12}$/.test(l.headSha12 ?? "")) return d;
   const out = { ...d, phase: l.phase, phaseFrom: "live" };
-  if (typeof d.head === "string" && !d.head.startsWith(l.headSha12)) { delete out.readyAt; delete out.waitingFor; }
+  if (typeof d.head === "string" && !d.head.startsWith(l.headSha12)) { delete out.readyAt; delete out.waitingFor; delete out.reviews; }
   return out;
 }
 

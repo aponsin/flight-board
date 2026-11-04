@@ -95,10 +95,10 @@ test("what a card needs follows its level, lookChange, customerText and skip lis
   assert.equal(needs(card("q", 1, { level: "Full", status: "dropped" })), "");
 });
 
-test("only a plain ship start is checked: a wait, an end, another phase, a start end that is open, and a start in the same call as the ends", () => {
+test("only a plain ship start or end is checked: a wait, another phase, a start end that is open, and a start in the same call as the ends", () => {
   const m = mirror([FULL_LOOK]);
   assert.deepEqual(errs(ship({ wait: "busy" }), m), [], "a wait start is a queue marker");
-  assert.deepEqual(errs(put(step("big", "ship", "end")), m), [], "an end");
+  assert.deepEqual(errs(ship({ wait: "busy", kind: "end" }), m), [], "a wait end is a queue marker too");
   assert.deepEqual(errs(put(step("big", "build", "start")), m), [], "another phase");
   assert.deepEqual(errs(put(step("big", "live", "start")), m), [], "live is not ship");
   const together = [ship(), ...["checker", "design", "security", "language"].map((p) => put(step("big", p, "end", T - 1)))];
@@ -108,6 +108,35 @@ test("only a plain ship start is checked: a wait, an end, another phase, a start
   const otherCard = mirror([FULL_LOOK, card("other", 11)], ends("checker", "design", "security", "language").map((e) => ({ ...e, init: "other" })));
   assert.match(errs(ship(), otherCard)[0], /no end step yet/, "another card's ends do not count");
   assert.deepEqual(errs(ship(), { docs: { initiatives: [FULL_LOOK] } }), [], "the export has no steps: skipped");
+});
+
+// ---- #C671: a ship step also needs its reviews, and a signed note on the head counts as one ----
+const PHASES_NEEDED = ["checker", "design", "security", "language"];
+const withDerived = (reviews, steps = []) => ({ docs: { ...mirror([FULL_LOOK], steps).docs, derived: [{ id: "all", cards: { big: { phase: "ship", ...(reviews === undefined ? {} : { reviews }) } } }] } });
+const shipEnd = () => put(step("big", "ship", "end", T));
+test("a ship end is refused like a ship start while a review has neither an end step nor a signed note", () => {
+  const none = errs(shipEnd(), mirror([FULL_LOOK]));
+  assert.equal(none.length, 1);
+  assert.match(none[0], /#C10 can't end Ship: no end step yet for (?=.*Checker)(?=.*Design)(?=.*Security)(?=.*Linguist)/);
+  assert.deepEqual(errs(shipEnd(), mirror([FULL_LOOK], ends(...PHASES_NEEDED))), [], "the end steps are in");
+  assert.equal(errs(put(step("big", "ship", "end", T, { wait: "busy" })), mirror([FULL_LOOK])).length, 0, "a wait end is a queue marker");
+});
+test("a review signed on the head (derived reviews) counts as an end step, for a start and for an end", () => {
+  const all = Object.fromEntries(PHASES_NEEDED.map((p) => [p, T - 60e3]));
+  assert.deepEqual(errs(ship(), withDerived(all)), [], "every review signed, no step logged");
+  assert.deepEqual(errs(shipEnd(), withDerived(all)), []);
+  const some = { checker: T - 60e3, design: T - 60e3 };
+  assert.match(errs(ship(), withDerived(some))[0], /no end step yet for (?=.*Linguist)(?=.*Security)/, "the missing ones are still named");
+  assert.doesNotMatch(errs(ship(), withDerived(some))[0], /no end step yet for [^.]*(Checker|Design)/, "the signed ones are not");
+  // A hand-logged end and a signed note together make the set.
+  assert.deepEqual(errs(ship(), withDerived({ checker: T - 60e3, design: T - 60e3 }, ends("security", "language"))), []);
+  // Only a real time counts, and only on this card.
+  for (const bad of [{ checker: "x" }, { checker: null }, { checker: NaN }, [], "checker", 5]) assert.match(errs(ship(), withDerived(bad))[0], /no end step yet for (?=.*Checker)(?=.*Security)/, JSON.stringify(bad));
+  assert.match(errs(ship(), withDerived(undefined))[0], /no end step yet/, "a derived card with no reviews");
+  const other = { docs: { ...mirror([FULL_LOOK, card("other", 11)]).docs, derived: [{ id: "all", cards: { other: { reviews: all } } }] } };
+  assert.match(errs(ship(), other)[0], /no end step yet/, "another card's signed notes do not count");
+  assert.deepEqual(errs(ship(), withDerived(all, [step("big", "checker", "start", T - 1)])), [], "a review that only started but is signed on the head");
+  assert.match(errs(ship(), { docs: { ...mirror([FULL_LOOK]).docs, derived: [{ id: "other", cards: { big: { reviews: all } } }] } })[0], /no end step yet/, "only the all document");
 });
 
 test("a review that only started has not signed off; a card id from the board reaches the writer only as an id", () => {

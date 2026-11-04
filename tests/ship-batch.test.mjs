@@ -102,7 +102,9 @@ test("shipBatch --partial: a build step with the note and the card's nextNote; t
 });
 
 test("every op of a ship batch is accepted by the gate for the Release role, as the board holds the cards", () => {
-  const steps = [...cards.map((c) => ({ id: `${c.id}-build-end-1`, init: c.id, kind: "end", phase: "build", who: "Builder", at: 1 })), ...cards.map((c) => ({ id: `${c.id}-ship-start-2`, init: c.id, kind: "start", phase: "ship", who: "Release", at: 2 }))];
+  // The reviews are signed by the time a card ships (#C671: a ship step, start or end, needs them): an end step for each, as the board holds them.
+  const reviews = cards.flatMap((c) => ["checker", "security", "language", "design"].map((p) => ({ id: `${c.id}-${p}-end-1`, init: c.id, kind: "end", phase: p, who: "Reviewer", at: 1 })));
+  const steps = [...cards.map((c) => ({ id: `${c.id}-build-end-1`, init: c.id, kind: "end", phase: "build", who: "Builder", at: 1 })), ...reviews, ...cards.map((c) => ({ id: `${c.id}-ship-start-2`, init: c.id, kind: "start", phase: "ship", who: "Release", at: 2 }))];
   const mirror = { docs: { initiatives: cards, steps, messages: [], waiting: [], derived: [{ id: "all", cards: derived }] }, at: NOW };
   for (const partial of [[], ["menu-fix"]]) {
     const r = shipBatch({ version: "1.200.0", sha: "9".repeat(40), commits, cards, config, now: NOW, versions: { "menu-fix": 7, "tabs-fix": 3, bystander: 9 }, derived, partial });

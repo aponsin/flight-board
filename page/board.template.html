@@ -1200,7 +1200,7 @@ function replyWrites(w,act,note,files,now,choice,rid){
 // so they go. The db is the fallback, never the authority.
 function derivedOf(id){const all=state.derived.find(d=>d.id==="all"),d=all&&all.cards&&all.cards[id]||null,L=liveCard(id);
   if(!L)return d;const out={...(d||{}),phase:L.phase,at:L.at,firm:true,live:true};
-  if(d&&typeof d.head==="string"&&!d.head.startsWith(L.head12)){delete out.head;delete out.readyAt;delete out.waitingFor}
+  if(d&&typeof d.head==="string"&&!d.head.startsWith(L.head12)){delete out.head;delete out.readyAt;delete out.waitingFor;delete out.reviews}
   if(L.phase===LIVE_PHASE&&L.liveVersion)out.version=L.liveVersion;
   return out}
 // The card's one source of stage, with its age (#C450, the owner on #C448: "IN FLIGHT · typed: phase build · Repository:
@@ -2020,10 +2020,10 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const sMs=i.status!=="done"?stepMs(i):null;
   const skip=Array.isArray(i.skip)?i.skip:[], waits=waitBoxes(i.phaseLog,i.status==="done"?i.doneAt:null);
   const ev=new Set((liveCard(i.id)||{}).seen||[]); // #C620: phases the repository shows evidence of, whatever the steps say
-  const steps=PHASES.map(([k,l],n)=>{if(k==="test"&&skip.includes(k)&&n!==idx)return "";const pre=(waits[k]||[]).map(w=>`<div class="wait ${w.kind}${w.open?" live":""}" title="${w.kind==="gate"?"Waiting on a decision":"Waiting: the agent was busy"} before ${esc(l)}">${w.kind==="gate"?"⏸ Gated":"⧗ Queued"}<small>${esc(w.who)}${w.who?" · ":""}${dur(w.ms)}</small></div>`).join("");const np=i.status!=="done"&&i.nowPhases&&i.nowPhases[k];let c="step";if(np&&n!==idx)c+=" now";else if(skip.includes(k)&&n!==idx)c+=" skip";else if(i.status==="done"||n<idx)c+=" done";else if(ev.has(k)&&n>idx)c+=" done seen";else if(n===idx&&i.upNext&&!stuck&&!ns)c+=" upnext";else if(n===idx&&!(waits[k]||[]).some(w=>w.open))c+=" now"+(stuck?" stuck":queued?" queued":"");
+  const steps=PHASES.map(([k,l],n)=>{if(k==="test"&&skip.includes(k)&&n!==idx)return "";const pre=(waits[k]||[]).map(w=>`<div class="wait ${w.kind}${w.open?" live":""}" title="${w.kind==="gate"?"Waiting on a decision":"Waiting: the agent was busy"} before ${esc(l)}">${w.kind==="gate"?"⏸ Gated":"⧗ Queued"}<small>${esc(w.who)}${w.who?" · ":""}${dur(w.ms)}</small></div>`).join("");const np=i.status!=="done"&&i.nowPhases&&i.nowPhases[k];const sgn=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filter(e=>e&&e.signed&&e.phase===k).pop();let c="step";if(np&&n!==idx)c+=" now";else if(skip.includes(k)&&n!==idx)c+=" skip";else if(i.status==="done"||n<idx)c+=" done";else if(ev.has(k)&&n>idx)c+=" done seen";else if(n===idx&&i.upNext&&!stuck&&!ns)c+=" upnext";else if(n===idx&&!(waits[k]||[]).some(w=>w.open))c+=" now"+(stuck?" stuck":queued?" queued":"");
     // An open wait box in front of this phase already says what holds it; the phase itself stays plain until work starts.
     // A phase nobody has started says "up next" instead of pulsing as if someone were on it.
-    const t=(n===idx&&i.stepLogBehind&&i.status!=="done")?`<small class="behind">step log behind</small>`:(ns&&n===idx)?(i.noWork?`<small class="nowork">start logged ${hhmm(i.noWork)}, no work seen</small>`:`<small>${esc(queueLabel(i))}</small>`):(n===idx&&i.upNext&&!stuck&&i.status!=="done")?`<small>up next</small>`:(np&&n!==idx)?`<small>${esc(np.join(", "))}${times[k]?" · "+dur(times[k]):""}</small>`:(n===idx&&i.status!=="done"&&i.who)?`<small>${esc(i.who)}${times[k]?" · "+dur(times[k]):""}</small>`:times[k]?`<small>${dur(times[k])}</small>`:skip.includes(k)?"<small>not needed</small>":ev.has(k)&&n!==idx?'<small class="seen">in the repo</small>':(i.status==="done"||n<idx)&&k!==LIVE_PHASE?'<small class="norec">no record</small>':"<small>&nbsp;</small>";// While Release ships: an estimate from past ships (tests ~7 min, then deploy, ~10 min in all), labelled "est.".
+    const t=(n===idx&&i.stepLogBehind&&i.status!=="done")?`<small class="behind">step log behind</small>`:(ns&&n===idx)?(i.noWork?`<small class="nowork">start logged ${hhmm(i.noWork)}, no work seen</small>`:`<small>${esc(queueLabel(i))}</small>`):(n===idx&&i.upNext&&!stuck&&i.status!=="done")?`<small>up next</small>`:(np&&n!==idx)?`<small>${esc(np.join(", "))}${times[k]?" · "+dur(times[k]):""}</small>`:(n===idx&&i.status!=="done"&&i.who)?`<small>${esc(i.who)}${times[k]?" · "+dur(times[k]):""}</small>`:times[k]?`<small>${dur(times[k])}</small>`:sgn&&num(sgn.end)!=null?`<small class="seen" title="The sign-off note on the commit; no step was logged">signed ${hhmm(sgn.end)}</small>`:skip.includes(k)?"<small>not needed</small>":ev.has(k)&&n!==idx?'<small class="seen">in the repo</small>':(i.status==="done"||n<idx)&&k!==LIVE_PHASE?'<small class="norec">no record</small>':"<small>&nbsp;</small>";// While Release ships: an estimate from past ships (tests ~7 min, then deploy, ~10 min in all), labelled "est.".
     const sm=k==="ship"&&n===idx&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
     const sd=sm!=null?`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`:k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";const vf=k===LIVE_PHASE&&n===idx&&verifying(i);return pre+`<div class="${vf?"step verifying":c+(t.includes('class="norec"')?" norec":"")}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:t}${sd}</div>`}).join("");
   const chips=issueChips(i);
@@ -2390,8 +2390,16 @@ function stepsOf(i){const mine=state.steps.filter(e=>e&&e.init===i.id);
 // A version's CI times from the release log (#C397: derived/all's releaseTimes, by "x.y.z"), or null.
 function releaseTimesOf(v){const m=/^v?(\d+\.\d+\.\d+)$/.exec(String(v||""));const all=state.derived.find(d=>d&&d.id==="all"),t=all&&all.releaseTimes;
   return m&&t&&typeof t==="object"&&Object.hasOwn(t,m[1])&&t[m[1]]&&typeof t[m[1]]==="object"?t[m[1]]:null}
+// #C671: a review the repository shows signed on the card's head (the probe's derived card.reviews, { phase: ms } at the note's
+// time) is an end step even when its agent logged none. A hand-logged end of that phase within five minutes of the note
+// (before or after) is the same sign-off and stays the only one; an older end belongs to an earlier head, so the note adds its own.
+function withSignedReviews(i,evs){const rv=(derivedOf(i.id)||{}).reviews;if(!rv||typeof rv!=="object")return evs;
+  const add=[];Object.keys(rv).forEach(p=>{const at=num(rv[p]);if(at==null||!PHASES.some(x=>x[0]===p))return;
+    if(evs.some(e=>e.phase===p&&e.kind==="end"&&!e.wait&&e.at>=at-300000))return;
+    add.push({id:"derived-"+p,init:i.id,phase:p,kind:"end",at,derived:true})});
+  return add.length?evs.concat(add).sort((a,b)=>a.at-b.at):evs}
 function fromSteps(i){
-  const evs=stepsOf(i).filter(e=>e&&e.phase&&num(e.at)!=null).sort((a,b)=>a.at-b.at);
+  const evs=withSignedReviews(i,stepsOf(i).filter(e=>e&&e.phase&&num(e.at)!=null).sort((a,b)=>a.at-b.at));
   const skip=new Set(Array.isArray(i.skip)?i.skip:[]);
   // The configured skips: a phase only at a given level, skipped when an item field is false, or only when one is true.
   (CONFIG.skips||[]).forEach(k=>{if(k.unlessLevel&&i.level&&i.level!==k.unlessLevel)skip.add(k.phase);if(k.whenFalse&&i[k.whenFalse]===false)skip.add(k.phase);if(k.unlessTrue&&i[k.unlessTrue]!==true)skip.add(k.phase)});
@@ -2407,7 +2415,7 @@ function fromSteps(i){
       // None there: the release log's, read by the collector for that version (#C397).
       const r=num(e.testsMin)!=null||num(e.deployMin)!=null?e:releaseTimesOf(e.version)||{};
       if(num(r.testsMin)!=null||num(r.deployMin)!=null)out.shipDetail=[num(r.testsMin)!=null?"tests "+Math.round(r.testsMin)+" min":"",num(r.deployMin)!=null?"deploy "+Math.round(r.deployMin)+" min":""].filter(Boolean).join(" · ");return}
-    if(e.kind==="end"){const o=open[key];if(o){o.end=e.at;delete open[key]}else log.push({phase:e.phase,who:e.who,start:e.at,end:e.at});return}
+    if(e.kind==="end"){const o=open[key];if(o){o.end=e.at;delete open[key]}else log.push({phase:e.phase,who:e.who,start:e.at,end:e.at,...(e.derived?{signed:true}:{})});return}
     // A second start by the same agent on the same phase closes the first (it never logged an end).
     if(open[key]&&open[key].end==null)open[key].end=e.at;
     const en={phase:e.phase,who:e.who,start:e.at};if(e.wait)en.wait=e.wait;log.push(en);open[key]=en});

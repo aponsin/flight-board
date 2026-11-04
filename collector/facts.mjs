@@ -19,6 +19,26 @@ export function signedPhases(git, sha, notes) {
   return new Set(Object.entries(notes).filter(([, ref]) => ok(() => git(["notes", `--ref=${ref}`, "show", sha]))).map(([p]) => p));
 }
 
+// #C671: when each signed review was signed, from the notes ref itself: the newest commit of that ref that touched the
+// commit's note (a note sits at <sha>, or <aa>/<rest>, or <aa>/<bb>/<rest> once the ref is fanned out). A sign-off the ref's
+// history can't date (a shallow fetch) takes `fallback` (the READY commit's time), never the present: a time that moves
+// with every run would restart the clock on a review nobody did. { phase: ms } for the signed phases only.
+export function signedTimes(git, sha, notes, signed, fallback = null) {
+  const out = {};
+  if (!/^[0-9a-f]{40}$/.test(String(sha))) return out;
+  const paths = [sha, `${sha.slice(0, 2)}/${sha.slice(2)}`, `${sha.slice(0, 2)}/${sha.slice(2, 4)}/${sha.slice(4)}`];
+  for (const p of signed) {
+    let at = null;
+    try {
+      const t = Number(git(["log", "-1", "--format=%ct", notes[p], "--", ...paths]).trim());
+      if (Number.isFinite(t) && t > 0) at = t * 1000;
+    } catch { /* the ref's history can't date it */ }
+    if (at === null) at = Number.isFinite(fallback) ? fallback : null;
+    if (at !== null) out[p] = at;
+  }
+  return out;
+}
+
 export const isAncestor = (git, a, b) => ok(() => git(["merge-base", "--is-ancestor", a, b]));
 
 // The version a commit shipped in: the first commit on the main branch's first-parent line, from the one that brought it
@@ -137,9 +157,11 @@ export function factsFor(git, head, { config, line, deployed }) {
   const c = config.collector;
   if (!head) return { head: null };
   const onMain = isAncestor(git, head.sha, `${c.remote}/${c.mainBranch}`);
+  const signed = signedPhases(git, head.sha, c.notes);
   return {
     head,
-    signed: signedPhases(git, head.sha, c.notes),
+    signed,
+    signedAt: signedTimes(git, head.sha, c.notes, signed, head.at),
     onMain,
     deployed: onMain && !!deployed && isAncestor(git, head.sha, deployed),
     version: onMain ? versionFor(git, head.sha, line, c.versionPattern) : null,

@@ -750,7 +750,7 @@ export function stepGuardErrors(w, { config, mirror, batch = [], known = [] }) {
     if (cards.length) return [`init ${idText(init)} is no card on the board (initiatives/<id>): a step under a name no card has is never shown; log it under the card's id`];
     return [];
   }
-  if (data.kind !== "start" || data.phase !== config.collector.shipPhase || data.wait) return [];
+  if ((data.kind !== "start" && data.kind !== "end") || data.phase !== config.collector.shipPhase || data.wait) return [];
   let card = cards.find((c) => c.id === init) ?? null;
   for (const b of batch) if (b && b.collection === "initiatives" && b.doc_id === init && b.op !== "delete" && b.data && typeof b.data === "object") card = { ...(b.op === "update" ? card : {}), ...b.data, id: init };
   const steps = mirror?.docs?.steps;
@@ -765,11 +765,16 @@ export function stepGuardErrors(w, { config, mirror, batch = [], known = [] }) {
   }
   const ended = new Set([...steps, ...batch.filter((b) => b && b !== w && b.collection === "steps" && b.op === "set").map((b) => b.data)]
     .filter((e) => e && e.init === init && e.kind === "end" && !e.wait && typeof e.phase === "string").map((e) => e.phase));
+  // #C671: a review the repository shows signed on the card's head counts as done without an end step: the probe's derived card
+  // carries reviews { phase: ms } from the sign-off notes (collector/derive.mjs), so an agent that forgot to log its end does not
+  // hold the ship. Only a finite time counts, and only a review phase (the loop below reads the config's).
+  const signed = (mirror?.docs?.derived ?? []).find((d) => d && d.id === "all")?.cards?.[init]?.reviews;
+  if (signed && typeof signed === "object" && !Array.isArray(signed)) for (const [p, at] of Object.entries(signed)) if (Number.isFinite(at)) ended.add(p);
   const label = (p) => (config.phases.find((x) => x[0] === p) ?? [p, p])[1];
   const missing = Object.keys(config.collector.notes ?? {}).filter((p) => config.phases.some((x) => x[0] === p) && !skip.has(p) && !ended.has(p));
   if (!missing.length) return [];
   const name = Number.isInteger(card.num) ? `#C${card.num}` : idText(init);
-  return [`${name} can't start ${label(config.collector.shipPhase)}: no end step yet for ${missing.map((p) => idText(label(p))).join(", ")}. Each review ends with its own step (steps/${idText(init)}-<phase>-end-<at>) at its verdict; ship starts once all are in. The board keeps 7 days of steps: an end older than that is gone, so log it again`];
+  return [`${name} can't ${data.kind} ${label(config.collector.shipPhase)}: no end step yet for ${missing.map((p) => idText(label(p))).join(", ")}. Each review ends with its own step (steps/${idText(init)}-<phase>-end-<at>) at its verdict, or its sign-off note is on the card's head; ship goes ahead once all are in. The board keeps 7 days of steps: an end older than that is gone, so log it again`];
 }
 
 export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now(), who = {}, live = null, known = [] }) {
