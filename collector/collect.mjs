@@ -14,7 +14,7 @@ import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
-import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf } from "./derive.mjs";
+import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, abandonedAt } from "./derive.mjs";
 import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor } from "./facts.mjs";
 import { shippedBase, afterShipText, fetchBranches } from "./after-ship.mjs";
 import { evidenceTimes } from "./timings.mjs";
@@ -446,7 +446,7 @@ export function underLive(d, l, phases) {
   return out;
 }
 
-export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null, repos = {}, liveState = null }) {
+export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null, repos = {}, liveState = null, steps = [] }) {
   const c = config.collector;
   const cfg = { ...config, collector: { ...c, notes: localNotes(c.notes) } };
   const line = mainLine(git, c.remote, c.mainBranch);
@@ -484,6 +484,11 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
     const tips = tipsOf[card.id];
     // A stacked follow-up set aside (#C358) is no second branch to split.
     if (tips.length > 1 && (derived[card.id].branches?.length ?? 1) > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
+  }
+  // #C654: a plain build start nobody acted on (no head, the agent not on the card) is closed after 30 minutes: abandonedAt.
+  for (const card of open) {
+    const at = abandonedAt({ steps, cardId: card.id, derived: derived[card.id], liveState, buildPhase: c.buildPhase, now });
+    if (at !== null && derived[card.id]) derived[card.id].abandonedAt = at;
   }
   // A ship run on now: the cards its candidate branch names (branch@sha in one of its last commits) are shipping now.
   const ships = shipping(git, heads, c), runOf = {};
@@ -613,7 +618,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const now = Date.now();
   const live = await liveBuild(fetch, config.collector.liveUrl, config.collector.liveTag);
   const liveState = readLiveState(dir, now);
-  const { doc, conflicts, versions } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos, liveState });
+  const { doc, conflicts, versions } = collect({ config, cards: mirror.docs.initiatives, git, gh, now, plan: mirror.docs.plan ?? [], waiting: mirror.docs.waiting ?? [], live, repos, liveState, steps: mirror.docs.steps ?? [] });
   const guard = runExpected(dir, mirror.docs.initiatives, doc, versions);
   doc.conflicts.push(...guard);
   conflicts.push(...guard);

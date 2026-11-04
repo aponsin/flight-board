@@ -41,7 +41,22 @@ export function buildState(mirror, role, cardId) {
   return { steps: list.length > 0, started, ended };
 }
 
-export const startWrite = (cardId, role, now) => `db_write set steps/${cardId}-build-start-${now} {"at": ${now}, "init": "${cardId}", "kind": "start", "phase": "build", "who": "${role}"} (the real clock: node -e "console.log(Date.now())")`;
+// The card a role is on now by its steps (#C654): its latest PLAIN build start that has no later end by the same role on the
+// same card, other than `except`. Returns the card id, or null. A busy start is a queue entry, never "on".
+export function openElsewhere(steps, role, except) {
+  const mine = (Array.isArray(steps) ? steps : []).filter((s) => s && s.who === role && s.phase === "build" && Number.isFinite(s.at) && typeof s.init === "string");
+  const open = new Map();
+  for (const s of mine.slice().sort((a, b) => a.at - b.at)) {
+    if (s.kind === "start" && !s.wait) open.set(s.init, s.at);
+    else if (s.kind === "end") open.delete(s.init);
+  }
+  open.delete(except);
+  let card = null, at = -Infinity;
+  for (const [k, v] of open) if (v > at) { card = k; at = v; }
+  return card;
+}
+
+export const startWrite =(cardId, role, now) => `db_write set steps/${cardId}-build-start-${now} {"at": ${now}, "init": "${cardId}", "kind": "start", "phase": "build", "who": "${role}"} (the real clock: node -e "console.log(Date.now())")`;
 export const endWrite = (cardId, role, now) => `db_write set steps/${cardId}-build-end-${now} {"at": ${now}, "init": "${cardId}", "kind": "end", "phase": "build", "who": "${role}"} (the real clock: node -e "console.log(Date.now())")`;
 
 // A commit tagged #C<num>: refused until the committer has a plain build start on that card. Returns an error text or null.

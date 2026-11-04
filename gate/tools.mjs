@@ -22,7 +22,7 @@ export const isUuid =(s) => UUID.test(String(s ?? ""));
 
 // The same server may be registered under another name (Security): a tool whose name ends in one of the write or page tools is
 // read as the claude-artifacts one. Anything else keeps its own name.
-const SUFFIXED = /^mcp__.+__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)$/;
+const SUFFIXED = /^mcp__.+__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file|upload_asset)$/;
 export const normName = (name) => {
   if (typeof name !== "string" || name.startsWith(PREFIX)) return name;
   const m = SUFFIXED.exec(name);
@@ -71,6 +71,29 @@ export function dbStrReplaceOps(t) {
   return [{ op: "str_replace", collection: parts.slice(0, -1).join("/"), doc_id: parts[parts.length - 1], data: { [t.field]: t.new_str }, if_version: t.ifVersion }];
 }
 
+// upload_asset (#C654, Manager): agents attach screenshots and files to a thread or a decision as assets of the board, so it is no
+// longer shut as an unknown tool. It only ADDS files to the artifact's asset store (the page reads them by url; nothing the
+// gate protects is a document there), so it passes when its shape is the plain one: 1 to 10 files, each with a name whose
+// extension is a picture or a PDF (what a screenshot or a printed page is) and a path (never the client's own `uri`), and
+// nothing else beside slug, files, shared_live and artifact_title. Any other shape is refused with the reason.
+export const UPLOAD_ASSET = `${PREFIX}upload_asset`;
+const ASSET_EXT = /\.(png|jpe?g|gif|webp|pdf)$/i;
+const ASSET_KEYS = new Set(["slug", "files", "shared_live", "artifact_title"]);
+export function assetError(t) {
+  const why = (m) => ({ kind: "refuse", why: `upload_asset on the board: ${m} (a picture or a PDF, 1 to 10 files, each {name, path}; the board's assets take nothing else)` });
+  const extra = Object.keys(t ?? {}).filter((k) => !ASSET_KEYS.has(k));
+  if (extra.length) return why(`unexpected ${extra.join(", ")}`);
+  if (!Array.isArray(t.files) || t.files.length < 1 || t.files.length > 10) return why("files must be 1 to 10 entries");
+  for (const f of t.files) {
+    if (!f || typeof f !== "object" || Array.isArray(f)) return why("a file entry is not {name, path}");
+    const bad = Object.keys(f).filter((k) => k !== "name" && k !== "path");
+    if (bad.length) return why(`a file entry has ${bad.join(", ")}`);
+    if (typeof f.name !== "string" || !ASSET_EXT.test(f.name)) return why("a file name is not a picture or a PDF");
+    if (typeof f.path !== "string" || !f.path.startsWith("/")) return why("a file path is not an absolute path");
+  }
+  return null;
+}
+
 // What a call on the board is: null (not about the board, or nothing to check), { kind: "db", writes }, { kind: "page" },
 // or { kind: "refuse", why }. The old ArtifactData is left to the callers that already read it.
 export function classify(input, config) {
@@ -83,6 +106,7 @@ export function classify(input, config) {
     return writes ? { kind: "db", writes } : { kind: "refuse", why: `${name.slice(PREFIX.length)} on the board, in a shape the gate cannot read (ops as {op: set|update|delete, path: "collection/id", data}; merge is refused because it creates a missing document unchecked: use set to create, update to change; or a path and a field)` };
   }
   if (PAGE_TOOLS.has(name)) return { kind: "page" };
+  if (name === UPLOAD_ASSET) return assetError(t);
   if (OPEN_TOOLS.has(name)) return null;
   return { kind: "refuse", why: `${name.slice(PREFIX.length)} on the board: the gate does not know this tool, so it is shut until someone reads it` };
 }

@@ -114,7 +114,7 @@ test("a write to another artifact, or a read of this board, is nobody's business
 });
 
 test("any other claude-artifacts tool on the board is refused, known writers and unknown names alike (fail closed)", () => {
-  for (const name of ["copy_asset", "upload_asset", "delete_asset", "declare_capabilities", "create_from_type", "delete_artifact", "db_future_tool", "something_new"]) {
+  for (const name of ["copy_asset", "delete_asset", "declare_capabilities", "create_from_type", "delete_artifact", "db_future_tool", "something_new"]) {
     assert.match(gate(mk(name), { slug: UUID }).block ?? "", /shut until someone reads it/, name);
     assert.deepEqual(gate(mk(name), { slug: OTHER }), {}, `${name} on another artifact`);
   }

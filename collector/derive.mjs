@@ -50,6 +50,29 @@ export function headsFor(id, heads, num = null) {
   return [...tips.values()].sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
 }
 
+// #C654: a plain build start with no work behind it. A PLAIN start (no wait) is open until the same role ends that card; after
+// ABANDON_MS with no evidence (the card has no commit or branch head, and the role is not working on it in the fresh live
+// state) the start is treated as closed at start.at + ABANDON_MS, so the board does not show a card building for a start
+// nobody acted on. Returns the latest such close time, or null. Pure: steps, the card's derived reading, the live state.
+export const ABANDON_MS = 30 * 60 * 1000;
+export function abandonedAt({ steps, cardId, derived, liveState = null, buildPhase, now }) {
+  if (derived?.head || (Array.isArray(derived?.branches) && derived.branches.length)) return null;
+  const mine = (Array.isArray(steps) ? steps : []).filter((s) => s && s.init === cardId && s.phase === buildPhase && Number.isFinite(s.at) && typeof s.who === "string");
+  const open = new Map();
+  for (const s of mine.slice().sort((a, b) => a.at - b.at)) {
+    if (s.kind === "start" && !s.wait) open.set(s.who, s.at);
+    else if (s.kind === "end") open.delete(s.who);
+  }
+  let out = null;
+  for (const [who, at] of open) {
+    if (!(now - at >= ABANDON_MS)) continue;
+    const a = liveState?.agents?.[who];
+    if (a && typeof a === "object" && a.state === "working" && a.card === cardId) continue;
+    out = Math.max(out ?? -Infinity, at + ABANDON_MS);
+  }
+  return out;
+}
+
 // The review phases a card needs: the config's review phases, minus the ones its skips or its fields rule out.
 export function reviewsFor(card, config) {
   const c = config.collector;

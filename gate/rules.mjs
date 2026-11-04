@@ -9,6 +9,7 @@ import { contextRoles, contextWriteErrors, isContextWrite } from "../collector/c
 import { mechanicalClass } from "./traffic.mjs";
 import { approvalWriteErrors, agentPrWriteErrors } from "./agent-prs.mjs";
 import { buildingNow, liveCard } from "../collector/state-schema.mjs";
+import { openElsewhere, buildState } from "./build-steps.mjs";
 import { reworkOwed, issueTotal, signalText, ISSUE_KINDS, DONE_WHEN_MAX, halfLive } from "../collector/rework.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
@@ -595,6 +596,39 @@ export function dependsOnErrors(w, { config, mirror, batch = [] }) {
   return e;
 }
 
+// #C654: a PLAIN build start says "I am building this card now" and lights the strip, so it is refused while the agent is
+// plainly on another card: the agent's own latest plain build start with no end after it, or the card the fresh live state has
+// the agent working on, unless that card is closed, past build by the repository (readyAt at or after its start), closed by
+// the probe as abandoned, or already ended by the agent. A queued card gets a start with {"wait": "busy"} (the board shows
+// a wait, not a build); the end of the other card, or a busy start, clears the refusal. Other roles' steps are not this
+// rule's (the writer's own role is who.role); it fails open on anything it cannot read (no role, no mirror steps, other phase).
+export function startEvidenceErrors(w, { config, mirror, who = {}, live = null }) {
+  const { op, collection, data } = w;
+  const role = who.role;
+  if (collection !== "steps" || op !== "set" || !role || !data || typeof data !== "object" || data.kind !== "start" || data.wait || data.phase !== config.collector.buildPhase || typeof data.init !== "string" || data.who !== role) return [];
+  const steps = mirror?.docs?.steps, cards = mirror?.docs?.initiatives;
+  if (!Array.isArray(steps) || !Array.isArray(cards)) return [];
+  const derived = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards ?? {};
+  const candidates = new Set();
+  const stepsCard = openElsewhere(steps, role, data.init);
+  if (stepsCard) candidates.add(stepsCard);
+  const agent = live && typeof live === "object" && live.agents && typeof live.agents === "object" ? live.agents[role] : null;
+  if (agent && typeof agent === "object" && agent.state === "working" && typeof agent.card === "string" && agent.card && agent.card !== data.init) candidates.add(agent.card);
+  for (const id of candidates) {
+    const k = cards.find((x) => x && x.id === id);
+    if (!k || k.status === "done" || k.status === "dropped") continue;
+    const b = buildState(mirror, role, id);
+    if (b.started !== null && b.ended) continue;
+    if (b.started !== null) {
+      const d = derived[id];
+      if (typeof d?.readyAt === "number" && d.readyAt >= b.started) continue;
+      if (typeof d?.abandonedAt === "number" && d.abandonedAt >= b.started) continue;
+    }
+    return [`${idText(role)} is on ${idText(id)} now, so a plain build start on ${idText(data.init)} would show two cards building; this one is queued: write the start with "wait": "busy" (the board then shows it waiting), or end ${idText(id)} first (db_write set steps/${idText(id)}-build-end-<now>)`];
+  }
+  return [];
+}
+
 // One open phase per card (Build and Checker once both lit on one card because a build step was never ended). Starting
 // a review while build is open, or ship while anything is open, is refused; reviews overlap each other, and a build may
 // start while a review is open (a fix round after FINDINGS is real work while the review waits). An open step is a
@@ -610,7 +644,8 @@ export function phaseOverlapErrors(w, { config, mirror, batch = [] }) {
   const open = new Map();
   for (const e of evs) { const key = `${e.phase}|${e.who ?? ""}`; if (e.kind === "start") open.set(key, e); else if (e.kind === "end") open.delete(key); }
   const readyAt = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards?.[card]?.readyAt;
-  const live = [...open.values()].filter((e) => !(e.phase === c.buildPhase && typeof readyAt === "number" && readyAt >= e.at));
+  const abandonedAt = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards?.[card]?.abandonedAt;
+  const live = [...open.values()].filter((e) => !(e.phase === c.buildPhase && ((typeof readyAt === "number" && readyAt >= e.at) || (typeof abandonedAt === "number" && abandonedAt >= e.at))));
   const label = (p) => (config.phases.find((x) => x[0] === p) ?? [p, p])[1];
   // Board text (who wrote the step, its phase) reaches the writer only as a plain id (Security).
   const since = (e) => `${idText(label(e.phase))} is still open by ${e.who ? idText(e.who) : "someone"} since ${hhmmUtc(e.at)} UTC: end it first`;
@@ -661,7 +696,7 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
     const orphan = was && was.kind !== "decision" && Array.isArray(data.options) ? [`options show as buttons only on kind "decision": this ask is ${idText(was.kind ?? "of no kind")}; update {kind: "decision", options} to turn it into a decision in place`] : [];
     return [...threadNumberedErrors(w, { mirror, batch }), ...(was ? choiceErrors(data, was.kind) : []), ...orphan];
   }
-  if (collection === "steps") return [...phaseOverlapErrors(w, { config, mirror, batch }), ...dependsOnErrors(w, { config, mirror, batch })];
+  if (collection === "steps") return [...phaseOverlapErrors(w, { config, mirror, batch }), ...dependsOnErrors(w, { config, mirror, batch }), ...startEvidenceErrors(w, { config, mirror, who, live })];
   if (collection === PLAN) return planMirrorErrors(w, { mirror, batch });
   // Every card links to the plan node it serves (board v3); a new card can't go without one, mirror or not.
   const planned = collection === "initiatives" ? initiativePlanErrors(w, { mirror, batch }) : [];
