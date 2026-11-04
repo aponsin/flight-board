@@ -1,0 +1,1 @@
+PASS Full: #C668 derived-all-publish, build/derived-all-publish-v2 @ c1e0f2a (this commit: rebase of b2a3e74, range-diff CHANGELOG merge only). Findings 1-3 fixed in c1e0f2a. Suite 1366/1366, exit 0. Mutation check: pass. Checker
