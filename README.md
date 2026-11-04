@@ -8,6 +8,8 @@ Everything particular to one team lives in its own `board.config.json`, outside 
 
 ## What is here
 
+**Data contract:** `docs/DATA.md` lists every data point the board shows, its store, its writer, its truth source and its freshness, as agreed with the owner on 2026-11-04. Build from it; change it only with a dated line under its "Changes".
+
 | Path | What it is |
 |---|---|
 | `page/board.template.html` | The board page, with a `/*BOARD_CONFIG*/` block the build fills in. |
