@@ -219,6 +219,41 @@ function save(path, content) {
   renameSync(tmp, path);
 }
 
+// What a failed capture leaves for the lead to read (#C660): the raw tool_response with every string cut so a document line is
+// at most LINE_MAX characters and the whole at most RESPONSE_MAX, the structure kept (so the shape of the app's answer shows),
+// plus the tool, its input (cut the same way) and the error. The file sits in the task's folder, which the run's Read deny
+// covers, so the model never sees it; one file, overwritten by the next failure.
+export const PARSE_FAILURE_FILE = "hook-parse-failure.json";
+export const LINE_MAX = 80, RESPONSE_MAX = 4000, INPUT_MAX = 1000;
+export function cut(value, max) {
+  let left = max;
+  const walk = (v, depth) => {
+    if (typeof v === "string") {
+      const lines = v.split("\n").map((l) => (l.length > LINE_MAX ? `${l.slice(0, LINE_MAX)}…` : l));
+      let s = lines.join("\n");
+      if (s.length > left) s = `${s.slice(0, Math.max(left, 0))}…`;
+      left -= s.length;
+      return s;
+    }
+    if (v === null || typeof v !== "object") return v;
+    if (depth >= 8) return "…";
+    if (Array.isArray(v)) return v.map((x) => walk(x, depth + 1));
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k.slice(0, LINE_MAX), walk(x, depth + 1)]));
+  };
+  return walk(value, 0);
+}
+export function parseFailureRecord(input, error) {
+  return JSON.stringify({ tool: String(input?.tool_name ?? "").slice(0, LINE_MAX), error: String(error).slice(0, 200), tool_input: cut(input?.tool_input, INPUT_MAX), tool_response: cut(input?.tool_response, RESPONSE_MAX) });
+}
+// Never throws: a failure to write leaves the hook's answer as it was.
+export function recordParseFailure(spec, input, error) {
+  try {
+    const path = join(spec.cwd, PARSE_FAILURE_FILE), tmp = `${path}.${process.pid}.part`;
+    writeFileSync(tmp, parseFailureRecord(input, error), { mode: 0o600 });
+    renameSync(tmp, path);
+  } catch { /* the refusal below still stops the run */ }
+}
+
 // The hook: read the call, decide, refuse with exit 2. Every failure on the way refuses too. A PostToolUse call records the answer.
 export function main(argv, stdin) {
   const opt = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
@@ -232,7 +267,7 @@ export function main(argv, stdin) {
   const input = JSON.parse(stdin);
   if (input?.hook_event_name === "PostToolUse") {
     const r = captureOf(input, spec, `${Date.now()}-${randomBytes(4).toString("hex")}`);
-    if (r.error) { if (r.failed) { try { save(r.failed, "failed"); } catch { /* the refusal below still stops the run */ } } return `could not record the board's answer: ${r.error}`; }
+    if (r.error) { recordParseFailure(spec, input, r.error); if (r.failed) { try { save(r.failed, "failed"); } catch { /* the refusal below still stops the run */ } } return `could not record the board's answer: ${r.error}`; }
     if (r.path) save(r.path, r.content);
     return null;
   }

@@ -2,12 +2,12 @@
 // refused; any failure refuses. Fictional board, folders and sessions.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
-import { fenceSpec, scratchpads, decide, parseAnswer, captureOf, DERIVED_MAX, DB_TOOLS } from "../collector/fence.mjs";
+import { fenceSpec, scratchpads, decide, parseAnswer, captureOf, DERIVED_MAX, DB_TOOLS, PARSE_FAILURE_FILE, LINE_MAX, RESPONSE_MAX, cut } from "../collector/fence.mjs";
 
 const URL_ = "https://claude.ai/" + "artifact/TestBoard01";
 const SLUG = "11111111-2222-4333-8444-555555555555";
@@ -237,4 +237,58 @@ test("the hook refuses with exit 2 on a refusal, a bad config and bad input, and
     assert.equal(hook(good, ["--config", join(dir, "missing.json")]).status, 2);
     assert.equal(hook(good, ["--config", cfg]).status, 0, "no --send-to: the fence sends nothing");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a capture that fails leaves the raw answer, cut, in the task's folder; a success leaves nothing; a write failure changes no exit code (#C660)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fence-pf-"));
+  try {
+    const cfg = join(dir, "board.config.json");
+    writeFileSync(cfg, JSON.stringify({ ...raw, gate: { stateDir: dir } }));
+    const fence = new URL("../collector/fence.mjs", import.meta.url).pathname;
+    const cwd = join(dir, "TestBoard01");
+    mkdirSync(cwd);
+    const file = join(cwd, PARSE_FAILURE_FILE);
+    const hook = (input) => spawnSync(process.execPath, [fence, "--config", cfg], { input: JSON.stringify(input), encoding: "utf8" });
+    const base = { session_id: S, cwd, hook_event_name: "PostToolUse", tool_name: DB_TOOLS.list, tool_input: list() };
+    // Success: no file.
+    assert.equal(hook({ ...base, tool_response: answer([D("a", { text: "t" })]) }).status, 0);
+    assert.equal(existsSync(file), false, "no write on success");
+    // Failure: the structure stays, every line is cut to LINE_MAX, the whole to RESPONSE_MAX.
+    const long = "x".repeat(500);
+    const shaped = { content: [{ type: "text", text: `${long}\n${long}` }], isError: false };
+    const bad = hook({ ...base, tool_response: shaped });
+    assert.equal(bad.status, 2);
+    const rec = JSON.parse(readFileSync(file, "utf8"));
+    assert.equal(rec.tool, DB_TOOLS.list);
+    assert.match(rec.error, /not JSON/);
+    assert.deepEqual(rec.tool_input, base.tool_input);
+    assert.equal(rec.tool_response.isError, false);
+    assert.equal(rec.tool_response.content[0].type, "text");
+    for (const l of rec.tool_response.content[0].text.split("\n")) assert.ok(l.length <= LINE_MAX + 1, `line of ${l.length}`);
+    assert.equal(statSync(file).mode & 0o777, 0o600);
+    // A big answer: the whole is capped.
+    const many = hook({ ...base, tool_response: Array.from({ length: 300 }, (_, i) => `line ${i} ${"y".repeat(60)}`).join("\n") });
+    assert.equal(many.status, 2);
+    const big = JSON.parse(readFileSync(file, "utf8"));
+    assert.ok(big.tool_response.length <= RESPONSE_MAX + 1, `capped, was ${big.tool_response.length}`);
+    assert.notDeepEqual(big.tool_response, rec.tool_response, "overwritten, not appended");
+    assert.deepEqual(readdirSync(cwd), [PARSE_FAILURE_FILE], "no part files left");
+    // A folder where the file should go makes the write fail: the exit code and the reason stay.
+    rmSync(file);
+    mkdirSync(file);
+    const blocked = hook({ ...base, tool_response: shaped });
+    assert.equal(blocked.status, 2);
+    assert.match(blocked.stderr, /could not record the board's answer: the summary is not JSON/);
+    // And a task folder that does not exist: a refusal still, no crash.
+    rmSync(cwd, { recursive: true });
+    assert.equal(hook({ ...base, tool_response: shaped }).status, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("cut: strings cut by line and by total, structure and non-strings kept (#C660)", () => {
+  assert.deepEqual(cut({ a: [1, null, true, "ok"] }, 100), { a: [1, null, true, "ok"] });
+  assert.equal(cut("y".repeat(200), 1000), `${"y".repeat(LINE_MAX)}…`);
+  assert.equal(cut("a\n" + "b".repeat(200), 1000), `a\n${"b".repeat(LINE_MAX)}…`);
+  assert.ok(JSON.stringify(cut(Array.from({ length: 100 }, () => "z".repeat(60)), 300)).length < 300 + 100 * 6);
+  assert.equal(cut("a".repeat(70), 10), `${"a".repeat(10)}…`);
 });
