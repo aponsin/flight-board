@@ -6,7 +6,7 @@
 // permission mode decides: a run in auto mode can't be steered by board text into any other call (Security). It never
 // grants: it only refuses, so it can't raise what the settings allow. Any failure refuses (the "|| exit 2" covers a
 // crash or a missing file, which a hook would otherwise let pass). Paths and links compare as exact strings.
-import { readFileSync, readlinkSync, existsSync, mkdirSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync, readlinkSync, existsSync, mkdirSync, writeFileSync, renameSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join, dirname, resolve, basename } from "node:path";
 import { homedir } from "node:os";
@@ -70,7 +70,7 @@ const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 // The reason a call is refused, or null when the fence lets it through. Pure but for read: the hook's input, the spec,
 // and the probe's derived-all.json a db_write must equal.
-export function decide(input, spec, read = readJson) {
+export function decide(input, spec, read = readJson, mtime = mtimeMs, now = Date.now) {
   if (!plain(input)) return "no hook input";
   const { tool_name: tool, tool_input: t, session_id: session, cwd } = input;
   if (cwd !== spec.cwd) return `this fence is for runs in ${spec.cwd} only`;
@@ -84,7 +84,7 @@ export function decide(input, spec, read = readJson) {
     if (!spec.commands.includes(t.command)) return "Bash: only the two collect.mjs commands, exactly as the steps write them (from the pinned copy or the current link)";
     return null;
   }
-  if (Object.values(DB_TOOLS).includes(tool)) return dbCall(tool, t, spec, read);
+  if (Object.values(DB_TOOLS).includes(tool)) return dbCall(tool, t, spec, read, mtime, now);
   if (tool === "Read") {
     // The one file the run publishes: the probe's derived-all.json, so it can copy it into the db_write below.
     const extra = onlyKeys(t, ["file_path", "offset", "limit", "allow_large"]);
@@ -98,14 +98,14 @@ export function decide(input, spec, read = readJson) {
 // collection: one page (limit up to 1000) at the cursor the plan or the last page gave; db_query only with one condition,
 // "at" or "updatedAt" at or after a time, as the plan wrote it. db_get reads derived/all (its version); db_write sets
 // derived/all, one document, inline, at most DERIVED_MAX bytes. Nothing else: no delete, no merge, no other path.
-function dbCall(tool, t, spec, read) {
+function dbCall(tool, t, spec, read, mtime, now) {
   if (t.slug !== spec.slug) return "the board database: this board only";
   if (tool === DB_TOOLS.get) {
     const extra = onlyKeys(t, ["slug", "path"]);
     if (extra.length) return `db_get: unexpected ${extra.join(", ")}`;
     return t.path === "derived/all" ? null : "db_get: derived/all only";
   }
-  if (tool === DB_TOOLS.write) return dbWrite(t, spec, read);
+  if (tool === DB_TOOLS.write) return dbWrite(t, spec, read, mtime, now);
   const query = tool === DB_TOOLS.query;
   const extra = onlyKeys(t, query ? ["slug", "collection", "limit", "cursor", "where"] : ["slug", "collection", "limit", "cursor"]);
   if (extra.length) return `${query ? "db_query" : "db_list"}: unexpected ${extra.join(", ")}`;
@@ -123,7 +123,32 @@ function dbCall(tool, t, spec, read) {
 // The same value whatever the order of an object's keys (the copy typed into the write may reorder them).
 const canon = (v) => (Array.isArray(v) ? v.map(canon) : plain(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
 
-function dbWrite(t, spec, read) {
+// #C668: the run does not retype the summary (about 30 KB, and about one run in five broke it). Its db_write carries the
+// placeholder {"fromFile": true} and this fence, which is also the call's PreToolUse hook, puts the probe's derived-all.json in
+// its place (rewriteOf, answered to the app as updatedInput). The placeholder is taken only when that file is this run's: written
+// after this run's --prepare wrote the plan (export-since.json) and not more than FRESH_MAX_MS ago, so the placeholder can never
+// publish an old summary. A typed copy that equals the file is still taken, as before.
+export const PLACEHOLDER = { fromFile: true };
+export const FRESH_MAX_MS = 30 * 60e3;
+const isPlaceholder = (d) => plain(d) && Object.keys(d).length === 1 && d.fromFile === true;
+const mtimeMs = (p) => statSync(p).mtimeMs;
+function staleReason(spec, mtime, now) {
+  let file, plan;
+  try { file = mtime(spec.derivedFile); plan = mtime(join(spec.cwd, "export-since.json")); } catch { return "db_write: can't date the collector's derived-all.json against this run's plan"; }
+  if (!(file >= plan)) return "db_write: the collector's derived-all.json is older than this run's plan: this run's probe did not write it";
+  if (now() - file > FRESH_MAX_MS) return `db_write: the collector's derived-all.json is more than ${FRESH_MAX_MS / 60e3} minutes old`;
+  return null;
+}
+// The call with the placeholder replaced by the file, or null when the call carries none (decide has already passed it).
+export function rewriteOf(input, spec, read = readJson) {
+  if (input?.tool_name !== DB_TOOLS.write) return null;
+  const op = input?.tool_input?.ops?.[0];
+  if (!op || !isPlaceholder(op.data)) return null;
+  const file = read(spec.derivedFile);
+  return { ...input.tool_input, ops: [{ ...op, data: file }] };
+}
+
+function dbWrite(t, spec, read, mtime, now) {
   const extra = onlyKeys(t, ["slug", "ops"]);
   if (extra.length) return `db_write: unexpected ${extra.join(", ")}`;
   if (!Array.isArray(t.ops) || t.ops.length !== 1 || !plain(t.ops[0])) return "db_write: one operation";
@@ -132,6 +157,13 @@ function dbWrite(t, spec, read) {
   if (bad.length) return `db_write: unexpected ${bad.join(", ")}`;
   if (op.op !== "set" || op.path !== "derived/all") return "db_write: set derived/all only";
   if (op.ifVersion !== undefined && !(Number.isInteger(op.ifVersion) && op.ifVersion >= 1)) return "db_write: ifVersion a whole number";
+  if (isPlaceholder(op.data)) {
+    let file;
+    try { file = read(spec.derivedFile); } catch { return "db_write: can't read the collector's derived-all.json"; }
+    if (!plain(file)) return "db_write: the collector's derived-all.json is an object";
+    if (Buffer.byteLength(JSON.stringify(file), "utf8") > DERIVED_MAX) return `db_write: derived/all at most ${DERIVED_MAX} bytes`;
+    return staleReason(spec, mtime, now);
+  }
   if (!plain(op.data)) return "db_write: derived/all is an object";
   if (Buffer.byteLength(JSON.stringify(op.data), "utf8") > DERIVED_MAX) return `db_write: derived/all at most ${DERIVED_MAX} bytes`;
   // What goes to the board is the probe's file, whole: nothing typed into it, nothing left out.
@@ -275,12 +307,19 @@ export function main(argv, stdin) {
     if (r.path) save(r.path, r.content);
     return null;
   }
-  return decide(input, spec);
+  const why = decide(input, spec);
+  if (why) return why;
+  const updatedInput = rewriteOf(input, spec);
+  return updatedInput ? { updatedInput } : null;
 }
+
+// The answer to the app for a call whose placeholder the fence filled in: allow it, as rewritten (#C668).
+export const allowAs = (updatedInput) => JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput } });
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   let reason;
   try { reason = main(process.argv.slice(2), readFileSync(0, "utf8")); } catch (e) { reason = `fence error: ${e?.message ?? e}`; }
+  if (reason && typeof reason === "object") { process.stdout.write(`${allowAs(reason.updatedInput)}\n`); process.exit(0); }
   if (reason) { process.stderr.write(`Refused by the collector's fence: ${reason}. Stop the run and tell the lead.\n`); process.exit(2); }
   process.exit(0);
 }

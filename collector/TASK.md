@@ -165,10 +165,13 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
    in place that the deltas did not bring (a write with no `updatedAt`, a hard delete) and the sweep replaces the mirror. The mirror's
    `derived/all` is made by the probe from what it derives, not exported. An export that is not sealed is never merged, and the next
    run starts from the last merged one, so a run that failed costs only its own wait.
-3. **Publish**: read `<collector.outDir>/derived-all.json` (the Read tool; the probe's last derive wrote it, atomically), then
-   `db_write` of one operation: `set` `derived/all` with that file's content as `data`, copied exactly, and `ifVersion` the
-   version step 2's last call showed (none if `null`). The fence reads the file itself and refuses any `data` that differs from it
-   (key order aside), and any size over 200 KB. A missing file, or a write refused because the version moved, ends the run: the next one publishes.
+3. **Publish** (#C668): `db_write` of one operation: `set` `derived/all` with `data` exactly `{"fromFile": true}` and `ifVersion` the
+   version step 2's last call showed (none if `null`). The model types no summary: the fence, which is this call's PreToolUse
+   hook, reads `<collector.outDir>/derived-all.json` (the probe's last derive wrote it, atomically) and answers the app with the
+   call rewritten (`updatedInput`) so that the file stands in the placeholder's place. The placeholder is taken only while the
+   file is this run's: written after this run's `--prepare` wrote the plan (`export-since.json`) and not 30 minutes ago; a
+   missing, old or oversized file (over 200 KB), or a `data` that is neither the placeholder nor equal to the file (key order
+   aside: the old typed copy is still taken), is refused. A refusal, or a write refused because the version moved, ends the run: the next one publishes.
 
 The probe's part, every minute and with no model: merge the sealed export; derive from the mirror when a merge changed it or the
 last derive is ten minutes old (`collect.mjs --probe-step`, which fetches nothing of its own: the probe has just fetched) into

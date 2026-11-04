@@ -367,9 +367,10 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   for (const d of ["clear_session", "set_remote_control", "stop_session", "archive_session", "delete_session", "set_session_permission_mode"]) assert.ok(settings.permissions.deny.includes(`mcp__ccd_session_mgmt__${d}`), d);
   assert.ok(!settings.permissions.deny.includes("mcp__ccd_session_mgmt__send_message"));
   assert.match(doc, /never with cd, &&, or anything added or/, "the commands run exactly as allowed (Security)");
-  assert.match(doc, /with that file's content as `data`, copied exactly/, "derived/all is the probe's file, copied whole (#C655)");
+  assert.match(doc, /with `data` exactly `\{"fromFile": true\}`/, "derived/all is the probe's file, put in by the fence, never typed (#C668)");
+  assert.match(doc, /PreToolUse\s+hook, reads `<collector\.outDir>\/derived-all\.json`/);
   assert.match(doc, /`ifVersion` the\s+version step 2's last call showed/, "the version comes from the last db_get, saved in the seal");
-  assert.match(doc, /The fence reads the file itself and refuses any `data` that differs from it/, "the copy is checked, not trusted");
+  assert.match(doc, /neither the placeholder nor equal to the file/, "any other data is checked against the file, not trusted (#C668)");
   assert.ok(settings.permissions.deny.includes("Write"), "the run writes no file: a hook records the board's answers (Security R1)");
   assert.ok(settings.permissions.deny.includes("Edit"));
   assert.match(doc, /\*\*Folder\*\*: the board's own state folder/, "exports are saved only inside the run's folder (trial 2)");
