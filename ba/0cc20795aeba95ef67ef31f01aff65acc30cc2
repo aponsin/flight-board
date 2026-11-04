@@ -1,0 +1,1 @@
+PASS Quick: #C667, reviewed with its rework fe30485 (see that note); this commit alone had findings fixed there.
