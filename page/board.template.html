@@ -24,6 +24,8 @@ body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);padding:20
 /* #C675: the header (title, live version, badge and version chip, clock, sources line) stays on screen while the page scrolls. It sits
    in the page's colour so the content slides under it; the strip below it sticks at the header's height (--hdr-h, set from the
    header's own height, which changes when it wraps on a phone). */
+/* A jump to a card or thread (scrollIntoView) stops below the sticky header, not behind it (Checker on 46ba0d8). */
+html{scroll-padding-top:var(--hdr-h,0px)}
 header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;position:sticky;top:0;z-index:7;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line)}
 h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;margin:0}
 /* The Manager chip sits at the header's top right, above the clock; with no room beside the title the whole block wraps below it. */
