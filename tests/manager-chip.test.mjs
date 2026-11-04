@@ -142,8 +142,14 @@ test("the header is sticky in the page's colour, and the strip below it sticks a
   assert.match(rule, /background:var\(--bg\)/, "content scrolling under it is hidden");
   assert.match(rule, /z-index:7/, "above the strip (5)");
   assert.match(html, /\.v3strip\{position:sticky;top:var\(--hdr-h,0px\)/);
-  assert.match(html, /style\.setProperty\("--hdr-h",h\.offsetHeight\+"px"\)/, "the header's height is read, and again when it changes");
+  assert.match(html, /style\.setProperty\("--hdr-h",\(getComputedStyle\(h\)\.position==="sticky"\?h\.offsetHeight:0\)\+"px"\)/, "the header's height is read, and again when it changes");
   assert.match(html, /new ResizeObserver\(set\)\.observe\(h\)/);
+  // Sticky from 600px up only (Designer): under it the header scrolls away, the media rule comes after the header rule, and
+  // --hdr-h reads 0 when the header is not sticky, so the strip and the scroll padding fall back to the top of the page.
+  const at = html.indexOf("\nheader{"), phone = html.indexOf("@media (max-width:599px){header{position:static;border-bottom:0}}");
+  assert.ok(phone > at && at > 0, "the phone rule follows the header rule, so it wins");
+  assert.match(html, /getComputedStyle\(h\)\.position==="sticky"\?h\.offsetHeight:0/);
+  assert.match(html, /window\.addEventListener\("resize",set\)/, "crossing 600px re-reads it");
   assert.match(html, /\nhtml\{scroll-padding-top:var\(--hdr-h,0px\)\}/, "a card or thread jump (scrollIntoView block:start) stops below the header, not behind it");
 });
 
