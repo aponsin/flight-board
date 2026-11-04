@@ -7,7 +7,7 @@
 // applyWrites) and a delete is a tombstone: {deleted: true, updatedAt}.
 import { readFileSync, writeFileSync, readdirSync, lstatSync, mkdirSync, renameSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { EXPORT_COLLECTIONS, READ_COLLECTIONS, CURSOR, DOC_ID, CALLS_DIR } from "./export.mjs";
+import { EXPORT_COLLECTIONS, READ_COLLECTIONS, CURSOR, DOC_ID, CALLS_DIR, FAILED_FILE } from "./export.mjs";
 
 // Edited in place, with no one time field of their own: they carry updatedAt (a write without it is refused).
 export const MUTABLE = ["initiatives", "waiting", "ideas", "threads", "plan"];
@@ -96,6 +96,7 @@ export function sealed(exportDir) {
   if (!regular(seal)) return false;
   const dir = join(exportDir, CALLS_DIR);
   if (!directory(dir)) return true;
+  if (regular(join(dir, FAILED_FILE))) return false;
   const at = lstatSync(seal).mtimeMs;
   return readdirSync(dir).every((f) => { try { return lstatSync(join(dir, f)).mtimeMs <= at; } catch { return true; } });
 }
@@ -124,18 +125,39 @@ const goodCall = (c) => plainObj(c) && (c.tool === "list" || c.tool === "query")
   && (c.cursor === null || (typeof c.cursor === "string" && CURSOR.test(c.cursor))) && (c.next === null || (typeof c.next === "string" && CURSOR.test(c.next)))
   && Array.isArray(c.docs) && c.docs.every((d) => plainObj(d) && typeof d.id === "string" && DOC_ID.test(d.id) && plainObj(d.data));
 const savePage = (path, docs) => { mkdirSync(join(path, ".."), { recursive: true }); writeAtomic(path, JSON.stringify({ docs })); };
+const recordsOf = (dir) => readdirSync(dir).filter((x) => /^[0-9]{10,}-[0-9a-f]{8}\.json$/.test(x)).sort()
+  .map((f) => (regular(join(dir, f)) ? readDoc(join(dir, f)) : null)).filter(goodCall);
+const asksFor = (c, q) => c.tool === "query" && q.collection === c.collection && whereIs(c.where, q.field, q.since);
+
+// A delta answers a query a page at a time (nextCursor). It is whole only when, for every query the plan asked, the records hold
+// the page with no cursor and a page for every cursor the pages before it handed on, down to one whose next is null. A chain that
+// stops short (a run that failed or ran out of budget between pages, a page whose capture failed) is no delta: the stamp would move
+// past changes the run never took (Checker, Security F1). Returns the queries whose chain is broken (empty when whole).
+export function brokenChains(found, mark) {
+  const dir = join(found, CALLS_DIR), queries = Array.isArray(mark?.queries) ? mark.queries : [];
+  if (queries.length === 0) return [];
+  if (!directory(dir)) return queries.map((q) => `${q.collection}: no answer`);
+  if (regular(join(dir, FAILED_FILE))) return queries.map((q) => `${q.collection}: a capture failed`);
+  const calls = recordsOf(dir), broken = [];
+  for (const q of queries) {
+    const mine = calls.filter((c) => asksFor(c, q));
+    let page = mine.find((c) => c.cursor === null), steps = 0;
+    while (page && page.next !== null && steps++ < 10000) page = mine.find((c) => c.cursor === page.next);
+    if (!page || page.next !== null) broken.push(`${q.collection}: the chain of pages is not whole`);
+  }
+  return broken;
+}
+
 export function ingestCalls(found, mark) {
   const dir = join(found, CALLS_DIR);
   if (!directory(dir)) return { delta: 0, sweep: false };
   const queries = Array.isArray(mark?.queries) ? mark.queries : [], s = mark?.sweep ?? null;
   let n = 0, sweep = null;
-  for (const f of readdirSync(dir).filter((x) => /^[0-9]{10,}-[0-9a-f]{8}\.json$/.test(x)).sort()) {
-    const c = regular(join(dir, f)) ? readDoc(join(dir, f)) : null;
-    if (!goodCall(c)) continue;
+  for (const c of recordsOf(dir)) {
     const isSweep = s && c.collection === s.collection && c.limit === s.limit && (c.cursor ?? null) === (s.cursor ?? null)
       && (s.since === undefined ? c.tool === "list" : c.tool === "query" && whereIs(c.where, "at", s.since));
     if (isSweep) { sweep = c; continue; }
-    if (c.tool === "query" && queries.some((q) => q.collection === c.collection && whereIs(c.where, q.field, q.since))) savePage(join(found, c.collection, `c${n++}.page.json`), c.docs);
+    if (queries.some((q) => asksFor(c, q))) savePage(join(found, c.collection, `c${n++}.page.json`), c.docs);
   }
   if (sweep) {
     savePage(join(found, SWEEP_DIR, sweep.collection, "p1.page.json"), sweep.docs);

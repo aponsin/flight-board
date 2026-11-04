@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, symlinkSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { MUTABLE, APPENDED, OVERLAP_MS, SWEEP_STAGES, SWEEP_CYCLE_MS, SWEEP_EVERY, STEPS_KEEP_DAYS, deltaField, deltaPlan, queryLines, sealed, mergeDelta, readStamp, writeStamp, driftLines, isTombstone, explodePages, ingestCalls, lay, readSweep, readSweepReport, advanceSweep } from "../collector/delta.mjs";
+import { MUTABLE, APPENDED, OVERLAP_MS, SWEEP_STAGES, SWEEP_CYCLE_MS, SWEEP_EVERY, STEPS_KEEP_DAYS, deltaField, deltaPlan, queryLines, sealed, mergeDelta, readStamp, writeStamp, driftLines, isTombstone, explodePages, ingestCalls, brokenChains, lay, readSweep, readSweepReport, advanceSweep } from "../collector/delta.mjs";
 import { READ_COLLECTIONS, EXPORT_COLLECTIONS } from "../collector/export.mjs";
 
 const NOW = Date.UTC(2026, 10, 3, 20, 0, 0) + 12345;
@@ -357,5 +357,35 @@ test("sealed: the seal must be newer than every recorded answer, so a read made 
     assert.equal(sealed(root), true);
     rmSync(join(root, "calls"), { recursive: true });
     assert.equal(sealed(root), true, "no records: only the seal");
+    mkdirSync(join(root, "calls"), { recursive: true });
+    writeFileSync(join(root, "calls", "FAILED"), "failed");
+    at(join(root, "calls", "FAILED"), 100); at(seal, 5000);
+    assert.equal(sealed(root), false, "a capture that failed: the export is not whole, whatever the seal's age");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("brokenChains: every planned query needs the page with no cursor and a page for each cursor handed on, ending in null", () => {
+  const root = tmp();
+  try {
+    const mark = { queries: [{ collection: "initiatives", field: "updatedAt", since: 500 }] };
+    const page = (token, cursor, next) => rec(root, token, { collection: "initiatives", where: W("updatedAt", 500), cursor, next });
+    assert.equal(brokenChains(root, { queries: [] }).length, 0, "no plan: nothing to chain");
+    assert.equal(brokenChains(root, mark).length, 1, "no calls folder");
+    page(T1, null, "abc");
+    assert.equal(brokenChains(root, mark).length, 1, "the chain stops at abc");
+    page(T2, "abc", null);
+    assert.deepEqual(brokenChains(root, mark), []);
+    writeFileSync(join(root, "calls", "FAILED"), "failed");
+    assert.equal(brokenChains(root, mark).length, 1, "a whole chain with a failed capture is still no delta");
+    rmSync(join(root, "calls", "FAILED"));
+    const loop = tmp();
+    try {
+      rec(loop, T1, { collection: "initiatives", where: W("updatedAt", 500), cursor: null, next: "abc" });
+      rec(loop, T2, { collection: "initiatives", where: W("updatedAt", 500), cursor: "abc", next: "abc" });
+      assert.equal(brokenChains(loop, mark).length, 1, "a page that points at itself never ends");
+    } finally { rmSync(loop, { recursive: true, force: true }); }
+    // A second planned query is judged on its own.
+    const two = { queries: [...mark.queries, { collection: "steps", field: "at", since: 500 }] };
+    assert.equal(brokenChains(root, two).length, 1);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

@@ -10,3 +10,5 @@ export const CURSOR = /^[A-Za-z0-9_=+/.:-]{1,512}$/;
 export const DOC_ID = /^[A-Za-z0-9_.@+:~-]{1,195}$/;
 // Where the fence's PostToolUse hook records each answer of the board's read tools, inside the export (collector/fence.mjs).
 export const CALLS_DIR = "calls";
+// Written by the fence's hook when it could not record an answer: the export is then not whole (collector/delta.mjs sealed).
+export const FAILED_FILE = "FAILED";

@@ -238,6 +238,69 @@ test("mergeRun takes the documents from the fence's records of the board's answe
   } finally { b.done(); }
 });
 
+// A delta answer is paged (nextCursor): the delta is whole only when the records hold every page of every planned query
+// (Checker, Security F1). A chain that stops short merges nothing and leaves the stamp, so the next run reads the same changes.
+function chainRun(b, pages, extra = () => {}) {
+  const t0 = NOW - 3600e3, since = t0 - OVERLAP_MS;
+  mkdirSync(join(b.dir, "mirror", "waiting"), { recursive: true });
+  put(join(b.dir, "mirror"), "waiting", "ask-1", { text: "old", updatedAt: 1 });
+  writeStamp(join(b.dir, "mirror"), t0, t0);
+  writeDeltaState(b.dir, { at: t0, fullAt: t0, lastPrepare: t0, sweep: null });
+  writeFileSync(join(b.dir, "export-since.json"), JSON.stringify({ at: NOW - 600e3, refs: {}, mode: "delta", sweep: null, queries: [{ collection: "waiting", field: "updatedAt", since }] }));
+  const exp = join(b.root, "chain", "scratchpad", EXPORT_NAME);
+  mkdirSync(join(exp, "calls"), { recursive: true });
+  pages.forEach(([cursor, next, id], i) => writeFileSync(join(exp, "calls", `179375000000${i}-aaaaaaa${i}.json`), JSON.stringify({ tool: "query", collection: "waiting", limit: 200, cursor, next, where: [{ field: "updatedAt", op: ">=", value: since }], docs: [{ id, data: { text: id, updatedAt: NOW - 650e3 } }] })));
+  extra(exp);
+  put(exp, "derived", "all", { version: 4 });
+  return { exp, t0 };
+}
+
+test("mergeRun: a delta whose chain of pages stops short merges nothing and leaves the stamp; the same chain with its last page merges", () => {
+  const b = board();
+  try {
+    const { exp, t0 } = chainRun(b, [[null, "abc123", "p1"]]);
+    const out = b.merge();
+    assert.equal(out.did, null);
+    assert.match(out.broken[0], /waiting/);
+    assert.equal(existsSync(join(b.dir, "mirror", "waiting", "p1.json")), false, "nothing laid");
+    assert.equal(readDeltaState(b.dir).at, t0, "state.at did not move");
+    assert.equal(readStamp(join(b.dir, "mirror")).at, t0, "the stamp stayed");
+    assert.equal(existsSync(exp), true, "the export is left where it was");
+  } finally { b.done(); }
+  const c = board();
+  try {
+    chainRun(c, [[null, "abc123", "p1"], ["abc123", null, "p2"]]);
+    assert.equal(c.merge().did, "delta");
+    assert.equal(existsSync(join(c.dir, "mirror", "waiting", "p1.json")), true);
+    assert.equal(existsSync(join(c.dir, "mirror", "waiting", "p2.json")), true);
+  } finally { c.done(); }
+  const d = board();
+  try {
+    chainRun(d, [["abc123", null, "p2"]]);
+    assert.equal(d.merge().did, null, "a second page with no first page is no chain");
+  } finally { d.done(); }
+  const e = board();
+  try {
+    chainRun(e, [[null, "abc123", "p1"], ["zzz999", null, "p2"]]);
+    assert.equal(e.merge().did, null, "a page for another cursor does not complete the chain");
+  } finally { e.done(); }
+  const f = board();
+  try {
+    chainRun(f, []);
+    assert.equal(f.merge().did, null, "a planned query with no answer at all is no delta");
+  } finally { f.done(); }
+});
+
+test("mergeRun: a capture that failed (the FAILED marker) leaves the export unsealed, so nothing is merged", () => {
+  const b = board();
+  try {
+    const { exp } = chainRun(b, [[null, null, "p1"]], (e) => writeFileSync(join(e, "calls", "FAILED"), "failed"));
+    assert.equal(b.merge().did, null);
+    assert.equal(existsSync(join(b.dir, "mirror", "waiting", "p1.json")), false);
+    assert.equal(existsSync(exp), true);
+  } finally { b.done(); }
+});
+
 test("readMirror: a delta-built mirror is as current as its stamp says, however old its newest file; a mirror without a stamp is as before", () => {
   const b = board();
   try {

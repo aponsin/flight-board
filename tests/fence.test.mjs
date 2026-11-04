@@ -174,6 +174,10 @@ test("captureOf: the record of a read is the call's own fields and the documents
   assert.match(captureOf(post(DB_TOOLS.list, list(), answer([D("a")], { count: 5 })), spec, "x").error, /count/);
   assert.match(captureOf({ ...post(DB_TOOLS.list, list(), answer([])), cwd: "/elsewhere" }, spec, "x").error, /runs in/);
   assert.match(captureOf({ ...post(DB_TOOLS.list, list(), answer([])), session_id: "../x" }, spec, "x").error, /no session id/);
+  // A failure marks the run's export: FAILED beside the records, so the export is never sealed (Security F1). No folder, no mark.
+  assert.equal(captureOf(post(DB_TOOLS.list, list(), answer([D("a")], { count: 5 })), spec, "x").failed, `${EXP}/calls/FAILED`);
+  assert.equal(captureOf({ ...post(DB_TOOLS.list, list(), answer([])), session_id: "../x" }, spec, "x").failed, undefined);
+  assert.equal(captureOf(post(DB_TOOLS.list, list(), answer([])), spec, "x").failed, undefined, "a good record has no mark");
 });
 
 test("artifactSlug is a lower-case UUID or empty, so a short id or a link fails at install, not at run time (Security c)", async () => {
@@ -226,7 +230,8 @@ test("the hook refuses with exit 2 on a refusal, a bad config and bad input, and
     const torn = hook({ ...good, hook_event_name: "PostToolUse", tool_name: DB_TOOLS.list, tool_input: list(), tool_response: answer([D("a")], { count: 3 }) });
     assert.equal(torn.status, 2);
     assert.match(torn.stderr, /could not record the board's answer/);
-    assert.equal(readdirSync(join(pad, "flight-board-export", "calls")).length, 1, "nothing recorded for it");
+    assert.deepEqual(readdirSync(join(pad, "flight-board-export", "calls")).filter((f) => f !== "FAILED"), files, "no record for it");
+    assert.equal(readFileSync(join(pad, "flight-board-export", "calls", "FAILED"), "utf8"), "failed", "but a FAILED marker: the export is not whole (Security F1)");
     assert.match(bad.stderr, /Refused by the collector's fence/);
     assert.equal(hook("not json").status, 2);
     assert.equal(hook(good, ["--config", join(dir, "missing.json")]).status, 2);

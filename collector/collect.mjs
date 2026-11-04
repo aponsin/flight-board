@@ -30,7 +30,7 @@ import { runMark, localMain, localShips } from "./refresh.mjs";
 import { allocate } from "../scripts/thread-ids.mjs";
 import { refreshPickups } from "./pickup.mjs";
 import { liveFresh, LIVE_FRESH_MS } from "./state-schema.mjs";
-import { sealed, deltaPlan, dropTombstones, queryLines, readDeltaState, writeDeltaState, writeStamp, mergeDelta, driftLines, deriveDue, saveLines, explodePages, ingestCalls, lay, readSweepReport, advanceSweep, SWEEP_DIR, DERIVE_FILE, LINE_START } from "./delta.mjs";
+import { sealed, deltaPlan, dropTombstones, queryLines, readDeltaState, writeDeltaState, writeStamp, mergeDelta, driftLines, deriveDue, saveLines, explodePages, ingestCalls, brokenChains, lay, readSweepReport, advanceSweep, SWEEP_DIR, DERIVE_FILE, LINE_START } from "./delta.mjs";
 
 // The folder this run's code really lives in (the current link resolved, by Node, to a pinned copy).
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -174,6 +174,10 @@ export function mergeRun({ dir, id, uid = process.getuid(), now = Date.now(), ba
   if (mark.mode === "delta" && !seeded) return { did: null };
   // The fence's hook recorded the board's answers (the run copies nothing): sort them into the delta's pages and the sweep
   // page, then cut the pages into the <id>.json files.
+  // A delta missing a page is no delta (like an unsealed export): nothing is laid and the stamp stays, so the next run reads the
+  // same changes again (Checker, Security F1).
+  const broken = brokenChains(found, mark);
+  if (broken.length) return { did: null, broken };
   ingestCalls(found, mark);
   explodePages(found);
   explodePages(join(found, SWEEP_DIR));

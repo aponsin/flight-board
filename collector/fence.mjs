@@ -12,7 +12,7 @@ import { join, dirname, resolve, basename } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { EXPORT_NAME, READ_COLLECTIONS, CURSOR, DOC_ID, CALLS_DIR } from "./export.mjs";
+import { EXPORT_NAME, READ_COLLECTIONS, CURSOR, DOC_ID, CALLS_DIR, FAILED_FILE } from "./export.mjs";
 
 // The most the run may publish as derived/all.
 export const DERIVED_MAX = 200 * 1024;
@@ -197,11 +197,16 @@ export function captureOf(input, spec, token) {
   const { tool_name: tool, tool_input: t, session_id: session } = input;
   const kind = Object.entries(DB_TOOLS).find(([, v]) => v === tool)?.[0];
   if (!["list", "query", "get"].includes(kind)) return { skip: true };
+  // Any failure leaves a FAILED marker beside the records (when the run's folder can be told): the export is then not sealed, so
+  // the probe never merges a delta that is missing a page (Security F1).
+  let base = null;
+  try { const pad = SESSION.test(String(session ?? "")) ? scratchpads(spec, session)[0] : null; if (pad) base = `${pad}/${EXPORT_NAME}`; } catch { /* no folder to mark */ }
+  const fail = (error) => ({ error, ...(base ? { failed: `${base}/${CALLS_DIR}/${FAILED_FILE}` } : {}) });
   const why = decide(input, spec);
-  if (why) return { error: why };
+  if (why) return fail(why);
   const a = parseAnswer(input.tool_response, kind);
-  if (a.error) return { error: a.error };
-  const base = `${scratchpads(spec, session)[0]}/${EXPORT_NAME}`;
+  if (a.error) return fail(a.error);
+  if (!base) return fail("no folder for the run");
   if (kind === "get") return { path: `${base}/derived/all.json`, content: JSON.stringify({ version: a.version }) };
   const record = { tool: kind, collection: t.collection, limit: t.limit, cursor: t.cursor ?? null, where: kind === "query" ? t.where ?? null : null, docs: a.docs, next: a.next };
   return { path: `${base}/${CALLS_DIR}/${token}.json`, content: JSON.stringify(record) };
@@ -227,7 +232,7 @@ export function main(argv, stdin) {
   const input = JSON.parse(stdin);
   if (input?.hook_event_name === "PostToolUse") {
     const r = captureOf(input, spec, `${Date.now()}-${randomBytes(4).toString("hex")}`);
-    if (r.error) return `could not record the board's answer: ${r.error}`;
+    if (r.error) { if (r.failed) { try { save(r.failed, "failed"); } catch { /* the refusal below still stops the run */ } } return `could not record the board's answer: ${r.error}`; }
     if (r.path) save(r.path, r.content);
     return null;
   }
