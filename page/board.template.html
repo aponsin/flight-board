@@ -2824,8 +2824,17 @@ function shipNow(now=Date.now()){const a=liveAgent(SHIP_ROLE,now),L=a&&a.state==
 // Any other agent on a command in the last CMD_NOW (the owner's choice c via Manager, Checker's finding): a push or an install
 // in flight shows as a Bash call a few seconds old; older than that it is between commands.
 const CMD_FRESH=45e3,CMD_NOW=15e3;
+// #C679: a ship candidate branch pushed and not on main (the probe's ship {version, ci, at}, from the repository itself, not from an
+// open card): never green, and it says why ("Ship v1.200.6 waiting on CI"). The probe drops it once the run fails or is cancelled, the
+// branch lands on main or is deleted, or it is 6 hours old. Returns the words, or null.
+const SHIP_CI_WORDS={none:"candidate pushed, not on main",queued:"waiting on CI",running:"CI running",passed:"CI passed, merging"};
+function shipCandidate(now=Date.now()){const sh=probe&&probe.ship;
+  if(!sh||typeof sh!=="object"||!isT(sh.at)||!Object.hasOwn(SHIP_CI_WORDS,sh.ci))return null;
+  const v=/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(String(sh.version))?` v${sh.version}`:"";
+  return `Ship${v} ${SHIP_CI_WORDS[sh.ci]}`}
 function restartState(now=Date.now()){if(!liveOn(now))return null;
   const s=shipNow(now);if(s)return {ok:false,why:`Release is shipping${s.version?` v${s.version}`:""}`};
+  const cand=shipCandidate(now);if(cand)return {ok:false,why:cand};
   const roles=Object.keys(probe.agents).filter(n=>n!==LEAD_ROLE).sort(),cmd=n=>{const la=liveAgent(n,now),a=probe.agents[n];
     return la&&la.state==="working"&&a&&a.tool==="Bash"&&isT(a.lastActivityAt)?{la,age:now-a.lastActivityAt}:null};
   for(const n of roles){const c=cmd(n);if(!c||c.age>CMD_FRESH)continue;

@@ -107,11 +107,11 @@ test("no line when Release is idle, works on a card in review, or a shipping car
 });
 
 // #C613: the pill under the title (placement C). Green Safe to restart, red Not now: <what>, nothing without a fresh reading.
-function restartBoard({ agents = {}, cards = { "c-1": { phase: "ship", headSha12: "a1b2c3d4e5f6" } }, derived = {}, fresh = true } = {}) {
-  const b = loadNames(["shipNow", "restartState", "renderRestart", "probeEvent"]);
-  b.state.initRaw = [{ id: "c-1", num: 499, status: "active" }, { id: "c-2", num: 500, status: "active" }];
+function restartBoard({ agents = {}, cards = { "c-1": { phase: "ship", headSha12: "a1b2c3d4e5f6" } }, derived = {}, fresh = true, ship = undefined, open = true } = {}) {
+  const b = loadNames(["shipNow", "shipCandidate", "restartState", "renderRestart", "probeEvent"]);
+  b.state.initRaw = open ? [{ id: "c-1", num: 499, status: "active" }, { id: "c-2", num: 500, status: "active" }] : [];
   b.state.derived = [{ id: "all", cards: derived }];
-  b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - (fresh ? 20e3 : 20 * 60e3) }, cards, agents } } });
+  b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - (fresh ? 20e3 : 20 * 60e3) }, cards, agents, ...(ship === undefined ? {} : { ship }) } } });
   return b;
 }
 const bash = (ago, extra = {}) => ({ state: "working", tool: "Bash", lastActivityAt: Date.now() - ago, since: Date.now() - 5 * 60e3, ...extra });
@@ -164,4 +164,38 @@ test("no fresh live reading: no pill (the page never says safe when it can't kno
   assert.equal(pill(restartBoard({ fresh: false, agents: { Builder: bash(5e3, { card: "c-1" }) } })).hidden, true);
   const b = loadNames(["restartState", "renderRestart"]);
   assert.equal(b.restartState(), null);
+});
+
+// #C679 (2026-11-04: the badge was green while Release's v1.200.6 ship waited on CI; the owner restarted and the ship died): a ship
+// candidate branch pushed and not on main, which the probe reads from the repository itself (state.ship), is never green, whatever
+// the cards and agents say, and the badge says why.
+test("a pushed ship candidate with its CI queued: Not now, naming the version and the wait, with every agent idle and no open card", () => {
+  const idle = { Release: { state: "idle", card: null, lastActivityAt: Date.now() - 5 * 60e3 } };
+  const ship = { version: "1.200.6", ci: "queued", at: Date.now() - 4 * 60e3 };
+  assert.deepEqual(pill(restartBoard({ agents: idle, ship })), { hidden: false, cls: "rb bad", text: "Not now: Ship v1.200.6 waiting on CI" });
+  assert.equal(pill(restartBoard({ agents: idle, ship, open: false, cards: {} })).text, "Not now: Ship v1.200.6 waiting on CI", "with no open card at all");
+  assert.equal(pill(restartBoard({ agents: idle })).text, "Safe to restart", "the same board without the candidate is green");
+});
+
+test("the candidate's words by CI state, with or without a version", () => {
+  const at = Date.now() - 60e3, idle = { Release: { state: "idle", card: null, lastActivityAt: Date.now() - 5 * 60e3 } };
+  const text = (ship) => pill(restartBoard({ agents: idle, ship })).text;
+  assert.equal(text({ version: "1.200.6", ci: "running", at }), "Not now: Ship v1.200.6 CI running");
+  assert.equal(text({ version: "1.200.6", ci: "none", at }), "Not now: Ship v1.200.6 candidate pushed, not on main");
+  assert.equal(text({ version: "1.200.6", ci: "passed", at }), "Not now: Ship v1.200.6 CI passed, merging");
+  assert.equal(text({ version: null, ci: "queued", at }), "Not now: Ship waiting on CI");
+});
+
+test("a ship reading that is not the plan's shape names nothing: the badge falls back to the cards and agents, and no text of it is shown", () => {
+  const at = Date.now() - 60e3, idle = { Release: { state: "idle", card: null, lastActivityAt: Date.now() - 5 * 60e3 } };
+  for (const ship of [null, "x", [], { version: "1.2.3", ci: "failed", at }, { version: "1.2.3", ci: "queued" }, { version: "1.2.3", ci: "queued", at: "now" }, { version: "1.2.3", ci: "__proto__", at }, { version: "1.2.3", ci: "toString", at }]) {
+    assert.equal(pill(restartBoard({ agents: idle, ship })).text, "Safe to restart", JSON.stringify(ship));
+  }
+  const odd = pill(restartBoard({ agents: idle, ship: { version: "<b>x</b>", ci: "queued", at } })).text;
+  assert.equal(odd, "Not now: Ship waiting on CI", "an odd version is left out, never printed");
+});
+
+test("with no fresh reading the candidate does not make a pill either: the page never says anything it can't know", () => {
+  const ship = { version: "1.200.6", ci: "queued", at: Date.now() - 60e3 };
+  assert.equal(pill(restartBoard({ fresh: false, ship })).hidden, true);
 });
