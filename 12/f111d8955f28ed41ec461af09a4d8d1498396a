@@ -1,0 +1,1 @@
+PASS Full: #C664 source-age-v2 at 12f111d, the rebase of my PASS at 59a6f91 onto main 1a1d6af. range-diff 3b37540..59a6f91 vs 1a1d6af..12f111d: code identical, CHANGELOG context only (the new base's #C663 and publish-check entries); 59a6f91 = 12f111d. Subjects and Board-Id trailers kept. Suite 1349/1349 on the stacked tip fe40c8f.
