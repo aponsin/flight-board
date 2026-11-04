@@ -10,13 +10,13 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { home } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, ALIVE_MAX_MS, MAX_RUN_MS } from "../gate/wake.mjs";
-import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine, TRUTH_FILE, TRUTH_SEEN_FILE, SHIP_ROLE, truthPending, truthSeen, truthLine, NOEVIDENCE_FILE, NOEVIDENCE_SEEN_FILE, noEvidencePending, noEvidenceLine, DISPATCH_FILE, DISPATCH_LATE_SEEN_FILE, dispatchSeenFile, dispatchPidFile, dispatchPending, dispatchSeen, dispatchLine, dispatchLateLine, dispatchWatchAlive, LINES_FILE, LINES_SEEN_FILE, linesPending, linesSeen } from "../gate/reset.mjs";
+import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine, TRUTH_FILE, TRUTH_SEEN_FILE, SHIP_ROLE, truthPending, truthSeen, truthLine, NOEVIDENCE_FILE, NOEVIDENCE_SEEN_FILE, noEvidencePending, noEvidenceLine, DISPATCH_FILE, DISPATCH_LATE_SEEN_FILE, dispatchSeenFile, dispatchPidFile, dispatchPending, dispatchSeen, dispatchLine, dispatchLateLine, dispatchWatchAlive, LINES_FILE, LINES_SEEN_FILE, linesPending, linesSeen, linesSeenFile, routeOf } from "../gate/reset.mjs";
 
 // One look: the heartbeat, then the line to print, or null. Marks the wake seen only once it is returned.
-export function tick(dir, now, pid = process.pid, roster = null) {
+export function tick(dir, now, pid = process.pid, roster = null, lead = null) {
   const p = wakePaths(dir);
   writeAtomic(p.alive, JSON.stringify({ at: now, pid }));
-  const lines = resetLines(dir, roster, now);
+  const lines = resetLines(dir, roster, now, lead);
   const wake = readWakeFile(p.wake), seen = readWakeFile(p.seen);
   if (wakePending(wake, seen)) {
     writeAtomic(p.seen, JSON.stringify({ seq: wake.seq, at: wake.at }));
@@ -31,13 +31,16 @@ export function roleTick(dir, role, now, pid = process.pid) {
   writeAtomic(join(dir, dispatchPidFile(role)), JSON.stringify({ pid, at: now }));
   const read = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
   const seen = read(dispatchSeenFile(role)), due = dispatchPending(read(DISPATCH_FILE), seen, { role, level: 1 });
-  if (!due.length) return null;
-  writeAtomic(join(dir, dispatchSeenFile(role)), JSON.stringify(dispatchSeen(seen, due)));
-  return due.map(dispatchLine).join("\n");
+  // #C678: the nudges and conflicts the probe marked for this role (its own seen file, one batch once).
+  const batch = read(LINES_FILE), lseen = read(linesSeenFile(role)), mine = linesPending(batch, lseen, { role });
+  if (Number.isInteger(batch?.at) && batch.at !== lseen?.at) writeAtomic(join(dir, linesSeenFile(role)), JSON.stringify(linesSeen(batch)));
+  if (!due.length && !mine.length) return null;
+  if (due.length) writeAtomic(join(dir, dispatchSeenFile(role)), JSON.stringify(dispatchSeen(seen, due)));
+  return [...due.map(dispatchLine), ...mine].join("\n");
 }
 
 // The roles the probe asked to reset (#C592, gate/reset.mjs) that this watch has not printed yet; marks them printed.
-function resetLines(dir, roster = null, now = Date.now()) {
+function resetLines(dir, roster = null, now = Date.now(), lead = null) {
   // Only roster roles are ever named (Security: a planted file in the state folder must not make the lead wake or reset a role the team does not have).
   const onRoster = (r) => !roster || roster.includes(r);
   const read = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
@@ -63,7 +66,12 @@ function resetLines(dir, roster = null, now = Date.now()) {
   if (JSON.stringify(nextSeen) !== JSON.stringify(tseen ?? { items: {} })) writeAtomic(join(dir, TRUTH_SEEN_FILE), JSON.stringify(nextSeen));
   out.push(...todo.map(truthLine));
   // What the derive step found (#C642): CONFLICT, LIVE BUT OPEN, NUDGE and MIRROR DRIFT lines, once per batch.
-  const batch = read(LINES_FILE), batchSeen = read(LINES_SEEN_FILE), shown = linesPending(batch, batchSeen);
+  // #C678: a line about one agent's card goes to that agent's watch; the lead keeps it only when that role has no open session.
+  const away = [...(Array.isArray(wasked?.roles) ? wasked.roles : []), ...(Array.isArray(wasked?.missing) ? wasked.missing : [])].filter((r) => typeof r === "string");
+  const batch = read(LINES_FILE), batchSeen = read(LINES_SEEN_FILE);
+  // ...or whose own watch is not running: nobody would print its line (Security on 3eb2450).
+  for (const l of Array.isArray(batch?.lines) ? batch.lines : []) { const r = typeof l === "string" ? routeOf(l) : null; if (r && !away.includes(r) && !dispatchWatchAlive(join(dir, dispatchPidFile(r)), now)) away.push(r); }
+  const shown = linesPending(batch, batchSeen, { lead, roster, away });
   if (Number.isInteger(batch?.at) && batch.at !== batchSeen?.at) writeAtomic(join(dir, LINES_SEEN_FILE), JSON.stringify(linesSeen(batch)));
   out.push(...shown);
   // The probe finds no branch for any open card (#C632): one NOEVIDENCE line per outage; the seen file is cleared when it ends.
@@ -132,7 +140,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const loop = () => {
     const now = Date.now();
     let line = null;
-    try { line = tick(dir, now, process.pid, config.roster); } catch { /* a file that can't be written this time: the next look tries again */ }
+    try { line = tick(dir, now, process.pid, config.roster, config.gate.managerRole); } catch { /* a file that can't be written this time: the next look tries again */ }
     if (line) console.log(line);
     if (now - start >= MAX_RUN_MS) { endWatch(dir); process.exit(0); }
   };

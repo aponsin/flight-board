@@ -54,8 +54,7 @@ const run = (docs, d = derived(), state = {}) => nudges({ config, docs: { initia
 test("nudge 9: a READY logged at or after the tip, on a branch read as after-ship, asks for the trailer; forwarded to who logged it", () => {
   const { lines } = run({ steps: [step(TIP_AT + 5 * MIN)] });
   assert.deepEqual(lines.filter((l) => /after its ship|after stale-fix/.test(l)), [
-    `NUDGE stale-fix (#C521): READY logged after its ship, but admin/stale-fix at aaaaaaaa has no "Board-Id: stale-fix" commit since the ship, so the board reads it as 2 extra commits after ship, not a new review; forward:`,
-    `NUDGE forward to Admin: a rework after stale-fix (#C521) shipped needs a commit with "Board-Id: stale-fix" (or its own branch and sub-card), or the board never shows it READY`,
+    `NUDGE @Admin stale-fix (#C521): READY logged after its ship, but admin/stale-fix at aaaaaaaa has no "Board-Id: stale-fix" commit since the ship, so the board reads it as 2 extra commits after ship, not a new review. Please: a rework after stale-fix (#C521) shipped needs a commit with "Board-Id: stale-fix" (or its own branch and sub-card), or the board never shows it READY`,
   ]);
   assert.equal(run({ steps: [step(TIP_AT)] }).lines.filter((l) => /READY logged after its ship/.test(l)).length, 1, "a READY at the tip's own time counts");
   assert.equal(run({ steps: [step(TIP_AT, { init: "C521" })] }).lines.filter((l) => /READY logged after its ship/.test(l)).length, 1, "a step by card number counts");

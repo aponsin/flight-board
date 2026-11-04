@@ -29,6 +29,7 @@
 import { idText as q } from "./text.mjs";
 import { repoOf, openAsks } from "./derive.mjs";
 import { typedClashes } from "./state-schema.mjs";
+import { routedLine, plainLine } from "../gate/reset.mjs";
 import { reworkOwed, signalText, halfLive } from "./rework.mjs";
 
 const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10, TYPED_MIN = 5, IDLE_MIN = 10;
@@ -59,6 +60,10 @@ function fingerprint(doc) {
 // install): no step-overdue or unchanged nudge for them. derived: this run's derived cards ({ id: derivePhase's answer }).
 // releaseTimes: the release log's times by version (collector/facts.mjs releaseTimes). live: the live state's fresh
 // reading (collect.mjs readLiveState), or null.
+// #C678: the role a nudge about one agent's card is for: the card's own role, when it is a plain role name and not the lead
+// (the lead reads the rest). Such a nudge is printed as "NUDGE @Role ..." and goes to that role's watch (gate/reset.mjs).
+export const roleFor = (role, config) => (typeof role === "string" && /^[A-Za-z][A-Za-z0-9_-]{0,31}$/.test(role) && role !== config.gate?.managerRole ? role : null);
+
 export function nudges({ config, docs, now, state = {}, waiting = new Set(), derived = {}, releaseTimes = {}, live = null }) {
   const n = config.nudges, owner = config.owner, firing = [];
   const messages = (docs.messages ?? []).filter((m) => m && typeof m.thread === "string" && typeof m.at === "number");
@@ -156,7 +161,7 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     if (Object.hasOwn(releaseTimes, ver)) continue;
     const tag = Number.isInteger(card.num) && card.num > 0 ? ` (#C${card.num})` : "";
     firing.push({
-      key: `shiptimes:${id}`,
+      key: `shiptimes:${id}`, to: s.who || "Release",
       text: `${q(id)}${tag}: live in v${q(ver)} for ${mins(now - s.at)} min with no ship times; forward:`,
       then: `forward to ${q(s.who || "Release")}: ship times for v${q(ver)}${tag}: add testsMin and deployMin to its live step, or its row to the release log`,
     });
@@ -171,7 +176,7 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     if (closed(card) || !Number.isFinite(card.etaLive) || Math.abs(card.etaLive) > 8.64e15 || now - card.etaLive <= HOUR) continue;
     if (phase === config.collector.livePhase || openAsks(docs.waiting, card.id).length) continue;
     const d = new Date(card.etaLive), eta = [d.getUTCHours(), d.getUTCMinutes()].map((x) => String(x).padStart(2, "0")).join(":");
-    firing.push({ key: `overdue:${card.id}:${card.etaLive}`, every: true, text: `overdue: ${q(card.id)} (ETA ${eta}Z, phase ${q(phase ?? "?")})` });
+    firing.push({ key: `overdue:${card.id}:${card.etaLive}`, every: true, to: card.who, text: `overdue: ${q(card.id)} (ETA ${eta}Z, phase ${q(phase ?? "?")})` });
   }
 
   // 8. A typed field the live state contradicts, TYPED_MIN minutes on (a minute's lag between a write and the reading is
@@ -187,7 +192,7 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
         typedSeen[key] = typeof before === "number" ? before : now;
         if (now - typedSeen[key] < TYPED_MIN * MIN) continue;
         const tag = Number.isInteger(card.num) && card.num > 0 ? ` (#C${card.num})` : "";
-        firing.push({ key: `typed:${key}`, text: `${q(card.id)}${tag}: its typed ${field} disagrees with the live state for ${mins(now - typedSeen[key])} min; the board shows the live one, so fix or clear the typed one` });
+        firing.push({ key: `typed:${key}`, to: card.who, text: `${q(card.id)}${tag}: its typed ${field} disagrees with the live state for ${mins(now - typedSeen[key])} min; the board shows the live one, so fix or clear the typed one` });
       }
     }
   } else Object.assign(typedSeen, state.typedSeen ?? {});
@@ -201,7 +206,7 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     const ready = (docs.steps ?? []).filter((s) => s && (s.init === id || (num && s.init === num)) && s.phase === config.collector.buildPhase && s.kind === "end" && typeof s.at === "number" && s.at >= a.at).sort((x, y) => y.at - x.at)[0];
     if (!ready) continue;
     firing.push({
-      key: `aftership:${id}:${a.tip}`,
+      key: `aftership:${id}:${a.tip}`, to: ready.who,
       text: `${q(id)}${tag}: READY logged after its ship, but ${branchText(a.branch)} at ${a.tip.slice(0, 8)} has no "Board-Id: ${q(id)}" commit since the ship, so the board reads it as ${Number.isInteger(a.extra) ? a.extra : "?"} extra commits after ship, not a new review; forward:`,
       then: `forward to ${q(ready.who || "its builder")}: a rework after ${q(id)}${tag} shipped needs a commit with "Board-Id: ${q(id)}" (or its own branch and sub-card), or the board never shows it READY`,
     });
@@ -234,7 +239,7 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     const open = halfLive(card, docs.steps ?? []);
     if (!open.length) continue;
     const tag = Number.isInteger(card.num) && card.num > 0 ? ` (#C${card.num})` : "";
-    firing.push({ key: `halflive:${card.id}:${open.join(",")}`, text: `HALF-LIVE ${q(card.id)}${tag}: ${card.status === "done" ? "done" : "live"} with ${open.length} doneWhen line(s) that have no end step (lines ${open.join(", ")}): log each step, or take the line off the card` });
+    firing.push({ key: `halflive:${card.id}:${open.join(",")}`, to: card.who, text: `HALF-LIVE ${q(card.id)}${tag}: ${card.status === "done" ? "done" : "live"} with ${open.length} doneWhen line(s) that have no end step (lines ${open.join(", ")}): log each step, or take the line off the card` });
   }
 
   // 12. Work the steps never logged (#C649): a card the board has on plan or queued while the repository shows commits for it
@@ -246,7 +251,7 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     const logged = (docs.steps ?? []).some((s) => s && s.init === card.id && s.phase === config.collector.buildPhase && s.kind === "start" && !s.wait);
     if (logged) continue;
     const tag = Number.isInteger(card.num) && card.num > 0 ? ` (#C${card.num})` : "";
-    firing.push({ key: `unlogged:${card.id}:${d.head}`, text: `UNLOGGED BUILD ${q(card.id)}${tag}: the repository shows commits for it (head ${d.head.slice(0, 8)}) but the card is ${card.status === "queued" ? "queued" : "on plan"} and no plain build start step exists; whoever builds it logs the start (the board shows it as build meanwhile)` });
+    firing.push({ key: `unlogged:${card.id}:${d.head}`, to: card.who, text: `UNLOGGED BUILD ${q(card.id)}${tag}: the repository shows commits for it (head ${d.head.slice(0, 8)}) but the card is ${card.status === "queued" ? "queued" : "on plan"} and no plain build start step exists; whoever builds it logs the start (the board shows it as build meanwhile)` });
   }
 
   // Once, then again only after the quiet period; forgotten when it stops holding.
@@ -255,8 +260,11 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     const last = Object.hasOwn(state.sent ?? {}, f.key) ? state.sent[f.key] : undefined;
     if (!f.every && typeof last === "number" && now - last < n.quietMin * MIN) { sent[f.key] = last; continue; }
     sent[f.key] = now;
-    lines.push(`NUDGE ${f.text}`);
-    if (f.then) lines.push(`NUDGE ${f.then}`);
+    // A nudge for one agent's card goes straight to that agent: the lead has nothing to forward (#C678).
+    const to = roleFor(f.to, config);
+    if (to) { lines.push(routedLine("NUDGE", to, f.then ? `${f.text.replace(/[;,]? forward:$/, ".")} Please: ${f.then.replace(/^forward to [^:]*: /, "")}` : f.text)); continue; }
+    lines.push(plainLine("NUDGE", f.text));
+    if (f.then) lines.push(plainLine("NUDGE", f.then));
   }
   return { lines, state: { sent, seen, readySeen, typedSeen } };
 }
