@@ -27,6 +27,9 @@ body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);padding:20
 /* A jump to a card or thread (scrollIntoView) stops below the sticky header, not behind it (Checker on 46ba0d8). */
 html{scroll-padding-top:var(--hdr-h,0px)}
 header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;position:sticky;top:0;z-index:7;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line)}
+/* Sticky from 600px up only (Designer on 46ba0d8: at 360px the header is ~200px, and with the strip pinned under it over half the
+   phone screen was fixed). Below that it scrolls away as before, and --hdr-h reads 0. After the header rule so it wins. */
+@media (max-width:599px){header{position:static;border-bottom:0}}
 h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;margin:0}
 /* The Manager chip sits at the header's top right, above the clock; with no room beside the title the whole block wraps below it. */
 .hdr-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:100%;text-align:right}
@@ -2735,8 +2738,10 @@ function boardVerText(pack,commit,installed){const p=/^v\d+\.\d+[a-z]?$/.test(pa
 function renderBoardVer(){const el=$("boardver");if(!el)return;const t=boardVerText(el.dataset.pack,el.dataset.commit,liveOn(Date.now())&&probe&&probe.board?probe.board.pageVersion:null);el.hidden=!t;el.textContent=t}
 // #C675: the sticky header's height, for whatever sticks below it; it changes when the header wraps or its lines change.
 (function(){const h=document.querySelector("header");if(!h||!document.documentElement)return;
-  const set=()=>document.documentElement.style.setProperty("--hdr-h",h.offsetHeight+"px");set();
-  if(typeof ResizeObserver==="function")new ResizeObserver(set).observe(h);else window.addEventListener("resize",set)})();
+  // 0 when the header is not sticky (under 600px), so the strip and the scroll padding go back to the top of the page there.
+  const set=()=>document.documentElement.style.setProperty("--hdr-h",(getComputedStyle(h).position==="sticky"?h.offsetHeight:0)+"px");set();
+  if(typeof ResizeObserver==="function")new ResizeObserver(set).observe(h);
+  window.addEventListener("resize",set)})();
 function renderManagerChip(){const el=$("mgrchip");if(!el)return;const c=managerChip();el.hidden=!c;if(c){el.className="mgr-chip "+c.cls;el.textContent=c.text}}
 // Under the owner's message: "seen" once the watch has handled a wake at or after it; the time is the wake's, shown on the
 // newest such message (the older ones are before it, with no time of their own).
