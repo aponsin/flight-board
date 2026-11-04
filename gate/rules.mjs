@@ -494,7 +494,7 @@ export function checkWrites(writes, { config, who, now, state, mirror = null, se
   const perItem = new Map();
   for (const w of writes) {
     if (w === stuckWrite) continue;
-    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now, who, live }), ...queuedLiveErrors(w, { live }), ...liveStepErrors(w, { config, mirror, batch: writes })];
+    const errs = [...writeErrors(w, { config, who, now }), ...lookErrors(w, { config, seen, batch: writes }), ...offBoardErrors(w, { config }), ...ownerWordErrors(w, { config, who, seen, batch: writes }), ...mirrorErrors(w, { config, mirror, batch: writes, now, who, live, known: state?.known }), ...queuedLiveErrors(w, { live }), ...liveStepErrors(w, { config, mirror, batch: writes })];
     perItem.set(itemKey(w), [...(perItem.get(itemKey(w)) ?? []), ...errs]);
     for (const m of errs) errors.push(`${w.collection}/${w.doc_id}: ${m}`);
   }
@@ -720,7 +720,58 @@ export function leadFieldErrors(w, { config, who = {}, mirror }) {
   return e;
 }
 
-export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now(), who = {}, live = null }) {
+// A step names a real card, and a ship start needs its sign-offs (#C669, the owner in the #C668 thread: "what stops the same mistake?";
+// the ship steps of two cards were once logged under "C667" and "C668", the cards' numbers, which no card has as its id, so the
+// page never saw them, and the cards' Designer and Security sign-off steps were left out).
+// 1. A steps write whose init is no card is refused. An init written as a card number ("C667", "#c667") says which card it is
+//    when the board knows the number. The card ids come from the board's copy (with the gate's journal over it), this batch's
+//    new cards and the cards the gate has seen created (state.known); with none of them to check against (no copy of the board,
+//    or an empty one) only the number shape is refused, which no card id has in practice, unless a card really has that id.
+// 2. A ship start (not a wait) is refused while a review phase the card needs has no end step: the config's review phases
+//    (collector.notes), less the card's skips (card.skip, "look" standing for design) and the config.skips rules (a phase
+//    only at a level, or only when a card field is true). Checker always. A card at level None needs no review, and a done or
+//    dropped card is not checked. The steps are the board's plus this batch's, so an end step and the ship start can go in one call.
+const CARD_NUMBER = /^#?[cC](\d{1,6})$/;
+export function stepGuardErrors(w, { config, mirror, batch = [], known = [] }) {
+  const { op, collection, data } = w;
+  if (collection !== "steps" || op !== "set" || !data || typeof data !== "object" || typeof data.init !== "string" || !data.init) return [];
+  const cards = Array.isArray(mirror?.docs?.initiatives) ? mirror.docs.initiatives.filter((c) => c && typeof c.id === "string") : [];
+  const made = batch.filter((b) => b && b.collection === "initiatives" && b.op !== "delete" && typeof b.doc_id === "string").map((b) => b.doc_id);
+  const ids = new Set([...cards.map((c) => c.id), ...made, ...(Array.isArray(known) ? known.filter((k) => typeof k === "string") : [])]);
+  const init = data.init;
+  if (!ids.has(init)) {
+    const m = CARD_NUMBER.exec(init);
+    if (m) {
+      const n = Number(m[1]), card = cards.find((c) => c.num === n);
+      return [card
+        ? `init ${idText(init)} is a card number, not a card id: #C${n} is ${idText(card.id)}; log the step under init "${idText(card.id)}" (steps/${idText(card.id)}-<phase>-<kind>-<at>)`
+        : `init ${idText(init)} is a card number, not a card id: log the step under the card's id, the name of its initiatives/<id> document`];
+    }
+    if (cards.length) return [`init ${idText(init)} is no card on the board (initiatives/<id>): a step under a name no card has is never shown; log it under the card's id`];
+    return [];
+  }
+  if (data.kind !== "start" || data.phase !== config.collector.shipPhase || data.wait) return [];
+  let card = cards.find((c) => c.id === init) ?? null;
+  for (const b of batch) if (b && b.collection === "initiatives" && b.doc_id === init && b.op !== "delete" && b.data && typeof b.data === "object") card = { ...(b.op === "update" ? card : {}), ...b.data, id: init };
+  const steps = mirror?.docs?.steps;
+  if (!card || !Array.isArray(steps) || card.status === "done" || card.status === "dropped" || card.level === "None") return [];
+  const skip = new Set(Array.isArray(card.skip) ? card.skip : []);
+  if (skip.has("look")) skip.add("design");
+  for (const k of config.skips ?? []) {
+    if (k.unlessLevel && card.level !== k.unlessLevel) skip.add(k.phase);
+    if (k.whenFalse && card[k.whenFalse] !== true) skip.add(k.phase);
+    if (k.unlessTrue && card[k.unlessTrue] !== true) skip.add(k.phase);
+  }
+  const ended = new Set([...steps, ...batch.filter((b) => b && b !== w && b.collection === "steps" && b.op === "set").map((b) => b.data)]
+    .filter((e) => e && e.init === init && e.kind === "end" && !e.wait && typeof e.phase === "string").map((e) => e.phase));
+  const label = (p) => (config.phases.find((x) => x[0] === p) ?? [p, p])[1];
+  const missing = Object.keys(config.collector.notes ?? {}).filter((p) => config.phases.some((x) => x[0] === p) && !skip.has(p) && !ended.has(p));
+  if (!missing.length) return [];
+  const name = Number.isInteger(card.num) ? `#C${card.num}` : idText(init);
+  return [`${name} can't start ${label(config.collector.shipPhase)}: no end step yet for ${missing.map((p) => idText(label(p))).join(", ")}. Each review ends with its own step (steps/${idText(init)}-<phase>-end-<at>) at its verdict; ship starts once all are in`];
+}
+
+export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now(), who = {}, live = null, known = [] }) {
   const { op, collection, doc_id: id, data } = w;
   const lead = leadFieldErrors(w, { config, who, mirror });
   if (lead.length) return lead;
@@ -731,7 +782,7 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
     const orphan = was && was.kind !== "decision" && Array.isArray(data.options) ? [`options show as buttons only on kind "decision": this ask is ${idText(was.kind ?? "of no kind")}; update {kind: "decision", options} to turn it into a decision in place`] : [];
     return [...threadNumberedErrors(w, { mirror, batch }), ...(was ? choiceErrors(data, was.kind) : []), ...orphan];
   }
-  if (collection === "steps") return [...phaseOverlapErrors(w, { config, mirror, batch }), ...dependsOnErrors(w, { config, mirror, batch }), ...startEvidenceErrors(w, { config, mirror, who, live, batch })];
+  if (collection === "steps") return [...stepGuardErrors(w, { config, mirror, batch, known }), ...phaseOverlapErrors(w, { config, mirror, batch }), ...dependsOnErrors(w, { config, mirror, batch }), ...startEvidenceErrors(w, { config, mirror, who, live, batch })];
   if (collection === PLAN) return planMirrorErrors(w, { mirror, batch });
   // Every card links to the plan node it serves (board v3); a new card can't go without one, mirror or not.
   const planned = collection === "initiatives" ? initiativePlanErrors(w, { mirror, batch }) : [];
