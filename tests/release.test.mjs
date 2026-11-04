@@ -99,7 +99,8 @@ test("the prompt: the repository's template with the team's values filled in; a 
   const text = renderPrompt(readFileSync(new URL("../collector/PROMPT.txt", import.meta.url), "utf8"), values);
   assert.match(text, /^You are the Collector\. With config \/srv\/team\/board\.config\.json and the board https:\/\/example\.com\/board,/);
   assert.match(text, /node \/srv\/fb\/current\/collector\/collect\.mjs --config \/srv\/team\/board\.config\.json --prepare/);
-  assert.match(text, /Read \/srv\/fb\/out\/derived-all\.json/);
+  assert.match(text, /set derived\/all with data exactly \{"fromFile": true\}/, "#C668: the run types no summary");
+  assert.ok(!/derived-all\.json/.test(text), "and reads no file");
   assert.match(text, /Send no messages and call no session tool: the probe works the board out and tells Manager\./);
   assert.ok(!text.includes("local_lead-1"), "the Collector is given no session to message");
   assert.ok(!text.includes("{{"));

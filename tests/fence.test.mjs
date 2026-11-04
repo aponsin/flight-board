@@ -2,12 +2,12 @@
 // refused; any failure refuses. Fictional board, folders and sessions.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readdirSync, readFileSync, existsSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
-import { fenceSpec, scratchpads, decide, parseAnswer, captureOf, DERIVED_MAX, DB_TOOLS, PARSE_FAILURE_FILE, LINE_MAX, RESPONSE_MAX, cut } from "../collector/fence.mjs";
+import { fenceSpec, scratchpads, decide, parseAnswer, captureOf, rewriteOf, allowAs, PLACEHOLDER, FRESH_MAX_MS, DERIVED_MAX, DB_TOOLS, PARSE_FAILURE_FILE, LINE_MAX, RESPONSE_MAX, cut } from "../collector/fence.mjs";
 
 const URL_ = "https://claude.ai/" + "artifact/TestBoard01";
 const SLUG = "11111111-2222-4333-8444-555555555555";
@@ -105,6 +105,78 @@ test("db_write: set derived/all, one operation, the probe's file exactly, at mos
   assert.match(decide(call(DB_TOOLS.write, setAll()), spec, () => { throw new Error("gone"); }), /can't read the collector's derived-all.json/);
   const big = { x: "y".repeat(DERIVED_MAX) };
   assert.equal(decide(call(DB_TOOLS.write, setAll({ data: big })), spec, () => big).includes(`${DERIVED_MAX} bytes`), true);
+});
+
+// #C668: the run's db_write carries {"fromFile": true} and the fence puts the probe's file in its place, if the file is this run's.
+const PLAN = "/srv/fb/TestBoard01/export-since.json";
+const NOW = 1793770000000;
+const dated = (fileAt, planAt) => (p) => { if (p === DERIVED) { if (fileAt === null) throw new Error("no file"); return fileAt; } if (p === PLAN) { if (planAt === null) throw new Error("no plan"); return planAt; } throw new Error("no such path"); };
+const writeFile = (data = PLACEHOLDER, over = {}) => call(DB_TOOLS.write, setAll({ data, ...over }));
+const decideAt = (c, fileAt, planAt, rd = read) => decide(c, spec, rd, dated(fileAt, planAt), () => NOW);
+test("db_write with the placeholder is taken only when the probe's file is this run's: written after the plan and not 30 minutes old", () => {
+  assert.deepEqual(PLACEHOLDER, { fromFile: true });
+  assert.equal(decideAt(writeFile(), NOW - 1e3, NOW - 6e4), null, "fresh, after the plan");
+  assert.equal(decideAt(writeFile(), NOW - 6e4, NOW - 6e4), null, "the same instant is this run's");
+  assert.equal(decideAt(writeFile(PLACEHOLDER, { ifVersion: undefined }), NOW - 1e3, NOW - 6e4), null, "a first write has no version");
+  assert.match(decideAt(writeFile(), NOW - 2 * 6e4, NOW - 6e4), /older than this run's plan/, "written before this run's --prepare: an old summary");
+  assert.match(decideAt(writeFile(), NOW - FRESH_MAX_MS - 1, NOW - FRESH_MAX_MS - 5e3), /more than 30 minutes old/);
+  assert.equal(decideAt(writeFile(), NOW - FRESH_MAX_MS, NOW - FRESH_MAX_MS - 5e3), null, "exactly 30 minutes is still this run's");
+  assert.match(decideAt(writeFile(), null, NOW - 6e4), /can't date/);
+  assert.match(decideAt(writeFile(), NOW - 1e3, null), /can't date/, "no plan, no proof it is this run's");
+  assert.match(decideAt(writeFile(), NOW - 1e3, NOW - 6e4, () => { throw new Error("gone"); }), /can't read the collector's derived-all.json/);
+  assert.match(decideAt(writeFile(), NOW - 1e3, NOW - 6e4, () => [1]), /derived-all.json is an object/);
+  const big = { x: "y".repeat(DERIVED_MAX) };
+  assert.match(decideAt(writeFile(), NOW - 1e3, NOW - 6e4, () => big), new RegExp(`${DERIVED_MAX} bytes`));
+});
+test("the placeholder is exactly {fromFile: true}; every other op rule still holds; a typed copy is still taken", () => {
+  for (const data of [{ fromFile: false }, { fromFile: "true" }, { fromFile: true, extra: 1 }, { fromfile: true }, {}, "fromFile"]) {
+    const r = decideAt(writeFile(data), NOW - 1e3, NOW - 6e4);
+    assert.ok(r && /exactly|an object/.test(r), JSON.stringify(data));
+  }
+  for (const over of [{ path: "waiting/x" }, { op: "merge" }, { ifVersion: "2" }, { extra: 1 }]) assert.ok(decideAt(writeFile(PLACEHOLDER, over), NOW - 1e3, NOW - 6e4), JSON.stringify(over));
+  refused(call(DB_TOOLS.write, { slug: SLUG, ops: [setAll().ops[0], setAll().ops[0]] }), "one operation");
+  assert.equal(decideAt(call(DB_TOOLS.write, setAll()), NOW - 99 * 6e4, NOW), null, "the exact copy needs no date, as before");
+});
+test("rewriteOf puts the probe's file where the placeholder was, keeping the slug, the path and the version; nothing else is rewritten", () => {
+  const r = rewriteOf(writeFile(), spec, read);
+  assert.deepEqual(r, { slug: SLUG, ops: [{ op: "set", path: "derived/all", data: doc, ifVersion: 2 }] });
+  assert.equal(rewriteOf(writeFile(PLACEHOLDER, { ifVersion: undefined }), spec, read).ops[0].ifVersion, undefined);
+  assert.equal(rewriteOf(call(DB_TOOLS.write, setAll()), spec, read), null, "a typed copy is left as it is");
+  assert.equal(rewriteOf(call(DB_TOOLS.get, { slug: SLUG, path: "derived/all" }), spec, read), null);
+  assert.equal(rewriteOf(call("Bash", { command: RUN }), spec, read), null);
+  assert.equal(rewriteOf(call(DB_TOOLS.get, { slug: SLUG, ops: [{ data: PLACEHOLDER }] }), spec, read), null, "only db_write is rewritten, whatever the input holds");
+  const out = JSON.parse(allowAs(r));
+  assert.deepEqual(out, { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput: r } });
+});
+test("the hook, as a process: a fresh placeholder is answered with the file in updatedInput (exit 0); a stale one, a typed copy and a refusal are not", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fence-pub-"));
+  try {
+    const out = join(dir, "out"), cwd = join(dir, "TestBoard01"), cfg = join(dir, "board.config.json");
+    mkdirSync(out); mkdirSync(cwd);
+    writeFileSync(cfg, JSON.stringify({ ...raw, gate: { stateDir: dir }, collector: { repoPath: "/srv/repo", outDir: out } }));
+    const file = join(out, "derived-all.json"), plan = join(cwd, "export-since.json");
+    writeFileSync(file, JSON.stringify(doc)); writeFileSync(plan, "{}");
+    const t0 = Date.now() / 1000;
+    const fence = new URL("../collector/fence.mjs", import.meta.url).pathname;
+    const hook = (input) => spawnSync(process.execPath, [fence, "--config", cfg], { input: JSON.stringify(input), encoding: "utf8" });
+    const put = { session_id: S, cwd, hook_event_name: "PreToolUse", tool_name: DB_TOOLS.write, tool_input: setAll({ data: PLACEHOLDER }) };
+    utimesSync(plan, t0 - 60, t0 - 60); utimesSync(file, t0 - 5, t0 - 5);
+    const ok = hook(put);
+    assert.equal(ok.status, 0, ok.stderr);
+    const ans = JSON.parse(ok.stdout);
+    assert.equal(ans.hookSpecificOutput.permissionDecision, "allow");
+    assert.deepEqual(ans.hookSpecificOutput.updatedInput, setAll({ data: doc }), "the file, whole, in the placeholder's place");
+    utimesSync(file, t0 - 120, t0 - 120);
+    const old = hook(put);
+    assert.equal(old.status, 2);
+    assert.match(old.stderr, /older than this run's plan/);
+    assert.equal(old.stdout, "");
+    utimesSync(file, t0 - 5, t0 - 5);
+    const typed = hook({ ...put, tool_input: setAll({ data: doc }) });
+    assert.equal(typed.status, 0, typed.stderr);
+    assert.equal(typed.stdout, "", "a typed copy passes as it is, with no rewrite");
+    assert.equal(hook({ ...put, tool_input: setAll({ data: PLACEHOLDER, path: "ctx/Manager" }) }).status, 2);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 const OLD = (tool, input) => call(tool, input);
