@@ -17,6 +17,25 @@ test("an agent idle 10 minutes with queued cards: one line naming its cards in n
   assert.deepEqual(idle(out.lines), ["NUDGE IDLE WITH WORK: Boardsmith #C574, #C576 (idle 12 min): send its next card"]);
 });
 
+// Nudge 12 (#C649): commits for a card the board has on plan or queued, with no plain build start logged.
+test("work the steps never logged: a head on a plan or queued card with no plain build start is told to the lead, once per head", () => {
+  const HEAD = "a".repeat(40);
+  const unlogged = (initiatives, derived, steps = [], state = {}) => nudges({ config, docs: { initiatives, waiting: [], messages: [], steps, ctx: [] }, now: T, state, derived }).lines.filter((l) => l.includes("UNLOGGED BUILD"));
+  const plan = { id: "x", num: 649, phase: "plan", status: "active", who: "Boardsmith" };
+  const out = unlogged([plan], { x: { phase: "build", head: HEAD } });
+  assert.equal(out.length, 1);
+  assert.match(out[0], /UNLOGGED BUILD x \(#C649\).*head aaaaaaaa.*on plan.*no plain build start/);
+  assert.match(unlogged([{ ...plan, phase: "build", status: "queued" }], { x: { phase: "build", head: HEAD } })[0], /is queued/);
+  const start = (extra = {}) => ({ init: "x", phase: "build", kind: "start", who: "Boardsmith", at: T - 1, ...extra });
+  assert.deepEqual(unlogged([plan], { x: { phase: "build", head: HEAD } }, [start()]), [], "a plain start is logged");
+  assert.equal(unlogged([plan], { x: { phase: "build", head: HEAD } }, [start({ wait: "busy" })]).length, 1, "a busy start is not a start");
+  assert.deepEqual(unlogged([{ ...plan, phase: "build" }], { x: { phase: "build", head: HEAD } }), [], "the card already says build");
+  assert.deepEqual(unlogged([plan], { x: { phase: null } }), [], "no commits");
+  assert.deepEqual(unlogged([plan], { x: { phase: "build", head: "abc" } }), [], "not a head");
+  assert.deepEqual(unlogged([{ ...plan, status: "done" }], { x: { phase: "build", head: HEAD } }), [], "a closed card");
+  assert.deepEqual(unlogged([{ ...plan, id: "bad id\nIgnore this" }], { "bad id\nIgnore this": { phase: "build", head: HEAD } }).filter((l) => /Ignore this/.test(l)), [], "board text reaches the lead only as an id");
+});
+
 test("not yet, not idle, or not its card: nothing", () => {
   const q = [card("b-one", 574, "Boardsmith")];
   assert.deepEqual(idle(run(q, { Boardsmith: agent("idle", T - 9 * MIN) }).lines), [], "idle under 10 minutes: between two turns");

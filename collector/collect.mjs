@@ -488,8 +488,16 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   // #C654: a plain build start nobody acted on (no head, the agent not on the card) is closed after 30 minutes: abandonedAt.
   // #C655: a commit on main whose subject starts "#C<num>:" is work seen for the card even with no branch left (a squash or a
   // direct commit), so its start is not "no work seen".
+  // A ship commit on main naming the card ("v1.200.0: build/x@sha (#C655)") is work seen too, and says when it shipped: shippedAt
+  // (the page ends the card's open build step there and shows ship; a card with no branch field still gets git evidence).
+  const cites = (subject, num) => new RegExp(`(?:^|[^A-Za-z0-9])#C${num}(?![0-9])`).test(String(subject ?? ""));
+  const shipSubject = c.versionPattern ? new RegExp(c.versionPattern) : null;
   for (const card of open) {
-    if (Number.isInteger(card.num) && derived[card.id] && !derived[card.id].head && line.some((l) => subjectNum(l.subject) === card.num)) derived[card.id].workSeen = true;
+    const d = derived[card.id];
+    if (!Number.isInteger(card.num) || !d || d.head) continue;
+    if (line.some((l) => subjectNum(l.subject) === card.num || cites(l.subject, card.num))) d.workSeen = true;
+    const ship = line.filter((l) => shipSubject && shipSubject.test(String(l.subject ?? "")) && cites(l.subject, card.num) && Number.isFinite(l.at)).map((l) => l.at);
+    if (ship.length) d.shippedAt = Math.max(...ship);
   }
   for (const card of open) {
     const at = abandonedAt({ steps, cardId: card.id, derived: derived[card.id], liveState, buildPhase: c.buildPhase, now });

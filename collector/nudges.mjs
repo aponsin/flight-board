@@ -237,6 +237,18 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     firing.push({ key: `halflive:${card.id}:${open.join(",")}`, text: `HALF-LIVE ${q(card.id)}${tag}: ${card.status === "done" ? "done" : "live"} with ${open.length} doneWhen line(s) that have no end step (lines ${open.join(", ")}): log each step, or take the line off the card` });
   }
 
+  // 12. Work the steps never logged (#C649): a card the board has on plan or queued while the repository shows commits for it
+  // (a branch, or commits tagged "#C<num>:") and nobody logged a plain build start. The probe already shows it as build; this
+  // tells the lead, who tells the builder to log. Keyed by the head, so new commits are news.
+  for (const card of cards.values()) {
+    const d = derived[card.id];
+    if (closed(card) || (card.phase !== config.phases?.[0]?.[0] && card.status !== "queued") || !/^[0-9a-f]{40}$/.test(d?.head ?? "") || waiting.has(card.id)) continue;
+    const logged = (docs.steps ?? []).some((s) => s && s.init === card.id && s.phase === config.collector.buildPhase && s.kind === "start" && !s.wait);
+    if (logged) continue;
+    const tag = Number.isInteger(card.num) && card.num > 0 ? ` (#C${card.num})` : "";
+    firing.push({ key: `unlogged:${card.id}:${d.head}`, text: `UNLOGGED BUILD ${q(card.id)}${tag}: the repository shows commits for it (head ${d.head.slice(0, 8)}) but the card is ${card.status === "queued" ? "queued" : "on plan"} and no plain build start step exists; whoever builds it logs the start (the board shows it as build meanwhile)` });
+  }
+
   // Once, then again only after the quiet period; forgotten when it stops holding.
   const sent = Object.create(null), lines = [];
   for (const f of firing) {

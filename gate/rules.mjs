@@ -602,7 +602,7 @@ export function dependsOnErrors(w, { config, mirror, batch = [] }) {
 // the probe as abandoned, or already ended by the agent. A queued card gets a start with {"wait": "busy"} (the board shows
 // a wait, not a build); the end of the other card, or a busy start, clears the refusal. Other roles' steps are not this
 // rule's (the writer's own role is who.role); it fails open on anything it cannot read (no role, no mirror steps, other phase).
-export function startEvidenceErrors(w, { config, mirror, who = {}, live = null }) {
+export function startEvidenceErrors(w, { config, mirror, who = {}, live = null, batch = [] }) {
   const { op, collection, data } = w;
   const role = who.role;
   if (collection !== "steps" || op !== "set" || !role || !data || typeof data !== "object" || data.kind !== "start" || data.wait || data.phase !== config.collector.buildPhase || typeof data.init !== "string" || data.who !== role) return [];
@@ -614,7 +614,10 @@ export function startEvidenceErrors(w, { config, mirror, who = {}, live = null }
   if (stepsCard) candidates.add(stepsCard);
   const agent = live && typeof live === "object" && live.agents && typeof live.agents === "object" ? live.agents[role] : null;
   if (agent && typeof agent === "object" && agent.state === "working" && typeof agent.card === "string" && agent.card && agent.card !== data.init) candidates.add(agent.card);
+  // The way out the refusal names, in one call (Checker): an end of the other card in the same batch counts, as in phaseOverlapErrors.
+  const endsHere = new Set(batch.filter((b) => b && b !== w && b.collection === "steps" && b.op === "set" && b.data && b.data.kind === "end" && b.data.who === role && b.data.phase === config.collector.buildPhase && typeof b.data.init === "string").map((b) => b.data.init));
   for (const id of candidates) {
+    if (endsHere.has(id)) continue;
     const k = cards.find((x) => x && x.id === id);
     if (!k || k.status === "done" || k.status === "dropped") continue;
     const b = buildState(mirror, role, id);
@@ -696,7 +699,7 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
     const orphan = was && was.kind !== "decision" && Array.isArray(data.options) ? [`options show as buttons only on kind "decision": this ask is ${idText(was.kind ?? "of no kind")}; update {kind: "decision", options} to turn it into a decision in place`] : [];
     return [...threadNumberedErrors(w, { mirror, batch }), ...(was ? choiceErrors(data, was.kind) : []), ...orphan];
   }
-  if (collection === "steps") return [...phaseOverlapErrors(w, { config, mirror, batch }), ...dependsOnErrors(w, { config, mirror, batch }), ...startEvidenceErrors(w, { config, mirror, who, live })];
+  if (collection === "steps") return [...phaseOverlapErrors(w, { config, mirror, batch }), ...dependsOnErrors(w, { config, mirror, batch }), ...startEvidenceErrors(w, { config, mirror, who, live, batch })];
   if (collection === PLAN) return planMirrorErrors(w, { mirror, batch });
   // Every card links to the plan node it serves (board v3); a new card can't go without one, mirror or not.
   const planned = collection === "initiatives" ? initiativePlanErrors(w, { mirror, batch }) : [];

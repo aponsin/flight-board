@@ -61,6 +61,19 @@ test("a plain build start is refused while the agent has another card open; the 
   assert.deepEqual(errs({ ...start("two"), data: { ...start("two").data, phase: "checker" } }, m), [], "only the build phase");
 });
 
+test("the way out the refusal names works in one call: end the other card and start this one in a single batch (Checker)", () => {
+  const m = mirror([step("one", "start", "Smith", T - 3e6)]);
+  const end = (init, who = "Smith") => ({ op: "set", collection: "steps", doc_id: `${init}-build-end-${T - 1}`, data: step(init, "end", who, T - 1) });
+  const go = (writes, role = "Smith") => checkWrites(writes, { config, who: { role }, now: T, mirror: m }).errors.filter((e) => /is on one now/.test(e));
+  assert.equal(go([start("two")]).length, 1, "alone: refused");
+  assert.deepEqual(go([end("one"), start("two")]), [], "the end first, then the start");
+  assert.deepEqual(go([start("two"), end("one")]), [], "the start first, then the end: one call");
+  assert.equal(go([end("one", "Jones"), start("two")]).length, 1, "another agent's end does not count");
+  assert.equal(go([{ ...end("one"), data: { ...end("one").data, phase: "checker" } }, start("two")]).length, 1, "another phase's end does not count");
+  assert.equal(go([end("three"), start("two")]).length, 1, "an end of some other card does not clear this one");
+  assert.equal(go([{ ...end("one"), op: "delete" }, start("two")]).length, 1, "a delete is no end");
+});
+
 test("the other card does not count when it is closed, past build by the repository, or closed by the probe as abandoned", () => {
   const open = [step("one", "start", "Smith", T - 3e6)];
   assert.deepEqual(errs(start("two"), mirror(open, { cards: [card("one", { status: "done" }), card("two")] })), [], "done");

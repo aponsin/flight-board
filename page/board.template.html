@@ -1865,7 +1865,7 @@ function gapRed(g,i){return (g.includes("no owner")||g.includes("no ETA"))&&!hel
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
 // repository explains, or done. Returns minutes.
-function stalled(i){if(!i||i.status!=="active"||i.noWork||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE)||knownWait(i)||ownerWait(i)||liveWorkers(i.id).length)return 0;
+function stalled(i){if(!i||i.status!=="active"||i.noWork||i.stepLogBehind||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE)||knownWait(i)||ownerWait(i)||liveWorkers(i.id).length)return 0;
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];if(log.some(e=>e&&e.wait&&e.end==null))return 0;
   const last=num(i.lastStepAt)??log.reduce((m,e)=>Math.max(m,num(e&&e.end)??num(e&&e.start)??0),0);
   if(!last)return 0;const m=Math.floor((Date.now()-last)/60000);return m>=30?m:0}
@@ -1979,7 +1979,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const steps=PHASES.map(([k,l],n)=>{if(k==="test"&&skip.includes(k)&&n!==idx)return "";const pre=(waits[k]||[]).map(w=>`<div class="wait ${w.kind}${w.open?" live":""}" title="${w.kind==="gate"?"Waiting on a decision":"Waiting: the agent was busy"} before ${esc(l)}">${w.kind==="gate"?"⏸ Gated":"⧗ Queued"}<small>${esc(w.who)}${w.who?" · ":""}${dur(w.ms)}</small></div>`).join("");const np=i.status!=="done"&&i.nowPhases&&i.nowPhases[k];let c="step";if(np&&n!==idx)c+=" now";else if(skip.includes(k)&&n!==idx)c+=" skip";else if(i.status==="done"||n<idx)c+=" done";else if(ev.has(k)&&n>idx)c+=" done seen";else if(n===idx&&i.upNext&&!stuck&&!ns)c+=" upnext";else if(n===idx&&!(waits[k]||[]).some(w=>w.open))c+=" now"+(stuck?" stuck":queued?" queued":"");
     // An open wait box in front of this phase already says what holds it; the phase itself stays plain until work starts.
     // A phase nobody has started says "up next" instead of pulsing as if someone were on it.
-    const t=(ns&&n===idx)?(i.noWork?`<small class="nowork">start logged ${hhmm(i.noWork)}, no work seen</small>`:`<small>${esc(queueLabel(i))}</small>`):(n===idx&&i.upNext&&!stuck&&i.status!=="done")?`<small>up next</small>`:(np&&n!==idx)?`<small>${esc(np.join(", "))}${times[k]?" · "+dur(times[k]):""}</small>`:(n===idx&&i.status!=="done"&&i.who)?`<small>${esc(i.who)}${times[k]?" · "+dur(times[k]):""}</small>`:times[k]?`<small>${dur(times[k])}</small>`:skip.includes(k)?"<small>not needed</small>":ev.has(k)&&n!==idx?'<small class="seen">in the repo</small>':(i.status==="done"||n<idx)&&k!==LIVE_PHASE?'<small class="norec">no record</small>':"<small>&nbsp;</small>";// While Release ships: an estimate from past ships (tests ~7 min, then deploy, ~10 min in all), labelled "est.".
+    const t=(n===idx&&i.stepLogBehind&&i.status!=="done")?`<small class="behind">step log behind</small>`:(ns&&n===idx)?(i.noWork?`<small class="nowork">start logged ${hhmm(i.noWork)}, no work seen</small>`:`<small>${esc(queueLabel(i))}</small>`):(n===idx&&i.upNext&&!stuck&&i.status!=="done")?`<small>up next</small>`:(np&&n!==idx)?`<small>${esc(np.join(", "))}${times[k]?" · "+dur(times[k]):""}</small>`:(n===idx&&i.status!=="done"&&i.who)?`<small>${esc(i.who)}${times[k]?" · "+dur(times[k]):""}</small>`:times[k]?`<small>${dur(times[k])}</small>`:skip.includes(k)?"<small>not needed</small>":ev.has(k)&&n!==idx?'<small class="seen">in the repo</small>':(i.status==="done"||n<idx)&&k!==LIVE_PHASE?'<small class="norec">no record</small>':"<small>&nbsp;</small>";// While Release ships: an estimate from past ships (tests ~7 min, then deploy, ~10 min in all), labelled "est.".
     const sm=k==="ship"&&n===idx&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
     const sd=sm!=null?`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`:k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";const vf=k===LIVE_PHASE&&n===idx&&verifying(i);return pre+`<div class="${vf?"step verifying":c+(t.includes('class="norec"')?" norec":"")}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:t}${sd}</div>`}).join("");
   const chips=issueChips(i);
@@ -2364,6 +2364,8 @@ function fromSteps(i){
     const en={phase:e.phase,who:e.who,start:e.at};if(e.wait)en.wait=e.wait;log.push(en);open[key]=en});
   // A build step left open ends where the repository says the work went READY (the collector's readyAt), as a derived end.
   const ra=num((derivedOf(i.id)||{}).readyAt);if(ra!=null)log.forEach(en=>{if(en.phase===BUILD_PHASE&&!en.wait&&en.end==null&&ra>=en.start){en.end=ra;en.derived=true;Object.keys(open).forEach(k=>{if(open[k]===en)delete open[k]})}});
+  // #C655: a build step left open ends where main's ship commit for the card says it shipped (the probe's shippedAt), as a derived end.
+  const sh=num((derivedOf(i.id)||{}).shippedAt);if(sh!=null)log.forEach(en=>{if(en.phase===BUILD_PHASE&&!en.wait&&en.end==null&&sh>=en.start){en.end=sh;en.derived=true;Object.keys(open).forEach(k=>{if(open[k]===en)delete open[k]})}});
   // #C654/#C655: a plain build start the probe closed as abandoned (no commit, no branch, the agent not on the card after 30
   // minutes) ends where it says, and is not a finished build: the card goes back to "up next" with the grey note below.
   const aa=num((derivedOf(i.id)||{}).abandonedAt);if(aa!=null)log.forEach(en=>{if(en.phase===BUILD_PHASE&&!en.wait&&en.end==null&&aa>=en.start){en.end=aa;en.derived=true;en.abandoned=true;Object.keys(open).forEach(k=>{if(open[k]===en)delete open[k]})}});
@@ -2386,7 +2388,13 @@ function fromSteps(i){
     const held=log.filter(e=>e.wait&&e.end==null).pop();
     if(working){out.phase=working.phase;out.who=working.who;out.status="active";if(working.phase==="ship")out.shipAt=working.start}
     else if(held){out.phase=held.phase;out.who=held.who;out.status=held.wait==="busy"?"queued":"active"}
-    else{const next=PHASES.find(([k],n)=>n>=from&&!skip.has(k)&&!finished.has(k));out.phase=next?next[0]:"ship";out.who=null;out.status="active";out.upNext=true}}
+    else{const next=PHASES.find(([k],n)=>n>=from&&!skip.has(k)&&!finished.has(k));out.phase=next?next[0]:"ship";out.who=null;out.status="active";out.upNext=true}
+    // #C655: the card's own phase is ahead of the step log and the card was written after the log's last step (an agent forgot
+    // to end its build, or never logged the next phase): the bar shows the card's phase with "step log behind" in small print,
+    // never a lit build, never STALLED. The probe's ship commit on main (derived shippedAt) says the same for a card with no branch.
+    const sa=num((derivedOf(i.id)||{}).shippedAt),written=num(i.updatedAt)??num(i.nextNoteAt),lastAt=num(out.lastStepAt)??0;
+    const behindTo=sa!=null&&phaseIndex(SHIP_PHASE)>phaseIndex(out.phase)?SHIP_PHASE:(i.phase&&written!=null&&written>lastAt&&phaseIndex(i.phase)>phaseIndex(out.phase)?i.phase:null);
+    if(behindTo){out.phase=behindTo;out.stepLogBehind=true;out.who=null;out.upNext=false;out.status="active";out.nowPhases={}}}
   return out;
 }
 // A question to the owner tied to an initiative holds it: open, it shows as "Gated · the owner" at the phase it holds;
