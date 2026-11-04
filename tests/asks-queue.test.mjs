@@ -36,12 +36,17 @@ test("no clicks, no queue line; one click is still a queue of one; questions alo
   assert.equal((html(q).match(/<details class="w-item"/g) || []).length, 2);
   const one = board([click("c1", T - 1e5)]);
   one.renderAll();
-  assert.match(html(one), /Your queue · 1 to do/);
-  assert.match(html(one), /1\. Your click/);
+  assert.match(html(one), /Your queue · 1 to do<\/div>/, "no 'in this order' for one");
+  assert.doesNotMatch(html(one), /1\. Your click/, "and no lone number");
+  assert.match(html(one), /class="kind action">Your click</);
+  const first = board([click("c1", T - 2e5), click("c2", T - 1e5)]);
+  first.renderAll();
+  assert.ok(html(first).indexOf('id="queue-h"') < html(first).indexOf("Run c1"), "with no question the line comes first");
 });
 
 test("the queue line is styled and the label keeps the page's grid (the number is inside the kind label)", () => {
   const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-  assert.match(page, /\.queue-h\{[^}]*font-size:\.82rem/);
+  assert.match(page, /\.queue-h\{[^}]*font-size:\.82rem[^}]*padding:10px 16px 4px/, "its text lines up with the rows' 16px");
+  assert.match(page, /\.queue-h:first-child\{border-top:0\}\.queue-h\+\.w-item\{border-top:0\}/, "the line is the heading of its group: no box of two borders");
   assert.match(page, /\$\{qn\?qn\+"\. ":""\}\$\{esc\(KIND\[w\.kind\]/, "inside the kind span, no new grid cell");
 });

@@ -368,7 +368,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .lb-scroll{flex:1 1 auto;min-height:0;overflow:auto;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
 .lb-scroll img{display:block;max-width:100%;height:auto;cursor:zoom-in}
 .lb-scroll img.zoomed{max-width:none;cursor:zoom-out}
-.queue-h{font-size:.82rem;font-weight:600;color:var(--muted);padding:10px 12px 4px;border-top:1px solid var(--line)}
+.queue-h{font-size:.82rem;font-weight:600;color:var(--muted);padding:10px 16px 4px;border-top:1px solid var(--line)}.queue-h:first-child{border-top:0}.queue-h+.w-item{border-top:0}
 .w-item{border-top:1px solid var(--line)}
 .w-item:first-child{border-top:0}
 .w-item>summary{list-style:none;cursor:pointer;border-top:0}
@@ -700,7 +700,9 @@ function youItems(now,q){return {asks:state.waiting.filter(w=>waitsOn(w.id,now)=
 // under a "Your queue" line, numbered in the order he should do them (oldest first, as asked). qn is the number on the ask's label.
 const isClick=w=>w&&w.kind==="action";
 function queueHtml(asks,item){const qs=asks.filter(w=>!isClick(w)),acts=asks.filter(isClick);
-  return qs.map(w=>item(w)).join("")+(acts.length?`<div class="queue-h" id="queue-h">Your queue · ${acts.length} to do, in this order</div>`+acts.map((w,i)=>item(w,i+1)).join(""):"")}
+  // A queue of one is just "1 to do" with no number (Designer); from two, the order is the point.
+  const many=acts.length>1;
+  return qs.map(w=>item(w)).join("")+(acts.length?`<div class="queue-h" id="queue-h">Your queue · ${acts.length} to do${many?", in this order":""}</div>`+acts.map((w,i)=>item(w,many?i+1:null)).join(""):"")}
 function youCount(now,q){const y=youItems(now,q);return y.asks.length+y.answered.length}
 function renderWaiting(){
   const q=qOf("you"),t=Date.now(),{asks,answered:ans}=youItems(t,q);
