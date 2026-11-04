@@ -111,7 +111,9 @@ export function linesFor(lines, role, { lead = null, roster = null, away = [] } 
 // (when it comes back it prints again). An older seen file ({ at } alone) has no lines: everything prints once, as before.
 export const LINE_AGAIN_MS = 2 * 3600e3;
 const seenLines = (seen) => (seen && typeof seen.lines === "object" && seen.lines && !Array.isArray(seen.lines) ? seen.lines : {});
-const quiet = (seen, line, now) => { const t = seenLines(seen)[line]; return Number.isInteger(t) && t <= now + 5_000 && now - t < LINE_AGAIN_MS; };
+// #C441's overdue nudge is "every run, no quiet period" (collector/nudges.mjs, nudge 7): it is never held back here.
+export const EVERY_RUN = /^NUDGE (@[A-Za-z][A-Za-z0-9_-]{0,31} )?overdue: /;
+const quiet = (seen, line, now) => { if (EVERY_RUN.test(line)) return false; const t = seenLines(seen)[line]; return Number.isInteger(t) && t <= now + 5_000 && now - t < LINE_AGAIN_MS; };
 export const linesPending = (file, seen, opts = {}) => (Number.isInteger(file?.at) && file.at !== seen?.at
   ? linesFor(linesOf(file), opts.role ?? null, opts).filter((l) => !quiet(seen, l, opts.now ?? Date.now()))
   : []);

@@ -100,6 +100,21 @@ test("linesPending: a held-back line keeps its printed time, and a line routed e
   assert.deepEqual(next, { at: 2, lines: { "NUDGE a": T }, }, "the time of the print stays; the Builder's line is not the lead's");
 });
 
+test("the overdue nudge (#C441) is still printed every run, for the lead and for the card's agent", () => {
+  const dir = folder();
+  try {
+    const own = "NUDGE overdue: c674 (ETA 10:00Z, phase build)", mine = "NUDGE @Builder overdue: c675 (ETA 10:00Z, phase build)";
+    for (let i = 0; i < 3; i++) {
+      batch(dir, [own], T + i * 5 * MIN);
+      assert.equal(lead(dir, T + i * 5 * MIN), own, `lead, run ${i}`);
+    }
+    for (let i = 0; i < 3; i++) {
+      batch(dir, [mine], T + (10 + i * 5) * MIN);
+      assert.equal(roleTick(dir, "Builder", T + (10 + i * 5) * MIN, 4242), mine, `agent, run ${i}`);
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("CLOSE is printed once per tip and repeats after two hours, not every ten minutes", () => {
   assert.equal(CLOSE_AGAIN_MS, 2 * 3600e3);
   const asked = { items: [{ kind: "close", card: "c674", sha: "a1b2c3d4e5f6" }, { kind: "close", card: "c679", sha: "b1b2c3d4e5f6" }] };
