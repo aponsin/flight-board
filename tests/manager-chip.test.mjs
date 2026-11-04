@@ -118,17 +118,32 @@ test("the header's right block is left-aligned on a phone, where it wraps under 
   assert.match(html, /@media \(max-width:600px\)\{\.hdr-right\{align-items:flex-start;text-align:left\}\}/);
 });
 
-// #C618: the version line sits in the header's right block, under the clock, not under the title (it saves a line of height).
-test("the version line is in the header's right block after the clock, not under the title; it stays hidden when empty", () => {
+// #C675 (it was #C618's: under the clock): the "Board vX" chip sits just right of the "Safe to restart" badge, in the left block.
+test("the version chip is just right of the restart badge in the header's left block, not under the clock; it stays hidden when empty", () => {
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   const header = html.match(/<header>([\s\S]*?)<\/header>/)[1];
   const left = header.match(/<div class="hdr-left">([\s\S]*?)<\/div>\s*<div class="hdr-right">/)[1];
   const right = header.match(/<div class="hdr-right">([\s\S]*)<\/div>\s*$/)[1];
-  assert.ok(!left.includes("boardver"), "not under the title");
-  assert.ok(right.indexOf('class="clock"') >= 0 && right.indexOf('class="clock"') < right.indexOf('id="boardver"'), "after the clock in the right block");
-  assert.match(right, /id="boardver"[^>]* hidden>/);
+  assert.ok(!right.includes("boardver"), "not under the clock");
+  const badge = left.indexOf('id="restartbadge"'), chip = left.indexOf('id="boardver"');
+  assert.ok(badge >= 0 && chip > badge, "after the badge");
+  assert.ok(left.indexOf("</div>", badge) < chip && left.slice(left.indexOf("</div>", badge), chip).match(/<div/g)?.length === 1, "the badge's own div closes, and the chip is the next thing in the same row");
+  assert.match(left, /id="boardver"[^>]* hidden>/);
+  assert.match(html, /\.hdr-badges\{display:flex;flex-wrap:wrap;align-items:center/, "one row, wrapping on a phone");
   assert.match(html, /\.boardver\[hidden\]\{display:none\}/, "a hidden line takes no room");
-  assert.doesNotMatch(html, /\.boardver\{[^}]*margin-top/, "the right block's gap spaces it");
+});
+
+// #C675: the header stays put while the page scrolls, at phone and laptop size; what sticks below it starts at its height.
+test("the header is sticky in the page's colour, and the strip below it sticks at the header's height", () => {
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  const rule = html.match(/\nheader\{([^}]*)\}/)[1];
+  assert.match(rule, /position:sticky/);
+  assert.match(rule, /top:0/);
+  assert.match(rule, /background:var\(--bg\)/, "content scrolling under it is hidden");
+  assert.match(rule, /z-index:7/, "above the strip (5)");
+  assert.match(html, /\.v3strip\{position:sticky;top:var\(--hdr-h,0px\)/);
+  assert.match(html, /style\.setProperty\("--hdr-h",h\.offsetHeight\+"px"\)/, "the header's height is read, and again when it changes");
+  assert.match(html, /new ResizeObserver\(set\)\.observe\(h\)/);
 });
 
 test("the build stamps the page's commit and the pack name into the header; only well-formed ones", async () => {
