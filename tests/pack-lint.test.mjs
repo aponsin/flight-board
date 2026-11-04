@@ -61,3 +61,17 @@ test("a pack with no backups is clean, and the CLI exits 1 on a problem and 0 on
   assert.equal(run(good).code, 0); assert.match(run(good).out, /clean/);
   assert.equal(run(bad).code, 1); assert.match(run(bad).out, /bad\.sh:5: uses a backup/);
 });
+
+test("#C664: a pack that removes or disables a scheduled task or source must name its replacement's install log", () => {
+  for (const line of ['launchctl bootout "gui/$(id -u)/com.example.old-probe"', 'launchctl unload "$HOME/Library/LaunchAgents/com.example.old.plist"', 'rm -f "$HOME/Library/LaunchAgents/com.example.old.plist"',
+    'launchctl disable "gui/501/com.example.old"', 'echo y | claude scheduled-task delete board-collector', 'disable the scheduled task "board-collector"', 'rm "$HOME/x/old.plist" # pack-lint: ok removing it']) {
+    const r = lintPack(line);
+    assert.equal(r.length, 1, line);
+    assert.match(r[0].rule, /without naming its replacement's install log/);
+  }
+  assert.equal(lintPack('launchctl bootout "gui/501/com.example.old" # pack-lint: replaced-by board-v3.60-install.log').length, 0, "named: clean");
+  assert.equal(lintPack('launchctl bootout "gui/501/com.example.old" # pack-lint: replaced-by').length, 1, "a mark with no log does not count");
+  assert.equal(lintPack('launchctl bootout "gui/501/com.example.old" # pack-lint: replaced-by it').length, 1, "a name that is no .log does not count");
+  assert.equal(lintPack('launchctl bootout "gui/501/com.example.old" \\\n  # pack-lint: replaced-by board-v3.60-install.log').length, 0, "a continued command is read whole, mark included");
+  assert.deepEqual(lintPack('# launchctl bootout x\necho "run: launchctl bootout x yourself"\nlaunchctl print "gui/501/com.example.new" >/dev/null\nlaunchctl bootstrap "gui/501" "$P"'), [], "comments, plain messages, print and bootstrap retire nothing");
+});

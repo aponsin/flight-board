@@ -194,7 +194,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .reply label{font-size:.82rem;color:var(--muted)}
 .reply textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
-.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}
+.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}.evidence.old{background:var(--line);border-color:var(--line)}
 .shipline{margin:0;padding:8px 12px;border:1px solid var(--warn);border-radius:8px;background:var(--warn-soft);color:var(--warn-ink);font-size:.9rem}
 .shipline b{font-weight:700}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
@@ -1196,7 +1196,8 @@ function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const lab
   const live=d.live&&liveOn(),title=[...off,d.evidence||""].filter(Boolean).join(" · ");
   // The flag and its age wrap as one (Designer on live-source: a short title let the flag ride up alone).
   const text=`${live?"Live: ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}`,t=title?` title="${esc(title)}"`:"";
-  const flag=off.length?`<button type="button" class="evidence differs" data-evdiff="${esc(i.id)}" aria-expanded="${evOpen.has(i.id)}"${t}>${text}</button>`:`<span class="evidence"${t}>${text}</span>`;
+  const old=!live&&num(d.at)!=null&&Date.now()-d.at>ASOF_STALE?" old":"";
+  const flag=off.length?`<button type="button" class="evidence differs${old}" data-evdiff="${esc(i.id)}" aria-expanded="${evOpen.has(i.id)}"${t}>${text}</button>`:`<span class="evidence${old}"${t}>${text}</span>`;
   const ao=live?` <small class="asof" title="When the live state last read the Studio">${esc(liveAgeText())}</small>`:asOf(d.at);
   return ao?`<span class="evg">${flag}${ao}</span>`:flag}
 // The disagreement's line, while its flag is pressed open: the hover's words.
@@ -1208,8 +1209,19 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
 function liveAgeText(now=Date.now()){const s=Math.max(0,Math.round((now-probe.board.at)/1e3));return (s<60?s+" s":dur(s*1e3))+" ago"}
 // How old the repository's reading is (#C237): "as of 12 min ago"; past half an hour it says "· old" in the warning
 // colour, at full contrast (#C265: dimmed, it was hardest to read just when it mattered).
+// #C664: past half an hour the tile goes grey and writes the age and the source ("repository copy 6 h old"), so a tile
+// resting on an old copy never reads as current; the header names the oldest source (oldestText).
 const ASOF_STALE=30*60e3;
-function asOfText(at,now=Date.now()){return "as of "+dur(now-at)+" ago"+(now-at>ASOF_STALE?" · old":"")}
+function asOfText(at,now=Date.now()){return now-at>ASOF_STALE?"repository copy "+dur(now-at)+" old":"as of "+dur(now-at)+" ago"}
+const SRC_NAME={repo:"repository copy",live:"live state",usage:"usage reading"};
+// The sources the page rests on, each with its reading time: the Collector's copy of the repository (derived/all), the live
+// state (the probe's own reading) and the usage reading. [] pieces a source that has never been read.
+function sourceAges(now=Date.now()){const out=[],all=state.derived.find(x=>x.id==="all"),r=num(all&&all.at);
+  if(r!=null)out.push({name:SRC_NAME.repo,at:r});
+  if(probe&&probe.board&&isT(probe.board.at))out.push({name:SRC_NAME.live,at:probe.board.at});
+  if(probe&&probe.usage&&isT(probe.usage.at))out.push({name:SRC_NAME.usage,at:probe.usage.at});
+  return out.map(s=>({...s,age:Math.max(0,now-s.at)}))}
+function oldestText(now=Date.now()){const o=sourceAges(now).sort((a,b)=>b.age-a.age)[0];return o?`Oldest source: ${o.name} ${dur(o.age)} old`:""}
 function asOf(at,now=Date.now()){if(num(at)==null)return "";const old=now-at>ASOF_STALE;
   return ` <small class="asof${old?" stale":""}" data-asof="${at}" title="When the collector last read the repository">${asOfText(at,now)}</small>`}
 
@@ -2711,7 +2723,7 @@ function catchUp(now=Date.now()){if(!dataBehind(now)){resyncAt=null;return null}
   if(now-last<RELOAD_GAP)return null;
   try{sessionStorage.setItem(RELOAD_KEY,String(now))}catch(e){return null}
   try{location.reload()}catch(e){}return "reloaded"}
-const stampLine=(now=Date.now())=>stampText(now)+(probeNote?" · "+probeNote:"");
+const stampLine=(now=Date.now())=>[stampText(now),oldestText(now)].filter(Boolean).join(" · ")+(probeNote?" · "+probeNote:"");
 let dbSynced=null,dbState="";
 function renderStamp(){renderManagerChip();renderBoardVer();renderRestart();const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
   // Why the board reads the db (a lapsed connector, an odd reading) shows as words, not only on hover: a phone has none
@@ -2773,7 +2785,7 @@ function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"
   document.querySelectorAll("[data-next]").forEach(e=>{const t=+e.dataset.next;e.textContent=t>Date.now()?"in "+dur(t-Date.now()):"due now"});
   document.querySelectorAll("[data-plan-at]").forEach(e=>{const t=+e.dataset.planAt,old=Date.now()-t>PLAN_STALE,a=e.querySelector("[data-plan-age]");
     e.classList.toggle("stale",old);e.classList.toggle(e.dataset.planLevel,!old);if(a)a.textContent="as of "+dur(Math.max(0,Date.now()-t))+" ago"});
-  document.querySelectorAll("[data-asof]").forEach(e=>{const t=+e.dataset.asof;e.textContent=asOfText(t);e.classList.toggle("stale",Date.now()-t>ASOF_STALE)});
+  document.querySelectorAll("[data-asof]").forEach(e=>{const t=+e.dataset.asof;e.textContent=asOfText(t);e.classList.toggle("stale",Date.now()-t>ASOF_STALE);const ev=e.closest(".evg")&&e.closest(".evg").querySelector(".evidence");if(ev)ev.classList.toggle("old",Date.now()-t>ASOF_STALE)});
   // A live reading that went stale (or fresh again) changes what every card reads: all of it again; else the stamp.
   catchUp();
   if(liveOn()!==liveWas)renderSoon();else renderStamp()}

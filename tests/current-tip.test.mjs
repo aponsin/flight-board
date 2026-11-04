@@ -130,7 +130,7 @@ test("the page: the repository's reading says how old it is, and 'old' in the wa
     z: { phase: "checker", evidence: "e", at: now, branches: ["build/z", "fix/z<b>"], behind: "fix/z<b>" },
   } });
   assert.match(b.evidence({ id: "x", phase: "checker", status: "active" }), /<\/span> <small class="asof" data-asof="\d+" [^>]*>as of 12 min ago<\/small><\/span>$/);
-  assert.match(b.evidence({ id: "y", phase: "checker", status: "active" }), /<small class="asof stale" [^>]*>as of 31 min ago · old</);
+  assert.match(b.evidence({ id: "y", phase: "checker", status: "active" }), /<small class="asof stale" [^>]*>repository copy 31 min old</);
   assert.doesNotMatch(b.evidence({ id: "x", phase: "checker", status: "active" }), /old/, "a fresh reading says no more");
   const css = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8").match(/\.asof\.stale\{[^}]*\}/)[0];
   assert.match(css, /color:var\(--warn\)/, "the warning colour (passes 4.5:1 with the badges' check)");

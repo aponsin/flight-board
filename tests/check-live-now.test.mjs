@@ -56,7 +56,7 @@ test("without the connector, a press says what each source is: no live state, th
   assert.match(html, new RegExp(`<span class="i-checked">No live state · Collector next ${new Date(NOW + 10 * MIN).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>`));
   assert.doesNotMatch(html, /checking/i);
   assert.match(html, /data-check="rev-card"/, "the button stays, to read again");
-  assert.match(html, /<span class="evidence"[^>]*>Repository: Build<\/span> <small class="asof/, "the repository, as of its run (agreeing with the steps: no hover mark)");
+  assert.match(html, /<span class="evidence( old)?"[^>]*>Repository: Build<\/span> <small class="asof/, "the repository, as of its run (agreeing with the steps: no hover mark)");
 });
 
 test("a fresh reading already drives the card: the button (#C495), no check line, its age on the source", () => {
