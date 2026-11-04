@@ -76,10 +76,11 @@ test("#C664: a pack that removes or disables a scheduled task or source must nam
   // Security's and Checker's indirect forms: every one passed the first version of rule 3.
   for (const pack of ['launchctl "bootout" "gui/501/com.example.old"', 'L=launchctl\n$L bootout "gui/501/com.example.old"', 'launchctl kill TERM "gui/501/com.example.old"',
     'P="$HOME/Library/LaunchAgents/com.example.old.plist"\nrm -f "$P"', 'mv ~/Library/LaunchAgents/x.plist /tmp/', 'mv ~/Library/LaunchAgents/x.plist ~/old.plist.off', 'find ~/Library/LaunchAgents -name "x*" -delete',
-    'rm -rf ~/.claude/scheduled-tasks/board-collector', 'echo "launchctl bootout x" | sh', 'D=~/.claude/scheduled-tasks/old\nrm -rf "${D}"', 'P="$HOME/Library/LaunchAgents/x.plist"\nmv "$P" "$P.off"']) {
+    'rm -rf ~/.claude/scheduled-tasks/board-collector', 'echo "launchctl bootout x" | sh', 'D=~/.claude/scheduled-tasks/old\nrm -rf "${D}"', 'P="$HOME/Library/LaunchAgents/x.plist"\nmv "$P" "$P.off"', 'L=launchctl; $L bootout "gui/501/com.example.old"', 'P=~/Library/LaunchAgents/x.plist && rm -f "$P"']) {
     assert.equal(lintPack(pack).length, 1, pack);
   }
   assert.equal(lintPack('launchctl bootout "gui/501/x" # pack-lint: replaced-by board-v3.60.log').length, 1, "the named log must be an install log");
+  assert.deepEqual(lintPack('mv "$HOME/Library/LaunchAgents/x.plist.tmp" "$HOME/Library/LaunchAgents/x.plist"\nmv x.plist.tmp x.plist'), [], "installing a plist from its temp file retires nothing (Checker)");
   assert.deepEqual(lintPack('P="$HOME/Library/LaunchAgents/x.plist"\ncat > "$P" <<EOF\nEOF\nmv "$TMP" "$P"\nlaunchctl bootstrap "gui/501" "$P"\nlaunchctl kickstart "gui/501/x"\nL=launchctl\n$L print "gui/501/x"'), [], "writing a plist, bootstrap, kickstart and print retire nothing");
   assert.deepEqual(lintPack('# launchctl bootout x\necho "run: launchctl bootout x yourself"\nlaunchctl print "gui/501/com.example.new" >/dev/null\nlaunchctl bootstrap "gui/501" "$P"'), [], "comments, plain messages, print and bootstrap retire nothing");
 });

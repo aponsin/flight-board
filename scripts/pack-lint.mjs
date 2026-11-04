@@ -45,7 +45,7 @@ function logicalLines(text) {
 // is code, not a message. The named log must be an install log (`...install...log`).
 const VERB = "[\"']?(?:bootout|unload|disable|remove|kill)[\"']?";
 const PATHY = /LaunchAgents|scheduled-tasks|\.plist\b/;
-const RETIRES = new RegExp(`\\blaunchctl\\s+${VERB}(?![A-Za-z])|\\b(?:rm|unlink)\\b[^#]*(?:LaunchAgents|scheduled-tasks|\\.plist\\b)|\\bmv\\s+(?:-\\S+\\s+)*[\"']?\\S*(?:LaunchAgents|scheduled-tasks|\\.plist\\b)|\\bfind\\b[^#]*(?:LaunchAgents|scheduled-tasks)[^#]*-delete|\\bscheduled[- ]tasks?\\b[^#]*\\b(?:delete|remove|disable|pause|stop)\\w*|\\b(?:delete|remove|disable|pause)\\w*\\b[^#]*\\bscheduled[- ]tasks?\\b`, "i");
+const RETIRES = new RegExp(`\\blaunchctl\\s+${VERB}(?![A-Za-z])|\\b(?:rm|unlink)\\b[^#]*(?:LaunchAgents|scheduled-tasks|\\.plist\\b)|\\bmv\\s+(?:-\\S+\\s+)*[\"']?[^\\s\"']*(?:scheduled-tasks[^\\s\"']*|\\.plist)[\"']?(?=\\s)|\\bfind\\b[^#]*(?:LaunchAgents|scheduled-tasks)[^#]*-delete|\\bscheduled[- ]tasks?\\b[^#]*\\b(?:delete|remove|disable|pause|stop)\\w*|\\b(?:delete|remove|disable|pause)\\w*\\b[^#]*\\bscheduled[- ]tasks?\\b`, "i");
 const REPLACED_BY = /#\s*pack-lint:\s*replaced-by\s+[^\s#]*install[^\s#]*\.log\b/;
 const ASSIGN = /^(?:export\s+|local\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
 const PIPED_TO_SHELL = /\|\s*(?:sh|bash|zsh|eval)\b/;
@@ -56,8 +56,10 @@ export function lintPack(text) {
   for (const { n, line } of logicalLines(text)) {
     if (line && !line.startsWith("#")) {
       const code = PIPED_TO_SHELL.test(line) ? line : line.replace(ALLOWED[2], "");
-      const a = ASSIGN.exec(code.replace(/#.*$/, "").trim());
-      if (a) {
+      // Each command of the line on its own (`L=launchctl; $L bootout x` is two): an assignment names a path or the launchctl alias.
+      for (const part of code.replace(/#.*$/, "").split(/;|&&|\|\|/)) {
+        const a = ASSIGN.exec(part.trim());
+        if (!a) continue;
         const value = a[2].trim().replace(/^["']|["']$/g, "");
         if (PATHY.test(value)) pathVars.add(a[1]);
         if (/^(?:command\s+)?(?:\/\S*\/)?launchctl$/.test(value)) aliasVars.add(a[1]);
