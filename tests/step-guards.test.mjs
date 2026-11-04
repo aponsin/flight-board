@@ -77,17 +77,20 @@ test("what a card needs follows its level, lookChange, customerText and skip lis
     const r = errs(put(step(c.id, "ship", "start")), mirror([c], steps));
     return r.length ? (/no end step yet for ([^.]+)\./.exec(r[0]) ?? [])[1] : "";
   };
-  assert.equal(needs(card("q", 1, { level: "Quick" })), "Checker", "Quick: Checker alone");
+  assert.equal(needs(card("q", 1, { level: "Quick", customerText: false })), "Checker", "Quick: Checker alone");
   assert.equal(needs(card("q", 1, { level: "Quick", lookChange: false, customerText: false })), "Checker");
-  assert.equal(needs(card("q", 1, { level: "Quick", lookChange: true })), "Design, Checker");
+  assert.equal(needs(card("q", 1, { level: "Quick", lookChange: true, customerText: false })), "Design, Checker");
   assert.equal(needs(card("q", 1, { level: "Quick", customerText: true })), "Linguist, Checker");
-  assert.equal(needs(card("q", 1, { level: "Full" })), "Checker, Security");
-  assert.equal(needs(card("q", 1, { level: "Full", lookChange: true, skip: ["design"] })), "Checker, Security", "skipped design");
-  assert.equal(needs(card("q", 1, { level: "Full", lookChange: true, skip: ["look"] })), "Checker, Security", "look stands for design");
-  assert.equal(needs(card("q", 1, { level: "Full", skip: ["security"] })), "Checker");
+  // The page's rule: a card with no customerText field still needs the Linguist; a card with no level still needs Security.
+  assert.equal(needs(card("q", 1, { level: "Quick" })), "Linguist, Checker", "no customerText: Linguist needed");
+  assert.match(needs(card("q", 1, { level: undefined, customerText: false })), /Security/, "no level: Security needed");
+  assert.equal(needs(card("q", 1, { level: "Full", customerText: false })), "Checker, Security");
+  assert.equal(needs(card("q", 1, { level: "Full", customerText: false, lookChange: true, skip: ["design"] })), "Checker, Security", "skipped design");
+  assert.equal(needs(card("q", 1, { level: "Full", customerText: false, lookChange: true, skip: ["look"] })), "Checker, Security", "look stands for design");
+  assert.equal(needs(card("q", 1, { level: "Full", customerText: false, skip: ["security"] })), "Checker");
   assert.equal(needs(card("q", 1, { level: "Full", customerText: true, skip: ["language"] })), "Checker, Security");
   assert.equal(needs(card("q", 1, { level: "None", lookChange: true })), "", "level None: no review");
-  assert.equal(needs(card("q", 1, { level: "Full" }), [step("q", "checker", "end"), step("q", "security", "end")]), "");
+  assert.equal(needs(card("q", 1, { level: "Full", customerText: false }), [step("q", "checker", "end"), step("q", "security", "end")]), "");
   assert.equal(needs(card("q", 1, { level: "Quick", status: "done" })), "", "a closed card is not checked");
   assert.equal(needs(card("q", 1, { level: "Full", status: "dropped" })), "");
 });

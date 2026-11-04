@@ -24,7 +24,7 @@ test("the exact case: Checker's end step, journaled before a later file in steps
   try {
     const now = Date.now(), board = join(root, "TestBoard01"), m = join(board, "mirror");
     const config = fullConfig({ artifactUrl: URL_, gate: { stateDir: root } });
-    file(m, "initiatives", "x", { name: "X", status: "active", phase: "checker", who: "Checker" }, now - 20 * MIN);
+    file(m, "initiatives", "x", { name: "X", status: "active", phase: "checker", who: "Checker", level: "Quick", customerText: false }, now - 20 * MIN);
     file(m, "steps", "x-checker-start", { init: "x", phase: "checker", who: "Checker", kind: "start", at: now - 30 * MIN }, now - 20 * MIN);
     file(m, "steps", "y-build-start", { init: "y", phase: "build", who: "Builder", kind: "start", at: now - 6 * MIN }, now - 5 * MIN);
     const end = { op: "set", collection: "steps", doc_id: "x-checker-end", data: { init: "x", phase: "checker", who: "Checker", kind: "end", at: now - 10 * MIN + 1234 }, at: now - 10 * MIN };
