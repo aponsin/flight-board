@@ -1,0 +1,1 @@
+PASS Full: #C661 the gate refuses a card phase outside config.phases (initiatives only; absent or null passes); the refusal now says write phase "ship" and no wait field (the board shows Waiting for install from the repository). Suite 1307/1307 at 29d7721.
