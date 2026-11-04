@@ -144,6 +144,7 @@ test("the header is sticky in the page's colour, and the strip below it sticks a
   assert.match(html, /\.v3strip\{position:sticky;top:var\(--hdr-h,0px\)/);
   assert.match(html, /style\.setProperty\("--hdr-h",h\.offsetHeight\+"px"\)/, "the header's height is read, and again when it changes");
   assert.match(html, /new ResizeObserver\(set\)\.observe\(h\)/);
+  assert.match(html, /\nhtml\{scroll-padding-top:var\(--hdr-h,0px\)\}/, "a card or thread jump (scrollIntoView block:start) stops below the header, not behind it");
 });
 
 test("the build stamps the page's commit and the pack name into the header; only well-formed ones", async () => {
