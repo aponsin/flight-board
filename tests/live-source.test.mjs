@@ -15,7 +15,7 @@ const reading = (at, extra = {}) => ({
   agents: { Checker: { state: "working", lastActivityAt: at, tool: "Bash", card: "live-card", since: at - 4 * MIN }, ...extra.agents },
 });
 function board({ live = null, derived = { phase: "build", head: HEAD, readyAt: NOW - 30 * MIN, waitingFor: ["checker", "security"], at: NOW - 40 * MIN } } = {}) {
-  const b = loadNames(["derivedOf", "liveCard", "liveAgent", "liveSubstep", "agentOn", "stampText", "probeEvent", "enrich", "crewHtml", "renderAll", "initRow", "stampLine", "evidence"]);
+  const b = loadNames(["derivedOf", "liveCard", "liveAgent", "liveSubstep", "agentOn", "stampText", "probeEvent", "enrich", "crewHtml", "renderAll", "initRow", "stampLine", "evidence", "oldestText"]);
   Object.assign(b.state, {
     initRaw: [], steps: [], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [],
     derived: [{ id: "all", at: NOW - 40 * MIN, cards: { "live-card": derived } }],
@@ -32,10 +32,11 @@ test("the Right now panel is gone: no section, no renderer; the connector's one 
 
 test("#C664: the header names the oldest source (here the repository copy, not the fresh live state); a live tile is never grey", () => {
   const b = board({ live: reading(NOW - 40e3) });
-  assert.match(b.stampLine(), /Oldest source: repository copy 4[01] min old/);
+  assert.match(b.oldestText(), /Oldest source: repository copy 4[01] min old/);
+  assert.doesNotMatch(b.stampLine(), /Oldest source/, "its own line under the clock, not in the stamp's text");
   assert.doesNotMatch(b.evidence(b.enrich(b.state.initiatives[0])), /evidence[^"]* old"/, "a fresh live reading is not an old copy");
   const none = board();
-  assert.match(none.stampLine(), /Oldest source: repository copy 4[01] min old/, "with no live state the repository copy is the only source");
+  assert.match(none.oldestText(), /Oldest source: repository copy 4[01] min old/,"with no live state the repository copy is the only source");
 });
 
 test("a fresh live reading gives a card its phase and time; the db's other fields stay", () => {
