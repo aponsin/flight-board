@@ -1,0 +1,1 @@
+PASS Full: #C657 keeper reads meta/context with db_get only (checked db_get takes the board link); stack suite 1296/1296 at f56f2b9.
