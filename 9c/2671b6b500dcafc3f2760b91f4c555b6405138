@@ -1,0 +1,1 @@
+PASS Full: #C678 wake-only-for-manager, tip 9c2671b. 3eb2450 as passed, plus Security's two LOWs: plainLine keeps an unrouted line from starting with @, and the lead keeps a marked line whose role watch is not running. 5 touched test files, 52/52. Checker, 2026-11-04.
