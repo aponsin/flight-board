@@ -1,0 +1,1 @@
+PASS Full: #C669 step-guards, build/step-guards-v2 @ a40c116 (this commit: 038bf87 reworded, Board-Id trailer added; same tree). Done-when met: a step under C667 is refused naming thread-type-follows-need; a ship start without a design end (lookChange true) is refused naming Design. Suite 1374/1374, exit 0. Mutation check: pass. Checker
