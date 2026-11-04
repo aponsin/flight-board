@@ -86,13 +86,15 @@ test("ship only with a commit on main or a release note", () => {
   const m = board([card({ phase: "security" })], withEnd);
   const e = gate(upd({ phase: "ship" }), m);
   assert.equal(e.length, 1);
-  assert.match(e[0], /phase: #C700 is on ship but it has no ship step, no commit on main and no release version, and the repository does not show it signed/);
+  assert.match(e[0], /phase: #C700 is on ship but the repository does not show it signed, and it has no commit on main and no release version \(a ship step is not evidence\)/);
   assert.deepEqual(gate(upd({ phase: "ship", version: "1.2.3" }), m), [], "a release note");
   assert.deepEqual(gate(upd({ phase: "ship" }), board([card({ phase: "security" })], withEnd, { menu: { phase: "ship", onMain: true } })), [], "the export says it is on main");
   // Checker 1: a signed card waiting for Release is on ship by the repository's own reading (every review signed, not on main
-  // yet), and a ship step (Release logged its start) is evidence too; neither makes a card live.
+  // yet). A ship step (Release logs its start when the ship begins) is NOT evidence for a move to ship (#C663, Security: it let a
+  // security-phase card move to ship with no sign-off); it still covers live.
   assert.deepEqual(gate(upd({ phase: "ship" }), board([card({ phase: "security" })], withEnd, { menu: { phase: "ship" } })), [], "signed, waiting for Release: ship reads clean");
-  assert.deepEqual(gate(upd({ phase: "ship" }), board([card({ phase: "security" })], [...withEnd, step({ id: "r", phase: "ship", who: "Release" })])), [], "a ship step");
+  assert.equal(gate(upd({ phase: "ship" }), board([card({ phase: "security" })], [...withEnd, step({ id: "r", phase: "ship", who: "Release" })])).length, 1, "a ship step alone is no evidence for ship");
+  assert.equal(gate(upd({ phase: "ship" }), board([card({ phase: "security" })], [...withEnd, step({ id: "r", phase: "ship", who: "Release" })], { menu: { phase: "security" } })).length, 1, "the repository says security: still refused");
   assert.equal(gate(upd({ phase: "live" }), board([card({ phase: "ship" })], withEnd, { menu: { phase: "ship" } })).length, 1, "signed is not live");
   assert.deepEqual(gate(upd({ phase: "live" }), board([card({ phase: "ship" })], withEnd, { menu: { phase: "ship", onMain: true } })), [], "on main by the export: live reads clean");
   assert.equal(gate(upd({ phase: "live" }), board([card({ phase: "ship" })], [...withEnd, step({ id: "r", phase: "ship", who: "Release" })])).length, 0, "a ship step in the mirror covers live too");
@@ -127,7 +129,7 @@ test("the probe writes a red line for each open card that breaks a rule, and non
   const red = (id) => doc.cards[id]?.red ?? [];
   assert.match(red("a647").join(), /#C647 is on checker, past build, but has no build end step/);
   assert.match(red("a640").join(), /#C640 is queued but has a start step on build/);
-  assert.match(red("a649").join(), /#C649 is on ship but it has no ship step, no commit on main and no release version/);
+  assert.match(red("a649").join(), /#C649 is on ship but the repository does not show it signed, and it has no commit on main and no release version/);
   assert.deepEqual(red("clean"), []);
   assert.equal(doc.cards.old, undefined, "a closed card gets no reading, so no line");
   for (const id of ["a647", "a640", "a649"]) assert.ok(red(id).every((l) => l.length <= 240) && red(id).length <= 3, id);

@@ -78,11 +78,15 @@ export function stepProblems(card, { steps = [], derived = null, live = null, co
     const fresh = liveCard(live, card.id, config);
     const onMain = (fresh && fresh.onMain === true) || derived?.onMain === true || derived?.phase === c.livePhase;
     const note = [card.version, card.liveVersion].some((v) => typeof v === "string" && v.trim());
-    // Ship is also evidenced by a ship-phase step (Release logged its start), and, for phase ship only, by the repository's own
-    // reading "ship": every review signed, not on main yet, a card waiting for Release (collector/derive.mjs).
-    const shipStep = mine.some((s) => s.phase === c.shipPhase);
+    // Ship is evidenced by the repository's own reading "ship" (every review signed, not on main yet, a card waiting for Release,
+    // collector/derive.mjs), by a commit on main or by a release version. A ship-phase step is NO evidence for phase ship (#C663,
+    // Security): Release logs one when the ship begins, so it would let a card that no review signed move to ship; for phase live
+    // it still counts.
+    const shipStep = card.phase === c.livePhase && mine.some((s) => s.phase === c.shipPhase);
     const signed = card.phase === c.shipPhase && derived?.phase === c.shipPhase;
-    if (!onMain && !note && !shipStep && !signed) out.push({ code: `no-ship-evidence:${card.phase}`, text: `phase: ${label} is on ${idText(card.phase)} but it has no ${c.shipPhase} step, no commit on ${c.mainBranch} and no release version${card.phase === c.shipPhase ? ", and the repository does not show it signed" : ""}: ${c.shipPhase} needs one of them` });
+    if (!onMain && !note && !shipStep && !signed) out.push({ code: `no-ship-evidence:${card.phase}`, text: card.phase === c.shipPhase
+      ? `phase: ${label} is on ${idText(card.phase)} but the repository does not show it signed, and it has no commit on ${c.mainBranch} and no release version (a ${c.shipPhase} step is not evidence): ${c.shipPhase} needs one of those`
+      : `phase: ${label} is on ${idText(card.phase)} but it has no ${c.shipPhase} step, no commit on ${c.mainBranch} and no release version: ${c.shipPhase} needs one of them` });
   }
   return out;
 }
