@@ -20,7 +20,7 @@ pickup goes out once either way.
 The task's permissions allow Bash for exactly the command `sleep 60` (an exact rule) and for the pickup-watch script
 under the same rule Steward holds, `Bash(node ~/.flight-board/current/scripts/pickup-watch.mjs *)`, never Bash in
 general (Security): the task reads session titles, so a broad grant would let a crafted title run commands. It never
-reads or writes the board, so it has no ArtifactData rule; Manager records its own pickedAt (the keeper's step 4 then
+reads or writes the board, so it has no database-tool rule (no `mcp__claude-artifacts__db_*`); Manager records its own pickedAt (the keeper's step 4 then
 skips it).
 
 ## Prompt

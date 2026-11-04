@@ -46,9 +46,10 @@ test("a reset is told by the Messages category, never the total (Checker on a307
 // resets itself on its own cue): the lead records pickedAt for each pickup the report lists, and step 4 skips a session
 // picked up since its last reset (pickedAt set, no activity more than 30 minutes past it); no pickedAt, a pickup.
 test("a pickup from an earlier run skips a session picked up since its reset (pickedAt), and the lead records pickedAt", () => {
-  assert.match(step(1), /select:[^"]*mcp__ccd_session_mgmt__send_message,ArtifactData"/, "the keeper reads the board");
+  assert.match(step(1), /select:[^"]*mcp__ccd_session_mgmt__send_message,mcp__claude-artifacts__db_get"/, "the keeper reads the board with db_get only");
+  assert.doesNotMatch(prompt, /ArtifactData|db_write|db_query|db_list/, "the removed tool, and every other database tool, is out of the prompt");
   assert.match(step(2), /note each one's lastActivityAt/);
-  assert.match(step(4), /ArtifactData get, url \{\{BOARD\}\}, collection "meta", doc_id "context"; read it, never write it/);
+  assert.match(step(4), /db_get, slug \{\{BOARD\}\}, path "meta\/context"; read it, never write it/);
   assert.match(step(4), /agents\.<Title>\.pickedAt there is a time \(milliseconds\) and the session's lastActivityAt \(from step 2\) is no more than 30 minutes after it\. Send that one nothing/);
   assert.match(step(4), /A missing pickedAt still gets the pickup \(an agent that reset itself on its own cue\)/);
   assert.doesNotMatch(step(4), /Never send it to a session with no saved entry/, "a self-reset has no saved entry (Checker on c70dfb1)");
@@ -83,10 +84,10 @@ test("the self-reset path: an agent that resets itself on its own cue is still p
   assert.deepEqual(pickups([{ ...builder, idle: false }, { ...builder, messages: 40000, lastActivityAt: 999 * MIN }], {}), [], "working, or not reset: none");
 });
 
-test("no ArtifactData allow rule: one can't be limited to a get (Security on c70dfb1)", () => {
-  assert.match(doc, /the task has no ArtifactData allow rule/);
+test("the task is allowed db_get and no other database tool, db_write above all (#C657, Security on c70dfb1)", () => {
+  assert.match(doc, /permissions allow exactly\s+`mcp__claude-artifacts__db_get` \(a read of one document\) and no other database tool, `db_write` above all/);
   assert.match(doc, /tell Security before anyone widens anything/);
-  assert.doesNotMatch(doc, /permissions allow ArtifactData get/);
+  assert.doesNotMatch(doc, /ArtifactData/, "the removed tool is named nowhere");
 });
 
 // #C399 (the owner's 600k in #T1038): the limit is the config's resetAt, filled in where the lead saves the prompt.

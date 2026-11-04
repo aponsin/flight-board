@@ -51,7 +51,7 @@ test("a context that isn't 'ok' is no reading: the reset goes ahead, never skipp
 
 test("Manager records its own pickedAt, so the keeper's hourly step 4 doesn't pick it up again", () => {
   assert.match(step(7), /Set agents\.Manager\.pickedAt on the board's meta\/context to now \(milliseconds\)/);
-  assert.doesNotMatch(prompt, /ArtifactData/, "the task never reads or writes the board");
+  assert.doesNotMatch(prompt, /ArtifactData|mcp__claude-artifacts__db_/, "the task never reads or writes the board");
 });
 
 test("it never clears a session or touches Remote Control; its Bash is two exact rules (Security)", () => {
