@@ -14,7 +14,7 @@ import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
-import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, abandonedAt } from "./derive.mjs";
+import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, abandonedAt, subjectNum } from "./derive.mjs";
 import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor } from "./facts.mjs";
 import { shippedBase, afterShipText, fetchBranches } from "./after-ship.mjs";
 import { evidenceTimes } from "./timings.mjs";
@@ -486,6 +486,11 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
     if (tips.length > 1 && (derived[card.id].branches?.length ?? 1) > 1) split.push(`${idText(card.id)}: ${tips.length} branches (${tips.map((h) => lineText(h.branch, 60)).join(", ")}): one card is one branch; split the rework into a sub-card`);
   }
   // #C654: a plain build start nobody acted on (no head, the agent not on the card) is closed after 30 minutes: abandonedAt.
+  // #C655: a commit on main whose subject starts "#C<num>:" is work seen for the card even with no branch left (a squash or a
+  // direct commit), so its start is not "no work seen".
+  for (const card of open) {
+    if (Number.isInteger(card.num) && derived[card.id] && !derived[card.id].head && line.some((l) => subjectNum(l.subject) === card.num)) derived[card.id].workSeen = true;
+  }
   for (const card of open) {
     const at = abandonedAt({ steps, cardId: card.id, derived: derived[card.id], liveState, buildPhase: c.buildPhase, now });
     if (at !== null && derived[card.id]) derived[card.id].abandonedAt = at;

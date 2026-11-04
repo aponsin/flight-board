@@ -263,8 +263,10 @@ test("9. stalled: in flight with no step for 30+ min shows a Stalled flag, not a
   assert.equal(b.stalled(i), 31);
   assert.ok(![...b.gaps(i)].some((g) => /stalled/.test(g)));
   // An open step that has run 30+ min with nothing logged is stalled too: the board can't tell work from a hang.
-  const open = item(b, "x", [step("x", "build", "Admin", "start", old)], base);
+  const open = item(b, "x", [step("x", "build", "Admin", "start", old)], { ...base, branch: "build/x" });
   assert.equal(b.stalled(open), 31);
+  // A start with no branch, commit or agent behind it is "no work seen" (#C655), never a stall.
+  assert.equal(b.stalled(item(b, "x", [step("x", "build", "Admin", "start", old)], base)), 0);
   const fresh = item(b, "x", [step("x", "build", "Admin", "start", Date.now() - 1), step("x", "build", "Admin", "end", Date.now())], base);
   assert.equal(b.stalled(fresh), 0);
   // Queued behind a busy agent, or held by Owner, or done: not stalled.

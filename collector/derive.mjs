@@ -56,7 +56,7 @@ export function headsFor(id, heads, num = null) {
 // nobody acted on. Returns the latest such close time, or null. Pure: steps, the card's derived reading, the live state.
 export const ABANDON_MS = 30 * 60 * 1000;
 export function abandonedAt({ steps, cardId, derived, liveState = null, buildPhase, now }) {
-  if (derived?.head || (Array.isArray(derived?.branches) && derived.branches.length)) return null;
+  if (derived?.head || derived?.workSeen === true || (Array.isArray(derived?.branches) && derived.branches.length)) return null;
   const mine = (Array.isArray(steps) ? steps : []).filter((s) => s && s.init === cardId && s.phase === buildPhase && Number.isFinite(s.at) && typeof s.who === "string");
   const open = new Map();
   for (const s of mine.slice().sort((a, b) => a.at - b.at)) {

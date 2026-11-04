@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import { loadBoard, step } from "./harness.mjs";
 
 const H = 3600e3, MIN = 60e3;
+// Work seen (#C655): a build start alone, with no commit, branch or live agent, is "start logged, no work seen" and not lit.
+const SEEN = { phase: "build", head: { sha: "abc1234", branch: "x" }, firm: false };
 const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 function card(b, steps, fields = {}, derived = null) {
   b.state.steps = steps;
@@ -20,7 +22,7 @@ function card(b, steps, fields = {}, derived = null) {
 // card's one ETA; the size's median is a hint only, "(usually 1.5 h for S)", with no due time of its own.
 test("beside 'so far': the size's usual hours, a hint with no due time", () => {
   const b = loadBoard(), now = Date.now();
-  const on = card(b, [step("x", "build", "Admin", "start", now - 20 * MIN)], { createdAt: now - 30 * MIN });
+  const on = card(b, [step("x", "build", "Admin", "start", now - 20 * MIN)], { createdAt: now - 30 * MIN }, SEEN);
   assert.match(b.initRow(on), /so far <span class="usual">\(usually 1\.5 h for S\)<\/span><\/span>/);
   const late = card(b, [step("x", "build", "Admin", "start", now - 3 * H)], { createdAt: now - 4 * H });
   assert.doesNotMatch(b.initRow(late), /due ~|expected/, "past it: still no second due time");
@@ -30,7 +32,7 @@ test("beside 'so far': the size's usual hours, a hint with no due time", () => {
 
 test("Designer 1: one ETA per card; a running tile shows who and how long only", () => {
   const b = loadBoard(), now = Date.now();
-  const i = card(b, [step("x", "build", "Admin", "start", now - 20 * MIN)], { createdAt: now - 30 * MIN, size: "M", etaLive: now + 2 * H });
+  const i = card(b, [step("x", "build", "Admin", "start", now - 20 * MIN)], { createdAt: now - 30 * MIN, size: "M", etaLive: now + 2 * H }, SEEN);
   const html = b.initRow(i);
   assert.match(html, /class="step now"[^>]*>Build<small>Admin · 20 min<\/small>/);
   assert.doesNotMatch(html, /due ~/, "no due time beside the ETA box (#C450)");
@@ -48,6 +50,8 @@ test("a card nobody has started shows Build queued, not lit; a branch or a build
   assert.doesNotMatch(html, /Started|due ~/);
   const branched = card(b, [], { phase: "plan", who: "Boardsmith", createdAt: now - 10 * MIN }, { phase: "build", head: { sha: "abc1234", branch: "x" }, firm: false });
   assert.doesNotMatch(b.initRow(branched), /queued/i, "the collector has seen its branch");
-  const begun = card(b, [step("x", "build", "Boardsmith", "start", now - 5 * MIN)], { createdAt: now - 10 * MIN });
-  assert.doesNotMatch(b.initRow(begun), /queued/i, "a build start logged");
+  const begun = card(b, [step("x", "build", "Boardsmith", "start", now - 5 * MIN)], { createdAt: now - 10 * MIN }, SEEN);
+  assert.doesNotMatch(b.initRow(begun), /queued/i, "a build start logged, with work seen");
+  const lone = card(b, [step("x", "build", "Boardsmith", "start", now - 5 * MIN)], { createdAt: now - 10 * MIN });
+  assert.match(b.initRow(lone), /start logged .*, no work seen/, "a build start and nothing else (#C655)");
 });

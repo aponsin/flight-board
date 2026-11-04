@@ -29,7 +29,7 @@ test("before the next run: no live state, with when the Collector's run is due; 
   b.state.derived = derived(now - 20 * MIN);
   assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), `No live state · Collector next ${hhmm(now + 40 * MIN)}`);
   b.state.derived = derived(now - 70 * MIN);
-  assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), `No live state · Collector run late (due ${hhmm(now - 10 * MIN)})`);
+  assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), "No live state", "past the due time the line says nothing about the run (#C655): the card's own evidence is what shows");
   b.state.derived = [];
   assert.equal(b.checkLine(card, { at: now - 5 * MIN }, now), "No live state · Collector not run yet", "no run seen yet");
 });
@@ -47,8 +47,9 @@ test("the late state is marked on the card; the Check button stays, to read agai
   b.state.checkRequests = [{ id: "x", at: now - 5 * MIN }];
   b.state.derived = derived(now - 70 * MIN, ["x"]);
   const html = b.initRow(b.gates(b.enrich({ id: "x", num: 351, name: "X", size: "S", level: "Quick", skip: ["plan"], status: "active", createdAt: now - 30 * MIN })));
-  // Its own class, not the global .late (nowrap, margin, 600 weight): at 390 px that widened the card (Designer on 091cd53).
-  assert.match(html, /<span class="i-checked is-late">No live state · Collector run late \(due /);
+  // No "Collector run late" line any more (#C655), and still no global .late class (it widened the card at 390 px, Designer on 091cd53).
+  assert.match(html, /<span class="i-checked">No live state<\/span>/);
+  assert.doesNotMatch(html, /run late/);
   assert.doesNotMatch(html, /class="(?:[^"]*\s)?late[\s"]/);
   assert.match(html, /data-check="x"/, "no live state reads it: the button stays (#C450)");
 });
@@ -62,7 +63,8 @@ function owned(b, { ask = true, answered = false } = {}) {
   b.state.messages = [];
   // No "since": gates() holds only an ask with one (its Gated box), so before #C376 this card read "Stalled".
   b.state.waiting = ask ? [{ id: "w1", initiative: "x", kind: "decision", title: "Which look?", text: "A or B?", ...(answered ? { response: { status: "A", at: now - 10 * MIN } } : {}) }] : [];
-  return b.gates(b.enrich({ id: "x", num: 351, name: "X", size: "S", level: "Quick", skip: ["plan"], status: "active", createdAt: now - 120 * MIN, nextNote: "Build", nextNoteAt: now - 2 * 36e5, etaLive: now - 30 * MIN }));
+  // A branch: work seen (#C655: a lone start with none of it is "start logged, no work seen", which never stalls).
+  return b.gates(b.enrich({ id: "x", num: 351, name: "X", size: "S", level: "Quick", skip: ["plan"], status: "active", branch: "build/x", createdAt: now - 120 * MIN, nextNote: "Build", nextNoteAt: now - 2 * 36e5, etaLive: now - 30 * MIN }));
 }
 
 test("a card with an open ask to the owner: not stalled, no stale next step, no passed ETA; it says what it waits on", () => {
