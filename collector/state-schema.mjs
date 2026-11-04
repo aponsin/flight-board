@@ -86,13 +86,18 @@ const AGENT = {
 //   stuck: { <role>: { kind, card, since } }          a role stuck on one step, or waiting on the owner (kind: step | user)
 //   usage: { at, asOf?, weekPct, pace, level, top: [{ src, pct }] }   pace in hundredths (130 = 1.3x); src a role, "scheduled" or "other";
 //          asOf (#C623, optional): when the spend script last ran, the time the numbers are of (at is the probe's clock)
-export const EXTRA_KEYS = ["ctx", "stuck", "usage"];
+//   ship (#C679, optional): { version, ci, at } a ship candidate branch (collector.candidatePattern, "build/ship-v1.2.3") is pushed and not
+//          on main yet: version its number or null, ci its CI run (none | queued | running | passed), at the branch tip's time.
+//          The page's "Safe to restart" badge is never green while it is there. A probe before it leaves the key out.
+export const EXTRA_KEYS = ["ctx", "stuck", "usage", "ship"];
+export const SHIP_CI = ["none", "queued", "running", "passed"];
 export const STUCK_KINDS = ["step", "user"], USAGE_LEVELS = ["ok", "amber", "red"], MAX_TOP = 5;
 const whole = (lo, hi) => (v) => Number.isInteger(v) && v >= lo && v <= hi;
 const CTX = { pct: whole(0, 100), tokens: nullOr(whole(0, 5e6)), at: isTime, over: (v) => typeof v === "boolean" };
 const STUCK = { kind: (v) => STUCK_KINDS.includes(v), card: nullOr(isId), since: isTime };
 const USAGE = { at: isTime, asOf: isTime, weekPct: nullOr(whole(0, 1000)), pace: nullOr(whole(0, 10000)), level: (v) => USAGE_LEVELS.includes(v), top: (v) => Array.isArray(v) && v.length <= MAX_TOP };
 const USAGE_TOP = { src: re(ROLE), pct: whole(0, 100) };
+const SHIP = { version: nullOr(re(VERSION)), ci: (v) => SHIP_CI.includes(v), at: isTime };
 
 // One record against its fields: exactly those keys, each value passing. The errors name only the schema's own words.
 function fields(at, rec, spec, errs) {
@@ -118,6 +123,7 @@ export function stateErrors(s) {
       fields(`${name}.${k}`, s[name][k], spec, errs);
     }
   }
+  if (Object.hasOwn(s, "ship")) fields("ship", s.ship, SHIP, errs);
   if (Object.hasOwn(s, "usage")) {
     fields("usage", s.usage, USAGE, errs);
     const top = plain(s.usage) && Array.isArray(s.usage.top) ? s.usage.top : [];
@@ -196,6 +202,7 @@ export function pickState(s) {
   const out = { v: STATE_VERSION, board: take(s.board, BOARD), cards, agents: map(s.agents, AGENT) };
   if (Object.hasOwn(s, "ctx")) out.ctx = map(s.ctx, CTX);
   if (Object.hasOwn(s, "stuck")) out.stuck = map(s.stuck, STUCK);
+  if (Object.hasOwn(s, "ship")) out.ship = take(s.ship, SHIP);
   if (Object.hasOwn(s, "usage")) out.usage = { ...take(s.usage, USAGE), top: s.usage.top.map((t) => take(t, USAGE_TOP)) };
   return out;
 }

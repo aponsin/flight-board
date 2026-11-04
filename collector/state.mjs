@@ -320,6 +320,30 @@ export function shipRuns(gh, now, backoff = { until: 0, wait: BACKOFF_MIN_MS }, 
 // (7 characters at least: a cut title's short sha alone names nothing) starts the tip or the head.
 export const shipsCard = (ships, tip, head) => ships.some((s) => s.branch === tip.branch || (s.sha.length >= 7 && (tip.sha.startsWith(s.sha) || head.sha.startsWith(s.sha))));
 
+// #C679: a ship candidate in flight. Release pushes a candidate branch (collector.candidatePattern, "build/ship-v1.2.3") and its CI
+// run merges the cards and deploys: from the push to the merge a restart cuts the ship (2026-11-04: the badge was green while
+// v1.200.6 waited on CI, the owner restarted, and the ship died). The page's cards see a ship only through an open card a running
+// run's title names, which misses a candidate whose cards are closed or whose queued run's title doesn't match. So the candidate
+// itself is read: the newest remote tip matching the pattern that is not on main yet, under SHIP_CANDIDATE_MAX_MS old (an old one
+// stays on GitHub after a red run), whose CI run is not finished badly (failed or cancelled: the ship is over). { version, ci,
+// at } or null. A CI read that can't be made (back-off, the call limit) is "none": the candidate still counts, never a green badge.
+export const SHIP_CANDIDATE_MAX_MS = 6 * 3600e3;
+export function shipCandidate({ tips, pattern, now, onMain, ci }) {
+  if (!pattern) return null;
+  let re;
+  try { re = new RegExp(pattern); } catch { return null; }
+  const found = (tips ?? []).filter((t) => t && typeof t.branch === "string" && re.test(t.branch) && /^[0-9a-f]{40}$/.test(String(t.sha)) && Number.isFinite(t.at) && now - t.at <= SHIP_CANDIDATE_MAX_MS && t.at - now <= 60e3)
+    .sort((a, b) => b.at - a.at).slice(0, 3);
+  for (const t of found) {
+    if (onMain(t.sha)) continue;
+    const r = ci(t.sha), state = r && typeof r.ci === "string" ? r.ci : "none";
+    if (state === "failed" || state === "cancelled") continue;
+    const m = /v(\d{1,4}\.\d{1,4}\.\d{1,4})/.exec(t.branch);
+    return { version: m ? m[1] : null, ci: state, at: t.at };
+  }
+  return null;
+}
+
 // The version a commit went live in: the first subject naming one (versionPattern), from the commit itself on along
 // the main line's first parents that descend from it.
 function versionAfter(git, sha, ref, pattern) {
@@ -569,8 +593,8 @@ export function usageTile({ scriptText = null, dir, roster, now, run, quota = 0,
 }
 
 // The state that leaves, checked against the allowlist before it does.
-export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, usage = null }) {
-  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}) };
+export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, usage = null, ship = null }) {
+  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}), ...(ship ? { ship } : {}) };
   const errs = stateErrors(s);
   if (errs.length) throw new Error(`the state doesn't fit the plan (${errs.length} problem(s), first: ${errs[0]})`);
   return pickState(s);
@@ -748,7 +772,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const dispatch = waitingKnown ? dispatchItems({ cards: cards.filter((k) => !closed(k)), agents, asked: askedCards, roster: config.roster, lead: config.gate.managerRole, now, before: dispatchBefore }) : { items: [], state: dispatchBefore ?? { items: {} } };
     writeAtomic(join(stateDir, id, DISPATCH_FILE), JSON.stringify({ at: now, items: dispatch.items }));
     writeAtomic(dispatchStatePath, JSON.stringify(dispatch.state));
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, usage: spend.tile, ...wakeTimes(join(stateDir, id), now) });
+    // #C679: a ship candidate pushed and not on main (the team's repository only: the one the ship runs in).
+    let ship = null;
+    const team = repos[""];
+    if (team && c.candidatePattern) { try { ship = shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ok(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci }); } catch { /* no reading: the badge stays as the cards say */ } }
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, usage: spend.tile, ship, ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
     writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
     writeAtomic(wakePath, JSON.stringify({ at: now, roles: wakeAsk.roles, missing: missingAsk.roles }));
