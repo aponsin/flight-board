@@ -48,7 +48,9 @@ const truthList = (f) => (Array.isArray(f?.items) ? f.items.filter((a) => a && T
 // A CLOSE line repeats every CLOSE_AGAIN_MS until the card is no longer listed (its status done: the probe reads the export), so a
 // line the lead missed can't sit for hours (the lead, 23:50Z), and a GAP line every GAP_AGAIN_MS; a SHIP line is printed once per
 // tip. The seen file keeps { sha, at } per "<kind> <card>" (an older file kept the sha alone: read as printed at 0).
-export const CLOSE_AGAIN_MS = 10 * 60e3, GAP_AGAIN_MS = 30 * 60e3;
+// #C682: CLOSE repeated every 10 minutes, which woke the lead for a card that is open on purpose (it waits on a real test); it
+// now repeats after 2 hours (a changed tip still prints at once), like LINE_AGAIN_MS below.
+export const CLOSE_AGAIN_MS = 2 * 3600e3, GAP_AGAIN_MS = 30 * 60e3;
 const AGAIN = { close: CLOSE_AGAIN_MS, gap: GAP_AGAIN_MS };
 const seenItems = (seen) => (seen && typeof seen.items === "object" && seen.items && !Array.isArray(seen.items) ? seen.items : {});
 const seenEntry = (v) => (typeof v === "string" ? { sha: v, at: 0 } : v && typeof v === "object" && typeof v.sha === "string" ? { sha: v.sha, at: Number.isInteger(v.at) ? v.at : 0 } : null);
@@ -103,8 +105,26 @@ export function linesFor(lines, role, { lead = null, roster = null, away = [] } 
     return !to || to === lead || (Array.isArray(roster) && !roster.includes(to)) || away.includes(to);
   });
 }
-export const linesPending = (file, seen, opts = {}) => (Number.isInteger(file?.at) && file.at !== seen?.at ? linesFor(linesOf(file), opts.role ?? null, opts) : []);
-export const linesSeen = (file) => ({ at: file.at });
+// #C682: the probe stamps every batch with a new `at`, so a card that waits on purpose (its text unchanged) made the same lines wake
+// the lead every run. The seen file now keeps { at, lines: { <line text>: printedAt } }: a line is printed when its text is not there
+// (a card that changed reads differently) or was printed LINE_AGAIN_MS ago or more, and a line the batch no longer holds is forgotten
+// (when it comes back it prints again). An older seen file ({ at } alone) has no lines: everything prints once, as before.
+export const LINE_AGAIN_MS = 2 * 3600e3;
+const seenLines = (seen) => (seen && typeof seen.lines === "object" && seen.lines && !Array.isArray(seen.lines) ? seen.lines : {});
+const quiet = (seen, line, now) => { const t = seenLines(seen)[line]; return Number.isInteger(t) && t <= now + 5_000 && now - t < LINE_AGAIN_MS; };
+export const linesPending = (file, seen, opts = {}) => (Number.isInteger(file?.at) && file.at !== seen?.at
+  ? linesFor(linesOf(file), opts.role ?? null, opts).filter((l) => !quiet(seen, l, opts.now ?? Date.now()))
+  : []);
+// The seen file after a look at `file`: the batch's lines only, each with the time it was last printed (`printed` are the lines
+// this look returned; a held-back line keeps its earlier time).
+export const linesSeen = (file, seen = null, printed = [], now = Date.now()) => {
+  const out = {}, old = seenLines(seen);
+  for (const l of linesOf(file)) {
+    if (printed.includes(l)) out[l] = now;
+    else if (Number.isInteger(old[l])) out[l] = old[l];
+  }
+  return { at: file.at, lines: out };
+};
 export const linesSeenFile = (role) => `collector-lines-seen-${role}.json`;
 export const NOEVIDENCE_FILE = "no-evidence.json", NOEVIDENCE_SEEN_FILE = "no-evidence-seen.json";
 export const EVIDENCE_STALE_MS = 10 * 60e3, EVIDENCE_MIN_CARDS = 3;

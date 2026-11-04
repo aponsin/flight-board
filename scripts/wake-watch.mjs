@@ -32,8 +32,8 @@ export function roleTick(dir, role, now, pid = process.pid) {
   const read = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
   const seen = read(dispatchSeenFile(role)), due = dispatchPending(read(DISPATCH_FILE), seen, { role, level: 1 });
   // #C678: the nudges and conflicts the probe marked for this role (its own seen file, one batch once).
-  const batch = read(LINES_FILE), lseen = read(linesSeenFile(role)), mine = linesPending(batch, lseen, { role });
-  if (Number.isInteger(batch?.at) && batch.at !== lseen?.at) writeAtomic(join(dir, linesSeenFile(role)), JSON.stringify(linesSeen(batch)));
+  const batch = read(LINES_FILE), lseen = read(linesSeenFile(role)), mine = linesPending(batch, lseen, { role, now });
+  if (Number.isInteger(batch?.at) && batch.at !== lseen?.at) writeAtomic(join(dir, linesSeenFile(role)), JSON.stringify(linesSeen(batch, lseen, mine, now)));
   if (!due.length && !mine.length) return null;
   if (due.length) writeAtomic(join(dir, dispatchSeenFile(role)), JSON.stringify(dispatchSeen(seen, due)));
   return [...due.map(dispatchLine), ...mine].join("\n");
@@ -71,8 +71,8 @@ function resetLines(dir, roster = null, now = Date.now(), lead = null) {
   const batch = read(LINES_FILE), batchSeen = read(LINES_SEEN_FILE);
   // ...or whose own watch is not running: nobody would print its line (Security on 3eb2450).
   for (const l of Array.isArray(batch?.lines) ? batch.lines : []) { const r = typeof l === "string" ? routeOf(l) : null; if (r && !away.includes(r) && !dispatchWatchAlive(join(dir, dispatchPidFile(r)), now)) away.push(r); }
-  const shown = linesPending(batch, batchSeen, { lead, roster, away });
-  if (Number.isInteger(batch?.at) && batch.at !== batchSeen?.at) writeAtomic(join(dir, LINES_SEEN_FILE), JSON.stringify(linesSeen(batch)));
+  const shown = linesPending(batch, batchSeen, { lead, roster, away, now });
+  if (Number.isInteger(batch?.at) && batch.at !== batchSeen?.at) writeAtomic(join(dir, LINES_SEEN_FILE), JSON.stringify(linesSeen(batch, batchSeen, shown, now)));
   out.push(...shown);
   // The probe finds no branch for any open card (#C632): one NOEVIDENCE line per outage; the seen file is cleared when it ends.
   const blind = read(NOEVIDENCE_FILE), blindSeen = read(NOEVIDENCE_SEEN_FILE);

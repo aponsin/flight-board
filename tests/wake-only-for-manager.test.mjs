@@ -69,7 +69,7 @@ test("the lead's watch skips a line marked for an agent with an open session, an
     assert.match(out, /NUDGE @Checker two/);
     assert.match(out, /NUDGE three/);
     assert.doesNotMatch(out, /@Builder/);
-    assert.deepEqual(JSON.parse(readFileSync(join(dir, LINES_SEEN_FILE), "utf8")), linesSeen({ at: 1000 }), "the batch is marked seen");
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, LINES_SEEN_FILE), "utf8")), linesSeen({ at: 1000, lines: ["NUDGE @Builder one", "NUDGE @Checker two", "NUDGE three"] }, null, ["NUDGE @Checker two", "NUDGE three"], 5000), "the batch is marked seen");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

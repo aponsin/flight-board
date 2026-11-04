@@ -161,29 +161,31 @@ test("boardTruth: ship for a signed tip off main with no run; close for a live o
   assert.equal(boardTruth({ states: Object.fromEntries(Array.from({ length: 30 }, (_, n) => [`card-${String(n).padStart(2, "0")}`, st("ship")])), shipPhase: "ship", livePhase: "live" }).length, 20, "at most 20");
 });
 
-test("a CLOSE line repeats every 10 minutes until the card leaves the list (status done); a SHIP line is printed once per tip", () => {
+test("a CLOSE line repeats every 2 hours until the card leaves the list (status done); a SHIP line is printed once per tip", () => {
   const dir = mkdtempSync(join(tmpdir(), "fb-truth-repeat-"));
   const write = (items) => writeFileSync(join(dir, TRUTH_FILE), JSON.stringify({ at: T, items }));
   const roster = ["Manager", "Release"], MIN = 60e3;
   write([{ kind: "ship", card: "board-x", sha: "a1b2c3d4e5f6" }, { kind: "close", card: "board-y", sha: "b1b2c3d4e5f6" }]);
   const first = tick(dir, T, 1, roster);
   assert.match(first, /SHIP board-x/); assert.match(first, /CLOSE board-y/);
+  // #C682: the repeat is two hours (it was ten minutes), so a card that is open on purpose does not wake the lead every run.
+  const H = 60 * MIN;
   assert.equal(tick(dir, T + 5 * MIN, 1, roster), null, "five minutes on: nothing");
-  assert.equal(tick(dir, T + 9 * MIN + 59e3, 1, roster), null, "just under ten minutes");
-  const again = tick(dir, T + 10 * MIN, 1, roster);
-  assert.equal(again.split("\n").length, 1, "ten minutes: the CLOSE line only");
+  assert.equal(tick(dir, T + 10 * MIN, 1, roster), null, "ten minutes: nothing any more");
+  assert.equal(tick(dir, T + 2 * H - 1e3, 1, roster), null, "just under two hours");
+  const again = tick(dir, T + 2 * H, 1, roster);
+  assert.equal(again.split("\n").length, 1, "two hours: the CLOSE line only");
   assert.match(again, /^CLOSE board-y/);
-  assert.equal(tick(dir, T + 15 * MIN, 1, roster), null, "the clock restarts at each print");
-  assert.match(tick(dir, T + 20 * MIN, 1, roster), /^CLOSE board-y/, "and again ten minutes after that");
-  assert.match(tick(dir, T + 30 * MIN, 1, roster), /^CLOSE board-y/, "for as long as the card stays open");
+  assert.equal(tick(dir, T + 3 * H, 1, roster), null, "the clock restarts at each print");
+  assert.match(tick(dir, T + 4 * H, 1, roster), /^CLOSE board-y/, "and again two hours after that");
   write([{ kind: "ship", card: "board-x", sha: "a1b2c3d4e5f6" }]);
-  assert.equal(tick(dir, T + 41 * MIN, 1, roster), null, "the card's status is done: no more CLOSE lines, and SHIP is not repeated");
+  assert.equal(tick(dir, T + 4 * H + 11 * MIN, 1, roster), null, "the card's status is done: no more CLOSE lines, and SHIP is not repeated");
   write([{ kind: "ship", card: "board-x", sha: "a1b2c3d4e5f6" }, { kind: "close", card: "board-y", sha: "b1b2c3d4e5f6" }]);
-  assert.match(tick(dir, T + 42 * MIN, 1, roster), /^CLOSE board-y/, "a card that comes back is asked at once");
-  assert.equal(JSON.parse(readFileSync(join(dir, TRUTH_SEEN_FILE), "utf8")).items["close board-y"].at, T + 42 * MIN, "the seen file keeps the print time");
+  assert.match(tick(dir, T + 4 * H + 12 * MIN, 1, roster), /^CLOSE board-y/, "a card that comes back is asked at once");
+  assert.equal(JSON.parse(readFileSync(join(dir, TRUTH_SEEN_FILE), "utf8")).items["close board-y"].at, T + 4 * H + 12 * MIN, "the seen file keeps the print time");
   // an older seen file (the sha alone) reads as printed long ago
   writeFileSync(join(dir, TRUTH_SEEN_FILE), JSON.stringify({ items: { "close board-y": "b1b2c3d4e5f6", "ship board-x": "a1b2c3d4e5f6" } }));
-  const old = tick(dir, T + 43 * MIN, 1, roster);
+  const old = tick(dir, T + 4 * H + 13 * MIN, 1, roster);
   assert.match(old, /^CLOSE board-y/);
   assert.equal(old.includes("SHIP"), false);
 });
