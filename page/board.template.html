@@ -49,7 +49,7 @@ section{min-width:0}
 .kind{font:600 .72rem var(--mono);text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:4px;background:var(--bad-soft);color:var(--bad);white-space:nowrap}
 .kind.action{background:var(--warn-soft);color:var(--warn)}
 .kind.session{background:var(--accent-soft);color:var(--accent)}
-.kind.later{background:var(--track);color:var(--muted)}
+.kind.later,.kind.conversation{background:var(--track);color:var(--muted)}
 .kind.answer{background:var(--ok-soft);color:var(--ok)}
 /* A thread's state (#C364): Question as an ask, Building blue, Live green as an answer, Decision as a decision. */
 .kind.building{background:var(--accent-soft);color:var(--accent)}
@@ -620,6 +620,8 @@ const PHASES=CONFIG.phases;
 const BUILD_PHASE=(CONFIG.collector&&CONFIG.collector.buildPhase)||"build";
 const LIVE_PHASE=(CONFIG.collector&&CONFIG.collector.livePhase)||"live";
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
+// The labels a chip can show once a thread has moved on from the ask that began it (#C667, askNeed).
+const ASKLABEL=Object.assign({},KIND,{question:"Question",conversation:"Conversation",ack:"Ack",building:"Building",live:"Live"});
 const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[],agentPrs:[],approvals:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -679,7 +681,8 @@ function typeLine(text){const m=String(text||"").match(/\btype:\s*(\S[^\n]*)/);i
 const typeCopy=(w,s)=>{const t=w&&w.rearm===true&&!(s&&s.cmd)?typeLine(typeof s==="string"?s:s&&s.text):"";
   return t?`<div class="cmd"><code>${esc(t)}</code><button type="button" class="copy" data-copy="${esc(t)}">Copy</button></div>`:""};
 function askHtml(w,open,at=w.since,sub="",qn=null){const steps=Array.isArray(w.steps)?w.steps:[];
-   const head=`<span class="kind ${esc(w.kind)}">${qn?qn+". ":""}${esc(KIND[w.kind]||w.kind||"Ask")}</span>
+   const nk=askNeed(w);
+   const head=`<span class="kind ${esc(chipClass(nk))}">${qn?qn+". ":""}${esc(ASKLABEL[nk]||nk||"Ask")}</span>
    <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${pingHtml(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
    <span class="age">${num(at)?dur(Date.now()-at)+'<span class="ago"> ago</span>':""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
@@ -689,6 +692,20 @@ function askHtml(w,open,at=w.since,sub="",qn=null){const steps=Array.isArray(w.s
 // Once the owner has answered an ask, its thread's box is always there to add more (#C386, the owner in t-1793166144265:
 // a chosen decision, with the team, had no box until its thread had a message).
 const answeredAsk=w=>!!(w.response&&w.response.status);
+// #C667 (the owner in #T1437: "a thread's type should reflect what is needed now"; a decided thread still said Decision):
+// an ask's chip is its own kind while it waits for the owner. Once he has answered it, the chip follows the newest word
+// posted after his answer, by anyone: none yet, the ask's own kind; a Manager word that is a decision, Decision; one that
+// is live or building, as it is; a word (either side) that asks something (ends in or holds a question mark), Question;
+// Manager only reporting, Ack; the owner's word that asks nothing, Conversation. Which threads sit under Needs you is not
+// decided here (waitsOn, leadLast): only the chip's text and colour.
+function askNeed(w){const k=w&&w.kind;if(!w||!answeredAsk(w))return k;
+  const at=num(w.response.at)??0,n=threadOf(w.id).filter(m=>(num(m.at)??0)>at).pop();
+  if(!n)return k;
+  if(n.from===OWNER)return /\?/.test(String(n.text||""))?"question":"conversation";
+  const mk=String(n.kind||"");
+  if(mk==="decision"||mk==="live"||mk==="building")return mk;
+  return /\?/.test(String(n.text||""))?"question":"ack"}
+const chipClass=k=>k==="ack"?"answer":k;
 // "Needs you": the open asks, Later folded at their end, then the threads where Manager answered and the owner has not
 // closed or replied (their item is no longer on the board).
 // What Needs you holds: the open asks on the owner (Later has its own tab) and the threads Manager answered. Its list and
@@ -1324,7 +1341,7 @@ const threadCardAny=id=>threadCard(id)||threadCards(id).slice().sort((a,b)=>(num
 // Manager said), "decision" (Manager asks the owner to pick), else "answer" (Manager's word informs). Manager's messages
 // carry it as kind: answer | live | decision | building. A building word with no card in flight (none named yet, or
 // dropped) is an answer (Checker: it stuck under With the team with no Ack and no Close).
-const TSTATE={question:"Question",building:"Building",answer:"Answer",live:"Live",decision:"Decision"};
+const TSTATE={question:"Question",building:"Building",answer:"Ack",live:"Live",decision:"Decision"};
 function threadState(id){const t=threadOf(id),last=t[t.length-1];if(!last)return null;
   if(threadOpen(id))return "question";if(threadCard(id))return "building";
   const k=last.from===OWNER?"":String(last.kind||"");
@@ -1494,7 +1511,8 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
 // A thread's kind is its state now (#C364): Question, Building #C356, Answer, Live, Decision; a resolved one keeps the
 // kind it started as. Under With the team, a line says what it waits on (withLine).
 function threadRow(id,now,where="panel",ask=null){const on=waitsOn(id,now),st=ask||on==="resolved"?null:threadState(id),card=st?threadCardAny(id):null;
-  const kind=ask?`<span class="kind ${esc(ask.kind)}">${esc(Object.hasOwn(KIND,String(ask.kind))?KIND[ask.kind]:ask.kind||"Ask")}</span>`:st?`<span class="kind ${st}">${TSTATE[st]}${card&&Number.isInteger(card.num)?`<span class="kn"> #C${card.num}</span>`:""}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
+  const nk=ask?askNeed(ask):null;
+  const kind=ask?`<span class="kind ${esc(chipClass(nk))}">${esc(Object.hasOwn(ASKLABEL,String(nk))?ASKLABEL[nk]:nk||"Ask")}</span>`:st?`<span class="kind ${st}">${TSTATE[st]}${card&&Number.isInteger(card.num)?`<span class="kn"> #C${card.num}</span>`:""}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
   return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${pingHtml(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
 function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id,q));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),

@@ -48,5 +48,5 @@ test("the queue line is styled and the label keeps the page's grid (the number i
   const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   assert.match(page, /\.queue-h\{[^}]*font-size:\.82rem[^}]*padding:10px 16px 4px/, "its text lines up with the rows' 16px");
   assert.match(page, /\.queue-h:first-child\{border-top:0\}\.queue-h\+\.w-item\{border-top:0\}/, "the line is the heading of its group: no box of two borders");
-  assert.match(page, /\$\{qn\?qn\+"\. ":""\}\$\{esc\(KIND\[w\.kind\]/, "inside the kind span, no new grid cell");
+  assert.match(page, /\$\{qn\?qn\+"\. ":""\}\$\{esc\(ASKLABEL\[nk\]/, "inside the kind span, no new grid cell");
 });
