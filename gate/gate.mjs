@@ -15,7 +15,7 @@ import { checkWrites, refusalText } from "./rules.mjs";
 import { readLines, sessionRole } from "./session.mjs";
 import { mechanicalClass, refusal } from "./traffic.mjs";
 import { liveFresh } from "../collector/state-schema.mjs";
-import { classify } from "./tools.mjs";
+import { classify, normName, PREFIX } from "./tools.mjs";
 import { isReady, readyError } from "./build-steps.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
@@ -245,7 +245,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       // A throw in the gate is never the way past it (Security, #C662): a call on the artifact tools (a board write is one) that
       // the gate could not check is refused, naming the error. Anything else the gate cannot read still passes, as before.
       const t = typeof input?.tool_name === "string" ? input.tool_name : "";
-      if (input && (t === "ArtifactData" || t.startsWith("mcp__claude-artifacts__"))) { process.stderr.write(`Flight board refused this call: the gate could not check it (${String(e?.message ?? "error").slice(0, 120)}).\n`); process.exit(2); }
+      // By the name the rules know it by (normName): a renamed server's db_write is the board's too (Security, #C662).
+      if (input && (t === "ArtifactData" || normName(t).startsWith(PREFIX))) { process.stderr.write(`Flight board refused this call: the gate could not check it (${String(e?.message ?? "error").slice(0, 120)}).\n`); process.exit(2); }
       process.stderr.write(`Flight board gate could not read the call: ${e.message}\n`); process.exit(0);
     }
     if (r.block) { process.stderr.write(r.block); process.exit(2); }

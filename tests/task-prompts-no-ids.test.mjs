@@ -27,7 +27,9 @@ for (const name of LEAD_PROMPTS) {
   });
 }
 
-test("the Collector's prompt says to message the lead from gate.managerSession", { skip: !existsSync(join(homedir(), ".claude", "scheduled-tasks", "board-collector", "SKILL.md")) && "not installed here" }, () => {
+// Since the Collector stopped messaging the lead (the probe tells it), its prompt says "Send no messages": it either names the
+// config key to message from or says it sends none. A prompt that does neither is a prompt that still names someone else.
+test("the Collector's prompt either messages the lead from gate.managerSession or says it sends no messages", { skip: !existsSync(join(homedir(), ".claude", "scheduled-tasks", "board-collector", "SKILL.md")) && "not installed here" }, () => {
   const text = readFileSync(join(homedir(), ".claude", "scheduled-tasks", "board-collector", "SKILL.md"), "utf8");
-  assert.ok(text.includes("gate.managerSession"));
+  assert.ok(text.includes("gate.managerSession") || /send no messages/i.test(text));
 });

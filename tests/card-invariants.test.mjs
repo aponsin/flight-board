@@ -235,7 +235,11 @@ test("the gate's CLI refuses an object in each typed field (exit 2), and refuses
     const thrown = cli(dbWrite(ops));
     assert.equal(thrown.status, 2, thrown.stderr);
     assert.match(thrown.stderr, /could not check it|refused|Flight board/);
+    // The same call under another server's name (normName reads it as the board's tool): fail closed too (Security).
+    const renamed = cli({ ...dbWrite(ops), tool_name: "mcp__other-artifacts__db_write" });
+    assert.equal(renamed.status, 2, `renamed: ${renamed.stderr}`);
   }
+  assert.equal(cli({ tool_name: "mcp__other-artifacts__list_things", tool_input: { slug: ODD } }).status, 0, "an unrelated tool of another server still passes when unreadable");
   const other = cli({ tool_name: { toString: 1 }, tool_input: { slug: ODD } });
   assert.equal(other.status, 0, "a call that is not on an artifact tool still passes when unreadable");
   assert.equal(cli({ tool_name: "Bash", tool_input: { command: "ls" } }).status, 0);
@@ -254,6 +258,36 @@ test("the probe reads each open card in its own try: one card with an object fie
   assert.doesNotThrow(() => { out = collect({ config, cards: [boom, card({ id: "fine", num: 661, phase: "checker" })], git, gh: () => "[]", now: NOW, steps: [] }).doc; });
   assert.match((out.cards.boom?.red ?? []).join(), /cannot read/, "its own red line");
   assert.match((out.cards.fine.red ?? []).join(), /#C661/, "the others are still read");
+});
+
+test("a memory reading's numbers are numbers: an object in pct, tokens or at is refused in ctx/<Role> and in meta/context", () => {
+  const ctx = (data, op = "set", id = "Builder") => writeErrors({ op, collection: "ctx", doc_id: id, data }, { config, who, now: NOW });
+  assert.deepEqual(ctx({ pct: 24, tokens: 235548, at: NOW }), [], "a good reading");
+  assert.deepEqual(ctx({ pct: 24, at: NOW }), [], "tokens are optional");
+  assert.deepEqual(ctx({ pct: 24, tokens: null, at: NOW }), [], "a null token count is a reading without it");
+  for (const [bad, re] of [[{ pct: ODD, at: NOW }, /pct is a whole number/], [{ pct: 24.5, at: NOW }, /pct is a whole/], [{ pct: 101, at: NOW }, /pct is a whole/], [{ pct: 5, tokens: ODD, at: NOW }, /tokens is a whole/], [{ pct: 5, tokens: -1, at: NOW }, /tokens is a whole/], [{ pct: 5, at: ODD }, /at is a time/], [{ pct: "5", at: NOW }, /pct is a whole/]]) {
+    let errs;
+    assert.doesNotThrow(() => { errs = ctx(bad); }, JSON.stringify(bad));
+    assert.match(errs.join(), re, JSON.stringify(bad));
+    assert.match(ctx(bad, "update").join(), re, "update too");
+  }
+  const meta = (agents) => writeErrors({ op: "update", collection: "meta", doc_id: "context", data: { agents } }, { config, who, now: NOW });
+  assert.deepEqual(meta({ Builder: { pct: 3, tokens: 10, at: NOW } }), []);
+  assert.match(meta({ Builder: { pct: ODD, at: NOW } }).join(), /meta\/context agents\.Builder: pct is a whole/);
+});
+
+test("the gate's CLI refuses an object pct in a memory tile (exit 2)", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { spawnSync } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "fb-inv-"));
+  const cfgFile = join(dir, "board.config.json");
+  writeFileSync(cfgFile, JSON.stringify({ artifactUrl: BOARD_URL, artifactSlug: UUID, owner: "Sam", roster: ["Manager", "Builder"], gate: { stateDir: dir } }));
+  const call = (data) => ({ tool_name: "mcp__claude-artifacts__db_write", tool_input: { slug: UUID, ops: [{ op: "set", path: "ctx/Builder", data }] } });
+  const cli = (input) => spawnSync("node", ["--max-old-space-size=512", new URL("../gate/gate.mjs", import.meta.url).pathname, "--config", cfgFile], { input: JSON.stringify(input), encoding: "utf8", timeout: 20000, env: { ...process.env, FLIGHT_BOARD_ROLE: "Builder" } });
+  assert.equal(cli(call({ pct: ODD, at: Date.now() - 4321 })).status, 2);
+  assert.equal(cli(call({ pct: 12, tokens: 1234, at: Date.now() - 4321 })).status, 0, "a good reading passes");
 });
 
 test("cardProblems is the one list: fields first, then the steps", () => {

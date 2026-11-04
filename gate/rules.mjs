@@ -131,6 +131,16 @@ function timeErrors(data, now) {
   return e;
 }
 
+// The numbers of a memory reading: pct a whole number 0 to 100, tokens a whole number of tokens, at a time; absent is fine.
+function ctxNumberErrors(d, where) {
+  const e = [];
+  const gone = (v) => !!v && typeof v === "object" && v.__delete__ === true;
+  if (d.pct !== undefined && !gone(d.pct) && !(Number.isInteger(d.pct) && d.pct >= 0 && d.pct <= 100)) e.push(`${where}: pct is a whole number from 0 to 100 (not ${safeText(d.pct)})`);
+  if (d.tokens !== undefined && d.tokens !== null && !gone(d.tokens) && !(Number.isInteger(d.tokens) && d.tokens >= 0 && d.tokens <= 1e8)) e.push(`${where}: tokens is a whole number from 0 to 100000000 (not ${safeText(d.tokens)})`);
+  if (d.at !== undefined && !gone(d.at) && !(typeof d.at === "number" && Number.isFinite(d.at) && d.at > 0)) e.push(`${where}: at is a time in ms (not ${safeText(d.at)})`);
+  return e;
+}
+
 // One write's problems. w: { op, collection, doc_id, data }. who: { role, manager }.
 export function writeErrors(w, { config, who, now }) {
   const { op, collection, doc_id: id, data } = w;
@@ -175,6 +185,13 @@ export function writeErrors(w, { config, who, now }) {
   if (collection === "ctx") {
     if (!who.role) e.push("no role for this session: give it its role as its title");
     else if (id !== who.role) e.push(`ctx/${id} is ${id}'s own tile; this session is ${who.role}`);
+  }
+  // A memory reading's numbers are numbers (#C662, Security): the page and the keeper compute with them, and an object in pct passed.
+  if (op !== "delete" && data && typeof data === "object" && !Array.isArray(data)) {
+    if (collection === "ctx") e.push(...ctxNumberErrors(data, `ctx/${id}`));
+    if (collection === "meta" && id === "context" && data.agents && typeof data.agents === "object" && !Array.isArray(data.agents)) {
+      for (const [role, d] of Object.entries(data.agents)) if (d && typeof d === "object" && !Array.isArray(d) && !d.__delete__) e.push(...ctxNumberErrors(d, `meta/context agents.${idText(role)}`));
+    }
   }
   // The context keeper (#C577, gate.keeperRole) updates every role's entry in meta/context, as the lead may; nothing else in it.
   const keeper = who.role !== null && who.role !== undefined && who.role === config.gate.keeperRole;
