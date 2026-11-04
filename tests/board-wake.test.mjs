@@ -299,7 +299,8 @@ test("the page wakes the lead for the owner's message or a real answer, and for 
   assert.equal(wakeKind([w("messages/m1-a", { thread: "t", from: "Owner", text: "Ack.", at: T, resolved: true, kind: "ack" })]), null, "an Ack or a close needs nothing");
   assert.equal(wakeKind([{ op: "update", path: "waiting/ask1", data: { response: { status: "chose", choice: "A", at: T } } }]), "answer");
   assert.equal(wakeKind([{ op: "update", path: "waiting/ask1", data: { response: { status: "help", note: "it broke", at: T } } }]), "answer");
-  assert.equal(wakeKind([{ op: "update", path: "waiting/ask1", data: { response: { status: "done", at: T } } }]), null, "a bare Done");
+  assert.equal(wakeKind([{ op: "update", path: "waiting/ask1", data: { response: { status: "done", at: T } } }]), "answer", "a bare Done always wakes (#C678)");
+  assert.equal(wakeKind([{ op: "update", path: "waiting/ask1", data: { response: { status: "close", at: T } } }]), null, "a bare Close");
   assert.equal(wakeKind([{ op: "update", path: "waiting/ask1", data: { response: { status: "ack", at: T } } }]), null, "a bare Ack");
   assert.equal(wakeKind([{ op: "update", path: "waiting/ask1", data: { response: { status: "done", note: "also fix X", at: T } } }]), "answer", "a Done with a note");
   assert.equal(wakeKind([w("pingThreads/x", { threadId: "t", at: T })]), null);

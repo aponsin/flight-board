@@ -1187,7 +1187,7 @@ async function applyWrites(ws){for(const w of ws){const d=dbRef.doc(w.path);if(w
 // never a reason to fail the write: a viewer without the connector, a refused call or no connector at all changes nothing.
 function wakeKind(ws){
   if(ws.some(w=>/^messages\//.test(w.path)&&w.data&&w.data.from===OWNER&&w.data.resolved!==true))return "message";
-  if(ws.some(w=>/^waiting\//.test(w.path)&&w.data&&w.data.response&&!(["ack","done"].includes(w.data.response.status)&&!String(w.data.response.note||"").trim()&&!(w.data.response.files||[]).length)))return "answer";
+  if(ws.some(w=>/^waiting\//.test(w.path)&&w.data&&w.data.response&&!(["ack","close"].includes(w.data.response.status)&&!String(w.data.response.note||"").trim()&&!(w.data.response.files||[]).length)))return "answer";
   return null}
 function wakeLead(ws){const kind=wakeKind(ws);if(kind)wakeOk(kind)}
 // A button reply on an ask (unchanged for every kind), as the writes it makes. Board v2: a bare Ack on
