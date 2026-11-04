@@ -758,8 +758,9 @@ export function stepGuardErrors(w, { config, mirror, batch = [], known = [] }) {
   const skip = new Set(Array.isArray(card.skip) ? card.skip : []);
   if (skip.has("look")) skip.add("design");
   for (const k of config.skips ?? []) {
-    if (k.unlessLevel && card.level !== k.unlessLevel) skip.add(k.phase);
-    if (k.whenFalse && card[k.whenFalse] !== true) skip.add(k.phase);
+    // The same rule as the page and the Collector (state.mjs reviewsFor): a missing level or field skips nothing.
+    if (k.unlessLevel && card.level && card.level !== k.unlessLevel) skip.add(k.phase);
+    if (k.whenFalse && card[k.whenFalse] === false) skip.add(k.phase);
     if (k.unlessTrue && card[k.unlessTrue] !== true) skip.add(k.phase);
   }
   const ended = new Set([...steps, ...batch.filter((b) => b && b !== w && b.collection === "steps" && b.op === "set").map((b) => b.data)]
@@ -768,7 +769,7 @@ export function stepGuardErrors(w, { config, mirror, batch = [], known = [] }) {
   const missing = Object.keys(config.collector.notes ?? {}).filter((p) => config.phases.some((x) => x[0] === p) && !skip.has(p) && !ended.has(p));
   if (!missing.length) return [];
   const name = Number.isInteger(card.num) ? `#C${card.num}` : idText(init);
-  return [`${name} can't start ${label(config.collector.shipPhase)}: no end step yet for ${missing.map((p) => idText(label(p))).join(", ")}. Each review ends with its own step (steps/${idText(init)}-<phase>-end-<at>) at its verdict; ship starts once all are in`];
+  return [`${name} can't start ${label(config.collector.shipPhase)}: no end step yet for ${missing.map((p) => idText(label(p))).join(", ")}. Each review ends with its own step (steps/${idText(init)}-<phase>-end-<at>) at its verdict; ship starts once all are in. The board keeps 7 days of steps: an end older than that is gone, so log it again`];
 }
 
 export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now(), who = {}, live = null, known = [] }) {
