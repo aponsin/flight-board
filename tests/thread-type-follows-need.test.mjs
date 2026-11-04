@@ -33,7 +33,7 @@ test("a decision he picked still says Decision until someone posts after the pic
   assert.equal(askChip(w, []), "decision|Decision", "no word after the pick");
   assert.equal(askChip(w, [msg("w-1", "Manager", "Before the pick", PICK - 1e3)]), "decision|Decision", "a word BEFORE the pick does not count");
   assert.equal(askChip(w, [msg("w-1", "Owner", "Looks fine, thanks for that", PICK + 1e3)]), "conversation|Conversation", "he posts after the pick");
-  assert.equal(askChip(w, [msg("w-1", "Manager", "Noted, building it", PICK + 1e3)]), "answer|Ack", "Manager only reports");
+  assert.equal(askChip(w, [msg("w-1", "Manager", "Noted, building it", PICK + 1e3)]), "conversation|Conversation", "anyone posts after the pick, Manager included (done-when 1)");
   assert.equal(askChip(w, [msg("w-1", "Manager", "Which colour next?", PICK + 1e3)]), "question|Question", "Manager asks something");
   assert.equal(askChip(w, [msg("w-1", "Owner", "Can it be bigger?", PICK + 1e3)]), "question|Question", "he asks something");
   assert.equal(askChip(w, [msg("w-1", "Manager", "Pick again", PICK + 1e3, { kind: "decision", options: [{ key: "A", label: "x" }] })]), "decision|Decision", "a new open decision");
@@ -46,13 +46,41 @@ test("only the NEWEST word after the pick counts, whoever wrote it", () => {
   const m = [msg("w-1", "Manager", "Which colour next?", PICK + 1e3), msg("w-1", "Owner", "Blue", PICK + 2e3)];
   assert.equal(askChip(w, m), "conversation|Conversation", "his answer closed the question");
   m.push(msg("w-1", "Manager", "Done, see the page", PICK + 3e3));
-  assert.equal(askChip(w, m), "answer|Ack");
+  assert.equal(askChip(w, m), "conversation|Conversation");
+});
+
+// Checker on ba0cc20: the chip follows the open needs ranked (open decision > open question > conversation), not just the
+// newest word, and a question mark inside a link is no question.
+test("an open decision beats a later plain word; an open question too; a picked decision or an answered question does not", () => {
+  const w = picked();
+  const dec = msg("w-1", "Manager", "Pick again", PICK + 1e3, { kind: "decision", options: [{ key: "A", label: "x" }] });
+  assert.equal(askChip(w, [dec, msg("w-1", "Owner", "let me think", PICK + 2e3)]), "decision|Decision", "he has not picked");
+  assert.equal(askChip(w, [dec, msg("w-1", "Owner", "Chose A: x", PICK + 2e3)]), "conversation|Conversation", "he picked");
+  assert.equal(askChip(w, [dec, msg("w-1", "Owner", "Chose A: x", PICK + 2e3), msg("w-1", "Manager", "Thanks", PICK + 3e3)]), "conversation|Conversation");
+  const q = msg("w-1", "Owner", "Can it be bigger?", PICK + 1e3);
+  assert.equal(askChip(w, [q, msg("w-1", "Owner", "and bluer", PICK + 2e3)]), "question|Question", "his own follow-up does not answer his question");
+  assert.equal(askChip(w, [q, msg("w-1", "Manager", "Yes, doing it", PICK + 2e3)]), "conversation|Conversation", "Manager answered");
+  assert.equal(askChip(w, [q, msg("w-1", "Manager", "Yes, doing it", PICK + 2e3), msg("w-1", "Manager", "Which blue?", PICK + 3e3)]), "question|Question", "a newer open question");
+  assert.equal(askChip(w, [dec, msg("w-1", "Manager", "Which blue?", PICK + 2e3)]), "decision|Decision", "decision outranks question");
+  assert.equal(askChip(w, [msg("w-1", "Owner", "Pick again", PICK + 1e3, { kind: "decision" })]), "conversation|Conversation", "only Manager's words can be an open decision");
+  const dec2 = msg("w-1", "Manager", "And now this", PICK + 3e3, { kind: "decision", options: [{ key: "A", label: "y" }] });
+  assert.equal(askChip(w, [dec, msg("w-1", "Owner", "Chose A: x", PICK + 2e3), dec2]), "decision|Decision", "a second decision, open, after a picked one");
+  assert.equal(askChip(w, [q, msg("w-1", "Manager", "Live now", PICK + 2e3, { kind: "live" })]), "live|Live", "Manager's live word answers it and is the newest");
+});
+
+test("a question mark counts at the end of a sentence, not inside a link", () => {
+  const w = picked();
+  const one = (text) => askChip(w, [msg("w-1", "Manager", text, PICK + 1e3)]);
+  assert.equal(one("See https://example.test/page?v=2 for it"), "conversation|Conversation");
+  assert.equal(one("Is this right? Tell me."), "question|Question");
+  assert.equal(one("Done. Anything else?"), "question|Question");
+  assert.equal(one("Done"), "conversation|Conversation");
 });
 
 test("the same label on the thread row that draws a closed ask", () => {
   const w = picked();
   assert.equal(rowChip(w, [msg("w-1", "Owner", "Thanks", PICK + 1e3)]), "conversation|Conversation");
-  assert.equal(rowChip(w, [msg("w-1", "Manager", "Noted", PICK + 1e3)]), "answer|Ack");
+  assert.equal(rowChip(w, [msg("w-1", "Manager", "Noted", PICK + 1e3)]), "conversation|Conversation");
   assert.equal(rowChip(w, []), "decision|Decision");
 });
 
@@ -86,7 +114,7 @@ test("the green chips (Ack, Live) pass 4.5:1 in light and dark", () => {
 
 test("the chip is computed in one place and both chips use it", () => {
   assert.match(page, /function askNeed\(w\)/);
-  assert.match(page, /const nk=askNeed\(w\);\s*const head=`<span class="kind \$\{esc\(chipClass\(nk\)\)\}">/);
+  assert.match(page, /const nk=askNeed\(w\);\s*const head=`<span class="kind \$\{esc\(nk\)\}">/);
   assert.match(page, /const nk=ask\?askNeed\(ask\):null;/);
   assert.match(page, /\.kind\.later,\.kind\.conversation\{/);
 });
