@@ -368,6 +368,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .lb-scroll{flex:1 1 auto;min-height:0;overflow:auto;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
 .lb-scroll img{display:block;max-width:100%;height:auto;cursor:zoom-in}
 .lb-scroll img.zoomed{max-width:none;cursor:zoom-out}
+.queue-h{font-size:.82rem;font-weight:600;color:var(--muted);padding:10px 12px 4px;border-top:1px solid var(--line)}
 .w-item{border-top:1px solid var(--line)}
 .w-item:first-child{border-top:0}
 .w-item>summary{list-style:none;cursor:pointer;border-top:0}
@@ -677,8 +678,8 @@ function typeLine(text){const m=String(text||"").match(/\btype:\s*(\S[^\n]*)/);i
 // fallback selects that code).
 const typeCopy=(w,s)=>{const t=w&&w.rearm===true&&!(s&&s.cmd)?typeLine(typeof s==="string"?s:s&&s.text):"";
   return t?`<div class="cmd"><code>${esc(t)}</code><button type="button" class="copy" data-copy="${esc(t)}">Copy</button></div>`:""};
-function askHtml(w,open,at=w.since,sub=""){const steps=Array.isArray(w.steps)?w.steps:[];
-   const head=`<span class="kind ${esc(w.kind)}">${esc(KIND[w.kind]||w.kind||"Ask")}</span>
+function askHtml(w,open,at=w.since,sub="",qn=null){const steps=Array.isArray(w.steps)?w.steps:[];
+   const head=`<span class="kind ${esc(w.kind)}">${qn?qn+". ":""}${esc(KIND[w.kind]||w.kind||"Ask")}</span>
    <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${pingHtml(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
    <span class="age">${num(at)?dur(Date.now()-at)+'<span class="ago"> ago</span>':""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
@@ -694,6 +695,12 @@ const answeredAsk=w=>!!(w.response&&w.response.status);
 // its pill both come from here (#C366: the pill read 1 over "Nothing to do now.").
 function youItems(now,q){return {asks:state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&w.kind!=="later"&&askHit(w,q)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0)),
   answered:threadSets(now,q).answered}}
+// #C665 (the owner via the lead: "one ask at a time" is now "one question at a time"; installs and clicks are queued, never held
+// back): the questions (decisions, answers, sessions) come first, in the order asked; the clicks and installs (kind action) follow
+// under a "Your queue" line, numbered in the order he should do them (oldest first, as asked). qn is the number on the ask's label.
+const isClick=w=>w&&w.kind==="action";
+function queueHtml(asks,item){const qs=asks.filter(w=>!isClick(w)),acts=asks.filter(isClick);
+  return qs.map(w=>item(w)).join("")+(acts.length?`<div class="queue-h" id="queue-h">Your queue · ${acts.length} to do, in this order</div>`+acts.map((w,i)=>item(w,i+1)).join(""):"")}
 function youCount(now,q){const y=youItems(now,q);return y.asks.length+y.answered.length}
 function renderWaiting(){
   const q=qOf("you"),t=Date.now(),{asks,answered:ans}=youItems(t,q);
@@ -704,9 +711,9 @@ function renderWaiting(){
   const drafts={};el.querySelectorAll("textarea[id^='note-'],textarea[id^='tnote-']").forEach(x=>{if(x.value)drafts[x.id]=x.value});
   const focusId=document.activeElement&&document.activeElement.id&&/^t?note-/.test(document.activeElement.id)?document.activeElement.id:null;
   queueMicrotask(()=>{Object.entries(drafts).forEach(([id,v])=>{const x=document.getElementById(id);if(x){x.value=v;fitBox(x)}});if(focusId){const x=document.getElementById(focusId);if(x){x.focus();x.selectionStart=x.selectionEnd=x.value.length}}});
-  const item=w=>askHtml(w,open);
+  const item=(w,qn=null)=>askHtml(w,open,w.since,"",qn);
   const y=window.scrollY;
-  el.innerHTML=asks.map(item).join("")+answeredRows;
+  el.innerHTML=queueHtml(asks,item)+answeredRows;
   restoreFolds(el,open);if(window.scrollY!==y)window.scrollTo(0,y);
   el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply));
   el.querySelectorAll("details.w-item").forEach(d=>d.addEventListener("toggle",()=>{if(d.open)closedAnswers.delete(d.dataset.id);else closedAnswers.add(d.dataset.id)}));
