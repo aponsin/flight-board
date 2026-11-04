@@ -27,6 +27,8 @@ export const changeKey = (s) => JSON.stringify([
   Object.entries(s.ctx ?? {}).map(([r, c]) => [r, Math.floor(c.pct / 5), c.over]),
   Object.entries(s.stuck ?? {}).map(([r, k]) => [r, k.kind, k.card, k.since]),
   s.usage ? [s.usage.weekPct, s.usage.pace, s.usage.level, s.usage.asOf ?? null, s.usage.top.map((t) => [t.src, t.pct])] : null,
+  // #C679: a ship candidate pushed and not on main (the restart badge): stored the minute it appears, changes or goes.
+  s.ship ? [s.ship.version, s.ship.ci] : null,
 ]);
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const TOOL = {
