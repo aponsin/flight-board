@@ -492,12 +492,26 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   // (the page ends the card's open build step there and shows ship; a card with no branch field still gets git evidence).
   const cites = (subject, num) => new RegExp(`(?:^|[^A-Za-z0-9])#C${num}(?![0-9])`).test(String(subject ?? ""));
   const shipSubject = c.versionPattern ? new RegExp(c.versionPattern) : null;
+  // Real ship commits name the branch and commit ("v1.200.2: manager/start-on-work-rule@ab632436") and no card: the card is the one
+  // whose commit at that sha starts "#C<num>:" or carries its Board-Id trailer (Checker, #C655 1b). Read once per sha.
+  const shipLine = shipSubject ? line.filter((l) => shipSubject.test(String(l.subject ?? ""))) : [];
+  const shipped = c.shippedPattern ? shippedHeads(git, shipLine, c.shippedPattern) : [];
+  const messageAt = new Map();
+  const messageOf = (sha) => {
+    if (!messageAt.has(sha)) { let m = ""; try { m = git(["log", "-1", "--format=%B", sha]); } catch { m = ""; } messageAt.set(sha, m); }
+    return messageAt.get(sha);
+  };
   for (const card of open) {
     const d = derived[card.id];
     if (!Number.isInteger(card.num) || !d || d.head) continue;
     if (line.some((l) => subjectNum(l.subject) === card.num || cites(l.subject, card.num))) d.workSeen = true;
-    const ship = line.filter((l) => shipSubject && shipSubject.test(String(l.subject ?? "")) && cites(l.subject, card.num) && Number.isFinite(l.at)).map((l) => l.at);
-    if (ship.length) d.shippedAt = Math.max(...ship);
+    const ship = shipLine.filter((l) => cites(l.subject, card.num) && Number.isFinite(l.at)).map((l) => l.at);
+    for (const h of shipped) {
+      if (!Number.isFinite(h.at)) continue;
+      const m = messageOf(h.sha);
+      if (subjectNum(m) === card.num || boardIdOf(m) === card.id) ship.push(h.at);
+    }
+    if (ship.length) { d.shippedAt = Math.max(...ship); d.workSeen = true; }
   }
   for (const card of open) {
     const at = abandonedAt({ steps, cardId: card.id, derived: derived[card.id], liveState, buildPhase: c.buildPhase, now });

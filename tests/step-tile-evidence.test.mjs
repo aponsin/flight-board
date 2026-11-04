@@ -119,6 +119,31 @@ test("a queued card with only a start logged renders as queued with the grey lin
   assert.equal(c.noWork, at + MIN);
 });
 
+// Checker's 1b: real ship commits name branch@sha and no card. The card is the one whose commit at that sha starts "#C<num>:" or
+// carries its Board-Id trailer.
+test("the probe: a ship commit that names only branch@sha gives shippedAt to the card whose commit it shipped (subject or Board-Id)", () => {
+  const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", collector: { shippedPattern: "([A-Za-z0-9._/-]+)@([0-9a-f]{7,40})" } });
+  const now = 1_792_998_566_221, shipAt = now - 30 * MIN;
+  const FULL = "c".repeat(40), OTHER = "d".repeat(40);
+  const make = (msgs) => (args) => {
+    if (args[0] === "log" && args.some((a) => /--first-parent/.test(a))) return ["a".repeat(40), String(Math.floor(shipAt / 1000)), "v1.200.0: build/q@abc1234"].join("\x1f") + "\n" + ["e".repeat(40), String(Math.floor(shipAt / 1000) + 60), "v1.200.1: build/z@fed9876"].join("\x1f");
+    if (args[0] === "rev-parse") return args.some((a) => /^abc1234/.test(a)) ? FULL : OTHER;
+    if (args[0] === "log" && args.includes("-1")) return msgs[args[args.length - 1]] ?? "";
+    return "";
+  };
+  const cards = [{ id: "x", num: 647, status: "active" }, { id: "y", num: 648, status: "active" }, { id: "w", num: 650, status: "active" }];
+  const bySubject = collect({ config, cards, git: make({ [FULL]: "#C647: the work\n\nBody", [OTHER]: "not a card" }), gh: () => "[]", now }).doc.cards;
+  assert.equal(bySubject.x.shippedAt, Math.floor(shipAt / 1000) * 1000);
+  assert.equal(bySubject.x.workSeen, true);
+  assert.equal(bySubject.y.shippedAt, undefined);
+  const byTrailer = collect({ config, cards, git: make({ [FULL]: "A subject\n\nBoard-Id: w", [OTHER]: "" }), gh: () => "[]", now }).doc.cards;
+  assert.equal(byTrailer.w.shippedAt, Math.floor(shipAt / 1000) * 1000);
+  assert.equal(byTrailer.x.shippedAt, undefined);
+  const none = collect({ config, cards, git: make({ [FULL]: "no card here", [OTHER]: "none" }), gh: () => "[]", now }).doc.cards;
+  assert.equal(none.x.shippedAt, undefined);
+  assert.equal(none.w.shippedAt, undefined);
+});
+
 test("the probe: a ship commit on main citing the card is work seen and its shippedAt; the page ends the open build there and shows ship", () => {
   const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01" });
   const now = 1_792_998_566_221, shipAt = now - 30 * MIN;

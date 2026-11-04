@@ -4,6 +4,9 @@
 import nodeTest from "node:test";
 const test = (name, fn) => nodeTest(name, { timeout: 30000 }, fn);
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fullConfig } from "../scripts/config.mjs";
 import { checkWrites, startEvidenceErrors, phaseOverlapErrors } from "../gate/rules.mjs";
 import { openElsewhere, commitError, readyError, plainId } from "../gate/build-steps.mjs";
@@ -168,7 +171,10 @@ test("collect writes abandonedAt into derived/all for a plain start nobody acted
 });
 
 test("upload_asset: a plain picture or PDF upload to the board's assets passes; any other shape or a file type that is not one is refused; another artifact is nobody's business", () => {
-  const files = [{ name: "shot.png", path: "/tmp/x/shot.png" }, { name: "page.PDF", path: "/tmp/x/p.pdf" }];
+  // The gate resolves the real path (Security), so the files that must pass are real ones.
+  const real = realpathSync(mkdtempSync(join(tmpdir(), "assets-")));
+  for (const n of ["shot.png", "p.pdf", "scratch.PNG"]) writeFileSync(join(real, n), "x");
+  const files = [{ name: "shot.png", path: join(real, "shot.png") }, { name: "page.PDF", path: join(real, "p.pdf") }];
   const call = (tool_input, tool_name = UPLOAD_ASSET) => classify({ tool_name, tool_input }, config);
   assert.equal(call({ slug: UUID, files }), null, "allowed");
   assert.equal(call({ slug: BOARD, files, shared_live: "owner", artifact_title: "T" }), null, "by the whole link too");
@@ -199,7 +205,20 @@ test("upload_asset: a plain picture or PDF upload to the board's assets passes; 
   refused({ slug: UUID, files: [{ name: "shot.png", path: "/Users/sam/Library/Messages/shot.png" }] }, /Library/);
   refused({ slug: UUID, files: [{ name: "shot.png", path: "/tmp/x/../../etc/shot.png" }] }, /\. or \.\./);
   refused({ slug: UUID, files: [{ name: "shot.png", path: "/tmp/x/./shot.png" }] }, /\. or \.\./);
-  assert.equal(call({ slug: UUID, files: [{ name: "a.png", path: "/private/tmp/claude-501/x/scratchpad/shot.PNG" }] }), null, "an ordinary scratchpad picture passes");
+  assert.equal(call({ slug: UUID, files: [{ name: "a.png", path: join(real, "scratch.PNG") }] }), null, "an ordinary scratchpad picture passes");
   assert.equal(assetError({ files }), null);
+  // Security's two notes: Library compares without case (macOS folders do), and the real path gets the same checks.
+  refused({ slug: UUID, files: [{ name: "shot.png", path: "/Users/sam/LIBRARY/Messages/shot.png" }] }, /Library/);
+  refused({ slug: UUID, files: [{ name: "shot.png", path: "/Users/sam/library/Messages/shot.png" }] }, /Library/);
+  refused({ slug: UUID, files: [{ name: "shot.png", path: join(real, "missing.png") }] }, /cannot be resolved/);
+  writeFileSync(join(real, ".env"), "SECRET=1");
+  symlinkSync(join(real, ".env"), join(real, "innocent.png"));
+  refused({ slug: UUID, files: [{ name: "innocent.png", path: join(real, "innocent.png") }] }, /resolves to/);
+  mkdirSync(join(real, ".hidden"));
+  writeFileSync(join(real, ".hidden", "a.png"), "x");
+  symlinkSync(join(real, ".hidden"), join(real, "dir"));
+  refused({ slug: UUID, files: [{ name: "a.png", path: join(real, "dir", "a.png") }] }, /hidden/);
+  symlinkSync(join(real, "shot.png"), join(real, "ok-link.png"));
+  assert.equal(call({ slug: UUID, files: [{ name: "ok-link.png", path: join(real, "ok-link.png") }] }), null, "a link to an ordinary picture passes");
   for (const name of ["copy_asset", "delete_asset"]) assert.match(classify({ tool_name: PREFIX + name, tool_input: { slug: UUID } }, config)?.why ?? "", /shut until someone reads it/, `${name} stays shut`);
 });

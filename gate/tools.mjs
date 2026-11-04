@@ -10,6 +10,7 @@
 //     page and denies the rest);
 //   - a read or a comment tool (OPEN): nothing to check;
 //   - anything else under the prefix, an unknown name too: refused. A new tool that writes is shut until someone reads it.
+import { realpathSync } from "node:fs";
 export const PREFIX = "mcp__claude-artifacts__";
 export const DB_WRITE = `${PREFIX}db_write`, DB_STR_REPLACE = `${PREFIX}db_str_replace`, DB_QUERY = `${PREFIX}db_query`;
 export const PAGE_TOOLS = new Set(["publish_version", "publish_files", "edit_version", "copy_file"].map((n) => PREFIX + n));
@@ -93,12 +94,25 @@ export function assetError(t) {
     // Security R1 (#C654): the client uploads the PATH, so the picture-or-PDF test is on it too, and a path into a hidden
     // folder or file (.env*, ~/.ssh, ~/.claude, .git, ~/.flight-board) or under a Library folder is refused whatever its name:
     // an extension alone is no wall (cp .env.local x.png), so the location is the part that holds.
-    if (!ASSET_EXT.test(f.path)) return why("a file path is not a picture or a PDF");
-    const parts = f.path.split("/");
-    if (parts.some((p) => p === ".." || p === "." )) return why("a file path has a . or .. segment");
-    if (parts.some((p) => p.startsWith("."))) return why("a file path goes through a hidden file or folder");
-    if (parts.some((p) => p === "Library")) return why("a file path is under a Library folder");
+    const problem = pathProblem(f.path);
+    if (problem) return why(problem);
+    // Security (#C654 notes): a symlink such as ~/Desktop/x.png can point at a hidden file, and the client uploads what the path
+    // resolves to: the same checks run on the real path, and a path that cannot be resolved is refused.
+    let real;
+    try { real = realpathSync(f.path); } catch { return why("a file path cannot be resolved to a real file"); }
+    const worse = pathProblem(real);
+    if (worse) return why(`${worse} (the path resolves to ${real})`);
   }
+  return null;
+}
+
+// The location tests on one absolute path; null when it passes. macOS folders are case-insensitive, so Library is compared so.
+function pathProblem(path) {
+  if (!ASSET_EXT.test(path)) return "a file path is not a picture or a PDF";
+  const parts = path.split("/");
+  if (parts.some((p) => p === ".." || p === ".")) return "a file path has a . or .. segment";
+  if (parts.some((p) => p.startsWith("."))) return "a file path goes through a hidden file or folder";
+  if (parts.some((p) => p.toLowerCase() === "library")) return "a file path is under a Library folder";
   return null;
 }
 
