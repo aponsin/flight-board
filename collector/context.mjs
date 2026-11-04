@@ -95,6 +95,23 @@ export function usageReading(resp, sessionId) {
   return { status: pct === null ? "unavailable" : "ok", pct, tokens: wholeTokens(t) ? t : null };
 }
 
+// #C672: the window get_usage reports for the session (contextWindow), a whole number of tokens from 100,000 to 2,000,000, or
+// null. The probe works a role not listed in contextWindows against this, so a 200k session is not divided by 1M.
+export function usageWindow(resp, sessionId) {
+  const c = plain(resp) ? resp.context : null;
+  const w = plain(c) && c.session === sessionId ? c.contextWindow : null;
+  return Number.isInteger(w) && w >= 100000 && w <= 2000000 ? w : null;
+}
+export const WINDOWS_FILE = "ctx-windows.json";
+// { Role: window } as the Collector last saw it; only whole windows in range, for roles named as roles.
+export function readWindows(dir) {
+  try {
+    const o = JSON.parse(readFileSync(join(dir, WINDOWS_FILE), "utf8"));
+    if (!plain(o)) return {};
+    return Object.fromEntries(Object.entries(o).filter(([k, v]) => /^[A-Za-z0-9_-]{1,60}$/.test(k) && Number.isInteger(v) && v >= 100000 && v <= 2000000));
+  } catch { return {}; }
+}
+
 export function readPlan(dir) {
   try {
     const p = JSON.parse(readFileSync(join(dir, PLAN_FILE), "utf8"));
@@ -115,7 +132,7 @@ export function tap(input, { dir, now, homeDir = homedir() }) {
     const id = input.tool_input?.session_id;
     if (!SESSION.test(String(id ?? "")) || !Object.values(readPlan(dir)?.roles ?? {}).includes(id)) return "not a planned session";
     mkdirSync(join(dir, USAGE_DIR), { recursive: true });
-    writeFileSync(join(dir, USAGE_DIR, `${id}.json`), JSON.stringify({ ...usageReading(resp, id), at: now }));
+    writeFileSync(join(dir, USAGE_DIR, `${id}.json`), JSON.stringify({ ...usageReading(resp, id), ...(usageWindow(resp, id) ? { window: usageWindow(resp, id) } : {}), at: now }));
     return null;
   }
   return "not a memory reading";
@@ -143,7 +160,7 @@ export function writeContext(dir, out, config, now) {
   if (!roles.length) return [];
   mkdirSync(out, { recursive: true });
   for (const f of readdirSync(out)) if (f === META_FILE || (f.startsWith("ctx-") && f.endsWith(".json"))) rmSync(join(out, f), { force: true });
-  const plan = readPlan(dir), agents = {}, lines = [];
+  const plan = readPlan(dir), agents = {}, lines = [], seen = {};
   for (const role of roles) {
     const id = plan?.roles?.[role];
     let r = null;
@@ -154,9 +171,12 @@ export function writeContext(dir, out, config, now) {
     const tile = wholeTokens(r?.tokens) ? { pct: own ? Math.min(100, Math.round((r.tokens / own) * 100)) : r.pct, tokens: r.tokens, at: r.at } : { pct: r?.pct, at: r?.at };
     if (!plain(r) || r.status !== "ok" || !(r.at >= plan.at) || ctxDocErrors(tile, now).length) continue;
     agents[role] = tile;
+    if (Number.isInteger(r.window) && r.window >= 100000 && r.window <= 2000000) seen[role] = r.window;
     writeFileSync(join(out, ctxFile(role)), JSON.stringify(agents[role]));
     lines.push(`MEMORY set ctx/${role} from ${join(out, ctxFile(role))}`);
   }
+  // The windows get_usage reported this run, kept in the state folder for the probe (a role not read keeps its last one).
+  if (Object.keys(seen).length) writeFileSync(join(dir, WINDOWS_FILE), JSON.stringify({ ...readWindows(dir), ...seen }));
   if (lines.length) {
     writeFileSync(join(out, META_FILE), JSON.stringify({ agents }));
     lines.push(`MEMORY update meta/context from ${join(out, META_FILE)}`);

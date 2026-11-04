@@ -384,7 +384,7 @@ except Exception:
 # Two rules left this hook (#C334, the context-tax brief's card A): the memory tile (the Collector writes it from the
 # app's numbers, collector/context.mjs) and the read of the waiting items (the Stop gate, gate/stop.mjs, sees the open
 # asks the owner answered on the board itself). Each made Manager spend a tool call, and its result, every turn. The
-# tile came back throttled (#C392, above): only when it is 30 min old or 5 points off.
+# tile came back throttled (#C392, above): only when it is 30 min old or 10 points off.
 if reasons:
     print(json.dumps({"decision": "block", "reason": " ".join(reasons)}))
 sys.exit(0)

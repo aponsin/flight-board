@@ -21,11 +21,13 @@ export const windowOf = (windows, role, window = WINDOW_TOKENS) => {
   const w = windows && typeof windows === "object" && !Array.isArray(windows) && Object.hasOwn(windows, role) ? windows[role] : null;
   return Number.isInteger(w) && w >= 100000 && w <= 2000000 ? w : window;
 };
-export function ctxReadings({ tokens, resetAt, now, window = WINDOW_TOKENS, windows = {} }) {
+// `seen` is { Role: window } as get_usage last reported it (the Collector's ctx-windows.json): the config's number wins, then
+// the app's, then `window`.
+export function ctxReadings({ tokens, resetAt, now, window = WINDOW_TOKENS, windows = {}, seen = {} }) {
   const out = {};
   for (const [role, t] of Object.entries(tokens)) {
     if (!ROLE.test(role) || !Number.isInteger(t)) continue;
-    out[role] = { pct: Math.min(100, Math.round((t / windowOf(windows, role, window)) * 100)), tokens: t, at: now, over: t >= resetAt };
+    out[role] = { pct: Math.min(100, Math.round((t / windowOf(windows, role, windowOf(seen, role, window))) * 100)), tokens: t, at: now, over: t >= resetAt };
   }
   return out;
 }

@@ -23,6 +23,7 @@ import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX,
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
+import { readWindows } from "./context.mjs";
 import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, wakeNeeds, askOnce, ownerAsks, askSince, boardTruth } from "./readings.mjs";
 
 // The folder this run's code lives in: the pinned copy <install root>/<full sha>, whose sha is the board's probe.
@@ -720,7 +721,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const agents = agentStates({ roles: config.roster, sessionIds: { ...config.rosterSessions, ...(config.gate.managerSession ? { [config.gate.managerRole]: config.gate.managerSession } : {}) }, sessions, homeDir: homedir(), now, ids, nums, prompts, tools, tokens });
   // The roles' context, who is stuck, and the usage tile (#C592, #C593, #C595); a role past resetAt is asked to reset once
   // (context-reset.json, which the lead's wake watch prints), and asked again only after it came back under.
-  const ctx = ctxReadings({ tokens, resetAt: config.resetAt, now, windows: config.contextWindows });
+  const ctx = ctxReadings({ tokens, resetAt: config.resetAt, now, windows: config.contextWindows, seen: readWindows(join(stateDir, id)) });
   const stuck = stuckReadings({ agents, prompts, now, lead: config.gate.managerRole });
   const resetPath = join(stateDir, id, "context-reset.json");
   let resetBefore = null;

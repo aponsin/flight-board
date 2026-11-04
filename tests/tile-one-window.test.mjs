@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkConfig, fullConfig } from "../scripts/config.mjs";
 import { ctxReadings, windowOf, WINDOW_TOKENS } from "../collector/readings.mjs";
-import { writeContext } from "../collector/context.mjs";
+import { writeContext, usageWindow, readWindows, tap } from "../collector/context.mjs";
 
 const NOW = 1_793_050_000_123;
 
@@ -61,5 +61,39 @@ test("the Collector: a listed role's tile percentage is worked from its tokens a
     writeFileSync(join(dir, "usage", "local_m.json"), JSON.stringify({ status: "ok", pct: 18, tokens: null, at: NOW + 5 }));
     writeContext(dir, out, config, NOW + 10);
     assert.deepEqual(JSON.parse(readFileSync(join(out, "ctx-Manager.json"), "utf8")), { pct: 18, at: NOW + 5 });
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("get_usage's window: tap keeps it, the Collector saves it, the probe works an unlisted 200k role against it (config still wins)", () => {
+  const base = mkdtempSync(join(tmpdir(), "fb-win-"));
+  try {
+    const dir = join(base, "state"), out = join(base, "out");
+    mkdirSync(dir); mkdirSync(out);
+    writeFileSync(join(dir, "usage-plan.json"), JSON.stringify({ at: NOW, roles: { Manager: "local_m", Scout: "local_s" } }));
+    const resp = (session, tokensUsed, contextWindow) => ({ plan: { status: "ok" }, context: { session, status: "ok", percentUsed: Math.round(tokensUsed / contextWindow * 100), tokensUsed, contextWindow } });
+    const read = (id, t, w, at) => tap({ cwd: dir, tool_name: "mcp__ccd_session_mgmt__get_usage", tool_input: { session_id: id }, tool_response: JSON.stringify(resp(id, t, w)) }, { dir, now: at });
+    assert.equal(usageWindow(resp("local_s", 100000, 200000), "local_s"), 200000);
+    for (const w of [undefined, "200000", 50000, 3e6, 200000.5, null]) assert.equal(usageWindow({ context: { session: "local_s", contextWindow: w } }, "local_s"), null, String(w));
+    assert.equal(usageWindow(resp("local_other", 1, 200000), "local_s"), null, "another session's window");
+    assert.equal(read("local_m", 175000, 1000000, NOW + 5), null);
+    assert.equal(read("local_s", 100000, 200000, NOW + 5), null);
+    const config = fullConfig({ collector: { contextRoles: ["Manager", "Scout"] }, contextWindows: { Manager: 350000 } });
+    writeContext(dir, out, config, NOW + 10);
+    assert.deepEqual(readWindows(dir), { Manager: 1000000, Scout: 200000 });
+    // The probe: Scout (200k, not in the config) reads 50%, like the app's tile; Manager's config window wins over the app's.
+    const tokens = { Manager: 175000, Scout: 100000 };
+    const c = ctxReadings({ tokens, resetAt: 600000, now: NOW, windows: config.contextWindows, seen: readWindows(dir) });
+    assert.equal(c.Scout.pct, 50);
+    assert.equal(c.Manager.pct, 50, "config 350k beats the app's 1M");
+    assert.equal(ctxReadings({ tokens, resetAt: 600000, now: NOW }).Scout.pct, 10, "without the app's window it was 10 against 1M");
+    // A run that reads only one role keeps the other's last window; a bad file is no windows.
+    writeFileSync(join(dir, "usage-plan.json"), JSON.stringify({ at: NOW + 20, roles: { Scout: "local_s" } }));
+    read("local_s", 100000, 400000, NOW + 25);
+    writeContext(dir, out, config, NOW + 30);
+    assert.deepEqual(readWindows(dir), { Manager: 1000000, Scout: 400000 });
+    writeFileSync(join(dir, "ctx-windows.json"), JSON.stringify({ Scout: "x", "bad role": 200000, Ok: 150000 }));
+    assert.deepEqual(readWindows(dir), { Ok: 150000 });
+    writeFileSync(join(dir, "ctx-windows.json"), "{");
+    assert.deepEqual(readWindows(dir), {});
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

@@ -77,7 +77,7 @@ test("the hook keeps the session list and each planned session's reading in the 
     tap(hook(dir, "mcp__ccd_session_mgmt__get_usage", { session_id: "local_c" }, text(usage("local_c", 41))), { dir, now: NOW + 5 });
     tap(hook(dir, "mcp__ccd_session_mgmt__get_usage", { session_id: "local_m" }, text(usage("local_m", 50))), { dir, now: NOW + 6 });
     assert.deepEqual(readdirSync(join(dir, "usage")), ["local_c.json"]);
-    assert.deepEqual(JSON.parse(readFileSync(join(dir, "usage", "local_c.json"), "utf8")), { status: "ok", pct: 41, tokens: null, at: NOW + 5 });
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "usage", "local_c.json"), "utf8")), { status: "ok", pct: 41, tokens: null, window: 1000000, at: NOW + 5 });
     // Another folder, another tool: nothing saved.
     assert.equal(tap(hook(join(base, "elsewhere"), "mcp__ccd_session_mgmt__list_sessions", {}, text([])), { dir, now: NOW }), "not this board's state folder");
     assert.equal(tap(hook(dir, "Bash", { command: "x" }, "y"), { dir, now: NOW }), "not a memory reading");
