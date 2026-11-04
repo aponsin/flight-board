@@ -1,0 +1,1 @@
+PASS Full: #C662 3b37540 on 683602e: the gate refuses an artifact-tool call it threw on by normName (renamed servers too); ctx/<Role> and meta/context agents numbers checked (whole pct 0-100, tokens whole or null, at a time; live entries all pass); the Collector prompt test accepts 'send no messages'. Suite 1326/1326 at 3b37540. Earlier PASS on b24f872 and 683602e stands.
