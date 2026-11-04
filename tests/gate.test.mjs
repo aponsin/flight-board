@@ -419,7 +419,7 @@ test("Manager's find, Checker's probe: the writes the gate let through since the
     writeFileSync(join(dir, "TestBoard01", "mirror", "initiatives", "new-card.json"), JSON.stringify({ status: "active", phase: "plan" }));
     assert.match(call({ action: "update", collection: "initiatives", doc_id: "new-card", data: { phase: "build", who: "Builder" } }).block ?? "", /old-card is on build for Builder/);
     // An unrelated write in between leaves the rules on (Checker's probe).
-    assert.deepEqual(call({ action: "set", collection: "steps", doc_id: "s1", data: { init: "x", phase: "build", who: "A", kind: "start", at: Date.now() - 1234 } }), {});
+    assert.deepEqual(call({ action: "set", collection: "steps", doc_id: "s1", data: { init: "old-card", phase: "build", who: "A", kind: "start", at: Date.now() - 1234 } }), {});
     assert.match(call({ action: "update", collection: "initiatives", doc_id: "old-card", data: { phase: "plan" } }).block ?? "", /only move forward/, "rules still apply after an unrelated write");
     assert.match(call({ action: "update", collection: "initiatives", doc_id: "new-card", data: { phase: "build", who: "Builder" } }).block ?? "", /old-card is on build/, "a refused write never reaches the overlay");
     // The card closes after the export: the overlay knows, so the other card may take the lane.
