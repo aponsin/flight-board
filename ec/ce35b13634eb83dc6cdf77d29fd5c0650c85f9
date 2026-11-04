@@ -1,0 +1,1 @@
+PASS Quick: #C675 board-header-sticky-v2, tip ecce35b. A rebase of my PASSed ec972b4 onto main 5e3ab17; range-diff shows all three patches identical. manager-chip 11/11 on the new base. Checker, 2026-11-04.
