@@ -1,0 +1,1 @@
+PASS Quick: #C682 wake-quiet-known-wait, tip 6e7dc30 on top of ba58718 (passed). Test-only: the future-time guard test for Security's LOW, lead and role watch. Touched tests 70/70; mutation check pass (dropping the t <= now + 5_000 guard fails the new test). Checker, 2026-11-04.
