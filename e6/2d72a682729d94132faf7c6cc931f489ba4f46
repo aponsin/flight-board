@@ -1,0 +1,1 @@
+PASS Full: publish check accepts the bare page a read_file saves; the sha256 compare is unchanged; an empty read-back still can't be checked. Reviewed in the #C663 stack (tip 1a1d6af).
