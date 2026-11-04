@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 // A flight-board hook, from this checkout or a pinned copy: replaced on every install.
-const MARK = /(?:flight-board|\/[0-9a-f]{40})\/(?:gate\/(?:gate|stop|after|digest|publish)|collector\/refresh)\.mjs/;
+const MARK = /(?:flight-board|\/[0-9a-f]{40})\/(?:gate\/(?:gate|stop|after|digest|publish|commit)|collector\/refresh)\.mjs/;
 // A path as one shell word, in single quotes (a ' inside written '\''): sh expands nothing in it, so a folder with a
 // space ("Application Support") or a crafted name with $( ) or backticks stays a plain path.
 export const shellQuote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
@@ -24,7 +24,9 @@ export function hookEntries(repo, configPath, node = process.execPath) {
     // each hook answers only its own tools.
     // The claude-artifacts server's tools too (#C652): the app replaced ArtifactData and Artifact with them, and a matcher that
     // names the old two lets every board write and page publish by the new ones pass unchecked.
-    PreToolUse: { matcher: "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*|mcp__.*__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)", hooks: [{ type: "command", command: cmd("gate.mjs") }, { type: "command", command: cmd("publish.mjs") }] },
+    // A tagged git commit needs its card's plain build start step (#C649, gate/commit.mjs): a hook of its own on Bash that
+    // reads nothing for any other command and fails open on any error of its own.
+    PreToolUse: [{ matcher: "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*|mcp__.*__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)", hooks: [{ type: "command", command: cmd("gate.mjs") }, { type: "command", command: cmd("publish.mjs") }] }, { matcher: "Bash", hooks: [{ type: "command", command: cmd("commit.mjs") }] }],
     // After a board write the board applied: what the gate must remember from it (the thread counter).
     PostToolUse: { matcher: "ArtifactData|mcp__.*__(db_write|db_str_replace)", hooks: [{ type: "command", command: cmd("after.mjs") }] },
     // The lead's turn end: the gate's checks, then "start the collector now" when a card moved since its last run.
@@ -50,7 +52,7 @@ export function withHooks(settings, entries, retire = []) {
       return hooks.length === (e.hooks ?? []).length ? e : { ...e, hooks };
     }).filter((e) => (e.hooks ?? []).length);
   }
-  for (const [event, entry] of Object.entries(entries)) out.hooks[event] = [...(out.hooks[event] ?? []), entry];
+  for (const [event, entry] of Object.entries(entries)) out.hooks[event] = [...(out.hooks[event] ?? []), ...[].concat(entry)];
   return { settings: out, added: Object.keys(entries), replaced, retired };
 }
 
@@ -98,7 +100,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const settings = existsSync(target) ? JSON.parse(readFileSync(target, "utf8")) : {};
   const result = withHooks(settings, entries, retire);
   if (!args.includes("--write")) {
-    console.log(JSON.stringify({ hooks: Object.fromEntries(Object.entries(entries).map(([k, v]) => [k, [v]])) }, null, 2));
+    console.log(JSON.stringify({ hooks: Object.fromEntries(Object.entries(entries).map(([k, v]) => [k, [].concat(v)])) }, null, 2));
     console.log(`\n${summary(result, null).replace(/^Changed:/, "Dry run, nothing written. With --write it would change this:")} File: ${target}. Hooks would run the copy of ${pinned.sha.slice(0, 12)} at ${pinned.dir}.`);
     process.exit(0);
   }

@@ -42,7 +42,8 @@ test("#C653 (Security): the publish hook and the page build it runs are the owne
   const read = (f) => { try { return readFileSync(new URL(`../${f}`, import.meta.url), "utf8"); } catch { return null; } };
   const owned = importClosure([...OWNER_ENTRIES, ...RELEASE_ENTRIES], read);
   assert.ok(OWNER_ENTRIES.includes("gate/publish.mjs"), "a registered hook of its own, no other entry imports it");
-  for (const f of ["gate/publish.mjs", "scripts/build-page.mjs", "scripts/fixtures.mjs", "scripts/pack-label.mjs", "gate/tools.mjs"]) {
+  assert.ok(OWNER_ENTRIES.includes("gate/commit.mjs"), "#C649: the commit gate is a registered hook of its own too");
+  for (const f of ["gate/publish.mjs", "gate/commit.mjs", "gate/build-steps.mjs", "scripts/build-page.mjs", "scripts/fixtures.mjs", "scripts/pack-label.mjs", "gate/tools.mjs"]) {
     assert.ok(owned.includes(f), f);
     const v = verdict({ ...good, owned, changed: [f] });
     assert.equal(v.ok, false, f);
@@ -58,7 +59,7 @@ test("#C278 (Security): the fence takes only collector/export.mjs, which imports
   // A new import from a pinned file into the collector's code re-pins it, and this list says so.
   assert.deepEqual(importClosure([...OWNER_ENTRIES, ...RELEASE_ENTRIES], read), [
     "collector/after-ship.mjs", "collector/collect.mjs", "collector/context.mjs", "collector/delta.mjs", "collector/derive.mjs", "collector/expected.mjs", "collector/export.mjs", "collector/facts.mjs", "collector/fence.mjs", "collector/keeper.mjs", "collector/nudges.mjs", "collector/owner-push.mjs", "collector/pickup.mjs", "collector/plan-state.mjs", "collector/prompt-alarm.mjs", "collector/readings.mjs", "collector/refresh.mjs", "collector/rework.mjs", "collector/state-schema.mjs", "collector/state.mjs", "collector/text.mjs", "collector/timings.mjs",
-    "gate/after.mjs", "gate/agent-prs.mjs", "gate/digest.mjs", "gate/gate.mjs", "gate/live.mjs", "gate/owner-waits.mjs", "gate/plan.mjs", "gate/publish.mjs", "gate/reset.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs", "gate/tools.mjs", "gate/traffic.mjs", "gate/wake.mjs",
+    "gate/after.mjs", "gate/agent-prs.mjs", "gate/build-steps.mjs", "gate/commit.mjs", "gate/digest.mjs", "gate/gate.mjs", "gate/live.mjs", "gate/owner-waits.mjs", "gate/plan.mjs", "gate/publish.mjs", "gate/reset.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs", "gate/tools.mjs", "gate/traffic.mjs", "gate/wake.mjs",
     "hooks/red-ask-board.py", "scripts/board-release.mjs", "scripts/build-page.mjs", "scripts/config.mjs", "scripts/current.mjs", "scripts/fixtures.mjs", "scripts/hooks.mjs", "scripts/pack-label.mjs", "scripts/scan.mjs", "scripts/state-install.mjs", "scripts/thread-ids.mjs", "scripts/wake-watch.mjs",
     "worker/state-worker.mjs",
   ]);

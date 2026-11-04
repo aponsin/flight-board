@@ -189,10 +189,13 @@ export function repoOf(card, config) {
   if (card.repo) return repos.find((r) => r.name === card.repo) ?? null;
   return repos.find((r) => (r.idPrefixes ?? []).some((p) => String(card.id).startsWith(p))) ?? null;
 }
-export function headsFor(id, heads) {
+// #C649: a commit whose message starts "#C<num>:" belongs to the card with that number too (num, when the card has one), so a card
+// worked on without its Board-Id trailer or a branch named for it still has a head: the board then shows it as build.
+export const subjectNum = (message) => { const m = /^#C(\d{1,6}):/.exec(String(message ?? "")); return m ? Number(m[1]) : null; };
+export function headsFor(id, heads, num = null) {
   const tips = new Map();
   for (const h of heads) {
-    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id) continue;
+    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && !(Number.isInteger(num) && subjectNum(h.message) === num)) continue;
     const had = tips.get(h.branch);
     if (!had || (h.at ?? 0) > (had.at ?? 0)) tips.set(h.branch, h);
   }
@@ -421,7 +424,7 @@ export function cardState(card, repo, config, now) {
   const declared = config.phases.some((p) => p[0] === card.phase) ? card.phase : null;
   const base = { num: Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? card.num : null, phase: declared, headSha12: null, signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: now };
   if (!repo) return base;
-  const tips = headsFor(card.id, repo.tips.filter((h) => h.branch !== repo.main));
+  const tips = headsFor(card.id, repo.tips.filter((h) => h.branch !== repo.main), card.num);
   const tip = tips[0];
   if (!tip) return base;
   const one = tipState(card, tip, repo, config, now, declared);
@@ -442,7 +445,7 @@ export function cardStates({ cards, config, repos, now }) {
     // (a Board-Id trailer or a branch named for it): the team's own if it has one, else the repository with the newest tip;
     // none has one: the team's own, as before.
     if (!r && !card.repo) {
-      const tipOf = (x) => headsFor(card.id, (x.tips ?? []).filter((h) => h.branch !== x.main))[0];
+      const tipOf = (x) => headsFor(card.id, (x.tips ?? []).filter((h) => h.branch !== x.main), card.num)[0];
       const found = Object.values(repos).map((x) => [x, tipOf(x)]).filter(([, t]) => t).sort((a, b) => (b[1].at ?? 0) - (a[1].at ?? 0))[0];
       if (found && !(repo && tipOf(repo))) repo = found[0];
     }

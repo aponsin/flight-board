@@ -288,16 +288,18 @@ test("writeErrors is the per-write rule list the batch uses", () => {
 test("the hook entries: the gate on board writes and hand-offs, the Stop check; writing them keeps every other hook and replaces an older one", async () => {
   const { hookEntries, withHooks, shellQuote } = await import("../scripts/hooks.mjs");
   const e = hookEntries("/r/flight-board", "/cfg/board.config.json", "/bin/node");
-  assert.equal(e.PreToolUse.matcher, "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*|mcp__.*__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)", "#C652: the claude-artifacts server's tools too");
+  assert.equal(e.PreToolUse.length, 2);
+  assert.deepEqual(e.PreToolUse[1], { matcher: "Bash", hooks: [{ type: "command", command: "'/bin/node' '/r/flight-board/gate/commit.mjs' --config '/cfg/board.config.json'" }] }, "#C649: the commit gate is a hook of its own on Bash, beside the board's");
+  assert.equal(e.PreToolUse[0].matcher, "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*|mcp__.*__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)", "#C652: the claude-artifacts server's tools too");
   assert.equal(e.PostToolUse.matcher, "ArtifactData|mcp__.*__(db_write|db_str_replace)", "#C652: its writes are journalled");
-  assert.equal(e.PreToolUse.hooks[1].command, "'/bin/node' '/r/flight-board/gate/publish.mjs' --config '/cfg/board.config.json'", "the publish hook (#C409)");
-  assert.equal(e.PreToolUse.hooks[0].command, "'/bin/node' '/r/flight-board/gate/gate.mjs' --config '/cfg/board.config.json'");
+  assert.equal(e.PreToolUse[0].hooks[1].command, "'/bin/node' '/r/flight-board/gate/publish.mjs' --config '/cfg/board.config.json'", "the publish hook (#C409)");
+  assert.equal(e.PreToolUse[0].hooks[0].command, "'/bin/node' '/r/flight-board/gate/gate.mjs' --config '/cfg/board.config.json'");
   assert.equal(e.Stop.hooks[0].command, "'/bin/node' '/r/flight-board/gate/stop.mjs' --config '/cfg/board.config.json'");
   const other = { matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }] };
   const old = { matcher: "ArtifactData", hooks: [{ type: "command", command: "node /old/flight-board/gate/gate.mjs --config x" }] };
   const { settings: s, replaced } = withHooks({ model: "x", hooks: { PreToolUse: [other, old] } }, e);
   assert.equal(s.model, "x");
-  assert.deepEqual(s.hooks.PreToolUse, [other, e.PreToolUse]);
+  assert.deepEqual(s.hooks.PreToolUse, [other, ...e.PreToolUse]);
   assert.deepEqual(s.hooks.Stop, [e.Stop]);
   assert.equal(replaced.length, 1);
 });
@@ -344,7 +346,7 @@ test("hooks --write retires an older gate in the same write, keeps every other h
   const mixed = { matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }, { type: "command", command: "node /x/board-tests/write-gate.mjs" }] };
   const otherStop = { hooks: [{ type: "command", command: "python3 ~/.claude/hooks/other-stop.py" }] };
   const r = withHooks({ hooks: { PreToolUse: [oldGate, mixed], Stop: [otherStop] } }, e, ["board-tests/write-gate.mjs"]);
-  assert.deepEqual(r.settings.hooks.PreToolUse, [{ matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }] }, e.PreToolUse], "the old gate's entry gone, the shared entry kept without it");
+  assert.deepEqual(r.settings.hooks.PreToolUse, [{ matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }] }, ...e.PreToolUse], "the old gate's entry gone, the shared entry kept without it");
   assert.deepEqual(r.settings.hooks.Stop, [otherStop, e.Stop], "another Stop hook stays beside the gate's");
   assert.equal(r.retired.length, 2);
   assert.match(summary(r, "/s.json.before-flight-board-1"), /^Changed: added the gate to PreToolUse, PostToolUse, Stop and UserPromptSubmit; retired 2: PreToolUse: \/bin\/node \/home\/x\/board-tests\/write-gate\.mjs; .* Backup: \/s\.json\.before-flight-board-1$/);
@@ -369,13 +371,13 @@ test("hooks --write end to end on a scratch settings file: a pinned copy of the 
     const run = spawnSync(process.execPath, [...args, "--write"], { encoding: "utf8" });
     assert.match(run.stdout, /^Changed: added the gate to PreToolUse, PostToolUse, Stop and UserPromptSubmit; retired 1: .*write-gate\.mjs\. Backup: .*settings\.json\.before-flight-board-\d+ Hooks run the copy of [0-9a-f]{12} at /);
     const after = JSON.parse(readFileSync(settings, "utf8"));
-    assert.equal(after.hooks.PreToolUse.length, 1);
+    assert.equal(after.hooks.PreToolUse.length, 2, "the board's entry and the commit gate's");
     assert.equal(after.hooks.PreToolUse[0].hooks[0].command.includes(`'${join(root, head, "gate", "gate.mjs")}'`), true, "the hook runs the pinned copy");
     assert.equal(readFileSync(join(root, head, "gate", "gate.mjs"), "utf8"), ex("git", ["show", `${head}:gate/gate.mjs`], { cwd: new URL("..", import.meta.url), encoding: "utf8" }), "exactly the committed file, not the working tree");
     const backup = run.stdout.match(/Backup: (\S*)/)[1];
     assert.match(readFileSync(backup, "utf8"), /board-tests\/write-gate\.mjs/);
     const again = spawnSync(process.execPath, [...args, "--write"], { encoding: "utf8" });
-    assert.match(again.stdout, /replaced 6 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries (the refresh check and the publish hook too): " + again.stdout + again.stderr);
+    assert.match(again.stdout, /replaced 7 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries (the refresh check, the publish hook and the commit gate too): " + again.stdout + again.stderr);
     assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "nope-not-a-commit", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/);
     assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "--output=/tmp/x", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/, "a pin that looks like an option is still just a name");
   } finally { rmSync(dir, { recursive: true, force: true }); }

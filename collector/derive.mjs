@@ -37,10 +37,13 @@ export function headFor(id, heads) {
 
 // Every branch the card has, each at its current tip (#C237): the newest matching head per branch, by trailer or by
 // name, newest first. A card is one branch; a second one is a rework that belongs in a sub-card.
-export function headsFor(id, heads) {
+// #C649: a commit whose message starts "#C<num>:" belongs to the card with that number too (num, when the card has one), so a card
+// worked on without its Board-Id trailer or a branch named for it still has a head: the board then shows it as build.
+export const subjectNum = (message) => { const m = /^#C(\d{1,6}):/.exec(String(message ?? "")); return m ? Number(m[1]) : null; };
+export function headsFor(id, heads, num = null) {
   const tips = new Map();
   for (const h of heads) {
-    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id) continue;
+    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && !(Number.isInteger(num) && subjectNum(h.message) === num)) continue;
     const had = tips.get(h.branch);
     if (!had || (h.at ?? 0) > (had.at ?? 0)) tips.set(h.branch, h);
   }

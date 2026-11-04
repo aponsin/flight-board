@@ -16,6 +16,7 @@ import { readLines, sessionRole } from "./session.mjs";
 import { mechanicalClass, refusal } from "./traffic.mjs";
 import { liveFresh } from "../collector/state-schema.mjs";
 import { classify } from "./tools.mjs";
+import { isReady, readyError } from "./build-steps.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"]);
@@ -201,6 +202,13 @@ export function run(input, { config, env = process.env, now = Date.now() }) {
     // gate lets through can still be refused, at the app's consent card or by a stale pin: Security).
     save(out.state);
     return out.errors.length ? { block: refusalText(out.errors, out.stuckNow, now) } : {};
+  }
+  // A READY (#C649): refused until the sender's build end step exists, when the sender started that card; the refusal names
+  // the write. A stale or missing mirror, a card the sender never started, or no role: not checked.
+  if (SEND_TOOLS.has(input?.tool_name) && isReady(t.message ?? t.text ?? "") && role && !roleError) {
+    const m = readMirror(join(dir, "mirror"));
+    const text = m ? readyError({ text: t.message ?? t.text ?? "", role, mirror: withJournal(m, state.journal), now, maxAgeMs: config.gate.mirrorMaxAgeMin * 60e3 }) : null;
+    if (text) return { block: `${text}\n` };
   }
   // A status-only message from any session but the lead's, to anyone, goes to the board's log instead (#C335): the lead
   // gets a digest line at its next prompt (gate/digest.mjs). The gate never guesses: no class, no refusal.

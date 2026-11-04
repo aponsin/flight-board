@@ -293,6 +293,23 @@ test("the probe's phase rule is collector/derive.mjs's: the same phase on every 
   assert.equal(n, 144);
   const hs = [{ branch: "a/c", sha: "1", at: 2, message: "" }, { branch: "x", sha: "2", at: 3, message: "Board-Id: c" }, { branch: "a/c", sha: "3", at: 1, message: "" }, { branch: "y", sha: "4", at: 9, message: "" }];
   assert.deepEqual(headsForProbe("c", hs), headsFor("c", hs));
+  // #C649: a commit whose message starts "#C<num>:" is the card's too (the two copies agree, with and without the number).
+  const tagged = [...hs, { branch: "w/other", sha: "5", at: 7, message: "#C701: The menu opens\n\nbody" }, { branch: "w/late", sha: "6", at: 8, message: "Fix (#C701: not at the start)" }, { branch: "w/num", sha: "7", at: 6, message: "#C7010: another card" }];
+  assert.deepEqual(headsForProbe("menu-fix", tagged, 701), headsFor("menu-fix", tagged, 701));
+  assert.deepEqual(headsForProbe("menu-fix", tagged, 701).map((h) => h.sha), ["5"], "only the tagged subject, only that number");
+  assert.deepEqual(headsForProbe("menu-fix", tagged), [], "no number, no tag match");
+  assert.deepEqual(headsForProbe("menu-fix", tagged, null), headsFor("menu-fix", tagged, null));
+});
+
+test("#C649: a card worked on only by tagged commits, in plan with no branch of its name, shows as build with its head", () => {
+  const config = { phases: [["plan"], ["build"], ["checker"], ["ship"], ["live"]], skips: [], collector: { notes: { checker: "x" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", mainBranch: "main", repos: [] } };
+  const sha = "b".repeat(40);
+  const repo = { git: () => { throw new Error("no repository here"); }, remote: "origin", main: "main", notes: { checker: "refs/notes/checker" }, tips: [{ branch: "feature/x", sha, at: T, message: "#C701: The menu opens\n\nbody" }, { branch: "main", sha: "x", at: T, message: "" }], live: null, versionPattern: null };
+  const s = cardState({ id: "menu-fix", num: 701, phase: "plan" }, repo, config, T);
+  assert.equal(s.phase, "build");
+  assert.equal(s.headSha12, sha.slice(0, 12));
+  assert.equal(cardState({ id: "menu-fix", num: 702, phase: "plan" }, repo, config, T).headSha12, null, "another number: no evidence");
+  assert.equal(cardState({ id: "menu-fix", phase: "plan" }, repo, config, T).headSha12, null, "a card with no number cannot match a tag");
 });
 
 test("the probe: a card on a scratch repository: its tip, sign-offs, main, CI; one not in a repository stays as declared", () => {

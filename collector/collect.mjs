@@ -412,7 +412,7 @@ export function inRepo(card, r, use, config, now, ids = new Set()) {
   try { heads = remoteHeads(use.git, remote); } catch { /* an empty clone */ }
   const work = heads.filter((h) => h.branch !== main);
   const settle = (list) => afterShipTips(use.git, `${remote}/${main}`, settledTips(use.git, remote, main, list), card.id, r.shippedPattern ?? "");
-  const { tips: live, superseded } = unsuperseded(use.git, `${remote}/${main}`, settle(headsFor(card.id, work)), settle(recutsFor(card.id, work, ids)));
+  const { tips: live, superseded } = unsuperseded(use.git, `${remote}/${main}`, settle(headsFor(card.id, work, card.num)), settle(recutsFor(card.id, work, ids)));
   // A branch deleted after it merged leaves only its Board-Id trailer on main (#C281).
   const tips = live.length ? live : [trailerOnMain(use.git, remote, main, card.id)].filter(Boolean);
   const derive = (h) => {
@@ -461,7 +461,7 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const supersededOf = {};
   const phaseOf = (card) => {
     const settle = (list) => afterShipTips(git, `${c.remote}/${c.mainBranch}`, settledTips(git, c.remote, c.mainBranch, list), card.id, c.shippedPattern);
-    const { tips, superseded } = unsuperseded(git, `${c.remote}/${c.mainBranch}`, settle(headsFor(card.id, work)), settle(recutsFor(card.id, work, ids)));
+    const { tips, superseded } = unsuperseded(git, `${c.remote}/${c.mainBranch}`, settle(headsFor(card.id, work, card.num)), settle(recutsFor(card.id, work, ids)));
     tipsOf[card.id] = tips; supersededOf[card.id] = superseded;
     return { ...supersededNote(superseded, leastAdvanced(card, tips, (h) => afterShipNote(h, settledNote(h, derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg))), config, stackedOn(card, ids))), at: now };
   };
@@ -469,11 +469,11 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
     let r = repoOf(card, config);
     // #C632: a card with no repo field and no listed prefix whose branch is not in the team's own repository but is in
     // another listed one belongs there (the probe, collector/state.mjs, reads it the same way).
-    if (!r && !card.repo && !headsFor(card.id, work).length) {
+    if (!r && !card.repo && !headsFor(card.id, work, card.num).length) {
       r = (config.collector.repos ?? []).find((x) => {
         const use = repos[x.name];
         if (!use?.git) return false;
-        try { return headsFor(card.id, remoteHeads(use.git, x.remote ?? "origin").filter((h) => h.branch !== (x.mainBranch ?? "main"))).length > 0; } catch { return false; }
+        try { return headsFor(card.id, remoteHeads(use.git, x.remote ?? "origin").filter((h) => h.branch !== (x.mainBranch ?? "main")), card.num).length > 0; } catch { return false; }
       }) ?? null;
     }
     if (r) { derived[card.id] = inRepo(card, r, repos[r.name], config, now, ids); continue; }
