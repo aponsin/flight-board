@@ -19,7 +19,8 @@ import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, 
 import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor } from "./facts.mjs";
 import { shippedBase, afterShipText, fetchBranches } from "./after-ship.mjs";
 import { evidenceTimes } from "./timings.mjs";
-import { nudges } from "./nudges.mjs";
+import { nudges, roleFor } from "./nudges.mjs";
+import { routedLine } from "../gate/reset.mjs";
 import { ownerPush } from "./owner-push.mjs";
 import { runPromptAlarm } from "./prompt-alarm.mjs";
 import { derivePlan } from "./plan-state.mjs";
@@ -686,7 +687,12 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     renameSync(tmp, join(dd, "all.json"));
   }
   console.log(`Derived ${Object.keys(doc.cards).length} open card(s) into ${out}.`);
-  for (const line of conflicts) console.log(`CONFLICT ${line}`);
+  // #C678: a conflict about one agent's card (the line starts with the card's name) is marked for that agent's watch.
+  for (const line of conflicts) {
+    const card = (mirror.docs.initiatives ?? []).find((k) => k && typeof k.id === "string" && line.startsWith(`${idText(k.id)}:`));
+    const to = roleFor(card?.who, config);
+    console.log(to ? routedLine("CONFLICT", to, line) : `CONFLICT ${line}`);
+  }
   const kl = keeperLine(config, keeper);
   if (kl) console.log(kl);
   if (doc.liveButOpen.length) console.log(`LIVE BUT OPEN (${doc.liveButOpen.length}): ${doc.liveButOpen.map(idText).join(", ")}`);

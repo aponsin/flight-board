@@ -86,8 +86,23 @@ export const LINES_FILE = "collector-lines.json", LINES_SEEN_FILE = "collector-l
 export const LINE_KINDS = /^(CONFLICT|LIVE BUT OPEN|NUDGE|KEEPER|MIRROR DRIFT)\b/;
 export const LINES_MAX = 20, LINE_MAX = 600;
 export const linesOf = (f) => (Number.isInteger(f?.at) && Array.isArray(f.lines) ? f.lines.filter((l) => typeof l === "string" && LINE_KINDS.test(l)).slice(0, LINES_MAX).map((l) => l.slice(0, LINE_MAX)) : []);
-export const linesPending = (file, seen) => (Number.isInteger(file?.at) && file.at !== seen?.at ? linesOf(file) : []);
+// #C678: a NUDGE or CONFLICT about one agent's card carries "@<Role>" after its word ("NUDGE @Builder #C12: ..."). It goes to
+// that role's own watch, not the lead's, unless the role is not on the roster, is the lead, or has no open session (its name
+// is in `away`, the roles the probe asked to wake or found missing): then the lead still gets it, to act on.
+export const LINE_ROUTE = /^(CONFLICT|NUDGE) @([A-Za-z][A-Za-z0-9_-]{0,31}) /;
+export const routeOf = (line) => LINE_ROUTE.exec(line)?.[2] ?? null;
+export const routedLine = (kind, role, text) => `${kind} @${role} ${text}`;
+// The lines a reader prints: role null is the lead's (needs lead, roster, away), a role name is that role's own watch.
+export function linesFor(lines, role, { lead = null, roster = null, away = [] } = {}) {
+  return lines.filter((l) => {
+    const to = routeOf(l);
+    if (role) return to === role;
+    return !to || to === lead || (Array.isArray(roster) && !roster.includes(to)) || away.includes(to);
+  });
+}
+export const linesPending = (file, seen, opts = {}) => (Number.isInteger(file?.at) && file.at !== seen?.at ? linesFor(linesOf(file), opts.role ?? null, opts) : []);
 export const linesSeen = (file) => ({ at: file.at });
+export const linesSeenFile = (role) => `collector-lines-seen-${role}.json`;
 export const NOEVIDENCE_FILE = "no-evidence.json", NOEVIDENCE_SEEN_FILE = "no-evidence-seen.json";
 export const EVIDENCE_STALE_MS = 10 * 60e3, EVIDENCE_MIN_CARDS = 3;
 // Only cards before ship count (skip: the ship and live phases): a card past its merge usually has no branch left to show (Checker

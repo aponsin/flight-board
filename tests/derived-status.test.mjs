@@ -82,8 +82,8 @@ test("the Collector tells the lead of a typed field the live state contradicts f
   const run2 = nudges({ config: cfg, docs, now: NOW + 6 * MIN, state: run1.state, live: reading(NOW + 6 * MIN) });
   const lines = run2.lines.filter((l) => /typed/.test(l));
   assert.deepEqual(lines, [
-    `NUDGE ${ID} (#C48): its typed status disagrees with the live state for 6 min; the board shows the live one, so fix or clear the typed one`,
-    `NUDGE ${ID} (#C48): its typed waitingOn disagrees with the live state for 6 min; the board shows the live one, so fix or clear the typed one`,
+    `NUDGE @Builder ${ID} (#C48): its typed status disagrees with the live state for 6 min; the board shows the live one, so fix or clear the typed one`,
+    `NUDGE @Builder ${ID} (#C48): its typed waitingOn disagrees with the live state for 6 min; the board shows the live one, so fix or clear the typed one`,
   ]);
   assert.doesNotMatch(lines.join(), /secret-ish/);
   const gap = nudges({ config: cfg, docs, now: NOW + 3 * MIN, state: run1.state, live: null });
