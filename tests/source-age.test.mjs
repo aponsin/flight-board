@@ -56,7 +56,12 @@ test("the grey is a fill with the page's ink on it, never a dimming; the ratio p
   assert.ok(ratio(light.muted, light.line) < 4.5, "the muted text on the fill would have failed: that is why the tile uses the ink");
   const oldsrc = html.match(/\.oldsrc\{[^}]*\}\.oldsrc\.stale\{[^}]*\}/)[0];
   assert.match(oldsrc, /display:block/, "the oldest source is on its own line");
-  assert.match(oldsrc, /\.oldsrc\.stale\{color:var\(--warn\);font-weight:600\}/, "and old looks the same as the tiles' age text");
+  assert.match(oldsrc, /\.oldsrc\.stale\{color:var\(--warn-ink\);font-weight:600\}/, "and old looks like the tiles' age text, in the ink that passes 4.5:1 on the page background (Designer)");
+  const wi = (b) => b.match(/--warn-ink:(#[0-9a-f]{6})/)[1], bg = (b) => b.match(/--bg:(#[0-9a-f]{6})/)[1];
+  const lightBlock = html.match(/:root\{[^}]*\}/)[0], darkBlock = html.match(/@media \(prefers-color-scheme: ?dark\)\{[\s\S]*?color-scheme:dark\}/)[0];
+  assert.ok(ratio(wi(lightBlock), bg(lightBlock)) >= 4.5, "warn-ink on the page background, light");
+  assert.ok(ratio(wi(darkBlock), bg(darkBlock)) >= 4.5, "and dark");
+  assert.ok(html.indexOf('el.append(" · ",b)') < html.indexOf("const old=oldestLine();if(old)el.append(old)"), "the oldest-source line comes after the Allow live button");
 });
 
 test("an open page greys a tile when its reading passes 30 minutes (tick), and un-greys it for a fresh one", () => {

@@ -194,7 +194,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .reply label{font-size:.82rem;color:var(--muted)}
 .reply textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
-.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}.evidence.old{background:var(--line);border-color:var(--line);color:var(--ink)}.oldsrc{display:block;font:.82rem var(--mono);color:var(--muted)}.oldsrc.stale{color:var(--warn);font-weight:600}
+.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}.evidence.old{background:var(--line);border-color:var(--line);color:var(--ink)}.oldsrc{display:block;font:.82rem var(--mono);color:var(--muted)}.oldsrc.stale{color:var(--warn-ink);font-weight:600}
 .shipline{margin:0;padding:8px 12px;border:1px solid var(--warn);border-radius:8px;background:var(--warn-soft);color:var(--warn-ink);font-size:.9rem}
 .shipline b{font-weight:700}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
@@ -2734,9 +2734,10 @@ function renderStamp(){renderManagerChip();renderBoardVer();renderRestart();cons
   // Why the board reads the db (a lapsed connector, an odd reading) shows as words, not only on hover: a phone has none
   // (Checker on live-source).
   el.textContent=stampLine();
-  const old=oldestLine();if(old)el.append(old);
   if(probeAsk&&liveMcp){const mcp=liveMcp;const b=document.createElement("button");b.type="button";b.className="viewlink";b.id="probe-allow";b.textContent="Allow live";el.append(" · ",b);
-    b.addEventListener("click",()=>{readLiveNow(mcp)},{once:true})}}
+    b.addEventListener("click",()=>{readLiveNow(mcp)},{once:true})}
+  // After the button (Designer): its own line, so no stray " · " begins it.
+  const old=oldestLine();if(old)el.append(old)}
 // One read of the live state now, outside the minute's watch: "Allow live" and ↻ Check (#C450). The page's one callTool.
 function readLiveNow(mcp){return mcp.callTool(STATE_SERVER,STATE_TOOL,null).then(r=>probeEvent({type:"data",result:r},mcp),e=>probeEvent({type:"error",error:e},mcp))}
 function probeEvent(ev,mcp){liveMcp=mcp||liveMcp;
