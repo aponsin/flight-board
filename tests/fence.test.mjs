@@ -156,6 +156,36 @@ test("parseAnswer: the documents of an answer, its next cursor, its version; an 
   assert.match(parseAnswer(got("x"), "get").error, /no version/);
 });
 
+// #C666: a query that matches nothing is answered with the bare {"docs": [], "nextCursor": ""} (these are the bytes the hook
+// kept from a real run), with no count and no tagged block. That one shape is an empty answer; no other bare shape is a record.
+const bare = (obj) => [{ type: "text", text: JSON.stringify(obj) }];
+test("parseAnswer: the board's bare empty answer is zero documents; any other bare shape is still refused (#C666)", () => {
+  const real = [{ type: "text", text: "{\"docs\":[],\"nextCursor\":\"\"}" }];
+  assert.deepEqual(parseAnswer(real, "query"), { docs: [], next: null });
+  assert.deepEqual(parseAnswer(real, "list"), { docs: [], next: null });
+  assert.deepEqual(parseAnswer(bare({ docs: [] }), "query"), { docs: [], next: null }, "no cursor key");
+  assert.deepEqual(parseAnswer("{\"docs\":[],\"nextCursor\":\"\"}", "query"), { docs: [], next: null }, "a plain string");
+  // Still refused: documents in the bare shape (they carry no count to check), a field of another name, a bad cursor, a docs that
+  // is not a list, a bare shape followed by a block, no count and no docs.
+  for (const [r, part] of [
+    [bare({ docs: [{ id: "a", data: {} }], nextCursor: "" }), "count is not the documents"],
+    [bare({ docs: [], nextCursor: "", extra: 1 }), "count is not the documents"],
+    [bare({ docs: {}, nextCursor: "" }), "count is not the documents"],
+    [bare({ docs: "", nextCursor: "" }), "count is not the documents"],
+    [bare({ docs: null }), "count is not the documents"],
+    [bare({ nextCursor: "" }), "count is not the documents"],
+    [bare({ docs: [], nextCursor: "a b" }), "next cursor"],
+    [{ content: [{ type: "text", text: "{\"docs\":[],\"nextCursor\":\"\"}<untrusted-document-ab>\n{\"id\":\"a\",\"data\":{}}\n</untrusted-document-ab>" }] }, "count is not the documents"],
+    [{ content: [{ type: "text", text: "{\"docs\":[],\"nextCursor\":\"\"}<untrusted-document-ab>\n</untrusted-document-ab>" }] }, "count is not the documents"],
+  ]) assert.match(parseAnswer(r, "query").error ?? "", new RegExp(part), JSON.stringify(r)?.slice(0, 80));
+  // A count that is there is still checked.
+  assert.match(parseAnswer(bare({ count: 1, docs: [], nextCursor: "" }), "query").error, /count is not the documents/);
+  // The whole hook path: an empty query records an empty page, not a FAILED mark.
+  const r = captureOf(post(DB_TOOLS.query, query({ collection: "plan", where: [{ field: "updatedAt", op: ">=", value: 99 }] }), real), spec, "1793762000000-0000000a");
+  assert.equal(r.error, undefined);
+  assert.deepEqual(JSON.parse(r.content), { tool: "query", collection: "plan", limit: 200, cursor: null, where: [{ field: "updatedAt", op: ">=", value: 99 }], docs: [], next: null });
+});
+
 test("captureOf: the record of a read is the call's own fields and the documents the board answered, in the run's scratchpad; the seal for db_get", () => {
   const input = post(DB_TOOLS.query, query({ collection: "initiatives", where: [{ field: "updatedAt", op: ">=", value: 99 }], cursor: "c1" }), answer([D("a", { from: "owner", text: "hello" })], { next: "c2" }));
   const r = captureOf(input, spec, "1793750000000-deadbeef");

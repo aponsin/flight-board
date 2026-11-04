@@ -180,7 +180,11 @@ export function parseAnswer(response, kind) {
     if (!Number.isInteger(summary.version) || summary.version < 1) return { error: "no version" };
     return { version: summary.version };
   }
-  if (!Number.isInteger(summary.count) || summary.count !== docs.length) return { error: "the count is not the documents" };
+  // The board answers a query that matches nothing with the bare {"docs": [], "nextCursor": ""}: no count and no tagged block. That
+  // shape, and only that (an empty docs list, nothing else in it, no block), is the empty answer; any other bare shape is no record.
+  const bareEmpty = !open && summary.count === undefined && Array.isArray(summary.docs) && summary.docs.length === 0
+    && Object.keys(summary).every((k) => k === "docs" || k === "nextCursor");
+  if (!bareEmpty && (!Number.isInteger(summary.count) || summary.count !== docs.length)) return { error: "the count is not the documents" };
   const next = summary.nextCursor === undefined || summary.nextCursor === "" ? null : summary.nextCursor;
   if (next !== null && !(typeof next === "string" && CURSOR.test(next))) return { error: "the next cursor is not the board's characters" };
   const out = [];
