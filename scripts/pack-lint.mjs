@@ -9,6 +9,9 @@
 //        - restore one: cp -p "$F.before-v3.51" "$F"
 //        - name one in a plain message: echo "... $F.before-v3.51 ..."  (no `$(` or backtick in the message)
 //      A line that must read one anyway says why with `# pack-lint: ok <reason>` (a mark with no reason does not count).
+//   3. (#C664) a line that removes or disables a scheduled task or source (launchctl bootout/unload/disable/remove, rm of a plist
+//      or LaunchAgents file, deleting or disabling a scheduled task) names its replacement's install log with
+//      `# pack-lint: replaced-by <install log>.log` on that line, or the lint fails.
 // Comments are not linted. Usage: node scripts/pack-lint.mjs <pack.sh>...   (exit 1 with one line per problem)
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -34,10 +37,20 @@ function logicalLines(text) {
   return out;
 }
 
+// Rule 3 (#C664): a pack that removes or disables a scheduled task or a source (a launchd job, its plist, a scheduled task) names
+// the install log of what replaces it on that line: `# pack-lint: replaced-by board-v3.60-install.log`. Without it the lint fails:
+// the board must not lose a source before its replacement is live. A plain echo message naming the command is not one.
+const RETIRES = /\blaunchctl\s+(?:bootout|unload|disable|remove)\b|\b(?:rm|unlink)\b[^#]*(?:LaunchAgents|\.plist\b)|\bscheduled[- ]tasks?\b[^#]*\b(?:delete|remove|disable|pause|stop)\w*|\b(?:delete|remove|disable|pause)\w*\b[^#]*\bscheduled[- ]tasks?\b/i;
+const REPLACED_BY = /#\s*pack-lint:\s*replaced-by\s+[^\s#]*[A-Za-z0-9._-]+\.log\b/;
+
 // The problems in a pack's text, as { line, rule, text }.
 export function lintPack(text) {
   const out = [];
   for (const { n, line } of logicalLines(text)) {
+    if (line && !line.startsWith("#")) {
+      const code = line.replace(ALLOWED[2], "");
+      if (RETIRES.test(code) && !REPLACED_BY.test(line)) out.push({ line: n, rule: "removes or disables a scheduled task or source without naming its replacement's install log (add `# pack-lint: replaced-by <install log>.log` once the replacement is installed)", text: line });
+    }
     if (!line || line.startsWith("#") || !line.includes(".before-")) continue;
     if (UNDOTTED.test(line)) out.push({ line: n, rule: "a backup name without the dotted version (.before-v3.51, not .before-v351)", text: line });
     if (MARK.test(line)) continue;

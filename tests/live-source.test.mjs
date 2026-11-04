@@ -30,6 +30,14 @@ test("the Right now panel is gone: no section, no renderer; the connector's one 
   assert.equal([...html.matchAll(/watchTool\(|callTool\(/g)].length, 3);
 });
 
+test("#C664: the header names the oldest source (here the repository copy, not the fresh live state); a live tile is never grey", () => {
+  const b = board({ live: reading(NOW - 40e3) });
+  assert.match(b.stampLine(), /Oldest source: repository copy 4[01] min old/);
+  assert.doesNotMatch(b.evidence(b.enrich(b.state.initiatives[0])), /evidence[^"]* old"/, "a fresh live reading is not an old copy");
+  const none = board();
+  assert.match(none.stampLine(), /Oldest source: repository copy 4[01] min old/, "with no live state the repository copy is the only source");
+});
+
 test("a fresh live reading gives a card its phase and time; the db's other fields stay", () => {
   const b = board({ live: reading(NOW - 40e3) });
   const d = b.derivedOf("live-card");
@@ -124,7 +132,7 @@ test("the source flag and its age make one group, so a short title can't strand 
   const b = board({ live: reading(NOW - 40e3) });
   assert.match(b.evidence(b.enrich(b.state.initiatives[0])), /^<span class="evg"><(span|button)[^>]*class="evidence[^"]*"[^>]*>Live: [^<]*<\/(span|button)> <small class="asof[^"]*"[^>]*>40 s ago<\/small><\/span>$/, "the live state, its reading's age (#C450)");
   const db = board();
-  assert.match(db.evidence(db.enrich(db.state.initiatives[0])), /^<span class="evg"><span class="evidence[^"]*"[^>]*>Repository: [^<]*<\/span> <small class="asof[^"]*"[^>]*>as of [^<]*<\/small><\/span>$/, "else the repository, as of its run");
+  assert.match(db.evidence(db.enrich(db.state.initiatives[0])), /^<span class="evg"><span class="evidence[^"]*"[^>]*>Repository: [^<]*<\/span> <small class="asof[^"]*"[^>]*>(as of|repository copy) [^<]*<\/small><\/span>$/, "else the repository, as of its run (or, past 30 minutes, the repository copy's age: #C664)");
   assert.match(html, /\.evg\{display:inline-block;max-width:100%\}/, "a block that still wraps inside on a phone");
 });
 
