@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
-import { fenceSpec, scratchpads, decide, parseAnswer, captureOf, rewriteOf, readOnce, allowAs, PLACEHOLDER, FRESH_MAX_MS, DERIVED_MAX, DB_TOOLS, PARSE_FAILURE_FILE, LINE_MAX, RESPONSE_MAX, cut } from "../collector/fence.mjs";
+import { fenceSpec, scratchpads, decide, parseAnswer, captureOf, rewriteOf, readOnce, allowAs, PLACEHOLDER, FRESH_MAX_MS, FUTURE_MAX_MS, DERIVED_MAX, DB_TOOLS, PARSE_FAILURE_FILE, LINE_MAX, RESPONSE_MAX, cut } from "../collector/fence.mjs";
 
 const URL_ = "https://claude.ai/" + "artifact/TestBoard01";
 const SLUG = "11111111-2222-4333-8444-555555555555";
@@ -113,16 +113,22 @@ const NOW = 1793770000000;
 const dated = (fileAt, planAt) => (p) => { if (p === DERIVED) { if (fileAt === null) throw new Error("no file"); return fileAt; } if (p === PLAN) { if (planAt === null) throw new Error("no plan"); return planAt; } throw new Error("no such path"); };
 const writeFile = (data = PLACEHOLDER, over = {}) => call(DB_TOOLS.write, setAll({ data, ...over }));
 const decideAt = (c, fileAt, planAt, rd = read) => decide(c, spec, rd, dated(fileAt, planAt), () => NOW);
-test("db_write with the placeholder is taken only when the probe's file is this run's: written after the plan and not 30 minutes old", () => {
+test("db_write with the placeholder is taken while the probe's file is its recent derive: not 30 minutes old, not from the future, and the run has a plan", () => {
   assert.deepEqual(PLACEHOLDER, { fromFile: true });
   assert.equal(decideAt(writeFile(), NOW - 1e3, NOW - 6e4), null, "fresh, after the plan");
-  assert.equal(decideAt(writeFile(), NOW - 6e4, NOW - 6e4), null, "the same instant is this run's");
+  assert.equal(decideAt(writeFile(), NOW - 6e4, NOW - 6e4), null, "the same instant");
   assert.equal(decideAt(writeFile(PLACEHOLDER, { ifVersion: undefined }), NOW - 1e3, NOW - 6e4), null, "a first write has no version");
-  assert.match(decideAt(writeFile(), NOW - 2 * 6e4, NOW - 6e4), /older than this run's plan/, "written before this run's --prepare: an old summary");
+  // The live case (23:03 on 11-03): the plan at :02:58, the run publishing at :03:23, the probe's last derive (it merges this run's
+  // export and derives only after the run is at this step) from the minute before the plan. It stopped every run until this was taken.
+  assert.equal(decideAt(writeFile(), NOW - 41e3, NOW - 25e3), null, "written before this run's plan, a minute old: the probe's last derive");
+  assert.equal(decideAt(writeFile(), NOW - 9 * 6e4, NOW - 25e3), null, "written before the plan, nine minutes old: the periodic derive");
   assert.match(decideAt(writeFile(), NOW - FRESH_MAX_MS - 1, NOW - FRESH_MAX_MS - 5e3), /more than 30 minutes old/);
-  assert.equal(decideAt(writeFile(), NOW - FRESH_MAX_MS, NOW - FRESH_MAX_MS - 5e3), null, "exactly 30 minutes is still this run's");
+  assert.match(decideAt(writeFile(), NOW - FRESH_MAX_MS - 1, NOW - 25e3), /more than 30 minutes old/, "an old file is refused whatever the plan says");
+  assert.equal(decideAt(writeFile(), NOW - FRESH_MAX_MS, NOW - FRESH_MAX_MS - 5e3), null, "exactly 30 minutes is still taken");
+  assert.equal(decideAt(writeFile(), NOW + FUTURE_MAX_MS, NOW - 6e4), null, "a minute ahead is clock slack");
+  assert.match(decideAt(writeFile(), NOW + FUTURE_MAX_MS + 1, NOW - 6e4), /dated in the future/);
   assert.match(decideAt(writeFile(), null, NOW - 6e4), /can't date/);
-  assert.match(decideAt(writeFile(), NOW - 1e3, null), /can't date/, "no plan, no proof it is this run's");
+  assert.match(decideAt(writeFile(), NOW - 1e3, null), /no plan/, "no plan: step 1 did not run, so this is not a run");
   assert.match(decideAt(writeFile(), NOW - 1e3, NOW - 6e4, () => { throw new Error("gone"); }), /can't read the collector's derived-all.json/);
   assert.match(decideAt(writeFile(), NOW - 1e3, NOW - 6e4, () => [1]), /derived-all.json is an object/);
   const big = { x: "y".repeat(DERIVED_MAX) };
@@ -167,10 +173,18 @@ test("the hook, as a process: a fresh placeholder is answered with the file in u
     assert.equal(ans.hookSpecificOutput.permissionDecision, "allow");
     assert.deepEqual(ans.hookSpecificOutput.updatedInput, setAll({ data: doc }), "the file, whole, in the placeholder's place");
     utimesSync(file, t0 - 120, t0 - 120);
+    const before = hook(put);
+    assert.equal(before.status, 0, "the probe's last derive, from before the plan: taken (the live case that stopped every run)");
+    assert.deepEqual(JSON.parse(before.stdout).hookSpecificOutput.updatedInput, setAll({ data: doc }));
+    utimesSync(file, t0 - 31 * 60, t0 - 31 * 60);
     const old = hook(put);
     assert.equal(old.status, 2);
-    assert.match(old.stderr, /older than this run's plan/);
+    assert.match(old.stderr, /more than 30 minutes old/);
     assert.equal(old.stdout, "");
+    utimesSync(file, t0 + 120, t0 + 120);
+    const ahead = hook(put);
+    assert.equal(ahead.status, 2);
+    assert.match(ahead.stderr, /dated in the future/);
     utimesSync(file, t0 - 5, t0 - 5);
     const typed = hook({ ...put, tool_input: setAll({ data: doc }) });
     assert.equal(typed.status, 0, typed.stderr);

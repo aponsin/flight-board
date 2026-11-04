@@ -128,18 +128,25 @@ const canon = (v) => (Array.isArray(v) ? v.map(canon) : plain(v) ? Object.fromEn
 
 // #C668: the run does not retype the summary (about 30 KB, and about one run in five broke it). Its db_write carries the
 // placeholder {"fromFile": true} and this fence, which is also the call's PreToolUse hook, puts the probe's derived-all.json in
-// its place (rewriteOf, answered to the app as updatedInput). The placeholder is taken only when that file is this run's: written
-// after this run's --prepare wrote the plan (export-since.json) and not more than FRESH_MAX_MS ago, so the placeholder can never
-// publish an old summary. A typed copy that equals the file is still taken, as before.
+// its place (rewriteOf, answered to the app as updatedInput). The placeholder is taken only while that file is the probe's recent
+// derive: not more than FRESH_MAX_MS old and not dated in the future, and only in a run whose --prepare wrote the plan
+// (export-since.json), so the placeholder can never publish an old summary. It is NOT required to be newer than the plan: the
+// probe derives after it has merged this run's export, which is after the run reaches this step (merge, then about 25 s of derive),
+// so such a file cannot exist yet and every run stopped here (#C668 fix). The probe derives at least every ten minutes, so a live
+// probe leaves a file well inside the window; a dead one leaves it to age out and the run stops, loudly. The published summary is
+// the probe's last derive as of the run, up to one run older than the mirror (TASK.md). A typed copy that equals the file is
+// still taken, as before.
 export const PLACEHOLDER = { fromFile: true };
 export const FRESH_MAX_MS = 30 * 60e3;
+export const FUTURE_MAX_MS = 60e3;
 const isPlaceholder = (d) => plain(d) && Object.keys(d).length === 1 && d.fromFile === true;
 const mtimeMs = (p) => statSync(p).mtimeMs;
 function staleReason(spec, mtime, now) {
-  let file, plan;
-  try { file = mtime(spec.derivedFile); plan = mtime(join(spec.cwd, "export-since.json")); } catch { return "db_write: can't date the collector's derived-all.json against this run's plan"; }
-  if (!(file >= plan)) return "db_write: the collector's derived-all.json is older than this run's plan: this run's probe did not write it";
-  if (now() - file > FRESH_MAX_MS) return `db_write: the collector's derived-all.json is more than ${FRESH_MAX_MS / 60e3} minutes old`;
+  let file;
+  try { file = mtime(spec.derivedFile); mtime(join(spec.cwd, "export-since.json")); } catch { return "db_write: can't date the collector's derived-all.json, or this run has no plan (export-since.json)"; }
+  const age = now() - file;
+  if (age > FRESH_MAX_MS) return `db_write: the collector's derived-all.json is more than ${FRESH_MAX_MS / 60e3} minutes old`;
+  if (age < -FUTURE_MAX_MS) return "db_write: the collector's derived-all.json is dated in the future";
   return null;
 }
 // The call with the placeholder replaced by the file, or null when the call carries none (decide has already passed it).
