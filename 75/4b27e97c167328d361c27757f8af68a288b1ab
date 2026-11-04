@@ -1,0 +1,1 @@
+PASS Full: #C660 fence keeps a cut raw answer in hook-parse-failure.json (0600), write failure swallowed. Nit: the cut budgets strings only, so a huge array keeps its whole structure.
