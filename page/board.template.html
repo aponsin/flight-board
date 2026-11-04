@@ -2391,8 +2391,9 @@ function stepsOf(i){const mine=state.steps.filter(e=>e&&e.init===i.id);
 function releaseTimesOf(v){const m=/^v?(\d+\.\d+\.\d+)$/.exec(String(v||""));const all=state.derived.find(d=>d&&d.id==="all"),t=all&&all.releaseTimes;
   return m&&t&&typeof t==="object"&&Object.hasOwn(t,m[1])&&t[m[1]]&&typeof t[m[1]]==="object"?t[m[1]]:null}
 // #C671: a review the repository shows signed on the card's head (the probe's derived card.reviews, { phase: ms } at the note's
-// time) is an end step even when its agent logged none. A hand-logged end of that phase within five minutes of the note
-// (before or after) is the same sign-off and stays the only one; an older end belongs to an earlier head, so the note adds its own.
+// time) is an end step even when its agent logged none. A hand-logged end of that phase at or after five minutes
+// before the note (any time later) is the same sign-off and stays the only one; an older end belongs to an earlier head, so the
+// note adds its own. (The lights only: the gate counts the signed note alone.)
 function withSignedReviews(i,evs){const rv=(derivedOf(i.id)||{}).reviews;if(!rv||typeof rv!=="object")return evs;
   const add=[];Object.keys(rv).forEach(p=>{const at=num(rv[p]);if(at==null||!PHASES.some(x=>x[0]===p))return;
     if(evs.some(e=>e.phase===p&&e.kind==="end"&&!e.wait&&e.at>=at-300000))return;

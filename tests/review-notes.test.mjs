@@ -9,6 +9,8 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { signedTimes, signedPhases, factsFor } from "../collector/facts.mjs";
 import { derivePhase } from "../collector/derive.mjs";
+import { cardState, remoteTips } from "../collector/state.mjs";
+import { remoteHeads } from "../collector/facts.mjs";
 import { underLive } from "../collector/collect.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 import { loadNames } from "./harness.mjs";
@@ -187,4 +189,57 @@ test("the page: a live tip that moved past the repository copy drops that copy's
     b.probeEvent({ type: "data", result: { payload: reading(head12) } }, {});
     assert.equal(!!b.derivedOf("rev-card").reviews, kept, `live head ${head12.slice(0, 4)}`);
   }
+});
+
+// ---- done-when 2: a pushed branch named for the card, with no commits yet, shows the card as being worked ----
+// A repository whose main has one commit (signed by Checker, as any main commit may be) and a remote branch at that same commit.
+function bareRepo(branch) {
+  const { git } = scratch();
+  const main = git(["rev-parse", "main"]).trim();
+  git(["notes", "--ref=refs/notes/checker", "add", "-m", "PASS", main], at(50));
+  git(["update-ref", "refs/remotes/origin/main", main]);
+  git(["update-ref", `refs/remotes/origin/${branch}`, main]);
+  return { git, main };
+}
+const CARD = { id: "bare-card", num: 71, name: "A card", status: "active", level: "Quick", customerText: false };
+
+test("done-when 2: a branch named for the card with no commits beyond main is build, not ship or live (derive)", () => {
+  const { git } = bareRepo("build/bare-card");
+  const heads = remoteHeads(git, "origin").filter((h) => h.branch === "build/bare-card");
+  assert.equal(heads.length, 1);
+  const cfg = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", collector: { repoPath: "/x", notes: NOTES } });
+  const d = derivePhase(CARD, factsFor(git, heads[0], { config: cfg, line: [], deployed: null }), cfg);
+  assert.equal(d.phase, cfg.collector.buildPhase);
+  assert.equal(d.firm, false);
+  assert.equal(d.reviews, undefined, "main's sign-off note is not the card's");
+  assert.ok(d.head, "a head: the page sees work, the 30-minute abandon rule does not apply");
+  assert.equal(d.onMain, undefined);
+});
+
+test("done-when 2: the same tip is still on main when it carries the card's trailer or its #C subject (a shipped, left branch)", () => {
+  for (const msg of ["work\n\nBoard-Id: bare-card", "#C71: work"]) {
+    const cfg = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", collector: { repoPath: "/x", notes: NOTES } });
+    const facts = { head: { branch: "build/bare-card", sha: "a".repeat(40), at: 1, message: msg }, signed: new Set(["checker"]), onMain: true, deployed: false };
+    assert.equal(derivePhase(CARD, facts, cfg).phase, cfg.collector.shipPhase, msg);
+  }
+  const cfg = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", collector: { repoPath: "/x", notes: NOTES } });
+  const other = { head: { branch: "build/another-card", sha: "a".repeat(40), at: 1, message: "base" }, signed: new Set(), onMain: true, deployed: false };
+  assert.equal(derivePhase(CARD, other, cfg).phase, cfg.collector.shipPhase, "a branch with another name is not this card's bare branch");
+});
+
+test("done-when 2: the probe reads the same bare branch as build, with no main sign-offs and not on main", () => {
+  const { git, main } = bareRepo("build/bare-card");
+  const cfg = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", collector: { repoPath: "/x", notes: NOTES } });
+  const repo = { git, remote: "origin", main: "main", notes: NOTES, tips: remoteTips(git, "origin"), live: null, ids: new Set(), repo: null };
+  const st = cardState(CARD, repo, cfg, Date.now());
+  assert.equal(st.phase, cfg.collector.buildPhase);
+  assert.equal(st.headSha12, main.slice(0, 12));
+  assert.equal(st.onMain, false);
+  assert.deepEqual(st.signed, []);
+  assert.ok(st.seen.includes("build") && !st.seen.includes("ship"), JSON.stringify(st.seen));
+  // The branch with the card's trailer on main stays what it was.
+  const { git: g2 } = bareRepo("build/bare-card");
+  g2(["update-ref", "-d", "refs/remotes/origin/build/bare-card"]);
+  const r2 = { ...repo, git: g2, tips: remoteTips(g2, "origin") };
+  assert.equal(cardState(CARD, r2, cfg, Date.now()).headSha12, null, "no branch, no head");
 });

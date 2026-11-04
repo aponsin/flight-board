@@ -25,6 +25,8 @@ test("the exact case: Checker's end step, journaled before a later file in steps
     const now = Date.now(), board = join(root, "TestBoard01"), m = join(board, "mirror");
     const config = fullConfig({ artifactUrl: URL_, gate: { stateDir: root } });
     file(m, "initiatives", "x", { name: "X", status: "active", phase: "checker", who: "Checker", level: "Quick", customerText: false }, now - 20 * MIN);
+    // The ship start also needs Checker's signed note on the head (#C671): the probe's derived card carries it.
+    file(m, "derived", "all", { id: "all", cards: { x: { phase: "ship", reviews: { checker: now - 10 * MIN } } } }, now - 20 * MIN);
     file(m, "steps", "x-checker-start", { init: "x", phase: "checker", who: "Checker", kind: "start", at: now - 30 * MIN }, now - 20 * MIN);
     file(m, "steps", "y-build-start", { init: "y", phase: "build", who: "Builder", kind: "start", at: now - 6 * MIN }, now - 5 * MIN);
     const end = { op: "set", collection: "steps", doc_id: "x-checker-end", data: { init: "x", phase: "checker", who: "Checker", kind: "end", at: now - 10 * MIN + 1234 }, at: now - 10 * MIN };

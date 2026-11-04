@@ -105,7 +105,9 @@ test("every op of a ship batch is accepted by the gate for the Release role, as 
   // The reviews are signed by the time a card ships (#C671: a ship step, start or end, needs them): an end step for each, as the board holds them.
   const reviews = cards.flatMap((c) => ["checker", "security", "language", "design"].map((p) => ({ id: `${c.id}-${p}-end-1`, init: c.id, kind: "end", phase: p, who: "Reviewer", at: 1 })));
   const steps = [...cards.map((c) => ({ id: `${c.id}-build-end-1`, init: c.id, kind: "end", phase: "build", who: "Builder", at: 1 })), ...reviews, ...cards.map((c) => ({ id: `${c.id}-ship-start-2`, init: c.id, kind: "start", phase: "ship", who: "Release", at: 2 }))];
-  const mirror = { docs: { initiatives: cards, steps, messages: [], waiting: [], derived: [{ id: "all", cards: derived }] }, at: NOW };
+  // ... and the gate counts only the signed notes, which the probe's derived cards carry as reviews { phase: ms }.
+  const signed = Object.fromEntries(Object.entries(derived).map(([id, d]) => [id, { ...d, reviews: { checker: 1, security: 1, language: 1, design: 1 } }]));
+  const mirror = { docs: { initiatives: cards, steps, messages: [], waiting: [], derived: [{ id: "all", cards: signed }] }, at: NOW };
   for (const partial of [[], ["menu-fix"]]) {
     const r = shipBatch({ version: "1.200.0", sha: "9".repeat(40), commits, cards, config, now: NOW, versions: { "menu-fix": 7, "tabs-fix": 3, bystander: 9 }, derived, partial });
     const writes = r.ops.map((o) => { const [collection, doc_id] = o.path.split("/"); return { op: o.op, collection, doc_id, data: o.data }; });

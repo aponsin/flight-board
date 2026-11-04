@@ -763,18 +763,17 @@ export function stepGuardErrors(w, { config, mirror, batch = [], known = [] }) {
     if (k.whenFalse && card[k.whenFalse] === false) skip.add(k.phase);
     if (k.unlessTrue && card[k.unlessTrue] !== true) skip.add(k.phase);
   }
-  const ended = new Set([...steps, ...batch.filter((b) => b && b !== w && b.collection === "steps" && b.op === "set").map((b) => b.data)]
-    .filter((e) => e && e.init === init && e.kind === "end" && !e.wait && typeof e.phase === "string").map((e) => e.phase));
-  // #C671: a review the repository shows signed on the card's head counts as done without an end step: the probe's derived card
-  // carries reviews { phase: ms } from the sign-off notes (collector/derive.mjs), so an agent that forgot to log its end does not
-  // hold the ship. Only a finite time counts, and only a review phase (the loop below reads the config's).
+  // #C671 (the owner's pick, #1451 A): only a SIGNED NOTE satisfies the gate. The probe's derived card carries reviews { phase: ms }
+  // from the sign-off notes on the card's head (collector/derive.mjs); an agent-logged end step lights the review on the page
+  // but does not let the ship go ahead. Only a finite time counts, and only a review phase (the loop below reads the config's).
+  const ended = new Set();
   const signed = (mirror?.docs?.derived ?? []).find((d) => d && d.id === "all")?.cards?.[init]?.reviews;
   if (signed && typeof signed === "object" && !Array.isArray(signed)) for (const [p, at] of Object.entries(signed)) if (Number.isFinite(at)) ended.add(p);
   const label = (p) => (config.phases.find((x) => x[0] === p) ?? [p, p])[1];
   const missing = Object.keys(config.collector.notes ?? {}).filter((p) => config.phases.some((x) => x[0] === p) && !skip.has(p) && !ended.has(p));
   if (!missing.length) return [];
   const name = Number.isInteger(card.num) ? `#C${card.num}` : idText(init);
-  return [`${name} can't ${data.kind} ${label(config.collector.shipPhase)}: no end step yet for ${missing.map((p) => idText(label(p))).join(", ")}. Each review ends with its own step (steps/${idText(init)}-<phase>-end-<at>) at its verdict, or its sign-off note is on the card's head; ship goes ahead once all are in. The board keeps 7 days of steps: an end older than that is gone, so log it again`];
+  return [`${name} can't ${data.kind} ${label(config.collector.shipPhase)}: no signed note on the card's head yet for ${missing.map((p) => idText(label(p))).join(", ")}. A review counts for the ship when its sign-off note (PASS / SECURE) is on the head, as the Collector's derived/all shows it; a hand-logged end step lights the review on the board but does not let the ship go ahead. Ship goes ahead once every needed review is signed`];
 }
 
 export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now(), who = {}, live = null, known = [] }) {

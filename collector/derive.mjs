@@ -40,6 +40,15 @@ export function headFor(id, heads) {
 // #C649: a commit whose message starts "#C<num>:" belongs to the card with that number too (num, when the card has one), so a card
 // worked on without its Board-Id trailer or a branch named for it still has a head: the board then shows it as build.
 export const subjectNum = (message) => { const m = /^#C(\d{1,6}):/.exec(String(message ?? "")); return m ? Number(m[1]) : null; };
+// #C671 (done-when 2): a branch named for the card (its last path segment is the card's id) whose tip carries neither the card's
+// Board-Id trailer nor its "#C<num>:" subject: the name alone found it. When that tip is also on main it is a branch pushed
+// before any commit, and it shows the card as being worked (build), never as shipped or live. state.mjs holds a copy.
+export function bareBranch(card, head) {
+  // A tip read as the card's shipped commit (afterShip: commits after a ship) is that commit's own, not a branch without one.
+  // A head from a release commit's "branch@sha" (shipped: a branch deleted since) is a shipped one, not a pushed branch.
+  if (!head || head.afterShip || head.shipped || String(head.branch).split("/").pop() !== card.id) return false;
+  return boardIdOf(head.message) !== card.id && !(Number.isInteger(card.num) && subjectNum(head.message) === card.num);
+}
 export function headsFor(id, heads, num = null) {
   const tips = new Map();
   for (const h of heads) {
@@ -93,7 +102,7 @@ export function reviewsFor(card, config) {
 export function derivePhase(card, facts, config) {
   const d = phaseFromFacts(card, facts, config);
   const at = facts?.signedAt;
-  if (!facts?.head || !at || typeof at !== "object") return d;
+  if ((facts?.onMain && bareBranch(card, facts?.head)) || !facts?.head || !at || typeof at !== "object") return d;
   const reviews = {};
   for (const p of Object.keys(config.collector.notes)) if (facts.signed?.has(p) && Number.isFinite(at[p])) reviews[p] = at[p];
   return Object.keys(reviews).length ? { ...d, reviews } : d;
@@ -105,6 +114,8 @@ function phaseFromFacts(card, facts, config) {
   const short = String(head).slice(0, 8);
   // readyAt: the READY commit's time, where build ends by the evidence (the page closes a build step left open there).
   const readyAt = Number.isFinite(facts.head.at) ? facts.head.at : null;
+  // #C671: a branch pushed for the card before its first commit sits at a main commit: work started, not shipped.
+  if (facts.onMain && bareBranch(card, facts.head)) return { phase: c.buildPhase, head, firm: false, evidence: `${facts.head.branch} at ${short} has no commits beyond ${c.mainBranch} yet` };
   // onMain (#C662): the card's commit is on the main branch, the evidence the ship rule asks for (gate/card-rules.mjs).
   if (facts.onMain && facts.deployed) return { phase: c.livePhase, onMain: true, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch} and deployed${facts.version ? ` in ${facts.version}` : ""}` };
   if (facts.onMain) return { phase: c.shipPhase, onMain: true, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch}, not deployed yet` };

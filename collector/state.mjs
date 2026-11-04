@@ -192,6 +192,13 @@ export function repoOf(card, config) {
 // #C649: a commit whose message starts "#C<num>:" belongs to the card with that number too (num, when the card has one), so a card
 // worked on without its Board-Id trailer or a branch named for it still has a head: the board then shows it as build.
 export const subjectNum = (message) => { const m = /^#C(\d{1,6}):/.exec(String(message ?? "")); return m ? Number(m[1]) : null; };
+// #C671 (done-when 2): a branch named for the card (its last path segment is the card's id) whose tip carries neither the card's
+// Board-Id trailer nor its "#C<num>:" subject: the name alone found it. When that tip is also on main it is a branch pushed
+// before any commit, and it shows the card as being worked (build), never as shipped or live. A copy of derive.mjs's bareBranch.
+export function bareBranch(card, head) {
+  if (!head || head.afterShip || head.shipped || String(head.branch).split("/").pop() !== card.id) return false;
+  return boardIdOf(head.message) !== card.id && !(Number.isInteger(card.num) && subjectNum(head.message) === card.num);
+}
 export function headsFor(id, heads, num = null) {
   const tips = new Map();
   for (const h of heads) {
@@ -214,6 +221,7 @@ function reviewsFor(card, config) {
 export function phaseOf(card, facts, config) {
   const c = config.collector;
   if (!facts.head) return null;
+  if (facts.onMain && bareBranch(card, facts.head)) return c.buildPhase;
   if (facts.onMain) return facts.deployed ? c.livePhase : c.shipPhase;
   if (boardIdOf(facts.head.message) !== card.id && facts.signed.size === 0) return c.buildPhase;
   const order = config.phases.map((p) => p[0]);
@@ -409,9 +417,14 @@ function tipState(card, tip, repo, config, now, declared) {
   // A tip with commits after the card's shipped one (#C527, collector/after-ship.mjs) is read as that commit, with its
   // sign-offs.
   const after = landed ? null : shippedBase(repo.git, mainRef, tip.sha, { id: card.id, branch: tip.branch, pattern: repo.shippedPattern ?? "" });
-  const signed = signedOn(after ? after.sha : tip.sha);
-  const head = landed ? { ...tip, sha: landed } : after ? { ...tip, sha: after.sha } : tip;
-  const onMain = !!landed || ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, mainRef]));
+  // A tip read as a main commit (landed, or the shipped one) keeps afterShip set: that head is no bare branch (bareBranch).
+  const head = landed ? { ...tip, sha: landed, afterShip: true } : after ? { ...tip, sha: after.sha, afterShip: true } : tip;
+  const atMain = !!landed || ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, mainRef]));
+  // #C671: a pushed branch named for the card with no commit of its own sits at a main commit: it is work started (build), and
+  // main's sign-off notes and deploy are not the card's.
+  const bare = !landed && !after && atMain && bareBranch(card, head);
+  const signed = bare ? [] : signedOn(after ? after.sha : tip.sha);
+  const onMain = atMain && !bare;
   const deployed = onMain && !!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed }, cfg);

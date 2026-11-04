@@ -87,7 +87,7 @@ export function shippedHeads(git, line, pattern) {
     if (!m[1] || !/^[0-9a-f]{7,40}$/.test(m[2])) continue;
     let sha = m[2];
     try { sha = git(["rev-parse", "--verify", "--quiet", `${m[2]}^{commit}`]).trim(); } catch { continue; }
-    out.push({ branch: m[1], sha, at: c.at, message: "" });
+    out.push({ branch: m[1], sha, at: c.at, message: "", shipped: true }); // shipped: not a branch on the remote (a bare one is, #C671)
   }
   return out;
 }
