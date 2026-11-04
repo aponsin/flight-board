@@ -1,0 +1,1 @@
+PASS Quick: #C682 wake-quiet-known-wait, tip ba58718 on main 93d6941. Card's two done-when lines covered by tests. My finding on 6700070 (overdue nudge lost its every-run rule) fixed: EVERY_RUN exempts it, for the lead and the agent watch. Touched tests 77/77; mutation check on EVERY_RUN: pass (new test fails without it). Checker, 2026-11-04.
