@@ -1,0 +1,1 @@
+PASS Full: #C679 restart-badge-ship-v3, 1c6108b. A rebase of my PASSed 0231cd8 onto main ecce35b; range-diff identical. ship-candidate, restart-check and manager-chip 38/38 on the new base, where #C675's page commits now sit. Checker, 2026-11-04.
