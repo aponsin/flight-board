@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
-import { fenceSpec, scratchpads, decide, parseAnswer, captureOf, rewriteOf, allowAs, PLACEHOLDER, FRESH_MAX_MS, DERIVED_MAX, DB_TOOLS, PARSE_FAILURE_FILE, LINE_MAX, RESPONSE_MAX, cut } from "../collector/fence.mjs";
+import { fenceSpec, scratchpads, decide, parseAnswer, captureOf, rewriteOf, readOnce, allowAs, PLACEHOLDER, FRESH_MAX_MS, DERIVED_MAX, DB_TOOLS, PARSE_FAILURE_FILE, LINE_MAX, RESPONSE_MAX, cut } from "../collector/fence.mjs";
 
 const URL_ = "https://claude.ai/" + "artifact/TestBoard01";
 const SLUG = "11111111-2222-4333-8444-555555555555";
@@ -385,6 +385,16 @@ test("a capture that fails leaves the raw answer, cut, in the task's folder; a s
     rmSync(cwd, { recursive: true });
     assert.equal(hook({ ...base, tool_response: shaped }).status, 2);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("Checker 3 (#C668): the file is read once; the object decide checked is the one rewriteOf sends, even if the file changes between", () => {
+  let n = 0;
+  const flipping = () => (++n === 1 ? doc : { evil: true });
+  const rd = readOnce(flipping);
+  assert.equal(decideAt(writeFile(), NOW - 1e3, NOW - 6e4, rd), null);
+  const r = rewriteOf(writeFile(), spec, rd);
+  assert.deepEqual(r.ops[0].data, doc, "the checked copy, not a second read");
+  assert.equal(n, 1, "one read of the path");
 });
 
 test("cut: strings cut by line and by total, structure and non-strings kept (#C660)", () => {

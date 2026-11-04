@@ -108,7 +108,8 @@ Created only with the owner's yes. Its settings:
   tool for the probe's `derived-all.json` only; ToolSearch and the plan tools) and refuses everything else, whatever the mode
   would allow: the run can write no file, send no message and call no session tool (Security, #C656). Each call may carry only its known fields, paths compare as exact
   strings, and any failure refuses: the `|| exit 2` turns a crash or a missing file into a refusal too. It only refuses,
-  never grants. Because it keys on this folder, any session opened here is fenced the same way. Test it once on a
+  and grants in one case: a `db_write` of `derived/all` carrying `{"fromFile": true}` is answered `allow` with `updatedInput` (the
+  probe's file, read once, in its place) after every check above passed; no other call is allowed by it. Because it keys on this folder, any session opened here is fenced the same way. Test it once on a
   throwaway task and board before the real one (a write to a second board, a stray command, a file read or written:
   each refused).
   The same file is the **PostToolUse** hook of `db_list`, `db_query` and `db_get` (the settings above): it parses what the tool

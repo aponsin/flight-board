@@ -19,6 +19,16 @@ const msg = (thread, at) => ({ thread, at, from: "Sam", text: "x" });
 const num = (id, n, op = "set") => ({ op, collection: "threads", doc_id: id, data: { num: n } });
 const seq = (next, op = "update", if_version = 7) => ({ op, collection: "meta", doc_id: "threadSeq", data: { next }, ...(if_version ? { if_version } : {}) });
 
+test("Checker 1 (#C668): a derived/all write that carries the placeholder is never journaled; a real one is", () => {
+  const w = (data) => ({ op: "set", collection: "derived", doc_id: "all", data });
+  assert.deepEqual(afterWrite({}, [w({ fromFile: true })]), {}, "the placeholder leaves the state as it was");
+  const real = afterWrite({}, [w({ at: 5, cards: { a: { phase: "build" } } })]);
+  assert.deepEqual(real.journal.map((x) => `${x.collection}/${x.doc_id}`), ["derived/all"]);
+  const mixed = afterWrite({}, [w({ fromFile: true }), { op: "set", collection: "steps", doc_id: "s", data: { text: "x" } }]);
+  assert.deepEqual(mixed.journal.map((x) => x.collection), ["steps"], "other writes of the same call are journaled");
+  assert.equal(afterWrite({}, [w({ fromFile: true, extra: 1 })]).journal.length, 1, "only exactly {fromFile: true} is the placeholder");
+});
+
 test("allocation: numbers in the order threads opened (each thread's first message), kept numbers kept, the counter last", () => {
   const messages = [msg("b", 30), msg("a", 20), msg("a", 10), msg("c", 25), msg("b", 5), { thread: "", at: 1 }, { thread: "x" }];
   const { batches, first, next } = allocate({ threads: [{ id: "c", num: 4 }, { id: "a", title: "Named" }], messages, seq: { next: 5 } });

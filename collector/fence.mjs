@@ -4,7 +4,10 @@
 // answered, in the run's scratchpad, so the model copies nothing (#C656, Security R1).
 // It lets through exactly the calls collector/TASK.md's steps make and refuses everything else (exit 2), whatever the
 // permission mode decides: a run in auto mode can't be steered by board text into any other call (Security). It never
-// grants: it only refuses, so it can't raise what the settings allow. Any failure refuses (the "|| exit 2" covers a
+// grants in one case only: a db_write of derived/all carrying the placeholder {"fromFile": true} (#C668) is answered with
+// permissionDecision "allow" and updatedInput (the probe's file in the placeholder's place), after decide passed the whole call;
+// every other call gets no answer but a refusal (exit 2) or silence (exit 0), so the settings alone decide it. Whether a settings
+// deny rule still beats a hook's allow depends on the app's version (Security checks it). Any failure refuses (the "|| exit 2" covers a
 // crash or a missing file, which a hook would otherwise let pass). Paths and links compare as exact strings.
 import { readFileSync, readlinkSync, existsSync, mkdirSync, writeFileSync, renameSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
@@ -140,6 +143,7 @@ function staleReason(spec, mtime, now) {
   return null;
 }
 // The call with the placeholder replaced by the file, or null when the call carries none (decide has already passed it).
+// It reads through the same `read` decide used; main passes a reader that reads the file once, so the object sent is the one checked.
 export function rewriteOf(input, spec, read = readJson) {
   if (input?.tool_name !== DB_TOOLS.write) return null;
   const op = input?.tool_input?.ops?.[0];
@@ -307,10 +311,17 @@ export function main(argv, stdin) {
     if (r.path) save(r.path, r.content);
     return null;
   }
-  const why = decide(input, spec);
+  const read = readOnce();
+  const why = decide(input, spec, read);
   if (why) return why;
-  const updatedInput = rewriteOf(input, spec);
+  const updatedInput = rewriteOf(input, spec, read);
   return updatedInput ? { updatedInput } : null;
+}
+
+// A reader that reads each path once and gives the same object again: decide's checks and the copy sent are one read (#C668, Checker 3).
+export function readOnce(read = readJson) {
+  const seen = new Map();
+  return (p) => { if (!seen.has(p)) seen.set(p, read(p)); return seen.get(p); };
 }
 
 // The answer to the app for a call whose placeholder the fence filled in: allow it, as rewritten (#C668).

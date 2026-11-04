@@ -187,8 +187,9 @@ the consent offers, so in the default mode every run would wait for the owner). 
 calls, so `collector/fence.mjs` decides first: a PreToolUse hook on every tool, in the collector's folder only, that
 lets through exactly the steps of `collector/TASK.md` and refuses anything else. Each call may carry only its known
 fields; paths and links compare as exact strings; the board's rows go only to files in the run's scratchpad, never into
-the session. Any failure refuses, a crash or a missing file included (`|| exit 2` on its command). It never grants
-anything: it only refuses.
+the session. Any failure refuses, a crash or a missing file included (`|| exit 2` on its command). It grants in
+one case only: a `derived/all` write carrying `{"fromFile": true}` is allowed with the probe's file put in its place
+(`updatedInput`), once every check passed; it raises nothing else.
 
 ### The current link
 
