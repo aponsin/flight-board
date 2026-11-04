@@ -194,7 +194,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .reply label{font-size:.82rem;color:var(--muted)}
 .reply textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
-.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}.evidence.old{background:var(--line);border-color:var(--line)}
+.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}.evidence.old{background:var(--line);border-color:var(--line);color:var(--ink)}.oldsrc{display:block;font:.82rem var(--mono);color:var(--muted)}.oldsrc.stale{color:var(--warn);font-weight:600}
 .shipline{margin:0;padding:8px 12px;border:1px solid var(--warn);border-radius:8px;background:var(--warn-soft);color:var(--warn-ink);font-size:.9rem}
 .shipline b{font-weight:700}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
@@ -1221,7 +1221,8 @@ function sourceAges(now=Date.now()){const out=[],all=state.derived.find(x=>x.id=
   if(probe&&probe.board&&isT(probe.board.at))out.push({name:SRC_NAME.live,at:probe.board.at});
   if(probe&&probe.usage&&isT(probe.usage.at))out.push({name:SRC_NAME.usage,at:probe.usage.at});
   return out.map(s=>({...s,age:Math.max(0,now-s.at)}))}
-function oldestText(now=Date.now()){const o=sourceAges(now).sort((a,b)=>b.age-a.age)[0];return o?`Oldest source: ${o.name} ${dur(o.age)} old`:""}
+const oldestSource=(now=Date.now())=>sourceAges(now).sort((a,b)=>b.age-a.age)[0]||null;
+function oldestText(now=Date.now()){const o=oldestSource(now);return o?`Oldest source: ${o.name} ${dur(o.age)} old`:""}
 function asOf(at,now=Date.now()){if(num(at)==null)return "";const old=now-at>ASOF_STALE;
   return ` <small class="asof${old?" stale":""}" data-asof="${at}" title="When the collector last read the repository">${asOfText(at,now)}</small>`}
 
@@ -2723,12 +2724,17 @@ function catchUp(now=Date.now()){if(!dataBehind(now)){resyncAt=null;return null}
   if(now-last<RELOAD_GAP)return null;
   try{sessionStorage.setItem(RELOAD_KEY,String(now))}catch(e){return null}
   try{location.reload()}catch(e){}return "reloaded"}
-const stampLine=(now=Date.now())=>[stampText(now),oldestText(now)].filter(Boolean).join(" · ")+(probeNote?" · "+probeNote:"");
+const stampLine=(now=Date.now())=>stampText(now)+(probeNote?" · "+probeNote:"");
+// The oldest source goes on its own line under the clock (Designer: at 360 px it wrapped over three lines in the clock line), in
+// the warning colour and weight of the tiles' age text once it is past 30 minutes (the same "old"), plain muted while fresh.
+function oldestLine(now=Date.now()){const o=oldestSource(now);if(!o)return null;
+  const s=document.createElement("span");s.className="oldsrc"+(o.age>ASOF_STALE?" stale":"");s.textContent=oldestText(now);return s}
 let dbSynced=null,dbState="";
 function renderStamp(){renderManagerChip();renderBoardVer();renderRestart();const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
   // Why the board reads the db (a lapsed connector, an odd reading) shows as words, not only on hover: a phone has none
   // (Checker on live-source).
   el.textContent=stampLine();
+  const old=oldestLine();if(old)el.append(old);
   if(probeAsk&&liveMcp){const mcp=liveMcp;const b=document.createElement("button");b.type="button";b.className="viewlink";b.id="probe-allow";b.textContent="Allow live";el.append(" · ",b);
     b.addEventListener("click",()=>{readLiveNow(mcp)},{once:true})}}
 // One read of the live state now, outside the minute's watch: "Allow live" and ↻ Check (#C450). The page's one callTool.

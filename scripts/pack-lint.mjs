@@ -40,16 +40,33 @@ function logicalLines(text) {
 // Rule 3 (#C664): a pack that removes or disables a scheduled task or a source (a launchd job, its plist, a scheduled task) names
 // the install log of what replaces it on that line: `# pack-lint: replaced-by board-v3.60-install.log`. Without it the lint fails:
 // the board must not lose a source before its replacement is live. A plain echo message naming the command is not one.
-const RETIRES = /\blaunchctl\s+(?:bootout|unload|disable|remove)\b|\b(?:rm|unlink)\b[^#]*(?:LaunchAgents|\.plist\b)|\bscheduled[- ]tasks?\b[^#]*\b(?:delete|remove|disable|pause|stop)\w*|\b(?:delete|remove|disable|pause)\w*\b[^#]*\bscheduled[- ]tasks?\b/i;
-const REPLACED_BY = /#\s*pack-lint:\s*replaced-by\s+[^\s#]*[A-Za-z0-9._-]+\.log\b/;
+// The verb may be quoted, `kill` stops a job, mv/find -delete move or remove its file, and the scheduled-tasks folder is the other
+// kind of source. A path or the launchctl command held in a variable is followed (pathVars, aliasVars below); `echo "..." | sh`
+// is code, not a message. The named log must be an install log (`...install...log`).
+const VERB = "[\"']?(?:bootout|unload|disable|remove|kill)[\"']?";
+const PATHY = /LaunchAgents|scheduled-tasks|\.plist\b/;
+const RETIRES = new RegExp(`\\blaunchctl\\s+${VERB}(?![A-Za-z])|\\b(?:rm|unlink)\\b[^#]*(?:LaunchAgents|scheduled-tasks|\\.plist\\b)|\\bmv\\s+(?:-\\S+\\s+)*[\"']?\\S*(?:LaunchAgents|scheduled-tasks|\\.plist\\b)|\\bfind\\b[^#]*(?:LaunchAgents|scheduled-tasks)[^#]*-delete|\\bscheduled[- ]tasks?\\b[^#]*\\b(?:delete|remove|disable|pause|stop)\\w*|\\b(?:delete|remove|disable|pause)\\w*\\b[^#]*\\bscheduled[- ]tasks?\\b`, "i");
+const REPLACED_BY = /#\s*pack-lint:\s*replaced-by\s+[^\s#]*install[^\s#]*\.log\b/;
+const ASSIGN = /^(?:export\s+|local\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
+const PIPED_TO_SHELL = /\|\s*(?:sh|bash|zsh|eval)\b/;
 
 // The problems in a pack's text, as { line, rule, text }.
 export function lintPack(text) {
-  const out = [];
+  const out = [], pathVars = new Set(), aliasVars = new Set();
   for (const { n, line } of logicalLines(text)) {
     if (line && !line.startsWith("#")) {
-      const code = line.replace(ALLOWED[2], "");
-      if (RETIRES.test(code) && !REPLACED_BY.test(line)) out.push({ line: n, rule: "removes or disables a scheduled task or source without naming its replacement's install log (add `# pack-lint: replaced-by <install log>.log` once the replacement is installed)", text: line });
+      const code = PIPED_TO_SHELL.test(line) ? line : line.replace(ALLOWED[2], "");
+      const a = ASSIGN.exec(code.replace(/#.*$/, "").trim());
+      if (a) {
+        const value = a[2].trim().replace(/^["']|["']$/g, "");
+        if (PATHY.test(value)) pathVars.add(a[1]);
+        if (/^(?:command\s+)?(?:\/\S*\/)?launchctl$/.test(value)) aliasVars.add(a[1]);
+      }
+      const ref = (v) => new RegExp(`\\$\\{?${v}\\}?(?![A-Za-z0-9_])`);
+      // rm/unlink of the variable, or mv with it as the SOURCE (mv "$TMP" "$PLIST" writes the plist, it does not retire it).
+      const viaPath = [...pathVars].some((v) => (/\b(?:rm|unlink)\b/.test(code) && ref(v).test(code)) || new RegExp(`\\bmv\\s+(?:-\\S+\\s+)*["']?\\$\\{?${v}\\}?(?![A-Za-z0-9_])`).test(code));
+      const viaAlias = [...aliasVars].some((v) => new RegExp(`\\$\\{?${v}\\}?\\s+${VERB}(?![A-Za-z])`).test(code));
+      if ((RETIRES.test(code) || viaPath || viaAlias) && !REPLACED_BY.test(line)) out.push({ line: n, rule: "removes or disables a scheduled task or source without naming its replacement's install log (add `# pack-lint: replaced-by <install log>.log` once the replacement is installed)", text: line });
     }
     if (!line || line.startsWith("#") || !line.includes(".before-")) continue;
     if (UNDOTTED.test(line)) out.push({ line: n, rule: "a backup name without the dotted version (.before-v3.51, not .before-v351)", text: line });
