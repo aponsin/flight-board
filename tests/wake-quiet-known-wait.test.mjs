@@ -3,10 +3,10 @@
 // when its text changes (the card changed), when it left the batch and came back, or after LINE_AGAIN_MS; CLOSE likewise.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LINES_FILE, LINES_SEEN_FILE, LINE_AGAIN_MS, CLOSE_AGAIN_MS, linesPending, linesSeen, truthPending, truthSeen } from "../gate/reset.mjs";
+import { LINES_FILE, LINES_SEEN_FILE, linesSeenFile, LINE_AGAIN_MS, CLOSE_AGAIN_MS, linesPending, linesSeen, truthPending, truthSeen } from "../gate/reset.mjs";
 import { tick, roleTick } from "../scripts/wake-watch.mjs";
 
 const MIN = 60e3, T = 1_000_000_000_000;
@@ -113,6 +113,26 @@ test("the overdue nudge (#C441) is still printed every run, for the lead and for
       assert.equal(roleTick(dir, "Builder", T + (10 + i * 5) * MIN, 4242), mine, `agent, run ${i}`);
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a printed time in the future (a planted seen file, a clock set back) silences nothing: the line prints and is stamped with now (Security)", () => {
+  const YEAR = 365 * 24 * 60 * MIN;
+  const dir = folder();
+  try {
+    batch(dir, WAIT, T);
+    writeFileSync(join(dir, LINES_SEEN_FILE), JSON.stringify({ at: T - MIN, lines: Object.fromEntries(WAIT.map((l) => [l, T + YEAR])) }));
+    assert.equal(lead(dir, T), WAIT.join("\n"), "the lead prints them");
+    const seen = JSON.parse(readFileSync(join(dir, LINES_SEEN_FILE), "utf8"));
+    assert.deepEqual(seen.lines, Object.fromEntries(WAIT.map((l) => [l, T])), "and stamps them with now");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const dir2 = folder();
+  try {
+    const mine = "NUDGE @Builder c674 waits";
+    batch(dir2, [mine], T);
+    writeFileSync(join(dir2, linesSeenFile("Builder")), JSON.stringify({ at: T - MIN, lines: { [mine]: T + YEAR } }));
+    assert.equal(roleTick(dir2, "Builder", T, 4242), mine, "the role's watch prints it");
+    assert.deepEqual(JSON.parse(readFileSync(join(dir2, linesSeenFile("Builder")), "utf8")).lines, { [mine]: T });
+  } finally { rmSync(dir2, { recursive: true, force: true }); }
 });
 
 test("CLOSE is printed once per tip and repeats after two hours, not every ten minutes", () => {
