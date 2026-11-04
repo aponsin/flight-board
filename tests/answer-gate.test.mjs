@@ -14,7 +14,8 @@ const R = 1793600000000;
 // waiting: { id: doc }, threads: { id: { num, title } }, messages: { id: doc }; calls: ArtifactData inputs this turn made;
 // ageMin: how old the mirror's files are (they are fresh unless a test says). The hook's stderr lands in `lastErr`.
 let lastErr = "";
-function verdict({ title = "Manager", waiting = {}, threads = {}, messages = {}, calls = [], ageMin = 0 } = {}) {
+// live (#C676): what the Stop gate's live check kept for Manager in <board>/live.json: { checkedAgoS, asks: [..] }.
+function verdict({ title = "Manager", waiting = {}, threads = {}, messages = {}, calls = [], ageMin = 0, live = null } = {}) {
   const home = mkdtempSync(join(tmpdir(), "fb-answergate-"));
   try {
     const mirror = join(home, ".flight-board", "BOARD", "mirror");
@@ -23,6 +24,7 @@ function verdict({ title = "Manager", waiting = {}, threads = {}, messages = {},
       mkdirSync(join(mirror, coll), { recursive: true });
       for (const [id, d] of Object.entries(docs)) { const f = join(mirror, coll, `${id}.json`); writeFileSync(f, JSON.stringify(d)); utimesSync(f, when, when); }
     }
+    if (live) { mkdirSync(join(home, ".flight-board", "BOARD"), { recursive: true }); writeFileSync(join(home, ".flight-board", "BOARD", "live.json"), JSON.stringify({ Manager: { checkedAt: Date.now() - live.checkedAgoS * 1000, msgs: [], asks: live.asks ?? [] } })); }
     const lines = [
       { type: "custom-title", customTitle: title },
       { type: "user", message: { content: [{ type: "text", text: "status" }] } },
@@ -109,7 +111,10 @@ test("a stale mirror (over 2 h) skips the rule and says so; a fresh one holds th
   const waiting = { x: answered };
   assert.equal(verdict({ waiting, ageMin: 180 }), "");
   assert.match(lastErr, /^Answer gate: the board's mirror of the waiting items is over 120 min old, so the answered-but-open check was skipped\./);
-  assert.match(verdict({ waiting, ageMin: 100 }), /still open/, "100 min is within the limit");
+  // #C676: within the 2 h limit the mirror is read, but a lagging one (over 2 min) names an item only with the live board's word.
+  assert.equal(verdict({ waiting, ageMin: 100 }), "", "100 min is within the limit, but the live board hasn't confirmed it");
+  assert.match(lastErr, /^Answer gate: 1 answered item in the mirror, not confirmed open by the live board/);
+  assert.match(verdict({ waiting, ageMin: 100, live: { checkedAgoS: 30, asks: [{ id: "x", respondedAt: R, response: answered.response }] } }), /still open/, "the live check under 2 min old returned it open");
   assert.equal(lastErr, "");
   verdict({ title: "Checker", waiting, ageMin: 180 });
   assert.equal(lastErr, "", "another agent never sees the note");
@@ -125,5 +130,55 @@ test("a stale mirror (over 2 h) skips the rule and says so; a fresh one holds th
     writeFileSync(path, [{ type: "custom-title", customTitle: "Manager" }, { type: "user", message: { content: [{ type: "text", text: "status" }] } }, { type: "assistant", message: { content: [{ type: "text", text: "ok" }] } }].map((l) => JSON.stringify(l)).join("\n") + "\n");
     const r = spawnSync("python3", [HOOK], { input: JSON.stringify({ transcript_path: path }), encoding: "utf8", env: { ...process.env, CLAUDE_CODE_AUTO_COMPACT_WINDOW: "", HOME: home } });
     assert.match(JSON.parse(r.stdout).reason, /\[x\]/);
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});
+
+// #C676 (10:20-10:33 am MT: #T1461 and #T1462 re-flagged three times after they were done on the live board; the mirror lagged):
+// the live board decides. Done there: never named. Open there in a check under 2 min old, or in a mirror under 2 min old: named.
+// Neither: the mirror may be lagging, so no nag, and stderr says so.
+const liveAsk = (o = {}) => ({ id: "x", respondedAt: R, response: answered.response, ...o });
+test("an item done on the live board is never named, however the mirror lags or how old the check", () => {
+  const waiting = { x: answered };
+  assert.equal(verdict({ waiting, ageMin: 10, live: { checkedAgoS: 20, asks: [liveAsk({ done: true })] } }), "", "the mirror (10 min old) shows it open, the live board done");
+  assert.equal(verdict({ waiting, ageMin: 0, live: { checkedAgoS: 20, asks: [liveAsk({ done: true })] } }), "", "even a fresh mirror: the live board is later");
+  assert.equal(verdict({ waiting, ageMin: 10, live: { checkedAgoS: 3600, asks: [liveAsk({ done: true })] } }), "", "done stays done, whatever the check's age");
+  assert.equal(verdict({ waiting, ageMin: 10, live: { checkedAgoS: 20, asks: [liveAsk({ doneAt: R + 5 })] } }), "", "doneAt counts as closed too");
+  assert.equal(lastErr, "", "a closed item is not an unconfirmed one");
+});
+
+test("an item the live board returned open in a check under 2 min old is named, though the mirror lags", () => {
+  const waiting = { x: answered };
+  assert.match(verdict({ waiting, ageMin: 10, live: { checkedAgoS: 90, asks: [liveAsk()] } }), /still open/);
+  assert.equal(lastErr, "");
+  assert.equal(verdict({ waiting, ageMin: 10, live: { checkedAgoS: 150, asks: [liveAsk()] } }), "", "a check over 2 min old confirms nothing");
+  assert.match(lastErr, /^Answer gate: 1 answered item in the mirror, not confirmed open by the live board \(its check or the mirror is over 120 s old\), so no nag for it\./);
+  assert.equal(verdict({ waiting, ageMin: 10, live: { checkedAgoS: 20, asks: [] } }), "", "a fresh check that did not return it confirms nothing");
+});
+
+test("a mirror under 2 min old confirms by itself; a lagging one with no live check names nothing", () => {
+  const waiting = { x: answered };
+  assert.match(verdict({ waiting, ageMin: 1 }), /still open/, "a mirror one minute old");
+  assert.equal(verdict({ waiting, ageMin: 3 }), "", "three minutes old, no live check");
+  assert.match(lastErr, /not confirmed open by the live board/);
+  assert.equal(verdict({ waiting, threads: {}, ageMin: 3, live: { checkedAgoS: 10, asks: [liveAsk({ id: "other" })] } }), "", "the live check returned another item");
+});
+
+test("only Manager's live entry counts, and a broken live.json is no live check", () => {
+  const waiting = { x: answered };
+  const home = mkdtempSync(join(tmpdir(), "fb-answergate-"));
+  try {
+    const dir = join(home, ".flight-board", "BOARD");
+    mkdirSync(join(dir, "mirror", "waiting"), { recursive: true });
+    const f = join(dir, "mirror", "waiting", "x.json"), old = new Date(Date.now() - 600000);
+    writeFileSync(f, JSON.stringify(waiting.x)); utimesSync(f, old, old);
+    const path = join(home, "s.jsonl");
+    writeFileSync(path, [{ type: "custom-title", customTitle: "Manager" }, { type: "user", message: { content: [{ type: "text", text: "status" }] } }, { type: "assistant", message: { content: [{ type: "text", text: "ok" }] } }].map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const run = () => spawnSync("python3", [HOOK], { input: JSON.stringify({ transcript_path: path }), encoding: "utf8", env: { ...process.env, CLAUDE_CODE_AUTO_COMPACT_WINDOW: "", HOME: home } });
+    for (const body of [JSON.stringify({ Checker: { checkedAt: Date.now(), asks: [liveAsk()] } }), "{", "[]", JSON.stringify({ Manager: { checkedAt: "now", asks: [liveAsk()] } }), JSON.stringify({ Manager: { checkedAt: Date.now(), asks: "x" } })]) {
+      writeFileSync(join(dir, "live.json"), body);
+      const r = run();
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.stdout.trim(), "", body);
+    }
   } finally { rmSync(home, { recursive: true, force: true }); }
 });

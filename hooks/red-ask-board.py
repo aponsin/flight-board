@@ -291,6 +291,25 @@ except Exception:
 # waiting file is over MIRROR_STALE_MIN old is no reading at all (Checker: the Collector's mirror here stopped at 06:30Z):
 # the rule is skipped and says so on stderr, never a block on a backlog it can't see.
 MIRROR_STALE_MIN = 120
+# #C676 (the Stop hook re-flagged #T1461 and #T1462 three times after they were done on the live board; the mirror lagged, and
+# each flag cost Manager a turn): an item is named only when the live board confirms it is still open. The live board is what
+# the Stop gate's live check keeps in <board>/live.json for this role (the waiting items the owner replied to, with their done
+# flag, from the lead's own queries, once a minute): an item done there is closed, whatever the mirror says; an item is
+# confirmed open by a live check under LIVE_FRESH_S old that returned it open, or by a mirror whose newest waiting file is under
+# LIVE_FRESH_S old. An item neither of those confirms is skipped (no nag), and stderr says how many.
+LIVE_FRESH_S = 120
+lives = {}
+def live_asks(mirror):
+    j = read_json(os.path.join(os.path.dirname(mirror), "live.json"))
+    r = j.get(TITLE) if isinstance(j, dict) and TITLE else None
+    if not isinstance(r, dict):
+        return None, {}
+    at = r.get("checkedAt")
+    asks = {}
+    for a in r.get("asks") if isinstance(r.get("asks"), list) else []:
+        if isinstance(a, dict) and isinstance(a.get("id"), str):
+            asks[a["id"]] = a
+    return (at if num(at) else None), asks
 def manager_replies(mirror):
     last = {}
     try:
@@ -313,10 +332,12 @@ def answered_open():
             stale = True
             continue
         mirror = os.path.dirname(d)
+        fresh = bool(files) and time.time() - max(os.path.getmtime(f) for f in files) <= LIVE_FRESH_S
         for p in files:
-            out += one_answered(p, mirror, replies)
+            out += one_answered(p, mirror, replies, fresh)
     return [x[1] for x in sorted(out)], stale
-def one_answered(p, mirror, replies):
+unconfirmed = []  # answered-but-open items in the mirror the live board didn't confirm (no nag)
+def one_answered(p, mirror, replies, fresh=False):
     w = read_json(p)
     if not w:
         return []
@@ -328,6 +349,17 @@ def one_answered(p, mirror, replies):
         replies[mirror] = manager_replies(mirror)
     if replies[mirror].get(i, 0) > r:
         return []  # Manager answered in the item's thread after the owner's reply
+    # #C676: the live board decides. Done there: closed. Open there in a check under LIVE_FRESH_S old, or in a mirror under
+    # LIVE_FRESH_S old: confirmed. Otherwise the mirror may be lagging, and the item is not named.
+    if mirror not in lives:
+        lives[mirror] = live_asks(mirror)
+    checked, asks = lives[mirror]
+    a = asks.get(i)
+    if a is not None and (a.get("done") is True or isinstance(a.get("doneAt"), (int, float))):
+        return []
+    if not (fresh or (a is not None and checked is not None and 0 <= time.time() * 1000 - checked <= LIVE_FRESH_S * 1000)):
+        unconfirmed.append(i)
+        return []
     t = read_json(os.path.join(mirror, "threads", i + ".json")) or {}
     n = t.get("num")
     title = re.sub(r"\s+", " ", str(t.get("title") or w.get("text") or w.get("question") or i)).strip()[:80]
@@ -337,6 +369,8 @@ try:
         _open, _stale = answered_open()
         if _stale:
             sys.stderr.write("Answer gate: the board's mirror of the waiting items is over %d min old, so the answered-but-open check was skipped.\n" % MIRROR_STALE_MIN)
+        if unconfirmed:
+            sys.stderr.write("Answer gate: %d answered item%s in the mirror, not confirmed open by the live board (its check or the mirror is over %d s old), so no nag for %s.\n" % (len(unconfirmed), "" if len(unconfirmed) == 1 else "s", LIVE_FRESH_S, "it" if len(unconfirmed) == 1 else "them"))
         if _open:
             # The titles are the board's text, not the hook's: labelled as data, and no quote mark in them can close the label.
             _names = "; ".join(_open[:5]).replace('"', "") + ("; and %d more" % (len(_open) - 5) if len(_open) > 5 else "")
