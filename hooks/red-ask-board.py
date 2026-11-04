@@ -295,8 +295,11 @@ MIRROR_STALE_MIN = 120
 # each flag cost Manager a turn): an item is named only when the live board confirms it is still open. The live board is what
 # the Stop gate's live check keeps in <board>/live.json for this role (the waiting items the owner replied to, with their done
 # flag, from the lead's own queries, once a minute): an item done there is closed, whatever the mirror says; an item is
-# confirmed open by a live check under LIVE_FRESH_S old that returned it open, or by a mirror whose newest waiting file is under
-# LIVE_FRESH_S old. An item neither of those confirms is skipped (no nag), and stderr says how many.
+# confirmed open by a copy a live check returned under LIVE_FRESH_S ago (its seenAt, stamped by gate/live.mjs nextLive), or by
+# its own mirror file being under LIVE_FRESH_S old. Never by the check's checkedAt: the waiting query reads respondedAt only, so
+# an item the owner later closes with Done (done, doneAt, no respondedAt) is never read again and its kept copy stays "open"
+# while checkedAt is refreshed every minute (Checker on 771b94b). An item neither confirms is skipped (no nag), and stderr says
+# how many.
 LIVE_FRESH_S = 120
 lives = {}
 def live_asks(mirror):
@@ -332,9 +335,9 @@ def answered_open():
             stale = True
             continue
         mirror = os.path.dirname(d)
-        fresh = bool(files) and time.time() - max(os.path.getmtime(f) for f in files) <= LIVE_FRESH_S
         for p in files:
-            out += one_answered(p, mirror, replies, fresh)
+            # The item's own file: a newer file beside it says nothing of this one (Checker's LOW on 771b94b).
+            out += one_answered(p, mirror, replies, time.time() - os.path.getmtime(p) <= LIVE_FRESH_S)
     return [x[1] for x in sorted(out)], stale
 unconfirmed = []  # answered-but-open items in the mirror the live board didn't confirm (no nag)
 def one_answered(p, mirror, replies, fresh=False):
@@ -357,7 +360,8 @@ def one_answered(p, mirror, replies, fresh=False):
     a = asks.get(i)
     if a is not None and (a.get("done") is True or isinstance(a.get("doneAt"), (int, float))):
         return []
-    if not (fresh or (a is not None and checked is not None and 0 <= time.time() * 1000 - checked <= LIVE_FRESH_S * 1000)):
+    seen = a.get("seenAt") if a is not None else None
+    if not (fresh or (num(seen) and 0 <= time.time() * 1000 - seen <= LIVE_FRESH_S * 1000)):
         unconfirmed.append(i)
         return []
     t = read_json(os.path.join(mirror, "threads", i + ".json")) or {}

@@ -254,3 +254,18 @@ test("live.json: per role, the last two days, newest first, checkedAt only when 
     assert.deepEqual(readLive(p, "__proto__"), { checkedAt: null, msgs: [], asks: [] });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// #C676 (Checker on 771b94b): each ask copy a check returns is stamped with that check's time (seenAt); a copy kept from before
+// keeps its own, so the Stop hook can tell a copy returned a minute ago from one that is only the last thing a reply left.
+test("live.json: an ask a check returns is stamped seenAt; kept ones keep theirs, even across a check that returns nothing", () => {
+  const ask = (id, extra = {}) => ({ id, respondedAt: NOW - 5 * 60e3, response: { choice: "A", status: "chose", at: NOW - 5 * 60e3 }, ...extra });
+  const before = { checkedAt: NOW - 120e3, msgs: [], asks: [ask("kept", { seenAt: NOW - 300e3 })] };
+  const n = nextLive(before, { msgs: [], asks: [ask("new")], complete: true }, NOW);
+  assert.equal(n.asks.find((a) => a.id === "new").seenAt, NOW);
+  assert.equal(n.asks.find((a) => a.id === "kept").seenAt, NOW - 300e3, "a copy this check didn't return keeps its old stamp");
+  const again = nextLive(n, { msgs: [], asks: [], complete: true }, NOW + 60e3);
+  assert.equal(again.asks.find((a) => a.id === "new").seenAt, NOW, "a check that returns nothing leaves the stamps alone");
+  const back = nextLive(again, { msgs: [], asks: [ask("new", { done: true })], complete: true }, NOW + 120e3);
+  assert.deepEqual([back.asks.find((a) => a.id === "new").done, back.asks.find((a) => a.id === "new").seenAt], [true, NOW + 120e3], "a copy returned again takes the new stamp");
+  assert.equal(nextLive(before, null, NOW).asks[0].seenAt, NOW - 300e3, "no check this turn: nothing is stamped");
+});

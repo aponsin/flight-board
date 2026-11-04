@@ -190,5 +190,8 @@ export function nextLive(before, fresh, now) {
     for (const x of got) by.set(x.id, x);
     return [...by.values()].filter((x) => at(x) > now - KEEP_DAYS * DAY).sort((a, b) => at(b) - at(a)).slice(0, KEEP);
   };
-  return { checkedAt: fresh?.complete ? now : before.checkedAt, msgs: keep(before.msgs, fresh?.msgs ?? [], (m) => m.at), asks: keep(before.asks ?? [], fresh?.asks ?? [], (a) => a.respondedAt) };
+  // #C676 (Checker): each ask copy is stamped with the time a check returned it (seenAt). The waiting query reads respondedAt only,
+  // so an item the owner closes later with Done (done, doneAt, no respondedAt) is never read again and its kept copy stays "open":
+  // red-ask-board.py confirms an item open only from a copy a check returned in the last two minutes, never from checkedAt.
+  return { checkedAt: fresh?.complete ? now : before.checkedAt, msgs: keep(before.msgs, fresh?.msgs ?? [], (m) => m.at), asks: keep(before.asks ?? [], (fresh?.asks ?? []).map((a) => ({ ...a, seenAt: now })), (a) => a.respondedAt) };
 }
