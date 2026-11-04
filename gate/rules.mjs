@@ -291,6 +291,11 @@ export function writeErrors(w, { config, who, now }) {
     if (data.kind === "decision" && opts.filter((o) => o && o.key && o.label).length < 2) e.push("a decision needs at least two options {key, label}: the owner picks with a button each");
     if (data.kind !== "decision" && offersLetteredChoices(data.text)) e.push('text offers choices (A) … B), "A:" lines or "option A"): make it kind "decision" with options, a button each');
   }
+  // A card's phase is one of config.phases (#C661): a phase the board does not list (Manager once wrote "install" on nine cards)
+  // gives the page no place for the card, so it showed as queued with Build lit. Waiting for the install is "ship" with wait "install".
+  if (collection === "initiatives" && data && typeof data === "object" && data.phase !== undefined && data.phase !== null && !phases.includes(data.phase)) {
+    e.push(`unknown phase ${JSON.stringify(String(data.phase).slice(0, 40))} on a card (use ${phases.join(", ")}): a card waiting for the install stays on "ship" with wait "install", written {phase: "ship", wait: "install"}`);
+  }
   if (collection === "steps" && op === "set") {
     if (!phases.includes(data.phase)) e.push(`unknown phase "${data.phase}" (use ${phases.join(", ")})`);
     if (!["start", "end"].includes(data.kind)) e.push("kind must be start or end");
