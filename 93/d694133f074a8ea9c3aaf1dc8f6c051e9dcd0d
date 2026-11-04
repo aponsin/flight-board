@@ -1,0 +1,1 @@
+PASS Full: #C678 wake-only-for-manager, re-cut tip 93d6941 on main 80a331e. Same patch as 9c2671b (passed): the diff of the two patches is only CHANGELOG context, the #C673 entry above it. 6 touched test files on the new base, 60/60. Checker, 2026-11-04.
