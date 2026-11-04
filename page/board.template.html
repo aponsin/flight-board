@@ -21,7 +21,10 @@
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);padding:20px 16px 40px}
 .wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
-header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px}
+/* #C675: the header (title, live version, badge and version chip, clock, sources line) stays on screen while the page scrolls. It sits
+   in the page's colour so the content slides under it; the strip below it sticks at the header's height (--hdr-h, set from the
+   header's own height, which changes when it wraps on a phone). */
+header{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:8px 16px;position:sticky;top:0;z-index:7;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line)}
 h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;margin:0}
 /* The Manager chip sits at the header's top right, above the clock; with no room beside the title the whole block wraps below it. */
 .hdr-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-width:100%;text-align:right}
@@ -31,7 +34,10 @@ h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;
 .live-dot.on{background:var(--ok)}
 .mgr-chip{display:inline-block;font:600 .72rem var(--mono);padding:2px 8px;border-radius:999px;white-space:normal}
 .mgr-chip[hidden]{display:none}
-.rb{display:inline-block;max-width:100%;margin-top:8px;font:700 .8rem var(--mono);padding:3px 10px;border-radius:12px;color:var(--panel)}
+/* #C675: the "Board vX" chip sits just right of the "Safe to restart" badge. */
+.hdr-badges{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.hdr-badges>:not([hidden]){margin-top:8px}
+.rb{display:inline-block;max-width:100%;font:700 .8rem var(--mono);padding:3px 10px;border-radius:12px;color:var(--panel)}
 .rb[hidden]{display:none}
 .rb.ok{background:var(--ok)}.rb.bad{background:var(--bad)}
 .boardver{font:600 .75rem var(--mono);color:var(--muted)}
@@ -457,7 +463,7 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .pn-bar>span{display:block;height:100%;background:var(--ok)}
 .pn-cards{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:.88rem;margin-top:2px}
 .pn-cards span{color:var(--muted)}
-.v3strip{position:sticky;top:0;z-index:5}
+.v3strip{position:sticky;top:var(--hdr-h,0px);z-index:5}
 .v3strip .panel{max-height:45vh;overflow:auto;box-shadow:0 2px 8px rgba(0,0,0,.12)}
 .v3tabs{display:flex;gap:6px}
 .v3tabs button{font:700 .95rem var(--display);letter-spacing:.06em;text-transform:uppercase;padding:6px 14px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;min-height:40px}
@@ -516,8 +522,8 @@ table.crew3-ph{margin-top:14px}
 
 <div class="wrap">
   <header>
-    <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="rb" id="restartbadge" role="status" hidden></div></div>
-    <div class="hdr-right"><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div></div>
+    <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="hdr-badges"><div class="rb" id="restartbadge" role="status" hidden></div><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div></div></div>
+    <div class="hdr-right"><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div></div>
   </header>
   <div class="shipline" id="shipline" role="status" hidden></div>
   <div class="stuckline" id="threadsfull" role="status" hidden></div>
@@ -2725,6 +2731,10 @@ function managerChip(now=Date.now()){if(!liveOn(now)||!Object.hasOwn(probe.board
 function boardVerText(pack,commit,installed){const p=/^v\d+\.\d+[a-z]?$/.test(pack||"")?pack:"",c=/^[0-9a-f]{7,12}$/.test(commit||"")?commit:"",i=/^[0-9a-f]{12}$/.test(installed||"")?installed.slice(0,7):"";
   return [p||i?"Board "+(p||i):"",c?"page "+c:""].filter(Boolean).join(" · ")}
 function renderBoardVer(){const el=$("boardver");if(!el)return;const t=boardVerText(el.dataset.pack,el.dataset.commit,liveOn(Date.now())&&probe&&probe.board?probe.board.pageVersion:null);el.hidden=!t;el.textContent=t}
+// #C675: the sticky header's height, for whatever sticks below it; it changes when the header wraps or its lines change.
+(function(){const h=document.querySelector("header");if(!h||!document.documentElement)return;
+  const set=()=>document.documentElement.style.setProperty("--hdr-h",h.offsetHeight+"px");set();
+  if(typeof ResizeObserver==="function")new ResizeObserver(set).observe(h);else window.addEventListener("resize",set)})();
 function renderManagerChip(){const el=$("mgrchip");if(!el)return;const c=managerChip();el.hidden=!c;if(c){el.className="mgr-chip "+c.cls;el.textContent=c.text}}
 // Under the owner's message: "seen" once the watch has handled a wake at or after it; the time is the wake's, shown on the
 // newest such message (the older ones are before it, with no time of their own).
