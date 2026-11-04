@@ -292,9 +292,9 @@ export function writeErrors(w, { config, who, now }) {
     if (data.kind !== "decision" && offersLetteredChoices(data.text)) e.push('text offers choices (A) … B), "A:" lines or "option A"): make it kind "decision" with options, a button each');
   }
   // A card's phase is one of config.phases (#C661): a phase the board does not list (Manager once wrote "install" on nine cards)
-  // gives the page no place for the card, so it showed as queued with Build lit. Waiting for the install is "ship" with wait "install".
+  // gives the page no place for the card, so it showed as queued with Build lit. Waiting for the install is "ship": the collector's derived wait shows it (the page's KNOWN_WAITS).
   if (collection === "initiatives" && data && typeof data === "object" && data.phase !== undefined && data.phase !== null && !phases.includes(data.phase)) {
-    e.push(`unknown phase ${JSON.stringify(String(data.phase).slice(0, 40))} on a card (use ${phases.join(", ")}): a card waiting for the install stays on "ship" with wait "install", written {phase: "ship", wait: "install"}`);
+    e.push(`unknown phase ${JSON.stringify(String(data.phase).slice(0, 40))} on a card (use ${phases.join(", ")}): a card waiting for the install stays on "ship": the board shows "Waiting for install" itself, from the repository, so write phase "ship" and no wait field`);
   }
   if (collection === "steps" && op === "set") {
     if (!phases.includes(data.phase)) e.push(`unknown phase "${data.phase}" (use ${phases.join(", ")})`);

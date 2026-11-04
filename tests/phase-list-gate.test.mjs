@@ -1,5 +1,5 @@
 // #C661: the gate refuses a card write whose phase is not one of the board's phases, and the refusal names the form for a card
-// waiting for the install ("ship" with wait "install"). Fictional board and card.
+// waiting for the install ("ship": the board shows the wait itself, from the repository). Fictional board and card.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fullConfig } from "../scripts/config.mjs";
@@ -18,7 +18,9 @@ test("a card write with a phase the board does not list is refused, and the refu
     assert.equal(errs.length, 1, op);
     assert.match(errs[0], /"install"/);
     assert.match(errs[0], /plan, build, test, language, checker, security, ship, live/, "the board's phases are listed");
-    assert.match(errs[0], /"ship" with wait "install"/, "the way to say waiting for the install");
+    assert.match(errs[0], /stays on "ship"/, "the way to say waiting for the install");
+    assert.match(errs[0], /Waiting for install/, "and what the board shows for it");
+    assert.doesNotMatch(errs[0], /wait: "install"/, "no field that nothing reads");
   }
   assert.equal(unknown(write("update", { phase: "install" }, lead)).length, 1, "the lead too");
 });
@@ -27,7 +29,7 @@ test("every listed phase passes, and so does a write that names no phase (or a n
   for (const p of config.phases.map((x) => x[0])) assert.deepEqual(unknown(write("update", { phase: p })), [], p);
   assert.deepEqual(unknown(write("update", { name: "x" })), []);
   assert.deepEqual(unknown(write("update", { phase: null })), []);
-  assert.deepEqual(unknown(write("update", { phase: "ship", wait: "install" })), [], "the form the refusal names passes");
+  assert.deepEqual(unknown(write("update", { phase: "ship" })), [], "the form the refusal names passes");
 });
 
 test("a long or odd phase is cut and quoted in the message; a delete is not checked; another collection is not touched", () => {
