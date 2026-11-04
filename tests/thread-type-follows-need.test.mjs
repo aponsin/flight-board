@@ -72,6 +72,18 @@ test("Needs you lists the same threads as before: a Manager word after the pick 
   assert.equal(c.waitsOn("w-1", T), "lead", "his own word is the last: with the team, as before");
 });
 
+// Designer on ba0cc20: Ack (and Live) are green on a green fill; --ok on --ok-soft is 4.33:1 in light, under 4.5 at .72rem. The
+// chips use --ok-ink, which passes in both modes.
+const lum = (hex) => { const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+test("the green chips (Ack, Live) pass 4.5:1 in light and dark", () => {
+  const blocks = [...page.matchAll(/--ok:(#\w{6}); --ok-ink:(#\w{6}); --ok-soft:(#\w{6});/g)].map((m) => ({ ink: m[2], soft: m[3] }));
+  assert.equal(blocks.length, 3, "the light root, the dark media block and the dark theme block each set --ok-ink");
+  for (const b of blocks) assert.ok(ratio(b.ink, b.soft) >= 4.5, `${b.ink} on ${b.soft}: ${ratio(b.ink, b.soft).toFixed(2)}`);
+  assert.match(page, /\.kind\.answer\{background:var\(--ok-soft\);color:var\(--ok-ink\)\}/);
+  assert.match(page, /\.kind\.live\{background:var\(--ok-soft\);color:var\(--ok-ink\)\}/);
+});
+
 test("the chip is computed in one place and both chips use it", () => {
   assert.match(page, /function askNeed\(w\)/);
   assert.match(page, /const nk=askNeed\(w\);\s*const head=`<span class="kind \$\{esc\(chipClass\(nk\)\)\}">/);

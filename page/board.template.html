@@ -6,7 +6,7 @@
 :root{
   --bg:#f3f5f7; --panel:#ffffff; --ink:#18202a; --muted:#5d6b7a; --line:#dde3ea;
   --accent:#1f5fd6; --accent-soft:#e3ecfc;
-  --ok:#1b7f4b; --ok-soft:#dff3e8; --warn:#a85f00; --warn-soft:#fdf0d9; --warn-ink:#9a5700; --bad:#b4232c; --bad-soft:#fbe2e3;
+  --ok:#1b7f4b; --ok-ink:#17703f; --ok-soft:#dff3e8; --warn:#a85f00; --warn-soft:#fdf0d9; --warn-ink:#9a5700; --bad:#b4232c; --bad-soft:#fbe2e3;
   --track:#e7ecf2;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -14,10 +14,10 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0f141a; --panel:#171e26; --ink:#e7edf3; --muted:#93a2b2; --line:#2a3542;
-  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --warn-ink:#f2b45c; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; color-scheme:dark}}
+  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-ink:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --warn-ink:#f2b45c; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0f141a; --panel:#171e26; --ink:#e7edf3; --muted:#93a2b2; --line:#2a3542;
-  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --warn-ink:#f2b45c; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; color-scheme:dark}
+  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-ink:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --warn-ink:#f2b45c; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);padding:20px 16px 40px}
 .wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
@@ -50,10 +50,10 @@ section{min-width:0}
 .kind.action{background:var(--warn-soft);color:var(--warn)}
 .kind.session{background:var(--accent-soft);color:var(--accent)}
 .kind.later,.kind.conversation{background:var(--track);color:var(--muted)}
-.kind.answer{background:var(--ok-soft);color:var(--ok)}
+.kind.answer{background:var(--ok-soft);color:var(--ok-ink)}
 /* A thread's state (#C364): Question as an ask, Building blue, Live green as an answer, Decision as a decision. */
 .kind.building{background:var(--accent-soft);color:var(--accent)}
-.kind.live{background:var(--ok-soft);color:var(--ok)}
+.kind.live{background:var(--ok-soft);color:var(--ok-ink)}
 /* On a phone the chip says Building alone: the row's line under the title names the card. */
 @media (max-width:600px){.kind .kn{display:none}}
 /* Ping is a control beside status pills (Designer on 7b85ba9): filled, square-ish, its hit area ~40 px tall. */
