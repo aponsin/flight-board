@@ -29,7 +29,7 @@
 import { idText as q } from "./text.mjs";
 import { repoOf, openAsks } from "./derive.mjs";
 import { typedClashes } from "./state-schema.mjs";
-import { routedLine } from "../gate/reset.mjs";
+import { routedLine, plainLine } from "../gate/reset.mjs";
 import { reworkOwed, signalText, halfLive } from "./rework.mjs";
 
 const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10, TYPED_MIN = 5, IDLE_MIN = 10;
@@ -263,8 +263,8 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     // A nudge for one agent's card goes straight to that agent: the lead has nothing to forward (#C678).
     const to = roleFor(f.to, config);
     if (to) { lines.push(routedLine("NUDGE", to, f.then ? `${f.text.replace(/[;,]? forward:$/, ".")} Please: ${f.then.replace(/^forward to [^:]*: /, "")}` : f.text)); continue; }
-    lines.push(`NUDGE ${f.text}`);
-    if (f.then) lines.push(`NUDGE ${f.then}`);
+    lines.push(plainLine("NUDGE", f.text));
+    if (f.then) lines.push(plainLine("NUDGE", f.then));
   }
   return { lines, state: { sent, seen, readySeen, typedSeen } };
 }

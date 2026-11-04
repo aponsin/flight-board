@@ -92,6 +92,9 @@ export const linesOf = (f) => (Number.isInteger(f?.at) && Array.isArray(f.lines)
 export const LINE_ROUTE = /^(CONFLICT|NUDGE) @([A-Za-z][A-Za-z0-9_-]{0,31}) /;
 export const routeOf = (line) => LINE_ROUTE.exec(line)?.[2] ?? null;
 export const routedLine = (kind, role, text) => `${kind} @${role} ${text}`;
+// A line that is not routed never starts its text with "@": a card id may (idText allows it), and "NUDGE @Security (#C5): ..." would
+// read as a line for that role and leave the lead's watch (Security on 3eb2450).
+export const plainLine = (kind, text) => `${kind} ${String(text).replace(/^@/, "?@")}`;
 // The lines a reader prints: role null is the lead's (needs lead, roster, away), a role name is that role's own watch.
 export function linesFor(lines, role, { lead = null, roster = null, away = [] } = {}) {
   return lines.filter((l) => {

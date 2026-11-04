@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fullConfig } from "../scripts/config.mjs";
 import { nudges, roleFor } from "../collector/nudges.mjs";
-import { routeOf, routedLine, linesFor, linesPending, linesSeen, linesSeenFile, LINES_FILE, LINES_SEEN_FILE, WAKE_ROLES_FILE } from "../gate/reset.mjs";
+import { plainLine, dispatchPidFile, routeOf, routedLine, linesFor, linesPending, linesSeen, linesSeenFile, LINES_FILE, LINES_SEEN_FILE, WAKE_ROLES_FILE } from "../gate/reset.mjs";
 import { tick, roleTick } from "../scripts/wake-watch.mjs";
 
 const config = fullConfig({ owner: "Sam", roster: ["Manager", "Builder", "Checker"], collector: { repoPath: "/x", deployWorkflow: "CI" } });
@@ -63,12 +63,41 @@ test("the lead's watch skips a line marked for an agent with an open session, an
   try {
     batchFile(dir, ["NUDGE @Builder one", "NUDGE @Checker two", "NUDGE three"]);
     writeFileSync(join(dir, WAKE_ROLES_FILE), JSON.stringify({ at: 1, roles: ["Checker"], missing: [] }));
+    // Builder's own watch is running (a fresh beat from a live process); Checker has no open session.
+    writeFileSync(join(dir, dispatchPidFile("Builder")), JSON.stringify({ pid: process.pid, at: 5000 }));
     const out = tick(dir, 5000, 4242, ["Manager", "Builder", "Checker"], "Manager");
     assert.match(out, /NUDGE @Checker two/);
     assert.match(out, /NUDGE three/);
     assert.doesNotMatch(out, /@Builder/);
     assert.deepEqual(JSON.parse(readFileSync(join(dir, LINES_SEEN_FILE), "utf8")), linesSeen({ at: 1000 }), "the batch is marked seen");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a routed line is not lost: the lead keeps it while the role's own watch is not running (Security on 3eb2450)", () => {
+  const dir = folder();
+  try {
+    batchFile(dir, ["NUDGE @Builder one"]);
+    assert.match(tick(dir, 5000, 4242, ["Manager", "Builder"], "Manager"), /NUDGE @Builder one/, "no pid file: no watch");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const dir2 = folder();
+  try {
+    batchFile(dir2, ["NUDGE @Builder one"]);
+    writeFileSync(join(dir2, dispatchPidFile("Builder")), JSON.stringify({ pid: 2 ** 22 + 7, at: 5000 }));
+    assert.match(tick(dir2, 5000, 4242, ["Manager", "Builder"], "Manager"), /NUDGE @Builder one/, "a beat from a process that is gone");
+    writeFileSync(join(dir2, dispatchPidFile("Builder")), JSON.stringify({ pid: process.pid, at: 1 }));
+    batchFile(dir2, ["NUDGE @Builder two"], 2000);
+    assert.match(tick(dir2, 5000 + 10 * 60e3, 4242, ["Manager", "Builder"], "Manager") ?? "", /two/, "a stale beat");
+  } finally { rmSync(dir2, { recursive: true, force: true }); }
+});
+
+test("a card id that starts with @ cannot fake the marker: an unrouted line never starts its text with @ (Security on 3eb2450)", () => {
+  assert.equal(plainLine("NUDGE", "@Checker (#C5): its typed eta disagrees"), "NUDGE ?@Checker (#C5): its typed eta disagrees");
+  assert.equal(routeOf(plainLine("NUDGE", "@Checker (#C5): x")), null);
+  assert.equal(plainLine("CONFLICT", "menu: the card says a"), "CONFLICT menu: the card says a");
+  const out = nudges({ config, docs: { initiatives: [card({ id: "@Checker", num: 5, phase: "live", who: "Manager" })], steps: [], ctx: [] }, now: NOW, state: {} }).lines;
+  assert.ok(out.length >= 1);
+  for (const l of out) assert.equal(routeOf(l), null, l);
+  assert.deepEqual(linesFor(out, null, { lead: "Manager", roster: ["Manager", "Checker"], away: [] }), out, "the lead keeps them");
 });
 
 test("the agent's own watch prints the lines marked for it, once per batch, and not the lead's lines", () => {
