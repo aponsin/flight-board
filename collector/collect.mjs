@@ -14,6 +14,7 @@ import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home } from "../gate/gate.mjs";
+import { cardProblems } from "../gate/card-rules.mjs";
 import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, abandonedAt, subjectNum } from "./derive.mjs";
 import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor } from "./facts.mjs";
 import { shippedBase, afterShipText, fetchBranches } from "./after-ship.mjs";
@@ -446,6 +447,7 @@ export function underLive(d, l, phases) {
   return out;
 }
 
+const RED_MAX = 3;
 export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null, repos = {}, liveState = null, steps = [] }) {
   const c = config.collector;
   const cfg = { ...config, collector: { ...c, notes: localNotes(c.notes) } };
@@ -527,6 +529,14 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const main = mainVersion(line, c.versionPattern);
   const expected = expectedVersions({ cards, derived, live: { version: live?.version ?? null, mainVersion: main }, runOf, config });
   for (const [id, e] of Object.entries(expected)) derived[id].expected = e;
+  // #C662: the card rules (gate/card-rules.mjs) asked of every open card each run, the problems written as red lines in words; the
+  // page shows the line instead of silently picking a source. Fields and steps are the board's own, the reading is derived.
+  for (const card of open) {
+    const d = derived[card.id];
+    if (!d) continue;
+    const red = cardProblems(card, { steps, derived: d, live: liveState, config }).map((p) => lineText(p.text, 240)).slice(0, RED_MAX);
+    if (red.length) d.red = red;
+  }
   // Each phase's times from the evidence (#C235), for open cards and those closed in the last STEPS_DAYS days.
   const times = {};
   const recent = cards.filter((k) => closed(k) && Number.isFinite(k.doneAt) && k.doneAt > now - STEPS_DAYS * 864e5);

@@ -11,6 +11,7 @@ import { approvalWriteErrors, agentPrWriteErrors } from "./agent-prs.mjs";
 import { buildingNow, liveCard } from "../collector/state-schema.mjs";
 import { openElsewhere, buildState } from "./build-steps.mjs";
 import { reworkOwed, issueTotal, signalText, ISSUE_KINDS, DONE_WHEN_MAX, halfLive } from "../collector/rework.mjs";
+import { fieldProblems, stepProblems } from "./card-rules.mjs";
 
 const PAGE = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 let page;
@@ -295,6 +296,12 @@ export function writeErrors(w, { config, who, now }) {
   // gives the page no place for the card, so it showed as queued with Build lit. Waiting for the install is "ship": the collector's derived wait shows it (the page's KNOWN_WAITS).
   if (collection === "initiatives" && data && typeof data === "object" && data.phase !== undefined && data.phase !== null && !phases.includes(data.phase)) {
     e.push(`unknown phase ${JSON.stringify(String(data.phase).slice(0, 40))} on a card (use ${phases.join(", ")}): a card waiting for the install stays on "ship": the board shows "Waiting for install" itself, from the repository, so write phase "ship" and no wait field`);
+  }
+  // The card schema (#C662, gate/card-rules.mjs): a field the schema does not name, and a typed field (status, who, size, level,
+  // wait, kind, phase) outside its list or set to null, are refused with the field's name. A phase the board does not list is
+  // the check above.
+  if (collection === "initiatives" && op !== "delete" && data && typeof data === "object" && !Array.isArray(data)) {
+    for (const p of fieldProblems(data, config, { only: data })) if (p.code !== "value:phase") e.push(p.text);
   }
   if (collection === "steps" && op === "set") {
     if (!phases.includes(data.phase)) e.push(`unknown phase "${data.phase}" (use ${phases.join(", ")})`);
@@ -715,6 +722,15 @@ export function mirrorErrors(w, { config, mirror, batch = [], now: at = Date.now
   const was = cards.find((k) => k.id === id);
   const now = { ...(op === "update" ? was : {}), ...data };
   const derived = (mirror.docs.derived ?? []).find((d) => d.id === "all")?.cards?.[id];
+  // The card's rules against the board's steps and the repository's reading (#C662): the write may not bring in a problem the
+  // card did not have (queued with a step of its own, past build with no build end step, on ship with nothing on main).
+  // This batch's steps count, so the end step and the move can go in one call.
+  {
+    const batchSteps = batch.filter((b) => b.collection === "steps" && b.op === "set" && b.data).map((b) => b.data);
+    const after = { ...now, id }, before = was ? { ...was, id } : null;
+    const had = new Set(before ? stepProblems(before, { steps: mirror.docs.steps ?? [], derived, live, config }).map((p) => p.code) : []);
+    for (const p of stepProblems(after, { steps: [...(mirror.docs.steps ?? []), ...batchSteps], derived, live, config })) if (!had.has(p.code)) e.push(p.text);
+  }
   // A card's number (#C12) is given once, when the card is made, and kept: never changed or removed.
   if (was && Number.isInteger(was.num) && (op === "set" ? data.num !== was.num : "num" in data && data.num !== was.num)) e.push(`num: this card is #C${was.num} for good`);
   if (!was && op === "set" && data.num === undefined) e.push(`a new card gets its number: num from meta/${CARD_SEQ}, moved in the same batch (scripts/card-ids.mjs)`);

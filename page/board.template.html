@@ -111,6 +111,7 @@ section{min-width:0}
 .track{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:4px}
 .track>.step{flex:1 1 0;min-width:0}
 .wait{flex:0 0 auto;font:600 .62rem var(--mono);text-transform:uppercase;letter-spacing:.03em;text-align:center;padding:5px 6px;border-radius:4px;border:1px dashed var(--warn);color:var(--warn);background:var(--warn-soft);white-space:nowrap}
+.redline{display:flex;flex-direction:column;gap:2px;flex:1 1 100%;font:600 .72rem var(--mono);color:var(--bad,#b3261e)}
 .wait.gate{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
 .wait small{display:block;font-weight:400;opacity:.85}
 .wait.live{animation:pulse 2.4s ease-in-out infinite}
@@ -2015,8 +2016,13 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track">${steps}</div>`}
-   <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}</div>${thread}</div>`;
+   <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div>${thread}</div>`;
 }
+// The card rules' red lines (#C662, gate/card-rules.mjs): the probe writes them into derived/all for an open card that breaks one
+// (queued with a step of its own, past build with no build end step, on ship with nothing on main, a field outside its list),
+// and the card shows them as they are instead of quietly picking one source. Nothing for a card that keeps the rules.
+function redLines(i){if(i.status==="done"||i.status==="dropped")return "";const d=derivedOf(i.id),r=d&&Array.isArray(d.red)?d.red.filter(x=>typeof x==="string"&&x):[];
+  return r.length?`<span class="redline" role="alert">${r.map(x=>`<span>${esc(x)}</span>`).join("")}</span>`:""}
 // Who is on what: { by: { agent: [open cards] }, names: the roster, then anyone else on a card, notes: meta/crew's idle notes }.
 function crewBy(){
   const open=state.initiatives.filter(i=>i.status!=="done"&&(i.who||Object.keys(i.nowPhases||{}).length));

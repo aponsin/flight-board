@@ -122,16 +122,18 @@ test("a whole run: each open card's phase, its conflicts, the live-but-open list
 });
 
 // ---- The gate's rules on the mirror ----
+// A build end step for each fixture card, so the card rules (#C662: past build only with one) stay out of these phase tests.
+const ENDS = ["tabs", "menu", "other", "c", "b", "a", "t", "new-card"].map((id) => ({ id: `${id}-build-end-1`, init: id, phase: "build", kind: "end", who: "Builder", at: 1 }));
 const mirror = (over = {}) => ({ docs: {
   initiatives: [{ id: "tabs", status: "active", phase: "checker", who: "Checker" }, { id: "menu", status: "active", phase: "build", who: "Builder" }],
-  waiting: [], messages: [], derived: [{ id: "all", cards: { tabs: { phase: "security", evidence: "e" } } }], ...over } });
+  steps: ENDS, waiting: [], messages: [], derived: [{ id: "all", cards: { tabs: { phase: "security", evidence: "e" } } }], ...over } });
 const upd = (data, id = "tabs") => ({ op: "update", collection: "initiatives", doc_id: id, data });
 
 test("rule 3: a card's phase moves forward only; a jump past a phase needs it skipped, the evidence past it, or a reason", () => {
   assert.match(mirrorErrors(upd({ phase: "build" }), { config, mirror: mirror() })[0], /only move forward: checker → build/);
   assert.deepEqual(mirrorErrors(upd({ phase: "security" }), { config, mirror: mirror() }), []);
-  assert.match(mirrorErrors(upd({ phase: "live" }), { config, mirror: mirror() })[0], /skips security, ship/);
-  assert.deepEqual(mirrorErrors(upd({ phase: "live", phaseReason: "shipped by hand" }), { config, mirror: mirror() }), []);
+  assert.match(mirrorErrors(upd({ phase: "live", version: "1.0.0" }), { config, mirror: mirror() })[0], /skips security, ship/);
+  assert.deepEqual(mirrorErrors(upd({ phase: "live", version: "1.0.0", phaseReason: "shipped by hand" }), { config, mirror: mirror() }), []);
   assert.deepEqual(mirrorErrors(upd({ phase: "live" }), { config, mirror: mirror({ derived: [{ id: "all", cards: { tabs: { phase: "live" } } }] }) }), [], "the evidence is already live");
   assert.deepEqual(mirrorErrors(upd({ phase: "build" }, "new-card"), { config, mirror: mirror() }), [], "a card the mirror doesn't know");
 });
@@ -148,7 +150,7 @@ test("rule 4b: a card's owner is a roster role or a listed card owner (#C633)", 
 
 test("rule 4: one card per role per build or review phase", () => {
   assert.match(mirrorErrors(upd({ phase: "build", who: "Builder" }, "other"), { config, mirror: mirror({ initiatives: [...mirror().docs.initiatives, { id: "other", status: "active", phase: "plan" }] }) })[0], /menu is on build for Builder: has it moved on\? Update menu first/);
-  assert.deepEqual(mirrorErrors(upd({ phase: "ship", who: "Release" }, "other"), { config, mirror: mirror() }), [], "ship isn't a lane");
+  assert.deepEqual(mirrorErrors(upd({ phase: "ship", who: "Release", version: "1.0.0" }, "other"), { config, mirror: mirror() }), [], "ship isn't a lane");
   assert.deepEqual(mirrorErrors(upd({ phase: "build", who: "Builder" }, "menu"), { config, mirror: mirror() }), [], "the same card");
 });
 

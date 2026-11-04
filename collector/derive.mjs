@@ -95,8 +95,9 @@ export function derivePhase(card, facts, config) {
   const short = String(head).slice(0, 8);
   // readyAt: the READY commit's time, where build ends by the evidence (the page closes a build step left open there).
   const readyAt = Number.isFinite(facts.head.at) ? facts.head.at : null;
-  if (facts.onMain && facts.deployed) return { phase: c.livePhase, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch} and deployed${facts.version ? ` in ${facts.version}` : ""}` };
-  if (facts.onMain) return { phase: c.shipPhase, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch}, not deployed yet` };
+  // onMain (#C662): the card's commit is on the main branch, the evidence the ship rule asks for (gate/card-rules.mjs).
+  if (facts.onMain && facts.deployed) return { phase: c.livePhase, onMain: true, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch} and deployed${facts.version ? ` in ${facts.version}` : ""}` };
+  if (facts.onMain) return { phase: c.shipPhase, onMain: true, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch}, not deployed yet` };
   const ready = boardIdOf(facts.head.message) === card.id || facts.signed.size > 0;
   // Without a trailer or a note the head may still be READY, unsigned yet: build is only what the evidence can show.
   if (!ready) return { phase: c.buildPhase, head, firm: false, evidence: `${facts.head.branch} at ${short}, no READY trailer or sign-off yet` };

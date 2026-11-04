@@ -26,7 +26,7 @@ test("halfLive: the doneWhen indexes with no end step of the card (by id or #C n
 });
 
 test("rule 5b: phase live or status done is refused while a line has no step; a card without doneWhen is unaffected", () => {
-  assert.match(check(upd({ phase: "live" }), [end(0)])[0], /#C700 has doneWhen lines with no step: 1 \(of 0 to 1\)/);
+  assert.match(check(upd({ phase: "live" }), [end(0)]).find((m) => /doneWhen/.test(m)), /#C700 has doneWhen lines with no step: 1 \(of 0 to 1\)/);
   assert.match(check(upd({ status: "done" }), [])[0], /doneWhen lines with no step: 0, 1 \(of 0 to 1\)/);
   assert.deepEqual(check(upd({ phase: "live" }), [end(0), end(1)]).filter((m) => /doneWhen/.test(m)), [], "every line has its step");
   assert.deepEqual(check(upd({ phase: "live" }), [], card({ doneWhen: undefined })).filter((m) => /doneWhen/.test(m)), [], "no doneWhen: unaffected");

@@ -67,6 +67,10 @@ export const DEFAULTS = {
   // shown for a card about the team's main repository; board: the name for a card about the board itself; builders: the
   // roles that build the board, whose cards (owned now, or with a build step by one of them) are the board's.
   repos: { platform: "Platform", board: "Flight-Board", builders: [] },
+  // The values a card's typed fields may hold (#C662, gate/card-rules.mjs): the gate refuses a write outside them and the probe
+  // writes a red line for a card already outside them. phase and who come from phases and the roster, so only these are listed.
+  // wait and kind: no card carries either (a wait lives on a step), so their lists are empty.
+  cardFields: { status: ["queued", "active", "paused", "done", "dropped"], size: ["XS", "S", "M", "L", "XL"], level: ["Quick", "Full", "None"], wait: [], kind: [] },
   // The owner's decisions (gate rules 1 and 11, #C344): a decision is a look decision, needing a picture per option, when
   // its text or title names one of lookWords (a whole word, a plural too), or its card's lane (its who, or whoever built
   // it) is one of visualLanes (the team's roles: none by default). offBoard: wording that sends the owner off the board
@@ -249,6 +253,14 @@ export function checkConfig(c) {
       if (k.builders !== undefined && !(Array.isArray(k.builders) && k.builders.length <= 20 && k.builders.every((r) => typeof r === "string" && NAME.test(r)))) out.push("repos.builders: a list of role names");
     }
   }
+  if (c.cardFields !== undefined) {
+    const k = c.cardFields;
+    if (!k || typeof k !== "object" || Array.isArray(k)) out.push("cardFields: an object");
+    else for (const f of Object.keys(k)) {
+      if (!Object.hasOwn(DEFAULTS.cardFields, f)) out.push(`cardFields: unknown field "${f}" (known: ${Object.keys(DEFAULTS.cardFields).join(", ")})`);
+      else if (!(Array.isArray(k[f]) && k[f].length <= 20 && k[f].every((v) => typeof v === "string" && NAME.test(v)))) out.push(`cardFields.${f}: a list of up to 20 short values`);
+    }
+  }
   if (c.decisions !== undefined) {
     const k = c.decisions;
     if (!k || typeof k !== "object" || Array.isArray(k)) out.push("decisions: an object");
@@ -263,7 +275,7 @@ export function checkConfig(c) {
 
 // The defaults with the team's values on top.
 export function fullConfig(c) {
-  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}), refresh: { ...DEFAULTS.collector.refresh, ...(c?.collector?.refresh ?? {}) }, keeper: { ...DEFAULTS.collector.keeper, ...(c?.collector?.keeper ?? {}) } }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) }, traffic: { ...DEFAULTS.traffic, ...(c?.traffic ?? {}) }, decisions: { ...DEFAULTS.decisions, ...(c?.decisions ?? {}) }, repos: { ...DEFAULTS.repos, ...(c?.repos ?? {}) } };
+  return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}), refresh: { ...DEFAULTS.collector.refresh, ...(c?.collector?.refresh ?? {}) }, keeper: { ...DEFAULTS.collector.keeper, ...(c?.collector?.keeper ?? {}) } }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) }, traffic: { ...DEFAULTS.traffic, ...(c?.traffic ?? {}) }, decisions: { ...DEFAULTS.decisions, ...(c?.decisions ?? {}) }, cardFields: { ...DEFAULTS.cardFields, ...(c?.cardFields ?? {}) }, repos: { ...DEFAULTS.repos, ...(c?.repos ?? {}) } };
 }
 
 // The board's id, from its link: what the gate matches a write's url against.
