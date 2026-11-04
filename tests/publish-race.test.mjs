@@ -93,7 +93,11 @@ test("(2) the read-back check: ok on the page, MISMATCH on any other, can't chec
   assert.deepEqual(publishCheck(wrap(page), h), { ok: true, line: "publish check: ok" });
   const bad = publishCheck(wrap(page + "<script>x()</script>"), h);
   assert.equal(bad.ok, false); assert.match(bad.line, /^publish check: MISMATCH: the board holds [0-9a-f]{12}, the hook verified [0-9a-f]{12}: tell Security and the owner$/);
-  assert.match(publishCheck(page, h).line, /can't check: the read-back isn't wrapped/);
+  assert.deepEqual(publishCheck(page, h), { ok: true, line: "publish check: ok" }, "the bare page, as the connector's read_file saves it, is checked by its hash too");
+  assert.match(publishCheck(page + "<!-- x -->", h).line, /MISMATCH/, "a bare page that differs is a mismatch");
+  assert.equal(unwrap(page), page);
+  assert.match(publishCheck("  \n", h).line, /can't check: the read-back is empty/);
+  assert.match(publishCheck("", h).line, /can't check: the read-back is empty/);
   assert.match(publishCheck(wrap(page), "abc").line, /can't check: no sha256/);
 });
 

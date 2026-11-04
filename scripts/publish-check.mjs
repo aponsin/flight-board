@@ -13,18 +13,19 @@ import { fileURLToPath } from "node:url";
 const SKELETON_HEAD = /^<!doctype html><html><head>(?:(?!<\/head>)[\s\S]){0,4000}<\/head><body>\n/;
 const SKELETON_TAIL = "\n</body></html>";
 
-// The page inside the app's wrapping, or null when the text isn't wrapped as the app wraps a page.
+// The page inside the app's wrapping; the text as it is when it carries no wrapping (the bare page, as the connector's read_file
+// saves it: its hash is the page's own, so the compare below stays the check); null when there is nothing to check.
 export function unwrap(text) {
   const s = String(text ?? ""), head = SKELETON_HEAD.exec(s);
-  if (!head || !s.endsWith(SKELETON_TAIL)) return null;
-  return s.slice(head[0].length, s.length - SKELETON_TAIL.length);
+  if (head && s.endsWith(SKELETON_TAIL)) return s.slice(head[0].length, s.length - SKELETON_TAIL.length);
+  return s.trim() ? s : null;
 }
 
 // { ok, line } for a read-back's text and the sha256 the hook named.
 export function publishCheck(text, expected) {
   if (!/^[0-9a-f]{64}$/.test(String(expected ?? ""))) return { ok: false, line: "publish check: can't check: no sha256 from the hook's reason line" };
   const page = unwrap(text);
-  if (page === null) return { ok: false, line: "publish check: can't check: the read-back isn't wrapped as the app wraps a page" };
+  if (page === null) return { ok: false, line: "publish check: can't check: the read-back is empty" };
   const got = createHash("sha256").update(page, "utf8").digest("hex");
   return got === expected
     ? { ok: true, line: "publish check: ok" }
