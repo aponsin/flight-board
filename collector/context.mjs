@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
+import { windowOf } from "./readings.mjs";
 
 export const LIST_TOOL = "mcp__ccd_session_mgmt__list_sessions";
 export const USAGE_TOOL = "mcp__ccd_session_mgmt__get_usage";
@@ -147,7 +148,10 @@ export function writeContext(dir, out, config, now) {
     const id = plan?.roles?.[role];
     let r = null;
     try { r = id && SESSION.test(id) ? JSON.parse(readFileSync(join(dir, USAGE_DIR, `${id}.json`), "utf8")) : null; } catch { /* no reading */ }
-    const tile = wholeTokens(r?.tokens) ? { pct: r.pct, tokens: r.tokens, at: r.at } : { pct: r?.pct, at: r?.at };
+    // #C672: a role with its own window in the config (contextWindows) has its percentage worked from the tokens against that
+    // window, the number the hook and the probe use; the app's percentage is used for the others.
+    const own = wholeTokens(r?.tokens) && Object.hasOwn(config.contextWindows ?? {}, role) ? windowOf(config.contextWindows, role) : null;
+    const tile = wholeTokens(r?.tokens) ? { pct: own ? Math.min(100, Math.round((r.tokens / own) * 100)) : r.pct, tokens: r.tokens, at: r.at } : { pct: r?.pct, at: r?.at };
     if (!plain(r) || r.status !== "ok" || !(r.at >= plan.at) || ctxDocErrors(tile, now).length) continue;
     agents[role] = tile;
     writeFileSync(join(out, ctxFile(role)), JSON.stringify(agents[role]));

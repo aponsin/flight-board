@@ -63,12 +63,21 @@ def texts(content):
 # never a new hook: the config is the one the board's Stop gate is registered with in ~/.claude/settings.json ("…/gate/
 # stop.mjs' --config '<path>'"). No config, or no good value: 400k, the limit before.
 RESET_AT = 400000
+# #C672: the config's contextWindows { Role: tokens }, the window a role's memory tile is worked against (the same number the
+# probe and the Collector use). Empty when the config has none or can't be read.
+WINDOWS = {}
 try:
     with open(os.path.join(os.path.expanduser("~"), ".claude", "settings.json"), encoding="utf-8") as _f:
         _m = re.search(r"/gate/stop\.mjs' --config '([^'\n]{1,300})'", _f.read())
     if _m:
         with open(os.path.expanduser(_m.group(1)), encoding="utf-8") as _f:
-            _r = json.load(_f).get("resetAt")
+            _cfg = json.load(_f)
+        _r = _cfg.get("resetAt")
+        _w = _cfg.get("contextWindows")
+        if isinstance(_w, dict):
+            for _k, _v in _w.items():
+                if isinstance(_k, str) and isinstance(_v, (int, float)) and not isinstance(_v, bool) and 100000 <= _v <= 2000000 and _v == int(_v):
+                    WINDOWS[_k] = int(_v)
         # A whole number written 600000.0 or 6e5 is a float to json.load but whole to checkConfig (Security's LOW).
         if isinstance(_r, (int, float)) and not isinstance(_r, bool) and 100000 <= _r <= 2000000 and _r == int(_r):
             RESET_AT = int(_r)
@@ -228,7 +237,7 @@ if TITLE and not cleared and tokens is not None and tokens > RESET_AT:
 # per-turn call. Only a role with a tile from the Collector on this machine (the board's mirror, ~/.flight-board/<board>/
 # mirror/ctx/<Role>.json), whose tokens over percent give its window (the model id doesn't say: a 1M session reads
 # plain "claude-opus-5-5"), snapped to 200k or 1M. What it last asked is kept in ~/.flight-board/ctx-asks/<Role>.json.
-CTX_STALE_MIN, CTX_DRIFT = 30, 5
+CTX_STALE_MIN, CTX_DRIFT = 30, 10  # #C672: ask on a move of 10 points (it was 5) or when the tile is 30 minutes old
 ROLE_FILE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 def read_json(p):
     try:
@@ -254,6 +263,9 @@ def tile_ask():
         _w = os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "")
         if re.fullmatch(r"[0-9]{6,7}", _w) and 100000 <= int(_w) <= 2000000:
             size = int(_w)
+        # #C672: the config's window for this role wins, so the hook, the probe and the Collector divide by the same number.
+        if TITLE in WINDOWS:
+            size = WINDOWS[TITLE]
         pct = min(100, round(tokens * 100 / size))
         ms = int(time.time() * 1000)
         asked = read_json(os.path.join(fb, "ctx-asks", TITLE + ".json"))

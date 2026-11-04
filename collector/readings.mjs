@@ -15,11 +15,17 @@ export function contextTokens(entries) {
 // Each role's context (#C592): { <role>: { pct, tokens, at, over } } against the window (the board's resetAt is where the
 // roles reset, so pct is of the window and over is tokens at or past resetAt).
 export const WINDOW_TOKENS = 1_000_000;
-export function ctxReadings({ tokens, resetAt, now, window = WINDOW_TOKENS }) {
+// #C672: windows { Role: tokens } is the config's contextWindows: a role listed there is worked against its own window (Manager's
+// 350,000), the same number the red-ask hook and the Collector use; the others against `window`.
+export const windowOf = (windows, role, window = WINDOW_TOKENS) => {
+  const w = windows && typeof windows === "object" && !Array.isArray(windows) && Object.hasOwn(windows, role) ? windows[role] : null;
+  return Number.isInteger(w) && w >= 100000 && w <= 2000000 ? w : window;
+};
+export function ctxReadings({ tokens, resetAt, now, window = WINDOW_TOKENS, windows = {} }) {
   const out = {};
   for (const [role, t] of Object.entries(tokens)) {
     if (!ROLE.test(role) || !Number.isInteger(t)) continue;
-    out[role] = { pct: Math.min(100, Math.round((t / window) * 100)), tokens: t, at: now, over: t >= resetAt };
+    out[role] = { pct: Math.min(100, Math.round((t / windowOf(windows, role, window)) * 100)), tokens: t, at: now, over: t >= resetAt };
   }
   return out;
 }

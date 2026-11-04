@@ -11,6 +11,10 @@ export const DEFAULTS = {
   // reads it from this file, and the context keeper's prompt is filled with it ({{RESET_AT}}), so a new limit is a
   // config change, never a re-sign.
   resetAt: 400000,
+  // #C672: a role's context window in tokens, when it is not the default 1,000,000 (Manager's 350,000, set by its
+  // CLAUDE_CODE_AUTO_COMPACT_WINDOW). The red-ask hook (which asks the agent to write its memory tile), the probe and the Collector
+  // work every role's percentage against this one number, so a tile never flips between two windows. { Role: tokens }.
+  contextWindows: {},
   phases: [["plan", "Plan"], ["build", "Build"], ["test", "Test"], ["language", "Language"], ["checker", "Checker"], ["security", "Security"], ["ship", "Ship"], ["live", "Live"]],
   roster: ["Manager", "Builder", "Checker", "Security", "Release"],
   order: ["Manager", "Builder", "Checker", "Security", "Release"],
@@ -94,6 +98,10 @@ export function checkConfig(c) {
   if (c.artifactSlug !== undefined && c.artifactSlug !== "" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(c.artifactSlug))) out.push("artifactSlug: the artifact's UUID in lower case, or empty");
   if (c.artifactUrl !== undefined && c.artifactUrl !== "" &&!/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+$/.test(String(c.artifactUrl))) out.push("artifactUrl: a claude.ai artifact link, or empty");
   if (c.resetAt !== undefined && !(Number.isInteger(c.resetAt) && c.resetAt >= 100000 && c.resetAt <= 2000000)) out.push("resetAt: whole tokens, 100,000 to 2,000,000");
+  if (c.contextWindows !== undefined) {
+    const w = c.contextWindows, ok = w && typeof w === "object" && !Array.isArray(w) && Object.keys(w).length <= 40 && Object.entries(w).every(([r, t]) => /^[A-Za-z0-9_-]{1,60}$/.test(r) && Number.isInteger(t) && t >= 100000 && t <= 2000000);
+    if (!ok) out.push("contextWindows: { Role: whole tokens, 100,000 to 2,000,000 } for up to 40 roles (letters, digits, _ and -)");
+  }
   if (c.phases !== undefined) {
     if (!Array.isArray(c.phases) || c.phases.length < 2) out.push("phases: at least two [key, label] pairs");
     else {

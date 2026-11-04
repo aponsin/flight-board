@@ -175,7 +175,7 @@ test("a whole resetAt written as 600000.0 or 6e5 is 600k to the hook too, as it 
 });
 
 // #C392 (b), Manager's pick A: the live memory tile. The hook asks the agent to write ctx/<Role> when the board's tile is
-// 30+ min old or 5+ points off; the window comes from the Collector's reading on this machine (tokens over pct).
+// 30+ min old or 10+ points off (#C672: it was 5); the window comes from the Collector's reading on this machine (tokens over pct).
 const tileHome = (role, reading) => {
   const home = mkdtempSync(join(tmpdir(), "fb-home-"));
   const d = join(home, ".flight-board", "Board1", "mirror", "ctx");
@@ -184,16 +184,18 @@ const tileHome = (role, reading) => {
   return home;
 };
 const at1 = (tokens, title = "Manager") => { const l = turn([], { title, text: "status" }); l[2].message.usage = { input_tokens: tokens, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }; return l; };
-test("the live tile: asked when the board's tile is 5+ points off or 30+ min old, once, on the Collector's window", () => {
+test("the live tile: asked when the board's tile is 10+ points off or 30+ min old, once, on the Collector's window", () => {
   const now = Date.now();
-  const home = tileHome("Manager", { pct: 34, tokens: 340000, at: now - 18 * 60e3 });
+  const home = tileHome("Manager", { pct: 29, tokens: 290000, at: now - 18 * 60e3 });
   try {
     const r = hook(at1(390000), home);
-    assert.match(r, /^Memory tile: your context is 39% of its window \(390k tokens\); the board's tile says 34%, 18 min old\. /);
+    assert.match(r, /^Memory tile: your context is 39% of its window \(390k tokens\); the board's tile says 29%, 18 min old\. /);
     assert.match(r, /db_get ctx\/Manager for its version, then db_write set ctx\/Manager \{"pct": 39, "tokens": 390000, "at": \d{13}\}/);
     assert.equal(hook(at1(391000), home), "", "asked already: the next turn, still 39%, says nothing");
     assert.equal(hook(at1(420000), home).includes("Memory tile"), false, "3 points on from what it last asked: nothing");
-    assert.match(hook(at1(440000), home), /Memory tile: your context is 44%/, "5 points on from what it last asked");
+    assert.equal(hook(at1(440000), home).includes("Memory tile"), false, "5 points on from what it last asked: nothing since #C672");
+    assert.equal(hook(at1(480000), home).includes("Memory tile"), false, "9 points on: nothing");
+    assert.match(hook(at1(490000), home), /Memory tile: your context is 49%/, "10 points on from what it last asked");
   } finally { rmSync(home, { recursive: true, force: true }); }
   const fresh = tileHome("Manager", { pct: 42, tokens: 420000, at: now - 10 * 60e3 });
   try { assert.equal(hook(at1(400000), fresh), "", "2 points off, 10 min old: nothing"); } finally { rmSync(fresh, { recursive: true, force: true }); }
@@ -213,6 +215,33 @@ test("the live tile: asked when the board's tile is 5+ points off or 30+ min old
   } finally { rmSync(win, { recursive: true, force: true }); }
   const none = tileHome("Manager", null);
   try { assert.doesNotMatch(hook(at1(430000, "Collector"), none), /Memory tile/, "no tile for the role on this machine: never asked"); } finally { rmSync(none, { recursive: true, force: true }); }
+});
+
+// #C672: one window per role. The config's contextWindows { Role: tokens } is what the hook divides by, ahead of the session's
+// CLAUDE_CODE_AUTO_COMPACT_WINDOW and the tile's own tokens-over-percent; a role not listed keeps the old rule.
+const windowHome = (raw, role = "Manager", reading) => {
+  const home = configHome(undefined, raw);
+  const d = join(home, ".flight-board", "Board1", "mirror", "ctx");
+  mkdirSync(d, { recursive: true });
+  writeFileSync(join(d, `${role}.json`), JSON.stringify(reading ?? { pct: 40, tokens: 140000, at: Date.now() - 40 * 60e3 }));
+  return home;
+};
+test("contextWindows: the config's window for the role, ahead of the environment and the tile; a role not listed keeps the old rule", () => {
+  const cfg = (w) => JSON.stringify({ owner: "Owner", contextWindows: w });
+  const h = windowHome(cfg({ Manager: 350000 }));
+  try {
+    assert.match(hook(at1(175000), h), /your context is 50% of its window \(175k tokens\)/, "350k from the config, no environment");
+  } finally { rmSync(h, { recursive: true, force: true }); }
+  const env = windowHome(cfg({ Manager: 350000 }));
+  try { assert.match(hook(at1(175000), env, { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "500000" }), /your context is 50% of its window/, "the config wins over the environment"); } finally { rmSync(env, { recursive: true, force: true }); }
+  const other = windowHome(cfg({ Builder: 350000 }));
+  try { assert.match(hook(at1(175000), other), /your context is 88% of its window/, "Manager not listed: the tile's own window (140k at 40% snaps to 200k), as before"); } finally { rmSync(other, { recursive: true, force: true }); }
+  for (const bad of [{ Manager: "350000" }, { Manager: 50000 }, { Manager: 3000000 }, { Manager: 350000.5 }, { Manager: true }, [350000], "350000", null]) {
+    const b = windowHome(cfg(bad));
+    try { assert.match(hook(at1(175000), b), /your context is 88% of its window/, `${JSON.stringify(bad)}: refused, the old rule`); } finally { rmSync(b, { recursive: true, force: true }); }
+  }
+  const whole = windowHome('{"owner": "Owner", "contextWindows": {"Manager": 3.5e5}}');
+  try { assert.match(hook(at1(175000), whole), /your context is 50% of its window/, "350000 written 3.5e5 is whole to checkConfig and to the hook"); } finally { rmSync(whole, { recursive: true, force: true }); }
 });
 
 // #C392: the cue waits one turn while the owner is in the middle of something. Manager's 06:31Z reset threw away the
