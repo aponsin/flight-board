@@ -1,0 +1,1 @@
+PASS Full: #C646 doc-cap dry/steps/messages/restore; deletes pinned ifVersion 1 (messages are written once on the live board); nothing sent by the tool.
