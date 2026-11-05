@@ -1,0 +1,1 @@
+SECURE #C686 #C687: Copy fallback in page/board.template.html only. Temporary element written with textContent, removed after; no HTML sink; label kept in data-label and restored with textContent; no new network or storage. 1448 tests green; 2 mutants killed (innerHTML, ok=true).
