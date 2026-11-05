@@ -101,6 +101,22 @@ test("a #T button with no <code>, copy refused or throwing: says Copy failed, ne
   }
 });
 
+test("two clicks inside the 1.5 s window: the resting label comes back, for a #T button and a Copy button, copied or failed", async () => {
+  for (const [exec, label, copy] of [[() => true, "#T5", "#T5"], [() => false, "#T5", "#T5"], [() => true, "Copy", LINE]]) {
+    const timers = [];
+    const sel = { removeAllRanges() {}, addRange() {} };
+    const b = loadNames(["askHtml"], { navigator: { clipboard: { writeText: () => Promise.reject(new Error("denied")) } }, getSelection: () => sel, setTimeout: (f) => timers.push(f) });
+    b.document.createRange = () => ({ selectNodeContents() {} });
+    b.document.createElement = () => ({ style: {}, remove() {} });
+    b.document.body = { appendChild() {} };
+    b.document.execCommand = exec;
+    const btn = { dataset: { copy }, textContent: label, parentElement: { querySelector: () => (label === "Copy" ? {} : null) }, closest: (s) => (s === ".copy" ? btn : null) };
+    await click({ b, btn }); await click({ b, btn });
+    for (const f of timers) f();
+    assert.equal(btn.textContent, label);
+  }
+});
+
 test("writeText refused, execCommand refused or throwing: keeps the Cmd+C hint", async () => {
   const f = refused(() => false);
   await click(f);
