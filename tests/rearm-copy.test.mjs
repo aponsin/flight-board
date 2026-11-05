@@ -53,3 +53,31 @@ test("a click on it copies exactly the line and says Copied", async () => {
   assert.equal(copied, LINE);
   assert.equal(btn.textContent, "Copied");
 });
+
+// #C686: some panes refuse navigator.clipboard.writeText (permission "denied"); the fallback selects the line and asks the page to copy it.
+const refused = (exec) => {
+  const sel = { removeAllRanges() {}, addRange() {} };
+  const b = loadNames(["askHtml"], { navigator: { clipboard: { writeText: () => Promise.reject(new Error("denied")) } }, getSelection: () => sel });
+  b.document.createRange = () => ({ selectNodeContents() {} });
+  const calls = [];
+  b.document.execCommand = (c) => { calls.push(c); return exec(); };
+  const btn = { dataset: { copy: LINE }, textContent: "Copy", parentElement: { querySelector: () => ({}) }, closest: (s) => (s === ".copy" ? btn : null) };
+  return { b, btn, calls };
+};
+const click = async ({ b, btn }) => { for (const fn of b.listeners.click ?? []) fn({ target: btn, preventDefault() {} }); await null; await null; await null; };
+
+test("writeText refused, execCommand('copy') accepted: says Copied", async () => {
+  const t = refused(() => true);
+  await click(t);
+  assert.deepEqual(t.calls, ["copy"]);
+  assert.equal(t.btn.textContent, "Copied");
+});
+
+test("writeText refused, execCommand refused or throwing: keeps the Cmd+C hint", async () => {
+  const f = refused(() => false);
+  await click(f);
+  assert.equal(f.btn.textContent, "Selected: press Cmd+C");
+  const t = refused(() => { throw new Error("no"); });
+  await click(t);
+  assert.equal(t.btn.textContent, "Selected: press Cmd+C");
+});

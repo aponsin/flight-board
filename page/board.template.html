@@ -1010,7 +1010,7 @@ document.addEventListener("keydown",e=>{if($("lightbox").hidden)return;if(e.key=
 document.addEventListener("click",e=>{const t=e.target.closest&&e.target.closest(".thumb");if(t){e.preventDefault();openShot(t)}
   const c=e.target.closest&&e.target.closest(".copy");if(c){e.preventDefault();const txt=c.dataset.copy;
     const done=()=>{c.textContent="Copied";setTimeout(()=>{c.textContent="Copy"},1500)};
-    const fallback=()=>{const code=c.parentElement.querySelector("code");const r=document.createRange();r.selectNodeContents(code);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);c.textContent="Selected: press Cmd+C"};
+    const fallback=()=>{const code=c.parentElement.querySelector("code");const r=document.createRange();r.selectNodeContents(code);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);let ok=false;try{ok=document.execCommand("copy")===true}catch(_){}if(ok)done();else c.textContent="Selected: press Cmd+C"};
     try{navigator.clipboard.writeText(txt).then(done,fallback)}catch(_){fallback()}}});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("lightbox").hidden)closeShot()});
 
