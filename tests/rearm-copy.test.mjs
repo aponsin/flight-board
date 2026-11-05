@@ -73,6 +73,34 @@ test("writeText refused, execCommand('copy') accepted: says Copied", async () =>
   assert.equal(t.btn.textContent, "Copied");
 });
 
+// #C687: the #T number buttons have no <code> beside them; the fallback copies through a temporary element and gives the number back.
+const tnum = (exec) => {
+  const t = refused(exec);
+  const made = [];
+  t.b.document.createElement = () => { const e = { style: {}, remove() { e.gone = true; } }; made.push(e); return e; };
+  t.b.document.body = { appendChild() {} };
+  t.made = made;
+  Object.assign(t.btn, { dataset: { copy: "#T5" }, textContent: "#T5", parentElement: { querySelector: () => null } });
+  return t;
+};
+test("a #T button with no <code>: copies through a temporary element and says Copied", async () => {
+  const t = tnum(() => true);
+  await click(t);
+  assert.deepEqual(t.calls, ["copy"]);
+  assert.equal(t.made.length, 1);
+  assert.equal(t.made[0].textContent, "#T5");
+  assert.equal(t.made[0].gone, true);
+  assert.equal(t.btn.textContent, "Copied");
+});
+test("a #T button with no <code>, copy refused or throwing: says Copy failed, never throws", async () => {
+  for (const exec of [() => false, () => { throw new Error("no"); }]) {
+    const t = tnum(exec);
+    await click(t);
+    assert.equal(t.btn.textContent, "Copy failed");
+    assert.equal(t.made[0].gone, true);
+  }
+});
+
 test("writeText refused, execCommand refused or throwing: keeps the Cmd+C hint", async () => {
   const f = refused(() => false);
   await click(f);

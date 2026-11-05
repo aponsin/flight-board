@@ -1009,8 +1009,12 @@ function zoomBy(f,cx,cy){zoomTo(lbZ*f,cx,cy)}
 document.addEventListener("keydown",e=>{if($("lightbox").hidden)return;if(e.key==="ArrowRight"){e.preventDefault();stepShot(1)}if(e.key==="ArrowLeft"){e.preventDefault();stepShot(-1)}if(e.key==="+"||e.key==="="){e.preventDefault();zoomBy(1.5)}if(e.key==="-"){e.preventDefault();zoomBy(1/1.5)}});
 document.addEventListener("click",e=>{const t=e.target.closest&&e.target.closest(".thumb");if(t){e.preventDefault();openShot(t)}
   const c=e.target.closest&&e.target.closest(".copy");if(c){e.preventDefault();const txt=c.dataset.copy;
-    const done=()=>{c.textContent="Copied";setTimeout(()=>{c.textContent="Copy"},1500)};
-    const fallback=()=>{const code=c.parentElement.querySelector("code");const r=document.createRange();r.selectNodeContents(code);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);let ok=false;try{ok=document.execCommand("copy")===true}catch(_){}if(ok)done();else c.textContent="Selected: press Cmd+C"};
+    const orig=c.textContent;
+    const done=()=>{c.textContent="Copied";setTimeout(()=>{c.textContent=orig},1500)};
+    const fallback=()=>{const code=c.parentElement.querySelector("code");let tmp=null;if(!code){tmp=document.createElement("span");tmp.textContent=txt;tmp.style.cssText="position:fixed;left:-9999px;top:0;white-space:pre";document.body.appendChild(tmp)}
+      let ok=false;try{const r=document.createRange();r.selectNodeContents(code||tmp);const sel=getSelection();sel.removeAllRanges();sel.addRange(r);ok=document.execCommand("copy")===true}catch(_){}
+      if(tmp)tmp.remove();
+      if(ok)done();else if(code)c.textContent="Selected: press Cmd+C";else{c.textContent="Copy failed";setTimeout(()=>{c.textContent=orig},1500)}};
     try{navigator.clipboard.writeText(txt).then(done,fallback)}catch(_){fallback()}}});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("lightbox").hidden)closeShot()});
 
