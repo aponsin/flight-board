@@ -131,9 +131,11 @@ function dbCall(tool, t, spec, read, mtime, now) {
 // query.cursor of the board's characters, query.where one condition, "at" or "updatedAt" at or after a time), get of derived/all,
 // and set of derived/all from the probe's own derived-all.json (file_path, exactly that path; if_version a whole number). No
 // out_dir (the PostToolUse hook records the answer), no inline data, no order_by, no other action.
+const AD_KEYS = { get: ["url", "action", "collection", "doc_id"], set: ["url", "action", "collection", "doc_id", "file_path", "if_version"], list: ["url", "action", "collection", "query"], query: ["url", "action", "collection", "query"] };
 function adCall(t, spec, read, mtime, now) {
   if (t.url !== spec.url) return "ArtifactData: this board only";
-  const keys = { get: ["url", "action", "collection", "doc_id"], set: ["url", "action", "collection", "doc_id", "file_path", "if_version"], list: ["url", "action", "collection", "query"], query: ["url", "action", "collection", "query"] }[t.action];
+  if (typeof t.action !== "string") return "ArtifactData: action is a word";
+  const keys = Object.hasOwn(AD_KEYS, t.action) ? AD_KEYS[t.action] : undefined;
   if (!keys) return `ArtifactData: ${String(t.action)} is not one of the collector's steps`;
   const extra = onlyKeys(t, keys);
   if (extra.length) return `ArtifactData ${t.action}: unexpected ${extra.join(", ")}`;
@@ -306,6 +308,10 @@ export function parseAdAnswer(response, kind, collection) {
   }
   const tail = all.slice(end + close.length + 1);
   const m = /^next_cursor: "([^"]*)"/m.exec(tail);
+  // After the documents the board writes a cursor line or nothing. Text there that mentions a cursor but is not that line (renamed,
+  // unquoted, in single quotes, capitalised, mid-sentence) means the format moved: no record, rather than "the last page", which
+  // would let a delta merge with pages missing (Security R1). A full last page with no cursor text is still the last page.
+  if (!m && /next.?cursor/i.test(tail)) return { error: "the cursor line is not the one the board writes" };
   const next = m ? m[1] : null;
   if (next !== null && !CURSOR.test(next)) return { error: "the next cursor is not the board's characters" };
   const out = [];

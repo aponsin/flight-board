@@ -65,7 +65,8 @@ test("get and set: derived/all only; set from the probe's file path, exactly, a 
   refused(call(setAll({ file_path: undefined, data: doc })), "unexpected data");
   refused(call(setAll({ data: doc })), "unexpected data");
   for (const if_version of [0, -1, "7", 1.5]) refused(call(setAll({ if_version })), "if_version");
-  for (const action of ["update", "delete", "batch", "str_replace", "profiles", undefined]) refused(call({ ...setAll(), action }), "not one of the collector's steps");
+  for (const action of ["update", "delete", "batch", "str_replace", "profiles", "constructor", "__proto__", "toString", "hasOwnProperty"]) refused(call({ ...setAll(), action }), "not one of the collector's steps");
+  for (const action of [undefined, ["list"], 5, null, { a: 1 }]) refused(call({ ...setAll(), action }), "action is a word");
   refused(call(setAll(), {}), "", (p) => { throw new Error("no mtime"); }); // an undatable file
   refused(call(setAll()), "more than 30 minutes", (p) => NOW - FRESH_MAX_MS - 1);
   refused(call(setAll()), "in the future", (p) => NOW + 3600e3);
@@ -108,6 +109,12 @@ test("parseAdAnswer: the documents, the next cursor, the version; an answer that
     [answer("derived", [D("all"), D("two")]), "get", "derived", /no version/],
     [answer("derived", [JSON.stringify({ id: "all", data: {} })]), "get", "derived", /no version/],
   ]) assert.match(parseAdAnswer(r, kind, c).error ?? "", why);
+  // Security R1: text after the documents that mentions a cursor but is not the board's line means the format moved, so it is no
+  // record (the export is marked failed), never "the last page". A full last page with nothing about a cursor is still a page.
+  const end = "=== END ARTIFACT DB b8fa158b ===";
+  for (const tail of ["next_cursor: tok_1=", "next_cursor: 'tok_1='", "nextCursor: \"tok_1=\"", "Next_cursor: \"tok_1=\"", "More pages: pass the next cursor \"tok_1=\"", "see next-cursor: \"tok_1=\"", " next_cursor: \"tok_1=\"", "cursor next_cursor: \"tok_1=\""])
+    assert.match(parseAdAnswer(answer("steps", [D("a")]).replace(end, `${end}\n${tail}`), "list", "steps").error ?? "", /cursor line/, tail);
+  assert.deepEqual(parseAdAnswer(answer("steps", [D("a")]).replace(end, `${end}\n`), "list", "steps").next, null);
   // A document that carries a next_cursor line is data, not the page's cursor. JSON.stringify escapes a newline but leaves U+2028
   // raw, and a /m regex counts it as a line start, so only reading the cursor from after the END marker keeps this out.
   // (The text ends at the quote that follows "next_cursor: ", which is all the regex needs to take it from the document.)
