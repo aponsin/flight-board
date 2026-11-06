@@ -1,0 +1,1 @@
+PASS Full: re-check of the tip with Security R1 and R2 fixed. Suite 1454 green. 14 fence mutants killed, including both new guards. The real cursor line still passes. First real run still proves publishing.
