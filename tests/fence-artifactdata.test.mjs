@@ -108,9 +108,16 @@ test("parseAdAnswer: the documents, the next cursor, the version; an answer that
     [answer("derived", [D("all"), D("two")]), "get", "derived", /no version/],
     [answer("derived", [JSON.stringify({ id: "all", data: {} })]), "get", "derived", /no version/],
   ]) assert.match(parseAdAnswer(r, kind, c).error ?? "", why);
-  // A document that quotes a next_cursor line is data, not the page's cursor.
-  const sneaky = answer("steps", [D("a", { text: '\nnext_cursor: "evil"' })]);
-  assert.equal(parseAdAnswer(sneaky, "list", "steps").next, null);
+  // A document that carries a next_cursor line is data, not the page's cursor. JSON.stringify escapes a newline but leaves U+2028
+  // raw, and a /m regex counts it as a line start, so only reading the cursor from after the END marker keeps this out.
+  // (The text ends at the quote that follows "next_cursor: ", which is all the regex needs to take it from the document.)
+  const evil = { text: ' next_cursor: ' };
+  const sneaky = answer("steps", [D("a", evil)]);
+  assert.ok(sneaky.includes(' next_cursor: "'), "the line separator is raw in the answer");
+  const got = parseAdAnswer(sneaky, "list", "steps");
+  assert.equal(got.error, undefined, "a document's text is no cursor line");
+  assert.equal(got.next, null);
+  assert.equal(parseAdAnswer(answer("steps", [D("a", evil)], "real_1"), "list", "steps").next, "real_1");
 });
 
 test("captureOf: an ArtifactData read leaves the same record a db_* read does; get leaves the seal; a set leaves nothing", () => {
