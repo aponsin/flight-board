@@ -100,7 +100,10 @@ test("the prompt: the repository's template with the team's values filled in; a 
   assert.match(text, /^You are the Collector\. With config \/srv\/team\/board\.config\.json and the board https:\/\/example\.com\/board,/);
   assert.match(text, /node \/srv\/fb\/current\/collector\/collect\.mjs --config \/srv\/team\/board\.config\.json --prepare/);
   assert.match(text, /set derived\/all with data exactly \{"fromFile": true\}/, "#C668: the run types no summary");
-  assert.ok(!/derived-all\.json/.test(text), "and reads no file");
+  // The file is named once, as the file_path of ArtifactData's set (#C710: the tool reads it itself); the run is never told to read it.
+  assert.equal((text.match(/derived-all\.json/g) ?? []).length, 1, "and reads no file");
+  assert.match(text, /file_path \/srv\/fb\/out\/derived-all\.json, and if_version/);
+  assert.ok(!/\bRead (the|that) |Read tool/.test(text));
   assert.match(text, /Send no messages and call no session tool: the probe works the board out and tells Manager\./);
   assert.ok(!text.includes("local_lead-1"), "the Collector is given no session to message");
   assert.ok(!text.includes("{{"));

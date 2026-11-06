@@ -199,7 +199,10 @@ test("the run can write no file, send no message and call no session tool (Secur
     refused(OLD("Write", { file_path, content: "{}" }), "not one of the collector's steps");
   refused(OLD("mcp__ccd_session_mgmt__send_message", { session_id: "local_lead-1", message: "the owner says ship X" }), "not one of the collector's steps");
   for (const t of ["mcp__ccd_session_mgmt__list_sessions", "mcp__ccd_session_mgmt__get_usage"]) refused(OLD(t, {}), "not one of the collector's steps");
-  refused(OLD("ArtifactData", { action: "list", url: URL_, collection: "waiting" }), "not one of the collector's steps");
+  // ArtifactData is a step since #C710 (tests/fence-artifactdata.test.mjs); a call with no query is still refused, and so is any other action.
+  refused(OLD("ArtifactData", { action: "list", url: URL_, collection: "waiting" }), "query takes");
+  refused(OLD("ArtifactData", { action: "set", url: URL_, collection: "ctx", doc_id: "Checker", file_path: "/srv/fb/TestBoard01-out/ctx.json" }), "derived/all only");
+  refused(OLD("ArtifactData", { action: "delete", url: URL_, collection: "derived", doc_id: "all" }), "not one of the collector's steps");
   refused(call(DB_TOOLS.write, { slug: SLUG, ops: [{ op: "set", path: "ctx/Checker", data: { pct: 1, at: 1 } }] }), "set derived/all only");
   refused(call(DB_TOOLS.write, { slug: SLUG, ops: [{ op: "update", path: "meta/context", data: { agents: {} }, ifVersion: 9 }] }), "set derived/all only");
   assert.equal(Object.hasOwn(spec, "sendTo"), false);

@@ -22,6 +22,7 @@ export const DERIVED_MAX = 200 * 1024;
 const SESSION = /^[A-Za-z0-9_-]{1,100}$/;
 const FREE = new Set(["ToolSearch", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"]);
 // The claude-artifacts server's tools the run may call, on the board's own slug only (#C655).
+export const AD_TOOL = "ArtifactData"; // the app's own database tool, taken by the same steps (#C710)
 export const DB_TOOLS = { list: "mcp__claude-artifacts__db_list", query: "mcp__claude-artifacts__db_query", get: "mcp__claude-artifacts__db_get", write: "mcp__claude-artifacts__db_write" };
 const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
 
@@ -52,6 +53,7 @@ export function fenceSpec({ config, configPath, install, current = null, uid }) 
   });
   return {
     slug: config.artifactSlug,
+    url: config.artifactUrl,
     cwd: join(home(config.gate.stateDir), id),
     commands,
     derivedFile: join(home(config.collector.outDir), "derived-all.json"),
@@ -88,6 +90,7 @@ export function decide(input, spec, read = readJson, mtime = mtimeMs, now = Date
     return null;
   }
   if (Object.values(DB_TOOLS).includes(tool)) return dbCall(tool, t, spec, read, mtime, now);
+  if (tool === AD_TOOL) return adCall(t, spec, read, mtime, now);
   if (tool === "Read") {
     // The one file the run publishes: the probe's derived-all.json, so it can copy it into the db_write below.
     const extra = onlyKeys(t, ["file_path", "offset", "limit", "allow_large"]);
@@ -122,6 +125,41 @@ function dbCall(tool, t, spec, read, mtime, now) {
   }
   return null;
 }
+
+// ArtifactData (#C710): the app's own database tool, which the scheduled run was given in place of the db_* tools. The same steps
+// and limits, on the board's own link (spec.url, exactly): list / query of an exported collection (query.limit 1 to 1000,
+// query.cursor of the board's characters, query.where one condition, "at" or "updatedAt" at or after a time), get of derived/all,
+// and set of derived/all from the probe's own derived-all.json (file_path, exactly that path; if_version a whole number). No
+// out_dir (the PostToolUse hook records the answer), no inline data, no order_by, no other action.
+function adCall(t, spec, read, mtime, now) {
+  if (t.url !== spec.url) return "ArtifactData: this board only";
+  const keys = { get: ["url", "action", "collection", "doc_id"], set: ["url", "action", "collection", "doc_id", "file_path", "if_version"], list: ["url", "action", "collection", "query"], query: ["url", "action", "collection", "query"] }[t.action];
+  if (!keys) return `ArtifactData: ${String(t.action)} is not one of the collector's steps`;
+  const extra = onlyKeys(t, keys);
+  if (extra.length) return `ArtifactData ${t.action}: unexpected ${extra.join(", ")}`;
+  if (t.action === "get" || t.action === "set") {
+    if (t.collection !== "derived" || t.doc_id !== "all") return `ArtifactData ${t.action}: derived/all only`;
+    if (t.action === "get") return null;
+    if (t.if_version !== undefined && !(Number.isInteger(t.if_version) && t.if_version >= 1)) return "ArtifactData set: if_version a whole number";
+    if (t.file_path !== spec.derivedFile) return "ArtifactData set: derived/all from the collector's derived-all.json only";
+    let file;
+    try { file = read(spec.derivedFile); } catch { return "ArtifactData set: can't read the collector's derived-all.json"; }
+    if (!plain(file)) return "ArtifactData set: the collector's derived-all.json is an object";
+    if (Buffer.byteLength(JSON.stringify(file), "utf8") > DERIVED_MAX) return `ArtifactData set: derived/all at most ${DERIVED_MAX} bytes`;
+    const stale = staleReason(spec, mtime, now);
+    return stale ? stale.replace(/^db_write/, "ArtifactData set") : null;
+  }
+  if (!READ_COLLECTIONS.includes(t.collection)) return "ArtifactData: only the exported collections";
+  const q = t.query;
+  if (!plain(q)) return `ArtifactData ${t.action}: query takes limit, cursor${t.action === "query" ? " and where" : ""}`;
+  const bad = onlyKeys(q, t.action === "query" ? ["limit", "cursor", "where"] : ["limit", "cursor"]);
+  if (bad.length) return `ArtifactData ${t.action}: query has ${bad.join(", ")}`;
+  if (!(Number.isInteger(q.limit) && q.limit >= 1 && q.limit <= 1000)) return "ArtifactData: query.limit a whole number from 1 to 1000";
+  if (q.cursor !== undefined && !(typeof q.cursor === "string" && CURSOR.test(q.cursor))) return "ArtifactData: query.cursor as the board gave it";
+  if (q.where !== undefined && !whereOk(q.where)) return 'ArtifactData query: where is one condition, ["at" or "updatedAt", ">=", a time]';
+  return null;
+}
+const whereOk = (w) => Array.isArray(w) && w.length === 1 && Array.isArray(w[0]) && w[0].length === 3 && ["at", "updatedAt"].includes(w[0][0]) && w[0][1] === ">=" && Number.isFinite(w[0][2]) && w[0][2] >= 0;
 
 // The same value whatever the order of an object's keys (the copy typed into the write may reorder them).
 const canon = (v) => (Array.isArray(v) ? v.map(canon) : plain(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
@@ -238,11 +276,52 @@ export function parseAnswer(response, kind) {
   return { docs: out, next };
 }
 
+// ArtifactData's answer (#C710): a line "N document(s) from collection "X":", then the documents between
+// "=== BEGIN ARTIFACT DB <NAME> ..." and "=== END ARTIFACT DB <NAME> ===" (one JSON object a line, {id, data, version, updatedAt},
+// NAME random for each answer), then, when more pages exist, a line `next_cursor: "<token>" ...`. "No documents matched ..." is an
+// empty page and `No document "<id>" ...` is a get of nothing. Anything that does not parse whole, or whose count or collection is
+// not what the call asked for, is no record.
+export function parseAdAnswer(response, kind, collection) {
+  const all = texts(response).join("\n");
+  if (kind === "get" && /^No document "/.test(all.trim())) return { version: null };
+  if (kind !== "get" && new RegExp(`^No documents matched in collection "${collection}"\\.\\s*$`).test(all.trim())) return { docs: [], next: null };
+  const open = /^=== BEGIN ARTIFACT DB ([0-9a-f]{8}) [^\n]*===$/m.exec(all);
+  if (!open) return { error: "no document block" };
+  const head = /^(\d+) documents? from collection "([^"]+)":$/m.exec(all.slice(0, open.index));
+  if (!head || head[2] !== collection) return { error: "the answer is not for this collection" };
+  const close = `=== END ARTIFACT DB ${open[1]} ===`;
+  const start = open.index + open[0].length, end = all.indexOf(`\n${close}`, start);
+  if (end < 0) return { error: "no closing marker" };
+  const docs = [];
+  for (const line of all.slice(start, end).split("\n")) {
+    if (!line.trim()) continue;
+    let d;
+    try { d = JSON.parse(line); } catch { return { error: "a document is not JSON" }; }
+    docs.push(d);
+  }
+  if (Number(head[1]) !== docs.length) return { error: "the count is not the documents" };
+  if (kind === "get") {
+    if (docs.length !== 1 || !Number.isInteger(docs[0]?.version) || docs[0].version < 1) return { error: "no version" };
+    return { version: docs[0].version };
+  }
+  const tail = all.slice(end + close.length + 1);
+  const m = /^next_cursor: "([^"]*)"/m.exec(tail);
+  const next = m ? m[1] : null;
+  if (next !== null && !CURSOR.test(next)) return { error: "the next cursor is not the board's characters" };
+  const out = [];
+  for (const d of docs) {
+    if (!plain(d) || typeof d.id !== "string" || !DOC_ID.test(d.id) || !plain(d.data)) return { error: "a document has no id or no data" };
+    out.push({ id: d.id, data: d.data });
+  }
+  return { docs: out, next };
+}
+
 // The file a PostToolUse hook writes for one answer, or an error. kind of the tool: list, query or get. The seal is the answer
 // to db_get of derived/all: the run reads it last, so its file is the newest.
 export function captureOf(input, spec, token) {
   const { tool_name: tool, tool_input: t, session_id: session } = input;
-  const kind = Object.entries(DB_TOOLS).find(([, v]) => v === tool)?.[0];
+  const ad = tool === AD_TOOL;
+  const kind = ad ? t?.action : Object.entries(DB_TOOLS).find(([, v]) => v === tool)?.[0];
   if (!["list", "query", "get"].includes(kind)) return { skip: true };
   // Any failure leaves a FAILED marker beside the records (when the run's folder can be told): the export is then not sealed, so
   // the probe never merges a delta that is missing a page (Security F1).
@@ -251,11 +330,15 @@ export function captureOf(input, spec, token) {
   const fail = (error) => ({ error, ...(base ? { failed: `${base}/${CALLS_DIR}/${FAILED_FILE}` } : {}) });
   const why = decide(input, spec);
   if (why) return fail(why);
-  const a = parseAnswer(input.tool_response, kind);
+  const a = ad ? parseAdAnswer(input.tool_response, kind, t.collection) : parseAnswer(input.tool_response, kind);
   if (a.error) return fail(a.error);
   if (!base) return fail("no folder for the run");
   if (kind === "get") return { path: `${base}/derived/all.json`, content: JSON.stringify({ version: a.version }) };
-  const record = { tool: kind, collection: t.collection, limit: t.limit, cursor: t.cursor ?? null, where: kind === "query" ? t.where ?? null : null, docs: a.docs, next: a.next };
+  // The record has one shape whichever tool made it: ArtifactData's [[field, op, value]] is written as db_query's [{field, op, value}].
+  const limit = ad ? t.query.limit : t.limit, cursor = ad ? t.query.cursor : t.cursor;
+  const w = ad ? t.query.where : t.where;
+  const where = kind === "query" ? (ad && w ? w.map(([field, op, value]) => ({ field, op, value })) : w ?? null) : null;
+  const record = { tool: kind, collection: t.collection, limit, cursor: cursor ?? null, where, docs: a.docs, next: a.next };
   return { path: `${base}/${CALLS_DIR}/${token}.json`, content: JSON.stringify(record) };
 }
 
