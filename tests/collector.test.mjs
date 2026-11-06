@@ -347,7 +347,8 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /\*\*Mode: Auto\*\*/);
   assert.match(doc, /Never\s+Accept edits or Bypass/);
   assert.match(doc, /"matcher": "\*"[\s\S]*?collector\/fence\.mjs' --config '<full path to board\.config\.json>' \|\| exit 2/, "the fence on every tool, failing closed");
-  assert.match(doc, /"PostToolUse": \[\{ "matcher": "mcp__claude-artifacts__db_\(list\|query\|get\)"[\s\S]*?collector\/fence\.mjs'/, "the same file records the board's answers (Security R1)");
+  assert.match(doc, /"PostToolUse": \[\{ "matcher": "mcp__claude-artifacts__db_\(list\|query\|get\)\|ArtifactData"[\s\S]*?collector\/fence\.mjs'/, "the same file records the board's answers, ArtifactData's too (Security R1, #C710)");
+  assert.match(doc, /"mcp__claude-artifacts__db_write",\s*"ArtifactData",\s*"ToolSearch"/, "the settings allow both tool sets (#C710)");
   assert.doesNotMatch(doc, /--send-to/, "the fence sends nothing (Security R2)");
   assert.match(doc, /Never open, read or print those records/);
   assert.match(doc, /<scratchpad>\/flight-board-export\/calls\//, "the export goes to the run's scratchpad (the save test)");
@@ -357,8 +358,8 @@ test("Security: TASK.md sets the task's title, its exact permission rules, no re
   assert.match(doc, /`Query <collection>: where \[\{"field"/, "a delta run queries each collection by its time field");
   assert.match(doc, /`NUDGE` line/);
   const settings = JSON.parse(doc.match(/```json\n([\s\S]*?)\n  ```/)[1].replace(/^  /gm, ""));
-  assert.deepEqual(settings.permissions.allow.slice(1), ["Read(/<full path of collector.outDir>/derived-all.json)", "mcp__claude-artifacts__db_list", "mcp__claude-artifacts__db_query", "mcp__claude-artifacts__db_get", "mcp__claude-artifacts__db_write", "ToolSearch", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"], "no session tool and no memory file: the run only reads the board (#C642)");
-  assert.deepEqual(settings.hooks.PostToolUse.map((h) => h.matcher), ["mcp__claude-artifacts__db_(list|query|get)"], "the recording hook of the three read tools, and no memory hook");
+  assert.deepEqual(settings.permissions.allow.slice(1), ["Read(/<full path of collector.outDir>/derived-all.json)", "mcp__claude-artifacts__db_list", "mcp__claude-artifacts__db_query", "mcp__claude-artifacts__db_get", "mcp__claude-artifacts__db_write", "ArtifactData", "ToolSearch", "mcp__ccd_turn__update_plan", "mcp__ccd_turn__wrap_up"], "no session tool and no memory file: the run only reads the board (#C642)");
+  assert.deepEqual(settings.hooks.PostToolUse.map((h) => h.matcher), ["mcp__claude-artifacts__db_(list|query|get)|ArtifactData"], "the recording hook of the read tools (ArtifactData too, #C710), and no memory hook");
   assert.deepEqual(settings.hooks.PreToolUse.map((h) => h.matcher), ["*"], "the fence on every tool");
   assert.equal(settings.permissions.allow[1], "Read(/<full path of collector.outDir>/derived-all.json)", "the one file the run reads: the probe's output, outside the run's folder (Security)");
   assert.ok(settings.permissions.deny.includes("Read(/<full path of gate.stateDir/board id>/**)"), "the run's own folder denied to Read whole (Security)");

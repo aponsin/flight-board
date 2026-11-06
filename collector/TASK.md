@@ -49,6 +49,7 @@ Created only with the owner's yes. Its settings:
         "Bash(node <full path of the current link>/collector/collect.mjs --config <full path to board.config.json> --prepare)",
         "Read(/<full path of collector.outDir>/derived-all.json)",
         "mcp__claude-artifacts__db_list", "mcp__claude-artifacts__db_query", "mcp__claude-artifacts__db_get", "mcp__claude-artifacts__db_write",
+        "ArtifactData",
         "ToolSearch",
         "mcp__ccd_turn__update_plan",
         "mcp__ccd_turn__wrap_up"
@@ -72,7 +73,7 @@ Created only with the owner's yes. Its settings:
     "hooks": {
       "PreToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "timeout": 10,
         "command": "'<full path of node>' '<full path of the pinned install>/collector/fence.mjs' --config '<full path to board.config.json>' || exit 2" }] }],
-      "PostToolUse": [{ "matcher": "mcp__claude-artifacts__db_(list|query|get)", "hooks": [{ "type": "command", "timeout": 10,
+      "PostToolUse": [{ "matcher": "mcp__claude-artifacts__db_(list|query|get)|ArtifactData", "hooks": [{ "type": "command", "timeout": 10,
         "command": "'<full path of node>' '<full path of the pinned install>/collector/fence.mjs' --config '<full path to board.config.json>' || exit 2" }] }]
     }
   }
@@ -112,6 +113,13 @@ Created only with the owner's yes. Its settings:
   probe's file, read once, in its place) after every check above passed; no other call is allowed by it. Because it keys on this folder, any session opened here is fenced the same way. Test it once on a
   throwaway task and board before the real one (a write to a second board, a stray command, a file read or written:
   each refused).
+  **ArtifactData** (#C710): the app may give a scheduled run its own `ArtifactData` tool instead of the `db_*` tools (the 23:03Z run
+  of 2026-11-06 had only it). The fence takes it for the same steps and limits, on the board's link (`artifactUrl`) exactly: `list` /
+  `query` of an exported collection (`query.limit` 1 to 1000, `query.cursor` of the board's characters, `query.where` one
+  `["at" or "updatedAt", ">=", a time]`), `get` of `derived/all`, and `set` of `derived/all` with `file_path` exactly the probe's
+  `derived-all.json` (the same age and size checks; `if_version` a whole number; no `data`, no `out_dir`, no `order_by`, no other
+  action). The tool reads the file itself, so nothing is rewritten. The PostToolUse hook records an `ArtifactData` answer as it
+  does a `db_*` one (the same record), and the settings allow both vocabularies, so either tool set works.
   The same file is the **PostToolUse** hook of `db_list`, `db_query` and `db_get` (the settings above): it parses what the tool
   answered and records it itself in the run's scratchpad (`flight-board-export/calls/`, and the seal `derived/all.json` for the
   `db_get`). The model copies nothing, so an injected line or a slip cannot change a document on its way to the mirror, which the
@@ -173,6 +181,8 @@ and write the board, so each run is these steps, in order. `<config>` is the tea
    file is this run's: written after this run's `--prepare` wrote the plan (`export-since.json`) and not 30 minutes ago; a
    missing, old or oversized file (over 200 KB), or a `data` that is neither the placeholder nor equal to the file (key order
    aside: the old typed copy is still taken), is refused. A refusal, or a write refused because the version moved, ends the run: the next one publishes.
+   With `ArtifactData` (#C710) the same step is `set` `derived`/`all` with `file_path` `<collector.outDir>/derived-all.json` and
+   `if_version`; steps 2's reads are `list` / `query` / `get` with the limit, cursor and `where` (as `[[field, ">=", time]]`) inside `query`.
 
 The probe's part, every minute and with no model: merge the sealed export; derive from the mirror when a merge changed it or the
 last derive is ten minutes old (`collect.mjs --probe-step`, which fetches nothing of its own: the probe has just fetched) into
