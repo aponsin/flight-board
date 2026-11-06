@@ -1,0 +1,1 @@
+PASS Full: the fence takes ArtifactData at the same limits. Suite 1454 green. Parser checked against the real tool. Gate lets Collector set derived/all from file_path and refuses others. 11 fence mutants killed. First real run still proves publishing.
