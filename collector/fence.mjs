@@ -15,7 +15,7 @@ import { join, dirname, resolve, basename } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { EXPORT_NAME, READ_COLLECTIONS, CURSOR, DOC_ID, CALLS_DIR, FAILED_FILE } from "./export.mjs";
+import { EXPORT_NAME, READ_COLLECTIONS, CURSOR, DOC_ID, CALLS_DIR, FAILED_FILE, PUBLISHED_FILE } from "./export.mjs";
 
 // The most the run may publish as derived/all.
 export const DERIVED_MAX = 200 * 1024;
@@ -434,6 +434,16 @@ export function captureOf(input, spec, token) {
   return { path: `${base}/${CALLS_DIR}/${token}.json`, content: JSON.stringify(record) };
 }
 
+// #C711: the run's set of derived/all went through. The PostToolUse hook runs only for a call that succeeded, and the call was
+// allowed by this fence's own PreToolUse check (derived/all of this board only), so the time is the publish time; a response that
+// says it is an error is left out. Anything else: no marker, and the probe's chip then counts from the last one.
+export function publishedOf(input, spec, now) {
+  const t = input?.tool_input, r = input?.tool_response;
+  if (input?.tool_name !== AD_TOOL || !plain(t) || t.action !== "set" || t.url !== spec.url || t.collection !== "derived" || t.doc_id !== "all") return null;
+  if (plain(r) && (r.is_error === true || r.error !== undefined)) return null;
+  return { path: join(spec.cwd, PUBLISHED_FILE), content: JSON.stringify({ at: now }) };
+}
+
 function save(path, content) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = `${path}.${process.pid}.part`;
@@ -488,6 +498,8 @@ export function main(argv, stdin) {
   const spec = fenceSpec({ config, configPath, install, current: currentLink(install), uid: process.getuid() });
   const input = JSON.parse(stdin);
   if (input?.hook_event_name === "PostToolUse") {
+    const pub = publishedOf(input, spec, Date.now());
+    if (pub) { try { save(pub.path, pub.content); } catch { /* the probe's chip then counts from the last marker */ } return null; }
     const r = captureOf(input, spec, `${Date.now()}-${randomBytes(4).toString("hex")}`);
     if (r.error) { recordParseFailure(spec, input, r.error); if (r.failed) { try { save(r.failed, "failed"); } catch { /* the refusal below still stops the run */ } } return `could not record the board's answer: ${r.error}`; }
     if (r.path) save(r.path, r.content);

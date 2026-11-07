@@ -2715,7 +2715,7 @@ const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHA
 // (board.wakeAliveAt) and the last wake it handled (board.wakeSeenAt). Times only. A heartbeat more than WAKE_ALIVE_MAX
 // older than the probe's own reading, or none, is "not listening"; a probe from before this carries neither key, and the
 // chip stays hidden. A message is answered once anyone but the owner wrote after it in its thread.
-const WAKE_ALIVE_MAX=3*60e3,CARDS_STALE=5*60e3,EVIDENCE_STALE=10*60e3;
+const WAKE_ALIVE_MAX=3*60e3,CARDS_STALE=5*60e3,EVIDENCE_STALE=10*60e3,QUIET_MAX_MIN=60;
 function ownerUnanswered(){const own=state.messages.filter(m=>m&&m.from===OWNER&&isT(m.at)).sort((a,b)=>b.at-a.at)[0];
   return own&&!state.messages.some(m=>m&&m.thread===own.thread&&m.from!==OWNER&&isT(m.at)&&m.at>own.at)?own:null}
 function managerChip(now=Date.now()){if(!liveOn(now)||!Object.hasOwn(probe.board,"wakeAliveAt"))return null;
@@ -2729,6 +2729,11 @@ function managerChip(now=Date.now()){if(!liveOn(now)||!Object.hasOwn(probe.board
   // red 10 minutes after it, so a probe that reads nothing for every card can't pass as quiet.
   const ev=isT(b.evidenceAt)?b.evidenceAt:null;
   if(Object.hasOwn(b,"evidenceAt")&&ev!=null&&b.at-ev>EVIDENCE_STALE)return {cls:"bad",text:`Card checks found nothing since ${hhmm(ev)}`};
+  // #C711: the Collector's set of derived/all (board.derivedAt, the fence's marker) is more than QUIET_MAX_MIN minutes old counted in
+  // the Collector's own schedule (board.quietMin, 8 am to 8 pm Mountain time, worked out by the probe), so a night is no outage. A probe
+  // from before it carries neither key, and the chip says nothing of it.
+  const qm=b.quietMin;
+  if(Number.isInteger(qm)&&qm>QUIET_MAX_MIN)return {cls:"bad",text:isT(b.derivedAt)?`Collector has not published since ${hhmm(b.derivedAt)}`:"Collector has not published"};
   // #C606: the chip says Manager's state alone; the Studio's check is the header stamp's "Studio checked …", so the probe's
   // reading is shown once, not here too.
   const open=ownerUnanswered();

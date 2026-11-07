@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
+import { PUBLISHED_FILE } from "./export.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, wakeNeeds, askOnce, ownerAsks, askSince, boardTruth } from "./readings.mjs";
@@ -32,6 +33,30 @@ export const TAIL_ENTRIES = 20;
 const TAIL_BYTES = 1024 * 1024, SESSION_BYTES = 4 * 1024 * 1024;
 // A turn whose transcript has been quiet this long is read as idle (a session closed mid-turn).
 export const WORKING_QUIET_MS = 15 * 60e3;
+// #C711: how long the Collector has been quiet, counted only inside its own schedule (8 am to 8 pm, Mountain time: the manager's
+// word), so a night without runs is no outage. quietMinutes is the schedule's minutes between the last publish and now, over
+// the last two days at most; the page's chip goes red past 60 of them.
+// America/Boise: the same offsets and summer-time dates as the Mountain zone the schedule is kept in.
+export const SCHEDULE = { tz: "America/Boise", from: 8, to: 20 };
+export const QUIET_LOOKBACK_MS = 48 * 3600e3;
+const SCHEDULE_HOUR = new Intl.DateTimeFormat("en-US", { timeZone: SCHEDULE.tz, hour: "numeric", hourCycle: "h23" });
+export function quietMinutes(from, now) {
+  if (!Number.isFinite(from) || !Number.isFinite(now) || from >= now) return 0;
+  let n = 0;
+  for (let t = Math.max(Math.floor(from / 60e3) * 60e3, Math.floor((now - QUIET_LOOKBACK_MS) / 60e3) * 60e3); t < now; t += 60e3) {
+    const h = Number(SCHEDULE_HOUR.format(t));
+    if (h >= SCHEDULE.from && h < SCHEDULE.to) n++;
+  }
+  return n;
+}
+// The marker the fence leaves (PUBLISHED_FILE: { at }); with none yet, the probe starts one now, so a Collector that never publishes
+// after an install is counted from the install and not missed. Never throws: no reading leaves the key out of the state.
+export function publishedReading(path, now, read = readTail, write = writeAtomic) {
+  let at = null;
+  try { const r = read(path, 4096); if (r?.whole) { const v = JSON.parse(r.text)?.at; if (Number.isInteger(v) && v > 0 && v <= now + 60e3) at = Math.min(v, now); } } catch { /* none, or not ours */ }
+  if (at === null) { at = now; try { write(path, JSON.stringify({ at, baseline: true })); } catch { return null; } }
+  return { at, quietMin: quietMinutes(at, now) };
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
 const plain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -593,8 +618,8 @@ export function usageTile({ scriptText = null, dir, roster, now, run, quota = 0,
 }
 
 // The state that leaves, checked against the allowlist before it does.
-export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, usage = null, ship = null }) {
-  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}), ...(ship ? { ship } : {}) };
+export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, usage = null, ship = null, published = null }) {
+  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }), ...(published ? { derivedAt: published.at, quietMin: published.quietMin } : {}) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}), ...(ship ? { ship } : {}) };
   const errs = stateErrors(s);
   if (errs.length) throw new Error(`the state doesn't fit the plan (${errs.length} problem(s), first: ${errs[0]})`);
   return pickState(s);
@@ -776,7 +801,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let ship = null;
     const team = repos[""];
     if (team && c.candidatePattern) { try { ship = shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ok(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci }); } catch { /* no reading: the badge stays as the cards say */ } }
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, usage: spend.tile, ship, ...wakeTimes(join(stateDir, id), now) });
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, usage: spend.tile, ship, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
     writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
     writeAtomic(wakePath, JSON.stringify({ at: now, roles: wakeAsk.roles, missing: missingAsk.roles }));
