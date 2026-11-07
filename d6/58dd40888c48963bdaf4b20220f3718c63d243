@@ -1,0 +1,1 @@
+PASS Full: #C713 follow-up build/collector-fence-app-fields-v4 at d658dd4, one commit on 0d24f4d. Shapes match Claude Code 2.1.317 as read. 1461 tests green. 13 mutants, 12 killed, the survivor only makes the title limit stricter. The real set is still unproven until the first real run.
