@@ -90,7 +90,7 @@ export function decide(input, spec, read = readJson, mtime = mtimeMs, now = Date
     return null;
   }
   if (Object.values(DB_TOOLS).includes(tool)) return dbCall(tool, t, spec, read, mtime, now);
-  if (tool === AD_TOOL) return adCall(t, spec, read, mtime, now);
+  if (tool === AD_TOOL) return adCall(t, spec, read, mtime, now, input.hook_event_name === "PostToolUse");
   if (tool === "Read") {
     // The one file the run publishes: the probe's derived-all.json, so it can copy it into the db_write below.
     const extra = onlyKeys(t, ["file_path", "offset", "limit", "allow_large"]);
@@ -131,13 +131,32 @@ function dbCall(tool, t, spec, read, mtime, now) {
 // query.cursor of the board's characters, query.where one condition, "at" or "updatedAt" at or after a time), get of derived/all,
 // and set of derived/all from the probe's own derived-all.json (file_path, exactly that path; if_version a whole number). No
 // out_dir (the PostToolUse hook records the answer), no inline data, no order_by, no other action.
+const APP_KEY = /^__artifact[A-Za-z0-9]{1,60}$/;
+const APP_WORDS = (spec) => [spec.slug, spec.url, "read_db", "write_db"];
+export function appValueOk(v, spec, depth = 0) {
+  if (v === null || typeof v === "boolean") return true;
+  if (typeof v === "string") return APP_WORDS(spec).includes(v);
+  if (depth >= 4) return false;
+  if (Array.isArray(v)) return v.length === 0;
+  if (!plain(v)) return false;
+  return Object.entries(v).every(([k, x]) => /^[A-Za-z]{1,40}$/.test(k) && (k !== "dir" || x === null) && appValueOk(x, spec, depth + 1));
+}
 const AD_KEYS = { get: ["url", "action", "collection", "doc_id"], set: ["url", "action", "collection", "doc_id", "file_path", "if_version"], list: ["url", "action", "collection", "query"], query: ["url", "action", "collection", "query"] };
-function adCall(t, spec, read, mtime, now) {
+function adCall(t, spec, read, mtime, now, post = false) {
   if (t.url !== spec.url) return "ArtifactData: this board only";
   if (typeof t.action !== "string") return "ArtifactData: action is a word";
   const keys = Object.hasOwn(AD_KEYS, t.action) ? AD_KEYS[t.action] : undefined;
   if (!keys) return `ArtifactData: ${String(t.action)} is not one of the collector's steps`;
-  const extra = onlyKeys(t, keys);
+  // The app adds its own fields to the call (#C713: __artifactDbReadTargetPin, __artifactPlanConsentAsk, __artifactConsentPin,
+  // __artifactConsentAskCanReachUser). They are let through only as plain markers that name nothing the call could use: booleans,
+  // null, empty lists, the words read_db / write_db, this board's own id or link, and a "dir" that is null. Any other value (a
+  // path, another board, a number, a non-empty list) refuses the call, so a field cannot widen the board, collection or path limits.
+  // WHEN (Security R1 of #C713): the fields are on the call only after the app has handled it, so they pass at PostToolUse, where
+  // they were seen. At PreToolUse on a read or a get the call is exactly the steps' (the run's own typing): a typed
+  // __artifactSkipConsent or __artifactConsentPin there is refused, since those names are the app's consent plumbing. A set keeps
+  // the allowance at PreToolUse too: no real set's fields have been seen, the set is locked to derived/all from the probe's own file,
+  // and refusing it would risk one more pack.
+  const extra = onlyKeys(t, keys).filter((k) => !((post || t.action === "set") && APP_KEY.test(k) && appValueOk(t[k], spec)));
   if (extra.length) return `ArtifactData ${t.action}: unexpected ${extra.join(", ")}`;
   if (t.action === "get" || t.action === "set") {
     if (t.collection !== "derived" || t.doc_id !== "all") return `ArtifactData ${t.action}: derived/all only`;
@@ -283,7 +302,47 @@ export function parseAnswer(response, kind) {
 // NAME random for each answer), then, when more pages exist, a line `next_cursor: "<token>" ...`. "No documents matched ..." is an
 // empty page and `No document "<id>" ...` is a get of nothing. Anything that does not parse whole, or whose count or collection is
 // not what the call asked for, is no record.
+// What the hook is really given (#C713): the answer as an object, {db_read: {op, collection, docs: [{id, data, version, updatedAt}],
+// next_cursor}}, not the text the model reads. Every field is held to its type, an unknown key is no record (a renamed cursor field
+// must not read as "the last page", Security R1 of #C710), and a get may carry its one document as docs[0] or as doc.
+export function parseAdObject(response, kind, collection) {
+  const r = response?.db_read;
+  if (!plain(r)) return null;
+  // The real answer's only key is db_read: a next_cursor or a "truncated" beside it is not read past (Security R2).
+  const outer = onlyKeys(response, ["db_read"]);
+  if (outer.length) return { error: `the answer has ${outer.join(", ")} beside db_read` };
+  const bad = onlyKeys(r, ["op", "collection", "docs", "doc", "next_cursor", "count", "exists"]);
+  if (bad.length) return { error: `the answer has ${bad.join(", ")}` };
+  if (r.op !== kind) return { error: "the answer is for another call" };
+  if (r.collection !== collection) return { error: "the answer is not for this collection" };
+  // A page must say its documents: docs a list (empty is a page), no doc. Only a get may carry its one document as doc, or none.
+  if (kind !== "get" && (!Array.isArray(r.docs) || r.doc !== undefined)) return { error: "a page is a list of documents" };
+  const docs = r.docs !== undefined ? r.docs : r.doc === undefined || r.doc === null ? [] : [r.doc];
+  if (!Array.isArray(docs)) return { error: "the documents are not a list" };
+  if (r.count !== undefined && r.count !== docs.length) return { error: "the count is not the documents" };
+  const out = [];
+  for (const d of docs) {
+    if (!plain(d) || typeof d.id !== "string" || !DOC_ID.test(d.id) || !plain(d.data)) return { error: "a document has no id or no data" };
+    out.push(d);
+  }
+  if (kind === "get") {
+    if (out.length > 1) return { error: "more than one document" };
+    // exists must agree with the document: a seal with nothing behind it is no seal (Security R3).
+    if ((r.exists === true && !out.length) || (r.exists === false && out.length)) return { error: "exists does not match the document" };
+    if (!out.length) return { version: null };
+    if (!Number.isInteger(out[0].version) || out[0].version < 1) return { error: "no version" };
+    return { version: out[0].version };
+  }
+  const c = r.next_cursor;
+  if (c !== undefined && c !== null && typeof c !== "string") return { error: "the next cursor is not a string" };
+  const next = c === undefined || c === null || c === "" ? null : c;
+  if (next !== null && !CURSOR.test(next)) return { error: "the next cursor is not the board's characters" };
+  return { docs: out.map((d) => ({ id: d.id, data: d.data })), next };
+}
+
 export function parseAdAnswer(response, kind, collection) {
+  const o = parseAdObject(response, kind, collection);
+  if (o) return o;
   const all = texts(response).join("\n");
   if (kind === "get" && /^No document "/.test(all.trim())) return { version: null };
   if (kind !== "get" && new RegExp(`^No documents matched in collection "${collection}"\\.\\s*$`).test(all.trim())) return { docs: [], next: null };
