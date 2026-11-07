@@ -142,7 +142,14 @@ test("each field is held to its exact shape (every inner key, every value)", () 
     assert.equal(ok("__artifactDbWriteSourcePin", v), false, JSON.stringify(v));
   assert.equal(ok("__artifactDisplayTarget", WRITE.__artifactDisplayTarget), true);
   assert.equal(ok("__artifactDisplayTarget", { url: URL_, title: "x".repeat(120) }), true);
-  for (const v of [{ url: "https://claude.ai/artifact/Other", title: "t" }, { url: URL_, title: "x".repeat(121) }, { url: URL_, title: "a\nb" }, { url: URL_, title: 5 }, { url: URL_ }, { title: "t" }, { url: URL_, title: "t", extra: 1 }])
+  // The app's write path (Claude Code 2.1.317, as Checker read it): the title is optional, the url is the board's link or the
+  // /code/artifact form with the board's slug, and the user-only ask is the literal false.
+  assert.equal(ok("__artifactDisplayTarget", { url: URL_ }), true);
+  assert.equal(ok("__artifactDisplayTarget", { url: `https://claude.ai/code/artifact/${SLUG}` }), true);
+  assert.equal(ok("__artifactDisplayTarget", { url: `https://claude.ai/code/artifact/${SLUG}`, title: "Flight board" }), true);
+  assert.equal(ok("__artifactUserOnlyConsentAsk", false), true);
+  for (const v of [true, null, "false", 0, [], {}, undefined]) assert.equal(ok("__artifactUserOnlyConsentAsk", v), false, String(v));
+  for (const v of [{ url: "https://claude.ai/artifact/Other", title: "t" }, { url: "https://claude.ai/code/artifact/other", title: "t" }, { url: `https://staging.claude.ai/code/artifact/${SLUG}` }, { url: `https://claude.ai/code/artifact/${SLUG}/x` }, { url: URL_, title: "x".repeat(121) }, { url: URL_, title: "a\nb" }, { url: URL_, title: 5 }, { url: URL_, title: null }, { title: "t" }, {}, { url: URL_, title: "t", extra: 1 }])
     assert.equal(ok("__artifactDisplayTarget", v), false, JSON.stringify(v));
   assert.equal(ok("__artifactSecret", true), false);
 });
@@ -151,6 +158,15 @@ test("the write path: a set carrying the app's fields passes at either hook; any
   pass(call({ ...setAll(), ...FIELDS, ...WRITE }));
   pass(postc({ ...setAll(), ...FIELDS, ...WRITE }));
   pass(call({ ...setAll(), __artifactConsentPin: { action: "write_db", slug: SLUG } }));
+  // The write ask path as the app builds it: user-only ask false, a display target with no title, the /code/artifact url.
+  const ASK = { __artifactPlanConsentAsk: false, __artifactUserOnlyConsentAsk: false, __artifactConsentPin: { action: "write_db", slug: SLUG }, __artifactDisplayTarget: { url: `https://claude.ai/code/artifact/${SLUG}` } };
+  pass(call({ ...setAll(), ...ASK }));
+  pass(postc({ ...setAll(), ...ASK }));
+  refused(call({ ...setAll(), ...ASK, __artifactUserOnlyConsentAsk: true }), "unexpected __artifactUserOnlyConsentAsk");
+  // It is the write's field only: a read refuses it at either hook.
+  const readOnly = { action: "list", url: URL_, collection: "initiatives", query: { limit: 150 }, __artifactUserOnlyConsentAsk: false };
+  refused(call(readOnly), "unexpected __artifactUserOnlyConsentAsk");
+  refused(postc(readOnly), "unexpected __artifactUserOnlyConsentAsk");
   refused(call({ ...setAll(), __artifactConsentPin: { action: "write_db", slug: "other" } }), "unexpected __artifactConsentPin");
   refused(call({ ...setAll(), __artifactDbWriteSourcePin: { real: "/srv/fb/other.json", identity: null } }), "unexpected __artifactDbWriteSourcePin");
   refused(call({ ...setAll(), __artifactDisplayTarget: { url: "https://claude.ai/artifact/Other", title: "t" } }), "unexpected __artifactDisplayTarget");

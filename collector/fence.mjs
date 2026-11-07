@@ -137,7 +137,7 @@ function dbCall(tool, t, spec, read, mtime, now) {
 // of the app's validator, read by Checker), also at PreToolUse. A value names nothing the call could use: this board's id, the probe's
 // own file or this board's link, and a "dir" that is null; a title is limited free text, never read as a path or a board.
 const READ_FIELDS = ["__artifactDbReadTargetPin", "__artifactPlanConsentAsk", "__artifactConsentPin", "__artifactConsentAskCanReachUser"];
-const SET_FIELDS = [...READ_FIELDS, "__artifactDbWriteSourcePin", "__artifactDisplayTarget"];
+const SET_FIELDS = [...READ_FIELDS, "__artifactDbWriteSourcePin", "__artifactDisplayTarget", "__artifactUserOnlyConsentAsk"];
 export function appFieldOk(k, v, spec) {
   const only = (o, keys) => plain(o) && onlyKeys(o, keys).length === 0;
   switch (k) {
@@ -148,7 +148,12 @@ export function appFieldOk(k, v, spec) {
       return only(v, ["real", "identity", "linked"]) && v.real === spec.derivedFile
         && (v.identity === null || (typeof v.identity === "string" && /^[0-9:]{1,96}$/.test(v.identity)))
         && (v.linked === undefined || typeof v.linked === "boolean");
-    case "__artifactDisplayTarget": return only(v, ["url", "title"]) && v.url === spec.url && typeof v.title === "string" && v.title.length <= 120 && !/[\n\r]/.test(v.title);
+    // The app's write path (Claude Code 2.1.317, read by Checker): the user-only ask is the literal false; the display target's title is
+    // optional (the key is absent when none is known) and its url is the board's link or the /code/artifact form with the board's slug.
+    case "__artifactUserOnlyConsentAsk": return v === false;
+    case "__artifactDisplayTarget":
+      return only(v, ["url", "title"]) && (v.url === spec.url || v.url === `https://claude.ai/code/artifact/${spec.slug}`)
+        && (v.title === undefined || (typeof v.title === "string" && Array.from(v.title).length <= 120 && !/[\n\r]/.test(v.title)));
     default: return false;
   }
 }
