@@ -90,7 +90,7 @@ export function decide(input, spec, read = readJson, mtime = mtimeMs, now = Date
     return null;
   }
   if (Object.values(DB_TOOLS).includes(tool)) return dbCall(tool, t, spec, read, mtime, now);
-  if (tool === AD_TOOL) return adCall(t, spec, read, mtime, now);
+  if (tool === AD_TOOL) return adCall(t, spec, read, mtime, now, input.hook_event_name === "PostToolUse");
   if (tool === "Read") {
     // The one file the run publishes: the probe's derived-all.json, so it can copy it into the db_write below.
     const extra = onlyKeys(t, ["file_path", "offset", "limit", "allow_large"]);
@@ -131,13 +131,43 @@ function dbCall(tool, t, spec, read, mtime, now) {
 // query.cursor of the board's characters, query.where one condition, "at" or "updatedAt" at or after a time), get of derived/all,
 // and set of derived/all from the probe's own derived-all.json (file_path, exactly that path; if_version a whole number). No
 // out_dir (the PostToolUse hook records the answer), no inline data, no order_by, no other action.
+// The fields the app adds to an ArtifactData call (#C713), by EXACT name, each held to the shape the app gives it (Security: not a
+// name pattern, since the app also names __artifactSecret, __artifactEndpointBodyFile and __artifactAsk, which must never pass).
+// Reads: four, accepted at PostToolUse only, where they were seen. A set: the same four and the write's own two (the shapes are those
+// of the app's validator, read by Checker), also at PreToolUse. A value names nothing the call could use: this board's id, the probe's
+// own file or this board's link, and a "dir" that is null; a title is limited free text, never read as a path or a board.
+const READ_FIELDS = ["__artifactDbReadTargetPin", "__artifactPlanConsentAsk", "__artifactConsentPin", "__artifactConsentAskCanReachUser"];
+const SET_FIELDS = [...READ_FIELDS, "__artifactDbWriteSourcePin", "__artifactDisplayTarget"];
+export function appFieldOk(k, v, spec) {
+  const only = (o, keys) => plain(o) && onlyKeys(o, keys).length === 0;
+  switch (k) {
+    case "__artifactDbReadTargetPin": return only(v, ["dir", "asks"]) && v.dir === null && Array.isArray(v.asks) && v.asks.length === 0;
+    case "__artifactPlanConsentAsk": case "__artifactConsentAskCanReachUser": return typeof v === "boolean";
+    case "__artifactConsentPin": return only(v, ["action", "slug"]) && ["read_db", "write_db"].includes(v.action) && v.slug === spec.slug;
+    case "__artifactDbWriteSourcePin":
+      return only(v, ["real", "identity", "linked"]) && v.real === spec.derivedFile
+        && (v.identity === null || (typeof v.identity === "string" && /^[0-9:]{1,96}$/.test(v.identity)))
+        && (v.linked === undefined || typeof v.linked === "boolean");
+    case "__artifactDisplayTarget": return only(v, ["url", "title"]) && v.url === spec.url && typeof v.title === "string" && v.title.length <= 120 && !/[\n\r]/.test(v.title);
+    default: return false;
+  }
+}
 const AD_KEYS = { get: ["url", "action", "collection", "doc_id"], set: ["url", "action", "collection", "doc_id", "file_path", "if_version"], list: ["url", "action", "collection", "query"], query: ["url", "action", "collection", "query"] };
-function adCall(t, spec, read, mtime, now) {
+// Which app fields may sit on a call: on a set, the six, at either hook; on a read or a get, the four at PostToolUse only.
+const appFieldKeys = (action, post) => (action === "set" ? SET_FIELDS : post ? READ_FIELDS : []);
+function adCall(t, spec, read, mtime, now, post = false) {
   if (t.url !== spec.url) return "ArtifactData: this board only";
   if (typeof t.action !== "string") return "ArtifactData: action is a word";
   const keys = Object.hasOwn(AD_KEYS, t.action) ? AD_KEYS[t.action] : undefined;
   if (!keys) return `ArtifactData: ${String(t.action)} is not one of the collector's steps`;
-  const extra = onlyKeys(t, keys);
+  // The app adds its own fields to the call (#C713). Exact names only (READ_FIELDS, SET_FIELDS above), each in its exact shape
+  // (appFieldOk): a value names nothing the call could use, so a field cannot widen the board, collection or path limits.
+  // WHEN (Security R1 of #C713): the read fields are on the call only after the app has handled it, so they pass at PostToolUse,
+  // where they were seen. At PreToolUse on a read or a get the call is exactly the steps' (the run's own typing): a typed
+  // __artifactSkipConsent or __artifactConsentPin there is refused, since those names are the app's consent plumbing. A set
+  // takes its six at either hook: no real set's fields have been seen (the two write ones are from the app's validator), the set is
+  // locked to derived/all from the probe's own file, and refusing it would risk one more pack.
+  const extra = onlyKeys(t, keys).filter((k) => !(appFieldKeys(t.action, post).includes(k) && appFieldOk(k, t[k], spec)));
   if (extra.length) return `ArtifactData ${t.action}: unexpected ${extra.join(", ")}`;
   if (t.action === "get" || t.action === "set") {
     if (t.collection !== "derived" || t.doc_id !== "all") return `ArtifactData ${t.action}: derived/all only`;
@@ -283,7 +313,58 @@ export function parseAnswer(response, kind) {
 // NAME random for each answer), then, when more pages exist, a line `next_cursor: "<token>" ...`. "No documents matched ..." is an
 // empty page and `No document "<id>" ...` is a get of nothing. Anything that does not parse whole, or whose count or collection is
 // not what the call asked for, is no record.
-export function parseAdAnswer(response, kind, collection) {
+// What the hook is really given (#C713): the answer as an object, not the text the model reads. A list or query:
+// {db_read: {op, collection, docs: [{id, data, version, updatedAt}], next_cursor}}. A get: {db_read: {op: "get", collection, doc_id,
+// found, docs: [one document]}}, and for a missing document {op: "get", collection, doc_id, found: false} with no docs (Checker read
+// the real shapes from the app's own results). Every field is held to its type; an unknown key is no record (a renamed cursor
+// field must not read as "the last page", Security R1 of #C710); nothing else may sit beside db_read; a page must carry docs as a
+// list; and found has to agree with the documents.
+export function parseAdObject(response, kind, collection, docId) {
+  const r = response?.db_read;
+  if (!plain(r)) return null;
+  // The real answer's only key is db_read: a next_cursor or a "truncated" beside it is not read past (Security R2).
+  const outer = onlyKeys(response, ["db_read"]);
+  if (outer.length) return { error: `the answer has ${outer.join(", ")} beside db_read` };
+  const bad = onlyKeys(r, kind === "get" ? ["op", "collection", "doc_id", "found", "docs"] : ["op", "collection", "docs", "next_cursor"]);
+  if (bad.length) return { error: `the answer has ${bad.join(", ")}` };
+  if (r.op !== kind) return { error: "the answer is for another call" };
+  if (r.collection !== collection) return { error: "the answer is not for this collection" };
+  const check = (docs) => {
+    const out = [];
+    for (const d of docs) {
+      if (!plain(d) || typeof d.id !== "string" || !DOC_ID.test(d.id) || !plain(d.data)) return null;
+      out.push(d);
+    }
+    return out;
+  };
+  if (kind === "get") {
+    if (r.doc_id !== docId) return { error: "the answer is for another document" };
+    if (typeof r.found !== "boolean") return { error: "the answer does not say whether it found the document" };
+    if (r.docs !== undefined && !Array.isArray(r.docs)) return { error: "a page is a list of documents" };
+    const out = check(r.docs ?? []);
+    if (!out) return { error: "a document has no id or no data" };
+    if (out.length > 1) return { error: "more than one document" };
+    // found has to agree with the document: a seal with nothing behind it is no seal (Security R3).
+    if (r.found !== (out.length === 1)) return { error: "found does not match the document" };
+    if (!out.length) return { version: null };
+    if (out[0].id !== docId) return { error: "the answer is for another document" };
+    if (!Number.isInteger(out[0].version) || out[0].version < 1) return { error: "no version" };
+    return { version: out[0].version };
+  }
+  // A page must say its documents: docs a list (empty is a page). A list or query with no docs is not a whole page.
+  if (!Array.isArray(r.docs)) return { error: "a page is a list of documents" };
+  const out = check(r.docs);
+  if (!out) return { error: "a document has no id or no data" };
+  const c = r.next_cursor;
+  if (c !== undefined && c !== null && typeof c !== "string") return { error: "the next cursor is not a string" };
+  const next = c === undefined || c === null || c === "" ? null : c;
+  if (next !== null && !CURSOR.test(next)) return { error: "the next cursor is not the board's characters" };
+  return { docs: out.map((d) => ({ id: d.id, data: d.data })), next };
+}
+
+export function parseAdAnswer(response, kind, collection, docId) {
+  const o = parseAdObject(response, kind, collection, docId);
+  if (o) return o;
   const all = texts(response).join("\n");
   if (kind === "get" && /^No document "/.test(all.trim())) return { version: null };
   if (kind !== "get" && new RegExp(`^No documents matched in collection "${collection}"\\.\\s*$`).test(all.trim())) return { docs: [], next: null };
@@ -336,7 +417,7 @@ export function captureOf(input, spec, token) {
   const fail = (error) => ({ error, ...(base ? { failed: `${base}/${CALLS_DIR}/${FAILED_FILE}` } : {}) });
   const why = decide(input, spec);
   if (why) return fail(why);
-  const a = ad ? parseAdAnswer(input.tool_response, kind, t.collection) : parseAnswer(input.tool_response, kind);
+  const a = ad ? parseAdAnswer(input.tool_response, kind, t.collection, t.doc_id) : parseAnswer(input.tool_response, kind);
   if (a.error) return fail(a.error);
   if (!base) return fail("no folder for the run");
   if (kind === "get") return { path: `${base}/derived/all.json`, content: JSON.stringify({ version: a.version }) };
