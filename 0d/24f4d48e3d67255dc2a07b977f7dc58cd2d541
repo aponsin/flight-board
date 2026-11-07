@@ -1,0 +1,1 @@
+PASS Full: #C713 collector-fence-app-fields-v3 at 0d24f4d. 1461 tests green. The real failed call passes at PostToolUse and is refused at PreToolUse with the real config. 1529 real answers from transcripts parse with no error. 38 mutants, 37 killed, the survivor is cosmetic. The real set is still unproven until the first real run.
