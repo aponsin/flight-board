@@ -233,7 +233,10 @@ test("a branch deleted after it shipped is still found, from the release commit 
     const { doc } = collect({ config: cfg, cards: [{ id: "shipped-one", status: "active", phase: "ship" }], git: s.git, gh, now: 1 });
     assert.equal(doc.cards["shipped-one"].phase, "live");
     assert.equal(doc.cards["shipped-one"].version, "1.4.0");
-    assert.equal(collect({ config: fullConfig({ collector: { ...cfg.collector, shippedPattern: "" } }), cards: [{ id: "shipped-one", status: "active" }], git: s.git, gh, now: 1 }).doc.cards["shipped-one"].phase, null);
+    // #C716: with no shippedPattern the release commit names nothing, but the card's own commit on main carries its Board-Id trailer,
+    // so the card is found by that (as in another repository, #C281). A card with neither still reads null (tests/deleted-branch-signs.test.mjs).
+    assert.equal(collect({ config: fullConfig({ collector: { ...cfg.collector, shippedPattern: "" } }), cards: [{ id: "shipped-one", status: "active" }], git: s.git, gh, now: 1 }).doc.cards["shipped-one"].phase, "live");
+    assert.equal(collect({ config: fullConfig({ collector: { ...cfg.collector, shippedPattern: "" } }), cards: [{ id: "no-trailer-one", status: "active" }], git: s.git, gh, now: 1 }).doc.cards["no-trailer-one"].phase, null);
   } finally { rmSync(s.dir, { recursive: true, force: true }); }
 });
 
