@@ -12,3 +12,6 @@ export const DOC_ID = /^[A-Za-z0-9_.@+:~-]{1,195}$/;
 export const CALLS_DIR = "calls";
 // Written by the fence's hook when it could not record an answer: the export is then not whole (collector/delta.mjs sealed).
 export const FAILED_FILE = "FAILED";
+// #C711: the fence's PostToolUse hook writes this file in the state folder when the run's set of derived/all went through ({ at }); the
+// probe reads it for the page's "Collector has not published" chip. Not under the run's scratchpad: the run's deny rule covers the folder.
+export const PUBLISHED_FILE = "derived-published.json";
