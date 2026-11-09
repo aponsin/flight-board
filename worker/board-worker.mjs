@@ -6,6 +6,7 @@
 //   POST /mcp               JSON-RPC: initialize, ping, tools/list, tools/call
 import { ASK_TYPES, ASK_PARTS, ROSTER_ROLES } from "./board-rules.mjs";
 import { pageHtml } from "./page.mjs";
+import { legacyResponse } from "./legacy-page.mjs";
 import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -166,6 +167,8 @@ export default {
       const origin = request.headers.get("origin"), site = request.headers.get("sec-fetch-site");
       if ((origin !== null && origin !== url.origin) || (site !== null && !["same-origin", "none"].includes(site))) return bare(403);
     }
+    // The old board's page (#C723 A1), when this deploy carries it (env.LEGACY_HTML, from the generated module); else the small page.
+    if (url.pathname === "/" && request.method === "GET" && typeof env.LEGACY_HTML === "string") return legacyResponse(env.LEGACY_HTML);
     if (url.pathname === "/" && request.method === "GET") {
       return new Response(pageHtml({ version: env.BOARD_VERSION ?? "" }), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
     }
