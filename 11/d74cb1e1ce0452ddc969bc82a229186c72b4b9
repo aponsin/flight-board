@@ -1,0 +1,1 @@
+PASS Full: #C726 parity stage C at 11d74cb, carried from my PASS on dd72619. The one new commit changes one line of docs/PARITY.md only, no code or tests. Deploy: R2 bucket and migration 0010 before the Worker. The bidi LOW moves to #C727.
