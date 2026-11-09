@@ -10,7 +10,7 @@ export async function mint(db, name) {
   return r.n;
 }
 
-async function refuse(db, now, refusal, cardId, who) {
+export async function refuse(db, now, refusal, cardId, who) {
   await db.prepare("INSERT INTO refusals (at, rule, card_id, who, detail) VALUES (?, ?, ?, ?, ?)").bind(now, refusal.rule, cardId ?? null, who ?? null, String(refusal.detail ?? "").slice(0, 300)).run();
   return { ok: false, refused: refusal };
 }
@@ -63,6 +63,35 @@ export async function createAsk(db, now, ask) {
   await db.prepare("INSERT INTO asks (id, num, type, title, asked_by, card_id, body, eta_at, eta_precondition, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
     .bind(id, num, ask.type, ask.title, ask.asked_by, ask.card_id ?? null, JSON.stringify(body), ask.eta_at ?? null, ask.eta_precondition ?? null, now).run();
   return { ok: true, id, num };
+}
+
+// A message on a thread (a card id, an ask id or a free thread name). Delivery to Manager is the wake's business.
+export async function postMessage(db, now, who, m) {
+  const ok = m && typeof m === "object" && Object.keys(m).every((k) => k === "thread_id" || k === "body") && typeof m.thread_id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(m.thread_id) && typeof m.body === "string" && m.body.trim() && m.body.length <= 8000;
+  if (!ok) return refuse(db, now, { rule: "message-shape", detail: "thread_id and body, body 1 to 8000 characters, nothing else" }, m?.thread_id, who);
+  const id = `m-${now}-${crypto.randomUUID().slice(0, 8)}`;
+  await db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)").bind(id, m.thread_id, who, m.body, now).run();
+  return { ok: true, id };
+}
+
+// An answer to an ask. A Decision's answer must be one of its options (decide); only an open ask can be answered.
+export async function answerAsk(db, now, who, { id, answer } = {}) {
+  const ask = typeof id === "string" ? await db.prepare("SELECT * FROM asks WHERE id = ?").bind(id).first() : null;
+  if (!ask) return refuse(db, now, { rule: "ask-unknown", detail: String(id) }, null, who);
+  if (ask.answered_at) return refuse(db, now, { rule: "ask-already-answered", detail: id }, ask.card_id, who);
+  if (typeof answer !== "string" || !answer.trim()) return refuse(db, now, { rule: "answer-shape", detail: "an answer is text" }, ask.card_id, who);
+  if (ask.type === "Decision" && !JSON.parse(ask.body).options.includes(answer)) return refuse(db, now, { rule: "answer-not-an-option", detail: answer }, ask.card_id, who);
+  await db.prepare("UPDATE asks SET answered_at = ?, answer = ? WHERE id = ?").bind(now, answer, id).run();
+  return { ok: true, id };
+}
+
+// The owner's ack of a ship: once per version, only for a version the probe recorded.
+export async function ackShip(db, now, who, version) {
+  const ship = typeof version === "string" ? await db.prepare("SELECT acked_at FROM ships WHERE version = ?").bind(version).first() : null;
+  if (!ship) return refuse(db, now, { rule: "ship-unknown", detail: String(version) }, null, who);
+  if (ship.acked_at) return refuse(db, now, { rule: "ship-already-acked", detail: version }, null, who);
+  await db.prepare("UPDATE ships SET acked_at = ? WHERE version = ?").bind(now, version).run();
+  return { ok: true, version };
 }
 
 // Evidence: only the probe writes it; one lit phase per card.
