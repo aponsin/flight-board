@@ -28,7 +28,7 @@ export function headerHtml(view, { deploying = null, boardVersion = "", wake = {
   return `<header class="hd" role="banner">
 <span class="chip live ${live.cls}" title="${esc(live.long)}"><b>${esc(live.short)}</b><span class="detail"> ${esc(live.long.replace(/^Live now( \(stale\))?/, ""))}</span></span>
 <span class="chip ${wakeCls}" title="${esc(wakeText)}"><span class="dot"></span><span class="detail">${esc(wakeText)}</span></span>
-<span class="chip ver" title="Board ${esc(boardVersion)}">${esc(boardVersion)}</span>
+${view.probe?.state === "silent" ? `<span class="chip bad" title="probe silent"><span class="dot"></span><span class="detail">probe silent${view.probe.since ? ` since ${new Date(view.probe.since).toISOString().slice(11, 16)}Z` : ""}</span></span>\n` : ""}<span class="chip ver" title="Board ${esc(boardVersion)}">${esc(boardVersion)}</span>
 </header>`;
 }
 
@@ -46,7 +46,7 @@ export const HEADER_CSS = `
 
 // The longest state, for the width test: deploying, from one long version to the next, stale, Manager unreachable.
 export const LONGEST = {
-  view: { live: { state: "stale", version: "v1.200.12-rc.3+build.20261109", age: 17 * 60_000 } },
+  view: { live: { state: "stale", version: "v1.200.12-rc.3+build.20261109", age: 17 * 60_000 }, probe: { state: "silent", since: 1_800_000_000_000 } },
   opts: { deploying: { from: "v1.200.12-rc.3+build.20261109", to: "v1.200.13-rc.1+build.20261110" }, boardVersion: "board 3b9fa7d · v3.76", wake: { state: "red", reason: "login lapsed: run claude /login" } },
 };
 export { STALE_AFTER_MS };

@@ -53,6 +53,23 @@ test("a typed word cannot contradict evidence: dropping a card the probe reads a
   assert.equal((await updateCard(db, NOW, "Manager", { id: "ghost", summary: "x" })).refused.rule, "card-unknown");
 });
 
+test("the store notices a silent probe: no evidence for 3 minutes shows the probe chip red, and no card goes stalled", async () => {
+  const db = makeDb();
+  await createCard(db, NOW, "Manager", { id: "c-one", title: "One" });
+  await writeEvidence(db, NOW, "probe", "cards.c-one", { lit: ["build"] });
+  assert.equal((await readView(db, NOW + 60_000)).probe.state, "ok");
+  const quiet = await readView(db, NOW + 3 * 60_000 + 1);
+  assert.deepEqual([quiet.probe.state, quiet.probe.since], ["silent", NOW]);
+  assert.ok(!JSON.stringify(quiet.cards).includes("stalled"), "silence is the probe's chip, not a card state");
+  assert.notEqual(quiet.tag, (await readView(db, NOW + 60_000)).tag, "the page learns of it");
+  // a timed-out run's own report is not a heartbeat
+  await writeEvidence(db, NOW + 4 * 60_000, "probe", "run.timeout", { step: "x" });
+  assert.equal((await readView(db, NOW + 4 * 60_000 + 1)).probe.state, "silent");
+  // a good reading brings it back
+  await writeEvidence(db, NOW + 5 * 60_000, "probe", "cards.c-one", { lit: ["build"] });
+  assert.equal((await readView(db, NOW + 5 * 60_000 + 1)).probe.state, "ok");
+});
+
 test("the view carries a tag that changes only when something shown changes, and Live now from the probe's reading", async () => {
   const db = makeDb();
   await createCard(db, NOW, "Manager", { id: "c-one", title: "One" });

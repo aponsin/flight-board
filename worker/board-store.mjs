@@ -2,6 +2,7 @@
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
 import { askRefusal, cardWriteRefusal, evidenceRefusal, liveNow, ASK_PARTS } from "./board-rules.mjs";
 
+export const PROBE_SILENT_MS = 3 * 60_000;
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 // The store mints #C and #T numbers: one atomic statement, never a read-then-write.
@@ -111,8 +112,14 @@ export async function readView(db, now) {
   const evidence = Object.fromEntries((await all("SELECT key, value, read_at FROM evidence ORDER BY key")).map((e) => [e.key, { value: JSON.parse(e.value), readAt: e.read_at }]));
   const refusals = await all("SELECT at, rule, card_id, who, detail FROM refusals ORDER BY id DESC LIMIT 20");
   const wake = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
+  // The store notices silence, not the probe: the newest evidence write is the probe's heartbeat. No evidence for 3 minutes
+  // shows the probe's own chip red ("probe silent since"), and never makes the cards look stalled.
+  // A timed-out run's own report (key run.*) is not a healthy reading and does not count as a heartbeat.
+  const last = Math.max(0, ...Object.entries(evidence).filter(([k]) => !k.startsWith("run.")).map(([, e]) => e.readAt));
+  const probe = last && now - last <= PROBE_SILENT_MS ? { state: "ok", lastAt: last } : { state: "silent", since: last || null };
   const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now);
   const content = { cards, asks, evidence, refusals, wake };
-  const tag = (await sha256hex(JSON.stringify(content))).slice(0, 16);
-  return { tag, now, live, ...content };
+  // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
+  const tag = (await sha256hex(JSON.stringify([content, probe.state]))).slice(0, 16);
+  return { tag, now, live, probe, ...content };
 }
