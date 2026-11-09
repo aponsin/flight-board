@@ -210,7 +210,12 @@ export function readMirror(dir, { todoDir } = {}) {
     for (const f of readdirSync(from)) if (f.endsWith(".json")) { try { docs[name][f.slice(0, -5)] = JSON.parse(readFileSync(join(from, f), "utf8")); } catch { /* skipped */ } }
   };
   for (const c of ["initiatives", "threads", "messages", "waiting", "ideas", "steps"]) { try { read(c, join(dir, c)); } catch (e) { if (c !== "steps") throw e; docs.steps = {}; } }
-  if (todoDir) read("todo", todoDir);
+  if (todoDir) {
+    read("todo", todoDir);
+    // A --todo folder with no documents (the parent of the folder that holds them, a typo) would import every to-do as missing and
+    // report 0 open, with no error: refuse it by name instead.
+    if (!Object.keys(docs.todo).length) throw new Error(`--todo ${todoDir} holds no .json documents: pass the folder that holds the old board's todo documents`);
+  }
   return docs;
 }
 

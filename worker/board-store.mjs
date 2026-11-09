@@ -2,6 +2,9 @@
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
 import { askRefusal, cardWriteRefusal, closeRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, ASK_PARTS } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
+import { readFiles, screenshotsRefusal } from "./file-store.mjs";
+import { noteShip, readShips } from "./compat-ships.mjs";
+import { readUsage } from "./compat-usage.mjs";
 
 export const PROBE_SILENT_MS = 3 * 60_000;
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -58,6 +61,8 @@ export async function updateCard(db, now, who, fields) {
 export async function createAsk(db, now, ask) {
   const bad = askRefusal(ask, now);
   if (bad) return refuse(db, now, bad, ask?.card_id, ask?.asked_by);
+  const badShots = await screenshotsRefusal(db, ask.screenshots);
+  if (badShots) return refuse(db, now, badShots, ask.card_id, ask.asked_by);
   if (ask.card_id && !(await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(ask.card_id).first())) return refuse(db, now, { rule: "card-unknown", detail: ask.card_id }, ask.card_id, ask.asked_by);
   const num = await mint(db, "T");
   const body = {};
@@ -200,6 +205,7 @@ export async function writeEvidence(db, now, who, key, value, track) {
   const rows = prev === next ? [] : historyRows(cardId, prev, next, now, whoForPhase(cardId, next, (await evidenceOf(db, "agents")) ?? {}, (await db.prepare("SELECT owner_role FROM cards WHERE id = ?").bind(cardId).first())?.owner_role), prevWho);
   const ins = rows.map((r) => db.prepare("INSERT OR IGNORE INTO phase_history (card_id, phase, kind, at, who, source) VALUES (?, ?, ?, ?, ?, 'evidence')").bind(r.card_id, r.phase, r.kind, r.at, r.who));
   await db.batch([upsert, ...ins]);
+  await noteShip(db, now, cardId, value);
   return { ok: true };
 }
 
@@ -221,7 +227,8 @@ export async function readView(db, now) {
   const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now);
   const history = await all("SELECT id, card_id, phase, kind, at, who FROM phase_history ORDER BY at, id");
   const historyCards = await all("SELECT id, num, title, size, review_level, created_at, done_at FROM history_cards ORDER BY done_at");
-  const content = { cards, asks, lists, evidence, refusals, wake, history, historyCards };
+  const files = await readFiles(db, asks), ships = await readShips(db), usage = await readUsage(db);
+  const content = { cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
   const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now);
   const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);

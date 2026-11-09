@@ -7,6 +7,9 @@
 // events, usage, plan, timings, ctx*, checkRequests, threadPings, pingThreads, agentPrs, approvals.
 
 import { STALE_AFTER_MS } from "./board-rules.mjs";
+import { applyFiles } from "./file-store.mjs";
+import { applyShips } from "./compat-ships.mjs";
+import { applyUsage } from "./compat-usage.mjs";
 
 const num = (v) => (Number.isFinite(v) ? v : undefined);
 const prune = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== ""));
@@ -104,5 +107,8 @@ export function compatView(view) {
   // The phase history as the old step log's shape (B3b): the page's own code reads who, times, ETAs and medians from it.
   if ((view.history ?? []).length) collections.steps = view.history.map((h) => prune({ id: `h${h.id}`, init: h.card_id, phase: h.phase, kind: h.kind, at: h.at, who: h.who }));
   if (view.live?.state === "live") collections.meta = [{ id: "live", version: String(view.live.version).replace(/^v/, ""), at: view.now - (view.live.age ?? 0) }];
+  applyFiles(collections, view);
+  applyShips(collections, view);
+  applyUsage(collections, view);
   return { tag: view.tag, at: view.now, collections, probe: probeDoc(view) };
 }
