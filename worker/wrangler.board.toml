@@ -1,0 +1,17 @@
+# The board store Worker (#C719). Deployed under its OWN name while the old board keeps running; at cut-over the connector
+# address moves to it (the old state Worker's name and address are kept only if that can be done without a gap).
+# No secrets and no addresses here: the account's D1 id is filled in after `wrangler d1 create`, and the public hostname is
+# passed on the deploy command line (--routes), so nothing about the owner's domain is committed.
+name = "flight-board-store"
+main = "board-entry.mjs"
+compatibility_date = "2025-09-01"
+workers_dev = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "flight-board-store"
+database_id = "5142af62-65b4-4f57-8078-ac83d7214251"
+migrations_dir = "migrations"
+
+[vars]
+BOARD_VERSION = ""
