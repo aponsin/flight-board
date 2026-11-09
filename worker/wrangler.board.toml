@@ -10,7 +10,7 @@ workers_dev = false
 [[d1_databases]]
 binding = "DB"
 database_name = "flight-board-store"
-database_id = "REPLACE_AFTER_d1_create"
+database_id = "5142af62-65b4-4f57-8078-ac83d7214251"
 migrations_dir = "migrations"
 
 [vars]
