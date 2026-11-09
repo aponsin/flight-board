@@ -27,6 +27,10 @@ export function evidenceWrites(state, job) {
   if (plain(state.agents)) out.push({ key: "agents", value: state.agents });
   if (plain(state.ctx)) out.push({ key: "ctx", value: state.ctx });
   if (plain(state.board)) out.push({ key: "board", value: state.board });
+  // #C723 B3a: the old page's "stuck" marks and its restart badge ("Safe to restart" is never green while a ship candidate is
+  // pushed) read these two; a state without them (a probe before them, or nothing stuck and no candidate) writes nothing.
+  if (plain(state.stuck)) out.push({ key: "stuck", value: state.stuck });
+  if (plain(state.ship)) out.push({ key: "ship", value: state.ship });
   return out;
 }
 

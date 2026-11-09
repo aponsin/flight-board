@@ -117,6 +117,21 @@ export function evidenceRefusal(key, value, who, track) {
   return null;
 }
 
+// Phase history (#C723 B3b): who a phase change is put down to when no agent is working on the card at that moment: the phase's lane
+// role; the early phases (and any not named here) belong to the card's own owner_role.
+export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security", ship: "Release", live: "Release", pack: "Release", install: "Release" };
+// The rows one lit-phase change adds: the old phase ends and the new one starts at `at`. `prev` null (first reading) only starts.
+// The old step log put the same `who` on a phase's end as on its start; prevWho is the start's.
+export function historyRows(cardId, prev, next, at, who, prevWho = null) {
+  if (prev === next) return [];
+  return [...(prev ? [{ card_id: cardId, phase: prev, kind: "end", at, who: prevWho }] : []), { card_id: cardId, phase: next, kind: "start", at, who }];
+}
+// The role to put a phase on: an agent the `agents` evidence shows working on this card now, else the phase's lane, else the owner.
+export function whoForPhase(cardId, phase, agents, ownerRole) {
+  const working = Object.entries(agents && typeof agents === "object" ? agents : {}).find(([, a]) => a && a.state === "working" && a.card === cardId);
+  return working ? working[0] : PHASE_LANES[phase] ?? ownerRole ?? null;
+}
+
 // "Live now": only the probe's reading of /version.json counts, and a reading older than 3 min is stale, never live.
 export const STALE_AFTER_MS = 3 * 60_000;
 export function liveNow(reading, now) {

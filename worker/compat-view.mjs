@@ -6,6 +6,8 @@
 // readings and the live version), meta/live, and the probe document. Left out until their stage: messages, threads, steps,
 // events, usage, plan, timings, ctx*, checkRequests, threadPings, pingThreads, agentPrs, approvals.
 
+import { STALE_AFTER_MS } from "./board-rules.mjs";
+
 const num = (v) => (Number.isFinite(v) ? v : undefined);
 const prune = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== ""));
 const json = (s) => { try { const v = JSON.parse(s); return v && typeof v === "object" ? v : {}; } catch { return {}; } };
@@ -78,7 +80,10 @@ export function probeDoc(view) {
   for (const [key, e] of Object.entries(ev)) if (key.startsWith("cards.")) { const { lit, ...rest } = e.value ?? {}; cards[key.slice(6)] = rest; }
   const part = (k) => (ev[k] ? ev[k].value : undefined);
   const out = { v: 1, board: part("board") ?? { boardId: "", at: view.now }, cards, agents: part("agents") ?? {} };
-  for (const k of ["ctx", "stuck", "usage", "ship"]) if (part(k) !== undefined) out[k] = part(k);
+  for (const k of ["ctx", "usage"]) if (part(k) !== undefined) out[k] = part(k);
+  // stuck and ship are written only while they hold (the probe leaves the key out when nothing is stuck or no candidate is pushed),
+  // so the store keeps the last value: it counts only while the probe keeps rewriting it (a reading older than 3 minutes is gone).
+  for (const k of ["stuck", "ship"]) if (ev[k] && view.now - ev[k].readAt <= STALE_AFTER_MS) out[k] = ev[k].value;
   return out;
 }
 
@@ -92,6 +97,12 @@ export function compatView(view) {
     ideas: (view.lists ?? []).filter((l) => l.kind === "idea").map(listDoc),
     derived: [derivedDoc(view)],
   };
+  // The old board's done cards (the one-time import's side table), as done initiatives: the page's medians and its Done list read them.
+  // A store card of the same id wins.
+  const own = new Set((view.cards ?? []).map((c) => c.id));
+  for (const h of view.historyCards ?? []) if (!own.has(h.id)) collections.initiatives.push(prune({ id: h.id, name: h.title, num: h.num, size: h.size, level: h.review_level, status: "done", createdAt: h.created_at, doneAt: h.done_at }));
+  // The phase history as the old step log's shape (B3b): the page's own code reads who, times, ETAs and medians from it.
+  if ((view.history ?? []).length) collections.steps = view.history.map((h) => prune({ id: `h${h.id}`, init: h.card_id, phase: h.phase, kind: h.kind, at: h.at, who: h.who }));
   if (view.live?.state === "live") collections.meta = [{ id: "live", version: String(view.live.version).replace(/^v/, ""), at: view.now - (view.live.age ?? 0) }];
   return { tag: view.tag, at: view.now, collections, probe: probeDoc(view) };
 }
