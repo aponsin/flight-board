@@ -1,0 +1,1 @@
+PASS Full: #C725 B2 v5 asks in full. Answer status and note stored, shown and carried to the inbox, steps may be text with cmd and the ask tool's schema allows it. 21 touched test files 170/170. Mutations caught: inbox without status and note, no note cap, steps schema strings only, no steps check. Supersedes v4 1f6f4dd0 which had FINDINGS.
