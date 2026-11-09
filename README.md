@@ -136,6 +136,12 @@ Before each deploy of the store Worker, build the page from the team's config (i
 
 It writes `worker/store-assets/board.html` and the six fonts (`page/fonts/`, self-hosted), git-ignored, which `worker/wrangler.board.toml` deploys as the Worker's assets. The folder itself is tracked (empty but for its `.assetsignore`), so a deploy without a build still works, and `/board` then says "not built" (503). The page's policy runs only its own two scripts (by a nonce per response), and loads fonts, images and data from the Worker only.
 
+Files and screenshots (#C726) are stored in an R2 bucket bound as `FILES`. Create it once, before the first deploy that carries the binding:
+
+    npx wrangler r2 bucket create flight-board-files
+
+then apply the D1 migrations as for any store change (`0010_files.sql` holds the file list). Without the bucket the deploy fails. A Worker with no `FILES` binding refuses uploads as "file-store-off". The probe writes each day's runner and automation minutes and Actions cost to `POST /api/probe/usage`.
+
 ## Tests
 
 `npm test` runs every rule's test. Each rule also had a mutation check: break the rule on purpose, a test must fail, restore.

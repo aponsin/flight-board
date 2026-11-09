@@ -41,7 +41,7 @@ function doneAtOf(cardId, phase, history, readAt) {
 }
 
 // Pure. initiatives: a card read at its last phase is done, with doneAt and its version (a dropped card stays dropped).
-// events: one line per ship, newest first, "#C12 Title · #C13 Title", with the owner's ack when he gave it.
+// events: one line per ship, newest first, "#C12 Title · #C13 Title", with the owner's ack once given.
 export function applyShips(collections, view) {
   const cards = Object.fromEntries((view.cards ?? []).map((c) => [c.id, c]));
   for (const i of collections.initiatives ?? []) {

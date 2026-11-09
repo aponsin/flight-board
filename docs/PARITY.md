@@ -46,7 +46,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Needs you: asks, "Your queue" | same | compat `waiting` |
 | Ask row: kind, #T, title, badge, age, "For: card" | same; the chip after an answer: B1 | compat `waiting` |
 | Ask steps with Copy per command, "You should see" | not yet: B2 (steps are plain strings) | |
-| Ask screenshots, picture viewer | not yet: C1 (no file store). Until then a screenshot shows as a broken picture, with a policy error in the browser's console | |
+| Ask screenshots, picture viewer | same once Boardsmith's two hooks are in (C1): an agent stores the picture with `file_put` and names it in the ask's `screenshots` as `"<id>"`, `"<id> label"` or `"<id> A: label"` | `files` (migration 0010), `/_blob/<id>`; compat `waiting.images` |
 | Reply box per kind (A/B, OK/Change, Ack, Done/Help) | same for an option, Ack and Done; not yet: B2 for a note, "Something else", files | `POST /api/compat/write` |
 | Sent line "You chose …" | same for the choice; not yet: B2 for the note and files | |
 | "Manager missed" on an ask | hidden on the store until B4 (Manager, 2026-11-09): its fields are not in the store yet | |
@@ -60,7 +60,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Ideas: kind, Close, Add | same | `lists` |
 | "Let's start" on an idea | gone: "not part of this change" (DATA.md Changes, 2026-11-09, the lists) | |
 | #T and #C links, hover, jump | same for asks and cards; not yet: B1 for threads | |
-| Files: attach, paste, drop, thumbnails, save | not yet: C1 | |
+| Files: attach, paste, drop, thumbnails, save | same once Boardsmith's hooks are in (C1): the page's own attach, paste and drop code, unchanged, now finds an `assets` and a `downloads` handle in the shim. Until the answer and message hooks are in, a reply with files is refused by name ("files arrive with the file store") and nothing is lost | `POST /api/files`, `/_blob/<id>`, `file_links` |
 
 ## Cards
 
@@ -78,16 +78,16 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Queue line, "waits on", Next (written N ago), Started, issue chips | same for next note, waiting on, started; not yet: B4 for the rest | |
 | "Manager missed" on a card | hidden on the store until B4 (Manager, 2026-11-09; the ETA inputs come in B4) | |
 | Thread fold, closed asks | not yet: B1 | |
-| Done in the last 24 h, search | same: the old board's done cards come in as history (B3b), and the store's own once they go live | compat `initiatives` (done) |
+| Done in the last 24 h, search | same: the old board's done cards come in as history (B3b), and the store's own once the probe reads them at their last phase (live, or install on the board's own track), with doneAt and version (C2) | compat `initiatives` (done), `worker/compat-ships.mjs` |
 
 ## Shipped, time, usage
 
 | Item | Status | Where it comes from on the store |
 |---|---|---|
-| Shipped feed, search | not yet: C2 | |
-| Time spent: tiles, chart | not yet: C3 | |
+| Shipped feed, search | same once Boardsmith's hooks are in (C2): one line per version the probe read on a card's commit, "#C12 Title · #C13 Title". The old board's events come in with the import (C5) | `ships`, `worker/compat-ships.mjs` |
+| Time spent: tiles, chart | same once Boardsmith's hooks are in (C3): agent minutes from the phase history; runner and automation minutes and the Actions cost from `usage_days`, which the probe writes through `POST /api/probe/usage`. Nothing writes those rows yet (the old board's last row is 2026-10-31): a probe job that reads them is a follow-up | `usage_days`, `worker/compat-usage.mjs` |
 | Plan-week tile | same (data in; drawn from real readings after the deploy) | probe `usage` (evidence key `usage`, written by the usage job) |
-| Per-agent table | not yet: C3 | |
+| Per-agent table | same: drawn from the phase history (B3b) | compat `steps` |
 
 ## The page itself
 

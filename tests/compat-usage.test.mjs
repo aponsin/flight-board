@@ -21,7 +21,7 @@ test("a day's reading: a real date not in the future, known fields only, numbers
   assert.equal(usageDayRefusal({ day: today, runner_minutes: -1 }, NOW).rule, "usage-value");
   assert.equal(usageDayRefusal({ day: today, actions_usd: "0.11" }, NOW).rule, "usage-value");
   assert.equal(usageDayRefusal({ day: today, runner_minutes: Infinity }, NOW).rule, "usage-value");
-  assert.equal(usageDayRefusal({ day: today, agent_minutes: 30 }, NOW).rule, "usage-shape", "agent minutes come from the history");
+  assert.match(usageDayRefusal({ day: today, runner_minutes: 1, agent_minutes: 30 }, NOW).detail, /unknown fields agent_minutes/, "agent minutes come from the history");
   assert.equal(usageDayRefusal({ day: today }, NOW).rule, "usage-shape");
   assert.equal(usageDayRefusal([today], NOW).rule, "usage-shape");
 });
