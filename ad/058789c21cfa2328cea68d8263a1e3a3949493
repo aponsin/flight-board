@@ -1,0 +1,1 @@
+PASS Full: #C723 parity stage A v3. Suite 1688/1688. Probe on the real Worker over the test D1: compat doors, owner-only write, choice by key stored as option text, hostile option text as data, import then evidence adds no double start, closed ask answer-and-done stores nothing. Mutation: drop the closed_at guard fails 1 test. Deploy migrations 0008 and 0009 before the Worker.
