@@ -75,7 +75,7 @@ test("an Approval is in the panel, not in Needs you; Approve answers it for that
 });
 
 test("an Approval takes only Approve: Done, Ack or a note through Needs you are refused; an agent cannot answer or withdraw", async () => {
-  const { env, tool, write } = make();
+  const { env, tool, write, call } = make();
   const { id } = await tool("reviewer", "ask", approval());
   assert.equal((await write({ op: "update", path: `waiting/${id}`, data: { response: { status: "done", note: "", at: 1 } } })).body.refused.rule, "approval-answer");
   assert.equal((await answerAsk(env.DB, NOW, "owner", { id, answer: "Approve" })).ok, true);
@@ -83,6 +83,60 @@ test("an Approval takes only Approve: Done, Ack or a note through Needs you are 
   assert.equal((await withdrawAsk(env.DB, NOW, "owner", id, "owner")).ok, true);
   const row = await env.DB.prepare("SELECT answered_at, answer, withdrawn_at, withdrawn_by FROM asks WHERE id = ?").bind(id).first();
   assert.deepEqual(row, { answered_at: null, answer: null, withdrawn_at: NOW, withdrawn_by: "owner" });
+  const rpc = await (await call("reviewer", "/mcp", { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "answer", arguments: { id, answer: "Approve" } } }) })).json();
+  assert.equal(rpc.result, undefined, "an agent has no answer tool"); assert.ok(rpc.error, JSON.stringify(rpc));
+});
+
+test("a closed Approval takes no answer, even unanswered (merged or replaced)", async () => {
+  const { env, tool } = make();
+  const { id } = await tool("reviewer", "ask", approval());
+  assert.equal((await tool("reviewer", "ask_close", { id })).ok, true, "an Approval closes unanswered");
+  const r = await answerAsk(env.DB, NOW, "owner", { id, answer: "Approve" });
+  assert.equal(r.refused?.rule, "approval-answer", JSON.stringify(r));
+});
+
+test("asked again for an approved head after its ask closed: the panel shows it unapproved, as Release reads it", async () => {
+  const { env, tool, write, compat } = make();
+  const old = await tool("reviewer", "ask", approval(H1));
+  await write(approve(H1));
+  await tool("reviewer", "ask_close", { id: old.id });
+  await tool("reviewer", "ask", approval(H1));
+  const c = await compat();
+  assert.deepEqual(c.agentPrs.map((p) => p.head), [H1]);
+  assert.deepEqual(c.approvals, [], "not shown approved");
+  assert.equal(approvalFor((await readView(env.DB, NOW)).asks, 12, H1).ok, false);
+  assert.equal((await write(approve(H1))).status, 200, "he can approve it");
+});
+
+test("Withdraw clears every open approval of the pull request, an older head's too", async () => {
+  const { env, tool, write } = make();
+  await tool("reviewer", "ask", approval(H1));
+  await write(approve(H1));
+  await tool("reviewer", "ask", approval(H2));
+  await write(approve(H2));
+  assert.equal((await write(withdraw)).status, 200);
+  const asks = (await readView(env.DB, NOW)).asks;
+  assert.equal(approvalFor(asks, 12, H1).ok, false, "the older head no longer counts");
+  assert.equal(approvalFor(asks, 12, H2).ok, false);
+});
+
+test("Release's script run as a command: no arguments is exit 2 with a usage line, also through a path with a space and a symlink", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, symlinkSync, mkdirSync } = await import("node:fs");
+  const { join, resolve } = await import("node:path");
+  const { tmpdir } = await import("node:os");
+  const real = resolve("scripts/approvals-check.mjs");
+  const dir = join(mkdtempSync(join(tmpdir(), "c727-")), "a space");
+  mkdirSync(dir);
+  const link = join(dir, "check.mjs");
+  symlinkSync(real, link);
+  for (const path of [real, link]) {
+    const r = spawnSync(process.execPath, [path], { encoding: "utf8", env: { ...process.env, BOARD_CONNECTOR_URL: "" } });
+    assert.equal(r.status, 2, `${path}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stdout, /^usage: /);
+  }
+  const missing = spawnSync(process.execPath, [real, "12", H1, "--connector-file", join(dir, "none")], { encoding: "utf8" });
+  assert.equal(missing.status, 2); assert.match(missing.stdout, /^could not read /);
 });
 
 test("a push: Reviewer asks for the new head and closes the old ask; the panel says Approve again; the old approval no longer counts", async () => {
@@ -125,6 +179,9 @@ test("approvalFor: approved at that head, or why not; nothing but an answered, o
   const { env, tool, write } = make();
   assert.match(approvalFor([], 12, H1).why, /no Approval ask/);
   assert.match(approvalFor([], 12, "abc").why, /40-character/);
+  for (const short of ["a".repeat(12), "a".repeat(39), "A".repeat(40)]) assert.match(approvalFor([{ type: "Approval", num: 1, body: JSON.stringify({ pr: 12, head: short }), answered_at: NOW, answer: "Approve", answered_by: "owner" }], 12, short).why, /40-character/, `head ${short.length} long`);
+  const forged = { id: "t9", type: "Approval", num: 9, body: JSON.stringify({ pr: 12, head: H1 }), answered_at: NOW, answer: "Approve", answered_by: "Reviewer" };
+  assert.equal(approvalFor([forged], 12, H1).ok, false, "only the owner's answer counts");
   const { id } = await tool("reviewer", "ask", approval());
   assert.match(approvalFor((await readView(env.DB, NOW)).asks, 12, H1).why, /has not approved/);
   await write(approve());

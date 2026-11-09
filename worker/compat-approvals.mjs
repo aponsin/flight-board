@@ -22,9 +22,16 @@ function approvalAsks(asks) {
 //   approvals/pr<n>: the newest ask the owner's Approve stands on, open or closed, so a push after an approval shows "Approve again".
 export function approvalDocs(asks) {
   const agentPrs = new Map(), approvals = new Map();
-  for (const { a, pr, head, url } of approvalAsks(asks)) {
+  const list = approvalAsks(asks);
+  for (const { a, pr, head, url } of list) {
     const id = `pr${pr}`;
     if (!a.closed_at && !agentPrs.has(id)) agentPrs.set(id, { id, number: pr, title: a.title, url, head, signedHead: head, signedAt: a.created_at, review: "ok", at: a.created_at });
+  }
+  for (const { a, pr, head } of list) {
+    const id = `pr${pr}`;
+    // A closed approval for the head an open ask now asks about again is not shown: the open ask is the one Release reads, and it
+    // is unapproved (review on #C727: the panel said "approved" while approvalFor said no and Withdraw was refused).
+    if (a.closed_at && agentPrs.get(id)?.head === head) continue;
     if (a.answered_at && a.answer === APPROVE && !approvals.has(id)) approvals.set(id, { id, number: pr, head, at: a.answered_at, by: a.answered_by });
   }
   return { agentPrs: [...agentPrs.values()], approvals: [...approvals.values()] };
@@ -51,9 +58,13 @@ export async function routeApproval(db, now, who, role, op, id, data) {
     return answerAsk(db, now, who, { id: ask.a.id, answer: APPROVE });
   }
   if (op === "delete") {
-    const ask = open.find((x) => x.a.answered_at);
-    if (!ask) return refuse(db, now, { rule: "withdraw-not-approved", detail: `pull request ${pr} has no approval to withdraw` }, null, who);
-    return withdrawAsk(db, now, who, ask.a.id, role);
+    // Every open approved ask for this pull request, not only the newest: an older head left open must not keep counting if the
+    // branch is pushed back to it (review on #C727).
+    const approved = open.filter((x) => x.a.answered_at);
+    if (!approved.length) return refuse(db, now, { rule: "withdraw-not-approved", detail: `pull request ${pr} has no approval to withdraw` }, null, who);
+    let r;
+    for (const x of approved) { r = await withdrawAsk(db, now, who, x.a.id, role); if (!r.ok) return r; }
+    return r;
   }
   return refuse(db, now, { rule: "no-route-yet", detail: `approvals/${id}: ${op} has no route` }, null, who);
 }
@@ -67,6 +78,6 @@ export function approvalFor(asks, pr, head) {
   const at = mine.find((x) => x.head === head);
   if (!at) return { ok: false, why: `no Approval ask for pull request ${pr} at ${head.slice(0, 12)}: Reviewer has not asked for this head` };
   if (at.a.closed_at) return { ok: false, why: `the Approval for ${head.slice(0, 12)} is closed (merged or replaced)` };
-  if (!(at.a.answered_at && at.a.answer === APPROVE)) return { ok: false, why: at.a.withdrawn_at ? `the owner withdrew the approval of ${head.slice(0, 12)}` : `the owner has not approved ${head.slice(0, 12)}` };
+  if (!(at.a.answered_at && at.a.answer === APPROVE && at.a.answered_by === "owner")) return { ok: false, why: at.a.withdrawn_at ? `the owner withdrew the approval of ${head.slice(0, 12)}` : `the owner has not approved ${head.slice(0, 12)}` };
   return { ok: true, id: at.a.id, at: at.a.answered_at, by: at.a.answered_by };
 }

@@ -8,7 +8,8 @@
 //
 // The connector's address carries its secret: it is read from the file (or BOARD_CONNECTOR_URL), never from the command line,
 // and never printed. Exit 0: approved at that head. Exit 1: not approved (the line says why). Exit 2: could not check.
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { approvalFor } from "../worker/compat-approvals.mjs";
 
 export async function checkApproval({ pr, head, url, as = "Release", fetchImpl = fetch }) {
@@ -42,4 +43,7 @@ async function main(argv) {
   return r.code;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) process.exit(await main(process.argv.slice(2)));
+// Run as a command only when this file is the one node was given. Compared as real paths (review on #C727: a path with a
+// space or a symlink made the old string compare false, so the script printed nothing and exited 0, which reads as "approved").
+const isMain = () => { try { return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1] ?? ""); } catch { return false; } };
+if (isMain()) process.exit(await main(process.argv.slice(2)));
