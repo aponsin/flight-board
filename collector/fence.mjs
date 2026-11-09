@@ -15,7 +15,7 @@ import { join, dirname, resolve, basename } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { EXPORT_NAME, READ_COLLECTIONS, CURSOR, DOC_ID, CALLS_DIR, FAILED_FILE } from "./export.mjs";
+import { EXPORT_NAME, READ_COLLECTIONS, CURSOR, DOC_ID, CALLS_DIR, FAILED_FILE, PUBLISHED_FILE } from "./export.mjs";
 
 // The most the run may publish as derived/all.
 export const DERIVED_MAX = 200 * 1024;
@@ -434,6 +434,20 @@ export function captureOf(input, spec, token) {
   return { path: `${base}/${CALLS_DIR}/${token}.json`, content: JSON.stringify(record) };
 }
 
+// #C711: the run's set of derived/all went through. Only the app's own success answer counts (Security R1): a set's answer is
+// { db_write: { op: "set", collection, doc_id, committed: true, version } } (read from 1,025 real writes); a failure is an error
+// with a text result. Anything else, a text, nothing, another document's answer or committed false, leaves no marker, and the probe's
+// chip then counts from the last one (red, which is the safe side). The call is this board's, from the run's own folder.
+export function publishedOf(input, spec, now) {
+  const t = input?.tool_input, r = input?.tool_response;
+  if (input?.tool_name !== AD_TOOL || !plain(t) || t.action !== "set" || t.url !== spec.url || t.collection !== "derived" || t.doc_id !== "all") return null;
+  if (input.cwd !== spec.cwd) return null;
+  const w = plain(r) ? r.db_write : null;
+  if (plain(r) && (r.is_error === true || r.error !== undefined)) return null;
+  if (!plain(w) || w.committed !== true || w.op !== "set" || w.collection !== "derived" || w.doc_id !== "all") return null;
+  return { path: join(spec.cwd, PUBLISHED_FILE), content: JSON.stringify({ at: now }) };
+}
+
 function save(path, content) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const tmp = `${path}.${process.pid}.part`;
@@ -488,6 +502,8 @@ export function main(argv, stdin) {
   const spec = fenceSpec({ config, configPath, install, current: currentLink(install), uid: process.getuid() });
   const input = JSON.parse(stdin);
   if (input?.hook_event_name === "PostToolUse") {
+    const pub = publishedOf(input, spec, Date.now());
+    if (pub) { try { save(pub.path, pub.content); } catch { /* the probe's chip then counts from the last marker */ } return null; }
     const r = captureOf(input, spec, `${Date.now()}-${randomBytes(4).toString("hex")}`);
     if (r.error) { recordParseFailure(spec, input, r.error); if (r.failed) { try { save(r.failed, "failed"); } catch { /* the refusal below still stops the run */ } } return `could not record the board's answer: ${r.error}`; }
     if (r.path) save(r.path, r.content);
