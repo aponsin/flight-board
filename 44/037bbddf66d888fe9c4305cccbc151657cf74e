@@ -1,0 +1,1 @@
+PASS Full c719-wake-send-path at 44037bbd. Since 33136c6d: under node --test realSend refuses any claude outside the temp folder, the not-found test uses a path that cannot exist, and the ask job's --claude wiring is tested. Suite 1635/1635. Mutation check pass: dropping env in runChild fails 1 test, and the file runs in 135 ms with no real claude started.
