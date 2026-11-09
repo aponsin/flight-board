@@ -85,9 +85,9 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Item | Status | Where it comes from on the store |
 |---|---|---|
 | Shipped feed, search | same once Boardsmith's hooks are in (C2): one line per version the probe read on a card's commit, "#C12 Title · #C13 Title". The old board's events come in with the import (C5) | `ships`, `worker/compat-ships.mjs` |
-| Time spent: tiles, chart | same once Boardsmith's hooks are in (C3): agent minutes from the phase history; runner and automation minutes and the Actions cost from `usage_days`, which the probe writes through `POST /api/probe/usage`. The runner and automation minutes themselves: same (not written on either; the old board's last row is 2026-10-31) | `usage_days`, `worker/compat-usage.mjs` |
+| Time spent: tiles, chart | partly (#C728): agent minutes from the phase history, every day shown. No runner or Actions bars: nothing posts `POST /api/probe/usage` yet, so `usage_days` stays empty (Boardsmith: the probe's usage post) | `usage_days`, `worker/compat-usage.mjs` |
 | Plan-week tile | same (data in; drawn from real readings after the deploy) | probe `usage` (evidence key `usage`, written by the usage job) |
-| Per-agent table | same: drawn from the phase history (B3b) | compat `steps` |
+| Per-agent table | partly (#C728): drawn from the phase history (B3b), sorted by queued then working time. Queued (busy) and Gated are "—": the store's history keeps no waits and the import refuses wait steps. No rows for Manager or Ops: no phase is theirs, and the probe names who worked from the phase, not from steps the agents log (Designer shows only after a design phase). Release reads near 0: the probe reads every minute and often passes the ship phase between two readings, and live time isn't counted | compat `steps` |
 
 ## The page itself
 
