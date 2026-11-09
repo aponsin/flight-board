@@ -34,7 +34,7 @@ test("only the owner answers from the page; a bad option is refused with 422", a
   const env = { DB: makeDb() };
   const as = (role, who) => async () => ({ who, role });
   const a = await createAsk(env.DB, 1000, { type: "Decision", title: "Pick", asked_by: "Manager", question: "A or B?", options: ["A", "B"], recommended: "A" });
-  const post = (auth, body) => worker.fetch(new Request("https://b.test/api/answer", { method: "POST", body: JSON.stringify(body) }), env, null, 2000, auth);
+  const post = (auth, body) => worker.fetch(new Request("https://b.test/api/answer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), env, null, 2000, auth);
   assert.equal((await post(as("agent", "Manager"), { id: a.id, answer: "A" })).status, 403);
   assert.equal((await post(as("owner", "owner"), { id: a.id, answer: "C" })).status, 422);
   assert.equal((await post(as("owner", "owner"), { id: a.id, answer: "B" })).status, 200);

@@ -9,7 +9,7 @@ export const ageText = (ms) => (ms < 90_000 ? `${Math.max(0, Math.round(ms / 100
 
 // view.live from readView ({ state, version, age }); deploying = { from, to } or null (from GitHub's running deploy).
 export function liveChip(live, deploying) {
-  if (!live || live.state === "unknown") return { cls: "warn", short: "Live now ?", long: "Live now: unknown" };
+  if (!live || live.state === "unknown") return { cls: "warn", short: "Live now ?", long: "Live now: unknown", detail: "" };
   const stale = live.state === "stale";
   const age = ageText(live.age);
   const dep = deploying ? ` → ${deploying.to}` : "";
@@ -18,6 +18,8 @@ export function liveChip(live, deploying) {
     // The short form is what survives at phone width: version and the stale mark, no arrow detail.
     short: `${stale ? "STALE " : ""}${live.version}`,
     long: `${stale ? "Live now (stale)" : "Live now"} ${live.version}${dep} · read ${age} ago`,
+    // What follows the version on a laptop: the arrow and the age, never the version again (Designer).
+    detail: `${dep} · read ${age} ago`,
   };
 }
 
@@ -25,10 +27,14 @@ export function headerHtml(view, { deploying = null, boardVersion = "", wake = {
   const live = liveChip(view.live, deploying);
   const wakeCls = wake.state === "red" ? "bad" : "ok";
   const wakeText = wake.state === "red" ? `Manager: ${wake.reason ?? "cannot reach"}` : "Manager listening";
+  const wakeDetail = wake.state === "red" ? (wake.reason ?? "cannot reach") : "listening";
+  const probeDetail = `silent${view.probe?.since ? ` since ${new Date(view.probe.since).toISOString().slice(11, 16)}Z` : ""}`;
+  // A one-word label stays on a phone (the detail drops), so two red dots are never indistinguishable.
+  const ver = String(boardVersion), bare = ver.replace(/^board\s+/i, ""), prefix = ver.length > bare.length ? `<span class="detail">board </span>` : "";
   return `<header class="hd" role="banner">
-<span class="chip live ${live.cls}" title="${esc(live.long)}"><b>${esc(live.short)}</b><span class="detail"> ${esc(live.long.replace(/^Live now( \(stale\))?/, ""))}</span></span>
-<span class="chip ${wakeCls}" title="${esc(wakeText)}"><span class="dot"></span><span class="detail">${esc(wakeText)}</span></span>
-${view.probe?.state === "silent" ? `<span class="chip bad" title="probe silent"><span class="dot"></span><span class="detail">probe silent${view.probe.since ? ` since ${new Date(view.probe.since).toISOString().slice(11, 16)}Z` : ""}</span></span>\n` : ""}<span class="chip ver" title="Board ${esc(boardVersion)}">${esc(boardVersion)}</span>
+<span class="chip live ${live.cls}" title="${esc(live.long)}"><b>${esc(live.short)}</b><span class="detail">${esc(live.detail)}</span></span>
+<span class="chip ${wakeCls}" title="${esc(wakeText)}"><span class="dot"></span><span class="lbl">Manager</span><span class="detail">${esc(wakeDetail)}</span></span>
+${view.probe?.state === "silent" ? `<span class="chip bad" title="probe ${esc(probeDetail)}"><span class="dot"></span><span class="lbl">Probe</span><span class="detail">${esc(probeDetail)}</span></span>\n` : ""}<span class="chip ver" title="Board ${esc(ver)}">${prefix}${esc(bare)}</span>
 </header>`;
 }
 
@@ -40,7 +46,10 @@ export const HEADER_CSS = `
 .hd .chip.bad{background:#fdd;color:#900}
 .hd .chip.warn{background:#ffe9b0}
 .hd .dot{width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
-.hd .ver{flex:0 0 auto}
+.hd .chip b{font-weight:600;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.hd .detail{margin-left:4px}
+.hd .ver{flex:0 1 auto}
+@media (prefers-color-scheme:dark){.hd .chip{background:#2a2a2a}.hd .chip.bad{background:#4a1c1c;color:#fbb}.hd .chip.warn{background:#4a3a10}}
 @media (max-width:600px){.hd .detail{display:none}.hd .chip{padding:4px 6px}}
 `;
 

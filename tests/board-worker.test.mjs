@@ -7,7 +7,8 @@ const NOW = 1_800_000_000_000;
 const WHO = { manager: { who: "Manager", role: "agent" }, owner: { who: "owner", role: "owner" }, probe: { who: "probe", role: "probe" } };
 const make = () => {
   const env = { DB: makeDb() };
-  const call = (as, path, init = {}, now = NOW) => worker.fetch(new Request(`https://board.test${path}`, init), env, null, now, async (req) => WHO[req.headers.get("x-as")] ?? null);
+  // A POST says application/json unless the test sets another content type (the guard refuses anything else).
+  const call = (as, path, init = {}, now = NOW) => worker.fetch(new Request(`https://board.test${path}`, init.method === "POST" ? { ...init, headers: { "content-type": "application/json", ...init.headers } } : init), env, null, now, async (req) => WHO[req.headers.get("x-as")] ?? null);
   const rpc = async (as, method, params, id = 1, now = NOW) => (await call(as, "/mcp", { method: "POST", headers: { "x-as": as }, body: JSON.stringify({ jsonrpc: "2.0", id, method, params }) }, now)).json();
   const tool = async (as, name, args, now = NOW) => (await rpc(as, "tools/call", { name, arguments: args }, 1, now)).result;
   return { env, call, rpc, tool };
@@ -23,6 +24,40 @@ test("no tool writes status or phase, and the tool schemas forbid unknown fields
     assert.equal(t.inputSchema.additionalProperties, false, t.name);
     for (const f of ["status", "phase", "num", "live_version"]) assert.ok(!(f in t.inputSchema.properties), `${t.name} has ${f}`);
   }
+});
+
+test("a POST that is not application/json is refused (a cross-site text/plain form), on the page route and on /mcp", async () => {
+  const { call } = make();
+  const body = JSON.stringify({ id: "t1", answer: "A" });
+  const rpcBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" });
+  for (const [path, b] of [["/api/answer", body], ["/mcp", rpcBody]]) {
+    for (const type of ["text/plain", "text/plain;charset=UTF-8", "application/x-www-form-urlencoded", "multipart/form-data"]) {
+      assert.equal((await call("owner", path, { method: "POST", headers: { "x-as": "owner", "content-type": type }, body: b })).status, 415, `${path} ${type}`);
+    }
+    assert.equal((await call("owner", path, { method: "POST", headers: { "x-as": "owner" }, body: b })).status !== 415, true);
+  }
+});
+
+test("a browser POST from another origin or another site is refused; the same origin and a client with no Origin pass", async () => {
+  const { call } = make();
+  const post = (headers) => call("owner", "/mcp", { method: "POST", headers: { "x-as": "owner", ...headers }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) });
+  assert.equal((await post({ origin: "https://evil.test" })).status, 403);
+  assert.equal((await post({ origin: "https://board.test.evil.test" })).status, 403);
+  assert.equal((await post({ "sec-fetch-site": "cross-site" })).status, 403);
+  assert.equal((await post({ "sec-fetch-site": "same-site" })).status, 403);
+  assert.equal((await post({ origin: "https://board.test", "sec-fetch-site": "same-origin" })).status, 200);
+  assert.equal((await post({})).status, 200);
+});
+
+test("only the owner answers: an agent's answer is an unknown tool, and the owner's answer records answered_by", async () => {
+  const { tool, rpc, env } = make();
+  const made = (await tool("manager", "ask", { type: "Later", title: "t", asked_by: "Manager", text: "x", eta_at: NOW + 86_400_000 })).structuredContent;
+  assert.equal(made.ok, true);
+  const bad = await rpc("manager", "tools/call", { name: "answer", arguments: { id: made.id, answer: "yes" } });
+  assert.equal(bad.error.message, "unknown tool");
+  assert.ok(!(await rpc("manager", "tools/list")).result.tools.some((t) => t.name === "answer"));
+  assert.equal((await tool("owner", "answer", { id: made.id, answer: "yes" })).structuredContent.ok, true);
+  assert.equal((await env.DB.prepare("SELECT answered_by FROM asks WHERE id = ?").bind(made.id).first()).answered_by, "owner");
 });
 
 test("tools/list shows each role only its tools; the probe has no card or ask tools", async () => {

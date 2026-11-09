@@ -83,7 +83,7 @@ export async function answerAsk(db, now, who, { id, answer } = {}) {
   if (ask.answered_at) return refuse(db, now, { rule: "ask-already-answered", detail: id }, ask.card_id, who);
   if (typeof answer !== "string" || !answer.trim()) return refuse(db, now, { rule: "answer-shape", detail: "an answer is text" }, ask.card_id, who);
   if (ask.type === "Decision" && !JSON.parse(ask.body).options.includes(answer)) return refuse(db, now, { rule: "answer-not-an-option", detail: answer }, ask.card_id, who);
-  await db.prepare("UPDATE asks SET answered_at = ?, answer = ? WHERE id = ?").bind(now, answer, id).run();
+  await db.prepare("UPDATE asks SET answered_at = ?, answer = ?, answered_by = ? WHERE id = ?").bind(now, answer, who, id).run();
   return { ok: true, id };
 }
 

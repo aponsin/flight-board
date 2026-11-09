@@ -9,7 +9,7 @@ const POLL_MS = 2500;
 
 const CSS = `
 :root{color-scheme:light dark;--bg:#fff;--fg:#1a1a1a;--mute:#666;--line:#ddd}
-@media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mute:#999;--line:#333}.hd .chip{background:#2a2a2a}.hd .chip.bad{background:#4a1c1c;color:#fbb}.hd .chip.warn{background:#4a3a10}}
+@media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mute:#999;--line:#333}}
 html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,sans-serif}
 main{padding:12px 16px;max-width:900px;margin:0 auto}
 h2{font-size:15px;margin:20px 0 8px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em}

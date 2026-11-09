@@ -10,6 +10,21 @@ import { liveNow } from "../worker/board-rules.mjs";
 const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const NOW = 1_800_000_000_000;
 
+test("dark colours come after the base rules in the header's own CSS, so they win (Designer)", () => {
+  assert.ok(HEADER_CSS.indexOf("prefers-color-scheme:dark") > HEADER_CSS.indexOf(".hd .chip{display"));
+  assert.ok(HEADER_CSS.indexOf("prefers-color-scheme:dark") > HEADER_CSS.indexOf(".hd .chip.warn{background:#ffe9b0}"));
+});
+
+test("on a phone the two red states keep a one-word label, and the version is not shown twice (Designer)", () => {
+  const h = headerHtml(LONGEST.view, LONGEST.opts);
+  assert.match(h, /class="lbl">Manager</);
+  assert.match(h, /class="lbl">Probe</);
+  assert.match(h, /class="detail">board </, "the board prefix is the part that drops");
+  const live = headerHtml({ live: { state: "live", version: "v1.208.0", age: 20_000 } }).match(/<b>.*<\/span>/)[0];
+  assert.equal(live.split("v1.208.0").length - 1, 1, "the live version appears once");
+  assert.match(HEADER_CSS, /\.hd \.chip b\{[^}]*text-overflow:ellipsis/);
+});
+
 test("Live now shows the probe's reading with its age; past 3 minutes it is stale and red, never live", () => {
   const fresh = liveChip(liveNow({ version: "v1.2.3", readAt: NOW - 20_000 }, NOW), null);
   assert.equal(fresh.cls, "ok");
