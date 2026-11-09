@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { askRefusal, cardWriteRefusal, closeRefusal, listWriteRefusal, evidenceRefusal, liveNow, ASK_PARTS } from "./board-rules.mjs";
+import { askRefusal, cardWriteRefusal, closeRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, ASK_PARTS } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 
 export const PROBE_SILENT_MS = 3 * 60_000;
@@ -189,7 +189,17 @@ export async function takeInbox(db, now) {
 export async function writeEvidence(db, now, who, key, value, track) {
   const bad = evidenceRefusal(key, value, who, track);
   if (bad) return refuse(db, now, bad, key.startsWith?.("cards.") ? key.slice(6) : null, who);
-  await db.prepare("INSERT INTO evidence (key, value, read_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, read_at = excluded.read_at").bind(key, JSON.stringify(value), now).run();
+  const upsert = db.prepare("INSERT INTO evidence (key, value, read_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, read_at = excluded.read_at").bind(key, JSON.stringify(value), now);
+  if (!key.startsWith("cards.")) { await upsert.run(); return { ok: true }; }
+  // A card's lit phase changed (or is read for the first time): the phase history gets its rows in the same write (#C723 B3b).
+  // The phase it was in: the last evidence reading, else (the first reading after the one-time import) the phase the history left open.
+  const cardId = key.slice(6), next = value.lit[0];
+  let prev = (await evidenceOf(db, key))?.lit?.[0] ?? null;
+  if (!prev) { const last = await db.prepare("SELECT phase, kind FROM phase_history WHERE card_id = ? ORDER BY at DESC, id DESC LIMIT 1").bind(cardId).first(); if (last?.kind === "start") prev = last.phase; }
+  const prevWho = prev && prev !== next ? (await db.prepare("SELECT who FROM phase_history WHERE card_id = ? AND phase = ? AND kind = 'start' ORDER BY at DESC, id DESC LIMIT 1").bind(cardId, prev).first())?.who ?? null : null;
+  const rows = prev === next ? [] : historyRows(cardId, prev, next, now, whoForPhase(cardId, next, (await evidenceOf(db, "agents")) ?? {}, (await db.prepare("SELECT owner_role FROM cards WHERE id = ?").bind(cardId).first())?.owner_role), prevWho);
+  const ins = rows.map((r) => db.prepare("INSERT OR IGNORE INTO phase_history (card_id, phase, kind, at, who, source) VALUES (?, ?, ?, ?, ?, 'evidence')").bind(r.card_id, r.phase, r.kind, r.at, r.who));
+  await db.batch([upsert, ...ins]);
   return { ok: true };
 }
 
@@ -209,7 +219,8 @@ export async function readView(db, now) {
   const last = Math.max(0, ...Object.entries(evidence).filter(([k]) => !k.startsWith("run.")).map(([, e]) => e.readAt));
   const probe = last && now - last <= PROBE_SILENT_MS ? { state: "ok", lastAt: last } : { state: "silent", since: last || null };
   const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now);
-  const content = { cards, asks, lists, evidence, refusals, wake };
+  const history = await all("SELECT id, card_id, phase, kind, at, who FROM phase_history ORDER BY at, id");
+  const content = { cards, asks, lists, evidence, refusals, wake, history };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
   const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now);
   const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);
