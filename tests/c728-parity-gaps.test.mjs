@@ -99,3 +99,22 @@ test("(5) the chart shows every day from the first to today, a quiet one as an e
     assert.match(els.chart.innerHTML, new RegExp(`>${d.slice(5)}</text>`), `${d} has a column`);
   }
 });
+
+test("(5) a stray old usage day fills at most the last 30 days (Security on #C728)", () => {
+  const { b } = drawPage({}, { host: "store", expose: ["fillDays"] });
+  const keys = Object.keys(b.fillDays({ "1900-01-01": { day: "1900-01-01" } }, NOW));
+  assert.ok(keys.length <= 33, `${keys.length} days`);
+  assert.ok(keys.includes(localDay(NOW)) && keys.includes(localDay(NOW - 29 * 864e5)));
+  assert.deepEqual(Object.keys(b.fillDays({}, NOW)), [], "no data, no days");
+});
+
+test("(5) in Mountain time (MST7MDT) at 11:30 pm on 2027-03-20 (UTC is already the 21st), after the spring clock change: every day, and today is the 20th", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { fileURLToPath } = await import("node:url");
+  const helper = fileURLToPath(new URL("./helpers/c728-days.mjs", import.meta.url));
+  const days = (at) => { const r = spawnSync(process.execPath, [helper], { encoding: "utf8", env: { ...process.env, TZ: "MST7MDT", C728_NOW: String(at) } }); assert.equal(r.status, 0, r.stderr); return JSON.parse(r.stdout).labels; };
+  const run = (from, to) => Array.from({ length: to - from + 1 }, (_, k) => `03-${String(from + k).padStart(2, "0")}`);
+  assert.deepEqual(days(Date.UTC(2027, 2, 21, 5, 30)), run(7, 20), "11:30 pm on the 20th: today is the 20th");
+  // 12:30 am on the 21st: 30 days back is 11:30 pm, and a day stepped from there jumped over the 23-hour 03-14 (Checker's replay).
+  assert.deepEqual(days(Date.UTC(2027, 2, 21, 6, 30)), run(8, 21), "03-14 has its column");
+});

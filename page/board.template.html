@@ -2171,6 +2171,12 @@ function renderFeed(){
 const OPEN_CAP=2*36e5, BOARD_START=String(CONFIG.boardStart||"");
 // A time's local calendar day, YYYY-MM-DD (the key agentMinutesByDay and the usage chart use).
 function localDay(t){const d=new Date(t);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+// #C728: adds an empty row for every day from the first day in byDay to today (local days), so a quiet day is a column. Never
+// further back than 30 days (the longest tile): one stray old row must not loop over centuries each render (Security). Stepped
+// from local noon (Checker): from a late hour, a 23-hour spring day skipped a date.
+function fillDays(byDay,now){const today=localDay(now),first=Object.keys(byDay).sort()[0];if(!first)return byDay;
+  for(let t=Date.parse(localDay(Math.max(Date.parse(first+"T12:00:00"),now-30*864e5))+"T12:00:00");localDay(t)<today;t+=864e5){const d=localDay(t);byDay[d]=byDay[d]||{day:d}}
+  byDay[today]=byDay[today]||{day:today};return byDay}
 function agentMinutesByDay(){
   // Working time from every initiative's steps (not queued or gated time, not the owner), split by calendar day.
   // An agent works on one thing at a time: overlapping intervals of the same agent count once.
@@ -2209,10 +2215,7 @@ function renderUsage(){
   // #C728: every day from the first to today is shown, a quiet one as an empty column (11-07 was skipped), and "today" is the
   // same local calendar day agentMinutesByDay keys by (it was UTC, so evenings in Mountain time counted as tomorrow).
   const today=localDay(Date.now());
-  // From the first day, but no further back than the 30-day tile: one stray old row must not loop over centuries each render.
-  const first=Object.keys(byDay).sort()[0];
-  if(first)for(let t=Math.max(Date.parse(first+"T12:00:00"),Date.now()-30*864e5);localDay(t)<today;t+=864e5){const d=localDay(t);byDay[d]=byDay[d]||{day:d}}
-  if(first)byDay[today]=byDay[today]||{day:today};
+  fillDays(byDay,Date.now());
   const days=Object.values(byDay).sort((a,b)=>a.day<b.day?-1:1);
   const sum=(arr,k)=>arr.reduce((s,u)=>s+(num(u[k])||0),0);
   const lastN=n=>days.filter(u=>{const g=(Date.parse(today)-Date.parse(u.day))/864e5;return g>=0&&g<n}); // #C728: a day after today is in none
