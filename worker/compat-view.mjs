@@ -6,6 +6,8 @@
 // readings and the live version), meta/live, and the probe document. Left out until their stage: messages, threads, steps,
 // events, usage, plan, timings, ctx*, checkRequests, threadPings, pingThreads, agentPrs, approvals.
 
+import { STALE_AFTER_MS } from "./board-rules.mjs";
+
 const num = (v) => (Number.isFinite(v) ? v : undefined);
 const prune = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== ""));
 const json = (s) => { try { const v = JSON.parse(s); return v && typeof v === "object" ? v : {}; } catch { return {}; } };
@@ -78,7 +80,10 @@ export function probeDoc(view) {
   for (const [key, e] of Object.entries(ev)) if (key.startsWith("cards.")) { const { lit, ...rest } = e.value ?? {}; cards[key.slice(6)] = rest; }
   const part = (k) => (ev[k] ? ev[k].value : undefined);
   const out = { v: 1, board: part("board") ?? { boardId: "", at: view.now }, cards, agents: part("agents") ?? {} };
-  for (const k of ["ctx", "stuck", "usage", "ship"]) if (part(k) !== undefined) out[k] = part(k);
+  for (const k of ["ctx", "usage"]) if (part(k) !== undefined) out[k] = part(k);
+  // stuck and ship are written only while they hold (the probe leaves the key out when nothing is stuck or no candidate is pushed),
+  // so the store keeps the last value: it counts only while the probe keeps rewriting it (a reading older than 3 minutes is gone).
+  for (const k of ["stuck", "ship"]) if (ev[k] && view.now - ev[k].readAt <= STALE_AFTER_MS) out[k] = ev[k].value;
   return out;
 }
 
