@@ -1,0 +1,1 @@
+PASS Full: #C728 at 7746f1fc. Docs only on 08fc51fd, whose merge of main 34069b47 is git's clean merge, tree bf019310, tests 134/134. The PARITY rows for the Manager chip and the seen ticks now match the page. Code as signed at d951f835.
