@@ -65,6 +65,12 @@ test("a Later's ETA is the old item's eta field, in ms, as it is", () => {
   assert.equal(p.refused.length, 0);
 });
 
+test("an item with no thread field uses the thread doc of its own id and keeps that #T", () => {
+  const d = { ...docs, initiatives: {}, threads: { l: { num: 77, title: "t" } }, waiting: { l: { kind: "later", text: "wait", eta: Date.now() + 86_400_000 } } };
+  const p = plan(d, { owner: "Owner", lead: "Manager" });
+  assert.equal(p.asks[0].num, 77);
+});
+
 test("an ask with no thread gets the next number above the counters, and is in the SQL", () => {
   const d = { ...docs, initiatives: {}, waiting: { l: { kind: "later", text: "wait", eta: Date.now() + 86_400_000 } } };
   const p = plan(d, { owner: "Owner", lead: "Manager", liveT: 100 });

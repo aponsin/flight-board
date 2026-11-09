@@ -75,7 +75,8 @@ export function plan(docs, { owner = "", roster = [], lead = "", liveC = 0, live
   }
   for (const [id, d] of Object.entries(docs.waiting ?? {})) {
     if (d.done) { out.skipped.doneAsks++; continue; }
-    const tid = str(d.thread), msgs = tid ? byThread[tid] ?? [] : [];
+    // The item's thread: its `thread` field, else the thread doc of the same id (the old board names it that way).
+    const tid = str(d.thread) ?? (docs.threads?.[id] ? id : null), msgs = tid ? byThread[tid] ?? [] : [];
     if (tid && threadResolved(msgs, false)) { out.skipped.resolvedAsks++; continue; }
     // asked_by (Director): the item's `who` when it names a roster agent (never the owner), else the lead; counted when defaulted.
     const named = str(d.who) && d.who !== owner && roster.includes(d.who) ? d.who : null;
