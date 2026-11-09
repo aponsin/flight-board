@@ -137,6 +137,10 @@ test("Release's script run as a command: no arguments is exit 2 with a usage lin
   }
   const missing = spawnSync(process.execPath, [real, "12", H1, "--connector-file", join(dir, "none")], { encoding: "utf8" });
   assert.equal(missing.status, 2); assert.match(missing.stdout, /^could not read /);
+  // With the address from BOARD_CONNECTOR_URL only (no --connector-file), the pull request number is still read (Checker on #C727):
+  // the run reaches the network, which here is a host that does not exist.
+  const envOnly = spawnSync(process.execPath, [real, "12", H1], { encoding: "utf8", env: { ...process.env, BOARD_CONNECTOR_URL: "https://board.invalid/mcp/x" } });
+  assert.equal(envOnly.status, 2); assert.match(envOnly.stdout, /^could not reach the board/); assert.doesNotMatch(envOnly.stdout, /usage/);
 });
 
 test("a push: Reviewer asks for the new head and closes the old ask; the panel says Approve again; the old approval no longer counts", async () => {

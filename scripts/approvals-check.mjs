@@ -34,7 +34,7 @@ export async function checkApproval({ pr, head, url, as = "Release", fetchImpl =
 async function main(argv) {
   const at = argv.indexOf("--connector-file");
   const file = at >= 0 ? argv[at + 1] : null;
-  const [prArg, head] = argv.filter((x, i) => !(i === at || i === at + 1));
+  const [prArg, head] = at >= 0 ? argv.filter((x, i) => !(i === at || i === at + 1)) : argv; // Checker on #C727: at -1 dropped argv[0]
   const pr = /^[1-9][0-9]{0,6}$/.test(prArg ?? "") ? Number(prArg) : NaN;
   let url = process.env.BOARD_CONNECTOR_URL;
   if (file) { try { url = readFileSync(file, "utf8").trim(); } catch { console.log(`could not read ${file}`); return 2; } }
