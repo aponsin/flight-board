@@ -86,8 +86,9 @@ function fileWorld(answer, filesOn = true) {
   const document = { hidden: false, addEventListener() {}, body: { appendChild() {} }, createElement: () => { const a = { click: () => clicks.push({ href: a.href, download: a.download }), remove() {} }; made.push(a); return a; } };
   const URL = { createObjectURL: () => "blob:x", revokeObjectURL() {} };
   const window = {};
-  const shim = filesOn ? COMPAT_SHIM.replace("var FILES_ON = false;", "var FILES_ON = true;") : COMPAT_SHIM;
-  if (filesOn) assert.notEqual(shim, COMPAT_SHIM, "the flag is in the shim");
+  // #C725 B1: the shim ships with FILES_ON = true (the answer and message routes take files); a test turns it off to check the gate.
+  const shim = filesOn ? COMPAT_SHIM : COMPAT_SHIM.replace("var FILES_ON = true;", "var FILES_ON = false;");
+  if (!filesOn) assert.notEqual(shim, COMPAT_SHIM, "the flag is in the shim");
   vm.runInNewContext(shim, { window, fetch, document, FileReader, URL, setInterval: () => 1, setTimeout: () => 1, JSON, Promise, Object, String, Error });
   return { window, calls, clicks };
 }
@@ -95,6 +96,25 @@ test("Attach stays off until the answer and message routes take files: no assets
   const w = fileWorld({ status: 200, body: {} }, false);
   assert.equal(await w.window.claude.use("assets"), null);
   assert.equal(typeof (await w.window.claude.use("downloads")).save, "function");
+});
+
+test("the owner's messages carry the page's OWNER name on the page and the store's word \"owner\" on the way back (#C725 B1)", async () => {
+  const calls = [];
+  const compat = { tag: "1", at: 1, collections: { messages: [{ id: "m1-a", thread: "t1", from: "owner", text: "hi", at: 1 }, { id: "m2-b", thread: "t1", from: "Manager", text: "yo", at: 2 }] }, probe: null };
+  const fetch = async (url, init = {}) => { calls.push({ url, init }); return url === "/api/compat" ? { status: 200, ok: true, headers: { get: () => '"c-1"' }, json: async () => compat } : { status: 200, ok: true, json: async () => ({ ok: true }) }; };
+  const window = {};
+  vm.runInNewContext(COMPAT_SHIM, { window, fetch, document: { hidden: false, addEventListener() {} }, OWNER: "Pat", setInterval: () => 1, JSON, Promise, Object, String, Error });
+  const db = await window.claude.use("db"); let snap;
+  db.collection("messages").onSnapshot((s) => (snap = s));
+  await tick();
+  assert.deepEqual(snap.docs.map((d) => d.data().from), ["Pat", "Manager"]);
+  await db.doc("messages/m3-c").set({ thread: "t1", from: "Pat", text: "ok", at: 3 });
+  const sent = JSON.parse(calls.find((c) => c.url === "/api/compat/write").init.body);
+  assert.equal(sent.data.from, "owner");
+  // Only messages are renamed: another collection's field called from is the page's own, left as it is.
+  await db.doc("todo/x1").set({ text: "t", from: "Pat" });
+  const other = JSON.parse(calls.filter((c) => c.url === "/api/compat/write").pop().init.body);
+  assert.equal(other.data.from, "Pat");
 });
 test("assets.upload posts base64 JSON and returns {id, contentType, sizeBytes}; a refusal rejects with the page's code", async () => {
   const ok = fileWorld({ status: 200, body: { ok: true, id: "abcdefghijklmnop", contentType: "image/png", sizeBytes: 4 } });

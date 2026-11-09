@@ -5,6 +5,7 @@ import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
 import { readUsage } from "./compat-usage.mjs";
+import { readThreads } from "./compat-threads.mjs";
 
 export const PROBE_SILENT_MS = 3 * 60_000;
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -145,6 +146,19 @@ export async function closeAsk(db, now, who, id, role) {
   return { ok: true, id };
 }
 
+// A reply on a closed thread reopens it (#C725 B1): the owner's reply to a done ask puts it back where it was. The answer and
+// everything else stay as they are. An ask that is not closed is left alone. Nothing is deleted.
+export async function reopenAsk(db, now, who, id) {
+  const ask = typeof id === "string" ? await db.prepare("SELECT id, type, closed_at, card_id FROM asks WHERE id = ?").bind(id).first() : null;
+  if (!ask) return refuse(db, now, { rule: "ask-unknown", detail: String(id) }, null, who);
+  // An Approval is never reopened (Checker, #C725): it closes when its head is merged or replaced, and reopening it would bring back
+  // an approval of a head the owner did not approve again (the answer stays on a closed ask).
+  if (ask.type === "Approval") return refuse(db, now, { rule: "approval-reopen", detail: `${id}: a closed approval is not reopened; a new head is a new ask` }, ask.card_id, who);
+  if (!ask.closed_at) return { ok: true, id, changed: 0 };
+  await db.prepare("UPDATE asks SET closed_at = NULL, closed_by = NULL WHERE id = ?").bind(id).run();
+  return { ok: true, id, changed: 1 };
+}
+
 // The owner's ack of a ship: once per version, only for a version the probe recorded.
 export async function ackShip(db, now, who, version) {
   const ship = typeof version === "string" ? await db.prepare("SELECT acked_at FROM ships WHERE version = ?").bind(version).first() : null;
@@ -239,8 +253,8 @@ export async function readView(db, now) {
   const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now);
   const history = await all("SELECT id, card_id, phase, kind, at, who FROM phase_history ORDER BY at, id");
   const historyCards = await all("SELECT id, num, title, size, review_level, created_at, done_at FROM history_cards ORDER BY done_at");
-  const files = await readFiles(db, asks), ships = await readShips(db), usage = await readUsage(db);
-  const content = { cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage };
+  const files = await readFiles(db, asks), ships = await readShips(db), usage = await readUsage(db), threads = await readThreads(db);
+  const content = { cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
   const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now);
   const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);
