@@ -17,7 +17,7 @@ export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const obj = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
 const str = { type: "string" };
 
-const askProps = { type: { type: "string", enum: ASK_TYPES }, title: str, asked_by: str, card_id: str, eta_at: { type: "integer" }, eta_precondition: str, screenshots: { type: "array", items: str } };
+const askProps = { type: { type: "string", enum: ASK_TYPES }, title: str, asked_by: str, card_id: str, eta_at: { type: "integer" }, eta_precondition: str, screenshots: { type: "array", items: str }, pr: { type: "integer" } };
 for (const part of new Set(Object.values(ASK_PARTS).flat())) askProps[part] ??= part === "options" ? { type: "array", items: str } : part === "steps" || part === "commands" ? { type: "array", items: str } : str;
 
 // Typed tools (schema visible before the call). Roles allowed per tool; none writes status.

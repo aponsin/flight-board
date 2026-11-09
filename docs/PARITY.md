@@ -55,7 +55,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Later tab | same | compat `waiting` (Later) |
 | With the team, sub-step line | not yet: B1, B3a | |
 | Resolved tab, search | same for closed asks; not yet: B1 for threads | |
-| Pull request panel | gone: "Folded into row 19 as the Approval type" (row 22); Approval asks come in C4 | |
+| Pull request panel | same (C4): drawn from the store's Approval asks (`worker/compat-approvals.mjs`); Approve answers the open ask for that head, Withdraw clears it | |
 | To-do: rank, up/down, Done, Add | same | `lists` |
 | Ideas: kind, Close, Add | same | `lists` |
 | "Let's start" on an idea | gone: "not part of this change" (DATA.md Changes, 2026-11-09, the lists) | |
