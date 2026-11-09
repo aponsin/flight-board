@@ -18,12 +18,12 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | "⚠ Manager missed" after Live now | hidden on the store: a typed-field gap (row 37, "Mostly deleted with the typed fields") | |
 | Clock, "Studio checked N s" | same | probe reading via the shim |
 | "Board data behind, reloading" | gone: "Delete: row 2's 'fetched N s ago' covers it once there is one store" (row 3) | |
-| Manager chip | not yet: B1 ("seen your message" needs messages) | `wakeState` |
+| Manager chip | same: "seen your message" reads the owner's messages (B1) | `wakeState`, compat `messages` |
 | Safe to restart, "Don't restart: shipping" | same (data in; drawn from real readings after the deploy) | probe `agents`, `ship` (evidence keys `agents`, `ship`) |
 | Board vX · page abc | same | the build's stamp |
 | "Manager stuck on …" | not yet: B4 (refusals in the old shape, with the "You:" action) | `refusals` |
 | "X waiting on you since" | same (data in; drawn from real readings after the deploy) | probe `stuck` (evidence key `stuck`, written by the evidence job since B3a, fresh for 3 minutes) |
-| "You wrote, Manager silent N min" | not yet: B1 | messages |
+| "You wrote, Manager silent N min" | same (B1) | compat `messages` |
 | Comment threads full | gone: "Delete with the artifact comments" (row 11) | |
 | Keeper line | gone: "Delete" (row 12) | |
 | Layout link, Now / Plan / Crew views | gone: "Delete: v3 layout and plan outline removed" (row 45) | |
@@ -42,25 +42,25 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 
 | Item | Status | Where it comes from on the store |
 |---|---|---|
-| Tabs with counts, arrow keys | same for asks and lists; not yet: B1 for threads | |
+| Tabs with counts, arrow keys | same (B1: threads too) | |
 | Needs you: asks, "Your queue" | same | compat `waiting` |
-| Ask row: kind, #T, title, badge, age, "For: card" | same; the chip after an answer: B1 | compat `waiting` |
+| Ask row: kind, #T, title, badge, age, "For: card" | same (the chip after an answer reads the owner's messages, B1) | compat `waiting`, `messages` |
 | Ask steps with Copy per command, "You should see" | not yet: B2 (steps are plain strings) | |
 | Ask screenshots, picture viewer | same once Boardsmith's two hooks are in (C1): an agent stores the picture with `file_put` and names it in the ask's `screenshots` as `"<id>"`, `"<id> label"` or `"<id> A: label"` | `files` (migration 0010), `/_blob/<id>`; compat `waiting.images` |
 | Reply box per kind (A/B, OK/Change, Ack, Done/Help) | same for an option, Ack and Done; not yet: B2 for a note, "Something else", files | `POST /api/compat/write` |
 | Sent line "You chose …" | same for the choice; not yet: B2 for the note and files | |
 | "Manager missed" on an ask | hidden on the store until B4 (Manager, 2026-11-09): its fields are not in the store yet | |
-| Thread messages, "seen HH:MM" | not yet: B1 | |
-| Thread buttons: Close, options, Rename | not yet: B1 (asks close today) | |
+| Thread messages, "seen HH:MM" | same (B1): messages come with their kind, resolved flag and files; the owner's reply, Ack and Close are written as messages | compat `messages`, `POST /api/compat/write` |
+| Thread buttons: Close, options, Rename | same (B1): Close and Ack are resolving messages (an ask is also closed), a reply on a closed ask reopens it, Rename sets the title; an agent's message does not offer options yet (the `options` column is stored, no tool writes it) | compat `threads` |
 | Later tab | same | compat `waiting` (Later) |
-| With the team, sub-step line | not yet: B1, B3a | |
-| Resolved tab, search | same for closed asks; not yet: B1 for threads | |
+| With the team, sub-step line | same for threads (B1); the sub-step line: B3a | |
+| Resolved tab, search | same (B1: threads too) | |
 | Pull request panel | same (C4): drawn from the store's Approval asks (`worker/compat-approvals.mjs`); Approve answers the open ask for that head, Withdraw clears it | |
 | To-do: rank, up/down, Done, Add | same | `lists` |
 | Ideas: kind, Close, Add | same | `lists` |
 | "Let's start" on an idea | gone: "not part of this change" (DATA.md Changes, 2026-11-09, the lists) | |
-| #T and #C links, hover, jump | same for asks and cards; not yet: B1 for threads | |
-| Files: attach, paste, drop, thumbnails, save | same once Boardsmith's hooks are in (C1): the page's own attach, paste and drop code, unchanged, now finds an `assets` and a `downloads` handle in the shim. Attach, paste and drop stay hidden until the answer and message hooks are in (the shim's `FILES_ON`, switched on in the same change), so no upload is made that a refused reply would leave unlinked; saving works now | `POST /api/files`, `/_blob/<id>`, `file_links` |
+| #T and #C links, hover, jump | same (B1: threads too) | compat `threads` |
+| Files: attach, paste, drop, thumbnails, save | same once Boardsmith's hooks are in (C1): the page's own attach, paste and drop code, unchanged, now finds an `assets` and a `downloads` handle in the shim. Attach, paste and drop are on (the shim's `FILES_ON`, switched on with the answer and message hooks, B1): an answer's or a message's files are checked before it is stored and linked after it, so a refused reply leaves no link | `POST /api/files`, `/_blob/<id>`, `file_links` |
 
 ## Cards
 
@@ -77,7 +77,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | One track per branch | not yet: B3a | probe `cards.branches` |
 | Queue line, "waits on", Next (written N ago), Started, issue chips | same for next note, waiting on, started; not yet: B4 for the rest | |
 | "Manager missed" on a card | hidden on the store until B4 (Manager, 2026-11-09; the ETA inputs come in B4) | |
-| Thread fold, closed asks | not yet: B1 | |
+| Thread fold, closed asks | same (B1) | |
 | Done in the last 24 h, search | same: the old board's done cards come in as history (B3b), and the store's own once the probe reads them at their last phase (live, or install on the board's own track), with doneAt and version (C2) | compat `initiatives` (done), `worker/compat-ships.mjs` |
 
 ## Shipped, time, usage

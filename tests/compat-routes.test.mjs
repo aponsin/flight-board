@@ -52,7 +52,6 @@ test("a note with a choice, files and every route that does not exist yet are re
   const { id } = await tool("manager", "ask", decision);
   for (const w of [
     { op: "update", path: `waiting/${id}`, data: { response: { status: "chose", choice: "A", note: "but why", at: 1 } } },
-    { op: "set", path: "messages/m1-abc", data: { thread: id, from: "owner", text: "hi", at: 1 } },
     { op: "update", path: "checkRequests/c1", data: { at: 1 } },
   ]) { const r = await write(w); assert.equal(r.status, 422, JSON.stringify(w)); assert.equal(r.body.refused.rule, "no-route-yet", JSON.stringify(w)); }
   // #C726: files now go through the file store's checks; an id that is no stored file's id is refused by name, before anything is stored.

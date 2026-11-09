@@ -3,7 +3,8 @@
 // A write with no route is REFUSED by name ("no-route-yet", logged like any refusal), never dropped and never half-applied.
 // Owner only (the caller checks the role). A route is added with its stage: threads/messages (B1), the answer's note and files (B2),
 // approvals (C4).
-import { answerAsk, closeAsk, createListItem, updateListItem, refuse } from "./board-store.mjs";
+import { answerAsk, closeAsk, reopenAsk, createListItem, updateListItem, refuse, mint } from "./board-store.mjs";
+import { routeThreadWrite } from "./compat-threads.mjs";
 import { optionOfKey } from "./compat-view.mjs";
 import { filesRefusal, linkFiles } from "./file-store.mjs";
 import { routeApproval } from "./compat-approvals.mjs";
@@ -25,6 +26,8 @@ export async function routeWrite(db, now, who, { op, path, data } = {}) {
     if (!ask) return refuse(db, now, { rule: "ask-unknown", detail: id }, null, who);
     const keys = Object.keys(d);
     if (keys.every((k) => HARMLESS.has(k))) return { ok: true }; // a ping (or its time): nothing to store, the wake counts the answer
+    // A reply reopens a closed thread (#C725 B1): the page sends done:false (and when) with the message.
+    if (d.done === false && keys.every((k) => k === "done" || k === "reopenedAt" || HARMLESS.has(k))) return reopenAsk(db, now, who, id);
     // A closed ask takes no answer and no second close (Checker, #C723): refuse BEFORE anything is stored, so a write that is
     // refused is never half applied (an answer stored, then the close refused).
     if (ask.closed_at) return refuse(db, now, { rule: "ask-already-closed", detail: id }, ask.card_id, who);
@@ -66,6 +69,9 @@ export async function routeWrite(db, now, who, { op, path, data } = {}) {
     for (const k of ["text", "area", "category", "note", "rank", "done"]) if (d[k] !== undefined) f[k] = d[k];
     return updateListItem(db, now, who, f);
   }
+
+  // Threads and messages (#C725 B1): the owner's reply, ack, close and new thread, and a thread's rename.
+  if (coll === "messages" || coll === "threads") return routeThreadWrite({ db, now, who, mint, refuse, filesRefusal, linkFiles }, { op, coll, id, d });
 
   // The pull request panel's Approve (set) and Withdraw (delete) (#C727 C4): the caller is the owner (the route is owner only).
   if (coll === "approvals") return routeApproval(db, now, who, "owner", op, id, d);

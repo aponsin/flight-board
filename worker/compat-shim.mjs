@@ -16,6 +16,18 @@ export const COMPAT_SHIM = String.raw`(function () {
   var POLL_MS = 2500;
   var subs = [], watchers = [], etag = null, data = { collections: {}, probe: null }, seen = {}, probeSeen = "", loaded = false, failing = false, timer = null, busy = false;
   var nameOf = function (path) { return String(path).split("/")[0]; };
+  // The store keeps the owner's messages under its own word "owner"; the page knows the owner by the name in its config (its
+  // OWNER constant, defined by its own script, read when a message arrives or is sent, never at load).
+  var ownerName = function () { try { return typeof OWNER === "string" && OWNER ? OWNER : "owner"; } catch (e) { return "owner"; } };
+  var ownerNamed = function (j) {
+    var ms = j && j.collections && j.collections.messages;
+    if (ms) j.collections.messages = ms.map(function (m) { if (m.from !== "owner") return m; var c = {}; for (var k in m) c[k] = m[k]; c.from = ownerName(); return c; });
+    return j;
+  };
+  var storeNamed = function (path, body) {
+    if (nameOf(path) !== "messages" || !body || body.from !== ownerName()) return body;
+    var c = {}; for (var k in body) c[k] = body[k]; c.from = "owner"; return c;
+  };
   var docsOf = function (name) {
     return (data.collections[name] || []).map(function (d) { var rest = {}; for (var k in d) if (k !== "id") rest[k] = d[k]; return { id: d.id, data: function () { return rest; } }; });
   };
@@ -34,7 +46,7 @@ export const COMPAT_SHIM = String.raw`(function () {
       if (r.status === 304) { failing = false; return; }
       if (!r.ok) throw new Error("answered " + r.status);
       var tag = r.headers.get("etag");
-      return r.json().then(function (j) { etag = tag; data = j; loaded = true; failing = false; notify(false); });
+      return r.json().then(function (j) { etag = tag; data = ownerNamed(j); loaded = true; failing = false; notify(false); });
     }).catch(function (e) {
       if (!failing) { failing = true; subs.slice().forEach(function (s) { try { if (s.err) s.err(e); } catch (x) { /* ignore */ } }); }
     }).then(function () { busy = false; });
@@ -46,7 +58,7 @@ export const COMPAT_SHIM = String.raw`(function () {
     poll();
   };
   var write = function (op, path, body) {
-    return fetch("/api/compat/write", { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ op: op, path: path, data: body }) }).then(function (r) {
+    return fetch("/api/compat/write", { method: "POST", headers: { "content-type": "application/json" }, credentials: "same-origin", body: JSON.stringify({ op: op, path: path, data: storeNamed(path, body) }) }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) {
         if (r.ok && j.ok !== false) { etag = null; return poll(); }
         var why = j && j.refused ? j.refused.rule + ": " + j.refused.detail : "answered " + r.status;
@@ -79,7 +91,7 @@ export const COMPAT_SHIM = String.raw`(function () {
   };
   // #C726: Attach, paste and drop show only once the answer and message routes take files (Boardsmith's hooks); until then
   // the page has no assets handle, so nothing is uploaded that a refused answer would leave behind. Saving works either way.
-  var FILES_ON = false;
+  var FILES_ON = true;
   var CODES = { "file-too-large": "too_large", "file-type": "unsupported_type", "file-content": "unsupported_type", "file-quota": "quota_or_state", "file-quota-daily": "quota_or_state", "file-store-off": "store_unavailable" };
   var asBase64 = function (file) {
     return new Promise(function (ok, no) {
