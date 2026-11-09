@@ -5,6 +5,7 @@
 // approvals (C4).
 import { answerAsk, closeAsk, createListItem, updateListItem, refuse } from "./board-store.mjs";
 import { optionOfKey } from "./compat-view.mjs";
+import { filesRefusal, linkFiles } from "./file-store.mjs";
 
 const NO_ROUTE = (path, why) => ({ rule: "no-route-yet", detail: `${path}: ${why}` });
 const askOf = async (db, id) => (typeof id === "string" ? db.prepare("SELECT * FROM asks WHERE id = ?").bind(id).first() : null);
@@ -29,7 +30,8 @@ export async function routeWrite(db, now, who, { op, path, data } = {}) {
     const r = d.response;
     if (r !== undefined) {
       if (typeof r !== "object" || r === null) return refuse(db, now, NO_ROUTE(path, "the answer is an object"), ask.card_id, who);
-      if (Array.isArray(r.files) && r.files.length) return refuse(db, now, NO_ROUTE(path, "files arrive with the file store (C1)"), ask.card_id, who);
+      const fl = await filesRefusal(db, r.files);
+      if (fl.refused) return refuse(db, now, fl.refused, ask.card_id, who);
       const note = typeof r.note === "string" ? r.note.trim() : "";
       let answer;
       if (r.status === "chose") {
@@ -42,6 +44,7 @@ export async function routeWrite(db, now, who, { op, path, data } = {}) {
       } else return refuse(db, now, NO_ROUTE(path, `answer status ${String(r.status).slice(0, 20)} arrives with B2`), ask.card_id, who);
       const done = await answerAsk(db, now, who, { id, answer });
       if (!done.ok) return done;
+      await linkFiles(db, now, "answer", id, fl.ids);
       if (d.done === true) return closeAsk(db, now, who, id, "owner");
       return done;
     }

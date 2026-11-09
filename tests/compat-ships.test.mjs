@@ -66,6 +66,7 @@ test("the feed is newest first and carries the owner's ack; without ships in the
   const events = applyShips(compatView(view).collections, view).events;
   assert.deepEqual(events.map((e) => [e.version, e.ackedAt ?? null]), [["1.0.2", null], ["1.0.1", NOW]]);
   const bare = compatView(view).collections;
+  delete bare.events; // compatView applies the ships itself now (#C726 hook): start from a collection set without them
   assert.equal(applyShips(bare, { ...view, ships: undefined }).events, undefined);
 });
 
