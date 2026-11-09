@@ -102,6 +102,17 @@ test("an owner message written between the inbox's read and its mark is not lost
   assert.deepEqual((await takeInbox(db, T + 3)).messages.map((m) => m.body), ["second"], "the one that slipped in is still there for the next read");
 });
 
+test("the inbox marks 250 unread messages without any statement binding more than 100 values (D1's limit, Checker)", async () => {
+  const db = makeDb();
+  for (let i = 0; i < 250; i++) await postMessage(db, T + i, "owner", { thread_id: "t1", body: `m${i}` });
+  let most = 0;
+  const counting = { prepare: (sql) => { const s = db.prepare(sql); return { bind: (...a) => { most = Math.max(most, a.length); return s.bind(...a); }, all: () => s.all(), first: () => s.first(), run: () => s.run() }; } };
+  const got = await takeInbox(counting, T + 1000);
+  assert.equal(got.messages.length, 250);
+  assert.ok(most <= 100, `a statement bound ${most} values`);
+  assert.equal((await takeInbox(db, T + 2000)).messages.length, 0, "all were marked");
+});
+
 test("over HTTP only the probe asks and reports, and only Manager's role reads the inbox", async () => {
   const env = { DB: makeDb() };
   const as = (who, role) => async () => ({ who, role });

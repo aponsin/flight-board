@@ -136,9 +136,10 @@ export async function takeInbox(db, now) {
   const messages = (await db.prepare("SELECT id, thread_id, author, body, created_at FROM messages WHERE delivered_at IS NULL AND author = 'owner' ORDER BY created_at").all()).results;
   const answers = (await db.prepare("SELECT id, num, title, answer, answered_at, answered_by FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL ORDER BY answered_at").all()).results;
   // Mark exactly the rows returned: one written between the SELECT and the UPDATE stays for the next read, never lost (Checker).
-  const marks = (ids) => ids.map(() => "?").join(", ");
-  if (messages.length) await db.prepare(`UPDATE messages SET delivered_at = ? WHERE delivered_at IS NULL AND id IN (${marks(messages)})`).bind(now, ...messages.map((m) => m.id)).run();
-  if (answers.length) await db.prepare(`UPDATE asks SET answer_taken_at = ? WHERE answer_taken_at IS NULL AND id IN (${marks(answers)})`).bind(now, ...answers.map((a) => a.id)).run();
+  // D1 binds at most 100 values per statement (Checker): mark in chunks of 90 ids plus the time.
+  const mark = async (sql, rows) => { for (let i = 0; i < rows.length; i += 90) { const ids = rows.slice(i, i + 90).map((r) => r.id); await db.prepare(sql.replace("(?)", `(${ids.map(() => "?").join(", ")})`)).bind(now, ...ids).run(); } };
+  await mark("UPDATE messages SET delivered_at = ? WHERE delivered_at IS NULL AND id IN (?)", messages);
+  await mark("UPDATE asks SET answer_taken_at = ? WHERE answer_taken_at IS NULL AND id IN (?)", answers);
   await db.prepare("UPDATE wake SET taken_at = ?, seen_at = ? WHERE id = 1").bind(now, now).run();
   return { ok: true, messages, answers };
 }
