@@ -2,7 +2,7 @@
 // skeleton, served behind the identity check with a per-response script nonce and a policy that refuses every other site.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker, { OLD_PAGE_PATH, oldPageCsp, withNonce } from "../worker/board-worker.mjs";
 import { buildChecked } from "../scripts/build-page.mjs";
@@ -81,7 +81,7 @@ test("without its built assets the Worker says the page is not built (503), neve
   assert.match(await r.text(), /not built/);
 });
 
-test("the six fonts are in the repository, each with its licence", { skip: !existsSync(new URL(FONT_FACES[0].file, FONTS_DIR)) && "the fonts wait on the owner's yes (#T1668)" }, () => {
+test("the six fonts are in the repository, each with its licence (@fontsource, the owner's yes on #T1668)", () => {
   for (const f of FONT_FACES) {
     const bytes = readFileSync(new URL(f.file, FONTS_DIR));
     assert.equal(bytes.subarray(0, 4).toString("latin1"), "wOF2", f.file);
