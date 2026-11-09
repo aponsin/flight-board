@@ -47,7 +47,7 @@ export function askRow(id, d, { thread, askedBy }) {
   if (type === "Decision") Object.assign(ask, { question: str(d.question) ?? str(d.text), options: d.options, recommended: d.recommended });
   if (type === "Action") Object.assign(ask, { steps: d.steps, expect: d.expect });
   if (type === "Answer") ask.question = str(d.question) ?? str(d.text);
-  if (type === "Later") Object.assign(ask, { text: str(d.text) ?? str(d.question), ...(Number.isFinite(d.etaAt) ? { eta_at: d.etaAt } : {}) });
+  if (type === "Later") Object.assign(ask, { text: str(d.text) ?? str(d.question), ...(Number.isFinite(d.eta) ? { eta_at: d.eta } : {}) });
   if (type === "SessionStart") ask.words = str(d.words) ?? str(d.text);
   if (Array.isArray(d.images) && d.images.length) ask.screenshots = d.images.map(String);
   for (const k of Object.keys(ask)) if (ask[k] === undefined || ask[k] === null) delete ask[k];

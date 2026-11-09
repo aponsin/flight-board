@@ -57,6 +57,14 @@ test("an item the store's rules refuse is listed with rule and old id, never pat
   assert.ok(!p.asks.some((x) => x.id === "a3" || x.id === "a5"));
 });
 
+test("a Later's ETA is the old item's eta field, in ms, as it is", () => {
+  const eta = Date.now() + 86_400_000;
+  const d = { ...docs, initiatives: {}, waiting: { l: { kind: "later", text: "wait", eta } } };
+  const p = plan(d, { owner: "Owner", lead: "Manager" });
+  assert.equal(p.asks[0].eta_at, eta);
+  assert.equal(p.refused.length, 0);
+});
+
 test("no orphans: messages come only with an imported thread", () => {
   const p = plan(docs, { owner: "Owner", lead: "Manager" });
   assert.deepEqual(p.messages.map((m) => m.id).sort(), ["m1", "m2", "m5"]);
