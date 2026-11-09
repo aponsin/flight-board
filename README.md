@@ -126,6 +126,16 @@ Row 4 turns red ("not listening since") with its reason and the fix when: **logi
 
 A probe job killed by its watchdog (`collector/run-watchdog.mjs`) logs and exits 2 and tells the store nothing: the store's own silence rule is the only signal. The probe is marked silent 3 minutes after its last write, and the header's Probe chip turns red.
 
+## The old page on the store (#C723, board parity)
+
+The store Worker serves the old board page at `/board`, behind Access, with the same look as the artifact; the small page stays at `/` until the owner switches. The page reads and writes the store through a shim (`worker/compat-shim.mjs`) over `GET /api/compat` and `POST /api/compat/write`. What it shows and what is still missing, row by row: `docs/PARITY.md`.
+
+Before each deploy of the store Worker, build the page from the team's config (it carries the config, so it is never committed):
+
+    node scripts/build-store-page.mjs <board.config.json>
+
+It writes `dist/store-page/board.html` and the six fonts (`page/fonts/`, self-hosted), which `worker/wrangler.board.toml` deploys as the Worker's assets. A deploy without them still works, and `/board` says "not built" (503). The page's policy runs only its own two scripts (by a nonce per response), and loads fonts, images and data from the Worker only.
+
 ## Tests
 
 `npm test` runs every rule's test. Each rule also had a mutation check: break the rule on purpose, a test must fail, restore.
