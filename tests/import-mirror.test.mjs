@@ -65,6 +65,14 @@ test("a Later's ETA is the old item's eta field, in ms, as it is", () => {
   assert.equal(p.refused.length, 0);
 });
 
+test("an ask with no thread gets the next number above the counters, and is in the SQL", () => {
+  const d = { ...docs, initiatives: {}, waiting: { l: { kind: "later", text: "wait", eta: Date.now() + 86_400_000 } } };
+  const p = plan(d, { owner: "Owner", lead: "Manager", liveT: 100 });
+  assert.equal(p.asks[0].num, 100);
+  assert.equal(p.counters.T, 101);
+  assert.match(toSql(p), /INSERT OR IGNORE INTO asks/);
+});
+
 test("no orphans: messages come only with an imported thread", () => {
   const p = plan(docs, { owner: "Owner", lead: "Manager" });
   assert.deepEqual(p.messages.map((m) => m.id).sort(), ["m1", "m2", "m5"]);

@@ -94,6 +94,8 @@ export function plan(docs, { owner = "", roster = [], lead = "", liveC = 0, live
   const nums = (c, f) => Object.values(docs[c] ?? {}).map((x) => (Number.isInteger(x[f]) ? x[f] : 0));
   out.counters.C = Math.max(liveC, 1 + Math.max(0, ...nums("initiatives", "num")));
   out.counters.T = Math.max(liveT, 1 + Math.max(0, ...nums("threads", "num")));
+  // An item with no thread has no #T: it gets the next numbers above the counters (never a reused one), in old-id order.
+  for (const a of out.asks.filter((x) => x.num === null).sort((x, y) => x.id.localeCompare(y.id))) a.num = out.counters.T++;
   return out;
 }
 
@@ -101,7 +103,7 @@ const q = (v) => (v === null || v === undefined ? "NULL" : typeof v === "number"
 const insert = (t, row) => `INSERT OR IGNORE INTO ${t} (${Object.keys(row).join(", ")}) VALUES (${Object.values(row).map(q).join(", ")});`;
 // Keyed by old id: running it twice changes nothing. The counters only ever go up.
 export function toSql(p) {
-  return [...p.cards.map((r) => insert("cards", r)), ...p.asks.filter((r) => r.num !== null).map((r) => insert("asks", r)), ...p.messages.map((r) => insert("messages", r)),
+  return [...p.cards.map((r) => insert("cards", r)), ...p.asks.map((r) => insert("asks", r)), ...p.messages.map((r) => insert("messages", r)),
     `UPDATE counters SET next = MAX(next, ${p.counters.C}) WHERE name = 'C';`, `UPDATE counters SET next = MAX(next, ${p.counters.T}) WHERE name = 'T';`].join("\n");
 }
 
