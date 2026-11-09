@@ -1,0 +1,1 @@
+PASS Full: #C711 collector-stopped-alert-v5 at 2586fad, one commit on d658dd4. Only the test file changed from faa0121, where the full suite was 1471 green. The chip goes red past 75 minutes of the hourly schedule, and the marker is written only on the real committed set. 15 mutants, all killed, the future bound included. The real publish is still to be seen after install.
