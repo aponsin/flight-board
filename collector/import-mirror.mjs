@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { askRefusal, cardWriteRefusal } from "../worker/board-rules.mjs";
 
 const SIZES = ["XS", "S", "M", "L", "XL"], LEVELS = ["None", "Quick", "Full"];
+const REWORK = ["bug found in test", "review findings", "design change", "security finding", "owner change"];
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const int = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
 const str = (v) => (typeof v === "string" && v.trim() ? v : null);
@@ -33,7 +34,7 @@ export function cardRow(id, d) {
   const row = {
     id, num: d.num, title: d.name, summary: str(d.summary) ?? "", size: SIZES.includes(d.size) ? d.size : null, review_level: LEVELS.includes(d.level) ? d.level : null,
     track: "product", owner_role: str(d.who) ?? str(d.owner), next_note: str(d.nextNote), next_note_at: int(d.nextNoteAt), waiting_on: str(d.waitingOn),
-    paused: d.status === "paused" ? 1 : 0, dropped: d.status === "dropped" ? 1 : 0, rework_reason: str(d.phaseReason), created_at: int(d.createdAt) ?? 0, updated_at: int(d.updatedAt) ?? int(d.createdAt) ?? 0,
+    paused: d.status === "paused" ? 1 : 0, dropped: d.status === "dropped" ? 1 : 0, rework_reason: REWORK.includes(d.phaseReason) ? d.phaseReason : null, created_at: int(d.createdAt) ?? 0, updated_at: int(d.updatedAt) ?? int(d.createdAt) ?? 0,
   };
   const bad = cardWriteRefusal({ id, title: row.title, summary: row.summary, size: row.size, review_level: row.review_level, track: row.track, owner_role: row.owner_role, next_note: row.next_note, waiting_on: row.waiting_on, paused: row.paused, dropped: row.dropped, ...(row.rework_reason ? { rework_reason: row.rework_reason } : {}) }, null);
   return bad ? { ok: false, ...bad } : { ok: true, row };

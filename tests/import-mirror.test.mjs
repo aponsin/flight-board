@@ -98,6 +98,13 @@ test("a Decision with no flagged option is still refused, not given a recommenda
   assert.match(p.refused[0].detail, /recommended/);
 });
 
+test("a card's free-text phaseReason is not a rework reason: only the five reasons carry over, anything else is left empty", () => {
+  const d = { ...docs, initiatives: { a: { name: "A", num: 1, phaseReason: "Suite passed at 2bd53cf is the test step", status: "active" }, b: { name: "B", num: 2, phaseReason: "design change", status: "active" } }, waiting: {} };
+  const p = plan(d, { owner: "Owner", lead: "Manager" });
+  assert.deepEqual(p.refused, []);
+  assert.deepEqual(p.cards.map((c) => c.rework_reason), [null, "design change"]);
+});
+
 test("no orphans: messages come only with an imported thread", () => {
   const p = plan(docs, { owner: "Owner", lead: "Manager" });
   assert.deepEqual(p.messages.map((m) => m.id).sort(), ["m1", "m2", "m5"]);
