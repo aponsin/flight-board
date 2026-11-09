@@ -5,7 +5,8 @@
 //   use("db")      collection(name).onSnapshot(next, err) -> unsubscribe;  doc(path).set | update | delete -> promise
 //   use("mcp")     watchTool(server, tool, args, onEvent, {refetchInterval}) delivers the probe document the way the old state tool did
 //   use("assets")  upload(file, {type}) -> {id, contentType, sizeBytes}: POST /api/files (#C726 C1); a refusal rejects with
-//                  {code}: too_large, unsupported_type, quota_or_state, or the store's rule
+//                  {code}: too_large, unsupported_type, quota_or_state, store_unavailable, or the store's rule.
+//                  Null while FILES_ON is false (until the answer and message routes take files)
 //   use("downloads") save({filename, data}) saves a Blob through the browser's own download (an <a download> click)
 //   use(other)     resolves to null: comments are absent, and the page already hides what needs them
 // Reads: 2.5 s poll with If-None-Match, none while the tab is hidden, one at once when it shows again. A failed poll tells every
@@ -76,7 +77,10 @@ export const COMPAT_SHIM = String.raw`(function () {
     watchTool: function (server, tool, args, onEvent) { watchers.push(onEvent); schedule(); if (loaded && data.probe) Promise.resolve().then(function () { onEvent({ type: "data", result: { payload: data.probe } }); }); return function () { var i = watchers.indexOf(onEvent); if (i >= 0) watchers.splice(i, 1); }; },
     callTool: function () { return Promise.reject(new Error("not available on the Worker")); }
   };
-  var CODES = { "file-too-large": "too_large", "file-type": "unsupported_type", "file-content": "unsupported_type", "file-quota": "quota_or_state", "file-store-off": "quota_or_state" };
+  // #C726: Attach, paste and drop show only once the answer and message routes take files (Boardsmith's hooks); until then
+  // the page has no assets handle, so nothing is uploaded that a refused answer would leave behind. Saving works either way.
+  var FILES_ON = false;
+  var CODES = { "file-too-large": "too_large", "file-type": "unsupported_type", "file-content": "unsupported_type", "file-quota": "quota_or_state", "file-quota-daily": "quota_or_state", "file-store-off": "store_unavailable" };
   var asBase64 = function (file) {
     return new Promise(function (ok, no) {
       var r = new FileReader();
@@ -108,6 +112,7 @@ export const COMPAT_SHIM = String.raw`(function () {
       });
     }
   };
-  var handles = { db: db, mcp: mcp, assets: assets, downloads: downloads };
+  var handles = { db: db, mcp: mcp, downloads: downloads };
+  if (FILES_ON) handles.assets = assets;
   window.claude = { use: function (name) { return Promise.resolve(Object.prototype.hasOwnProperty.call(handles, name) ? handles[name] : null); } };
 })();`;

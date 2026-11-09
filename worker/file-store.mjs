@@ -6,18 +6,26 @@
 // anyone past the Worker's Access check, at GET /_blob/<id>, served with the type it was stored as, never sniffed, and in a
 // sandbox (a stored file can never run as a page of this Worker).
 //
+// The page's Attach, paste and drop stay off until the answer and message hooks are in: the shim's FILES_ON (compat-shim.mjs)
+// is false until then, so no upload is made that a refused answer would leave unlinked.
+//
 // Hooks for the store and the compatibility view (Boardsmith adds them, one line each):
 //   board-store readView      files: await readFiles(db, asks)                 (and in the tag's content)
 //   compat-view compatView    applyFiles(collections, view)                    (after waiting and messages are built)
 //   compat-write answer       filesRefusal(db, r.files) before answerAsk; linkFiles(db, now, "answer", id, ids) after it
 //   compat-write message      the same with "message" and the message's id, for data.assets
 //   board-store createAsk     screenshotsRefusal(db, ask.screenshots) next to askRefusal
+//   compat-shim               FILES_ON = true, in the same change as the two compat-write hooks
 // Everything below that reads only its arguments is pure and tested in Node.
 
 export const FILE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf", "text/plain", "text/markdown", "text/csv", "application/json"];
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
 export const MAX_TOTAL_BYTES = 2 * 1024 ** 3; // the store's whole size; past it a new upload is refused ("quota")
 export const MAX_FILES_PER_SEND = 10;
+// One caller's uploads in 24 hours (Builder's review): a looping agent or a leaked connector secret cannot fill the store.
+export const MAX_DAY_BYTES_PER_CALLER = 200 * 1024 * 1024;
+// A request body bigger than one file in base64 plus its JSON is refused before it is read (the Worker has 128 MB).
+export const MAX_BODY_BYTES = Math.ceil(MAX_FILE_BYTES / 3) * 4 + 64 * 1024;
 export const ID = /^[A-Za-z0-9_-]{16,64}$/;
 const IMAGE = /^image\//;
 
@@ -42,9 +50,10 @@ export function sniffRefusal(type, b) {
 }
 
 // A file's name as stored: no control characters, no path, at most 200 characters.
+// Cut by code point and with lone surrogates dropped, so the name is always well-formed text (encodeURIComponent never throws on it).
 export function cleanName(name) {
-  const s = String(name ?? "").replace(/[\u0000-\u001f\u007f-\u009f]/g, "").split(/[\\/]/).pop().trim().slice(0, 200);
-  return s || "file";
+  const s = String(name ?? "").replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "").replace(/[\u0000-\u001f\u007f-\u009f]/g, "").split(/[\\/]/).pop().trim();
+  return Array.from(s).slice(0, 200).join("").trim() || "file";
 }
 
 export function decodeBase64(s) {
@@ -78,6 +87,8 @@ export async function putFile({ db, bucket, now, who, refuse }, { name, type, da
   if (bad) return no(bad);
   const total = (await db.prepare("SELECT COALESCE(SUM(size), 0) AS n FROM files").first()).n;
   if (total + bytes.length > MAX_TOTAL_BYTES) return no(refusal("file-quota", "the board's file store is full"));
+  const mine = (await db.prepare("SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE added_by = ? AND added_at > ?").bind(String(who), now - 864e5).first()).n;
+  if (mine + bytes.length > MAX_DAY_BYTES_PER_CALLER) return no(refusal("file-quota-daily", `${who} stored ${mine} bytes in the last 24 hours`));
   const id = newFileId(), file = cleanName(name);
   const sha256 = hex(await crypto.subtle.digest("SHA-256", bytes));
   await bucket.put(id, bytes, { httpMetadata: { contentType: type } });

@@ -78,7 +78,7 @@ test("a failing poll tells the error handler once per streak, and the other hand
 
 // #C726 C1: assets.upload sends the file as base64 JSON to /api/files and answers in the artifact store's shape; a refusal
 // rejects with the code the page's message knows.
-function fileWorld(answer) {
+function fileWorld(answer, filesOn = true) {
   const calls = [];
   const fetch = async (url, init = {}) => { calls.push({ url, init }); return { status: answer.status, ok: answer.status < 300, json: async () => answer.body }; };
   class FileReader { readAsDataURL(f) { this.result = `data:${f.type};base64,${f.b64}`; setImmediate(() => this.onload()); } }
@@ -86,9 +86,16 @@ function fileWorld(answer) {
   const document = { hidden: false, addEventListener() {}, body: { appendChild() {} }, createElement: () => { const a = { click: () => clicks.push({ href: a.href, download: a.download }), remove() {} }; made.push(a); return a; } };
   const URL = { createObjectURL: () => "blob:x", revokeObjectURL() {} };
   const window = {};
-  vm.runInNewContext(COMPAT_SHIM, { window, fetch, document, FileReader, URL, setInterval: () => 1, setTimeout: () => 1, JSON, Promise, Object, String, Error });
+  const shim = filesOn ? COMPAT_SHIM.replace("var FILES_ON = false;", "var FILES_ON = true;") : COMPAT_SHIM;
+  if (filesOn) assert.notEqual(shim, COMPAT_SHIM, "the flag is in the shim");
+  vm.runInNewContext(shim, { window, fetch, document, FileReader, URL, setInterval: () => 1, setTimeout: () => 1, JSON, Promise, Object, String, Error });
   return { window, calls, clicks };
 }
+test("Attach stays off until the answer and message routes take files: no assets handle while FILES_ON is false; saving works", async () => {
+  const w = fileWorld({ status: 200, body: {} }, false);
+  assert.equal(await w.window.claude.use("assets"), null);
+  assert.equal(typeof (await w.window.claude.use("downloads")).save, "function");
+});
 test("assets.upload posts base64 JSON and returns {id, contentType, sizeBytes}; a refusal rejects with the page's code", async () => {
   const ok = fileWorld({ status: 200, body: { ok: true, id: "abcdefghijklmnop", contentType: "image/png", sizeBytes: 4 } });
   const assets = await ok.window.claude.use("assets");
@@ -96,7 +103,7 @@ test("assets.upload posts base64 JSON and returns {id, contentType, sizeBytes}; 
   assert.deepEqual({ ...res }, { id: "abcdefghijklmnop", contentType: "image/png", sizeBytes: 4 });
   assert.equal(ok.calls[0].url, "/api/files"); assert.equal(ok.calls[0].init.headers["content-type"], "application/json");
   assert.deepEqual(JSON.parse(ok.calls[0].init.body), { name: "shot.png", type: "image/png", data: "iVBORw==" });
-  for (const [rule, code] of [["file-too-large", "too_large"], ["file-type", "unsupported_type"], ["file-quota", "quota_or_state"], ["file-unknown", "file-unknown"]]) {
+  for (const [rule, code] of [["file-too-large", "too_large"], ["file-type", "unsupported_type"], ["file-quota", "quota_or_state"], ["file-quota-daily", "quota_or_state"], ["file-store-off", "store_unavailable"], ["file-unknown", "file-unknown"]]) {
     const w = fileWorld({ status: 422, body: { ok: false, refused: { rule, detail: "x" } } });
     await assert.rejects((await w.window.claude.use("assets")).upload({ name: "a", type: "image/png", b64: "" }, {}), (e) => e.code === code);
   }

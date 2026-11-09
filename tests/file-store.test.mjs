@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker from "../worker/board-worker.mjs";
 import { refuse } from "../worker/board-store.mjs";
-import { sniffRefusal, cleanName, decodeBase64, parseShot, putFile, filesRefusal, linkFiles, screenshotsRefusal, readFiles, applyFiles, MAX_FILE_BYTES } from "../worker/file-store.mjs";
+import { sniffRefusal, cleanName, decodeBase64, parseShot, putFile, filesRefusal, linkFiles, screenshotsRefusal, readFiles, applyFiles, MAX_FILE_BYTES, MAX_TOTAL_BYTES, MAX_DAY_BYTES_PER_CALLER, MAX_BODY_BYTES } from "../worker/file-store.mjs";
 
 const NOW = 1_800_000_000_000;
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
@@ -37,6 +37,11 @@ test("the first bytes must match the type; text kinds must be UTF-8 without NUL"
 test("a stored name has no path and no control characters; base64 is strict", () => {
   assert.equal(cleanName("../../etc/passwd"), "passwd"); assert.equal(cleanName("a\u0000b\nc.png"), "abc.png"); assert.equal(cleanName(""), "file");
   assert.equal(cleanName("x".repeat(300)).length, 200);
+  // Cut by code point, lone surrogates dropped: the stored name is always well-formed, so the download header never throws.
+  const emoji = cleanName("a".repeat(199) + "😀😀");
+  assert.equal(Array.from(emoji).length, 200); assert.ok(emoji.isWellFormed());
+  assert.equal(cleanName("x\ud800y\udc00z.png"), "xyz.png");
+  assert.doesNotThrow(() => encodeURIComponent(cleanName("\ud83d")));
   assert.deepEqual([...decodeBase64("AQID")], [1, 2, 3]); assert.equal(decodeBase64("AQI"), null); assert.equal(decodeBase64("A$=="), null); assert.equal(decodeBase64(5), null);
 });
 
@@ -66,6 +71,36 @@ test("putFile stores bytes and the list; every refusal is logged and stores noth
   assert.equal(bucket.m.size, 1);
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM refusals WHERE rule LIKE 'file-%'").first()).n, cases.length);
   assert.equal((await putFile({ ...ctx, bucket: undefined }, { name: "a.png", type: "image/png", data: b64(PNG) })).refused.rule, "file-store-off");
+});
+
+test("the store's whole size and each caller's day are capped; a decoded file over 15 MB is refused; a failed list write takes the bytes back", async () => {
+  const seed = async (db, n, who, at) => { for (let i = 0; i < n; i++) await db.prepare("INSERT INTO files (id, name, type, size, sha256, added_by, added_at) VALUES (?, 'x', 'image/png', ?, '', ?, ?)").bind(`seed${who}${String(i).padStart(14, "0")}`, MAX_FILE_BYTES, who, at).run(); };
+  // The whole store: full up to the last file, refused for anyone.
+  const full = makeDb(), bucket = fakeR2();
+  await seed(full, Math.ceil(MAX_TOTAL_BYTES / MAX_FILE_BYTES), "old", NOW - 30 * 864e5);
+  assert.equal((await putFile({ db: full, bucket, now: NOW, who: "owner", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).refused.rule, "file-quota");
+  // One caller's day: Builder is refused, the owner is not; yesterday's uploads do not count.
+  const day = makeDb();
+  await seed(day, Math.ceil(MAX_DAY_BYTES_PER_CALLER / MAX_FILE_BYTES), "Builder", NOW - 60_000);
+  assert.equal((await putFile({ db: day, bucket, now: NOW, who: "Builder", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).refused.rule, "file-quota-daily");
+  assert.equal((await putFile({ db: day, bucket, now: NOW, who: "owner", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).ok, true);
+  assert.equal((await putFile({ db: day, bucket, now: NOW + 864e5 + 1, who: "Builder", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).ok, true);
+  // Three bytes over: the base64 is short enough to be decoded, the bytes are not.
+  const big = new Uint8Array(MAX_FILE_BYTES + 1); big.set(PNG);
+  assert.equal((await putFile({ db: makeDb(), bucket, now: NOW, who: "owner", refuse }, { name: "big.png", type: "image/png", data: b64(big) })).refused.rule, "file-too-large");
+  // The list write fails after the bytes are in: they are taken back, nothing is half-stored.
+  const db = makeDb(), r2 = fakeR2(), real = db.prepare;
+  db.prepare = (sql) => (/^INSERT INTO files/.test(sql) ? { bind: () => ({ run: async () => { throw new Error("D1 down"); } }) } : real(sql));
+  await assert.rejects(putFile({ db, bucket: r2, now: NOW, who: "owner", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) }), /D1 down/);
+  assert.equal(r2.m.size, 0);
+});
+
+test("a request body over one file's size is refused before it is read (413)", async () => {
+  const { call } = make();
+  const r = await call("owner", "/api/files", { method: "POST", headers: { "content-length": String(MAX_BODY_BYTES + 1) }, body: "{}" });
+  assert.equal(r.status, 413);
+  const c = await worker.fetch(new Request("https://board.test/mcp/anything", { method: "POST", headers: { "content-type": "application/json", "content-length": String(MAX_BODY_BYTES + 1) }, body: "{}" }), { DB: makeDb() }, null, NOW, async () => null);
+  assert.equal(c.status, 413, "the connector too");
 });
 
 test("a send's files must be stored ids, at most ten, each once; links keep their order", async () => {

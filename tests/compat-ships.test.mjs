@@ -81,7 +81,7 @@ test("the old page draws them: the Done list in the last 24 h with its version, 
   assert.match(drawn.els.donesum.textContent, /^Done in the last 24 h \(2\)$/);
   assert.match(drawn.els.doneboard.innerHTML, /Hero band/); assert.match(drawn.els.doneboard.innerHTML, /Menu page/);
   assert.doesNotMatch(drawn.els.doneboard.innerHTML, /Old card/, "older than 24 h: out of view, found by search");
-  assert.match(drawn.els.doneboard.innerHTML, /Live 2\.4\.0|v2\.4\.0|2\.4\.0/);
+  assert.match(drawn.els.doneboard.innerHTML, /<div class="lbl">Live<\/div><div class="big">2\.4\.0<\/div>/);
   assert.match(drawn.els.feed.innerHTML, /<span class="ver">2\.4\.0<\/span>/);
   assert.match(drawn.els.feed.innerHTML, /#C1/); assert.match(drawn.els.feed.innerHTML, /Menu page/);
   assert.match(drawn.els.feed.innerHTML, /2\.3\.0/, "the feed keeps every ship, of any age");

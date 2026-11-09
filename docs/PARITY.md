@@ -60,7 +60,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Ideas: kind, Close, Add | same | `lists` |
 | "Let's start" on an idea | gone: "not part of this change" (DATA.md Changes, 2026-11-09, the lists) | |
 | #T and #C links, hover, jump | same for asks and cards; not yet: B1 for threads | |
-| Files: attach, paste, drop, thumbnails, save | same once Boardsmith's hooks are in (C1): the page's own attach, paste and drop code, unchanged, now finds an `assets` and a `downloads` handle in the shim. Until the answer and message hooks are in, a reply with files is refused by name ("files arrive with the file store") and nothing is lost | `POST /api/files`, `/_blob/<id>`, `file_links` |
+| Files: attach, paste, drop, thumbnails, save | same once Boardsmith's hooks are in (C1): the page's own attach, paste and drop code, unchanged, now finds an `assets` and a `downloads` handle in the shim. Attach, paste and drop stay hidden until the answer and message hooks are in (the shim's `FILES_ON`, switched on in the same change), so no upload is made that a refused reply would leave unlinked; saving works now | `POST /api/files`, `/_blob/<id>`, `file_links` |
 
 ## Cards
 
