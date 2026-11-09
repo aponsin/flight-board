@@ -9,7 +9,7 @@
 //  5 no orphans: a message goes with an imported thread only; the rest of the history stays on the old board;
 //  6 keyed by old id: the SQL is INSERT OR IGNORE, so a second run doubles nothing. The report compares its counts with the old
 //    page's tab counts when they are given (--expect needs=N,later=N,lead=N,todo=N,ideas=N) and names every difference.
-//   node import-mirror.mjs --mirror <dir> --owner <name> [--expect ...] [--live-c N --live-t N] [--sql <out file>]
+//   node import-mirror.mjs --mirror <dir> --owner <name> --roster A,B,C --lead <role> [--expect ...] [--live-c N --live-t N] [--sql <out file>]
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { askRefusal, cardWriteRefusal } from "../worker/board-rules.mjs";
@@ -61,10 +61,10 @@ export function askRow(id, d, { thread, askedBy }) {
 }
 
 // docs: { initiatives, waiting, threads, messages } each { oldId: doc }. owner: the owner's name (to tell a lead's word from his).
-export function plan(docs, { owner = "", liveC = 0, liveT = 0 } = {}) {
+export function plan(docs, { owner = "", roster = [], lead = "", liveC = 0, liveT = 0 } = {}) {
   const byThread = {};
   for (const [id, m] of Object.entries(docs.messages ?? {})) (byThread[m.thread] ??= []).push({ ...m, _id: id });
-  const out = { cards: [], asks: [], messages: [], refused: [], notes: [], skipped: { doneCards: 0, doneAsks: 0, resolvedAsks: 0 }, counts: { needs: 0, later: 0, lead: 0 }, counters: { C: 1, T: 1 } };
+  const out = { cards: [], asks: [], messages: [], refused: [], notes: [], defaulted: 0, skipped: { doneCards: 0, doneAsks: 0, resolvedAsks: 0 }, counts: { needs: 0, later: 0, lead: 0 }, counters: { C: 1, T: 1 } };
   const keep = new Set();
   for (const [id, d] of Object.entries(docs.initiatives ?? {})) {
     if (d.status === "done") { out.skipped.doneCards++; continue; }
@@ -77,8 +77,10 @@ export function plan(docs, { owner = "", liveC = 0, liveT = 0 } = {}) {
     if (d.done) { out.skipped.doneAsks++; continue; }
     const tid = str(d.thread), msgs = tid ? byThread[tid] ?? [] : [];
     if (tid && threadResolved(msgs, false)) { out.skipped.resolvedAsks++; continue; }
-    const first = [...msgs].sort((a, b) => (a.at ?? 0) - (b.at ?? 0)).find((m) => m.from && m.from !== owner);
-    const r = askRow(id, d, { thread: docs.threads?.[tid], askedBy: first?.from });
+    // asked_by (Director): the item's `who` when it names a roster agent (never the owner), else the lead; counted when defaulted.
+    const named = str(d.who) && d.who !== owner && roster.includes(d.who) ? d.who : null;
+    if (!named) out.defaulted++;
+    const r = askRow(id, { ...d, from: undefined }, { thread: docs.threads?.[tid], askedBy: named ?? str(lead) });
     if (!r.ok) { out.refused.push({ kind: "ask", id, rule: r.rule, detail: r.detail, type: d.kind }); continue; }
     if (r.row.num === null) out.notes.push({ id, note: "no thread number: the store would mint one above the counters" });
     out.asks.push(r.row);
@@ -120,14 +122,14 @@ export function readMirror(dir) {
 export function report(p, expect = {}) {
   const tally = {};
   for (const r of p.refused) { const k = `${r.kind}:${r.rule}`; tally[k] = (tally[k] ?? 0) + 1; }
-  return { cards: p.cards.length, asks: p.asks.length, messages: p.messages.length, skipped: p.skipped, counts: p.counts, refusedTally: tally, refused: p.refused.filter((r) => r.kind !== "message"), notes: p.notes, counters: p.counters, differences: compare(p.counts, expect), unchecked: ["To-do", "Ideas", ...(["needs", "later", "lead"].filter((k) => expect[k] === undefined).map((k) => k))] };
+  return { cards: p.cards.length, asks: p.asks.length, messages: p.messages.length, skipped: p.skipped, counts: p.counts, refusedTally: tally, refused: p.refused.filter((r) => r.kind !== "message"), notes: p.notes, askedByDefaulted: p.defaulted, counters: p.counters, differences: compare(p.counts, expect), unchecked: ["To-do", "Ideas", ...(["needs", "later", "lead"].filter((k) => expect[k] === undefined).map((k) => k))] };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const get = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? process.argv[i + 1] : undefined; };
   if (!get("--mirror")) { console.error("pass --mirror <dir>"); process.exit(64); }
   const expect = Object.fromEntries((get("--expect") ?? "").split(",").filter(Boolean).map((x) => x.split("=")).map(([k, v]) => [k, Number(v)]));
-  const p = plan(readMirror(get("--mirror")), { owner: get("--owner") ?? "", liveC: Number(get("--live-c") ?? 0), liveT: Number(get("--live-t") ?? 0) });
+  const p = plan(readMirror(get("--mirror")), { owner: get("--owner") ?? "", roster: (get("--roster") ?? "").split(",").filter(Boolean), lead: get("--lead") ?? "", liveC: Number(get("--live-c") ?? 0), liveT: Number(get("--live-t") ?? 0) });
   console.log(JSON.stringify(report(p, expect), null, 2));
   if (get("--sql")) writeFileSync(get("--sql"), toSql(p));
 }

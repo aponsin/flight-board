@@ -24,7 +24,7 @@ const docs = {
 };
 
 test("open cards map, bad ids are refused with the rule; done and resolved are skipped", () => {
-  const p = plan(docs, { owner: "Owner" });
+  const p = plan(docs, { owner: "Owner", lead: "Manager" });
   assert.deepEqual(p.cards.map((c) => c.id), ["open-card"]);
   assert.equal(p.skipped.doneCards, 1);
   assert.equal(p.skipped.doneAsks, 1);
@@ -32,8 +32,15 @@ test("open cards map, bad ids are refused with the rule; done and resolved are s
   assert.ok(p.refused.some((r) => r.kind === "card" && r.id === "Bad_ID" && r.rule === "card-id"));
 });
 
-test("an answered but unclosed ask is imported with its answer and its #T; the asker is a real word, not invented", () => {
-  const p = plan(docs, { owner: "Owner" });
+test("asked_by is the item's who when it names a roster agent (never the owner), else the lead, and the defaults are counted", () => {
+  const d = { ...docs, waiting: { x: { ...docs.waiting.a1, who: "Builder" }, y: { ...docs.waiting.a1, who: "Owner" }, z: { ...docs.waiting.a1 } } };
+  const p = plan(d, { owner: "Owner", roster: ["Builder", "Checker"], lead: "Manager" });
+  assert.deepEqual(p.asks.map((a) => a.asked_by), ["Builder", "Manager", "Manager"]);
+  assert.equal(p.defaulted, 2);
+});
+
+test("an answered but unclosed ask is imported with its answer and its #T", () => {
+  const p = plan(docs, { owner: "Owner", lead: "Manager" });
   const a = p.asks.find((x) => x.id === "a1");
   assert.equal(a.num, 41);
   assert.equal(a.asked_by, "Manager");
@@ -42,33 +49,33 @@ test("an answered but unclosed ask is imported with its answer and its #T; the a
 });
 
 test("an item the store's rules refuse is listed with rule and old id, never patched", () => {
-  const p = plan(docs, { owner: "Owner" });
+  const p = plan(docs, { owner: "Owner", lead: "Manager" });
   const later = p.refused.find((r) => r.id === "a3");
-  assert.equal(later.rule, "ask-missing-part"); // no asker in its thread
+  assert.equal(later.rule, "later-without-eta"); // the ETA is never defaulted
   const dec = p.refused.find((r) => r.id === "a5");
   assert.match(dec.detail, /recommended|Decision/);
   assert.ok(!p.asks.some((x) => x.id === "a3" || x.id === "a5"));
 });
 
 test("no orphans: messages come only with an imported thread", () => {
-  const p = plan(docs, { owner: "Owner" });
+  const p = plan(docs, { owner: "Owner", lead: "Manager" });
   assert.deepEqual(p.messages.map((m) => m.id).sort(), ["m1", "m2", "m5"]);
 });
 
 test("counters sit above every number on the old board and above the live board's", () => {
-  assert.deepEqual(plan(docs, { owner: "Owner" }).counters, { C: 10, T: 44 });
+  assert.deepEqual(plan(docs, { owner: "Owner", lead: "Manager" }).counters, { C: 10, T: 44 });
   assert.deepEqual(plan(docs, { owner: "Owner", liveC: 800, liveT: 1648 }).counters, { C: 800, T: 1648 });
 });
 
 test("the SQL is keyed by old id (INSERT OR IGNORE) and the counters only go up", () => {
-  const sql = toSql(plan(docs, { owner: "Owner" }));
+  const sql = toSql(plan(docs, { owner: "Owner", lead: "Manager" }));
   assert.ok(sql.split("\n").filter((l) => l.startsWith("INSERT")).every((l) => l.startsWith("INSERT OR IGNORE")));
   assert.match(sql, /SET next = MAX\(next, 10\)/);
 });
 
 test("the report names every difference from the old page's tab counts", () => {
   assert.deepEqual(compare({ needs: 1, later: 2, lead: 3 }, { needs: 1, later: 5 }), ["Later: old page 5, import 2"]);
-  assert.deepEqual(report(plan(docs, { owner: "Owner" }), { lead: 2 }).differences, ["With the team: old page 2, import 1"]);
+  assert.deepEqual(report(plan(docs, { owner: "Owner", lead: "Manager" }), { lead: 2 }).differences, ["With the team: old page 2, import 1"]);
 });
 
 test("a thread is resolved by its last message, but an Ack on a card's thread is not", () => {
