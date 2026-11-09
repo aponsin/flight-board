@@ -73,7 +73,40 @@ test("a failing poll tells the error handler once per streak, and the other hand
   const w = world(); const db = await w.window.claude.use("db"); let errs = 0;
   db.collection("waiting").onSnapshot(() => {}, () => errs++); await tick();
   w.down(true); await w.timers[0](); await w.timers[0](); await tick(); assert.equal(errs, 1);
-  assert.equal(await w.window.claude.use("assets"), null); assert.equal(await w.window.claude.use("comments"), null);
+  assert.equal(await w.window.claude.use("comments"), null); assert.equal(await w.window.claude.use("toString"), null);
+});
+
+// #C726 C1: assets.upload sends the file as base64 JSON to /api/files and answers in the artifact store's shape; a refusal
+// rejects with the code the page's message knows.
+function fileWorld(answer) {
+  const calls = [];
+  const fetch = async (url, init = {}) => { calls.push({ url, init }); return { status: answer.status, ok: answer.status < 300, json: async () => answer.body }; };
+  class FileReader { readAsDataURL(f) { this.result = `data:${f.type};base64,${f.b64}`; setImmediate(() => this.onload()); } }
+  const clicks = [], made = [];
+  const document = { hidden: false, addEventListener() {}, body: { appendChild() {} }, createElement: () => { const a = { click: () => clicks.push({ href: a.href, download: a.download }), remove() {} }; made.push(a); return a; } };
+  const URL = { createObjectURL: () => "blob:x", revokeObjectURL() {} };
+  const window = {};
+  vm.runInNewContext(COMPAT_SHIM, { window, fetch, document, FileReader, URL, setInterval: () => 1, setTimeout: () => 1, JSON, Promise, Object, String, Error });
+  return { window, calls, clicks };
+}
+test("assets.upload posts base64 JSON and returns {id, contentType, sizeBytes}; a refusal rejects with the page's code", async () => {
+  const ok = fileWorld({ status: 200, body: { ok: true, id: "abcdefghijklmnop", contentType: "image/png", sizeBytes: 4 } });
+  const assets = await ok.window.claude.use("assets");
+  const res = await assets.upload({ name: "shot.png", type: "image/png", b64: "iVBORw==" }, { type: "image/png" });
+  assert.deepEqual({ ...res }, { id: "abcdefghijklmnop", contentType: "image/png", sizeBytes: 4 });
+  assert.equal(ok.calls[0].url, "/api/files"); assert.equal(ok.calls[0].init.headers["content-type"], "application/json");
+  assert.deepEqual(JSON.parse(ok.calls[0].init.body), { name: "shot.png", type: "image/png", data: "iVBORw==" });
+  for (const [rule, code] of [["file-too-large", "too_large"], ["file-type", "unsupported_type"], ["file-quota", "quota_or_state"], ["file-unknown", "file-unknown"]]) {
+    const w = fileWorld({ status: 422, body: { ok: false, refused: { rule, detail: "x" } } });
+    await assert.rejects((await w.window.claude.use("assets")).upload({ name: "a", type: "image/png", b64: "" }, {}), (e) => e.code === code);
+  }
+  const down = fileWorld({ status: 503, body: {} });
+  await assert.rejects((await down.window.claude.use("assets")).upload({ name: "a", type: "image/png", b64: "" }, {}), (e) => e.code === "store_unavailable");
+});
+test("downloads.save saves the blob under its file name through a download link", async () => {
+  const w = fileWorld({ status: 200, body: {} });
+  await (await w.window.claude.use("downloads")).save({ filename: "notes.txt", data: {} });
+  assert.deepEqual(w.clicks, [{ href: "blob:x", download: "notes.txt" }]);
 });
 
 test("unsubscribing stops delivery", async () => {
