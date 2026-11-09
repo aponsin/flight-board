@@ -15,6 +15,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 |---|---|---|
 | Live now vX | same | evidence `live` (compat `meta/live`, `derived/all.live`) |
 | Live now "deploying vY" | not yet: B3a | the probe's `ship` evidence |
+| "⚠ Manager missed" after Live now | hidden on the store: a typed-field gap (row 37, "Mostly deleted with the typed fields") | |
 | Clock, "Studio checked N s" | same | probe reading via the shim |
 | "Board data behind, reloading" | gone: "Delete: row 2's 'fetched N s ago' covers it once there is one store" (row 3) | |
 | Manager chip | not yet: B1 ("seen your message" needs messages) | `wakeState` |
@@ -45,10 +46,10 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Needs you: asks, "Your queue" | same | compat `waiting` |
 | Ask row: kind, #T, title, badge, age, "For: card" | same; the chip after an answer: B1 | compat `waiting` |
 | Ask steps with Copy per command, "You should see" | not yet: B2 (steps are plain strings) | |
-| Ask screenshots, picture viewer | not yet: C1 (no file store) | |
+| Ask screenshots, picture viewer | not yet: C1 (no file store). Until then a screenshot shows as a broken picture, with a policy error in the browser's console | |
 | Reply box per kind (A/B, OK/Change, Ack, Done/Help) | same for an option, Ack and Done; not yet: B2 for a note, "Something else", files | `POST /api/compat/write` |
 | Sent line "You chose …" | same for the choice; not yet: B2 for the note and files | |
-| "Manager missed" on an ask | hidden on the store until B3b (Manager, 2026-11-09): its fields are not in the store yet | |
+| "Manager missed" on an ask | hidden on the store until B4 (Manager, 2026-11-09): its fields are not in the store yet | |
 | Thread messages, "seen HH:MM" | not yet: B1 | |
 | Thread buttons: Close, options, Rename | not yet: B1 (asks close today) | |
 | Later tab | same | compat `waiting` (Later) |
@@ -75,7 +76,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Track: who · time on each tile | not yet: B3b (tiles say "no record") | `derived/all.times` |
 | One track per branch | not yet: B3a | probe `cards.branches` |
 | Queue line, "waits on", Next (written N ago), Started, issue chips | same for next note, waiting on, started; not yet: B4 for the rest | |
-| "Manager missed" on a card | hidden on the store until B3b (Manager, 2026-11-09) | |
+| "Manager missed" on a card | hidden on the store until B4 (Manager, 2026-11-09; the ETA inputs come in B4) | |
 | Thread fold, closed asks | not yet: B1 | |
 | Done in the last 24 h | not yet: C2 | |
 

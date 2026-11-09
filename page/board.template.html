@@ -2243,7 +2243,7 @@ function liveText(){const all=state.derived.find(d=>d.id==="all"),l=all&&all.liv
     return "Live now: v"+lv+(ahead?" · deploying v"+l.mainVersion:"")}
   if(lv&&mv){const mn=mv.replace(/^v/,""),ahead=typeof l.mainVersion==="string"&&verCmp(l.mainVersion,mn)>0;
     return "Live now: v"+mn+(ahead?" · deploying v"+l.mainVersion:"")}
-  const gap=liveGap(m,state.events);return m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
+  const gap=!STORE&&liveGap(m,state.events);return m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
 function renderLive(){$("livever").textContent=liveText()}
 // The last 7 days from every card's phaseLog, summed by "who" (the agent) or "phase": { key: { work, busy, gate } } in ms.
 function logTotals(key,now=Date.now()){
@@ -2879,7 +2879,7 @@ function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"
 $("viewlink").addEventListener("click",()=>setView(view==="v3"?"v2":"v3"));
 document.querySelectorAll("[data-v3]").forEach(b=>b.addEventListener("click",()=>setV3View(b.dataset.v3)));
 // The v3 layout and its Now / Plan / Crew views are gone on the store (#C723 A4): no link, and no saved choice or #v3 opens it.
-if(STORE)$("viewlink").hidden=true;
+if(STORE){const v=$("viewlink");v.hidden=true;if(v.parentElement)v.parentElement.hidden=true}
 else{
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-v3view")}catch(e){}if(v==="plan"||v==="crew")setV3View(v)})();
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-view")}catch(e){}if(typeof location!=="undefined"&&location.hash==="#v3")v="v3";if(v==="v3")setView("v3")})();

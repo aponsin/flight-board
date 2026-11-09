@@ -13,7 +13,10 @@ const DOCS = {
   derived: [{ id: "all", at: NOW - 60e3, cards: { "card-1": { phase: "checker", at: NOW - 60e3, evidence: "branch tip" } } }],
   // An Action ask with no steps: "Manager missed" on the ask.
   waiting: [{ id: "ask-1", kind: "action", text: "Press the button", since: NOW - H }],
+  // Live now behind the newest shipped version: the header's "Manager missed".
+  events: [{ id: "board-1a2b3c4", at: NOW - H, text: "Shipped", version: "1.2.4" }],
   meta: [
+    { id: "live", version: "1.2.3", commit: "abc1234", checkedAt: NOW - 60e3 },
     { id: "commentThreads", count: 950, at: NOW - H },
     { id: "context", at: NOW, agents: { Builder: { at: NOW - 3 * H, pct: 40, tokens: 400000, saved: true, savedPct: 40, savedTokens: 400000 } } },
   ],
@@ -25,7 +28,8 @@ const DOCS = {
 const GONE = [
   ["the Check button on a card (row 38)", (d) => d.html.includes("data-check=")],
   ["the source-disagreement flag (row 28)", (d) => d.html.includes("evidence differs")],
-  ["\"Manager missed\" on a card and an ask (until B3b)", (d) => d.html.includes("Manager missed")],
+  ["\"Manager missed\" on a card and an ask (until B4)", (d) => d.html.includes("Manager missed")],
+  ["\"Manager missed\" after Live now in the header (row 37)", (d) => /Manager missed/.test(d.els.livever?.textContent ?? "")],
   ["the comment threads full line (row 11)", (d) => d.els.threadsfull && !d.els.threadsfull.hidden],
   ["the pull request panel (row 22: now Approval asks)", (d) => d.els.agentprs && !d.els.agentprs.hidden && d.els.agentprs.innerHTML !== ""],
   ["the memory tile's Refresh request (row 15)", (d) => d.html.includes("data-ctxref=")],

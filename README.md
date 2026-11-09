@@ -134,7 +134,7 @@ Before each deploy of the store Worker, build the page from the team's config (i
 
     node scripts/build-store-page.mjs <board.config.json>
 
-It writes `dist/store-page/board.html` and the six fonts (`page/fonts/`, self-hosted), which `worker/wrangler.board.toml` deploys as the Worker's assets. A deploy without them still works, and `/board` says "not built" (503). The page's policy runs only its own two scripts (by a nonce per response), and loads fonts, images and data from the Worker only.
+It writes `worker/store-assets/board.html` and the six fonts (`page/fonts/`, self-hosted), git-ignored, which `worker/wrangler.board.toml` deploys as the Worker's assets. The folder itself is tracked (empty but for its `.assetsignore`), so a deploy without a build still works, and `/board` then says "not built" (503). The page's policy runs only its own two scripts (by a nonce per response), and loads fonts, images and data from the Worker only.
 
 ## Tests
 

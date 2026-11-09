@@ -41,6 +41,8 @@ test("the Worker serves the old page at /board behind the identity check, its sc
   const get = (path, as = "owner", init = {}) => worker.fetch(new Request(`https://board.test${path}`, init), env, null, 1_800_000_000_000, async () => (as ? { who: as, role: as === "owner" ? "owner" : "agent" } : null));
   assert.equal(OLD_PAGE_PATH, "/board");
   assert.equal((await get("/board", null)).status, 401, "no identity, no page");
+  const asProbe = await worker.fetch(new Request("https://board.test/board"), env, null, 1_800_000_000_000, async () => ({ who: "probe", role: "probe" }));
+  assert.equal(asProbe.status, 403, "the probe gets no page, as it gets no /api/compat");
 
   const r1 = await get("/board"), r2 = await get("/board");
   assert.equal(r1.status, 200);
@@ -95,7 +97,18 @@ test("the six fonts are in the repository, each with its licence (@fontsource, t
   for (const lic of ["barlow-condensed-OFL.txt", "source-sans-3-OFL.txt", "jetbrains-mono-OFL.txt"]) assert.match(readFileSync(new URL(lic, FONTS_DIR), "utf8"), /SIL OPEN FONT LICENSE/i, lic);
 });
 
-test("the Worker config ships the built page as assets, Worker first", () => {
+test("the Worker config ships the built page as assets, Worker first, exact paths; the folder exists without a build", () => {
   const t = readFileSync(new URL("../worker/wrangler.board.toml", import.meta.url), "utf8");
-  assert.match(t, /^\[assets\]\ndirectory = "\.\.\/dist\/store-page"\nbinding = "ASSETS"\nrun_worker_first = true$/m);
+  assert.match(t, /^\[assets\]\ndirectory = "store-assets"\nbinding = "ASSETS"\nrun_worker_first = true\nhtml_handling = "none"$/m);
+  // wrangler refuses to deploy when the assets folder is missing (Builder's review on #C723): it is tracked, empty but for this.
+  assert.equal(readFileSync(new URL("../worker/store-assets/.assetsignore", import.meta.url), "utf8"), ".assetsignore\n");
+  const ignore = readFileSync(new URL("../.gitignore", import.meta.url), "utf8");
+  assert.match(ignore, /^worker\/store-assets\/\*$/m, "the built page (it carries the team's config) is never committed");
+  assert.match(ignore, /^!worker\/store-assets\/\.assetsignore$/m);
+});
+
+test("an asset is its exact path: a redirect from the assets is not the page (503), never followed", async () => {
+  const env = { DB: makeDb(), ASSETS: { fetch: async (req) => (req.redirect === "manual" ? new Response(null, { status: 307, headers: { location: "/board" } }) : new Response("followed")) } };
+  const r = await worker.fetch(new Request("https://board.test/board"), env, null, 1_800_000_000_000, async () => ({ who: "owner", role: "owner" }));
+  assert.equal(r.status, 503);
 });

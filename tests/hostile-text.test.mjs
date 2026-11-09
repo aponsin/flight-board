@@ -55,16 +55,25 @@ const PROBE = {
 
 // Words, not structure: the fields whose values the page shows as text.
 const WORDS = new Set(["text", "title", "name", "note", "notes", "summary", "nextNote", "outcome", "measure", "reason", "you", "body", "question", "expect", "where", "doneWhen", "label", "caption", "what", "verb", "tool", "dropReason", "blockedReason", "waitingOn", "kind_text", "answer", "choice", "steps", "options", "cmd", "dependsOn", "Builder"]);
-function taint(v, tag, all, key = "") {
-  if (typeof v === "string") return all || WORDS.has(key) ? v + attack(tag) : v;
-  if (Array.isArray(v)) return v.map((x) => taint(x, tag, all, key));
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, taint(x, tag, all, WORDS.has(key) ? key : k)]));
+// Addresses: a link or picture field gets a javascript: or data: address in place of its own (the attack can't ride at the end
+// of an address and still be one).
+const URLS = new Set(["url", "href", "src", "link", "image", "images", "screenshots"]);
+const badUrl = (tag) => (tag.length % 2 ? `javascript:hostile_${tag}()` : `data:text/html,<script>hostile_${tag}()</script>`);
+// mode: "all" (every string, attack at the end), "end" (the words, attack at the end), "start" (the words, attack first, so a
+// field the page cuts short still carries it; addresses replaced).
+function taint(v, tag, mode, key = "") {
+  if (typeof v === "string") {
+    if (mode === "start" && URLS.has(key)) return badUrl(tag);
+    return mode === "all" || WORDS.has(key) ? (mode === "start" ? attack(tag) + v : v + attack(tag)) : v;
+  }
+  if (Array.isArray(v)) return v.map((x) => taint(x, tag, mode, key));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, taint(x, tag, mode, WORDS.has(key) || URLS.has(key) ? key : k)]));
   return v;
 }
 
-
 // Markup that came from board text: a tag whose attributes carry the attack outside a quoted value (an attribute or a tag
-// broke out), an element the attack names (img, svg, b) carrying its marker, or a javascript: address.
+// broke out), an element the attack names (img, svg, b) carrying its marker or its own attributes even when a cut lost the
+// marker, or a javascript: or data: address.
 export function leaks(html) {
   const found = [];
   // A stray quote (an attribute value the attack closed early) is matched on its own, so the rest of the tag is still read.
@@ -73,28 +82,42 @@ export function leaks(html) {
     if (/hostile_/.test(attrs.replace(/"[^"]*"|'[^']*'/g, '""'))) found.push(tag);
     else if (/^(img|svg|script|iframe|object|embed)$/i.test(name) && /hostile_/.test(tag)) found.push(tag);
   }
-  for (const m of html.matchAll(/<b>hostile_[a-z]+<\/b>/g)) found.push(m[0]);
-  for (const m of html.matchAll(/\b(?:href|src|action|formaction)\s*=\s*["']?\s*javascript:/gi)) found.push(m[0]);
+  // The attack's own tags, marker or not: the page never writes an <img src=x> or an <svg onload>.
+  for (const m of html.matchAll(/<img src=x\b|<svg onload\b|<b>hostile_[a-z]*/g)) found.push(m[0]);
+  for (const m of html.matchAll(/\b(?:href|src|action|formaction|data)\s*=\s*["']?\s*(?:javascript|data):/gi)) found.push(m[0]);
   return found;
 }
 
 const fixtures = readdirSync(FIXTURES).filter((f) => f.endsWith(".json")).map((f) => ({ file: f, docs: times(JSON.parse(readFileSync(new URL(f, `file://${FIXTURES}/`), "utf8")).docs, NOW) }));
-const tainted = (docs, all) => Object.fromEntries(Object.entries(docs).map(([c, list]) => [c, taint(list, c.toLowerCase(), all)]));
+const tainted = (docs, mode) => Object.fromEntries(Object.entries(docs).map(([c, list]) => [c, taint(list, c.toLowerCase(), mode)]));
+// The sinks a plain draw never reaches (Builder's review): the hover bubbles on #T and #C links, and a new thread's receipt.
+const EXPOSE = ["threadBubble", "cardBubble", "sentLine"];
+function unreached(b, docs) {
+  const ids = new Set([...(docs.waiting ?? []), ...(docs.threads ?? [])].map((d) => d.id).concat((docs.messages ?? []).map((m) => m.thread)).filter(Boolean));
+  return [
+    ...[...ids].map((id) => b.threadBubble(id)),
+    ...b.state.initiatives.map((i) => b.cardBubble(i)),
+    ...[...ids].map((id) => b.sentLine(id, "unsent", attack("sent"))),
+  ].join("\n");
+}
 
 test("the leak check itself finds markup and javascript: addresses, and lets escaped text through", () => {
   assert.deepEqual(leaks(`<div>${"&lt;img src=x onerror=hostile_x()&gt;&quot;&#39;&gt;"}</div><a href="https://a.example/&quot;&gt;">ok</a>`), []);
-  assert.equal(leaks(`<div><img src=x onerror=hostile_x()></div>`).length, 1);
-  assert.equal(leaks(`<a title="x"' onmouseover=hostile_x() y="">`).length, 1);
-  assert.equal(leaks(`<a href="javascript:hostile_x()">`).length, 1);
-  assert.equal(leaks(`<span><b>hostile_x</b></span>`).length, 1);
+  assert.ok(leaks(`<div><img src=x onerror=hostile_x()></div>`).length > 0);
+  assert.ok(leaks(`<a title="x"' onmouseover=hostile_x() y="">`).length > 0);
+  assert.ok(leaks(`<a href="javascript:hostile_x()">`).length > 0);
+  assert.ok(leaks(`<span><b>hostile_x</b></span>`).length > 0);
+  assert.ok(leaks(`<span>A long title cut here <img src=x onerr…</span>`).length > 0, "a cut that lost the marker");
+  assert.ok(leaks(`<img src="data:text/html,x">`).length > 0);
 });
 
-for (const host of ["store", null]) for (const all of [true, false]) {
-  test(`no board text becomes markup (${host ? "the store's page" : "the artifact's page"}): every fixture and every other collection, ${all ? "every string" : "the words"} tainted`, () => {
+for (const host of ["store", null]) for (const mode of ["all", "end", "start"]) {
+  test(`no board text becomes markup (${host ? "the store's page" : "the artifact's page"}): every fixture and every other collection, ${{ all: "every string", end: "the words", start: "the words with the attack first, and bad addresses" }[mode]}`, () => {
     const runs = fixtures.map(({ file, docs }) => ({ file, docs: { ...docs, ...EXTRA, ...Object.fromEntries(Object.entries(EXTRA).map(([c, l]) => [c, [...(docs[c] ?? []), ...l]])) } }));
     let seen = "";
     for (const { file, docs } of runs) {
-      const { html, attrs } = drawPage(tainted(docs, all), { probe: taint(PROBE, "probe", all), host });
+      const bad = tainted(docs, mode), drawn = drawPage(bad, { probe: taint(PROBE, "probe", mode), host, expose: EXPOSE });
+      const { attrs } = drawn, html = drawn.html + "\n" + unreached(drawn.b, bad);
       const found = leaks(html);
       assert.deepEqual(found, [], `${file}: board text became markup, in: ${found.map((f) => html.slice(Math.max(0, html.indexOf(f) - 200), html.indexOf(f) + 40)).join(" | ")}`);
       assert.deepEqual(leaks(attrs), [], `${file}: board text became an attribute`);
@@ -103,7 +126,7 @@ for (const host of ["store", null]) for (const all of [true, false]) {
     // The words do arrive (escaped): otherwise the pass proves nothing. The probe's values are drawn only after a format
     // check (roles, ids, versions, known words), so its attack is refused before it is drawn; it stays in both passes.
     // The store's page leaves the pull request panel out (#C723 A4), so agentPrs' words show on the artifact's page only.
-    if (!all) for (const c of ["waiting", "messages", "threads", "initiatives", "events", "todo", "ideas", "meta", "plan", ...(host ? [] : ["agentprs"])]) assert.match(seen, new RegExp(`hostile_${c}\\(\\)`), `${c}'s words were drawn`);
+    if (mode !== "all") for (const c of ["waiting", "messages", "threads", "initiatives", "events", "todo", "ideas", "meta", "plan", ...(host ? [] : ["agentprs"])]) assert.match(seen, new RegExp(`hostile_${c}\\(\\)`), `${c}'s words were drawn`);
   });
 }
 

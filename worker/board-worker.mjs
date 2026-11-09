@@ -35,7 +35,7 @@ export const TOOLS = [
 const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
 
 // The old board page (#C723, board parity A1), built by scripts/build-store-page.mjs into the Worker's static assets
-// (env.ASSETS: board.html and fonts/*.woff2). It is served here, behind the same Access check as everything else, never
+// (env.ASSETS: board.html and fonts/*.woff2, worker/store-assets/; html_handling "none", so each is fetched by its exact path). It is served here, behind the same Access check as everything else, never
 // straight from the assets. Its scripts and style elements run by a fresh nonce per response; nothing else may run, and images,
 // fonts and connections come only from this Worker. Style attributes may be inline: the page's own markup sets widths and colours
 // with them, and no script runs from one (Boardsmith's split).
@@ -55,8 +55,9 @@ function newNonce() {
 }
 async function asset(env, url, path) {
   if (!env.ASSETS) return null;
-  const r = await env.ASSETS.fetch(new Request(new URL(path, url)));
-  return r.ok ? r : null;
+  // No redirect is followed: an asset is its exact path or nothing.
+  const r = await env.ASSETS.fetch(new Request(new URL(path, url), { redirect: "manual" }));
+  return r.status === 200 ? r : null;
 }
 async function oldPage(env, url) {
   const r = await asset(env, url, "/board.html");
@@ -205,8 +206,10 @@ export default {
       const origin = request.headers.get("origin"), site = request.headers.get("sec-fetch-site");
       if ((origin !== null && origin !== url.origin) || (site !== null && !["same-origin", "none"].includes(site))) return bare(403);
     }
-    if (url.pathname === OLD_PAGE_PATH && request.method === "GET") return oldPage(env, url);
+    // The page is for people and agents, as /api/compat is: the probe gets neither.
     const fontFile = request.method === "GET" && FONT_PATH.exec(url.pathname);
+    if (((url.pathname === OLD_PAGE_PATH && request.method === "GET") || fontFile) && auth.role === "probe") return bare(403);
+    if (url.pathname === OLD_PAGE_PATH && request.method === "GET") return oldPage(env, url);
     if (fontFile) return font(env, url, fontFile[1]);
     if (url.pathname === "/" && request.method === "GET") {
       return new Response(pageHtml({ version: env.BOARD_VERSION ?? "" }), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });

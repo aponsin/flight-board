@@ -3,9 +3,9 @@
 // - the fonts: the Google Fonts links (between <!--FONTS--> and <!--END_FONTS-->) become @font-face rules on the Worker's own
 //   /fonts/ files, so the page's policy can refuse every other site;
 // - the document: the artifact wrapped the page in a skeleton (doctype, charset, viewport); the Worker serves it whole.
-// Usage: node scripts/build-store-page.mjs <board.config.json> [outDir]   (outDir defaults to dist/store-page)
+// Usage: node scripts/build-store-page.mjs <board.config.json> [outDir]   (outDir defaults to worker/store-assets, from any folder)
 // It writes <outDir>/board.html and <outDir>/fonts/*.woff2: the Worker's static assets (worker/wrangler.board.toml [assets]).
-// The config never enters this repository, and neither does outDir.
+// The config never enters this repository, and neither does what it writes (git-ignored).
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, realpathSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,7 +41,7 @@ export function storePage(built) {
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
-  const [configPath, outDir = "dist/store-page"] = process.argv.slice(2);
+  const [configPath, outDir = fileURLToPath(new URL("../worker/store-assets/", import.meta.url))] = process.argv.slice(2);
   if (!configPath) { console.error("Usage: node scripts/build-store-page.mjs <board.config.json> [outDir]"); process.exit(2); }
   try {
     const built = buildChecked(readFileSync(TEMPLATE, "utf8"), JSON.parse(readFileSync(configPath, "utf8")), undefined, { commit: headCommit(), pack: process.env.BOARD_PACK });
