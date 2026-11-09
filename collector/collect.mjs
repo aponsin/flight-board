@@ -464,7 +464,10 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   const supersededOf = {};
   const phaseOf = (card) => {
     const settle = (list) => afterShipTips(git, `${c.remote}/${c.mainBranch}`, settledTips(git, c.remote, c.mainBranch, list), card.id, c.shippedPattern);
-    const { tips, superseded } = unsuperseded(git, `${c.remote}/${c.mainBranch}`, settle(headsFor(card.id, work, card.num)), settle(recutsFor(card.id, work, ids)));
+    const { tips: found, superseded } = unsuperseded(git, `${c.remote}/${c.mainBranch}`, settle(headsFor(card.id, work, card.num)), settle(recutsFor(card.id, work, ids)));
+    // #C716: a branch deleted after it merged leaves only its Board-Id trailer on main, here as in another repository (#C281): the
+    // card's commit is found there, so the sign-offs on it are read and a shipped card can close.
+    const tips = found.length ? found : [trailerOnMain(git, c.remote, c.mainBranch, card.id)].filter(Boolean);
     tipsOf[card.id] = tips; supersededOf[card.id] = superseded;
     return { ...supersededNote(superseded, leastAdvanced(card, tips, (h) => afterShipNote(h, settledNote(h, derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg))), config, stackedOn(card, ids))), at: now };
   };
