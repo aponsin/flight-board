@@ -1,0 +1,1 @@
+PASS Full: #C725 B2 v8, v5 661ee9a5 on main 34069b47 plus Security's three tests. range-diff: code unchanged, tests added, the conflict resolution drops only the messages no-route case B1 made routable. Touched tests 110/110. Mutants caught: Approval takes a status, something-else on any type, Withdraw keeps status and note.
