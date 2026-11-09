@@ -5,6 +5,7 @@
 //   POST /api/probe/evidence  { key, value, track? }   role probe only
 //   POST /mcp               JSON-RPC: initialize, ping, tools/list, tools/call
 import { ASK_TYPES, ASK_PARTS } from "./board-rules.mjs";
+import { pageHtml } from "./page.mjs";
 import { createCard, updateCard, createAsk, postMessage, answerAsk, ackShip, writeEvidence, readView, refuse } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -73,6 +74,17 @@ export default {
     const url = new URL(request.url);
     const auth = await authenticate(request, env);
     if (!auth) return bare(401);
+    if (url.pathname === "/" && request.method === "GET") {
+      return new Response(pageHtml({ version: env.BOARD_VERSION ?? "" }), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
+    }
+    // The owner's click on the page: the same rules as the typed tool (a Decision's answer must be an option).
+    if (url.pathname === "/api/answer" && request.method === "POST") {
+      if (auth.role !== "owner") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await answerAsk(env.DB, now, auth.who, b);
+      return json(r.ok ? 200 : 422, r);
+    }
     if (url.pathname === "/api/view" && request.method === "GET") {
       const v = await readView(env.DB, now);
       const etag = `"${v.tag}"`;
