@@ -51,6 +51,30 @@ test("(4) on the store a card's ETA box says — even with a history to estimate
   assert.match(artifact.html, /Live in/, "the artifact page draws its ETA");
 });
 
+test("(4) on the store no ETA in the card number's bubble or a thread's card line either; the artifact page keeps both", async () => {
+  const db = await store();
+  const withEta = (c) => ({ ...c, initiatives: c.initiatives.map((i) => ({ ...i, etaLive: NOW + 5 * M, thread: "t-1" })) });
+  const at = async (host) => {
+    const view = { ...(await readView(db, NOW)), usage: await readUsage(db) };
+    const { collections, probe } = compatView(view);
+    const { b } = drawPage(withEta(applyUsage(collections, view)), { probe, host, expose: ["cardBubble", "cardLine"] });
+    const card = b.state.initiatives.find((i) => i.id === "hero");
+    return { bubble: b.cardBubble(card), line: b.cardLine("t-1") };
+  };
+  const store_ = await at("store"), artifact = await at(null);
+  assert.ok(card(artifact), "the artifact page's card line exists");
+  assert.match(artifact.bubble, /due ~/); assert.match(artifact.line, /~\d/);
+  assert.doesNotMatch(store_.bubble, /due ~/); assert.doesNotMatch(store_.line, /~\d/);
+  function card(x) { return x.line.length > 0; }
+});
+
+test("(5) a usage day after today counts in no tile", async () => {
+  const db = await store();
+  const tomorrow = localDay(NOW + 864e5);
+  const { els } = await draw(db, "store", (c) => ({ ...c, usage: [{ id: tomorrow, day: tomorrow, runnerMin: 600 }] }));
+  assert.doesNotMatch(els.totals.innerHTML, /10\.0 h/, "tomorrow's 600 minutes are in no tile");
+});
+
 test("(5) the per-agent table lists the most working first when nobody was queued", async () => {
   // Builder first in the history but only 30 min; Checker after it, 2 h 30.
   const db = makeDb();

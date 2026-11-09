@@ -936,7 +936,7 @@ function cardLinks(html){return String(html).replace(/(?<![\w\/#&;.=?-])#C(\d{1,
 // step, cut so it stays two lines.
 function cardBubble(i,now=Date.now()){const done=i.status==="done",cut=(s,n)=>s.length>n?s.slice(0,n-1)+"…":s;
   const ph=done?(i.dropped?"Dropped":"Live"+(i.version?" "+i.version:"")):notStarted(i)?"Queued":(PHASES.find(p=>p[0]===i.phase)||[,i.phase||""])[1];
-  const eta=done?(num(i.doneAt)?dayLabel(i.doneAt,now):""):cardEta(i)?dueText(cardEta(i)):"";
+  const eta=done?(num(i.doneAt)?dayLabel(i.doneAt,now):""):!STORE&&cardEta(i)?dueText(cardEta(i)):""; // #C728: no ETA on the store
   const next=!done&&i.nextNote?"Next: "+cut(String(i.nextNote),90):"";
   return `<b>${Number.isInteger(i.num)?"#C"+i.num+" ":""}${esc(i.name||i.id)}</b><br>${esc([ph,!done&&i.who!==ph&&i.who,eta,next].filter(Boolean).join(" · "))}`}
 // A card's number opens it: on the board, or under Done (opened), clearing its list's search when that hides it. null
@@ -1385,7 +1385,7 @@ function optionText(id,key){const o=threadOptions(id).find(o=>String(o.key)===St
 function cardLine(id,now=Date.now()){const c=threadCardAny(id);if(!c)return "";
   const link=`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>`;
   if(c.status==="done"&&!c.dropped)return `→ ${link} · Live`;if(c.status==="dropped"||c.dropped)return `→ ${link} · Dropped`;
-  const eta=cardEta(c),s=liveSubstep(c.id);
+  const eta=STORE?null:cardEta(c),s=liveSubstep(c.id); // #C728: no ETA on the store (PARITY: not yet)
   if(s){const med=stepMedians()[s.phase],age=Math.max(0,now-s.at),slow=med!=null&&age>2*med,nx=nextPhaseLabel(c,s.phase);
     const verb=s.phase==="test"?"e2e running":`${esc(s.who||"")} ${SUB_VERB[s.phase]||"reviewing"}`.trim();
     const ci=s.phase==="ship"?stepMedians().ci:null;
@@ -2209,12 +2209,13 @@ function renderUsage(){
   // #C728: every day from the first to today is shown, a quiet one as an empty column (11-07 was skipped), and "today" is the
   // same local calendar day agentMinutesByDay keys by (it was UTC, so evenings in Mountain time counted as tomorrow).
   const today=localDay(Date.now());
+  // From the first day, but no further back than the 30-day tile: one stray old row must not loop over centuries each render.
   const first=Object.keys(byDay).sort()[0];
-  if(first)for(let t=Date.parse(first+"T12:00:00");localDay(t)<today;t+=864e5){const d=localDay(t);byDay[d]=byDay[d]||{day:d}}
+  if(first)for(let t=Math.max(Date.parse(first+"T12:00:00"),Date.now()-30*864e5);localDay(t)<today;t+=864e5){const d=localDay(t);byDay[d]=byDay[d]||{day:d}}
   if(first)byDay[today]=byDay[today]||{day:today};
   const days=Object.values(byDay).sort((a,b)=>a.day<b.day?-1:1);
   const sum=(arr,k)=>arr.reduce((s,u)=>s+(num(u[k])||0),0);
-  const lastN=n=>days.filter(u=>(Date.parse(today)-Date.parse(u.day))/864e5<n);
+  const lastN=n=>days.filter(u=>{const g=(Date.parse(today)-Date.parse(u.day))/864e5;return g>=0&&g<n}); // #C728: a day after today is in none
   const fmt=m=>m>=120?(m/60).toFixed(1)+" h":Math.round(m)+" min";
   const tile=(l,arr)=>{const t=sum(arr,"agentMin")+sum(arr,"runnerMin")+sum(arr,"actionsMin");const usd=sum(arr,"actionsUsd");return `<div class="tot"><div class="l">${l}</div><div class="n">${fmt(t)}</div><div class="l">${usd?"$"+usd.toFixed(2)+" Actions":"$0 Actions"}</div></div>`};
   $("totals").innerHTML=tile("Today",lastN(1))+tile("7 days",lastN(7))+tile("30 days",lastN(30))+planTile();
@@ -2269,7 +2270,7 @@ function renderQueue(){
   // wait:"gate" (or "decision") = held by a pending decision or outside condition; any other wait = queued because the agent was busy.
   const tot=logTotals("who");
   // Most queued first, then (#C728) most working: with no queued time the rows kept no order at all.
-  const rows=Object.entries(tot).sort((a,b)=>b[1].busy-a[1].busy||b[1].work-a[1].work);
+  const rows=Object.entries(tot).sort((a,b)=>b[1].busy-a[1].busy||b[1].work-a[1].work||a[0].localeCompare(b[0]));
   const fmt=ms=>ms?dur(ms):"—";
   $("qtable").innerHTML=rows.length?`<caption>Last 7 days, per agent</caption><thead><tr><th>Agent</th><th>Working</th><th title="Waiting because this agent was busy with other work">Queued (busy)</th><th title="Held by a pending decision or condition, not by the agent">Gated</th></tr></thead><tbody>${rows.map(([n,t])=>`<tr><td>${esc(n)}</td><td>${fmt(t.work)}</td><td class="${t.busy>t.work&&t.busy>36e5?"hot":""}">${fmt(t.busy)}</td><td>${fmt(t.gate)}</td></tr>`).join("")}</tbody>`:"";
 }
