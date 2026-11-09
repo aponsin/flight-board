@@ -85,7 +85,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Item | Status | Where it comes from on the store |
 |---|---|---|
 | Shipped feed, search | same once Boardsmith's hooks are in (C2): one line per version the probe read on a card's commit, "#C12 Title · #C13 Title". The old board's events come in with the import (C5) | `ships`, `worker/compat-ships.mjs` |
-| Time spent: tiles, chart | same once Boardsmith's hooks are in (C3): agent minutes from the phase history; runner and automation minutes and the Actions cost from `usage_days`, which the probe writes through `POST /api/probe/usage`. Nothing writes those rows yet (the old board's last row is 2026-10-31): a probe job that reads them is a follow-up | `usage_days`, `worker/compat-usage.mjs` |
+| Time spent: tiles, chart | same once Boardsmith's hooks are in (C3): agent minutes from the phase history; runner and automation minutes and the Actions cost from `usage_days`, which the probe writes through `POST /api/probe/usage`. The runner and automation minutes themselves: same (not written on either; the old board's last row is 2026-10-31) | `usage_days`, `worker/compat-usage.mjs` |
 | Plan-week tile | same (data in; drawn from real readings after the deploy) | probe `usage` (evidence key `usage`, written by the usage job) |
 | Per-agent table | same: drawn from the phase history (B3b) | compat `steps` |
 
