@@ -1,5 +1,4 @@
 dist/
-worker/legacy-page.generated.mjs
 node_modules/
 board.config.json
 *.local.*

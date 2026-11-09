@@ -7,6 +7,7 @@ import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker, { OLD_PAGE_PATH, oldPageCsp, withNonce } from "../worker/board-worker.mjs";
 import { buildChecked } from "../scripts/build-page.mjs";
 import { storePage, fontFaceCss, FONT_FACES, FONTS_DIR } from "../scripts/build-store-page.mjs";
+import { COMPAT_SHIM } from "../worker/compat-shim.mjs";
 
 const template = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 const config = JSON.parse(readFileSync(new URL("../board.config.example.json", import.meta.url), "utf8"));
@@ -48,12 +49,17 @@ test("the Worker serves the old page at /board behind the identity check, its sc
   const csp = r1.headers.get("content-security-policy"), nonce = /'nonce-([A-Za-z0-9_-]{24})'/.exec(csp)?.[1];
   assert.ok(nonce, csp);
   assert.equal(csp, oldPageCsp(nonce));
-  for (const part of ["default-src 'none'", `script-src 'nonce-${nonce}'`, "font-src 'self'", "img-src 'self' blob:", "connect-src 'self'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "object-src 'none'"]) assert.ok(csp.split("; ").includes(part), part);
+  for (const part of ["default-src 'none'", `script-src 'nonce-${nonce}'`, `style-src-elem 'nonce-${nonce}'`, "style-src-attr 'unsafe-inline'", "font-src 'self'", "img-src 'self' blob:", "connect-src 'self'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "object-src 'none'"]) assert.ok(csp.split("; ").includes(part), part);
   assert.doesNotMatch(csp, /unsafe-eval|https?:|\*/, "no other site, no eval");
   assert.doesNotMatch(csp.split("; ").find((p) => p.startsWith("script-src")), /unsafe-inline/);
   const html = await r1.text();
   assert.equal(html, withNonce(page, nonce));
-  assert.equal((html.match(new RegExp(`<script nonce="${nonce}">`, "g")) ?? []).length, 1);
+  // Two scripts, both by this nonce: the window.claude shim first, then the page's own; every style element by the nonce too.
+  assert.equal((html.match(/<script\b/g) ?? []).length, 2);
+  assert.equal((html.match(new RegExp(`<script nonce="${nonce}">`, "g")) ?? []).length, 2);
+  assert.ok(html.indexOf(COMPAT_SHIM) > 0 && html.indexOf(COMPAT_SHIM) < html.lastIndexOf(`<script nonce="${nonce}">`), "the shim runs before the page's script");
+  assert.equal((html.match(/<style\b/g) ?? []).length, (html.match(new RegExp(`<style nonce="${nonce}">`, "g")) ?? []).length);
+  assert.doesNotMatch(COMPAT_SHIM, /<\/?script|<!--/i, "the shim can't close its own element");
   assert.notEqual(/'nonce-([^']+)'/.exec(r2.headers.get("content-security-policy"))[1], nonce, "a new nonce per response");
 
   assert.equal((await get("/board", "owner", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 404, "GET only");

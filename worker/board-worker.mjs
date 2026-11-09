@@ -6,7 +6,6 @@
 //   POST /mcp               JSON-RPC: initialize, ping, tools/list, tools/call
 import { ASK_TYPES, ASK_PARTS, ROSTER_ROLES } from "./board-rules.mjs";
 import { pageHtml } from "./page.mjs";
-import { legacyResponse } from "./legacy-page.mjs";
 import { compatView } from "./compat-view.mjs";
 import { routeWrite } from "./compat-write.mjs";
 import { COMPAT_SHIM } from "./compat-shim.mjs";
@@ -37,13 +36,19 @@ const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
 
 // The old board page (#C723, board parity A1), built by scripts/build-store-page.mjs into the Worker's static assets
 // (env.ASSETS: board.html and fonts/*.woff2). It is served here, behind the same Access check as everything else, never
-// straight from the assets. Its one script runs by a fresh nonce per response; nothing else may run, and images, fonts and
-// connections come only from this Worker. Styles may be inline: the page's own markup sets style attributes.
+// straight from the assets. Its scripts and style elements run by a fresh nonce per response; nothing else may run, and images,
+// fonts and connections come only from this Worker. Style attributes may be inline: the page's own markup sets widths and colours
+// with them, and no script runs from one (Boardsmith's split).
 export const OLD_PAGE_PATH = "/board";
 const FONT_PATH = /^\/fonts\/([a-z0-9-]+\.woff2)$/;
-export const oldPageCsp = (nonce) => `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`;
-// The page's script tags carry the nonce (the built page has exactly one, `<script>`, and no inline handlers).
-export const withNonce = (html, nonce) => html.replaceAll("<script>", `<script nonce="${nonce}">`);
+export const oldPageCsp = (nonce) => `default-src 'none'; script-src 'nonce-${nonce}'; style-src-elem 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`;
+// The page's script and style elements carry the nonce (the built page has one bare <script> and bare <style>s, and no inline
+// handlers), and the window.claude shim (Boardsmith's worker/compat-shim.mjs) runs just before the page's script, so the page's
+// data block finds window.claude reading /api/compat and writing /api/compat/write.
+export const withNonce = (html, nonce, shim = COMPAT_SHIM) => html
+  .replaceAll("<style>", `<style nonce="${nonce}">`)
+  .replace("<script>", () => `<script nonce="${nonce}">${shim}</script><script nonce="${nonce}">`)
+  .replaceAll("<script>", `<script nonce="${nonce}">`);
 function newNonce() {
   const b = crypto.getRandomValues(new Uint8Array(18));
   return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_");
@@ -203,8 +208,6 @@ export default {
     if (url.pathname === OLD_PAGE_PATH && request.method === "GET") return oldPage(env, url);
     const fontFile = request.method === "GET" && FONT_PATH.exec(url.pathname);
     if (fontFile) return font(env, url, fontFile[1]);
-    // The old board's page (#C723 A1), when this deploy carries it (env.LEGACY_HTML, from the generated module); else the small page.
-    if (url.pathname === "/" && request.method === "GET" && typeof env.LEGACY_HTML === "string") return legacyResponse(env.LEGACY_HTML, COMPAT_SHIM);
     if (url.pathname === "/" && request.method === "GET") {
       return new Response(pageHtml({ version: env.BOARD_VERSION ?? "" }), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
     }
