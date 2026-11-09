@@ -1,0 +1,1 @@
+PASS Full refactor-step1-store at 5fd2e36b. Change since signed 1b5ceb07: the evidence job reads the product version.json from collector.liveUrl and posts it as live, after every other evidence write. Suite 1588/1588. Probe on the real board config gives v1.209.0. Mutation check pass: reading a top-level liveUrl fails 3 tests.
