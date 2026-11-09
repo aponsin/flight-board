@@ -1,0 +1,1 @@
+PASS Full: #C728 page parity gaps. No Manager chip and no ETA on the store, Time spent sorted with every day shown and local today. My finding fixed: fillDays steps from local noon, MST7MDT child-process test around the spring change. Page tests 93/93. Mutations caught: chip guard, thread-line ETA, unpinned start.
