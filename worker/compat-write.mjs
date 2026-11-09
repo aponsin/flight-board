@@ -9,7 +9,8 @@ import { optionOfKey } from "./compat-view.mjs";
 const NO_ROUTE = (path, why) => ({ rule: "no-route-yet", detail: `${path}: ${why}` });
 const askOf = async (db, id) => (typeof id === "string" ? db.prepare("SELECT * FROM asks WHERE id = ?").bind(id).first() : null);
 // Keys the old page sends along with an answer that the store does not need (the wake is the store's own count).
-const HARMLESS = new Set(["ping", "respondedAt", "doneAt"]);
+// The page stamps updatedAt on every write to waiting/ideas and turns a delete into {deleted:true, updatedAt} (board.template.html stampedDb).
+const HARMLESS = new Set(["ping", "respondedAt", "doneAt", "updatedAt"]);
 const ID = /^[A-Za-z0-9-]{1,64}$/;
 
 export async function routeWrite(db, now, who, { op, path, data } = {}) {
@@ -52,6 +53,7 @@ export async function routeWrite(db, now, who, { op, path, data } = {}) {
     return createListItem(db, now, who, f);
   }
   if ((coll === "todo" || coll === "ideas") && op === "update") {
+    if (d.deleted !== undefined) return refuse(db, now, NO_ROUTE(path, "the store deletes nothing; mark the row done"), null, who);
     if (d.startAt !== undefined) return refuse(db, now, NO_ROUTE(path, "Let's start is not part of this change"), null, who);
     const f = { id };
     for (const k of ["text", "area", "category", "note", "rank", "done"]) if (d[k] !== undefined) f[k] = d[k];
