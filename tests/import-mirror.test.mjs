@@ -1,45 +1,78 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { plan, report, cardRow } from "../collector/import-mirror.mjs";
+import { plan, report, toSql, compare, threadResolved } from "../collector/import-mirror.mjs";
 
 const docs = {
   initiatives: {
-    "open-card": { name: "Open", num: 5, status: "active", size: "L", level: "Full", who: "Builder", createdAt: 1, phaseReason: "review findings" },
+    "open-card": { name: "Open", num: 5, status: "active", size: "L", level: "Full", thread: "c-thread", createdAt: 1 },
     "old-card": { name: "Old", num: 9, status: "done" },
-    "dropped-card": { name: "Dropped", num: 6, status: "dropped", size: "XXL" },
     "Bad_ID": { name: "x", num: 7 },
-    "dup-num": { name: "y", num: 5 },
-    "no-title": { num: 8 },
   },
-  messages: { m1: { thread: "t1", from: "a", text: "hi", at: 10 }, m2: { thread: "t1", from: "a" } },
-  threads: { t1: { num: 41, title: "x" } },
-  waiting: { w1: { kind: "decision" }, w2: { kind: "decision" }, w3: {} },
+  threads: { "t-a": { num: 41, title: "Act" }, "t-b": { num: 42, title: "Closed" }, "t-c": { num: 43, title: "Later one" }, "c-thread": { num: 40, title: "card" } },
+  messages: {
+    m1: { thread: "t-a", from: "Manager", text: "do it", at: 10 }, m2: { thread: "t-a", from: "Owner", text: "done", at: 20 },
+    m3: { thread: "t-b", from: "Manager", text: "x", at: 1 }, m4: { thread: "t-b", from: "Owner", text: "Ack.", at: 2, resolved: true },
+    m5: { thread: "c-thread", from: "Owner", text: "hi", at: 3 }, m6: { thread: "t-gone", from: "Owner", text: "orphan", at: 3 },
+  },
+  waiting: {
+    a1: { kind: "action", thread: "t-a", steps: [{ text: "s" }], expect: "e", since: 5, response: { at: 20, status: "done" } },
+    a2: { kind: "action", thread: "t-b", steps: ["s"], expect: "e" },
+    a3: { kind: "later", thread: "t-c", text: "wait" },
+    a4: { kind: "action", done: true },
+    a5: { kind: "decision", thread: "t-a", question: "q", options: ["x", "y"] },
+  },
 };
 
-test("open and dropped cards map; done cards are counted, not imported; bad rows are refused with a reason", () => {
-  const p = plan(docs);
-  assert.deepEqual(p.cards.map((c) => c.id), ["open-card", "dropped-card"]);
-  assert.equal(p.cards[0].rework_reason, "review findings");
-  assert.equal(p.cards[1].dropped, 1);
-  assert.equal(p.cards[1].size, null, "a size outside the schema is not carried");
-  assert.deepEqual(p.refused.cards, { "card-id": 1, "duplicate-num": 1, "no-title": 1 });
+test("open cards map, bad ids are refused with the rule; done and resolved are skipped", () => {
+  const p = plan(docs, { owner: "Owner" });
+  assert.deepEqual(p.cards.map((c) => c.id), ["open-card"]);
   assert.equal(p.skipped.doneCards, 1);
+  assert.equal(p.skipped.doneAsks, 1);
+  assert.equal(p.skipped.resolvedAsks, 1);
+  assert.ok(p.refused.some((r) => r.kind === "card" && r.id === "Bad_ID" && r.rule === "card-id"));
 });
 
-test("counters continue after the highest number seen, done cards included", () => {
-  const p = plan(docs);
-  assert.equal(p.counters.C, 10);
-  assert.equal(p.counters.T, 42);
+test("an answered but unclosed ask is imported with its answer and its #T; the asker is a real word, not invented", () => {
+  const p = plan(docs, { owner: "Owner" });
+  const a = p.asks.find((x) => x.id === "a1");
+  assert.equal(a.num, 41);
+  assert.equal(a.asked_by, "Manager");
+  assert.equal(a.answered_at, 20);
+  assert.equal(p.counts.lead, 1);
 });
 
-test("messages arrive delivered; waiting is counted by kind and not mapped", () => {
-  const p = plan(docs);
-  assert.equal(p.messages.length, 1);
-  assert.equal(p.messages[0].delivered_at, 10);
-  assert.deepEqual(p.refused.messages, { "message-shape": 1 });
-  assert.deepEqual(report(p).waitingByKind, { decision: 2, none: 1 });
+test("an item the store's rules refuse is listed with rule and old id, never patched", () => {
+  const p = plan(docs, { owner: "Owner" });
+  const later = p.refused.find((r) => r.id === "a3");
+  assert.equal(later.rule, "ask-missing-part"); // no asker in its thread
+  const dec = p.refused.find((r) => r.id === "a5");
+  assert.match(dec.detail, /recommended|Decision/);
+  assert.ok(!p.asks.some((x) => x.id === "a3" || x.id === "a5"));
 });
 
-test("a card row never fails the store's own check on id", () => {
-  assert.equal(cardRow("a".repeat(65), { name: "x", num: 1 }).ok, false);
+test("no orphans: messages come only with an imported thread", () => {
+  const p = plan(docs, { owner: "Owner" });
+  assert.deepEqual(p.messages.map((m) => m.id).sort(), ["m1", "m2", "m5"]);
+});
+
+test("counters sit above every number on the old board and above the live board's", () => {
+  assert.deepEqual(plan(docs, { owner: "Owner" }).counters, { C: 10, T: 44 });
+  assert.deepEqual(plan(docs, { owner: "Owner", liveC: 800, liveT: 1648 }).counters, { C: 800, T: 1648 });
+});
+
+test("the SQL is keyed by old id (INSERT OR IGNORE) and the counters only go up", () => {
+  const sql = toSql(plan(docs, { owner: "Owner" }));
+  assert.ok(sql.split("\n").filter((l) => l.startsWith("INSERT")).every((l) => l.startsWith("INSERT OR IGNORE")));
+  assert.match(sql, /SET next = MAX\(next, 10\)/);
+});
+
+test("the report names every difference from the old page's tab counts", () => {
+  assert.deepEqual(compare({ needs: 1, later: 2, lead: 3 }, { needs: 1, later: 5 }), ["Later: old page 5, import 2"]);
+  assert.deepEqual(report(plan(docs, { owner: "Owner" }), { lead: 2 }).differences, ["With the team: old page 2, import 1"]);
+});
+
+test("a thread is resolved by its last message, but an Ack on a card's thread is not", () => {
+  assert.equal(threadResolved([{ at: 1, resolved: true }], false), true);
+  assert.equal(threadResolved([{ at: 1, resolved: true, kind: "ack" }], true), false);
+  assert.equal(threadResolved([], false), false);
 });
