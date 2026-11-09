@@ -71,8 +71,9 @@ test("(4) on the store no ETA in the card number's bubble or a thread's card lin
 test("(5) a usage day after today counts in no tile", async () => {
   const db = await store();
   const tomorrow = localDay(NOW + 864e5);
+  const without = (await draw(db)).els.totals.innerHTML;
   const { els } = await draw(db, "store", (c) => ({ ...c, usage: [{ id: tomorrow, day: tomorrow, runnerMin: 600 }] }));
-  assert.doesNotMatch(els.totals.innerHTML, /10\.0 h/, "tomorrow's 600 minutes are in no tile");
+  assert.equal(els.totals.innerHTML, without, "tomorrow's 600 minutes are in no tile");
 });
 
 test("(5) the per-agent table lists the most working first when nobody was queued", async () => {
