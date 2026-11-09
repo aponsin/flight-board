@@ -125,7 +125,8 @@ test("Release's script run as a command: no arguments is exit 2 with a usage lin
   const { mkdtempSync, symlinkSync, mkdirSync } = await import("node:fs");
   const { join, resolve } = await import("node:path");
   const { tmpdir } = await import("node:os");
-  const real = resolve("scripts/approvals-check.mjs");
+  const { fileURLToPath } = await import("node:url");
+  const real = resolve(fileURLToPath(new URL("../scripts/approvals-check.mjs", import.meta.url)));
   const dir = join(mkdtempSync(join(tmpdir(), "c727-")), "a space");
   mkdirSync(dir);
   const link = join(dir, "check.mjs");
