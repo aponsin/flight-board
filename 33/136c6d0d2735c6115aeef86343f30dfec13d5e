@@ -1,0 +1,1 @@
+PASS Full c719-wake-send-path at 33136c6d. The --claude full path for the wake send, the child PATH with claude's folder first, and claude-not-found classification. Suite 1633/1633. Mutation check pass: dropping env in runChild fails 2 tests. Note: under that mutation the bare-claude test ran the real claude CLI, so the test should use a command name that cannot exist.
