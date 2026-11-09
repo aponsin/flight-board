@@ -19,7 +19,7 @@ test("the store page: Google's font links become @font-face rules on /fonts/, in
   assert.doesNotMatch(page, /fonts\.(googleapis|gstatic)\.com/);
   assert.ok(page.includes(fontFaceCss()));
   for (const f of FONT_FACES) assert.ok(page.includes(`src:url(/fonts/${f.file}) format("woff2")`), f.file);
-  assert.match(page, /^<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">/);
+  assert.match(page, /^<!doctype html>\n<html lang="en" data-host="store">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">/);
   assert.match(page, /<\/body>\n<\/html>\n$/);
   // The artifact build keeps Google's links: the old board runs as it is until the owner switches.
   assert.match(built, /fonts\.googleapis\.com/);

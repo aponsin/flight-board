@@ -7,11 +7,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import vm from "node:vm";
 import { FIXTURES, times } from "../scripts/fixtures.mjs";
-
-const template = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-const script = template.match(/<script>([\s\S]*?)<\/script>/)[1];
+import { drawPage, TEMPLATE as template } from "./helpers/draw-page.mjs";
 
 // The attack, marked with where it came from so a leak names its collection.
 const attack = (tag) => `<img src=x onerror=hostile_${tag}()>"'><svg onload=hostile_${tag}()> javascript:hostile_${tag}() https://x.example/"><b>hostile_${tag}</b>`;
@@ -65,26 +62,6 @@ function taint(v, tag, all, key = "") {
   return v;
 }
 
-// The page's script on a set of documents and a probe reading: every element it wrote, as HTML and attribute values.
-function draw(docs, probe) {
-  const els = {}, attrs = [];
-  const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, scrollTop: 0, dataset: {}, style: {},
-    classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, addEventListener() {}, setAttribute: (k, v) => attrs.push(`${k}=${v}`), removeAttribute() {},
-    querySelectorAll: () => [], querySelector: () => null, appendChild() {}, focus() {}, getBoundingClientRect: () => ({ left: 0, width: 0, top: 0, height: 0 }) });
-  const document = { getElementById: el, querySelectorAll: () => [], querySelector: () => null, addEventListener() {}, activeElement: null, createRange: () => ({}), createElement: () => el("_new") };
-  const ctx = { document, window: { scrollY: 0, scrollTo() {}, addEventListener() {} }, console, setInterval() {}, setTimeout() {}, clearTimeout() {}, queueMicrotask() {}, navigator: {}, getSelection: () => ({}),
-    localStorage: { getItem: () => null, setItem() {} }, location: { hash: "", search: "" }, Date, Math, JSON, Number, String, Array, Object, Set, Map, WeakMap, isFinite, URLSearchParams };
-  vm.createContext(ctx);
-  vm.runInContext(script + "\n;globalThis.__b={state,renderAll,probeEvent};", ctx);
-  const b = ctx.__b;
-  for (const [c, list] of Object.entries(docs)) {
-    const key = c === "initiatives" ? "initRaw" : c;
-    if (Array.isArray(b.state[key])) b.state[key] = list;
-  }
-  if (probe) b.probeEvent({ type: "data", result: { payload: probe } });
-  b.renderAll();
-  return { html: Object.values(els).map((e) => e.innerHTML).join("\n"), attrs: attrs.join("\n") };
-}
 
 // Markup that came from board text: a tag whose attributes carry the attack outside a quoted value (an attribute or a tag
 // broke out), an element the attack names (img, svg, b) carrying its marker, or a javascript: address.
@@ -112,12 +89,12 @@ test("the leak check itself finds markup and javascript: addresses, and lets esc
   assert.equal(leaks(`<span><b>hostile_x</b></span>`).length, 1);
 });
 
-for (const all of [true, false]) {
-  test(`no board text becomes markup: every fixture and every other collection, ${all ? "every string" : "the words"} tainted`, () => {
+for (const host of ["store", null]) for (const all of [true, false]) {
+  test(`no board text becomes markup (${host ? "the store's page" : "the artifact's page"}): every fixture and every other collection, ${all ? "every string" : "the words"} tainted`, () => {
     const runs = fixtures.map(({ file, docs }) => ({ file, docs: { ...docs, ...EXTRA, ...Object.fromEntries(Object.entries(EXTRA).map(([c, l]) => [c, [...(docs[c] ?? []), ...l]])) } }));
     let seen = "";
     for (const { file, docs } of runs) {
-      const { html, attrs } = draw(tainted(docs, all), taint(PROBE, "probe", all));
+      const { html, attrs } = drawPage(tainted(docs, all), { probe: taint(PROBE, "probe", all), host });
       const found = leaks(html);
       assert.deepEqual(found, [], `${file}: board text became markup, in: ${found.map((f) => html.slice(Math.max(0, html.indexOf(f) - 200), html.indexOf(f) + 40)).join(" | ")}`);
       assert.deepEqual(leaks(attrs), [], `${file}: board text became an attribute`);
@@ -125,7 +102,8 @@ for (const all of [true, false]) {
     }
     // The words do arrive (escaped): otherwise the pass proves nothing. The probe's values are drawn only after a format
     // check (roles, ids, versions, known words), so its attack is refused before it is drawn; it stays in both passes.
-    if (!all) for (const c of ["waiting", "messages", "threads", "initiatives", "events", "todo", "ideas", "meta", "plan", "agentprs"]) assert.match(seen, new RegExp(`hostile_${c}\\(\\)`), `${c}'s words were drawn`);
+    // The store's page leaves the pull request panel out (#C723 A4), so agentPrs' words show on the artifact's page only.
+    if (!all) for (const c of ["waiting", "messages", "threads", "initiatives", "events", "todo", "ideas", "meta", "plan", ...(host ? [] : ["agentprs"])]) assert.match(seen, new RegExp(`hostile_${c}\\(\\)`), `${c}'s words were drawn`);
   });
 }
 

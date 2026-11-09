@@ -36,7 +36,8 @@ export function storePage(built) {
   if (!block.test(built)) throw new Error("the page has no <!--FONTS--> block");
   const page = built.replace(block, () => `<style>\n${fontFaceCss()}\n</style>`);
   if (/fonts\.(googleapis|gstatic)\.com/.test(page)) throw new Error("the page still names Google's font servers");
-  return `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n</head>\n<body>\n${page}\n</body>\n</html>\n`;
+  // data-host="store" tells the page it runs on the store (#C723 A4): it leaves out what the owner agreed is gone.
+  return `<!doctype html>\n<html lang="en" data-host="store">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n</head>\n<body>\n${page}\n</body>\n</html>\n`;
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
