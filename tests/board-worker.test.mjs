@@ -56,6 +56,9 @@ test("only the owner answers: an agent's answer is an unknown tool, and the owne
   const bad = await rpc("manager", "tools/call", { name: "answer", arguments: { id: made.id, answer: "yes" } });
   assert.equal(bad.error.message, "unknown tool");
   assert.ok(!(await rpc("manager", "tools/list")).result.tools.some((t) => t.name === "answer"));
+  const logged = (await env.DB.prepare("SELECT rule, who FROM refusals WHERE rule = 'tool-not-allowed'").all()).results;
+  assert.deepEqual(logged, [{ rule: "tool-not-allowed", who: "Manager" }], "the agent's try is in the refusal log");
+  assert.equal((await env.DB.prepare("SELECT answered_at FROM asks WHERE id = ?").bind(made.id).first()).answered_at, null, "and the ask is still unanswered");
   assert.equal((await tool("owner", "answer", { id: made.id, answer: "yes" })).structuredContent.ok, true);
   assert.equal((await env.DB.prepare("SELECT answered_by FROM asks WHERE id = ?").bind(made.id).first()).answered_by, "owner");
 });

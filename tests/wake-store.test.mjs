@@ -87,16 +87,31 @@ test("Manager's typed read takes the batch: it closes, the tick moves, a good se
   assert.equal(next.send, true);
 });
 
+test("an owner message written between the inbox's read and its mark is not lost (Checker)", async () => {
+  const db = makeDb();
+  await postMessage(db, T, "owner", { thread_id: "t1", body: "first" });
+  let slipped = false;
+  const racing = { prepare: (sql) => {
+    const stmt = db.prepare(sql);
+    if (!slipped && /^UPDATE messages SET delivered_at/.test(sql)) { slipped = true; return { bind: (...a) => ({ run: async () => { await postMessage(db, T + 1, "owner", { thread_id: "t1", body: "second" }); return stmt.bind(...a).run(); } }) }; }
+    return stmt;
+  } };
+  const first = await takeInbox(racing, T + 2);
+  assert.deepEqual(first.messages.map((m) => m.body), ["first"]);
+  assert.equal(slipped, true);
+  assert.deepEqual((await takeInbox(db, T + 3)).messages.map((m) => m.body), ["second"], "the one that slipped in is still there for the next read");
+});
+
 test("over HTTP only the probe asks and reports, and only Manager's role reads the inbox", async () => {
   const env = { DB: makeDb() };
   const as = (who, role) => async () => ({ who, role });
-  const post = (auth, path, body = {}) => worker.fetch(new Request(`https://b.test${path}`, { method: "POST", body: JSON.stringify(body) }), env, null, T, auth);
+  const post = (auth, path, body = {}) => worker.fetch(new Request(`https://b.test${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }), env, null, T, auth);
   assert.equal((await post(as("Manager", "agent"), "/api/probe/wake")).status, 403);
   assert.equal((await post(as("owner", "owner"), "/api/probe/wake-result", { exit: 0 })).status, 403);
   assert.equal((await post(as("probe", "probe"), "/api/probe/wake")).status, 200);
   assert.equal((await post(as("probe", "probe"), "/api/probe/wake-result", { exit: "x" })).status, 422);
   assert.equal((await post(as("probe", "probe"), "/api/probe/wake-result", { exit: 0, batchId: "b-1", text: GOOD })).status, 200);
-  const rpc = (auth) => worker.fetch(new Request("https://b.test/mcp", { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_inbox", arguments: {} } }) }), env, null, T, auth).then((r) => r.json());
+  const rpc = (auth) => worker.fetch(new Request("https://b.test/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_inbox", arguments: {} } }) }), env, null, T, auth).then((r) => r.json());
   assert.equal((await rpc(as("Manager", "agent"))).result.structuredContent.ok, true);
   assert.equal((await rpc(as("owner", "owner"))).error.code, -32602);
 });

@@ -62,7 +62,11 @@ async function mcp(request, env, auth, now) {
     case "tools/list": return ok({ tools: TOOLS.filter((t) => t.roles.includes(auth.role)).map(({ roles, ...t }) => t) });
     case "tools/call": {
       const tool = byName[msg.params?.name];
-      if (!tool || !tool.roles.includes(auth.role)) return err(-32602, "unknown tool");
+      if (!tool || !tool.roles.includes(auth.role)) {
+        // A real tool the role may not call is logged (an agent trying to answer the owner's ask), as any refusal is.
+        if (tool) await refuse(env.DB, now, { rule: "tool-not-allowed", detail: `${auth.role} cannot call ${tool.name}` }, null, auth.who);
+        return err(-32602, "unknown tool");
+      }
       const args = msg.params?.arguments ?? {};
       if (args === null || typeof args !== "object" || Array.isArray(args)) return err(-32602, "arguments are an object");
       return ok(await callTool(env.DB, now, auth.who, auth.role, tool.name, args));

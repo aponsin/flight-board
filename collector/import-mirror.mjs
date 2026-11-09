@@ -44,7 +44,13 @@ export function askRow(id, d, { thread, askedBy }) {
   const type = TYPE[d.kind];
   if (!type) return { ok: false, rule: "ask-type", detail: `kind ${d.kind ?? "none"}` };
   const ask = { type, title: str(d.title) ?? str(thread?.title) ?? str(d.question)?.slice(0, 120) ?? str(d.text)?.slice(0, 120), asked_by: str(d.from) ?? askedBy };
-  if (type === "Decision") Object.assign(ask, { question: str(d.question) ?? str(d.text), options: d.options, recommended: d.recommended });
+  // The old board stores options as [{key, label, recommended?}]; the store wants labels and the recommended label. Copied as it
+  // is, nothing invented: no flagged option, no recommended, and the store's rule refuses it as before.
+  const opts = Array.isArray(d.options) ? d.options : null;
+  const label = (o) => (typeof o === "string" ? o : str(o?.label));
+  const labels = opts?.map(label);
+  const flagged = opts?.find((o) => o && typeof o === "object" && o.recommended === true);
+  if (type === "Decision") Object.assign(ask, { question: str(d.question) ?? str(d.text), options: labels?.every(Boolean) ? labels : opts, recommended: flagged ? label(flagged) : d.recommended });
   if (type === "Action") Object.assign(ask, { steps: d.steps, expect: d.expect });
   if (type === "Answer") ask.question = str(d.question) ?? str(d.text);
   if (type === "Later") Object.assign(ask, { text: str(d.text) ?? str(d.question), ...(Number.isFinite(d.eta) ? { eta_at: d.eta } : {}) });
@@ -56,8 +62,12 @@ export function askRow(id, d, { thread, askedBy }) {
   const body = {};
   for (const k of ["question", "options", "recommended", "steps", "expect", "text", "words", "screenshots"]) if (ask[k] !== undefined) body[k] = ask[k];
   const answered = d.response && typeof d.response === "object" ? int(d.response.at) ?? int(d.respondedAt) : null;
+  // A Decision's old answer is the option's key (response.choice); the store's answer is the option's label.
+  const chosen = type === "Decision" && opts ? opts.find((o) => o && typeof o === "object" && o.key === d.response?.choice) : null;
+  const answer = !answered ? null : chosen ? label(chosen) : JSON.stringify(d.response);
+  // answer_taken_at = the answer's own time: the first wake after the import must not hand Manager every old answer again.
   return { ok: true, row: { id, num: Number.isInteger(thread?.num) ? thread.num : null, type, title: ask.title, asked_by: ask.asked_by, card_id: null, body: JSON.stringify(body), eta_at: ask.eta_at ?? null, eta_precondition: null,
-    created_at: int(d.since) ?? int(d.at) ?? 0, answered_at: answered, answer: answered ? JSON.stringify(d.response) : null, closed_at: null } };
+    created_at: int(d.since) ?? int(d.at) ?? 0, answered_at: answered, answer, answered_by: answered ? "owner" : null, answer_taken_at: answered, closed_at: null } };
 }
 
 // docs: { initiatives, waiting, threads, messages } each { oldId: doc }. owner: the owner's name (to tell a lead's word from his).

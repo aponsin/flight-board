@@ -79,6 +79,25 @@ test("an ask with no thread gets the next number above the counters, and is in t
   assert.match(toSql(p), /INSERT OR IGNORE INTO asks/);
 });
 
+test("a Decision in the old board's real shape imports: options become labels, the flagged one is recommended, the answer key becomes its label (Checker)", () => {
+  const dec = { kind: "decision", thread: "t-a", question: "Allow it?", options: [{ key: "A", label: "Yes, allow", recommended: true }, { key: "B", label: "No, keep asking" }], response: { at: 20, choice: "A", note: "", status: "chose" } };
+  const open = { ...dec, response: undefined };
+  const p = plan({ ...docs, initiatives: {}, waiting: { d1: dec, d2: { ...open, thread: "t-c" } } }, { owner: "Owner", lead: "Manager" });
+  assert.deepEqual(p.refused, []);
+  const a = p.asks.find((x) => x.id === "d1");
+  assert.deepEqual(JSON.parse(a.body).options, ["Yes, allow", "No, keep asking"]);
+  assert.equal(JSON.parse(a.body).recommended, "Yes, allow");
+  assert.equal(a.answer, "Yes, allow");
+  assert.equal(a.answer_taken_at, 20, "the first wake after the import does not resend old answers");
+  assert.equal(a.answered_by, "owner");
+});
+
+test("a Decision with no flagged option is still refused, not given a recommendation", () => {
+  const d = { kind: "decision", thread: "t-a", question: "q", options: [{ key: "A", label: "x" }, { key: "B", label: "y" }] };
+  const p = plan({ ...docs, initiatives: {}, waiting: { d1: d } }, { owner: "Owner", lead: "Manager" });
+  assert.match(p.refused[0].detail, /recommended/);
+});
+
 test("no orphans: messages come only with an imported thread", () => {
   const p = plan(docs, { owner: "Owner", lead: "Manager" });
   assert.deepEqual(p.messages.map((m) => m.id).sort(), ["m1", "m2", "m5"]);
