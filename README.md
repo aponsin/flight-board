@@ -116,6 +116,16 @@ Merge only when all four hold, else leave it and say which failed. An approval o
 
 **Residual risk, outside the gate** (Security's MEDIUM 4): the gate hooks the board's database and page tools (`ArtifactData` and `Artifact`, and the claude-artifacts server's `db_write`, `db_str_replace` and page tools), not a browser. A session with a browser signed in to claude.ai as the owner (the built-in browser, Claude in Chrome) could open the board and click Approve, which the gate cannot see. The routine above still needs Reviewer's real sign-off and green checks on `H`, so such a click alone cannot merge a pull request Reviewer did not sign. Whether to also refuse browser tools aimed at the board's own address (a PreToolUse rule) is the owner's call, through Manager; until he asks for it, this is the accepted risk.
 
+## The wake (new store, #C719)
+
+How the board gets Manager to look: the probe asks the store every 20 s "anything for Manager?" (a script call, no model, no tokens). Only when the store has a batch does it run ONE headless send, `claude -p "<send the session named Manager this line: N for Manager, batch ID>" --model haiku --allowedTools "SendMessage,ListAgents"`, which starts a turn in Manager's open session. The line carries a count and a batch id only, never board text; it is a nudge, not a fact: Manager reads the batch through the typed tool (that read marks it taken) and believes only the store. An untaken batch is sent again at most once per 5 minutes. Every send's exit code goes to the store (`worker/wake-rules.mjs` classifies it and decides row 4's state). There is no Monitor and nothing to re-arm.
+
+Two standing needs: the command-line login on the Studio stays alive (`claude /login` in a Terminal; it lapsed once, silently), and Manager's session is named and has Remote Control on.
+
+Row 4 turns red ("not listening since") with its reason and the fix when: **login lapsed** (the send printed "Failed to authenticate"; run `claude /login`), **Manager not reachable** ("No agent named … is reachable": Manager's session is closed, unnamed or has Remote Control off), **batch not taken** (a send went out and Manager has not read the batch 3 minutes later), or the probe has not asked for 3 minutes. The probe tells the owner once per reason, until a good send clears it.
+
+A probe job killed by its watchdog (`collector/run-watchdog.mjs`) logs and exits 2 and tells the store nothing: the store's own silence rule is the only signal. The probe is marked silent 3 minutes after its last write, and the header's Probe chip turns red.
+
 ## Tests
 
 `npm test` runs every rule's test. Each rule also had a mutation check: break the rule on purpose, a test must fail, restore.
