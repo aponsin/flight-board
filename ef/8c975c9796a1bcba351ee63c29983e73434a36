@@ -1,0 +1,1 @@
+PASS Full refactor-step1-store at ef8c975c. Tests only since signed 6c751ccc: no code file differs. Added tests cover the whole-hash compare at all 64 places, a malformed CONNECTOR_HASH opening nothing, the owner-name token getting no identity, and the wake end to end. Suite 1627/1627. Apply migrations 0003 to 0007 before the import SQL.
