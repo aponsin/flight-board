@@ -18,7 +18,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | "⚠ Manager missed" after Live now | hidden on the store: a typed-field gap (row 37, "Mostly deleted with the typed fields") | |
 | Clock, "Studio checked N s" | same | probe reading via the shim |
 | "Board data behind, reloading" | gone: "Delete: row 2's 'fetched N s ago' covers it once there is one store" (row 3) | |
-| Manager chip | same: "seen your message" reads the owner's messages (B1) | `wakeState`, compat `messages` |
+| Manager chip | partly: "seen your message" reads the owner's messages (B1). The chip itself ("Manager not listening") is hidden on the store (#C728): it reads the old wake watch's heartbeat (`probe.board.wakeAliveAt`), which the store does not get, so it was red on every load; it comes back when it reads the store's wake (`wakeState`) | `wakeState`, compat `messages` |
 | Safe to restart, "Don't restart: shipping" | same (data in; drawn from real readings after the deploy) | probe `agents`, `ship` (evidence keys `agents`, `ship`) |
 | Board vX · page abc | same | the build's stamp |
 | "Manager stuck on …" | not yet: B4 (refusals in the old shape, with the "You:" action) | `refusals` |
