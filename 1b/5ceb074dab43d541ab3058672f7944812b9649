@@ -1,0 +1,1 @@
+PASS Full refactor-step1-store at 1b5ceb07. Only change from signed b91f79a4: takeInbox marks in chunks of 90 ids plus the time, and its 250-message test. Suite 1585/1585. Mutation check pass: chunk 300 makes the test fail with 251 bound values. Migration 0003 goes before the import SQL.
