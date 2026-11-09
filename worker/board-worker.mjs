@@ -6,6 +6,9 @@
 //   POST /mcp               JSON-RPC: initialize, ping, tools/list, tools/call
 import { ASK_TYPES, ASK_PARTS, ROSTER_ROLES } from "./board-rules.mjs";
 import { pageHtml } from "./page.mjs";
+import { legacyResponse } from "./legacy-page.mjs";
+import { compatView } from "./compat-view.mjs";
+import { routeWrite } from "./compat-write.mjs";
 import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -199,6 +202,8 @@ export default {
     if (url.pathname === OLD_PAGE_PATH && request.method === "GET") return oldPage(env, url);
     const fontFile = request.method === "GET" && FONT_PATH.exec(url.pathname);
     if (fontFile) return font(env, url, fontFile[1]);
+    // The old board's page (#C723 A1), when this deploy carries it (env.LEGACY_HTML, from the generated module); else the small page.
+    if (url.pathname === "/" && request.method === "GET" && typeof env.LEGACY_HTML === "string") return legacyResponse(env.LEGACY_HTML);
     if (url.pathname === "/" && request.method === "GET") {
       return new Response(pageHtml({ version: env.BOARD_VERSION ?? "" }), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
     }
@@ -223,6 +228,22 @@ export default {
       const etag = `"${v.tag}"`;
       if (request.headers.get("if-none-match") === etag) return bare(304, { etag });
       return json(200, v, { etag, "cache-control": "no-store" });
+    }
+    // The old page's data (#C723 A2): the same store view in the old collection shapes. Read only; same ETag rule as /api/view.
+    if (url.pathname === "/api/compat" && request.method === "GET") {
+      if (auth.role === "probe") return bare(403);
+      const c = compatView(await readView(env.DB, now));
+      const etag = `"c-${c.tag}"`;
+      if (request.headers.get("if-none-match") === etag) return bare(304, { etag });
+      return json(200, c, { etag, "cache-control": "no-store" });
+    }
+    // The old page's writes (#C723 A3): one {op, path, data} per call, owner only, routed to the store's own functions.
+    if (url.pathname === "/api/compat/write" && request.method === "POST") {
+      if (auth.role !== "owner") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await routeWrite(env.DB, now, auth.who, b);
+      return json(r.ok ? 200 : 422, r.ok ? { ok: true } : r);
     }
     if (url.pathname === "/api/probe/evidence" && request.method === "POST") {
       if (auth.role !== "probe") return bare(403);
