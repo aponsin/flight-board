@@ -1,0 +1,72 @@
+// Ships, "Done in the last 24 h" and the shipped feed (#C726 C2, board parity; docs/DATA.md rows 40 and 41).
+// Nothing here is typed: a card is done when the probe reads its last phase lit (live, or install on the board's own track),
+// and a ship is a version the probe read on a card's commit (cards.<id>.liveVersion). The store keeps one ships row per
+// version (migration 0001: version, cards, shipped_at, acked_at), so the owner's ack (the ack tool) has a row to land on.
+//
+// Hooks (Boardsmith adds them, one line each):
+//   board-store writeEvidence   await noteShip(db, now, cardId, value)   for a cards.<id> key, after the evidence is stored
+//   board-store readView        ships: await readShips(db)               (and in the tag's content)
+//   compat-view compatView      applyShips(collections, view)            after initiatives are built
+// applyShips is pure; noteShip and readShips touch only the ships table.
+
+export const END_PHASES = ["live", "install"];
+const VERSION = /^v?(\d{1,6}\.\d{1,6}\.\d{1,6})$/;
+export const plainVersion = (v) => (typeof v === "string" && VERSION.test(v) ? VERSION.exec(v)[1] : null);
+
+// A card's reading carries the version it went live in: the ship of that version lists the card. The first reading of a
+// version is when it shipped; a later card in the same version joins the list and leaves the time as it was.
+export async function noteShip(db, now, cardId, value) {
+  const version = plainVersion(value?.liveVersion);
+  if (!version || typeof cardId !== "string") return;
+  const row = await db.prepare("SELECT cards FROM ships WHERE version = ?").bind(version).first();
+  if (!row) {
+    await db.prepare("INSERT INTO ships (version, cards, shipped_at) VALUES (?, ?, ?) ON CONFLICT (version) DO NOTHING").bind(version, JSON.stringify([cardId]), now).run();
+    return;
+  }
+  let cards;
+  try { cards = JSON.parse(row.cards); } catch { cards = []; }
+  if (!Array.isArray(cards)) cards = [];
+  if (cards.includes(cardId)) return;
+  await db.prepare("UPDATE ships SET cards = ? WHERE version = ?").bind(JSON.stringify([...cards, cardId]), version).run();
+}
+
+export async function readShips(db) {
+  return (await db.prepare("SELECT version, cards, shipped_at, acked_at FROM ships ORDER BY shipped_at, version").all()).results;
+}
+
+// When a card reached its last phase: the phase history's first start of it, else the reading's own time.
+function doneAtOf(cardId, phase, history, readAt) {
+  const h = (history ?? []).find((r) => r.card_id === cardId && r.phase === phase && r.kind === "start");
+  return h ? h.at : readAt;
+}
+
+// Pure. initiatives: a card read at its last phase is done, with doneAt and its version (a dropped card stays dropped).
+// events: one line per ship, newest first, "#C12 Title · #C13 Title", with the owner's ack when he gave it.
+export function applyShips(collections, view) {
+  const cards = Object.fromEntries((view.cards ?? []).map((c) => [c.id, c]));
+  for (const i of collections.initiatives ?? []) {
+    const c = cards[i.id];
+    const ev = view.evidence?.[`cards.${i.id}`];
+    const lit = ev?.value?.lit?.[0];
+    if (!c || !END_PHASES.includes(lit) || c.dropped) continue;
+    i.status = "done";
+    i.doneAt = doneAtOf(i.id, lit, view.history, ev.readAt);
+    const v = plainVersion(ev.value.liveVersion);
+    if (v) i.version = v;
+  }
+  if (view.ships === undefined) return collections;
+  const label = (id) => {
+    const c = cards[id] ?? (view.historyCards ?? []).find((h) => h.id === id);
+    return c ? `#C${c.num} ${String(c.title ?? "").trim()}`.trim() : id;
+  };
+  collections.events = (view.ships ?? []).map((s) => {
+    let ids;
+    try { ids = JSON.parse(s.cards); } catch { ids = []; }
+    if (!Array.isArray(ids)) ids = [];
+    ids = ids.filter((x) => typeof x === "string");
+    const doc = { id: `v${s.version}`, version: s.version, at: s.shipped_at, cards: ids, text: ids.map(label).join(" · ") };
+    if (s.acked_at) doc.ackedAt = s.acked_at;
+    return doc;
+  }).sort((a, b) => b.at - a.at);
+  return collections;
+}
