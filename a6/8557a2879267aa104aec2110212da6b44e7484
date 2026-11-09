@@ -1,0 +1,1 @@
+PASS Quick: #C716 deleted-branch-signs at a68557a. A team-repo card with no branch tip is found by its exact Board-Id trailer on main, so the signs on that commit are read, which meets doneWhen. Touched tests green. Three mutants killed: no fallback, fallback with tips, prefix match.
