@@ -59,7 +59,7 @@ function draw() {
   const lr = view.evidence.live ? { version: view.evidence.live.value.version, readAt: view.evidence.live.readAt } : null;
   const live = lr ? { state: Date.now() - lr.readAt > 180000 ? "stale" : "live", version: lr.version, age: Date.now() - lr.readAt } : { state: "unknown" };
   const probe = view.probe.state === "silent" || Date.now() - (view.probe.lastAt || 0) > 180000 ? { state: "silent", since: view.probe.since || view.probe.lastAt } : view.probe;
-  $("hd").innerHTML = headerHtml({ live, probe }, { boardVersion: document.body.dataset.version || "", wake: failed ? { state: "red", reason: failed } : { state: "idle" } });
+  $("hd").innerHTML = headerHtml({ live, probe }, { boardVersion: document.body.dataset.version || "", wake: failed ? { state: "red", reason: failed } : view.wakeState });
   $("fetched").textContent = "fetched " + ageText(sinceRead) + " ago";
 
   const open = view.asks.filter((a) => !a.answered_at);

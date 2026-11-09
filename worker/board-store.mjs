@@ -1,6 +1,7 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
 import { askRefusal, cardWriteRefusal, evidenceRefusal, liveNow, ASK_PARTS } from "./board-rules.mjs";
+import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 
 export const PROBE_SILENT_MS = 3 * 60_000;
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -95,6 +96,51 @@ export async function ackShip(db, now, who, version) {
   return { ok: true, version };
 }
 
+// ---- The wake (row 4) -------------------------------------------------------------------------------------------------
+// "For Manager": the owner's messages and answers Manager has not read. Manager's typed read (takeInbox) takes them.
+const pendingForManager = async (db) => {
+  const m = await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE delivered_at IS NULL AND author = 'owner'").first();
+  const a = await db.prepare("SELECT COUNT(*) AS n FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL").first();
+  return m.n + a.n;
+};
+const wakeFacts = (w, askedAt) => ({ askedAt, batchId: w.batch_id, count: w.batch_count, batchAt: w.batch_at, takenAt: w.taken_at, lastSendAt: w.last_send_at ?? undefined, lastSendBatch: w.last_send_batch, lastSendOk: w.last_send_ok === null ? undefined : w.last_send_ok === 1, lastSendReason: w.last_send_reason ?? undefined, lastSendFix: w.last_send_fix ?? undefined });
+
+// The probe's 20-second ask: the heartbeat, and the answer to "anything for Manager?". Opens a batch when something is
+// pending and none is open; says whether to send now (once per batch, again at most every 5 minutes) and with which line.
+export async function wakeAsk(db, now) {
+  await db.prepare("UPDATE wake SET alive_at = ? WHERE id = 1").bind(now).run();
+  let w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
+  const n = await pendingForManager(db);
+  const open = w.batch_id && w.taken_at < w.batch_at;
+  if (n > 0 && !open) {
+    await db.prepare("UPDATE wake SET batch_id = ?, batch_count = ?, batch_at = ? WHERE id = 1").bind(`b-${now}`, n, now).run();
+  } else if (n > 0) await db.prepare("UPDATE wake SET batch_count = ? WHERE id = 1").bind(n).run();
+  w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
+  const facts = wakeFacts(w, now);
+  const status = wakeStatus(facts, now);
+  const tellOwner = shouldTellOwner(status, w.told_reason);
+  if (tellOwner) await db.prepare("UPDATE wake SET told_reason = ? WHERE id = 1").bind(status.reason).run();
+  return { send: n > 0 && shouldSend(facts, now), line: n > 0 ? nudgeLine(w.batch_count, w.batch_id) : null, batchId: n > 0 ? w.batch_id : null, count: n, status, tellOwner };
+}
+
+// The probe reports a finished send (its exit code and the CLI's text, classified). A good send clears the owner-told memory.
+export async function wakeResult(db, now, batchId, exit, text) {
+  const c = classifySend(exit, text);
+  await db.prepare("UPDATE wake SET last_send_at = ?, last_send_batch = ?, last_send_ok = ?, last_send_reason = ?, last_send_fix = ?, told_reason = CASE WHEN ? = 1 THEN NULL ELSE told_reason END WHERE id = 1")
+    .bind(now, String(batchId ?? "").slice(0, 40), c.ok ? 1 : 0, c.ok ? null : c.reason, c.ok ? null : c.fix, c.ok ? 1 : 0).run();
+  return { ok: true, send: c };
+}
+
+// Manager's typed read: returns what is for Manager as data and marks it taken (the batch closes, wake.seen_at moves).
+export async function takeInbox(db, now) {
+  const messages = (await db.prepare("SELECT id, thread_id, author, body, created_at FROM messages WHERE delivered_at IS NULL AND author = 'owner' ORDER BY created_at").all()).results;
+  const answers = (await db.prepare("SELECT id, num, title, answer, answered_at FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL ORDER BY answered_at").all()).results;
+  await db.prepare("UPDATE messages SET delivered_at = ? WHERE delivered_at IS NULL AND author = 'owner'").bind(now).run();
+  await db.prepare("UPDATE asks SET answer_taken_at = ? WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL").bind(now).run();
+  await db.prepare("UPDATE wake SET taken_at = ?, seen_at = ? WHERE id = 1").bind(now, now).run();
+  return { ok: true, messages, answers };
+}
+
 // Evidence: only the probe writes it; one lit phase per card.
 export async function writeEvidence(db, now, who, key, value, track) {
   const bad = evidenceRefusal(key, value, who, track);
@@ -120,6 +166,7 @@ export async function readView(db, now) {
   const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now);
   const content = { cards, asks, evidence, refusals, wake };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
-  const tag = (await sha256hex(JSON.stringify([content, probe.state]))).slice(0, 16);
-  return { tag, now, live, probe, ...content };
+  const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now);
+  const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);
+  return { tag, now, live, probe, wakeState, ...content };
 }
