@@ -97,6 +97,10 @@ export function compatView(view) {
     ideas: (view.lists ?? []).filter((l) => l.kind === "idea").map(listDoc),
     derived: [derivedDoc(view)],
   };
+  // The old board's done cards (the one-time import's side table), as done initiatives: the page's medians and its Done list read them.
+  // A store card of the same id wins.
+  const own = new Set((view.cards ?? []).map((c) => c.id));
+  for (const h of view.historyCards ?? []) if (!own.has(h.id)) collections.initiatives.push(prune({ id: h.id, name: h.title, num: h.num, size: h.size, level: h.review_level, status: "done", createdAt: h.created_at, doneAt: h.done_at }));
   // The phase history as the old step log's shape (B3b): the page's own code reads who, times, ETAs and medians from it.
   if ((view.history ?? []).length) collections.steps = view.history.map((h) => prune({ id: `h${h.id}`, init: h.card_id, phase: h.phase, kind: h.kind, at: h.at, who: h.who }));
   if (view.live?.state === "live") collections.meta = [{ id: "live", version: String(view.live.version).replace(/^v/, ""), at: view.now - (view.live.age ?? 0) }];

@@ -220,7 +220,8 @@ export async function readView(db, now) {
   const probe = last && now - last <= PROBE_SILENT_MS ? { state: "ok", lastAt: last } : { state: "silent", since: last || null };
   const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now);
   const history = await all("SELECT id, card_id, phase, kind, at, who FROM phase_history ORDER BY at, id");
-  const content = { cards, asks, lists, evidence, refusals, wake, history };
+  const historyCards = await all("SELECT id, num, title, size, review_level, created_at, done_at FROM history_cards ORDER BY done_at");
+  const content = { cards, asks, lists, evidence, refusals, wake, history, historyCards };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
   const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now);
   const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);
