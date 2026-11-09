@@ -1,0 +1,1 @@
+PASS Full: #C726 hooks v4 at b51cda6, on 11d74cb. Worker code is the same as my signed d2617ac. New: hook tests for Security's two unguarded hooks and an import guard that refuses an empty --todo folder. Suite 1715/1715. Mutation: drop the empty --todo guard fails 1 test.
