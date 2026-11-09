@@ -1,0 +1,89 @@
+// Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
+// logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
+import { askRefusal, cardWriteRefusal, evidenceRefusal, liveNow, ASK_PARTS } from "./board-rules.mjs";
+
+const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+// The store mints #C and #T numbers: one atomic statement, never a read-then-write.
+export async function mint(db, name) {
+  const r = await db.prepare("UPDATE counters SET next = next + 1 WHERE name = ? RETURNING next - 1 AS n").bind(name).first();
+  return r.n;
+}
+
+async function refuse(db, now, refusal, cardId, who) {
+  await db.prepare("INSERT INTO refusals (at, rule, card_id, who, detail) VALUES (?, ?, ?, ?, ?)").bind(now, refusal.rule, cardId ?? null, who ?? null, String(refusal.detail ?? "").slice(0, 300)).run();
+  return { ok: false, refused: refusal };
+}
+
+const evidenceOf = async (db, key) => {
+  const r = await db.prepare("SELECT value FROM evidence WHERE key = ?").bind(key).first();
+  try { return r ? JSON.parse(r.value) : null; } catch { return null; }
+};
+
+const COLUMNS = ["title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason"];
+const bool = (v) => (v === true ? 1 : v === false ? 0 : v);
+
+// A new card: words only. The id is the caller's, the number the store's.
+export async function createCard(db, now, who, fields) {
+  const bad = cardWriteRefusal(fields, null);
+  if (bad) return refuse(db, now, bad, fields?.id, who);
+  if (typeof fields.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(fields.id)) return refuse(db, now, { rule: "card-id", detail: "lowercase letters, digits, hyphens" }, fields.id, who);
+  if (typeof fields.title !== "string" || !fields.title.trim()) return refuse(db, now, { rule: "card-shape", detail: "title is required" }, fields.id, who);
+  if (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(fields.id).first()) return refuse(db, now, { rule: "card-exists", detail: fields.id }, fields.id, who);
+  const num = await mint(db, "C");
+  const row = COLUMNS.map((c) => (c in fields ? bool(fields[c]) : null) ?? defaultFor(c));
+  await db.prepare(`INSERT INTO cards (id, num, ${COLUMNS.join(", ")}, created_at, updated_at) VALUES (?, ?, ${COLUMNS.map(() => "?").join(", ")}, ?, ?)`)
+    .bind(fields.id, num, ...row, now, now).run();
+  return { ok: true, id: fields.id, num };
+}
+const defaultFor = (c) => (c === "summary" ? "" : c === "track" ? "product" : c === "paused" || c === "dropped" ? 0 : null);
+
+// Card words changed later: checked against the probe's reading of this card (a typed word cannot contradict it).
+export async function updateCard(db, now, who, fields) {
+  const id = fields?.id;
+  const card = typeof id === "string" ? await db.prepare("SELECT id FROM cards WHERE id = ?").bind(id).first() : null;
+  if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
+  const bad = cardWriteRefusal(fields, await evidenceOf(db, `cards.${id}`));
+  if (bad) return refuse(db, now, bad, id, who);
+  const keys = COLUMNS.filter((c) => c in fields);
+  if (!keys.length) return { ok: true, id, changed: 0 };
+  await db.prepare(`UPDATE cards SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`).bind(...keys.map((k) => bool(fields[k])), now, id).run();
+  return { ok: true, id, changed: keys.length };
+}
+
+// An ask of one of the eight types. The parts of the type go in body as JSON; the store mints the #T number.
+export async function createAsk(db, now, ask) {
+  const bad = askRefusal(ask, now);
+  if (bad) return refuse(db, now, bad, ask?.card_id, ask?.asked_by);
+  if (ask.card_id && !(await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(ask.card_id).first())) return refuse(db, now, { rule: "card-unknown", detail: ask.card_id }, ask.card_id, ask.asked_by);
+  const num = await mint(db, "T");
+  const body = {};
+  for (const k of [...ASK_PARTS[ask.type], "screenshots"]) if (ask[k] !== undefined) body[k] = ask[k];
+  const id = `t${num}`;
+  await db.prepare("INSERT INTO asks (id, num, type, title, asked_by, card_id, body, eta_at, eta_precondition, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, num, ask.type, ask.title, ask.asked_by, ask.card_id ?? null, JSON.stringify(body), ask.eta_at ?? null, ask.eta_precondition ?? null, now).run();
+  return { ok: true, id, num };
+}
+
+// Evidence: only the probe writes it; one lit phase per card.
+export async function writeEvidence(db, now, who, key, value, track) {
+  const bad = evidenceRefusal(key, value, who, track);
+  if (bad) return refuse(db, now, bad, key.startsWith?.("cards.") ? key.slice(6) : null, who);
+  await db.prepare("INSERT INTO evidence (key, value, read_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, read_at = excluded.read_at").bind(key, JSON.stringify(value), now).run();
+  return { ok: true };
+}
+
+// The one JSON view the page polls: everything it shows with its source and age, and a version tag (ETag) over the content
+// that changes only when something the page shows changes (ages are computed by the page from at/readAt, not stored here).
+export async function readView(db, now) {
+  const all = async (sql) => (await db.prepare(sql).all()).results;
+  const cards = await all("SELECT * FROM cards ORDER BY num");
+  const asks = await all("SELECT * FROM asks ORDER BY num");
+  const evidence = Object.fromEntries((await all("SELECT key, value, read_at FROM evidence ORDER BY key")).map((e) => [e.key, { value: JSON.parse(e.value), readAt: e.read_at }]));
+  const refusals = await all("SELECT at, rule, card_id, who, detail FROM refusals ORDER BY id DESC LIMIT 20");
+  const wake = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
+  const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now);
+  const content = { cards, asks, evidence, refusals, wake };
+  const tag = (await sha256hex(JSON.stringify(content))).slice(0, 16);
+  return { tag, now, live, ...content };
+}
