@@ -1,0 +1,1 @@
+PASS Full: #C725 probe fix v6, supersedes v3 3137eb12. Code same as v3 apart from the comment, plus three tests and a DECISIONS entry. Probe tests 112/112. Security's three mutations each caught when run alone: line anchor, the no-tip guard, the 40-hex sha check.
