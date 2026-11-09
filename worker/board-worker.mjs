@@ -10,6 +10,7 @@ import { compatView } from "./compat-view.mjs";
 import { routeWrite } from "./compat-write.mjs";
 import { COMPAT_SHIM } from "./compat-shim.mjs";
 import { FILE_TYPES, putFile, fileResponse } from "./file-store.mjs";
+import { writeUsageDay } from "./compat-usage.mjs";
 import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -272,6 +273,14 @@ export default {
       let b;
       try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
       const r = await writeEvidence(env.DB, now, "probe", b?.key, b?.value, b?.track);
+      return json(r.ok ? 200 : 422, r);
+    }
+    // A day's runner and automation minutes and Actions cost (#C726 C3), probe only: the usage collection's rows.
+    if (url.pathname === "/api/probe/usage" && request.method === "POST") {
+      if (auth.role !== "probe") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await writeUsageDay(env.DB, now, b, refuse);
       return json(r.ok ? 200 : 422, r);
     }
     // The wake, probe only: the 20-second ask (heartbeat + "anything for Manager?") and the report of a finished send.
