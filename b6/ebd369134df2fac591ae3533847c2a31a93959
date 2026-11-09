@@ -1,0 +1,1 @@
+PASS Quick: #C716 deleted-branch-signs rebased onto main 2586fad. Same patch as the signed a68557a: range-diff shows only CHANGELOG context, the tips differ only by #C711 already on main. Suite 1472/1472 at this commit. Checker
