@@ -62,6 +62,15 @@ test("evidence job: one lit phase per read card, plus agents, ctx and board; no 
   assert.equal(w[0].value.onMain, false);
 });
 
+test("evidence job also writes stuck and ship when the state has them (#C723 B3a), and nothing for a state without", () => {
+  const stuck = { Builder: { kind: "step", card: "card-a", since: 5 } }, ship = { version: null, ci: "running", at: 5 };
+  const w = evidenceWrites({ ...state, stuck, ship }, "evidence");
+  assert.deepEqual(w.map((x) => x.key), ["cards.card-a", "agents", "ctx", "board", "stuck", "ship"]);
+  assert.deepEqual(w.find((x) => x.key === "ship").value, ship);
+  assert.deepEqual(evidenceWrites(state, "evidence").map((x) => x.key), ["cards.card-a", "agents", "ctx", "board"]);
+  assert.ok(!evidenceWrites({ ...state, stuck, ship }, "usage").some((x) => x.key === "stuck" || x.key === "ship"), "the usage job writes only usage");
+});
+
 test("usage job writes only usage, and nothing when there is no tile", () => {
   assert.deepEqual(evidenceWrites(state, "usage"), [{ key: "usage", value: { weekPct: 12 } }]);
   assert.deepEqual(evidenceWrites({ ...state, usage: undefined }, "usage"), []);

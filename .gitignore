@@ -1,4 +1,6 @@
 dist/
+worker/store-assets/*
+!worker/store-assets/.assetsignore
 node_modules/
 board.config.json
 *.local.*

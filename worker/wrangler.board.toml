@@ -13,5 +13,15 @@ database_name = "flight-board-store"
 database_id = "5142af62-65b4-4f57-8078-ac83d7214251"
 migrations_dir = "migrations"
 
+# The old board page and its fonts (#C723), built by `node scripts/build-store-page.mjs <board.config.json>` into
+# worker/store-assets/ (git-ignored but for its .assetsignore, so the folder exists in every checkout and a deploy without
+# the page still works: /board then says "not built"). Every request runs the Worker first, so the page and the fonts are
+# served only after its Access check, never straight from the assets. Paths are exact (no /board.html -> /board redirect).
+[assets]
+directory = "store-assets"
+binding = "ASSETS"
+run_worker_first = true
+html_handling = "none"
+
 [vars]
 BOARD_VERSION = ""

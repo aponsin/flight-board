@@ -1,6 +1,6 @@
 <title>{{TITLE}}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<!--FONTS--><link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap"><!--END_FONTS-->
 <style>
 /* Layout: a departures board. Waiting-on-you strip first, then one row per initiative with a phase track and its ETA, then the shipped feed and the usage overview. */
 :root{
@@ -618,7 +618,7 @@ table.crew3-ph{margin-top:14px}
 
 <div class="cbub" id="cbub" role="tooltip" hidden></div>
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot">
-  <div class="lb-inner"><div class="lb-bar"><span id="lb-cap"></span><span class="lb-btns"><button type="button" id="lb-prev" onclick="stepShot(-1)" aria-label="Previous picture">‹ Prev</button><button type="button" id="lb-next" onclick="stepShot(1)" aria-label="Next picture">Next ›</button><button type="button" id="lb-out" onclick="zoomBy(1/1.5)" aria-label="Zoom out">−</button><button type="button" id="lb-in" onclick="zoomBy(1.5)" aria-label="Zoom in">+</button><button type="button" id="lb-close" onclick="closeShot()">Close</button></span></div>
+  <div class="lb-inner"><div class="lb-bar"><span id="lb-cap"></span><span class="lb-btns"><button type="button" id="lb-prev" aria-label="Previous picture">‹ Prev</button><button type="button" id="lb-next" aria-label="Next picture">Next ›</button><button type="button" id="lb-out" aria-label="Zoom out">−</button><button type="button" id="lb-in" aria-label="Zoom in">+</button><button type="button" id="lb-close">Close</button></span></div>
   <div class="lb-scroll" id="lb-scroll"><img id="lb-img" alt=""></div></div>
 </div>
 <script>
@@ -626,6 +626,9 @@ document.getElementById("lightbox").addEventListener("click",e=>{if(e.target.id=
 // Everything particular to one team is board.config.json, injected here by scripts/build-page.mjs (see the README).
 const CONFIG=/*BOARD_CONFIG*/{"title":"Flight Board","owner":"Owner","phases":[["plan","Plan"],["build","Build"],["test","Test"],["language","Language"],["checker","Checker"],["security","Security"],["ship","Ship"],["live","Live"]],"roster":["Manager","Builder","Checker","Security","Release"],"order":["Manager","Builder","Checker","Security","Release"],"skips":[{"phase":"security","unlessLevel":"Full"},{"phase":"language","whenFalse":"customerText"}],"boardStart":"","usageNote":"Runner and automation minutes come from the job-run times the scheduler reports.","runnerLabel":"Runners","automationLabel":"Automation","nudges":{"etaHours":{"XS":1,"S":1.5,"M":3.5,"L":6}},"decisions":{"lookWords":["mock-up","mockup","screenshot","layout","band","icon","colour","color","font","spacing","px","hero","banner","logo","photo","button","text size"],"visualLanes":[],"offBoard":["Manager chat","in chat","see chat","in the chat"]}}/*END_CONFIG*/;
 const OWNER=String(CONFIG.owner||"Owner");
+// Served by the store Worker (#C723 A4; scripts/build-store-page.mjs marks <html data-host="store">), the page leaves out
+// what the owner agreed is gone (docs/DATA.md "Deleted"; docs/PARITY.md lists each line). The artifact page shows all of it.
+const STORE=(()=>{try{return document.documentElement.getAttribute("data-host")==="store"}catch(e){return false}})();
 const PHASES=CONFIG.phases;
 // The phase work is built in, as the collector names it (collector.buildPhase).
 const BUILD_PHASE=(CONFIG.collector&&CONFIG.collector.buildPhase)||"build";
@@ -694,7 +697,7 @@ const typeCopy=(w,s)=>{const t=w&&w.rearm===true&&!(s&&s.cmd)?typeLine(typeof s=
 function askHtml(w,open,at=w.since,sub="",qn=null){const steps=Array.isArray(w.steps)?w.steps:[];
    const nk=askNeed(w);
    const head=`<span class="kind ${esc(nk)}">${qn?qn+". ":""}${esc(ASKLABEL[nk]||nk||"Ask")}</span>
-   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${pingHtml(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
+   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${pingHtml(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${!STORE&&waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
    <span class="age">${num(at)?dur(Date.now()-at)+'<span class="ago"> ago</span>':""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
@@ -771,7 +774,7 @@ function prRows(prs,apps){
   const n=r=>Number(String(r.p.id).slice(2));
   return {need:need.sort((x,y)=>n(x)-n(y)),approved:approved.sort((x,y)=>n(x)-n(y))}}
 function renderAgentPrs(now=Date.now()){
-  const el=$("agentprs");if(!el)return;
+  const el=$("agentprs");if(!el)return;if(STORE){el.hidden=true;return}
   const {need,approved}=prRows(state.agentPrs,state.approvals);
   if(!need.length&&!approved.length){el.hidden=true;el.innerHTML="";return}
   const h7=s=>esc(String(s).slice(0,7)),link=p=>PR_URL.test(String(p.url||""))?p.url:null;
@@ -999,6 +1002,8 @@ function zoomTo(z,cx,cy){const sc=$("lb-scroll"),img=$("lb-img");z=Math.min(5,Ma
   if(z===1){img.style.width="";img.classList.remove("zoomed")}else{img.classList.add("zoomed");img.style.width=Math.round(lbBase*z)+"px"}
   sc.scrollLeft=fx*img.offsetWidth-px;sc.scrollTop=fy*img.offsetHeight-py}
 function zoomBy(f,cx,cy){zoomTo(lbZ*f,cx,cy)}
+// The lightbox's buttons, by listener: no inline handlers, so the page runs under a nonce-only script policy (#C723).
+[["lb-prev",()=>stepShot(-1)],["lb-next",()=>stepShot(1)],["lb-out",()=>zoomBy(1/1.5)],["lb-in",()=>zoomBy(1.5)],["lb-close",()=>closeShot()]].forEach(([id,f])=>$(id).addEventListener("click",f));
 (()=>{const sc=$("lb-scroll"),d=(a,b)=>Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
   sc.addEventListener("touchstart",e=>{if(e.touches.length===2){const[a,b]=e.touches;lbPinch={d:d(a,b),z:lbZ}}},{passive:true});
   sc.addEventListener("touchmove",e=>{if(e.touches.length===2&&lbPinch){e.preventDefault();const[a,b]=e.touches;zoomTo(lbPinch.z*d(a,b)/lbPinch.d,(a.clientX+b.clientX)/2,(a.clientY+b.clientY)/2)}},{passive:false});
@@ -1112,7 +1117,7 @@ async function sendPing(anchor,text,ref){let opening=false;
 const THREADS_NEAR=900;let threadsFull=null;
 function threadsCount(){const m=(state.meta||[]).find(d=>d&&d.id==="commentThreads");if(!m||!Number.isInteger(m.count)||num(m.at)==null)return null;
   return m.count+(state.pingThreads||[]).filter(d=>d&&num(d.at)!=null&&d.at>m.at).length}
-function renderThreadsFull(){const el=$("threadsfull");if(!el)return;const n=threadsCount(),near=n!=null&&n>=THREADS_NEAR;
+function renderThreadsFull(){const el=$("threadsfull");if(!el)return;if(STORE){el.hidden=true;return}const n=threadsCount(),near=n!=null&&n>=THREADS_NEAR;
   el.hidden=!threadsFull&&!near;el.classList.toggle("amber",!threadsFull&&near);
   el.textContent=threadsFull?"The board's comment threads are full: Send to Claude can't open a new one, so pings and new threads aren't reaching Manager. Delete old resolved threads in the board's comment panel (the board reads nothing from them).":near?`The board's comment threads are nearly full (${n} of about 1,000): delete old resolved ones in the board's comment panel before sends stop.`:""}
 function pingText(w,id,r){
@@ -1122,8 +1127,9 @@ function pingText(w,id,r){
   return `Board reply [${id}]: ${what} on "${w.text||id}".${r.note?" Note: "+r.note:""}${files}`.slice(0,1900)}
 function replyBox(w){
   const r=w.response;
-  if(r&&r.status){const lbl=r.status==="ack"?"You acknowledged this":r.status==="done"?"You marked this done":r.status==="chose"?"You chose "+(r.choice||""):r.status==="ok"?"You said OK":r.status==="change"?"You asked for changes":"You asked for help";
-    return `<div class="reply sent ${r.status}">${lbl}${num(r.at)?" "+dur(Date.now()-r.at)+" ago":""}${r.note?`: “${esc(r.note)}”`:""}.${sentFiles(r)} ${r.status==="ack"&&!r.note?"":w.ping==="sent"?"Sent to Manager.":w.ping?`Not sent to Manager (${esc(w.ping)}); it picks it up at its next check.`:"Sending to Manager…"}</div>`}
+  if(r&&r.status){const lbl=r.status==="ack"?"You acknowledged this":r.status==="done"?"You marked this done":r.status==="chose"?"You chose "+esc(r.choice||""):r.status==="ok"?"You said OK":r.status==="change"?"You asked for changes":"You asked for help";
+    // The choice is an option's words (an agent's), and the status names a class: escaped, and only a known one (#C723).
+    return `<div class="reply sent ${["ack","done","chose","ok","change","help"].includes(r.status)?r.status:"help"}">${lbl}${num(r.at)?" "+dur(Date.now()-r.at)+" ago":""}${r.note?`: “${esc(r.note)}”`:""}.${sentFiles(r)} ${r.status==="ack"&&!r.note?"":w.ping==="sent"?"Sent to Manager.":w.ping?`Not sent to Manager (${esc(w.ping)}); it picks it up at its next check.`:"Sending to Manager…"}</div>`}
   // The owner's A (#C368, #T980): the choices as chips above the compact box; the box keeps its own Send, which sends the
   // note as the "with a note" outcome: Something else (a decision), Change something (an approval), Something went
   // wrong (an action), or a follow-up (an answer, whose Ack is its choice).
@@ -1226,7 +1232,7 @@ function derivedOf(id){const all=state.derived.find(d=>d.id==="all"),d=all&&all.
 // line under the card's name row, and hides them on a second press.
 const phaseLabel=k=>(PHASES.find(p=>p[0]===k)||[k,k])[1];
 // What disagrees with the card's source, as words ([] when nothing does).
-function evidenceOff(i,d){if(!d||!d.phase)return [];
+function evidenceOff(i,d){if(STORE||!d||!d.phase)return [];
   // Shown by the evidence: a step phase that disagrees is the clash. Shown by the steps: the repository's word is.
   const clash=i.status!=="done"&&(i.byEvidence?i.stepPhase&&i.stepPhase!==d.phase:i.phase&&i.phase!==d.phase);
   const typed=Array.isArray(i.typed)?i.typed:[],typedPhase=(typed.find(k=>k.field==="phase")||{}).typed;
@@ -1300,7 +1306,7 @@ function deafLine(now=Date.now()){const lead=(CONFIG.gate&&CONFIG.gate.managerRo
   return `<div class="deaf">You wrote, and ${esc(lead)} has said nothing for ${Math.floor((now-oldest)/60000)} min: its board pings may be off, and only you can turn them back on. You: send ${esc(lead)} this.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}
 // The keeper line (#C407): the owner's keeper paste didn't save and nothing said so. The Collector says only whether the
 // task's saved prompt matches the installed one (derived/all.keeper.ok); the command comes from this page's own config.
-function keeperLine(){const all=state.derived.find(d=>d.id==="all"),k=all&&all.keeper,p=CONFIG.collector&&CONFIG.collector.keeper;
+function keeperLine(){if(STORE)return "";const all=state.derived.find(d=>d.id==="all"),k=all&&all.keeper,p=CONFIG.collector&&CONFIG.collector.keeper;
   if(!k||k.ok!==false||!p||!p.prompt||!/^~?[A-Za-z0-9._\/-]+$/.test(p.prompt))return "";
   const file=p.prompt.split("/").pop(),task=String(p.skill||"").split("/").slice(-2,-1)[0]||"context keeper",cmd=`pbcopy < ${p.prompt}`;
   return `<div class="deaf">The context keeper's saved prompt isn't the one your install shipped: its last paste didn't save. You: copy ${esc(file)} with this in a terminal, paste it into the ${esc(task)} task's prompt and Save.<div class="cmd"><code>${esc(cmd)}</code><button type="button" class="copy" data-copy="${esc(cmd)}">Copy</button></div></div>`}
@@ -1870,7 +1876,7 @@ function collectorNext(now){const all=state.derived.find(x=>x.id==="all"),last=n
 // the Collector's next run (checkRequests), which the lead is told of. While the live state drives the card its source
 // line already says how old it is, so the check line is left out there.
 const checkPressed=new Set();
-const checkable=(i,now)=>i.status!=="done"&&i.status!=="dropped";
+const checkable=(i,now)=>!STORE&&i.status!=="done"&&i.status!=="dropped";
 // The card's #C label is the button (#C376, the owner in t-1793166475210: a separate pill wrapped onto its own line);
 // a card with no number yet keeps the pill. Once done, the label is plain text.
 const checkLabel=i=>`Check ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} now: read the live state again, and have the Collector check it at its next run`;
@@ -2074,7 +2080,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track">${steps}</div>`}
-   <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div>${thread}</div>`;
+   <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div>${thread}</div>`;
 }
 // The card rules' red lines (#C662, gate/card-rules.mjs): the probe writes them into derived/all for an open card that breaks one
 // (queued with a step of its own, past build with no build end step, on ship with nothing on main, a field outside its list),
@@ -2237,7 +2243,7 @@ function liveText(){const all=state.derived.find(d=>d.id==="all"),l=all&&all.liv
     return "Live now: v"+lv+(ahead?" · deploying v"+l.mainVersion:"")}
   if(lv&&mv){const mn=mv.replace(/^v/,""),ahead=typeof l.mainVersion==="string"&&verCmp(l.mainVersion,mn)>0;
     return "Live now: v"+mn+(ahead?" · deploying v"+l.mainVersion:"")}
-  const gap=liveGap(m,state.events);return m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
+  const gap=!STORE&&liveGap(m,state.events);return m&&m.version?"Live now: "+m.version+(gap?"  ⚠ Manager missed: "+gap:""):""}
 function renderLive(){$("livever").textContent=liveText()}
 // The last 7 days from every card's phaseLog, summed by "who" (the agent) or "phase": { key: { work, busy, gate } } in ms.
 function logTotals(key,now=Date.now()){
@@ -2267,7 +2273,7 @@ function listOpen(c){return (state[c]||[]).filter(t=>!t.done&&t.text).sort((a,b)
 // While a search is on the arrows are off (Designer on f1c9f73: they would move a row past rows the owner can't see).
 function renderList(c){const L=LISTS[c],q=qOf(c),all=listOpen(c),list=all.filter(t=>listHit(t,q)),off=isOn(q)?' disabled title="Clear the search to reorder"':"";
   $(c+"list").innerHTML=list.length?list.map(t=>{const n=all.indexOf(t);return `<div class="td-row"><span class="td-n">${n+1}</span><div class="w-text">${t.kind&&IKIND[t.kind]?`<span class="ik ${esc(t.kind)}">${IKIND[t.kind]}</span> `:""}${esc(t.text)}${t.area||t.note?`<div class="w-sub">${esc([t.area,t.note].filter(Boolean).join(" · "))}</div>`:""}</div>
-    <span class="td-btns"><button type="button" data-td="up" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move up"${off||!n?off||" disabled":""}>▲</button><button type="button" data-td="down" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move down"${off||n>=all.length-1?off||" disabled":""}>▼</button>${c==="ideas"?(t.startAt?`<span class="w-sub" style="align-self:center">Sent to Manager</span>`:`<button type="button" class="td-start" data-td="start" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Let's start this">Let's start</button>`):""}<button type="button" class="td-done" data-td="done" data-coll="${c}" data-id="${esc(t.id)}" aria-label="${L.close}">${L.close}</button></span></div>`}).join(""):isOn(q)?NO_MATCH:`<div class="empty">${L.empty}</div>`;
+    <span class="td-btns"><button type="button" data-td="up" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move up"${off||!n?off||" disabled":""}>▲</button><button type="button" data-td="down" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Move down"${off||n>=all.length-1?off||" disabled":""}>▼</button>${c==="ideas"&&!STORE?(t.startAt?`<span class="w-sub" style="align-self:center">Sent to Manager</span>`:`<button type="button" class="td-start" data-td="start" data-coll="${c}" data-id="${esc(t.id)}" aria-label="Let's start this">Let's start</button>`):""}<button type="button" class="td-done" data-td="done" data-coll="${c}" data-id="${esc(t.id)}" aria-label="${L.close}">${L.close}</button></span></div>`}).join(""):isOn(q)?NO_MATCH:`<div class="empty">${L.empty}</div>`;
 }
 function renderTodo(){renderList("todo");renderList("ideas")}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-td]");if(!b||!dbRef)return;const c=b.dataset.coll;if(!LISTS[c])return;
@@ -2343,9 +2349,9 @@ function ctxTileHtml(n,t,req,now){const L=ctxLevel(t)||ctxLevel({pct:0}),c=L.c;
   // An old tile says why it is faded (its age), and its Refresh stays at full strength (Designer on f8d3e56).
   const st=waiting?"waking…":noAnswer?`${n} didn't answer`:asked?`no new reading: ${n}'s session isn't running`:old?`${dur(now-t.at)} old`:"";
   // ↻ alone, as on cards (#C355, #C361); the label says what it does.
-  const ref=old&&!waiting?` <button type="button" class="ctx-ref" data-ctxref="${esc(n)}" aria-label="Refresh ${esc(n)}'s reading" title="Refresh ${esc(n)}'s reading">↻</button>`:"";
+  const ref=!STORE&&old&&!waiting?` <button type="button" class="ctx-ref" data-ctxref="${esc(n)}" aria-label="Refresh ${esc(n)}'s reading" title="Refresh ${esc(n)}'s reading">↻</button>`:"";
   const sv=clearMe(t);
-  return `<div class="ctx-t ${c}${sv?" saved":""}${old?" stale":""}" title="${esc(n)}: ${esc(L.tip)}${num(t.at)?", read "+dur(now-t.at)+" ago":""}${sv?"; saved, ready to clear":""}"><span class="nm">${esc(n)}<span class="pc">${esc(L.txt)}</span></span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${sv?'<span class="sv">/clear me</span>':""}${st?`<span class="ctx-line"><span class="ctx-st">${esc(st)}</span>${ref}</span>`:""}</div>`}
+  return `<div class="ctx-t ${c}${sv?" saved":""}${old?" stale":""}" title="${esc(n)}: ${esc(L.tip)}${num(t.at)?", read "+dur(now-t.at)+" ago":""}${sv?"; saved, ready to clear":""}"><span class="nm">${esc(n)}<span class="pc">${esc(L.txt)}</span></span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${sv&&!STORE?'<span class="sv">/clear me</span>':""}${st?`<span class="ctx-line"><span class="ctx-st">${esc(st)}</span>${ref}</span>`:""}</div>`}
 function ctxRefreshWrites(n,now){return /^[A-Za-z0-9_-]{1,60}$/.test(String(n))?[{op:"set",path:`ctxRequests/${n}`,data:{at:now}}]:[]}
 const ctxPingText=n=>`Board: refresh ${n}'s memory tile (wake ${n}, then run board-collector)`;
 document.addEventListener("click",async e=>{const r=e.target.closest&&e.target.closest("[data-ctxref]");if(!r||!dbRef)return;
@@ -2578,7 +2584,7 @@ function crewHtml(now=Date.now()){
     const {items,note}=agentOn(n,(by[n]||[]).slice().sort(openOrder),notes[n],now);
     const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1];return `<span>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(note)}</span>`;
     return `<div class="panel crew3-t" data-agent="${esc(n)}"><h3><span>${esc(n)}</span>${md.model||md.effort?`<span class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</span>`:""}${liveAgent(n,now)&&probe.agents[n].by==="title"?'<span class="mdl" title="No session id for this role in the config: its agent is the newest session with this title">found by title</span>':""}</h3>`+
-      (L?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${esc(L.txt)}</span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${clearMe(m)?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
+      (L?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${esc(L.txt)}</span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${clearMe(m)&&!STORE?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
       `<div class="crew3-on">${on}</div></div>`}).join("");
   const tot=logTotals("phase",now),fmt=ms=>ms?dur(ms):"—";
   const rows=PHASES.filter(([k])=>tot[k]).map(([k,label])=>`<tr><td>${esc(label)}</td><td>${fmt(tot[k].work)}</td><td>${fmt(tot[k].busy)}</td><td>${fmt(tot[k].gate)}</td></tr>`).join("");
@@ -2770,7 +2776,7 @@ const dbHeld=()=>Math.max(dbSynced||0,dbNewest)||null;
 // A collection's docs arrived: the newest `at` the page holds (none past a minute ahead of this clock), and when.
 function received(docs,now=Date.now()){docs.forEach(d=>{if(isT(d.at)&&d.at<=now+60e3&&d.at>dbNewest)dbNewest=d.at});dbSynced=now}
 const liveWriteAt=(now=Date.now())=>liveOn(now)&&isT(probe.board.lastWriteAt)?probe.board.lastWriteAt:null;
-function dataBehind(now=Date.now()){const w=liveWriteAt(now);return w!=null&&w>(dbHeld()||0)+DATA_SLACK&&now-w>DATA_BEHIND}
+function dataBehind(now=Date.now()){if(STORE)return false;const w=liveWriteAt(now);return w!=null&&w>(dbHeld()||0)+DATA_SLACK&&now-w>DATA_BEHIND}
 const ageText=ms=>{const s=Math.max(0,Math.round(ms/1e3));return s<60?s+" s":dur(s*1e3)};
 // The header stamp: which source the board reads, and how old it is; while live, the data's age beside it, never the
 // live age alone (#C452).
@@ -2872,8 +2878,12 @@ function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"
   if(liveOn()!==liveWas)renderSoon();else renderStamp()}
 $("viewlink").addEventListener("click",()=>setView(view==="v3"?"v2":"v3"));
 document.querySelectorAll("[data-v3]").forEach(b=>b.addEventListener("click",()=>setV3View(b.dataset.v3)));
+// The v3 layout and its Now / Plan / Crew views are gone on the store (#C723 A4): no link, and no saved choice or #v3 opens it.
+if(STORE){const v=$("viewlink");v.hidden=true;if(v.parentElement)v.parentElement.hidden=true}
+else{
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-v3view")}catch(e){}if(v==="plan"||v==="crew")setV3View(v)})();
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-view")}catch(e){}if(typeof location!=="undefined"&&location.hash==="#v3")v="v3";if(v==="v3")setView("v3")})();
+}
 setInterval(()=>{tick();if(!typingText()&&document.querySelector("[data-shipat]"))renderBoard()},15000);tick();renderAll();
 
 (async()=>{

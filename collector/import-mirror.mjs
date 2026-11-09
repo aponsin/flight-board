@@ -12,7 +12,7 @@
 //   node import-mirror.mjs --mirror <dir> --owner <name> --roster A,B,C --lead <role> [--expect ...] [--live-c N --live-t N] [--sql <out file>]
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { askRefusal, cardWriteRefusal, closeRefusal, listWriteRefusal } from "../worker/board-rules.mjs";
+import { askRefusal, cardWriteRefusal, closeRefusal, listWriteRefusal, PHASES } from "../worker/board-rules.mjs";
 
 const SIZES = ["XS", "S", "M", "L", "XL"], LEVELS = ["None", "Quick", "Full"];
 // The old board kept free text in phaseReason; the store's rework_reason is one of five words. Only those five carry over.
@@ -89,10 +89,16 @@ export function listRow(kind, id, d) {
 export function plan(docs, { owner = "", roster = [], lead = "", liveC = 0, liveT = 0 } = {}) {
   const byThread = {};
   for (const [id, m] of Object.entries(docs.messages ?? {})) (byThread[m.thread] ??= []).push({ ...m, _id: id });
-  const out = { cards: [], asks: [], messages: [], refused: [], notes: [], defaulted: 0, skipped: { doneCards: 0, doneAsks: 0, resolvedAsks: 0 }, counts: { needs: 0, later: 0, lead: 0 }, counters: { C: 1, T: 1 } };
+  const out = { historyCards: [], cards: [], asks: [], messages: [], refused: [], notes: [], defaulted: 0, skipped: { doneCards: 0, doneAsks: 0, resolvedAsks: 0 }, counts: { needs: 0, later: 0, lead: 0 }, counters: { C: 1, T: 1 } };
   const keep = new Set();
   for (const [id, d] of Object.entries(docs.initiatives ?? {})) {
-    if (d.status === "done") { out.skipped.doneCards++; continue; }
+    if (d.status === "done") {
+      out.skipped.doneCards++;
+      // Not a store card: a history row (title, size, level, times) so the old page's medians and Done list are not blank (#C723 B3b).
+      const doneAt = int(d.doneAt);
+      if (!d.dropped && str(d.name) && doneAt) out.historyCards.push({ id, num: int(d.num), title: d.name, size: SIZES.includes(d.size) ? d.size : null, review_level: LEVELS.includes(d.level) ? d.level : null, created_at: int(d.createdAt), done_at: doneAt });
+      continue;
+    }
     const r = cardRow(id, d);
     if (!r.ok) { out.refused.push({ kind: "card", id, rule: r.rule, detail: r.detail }); continue; }
     out.cards.push(r.row);
@@ -113,6 +119,16 @@ export function plan(docs, { owner = "", roster = [], lead = "", liveC = 0, live
     if (tid) keep.add(tid);
     if (d.kind === "later") out.counts.later++; else if (d.response) out.counts.lead++; else out.counts.needs++;
   }
+  // The phase history (#C723 B3b): the old step log of the cards carried over, once, as source=import rows. A done card is not carried
+  // over, so its steps are not either. A wait, an unknown kind, a time that is no time or a phase the store does not know is counted, not guessed.
+  out.history = []; out.skipped.steps = 0;
+  const carried = new Set([...out.cards, ...out.historyCards].map((c) => c.id));
+  for (const s of Object.values(docs.steps ?? {})) {
+    if (!carried.has(s?.init)) { out.skipped.steps++; continue; }
+    if ((s.kind !== "start" && s.kind !== "end") || s.wait || !PHASES.includes(s.phase) || !int(s.at)) { out.refused.push({ kind: "step", id: `${s.init}/${s.phase}`, rule: "step-shape" }); continue; }
+    out.history.push({ card_id: s.init, phase: s.phase, kind: s.kind, at: s.at, who: str(s.who), source: "import" });
+  }
+  out.history.sort((a, b) => a.at - b.at || a.card_id.localeCompare(b.card_id));
   for (const tid of keep) for (const m of byThread[tid] ?? []) {
     if (!str(m.from) || !str(m.text) || !int(m.at)) { out.refused.push({ kind: "message", id: m._id, rule: "message-shape" }); continue; }
     out.messages.push({ id: m._id, thread_id: tid, author: m.from, body: m.text, created_at: m.at, delivered_at: m.at });
@@ -177,7 +193,7 @@ const skipUpdate = (r) => `UPDATE cards SET customer_text = ${q(r.customer_text)
 // An ask the old board has since closed is closed in the store, once (closed_at stays as it is if the store already closed it).
 const closeUpdate = (c) => `UPDATE asks SET closed_at = ${q(c.at)}, closed_by = 'import' WHERE id = ${q(c.id)} AND closed_at IS NULL;`;
 export function toSql(p) {
-  return [...p.cards.map((r) => insert("cards", r)), ...p.cards.map(skipUpdate), ...p.asks.map((r) => insert("asks", r)), ...p.messages.map((r) => insert("messages", r)), ...(p.lists ?? []).map((r) => insert("lists", r)), ...(p.closures?.close ?? []).map(closeUpdate), ...(p.closures?.lists ?? []).map((c) => `UPDATE lists SET done = 1, done_at = ${q(c.at)} WHERE id = ${q(c.id)} AND done = 0;`),
+  return [...p.cards.map((r) => insert("cards", r)), ...p.cards.map(skipUpdate), ...p.asks.map((r) => insert("asks", r)), ...p.messages.map((r) => insert("messages", r)), ...(p.lists ?? []).map((r) => insert("lists", r)), ...(p.historyCards ?? []).map((r) => insert("history_cards", r)), ...(p.history ?? []).map((r) => insert("phase_history", r)), ...(p.closures?.close ?? []).map(closeUpdate), ...(p.closures?.lists ?? []).map((c) => `UPDATE lists SET done = 1, done_at = ${q(c.at)} WHERE id = ${q(c.id)} AND done = 0;`),
     `UPDATE counters SET next = MAX(next, ${p.counters.C}) WHERE name = 'C';`, `UPDATE counters SET next = MAX(next, ${p.counters.T}) WHERE name = 'T';`].join("\n");
 }
 
@@ -193,7 +209,7 @@ export function readMirror(dir, { todoDir } = {}) {
     docs[name] = {};
     for (const f of readdirSync(from)) if (f.endsWith(".json")) { try { docs[name][f.slice(0, -5)] = JSON.parse(readFileSync(join(from, f), "utf8")); } catch { /* skipped */ } }
   };
-  for (const c of ["initiatives", "threads", "messages", "waiting", "ideas"]) read(c, join(dir, c));
+  for (const c of ["initiatives", "threads", "messages", "waiting", "ideas", "steps"]) { try { read(c, join(dir, c)); } catch (e) { if (c !== "steps") throw e; docs.steps = {}; } }
   if (todoDir) read("todo", todoDir);
   return docs;
 }
@@ -201,7 +217,7 @@ export function readMirror(dir, { todoDir } = {}) {
 export function report(p, expect = {}) {
   const tally = {};
   for (const r of p.refused) { const k = `${r.kind}:${r.rule}`; tally[k] = (tally[k] ?? 0) + 1; }
-  return { cards: p.cards.length, asks: p.asks.length, messages: p.messages.length, skipped: p.skipped, counts: p.counts, refusedTally: tally, refused: p.refused.filter((r) => r.kind !== "message"), notes: p.notes, askedByDefaulted: p.defaulted, counters: p.counters, differences: compare(p.counts, expect), ...(p.closures ? { closures: p.closures, openAsksAfter: p.openAsksAfter, openAsksMatchOldBoard: p.openAsksAfter === p.asks.length } : {}), lists: (p.lists ?? []).length, unchecked: ["needs", "later", "lead", "todo", "ideas"].filter((k) => expect[k] === undefined) };
+  return { cards: p.cards.length, asks: p.asks.length, messages: p.messages.length, skipped: p.skipped, counts: p.counts, refusedTally: tally, refused: p.refused.filter((r) => r.kind !== "message"), notes: p.notes, askedByDefaulted: p.defaulted, counters: p.counters, differences: compare(p.counts, expect), ...(p.closures ? { closures: p.closures, openAsksAfter: p.openAsksAfter, openAsksMatchOldBoard: p.openAsksAfter === p.asks.length } : {}), lists: (p.lists ?? []).length, history: (p.history ?? []).length, historyCards: (p.historyCards ?? []).length, unchecked: ["needs", "later", "lead", "todo", "ideas"].filter((k) => expect[k] === undefined) };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

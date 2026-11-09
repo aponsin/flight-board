@@ -6,6 +6,9 @@
 //   POST /mcp               JSON-RPC: initialize, ping, tools/list, tools/call
 import { ASK_TYPES, ASK_PARTS, ROSTER_ROLES } from "./board-rules.mjs";
 import { pageHtml } from "./page.mjs";
+import { compatView } from "./compat-view.mjs";
+import { routeWrite } from "./compat-write.mjs";
+import { COMPAT_SHIM } from "./compat-shim.mjs";
 import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -30,6 +33,43 @@ export const TOOLS = [
   { name: "ack", description: "Acknowledge a ship by version.", inputSchema: obj({ version: str }, ["version"]), roles: ["owner"] },
 ];
 const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
+
+// The old board page (#C723, board parity A1), built by scripts/build-store-page.mjs into the Worker's static assets
+// (env.ASSETS: board.html and fonts/*.woff2, worker/store-assets/; html_handling "none", so each is fetched by its exact path). It is served here, behind the same Access check as everything else, never
+// straight from the assets. Its scripts and style elements run by a fresh nonce per response; nothing else may run, and images,
+// fonts and connections come only from this Worker. Style attributes may be inline: the page's own markup sets widths and colours
+// with them, and no script runs from one (Boardsmith's split).
+export const OLD_PAGE_PATH = "/board";
+const FONT_PATH = /^\/fonts\/([a-z0-9-]+\.woff2)$/;
+export const oldPageCsp = (nonce) => `default-src 'none'; script-src 'nonce-${nonce}'; style-src-elem 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`;
+// The page's script and style elements carry the nonce (the built page has one bare <script> and bare <style>s, and no inline
+// handlers), and the window.claude shim (Boardsmith's worker/compat-shim.mjs) runs just before the page's script, so the page's
+// data block finds window.claude reading /api/compat and writing /api/compat/write.
+export const withNonce = (html, nonce, shim = COMPAT_SHIM) => html
+  .replaceAll("<style>", `<style nonce="${nonce}">`)
+  .replace("<script>", () => `<script nonce="${nonce}">${shim}</script><script nonce="${nonce}">`)
+  .replaceAll("<script>", `<script nonce="${nonce}">`);
+function newNonce() {
+  const b = crypto.getRandomValues(new Uint8Array(18));
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_");
+}
+async function asset(env, url, path) {
+  if (!env.ASSETS) return null;
+  // No redirect is followed: an asset is its exact path or nothing.
+  const r = await env.ASSETS.fetch(new Request(new URL(path, url), { redirect: "manual" }));
+  return r.status === 200 ? r : null;
+}
+async function oldPage(env, url) {
+  const r = await asset(env, url, "/board.html");
+  if (!r) return new Response("The board page is not built: run scripts/build-store-page.mjs, then deploy.", { status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+  const nonce = newNonce();
+  return new Response(withNonce(await r.text(), nonce), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": oldPageCsp(nonce), "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "x-frame-options": "DENY" } });
+}
+async function font(env, url, file) {
+  const r = await asset(env, url, `/fonts/${file}`);
+  if (!r) return bare(404);
+  return new Response(r.body, { status: 200, headers: { "content-type": "font/woff2", "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff" } });
+}
 
 const bare = (status, headers = {}) => new Response(null, { status, headers });
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
@@ -166,6 +206,11 @@ export default {
       const origin = request.headers.get("origin"), site = request.headers.get("sec-fetch-site");
       if ((origin !== null && origin !== url.origin) || (site !== null && !["same-origin", "none"].includes(site))) return bare(403);
     }
+    // The page is for people and agents, as /api/compat is: the probe gets neither.
+    const fontFile = request.method === "GET" && FONT_PATH.exec(url.pathname);
+    if (((url.pathname === OLD_PAGE_PATH && request.method === "GET") || fontFile) && auth.role === "probe") return bare(403);
+    if (url.pathname === OLD_PAGE_PATH && request.method === "GET") return oldPage(env, url);
+    if (fontFile) return font(env, url, fontFile[1]);
     if (url.pathname === "/" && request.method === "GET") {
       return new Response(pageHtml({ version: env.BOARD_VERSION ?? "" }), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
     }
@@ -190,6 +235,22 @@ export default {
       const etag = `"${v.tag}"`;
       if (request.headers.get("if-none-match") === etag) return bare(304, { etag });
       return json(200, v, { etag, "cache-control": "no-store" });
+    }
+    // The old page's data (#C723 A2): the same store view in the old collection shapes. Read only; same ETag rule as /api/view.
+    if (url.pathname === "/api/compat" && request.method === "GET") {
+      if (auth.role === "probe") return bare(403);
+      const c = compatView(await readView(env.DB, now));
+      const etag = `"c-${c.tag}"`;
+      if (request.headers.get("if-none-match") === etag) return bare(304, { etag });
+      return json(200, c, { etag, "cache-control": "no-store" });
+    }
+    // The old page's writes (#C723 A3): one {op, path, data} per call, owner only, routed to the store's own functions.
+    if (url.pathname === "/api/compat/write" && request.method === "POST") {
+      if (auth.role !== "owner") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await routeWrite(env.DB, now, auth.who, b);
+      return json(r.ok ? 200 : 422, r.ok ? { ok: true } : r);
     }
     if (url.pathname === "/api/probe/evidence" && request.method === "POST") {
       if (auth.role !== "probe") return bare(403);
