@@ -2,6 +2,10 @@
 
 ## 0.3.4 - Unreleased
 
+### Fixed
+
+- #C725 (board parity, the probe, `collector/state.mjs`): a card whose branch was merged and deleted is read from the commit on main that carries its Board-Id trailer (`trailerHead`, as the Collector's `trailerOnMain` did), so the store's board shows it signed and live instead of stalled or queued, with its version for the shipped feed. Before, the probe had no head for such a card and the Collector's reading that stood in for it is not in the store (the board's #C722 and #C724 read stalled and queued although live). Same fixed-string search, last 400 commits of main. Tests: `tests/probe-trailer-fallback.test.mjs`.
+
 ### Added
 
 - #C725 B1 (board parity, stage B): threads and messages on the old page (`worker/compat-threads.mjs`, migration 0012). The view carries every message with its kind, resolved flag and files, and a `threads` collection of each thread's #T number and rename. The owner's writes: a reply, Ack and Close are messages (`messages/<id>`; the store keeps the owner under the author "owner", the shim turns it into the page's owner name and back); an unknown thread id starts a free thread with a #T number from the ask counter; `threads/<id>` renames (title only); a reply with `done:false` on a closed ask reopens it (`reopenAsk`), except an Approval, which is never reopened (refused as `approval-reopen`: it closes when its head is merged or replaced, and reopening would bring back an approval of a head the owner did not approve again). Files on a message are checked before it is stored and linked after it. The shim's `FILES_ON` is now true (Attach, paste and drop on). The same change refuses nothing new that an older route took. Not built: options on an agent's message (the column is stored, no tool writes it), and loading a resolved thread's history on open. Tests: `tests/compat-threads.test.mjs`, `tests/compat-shim.test.mjs`. `docs/DECISIONS.md` starts here.

@@ -494,11 +494,27 @@ function tipState(card, tip, repo, config, now, declared) {
   const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed });
   return { phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(ci ? { ci: ci.ci, ciMin: ci.ciMin } : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(shipping === null ? {} : { shipping }), seen };
 }
+// The newest commit on the repository's main line (its last 400) whose Board-Id trailer is exactly the card's id, as a head
+// { branch: main, sha, at, message }, or null. The id goes to git as a fixed string, never a pattern or an option.
+export function trailerHead(repo, id) {
+  let out = "";
+  try { out = repo.git(["log", "-400", "--fixed-strings", `--grep=Board-Id: ${id}`, "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${repo.main}`]); } catch { return null; }
+  for (const r of out.split("\x1e")) {
+    const [sha, at, message] = r.replace(/^\n/, "").split("\x1f");
+    const ids = [...String(message ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)].map((m) => m[1]);
+    if (/^[0-9a-f]{40}$/.test(sha ?? "") && ids.includes(id)) return { branch: repo.main, sha, at: Number(at) * 1000, message };
+  }
+  return null;
+}
 export function cardState(card, repo, config, now) {
   const declared = config.phases.some((p) => p[0] === card.phase) ? card.phase : null;
   const base = { num: Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? card.num : null, phase: declared, headSha12: null, signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: now };
   if (!repo) return base;
-  const tips = headsFor(card.id, repo.tips.filter((h) => h.branch !== repo.main), card.num);
+  let tips = headsFor(card.id, repo.tips.filter((h) => h.branch !== repo.main), card.num);
+  // #C725: a card whose branch is gone (merged, then deleted) is read from the commit on main that carries its Board-Id trailer,
+  // as the Collector did (collect.mjs trailerOnMain, #C281/#C716). Without it the probe has no head for a shipped card and the board
+  // shows it queued or stalled, because the store carries none of the Collector's readings.
+  if (!tips.length && typeof repo.git === "function") { const t = trailerHead(repo, card.id); if (t) tips = [t]; }
   const tip = tips[0];
   if (!tip) return base;
   const one = tipState(card, tip, repo, config, now, declared);
