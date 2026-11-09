@@ -10,6 +10,7 @@ import { STALE_AFTER_MS } from "./board-rules.mjs";
 import { applyFiles } from "./file-store.mjs";
 import { applyShips } from "./compat-ships.mjs";
 import { applyUsage } from "./compat-usage.mjs";
+import { applyApprovals } from "./compat-approvals.mjs";
 
 const num = (v) => (Number.isFinite(v) ? v : undefined);
 const prune = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== ""));
@@ -110,5 +111,6 @@ export function compatView(view) {
   applyFiles(collections, view);
   applyShips(collections, view);
   applyUsage(collections, view);
+  applyApprovals(collections, view);
   return { tag: view.tag, at: view.now, collections, probe: probeDoc(view) };
 }

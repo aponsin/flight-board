@@ -14,13 +14,17 @@ export const ASK_PARTS = {
   Terminal: ["commands"],
   SessionStart: ["words"],
   Later: ["text"],
-  Approval: ["card", "version"],
+  // #C727 (parity C4): the owner's approval of one pull request at one commit; Release merges only that commit (README step 4).
+  Approval: ["pr", "head", "url"],
   Answer: ["question"],
   Thread: ["text"],
 };
 const ASK_ALLOWED = new Set(["type", "title", "asked_by", "card_id", "eta_at", "eta_precondition", ...Object.values(ASK_PARTS).flat(), "screenshots"]);
 
 const refuse = (rule, detail) => ({ rule, detail });
+export const APPROVAL_ASKERS = ["Reviewer", "Manager"];
+export const APPROVE = "Approve";
+const PR_URL = /^https:\/\/github\.com\/[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}\/pull\/([1-9][0-9]{0,6})$/;
 const present = (v) => v !== undefined && v !== null && !(typeof v === "string" && v.trim() === "") && !(Array.isArray(v) && v.length === 0);
 
 // An ask missing a required part, an unknown field, or a Later without an ETA.
@@ -34,6 +38,14 @@ export function askRefusal(ask, now) {
   if (ask.type === "Decision") {
     if (!Array.isArray(ask.options) || ask.options.length < 2 || ask.options.length > 4) return refuse("ask-missing-part", "Decision needs 2 to 4 options");
     if (!ask.options.includes(ask.recommended)) return refuse("ask-missing-part", "recommended must be one of the options");
+  }
+  if (ask.type === "Approval") {
+    // Asked by the role that signs pull requests (Reviewer) or the lead; for one pull request, at one full commit, with its own link.
+    if (!APPROVAL_ASKERS.includes(ask.asked_by)) return refuse("approval-asker", `${ask.asked_by} cannot ask for an approval; ${APPROVAL_ASKERS.join(" or ")} can`);
+    if (!Number.isInteger(ask.pr) || ask.pr < 1 || ask.pr > 1e6) return refuse("approval-shape", "pr is the pull request's number");
+    if (typeof ask.head !== "string" || !/^[0-9a-f]{40}$/.test(ask.head)) return refuse("approval-shape", "head is the full 40-character commit id");
+    const u = typeof ask.url === "string" ? PR_URL.exec(ask.url) : null;
+    if (!u || Number(u[1]) !== ask.pr) return refuse("approval-shape", `url is https://github.com/<owner>/<repo>/pull/${ask.pr}`);
   }
   if (ask.type === "Later") {
     const dated = Number.isFinite(ask.eta_at) && ask.eta_at > 0;
@@ -55,7 +67,19 @@ export function closeRefusal(ask, who, role) {
   if (!ask) return refuse("ask-unknown", "no such ask");
   if (ask.closed_at) return refuse("ask-already-closed", String(ask.id));
   if (role !== "owner" && (who === "owner" || who !== ask.asked_by)) return refuse("close-not-yours", `${who ?? "unknown"} did not ask ${ask.id}; only the owner or the asker closes it`);
-  if (["Decision", "Answer", "Approval"].includes(ask.type) && !ask.answered_at) return refuse("close-unanswered", `a ${ask.type} is answered before it is closed`);
+  // An Approval closes answered or not: closing never approves anything (a merged pull request, or one a newer head replaced).
+  if (["Decision", "Answer"].includes(ask.type) && !ask.answered_at) return refuse("close-unanswered", `a ${ask.type} is answered before it is closed`);
+  return null;
+}
+
+// Withdrawing the owner's approval (#C727): the owner's alone, on an open Approval that is approved. It clears the answer, so the
+// pull request needs his Approve again; Release reads only an approval that stands.
+export function withdrawRefusal(ask, role) {
+  if (role !== "owner") return refuse("withdraw-not-owner", "only the owner withdraws an approval");
+  if (!ask) return refuse("ask-unknown", "no such ask");
+  if (ask.type !== "Approval") return refuse("withdraw-not-approval", `${ask.id} is a ${ask.type}`);
+  if (ask.closed_at) return refuse("ask-already-closed", String(ask.id));
+  if (!ask.answered_at) return refuse("withdraw-not-approved", `${ask.id} is not approved`);
   return null;
 }
 

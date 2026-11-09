@@ -6,6 +6,7 @@
 import { answerAsk, closeAsk, createListItem, updateListItem, refuse } from "./board-store.mjs";
 import { optionOfKey } from "./compat-view.mjs";
 import { filesRefusal, linkFiles } from "./file-store.mjs";
+import { routeApproval } from "./compat-approvals.mjs";
 
 const NO_ROUTE = (path, why) => ({ rule: "no-route-yet", detail: `${path}: ${why}` });
 const askOf = async (db, id) => (typeof id === "string" ? db.prepare("SELECT * FROM asks WHERE id = ?").bind(id).first() : null);
@@ -65,6 +66,9 @@ export async function routeWrite(db, now, who, { op, path, data } = {}) {
     for (const k of ["text", "area", "category", "note", "rank", "done"]) if (d[k] !== undefined) f[k] = d[k];
     return updateListItem(db, now, who, f);
   }
+
+  // The pull request panel's Approve (set) and Withdraw (delete) (#C727 C4): the caller is the owner (the route is owner only).
+  if (coll === "approvals") return routeApproval(db, now, who, "owner", op, id, d);
 
   return refuse(db, now, NO_ROUTE(path, `${op} on ${coll} has no route`), null, who);
 }

@@ -22,7 +22,7 @@ export const FILE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp",
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
 export const MAX_TOTAL_BYTES = 2 * 1024 ** 3; // the store's whole size; past it a new upload is refused ("quota")
 export const MAX_FILES_PER_SEND = 10;
-// One caller's uploads in 24 hours (Builder's review): a looping agent or a leaked connector secret cannot fill the store.
+// Uploads in 24 hours, the owner's and all agents' together (#C727): a looping agent or a leaked connector secret cannot fill the store.
 export const MAX_DAY_BYTES_PER_CALLER = 200 * 1024 * 1024;
 // A request body bigger than one file in base64 plus its JSON is refused before it is read (the Worker has 128 MB).
 export const MAX_BODY_BYTES = Math.ceil(MAX_FILE_BYTES / 3) * 4 + 64 * 1024;
@@ -49,10 +49,11 @@ export function sniffRefusal(type, b) {
   return null;
 }
 
-// A file's name as stored: no control characters, no path, at most 200 characters.
+// A file's name as stored: no control characters, no bidi controls (a name can't read reversed: Checker's LOW on #C726), no path,
+// at most 200 characters.
 // Cut by code point and with lone surrogates dropped, so the name is always well-formed text (encodeURIComponent never throws on it).
 export function cleanName(name) {
-  const s = String(name ?? "").replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "").replace(/[\u0000-\u001f\u007f-\u009f]/g, "").split(/[\\/]/).pop().trim();
+  const s = String(name ?? "").replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, "").replace(/[\u0000-\u001f\u007f-\u009f؜‎‏‪-‮⁦-⁩]/g, "").split(/[\\/]/).pop().trim();
   return Array.from(s).slice(0, 200).join("").trim() || "file";
 }
 
@@ -87,8 +88,11 @@ export async function putFile({ db, bucket, now, who, refuse }, { name, type, da
   if (bad) return no(bad);
   const total = (await db.prepare("SELECT COALESCE(SUM(size), 0) AS n FROM files").first()).n;
   if (total + bytes.length > MAX_TOTAL_BYTES) return no(refusal("file-quota", "the board's file store is full"));
-  const mine = (await db.prepare("SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE added_by = ? AND added_at > ?").bind(String(who), now - 864e5).first()).n;
-  if (mine + bytes.length > MAX_DAY_BYTES_PER_CALLER) return no(refusal("file-quota-daily", `${who} stored ${mine} bytes in the last 24 hours`));
+  // Two daily caps (Security's LOW on #C726): the owner's own, and one for all the agents together, so a leaked connector secret
+  // can't multiply the cap by naming each role in turn.
+  const owner = who === "owner";
+  const mine = (await db.prepare(`SELECT COALESCE(SUM(size), 0) AS n FROM files WHERE added_by ${owner ? "=" : "<>"} 'owner' AND added_at > ?`).bind(now - 864e5).first()).n;
+  if (mine + bytes.length > MAX_DAY_BYTES_PER_CALLER) return no(refusal("file-quota-daily", `${owner ? "the owner" : "the agents together"} stored ${mine} bytes in the last 24 hours`));
   const id = newFileId(), file = cleanName(name);
   const sha256 = hex(await crypto.subtle.digest("SHA-256", bytes));
   await bucket.put(id, bytes, { httpMetadata: { contentType: type } });

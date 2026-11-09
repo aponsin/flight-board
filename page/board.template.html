@@ -774,7 +774,7 @@ function prRows(prs,apps){
   const n=r=>Number(String(r.p.id).slice(2));
   return {need:need.sort((x,y)=>n(x)-n(y)),approved:approved.sort((x,y)=>n(x)-n(y))}}
 function renderAgentPrs(now=Date.now()){
-  const el=$("agentprs");if(!el)return;if(STORE){el.hidden=true;return}
+  const el=$("agentprs");if(!el)return;
   const {need,approved}=prRows(state.agentPrs,state.approvals);
   if(!need.length&&!approved.length){el.hidden=true;el.innerHTML="";return}
   const h7=s=>esc(String(s).slice(0,7)),link=p=>PR_URL.test(String(p.url||""))?p.url:null;

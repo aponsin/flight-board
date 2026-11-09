@@ -125,8 +125,8 @@ for (const host of ["store", null]) for (const mode of ["all", "end", "start"]) 
     }
     // The words do arrive (escaped): otherwise the pass proves nothing. The probe's values are drawn only after a format
     // check (roles, ids, versions, known words), so its attack is refused before it is drawn; it stays in both passes.
-    // The store's page leaves the pull request panel out (#C723 A4), so agentPrs' words show on the artifact's page only.
-    if (mode !== "all") for (const c of ["waiting", "messages", "threads", "initiatives", "events", "todo", "ideas", "meta", "plan", ...(host ? [] : ["agentprs"])]) assert.match(seen, new RegExp(`hostile_${c}\\(\\)`), `${c}'s words were drawn`);
+    // The pull request panel shows on both pages (#C727 brought it back to the store, fed by Approval asks).
+    if (mode !== "all") for (const c of ["waiting", "messages", "threads", "initiatives", "events", "todo", "ideas", "meta", "plan", "agentprs"]) assert.match(seen, new RegExp(`hostile_${c}\\(\\)`), `${c}'s words were drawn`);
   });
 }
 

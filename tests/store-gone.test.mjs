@@ -31,7 +31,6 @@ const GONE = [
   ["\"Manager missed\" on a card and an ask (until B4)", (d) => d.html.includes("Manager missed")],
   ["\"Manager missed\" after Live now in the header (row 37)", (d) => /Manager missed/.test(d.els.livever?.textContent ?? "")],
   ["the comment threads full line (row 11)", (d) => d.els.threadsfull && !d.els.threadsfull.hidden],
-  ["the pull request panel (row 22: now Approval asks)", (d) => d.els.agentprs && !d.els.agentprs.hidden && d.els.agentprs.innerHTML !== ""],
   ["the memory tile's Refresh request (row 15)", (d) => d.html.includes("data-ctxref=")],
   ["the \"/clear me\" flag (row 14)", (d) => d.html.includes("/clear me")],
   ["\"Let's start\" on an idea (not part of the lists change)", (d) => d.html.includes('data-td="start"')],
@@ -50,6 +49,8 @@ test("the store's page leaves each of them out", () => {
   for (const [what, shown] of GONE) assert.ok(!shown(d), what);
   // The card itself is still there, with its #C number as plain text.
   assert.match(d.html, /#C5/);
+  // #C727 (C4): the pull request panel is back on the store, fed by Approval asks (row 22).
+  assert.ok(d.els.agentprs && !d.els.agentprs.hidden && /Add a business/.test(d.els.agentprs.innerHTML), "the pull request panel shows on the store");
 });
 
 test("the store's page has no keeper line and never says its data is behind (rows 12 and 3)", () => {

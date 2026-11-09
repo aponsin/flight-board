@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { askRefusal, cardWriteRefusal, closeRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, ASK_PARTS } from "./board-rules.mjs";
+import { askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, ASK_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -89,7 +89,19 @@ export async function answerAsk(db, now, who, { id, answer } = {}) {
   if (ask.answered_at) return refuse(db, now, { rule: "ask-already-answered", detail: id }, ask.card_id, who);
   if (typeof answer !== "string" || !answer.trim()) return refuse(db, now, { rule: "answer-shape", detail: "an answer is text" }, ask.card_id, who);
   if (ask.type === "Decision" && !JSON.parse(ask.body).options.includes(answer)) return refuse(db, now, { rule: "answer-not-an-option", detail: answer }, ask.card_id, who);
+  // An Approval (#C727) is answered with Approve only, and only while it is open: a closed one was merged or replaced by a newer head.
+  if (ask.type === "Approval" && (answer !== APPROVE || ask.closed_at)) return refuse(db, now, { rule: "approval-answer", detail: ask.closed_at ? `${id} is closed` : `an approval is answered "${APPROVE}"` }, ask.card_id, who);
   await db.prepare("UPDATE asks SET answered_at = ?, answer = ?, answered_by = ? WHERE id = ?").bind(now, answer, who, id).run();
+  return { ok: true, id };
+}
+
+// The owner's Withdraw of an approval (#C727): the answer is cleared, so the pull request waits for his Approve again and Release
+// reads no approval; the withdraw itself is kept on the ask. Owner only (the role, never a name).
+export async function withdrawAsk(db, now, who, id, role) {
+  const ask = typeof id === "string" ? await db.prepare("SELECT id, type, answered_at, closed_at, card_id FROM asks WHERE id = ?").bind(id).first() : null;
+  const bad = withdrawRefusal(ask, role);
+  if (bad) return refuse(db, now, bad, ask?.card_id, who);
+  await db.prepare("UPDATE asks SET answered_at = NULL, answer = NULL, answered_by = NULL, answer_taken_at = NULL, withdrawn_at = ?, withdrawn_by = ? WHERE id = ?").bind(now, who, id).run();
   return { ok: true, id };
 }
 

@@ -41,6 +41,9 @@ test("a stored name has no path and no control characters; base64 is strict", ()
   const emoji = cleanName("a".repeat(199) + "😀😀");
   assert.equal(Array.from(emoji).length, 200); assert.ok(emoji.isWellFormed());
   assert.equal(cleanName("x\ud800y\udc00z.png"), "xyz.png");
+  // No bidi controls (Checker's LOW on #C726): a name can't display reversed.
+  assert.equal(cleanName("evil‮gnp.exe"), "evilgnp.exe");
+  assert.equal(cleanName("a⁦b⁩c‏d؜e.txt"), "abcde.txt");
   assert.doesNotThrow(() => encodeURIComponent(cleanName("\ud83d")));
   assert.deepEqual([...decodeBase64("AQID")], [1, 2, 3]); assert.equal(decodeBase64("AQI"), null); assert.equal(decodeBase64("A$=="), null); assert.equal(decodeBase64(5), null);
 });
@@ -79,11 +82,17 @@ test("the store's whole size and each caller's day are capped; a decoded file ov
   const full = makeDb(), bucket = fakeR2();
   await seed(full, Math.ceil(MAX_TOTAL_BYTES / MAX_FILE_BYTES), "old", NOW - 30 * 864e5);
   assert.equal((await putFile({ db: full, bucket, now: NOW, who: "owner", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).refused.rule, "file-quota");
-  // One caller's day: Builder is refused, the owner is not; yesterday's uploads do not count.
+  // The agents' day is one cap for all of them (#C727, Security's LOW): Builder filled it, so Checker is refused too; the owner
+  // has his own; yesterday's uploads do not count.
   const day = makeDb();
   await seed(day, Math.ceil(MAX_DAY_BYTES_PER_CALLER / MAX_FILE_BYTES), "Builder", NOW - 60_000);
   assert.equal((await putFile({ db: day, bucket, now: NOW, who: "Builder", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).refused.rule, "file-quota-daily");
+  assert.equal((await putFile({ db: day, bucket, now: NOW, who: "Checker", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).refused.rule, "file-quota-daily", "another role shares the agents' cap");
   assert.equal((await putFile({ db: day, bucket, now: NOW, who: "owner", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).ok, true);
+  const owners = makeDb();
+  await seed(owners, Math.ceil(MAX_DAY_BYTES_PER_CALLER / MAX_FILE_BYTES), "owner", NOW - 60_000);
+  assert.equal((await putFile({ db: owners, bucket, now: NOW, who: "owner", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).refused.rule, "file-quota-daily");
+  assert.equal((await putFile({ db: owners, bucket, now: NOW, who: "Builder", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).ok, true);
   assert.equal((await putFile({ db: day, bucket, now: NOW + 864e5 + 1, who: "Builder", refuse }, { name: "a.png", type: "image/png", data: b64(PNG) })).ok, true);
   // Three bytes over: the base64 is short enough to be decoded, the bytes are not.
   const big = new Uint8Array(MAX_FILE_BYTES + 1); big.set(PNG);

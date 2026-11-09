@@ -76,6 +76,9 @@ test("stuck and ship count only while fresh: a reading the probe stopped rewriti
 
 test("a collection the store cannot fill is left out, never invented", () => {
   const c = compatView(view()).collections;
-  for (const name of ["messages", "threads", "steps", "events", "usage", "plan", "approvals", "agentPrs"]) assert.equal(name in c, false, name);
+  for (const name of ["messages", "threads", "steps", "events", "usage", "plan"]) assert.equal(name in c, false, name);
+  // #C727: the pull request panel's two collections are always there (empty without Approval asks), so a withdrawn or merged
+  // pull request leaves the panel instead of staying from the last snapshot.
+  assert.deepEqual([c.agentPrs, c.approvals], [[], []]);
   assert.deepEqual(optionObjects(undefined), undefined);
 });
