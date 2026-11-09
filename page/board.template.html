@@ -2056,7 +2056,8 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const liveOpen=i.status!=="done"&&i.byEvidence&&i.phase===LIVE_PHASE;
   if(i.status==="done") etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"")}</div><div class="lbl">${num(i.doneAt)?dayLabel(i.doneAt):""}</div>`;
   else if(liveOpen) etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"now")}</div>`;
-  else if(eta) etaHtml=`<div class="lbl">Live in</div><div class="big" data-eta="${eta}">${eta>Date.now()?dur(eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(eta)}${derivedEta(i)==null?" (declared)":""}</div>`;
+  // #C728: on the store the ETA box is "not yet" (PARITY: B3b, B4): its inputs aren't there, and a paused card read as due.
+  else if(eta&&!STORE) etaHtml=`<div class="lbl">Live in</div><div class="big" data-eta="${eta}">${eta>Date.now()?dur(eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(eta)}${derivedEta(i)==null?" (declared)":""}</div>`;
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   const vn=i.status!=="done"?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
   const st=stalled(i),ow=i.status!=="done"?ownerWait(i):null;
@@ -2168,6 +2169,8 @@ function renderFeed(){
   $("feedcount").textContent=on?`${ev.length} of ${all.length}`:""; $("feedcount").hidden=!on;
 }
 const OPEN_CAP=2*36e5, BOARD_START=String(CONFIG.boardStart||"");
+// A time's local calendar day, YYYY-MM-DD (the key agentMinutesByDay and the usage chart use).
+function localDay(t){const d=new Date(t);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function agentMinutesByDay(){
   // Working time from every initiative's steps (not queued or gated time, not the owner), split by calendar day.
   // An agent works on one thing at a time: overlapping intervals of the same agent count once.
@@ -2203,9 +2206,14 @@ function renderUsage(){
   const am=agentMinutesByDay();
   const byDay={};state.usage.filter(u=>u.day).forEach(u=>{byDay[u.day]={...u}});
   Object.entries(am).forEach(([d,m])=>{byDay[d]=byDay[d]||{day:d};if(num(byDay[d].agentMin)==null)byDay[d].agentMin=Math.round(m)});
+  // #C728: every day from the first to today is shown, a quiet one as an empty column (11-07 was skipped), and "today" is the
+  // same local calendar day agentMinutesByDay keys by (it was UTC, so evenings in Mountain time counted as tomorrow).
+  const today=localDay(Date.now());
+  const first=Object.keys(byDay).sort()[0];
+  if(first)for(let t=Date.parse(first+"T12:00:00");localDay(t)<today;t+=864e5){const d=localDay(t);byDay[d]=byDay[d]||{day:d}}
+  if(first)byDay[today]=byDay[today]||{day:today};
   const days=Object.values(byDay).sort((a,b)=>a.day<b.day?-1:1);
   const sum=(arr,k)=>arr.reduce((s,u)=>s+(num(u[k])||0),0);
-  const today=new Date().toISOString().slice(0,10);
   const lastN=n=>days.filter(u=>(Date.parse(today)-Date.parse(u.day))/864e5<n);
   const fmt=m=>m>=120?(m/60).toFixed(1)+" h":Math.round(m)+" min";
   const tile=(l,arr)=>{const t=sum(arr,"agentMin")+sum(arr,"runnerMin")+sum(arr,"actionsMin");const usd=sum(arr,"actionsUsd");return `<div class="tot"><div class="l">${l}</div><div class="n">${fmt(t)}</div><div class="l">${usd?"$"+usd.toFixed(2)+" Actions":"$0 Actions"}</div></div>`};
@@ -2260,7 +2268,8 @@ function renderQueue(){
   // An entry with no end stops where the next entry starts, or when the initiative finished; only the last one runs to now.
   // wait:"gate" (or "decision") = held by a pending decision or outside condition; any other wait = queued because the agent was busy.
   const tot=logTotals("who");
-  const rows=Object.entries(tot).sort((a,b)=>b[1].busy-a[1].busy);
+  // Most queued first, then (#C728) most working: with no queued time the rows kept no order at all.
+  const rows=Object.entries(tot).sort((a,b)=>b[1].busy-a[1].busy||b[1].work-a[1].work);
   const fmt=ms=>ms?dur(ms):"—";
   $("qtable").innerHTML=rows.length?`<caption>Last 7 days, per agent</caption><thead><tr><th>Agent</th><th>Working</th><th title="Waiting because this agent was busy with other work">Queued (busy)</th><th title="Held by a pending decision or condition, not by the agent">Gated</th></tr></thead><tbody>${rows.map(([n,t])=>`<tr><td>${esc(n)}</td><td>${fmt(t.work)}</td><td class="${t.busy>t.work&&t.busy>36e5?"hot":""}">${fmt(t.busy)}</td><td>${fmt(t.gate)}</td></tr>`).join("")}</tbody>`:"";
 }
@@ -2724,7 +2733,8 @@ const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHA
 const WAKE_ALIVE_MAX=3*60e3,CARDS_STALE=5*60e3,EVIDENCE_STALE=10*60e3,QUIET_MAX_MIN=75;
 function ownerUnanswered(){const own=state.messages.filter(m=>m&&m.from===OWNER&&isT(m.at)).sort((a,b)=>b.at-a.at)[0];
   return own&&!state.messages.some(m=>m&&m.thread===own.thread&&m.from!==OWNER&&isT(m.at)&&m.at>own.at)?own:null}
-function managerChip(now=Date.now()){if(!liveOn(now)||!Object.hasOwn(probe.board,"wakeAliveAt"))return null;
+// #C728: on the store the chip is "not yet" (PARITY: B1); it read the old wake watch's file and showed red on every load.
+function managerChip(now=Date.now()){if(STORE||!liveOn(now)||!Object.hasOwn(probe.board,"wakeAliveAt"))return null;
   const b=probe.board,alive=isT(b.wakeAliveAt)?b.wakeAliveAt:null;
   if(alive==null||b.at-alive>WAKE_ALIVE_MAX)return {cls:"bad",text:alive==null?"Manager not listening · say wake up the team":`Manager not listening since ${hhmm(alive)} · say wake up the team`};
   // #C591: the probe's last full read of the repositories (board.cardsCheckedAt); red 5 minutes after it. A probe from
