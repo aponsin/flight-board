@@ -2,6 +2,8 @@
 // is a short run under startRun's two limits; every network call has an abort timeout and every child its own kill timeout.
 // Secrets come from the env file and are never logged. The evidence and usage jobs (git, GitHub, sessions) are separate.
 import { readFileSync } from "node:fs";
+import { dirname, isAbsolute } from "node:path";
+import { tmpdir } from "node:os";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
 
 export const SEND_TIMEOUT_MS = 25_000;  // inside the ask job's 30 s limit
@@ -22,9 +24,17 @@ export const sendArgs = (line) => [
   "-p", `Use SendMessage to send the session named 'Manager' exactly this text: ${line}. Then reply with exactly what the tool returned.`,
   "--model", "haiku", "--allowedTools", "SendMessage,ListAgents",
 ];
-export async function realSend(line, { claudePath = "claude", cwd } = {}) {
+// A launchd job runs with PATH=/usr/bin:/bin:/usr/sbin:/sbin, where `claude` is not found (#C721: the first live wake failed with
+// "send exit 1" in 6 ms). So the job passes claude's FULL path, and the child gets a PATH that holds claude's own folder (a
+// launcher script may need the tools beside it) ahead of the standard ones.
+export const sendEnv = (claudePath, env = process.env) => ({ ...env, PATH: [dirname(claudePath), ...String(env.PATH ?? "").split(":"), "/usr/local/bin", "/usr/bin", "/bin"].filter((p, i, a) => p && a.indexOf(p) === i).join(":") });
+// A test run never starts the real claude (#C721: a test's "1 for Manager, batch b-1" reached Manager's live session). Under
+// `node --test` (NODE_TEST_CONTEXT is set) the send only runs a claude that sits in the temp folder, i.e. a fake the test made.
+export const blockedInTests = (claudePath, env = process.env) => !!env.NODE_TEST_CONTEXT && !String(claudePath).startsWith(tmpdir());
+export async function realSend(line, { claudePath = "claude", cwd, env = process.env } = {}) {
+  if (blockedInTests(claudePath)) return { exit: 125, text: "blocked: a test run never starts the real claude" };
   try {
-    const r = await runChild(claudePath, sendArgs(line), { timeoutMs: SEND_TIMEOUT_MS, cwd });
+    const r = await runChild(claudePath, sendArgs(line), { timeoutMs: SEND_TIMEOUT_MS, cwd, env: isAbsolute(claudePath) ? sendEnv(claudePath, env) : env });
     return { exit: 0, text: r.stdout + r.stderr };
   } catch (e) {
     // killed at the timeout (124, as timeout(1)) or exited non-zero: the exit code and the CLI's own words go to the store
@@ -65,7 +75,7 @@ export async function liveJob({ base, headers, productUrl, fetchImpl = fetch, lo
 }
 
 // The CLI entry: node probe-board.mjs --job ask|live --env <file> [--product <url>] [--base <url>]
-export async function main(argv, { env = process.env, exit = (c) => process.exit(c) } = {}) {
+export async function main(argv, { env = process.env, exit = (c) => process.exit(c), fetchImpl = fetch } = {}) {
   const get = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   const job = get("--job");
   if (!JOBS[job] || !["ask", "live"].includes(job)) { console.error(`unknown job ${job}`); return exit(64); }
@@ -73,10 +83,13 @@ export async function main(argv, { env = process.env, exit = (c) => process.exit
   // The board's address is configuration (an argument, or BOARD_BASE_URL in the env file), never written into the code.
   const base = get("--base") ?? cfg.BOARD_BASE_URL;
   if (!/^https:\/\/[A-Za-z0-9.-]+$/.test(base ?? "")) { console.error("no board address: pass --base or set BOARD_BASE_URL"); return exit(64); }
+  // claude's full path for the wake send (a launchd job has no PATH to find it); when given it must be absolute.
+  const claudePath = get("--claude") ?? "claude";
+  if (get("--claude") !== undefined && !isAbsolute(claudePath)) { console.error("--claude must be a full path"); return exit(64); }
   const run = startRun(job);
   const headers = accessHeaders(cfg);
   try {
-    if (job === "ask") await run.step("ask the store", () => askJob({ base, headers, log: run.log, send: (l) => realSend(l, { cwd: get("--send-cwd") }) }));
+    if (job === "ask") await run.step("ask the store", () => askJob({ base, headers, fetchImpl, log: run.log, send: (l) => realSend(l, { claudePath, cwd: get("--send-cwd") }) }));
     else await run.step("read version.json", () => liveJob({ base, headers, productUrl: get("--product"), log: run.log }));
     return exit(run.finish(0));
   } catch (e) {

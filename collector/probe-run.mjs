@@ -38,9 +38,9 @@ export function startRun(job, { write, report, exit, now = Date.now, setTimer, l
 }
 
 // A child process with its own timeout; killed (SIGKILL) at it. Rejects with a message naming the command and the limit.
-export function runChild(cmd, args, { timeoutMs, input, cwd } = {}) {
+export function runChild(cmd, args, { timeoutMs, input, cwd, env } = {}) {
   return new Promise((resolve, reject) => {
-    const child = execFile(cmd, args, { timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 16 * 1024 * 1024, cwd, encoding: "utf8" }, (err, stdout, stderr) => {
+    const child = execFile(cmd, args, { timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 16 * 1024 * 1024, cwd, env, encoding: "utf8" }, (err, stdout, stderr) => {
       if (err?.killed) return reject(new Error(`${cmd} killed after ${timeoutMs} ms`));
       if (err) return reject(Object.assign(new Error(`${cmd} exited ${err.code}`), { code: err.code, stdout, stderr }));
       resolve({ stdout, stderr });

@@ -17,6 +17,9 @@ export function classifySend(exit, text) {
   if (/No agent named .* is reachable/i.test(t)) {
     return { ok: false, reason: "no-agent-reachable", fix: "Manager's session must be open, named, with Remote Control on" };
   }
+  if (/exited ENOENT|spawn .* ENOENT|command not found/i.test(t)) {
+    return { ok: false, reason: "claude-not-found", fix: "the ask job cannot find claude: reinstall the launchd jobs with claude's full path (--claude)" };
+  }
   return { ok: false, reason: "send-failed", fix: `the send exited ${Number.isInteger(exit) ? exit : "abnormally"}; see the probe log` };
 }
 
