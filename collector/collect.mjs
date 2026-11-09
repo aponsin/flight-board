@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { readMirror, home } from "../gate/gate.mjs";
+import { readMirror, home, liveMirror } from "../gate/gate.mjs";
 import { cardProblems } from "../gate/card-rules.mjs";
 import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, abandonedAt, subjectNum } from "./derive.mjs";
 import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor } from "./facts.mjs";
@@ -637,7 +637,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     takeExport(found, dir, boardId(config));
     swapMirror(dir, boardId(config));
   } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
-  const mirror = readMirror(join(dir, "mirror"));
+  // The derive step (--from-mirror) sees the cards as the board has them now: the gate's journal over the mirror's cards (#C697, #C701).
+  const mirror = fromMirror ? liveMirror(join(dir, "mirror"), join(dir, "gate.json")) : readMirror(join(dir, "mirror"));
   if (!mirror?.docs.initiatives) { console.error(`Collector: no mirror at ${join(dir, "mirror")}: export the board first (collector/TASK.md, step 1).`); process.exit(1); }
   if (!process.argv.includes("--no-fetch")) {
     git(fetchBranches(config.collector.remote));

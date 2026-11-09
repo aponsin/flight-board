@@ -102,7 +102,7 @@ export function readMirror(dir) {
   let stamp = null;
   try { const s = JSON.parse(readFileSync(join(dir, "_at.json"), "utf8")); if (Number.isFinite(s?.at) && s.at > 0) stamp = s.at; } catch { /* a mirror from a whole export: its files' times */ }
   if (stamp !== null) { at = Math.max(at, stamp); for (const c of Object.keys(docs)) atBy[c] = Math.max(atBy[c] ?? 0, stamp); }
-  return { docs, at, atBy, atDoc };
+  return { docs, at, atBy, atDoc, stamp };
 }
 
 // The writes the gate let through, laid over the mirror: it then shows each card as it is now (a card closed after the
@@ -138,6 +138,30 @@ export function withJournal(mirror, journal) {
     if (i >= 0) list[i] = next; else list.push(next);
   }
   return { ...mirror, docs };
+}
+
+// #C697, #C701: the probe and the derive step read the Collector's hourly mirror, so a card closed after the last export was still
+// dispatched to and nudged about for up to an hour (more overnight, when the Collector does not run). They now lay the gate's own
+// journal over the CARDS only (the same rule as the gate's: a write counts unless the mirror holds that card listed at or after it),
+// so a card the board has closed is closed to them too. Only the cards are overlaid: the other collections are as the mirror has them,
+// but anything derived from the cards afterwards (collect.mjs --from-mirror builds derived/all from them) reads the overlaid ones.
+// A delta merge writes a card's file minutes AFTER the run read the board, so its file time is later than the run saw it: when the
+// mirror has the run's start (_at.json, `stamp`), a card counts as listed at the earlier of its file time and the stamp, and a
+// close between the run's read and its merge is still applied (re-applying a write the run saw is harmless).
+export function journalCards(mirror, journal) {
+  if (!mirror?.docs || !Array.isArray(mirror.docs.initiatives) || !Array.isArray(journal)) return mirror;
+  const writes = journal.filter((w) => w && typeof w === "object" && w.collection === "initiatives" && typeof w.doc_id === "string");
+  if (!writes.length) return mirror;
+  const own = mirror.atDoc?.initiatives;
+  const atDoc = own && Number.isFinite(mirror.stamp) && mirror.stamp > 0 ? { initiatives: Object.fromEntries(Object.entries(own).map(([k, v]) => [k, Math.min(v, mirror.stamp)])) } : mirror.atDoc;
+  const over = withJournal({ ...mirror, atDoc, docs: { initiatives: mirror.docs.initiatives } }, writes);
+  return { ...mirror, docs: { ...mirror.docs, initiatives: over.docs.initiatives } };
+}
+// The mirror in <dir> with the gate's journal (the file at `journalFile`) laid over its cards: what the derive step reads.
+export const liveMirror = (dir, journalFile) => journalCards(readMirror(dir), readJournal(journalFile));
+// The gate's journal as the gate keeps it (<stateDir>/<board>/gate.json, "journal"); none readable is none.
+export function readJournal(path) {
+  try { const j = JSON.parse(readFileSync(path, "utf8")); return Array.isArray(j?.journal) ? j.journal : []; } catch { return []; }
 }
 
 // Rule 9 (case 3): the card ids a hand-off names ("board id x-y", "card x-y", "task x-y"), and whether it hands out work.
