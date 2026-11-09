@@ -31,6 +31,36 @@ export const TOOLS = [
 ];
 const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
 
+// The old board page (#C723, board parity A1), built by scripts/build-store-page.mjs into the Worker's static assets
+// (env.ASSETS: board.html and fonts/*.woff2). It is served here, behind the same Access check as everything else, never
+// straight from the assets. Its one script runs by a fresh nonce per response; nothing else may run, and images, fonts and
+// connections come only from this Worker. Styles may be inline: the page's own markup sets style attributes.
+export const OLD_PAGE_PATH = "/board";
+const FONT_PATH = /^\/fonts\/([a-z0-9-]+\.woff2)$/;
+export const oldPageCsp = (nonce) => `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`;
+// The page's script tags carry the nonce (the built page has exactly one, `<script>`, and no inline handlers).
+export const withNonce = (html, nonce) => html.replaceAll("<script>", `<script nonce="${nonce}">`);
+function newNonce() {
+  const b = crypto.getRandomValues(new Uint8Array(18));
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_");
+}
+async function asset(env, url, path) {
+  if (!env.ASSETS) return null;
+  const r = await env.ASSETS.fetch(new Request(new URL(path, url)));
+  return r.ok ? r : null;
+}
+async function oldPage(env, url) {
+  const r = await asset(env, url, "/board.html");
+  if (!r) return new Response("The board page is not built: run scripts/build-store-page.mjs, then deploy.", { status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" } });
+  const nonce = newNonce();
+  return new Response(withNonce(await r.text(), nonce), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": oldPageCsp(nonce), "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "x-frame-options": "DENY" } });
+}
+async function font(env, url, file) {
+  const r = await asset(env, url, `/fonts/${file}`);
+  if (!r) return bare(404);
+  return new Response(r.body, { status: 200, headers: { "content-type": "font/woff2", "cache-control": "private, max-age=86400", "x-content-type-options": "nosniff" } });
+}
+
 const bare = (status, headers = {}) => new Response(null, { status, headers });
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 const text = (result) => ({ content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: result?.ok === false });
@@ -166,6 +196,9 @@ export default {
       const origin = request.headers.get("origin"), site = request.headers.get("sec-fetch-site");
       if ((origin !== null && origin !== url.origin) || (site !== null && !["same-origin", "none"].includes(site))) return bare(403);
     }
+    if (url.pathname === OLD_PAGE_PATH && request.method === "GET") return oldPage(env, url);
+    const fontFile = request.method === "GET" && FONT_PATH.exec(url.pathname);
+    if (fontFile) return font(env, url, fontFile[1]);
     if (url.pathname === "/" && request.method === "GET") {
       return new Response(pageHtml({ version: env.BOARD_VERSION ?? "" }), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
     }

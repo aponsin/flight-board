@@ -403,7 +403,9 @@ test("picture viewer: pinch, double-tap, trackpad and +/- zoom are wired, and zo
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   assert.match(src, /id="lb-scroll"/);
-  assert.match(src, /id="lb-in" onclick="zoomBy\(1\.5\)"/);
+  // Wired by listener, not inline (#C723: the store Worker's policy runs no inline handler).
+  assert.match(src, /id="lb-in" aria-label="Zoom in"/);
+  assert.match(src, /\["lb-in",\(\)=>zoomBy\(1\.5\)\]/);
   assert.match(src, /addEventListener\("touchmove",[^\n]*passive:false/);
   assert.match(src, /addEventListener\("dblclick"/);
   assert.match(src, /e\.ctrlKey/);

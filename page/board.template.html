@@ -1,6 +1,6 @@
 <title>{{TITLE}}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<!--FONTS--><link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;600&display=swap"><!--END_FONTS-->
 <style>
 /* Layout: a departures board. Waiting-on-you strip first, then one row per initiative with a phase track and its ETA, then the shipped feed and the usage overview. */
 :root{
@@ -618,7 +618,7 @@ table.crew3-ph{margin-top:14px}
 
 <div class="cbub" id="cbub" role="tooltip" hidden></div>
 <div class="lightbox" id="lightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot">
-  <div class="lb-inner"><div class="lb-bar"><span id="lb-cap"></span><span class="lb-btns"><button type="button" id="lb-prev" onclick="stepShot(-1)" aria-label="Previous picture">‹ Prev</button><button type="button" id="lb-next" onclick="stepShot(1)" aria-label="Next picture">Next ›</button><button type="button" id="lb-out" onclick="zoomBy(1/1.5)" aria-label="Zoom out">−</button><button type="button" id="lb-in" onclick="zoomBy(1.5)" aria-label="Zoom in">+</button><button type="button" id="lb-close" onclick="closeShot()">Close</button></span></div>
+  <div class="lb-inner"><div class="lb-bar"><span id="lb-cap"></span><span class="lb-btns"><button type="button" id="lb-prev" aria-label="Previous picture">‹ Prev</button><button type="button" id="lb-next" aria-label="Next picture">Next ›</button><button type="button" id="lb-out" aria-label="Zoom out">−</button><button type="button" id="lb-in" aria-label="Zoom in">+</button><button type="button" id="lb-close">Close</button></span></div>
   <div class="lb-scroll" id="lb-scroll"><img id="lb-img" alt=""></div></div>
 </div>
 <script>
@@ -999,6 +999,8 @@ function zoomTo(z,cx,cy){const sc=$("lb-scroll"),img=$("lb-img");z=Math.min(5,Ma
   if(z===1){img.style.width="";img.classList.remove("zoomed")}else{img.classList.add("zoomed");img.style.width=Math.round(lbBase*z)+"px"}
   sc.scrollLeft=fx*img.offsetWidth-px;sc.scrollTop=fy*img.offsetHeight-py}
 function zoomBy(f,cx,cy){zoomTo(lbZ*f,cx,cy)}
+// The lightbox's buttons, by listener: no inline handlers, so the page runs under a nonce-only script policy (#C723).
+[["lb-prev",()=>stepShot(-1)],["lb-next",()=>stepShot(1)],["lb-out",()=>zoomBy(1/1.5)],["lb-in",()=>zoomBy(1.5)],["lb-close",()=>closeShot()]].forEach(([id,f])=>$(id).addEventListener("click",f));
 (()=>{const sc=$("lb-scroll"),d=(a,b)=>Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
   sc.addEventListener("touchstart",e=>{if(e.touches.length===2){const[a,b]=e.touches;lbPinch={d:d(a,b),z:lbZ}}},{passive:true});
   sc.addEventListener("touchmove",e=>{if(e.touches.length===2&&lbPinch){e.preventDefault();const[a,b]=e.touches;zoomTo(lbPinch.z*d(a,b)/lbPinch.d,(a.clientX+b.clientX)/2,(a.clientY+b.clientY)/2)}},{passive:false});
