@@ -73,12 +73,12 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | ETA box | not yet: B3b, B4 | |
 | Version note, "Next: vX" | not yet: B3a, B4 | |
 | Track: lit phase, skips | same | `derived/all.cards` |
-| Track: who · time on each tile | not yet: B3b (tiles say "no record") | `derived/all.times` |
+| Track: who · time on each tile | same (B3b: the store's phase history, with the old board's steps imported) | `derived/all.times` |
 | One track per branch | not yet: B3a | probe `cards.branches` |
 | Queue line, "waits on", Next (written N ago), Started, issue chips | same for next note, waiting on, started; not yet: B4 for the rest | |
 | "Manager missed" on a card | hidden on the store until B4 (Manager, 2026-11-09; the ETA inputs come in B4) | |
 | Thread fold, closed asks | not yet: B1 | |
-| Done in the last 24 h | not yet: C2 | |
+| Done in the last 24 h, search | same: the old board's done cards come in as history (B3b), and the store's own once they go live | compat `initiatives` (done) |
 
 ## Shipped, time, usage
 
