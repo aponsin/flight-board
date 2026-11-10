@@ -18,7 +18,9 @@ const obj = (properties, required = []) => ({ type: "object", properties, requir
 const str = { type: "string" };
 
 const askProps = { type: { type: "string", enum: ASK_TYPES }, title: str, asked_by: str, card_id: str, eta_at: { type: "integer" }, eta_precondition: str, screenshots: { type: "array", items: str }, pr: { type: "integer" } };
-for (const part of new Set(Object.values(ASK_PARTS).flat())) askProps[part] ??= part === "options" ? { type: "array", items: str } : part === "steps" || part === "commands" ? { type: "array", items: str } : str;
+// An Action's step is text, or {text, cmd}: the page shows cmd with a Copy button (#C725 B2).
+const stepItem = { anyOf: [str, { type: "object", properties: { text: str, cmd: str }, required: ["text"], additionalProperties: false }] };
+for (const part of new Set(Object.values(ASK_PARTS).flat())) askProps[part] ??= part === "options" ? { type: "array", items: str } : part === "steps" ? { type: "array", items: stepItem } : part === "commands" ? { type: "array", items: str } : str;
 
 // Typed tools (schema visible before the call). Roles allowed per tool; none writes status.
 export const TOOLS = [

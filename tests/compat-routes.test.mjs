@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker from "../worker/board-worker.mjs";
+import { takeInbox, answerAsk } from "../worker/board-store.mjs";
 
 const NOW = 1_800_000_000_000;
 const WHO = { manager: { who: "Manager", role: "agent" }, owner: { who: "owner", role: "owner" }, probe: { who: "probe", role: "probe" } };
@@ -44,14 +45,73 @@ test("Ack and Done answer a non-Decision; a Decision refuses them; a ping alone 
   assert.equal((await write({ op: "update", path: `waiting/${a.id}`, data: { ping: "sent" } })).status, 200);
   assert.equal((await write({ op: "update", path: `waiting/${a.id}`, data: { response: { status: "ack", note: "", at: 1 } } })).status, 200);
   const d = await tool("manager", "ask", decision);
-  assert.equal((await write({ op: "update", path: `waiting/${d.id}`, data: { response: { status: "ack", note: "", at: 1 } } })).body.refused.rule, "answer-not-an-option");
+  assert.equal((await write({ op: "update", path: `waiting/${d.id}`, data: { response: { status: "ack", note: "", at: 1 } } })).body.refused.rule, "answer-status");
 });
 
-test("a note with a choice, files and every route that does not exist yet are refused by name, and logged", async () => {
+test("asks in full (B2): a note with a choice, something else, help, and the button and note come back whole", async () => {
+  const { tool, write, compat } = make();
+  const resp = async (id) => (await compat()).collections.waiting.find((w) => w.id === id).response;
+  // a choice with a note: the option's own text is the answer, the note rides along
+  const d1 = await tool("manager", "ask", decision);
+  assert.equal((await write({ op: "update", path: `waiting/${d1.id}`, data: { response: { status: "chose", choice: "B", note: "  but keep the logo  ", at: 1 } } })).status, 200);
+  assert.deepEqual({ ...await resp(d1.id), at: 0 }, { status: "chose", choice: "B", note: "but keep the logo", at: 0 });
+  // something else: needs its note; the note is what the agent reads
+  const d2 = await tool("manager", "ask", decision);
+  const bare = await write({ op: "update", path: `waiting/${d2.id}`, data: { response: { status: "chose", choice: "something else", note: "", at: 1 } } });
+  assert.equal(bare.body.refused.rule, "answer-needs-note");
+  assert.equal((await write({ op: "update", path: `waiting/${d2.id}`, data: { response: { status: "chose", choice: "something else", note: "Make it red", at: 1 } } })).status, 200);
+  const r2 = await resp(d2.id); assert.equal(r2.status, "chose"); assert.equal(r2.choice, "something else"); assert.equal(r2.note, "Make it red");
+  // help on an action needs a note and keeps it; done and ack keep theirs
+  const a = await tool("manager", "ask", { type: "Action", title: "Run it", steps: ["Open Terminal", { text: "Run this", cmd: "node a.mjs" }], expect: "OK" });
+  assert.equal((await write({ op: "update", path: `waiting/${a.id}`, data: { response: { status: "help", note: "", at: 1 } } })).body.refused.rule, "answer-needs-note");
+  assert.equal((await write({ op: "update", path: `waiting/${a.id}`, data: { response: { status: "help", note: "it printed an error", at: 1 } } })).status, 200);
+  const r3 = await resp(a.id); assert.equal(r3.status, "help"); assert.equal(r3.note, "it printed an error");
+  const doc = (await compat()).collections.waiting.find((w) => w.id === a.id);
+  assert.deepEqual(doc.steps[1], { text: "Run this", cmd: "node a.mjs" });
+  // a status the type does not have, and a Decision answered "done", are refused by name
+  const a2 = await tool("manager", "ask", { type: "Answer", title: "Live?", question: "Live?" });
+  assert.equal((await write({ op: "update", path: `waiting/${a2.id}`, data: { response: { status: "help", note: "x", at: 1 } } })).body.refused.rule, "answer-status");
+  const d3 = await tool("manager", "ask", decision);
+  assert.equal((await write({ op: "update", path: `waiting/${d3.id}`, data: { response: { status: "done", note: "", at: 1 } } })).body.refused.rule, "answer-status");
+  // an answer with a follow-up note: Manager's inbox carries status and note
+  const a3 = await tool("manager", "ask", { type: "Answer", title: "Fixed?", question: "Fixed?" });
+  await write({ op: "update", path: `waiting/${a3.id}`, data: { response: { status: "ack", note: "and the footer?", at: 1 } } });
+  assert.equal((await resp(a3.id)).note, "and the footer?");
+});
+
+test("Manager's inbox carries the answer's button and note, and a note over the cap is refused (#C725 B2)", async () => {
+  const { env, tool, write } = make();
+  const a = await tool("manager", "ask", { type: "Action", title: "Run it", steps: ["Open Terminal"], expect: "OK" });
+  const long = await write({ op: "update", path: `waiting/${a.id}`, data: { response: { status: "help", note: "x".repeat(2001), at: 1 } } });
+  assert.equal(long.body.refused.rule, "answer-shape");
+  assert.equal((await write({ op: "update", path: `waiting/${a.id}`, data: { response: { status: "help", note: "x".repeat(2000), at: 1 } } })).status, 200);
+  const d = await tool("manager", "ask", decision);
+  await write({ op: "update", path: `waiting/${d.id}`, data: { response: { status: "chose", choice: "something else", note: "Make it red", at: 1 } } });
+  const inbox = await takeInbox(env.DB, NOW + 1000);
+  const byId = Object.fromEntries(inbox.answers.map((x) => [x.id, x]));
+  assert.equal(byId[a.id].answer_status, "help"); assert.equal(byId[a.id].answer_note.length, 2000);
+  assert.equal(byId[d.id].answer_status, "other"); assert.equal(byId[d.id].answer_note, "Make it red"); assert.equal(byId[d.id].answer, "Make it red");
+});
+
+test("only a Decision has a something-else answer (#C725 B2)", async () => {
+  const { env, tool } = make();
+  const a = await tool("manager", "ask", { type: "Action", title: "Run it", steps: ["Open Terminal"], expect: "OK" });
+  const r = await answerAsk(env.DB, NOW, "owner", { id: a.id, status: "ack", other: true, note: "something else" });
+  assert.equal(r.refused?.rule, "answer-shape", JSON.stringify(r));
+  const row = await env.DB.prepare("SELECT answered_at FROM asks WHERE id = ?").bind(a.id).first();
+  assert.equal(row.answered_at, null, "nothing stored");
+});
+
+test("a malformed step is refused when the ask is made", async () => {
+  const { tool } = make();
+  const r = await tool("manager", "ask", { type: "Action", title: "Run it", steps: [{ text: "x", cmd: 5 }], expect: "OK" });
+  assert.equal(r.refused.rule, "steps-shape");
+});
+
+test("every route that does not exist yet is refused by name, and logged", async () => {
   const { tool, write, call } = make();
   const { id } = await tool("manager", "ask", decision);
   for (const w of [
-    { op: "update", path: `waiting/${id}`, data: { response: { status: "chose", choice: "A", note: "but why", at: 1 } } },
     { op: "update", path: "checkRequests/c1", data: { at: 1 } },
   ]) { const r = await write(w); assert.equal(r.status, 422, JSON.stringify(w)); assert.equal(r.body.refused.rule, "no-route-yet", JSON.stringify(w)); }
   // #C726: files now go through the file store's checks; an id that is no stored file's id is refused by name, before anything is stored.

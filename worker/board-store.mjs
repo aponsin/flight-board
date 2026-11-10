@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, ASK_PARTS, APPROVE } from "./board-rules.mjs";
+import { askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, ASK_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -84,15 +84,28 @@ export async function postMessage(db, now, who, m) {
 }
 
 // An answer to an ask. A Decision's answer must be one of its options (decide); only an open ask can be answered.
-export async function answerAsk(db, now, who, { id, answer } = {}) {
+// B2 (#C725): with a status the answer is given in full: {status, note, other, hasFiles} beside the answer (the option for a
+// choice). The text the agent reads (answer) is the option, the note of a something-else, or the note / Ack / Done / Help.
+export async function answerAsk(db, now, who, { id, answer, status, note, other, hasFiles } = {}) {
   const ask = typeof id === "string" ? await db.prepare("SELECT * FROM asks WHERE id = ?").bind(id).first() : null;
   if (!ask) return refuse(db, now, { rule: "ask-unknown", detail: String(id) }, null, who);
   if (ask.answered_at) return refuse(db, now, { rule: "ask-already-answered", detail: id }, ask.card_id, who);
+  let stored = null;
+  if (status !== undefined) {
+    if (ask.type === "Approval") return refuse(db, now, { rule: "approval-answer", detail: `an approval is answered "${APPROVE}"` }, ask.card_id, who);
+    const bad = answerShapeRefusal(ask, { status, note, other, hasFiles });
+    if (bad) return refuse(db, now, bad, ask.card_id, who);
+    const text = typeof note === "string" ? note.trim() : "";
+    if (other) answer = text || "Something else";
+    else if (status === "chose") { if (typeof answer !== "string") return refuse(db, now, { rule: "answer-shape", detail: "a choice names its option" }, ask.card_id, who); }
+    else answer = text || { done: "Done", help: "Help", ack: "Ack" }[status];
+    stored = { status: other ? "other" : status, note: text || null };
+  }
   if (typeof answer !== "string" || !answer.trim()) return refuse(db, now, { rule: "answer-shape", detail: "an answer is text" }, ask.card_id, who);
-  if (ask.type === "Decision" && !JSON.parse(ask.body).options.includes(answer)) return refuse(db, now, { rule: "answer-not-an-option", detail: answer }, ask.card_id, who);
+  if (ask.type === "Decision" && !other && !JSON.parse(ask.body).options.includes(answer)) return refuse(db, now, { rule: "answer-not-an-option", detail: answer }, ask.card_id, who);
   // An Approval (#C727) is answered with Approve only, and only while it is open: a closed one was merged or replaced by a newer head.
   if (ask.type === "Approval" && (answer !== APPROVE || ask.closed_at)) return refuse(db, now, { rule: "approval-answer", detail: ask.closed_at ? `${id} is closed` : `an approval is answered "${APPROVE}"` }, ask.card_id, who);
-  await db.prepare("UPDATE asks SET answered_at = ?, answer = ?, answered_by = ? WHERE id = ?").bind(now, answer, who, id).run();
+  await db.prepare("UPDATE asks SET answered_at = ?, answer = ?, answered_by = ?, answer_status = ?, answer_note = ? WHERE id = ?").bind(now, answer, who, stored?.status ?? null, stored?.note ?? null, id).run();
   return { ok: true, id };
 }
 
@@ -102,7 +115,7 @@ export async function withdrawAsk(db, now, who, id, role) {
   const ask = typeof id === "string" ? await db.prepare("SELECT id, type, answered_at, closed_at, card_id FROM asks WHERE id = ?").bind(id).first() : null;
   const bad = withdrawRefusal(ask, role);
   if (bad) return refuse(db, now, bad, ask?.card_id, who);
-  await db.prepare("UPDATE asks SET answered_at = NULL, answer = NULL, answered_by = NULL, answer_taken_at = NULL, withdrawn_at = ?, withdrawn_by = ? WHERE id = ?").bind(now, who, id).run();
+  await db.prepare("UPDATE asks SET answered_at = NULL, answer = NULL, answered_by = NULL, answer_status = NULL, answer_note = NULL, answer_taken_at = NULL, withdrawn_at = ?, withdrawn_by = ? WHERE id = ?").bind(now, who, id).run();
   return { ok: true, id };
 }
 
@@ -206,7 +219,7 @@ export async function wakeResult(db, now, batchId, exit, text) {
 // Manager's typed read: returns what is for Manager as data and marks it taken (the batch closes, wake.seen_at moves).
 export async function takeInbox(db, now) {
   const messages = (await db.prepare("SELECT id, thread_id, author, body, created_at FROM messages WHERE delivered_at IS NULL AND author = 'owner' ORDER BY created_at").all()).results;
-  const answers = (await db.prepare("SELECT id, num, title, answer, answered_at, answered_by FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL ORDER BY answered_at").all()).results;
+  const answers = (await db.prepare("SELECT id, num, title, answer, answer_status, answer_note, answered_at, answered_by FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL ORDER BY answered_at").all()).results;
   // Mark exactly the rows returned: one written between the SELECT and the UPDATE stays for the next read, never lost (Checker).
   // D1 binds at most 100 values per statement (Checker): mark in chunks of 90 ids plus the time.
   const mark = async (sql, rows) => { for (let i = 0; i < rows.length; i += 90) { const ids = rows.slice(i, i + 90).map((r) => r.id); await db.prepare(sql.replace("(?)", `(${ids.map(() => "?").join(", ")})`)).bind(now, ...ids).run(); } };

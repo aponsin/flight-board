@@ -39,6 +39,7 @@ export function askRefusal(ask, now) {
     if (!Array.isArray(ask.options) || ask.options.length < 2 || ask.options.length > 4) return refuse("ask-missing-part", "Decision needs 2 to 4 options");
     if (!ask.options.includes(ask.recommended)) return refuse("ask-missing-part", "recommended must be one of the options");
   }
+  if (ask.type === "Action") { const bad = stepsRefusal(ask.steps); if (bad) return bad; }
   if (ask.type === "Approval") {
     // Asked by the role that signs pull requests (Reviewer) or the lead; for one pull request, at one full commit, with its own link.
     if (!APPROVAL_ASKERS.includes(ask.asked_by)) return refuse("approval-asker", `${ask.asked_by} cannot ask for an approval; ${APPROVAL_ASKERS.join(" or ")} can`);
@@ -69,6 +70,32 @@ export function closeRefusal(ask, who, role) {
   if (role !== "owner" && (who === "owner" || who !== ask.asked_by)) return refuse("close-not-yours", `${who ?? "unknown"} did not ask ${ask.id}; only the owner or the asker closes it`);
   // An Approval closes answered or not: closing never approves anything (a merged pull request, or one a newer head replaced).
   if (["Decision", "Answer"].includes(ask.type) && !ask.answered_at) return refuse("close-unanswered", `a ${ask.type} is answered before it is closed`);
+  return null;
+}
+
+// The owner's answer in full (#C725 B2): the button he pressed (status), the note beside it, and "something else" on a Decision.
+// chose = an option (with an optional note); other = "something else" (a Decision, the note says what); done and help = an action,
+// terminal, session start or later (help needs its note); ack = an answer or thread (a note is a follow-up). Returns null when fine.
+export const ANSWER_NOTE_MAX = 2000;
+const STATUS_OF_TYPE = { Decision: ["chose"], Answer: ["ack"], Thread: ["ack"], Action: ["done", "help", "ack"], Terminal: ["done", "help", "ack"], SessionStart: ["done", "help", "ack"], Later: ["done", "help", "ack"] };
+export function answerShapeRefusal(ask, { status, note, other, hasFiles } = {}) {
+  const allowed = STATUS_OF_TYPE[ask.type] ?? [];
+  if (!allowed.includes(status)) return refuse("answer-status", `${ask.type} is answered with ${allowed.join(" or ") || "Approve only"}, not ${String(status).slice(0, 20)}`);
+  if (note !== undefined && !(typeof note === "string" && note.length <= ANSWER_NOTE_MAX)) return refuse("answer-shape", `a note is text up to ${ANSWER_NOTE_MAX} characters`);
+  if (other !== undefined && typeof other !== "boolean") return refuse("answer-shape", "other is true or false");
+  if (other && ask.type !== "Decision") return refuse("answer-shape", "only a Decision has a something-else answer");
+  const text = typeof note === "string" ? note.trim() : "";
+  if ((other || status === "help") && !text && !hasFiles) return refuse("answer-needs-note", "say in a few words what you want, or attach a file");
+  return null;
+}
+
+// An Action's steps: plain text, or {text, cmd} where cmd is a command the page shows with a Copy button.
+export function stepsRefusal(steps) {
+  if (!Array.isArray(steps) || steps.length > 30) return refuse("ask-missing-part", "steps are a list of at most 30");
+  for (const s of steps) {
+    const ok = typeof s === "string" ? s.length <= 2000 : s && typeof s === "object" && !Array.isArray(s) && Object.keys(s).every((k) => k === "text" || k === "cmd") && typeof s.text === "string" && s.text.length <= 2000 && (s.cmd === undefined || (typeof s.cmd === "string" && s.cmd.length <= 4000));
+    if (!ok) return refuse("steps-shape", "a step is text, or {text, cmd} with the command as text");
+  }
   return null;
 }
 

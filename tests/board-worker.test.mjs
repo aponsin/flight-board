@@ -26,6 +26,15 @@ test("no tool writes status or phase, and the tool schemas forbid unknown fields
   }
 });
 
+test("the ask tool's schema lets an Action's step be text or {text, cmd}, and nothing else (#C725 B2)", () => {
+  const items = TOOLS.find((t) => t.name === "ask").inputSchema.properties.steps.items;
+  const kinds = items.anyOf;
+  assert.deepEqual(kinds[0], { type: "string" });
+  assert.deepEqual(Object.keys(kinds[1].properties).sort(), ["cmd", "text"]);
+  assert.equal(kinds[1].additionalProperties, false);
+  assert.deepEqual(kinds[1].required, ["text"]);
+});
+
 test("a POST that is not application/json is refused (a cross-site text/plain form), on the page route and on /mcp", async () => {
   const { call } = make();
   const body = JSON.stringify({ id: "t1", answer: "A" });
