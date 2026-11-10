@@ -1,0 +1,1 @@
+PASS Full: #C729 B4a card fields, stacked on B1b v11 7ca60222. Delta 7ca60222..156a3d36 reviewed: depends_on, issues with issues_at, queue_pos, thread id by #T number, migration 0014. Checked on create and update, issue kinds match the page's five. Touched tests 107/107. Mutations caught: repeated depends ids, any issue key or count, any queue place.
