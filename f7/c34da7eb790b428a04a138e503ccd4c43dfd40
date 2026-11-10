@@ -1,0 +1,1 @@
+PASS Full: C732 stall wake v2 at f7c34da on main 61c2dd3. The redundant replace update was removed: the cleanup marks a changed reason taken, and the replacement test fails without it. Queued-CI exemption tested. 35 of 35 stall and route tests pass. Mutations caught: queued exemption, cleanup, wait from max start or since, inbox taking stalls, pending count, role pattern.
