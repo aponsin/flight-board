@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { render, observe } from "../scripts/fixtures.mjs";
+import { drawPage } from "./helpers/draw-page.mjs";
 import { compatView, waitingDoc, optionOfKey, optionObjects } from "../worker/compat-view.mjs";
 
 const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
@@ -97,4 +98,20 @@ test("a paused card the probe reads stays paused: after the active ones, marked 
   assert.match(paused, /<span class="state paused">Paused<\/span>/);
   assert.doesNotMatch(paused, /class="pv"/, "no version line on the paused card");
   assert.match(active, /<div class="pv">In review<\/div>/, "control: the active card in the same phase has its line");
+});
+
+// Checker on #C732: only going live ends the hold. The page's evidence step, on its own (a card read live is closed as done further
+// on, so the list never shows it): a paused or parked card read live becomes active; read in review it keeps its status.
+test("the evidence step: a paused or parked card read live is active again; read in review it keeps its hold", () => {
+  const ev = (phase) => ({ "cards.c29": { value: { lit: [phase], phase, headSha12: "aaaaaaaaaaaa", onMain: false }, readAt: NOW - 60e3 } });
+  const step = (phase, status) => {
+    const { b } = drawPage(compatView(view({ cards: [card({ id: "c29", num: 29 })], evidence: ev(phase) })).collections, { expose: ["byEvidence"] });
+    return b.byEvidence({ id: "c29", num: 29, status, phase: "build" });
+  };
+  for (const status of ["paused", "parked"]) {
+    assert.equal(step("live", status).status, "active", `${status}, read live`);
+    assert.equal(step("live", status).phase, "live");
+    assert.equal(step("checker", status).status, status, `${status}, read in review`);
+  }
+  assert.equal(step("checker", "active").status, "active", "control: an active card stays active");
 });
