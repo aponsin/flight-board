@@ -234,6 +234,9 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     const v = evidence?.[c.id], phase = v?.lit?.[0];
     if (typeof phase !== "string" || phase === "live" || !PHASES.includes(phase)) continue;
     if (v.ci === "running" || v.ci === "queued" || v.shipping === true) continue;
+    // #C737: a card of another repository (a repo word) that is on main and read at ship is waiting for the owner's deploy, not for Release:
+    // it never wakes Manager as stalled.
+    if (phase === "ship" && v.onMain === true && typeof c.repo === "string" && c.repo !== "") continue;
     const role = PHASE_LANES[phase] ?? c.owner_role;
     if (typeof role !== "string" || !/^[A-Za-z0-9 _-]{1,24}$/.test(role)) continue;
     const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`);

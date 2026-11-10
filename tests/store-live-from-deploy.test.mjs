@@ -118,11 +118,46 @@ test("a pair made from the templates: the deploy sets BUILD_SHA to the signed co
   const { makePair } = await import("../scripts/pair/make-pair.mjs");
   const files = makePair({ name: "pc11", card: "#C737", what: "w", signed: "d".repeat(40), deployOk: "ok", treeOk: "ok" });
   const [deploy, tree] = [files["board-store-deploy-pc11.mjs"], files["board-store-tree-pc11.mjs"]];
-  assert.match(deploy, /"--var", `BUILD_SHA:\$\{SIGNED\}`/);
+  assert.match(deploy, /"--var", `BUILD_SHA:\$\{checkedOut\}`/);
+  assert.match(deploy, /const checkedOut = String\(spawnSync\("git", \["-C", TREE, "rev-parse", "HEAD"\]/, "the value is read back from the checkout");
+  assert.match(deploy, /if \(checkedOut !== SIGNED\) fail\(/, "and it must be the signed commit");
+  assert.equal((deploy.match(/BUILD_SHA:/g) ?? []).length, 1, "BUILD_SHA is set in exactly one place");
+  assert.ok(!/process\.env|process\.argv\.slice|process\.argv\[2\]/.test(deploy), "no argument or environment reaches the deploy");
   assert.ok(deploy.includes("board-store-deploy-pc11.done") && tree.includes("board-store-deploy-pc11.done"), "one marker name in both");
   assert.ok(deploy.indexOf('"--var"') < deploy.indexOf("writeFileSync(`${HERE}"), "the marker is written after the deploy");
   const dir = mkdtempSync(join(tmpdir(), "fb-c737files-"));
   for (const [f, text] of Object.entries(files)) { writeFileSync(join(dir, f), text); execFileSync("node", ["--check", join(dir, f)], { stdio: "pipe" }); }
+});
+
+test("a deploy made without the template resets BUILD_SHA to its plain default (empty): the Worker says nothing and the card reads ship, never the last sha", async () => {
+  const toml = readFileSync(new URL("../worker/wrangler.board.toml", import.meta.url), "utf8");
+  assert.match(toml, /^BUILD_SHA = ""$/m, "the plain default is empty");
+  const r = rig();
+  const WHO = { probe: { who: "probe", role: "probe" } };
+  const answer = await (await worker.fetch(new Request("https://board.test/api/probe/build", { headers: { "x-as": "probe" } }), { DB: makeDb(), BUILD_SHA: "" }, null, Date.now(), async (req) => WHO[req.headers.get("x-as")] ?? null)).json();
+  assert.deepEqual(answer, { sha: null });
+  const dep = await readDeploy({ base: "https://x.test", headers: {}, fetchImpl: async () => ({ ok: true, json: async () => answer }), treeSha: () => r.c3 });
+  assert.equal(dep.worker, "");
+  const s = read(r, deployedSha((a) => r.g(a), dep.worker, dep.tree));
+  assert.equal(s.phase, "ship"); assert.notEqual(s.phase, "live");
+});
+
+// #C737 (Manager): a card of another repository that is on main and read at ship waits for the owner's deploy, not for Release: the
+// stall wake of #C732 does not fire for it. Control: the same card without a repo word, or not yet on main, still wakes.
+test("the stall wake does not fire for a board-repository card on main at ship; it still does for one not on main or one with no repo word", async () => {
+  const { createCard, writeEvidence, wakeAsk } = await import("../worker/board-store.mjs");
+  const T = 1_800_000_000_000, MIN = 60_000;
+  const wakes = async (card, evidence) => {
+    const db = makeDb();
+    await createCard(db, T, "Manager", { id: "card-a", title: "A card", owner_role: "Boardsmith", ...card });
+    await writeEvidence(db, T, "probe", "cards.card-a", { lit: ["ship"], phase: "ship", ci: "none", ...evidence });
+    await writeEvidence(db, T, "probe", "agents", { Release: { state: "idle", tool: null, card: null, since: T } });
+    return (await wakeAsk(db, T + 20 * MIN)).count;
+  };
+  assert.equal(await wakes({}, { onMain: true }), 1, "a card with no repo word at ship, Release idle 20 min: a stall (the team's own flow)");
+  assert.equal(await wakes({ repo: "flight-board" }, { onMain: false }), 1, "queued for a board release, not on main: Release's to land, a stall");
+  assert.equal(await wakes({ repo: "flight-board" }, { onMain: true }), 0, "on main, waiting for the owner's deploy: not a stall");
+  assert.equal(await wakes({ repo: "flight-board" }, {}), 1, "no reading of main: not exempt");
 });
 
 // The pair's ordering: the tree does not move until the deploy of the same pair has said it ran with the same commit.

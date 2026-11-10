@@ -81,7 +81,10 @@ function main() {
   if (mig.status !== 0) fail(`migration exited ${mig.status ?? mig.error?.message}`);
 
   // #C737: the Worker is told which commit it was deployed from (BUILD_SHA); the probe reads it to decide when a board card is live.
-  const dep = spawnSync("npx", ["--yes", WRANGLER, "deploy", "--config", CONFIG, "--var", `BUILD_SHA:${SIGNED}`], { encoding: "utf8" });
+  // The value is the commit the checkout is at (read back from git, and the same as the signed one or the run stops): never an argument.
+  const checkedOut = String(spawnSync("git", ["-C", TREE, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout ?? "").trim();
+  if (checkedOut !== SIGNED) fail("the checkout is not at the signed commit; nothing was deployed");
+  const dep = spawnSync("npx", ["--yes", WRANGLER, "deploy", "--config", CONFIG, "--var", `BUILD_SHA:${checkedOut}`], { encoding: "utf8" });
   const said = (dep.stdout ?? "") + (dep.stderr ?? "") + (dep.error?.message ?? "");
   if (dep.status !== 0) fail(`deploy exited ${dep.status}: ${said.slice(-200).replace(/\s+/g, " ")}`);
   const id = /Current Version ID:\s*([0-9a-f-]{36})/i.exec(said)?.[1];
