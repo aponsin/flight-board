@@ -1,0 +1,1 @@
+PASS #C740 ship feed times by shippedAt. Suite 1869 of 1869. Mutations that fail tests: the 30-day bound, the not-in-future bound, never moving a ship earlier. Green and equivalent: the isFinite checks, since a non-number already falls back through the comparisons and a fallback now is never earlier than a stored time. PARITY red-lines row as the lead decided. Checker 2026-11-10
