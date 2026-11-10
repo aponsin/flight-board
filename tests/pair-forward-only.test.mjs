@@ -155,3 +155,9 @@ test("the pair maker: both files carry the same guard, parse, and refuse values 
   for (const bad of [{ what: 'x"; process.exit(0); "' }, { card: "a\nb" }, { deployOk: "`$(x)`" }, { treeOk: "@@SIGNED@@" }, { signed: "abc" }, { name: "../x" }]) assert.throws(() => makePair({ ...base, ...bad }), undefined, JSON.stringify(bad));
   mkdirSync(join(dir, "ok"));
 });
+
+test("the pair maker refuses a backslash (one ending a value would escape the closing quote), a $ and a @@ in every text value (Security's LOW on 93877f5)", () => {
+  const base = { name: "pc10", card: "#C734", what: "w", signed: "a".repeat(40), deployOk: "ok", treeOk: "ok" };
+  for (const v of ["ends with a backslash\\", "a \\ in the middle", "\\", "costs $5", "$", "a@@b", "@@"]) for (const k of ["card", "what", "deployOk", "treeOk"]) assert.throws(() => makePair({ ...base, [k]: v }), undefined, `${k}: ${JSON.stringify(v)}`);
+  assert.doesNotThrow(() => makePair(base), "the plain values still make a pair");
+});
