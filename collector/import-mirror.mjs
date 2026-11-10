@@ -18,7 +18,7 @@ const SIZES = ["XS", "S", "M", "L", "XL"], LEVELS = ["None", "Quick", "Full"];
 // The old board kept free text in phaseReason; the store's rework_reason is one of five words. Only those five carry over.
 const REWORK = ["bug found in test", "review findings", "design change", "security finding", "owner change"];
 const flag = (v) => (v === true ? 1 : v === false ? 0 : null);
-const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+export const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const int = (v) => (Number.isInteger(v) && v >= 0 ? v : null);
 const str = (v) => (typeof v === "string" && v.trim() ? v : null);
 const TYPE = { decision: "Decision", choice: "Decision", look: "Decision", action: "Action", answer: "Answer", later: "Later", session: "SessionStart" };
