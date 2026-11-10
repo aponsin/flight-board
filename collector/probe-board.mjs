@@ -5,6 +5,9 @@ import { readFileSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
+import { dispatchRun } from "./store-dispatch.mjs";
+import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
+import { home } from "../gate/gate.mjs";
 
 export const SEND_TIMEOUT_MS = 25_000;  // inside the ask job's 30 s limit
 export const FETCH_TIMEOUT_MS = 8_000;
@@ -74,11 +77,19 @@ export async function liveJob({ base, headers, productUrl, fetchImpl = fetch, lo
   return { written: true, version: v.version };
 }
 
-// The CLI entry: node probe-board.mjs --job ask|live --env <file> [--product <url>] [--base <url>]
+// The owners' dispatch (#C821): read the store's view, write dispatch.json and dispatch-state.json for the role watches. `dir` is
+// <stateDir>/<board>; roster and lead come from the team's board.config.json.
+export async function dispatchJob({ base, headers, fetchImpl = fetch, dir, roster, lead, now = Date.now, log = () => {} }) {
+  const r = await fetchImpl(`${base}/api/view`, { method: "GET", headers, redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!r.ok) throw new Error(`view answered ${r.status}`);
+  return dispatchRun(await r.json(), { dir, roster, lead, now: now(), log });
+}
+
+// The CLI entry: node probe-board.mjs --job ask|live|dispatch --env <file> [--product <url>] [--base <url>] [--config <board.config.json>]
 export async function main(argv, { env = process.env, exit = (c) => process.exit(c), fetchImpl = fetch } = {}) {
   const get = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   const job = get("--job");
-  if (!JOBS[job] || !["ask", "live"].includes(job)) { console.error(`unknown job ${job}`); return exit(64); }
+  if (!JOBS[job] || !["ask", "live", "dispatch"].includes(job)) { console.error(`unknown job ${job}`); return exit(64); }
   const cfg = loadEnv(get("--env"));
   // The board's address is configuration (an argument, or BOARD_BASE_URL in the env file), never written into the code.
   const base = get("--base") ?? cfg.BOARD_BASE_URL;
@@ -86,10 +97,22 @@ export async function main(argv, { env = process.env, exit = (c) => process.exit
   // claude's full path for the wake send (a launchd job has no PATH to find it); when given it must be absolute.
   const claudePath = get("--claude") ?? "claude";
   if (get("--claude") !== undefined && !isAbsolute(claudePath)) { console.error("--claude must be a full path"); return exit(64); }
+  // The dispatch job needs the team's config for the state folder, the roster and the lead (the same file the watches read).
+  let team = null;
+  if (job === "dispatch") {
+    try {
+      const raw = JSON.parse(readFileSync(get("--config"), "utf8"));
+      if (checkConfig(raw).length) throw new Error("bad config");
+      const full = fullConfig(raw), id = boardId(full);
+      if (!id) throw new Error("no board link");
+      team = { dir: `${home(full.gate.stateDir)}/${id}`, roster: full.roster, lead: full.gate.managerRole };
+    } catch { console.error("dispatch: pass --config <board.config.json> (a usable team config)"); return exit(64); }
+  }
   const run = startRun(job);
   const headers = accessHeaders(cfg);
   try {
-    if (job === "ask") await run.step("ask the store", () => askJob({ base, headers, fetchImpl, log: run.log, send: (l) => realSend(l, { claudePath, cwd: get("--send-cwd") }) }));
+    if (job === "dispatch") await run.step("write the dispatch files", () => dispatchJob({ base, headers, fetchImpl, ...team, log: run.log }));
+    else if (job === "ask") await run.step("ask the store", () => askJob({ base, headers, fetchImpl, log: run.log, send: (l) => realSend(l, { claudePath, cwd: get("--send-cwd") }) }));
     else await run.step("read version.json", () => liveJob({ base, headers, productUrl: get("--product"), log: run.log }));
     return exit(run.finish(0));
   } catch (e) {

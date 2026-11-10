@@ -12,6 +12,7 @@ export const JOBS = {
   ask: { intervalSec: 20, limitSec: 30 },
   evidence: { intervalSec: 60, limitSec: 90 },
   usage: { intervalSec: 300, limitSec: 120 },
+  dispatch: { intervalSec: 60, limitSec: 45 }, // #C821: the owners' DISPATCH files from the store's view
 };
 export const OUTER_EXTRA_SEC = 15; // the OS alarm fires this long after the inside limit if the process is still stuck
 

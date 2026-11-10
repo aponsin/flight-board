@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { JOBS, OUTER_EXTRA_SEC, makeLogger, startRun, runChild, launchdPlist } from "../collector/probe-run.mjs";
 
-test("three cadences, each with an inside limit well under row 4's 3 minutes", () => {
-  assert.deepEqual(Object.keys(JOBS), ["ask", "evidence", "usage"]);
-  assert.deepEqual(Object.values(JOBS).map((j) => j.intervalSec), [20, 60, 300]);
-  assert.deepEqual(Object.values(JOBS).map((j) => j.limitSec), [30, 90, 120]);
+test("four cadences (#C821 added dispatch), each with an inside limit well under row 4's 3 minutes", () => {
+  assert.deepEqual(Object.keys(JOBS), ["ask", "evidence", "usage", "dispatch"]);
+  assert.deepEqual(Object.values(JOBS).map((j) => j.intervalSec), [20, 60, 300, 60]);
+  assert.deepEqual(Object.values(JOBS).map((j) => j.limitSec), [30, 90, 120, 45]);
   for (const j of Object.values(JOBS)) assert.ok(j.limitSec + OUTER_EXTRA_SEC < 180);
 });
 
@@ -46,9 +46,9 @@ test("a child process is killed at its own timeout", async () => {
 
 test("each cadence is its own launchd job with the OS alarm in front of the program", () => {
   const plists = Object.keys(JOBS).map((job) => launchdPlist({ job, label: `com.flight-board.probe.${job}`, nodePath: "/usr/bin/node", script: "/x/probe.mjs", logPath: `/x/${job}.log` }));
-  assert.equal(new Set(plists.map((p) => /<key>Label<\/key><string>([^<]+)/.exec(p)[1])).size, 3);
-  assert.deepEqual(plists.map((p) => Number(/<key>StartInterval<\/key><integer>(\d+)/.exec(p)[1])), [20, 60, 300]);
-  assert.deepEqual(plists.map((p) => /alarm (\d+); exec @ARGV/.exec(p)[1]), ["45", "105", "135"]);
+  assert.equal(new Set(plists.map((p) => /<key>Label<\/key><string>([^<]+)/.exec(p)[1])).size, 4);
+  assert.deepEqual(plists.map((p) => Number(/<key>StartInterval<\/key><integer>(\d+)/.exec(p)[1])), [20, 60, 300, 60]);
+  assert.deepEqual(plists.map((p) => /alarm (\d+); exec @ARGV/.exec(p)[1]), ["45", "105", "135", "60"]);
   for (const p of plists) assert.match(p, /<string>\/usr\/bin\/perl<\/string><string>-e<\/string>/);
 });
 
