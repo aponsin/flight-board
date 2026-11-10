@@ -1,0 +1,1 @@
+PASS #C744 decision log build/c744-decision-log-v2 by Checker 2026-11-10. Quick. docs/DECISIONS.md only, one commit on main d1d18da8. The four accepted LOWs match the code: ownHead, mainEvidence range 1 to 1e6, stalledWaits repo-word exemption, the C732 live test gap. Suite 1902/1902. No new guard, no mutation needed.
