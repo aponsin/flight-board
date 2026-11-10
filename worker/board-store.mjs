@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, ASK_PARTS, APPROVE } from "./board-rules.mjs";
+import { askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, ASK_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -191,8 +191,27 @@ export async function ackShip(db, now, who, version) {
 const pendingForManager = async (db) => {
   const m = await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE delivered_at IS NULL AND author = 'owner'").first();
   const a = await db.prepare("SELECT COUNT(*) AS n FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL").first();
-  return m.n + a.n;
+  const s = await db.prepare("SELECT COUNT(*) AS n FROM stall_wakes WHERE taken_at IS NULL").first();
+  return m.n + a.n + s.n;
 };
+// #C732: the cards that wait 15 min at a phase while its agent is idle (stalledWaits, board-rules.mjs), kept as one row per
+// (card, reason): a new reason for a card is pending for Manager once, an older untaken reason of the card is replaced by it, and a stall
+// that is over is no longer pending. A reason already sent is never sent again.
+async function syncStalls(db, now) {
+  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, waiting_on FROM cards").all()).results;
+  const evRows = (await db.prepare("SELECT key, value FROM evidence WHERE key = 'agents' OR key LIKE 'cards.%'").all()).results;
+  let agents = {}; const evidence = {};
+  for (const r of evRows) { let v; try { v = JSON.parse(r.value); } catch { continue; } if (r.key === "agents") agents = v; else evidence[r.key.slice(6)] = v; }
+  const openAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
+  const phaseStart = new Map((await db.prepare("SELECT card_id, phase, MAX(at) AS at FROM phase_history WHERE kind = 'start' GROUP BY card_id, phase").all()).results.map((r) => [`${r.card_id}|${r.phase}`, r.at]));
+  const stalls = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart });
+  for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
+  // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
+  // replaced by its new one here, so Manager never reads both.
+  const current = new Set(stalls.map((s) => `${s.card_id}|${s.reason}`));
+  const pending = (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE taken_at IS NULL").all()).results;
+  for (const p of pending) if (!current.has(`${p.card_id}|${p.reason}`)) await db.prepare("UPDATE stall_wakes SET taken_at = ? WHERE card_id = ? AND reason = ?").bind(now, p.card_id, p.reason).run();
+}
 const wakeFacts = (w, askedAt) => ({ askedAt, batchId: w.batch_id, count: w.batch_count, batchAt: w.batch_at, takenAt: w.taken_at, lastSendAt: w.last_send_at ?? undefined, lastSendBatch: w.last_send_batch, lastSendOk: w.last_send_ok === null ? undefined : w.last_send_ok === 1, lastSendReason: w.last_send_reason ?? undefined, lastSendFix: w.last_send_fix ?? undefined });
 
 // The probe's 20-second ask: the heartbeat, and the answer to "anything for Manager?". Opens a batch when something is
@@ -200,6 +219,7 @@ const wakeFacts = (w, askedAt) => ({ askedAt, batchId: w.batch_id, count: w.batc
 export async function wakeAsk(db, now) {
   await db.prepare("UPDATE wake SET alive_at = ? WHERE id = 1").bind(now).run();
   let w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
+  await syncStalls(db, now);
   const n = await pendingForManager(db);
   const open = w.batch_id && w.taken_at < w.batch_at;
   if (n > 0 && !open) {
@@ -230,8 +250,11 @@ export async function takeInbox(db, now) {
   const mark = async (sql, rows) => { for (let i = 0; i < rows.length; i += 90) { const ids = rows.slice(i, i + 90).map((r) => r.id); await db.prepare(sql.replace("(?)", `(${ids.map(() => "?").join(", ")})`)).bind(now, ...ids).run(); } };
   await mark("UPDATE messages SET delivered_at = ? WHERE delivered_at IS NULL AND id IN (?)", messages);
   await mark("UPDATE asks SET answer_taken_at = ? WHERE answer_taken_at IS NULL AND id IN (?)", answers);
+  // #C732: the stalls pending (each with its reason), taken with the rest; the reason text is built from card numbers, phase and role names.
+  const stalls = (await db.prepare("SELECT s.card_id, c.num, s.reason FROM stall_wakes s LEFT JOIN cards c ON c.id = s.card_id WHERE s.taken_at IS NULL ORDER BY s.created_at").all()).results;
+  for (const s of stalls) await db.prepare("UPDATE stall_wakes SET taken_at = ? WHERE card_id = ? AND reason = ? AND taken_at IS NULL").bind(now, s.card_id, s.reason).run();
   await db.prepare("UPDATE wake SET taken_at = ?, seen_at = ? WHERE id = 1").bind(now, now).run();
-  return { ok: true, messages, answers };
+  return { ok: true, messages, answers, stalls };
 }
 
 // Evidence: only the probe writes it; one lit phase per card.
