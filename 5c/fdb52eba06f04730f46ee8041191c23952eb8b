@@ -1,0 +1,1 @@
+PASS Full: #C725 B2 v9, v8 6cc8bb5a rebased onto main 1b1ff45 after the probe fix v7. range-diff shows only DECISIONS context, both entries kept. Touched tests 76/76. The commit message's 'cut on main 34069b47' is stale, the base is 1b1ff45.
