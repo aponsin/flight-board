@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { idsOf, boardIdsFromGit, planDelta, deltaSql, report } from "../collector/import-delta.mjs";
+import { idsOf, boardIdsFromGit, planDelta, planAsks, deltaSql, report } from "../collector/import-delta.mjs";
 
 const card = (num, extra = {}) => ({ num, name: `Card ${num}`, summary: "s", size: "S", level: "Full", who: "Boardsmith", status: "active", createdAt: 1000 + num, ...extra });
 
@@ -124,4 +124,122 @@ test("a done card's file-name id passes the card-id rule too (Security 3)", () =
   const p = planDelta({ "h'); DELETE FROM cards; --": card(740, { status: "done", doneAt: 5000 }), "fine-done": card(741, { status: "done", doneAt: 5000 }) }, {});
   assert.deepEqual(p.history.map((h) => h.id), ["fine-done"]);
   assert.deepEqual(p.refused.map((r) => r.rule), ["card-id"]);
+});
+
+// The asks and threads still open on the old board (#C744).
+const ROSTER = ["Builder", "Manager", "Checker"];
+const docsOf = (extra = {}) => ({
+  initiatives: {}, threads: { "t-a": { num: 900, title: "A" }, "t-b": { num: 901, title: "B" }, "t-res": { num: 902, title: "R" } },
+  messages: { m1: { thread: "t-a", from: "Manager", text: "hello", at: 5000 }, m2: { thread: "t-res", from: "Owner", text: "done", at: 6000, resolved: true }, m3: { thread: "t-a", from: "Owner", text: "ok", at: 7000 } },
+  waiting: {
+    "w-open": { kind: "later", thread: "t-a", text: "wait for it", who: "Builder", eta: 4_000_000_000_000 },
+    "w-new": { kind: "action", thread: "t-b", steps: ["s"], expect: "e" },
+    "w-done": { kind: "action", done: true },
+    "w-res": { kind: "later", thread: "t-res", text: "x", eta: 4_000_000_000_000 },
+    "w-bad": { kind: "decision", thread: "t-b", question: "q" },
+  }, ...extra,
+});
+
+test("asks: only open items come in, with their #T numbers, their thread messages, and the lead as the asker where none is named; a refused item is listed, never patched", () => {
+  const a = planAsks(docsOf(), { owner: "Owner", roster: ROSTER, lead: "Manager", liveT: 0, storeAsks: [] });
+  assert.deepEqual(a.asks.map((r) => r.id).sort(), ["w-new", "w-open"]);
+  assert.equal(a.asks.find((r) => r.id === "w-open").num, 900);
+  assert.equal(a.asks.find((r) => r.id === "w-open").asked_by, "Builder");
+  assert.equal(a.asks.find((r) => r.id === "w-new").asked_by, "Manager");
+  assert.deepEqual(a.messages.map((m) => m.id).sort(), ["m1", "m3"]);
+  assert.deepEqual(a.skipped, { doneAsks: 1, resolvedAsks: 1 });
+  assert.deepEqual(a.refused.map((r) => [r.kind, r.id]), [["ask", "w-bad"]]);
+  assert.equal(a.counterT, 903);
+  assert.deepEqual([a.counts.needs, a.counts.later, a.counts.lead], [1, 1, 0]);
+});
+
+test("asks: a second run with asks already in the store lists them as held, imports nothing twice (INSERT OR IGNORE), and closes nothing", () => {
+  const a = planAsks(docsOf(), { owner: "Owner", roster: ROSTER, lead: "Manager", storeAsks: [{ id: "w-open", closed_at: null }, { id: "w-done", closed_at: null }] });
+  assert.deepEqual(a.heldAlready, ["w-open"]);
+  assert.deepEqual(a.newAsks, ["w-new"]);
+  assert.deepEqual(a.stillOpenInStoreButClosedOld, ["w-done"]);
+  const sql = deltaSql({ insert: [], history: [], setRepo: [], counterC: 745 }, a);
+  assert.equal(sql.split("\n").filter((l) => l.startsWith("INSERT OR IGNORE INTO asks")).length, 2);
+  assert.equal(sql.split("\n").filter((l) => l.startsWith("INSERT OR IGNORE INTO messages")).length, 2);
+  assert.match(sql, /UPDATE counters SET next = MAX\(next, 903\) WHERE name = 'T';/);
+  assert.doesNotMatch(sql, /UPDATE asks|DELETE|DROP/);
+});
+
+test("asks: a thread number outside 1 to 1e6 is dropped and the ask gets the next number above the counters; a control character refuses the item (Security's rules)", () => {
+  const d = docsOf({ threads: { "t-a": { num: 1e300 }, "t-b": { num: 901 } } });
+  d.messages.m1.text = "a\u0000b";
+  const a = planAsks(d, { owner: "Owner", roster: ROSTER, lead: "Manager" });
+  assert.deepEqual(a.droppedThreadNums, ["t-a"]);
+  assert.ok(a.asks.every((r) => Number.isInteger(r.num) && r.num < 1e6));
+  assert.deepEqual(a.refused.filter((r) => r.rule === "control-char").map((r) => [r.kind, r.id]), [["message", "m1"]]);
+  assert.ok(!a.messages.some((m) => m.id === "m1"));
+  const e = planAsks(docsOf({ waiting: { "w-nul": { kind: "later", text: "a\u0000b", eta: 4_000_000_000_000 } } }), { owner: "Owner", roster: ROSTER, lead: "Manager" });
+  assert.deepEqual(e.refused.map((r) => [r.kind, r.id, r.rule]), [["ask", "w-nul", "control-char"]]);
+});
+
+test("asks the store holds that the old board closed since are listed whether the item is done or its thread is resolved (Checker F1), and one the store already closed is not (F3)", () => {
+  const storeAsks = [{ id: "w-open", closed_at: null }, { id: "w-res", closed_at: null }, { id: "w-done", closed_at: null }, { id: "w-gone", closed_at: null }];
+  const a = planAsks(docsOf({ messages: { m2: { thread: "t-res", from: "Owner", text: "done", at: 6000, resolved: true }, m9: { thread: "t-a", from: "Owner", text: "closed", at: 9000, resolved: true } } }), { owner: "Owner", roster: ROSTER, lead: "Manager", storeAsks });
+  assert.deepEqual(a.stillOpenInStoreButClosedOld.sort(), ["w-done", "w-open", "w-res"]);
+  assert.deepEqual(a.notOnOldBoard, ["w-gone"]);
+  const b = planAsks(docsOf(), { owner: "Owner", roster: ROSTER, lead: "Manager", storeAsks: [{ id: "w-done", closed_at: 5 }, { id: "w-res", closed_at: 6 }] });
+  assert.deepEqual(b.stillOpenInStoreButClosedOld, []);
+});
+
+test("asks: an ask id, a message id and a message's thread id pass the card-id rule, else the item is refused (Checker F2)", () => {
+  const d = docsOf({ waiting: { "W Bad/../id": { kind: "action", thread: "t-b", steps: ["s"], expect: "e" }, "w-ok": { kind: "action", thread: "t-b", steps: ["s"], expect: "e" } }, messages: { "M 1/x": { thread: "t-b", from: "Manager", text: "x", at: 100 }, m5: { thread: "T B/../x", from: "Manager", text: "x", at: 200 }, m6: { thread: "t-b", from: "Manager", text: "y", at: 300 } }, threads: { "t-b": { num: 901, title: "B" }, "T B/../x": { num: 950, title: "X" } } });
+  const a = planAsks(d, { owner: "Owner", roster: ROSTER, lead: "Manager" });
+  assert.deepEqual(a.asks.map((r) => r.id), ["w-ok"]);
+  assert.deepEqual(a.refused.map((r) => [r.kind, r.id, r.rule]).sort(), [["ask", "W Bad/../id", "ask-id"], ["message", "M 1/x", "message-id"]]);
+  assert.deepEqual(a.messages.map((m) => m.id), ["m6"]);
+});
+
+test("asks: a kept thread whose own id fails the card-id rule refuses its messages as message-id (Checker F4)", () => {
+  const d = docsOf({ waiting: { "w-ok": { kind: "action", thread: "T B/../x", steps: ["s"], expect: "e" } }, messages: { m5: { thread: "T B/../x", from: "Manager", text: "x", at: 200 } }, threads: { "T B/../x": { num: 950, title: "X" } } });
+  const a = planAsks(d, { owner: "Owner", roster: ROSTER, lead: "Manager" });
+  assert.deepEqual(a.asks.map((r) => r.id), ["w-ok"]);
+  assert.deepEqual(a.messages, []);
+  assert.deepEqual(a.refused.map((r) => [r.kind, r.id, r.rule]), [["message", "m5", "message-id"]]);
+});
+
+test("an item deleted on the old board ({ deleted: true, updatedAt }) is gone: not an ask, a thread, a message or a card, and not counted open (Manager)", () => {
+  const d = docsOf();
+  d.waiting["w-del"] = { deleted: true, updatedAt: 9000 };
+  d.threads["t-del"] = { deleted: true, updatedAt: 9000 };
+  d.messages["m-del"] = { deleted: true, updatedAt: 9000 };
+  d.waiting["w-new"] = { ...d.waiting["w-new"], deleted: true };
+  const a = planAsks(d, { owner: "Owner", roster: ROSTER, lead: "Manager", storeAsks: [{ id: "w-del", closed_at: null }] });
+  assert.deepEqual(a.asks.map((r) => r.id), ["w-open"]);
+  assert.ok(!a.messages.some((m) => m.id === "m-del"));
+  assert.deepEqual([a.counts.needs, a.counts.later, a.counts.lead], [0, 1, 0]);
+  assert.deepEqual(a.refused.map((r) => r.id), ["w-bad"]);
+  assert.deepEqual(a.notOnOldBoard, ["w-del"]);
+  const p = planDelta({ "c750-gone": { deleted: true, updatedAt: 9000 }, "c751-here": card(751) }, {});
+  assert.deepEqual(p.insert.map((r) => r.id), ["c751-here"]);
+  assert.equal(p.skipped.deleted, 1);
+  assert.deepEqual(p.refused, []);
+});
+
+test("a deleted thread or message keeps its fields on the old board but counts for nothing: no #T from it, no message from it, no closing by it (Checker F5)", () => {
+  const d = docsOf();
+  d.threads["t-del"] = { num: 800, title: "D", deleted: true, updatedAt: 9000 };
+  d.waiting["w-dt"] = { kind: "action", thread: "t-del", title: "Own title", steps: ["s"], expect: "e" };
+  d.messages["m-del"] = { thread: "t-a", from: "Manager", text: "zzz", at: 8000, deleted: true, updatedAt: 9000 };
+  d.messages["m-del-res"] = { thread: "t-a", from: "Owner", text: "closed", at: 9500, resolved: true, deleted: true, updatedAt: 9600 };
+  const a = planAsks(d, { owner: "Owner", roster: ROSTER, lead: "Manager", storeAsks: [{ id: "w-open", closed_at: null }] });
+  assert.ok(a.asks.some((r) => r.id === "w-open"), "an ask whose only resolving message is deleted stays open and is imported");
+  assert.deepEqual(a.messages.map((m) => m.id).sort(), ["m1", "m3"]);
+  assert.notEqual(a.asks.find((r) => r.id === "w-dt").num, 800);
+  assert.equal(a.asks.find((r) => r.id === "w-dt").num, 903);
+  assert.deepEqual(a.stillOpenInStoreButClosedOld, []);
+  assert.equal(a.counterT, 904);
+});
+
+test("appended lines: only a single guarded UPDATE of ships or cards is taken, after everything else; anything else throws", () => {
+  const p = { insert: [], history: [], setRepo: [], counterC: 745 };
+  const line = "UPDATE ships SET shipped_at = 1794260477000 WHERE version = '1.209.1' AND shipped_at > 1794260477000;";
+  const sql = deltaSql(p, null, `${line}\nUPDATE cards SET repo = 'flight-board' WHERE id = 'c743-deploy-pc13' AND repo IS NULL;\n`);
+  assert.equal(sql.split("\n").at(-2), line);
+  assert.match(sql.split("\n").at(-1), /^UPDATE cards SET repo/);
+  for (const bad of ["UPDATE cards SET owner_role = 'x';", "UPDATE ships SET shipped_at = 1 WHERE ;", "DELETE FROM cards;", "UPDATE counters SET next = 1;", "UPDATE ships SET a = 1; DELETE FROM ships;", "UPDATE ships SET a = 'x\u0000';"]) assert.throws(() => deltaSql(p, null, bad), /appended line|control character/);
 });

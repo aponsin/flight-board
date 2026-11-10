@@ -11,11 +11,11 @@
 //    one is listed with rule and id, never patched; a done card is a history row, as in import3, not a card;
 //  3 a card the store holds gets its repo word only if it has none (UPDATE ... WHERE repo IS NULL), nothing else changes;
 //  4 the card counter only goes up. Threads, asks, messages and steps are not touched: the probe writes a card's phase history itself.
-import { readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cardRow, ID } from "./import-mirror.mjs";
+import { cardRow, ID, plan as mirrorPlan, readMirror, compare, closures } from "./import-mirror.mjs";
 
 // A control character other than tab and newline (a NUL cuts the SQL text: SQLite would run the earlier statements, then fail) is never written.
 const CTRL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
@@ -46,9 +46,10 @@ export function boardIdsFromGit(git) {
 // docs: the exported initiatives { id: doc }. store: { cardIds: Set, historyIds: Set } of what the store holds. boardIds: the set above.
 export function planDelta(docs, { storeIds = new Set(), historyIds = new Set(), boardIds = new Set(), repoWord = "flight-board", fromNum = 719 } = {}) {
   if (!WORD.test(repoWord)) throw new Error("repo word: lower case letters, digits and -");
-  const out = { insert: [], history: [], setRepo: [], refused: [], teamCards: [], skipped: { belowNum: 0, alreadyThere: 0 }, counterC: 0 };
+  const out = { insert: [], history: [], setRepo: [], refused: [], teamCards: [], skipped: { belowNum: 0, alreadyThere: 0, deleted: 0 }, counterC: 0 };
   for (const [id, d] of Object.entries(docs).sort(([a], [b]) => a.localeCompare(b))) {
     // No number at all is not a card (left alone, as before); a number that is not an integer from 1 to 1e6 is refused, never counted.
+    if (d?.deleted === true) { out.skipped.deleted++; continue; }
     if (d?.num === undefined || d?.num === null) { out.skipped.belowNum++; continue; }
     if (!numOk(d.num)) { out.refused.push({ id, rule: "card-shape", detail: "number out of range" }); continue; }
     const num = d.num;
@@ -77,14 +78,62 @@ export function planDelta(docs, { storeIds = new Set(), historyIds = new Set(), 
   return out;
 }
 
-export function deltaSql(p) {
+// The asks and threads still open on the old board (#C744), by the first import's rules (collector/import-mirror.mjs plan: open items only,
+// the owner's answer carried, the old #T number kept, the store's own ask rules, a refused item listed and never patched, the lead as the
+// asker where the item names none). INSERT OR IGNORE by old id, so a second run with a fresher export changes nothing already there.
+// docs: { initiatives, threads, messages, waiting } (the lists and steps are not read here). storeAsks: the store's own asks.
+// Nothing is closed here: an ask the store holds that the old board has since closed is only listed (stillOpenInStoreButClosedOld).
+export function planAsks(docs, { owner = "", roster = [], lead = "", liveT = 0, storeAsks = [] } = {}) {
+  // A thread number must be an integer from 1 to 1e6 (the probe's rule): any other is dropped, and the ask is given the next number above the counters.
+  // Since board v3.56 a delete on the old board is { deleted: true, updatedAt }: such an item (a waiting item, a thread, a message) is gone, not open.
+  const live = (coll) => Object.fromEntries(Object.entries(coll ?? {}).filter(([, d]) => d?.deleted !== true));
+  const threads = {};
+  const dropped = [];
+  for (const [id, t] of Object.entries(live(docs.threads))) {
+    if (t && t.num !== undefined && !numOk(t.num)) { dropped.push(id); threads[id] = { ...t, num: undefined }; } else threads[id] = t;
+  }
+  const waiting = live(docs.waiting);
+  docs = { ...docs, waiting };
+  const p = mirrorPlan({ initiatives: live(docs.initiatives), threads, messages: live(docs.messages), waiting, ideas: {}, steps: {} }, { owner, roster, lead, liveT });
+  const refused = p.refused.filter((r) => r.kind === "ask" || r.kind === "message");
+  // Every file-name id that reaches the SQL (an ask's, a message's, a message's thread) passes the card-id rule, and no value holds a control character.
+  const okRow = (kind, row, ids) => {
+    if (ids.some((i) => typeof i !== "string" || !ID.test(i))) { refused.push({ kind, id: String(row.id), rule: `${kind}-id` }); return false; }
+    if (!hasCtrl(row)) return true;
+    refused.push({ kind, id: row.id, rule: "control-char" });
+    return false;
+  };
+  const asks = p.asks.filter((r) => okRow("ask", r, [r.id]));
+  const have = new Set(storeAsks.map((s) => s.id));
+  const messages = p.messages.filter((m) => okRow("message", m, [m.id, m.thread_id]));
+  // What the old board has closed since (done, or its thread resolved): the first import's own reading (closures), listed only, never closed here.
+  const cl = closures({ ...docs, threads, messages: live(docs.messages) }, storeAsks ?? [], { now: 0 });
+  const stillOpen = cl.close.map((c) => c.id);
+  return {
+    asks, messages, refused, notes: p.notes, droppedThreadNums: dropped, counts: p.counts, defaultedAsker: p.defaulted,
+    skipped: { doneAsks: p.skipped.doneAsks, resolvedAsks: p.skipped.resolvedAsks },
+    newAsks: asks.filter((a) => !have.has(a.id)).map((a) => a.id), heldAlready: asks.filter((a) => have.has(a.id)).map((a) => a.id),
+    stillOpenInStoreButClosedOld: stillOpen, closeRefused: cl.refused, notOnOldBoard: cl.unknown.map((u) => u.id), counterT: p.counters.T,
+  };
+}
+
+export function deltaSql(p, a = null, append = "") {
   const insert = (t, row) => `INSERT OR IGNORE INTO ${t} (${Object.keys(row).join(", ")}) VALUES (${Object.values(row).map(q).join(", ")});`;
+  const asksSql = a ? [...a.asks.map((r) => insert("asks", r)), ...a.messages.map((r) => insert("messages", r)), `UPDATE counters SET next = MAX(next, ${a.counterT}) WHERE name = 'T';`] : [];
+  const extra = String(append).split("\n").map((s) => s.trim()).filter(Boolean);
+  // Appended lines (--append): one-off, hand-written, each a single guarded UPDATE of ships or cards and nothing else.
+  for (const l of extra) {
+    if (CTRL.test(l)) throw new Error("sql: a control character in the appended lines");
+    if (!/^UPDATE (ships|cards) SET [^;]+ WHERE [^;]+;$/.test(l)) throw new Error(`sql: an appended line that is not a single guarded UPDATE (with a WHERE) of ships or cards: ${l.slice(0, 40)}`);
+  }
   return [
     ...p.insert.map((r) => insert("cards", r)),
     ...p.insert.map((r) => `UPDATE cards SET customer_text = ${q(r.customer_text)}, look_change = ${q(r.look_change)}, skip = ${q(r.skip)} WHERE id = ${q(r.id)} AND customer_text IS NULL AND look_change IS NULL AND skip IS NULL;`),
     ...p.history.map((h) => insert("history_cards", h)),
     ...p.setRepo.map((s) => `UPDATE cards SET repo = ${q(s.repo)} WHERE id = ${q(s.id)} AND repo IS NULL;`),
     `UPDATE counters SET next = MAX(next, ${p.counterC}) WHERE name = 'C';`,
+    ...asksSql,
+    ...extra,
   ].join("\n");
 }
 
@@ -109,6 +158,15 @@ if (process.argv[1] && same(fileURLToPath(import.meta.url), process.argv[1])) {
     storeIds: new Set((view.cards ?? []).map((c) => c.id)), historyIds: new Set((view.historyCards ?? []).map((c) => c.id)),
     boardIds: boardIdsFromGit(git), repoWord: get("--repo-word") ?? "flight-board", fromNum: Number(get("--from-num") ?? 719),
   });
-  console.log(JSON.stringify(report(p), null, 2));
-  if (get("--sql")) writeFileSync(get("--sql"), deltaSql(p) + "\n");
+  // The asks and threads (#C744): read when the export holds a waiting/ folder. The owner and the roster come from the board config (--config).
+  let a = null, asksReport = null;
+  if (existsSync(join(get("--export"), "waiting"))) {
+    if (!get("--config")) { console.error("the export has asks: pass --config <board.config.json> (owner and roster)"); process.exit(64); }
+    const conf = JSON.parse(readFileSync(get("--config"), "utf8"));
+    const expect = Object.fromEntries((get("--expect") ?? "").split(",").filter(Boolean).map((x) => x.split("=")).map(([k, v]) => [k, Number(v)]));
+    a = planAsks(readMirror(get("--export")), { owner: conf.owner ?? "", roster: conf.roster ?? [], lead: get("--lead") ?? "Manager", liveT: Number(get("--live-t") ?? 0), storeAsks: view.asks ?? [] });
+    asksReport = { newAsks: a.newAsks, heldAlready: a.heldAlready, messages: a.messages.length, counts: a.counts, differencesFromOldPage: compare(a.counts, expect), unchecked: ["needs", "later", "lead"].filter((k) => expect[k] === undefined), skipped: a.skipped, refused: a.refused.filter((r) => r.kind !== "message"), refusedMessages: a.refused.filter((r) => r.kind === "message").length, notes: a.notes, droppedThreadNums: a.droppedThreadNums, askedByLead: a.defaultedAsker, stillOpenInStoreButClosedOld: a.stillOpenInStoreButClosedOld, counterT: a.counterT };
+  }
+  console.log(JSON.stringify({ ...report(p), ...(asksReport ? { asks: asksReport } : {}) }, null, 2));
+  if (get("--sql")) writeFileSync(get("--sql"), deltaSql(p, a, get("--append") ? readFileSync(get("--append"), "utf8") : "") + "\n");
 }
