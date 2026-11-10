@@ -89,6 +89,27 @@ test("a card in another repository has no release log: no nudge", () => {
   assert.equal(go(card("photos-lightbox")).length, 1, "the team's own repository still nudges");
 });
 
+test("#C748: a card with an old live step (an earlier version) and a review started after it is not Done; with nothing after the live step it is", () => {
+  const b = loadBoard();
+  b.state.waiting = [];
+  b.state.derived = [{ id: "all", cards: {} }];
+  const card = { id: "x", level: "Full", customerText: false, skip: ["plan"], status: "active", name: "X" };
+  const live = [step("x", "ship", "Release", "start", T), step("x", "ship", "Release", "end", T), step("x", "live", "Release", "start", T + 1), step("x", "live", "Release", "end", T + 2, { version: "v1.158.13" })];
+  b.state.steps = live;
+  assert.equal(b.gates(b.enrich(card)).status, "done", "a finished card is still done");
+  b.state.steps = [...live, step("x", "checker", "Boardsmith", "start", T + HOUR), step("x", "checker", "Boardsmith", "end", T + HOUR + 1), step("x", "security", "Boardsmith", "start", T + HOUR + 2)];
+  const i = b.gates(b.enrich(card));
+  assert.notEqual(i.status, "done", "the newer version is in review");
+  assert.equal(i.phase, "security");
+  // Checker F4: a ship start for the next version, a wait step, or a phase the page does not know, logged after the live step, reopen nothing.
+  b.state.steps = [...live, step("x", "ship", "Release", "start", T + HOUR)];
+  assert.equal(b.gates(b.enrich(card)).status, "done", "a ship start after live (the next version's) is not a reopen");
+  b.state.steps = [...live, step("x", "checker", "Boardsmith", "start", T + HOUR, { wait: "busy" })];
+  assert.equal(b.gates(b.enrich(card)).status, "done", "a wait step after live is not a reopen");
+  b.state.steps = [...live, step("x", "no-such-phase", "Boardsmith", "start", T + HOUR)];
+  assert.equal(b.gates(b.enrich(card)).status, "done", "a phase the page does not know is not a reopen");
+});
+
 test("the page shows the log's times for a card whose live step has none, and no 'no ship times' then", () => {
   const b = loadBoard();
   b.state.steps = [step("x", "ship", "Release", "start", T), step("x", "live", "Release", "end", T + 1, { version: "v1.158.13" })];

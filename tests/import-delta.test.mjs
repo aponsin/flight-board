@@ -165,6 +165,92 @@ test("asks: a second run with asks already in the store lists them as held, impo
   assert.doesNotMatch(sql, /UPDATE asks|DELETE|DROP/);
 });
 
+test("#C748: asks the first import stored without a Later's steps, expect and where, an Action's where, or as a Later when they hold options, are fixed by a guarded UPDATE; once, and not an answered or closed ask", async () => {
+  const { makeDb } = await import("./helpers/d1-sqlite.mjs");
+  const docs = docsOf({ waiting: {
+    "l-steps": { kind: "later", text: "first look", eta: 4_000_000_000_000, steps: ["open it", "note it"], expect: "a few pages", where: "around 2026-10-22" },
+    "a-where": { kind: "action", title: "do it", steps: ["s"], expect: "e", where: "Laptop" },
+    "l-price": { kind: "later", text: "keep them?", eta: 4_000_000_000_000, options: [{ key: "A", label: "Keep", recommended: true }, { key: "B", label: "Match" }] },
+    "l-plain": { kind: "later", text: "plain", eta: 4_000_000_000_000 },
+  } });
+  const a = planAsks(docs, { owner: "Owner", roster: ROSTER, lead: "Manager", storeAsks: [] });
+  assert.deepEqual(a.refused, []);
+  const row = (id) => a.asks.find((r) => r.id === id);
+  assert.equal(row("l-price").type, "Decision");
+  assert.deepEqual(JSON.parse(row("l-price").body), { question: "keep them?", options: ["Keep", "Match"], recommended: "Keep" });
+  assert.equal(row("l-price").eta_at, null);
+  assert.deepEqual(JSON.parse(row("l-steps").body), { text: "first look", steps: ["open it", "note it"], expect: "a few pages", where: "around 2026-10-22" });
+  const db = makeDb();
+  // What the store holds from the first import: the same asks as it kept them then (text only, the options one a Later).
+  const was = { "l-steps": { text: "first look" }, "a-where": { steps: ["s"], expect: "e" }, "l-price": { text: "keep them?" }, "l-plain": { text: "plain" } };
+  for (const r of a.asks) {
+    const old = { ...r, type: r.id === "l-price" ? "Later" : r.type, body: JSON.stringify(was[r.id]), eta_at: r.id === "l-price" ? 4_000_000_000_000 : r.eta_at };
+    await db.prepare(`INSERT INTO asks (${Object.keys(old).join(", ")}) VALUES (${Object.keys(old).map(() => "?").join(", ")})`).bind(...Object.values(old)).run();
+  }
+  const sql = deltaSql({ insert: [], history: [], setRepo: [], counterC: 745 }, a);
+  const fixes = sql.split("\n").filter((l) => l.startsWith("UPDATE asks"));
+  assert.equal(fixes.length, 3, "the plain Later needs none");
+  for (const f of fixes) await db.prepare(f).run();
+  const get = async (id) => (await db.prepare("SELECT type, body, eta_at FROM asks WHERE id = ?").bind(id).first());
+  assert.deepEqual(JSON.parse((await get("l-steps")).body), { text: "first look", steps: ["open it", "note it"], expect: "a few pages", where: "around 2026-10-22" });
+  assert.deepEqual(JSON.parse((await get("a-where")).body), { steps: ["s"], expect: "e", where: "Laptop" });
+  const price = await get("l-price");
+  assert.equal(price.type, "Decision");
+  assert.equal(price.eta_at, null);
+  assert.deepEqual(JSON.parse(price.body).options, ["Keep", "Match"]);
+  assert.deepEqual(JSON.parse((await get("l-plain")).body), { text: "plain" });
+  // A second run changes nothing; an ask answered or closed since is left as it is.
+  const before = JSON.stringify([await get("l-steps"), await get("a-where"), price]);
+  for (const f of fixes) assert.equal((await db.prepare(f).run()).meta.changes, 0);
+  assert.equal(JSON.stringify([await get("l-steps"), await get("a-where"), await get("l-price")]), before);
+  await db.prepare("UPDATE asks SET body = '{\"text\":\"first look\"}', closed_at = 5 WHERE id = 'l-steps'").run();
+  assert.equal((await db.prepare(fixes.find((f) => f.includes("'l-steps'"))).run()).meta.changes, 0);
+});
+
+test("#C748 (Checker F2, F3, remark 3): an ask answered since is not patched; a Decision made from a Later is not rewritten by a later run from an edited export; an item already answered on the old board is not converted", async () => {
+  const { makeDb } = await import("./helpers/d1-sqlite.mjs");
+  const mk = (extra = {}, opts = [{ key: "A", label: "Keep", recommended: true }, { key: "B", label: "Match" }]) => planAsks(docsOf({ waiting: {
+    "l-steps": { kind: "later", text: "first look", eta: 4_000_000_000_000, steps: ["open it"], expect: "pages", where: "Laptop" },
+    "l-price": { kind: "later", text: "keep them?", eta: 4_000_000_000_000, options: opts, ...extra },
+  } }), { owner: "Owner", roster: ROSTER, lead: "Manager", storeAsks: [] });
+  const fixOf = (a, id) => deltaSql({ insert: [], history: [], setRepo: [], counterC: 745 }, a).split("\n").find((l) => l.startsWith("UPDATE asks") && l.includes(`'${id}'`));
+  const a = mk();
+  const db = makeDb();
+  for (const r of a.asks) {
+    const old = { ...r, type: "Later", body: JSON.stringify({ text: r.id === "l-steps" ? "first look" : "keep them?" }), eta_at: 4_000_000_000_000 };
+    await db.prepare(`INSERT INTO asks (${Object.keys(old).join(", ")}) VALUES (${Object.keys(old).map(() => "?").join(", ")})`).bind(...Object.values(old)).run();
+  }
+  // F2: the owner answered l-steps since: its fix changes nothing.
+  await db.prepare("UPDATE asks SET answered_at = 5, answer = 'done' WHERE id = 'l-steps'").run();
+  assert.equal((await db.prepare(fixOf(a, "l-steps")).run()).meta.changes, 0);
+  assert.deepEqual(JSON.parse((await db.prepare("SELECT body FROM asks WHERE id = 'l-steps'").first()).body), { text: "first look" });
+  // F3: the price Later becomes a Decision once; a run from an export with other options then changes nothing.
+  assert.equal((await db.prepare(fixOf(a, "l-price")).run()).meta.changes, 1);
+  const again = mk({}, [{ key: "A", label: "Other", recommended: true }, { key: "B", label: "Another" }]);
+  assert.equal((await db.prepare(fixOf(again, "l-price")).run()).meta.changes, 0);
+  assert.deepEqual(JSON.parse((await db.prepare("SELECT body FROM asks WHERE id = 'l-price'").first()).body).options, ["Keep", "Match"]);
+  // Remark 3: an item the owner answered on the old board is not converted at all (no fix line).
+  const answered = mk({ response: { choice: "A", at: 9_000 } });
+  assert.equal(fixOf(answered, "l-price"), undefined);
+});
+
+test("#C748: --clear-check lifts the check date of the named finished cards only, by a guarded UPDATE; a bad id throws", async () => {
+  const { clearCheckSql } = await import("../collector/import-delta.mjs");
+  const { makeDb } = await import("./helpers/d1-sqlite.mjs");
+  const { createCard } = await import("../worker/board-store.mjs");
+  const db = makeDb();
+  const T = 1_800_000_000_000;
+  await createCard(db, T, "Manager", { id: "c719-done", title: "A", check_at: T + 1000 });
+  await createCard(db, T, "Manager", { id: "c800-open", title: "B", check_at: T + 1000 });
+  const sql = deltaSql({ insert: [], history: [], setRepo: [], counterC: 745 }, null, clearCheckSql("c719-done"));
+  for (const l of sql.split("\n").filter((x) => x.startsWith("UPDATE cards SET check_at"))) await db.prepare(l).run();
+  const at = async (id) => (await db.prepare("SELECT check_at FROM cards WHERE id = ?").bind(id).first()).check_at;
+  assert.equal(await at("c719-done"), null);
+  assert.equal(await at("c800-open"), T + 1000);
+  assert.equal(clearCheckSql(""), "");
+  assert.throws(() => clearCheckSql("ok-id,Bad Id'; DROP"), /not a card id/);
+});
+
 test("asks: a thread number outside 1 to 1e6 is dropped and the ask gets the next number above the counters; a control character refuses the item (Security's rules)", () => {
   const d = docsOf({ threads: { "t-a": { num: 1e300 }, "t-b": { num: 901 } } });
   d.messages.m1.text = "a\u0000b";

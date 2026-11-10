@@ -33,6 +33,16 @@ test("a Later ask may carry steps and expect (#C747); a malformed step or an emp
   assert.equal(askRefusal({ ...later, expect: " " }, NOW).rule, "ask-missing-part");
 });
 
+test("#C748: a Later and an Action may carry a where line; an empty, long or misplaced one is refused", () => {
+  const later = { type: "Later", title: "t", asked_by: "Manager", text: "do it", eta_at: NOW + 3600_000 };
+  const action = { type: "Action", title: "t", asked_by: "Manager", steps: ["s"], expect: "e" };
+  assert.equal(askRefusal({ ...later, where: "Laptop, Google Search Console" }, NOW), null);
+  assert.equal(askRefusal({ ...action, where: "Laptop" }, NOW), null);
+  assert.equal(askRefusal({ ...later, where: " " }, NOW).rule, "ask-missing-part");
+  assert.equal(askRefusal({ ...later, where: "x".repeat(301) }, NOW).rule, "ask-missing-part");
+  assert.equal(askRefusal({ ...decision, where: "Laptop" }, NOW).rule, "ask-missing-part");
+});
+
 test("a session cannot type status or phase; the probe can write evidence", () => {
   assert.equal(cardWriteRefusal({ id: "x", status: "done" }).rule, "only-probe-writes-status");
   assert.equal(cardWriteRefusal({ id: "x", phase: "live" }).rule, "only-probe-writes-status");

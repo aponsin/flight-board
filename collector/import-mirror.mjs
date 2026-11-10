@@ -46,7 +46,9 @@ export function cardRow(id, d) {
 
 // An old waiting item as the store's ask: the parts come from the item as it is; nothing is made up.
 export function askRow(id, d, { thread, askedBy }) {
-  const type = TYPE[d.kind];
+  // #C748: a "later" item that carries options is a question the owner answers (a Decision with its options), not a Later: the store's
+  // Later rule takes no options. Its ETA is not carried (a Decision has none).
+  const type = d.kind === "later" && Array.isArray(d.options) && d.options.length ? "Decision" : TYPE[d.kind];
   if (!type) return { ok: false, rule: "ask-type", detail: `kind ${d.kind ?? "none"}` };
   const ask = { type, title: str(d.title) ?? str(thread?.title) ?? str(d.question)?.slice(0, 120) ?? str(d.text)?.slice(0, 120), asked_by: str(d.from) ?? askedBy };
   // The old board stores options as [{key, label, recommended?}]; the store wants labels and the recommended label. Copied as it
@@ -56,16 +58,16 @@ export function askRow(id, d, { thread, askedBy }) {
   const labels = opts?.map(label);
   const flagged = opts?.find((o) => o && typeof o === "object" && o.recommended === true);
   if (type === "Decision") Object.assign(ask, { question: str(d.question) ?? str(d.text), options: labels?.every(Boolean) ? labels : opts, recommended: flagged ? label(flagged) : d.recommended });
-  if (type === "Action") Object.assign(ask, { steps: d.steps, expect: d.expect });
+  if (type === "Action") Object.assign(ask, { steps: d.steps, expect: d.expect, where: str(d.where) });
   if (type === "Answer") ask.question = str(d.question) ?? str(d.text);
-  if (type === "Later") Object.assign(ask, { text: str(d.text) ?? str(d.question), ...(Number.isFinite(d.eta) ? { eta_at: d.eta } : {}) });
+  if (type === "Later") Object.assign(ask, { text: str(d.text) ?? str(d.question), ...(Number.isFinite(d.eta) ? { eta_at: d.eta } : {}), ...(Array.isArray(d.steps) && d.steps.length ? { steps: d.steps } : {}), ...(str(d.expect) ? { expect: d.expect } : {}), ...(str(d.where) ? { where: d.where } : {}) });
   if (type === "SessionStart") ask.words = str(d.words) ?? str(d.text);
   if (Array.isArray(d.images) && d.images.length) ask.screenshots = d.images.map(String);
   for (const k of Object.keys(ask)) if (ask[k] === undefined || ask[k] === null) delete ask[k];
   const bad = askRefusal(ask, null);
   if (bad) return { ok: false, ...bad };
   const body = {};
-  for (const k of ["question", "options", "recommended", "steps", "expect", "text", "words", "screenshots"]) if (ask[k] !== undefined) body[k] = ask[k];
+  for (const k of ["question", "options", "recommended", "steps", "expect", "where", "text", "words", "screenshots"]) if (ask[k] !== undefined) body[k] = ask[k];
   const answered = d.response && typeof d.response === "object" ? int(d.response.at) ?? int(d.respondedAt) : null;
   // A Decision's old answer is the option's key (response.choice); the store's answer is the option's label.
   const chosen = type === "Decision" && opts ? opts.find((o) => o && typeof o === "object" && o.key === d.response?.choice) : null;

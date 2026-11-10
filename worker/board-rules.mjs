@@ -20,8 +20,9 @@ export const ASK_PARTS = {
   Thread: ["text"],
 };
 // #C747: parts a type may carry besides the required ones. A Later ask keeps the steps and the expected result the old board gave it.
-export const ASK_OPTIONAL_PARTS = { Later: ["steps", "expect"] };
-const ASK_ALLOWED = new Set(["type", "title", "asked_by", "card_id", "eta_at", "eta_precondition", ...Object.values(ASK_PARTS).flat(), "screenshots"]);
+// #C748: and `where`, the line under the ask that says where to do it, on a Later and an Action.
+export const ASK_OPTIONAL_PARTS = { Later: ["steps", "expect", "where"], Action: ["where"] };
+const ASK_ALLOWED = new Set(["type", "title", "asked_by", "card_id", "eta_at", "eta_precondition", ...Object.values(ASK_PARTS).flat(), ...Object.values(ASK_OPTIONAL_PARTS).flat(), "screenshots"]);
 
 const refuse = (rule, detail) => ({ rule, detail });
 export const APPROVAL_ASKERS = ["Reviewer", "Manager"];
@@ -42,6 +43,7 @@ export function askRefusal(ask, now) {
     if (!ask.options.includes(ask.recommended)) return refuse("ask-missing-part", "recommended must be one of the options");
   }
   if (ask.type === "Action") { const bad = stepsRefusal(ask.steps); if (bad) return bad; }
+  if (ask.where !== undefined && (typeof ask.where !== "string" || !ask.where.trim() || ask.where.length > 300 || !(ask.type in ASK_OPTIONAL_PARTS && ASK_OPTIONAL_PARTS[ask.type].includes("where")))) return refuse("ask-missing-part", `${ask.type} where is a short line (a Later or an Action only)`);
   if (ask.type === "Approval") {
     // Asked by the role that signs pull requests (Reviewer) or the lead; for one pull request, at one full commit, with its own link.
     if (!APPROVAL_ASKERS.includes(ask.asked_by)) return refuse("approval-asker", `${ask.asked_by} cannot ask for an approval; ${APPROVAL_ASKERS.join(" or ")} can`);

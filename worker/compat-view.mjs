@@ -31,10 +31,10 @@ export function waitingDoc(a) {
   const doc = { id: a.id, kind: KINDS[a.type] ?? "action", since: num(a.created_at), initiative: a.card_id ?? undefined, from: a.asked_by };
   switch (a.type) {
     case "Decision": doc.text = b.question; doc.options = optionObjects(b.options); if (Array.isArray(b.options)) { const r = b.options.indexOf(b.recommended); if (r >= 0) doc.recommended = KEY(r); } break;
-    case "Action": doc.text = a.title; doc.steps = b.steps; doc.expect = b.expect; break;
+    case "Action": doc.text = a.title; doc.steps = b.steps; doc.expect = b.expect; doc.where = b.where; break;
     case "Terminal": doc.text = a.title; doc.steps = (b.commands ?? []).map((cmd) => ({ text: "Run this in Terminal:", cmd })); break;
     case "SessionStart": doc.text = a.title; doc.steps = [{ text: "Start the session and type:", cmd: b.words }]; break;
-    case "Later": doc.text = b.text ?? a.title; doc.eta = num(a.eta_at); doc.etaWhen = a.eta_precondition ?? undefined; doc.steps = b.steps; doc.expect = b.expect; break;
+    case "Later": doc.text = b.text ?? a.title; doc.eta = num(a.eta_at); doc.etaWhen = a.eta_precondition ?? undefined; doc.steps = b.steps; doc.expect = b.expect; doc.where = b.where; break;
     case "Approval": doc.text = a.title; break;
     case "Answer": doc.question = b.question; doc.text = a.title; break;
     default: doc.text = b.text ?? a.title;

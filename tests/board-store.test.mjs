@@ -9,14 +9,37 @@ const decision = { type: "Decision", title: "Pick", asked_by: "Manager", questio
 
 test("a Later ask keeps its steps and expect, and the page's waiting doc carries them (#C747)", async () => {
   const db = makeDb();
-  const r = await createAsk(db, NOW, { type: "Later", title: "L", asked_by: "Manager", text: "t", eta_at: NOW + 86_400_000, steps: ["one", { text: "two", cmd: "ls" }], expect: "all green" });
+  const r = await createAsk(db, NOW, { type: "Later", title: "L", asked_by: "Manager", text: "t", eta_at: NOW + 86_400_000, steps: ["one", { text: "two", cmd: "ls" }], expect: "all green", where: "Laptop, Search Console" });
   assert.equal(r.ok, true);
   const { waitingDoc } = await import("../worker/compat-view.mjs");
   const row = (await db.prepare("SELECT * FROM asks WHERE id = ?").bind(r.id).all()).results[0];
   const doc = waitingDoc(row);
   assert.deepEqual(doc.steps, ["one", { text: "two", cmd: "ls" }]);
   assert.equal(doc.expect, "all green");
+  assert.equal(doc.where, "Laptop, Search Console", "#C748 (Checker F1): a Later's where is shown");
   assert.equal(doc.kind, "later");
+  const w = await createAsk(db, NOW, { type: "Action", title: "A", asked_by: "Manager", steps: ["s"], expect: "e", where: "Laptop" });
+  assert.equal(w.ok, true);
+  const arow = (await db.prepare("SELECT * FROM asks WHERE id = ?").bind(w.id).all()).results[0];
+  assert.equal(waitingDoc(arow).where, "Laptop", "#C748: an Action's where is kept too");
+});
+
+test("#C748: a card's check date is set and lifted (null) by the lead or the owner only; another agent is refused and logged", async () => {
+  const db = makeDb();
+  await createCard(db, NOW, "Manager", { id: "c-chk", title: "C" });
+  const at = async () => (await db.prepare("SELECT check_at FROM cards WHERE id = 'c-chk'").first()).check_at;
+  assert.equal((await updateCard(db, NOW, "Manager", { id: "c-chk", check_at: NOW + 3600_000 })).changed, 1);
+  assert.equal(await at(), NOW + 3600_000);
+  assert.equal((await updateCard(db, NOW, "Builder", { id: "c-chk", check_at: null })).refused.rule, "check-at-lead-only");
+  assert.equal(await at(), NOW + 3600_000);
+  assert.equal((await updateCard(db, NOW, "Manager", { id: "c-chk", check_at: null })).changed, 1);
+  assert.equal(await at(), null);
+  assert.equal((await updateCard(db, NOW, "Builder", { id: "c-chk", next_note: "x" })).changed, 1, "other words are still any agent's");
+  // Checker F5: a new card takes the check date from the lead or the owner only, too.
+  assert.equal((await createCard(db, NOW, "Builder", { id: "c-new", title: "N", check_at: NOW + 3600_000 })).refused.rule, "check-at-lead-only");
+  assert.equal((await db.prepare("SELECT id FROM cards WHERE id = 'c-new'").first()), null);
+  assert.equal((await createCard(db, NOW, "Manager", { id: "c-new", title: "N", check_at: NOW + 3600_000 })).ok, true);
+  assert.equal((await createCard(db, NOW, "Builder", { id: "c-plain", title: "P" })).ok, true, "a card with no check date is any agent's to make");
 });
 
 test("a card carries the review-skip words (customer_text, look_change, skip): written, read back, changed, and a bad value is refused", async () => {

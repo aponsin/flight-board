@@ -2448,7 +2448,11 @@ function fromSteps(i){
   const out={...i,skip:[...skip]};
   if(!evs.length)return out;
   const log=[],open={};
+  // #C748: a card that went live on an earlier version and then had a review or build step started on a newer one (#C725: v9 live,
+  // v11 in review) is open again: its old live step does not close it. Only a step started after the last live step, before ship.
+  const lastLive=Math.max(0,...evs.filter(e=>e.phase==="live").map(e=>e.at)),reopened=lastLive>0&&evs.some(e=>!e.derived&&!e.wait&&e.kind==="start"&&e.at>lastLive&&phaseIndex(e.phase)>=0&&phaseIndex(e.phase)<phaseIndex(SHIP_PHASE));
   evs.forEach(e=>{const key=e.phase+"|"+(e.who||"")+"|"+(e.wait||"");
+    if(e.phase==="live"&&reopened)return;
     if(e.phase==="live"){out.status="done";out.phase="live";out.doneAt=e.at;if(e.version)out.version=e.version;
       // What the Ship box held: Release copies the ship script's two CI times onto its live step.
       // None there: the release log's, read by the collector for that version (#C397).

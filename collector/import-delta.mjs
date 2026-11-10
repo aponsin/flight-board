@@ -117,9 +117,38 @@ export function planAsks(docs, { owner = "", roster = [], lead = "", liveT = 0, 
   };
 }
 
+// #C748: an ask the store already holds from the first import has the parts the store's rules then dropped (a Later's steps, expect and
+// where; an Action's where) or the wrong type (a "later" item with options is a Decision). One guarded UPDATE each, by old id: it
+// changes the ask only while it is open and unanswered and its body lacks the part, so a second run, or an ask the owner has since
+// answered or closed, changes nothing. Reads the plan's own row, so it is as fresh as the export.
+const PATCHABLE = { Later: ["steps", "expect", "where"], Action: ["where"] };
+export function askFixSql(r) {
+  const body = JSON.parse(r.body);
+  const open = `closed_at IS NULL AND answered_at IS NULL`;
+  if (r.type === "Decision" && body.options) {
+    // Answered on the old board before this run: its answer is not carried by this UPDATE, so converting would ask the owner again. Left as it is.
+    if (r.answered_at) return null;
+    // An item the first import made a Later: becomes the Decision with its question and options (only while it still is a Later).
+    return `UPDATE asks SET type = 'Decision', body = ${q(r.body)}, eta_at = NULL, eta_precondition = NULL WHERE id = ${q(r.id)} AND type = 'Later' AND ${open};`;
+  }
+  const keys = (PATCHABLE[r.type] ?? []).filter((k) => body[k] !== undefined);
+  if (!keys.length) return null;
+  const patch = Object.fromEntries(keys.map((k) => [k, body[k]]));
+  return `UPDATE asks SET body = json_patch(body, ${q(JSON.stringify(patch))}) WHERE id = ${q(r.id)} AND type = ${q(r.type)} AND ${open} AND ${keys.map((k) => `json_extract(body, '$.${k}') IS NULL`).join(" AND ")};`;
+}
+
+// #C748: --clear-check <id,id,...>: lift the check date of finished cards (a card with one is not closed by the page on the live reading).
+// Each id passes the card-id rule; the UPDATE touches only a card that has a date.
+export function clearCheckSql(ids) {
+  return String(ids ?? "").split(",").map((s) => s.trim()).filter(Boolean).map((id) => {
+    if (!ID.test(id)) throw new Error(`clear-check: not a card id: ${id.slice(0, 40)}`);
+    return `UPDATE cards SET check_at = NULL WHERE id = ${q(id)} AND check_at IS NOT NULL;`;
+  }).join("\n");
+}
+
 export function deltaSql(p, a = null, append = "") {
   const insert = (t, row) => `INSERT OR IGNORE INTO ${t} (${Object.keys(row).join(", ")}) VALUES (${Object.values(row).map(q).join(", ")});`;
-  const asksSql = a ? [...a.asks.map((r) => insert("asks", r)), ...a.messages.map((r) => insert("messages", r)), `UPDATE counters SET next = MAX(next, ${a.counterT}) WHERE name = 'T';`] : [];
+  const asksSql = a ? [...a.asks.map((r) => insert("asks", r)), ...a.asks.map(askFixSql).filter(Boolean), ...a.messages.map((r) => insert("messages", r)), `UPDATE counters SET next = MAX(next, ${a.counterT}) WHERE name = 'T';`] : [];
   const extra = String(append).split("\n").map((s) => s.trim()).filter(Boolean);
   // Appended lines (--append): one-off, hand-written, each a single guarded UPDATE of ships or cards and nothing else.
   for (const l of extra) {
@@ -168,5 +197,5 @@ if (process.argv[1] && same(fileURLToPath(import.meta.url), process.argv[1])) {
     asksReport = { newAsks: a.newAsks, heldAlready: a.heldAlready, messages: a.messages.length, counts: a.counts, differencesFromOldPage: compare(a.counts, expect), unchecked: ["needs", "later", "lead"].filter((k) => expect[k] === undefined), skipped: a.skipped, refused: a.refused.filter((r) => r.kind !== "message"), refusedMessages: a.refused.filter((r) => r.kind === "message").length, notes: a.notes, droppedThreadNums: a.droppedThreadNums, askedByLead: a.defaultedAsker, stillOpenInStoreButClosedOld: a.stillOpenInStoreButClosedOld, counterT: a.counterT };
   }
   console.log(JSON.stringify({ ...report(p), ...(asksReport ? { asks: asksReport } : {}) }, null, 2));
-  if (get("--sql")) writeFileSync(get("--sql"), deltaSql(p, a, get("--append") ? readFileSync(get("--append"), "utf8") : "") + "\n");
+  if (get("--sql")) writeFileSync(get("--sql"), deltaSql(p, a, [get("--append") ? readFileSync(get("--append"), "utf8") : "", clearCheckSql(get("--clear-check"))].filter(Boolean).join("\n")) + "\n");
 }

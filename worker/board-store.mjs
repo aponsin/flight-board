@@ -32,6 +32,8 @@ const bool = (v) => (v === true ? 1 : v === false ? 0 : Array.isArray(v) || (v &
 
 // A new card: words only. The id is the caller's, the number the store's.
 export async function createCard(db, now, who, fields) {
+  // #C748 (Checker F5): the check date is the lead's or the owner's on a new card too.
+  if (fields && typeof fields === "object" && "check_at" in fields && !CHECK_AT_WRITERS.includes(who)) return refuse(db, now, { rule: "check-at-lead-only", detail: `${who ?? "unknown"} cannot set a card's check date; ${CHECK_AT_WRITERS.join(" or ")} can` }, fields.id, who);
   const bad = cardWriteRefusal(fields, null);
   if (bad) return refuse(db, now, bad, fields?.id, who);
   if (typeof fields.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(fields.id)) return refuse(db, now, { rule: "card-id", detail: "lowercase letters, digits, hyphens" }, fields.id, who);
@@ -45,6 +47,7 @@ export async function createCard(db, now, who, fields) {
 }
 const defaultFor = (c) => (c === "summary" ? "" : c === "track" ? "product" : c === "paused" || c === "dropped" ? 0 : null);
 
+const CHECK_AT_WRITERS = ["Manager", "owner"];
 // Card words changed later: checked against the probe's reading of this card (a typed word cannot contradict it).
 export async function updateCard(db, now, who, fields) {
   const id = fields?.id;
@@ -52,6 +55,8 @@ export async function updateCard(db, now, who, fields) {
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
   const bad = cardWriteRefusal(fields, await evidenceOf(db, `cards.${id}`));
   if (bad) return refuse(db, now, bad, id, who);
+  // #C748: the check date holds a card open past its live reading, so only the lead (or the owner) sets it or lifts it (null), as on the old board.
+  if ("check_at" in fields && !CHECK_AT_WRITERS.includes(who)) return refuse(db, now, { rule: "check-at-lead-only", detail: `${who ?? "unknown"} cannot set or lift a card's check date; ${CHECK_AT_WRITERS.join(" or ")} can` }, id, who);
   const keys = COLUMNS.filter((c) => c in fields);
   if (!keys.length) return { ok: true, id, changed: 0 };
   // The issue counts carry the time they were last set (the page shows when the chips were counted).
