@@ -56,6 +56,21 @@ test("a card at its last phase is done, with when it got there and its version; 
   assert.deepEqual(c.events, [{ id: "v1.3.0", version: "1.3.0", at: NOW - 2 * 60 * M, cards: ["live-one"], text: "#C1 Hero band" }]);
 });
 
+test("a wait step on the end phase does not date the card's arrival there: doneAt is the probe's own row (#C739, Checker F4)", () => {
+  const view = {
+    cards: [{ id: "c1" }],
+    evidence: { "cards.c1": { readAt: NOW - 60 * M, value: { lit: ["install"], liveVersion: null } } },
+    history: [
+      { card_id: "c1", phase: "install", kind: "start", at: NOW - 48 * 60 * M, who: "Release", wait: "busy" },
+      { card_id: "c1", phase: "install", kind: "start", at: NOW - 60 * M, who: "Release", wait: null },
+    ],
+  };
+  const c = applyShips({ initiatives: [{ id: "c1" }] }, view);
+  assert.equal(c.initiatives[0].status, "done"); assert.equal(c.initiatives[0].doneAt, NOW - 60 * M);
+  const only = applyShips({ initiatives: [{ id: "c1" }] }, { ...view, history: [view.history[0]] });
+  assert.equal(only.initiatives[0].doneAt, NOW - 60 * M, "with only a wait row, the reading's own time");
+});
+
 test("the feed is newest first and carries the owner's ack; without ships in the view the feed is left alone", async () => {
   const db = makeDb();
   for (const id of ["a", "b"]) await createCard(db, NOW, "Manager", { id, title: `Card ${id}` });

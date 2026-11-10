@@ -22,7 +22,8 @@ test("no identity, no answer", async () => {
 test("no tool writes status or phase, and the tool schemas forbid unknown fields", () => {
   for (const t of TOOLS) {
     assert.equal(t.inputSchema.additionalProperties, false, t.name);
-    for (const f of ["status", "phase", "num", "live_version"]) assert.ok(!(f in t.inputSchema.properties), `${t.name} has ${f}`);
+    // The step tool names the phase a WAIT is at (it requires a wait, so it can never log a work phase: the probe alone says which phase is lit).
+    for (const f of ["status", "phase", "num", "live_version"]) assert.ok(!(f in t.inputSchema.properties) || (t.name === "step" && f === "phase" && t.inputSchema.required.includes("wait")), `${t.name} has ${f}`);
   }
 });
 

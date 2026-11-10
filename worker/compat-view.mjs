@@ -103,6 +103,14 @@ export function derivedDoc(view) {
   let expected = {};
   try { expected = expectedVersions({ cards: own, derived: cards, live: live ? { version: live.version } : {}, runOf, config }); } catch { expected = {}; }
   for (const [id, x] of Object.entries(expected)) if (cards[id]) cards[id].expected = x;
+  // The card's wait (the page draws "Queued for board release" / "Waiting for install"): a card with a repo of its own, read at ship. Signed and
+  // not on main: it waits for a board release; on main: it waits for the owner's deploy (the install). Never for a live card or a card with no repo.
+  const rows = new Map((view.cards ?? []).map((c) => [c.id, c]));
+  for (const [id, c] of Object.entries(cards)) {
+    const v = view.evidence?.[`cards.${id}`]?.value;
+    if (!rows.get(id)?.repo || c.phase !== "ship" || typeof v?.onMain !== "boolean") continue;
+    c.wait = v.onMain ? "install" : "release";
+  }
   const rel = view.evidence?.releases?.value;
   return prune({ id: "all", at: view.now, cards, times: {}, live, releaseTimes: rel && typeof rel === "object" && !Array.isArray(rel) && Object.keys(rel).length ? rel : undefined });
 }
@@ -142,7 +150,7 @@ export function compatView(view) {
   const own = new Set((view.cards ?? []).map((c) => c.id));
   for (const h of view.historyCards ?? []) if (!own.has(h.id)) collections.initiatives.push(prune({ id: h.id, name: h.title, num: h.num, size: h.size, level: h.review_level, status: "done", createdAt: h.created_at, doneAt: h.done_at }));
   // The phase history as the old step log's shape (B3b): the page's own code reads who, times, ETAs and medians from it.
-  if ((view.history ?? []).length) collections.steps = view.history.map((h) => prune({ id: `h${h.id}`, init: h.card_id, phase: h.phase, kind: h.kind, at: h.at, who: h.who }));
+  if ((view.history ?? []).length) collections.steps = view.history.map((h) => prune({ id: `h${h.id}`, init: h.card_id, phase: h.phase, kind: h.kind, at: h.at, who: h.who, wait: h.wait ?? undefined }));
   if (view.live?.state === "live") collections.meta = [{ id: "live", version: String(view.live.version).replace(/^v/, ""), at: view.now - (view.live.age ?? 0) }];
   applyThreads(collections, view); // before applyFiles: it adds assets to the messages
   applyFiles(collections, view);

@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, ASK_PARTS, APPROVE } from "./board-rules.mjs";
+import { askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, ASK_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -126,6 +126,16 @@ export async function withdrawAsk(db, now, who, id, role) {
 
 // The owner's To-do and Ideas rows. The store names a new row; a row's kind never changes; done stamps done_at once.
 const LIST_COLUMNS = ["text", "area", "category", "note", "rank", "done"];
+// The step tool: one row of the phase history, from an agent, with the wait column. The writer is who authenticated (never a name in the
+// call); the card has to exist; a repeat of the same step (same card, phase, kind, time and wait) is stored once.
+export async function writeStep(db, now, who, a) {
+  const bad = stepRefusal(a, now);
+  if (bad) return refuse(db, now, bad, typeof a?.init === "string" ? a.init : null, who);
+  if (!(await db.prepare("SELECT id FROM cards WHERE id = ?").bind(a.init).first())) return refuse(db, now, { rule: "step-card-unknown", detail: a.init }, null, who);
+  const at = a.at ?? now, wait = a.wait ?? null;
+  await db.prepare("INSERT OR IGNORE INTO phase_history (card_id, phase, kind, at, who, source, wait) VALUES (?, ?, ?, ?, ?, 'tool', ?)").bind(a.init, a.phase, a.kind, at, who, wait).run();
+  return { ok: true };
+}
 export async function createListItem(db, now, who, fields) {
   const bad = listWriteRefusal(fields, { create: true });
   if (bad) return refuse(db, now, bad, null, who);
@@ -203,7 +213,7 @@ async function syncStalls(db, now) {
   let agents = {}; const evidence = {};
   for (const r of evRows) { let v; try { v = JSON.parse(r.value); } catch { continue; } if (r.key === "agents") agents = v; else evidence[r.key.slice(6)] = v; }
   const openAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
-  const phaseStart = new Map((await db.prepare("SELECT card_id, phase, MAX(at) AS at FROM phase_history WHERE kind = 'start' GROUP BY card_id, phase").all()).results.map((r) => [`${r.card_id}|${r.phase}`, r.at]));
+  const phaseStart = new Map((await db.prepare("SELECT card_id, phase, MAX(at) AS at FROM phase_history WHERE kind = 'start' AND wait IS NULL GROUP BY card_id, phase").all()).results.map((r) => [`${r.card_id}|${r.phase}`, r.at]));
   const stalls = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart });
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
@@ -267,8 +277,9 @@ export async function writeEvidence(db, now, who, key, value, track) {
   // The phase it was in: the last evidence reading, else (the first reading after the one-time import) the phase the history left open.
   const cardId = key.slice(6), next = value.lit[0];
   let prev = (await evidenceOf(db, key))?.lit?.[0] ?? null;
-  if (!prev) { const last = await db.prepare("SELECT phase, kind FROM phase_history WHERE card_id = ? ORDER BY at DESC, id DESC LIMIT 1").bind(cardId).first(); if (last?.kind === "start") prev = last.phase; }
-  const prevWho = prev && prev !== next ? (await db.prepare("SELECT who FROM phase_history WHERE card_id = ? AND phase = ? AND kind = 'start' ORDER BY at DESC, id DESC LIMIT 1").bind(cardId, prev).first())?.who ?? null : null;
+  // A wait step (the step tool, #C739) is not the lit phase: the three reads of the history below take the probe's own rows only (wait IS NULL).
+  if (!prev) { const last = await db.prepare("SELECT phase, kind FROM phase_history WHERE card_id = ? AND wait IS NULL ORDER BY at DESC, id DESC LIMIT 1").bind(cardId).first(); if (last?.kind === "start") prev = last.phase; }
+  const prevWho = prev && prev !== next ? (await db.prepare("SELECT who FROM phase_history WHERE card_id = ? AND phase = ? AND kind = 'start' AND wait IS NULL ORDER BY at DESC, id DESC LIMIT 1").bind(cardId, prev).first())?.who ?? null : null;
   const rows = prev === next ? [] : historyRows(cardId, prev, next, now, whoForPhase(cardId, next, (await evidenceOf(db, "agents")) ?? {}, (await db.prepare("SELECT owner_role FROM cards WHERE id = ?").bind(cardId).first())?.owner_role), prevWho);
   const ins = rows.map((r) => db.prepare("INSERT OR IGNORE INTO phase_history (card_id, phase, kind, at, who, source) VALUES (?, ?, ?, ?, ?, 'evidence')").bind(r.card_id, r.phase, r.kind, r.at, r.who));
   await db.batch([upsert, ...ins]);
@@ -292,7 +303,7 @@ export async function readView(db, now) {
   const last = Math.max(0, ...Object.entries(evidence).filter(([k]) => !k.startsWith("run.")).map(([, e]) => e.readAt));
   const probe = last && now - last <= PROBE_SILENT_MS ? { state: "ok", lastAt: last } : { state: "silent", since: last || null };
   const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now);
-  const history = await all("SELECT id, card_id, phase, kind, at, who FROM phase_history ORDER BY at, id");
+  const history = await all("SELECT id, card_id, phase, kind, at, who, wait FROM phase_history ORDER BY at, id");
   const historyCards = await all("SELECT id, num, title, size, review_level, created_at, done_at FROM history_cards ORDER BY done_at");
   const files = await readFiles(db, asks), ships = await readShips(db), usage = await readUsage(db), threads = await readThreads(db);
   const content = { cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads };

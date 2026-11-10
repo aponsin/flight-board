@@ -203,6 +203,22 @@ export function evidenceRefusal(key, value, who, track) {
 // Phase history (#C723 B3b): who a phase change is put down to when no agent is working on the card at that moment: the phase's lane
 // role; the early phases (and any not named here) belong to the card's own owner_role.
 export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security", ship: "Release", live: "Release", pack: "Release", install: "Release" };
+// The step tool (after B4b): an agent writes a start or an end of a WAIT at a phase for a card (the old step log's wait column). The refusal for
+// one call: the card id, the phase, kind, wait and time. `who` is never an argument: the store takes it from who authenticated.
+export const STEP_WAITS = ["busy", "gate", "decision"], STEP_PAST_MS = 7 * 86_400_000, STEP_FUTURE_MS = 60_000;
+export function stepRefusal(a, now) {
+  const refuse = (rule, detail) => ({ rule, detail });
+  if (a === null || typeof a !== "object" || Array.isArray(a)) return refuse("step-shape", "a step is an object");
+  const unknown = Object.keys(a).filter((k) => !["init", "phase", "kind", "wait", "at"].includes(k));
+  if (unknown.length) return refuse("unknown-field", unknown.join(", "));
+  if (typeof a.init !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(a.init)) return refuse("step-card", "init is a card id");
+  if (!PHASES.includes(a.phase)) return refuse("step-phase", `phase is one of ${PHASES.join(", ")}`);
+  if (!["start", "end"].includes(a.kind)) return refuse("step-kind", "kind is start or end");
+  // Only waits: the probe alone says which phase is lit, so a step with no wait (a work phase) is refused. An end carries the wait of its start.
+  if (!STEP_WAITS.includes(a.wait)) return refuse("step-wait", `wait is ${STEP_WAITS.join(", ")}: the tool logs waits, never a work phase`);
+  if (a.at !== undefined && !(Number.isInteger(a.at) && a.at >= now - STEP_PAST_MS && a.at <= now + STEP_FUTURE_MS)) return refuse("step-at", "at is a time in ms within the last 7 days, not in the future");
+  return null;
+}
 // The rows one lit-phase change adds: the old phase ends and the new one starts at `at`. `prev` null (first reading) only starts.
 // The old step log put the same `who` on a phase's end as on its start; prevWho is the start's.
 export function historyRows(cardId, prev, next, at, who, prevWho = null) {

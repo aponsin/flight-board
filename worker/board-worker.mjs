@@ -11,7 +11,7 @@ import { routeWrite } from "./compat-write.mjs";
 import { COMPAT_SHIM } from "./compat-shim.mjs";
 import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.mjs";
 import { writeUsageDay } from "./compat-usage.mjs";
-import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox } from "./board-store.mjs";
+import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const obj = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
@@ -29,6 +29,7 @@ export const TOOLS = [
   { name: "card_update", description: "Change a card's words (never status or phase: the probe reads those).", inputSchema: obj({ id: str, title: str, summary: str, size: str, review_level: str, track: str, owner_role: str, next_note: str, waiting_on: str, blocked_reason: str, paused: { type: "boolean" }, dropped: { type: "boolean" }, rework_reason: str, customer_text: { type: "boolean" }, look_change: { type: "boolean" }, skip: { type: "array", items: str }, depends_on: { type: "array", items: str }, issues: obj({ bugs: { type: "integer" }, security: { type: "integer" }, language: { type: "integer" }, design: { type: "integer" }, owner: { type: "integer" } }), queue_pos: { type: "integer" }, check_at: { type: "integer" }, repo: str, batch: str, bump: { type: "string", enum: ["patch", "minor", "major"] } }, ["id"]), roles: ["agent", "owner"] },
   { name: "ask", description: "Ask the owner something. One of eight types; each type's required parts are enforced.", inputSchema: obj(askProps, ["type", "title", "asked_by"]), roles: ["agent"] },
   { name: "post", description: "Post a message on a thread. An agent may give it a kind (a short lower-case word, such as decision) and, with the kind decision, two to four options {key A to D, label} that the page shows as buttons; the owner's pick comes back as his own message.", inputSchema: obj({ thread_id: str, body: str, kind: str, options: { type: "array", items: obj({ key: { type: "string", enum: ["A", "B", "C", "D"] }, label: str }, ["key", "label"]) } }, ["thread_id", "body"]), roles: ["agent", "owner"] },
+  { name: "step", description: "Log a wait of your own on a card, as the old step log did: the start or the end of a stretch where the card waits at a phase, not works: busy (behind other work), gate (held by an open ask) or decision. Work phases are never logged: the probe reads them. The writer is you; at is the time in ms (default now, within the last 7 days).", inputSchema: obj({ init: str, phase: str, kind: { type: "string", enum: ["start", "end"] }, wait: { type: "string", enum: ["busy", "gate", "decision"] }, at: { type: "integer" } }, ["init", "phase", "kind", "wait"]), roles: ["agent"] },
   { name: "answer", description: "Answer an ask (a Decision's answer must be one of its options).", inputSchema: obj({ id: str, answer: str }, ["id", "answer"]), roles: ["owner"] },
   { name: "list_add", description: "Add a row to the owner's To-do or Ideas list (words only; the store names the row).", inputSchema: obj({ kind: { type: "string", enum: ["todo", "idea"] }, text: str, area: str, category: str, note: str, rank: { type: "integer" } }, ["kind", "text"]), roles: ["agent", "owner"] },
   { name: "list_update", description: "Change a To-do or Ideas row's words, or mark it done or not done.", inputSchema: obj({ id: str, text: str, area: str, category: str, note: str, rank: { type: "integer" }, done: { type: "boolean" } }, ["id"]), roles: ["agent", "owner"] },
@@ -92,6 +93,7 @@ async function callTool(db, now, who, role, name, args, env = {}) {
       // Who asks is who authenticated, never a claimed name.
       if (args.asked_by !== undefined && args.asked_by !== who) return text(await refuse(db, now, { rule: "asked-by-mismatch", detail: `${args.asked_by} is not ${who}` }, args.card_id, who));
       return text(await createAsk(db, now, { ...args, asked_by: who }));
+    case "step": return text(await writeStep(db, now, who, args));
     case "post": return text(await postMessage(db, now, who, args));
     case "answer": return text(await answerAsk(db, now, who, args));
     case "list_add": return text(await createListItem(db, now, who, args));

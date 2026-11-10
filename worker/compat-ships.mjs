@@ -34,9 +34,10 @@ export async function readShips(db) {
   return (await db.prepare("SELECT version, cards, shipped_at, acked_at FROM ships ORDER BY shipped_at, version").all()).results;
 }
 
-// When a card reached its last phase: the phase history's first start of it, else the reading's own time.
+// When a card reached its last phase: the phase history's first start of it, else the reading's own time. A wait step (the step
+// tool, #C739) is not the lit phase: only the probe's own rows (no wait) say when the card got there.
 function doneAtOf(cardId, phase, history, readAt) {
-  const h = (history ?? []).find((r) => r.card_id === cardId && r.phase === phase && r.kind === "start");
+  const h = (history ?? []).find((r) => r.card_id === cardId && r.phase === phase && r.kind === "start" && r.wait == null);
   return h ? h.at : readAt;
 }
 
