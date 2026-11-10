@@ -68,7 +68,7 @@ export function shotsOf(images) {
 // and a Later without an ETA is given its closing time (the table needs one). Its type must still be one the store has.
 export function askRow(id, d, { thread, askedBy, lenient = false }) {
   // #C748: a "later" item that carries options is a question the owner answers (a Decision with its options), not a Later: the store's
-  // Later rule takes no options. Its ETA is not carried (a Decision has none).
+  // Later rule takes no options. Its ETA is carried as the Decision's "not before" (#C823): the owner is not asked until that date.
   const type = d.kind === "later" && Array.isArray(d.options) && d.options.length ? "Decision" : TYPE[d.kind];
   if (!type) return { ok: false, rule: "ask-type", detail: `kind ${d.kind ?? "none"}` };
   const ask = { type, title: str(d.title) ?? str(thread?.title) ?? str(d.question)?.slice(0, 120) ?? str(d.text)?.slice(0, 120), asked_by: str(d.from) ?? askedBy };
@@ -78,7 +78,7 @@ export function askRow(id, d, { thread, askedBy, lenient = false }) {
   const label = (o) => (typeof o === "string" ? o : str(o?.label));
   const labels = opts?.map(label);
   const flagged = opts?.find((o) => o && typeof o === "object" && o.recommended === true);
-  if (type === "Decision") Object.assign(ask, { question: str(d.question) ?? str(d.text), options: labels?.every(Boolean) ? labels : opts, recommended: flagged ? label(flagged) : d.recommended });
+  if (type === "Decision") Object.assign(ask, { question: str(d.question) ?? str(d.text), options: labels?.every(Boolean) ? labels : opts, recommended: flagged ? label(flagged) : d.recommended, ...(d.kind === "later" && Number.isFinite(d.eta) ? { eta_at: d.eta } : {}) });
   if (type === "Action") Object.assign(ask, { steps: d.steps, expect: d.expect, where: str(d.where) });
   if (type === "Answer") ask.question = str(d.question) ?? str(d.text);
   if (type === "Later") Object.assign(ask, { text: str(d.text) ?? str(d.question), ...(Number.isFinite(d.eta) ? { eta_at: d.eta } : {}), ...(Array.isArray(d.steps) && d.steps.length ? { steps: d.steps } : {}), ...(str(d.expect) ? { expect: d.expect } : {}), ...(str(d.where) ? { where: d.where } : {}) });

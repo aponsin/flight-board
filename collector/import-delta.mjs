@@ -132,7 +132,10 @@ export function askFixSql(r) {
     // Answered on the old board before this run: its answer is not carried by this UPDATE, so converting would ask the owner again. Left as it is.
     if (r.answered_at) return null;
     // An item the first import made a Later: becomes the Decision with its question and options (only while it still is a Later).
-    return `UPDATE asks SET type = 'Decision', body = ${q(r.body)}, eta_at = NULL, eta_precondition = NULL WHERE id = ${q(r.id)} AND type = 'Later' AND ${open};`;
+    // #C823: the old ETA is kept as the Decision's "not before" (eta_at), so it waits on Later until that date. The second statement is for a
+    // Decision an earlier run already converted without it (it sets the date only while the ask is open, unanswered and has none).
+    return [`UPDATE asks SET type = 'Decision', body = ${q(r.body)}, eta_at = ${q(r.eta_at ?? null)}, eta_precondition = NULL WHERE id = ${q(r.id)} AND type = 'Later' AND ${open};`,
+      ...(Number.isFinite(r.eta_at) ? [`UPDATE asks SET eta_at = ${q(r.eta_at)} WHERE id = ${q(r.id)} AND type = 'Decision' AND eta_at IS NULL AND ${open};`] : [])].join("\n");
   }
   const keys = (PATCHABLE[r.type] ?? []).filter((k) => body[k] !== undefined);
   if (!keys.length) return null;

@@ -657,6 +657,8 @@ function ackOnly(text){return ACK_ONLY.test(String(text||"").trim().replace(/[\s
 function settled(w){if(!w)return false;if(w.done)return true;const r=w.response;if(!r||(Array.isArray(r.files)&&r.files.length)||!ackOnly(r.note))return false;
   return (w.kind==="answer"&&r.status==="ack")||(w.kind!=="decision"&&r.status==="done")}
 function needsYou(w,now){return !settled(w)&&!answered(w,now)}
+// #C823: a Decision may carry notBefore (the ask's eta_at): until that time it waits on Later, and at the date it moves to Needs you.
+function isLater(w,now){return w.kind==="later"||(w.kind==="decision"&&num(w.notBefore)!=null&&w.notBefore>now)}
 function onLead(w,now){return !settled(w)&&answered(w,now)}
 // Who something waits on now: the one answer its badge and its section both come from, so they can never disagree
 // (#C236: an answered ask under "Waiting on Manager" still said "waiting on you"). An open ask: "you" (unanswered) or
@@ -727,7 +729,7 @@ function askNeed(w){const k=w&&w.kind;if(!w||!answeredAsk(w))return k;
 // closed or replied (their item is no longer on the board).
 // What Needs you holds: the open asks on the owner (Later has its own tab) and the threads Manager answered. Its list and
 // its pill both come from here (#C366: the pill read 1 over "Nothing to do now.").
-function youItems(now,q){return {asks:state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&w.kind!=="later"&&askHit(w,q)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0)),
+function youItems(now,q){return {asks:state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&!isLater(w,now)&&askHit(w,q)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0)),
   answered:threadSets(now,q).answered}}
 // #C665 (the owner via the lead: "one ask at a time" is now "one question at a time"; installs and clicks are queued, never held
 // back): the questions (decisions, answers, sessions) come first, in the order asked; the clicks and installs (kind action) follow
@@ -1601,7 +1603,7 @@ function setSearch(q){clearTimeout(searchTimer);searchTimer=setTimeout(()=>searc
 function renderTab(k){({you:renderWaiting,later:renderLater,lead:renderThreads,todo:()=>renderList("todo"),ideas:()=>renderList("ideas"),resolved:renderResolved})[k]?.()}
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="rsearch")setSearch(e.target.value)});
 // "Later": asks the owner can leave for now, in a tab of their own (#C351: no longer a fold-out).
-const laterAsks=(now,q=rQuery)=>state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&w.kind==="later"&&askHit(w,q)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
+const laterAsks=(now,q=rQuery)=>state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&isLater(w,now)&&askHit(w,q)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
 function laterHtml(now,open=new Set()){const q=qOf("later"),later=laterAsks(now,q);
   return later.length?later.map(w=>askHtml(w,open)).join(""):isOn(q)?NO_MATCH:'<div class="empty">Nothing for later.</div>'}
 function renderLater(){const el=$("later");keep(el,()=>{el.innerHTML=laterHtml(Date.now());el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply))})}
@@ -1713,7 +1715,7 @@ function renameWrites(id,title){const t=String(title||"").replace(/\s+/g," ").tr
 function trefPlace(id,now){const it=itemOf(id);
   if(it&&it.coll==="initiatives"&&it.doc.status!=="done")return {card:true};
   const on=waitsOn(id,now);
-  if(it&&it.coll==="waiting"&&itemShown(id,now))return {tab:on==="you"?(it.doc.kind==="later"?"later":"you"):"lead"};
+  if(it&&it.coll==="waiting"&&itemShown(id,now))return {tab:on==="you"?(isLater(it.doc,now)?"later":"you"):"lead"};
   if(on==="answered")return {tab:"you"};if(on==="lead")return {tab:"lead"};if(on==="resolved")return {tab:"resolved"};
   return it&&it.coll==="ideas"&&!it.doc.done?{tab:"ideas"}:null}
 // #T27 opens its item: its tab (or the board, for a card), clearing a search that hides it, then its row by id (an ask,

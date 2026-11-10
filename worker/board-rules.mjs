@@ -41,6 +41,10 @@ export function askRefusal(ask, now) {
   if (ask.type === "Decision") {
     if (!Array.isArray(ask.options) || ask.options.length < 2 || ask.options.length > 4) return refuse("ask-missing-part", "Decision needs 2 to 4 options");
     if (!ask.options.includes(ask.recommended)) return refuse("ask-missing-part", "recommended must be one of the options");
+    // #C823: eta_at on a Decision is a "not before": the owner is not asked until then (Later until the date, Needs you from it). A time, in the
+    // future when written (an import passes now = null: the date may be past by the time it runs); no precondition on a Decision.
+    if (ask.eta_at !== undefined && (!Number.isFinite(ask.eta_at) || ask.eta_at <= 0 || (Number.isFinite(now) && ask.eta_at < now - 60_000))) return refuse("decision-not-before", "eta_at is a time, not in the past");
+    if (ask.eta_precondition !== undefined) return refuse("decision-not-before", "a Decision takes eta_at (not before) and no precondition");
   }
   if (ask.type === "Action") { const bad = stepsRefusal(ask.steps); if (bad) return bad; }
   if (ask.where !== undefined && (typeof ask.where !== "string" || !ask.where.trim() || ask.where.length > 300 || !(ask.type in ASK_OPTIONAL_PARTS && ASK_OPTIONAL_PARTS[ask.type].includes("where")))) return refuse("ask-missing-part", `${ask.type} where is a short line (a Later or an Action only)`);

@@ -178,7 +178,7 @@ test("#C748: asks the first import stored without a Later's steps, expect and wh
   const row = (id) => a.asks.find((r) => r.id === id);
   assert.equal(row("l-price").type, "Decision");
   assert.deepEqual(JSON.parse(row("l-price").body), { question: "keep them?", options: ["Keep", "Match"], recommended: "Keep" });
-  assert.equal(row("l-price").eta_at, null);
+  assert.equal(row("l-price").eta_at, 4000000000000, "#C823: the old ETA is kept as the Decision's not-before (it was dropped before)");
   assert.deepEqual(JSON.parse(row("l-steps").body), { text: "first look", steps: ["open it", "note it"], expect: "a few pages", where: "around 2026-10-22" });
   const db = makeDb();
   // What the store holds from the first import: the same asks as it kept them then (text only, the options one a Later).
@@ -189,14 +189,14 @@ test("#C748: asks the first import stored without a Later's steps, expect and wh
   }
   const sql = deltaSql({ insert: [], history: [], setRepo: [], counterC: 745 }, a);
   const fixes = sql.split("\n").filter((l) => l.startsWith("UPDATE asks"));
-  assert.equal(fixes.length, 3, "the plain Later needs none");
+  assert.equal(fixes.length, 4, "the plain Later needs none; the Decision has two lines (#C823: the conversion, and the date for one already converted)");
   for (const f of fixes) await db.prepare(f).run();
   const get = async (id) => (await db.prepare("SELECT type, body, eta_at FROM asks WHERE id = ?").bind(id).first());
   assert.deepEqual(JSON.parse((await get("l-steps")).body), { text: "first look", steps: ["open it", "note it"], expect: "a few pages", where: "around 2026-10-22" });
   assert.deepEqual(JSON.parse((await get("a-where")).body), { steps: ["s"], expect: "e", where: "Laptop" });
   const price = await get("l-price");
   assert.equal(price.type, "Decision");
-  assert.equal(price.eta_at, null);
+  assert.equal(price.eta_at, 4_000_000_000_000, "#C823: the Later's ETA is kept as the Decision's not-before (it was set to NULL before)");
   assert.deepEqual(JSON.parse(price.body).options, ["Keep", "Match"]);
   assert.deepEqual(JSON.parse((await get("l-plain")).body), { text: "plain" });
   // A second run changes nothing; an ask answered or closed since is left as it is.
