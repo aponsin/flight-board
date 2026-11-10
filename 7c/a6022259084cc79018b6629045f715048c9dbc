@@ -1,0 +1,1 @@
+PASS Full: #C725 B1b v11, options on an agent's message, supersedes v10 255b1ff5. Only the label-cap test added on top of v10. Touched tests 38/38. Mutations caught: owner may send options, a key repeats, no label cap. Labels escaped where the page draws them, the owner's page route takes no options.
