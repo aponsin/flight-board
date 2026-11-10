@@ -103,7 +103,7 @@ export function planHistory(docs, { have = {}, now = Date.now(), days = 30, owne
     let doneAt = time(d.doneAt);
     if (doneAt === null) { doneAt = lastLive.get(id) ?? lastAny.get(id) ?? null; if (doneAt !== null) rep.historyCards.doneTimeFromSteps++; }
     if (doneAt !== null && doneAt < cutoff) { rep.historyCards.outsideWindow = (rep.historyCards.outsideWindow ?? 0) + 1; continue; }
-    if (!ID.test(id) || !str(d.name) || doneAt === null) { rep.historyCards.refused++; continue; }
+    if (!ID.test(id) || !str(d.name) || doneAt === null) { rep.historyCards.refused++; (rep.historyCards.refusedList ??= []).push({ id: rawId, rule: !ID.test(id) ? "card-id" : !str(d.name) ? "no-title" : "no-done-time" }); continue; }
     out.historyCards.push({ id, num: Number.isInteger(d.num) && d.num >= 1 && d.num <= 1e6 ? d.num : null, title: d.name, size: ["XS", "S", "M", "L", "XL"].includes(d.size) ? d.size : null, review_level: ["None", "Quick", "Full"].includes(d.level) ? d.level : null, created_at: time(d.createdAt), done_at: doneAt });
     known.add(id);
     rep.historyCards.new++;
@@ -114,13 +114,13 @@ export function planHistory(docs, { have = {}, now = Date.now(), days = 30, owne
   // and a card the store has no row for are counted, not written.
   rep.steps = { new: 0, outsideWindow: 0, notDoneCard: 0, noCardOnTheStore: 0, noCardIds: [], refused: 0, refusedBy: {}, waits: 0 };
   const seenNo = new Set(), seenKey = new Set();
-  for (const s of Object.values(docs.steps ?? {})) {
+  for (const [stepId, s] of Object.entries(docs.steps ?? {})) {
     const card = typeof s?.init === "string" ? s.init.toLowerCase() : ""; // the old numbered cards were "C547": the store's ids are lower case
     const at = time(s?.at);
     const why = !ID.test(card) ? "card-id" : s.kind !== "start" && s.kind !== "end" ? `kind ${String(s.kind).slice(0, 12)}` : !PHASES.includes(s.phase) ? `phase ${String(s.phase).slice(0, 12)}` : at === null ? "time" : null;
-    if (why) { rep.steps.refused++; rep.steps.refusedBy[why] = (rep.steps.refusedBy[why] ?? 0) + 1; continue; }
+    if (why) { rep.steps.refused++; rep.steps.refusedBy[why] = (rep.steps.refusedBy[why] ?? 0) + 1; (rep.steps.refusedList ??= []).push({ id: stepId, rule: why }); continue; }
     if (at < cutoff) { rep.steps.outsideWindow++; continue; }
-    if (s.wait && !WAITS.includes(s.wait)) { rep.steps.refused++; continue; }
+    if (s.wait && !WAITS.includes(s.wait)) { rep.steps.refused++; (rep.steps.refusedList ??= []).push({ id: stepId, rule: `wait ${String(s.wait).slice(0, 12)}` }); continue; }
     if (!doneIds.has(card)) {
       if (set("cardIds").has(card)) rep.steps.notDoneCard++; else { rep.steps.noCardOnTheStore++; seenNo.add(card); }
       continue;
@@ -149,6 +149,19 @@ export function planHistory(docs, { have = {}, now = Date.now(), days = 30, owne
   rep.closedAsks = { new: 0, held: 0, closedOpen: 0, outsideWindow: 0, noThread: 0, numTaken: 0, refused: 0, refusedBy: {}, withAnswer: 0 };
   // In-run clash: the store's ask numbers, and its thread numbers (a free thread with #T N would show two #T N).
   const closedThreads = new Set(), usedNums = new Set([...set("askNums"), ...set("threadNums")]);
+  // The old board's messages by thread, oldest first: the Resolved list's clock is a thread's NEWEST message (the page's threadLast), never its ask's close date.
+  const byThread = new Map();
+  for (const [id, m] of Object.entries(docs.messages ?? {})) {
+    if (!m || m.deleted === true) continue;
+    const thread = typeof m.thread === "string" ? m.thread : "";
+    if (!byThread.has(thread)) byThread.set(thread, []);
+    byThread.get(thread).push({ ...m, _id: id });
+  }
+  for (const list of byThread.values()) list.sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+  const newestOf = (tid) => time(byThread.get(tid)?.at(-1)?.at) ?? 0;
+  const plannedNum = new Map(); // num -> ask id planned in this run
+  const flagNewest = new Set(); // threads whose newest message comes flagged resolved (a closed ask that lost its #T to another item)
+  const holderOfNum = (num) => set("askNumHolders") instanceof Map && set("askNumHolders").has(num) ? `ask:${set("askNumHolders").get(num)}` : set("threadNumHolders") instanceof Map && set("threadNumHolders").has(num) ? `thread:${set("threadNumHolders").get(num)}` : plannedNum.has(num) ? `planned:${plannedNum.get(num)}` : "store (holder not named)";
   const outcome = (aid, how) => { out.askOutcome[aid] = how; };
   const refuse = (aid, why) => { rep.closedAsks.refused++; rep.closedAsks.refusedBy[why] = (rep.closedAsks.refusedBy[why] ?? 0) + 1; outcome(aid, `refused:${why}`); };
   for (const [aid, d] of Object.entries(docs.waiting ?? {}).sort(([x], [y]) => x.localeCompare(y))) {
@@ -161,12 +174,13 @@ export function planHistory(docs, { have = {}, now = Date.now(), days = 30, owne
       if (set("openAskIds").has(aid) && ID.test(aid)) {
         const r = askRow(aid, { ...d, from: undefined }, { thread, askedBy: "Manager", lenient: true });
         out.closeOpen.push({ id: aid, closed_at: closedAt ?? now, answered_at: r.ok ? r.row.answered_at : null, answer: r.ok ? r.row.answer : null });
-        if (tid && MSG_ID.test(tid) && thread) { closedThreads.add(tid); out.askThread[aid] = tid; }
+        if (tid && MSG_ID.test(tid) && thread) { closedThreads.add(tid); out.askThread[aid] = tid; if (aid !== tid) flagNewest.add(tid); }
         rep.closedAsks.closedOpen++; outcome(aid, "closedOpen");
       } else { rep.closedAsks.held++; outcome(aid, "held"); }
       continue;
     }
-    if (closedAt === null || closedAt < cutoff) { rep.closedAsks.outsideWindow++; outcome(aid, "outsideWindow"); continue; }
+    // In the window by the close time, or by the thread's newest message (the page's clock).
+    if (closedAt === null || (closedAt < cutoff && !(tid && newestOf(tid) >= cutoff))) { rep.closedAsks.outsideWindow++; outcome(aid, "outsideWindow"); continue; }
     if (!tid || !MSG_ID.test(tid) || !thread) { rep.closedAsks.noThread++; outcome(aid, "noThread"); continue; }
     if (!ID.test(aid)) { refuse(aid, "ask-id"); continue; }
     const named = str(d.who) && d.who !== owner && roster.includes(d.who) ? d.who : null;
@@ -177,11 +191,27 @@ export function planHistory(docs, { have = {}, now = Date.now(), days = 30, owne
       continue;
     }
     if (!Number.isInteger(r.row.num) || r.row.num < 1 || r.row.num > 1e6) { rep.closedAsks.noThread++; outcome(aid, "noThread"); continue; }
-    if (usedNums.has(r.row.num)) { rep.closedAsks.numTaken++; outcome(aid, "numTaken"); continue; }
+    if (usedNums.has(r.row.num)) {
+      rep.closedAsks.numTaken++; outcome(aid, "numTaken");
+      // Which number, who holds it, and whether the holder is this very thread (then the owner sees the same #T already).
+      const holder = holderOfNum(r.row.num);
+      const sameItem = holder === `ask:${tid}` || holder === `thread:${tid}` || holder === `ask:${aid}`;
+      (rep.closedAsks.numTakenList ??= []).push({ ask: aid, num: r.row.num, thread: tid, heldBy: holder, sameItem });
+      // The number belongs to ANOTHER item, so no ask row is made: the thread would then be a plain conversation the team answered, listed under
+      // Needs you (the page found dev-reset-1793658865596 there). The closed ask resolved it on the old board, so its thread comes with its
+      // closing (newest) message flagged resolved.
+      if (!sameItem && tid && MSG_ID.test(tid) && thread) { closedThreads.add(tid); flagNewest.add(tid); rep.closedAsks.clashResolved = (rep.closedAsks.clashResolved ?? 0) + 1; }
+      continue;
+    }
     if (CTRL.test(r.row.title ?? "") || CTRL.test(r.row.answer ?? "")) { refuse(aid, "control-char"); continue; }
-    usedNums.add(r.row.num);
+    usedNums.add(r.row.num); plannedNum.set(r.row.num, aid);
     out.asks.push({ ...r.row, closed_at: closedAt, closed_by: "import" });
     closedThreads.add(tid); out.askThread[aid] = tid;
+    // An ask whose `thread` names another thread may also have messages posted under its own id: those come too (the closed ask resolves them).
+    // The page finds an ask's item by the thread's id, so a thread named by an ask of another id is not linked to it: its newest message
+    // comes flagged resolved (the closed ask resolved it on the old board).
+    if (aid !== tid) flagNewest.add(tid);
+    if (aid !== tid && byThread.has(aid) && MSG_ID.test(aid)) { closedThreads.add(aid); rep.closedAsks.ownIdThreads = (rep.closedAsks.ownIdThreads ?? 0) + 1; }
     rep.closedAsks.new++; outcome(aid, "new");
     if (r.row.answered_at) rep.closedAsks.withAnswer++;
   }
@@ -189,25 +219,24 @@ export function planHistory(docs, { have = {}, now = Date.now(), days = 30, owne
 
   // 4. Threads closed in the window: every message of the thread, the closing one flagged resolved, and the thread's #T number.
   // A thread of an ask closed in the window (3c) comes whatever its last message says: the closed ask resolves it.
-  rep.resolved = { threads: 0, messages: 0, flagged: 0, refused: 0 };
-  const byThread = new Map();
-  for (const [id, m] of Object.entries(docs.messages ?? {})) {
-    if (!m || m.deleted === true) continue;
-    const thread = typeof m.thread === "string" ? m.thread : "";
-    if (!byThread.has(thread)) byThread.set(thread, []);
-    byThread.get(thread).push({ ...m, _id: id });
-  }
+  // The thread of a DONE card also comes (the page lists a thread under Resolved when its card is done, whatever its last message says):
+  // a card the old board finished that the store keeps as a history card (already, or planned above), when its newest message is in the window.
+  rep.resolved = { threads: 0, messages: 0, flagged: 0, refused: 0, viaDoneCard: 0 };
   for (const [tid, list] of byThread) {
-    list.sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
     const last = list.at(-1);
     const viaAsk = closedThreads.has(tid);
-    if (!tid || !MSG_ID.test(tid) || (!viaAsk && (!last?.resolved || (time(last.at) ?? 0) < cutoff))) continue;
+    const ini = docs.initiatives?.[tid];
+    const viaCard = !!ini && ini.deleted !== true && ini.status === "done" && !ini.dropped && (doneIds.has(tid.toLowerCase()) || set("cardIds").has(tid.toLowerCase()));
+    const inWindow = (time(last?.at) ?? 0) >= cutoff;
+    if (!tid || !MSG_ID.test(tid) || (!viaAsk && !(inWindow && (last?.resolved || viaCard)))) continue;
     const ok = list.filter((m) => MSG_ID.test(m._id) && str(m.from) && typeof m.text === "string" && m.text.trim() && !CTRL.test(m.text) && m.text.length <= MAX_TEXT && time(m.at) !== null);
     rep.resolved.refused += list.length - ok.length;
+    for (const m of list) if (!ok.includes(m)) (rep.resolved.refusedList ??= []).push({ id: m._id, thread: tid, rule: !MSG_ID.test(m._id) ? "message-id" : !str(m.from) ? "no-author" : typeof m.text !== "string" || !m.text.trim() ? "no-text" : CTRL.test(m.text) ? "control-char" : m.text.length > MAX_TEXT ? "too-long" : "time" });
+    if (viaCard && !last?.resolved && !viaAsk && ok.length) rep.resolved.viaDoneCard++;
     if (!ok.length) continue;
     rep.resolved.threads++;
     for (const m of ok) {
-      const isResolving = m.resolved === true;
+      const isResolving = m.resolved === true || (flagNewest.has(tid) && m === ok.at(-1));
       if (!set("messageIds").has(m._id)) {
         out.messages.push({ id: m._id, thread_id: tid, author: m.from, body: m.text, created_at: m.at, kind: str(m.kind), resolved: isResolving ? 1 : 0, delivered_at: m.at });
         rep.resolved.messages++;

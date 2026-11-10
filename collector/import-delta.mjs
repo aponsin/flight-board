@@ -223,6 +223,8 @@ if (process.argv[1] && same(fileURLToPath(import.meta.url), process.argv[1])) {
       have: {
         askIds: new Set((view.asks ?? []).map((s) => s.id)), openAskIds: new Set((view.asks ?? []).filter((s) => !s.closed_at).map((s) => s.id)),
         threadNums: new Set((view.threads?.threads ?? []).map((t) => t.num).filter(Number.isInteger)), askNums: new Set((view.asks ?? []).map((s) => s.num).filter(Number.isInteger)),
+        askNumHolders: new Map((view.asks ?? []).filter((s) => Number.isInteger(s.num)).map((s) => [s.num, s.id])),
+        threadNumHolders: new Map((view.threads?.threads ?? []).filter((t) => Number.isInteger(t.num)).map((t) => [t.num, t.id])),
         usageDays: new Set((view.usage ?? []).map((u) => u.day)), shipVersions: new Set((view.ships ?? []).map((s) => s.version)),
         historyCardIds: new Set(hc.map((c) => c.id)), cardIds: new Set(cs.map((c) => c.id)),
         messageIds: new Set((view.threads?.messages ?? []).map((m) => m.id)), threadIds: new Set((view.threads?.threads ?? []).map((t) => t.id)),
@@ -231,7 +233,7 @@ if (process.argv[1] && same(fileURLToPath(import.meta.url), process.argv[1])) {
     });
   }
   // #C824: the six tab counts and the in-flight count against the old page, a reason for every difference (needs the export's asks and history).
-  const tabs = a && h ? compareTabs({ docs: { ...mirror, ...readHistory(get("--export")) }, view, p, a, h, now: Number(get("--now") ?? Date.now()), expect, windowDays: Number(get("--history-days") ?? 30) }) : null;
+  const tabs = a && h ? compareTabs({ docs: { ...mirror, ...readHistory(get("--export")) }, view, p, a, h, now: Number(get("--now") ?? Date.now()), expect, windowDays: Number(get("--history-days") ?? 30), owner: conf?.owner ?? "Owner" }) : null;
   const whole = JSON.stringify({ ...report(p), ...(asksReport ? { asks: asksReport } : {}), ...(h ? { history: h.report } : {}), ...(tabs ? { tabs } : {}) }, null, 2);
   // --report <file>: the whole report goes to the file and only the tab line is printed (the report is long).
   if (get("--report")) {

@@ -120,23 +120,25 @@ test("the old page's resolved rule: a thread whose last message is resolved, or 
   assert.equal(oldResolved(old, NOW).has("t-1"), false, "older than 7 days");
 });
 
-test("compareTabs: counts against the expected ones, and a reason for each difference (a closed ask the store holds open, a card below #C719)", () => {
-  const h = { messages: [{ thread_id: "a-closed", created_at: NOW - DAY, resolved: 0 }, { thread_id: "t-1", created_at: NOW - DAY, resolved: 1 }], asks: [{ id: "a-closed", closed_at: NOW - DAY }], askOutcome: { "a-held": "numTaken" }, report: { closedAsks: { refusedBy: {} } } };
-  const t = compareTabs({ docs: tabDocs(), view: view({ asks: [{ id: "a-held", closed_at: null }] }), p: { insert: [] }, a: { counts: { needs: 1, later: 4, lead: 2, todo: 0, ideas: 3 } }, h, now: NOW, expect: { needs: 1, later: 4, lead: 1, resolved: 3, inflight: 3 } });
-  assert.deepEqual([t.needs.difference, t.later.difference, t.lead.difference], [undefined, undefined, 1], "only the tab that differs says so");
-  assert.equal(t.todo.note.startsWith("unchecked"), true);
+test("compareTabs: the tabs are read off the page; a reason for each difference (a closed ask the store holds open, a card below #C719)", () => {
+  const h = { messages: [{ id: "n1", thread_id: "a-closed", author: "Manager", body: "hi", created_at: NOW - DAY, resolved: 0 }, { id: "n2", thread_id: "t-1", author: "Owner", body: "bye", created_at: NOW - DAY, resolved: 1 }], asks: [{ id: "a-closed", closed_at: NOW - DAY }], askOutcome: { "a-held": "numTaken" }, report: { closedAsks: { refusedBy: {} } } };
+  const ask = (id, type, extra = {}) => ({ id, num: 1, type, title: id, asked_by: "Manager", body: JSON.stringify(type === "Decision" ? { question: "q", options: ["A", "B"], recommended: "A" } : type === "Later" ? { question: "q" } : { steps: ["x"], expect: "y" }), created_at: NOW - DAY, closed_at: null, ...extra });
+  const asks = [ask("a-held", "Decision"), ask("later1", "Later", { eta_at: NOW + DAY })];
+  const t = compareTabs({ docs: tabDocs(), view: view({ asks, lists: [{ id: "x1", kind: "todo", text: "t", done: 0 }, { id: "x2", kind: "idea", text: "i", done: 0 }, { id: "x3", kind: "idea", text: "j", done: 1 }] }), p: { insert: [] }, a: { counts: {} }, h, now: NOW, expect: { needs: 0, later: 1, lead: 0, todo: 1, ideas: 1, resolved: 3, inflight: 3 }, owner: "Owner" });
+  assert.deepEqual([t.needs.difference, t.later.difference, t.lead.difference, t.todo.difference, t.ideas.difference], [1, undefined, undefined, undefined, undefined], "only the tab that differs says so");
+  assert.deepEqual(t.needs.asks, ["a-held"], "the ask behind a tab is named");
   assert.equal(t.resolved.oldPage, 3);
   assert.equal(t.resolved.ours, 2);
   assert.equal(t.resolved.difference, -1);
   assert.equal(t.resolved.inOldNotAfter.length, 1);
   assert.match(t.resolved.inOldNotAfter[0].reason, /numTaken/, "the reason is what became of that ask");
-  assert.deepEqual(t.resolved.inOldNotAfter[0].sample, ["a-held"]);
+  assert.deepEqual(t.resolved.inOldNotAfter[0].ids, ["a-held"]);
   assert.equal(t.resolved.unexplained, 0, "the page's number minus ours is fully accounted for");
   assert.equal(t.inflight.ours, 2);
   assert.equal(t.inflight.oldPage, 3);
   assert.equal(t.inflight.difference, -1);
-  assert.deepEqual(t.inflight.inOldNotInStore.sample, ["c3"]);
-  assert.match(t.inflight.inOldNotInStore.reason, /719/);
+  assert.deepEqual(t.inflight.inOldNotInStore.ids, ["c3"]);
+  assert.match(t.inflight.inOldNotInStore.reason, /not a store card/);
 });
 
 // ---- #C824 v2: the Checker's findings G1-G10 and remarks (c), (e), (f); the guarded close of an ask the store holds open ----
@@ -227,7 +229,7 @@ test("(c) each missing closed ask is explained by what became of it, not by any 
   const D = { waiting: { ...w("m-taken", { doneAt: NOW - DAY }), ...w("m-refused", { doneAt: NOW - DAY }), ...w("m-old", { doneAt: NOW - 40 * DAY, updatedAt: NOW - DAY }) }, messages: { x1: { thread: "m-taken", from: "M", text: "t", at: NOW - DAY }, x2: { thread: "m-refused", from: "M", text: "t", at: NOW - DAY } }, threads: {}, initiatives: {} };
   const h = { messages: [], asks: [], askOutcome: { "m-taken": "numTaken", "m-refused": "refused:ask-title" }, report: { closedAsks: { refusedBy: { "ask-title": 1 } } } };
   const t = compareTabs({ docs: D, view: view(), p: { insert: [] }, a: { counts: {} }, h, now: NOW, expect: {} });
-  const why = Object.fromEntries(t.resolved.inOldNotAfter.map((g) => [g.sample[0], g.reason]));
+  const why = Object.fromEntries(t.resolved.inOldNotAfter.map((g) => [g.ids[0], g.reason]));
   assert.match(why["m-taken"], /already uses/);
   assert.doesNotMatch(why["m-taken"], /refuse/);
   assert.match(why["m-refused"], /ask rules refuse \(ask-title/);
@@ -236,11 +238,15 @@ test("(c) each missing closed ask is explained by what became of it, not by any 
 test("(f) an ask whose thread has another id counts once, not once missing and once extra", () => {
   const D = { waiting: w("ask-x", { thread: "thr-y", doneAt: NOW - DAY }), threads: th("thr-y", 980), messages: { z1: { thread: "thr-y", from: "Manager", text: "hi", at: NOW - DAY } }, initiatives: {} };
   const h = plan(D);
-  const t = compareTabs({ docs: D, view: view(), p: { insert: [] }, a: { counts: {} }, h, now: NOW, expect: { resolved: 1 } });
+  const t = compareTabs({ docs: D, view: view(), p: { insert: [] }, a: { counts: {} }, h, now: NOW, expect: { resolved: 0 } });
+  // The page finds an ask's item by the thread's id only, so thr-y is not linked to ask-x on either page: the old page's code does not list
+  // it, and the import flags the thread's newest message resolved (the closed ask resolved it on the old board), so the store lists it
+  // once, named as flagged (not once missing and once extra).
   assert.equal(t.resolved.ours, 1);
-  assert.equal(t.resolved.oldPageByRule, 1);
+  assert.equal(t.resolved.oldPageByCode, 0);
   assert.deepEqual(t.resolved.inOldNotAfter, []);
-  assert.equal(t.resolved.afterNotInOld, undefined);
+  assert.deepEqual(t.resolved.afterNotInOld.map((g) => [g.why, g.ids]), [["flagged", ["thr-y"]]]);
+  assert.equal(h.messages.at(-1).resolved, 1);
   assert.equal(t.resolved.unexplained, 0);
 });
 
