@@ -1,0 +1,1 @@
+PASS Quick: C733 at 6c3f9eb on main d8387c1, test only. The artifact page's seen time must be a time: string, past-2100, fraction, object and array give no tick and no answer coming, and a control time gives both. 8 of 8 wake chip tests pass. Mutations caught: the isT check dropped, any whole number accepted.
