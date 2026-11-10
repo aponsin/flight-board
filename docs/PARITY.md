@@ -70,7 +70,8 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Status pill | same where the probe has evidence; not yet: B3a for the rest | `derived/all.cards` |
 | Check button, "checked by the Collector" | gone: "Delete with the Collector" (row 38) | |
 | Source-disagreement flag | gone: "Delete: one source, nothing to flag" (row 28) | |
-| ETA box | not yet: B3b, B4 | |
+| ETA box | partly: the probe's readyAt, firm and waitingFor are in (B4b part 1, #C731); the expected version and the release times follow in part 2 | `derived/all.cards` |
+| Held for its done test ("Live, still open") | same where the lead sets it: card word check_at (B4b part 1, #C731), drawn as checkAt; the page already honours it | `cards` |
 | Version note, "Next: vX" | not yet: B3a, B4 | |
 | Track: lit phase, skips | same | `derived/all.cards` |
 | Track: who · time on each tile | same (B3b: the store's phase history, with the old board's steps imported) | `derived/all.times` |

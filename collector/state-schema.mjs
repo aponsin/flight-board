@@ -56,7 +56,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -69,6 +69,12 @@ const CARD = {
   liveVersion: nullOr(re(VERSION)),
   shipping: (v) => typeof v === "boolean",
   seen: (v) => Array.isArray(v) && v.length <= MAX_SIGNED + 4 && v.every(re(PHASE)) && new Set(v).size === v.length,
+  // #C731 B4b: the readings the old page's ETA and review lines need. readyAt: the READY commit's time; firm: false when the
+  // evidence is only a head with no trailer or sign-off yet (never written as true); waitingFor: the reviews still unsigned on
+  // the READY commit, in phase order. Optional: a probe from before them still fits.
+  readyAt: isTime,
+  firm: (v) => v === false,
+  waitingFor: (v) => Array.isArray(v) && v.length >= 1 && v.length <= MAX_SIGNED && v.every(re(PHASE)) && new Set(v).size === v.length,
   branches: (v) => Array.isArray(v) && v.length >= 2 && v.length <= MAX_BRANCHES,
   at: isTime,
 };
