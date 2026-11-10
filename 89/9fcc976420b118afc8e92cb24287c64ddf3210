@@ -1,0 +1,1 @@
+PASS #C747 v2 build/c747-later-ask-steps-v2 by Checker 2026-11-10. Full. Re-cut of 83fb387 on main 8b82f01e: range-diff equal, the only tree difference from v1 is docs/PARITY.md from main. Replaces 83fb387. Needs a Worker redeploy.
