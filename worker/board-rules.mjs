@@ -247,6 +247,9 @@ export function whoForPhase(cardId, phase, agents, ownerRole) {
 // stall lasts and changes only with the phase, the agent or the time the agent went idle. The wait counts from the later of the phase's
 // start and the agent going idle (a card queued behind a busy agent has not waited on an idle one). Exempt: a card that is dropped,
 // paused, blocked, held on someone (waiting_on), or gated by an open ask; a live card (done); a card with no agent for its phase.
+// #C828: a phase agent with NO open session (a role the `agents` reading does not list, while the reading lists others) is a stall too, counted
+// from the phase's start: nobody is there to take the card, so waiting on an idle one would never fire. The reason says "no session". An empty or
+// missing reading is a blind probe, never a stall: only a reading that lists someone says who is absent.
 // Pure: cards = rows {id, num, owner_role, blocked_reason, paused, dropped, waiting_on}; evidence = {cardId: reading}; agents = the
 // `agents` evidence; openAskCards = Set of card ids with an open ask; phaseStart = Map "<card>|<phase>" -> ms. Times are UTC ("Z").
 export const STALL_AFTER_MS = 15 * 60_000;
@@ -265,10 +268,14 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     if (phase === "ship" && v.onMain === true && typeof c.repo === "string" && c.repo !== "") continue;
     const role = PHASE_LANES[phase] ?? c.owner_role;
     if (typeof role !== "string" || !/^[A-Za-z0-9 _-]{1,24}$/.test(role)) continue;
-    const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`);
+    const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`), at = `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} 15 min`;
+    if (!a && Object.keys(roster).length && Number.isFinite(start)) {
+      if (now - start >= STALL_AFTER_MS) out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, no session for ${role}` });
+      continue;
+    }
     if (!a || a.state !== "idle" || !Number.isFinite(a.since) || !Number.isFinite(start)) continue;
     if (now - Math.max(start, a.since) < STALL_AFTER_MS) continue;
-    out.push({ card_id: c.id, num: c.num, phase, role, reason: `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} 15 min, ${role} idle since ${hhmmZ(a.since)}` });
+    out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, ${role} idle since ${hhmmZ(a.since)}` });
   }
   return out;
 }

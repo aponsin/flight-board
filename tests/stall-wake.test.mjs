@@ -100,7 +100,6 @@ exempt("a ship run is on now", (db) => writeEvidence(db, T + 1000, "probe", "car
 exempt("the card is live", (db) => writeEvidence(db, T + 1000, "probe", "cards.card-a", { lit: ["live"], phase: "live", ci: "none" }));
 exempt("the phase's agent is busy on another card", (db) => agents(db, T + 1000, { Checker: { state: "working", tool: "Bash", card: "other", since: T } }));
 exempt("an agent works the card (not its lane's)", (db) => agents(db, T + 1000, { Checker: { state: "idle", tool: null, card: null, since: T }, Builder: { state: "working", tool: "Bash", card: "card-a", since: T } }));
-exempt("the lane's agent is not on the roster", (db) => agents(db, T + 1000, { Someone: { state: "idle", tool: null, card: null, since: T } }));
 
 test("exempt: a phase with no lane and a card with no owner has no agent to wait on", async () => {
   const db = await world({ phase: "build", role: "Boardsmith", owner: null });
@@ -123,4 +122,57 @@ test("stalledWaits: an unusable roster, an unknown phase or a role that is not a
   assert.equal(stalledWaits({ ...base, evidence: { c: { lit: ["nonsense"] } }, agents: { Boardsmith: { state: "idle", since: T } } }).length, 0);
   assert.equal(stalledWaits({ ...base, cards: [{ ...card, owner_role: "x\ny" }], agents: { "x\ny": { state: "idle", since: T } } }).length, 0);
   assert.equal(stalledWaits({ ...base, cards: [{ ...card, num: null }], agents: { Boardsmith: { state: "idle", since: T } } }).length, 0);
+});
+
+// #C828: a phase agent with no open session is a stall, "no session", counted from the phase's start.
+test("#C828 a phase agent with no open session: the card waiting 15 min at its phase wakes Manager once with 'no session'; not before", async () => {
+  const db = await world();
+  await agents(db, T + 1000, { Someone: { state: "idle", tool: null, card: null, since: T } }); // Checker is not listed: no session
+  assert.equal(await pending(db, T + 15 * MIN - 1), 0, "14 min 59 s is not yet");
+  const r = await wakeAsk(db, T + 15 * MIN);
+  assert.equal(r.count, 1); assert.equal(r.send, true);
+  assert.deepEqual((await takeInbox(db, T + 15 * MIN + 1000)).stalls.map((s) => s.reason), ["#C1 waits at Checker 15 min, no session for Checker"]);
+  for (const m of [16, 60, 600]) assert.equal(await pending(db, T + m * MIN), 0, `sent once, quiet at ${m} min`);
+});
+
+test("#C828 the session comes back: the stall is over, and an idle agent after that is the old reason", async () => {
+  const db = await world();
+  await agents(db, T + 1000, { Someone: { state: "idle", tool: null, card: null, since: T } });
+  assert.equal(await pending(db, T + 20 * MIN), 1);
+  await agents(db, T + 21 * MIN, { Someone: { state: "idle", tool: null, card: null, since: T }, Checker: { state: "working", tool: "Bash", card: "card-a", since: T + 21 * MIN } });
+  assert.equal(await pending(db, T + 22 * MIN), 0, "the agent is back and works the card");
+  assert.deepEqual((await takeInbox(db, T + 23 * MIN)).stalls, []);
+});
+
+test("#C828 an empty or missing agents reading is a blind probe, never a stall; the exemptions still hold with no session", async () => {
+  const blind = await world();
+  await agents(blind, T + 1000, {});
+  assert.equal(await pending(blind, T + 60 * MIN), 0, "an empty reading says nobody is absent");
+  const none = makeDb();
+  await createCard(none, T, "Manager", { id: "card-a", title: "A card", owner_role: "Boardsmith" });
+  await writeEvidence(none, T, "probe", "cards.card-a", { lit: ["checker"], phase: "checker", ci: "none" });
+  assert.equal(await pending(none, T + 60 * MIN), 0, "no agents reading at all");
+  for (const [name, fix] of [
+    ["Gated", (db) => db.prepare("INSERT INTO asks (id, num, type, title, asked_by, card_id, body, created_at) VALUES ('t1', 1, 'Answer', 'q', 'Manager', 'card-a', '{}', ?)").bind(T).run()],
+    ["Blocked", (db) => db.prepare("UPDATE cards SET blocked_reason = 'waiting for a key' WHERE id = 'card-a'").run()],
+    ["Paused", (db) => db.prepare("UPDATE cards SET paused = 1 WHERE id = 'card-a'").run()],
+    ["a CI run is going", (db) => writeEvidence(db, T + 1000, "probe", "cards.card-a", { lit: ["checker"], phase: "checker", ci: "running" })],
+    ["live", (db) => writeEvidence(db, T + 1000, "probe", "cards.card-a", { lit: ["live"], phase: "live", ci: "none" })],
+  ]) {
+    const db = await world();
+    await agents(db, T + 1000, { Someone: { state: "idle", tool: null, card: null, since: T } });
+    await fix(db);
+    assert.equal(await pending(db, T + 60 * MIN), 0, name);
+  }
+});
+
+test("#C828 stalledWaits: no session needs the phase's start; a lane agent that is working or idle-but-young is not 'no session'", () => {
+  const card = { id: "c", num: 5, owner_role: "Boardsmith" };
+  const base = { now: T + STALL_AFTER_MS * 2, cards: [card], evidence: { c: { lit: ["checker"] } }, openAskCards: new Set(), phaseStart: new Map([["c|checker", T]]) };
+  const someone = { Someone: { state: "idle", since: T } };
+  assert.deepEqual(stalledWaits({ ...base, agents: someone }).map((s) => s.reason), ["#C5 waits at Checker 15 min, no session for Checker"]);
+  assert.equal(stalledWaits({ ...base, agents: someone, phaseStart: new Map() }).length, 0, "no phase start: nothing to count from");
+  assert.equal(stalledWaits({ ...base, agents: someone, now: T + STALL_AFTER_MS - 1 }).length, 0);
+  assert.equal(stalledWaits({ ...base, agents: { ...someone, Checker: { state: "working", card: "x", since: T } } }).length, 0);
+  assert.equal(stalledWaits({ ...base, agents: { ...someone, Checker: { state: "idle", since: T + STALL_AFTER_MS * 2 - 1000 } } }).length, 0, "listed and idle: the idle rule, not 'no session'");
 });
