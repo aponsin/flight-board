@@ -44,8 +44,29 @@ export function cardRow(id, d) {
   return bad ? { ok: false, ...bad } : { ok: true, row };
 }
 
+// An old item's images as the store's screenshots (#C824). The old board kept each as { label, option, url: "/_blob/<file id>" } (the
+// store's file ids), which `String` turned into "[object Object]" (#T1701). The store names a screenshot "<file id>", "<file id> label" or
+// "<file id> A: label" (parseShot in worker/file-store.mjs): a string that already has that shape is kept; an object with a /_blob/ url
+// becomes one; anything else is dropped, never guessed.
+const SHOT = /^[A-Za-z0-9_-]{16,64}(\s.*)?$/s;
+export function shotsOf(images) {
+  const out = [];
+  for (const i of Array.isArray(images) ? images : []) {
+    if (typeof i === "string") { if (SHOT.test(i)) out.push(i); continue; }
+    const id = /^\/_blob\/([A-Za-z0-9_-]{16,64})$/.exec(typeof i?.url === "string" ? i.url : "")?.[1];
+    if (!id) continue;
+    const label = typeof i.label === "string" ? i.label.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 200) : "";
+    const option = /^[A-D]$/.test(i.option ?? "") ? i.option : "";
+    out.push(label ? (option ? `${id} ${option}: ${label}` : `${id} ${label}`) : id);
+  }
+  return out.slice(0, 8);
+}
+
 // An old waiting item as the store's ask: the parts come from the item as it is; nothing is made up.
-export function askRow(id, d, { thread, askedBy }) {
+// `lenient` (#C824, a CLOSED ask kept for the record): the store's rules for a new open ask (a Decision's options and recommended, an
+// Action's expect, a Later's ETA) are not applied, because nothing will ask the owner again; the parts the old item has are kept as they are,
+// and a Later without an ETA is given its closing time (the table needs one). Its type must still be one the store has.
+export function askRow(id, d, { thread, askedBy, lenient = false }) {
   // #C748: a "later" item that carries options is a question the owner answers (a Decision with its options), not a Later: the store's
   // Later rule takes no options. Its ETA is not carried (a Decision has none).
   const type = d.kind === "later" && Array.isArray(d.options) && d.options.length ? "Decision" : TYPE[d.kind];
@@ -62,9 +83,11 @@ export function askRow(id, d, { thread, askedBy }) {
   if (type === "Answer") ask.question = str(d.question) ?? str(d.text);
   if (type === "Later") Object.assign(ask, { text: str(d.text) ?? str(d.question), ...(Number.isFinite(d.eta) ? { eta_at: d.eta } : {}), ...(Array.isArray(d.steps) && d.steps.length ? { steps: d.steps } : {}), ...(str(d.expect) ? { expect: d.expect } : {}), ...(str(d.where) ? { where: d.where } : {}) });
   if (type === "SessionStart") ask.words = str(d.words) ?? str(d.text);
-  if (Array.isArray(d.images) && d.images.length) ask.screenshots = d.images.map(String);
+  const shots = shotsOf(d.images);
+  if (shots.length) ask.screenshots = shots;
   for (const k of Object.keys(ask)) if (ask[k] === undefined || ask[k] === null) delete ask[k];
-  const bad = askRefusal(ask, null);
+  if (lenient && type === "Later" && !Number.isFinite(ask.eta_at)) ask.eta_at = int(d.doneAt) ?? int(d.response?.at) ?? int(d.respondedAt) ?? int(d.updatedAt) ?? int(d.since) ?? 1;
+  const bad = lenient ? (ask.title ? null : { rule: "ask-title", detail: "no title" }) : askRefusal(ask, null);
   if (bad) return { ok: false, ...bad };
   const body = {};
   for (const k of ["question", "options", "recommended", "steps", "expect", "where", "text", "words", "screenshots"]) if (ask[k] !== undefined) body[k] = ask[k];

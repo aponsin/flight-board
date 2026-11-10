@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cardRow, ID, plan as mirrorPlan, readMirror, compare, closures } from "./import-mirror.mjs";
 import { planHistory, historySql, readHistory } from "./import-history.mjs";
+import { compareTabs } from "./import-compare.mjs";
 
 // A control character other than tab and newline (a NUL cuts the SQL text: SQLite would run the earlier statements, then fail) is never written.
 const CTRL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
@@ -83,7 +84,8 @@ export function planDelta(docs, { storeIds = new Set(), historyIds = new Set(), 
 // the owner's answer carried, the old #T number kept, the store's own ask rules, a refused item listed and never patched, the lead as the
 // asker where the item names none). INSERT OR IGNORE by old id, so a second run with a fresher export changes nothing already there.
 // docs: { initiatives, threads, messages, waiting } (the lists and steps are not read here). storeAsks: the store's own asks.
-// Nothing is closed here: an ask the store holds that the old board has since closed is only listed (stillOpenInStoreButClosedOld).
+// Nothing is closed here: an ask the store holds that the old board has since closed is listed (stillOpenInStoreButClosedOld); the history
+// plan (planHistory, --history) closes it by a guarded UPDATE (closeOpenSql).
 export function planAsks(docs, { owner = "", roster = [], lead = "", liveT = 0, storeAsks = [] } = {}) {
   // A thread number must be an integer from 1 to 1e6 (the probe's rule): any other is dropped, and the ask is given the next number above the counters.
   // Since board v3.56 a delete on the old board is { deleted: true, updatedAt }: such an item (a waiting item, a thread, a message) is gone, not open.
@@ -138,6 +140,14 @@ export function askFixSql(r) {
   return `UPDATE asks SET body = json_patch(body, ${q(JSON.stringify(patch))}) WHERE id = ${q(r.id)} AND type = ${q(r.type)} AND ${open} AND ${keys.map((k) => `json_extract(body, '$.${k}') IS NULL`).join(" AND ")};`;
 }
 
+// #C824: an ask the first runs stored with its screenshots as "[object Object]" (#T1701: the old images were objects, and String() made them
+// that) gets the right list, by one guarded UPDATE that touches only a body whose screenshots still hold the bad text.
+export function shotsFixSql(r) {
+  const shots = JSON.parse(r.body).screenshots;
+  if (!Array.isArray(shots) || !shots.length || shots.some((s) => typeof s !== "string" || s.includes("[object"))) return null;
+  return `UPDATE asks SET body = json_patch(body, ${q(JSON.stringify({ screenshots: shots }))}) WHERE id = ${q(r.id)} AND json_extract(body, '$.screenshots') LIKE '%[object Object]%';`;
+}
+
 // #C748: --clear-check <id,id,...>: lift the check date of finished cards (a card with one is not closed by the page on the live reading).
 // Each id passes the card-id rule; the UPDATE touches only a card that has a date.
 export function clearCheckSql(ids) {
@@ -149,7 +159,7 @@ export function clearCheckSql(ids) {
 
 export function deltaSql(p, a = null, append = "", history = null) {
   const insert = (t, row) => `INSERT OR IGNORE INTO ${t} (${Object.keys(row).join(", ")}) VALUES (${Object.values(row).map(q).join(", ")});`;
-  const asksSql = a ? [...a.asks.map((r) => insert("asks", r)), ...a.asks.map(askFixSql).filter(Boolean), ...a.messages.map((r) => insert("messages", r)), `UPDATE counters SET next = MAX(next, ${a.counterT}) WHERE name = 'T';`] : [];
+  const asksSql = a ? [...a.asks.map((r) => insert("asks", r)), ...a.asks.map(askFixSql).filter(Boolean), ...a.asks.map(shotsFixSql).filter(Boolean), ...a.messages.map((r) => insert("messages", r)), `UPDATE counters SET next = MAX(next, ${a.counterT}) WHERE name = 'T';`] : [];
   const extra = String(append).split("\n").map((s) => s.trim()).filter(Boolean);
   // Appended lines (--append): one-off, hand-written, each a single guarded UPDATE of ships or cards and nothing else.
   for (const l of extra) {
@@ -190,12 +200,13 @@ if (process.argv[1] && same(fileURLToPath(import.meta.url), process.argv[1])) {
     boardIds: boardIdsFromGit(git), repoWord: get("--repo-word") ?? "flight-board", fromNum: Number(get("--from-num") ?? 719),
   });
   // The asks and threads (#C744): read when the export holds a waiting/ folder. The owner and the roster come from the board config (--config).
-  let a = null, asksReport = null;
+  let a = null, asksReport = null, mirror = null, conf = null;
+  const expect = Object.fromEntries((get("--expect") ?? "").split(",").filter(Boolean).map((x) => x.split("=")).map(([k, v]) => [k, Number(v)]));
   if (existsSync(join(get("--export"), "waiting"))) {
     if (!get("--config")) { console.error("the export has asks: pass --config <board.config.json> (owner and roster)"); process.exit(64); }
-    const conf = JSON.parse(readFileSync(get("--config"), "utf8"));
-    const expect = Object.fromEntries((get("--expect") ?? "").split(",").filter(Boolean).map((x) => x.split("=")).map(([k, v]) => [k, Number(v)]));
-    a = planAsks(readMirror(get("--export")), { owner: conf.owner ?? "", roster: conf.roster ?? [], lead: get("--lead") ?? "Manager", liveT: Number(get("--live-t") ?? 0), storeAsks: view.asks ?? [] });
+    conf = JSON.parse(readFileSync(get("--config"), "utf8"));
+    mirror = readMirror(get("--export"));
+    a = planAsks(mirror, { owner: conf.owner ?? "", roster: conf.roster ?? [], lead: get("--lead") ?? "Manager", liveT: Number(get("--live-t") ?? 0), storeAsks: view.asks ?? [] });
     asksReport = { newAsks: a.newAsks, heldAlready: a.heldAlready, messages: a.messages.length, counts: a.counts, differencesFromOldPage: compare(a.counts, expect), unchecked: ["needs", "later", "lead"].filter((k) => expect[k] === undefined), skipped: a.skipped, refused: a.refused.filter((r) => r.kind !== "message"), refusedMessages: a.refused.filter((r) => r.kind === "message").length, notes: a.notes, droppedThreadNums: a.droppedThreadNums, askedByLead: a.defaultedAsker, stillOpenInStoreButClosedOld: a.stillOpenInStoreButClosedOld, counterT: a.counterT };
   }
   // The old board's history (#C749): with --history, the usage days, the Shipped feed, the done cards' steps and the threads closed in the
@@ -205,7 +216,10 @@ if (process.argv[1] && same(fileURLToPath(import.meta.url), process.argv[1])) {
     const hc = view.historyCards ?? [], cs = view.cards ?? [];
     h = planHistory(readHistory(get("--export")), {
       now: Number(get("--now") ?? Date.now()), days: Number(get("--history-days") ?? 30),
+      owner: conf?.owner ?? "", roster: conf?.roster ?? [], lead: get("--lead") ?? "Manager",
       have: {
+        askIds: new Set((view.asks ?? []).map((s) => s.id)), openAskIds: new Set((view.asks ?? []).filter((s) => !s.closed_at).map((s) => s.id)),
+        threadNums: new Set((view.threads?.threads ?? []).map((t) => t.num).filter(Number.isInteger)), askNums: new Set((view.asks ?? []).map((s) => s.num).filter(Number.isInteger)),
         usageDays: new Set((view.usage ?? []).map((u) => u.day)), shipVersions: new Set((view.ships ?? []).map((s) => s.version)),
         historyCardIds: new Set(hc.map((c) => c.id)), cardIds: new Set(cs.map((c) => c.id)),
         messageIds: new Set((view.threads?.messages ?? []).map((m) => m.id)), threadIds: new Set((view.threads?.threads ?? []).map((t) => t.id)),
@@ -213,6 +227,13 @@ if (process.argv[1] && same(fileURLToPath(import.meta.url), process.argv[1])) {
       },
     });
   }
-  console.log(JSON.stringify({ ...report(p), ...(asksReport ? { asks: asksReport } : {}), ...(h ? { history: h.report } : {}) }, null, 2));
+  // #C824: the six tab counts and the in-flight count against the old page, a reason for every difference (needs the export's asks and history).
+  const tabs = a && h ? compareTabs({ docs: { ...mirror, ...readHistory(get("--export")) }, view, p, a, h, now: Number(get("--now") ?? Date.now()), expect, windowDays: Number(get("--history-days") ?? 30) }) : null;
+  const whole = JSON.stringify({ ...report(p), ...(asksReport ? { asks: asksReport } : {}), ...(h ? { history: h.report } : {}), ...(tabs ? { tabs } : {}) }, null, 2);
+  // --report <file>: the whole report goes to the file and only the tab line is printed (the report is long).
+  if (get("--report")) {
+    writeFileSync(get("--report"), whole + "\n");
+    console.log(`report written to ${get("--report")}${tabs ? `\ntabs: ${Object.values(tabs).map((t) => `${t.tab} ${t.ours}${t.oldPage !== null ? ` (old page ${t.oldPage})` : ""}`).join(" | ")}` : ""}${h?.report?.closedAsks ? `\nclosed asks: ${h.report.closedAsks.new} new, ${h.report.closedAsks.refused} refused, ${h.report.closedAsks.held} held` : ""}`);
+  } else console.log(whole);
   if (get("--sql")) writeFileSync(get("--sql"), deltaSql(p, a, [get("--append") ? readFileSync(get("--append"), "utf8") : "", clearCheckSql(get("--clear-check"))].filter(Boolean).join("\n"), h) + "\n");
 }

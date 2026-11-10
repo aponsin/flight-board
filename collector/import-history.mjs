@@ -8,7 +8,7 @@
 
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { ID } from "./import-mirror.mjs";
+import { ID, askRow } from "./import-mirror.mjs";
 import { PHASES } from "../worker/board-rules.mjs";
 import { plainVersion } from "../worker/compat-ships.mjs";
 
@@ -25,7 +25,7 @@ const minutes = (v) => (Number.isFinite(v) && v >= 0 && v < 1e6 ? v : null);
 
 export function readHistory(dir) {
   const docs = {};
-  for (const name of ["usage", "events", "steps", "threads", "messages", "initiatives"]) {
+  for (const name of ["usage", "events", "steps", "threads", "messages", "initiatives", "waiting"]) {
     docs[name] = {};
     const from = join(dir, name);
     if (!existsSync(from)) continue;
@@ -35,7 +35,7 @@ export function readHistory(dir) {
 }
 
 // have: what the store holds: usageDays, shipVersions, historyCardIds, cardIds (Sets), messageIds, threadIds (Sets), cardsByNum (Map num -> id).
-export function planHistory(docs, { have = {}, now = Date.now(), days = 30 } = {}) {
+export function planHistory(docs, { have = {}, now = Date.now(), days = 30, owner = "", roster = [], lead = "Manager" } = {}) {
   const cutoff = now - days * DAY_MS;
   const set = (k) => have[k] ?? new Set();
   const out = { usage: [], ships: [], steps: [], threads: [], messages: [], resolve: [], report: {} };
@@ -137,7 +137,58 @@ export function planHistory(docs, { have = {}, now = Date.now(), days = 30 } = {
   rep.ships.noCardsCount = rep.ships.noCards.length; rep.ships.noCards = rep.ships.noCards.slice(0, 5);
   out.steps.sort((a, b) => a.at - b.at || a.card_id.localeCompare(b.card_id));
 
+  // 3c. The asks closed in the window (#C824): the first import took open asks only, and step 4 below brought a thread only when its newest
+  // message is flagged resolved, while on the old board a closed ask resolves its thread by being done (Resolved read 66 against 192). Each closed ask the store lacks becomes a closed ask (closed_at the time it closed, closed_by 'import'), with its
+  // answer as the first import carries it (askRow) and the old #T number of its thread; its thread's messages come in with it (step 4). An ask
+  // with no thread, no thread number or a number the store already uses, or one the store's ask rules refuse, is counted with its reason,
+  // never patched. An ask the store holds is never changed.
+  out.asks = [];
+  out.closeOpen = []; // asks the store holds OPEN that the old board closed: closed by a guarded UPDATE (answer kept if the store has one)
+  out.askOutcome = {}; // ask id -> what became of it (new, held, closedOpen, outsideWindow, noThread, numTaken, refused:<rule>); read by the comparison
+  out.askThread = {}; // ask id -> the id of its thread (not always its own): the comparison keys a resolved thread by thread id
+  rep.closedAsks = { new: 0, held: 0, closedOpen: 0, outsideWindow: 0, noThread: 0, numTaken: 0, refused: 0, refusedBy: {}, withAnswer: 0 };
+  // In-run clash: the store's ask numbers, and its thread numbers (a free thread with #T N would show two #T N).
+  const closedThreads = new Set(), usedNums = new Set([...set("askNums"), ...set("threadNums")]);
+  const outcome = (aid, how) => { out.askOutcome[aid] = how; };
+  const refuse = (aid, why) => { rep.closedAsks.refused++; rep.closedAsks.refusedBy[why] = (rep.closedAsks.refusedBy[why] ?? 0) + 1; outcome(aid, `refused:${why}`); };
+  for (const [aid, d] of Object.entries(docs.waiting ?? {}).sort(([x], [y]) => x.localeCompare(y))) {
+    if (!d || d.deleted === true || !d.done) continue;
+    // The close time: the ask's own done time, else its answer's, else when it was responded to, else its last change.
+    const closedAt = time(d.doneAt) ?? time(d.response?.at) ?? time(d.respondedAt) ?? time(d.updatedAt);
+    const tid = str(d.thread) ?? (docs.threads?.[aid] ? aid : null), thread = tid ? docs.threads?.[tid] : null;
+    if (set("askIds").has(aid)) {
+      // The store holds it. Open there and closed on the old board: close it (never when it is already closed; the answer the store has is kept).
+      if (set("openAskIds").has(aid) && ID.test(aid)) {
+        const r = askRow(aid, { ...d, from: undefined }, { thread, askedBy: "Manager", lenient: true });
+        out.closeOpen.push({ id: aid, closed_at: closedAt ?? now, answered_at: r.ok ? r.row.answered_at : null, answer: r.ok ? r.row.answer : null });
+        if (tid && MSG_ID.test(tid) && thread) { closedThreads.add(tid); out.askThread[aid] = tid; }
+        rep.closedAsks.closedOpen++; outcome(aid, "closedOpen");
+      } else { rep.closedAsks.held++; outcome(aid, "held"); }
+      continue;
+    }
+    if (closedAt === null || closedAt < cutoff) { rep.closedAsks.outsideWindow++; outcome(aid, "outsideWindow"); continue; }
+    if (!tid || !MSG_ID.test(tid) || !thread) { rep.closedAsks.noThread++; outcome(aid, "noThread"); continue; }
+    if (!ID.test(aid)) { refuse(aid, "ask-id"); continue; }
+    const named = str(d.who) && d.who !== owner && roster.includes(d.who) ? d.who : null;
+    const r = askRow(aid, { ...d, from: undefined }, { thread, askedBy: named ?? str(lead) ?? "Manager", lenient: true });
+    if (!r.ok) {
+      const why = String(r.rule ?? "ask").slice(0, 40); refuse(aid, why);
+      (rep.closedAsks.refusedSample ??= []).length < 6 && rep.closedAsks.refusedSample.push({ id: aid, kind: d.kind ?? null, rule: why, detail: String(r.detail ?? "").slice(0, 80) });
+      continue;
+    }
+    if (!Number.isInteger(r.row.num) || r.row.num < 1 || r.row.num > 1e6) { rep.closedAsks.noThread++; outcome(aid, "noThread"); continue; }
+    if (usedNums.has(r.row.num)) { rep.closedAsks.numTaken++; outcome(aid, "numTaken"); continue; }
+    if (CTRL.test(r.row.title ?? "") || CTRL.test(r.row.answer ?? "")) { refuse(aid, "control-char"); continue; }
+    usedNums.add(r.row.num);
+    out.asks.push({ ...r.row, closed_at: closedAt, closed_by: "import" });
+    closedThreads.add(tid); out.askThread[aid] = tid;
+    rep.closedAsks.new++; outcome(aid, "new");
+    if (r.row.answered_at) rep.closedAsks.withAnswer++;
+  }
+  out.asks.sort((a, b) => a.closed_at - b.closed_at || a.id.localeCompare(b.id));
+
   // 4. Threads closed in the window: every message of the thread, the closing one flagged resolved, and the thread's #T number.
+  // A thread of an ask closed in the window (3c) comes whatever its last message says: the closed ask resolves it.
   rep.resolved = { threads: 0, messages: 0, flagged: 0, refused: 0 };
   const byThread = new Map();
   for (const [id, m] of Object.entries(docs.messages ?? {})) {
@@ -149,7 +200,8 @@ export function planHistory(docs, { have = {}, now = Date.now(), days = 30 } = {
   for (const [tid, list] of byThread) {
     list.sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
     const last = list.at(-1);
-    if (!tid || !MSG_ID.test(tid) || !last?.resolved || (time(last.at) ?? 0) < cutoff) continue;
+    const viaAsk = closedThreads.has(tid);
+    if (!tid || !MSG_ID.test(tid) || (!viaAsk && (!last?.resolved || (time(last.at) ?? 0) < cutoff))) continue;
     const ok = list.filter((m) => MSG_ID.test(m._id) && str(m.from) && typeof m.text === "string" && m.text.trim() && !CTRL.test(m.text) && m.text.length <= MAX_TEXT && time(m.at) !== null);
     rep.resolved.refused += list.length - ok.length;
     if (!ok.length) continue;
@@ -163,19 +215,29 @@ export function planHistory(docs, { have = {}, now = Date.now(), days = 30 } = {
       if (isResolving) rep.resolved.flagged++;
     }
     const t = docs.threads?.[tid];
-    if (t && Number.isInteger(t.num) && t.num >= 1 && t.num <= 1e6 && !set("threadIds").has(tid)) out.threads.push({ id: tid, num: t.num, title: str(t.title), created_at: ok[0].at });
+    // A closed ask carries its thread's #T number itself (its row), so it gets no thread row of its own.
+    if (!viaAsk && t && Number.isInteger(t.num) && t.num >= 1 && t.num <= 1e6 && !set("threadIds").has(tid)) out.threads.push({ id: tid, num: t.num, title: str(t.title), created_at: ok[0].at });
   }
   return out;
 }
 
 // The SQL, one statement a line. q quotes a value (the caller's: it throws on a control character). Every line is by its own key and
 // ignores a row that is there; the one UPDATE only sets a flag that is 0.
+// An ask the store holds open that the old board closed (#C824): one guarded UPDATE, only while it is open. The store's own answer is kept
+// (answered_at, answer, answered_by and answer_taken_at change only where the store has no answer); a second run changes nothing.
+export function closeOpenSql(c, q) {
+  const keep = (col, v) => `${col} = CASE WHEN answered_at IS NULL THEN ${q(v)} ELSE ${col} END`;
+  return `UPDATE asks SET ${[keep("answer", c.answer), keep("answered_by", c.answered_at ? "owner" : null), keep("answer_taken_at", c.answered_at), keep("answered_at", c.answered_at)].join(", ")}, closed_at = ${q(c.closed_at)}, closed_by = 'import' WHERE id = ${q(c.id)} AND closed_at IS NULL;`;
+}
+
 export function historySql(h, q) {
   const insert = (t, row) => `INSERT OR IGNORE INTO ${t} (${Object.keys(row).join(", ")}) VALUES (${Object.values(row).map(q).join(", ")});`;
   return [
     ...h.usage.map((r) => insert("usage_days", r)),
     ...h.ships.map((r) => insert("ships", r)),
     ...(h.historyCards ?? []).map((r) => insert("history_cards", r)),
+    ...(h.asks ?? []).map((r) => insert("asks", r)),
+    ...(h.closeOpen ?? []).map((c) => closeOpenSql(c, q)),
     ...h.steps.map((r) => insert("phase_history", r)),
     ...h.threads.map((r) => insert("threads", r)),
     ...h.messages.map((r) => insert("messages", r)),
