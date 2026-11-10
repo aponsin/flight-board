@@ -16,6 +16,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cardRow, ID, plan as mirrorPlan, readMirror, compare, closures } from "./import-mirror.mjs";
+import { planHistory, historySql, readHistory } from "./import-history.mjs";
 
 // A control character other than tab and newline (a NUL cuts the SQL text: SQLite would run the earlier statements, then fail) is never written.
 const CTRL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
@@ -146,7 +147,7 @@ export function clearCheckSql(ids) {
   }).join("\n");
 }
 
-export function deltaSql(p, a = null, append = "") {
+export function deltaSql(p, a = null, append = "", history = null) {
   const insert = (t, row) => `INSERT OR IGNORE INTO ${t} (${Object.keys(row).join(", ")}) VALUES (${Object.values(row).map(q).join(", ")});`;
   const asksSql = a ? [...a.asks.map((r) => insert("asks", r)), ...a.asks.map(askFixSql).filter(Boolean), ...a.messages.map((r) => insert("messages", r)), `UPDATE counters SET next = MAX(next, ${a.counterT}) WHERE name = 'T';`] : [];
   const extra = String(append).split("\n").map((s) => s.trim()).filter(Boolean);
@@ -162,6 +163,7 @@ export function deltaSql(p, a = null, append = "") {
     ...p.setRepo.map((s) => `UPDATE cards SET repo = ${q(s.repo)} WHERE id = ${q(s.id)} AND repo IS NULL;`),
     `UPDATE counters SET next = MAX(next, ${p.counterC}) WHERE name = 'C';`,
     ...asksSql,
+    ...(history ? historySql(history, q) : []),
     ...extra,
   ].join("\n");
 }
@@ -196,6 +198,21 @@ if (process.argv[1] && same(fileURLToPath(import.meta.url), process.argv[1])) {
     a = planAsks(readMirror(get("--export")), { owner: conf.owner ?? "", roster: conf.roster ?? [], lead: get("--lead") ?? "Manager", liveT: Number(get("--live-t") ?? 0), storeAsks: view.asks ?? [] });
     asksReport = { newAsks: a.newAsks, heldAlready: a.heldAlready, messages: a.messages.length, counts: a.counts, differencesFromOldPage: compare(a.counts, expect), unchecked: ["needs", "later", "lead"].filter((k) => expect[k] === undefined), skipped: a.skipped, refused: a.refused.filter((r) => r.kind !== "message"), refusedMessages: a.refused.filter((r) => r.kind === "message").length, notes: a.notes, droppedThreadNums: a.droppedThreadNums, askedByLead: a.defaultedAsker, stillOpenInStoreButClosedOld: a.stillOpenInStoreButClosedOld, counterT: a.counterT };
   }
-  console.log(JSON.stringify({ ...report(p), ...(asksReport ? { asks: asksReport } : {}) }, null, 2));
-  if (get("--sql")) writeFileSync(get("--sql"), deltaSql(p, a, [get("--append") ? readFileSync(get("--append"), "utf8") : "", clearCheckSql(get("--clear-check"))].filter(Boolean).join("\n")) + "\n");
+  // The old board's history (#C749): with --history, the usage days, the Shipped feed, the done cards' steps and the threads closed in the
+  // last --history-days (30) that the first import left out. Every row is INSERT OR IGNORE by its own key; --now is for tests and reruns.
+  let h = null;
+  if (process.argv.includes("--history")) {
+    const hc = view.historyCards ?? [], cs = view.cards ?? [];
+    h = planHistory(readHistory(get("--export")), {
+      now: Number(get("--now") ?? Date.now()), days: Number(get("--history-days") ?? 30),
+      have: {
+        usageDays: new Set((view.usage ?? []).map((u) => u.day)), shipVersions: new Set((view.ships ?? []).map((s) => s.version)),
+        historyCardIds: new Set(hc.map((c) => c.id)), cardIds: new Set(cs.map((c) => c.id)),
+        messageIds: new Set((view.threads?.messages ?? []).map((m) => m.id)), threadIds: new Set((view.threads?.threads ?? []).map((t) => t.id)),
+        cardsByNum: new Map([...hc, ...cs].filter((c) => Number.isInteger(c.num)).map((c) => [c.num, c.id])),
+      },
+    });
+  }
+  console.log(JSON.stringify({ ...report(p), ...(asksReport ? { asks: asksReport } : {}), ...(h ? { history: h.report } : {}) }, null, 2));
+  if (get("--sql")) writeFileSync(get("--sql"), deltaSql(p, a, [get("--append") ? readFileSync(get("--append"), "utf8") : "", clearCheckSql(get("--clear-check"))].filter(Boolean).join("\n"), h) + "\n");
 }
