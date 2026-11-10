@@ -161,6 +161,18 @@ test("card fields the old page draws (B4a): depends-on, issue counts with their 
   ]) { const r = await tool("manager", "card_update", { id: "card-b", ...fields }); assert.equal(r.refused?.rule, rule, JSON.stringify(fields)); }
 });
 
+test("the done-test hold (B4b, Designer's gap 1): check_at is written, drawn as checkAt, lifted by null, and a bad time is refused", async () => {
+  const { tool, compat } = make();
+  assert.equal((await tool("manager", "card_create", { id: "card-h", title: "H", check_at: 1_790_000_000_000 })).ok, true);
+  const get = async () => (await compat()).collections.initiatives.find((x) => x.id === "card-h");
+  assert.equal((await get()).checkAt, 1_790_000_000_000);
+  assert.equal((await tool("manager", "card_update", { id: "card-h", check_at: 1_791_000_000_000 })).ok, true);
+  assert.equal((await get()).checkAt, 1_791_000_000_000);
+  assert.equal((await tool("manager", "card_update", { id: "card-h", check_at: null })).ok, true);
+  assert.equal((await get()).checkAt, undefined);
+  for (const bad of [0, 5, 4_200_000_000_000, 1.5, "1790000000000"]) { const r = await tool("manager", "card_update", { id: "card-h", check_at: bad }); assert.equal(r.refused?.rule, "card-check", String(bad)); }
+});
+
 test("a malformed step is refused when the ask is made", async () => {
   const { tool } = make();
   const r = await tool("manager", "ask", { type: "Action", title: "Run it", steps: [{ text: "x", cmd: 5 }], expect: "OK" });

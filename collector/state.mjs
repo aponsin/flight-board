@@ -492,7 +492,17 @@ function tipState(card, tip, repo, config, now, declared) {
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
   const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed });
-  return { phase: phase ?? declared, headSha12: sha12(head.sha), signed, onMain, ...(ci ? { ci: ci.ci, ciMin: ci.ciMin } : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(shipping === null ? {} : { shipping }), seen };
+  // #C731 B4b: derive.mjs's readyAt, firm and waitingFor. A phase read as build is not firm (a head with no trailer or sign-off,
+  // or a bare branch); otherwise readyAt is the head's time, and a tip still in review lists the reviews unsigned on it.
+  const build = phase === config.collector.buildPhase;
+  const order = config.phases.map((p) => p[0]);
+  const unsigned = onMain ? [] : reviewsFor(card, cfg).filter((p) => !signed.includes(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const extra = {
+    ...(phase && build ? { firm: false } : {}),
+    ...(phase && !build && Number.isInteger(head.at) && head.at >= 1577836800000 && head.at <= 4102444800000 ? { readyAt: head.at } : {}),
+    ...(phase && !build && unsigned.length && unsigned[0] === phase ? { waitingFor: unsigned.slice(0, 10) } : {}),
+  };
+  return { phase: phase ?? declared, ...extra, headSha12: sha12(head.sha), signed, onMain, ...(ci ? { ci: ci.ci, ciMin: ci.ciMin } : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(shipping === null ? {} : { shipping }), seen };
 }
 // The newest commit on the repository's main line (its last 400) whose Board-Id trailer is exactly the card's id, as a head
 // { branch: main, sha, at, message }, or null. The id goes to git as a fixed string, never a pattern or an option.
@@ -748,7 +758,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   }
   for (const x of c.repos) {
     const installed = installedSha(home(x.installedLink ?? ""));
-    repos[x.name] = { ...repoAt(home(x.path), x.remote ?? "origin", x.mainBranch ?? "main", x.notes), gh: null, live: installed, versionPattern: null };
+    repos[x.name] = { ...repoAt(home(x.path), x.remote ?? "origin", x.mainBranch ?? "main", x.notes), gh: null, live: installed, versionPattern: c.versionPattern || null };
+    // #C731 B4b (Designer's gap 2): another repository's cards read their version by the same pattern as the team's. Before, it was null,
+    // so #C722 and #C724 (on main, live in v1.209.1 and v1.209.2) never resolved a live version and showed "LIVE IN 9 min".
   }
   // #C642: what the Collector's last run saved is merged into the mirror first, so this minute reads the board as of that run. The merge
   // and the derive after it are collect.mjs --probe-step, a child process (the collector's code is the release's, not this pinned file's).

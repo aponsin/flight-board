@@ -67,6 +67,8 @@ export function initiativeDoc(c, ev) {
     // #C729 B4a: what it waits on, its issue counts (and when set) and its place in its owner's queue.
     dependsOn: Array.isArray(deps) ? deps : undefined, issues: issues && typeof issues === "object" && !Array.isArray(issues) ? issues : undefined, issuesAt: num(c.issues_at),
     queuePos: Number.isInteger(c.queue_pos) && c.queue_pos > 0 ? c.queue_pos : undefined,
+    // #C731 B4b: the done-test hold. A card with a checkAt is not closed by the page on the live reading ("Live, still open").
+    checkAt: Number.isInteger(c.check_at) && c.check_at > 0 ? c.check_at : undefined,
   });
 }
 
@@ -81,7 +83,9 @@ export function derivedDoc(view) {
   for (const [key, e] of Object.entries(view.evidence ?? {})) {
     if (!key.startsWith("cards.")) continue;
     const v = e.value ?? {};
-    cards[key.slice(6)] = prune({ phase: v.phase ?? v.lit?.[0], head: v.headSha12, version: v.liveVersion ?? undefined, shipping: v.shipping === true ? true : undefined, evidence: undefined, at: e.readAt });
+    cards[key.slice(6)] = prune({ phase: v.phase ?? v.lit?.[0], head: v.headSha12, version: v.liveVersion ?? undefined, shipping: v.shipping === true ? true : undefined, evidence: undefined, at: e.readAt,
+      // #C731 B4b: the probe's readyAt, firm (only ever false) and waitingFor, as derive.mjs gave the page.
+      readyAt: num(v.readyAt), firm: v.firm === false ? false : undefined, waitingFor: Array.isArray(v.waitingFor) && v.waitingFor.length ? v.waitingFor : undefined });
   }
   const live = view.live?.state === "live" ? { version: String(view.live.version).replace(/^v/, ""), at: view.now - (view.live.age ?? 0) } : undefined;
   return prune({ id: "all", at: view.now, cards, times: {}, live });
