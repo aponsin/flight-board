@@ -21,7 +21,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Manager chip | same (#C730): on the store it reads the store's own wake, not the old wake watch's keys. "Manager listening" while the probe asks the store; red "Manager not listening · <the store's fix>" when a send failed, a batch went untaken, or the probe stopped asking the store (3 min) while it still writes evidence (a probe silent altogether hides the chip, as on the old page; the probe chip says so); "seen your HH:MM message · answer coming" from Manager's last typed read. Hidden until the probe has asked the store once (as the old page hid it for a probe without the keys). The "Collector has not published" red is not drawn on the store (the Collector is gone, row 38) | `wakeState`, `wake.seen_at` (compat `probe.board.wake`) |
 | Safe to restart, "Don't restart: shipping" | same (data in; drawn from real readings after the deploy) | probe `agents`, `ship` (evidence keys `agents`, `ship`) |
 | Board vX · page abc | same | the build's stamp |
-| "Manager stuck on …" | not yet: B4 (refusals in the old shape, with the "You:" action) | `refusals` |
+| "Manager stuck on …" | not yet: B5 (refusals in the old shape, with the "You:" action); the page has no code for it on the store yet. **A difference for the owner's list.** | `refusals` |
 | "X waiting on you since" | same (data in; drawn from real readings after the deploy) | probe `stuck` (evidence key `stuck`, written by the evidence job since B3a, fresh for 3 minutes) |
 | "You wrote, Manager silent N min" | same (B1) | compat `messages` |
 | Comment threads full | gone: "Delete with the artifact comments" (row 11) | |
@@ -35,8 +35,8 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Memory tiles: %, bar, colour, tokens, age | same (data in; drawn from real readings after the deploy) | probe `ctx` (evidence key `ctx`, written by the evidence job from before B3a) |
 | "/clear me" | gone: "Delete the flag" (row 14) | |
 | Refresh (↻) on a faded tile | gone: "the Refresh request" (Deleted list). Row 15's "check now" comes back with its own endpoint, later | |
-| Model · effort | not yet: B4 | |
-| Who is on what | partly: agents are in (evidence `agents`); the notes are B4 | probe `agents` |
+| Model · effort | not yet: B5; neither the store nor the page has it. **A difference for the owner's list.** | |
+| Who is on what | partly: agents are in (evidence `agents`); the agent notes under it are B5. **A difference for the owner's list.** | probe `agents` |
 
 ## Needs you, threads, lists
 
@@ -45,13 +45,13 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Tabs with counts, arrow keys | same (B1: threads too) | |
 | Needs you: asks, "Your queue" | same | compat `waiting` |
 | Ask row: kind, #T, title, badge, age, "For: card" | same (the chip after an answer reads the owner's messages, B1) | compat `waiting`, `messages` |
-| Ask steps with Copy per command, "You should see" | not yet: B2 (steps are plain strings) | |
+| Ask steps with Copy per command, "You should see" | same (B2, #C725): an Action's steps may be `{text, cmd}`, the page shows `cmd` with a Copy button, and the `ask` tool's schema allows it | compat `waiting` |
 | Ask screenshots, picture viewer | same once Boardsmith's two hooks are in (C1): an agent stores the picture with `file_put` and names it in the ask's `screenshots` as `"<id>"`, `"<id> label"` or `"<id> A: label"` | `files` (migration 0010), `/_blob/<id>`; compat `waiting.images` |
-| Reply box per kind (A/B, OK/Change, Ack, Done/Help) | same for an option, Ack and Done; not yet: B2 for a note, "Something else", files | `POST /api/compat/write` |
-| Sent line "You chose …" | same for the choice; not yet: B2 for the note and files | |
+| Reply box per kind (A/B, OK/Change, Ack, Done/Help) | same (B2, #C725): an option with its note, "Something else" (the note says what), Ack, Done and Help (a note or a file), kept as the button and the note (migration 0013) | `POST /api/compat/write` |
+| Sent line "You chose …" | same (B2): "You chose B: <note>", "something else" and "asked for help" as on the old page | |
 | "Manager missed" on an ask | hidden on the store until B4 (Manager, 2026-11-09): its fields are not in the store yet | |
 | Thread messages, "seen HH:MM" | same: the messages (B1) come with their kind, resolved flag and files, and the owner's reply, Ack and Close are written as messages. The per-message "seen HH:MM" ticks read Manager's last typed read of the store (`wake.seen_at`, #C730), not the old wake watch's seen time | compat `messages`, `probe.board.wake`, `POST /api/compat/write` |
-| Thread buttons: Close, options, Rename | same (B1): Close and Ack are resolving messages (an ask is also closed), a reply on a closed ask reopens it, Rename sets the title; an agent's message does not offer options yet (the `options` column is stored, no tool writes it) | compat `threads` |
+| Thread buttons: Close, options, Rename | same (B1): Close and Ack are resolving messages (an ask is also closed), a reply on a closed ask reopens it, Rename sets the title; an agent's message offers options as buttons (B1b, #C725: the `post` tool takes a kind and, with `decision`, two to four A to D options) | compat `threads` |
 | Later tab | same | compat `waiting` (Later) |
 | With the team, sub-step line | same for threads (B1); the sub-step line: B3a | |
 | Resolved tab, search | same (B1: threads too) | |
@@ -70,13 +70,13 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Status pill | same where the probe has evidence; not yet: B3a for the rest | `derived/all.cards` |
 | Check button, "checked by the Collector" | gone: "Delete with the Collector" (row 38) | |
 | Source-disagreement flag | gone: "Delete: one source, nothing to flag" (row 28) | |
-| ETA box | partly: the probe's readyAt, firm and waitingFor (B4b part 1, #C731) and, with part 2, the expected version (`expected`, from collector/expected.mjs, with the card words repo, batch and bump, migration 0016) and `releaseTimes` (the release log's CI times, the probe's `releases` key) are in; with part 3 the probe's reviews (when each review was signed), workSeen and shippedAt; still to come: abandonedAt (needs the step `wait` column, which the step tool, #C739, now writes). The red lines are not built (next row) | `derived/all.cards`, `derived/all.releaseTimes` |
+| ETA box | partly: the probe's readyAt, firm and waitingFor (B4b part 1, #C731) and, with part 2, the expected version (`expected`, from collector/expected.mjs, with the card words repo, batch and bump, migration 0016) and `releaseTimes` (the release log's CI times, the probe's `releases` key) are in; with part 3 the probe's reviews (when each review was signed), workSeen and shippedAt; still to come: abandonedAt (the step `wait` column it needs is written by the step tool, #C739, and the probe does not read it yet). The data is in, but the page still draws "—" for the ETA on the store (`STORE` in the page, #C730): **a difference for the owner's list.** The red lines are not built (next row) | `derived/all.cards`, `derived/all.releaseTimes` |
 | Card red lines (#C662: "queued but has a step of its own", "past build with no build end step", "on ship with nothing on main", a field outside its list) | **not needed on the store (by construction); a difference for the owner to review before the switch: the page draws no red lines on the store.** (1) The four step rules (queued-phase, queued-step, no-build-end, no-ship-evidence) compare a card's declared phase and status with the step log and the repository; on the store a card's phase is never declared, the probe's lit phase is the evidence, so they cannot disagree. (2) The field rules (unknown field, null, a typed field outside its list) are refused at the write by the store's card tools, so no stored card can carry one. (3) Without `derived/all.cards[id].red` the page draws nothing, so no false red is possible. (4) The two false reds the designer named are fixed on their own: "Manager not listening" (#C730) and a paused card showing "LIVE IN" (#C732). No store-only rule is added (owner's lead, 2026-11-10) | `gate/card-rules.mjs` (old board only) |
 | Held for its done test ("Live, still open") | same where the lead sets it: card word check_at (B4b part 1, #C731), drawn as checkAt; the page already honours it | `cards` |
-| Version note, "Next: vX" | not yet: B3a, B4 | |
+| Version note, "Next: vX" | partly: the data is in (`expected`, B4b part 2, #C731, in `derived/all.cards`) and the page's version note is not hidden on the store; not checked against real readings of a card in review since the deploy, so not marked same. **A difference for the owner's list until it is.** | `derived/all.cards[id].expected` |
 | Track: lit phase, skips | same | `derived/all.cards` |
 | Track: who · time on each tile | same (B3b: the store's phase history, with the old board's steps imported) | `derived/all.times` |
-| One track per branch | not yet: B3a | probe `cards.branches` |
+| One track per branch | not yet: the probe writes `branches` for a card with two or more branch tips (#C621) and the page draws one track per branch, but the store's `derived/all.cards` (`derivedDoc` in `worker/compat-view.mjs`) does not carry `branches` yet. **A difference for the owner's list.** | probe `cards.branches` |
 | Queue line, "waits on", Next (written N ago), Started, issue chips | same for next note, waiting on, started, and (B4a, #C729) the queue place, "depends on" and the five issue counts, written by card_create / card_update (depends_on, issues, queue_pos); a card written before has none; not yet: B4b for the lines the probe's readings feed (ETA, waits) | `cards` |
 | "Manager missed" on a card | hidden on the store until B4 (Manager, 2026-11-09; the ETA inputs come in B4) | |
 | Thread fold, closed asks | same (B1) | |
@@ -87,9 +87,9 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Item | Status | Where it comes from on the store |
 |---|---|---|
 | Shipped feed, search | same once Boardsmith's hooks are in (C2): one line per version the probe read on a card's commit, "#C12 Title · #C13 Title", timed by the probe's shippedAt (when the work reached main, within the last 30 days) rather than by the probe's first reading; a later card with an earlier shippedAt moves the ship back to it. The old board's events come in with the import (C5) | `ships`, `worker/compat-ships.mjs` |
-| Time spent: tiles, chart | partly (#C728, #C736): agent minutes from the phase history, every day shown. The usage job now posts the day's runner and Actions minutes and cost (`collector/actions-usage.mjs`, the old usage script's count) to `POST /api/probe/usage`, today and yesterday; the bars fill after the next deploy and tree step. Queued and Gated hours come from the wait steps agents log with the step tool (#C739): data, not code, so they match the old board only for days the wait steps cover | `usage_days`, `worker/compat-usage.mjs` |
+| Time spent: tiles, chart | partly (#C728, #C736): agent minutes from the phase history, every day shown. The usage job now posts the day's runner and Actions minutes and cost (`collector/actions-usage.mjs`, the old usage script's count) to `POST /api/probe/usage`, today and yesterday; the bars fill: its first two days were posted on 2026-11-10 after the pc13 deploy and tree step (the store's view then carried the runner and automation minutes and the Actions cost for 11-09 and 11-10). Queued and Gated hours come from the wait steps agents log with the step tool (#C739): data, not code, so they match the old board only for days the wait steps cover | `usage_days`, `worker/compat-usage.mjs` |
 | Plan-week tile | same (data in; drawn from real readings after the deploy) | probe `usage` (evidence key `usage`, written by the usage job) |
-| Per-agent table | partly (#C728): drawn from the phase history (B3b), sorted by queued then working time. Queued (busy) and Gated are "—": the store's history keeps no waits and the import refuses wait steps. No rows for Manager or Ops: no phase is theirs, and the probe names who worked from the phase, not from steps the agents log (Designer shows only after a design phase). Release reads near 0: the probe reads every minute and often passes the ship phase between two readings, and live time isn't counted | compat `steps` |
+| Per-agent table | partly (#C728): drawn from the phase history (B3b), sorted by queued then working time. Queued (busy) and Gated come from the wait steps agents log with the step tool (#C739, the history's `wait` column): empty for the days before any were logged, because the import refuses the old board's wait steps (**a difference for the owner's list**). No rows for Manager or Ops: no phase is theirs, and the probe names who worked from the phase, not from steps the agents log (Designer shows only after a design phase). Release reads near 0: the probe reads every minute and often passes the ship phase between two readings, and live time isn't counted | compat `steps` |
 
 ## The page itself
 
