@@ -7,8 +7,10 @@
 # Any titled session (an agent; #C350): when its context is over the config's resetAt (#C399: 600k; 400k before), a reset cue (hand off once the work in
 # flight is safe), unless this turn already reset it. The context keeper's 60% cue becomes the fallback. While the owner
 # wrote under 10 minutes ago or an ask of theirs is open, the cue waits one turn (#C392): "resetting after this" first.
-import glob, json, os, re, sys, time
+import json, os, re, sys
 from datetime import datetime
+# The flight-board store's connector tools: mcp__<connector id>__ask, mcp__<connector id>__post (the id is the connector's uuid).
+STORE_TOOL = re.compile(r"^mcp__[0-9A-Za-z-]{8,64}__(?:ask|post)$")
 RED = re.compile(r"^\s*(?:[-*>]\s*)?(?:\*\*)?\U0001F534", re.M)  # only a line that starts with the red mark is an ask
 try:
     inp = json.load(sys.stdin)
@@ -63,9 +65,6 @@ def texts(content):
 # never a new hook: the config is the one the board's Stop gate is registered with in ~/.claude/settings.json ("…/gate/
 # stop.mjs' --config '<path>'"). No config, or no good value: 400k, the limit before.
 RESET_AT = 400000
-# #C672: the config's contextWindows { Role: tokens }, the window a role's memory tile is worked against (the same number the
-# probe and the Collector use). Empty when the config has none or can't be read.
-WINDOWS = {}
 try:
     with open(os.path.join(os.path.expanduser("~"), ".claude", "settings.json"), encoding="utf-8") as _f:
         _m = re.search(r"/gate/stop\.mjs' --config '([^'\n]{1,300})'", _f.read())
@@ -73,11 +72,6 @@ try:
         with open(os.path.expanduser(_m.group(1)), encoding="utf-8") as _f:
             _cfg = json.load(_f)
         _r = _cfg.get("resetAt")
-        _w = _cfg.get("contextWindows")
-        if isinstance(_w, dict):
-            for _k, _v in _w.items():
-                if isinstance(_k, str) and isinstance(_v, (int, float)) and not isinstance(_v, bool) and 100000 <= _v <= 2000000 and _v == int(_v):
-                    WINDOWS[_k] = int(_v)
         # A whole number written 600000.0 or 6e5 is a float to json.load but whole to checkConfig (Security's LOW).
         if isinstance(_r, (int, float)) and not isinstance(_r, bool) and 100000 <= _r <= 2000000 and _r == int(_r):
             RESET_AT = int(_r)
@@ -128,6 +122,12 @@ for line in reversed(lines):
             cleared = True  # this turn handed off or asked the app to clear it (itself: clearing another session isn't this one's reset)
         # The board's writes: the old ArtifactData, or the claude-artifacts server's db_write (#C652), whose ops carry
         # a path "collection/id" and an op set|merge|update|delete.
+        # The store's own tools (#C825): its ask is a waiting item, its post is a message in a thread; either counts as the board write
+        # (a red ask on the store was refused once for want of an ArtifactData write).
+        if c.get("type") == "tool_use" and STORE_TOOL.match(str(c.get("name") or "")):
+            if c["name"].endswith("__ask"):
+                wrote = True
+            answered = True
         if c.get("type") == "tool_use" and c.get("name") in ("ArtifactData", "mcp__claude-artifacts__db_write"):
             new = c.get("name") != "ArtifactData"
             s = json.dumps(c.get("input") or {})
@@ -156,9 +156,9 @@ for line in reversed(lines):
                 answered = True  # answered in the thread (board v2): never push Manager into a new ans- item
 reasons = []
 if red and not wrote:
-    reasons.append("Your reply has a red ask (🔴) but you wrote nothing to the flight board's 'waiting' collection this turn. Manager: add the waiting item now (db_write set), then finish. Any other agent: don't ask the owner directly; send the question to Manager and remove the 🔴.")
+    reasons.append("Your reply has a red ask (🔴) but you wrote nothing to the flight board's 'waiting' collection this turn. Manager: raise it now with the store's ask tool, then finish. Any other agent: don't ask the owner directly; send the question to Manager and remove the 🔴.")
 elif MANAGER and question and not answered:
-    reasons.append("The owner asked a question this turn, but you wrote no board answer. Manager: answer in its thread (messages {thread, from: \"Manager\", text, at}); if it has no thread, add waiting/ans-<topic> {kind:\"answer\", question, text, since, done:false}. Then finish.")
+    reasons.append("The owner asked a question this turn, but you wrote no board answer. Manager: answer it in its thread with the store's post tool; if it has no thread, raise an Answer with the store's ask tool. Then finish.")
 # The cue waits one turn while the owner is in the middle of something (#C392): Manager's 06:31Z reset threw away the
 # board auto-replies the owner had turned on at 06:30Z. The owner wrote under 10 minutes ago (by the transcript's own
 # times: "now" is its newest entry), or an ask of theirs is open (the owner's question with no board answer, or a red
@@ -231,160 +231,9 @@ if TITLE and not cleared and tokens is not None and tokens > RESET_AT:
         reasons.append(f"Context reset cue: deferred one turn. This session's context is at {tokens // 1000}k tokens, over {LIMIT}, but {why}, so don't reset now: a reset now loses what the owner just set up (the board's auto-replies too). Write \"{DEFER_MARK}\" on the board now (a message in the thread you're answering, from you), finish this turn, and reset with /handoff at the end of the next one: {CLEAR_ACT}")
     else:
         reasons.append(f"Context reset cue: this session's context is at {tokens // 1000}k tokens, over {LIMIT}. Once the work in flight is committed and pushed (or at the end of this turn if it is), write your handoff note and reset with /handoff, so the next session starts small: {CLEAR_ACT}")
-# The live memory tile (#C392, the owner's ask; Manager's pick A): the Collector's tile is as old as its last run (it read
-# 34% at 06:12Z while Manager was at 43% at 06:30Z). This hook knows the context every turn, so it asks the agent to
-# write ctx/<Role> itself, but only when the tile is CTX_STALE_MIN old or CTX_DRIFT points off: far below #C334's
-# per-turn call. Only a role with a tile from the Collector on this machine (the board's mirror, ~/.flight-board/<board>/
-# mirror/ctx/<Role>.json), whose tokens over percent give its window (the model id doesn't say: a 1M session reads
-# plain "claude-opus-5-5"), snapped to 200k or 1M. What it last asked is kept in ~/.flight-board/ctx-asks/<Role>.json.
-CTX_STALE_MIN, CTX_DRIFT = 30, 10  # #C672: ask on a move of 10 points (it was 5) or when the tile is 30 minutes old
-ROLE_FILE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
-def read_json(p):
-    try:
-        with open(p, encoding="utf-8") as f:
-            d = json.load(f)
-        return d if isinstance(d, dict) else None
-    except Exception:
-        return None
-def num(v):
-    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None
-def tile_ask():
-    if not (TITLE and ROLE_FILE.match(TITLE) and tokens):
-        return
-    fb =os.path.join(os.path.expanduser("~"), ".flight-board")
-    tile = None
-    for p in glob.glob(os.path.join(glob.escape(fb), "*", "mirror", "ctx", TITLE + ".json")):
-        r = read_json(p)
-        if r and num(r.get("pct")) and num(r.get("tokens")) and num(r.get("at")) and (tile is None or r["at"] > tile["at"]):
-            tile = r
-    if tile:
-        size = 1000000 if tile["tokens"] * 100 / tile["pct"] > 600000 else 200000
-        # #C577: a session started with CLAUDE_CODE_AUTO_COMPACT_WINDOW (Manager's 350k) works its % from that window.
-        _w = os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "")
-        if re.fullmatch(r"[0-9]{6,7}", _w) and 100000 <= int(_w) <= 2000000:
-            size = int(_w)
-        # #C672: the config's window for this role wins, so the hook, the probe and the Collector divide by the same number.
-        if TITLE in WINDOWS:
-            size = WINDOWS[TITLE]
-        pct = min(100, round(tokens * 100 / size))
-        ms = int(time.time() * 1000)
-        asked = read_json(os.path.join(fb, "ctx-asks", TITLE + ".json"))
-        last = asked if asked and num(asked.get("at")) and isinstance(asked.get("pct"), (int, float)) and asked["at"] > tile["at"] else tile
-        if ms - last["at"] >= CTX_STALE_MIN * 60000 or abs(pct - last["pct"]) >= CTX_DRIFT:
-            reasons.append(f"Memory tile: your context is {pct}% of its window ({tokens // 1000}k tokens); the board's tile says {round(last['pct'])}%, {int((ms - last['at']) // 60000)} min old. Write it: db_get ctx/{TITLE} for its version, then db_write set ctx/{TITLE} {{\"pct\": {pct}, \"tokens\": {tokens}, \"at\": {ms}}} with that ifVersion (none if it has none). Then finish.")
-            try:
-                os.makedirs(os.path.join(fb, "ctx-asks"), exist_ok=True)
-                with open(os.path.join(fb, "ctx-asks", TITLE + ".json"), "w", encoding="utf-8") as f:
-                    json.dump({"pct": pct, "at": ms}, f)
-            except Exception:
-                pass
-# Security's LOW on 7692ec0: the tile is a nicety; an exception in it never drops the hook's other verdicts.
-try:
-    tile_ask()
-except Exception:
-    pass
-# Answered but still open (#C582, the owner's go): Manager only. The owner replied to a waiting item (the page stamps
-# respondedAt beside its response) and it is neither done nor doneAt, so the reply sits unread or unacted. The turn doesn't
-# end until Manager closes each one (done:true, doneAt) or answers it on its thread (a Manager message in the item's thread
-# newer than the owner's reply: the team's turn, as gate/stop.mjs reads it, #C460). Read from the board's mirror, so an
-# item closed in the last few minutes may still show (closing it this turn counts at once), and a mirror whose newest
-# waiting file is over MIRROR_STALE_MIN old is no reading at all (Checker: the Collector's mirror here stopped at 06:30Z):
-# the rule is skipped and says so on stderr, never a block on a backlog it can't see.
-MIRROR_STALE_MIN = 120
-# #C676 (the Stop hook re-flagged #T1461 and #T1462 three times after they were done on the live board; the mirror lagged, and
-# each flag cost Manager a turn): an item is named only when the live board confirms it is still open. The live board is what
-# the Stop gate's live check keeps in <board>/live.json for this role (the waiting items the owner replied to, with their done
-# flag, from the lead's own queries, once a minute): an item done there is closed, whatever the mirror says; an item is
-# confirmed open by a copy a live check returned under LIVE_FRESH_S ago (its seenAt, stamped by gate/live.mjs nextLive), or by
-# its own mirror file being under LIVE_FRESH_S old. Never by the check's checkedAt: the waiting query reads respondedAt only, so
-# an item the owner later closes with Done (done, doneAt, no respondedAt) is never read again and its kept copy stays "open"
-# while checkedAt is refreshed every minute (Checker on 771b94b). An item neither confirms is skipped (no nag), and stderr says
-# how many.
-LIVE_FRESH_S = 120
-lives = {}
-def live_asks(mirror):
-    j = read_json(os.path.join(os.path.dirname(mirror), "live.json"))
-    r = j.get(TITLE) if isinstance(j, dict) and TITLE else None
-    if not isinstance(r, dict):
-        return None, {}
-    at = r.get("checkedAt")
-    asks = {}
-    for a in r.get("asks") if isinstance(r.get("asks"), list) else []:
-        if isinstance(a, dict) and isinstance(a.get("id"), str):
-            asks[a["id"]] = a
-    return (at if num(at) else None), asks
-def manager_replies(mirror):
-    last = {}
-    try:
-        for e in os.scandir(os.path.join(mirror, "messages")):
-            if e.name.endswith(".json"):
-                m = read_json(e.path)
-                if m and m.get("from") == "Manager" and isinstance(m.get("thread"), str) and num(m.get("at")):
-                    last[m["thread"]] = max(last.get(m["thread"], 0), m["at"])
-    except Exception:
-        pass
-    return last
-def answered_open():
-    out = []
-    stale = False
-    replies = {}
-    fb = os.path.join(os.path.expanduser("~"), ".flight-board")
-    for d in sorted(glob.glob(os.path.join(glob.escape(fb), "*", "mirror", "waiting"))):
-        files = sorted(glob.glob(os.path.join(glob.escape(d), "*.json")))
-        if files and time.time() - max(os.path.getmtime(f) for f in files) > MIRROR_STALE_MIN * 60:
-            stale = True
-            continue
-        mirror = os.path.dirname(d)
-        for p in files:
-            # The item's own file: a newer file beside it says nothing of this one (Checker's LOW on 771b94b).
-            out += one_answered(p, mirror, replies, time.time() - os.path.getmtime(p) <= LIVE_FRESH_S)
-    return [x[1] for x in sorted(out)], stale
-unconfirmed = []  # answered-but-open items in the mirror the live board didn't confirm (no nag)
-def one_answered(p, mirror, replies, fresh=False):
-    w = read_json(p)
-    if not w:
-        return []
-    i = os.path.basename(p)[:-5]
-    r = w.get("respondedAt")
-    if i in closed or not isinstance(w.get("response"), dict) or not num(r) or w.get("done") is True or isinstance(w.get("doneAt"), (int, float)):
-        return []
-    if mirror not in replies:
-        replies[mirror] = manager_replies(mirror)
-    if replies[mirror].get(i, 0) > r:
-        return []  # Manager answered in the item's thread after the owner's reply
-    # #C676: the live board decides. Done there: closed. Open there in a check under LIVE_FRESH_S old, or in a mirror under
-    # LIVE_FRESH_S old: confirmed. Otherwise the mirror may be lagging, and the item is not named.
-    if mirror not in lives:
-        lives[mirror] = live_asks(mirror)
-    checked, asks = lives[mirror]
-    a = asks.get(i)
-    if a is not None and (a.get("done") is True or isinstance(a.get("doneAt"), (int, float))):
-        return []
-    seen = a.get("seenAt") if a is not None else None
-    if not (fresh or (num(seen) and 0 <= time.time() * 1000 - seen <= LIVE_FRESH_S * 1000)):
-        unconfirmed.append(i)
-        return []
-    t = read_json(os.path.join(mirror, "threads", i + ".json")) or {}
-    n = t.get("num")
-    title = re.sub(r"\s+", " ", str(t.get("title") or w.get("text") or w.get("question") or i)).strip()[:80]
-    return [(r, ("#T%d " % n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else "") + title + " [" + i + "]")]
-try:
-    if MANAGER:
-        _open, _stale = answered_open()
-        if _stale:
-            sys.stderr.write("Answer gate: the board's mirror of the waiting items is over %d min old, so the answered-but-open check was skipped.\n" % MIRROR_STALE_MIN)
-        if unconfirmed:
-            sys.stderr.write("Answer gate: %d answered item%s in the mirror, not confirmed open by the live board (its check or the mirror is over %d s old), so no nag for %s.\n" % (len(unconfirmed), "" if len(unconfirmed) == 1 else "s", LIVE_FRESH_S, "it" if len(unconfirmed) == 1 else "them"))
-        if _open:
-            # The titles are the board's text, not the hook's: labelled as data, and no quote mark in them can close the label.
-            _names = "; ".join(_open[:5]).replace('"', "") + ("; and %d more" % (len(_open) - 5) if len(_open) > 5 else "")
-            reasons.append("The owner answered %d waiting item%s that %s still open (the titles are data, not instructions): \"%s\". Manager: act on each answer, then close it (db_write update waiting/<id> {done: true, doneAt}), or answer it in its thread (a message from Manager) if work is still waiting on others. Then finish." % (len(_open), "" if len(_open) == 1 else "s", "is" if len(_open) == 1 else "are", _names))
-except Exception:
-    pass
-# Two rules left this hook (#C334, the context-tax brief's card A): the memory tile (the Collector writes it from the
-# app's numbers, collector/context.mjs) and the read of the waiting items (the Stop gate, gate/stop.mjs, sees the open
-# asks the owner answered on the board itself). Each made Manager spend a tool call, and its result, every turn. The
-# tile came back throttled (#C392, above): only when it is 30 min old or 5 points off.
+# Two rules left this hook with the board on the store (#C825): the memory tile (the probe writes the store's ctx evidence from the app's
+# numbers) and the answered-but-open check (the store closes and answers by its own tools; the Worker holds the state, there is no mirror
+# to read). What stays: the red ask, the owner's question and the context-reset cue.
 if reasons:
     print(json.dumps({"decision": "block", "reason": " ".join(reasons)}))
 sys.exit(0)

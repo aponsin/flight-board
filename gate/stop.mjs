@@ -1,4 +1,6 @@
-// The gate's Stop hook: node gate/stop.mjs --config <board.config.json>
+// The gate's Stop hook: node gate/stop.mjs --config <board.config.json> [--store]
+// --store (#C825, the board on the store): the lead's branch does nothing (the store's own tools and the Worker keep the board; there is no mirror, journal
+// or live check to read), and an owner role's dispatch ask is unchanged.
 // A lead-role reply can't end its turn when
 // - it states a verdict (the config's verdictWords: shipped, is live, decided…) and the turn wrote nothing to the board
 //   (case 4: "the initiative was not up to date"); or
@@ -222,8 +224,9 @@ export const dispatchAsk = ({ on, alive, askedAt, command }, now) =>
   on && !alive && !(Number.isFinite(askedAt) && askedAt <= now + 5_000 && now - askedAt < DISPATCH_ASK_GAP_MS)
     ? `Dispatch watch: the board wakes you through it when a card of yours waits and you are idle, and it isn't running. Arm it now (Bash with run_in_background true and no timeout): ${command}. When it ends it has printed a DISPATCH line: act on it, then arm it again.`
     : null;
-export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null, wake = null, dispatch = null }) {
+export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null, wake = null, dispatch = null, store = false }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
+  if (store && role === config.gate.managerRole) return { errs: [], record: null, note: null, liveNext: null, dispatchAsked: false };
   if (role !== config.gate.managerRole) {
     const ask = dispatch && role && config.roster.includes(role) ? dispatchAsk(dispatch, now) : null;
     return { errs: ask ? [ask] : [], record: null, note: null, liveNext: null, dispatchAsked: !!ask };
@@ -317,14 +320,15 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // the next turn's since past an owner word it left waiting. The record is the role's (#C334: a reset starts a new
     // transcript and keeps the window); a session with no role keys it by its transcript's name.
     const now = Date.now(), path = passPath(config), lines = readLines(input.transcript_path);
+    const store = process.argv.includes("--store");
     const key = sessionRole(lines, process.env.FLIGHT_BOARD_ROLE).role || basename(String(input.transcript_path), ".jsonl");
     let view = null;
-    try { view = boardView(config); } catch { /* unreadable: as none */ }
+    if (!store) { try { view = boardView(config); } catch { /* unreadable: as none */ } }
     const lp = livePath(config);
     const sessionRoleName = sessionRole(lines, process.env.FLIGHT_BOARD_ROLE).role;
     let dispatch = null;
     if (sessionRoleName && sessionRoleName !== config.gate.managerRole && config.roster.includes(sessionRoleName)) { try { dispatch = dispatchState(config, process.argv[at + 1], sessionRoleName, now); } catch { /* none: no ask */ } }
-    const { errs, record, note, liveNext, dispatchAsked } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true }, wake: wakeState(config, process.argv[at + 1]), dispatch });
+    const { errs, record, note, liveNext, dispatchAsked } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true }, wake: wakeState(config, process.argv[at + 1]), dispatch, store });
     if (dispatchAsked && !input.stop_hook_active) { try { writeAtomic(join(home(config.gate.stateDir), boardId(config) ?? "no-board", `dispatch-asked-${sessionRoleName}.json`), JSON.stringify({ at: now })); } catch { /* asks again */ } }
     if (!errs.length && record != null) { try { recordPass(path, key, record); } catch { /* no record: a day back next turn */ } }
     // The live check's messages are kept even on a refused or second stop: they are what the lead's query saw.

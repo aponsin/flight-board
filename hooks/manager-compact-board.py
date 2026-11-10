@@ -27,15 +27,16 @@ if not title.strip():
         pass
 if title.strip() != "Manager":
     sys.exit(0)
-# The board's link: the artifactUrl of the config the board's Stop gate is registered with in ~/.claude/settings.json.
+# The board's link: the storeUrl of the config the board's Stop gate is registered with in ~/.claude/settings.json (#C825: the board is on
+# the store; never a typed address, never the old artifact).
 link = ""
 try:
     with open(os.path.join(os.path.expanduser("~"), ".claude", "settings.json"), encoding="utf-8") as _f:
         _m = re.search(r"/gate/stop\.mjs' --config '([^'\n]{1,300})'", _f.read())
     if _m:
         with open(os.path.expanduser(_m.group(1)), encoding="utf-8") as _f:
-            _u = json.load(_f).get("artifactUrl")
-        if isinstance(_u, str) and re.fullmatch(r"https://claude\.ai/artifact/[A-Za-z0-9_-]{1,64}", _u):
+            _u = json.load(_f).get("storeUrl")
+        if isinstance(_u, str) and re.fullmatch(r"https://[A-Za-z0-9.-]{1,200}(:[0-9]{1,5})?/?", _u):
             link = _u
 except Exception:
     pass
@@ -45,5 +46,4 @@ text = (
     "Run the pickup digest now (your /pickup steps: read the board and your newest hand-over note), then go on from what they say."
 )
 text += f" The board: {link}." if link else " Its link is not in this hook's reach: ask the owner to paste it once."
-text += " Check that your board watch is still armed (ArtifactComments watch, no url) and re-arm it if not."
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}))

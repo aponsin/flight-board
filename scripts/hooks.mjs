@@ -2,7 +2,11 @@
 // hand-off messages, PostToolUse after them, Stop on the lead's replies (the gate's check, then the collector on demand),
 // UserPromptSubmit on the lead's prompts (the digest).
 // Printed by default; written only with --write, which keeps every other entry and replaces an older flight-board one.
-// Usage: node scripts/hooks.mjs <board.config.json> --pin <signed commit> [--write] [--retire <text>]... [--settings <file>]
+// --store (#C825, the board on the store): two entries: one Stop hook, gate/stop.mjs --store, and gate/publish.mjs on the page tools (it
+// denies a page change on the old board's artifact that is not the signed page, which stays published until the owner unpublishes it:
+// Security's finding on 49b78c9); the gate, commit, after, digest and refresh entries are removed (withHooks drops every flight-board entry it
+// knows before adding the new ones). The installer has no other remove mode, so --write without --store would reinstall the old gate.
+// Usage: node scripts/hooks.mjs <board.config.json> --pin <signed commit> [--write] [--store] [--retire <text>]... [--settings <file>]
 // [--install-root <folder>]. Run it from a checkout of that commit: the entries it writes are this file's.
 import { realpathSync } from "node:fs";
 import { readFileSync, writeFileSync, existsSync, copyFileSync, mkdirSync, renameSync, rmSync } from "node:fs";
@@ -17,8 +21,11 @@ const MARK = /(?:flight-board|\/[0-9a-f]{40})\/(?:gate\/(?:gate|stop|after|diges
 // space ("Application Support") or a crafted name with $( ) or backticks stays a plain path.
 export const shellQuote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const q = shellQuote;
-export function hookEntries(repo, configPath, node = process.execPath) {
-  const cmd = (file, dir = "gate") => `${q(node)} ${q(resolve(repo, dir, file))} --config ${q(resolve(configPath))}`;
+// The tools that change a page: the old Artifact tool and the claude-artifacts server's (#C652). publish.mjs answers only the ones on the board's own artifact.
+export const PAGE_MATCHER = "Artifact|mcp__claude-artifacts__.*|mcp__.*__(publish_version|publish_files|edit_version|copy_file)";
+export function hookEntries(repo, configPath, node = process.execPath, { store = false } = {}) {
+  const cmd = (file, dir = "gate", more = "") => `${q(node)} ${q(resolve(repo, dir, file))} --config ${q(resolve(configPath))}${more}`;
+  if (store) return { PreToolUse: { matcher: PAGE_MATCHER, hooks: [{ type: "command", command: cmd("publish.mjs") }] }, Stop: { hooks: [{ type: "command", command: cmd("stop.mjs", "gate", " --store") }] } };
   return {
     // Artifact too: the lead's publish of exactly the signed board page goes without asking (#C409, gate/publish.mjs);
     // each hook answers only its own tools.
@@ -91,12 +98,12 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const retire = args.flatMap((a, n) => (args[n - 1] === "--retire" ? [a] : []));
   const target = resolve(opt("--settings") ?? resolve(homedir(), ".claude/settings.json"));
   const pin = opt("--pin");
-  if (!configPath || configPath.startsWith("--") || !pin) { console.error("Usage: node scripts/hooks.mjs <board.config.json> --pin <signed commit> [--write] [--retire <text in an old hook's command>]... [--settings <file>] [--install-root <folder>]"); process.exit(2); }
+  if (!configPath || configPath.startsWith("--") || !pin) { console.error("Usage: node scripts/hooks.mjs <board.config.json> --pin <signed commit> [--write] [--store] [--retire <text in an old hook's command>]... [--settings <file>] [--install-root <folder>]"); process.exit(2); }
   const repo = fileURLToPath(new URL("..", import.meta.url));
   const root = resolve(opt("--install-root") ?? resolve(homedir(), ".flight-board", "install"));
   let pinned;
   try { pinned = pinnedDir(repo, pin, root); } catch (e) { console.error(e.message); process.exit(1); }
-  const entries = hookEntries(pinned.dir, configPath);
+  const entries = hookEntries(pinned.dir, configPath, process.execPath, { store: args.includes("--store") });
   const settings = existsSync(target) ? JSON.parse(readFileSync(target, "utf8")) : {};
   const result = withHooks(settings, entries, retire);
   if (!args.includes("--write")) {

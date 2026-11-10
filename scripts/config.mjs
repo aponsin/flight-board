@@ -4,6 +4,9 @@ export const DEFAULTS = {
   title: "Flight Board",
   owner: "Owner",
   artifactUrl: "",
+  // #C825: the board's address on the store (a plain https address, e.g. https://board.example.com/): the pointer hooks/manager-compact-board.py
+  // gives Manager after a compaction. Empty: the hook says the link is not in its reach and asks the owner to paste it once.
+  storeUrl: "",
   // The artifact's UUID (#C652): the claude-artifacts server's tools take it (or a whole link) as the slug, so the gate knows a
   // call on the board by it as well as by the id in artifactUrl. Empty: only calls naming the id or the link are the board's.
   artifactSlug: "",
@@ -97,6 +100,8 @@ export function checkConfig(c) {
   for (const k of ["title", "owner"]) if (c[k] !== undefined && !(typeof c[k] === "string" && NAME.test(c[k]))) out.push(`${k}: 1 to 60 characters, no < > { } or line breaks`);
   if (c.artifactSlug !== undefined && c.artifactSlug !== "" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(c.artifactSlug))) out.push("artifactSlug: the artifact's UUID in lower case, or empty");
   if (c.artifactUrl !== undefined && c.artifactUrl !== "" &&!/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+$/.test(String(c.artifactUrl))) out.push("artifactUrl: a claude.ai artifact link, or empty");
+  // The same shape the compact hook accepts (hooks/manager-compact-board.py): https, a host, an optional port and a trailing slash, no path or query.
+  if (c.storeUrl !== undefined && c.storeUrl !== "" && !/^https:\/\/[A-Za-z0-9.-]{1,200}(:[0-9]{1,5})?\/?$/.test(String(c.storeUrl))) out.push("storeUrl: a plain https address (host, optional port, no path), or empty");
   if (c.resetAt !== undefined && !(Number.isInteger(c.resetAt) && c.resetAt >= 100000 && c.resetAt <= 2000000)) out.push("resetAt: whole tokens, 100,000 to 2,000,000");
   if (c.contextWindows !== undefined) {
     const w = c.contextWindows, ok = w && typeof w === "object" && !Array.isArray(w) && Object.keys(w).length <= 40 && Object.entries(w).every(([r, t]) => /^[A-Za-z0-9_-]{1,60}$/.test(r) && Number.isInteger(t) && t >= 100000 && t <= 2000000);

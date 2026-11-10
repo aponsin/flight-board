@@ -2,7 +2,7 @@
 // transcripts. The answer rule's checks are the ones its own test_red_ask.py held before it came here (#C329).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -174,74 +174,44 @@ test("a whole resetAt written as 600000.0 or 6e5 is 600k to the hook too, as it 
   try { assert.match(hook(t(449000), h), /over 400k/, "600000.5 stays refused"); } finally { rmSync(h, { recursive: true, force: true }); }
 });
 
-// #C392 (b), Manager's pick A: the live memory tile. The hook asks the agent to write ctx/<Role> when the board's tile is
-// 30+ min old or 10+ points off (#C672: it was 5); the window comes from the Collector's reading on this machine (tokens over pct).
-const tileHome = (role, reading) => {
-  const home = mkdtempSync(join(tmpdir(), "fb-home-"));
-  const d = join(home, ".flight-board", "Board1", "mirror", "ctx");
-  mkdirSync(d, { recursive: true });
-  if (reading) writeFileSync(join(d, `${role}.json`), JSON.stringify(reading));
-  return home;
-};
-const at1 = (tokens, title = "Manager") => { const l = turn([], { title, text: "status" }); l[2].message.usage = { input_tokens: tokens, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }; return l; };
-test("the live tile: asked when the board's tile is 10+ points off or 30+ min old, once, on the Collector's window", () => {
-  const now = Date.now();
-  const home = tileHome("Manager", { pct: 29, tokens: 290000, at: now - 18 * 60e3 });
+// #C825 (the board on the store): the memory tile cue left this hook (the probe keeps the store's ctx evidence), whatever the tile says.
+test("no memory tile cue, however stale the tile or far the context has moved", () => {
+  const home = mkdtempSync(join(tmpdir(), "fb-tile-"));
   try {
-    const r = hook(at1(390000), home);
-    assert.match(r, /^Memory tile: your context is 39% of its window \(390k tokens\); the board's tile says 29%, 18 min old\. /);
-    assert.match(r, /db_get ctx\/Manager for its version, then db_write set ctx\/Manager \{"pct": 39, "tokens": 390000, "at": \d{13}\}/);
-    assert.equal(hook(at1(391000), home), "", "asked already: the next turn, still 39%, says nothing");
-    assert.equal(hook(at1(420000), home).includes("Memory tile"), false, "3 points on from what it last asked: nothing");
-    assert.equal(hook(at1(440000), home).includes("Memory tile"), false, "5 points on from what it last asked: nothing since #C672");
-    assert.equal(hook(at1(480000), home).includes("Memory tile"), false, "9 points on: nothing");
-    assert.match(hook(at1(490000), home), /Memory tile: your context is 49%/, "10 points on from what it last asked");
+    mkdirSync(join(home, ".flight-board", "BOARD", "mirror", "ctx"), { recursive: true });
+    writeFileSync(join(home, ".flight-board", "BOARD", "mirror", "ctx", "Manager.json"), JSON.stringify({ pct: 29, tokens: 290000, at: Date.now() - 18 * 60000 }));
+    const l = turn([], { title: "Manager", text: "status" });
+    l[2].message.usage = { input_tokens: 390000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+    assert.equal(hook(l, home), "");
   } finally { rmSync(home, { recursive: true, force: true }); }
-  const fresh = tileHome("Manager", { pct: 42, tokens: 420000, at: now - 10 * 60e3 });
-  try { assert.equal(hook(at1(400000), fresh), "", "2 points off, 10 min old: nothing"); } finally { rmSync(fresh, { recursive: true, force: true }); }
-  const old = tileHome("Manager", { pct: 43, tokens: 430000, at: now - 31 * 60e3 });
-  try { assert.match(hook(at1(430000), old), /says 43%, 31 min old/, "the same number, but 31 min old"); } finally { rmSync(old, { recursive: true, force: true }); }
-  const small = tileHome("Builder", { pct: 50, tokens: 100000, at: now - 40 * 60e3 });
-  try { assert.match(hook(at1(120000, "Builder"), small), /your context is 60% of its window/, "a 200k window, from 100k at 50%"); } finally { rmSync(small, { recursive: true, force: true }); }
-  // #C577: Manager's session runs with CLAUDE_CODE_AUTO_COMPACT_WINDOW=350000: 175k tokens is 50%, not 88% of 200k.
-  const win = tileHome("Manager", { pct: 40, tokens: 140000, at: now - 40 * 60e3 });
-  try {
-    assert.match(hook(at1(175000), win, { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "350000" }), /your context is 50% of its window \(175k tokens\)/);
-    // Checker: "²" is a digit to str.isdigit() but not to int(); it must fall back, not kill the hook.
-    for (const bad of ["bogus", "²", "³50000", "٣٥٠٠٠٠", "50000", "3000000", " 350000"]) {
-      const h = tileHome("Manager", { pct: 40, tokens: 140000, at: now - 40 * 60e3 });
-      try { assert.match(hook(at1(175000), h, { CLAUDE_CODE_AUTO_COMPACT_WINDOW: bad }), /your context is 88% of its window/, `${JSON.stringify(bad)}: an unreadable window falls back to the tile's`); } finally { rmSync(h, { recursive: true, force: true }); }
-    }
-  } finally { rmSync(win, { recursive: true, force: true }); }
-  const none = tileHome("Manager", null);
-  try { assert.doesNotMatch(hook(at1(430000, "Collector"), none), /Memory tile/, "no tile for the role on this machine: never asked"); } finally { rmSync(none, { recursive: true, force: true }); }
 });
 
-// #C672: one window per role. The config's contextWindows { Role: tokens } is what the hook divides by, ahead of the session's
-// CLAUDE_CODE_AUTO_COMPACT_WINDOW and the tile's own tokens-over-percent; a role not listed keeps the old rule.
-const windowHome = (raw, role = "Manager", reading) => {
-  const home = configHome(undefined, raw);
-  const d = join(home, ".flight-board", "Board1", "mirror", "ctx");
-  mkdirSync(d, { recursive: true });
-  writeFileSync(join(d, `${role}.json`), JSON.stringify(reading ?? { pct: 40, tokens: 140000, at: Date.now() - 40 * 60e3 }));
-  return home;
-};
-test("contextWindows: the config's window for the role, ahead of the environment and the tile; a role not listed keeps the old rule", () => {
-  const cfg = (w) => JSON.stringify({ owner: "Owner", contextWindows: w });
-  const h = windowHome(cfg({ Manager: 350000 }));
-  try {
-    assert.match(hook(at1(175000), h), /your context is 50% of its window \(175k tokens\)/, "350k from the config, no environment");
-  } finally { rmSync(h, { recursive: true, force: true }); }
-  const env = windowHome(cfg({ Manager: 350000 }));
-  try { assert.match(hook(at1(175000), env, { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "500000" }), /your context is 50% of its window/, "the config wins over the environment"); } finally { rmSync(env, { recursive: true, force: true }); }
-  const other = windowHome(cfg({ Builder: 350000 }));
-  try { assert.match(hook(at1(175000), other), /your context is 88% of its window/, "Manager not listed: the tile's own window (140k at 40% snaps to 200k), as before"); } finally { rmSync(other, { recursive: true, force: true }); }
-  for (const bad of [{ Manager: "350000" }, { Manager: 50000 }, { Manager: 3000000 }, { Manager: 350000.5 }, { Manager: true }, [350000], "350000", null]) {
-    const b = windowHome(cfg(bad));
-    try { assert.match(hook(at1(175000), b), /your context is 88% of its window/, `${JSON.stringify(bad)}: refused, the old rule`); } finally { rmSync(b, { recursive: true, force: true }); }
-  }
-  const whole = windowHome('{"owner": "Owner", "contextWindows": {"Manager": 3.5e5}}');
-  try { assert.match(hook(at1(175000), whole), /your context is 50% of its window/, "350000 written 3.5e5 is whole to checkConfig and to the hook"); } finally { rmSync(whole, { recursive: true, force: true }); }
+// The store's tools (#C825): its ask is a waiting item, its post a message in a thread; a red ask on the store was refused once for want of
+// an ArtifactData write.
+const STORE = "mcp__ef1fd144-2d48-4acf-b314-24af223499c0__";
+const storeTurn = (name, { text = "Is the gate live?", title = "Manager", reply = "Not yet." } = {}) => [
+  { type: "custom-title", customTitle: title },
+  { type: "user", message: { content: [{ type: "text", text }] } },
+  { type: "assistant", message: { content: [{ type: "tool_use", id: "t0", name, input: {} }] } },
+  { type: "assistant", message: { content: [{ type: "text", text: reply }] } },
+];
+test("the store's ask is the board write a red ask needs; its post answers a question; other store tools do not", () => {
+  const red = "\u{1F534} Owner: approve the pack?";
+  assert.equal(hook(storeTurn(STORE + "ask", { text: "status", reply: red })), "", "ask is the waiting write");
+  assert.match(hook(storeTurn(STORE + "post", { text: "status", reply: red })), /red ask/, "a post is a message, not a waiting item");
+  assert.match(hook(storeTurn(STORE + "card_update", { text: "status", reply: red })), /red ask/);
+  assert.match(hook(storeTurn("mcp__ef1fd144-2d48-4acf-b314-24af223499c0__ask_close",{ text: "status", reply: red })), /red ask/, "a name that only ends like ask is not the store's");
+  assert.match(hook(storeTurn(STORE + "ask_close")), /asked a question this turn/, "ask_close is no answer");
+  assert.equal(hook(storeTurn(STORE + "post")), "", "a question answered by a post");
+  assert.equal(hook(storeTurn(STORE + "ask")), "", "or by an Answer ask");
+  assert.match(hook(storeTurn(STORE + "card_update")), /asked a question this turn/);
+  assert.match(hook(storeTurn(STORE + "ask", { text: "Is it?", title: "Manager", reply: red })), /^$/, "ask wrote the waiting item");
+});
+test("the hook's reasons name the store's tools, and never tell a role to call read_inbox (the lead's door only)", () => {
+  const src = readFileSync(HOOK, "utf8");
+  assert.doesNotMatch(src, /read_inbox|db_write update|db_get/);
+  assert.match(hook(storeTurn("Bash", { text: "status", reply: "\u{1F534} Owner: approve the pack?" })), /store's ask tool/);
+  assert.match(hook(storeTurn("Bash")), /store's post tool/);
 });
 
 // #C392: the cue waits one turn while the owner is in the middle of something. Manager's 06:31Z reset threw away the
