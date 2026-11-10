@@ -61,7 +61,10 @@ export function linkMove({ sha, before, beforeHasSha, beforeOnMain, beforeNote }
 
 // The commit the owner's install pins: the one the gate's hook runs from in the settings, or null.
 export function pinnedCommit(settingsText) {
-  return /install\/([0-9a-f]{40})\/gate\/gate\.mjs/.exec(String(settingsText ?? ""))?.[1] ?? null;
+  // On the store (hooks.mjs --store) gate.mjs is gone: stop.mjs and publish.mjs, the hooks that remain, run from the same pinned copy.
+  // The gate's hooks must agree on the pin (hooks.mjs installs them together): two different commits name none, so a release refuses.
+  const all = new Set([...String(settingsText ?? "").matchAll(/install\/([0-9a-f]{40})\/gate\/(?:gate|stop|publish)\.mjs/g)].map((m) => m[1]));
+  return all.size === 1 ? [...all][0] : null;
 }
 
 // Every regular file under dir (relative path → bytes); anything else (a link, a device) is a difference in itself.

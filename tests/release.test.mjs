@@ -129,6 +129,29 @@ test("the prompt: the repository's template with the team's values filled in; a 
   assert.throws(() => renderPrompt("x {{LEAD}}", { ...values, LEAD: "" }), /LEAD/);
 });
 
+test("on the store the config is named by the hooks that remain (stop.mjs --store, publish.mjs), not only by the removed gate.mjs", () => {
+  const sha = "c".repeat(40);
+  const hooks = (...cmds) => JSON.stringify({ hooks: { Stop: [{ hooks: cmds.map((command) => ({ type: "command", command })) }] } });
+  const stop = `'/n/node' '/u/.flight-board/install/${sha}/gate/stop.mjs' --config '/srv/team/board.config.json' --store`;
+  const publish = `'/n/node' '/u/.flight-board/install/${sha}/gate/publish.mjs' --config '/srv/team/board.config.json'`;
+  assert.equal(configFromSettings(hooks(stop, publish)), "/srv/team/board.config.json");
+  assert.equal(configFromSettings(hooks(stop)), "/srv/team/board.config.json");
+  assert.equal(configFromSettings(hooks(publish)), "/srv/team/board.config.json");
+  assert.equal(configFromSettings(hooks("python3 ~/.claude/hooks/red-ask-board.py")), null, "a hook that is not the board's names no config");
+  // The script anchor: another hook's --config earlier in the file (or on the same line) is not the board's config (Security's mutant /--config '([^']+)'/).
+  const other = `'/n/node' '/elsewhere/other-hook.mjs' --config '/elsewhere/x.json'`;
+  assert.equal(configFromSettings(hooks(other, stop)), "/srv/team/board.config.json", "the first --config in the file is not necessarily the board's");
+  assert.equal(configFromSettings(hooks(other, publish)), "/srv/team/board.config.json");
+  assert.equal(configFromSettings(hooks(other)), null, "a --config on a hook that is not the gate's names no config");
+  // Checker: a non-gate script that takes --config, first (prompt-watch.mjs in the real settings), must not be read as the board's config.
+  assert.equal(configFromSettings(hooks(`'/n/node' '/u/.flight-board/current/scripts/prompt-watch.mjs' --config '/other.json'`, stop, publish)), "/srv/team/board.config.json");
+  // Two gate hooks that name different configs name none: the release refuses rather than read whichever is first.
+  const stopElsewhere = `'/n/node' '/u/.flight-board/install/${sha}/gate/stop.mjs' --config '/elsewhere/other.config.json' --store`;
+  assert.equal(configFromSettings(hooks(stop, stopElsewhere)), null);
+  assert.equal(configFromSettings(hooks(stopElsewhere, publish)), null);
+  assert.equal(configFromSettings(hooks(`'/n/node' '/u/.flight-board/install/${sha}/gate/other.mjs' --config '/elsewhere/x.json'`, stop)), "/srv/team/board.config.json", "a gate script that is not gate, stop or publish does not count");
+});
+
 test("the config and the lead come from the owner's install, never from the caller", () => {
   const settings = JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ command: "'/n/node' '/u/.flight-board/install/" + "b".repeat(40) + "/gate/gate.mjs' --config '/srv/team/board.config.json'" }] }] } });
   assert.equal(configFromSettings(settings), "/srv/team/board.config.json");

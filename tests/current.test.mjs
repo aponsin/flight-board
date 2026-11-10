@@ -38,6 +38,16 @@ test("importClosure: the owner's install is everything its entry points load; at
   assert.deepEqual(importClosure(["a.mjs"], (f) => ({ ...files, "b/d.mjs": "" })[f] ?? null), ["a.mjs", "b/c.mjs", "b/d.mjs"], "a side-effect import is followed");
 });
 
+test("pinnedCommit on the store: the remaining hooks (stop.mjs --store, publish.mjs) name the pinned commit too", () => {
+  assert.equal(pinnedCommit(`{"command": "node '/u/.flight-board/install/${A}/gate/stop.mjs' --config x --store"}`), A);
+  assert.equal(pinnedCommit(`{"command": "node '/u/.flight-board/install/${A}/gate/publish.mjs' --config x"}`), A);
+  assert.equal(pinnedCommit(`{"command": "node '/u/.flight-board/install/${A}/scripts/hooks.mjs'"}`), null, "only the gate's hooks name the pin");
+  assert.equal(pinnedCommit(`{"command": "node '/u/.flight-board/install/${"d".repeat(40)}/scripts/x.mjs'"} {"command": "node '/u/.flight-board/install/${A}/gate/stop.mjs' --config x --store"}`), A, "a script that is not a gate hook, first, is not the pin (Checker)");
+  const B = "b".repeat(40);
+  assert.equal(pinnedCommit(`node '/u/.flight-board/install/${A}/gate/stop.mjs' --store; node '/u/.flight-board/install/${B}/gate/publish.mjs'`), null, "two gate hooks on different commits name none: the release refuses");
+  assert.equal(pinnedCommit(`node '/u/.flight-board/install/${A}/gate/stop.mjs' --store; node '/u/.flight-board/install/${A}/gate/publish.mjs'`), A);
+});
+
 test("pinnedCommit: the commit the settings' gate hook runs from", () => {
   assert.equal(pinnedCommit(`{"command": "node '/u/.flight-board/install/${A}/gate/gate.mjs' --config x"}`), A);
   assert.equal(pinnedCommit(`node /u/flight-board/gate/gate.mjs`), null);

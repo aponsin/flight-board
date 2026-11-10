@@ -86,7 +86,12 @@ export function renderPrompt(template, values) {
   return text;
 }
 // The config the owner installed: the gate's pinned hook names it. The lead: the collector's fence sends only to it.
-export const configFromSettings = (text) => /gate\/gate\.mjs'? --config '([^']+)'/.exec(String(text ?? ""))?.[1] ?? null;
+// On the store (hooks.mjs --store) gate.mjs is gone: the hooks that remain, stop.mjs and publish.mjs, name the same config.
+// The gate's hooks must agree: two different configs name none, so a release refuses rather than read whichever comes first.
+export const configFromSettings = (text) => {
+  const all = new Set([...String(text ?? "").matchAll(/gate\/(?:gate|stop|publish)\.mjs'? --config '([^']+)'/g)].map((m) => m[1]));
+  return all.size === 1 ? [...all][0] : null;
+};
 // The lead's session (#C586): the config's gate.managerSession first; the fence's --send-to only while the config has none.
 export const leadOf = (config, settingsText) => config?.gate?.managerSession || leadFromSettings(settingsText);
 export const leadFromSettings = (text) => /collector\/fence\.mjs'? [^"]*?--send-to ([A-Za-z0-9_-]{1,100})/.exec(String(text ?? ""))?.[1] ?? null;
