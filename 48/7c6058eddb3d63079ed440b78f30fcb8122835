@@ -1,0 +1,1 @@
+PASS #C741 v2 C5 delta import, dry run first, replaces v1 e006cf2. Suite 1879 of 1879. Mutations that fail tests: repo IS NULL guard, counter MAX, quote escaping, INSERT OR IGNORE, historyIds, repo-word check, starting number, the dropped guard, and the realpath compare for running as a script. Nothing runs in production from it. Checker 2026-11-10
