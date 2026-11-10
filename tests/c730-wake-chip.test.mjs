@@ -21,7 +21,7 @@ async function store({ quietMin = 0 } = {}) {
 }
 const draw = async (db, host = "store") => {
   const { collections, probe } = compatView(await readView(db, NOW));
-  return drawPage(collections, { probe, host, expose: ["managerChip", "seenTick", "OWNER"] });
+  return drawPage(collections, { probe, host, expose: ["managerChip", "seenTick", "OWNER", "hhmm"] });
 };
 
 test("the view carries the store's wake: state, reason, fix, the ask's age, and Manager's last read; no seenAt before one", async () => {
@@ -31,6 +31,16 @@ test("the view carries the store's wake: state, reason, fix, the ask's age, and 
   assert.deepEqual(probeDoc(await readView(db, NOW)).board.wake, { state: "idle", askAge: 20_000 });
   await takeInbox(db, NOW - 5_000);
   assert.equal(probeDoc(await readView(db, NOW)).board.wake.seenAt, NOW - 5_000);
+});
+
+test("a `wake` key in the probe's own board reading is never passed on: the store's replaces it, and with none it is dropped", async () => {
+  const db = makeDb();
+  const wr = await writeEvidence(db, NOW - 10_000, "probe", "board", { boardId: "flight-board", at: NOW - 10_000, wake: { state: "ok", askAge: 1 } });
+  assert.equal(wr.ok, true, JSON.stringify(wr));
+  const view = await readView(db, NOW);
+  assert.equal(view.evidence.board.value.wake.state, "ok", "the reading carries its own wake");
+  assert.equal(probeDoc(view).board.wake.state, "red", "the store's wake (never asked) wins");
+  assert.equal(Object.hasOwn(probeDoc({ ...view, wakeState: undefined }).board, "wake"), false);
 });
 
 test("on the store the chip is hidden until the probe has asked the store once, though the old keys say not listening", async () => {
@@ -80,14 +90,15 @@ test("on the store \"seen\" and \"answer coming\" come from Manager's last typed
   await takeInbox(db, NOW - 9 * M); // read after the first message, before the second
   ({ b } = await draw(db));
   b.state.messages = msgs(b);
-  assert.match(b.seenTick(b.state.messages[0]), /<div class="t-seen">seen \d\d?:\d\d( [AP]M)?<\/div>/);
+  // The page's own hhmm gives the expected time, so the test holds in any locale (the review: a 12-hour clock, U+202F before AM).
+  assert.equal(b.seenTick(b.state.messages[0]), `<div class="t-seen">seen ${b.hhmm(NOW - 9 * M)}</div>`);
   assert.equal(b.seenTick(b.state.messages[1]), "");
 
   await takeInbox(db, NOW - 5 * M);
   ({ b } = await draw(db));
   b.state.messages = msgs(b);
   assert.equal(b.seenTick(b.state.messages[0]), `<div class="t-seen">seen</div>`, "the older one: no time of its own");
-  assert.match(b.seenTick(b.state.messages[1]), /seen \d\d?:\d\d/);
-  assert.match(b.managerChip()?.text ?? "", /^seen your \d\d?:\d\d( [AP]M)? message · answer coming$/);
+  assert.equal(b.seenTick(b.state.messages[1]), `<div class="t-seen">seen ${b.hhmm(NOW - 5 * M)}</div>`);
+  assert.equal(b.managerChip()?.text, `seen your ${b.hhmm(NOW - 8 * M)} message · answer coming`);
   assert.equal(b.managerChip()?.cls, "warn");
 });

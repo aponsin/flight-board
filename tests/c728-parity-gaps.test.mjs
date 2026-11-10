@@ -29,7 +29,7 @@ const draw = async (db, host = "store", tweak = (c) => c) => {
   return drawPage(tweak(applyUsage(collections, view)), { probe, host, expose: ["managerChip"] });
 };
 
-test("(3) the Manager chip is not drawn on the store; the artifact page still draws it from the wake watch", async () => {
+test("(3) the Manager chip is not drawn on the store from the old wake watch's keys (#C730: it reads the store's wake, tests/c730-wake-chip.test.mjs); the artifact page still draws it from them", async () => {
   // The probe's board part as the live store has it: the old wake watch's heartbeat is none (Designer's red chip).
   const db = await store();
   const w = await writeEvidence(db, NOW - M, "probe", "board", { boardId: "flight-board", at: NOW - M, probe: "a".repeat(12), wakeAliveAt: null, wakeSeenAt: null });

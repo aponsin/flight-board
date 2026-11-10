@@ -100,7 +100,9 @@ export function probeDoc(view) {
   for (const k of ["stuck", "ship"]) if (ev[k] && view.now - ev[k].readAt <= STALE_AFTER_MS) out[k] = ev[k].value;
   // #C730: the store's own wake (row 4) for the Manager chip and the "seen" ticks, in place of the old wake watch's
   // wakeAliveAt / wakeSeenAt. askAge is left out until the probe has asked the store once; seenAt is Manager's last typed read.
+  // A `wake` key in the probe's own board reading is never passed on: only the store's.
   const w = view.wakeState;
+  if (out.board && Object.hasOwn(out.board, "wake")) { const { wake, ...rest } = out.board; out.board = rest; }
   if (w && typeof w === "object") out.board = { ...out.board, wake: prune({ state: w.state, reason: w.reason, fix: w.fix, askAge: num(w.askAge), seenAt: view.wake?.seen_at > 0 ? view.wake.seen_at : undefined }) };
   return out;
 }
