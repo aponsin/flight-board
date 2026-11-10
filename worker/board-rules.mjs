@@ -215,6 +215,35 @@ export function whoForPhase(cardId, phase, agents, ownerRole) {
   return working ? working[0] : PHASE_LANES[phase] ?? ownerRole ?? null;
 }
 
+// #C732 (the owner's pick A on #T1681, 11-09): "Stalled" for the wake covers every phase. A card that has waited STALL_AFTER_MS at its phase
+// while that phase's agent is idle (and no agent works the card, no CI or ship run is going) is a stall, with a reason Manager reads:
+// "#C730 waits at Checker 15 min, Checker idle since 04:40Z". The 15 min is the threshold crossed, so the reason is stable while the
+// stall lasts and changes only with the phase, the agent or the time the agent went idle. The wait counts from the later of the phase's
+// start and the agent going idle (a card queued behind a busy agent has not waited on an idle one). Exempt: a card that is dropped,
+// paused, blocked, held on someone (waiting_on), or gated by an open ask; a live card (done); a card with no agent for its phase.
+// Pure: cards = rows {id, num, owner_role, blocked_reason, paused, dropped, waiting_on}; evidence = {cardId: reading}; agents = the
+// `agents` evidence; openAskCards = Set of card ids with an open ask; phaseStart = Map "<card>|<phase>" -> ms. Times are UTC ("Z").
+export const STALL_AFTER_MS = 15 * 60_000;
+const hhmmZ = (ms) => `${new Date(ms).toISOString().slice(11, 16)}Z`;
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }) {
+  const out = [];
+  const roster = agents && typeof agents === "object" ? agents : {};
+  const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
+  for (const c of cards ?? []) {
+    if (!Number.isInteger(c.num) || c.dropped || c.paused || c.blocked_reason || c.waiting_on || openAskCards?.has(c.id) || working.has(c.id)) continue;
+    const v = evidence?.[c.id], phase = v?.lit?.[0];
+    if (typeof phase !== "string" || phase === "live" || !PHASES.includes(phase)) continue;
+    if (v.ci === "running" || v.ci === "queued" || v.shipping === true) continue;
+    const role = PHASE_LANES[phase] ?? c.owner_role;
+    if (typeof role !== "string" || !/^[A-Za-z0-9 _-]{1,24}$/.test(role)) continue;
+    const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`);
+    if (!a || a.state !== "idle" || !Number.isFinite(a.since) || !Number.isFinite(start)) continue;
+    if (now - Math.max(start, a.since) < STALL_AFTER_MS) continue;
+    out.push({ card_id: c.id, num: c.num, phase, role, reason: `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} 15 min, ${role} idle since ${hhmmZ(a.since)}` });
+  }
+  return out;
+}
+
 // "Live now": only the probe's reading of /version.json counts, and a reading older than 3 min is stale, never live.
 export const STALE_AFTER_MS = 3 * 60_000;
 export function liveNow(reading, now) {
