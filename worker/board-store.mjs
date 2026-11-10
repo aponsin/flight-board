@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, ASK_PARTS, APPROVE } from "./board-rules.mjs";
+import { askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, ASK_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -76,10 +76,12 @@ export async function createAsk(db, now, ask) {
 
 // A message on a thread (a card id, an ask id or a free thread name). Delivery to Manager is the wake's business.
 export async function postMessage(db, now, who, m) {
-  const ok = m && typeof m === "object" && Object.keys(m).every((k) => k === "thread_id" || k === "body") && typeof m.thread_id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(m.thread_id) && typeof m.body === "string" && m.body.trim() && m.body.length <= 8000;
-  if (!ok) return refuse(db, now, { rule: "message-shape", detail: "thread_id and body, body 1 to 8000 characters, nothing else" }, m?.thread_id, who);
+  const ok = m && typeof m === "object" && Object.keys(m).every((k) => ["thread_id", "body", "kind", "options"].includes(k)) && typeof m.thread_id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(m.thread_id) && typeof m.body === "string" && m.body.trim() && m.body.length <= 8000;
+  if (!ok) return refuse(db, now, { rule: "message-shape", detail: "thread_id and body, body 1 to 8000 characters, and for an agent a kind and options; nothing else" }, m?.thread_id, who);
+  const extra = messageExtrasRefusal(m, who);
+  if (extra) return refuse(db, now, extra, m.thread_id, who);
   const id = `m-${now}-${crypto.randomUUID().slice(0, 8)}`;
-  await db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at) VALUES (?, ?, ?, ?, ?)").bind(id, m.thread_id, who, m.body, now).run();
+  await db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, kind, options) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(id, m.thread_id, who, m.body, now, m.kind ?? null, m.options ? JSON.stringify(m.options) : null).run();
   return { ok: true, id };
 }
 

@@ -89,6 +89,28 @@ export function answerShapeRefusal(ask, { status, note, other, hasFiles } = {}) 
   return null;
 }
 
+// An agent's message may carry a kind (a short lower-case word, as the page draws it) and, with the kind "decision", two to four
+// options {key A to D, label}: the page shows them as buttons under the message, and the owner's pick is his own message
+// ("Chose A: Red"). The owner's messages carry neither (#C725 B1b). Returns null when fine.
+const MESSAGE_KIND = /^[a-z][a-z-]{0,19}$/;
+export function messageExtrasRefusal(m, who) {
+  if (m.kind === undefined && m.options === undefined) return null;
+  if (who === "owner") return refuse("message-shape", "the owner's message carries no kind or options");
+  if (m.kind !== undefined && !(typeof m.kind === "string" && MESSAGE_KIND.test(m.kind))) return refuse("message-shape", "kind is a short lower-case word");
+  if (m.options !== undefined) {
+    if (m.kind !== "decision") return refuse("message-shape", "options go with the kind decision");
+    const o = m.options;
+    if (!Array.isArray(o) || o.length < 2 || o.length > 4) return refuse("message-options", "two to four options");
+    const keys = new Set();
+    for (const x of o) {
+      const ok = x && typeof x === "object" && !Array.isArray(x) && Object.keys(x).every((k) => k === "key" || k === "label") && /^[A-D]$/.test(x.key) && typeof x.label === "string" && x.label.trim() && x.label.length <= 200 && !keys.has(x.key);
+      if (!ok) return refuse("message-options", "each option is {key: A to D, once; label: 1 to 200 characters}");
+      keys.add(x.key);
+    }
+  }
+  return null;
+}
+
 // An Action's steps: plain text, or {text, cmd} where cmd is a command the page shows with a Copy button.
 export function stepsRefusal(steps) {
   if (!Array.isArray(steps) || steps.length > 30) return refuse("ask-missing-part", "steps are a list of at most 30");

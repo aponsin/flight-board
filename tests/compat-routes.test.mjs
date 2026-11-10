@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker from "../worker/board-worker.mjs";
-import { takeInbox, answerAsk } from "../worker/board-store.mjs";
+import { takeInbox, answerAsk, postMessage } from "../worker/board-store.mjs";
 
 const NOW = 1_800_000_000_000;
 const WHO = { manager: { who: "Manager", role: "agent" }, owner: { who: "owner", role: "owner" }, probe: { who: "probe", role: "probe" } };
@@ -100,6 +100,39 @@ test("only a Decision has a something-else answer (#C725 B2)", async () => {
   assert.equal(r.refused?.rule, "answer-shape", JSON.stringify(r));
   const row = await env.DB.prepare("SELECT answered_at FROM asks WHERE id = ?").bind(a.id).first();
   assert.equal(row.answered_at, null, "nothing stored");
+});
+
+test("options on an agent's message (B1b): drawn from the thread's last word; the owner's pick is his own message; bad shapes are refused", async () => {
+  const { env, tool, write, compat } = make();
+  const { id } = await tool("manager", "ask", { type: "Answer", title: "Colour?", question: "Colour?" });
+  const options = [{ key: "A", label: "Red" }, { key: "B", label: "Blue" }];
+  const ok = await tool("manager", "post", { thread_id: id, body: "Which colour?", kind: "decision", options });
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  const m = (await compat()).collections.messages.find((x) => x.id === ok.id);
+  assert.equal(m.kind, "decision"); assert.deepEqual(m.options, options); assert.equal(m.from, "Manager");
+  // the owner's pick is an ordinary message of his
+  const pick = await write({ op: "set", path: "messages/m1-pick", data: { thread: id, from: "owner", text: "Chose A: Red", at: 1 } });
+  assert.equal(pick.status, 200, JSON.stringify(pick.body));
+  // bad shapes: options without the decision kind, one option, a key twice, a key outside A to D, an extra field, a bad kind
+  for (const [args, rule] of [
+    [{ options }, "message-shape"],
+    [{ kind: "decision", options: [options[0]] }, "message-options"],
+    [{ kind: "decision", options: [options[0], { key: "A", label: "Again" }] }, "message-options"],
+    [{ kind: "decision", options: [options[0], { key: "E", label: "Green" }] }, "message-options"],
+    [{ kind: "decision", options: [options[0], { key: "B", label: "Blue", extra: 1 }] }, "message-options"],
+    [{ kind: "Decision" }, "message-shape"],
+    [{ kind: "decision", options: [options[0], { key: "B", label: "x".repeat(201) }] }, "message-options"],
+    [{ kind: "decision", options: [options[0], { key: "B", label: "   " }] }, "message-options"],
+  ]) { const r = await tool("manager", "post", { thread_id: id, body: "x", ...args }); assert.equal(r.refused?.rule, rule, JSON.stringify(args)); }
+  // a label of exactly 200 characters passes
+  const edge = await tool("manager", "post", { thread_id: id, body: "edge", kind: "decision", options: [options[0], { key: "B", label: "x".repeat(200) }] });
+  assert.equal(edge.ok, true, JSON.stringify(edge));
+  // a field the store does not know is refused at the store itself (the tool's schema is not the only guard)
+  const odd = await postMessage(env.DB, NOW, "Manager", { thread_id: id, body: "x", author: "owner" });
+  assert.equal(odd.refused?.rule, "message-shape", JSON.stringify(odd));
+  // the owner's message carries neither
+  const own = await tool("owner", "post", { thread_id: id, body: "x", kind: "decision", options });
+  assert.equal(own.refused?.rule, "message-shape");
 });
 
 test("a malformed step is refused when the ask is made", async () => {
