@@ -102,3 +102,25 @@ test("on the store \"seen\" and \"answer coming\" come from Manager's last typed
   assert.equal(b.managerChip()?.text, `seen your ${b.hhmm(NOW - 8 * M)} message · answer coming`);
   assert.equal(b.managerChip()?.cls, "warn");
 });
+
+// #C733 (Security's LOW on #C730): the artifact page reads the probe's own wakeSeenAt, so a value that is not a time (a string, a
+// time past 2100, a fraction, an object, an array) gives no "seen" tick and no "answer coming"; a real time still does (the control).
+test("on the artifact page a wakeSeenAt that is not a time gives no seen tick and no \"answer coming\"", async () => {
+  const db = await store();
+  const { b } = await draw(db, null);
+  const base = probeDoc(await readView(db, NOW));
+  const feed = (wakeSeenAt) => b.probeEvent({ type: "data", result: { payload: { ...base, board: { ...base.board, wakeAliveAt: NOW - 10_000, wakeSeenAt } } } });
+  const msgs = [{ id: "m1", thread: "t-1", from: b.OWNER, text: "first", at: NOW - 10 * M }];
+
+  feed(NOW - 5 * M);
+  b.state.messages = msgs;
+  assert.equal(b.seenTick(msgs[0]), `<div class="t-seen">seen ${b.hhmm(NOW - 5 * M)}</div>`, "control: a real time gives the tick");
+  assert.equal(b.managerChip()?.text, `seen your ${b.hhmm(NOW - 10 * M)} message · answer coming`);
+
+  for (const bad of [String(NOW - 5 * M), 5_000_000_000_000, NOW - 5 * M + 0.5, { at: NOW - 5 * M }, [NOW - 5 * M]]) {
+    feed(bad);
+    b.state.messages = msgs;
+    assert.equal(b.seenTick(msgs[0]), "", `no tick for ${JSON.stringify(bad)}`);
+    assert.deepEqual({ ...b.managerChip() }, { cls: "ok", text: "Manager listening" }, `no "answer coming" for ${JSON.stringify(bad)}`);
+  }
+});
