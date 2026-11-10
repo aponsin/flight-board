@@ -71,6 +71,23 @@ test("a wait step on the end phase does not date the card's arrival there: doneA
   assert.equal(only.initiatives[0].doneAt, NOW - 60 * M, "with only a wait row, the reading's own time");
 });
 
+test("a ship is dated by the probe's shippedAt when it is a time in the last 30 days, not by the reading; an earlier shippedAt from a later card moves it back (#C736 follow-up)", async () => {
+  const db = makeDb();
+  for (const id of ["a", "b", "c", "d"]) await createCard(db, NOW, "Manager", { id, title: id.toUpperCase() });
+  await read(db, NOW - 5 * M, "a", "live", { liveVersion: "v2.0.0", shippedAt: NOW - 3 * 60 * M });
+  assert.equal((await readShips(db))[0].shipped_at, NOW - 3 * 60 * M, "the commit's time, not the reading's");
+  await read(db, NOW - 4 * M, "b", "live", { liveVersion: "v2.0.0", shippedAt: NOW - 4 * 60 * M });
+  assert.equal((await readShips(db))[0].shipped_at, NOW - 4 * 60 * M, "an earlier card moves the ship back");
+  assert.deepEqual(JSON.parse((await readShips(db))[0].cards), ["a", "b"]);
+  await read(db, NOW - 3 * M, "c", "live", { liveVersion: "v2.0.0", shippedAt: NOW - 60 * M });
+  assert.equal((await readShips(db))[0].shipped_at, NOW - 4 * 60 * M, "a later one leaves it");
+  for (const [id, v, want] of [["d", "v3.0.0", NOW - 2 * M], ["d", "v3.1.0", NOW - 2 * M], ["d", "v3.2.0", NOW - 2 * M]]) {
+    const bad = v === "v3.0.0" ? NOW + 10 * 60 * M : v === "v3.1.0" ? NOW - 40 * 864e5 : "yesterday";
+    await read(db, NOW - 2 * M, id, "live", { liveVersion: v, shippedAt: bad });
+    assert.equal((await readShips(db)).find((s) => s.version === v.slice(1)).shipped_at, want, `a shippedAt of ${String(bad)} is no time: the reading's`);
+  }
+});
+
 test("the feed is newest first and carries the owner's ack; without ships in the view the feed is left alone", async () => {
   const db = makeDb();
   for (const id of ["a", "b"]) await createCard(db, NOW, "Manager", { id, title: `Card ${id}` });

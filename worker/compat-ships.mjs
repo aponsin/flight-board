@@ -15,19 +15,27 @@ export const plainVersion = (v) => (typeof v === "string" && VERSION.test(v) ? V
 
 // A card's reading carries the version it went live in: the ship of that version lists the card. The first reading of a
 // version is when it shipped; a later card in the same version joins the list and leaves the time as it was.
+// The probe's own shippedAt (when the card's work reached main, #C731 B4b) is when the version shipped, not when the probe first noticed it:
+// used when it is a time in the last 30 days and not in the future, else the reading's time. A later card in the same version with an
+// earlier shippedAt moves the ship back to it (the version shipped when its first card did).
+const FRESH_MS = 30 * 864e5;
+const shipTime = (now, v) => (Number.isFinite(v) && v > now - FRESH_MS && v <= now ? Math.floor(v) : now);
 export async function noteShip(db, now, cardId, value) {
   const version = plainVersion(value?.liveVersion);
   if (!version || typeof cardId !== "string") return;
-  const row = await db.prepare("SELECT cards FROM ships WHERE version = ?").bind(version).first();
+  const at = shipTime(now, value?.shippedAt);
+  const row = await db.prepare("SELECT cards, shipped_at FROM ships WHERE version = ?").bind(version).first();
   if (!row) {
-    await db.prepare("INSERT INTO ships (version, cards, shipped_at) VALUES (?, ?, ?) ON CONFLICT (version) DO NOTHING").bind(version, JSON.stringify([cardId]), now).run();
+    await db.prepare("INSERT INTO ships (version, cards, shipped_at) VALUES (?, ?, ?) ON CONFLICT (version) DO NOTHING").bind(version, JSON.stringify([cardId]), at).run();
     return;
   }
   let cards;
   try { cards = JSON.parse(row.cards); } catch { cards = []; }
   if (!Array.isArray(cards)) cards = [];
-  if (cards.includes(cardId)) return;
-  await db.prepare("UPDATE ships SET cards = ? WHERE version = ?").bind(JSON.stringify([...cards, cardId]), version).run();
+  const earlier = Number.isFinite(row.shipped_at) && at < row.shipped_at && Number.isFinite(value?.shippedAt);
+  if (cards.includes(cardId) && !earlier) return;
+  if (earlier) await db.prepare("UPDATE ships SET cards = ?, shipped_at = ? WHERE version = ?").bind(JSON.stringify(cards.includes(cardId) ? cards : [...cards, cardId]), at, version).run();
+  else await db.prepare("UPDATE ships SET cards = ? WHERE version = ?").bind(JSON.stringify([...cards, cardId]), version).run();
 }
 
 export async function readShips(db) {
