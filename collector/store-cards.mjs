@@ -76,7 +76,7 @@ export async function prepareStoreState({ privateDir, stateFile, configPath, bas
   const cfgPath = join(privateDir, boardId, "config.json");
   writeFileSync(cfgPath, JSON.stringify(privateConfig(JSON.parse(readText(configPath)), privateDir)), { mode: 0o600 });
   log(`store cards: ${m.written} written, ${m.removed} removed${seeded ? `, ${seeded} usage file(s) seeded` : ""}`);
-  return { configPath: cfgPath, stateFile: join(privateDir, boardId, "state.json") };
+  return { configPath: cfgPath, stateFile: join(privateDir, boardId, "state.json"), cards };
 }
 
 // The first time only: the usage history the old state job keeps is copied over, so the usage tile does not start from nothing.

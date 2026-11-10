@@ -136,6 +136,17 @@ export async function writeStep(db, now, who, a) {
   await db.prepare("INSERT OR IGNORE INTO phase_history (card_id, phase, kind, at, who, source, wait) VALUES (?, ?, ?, ?, ?, 'tool', ?)").bind(a.init, a.phase, a.kind, at, who, wait).run();
   return { ok: true };
 }
+// The probe fills in a card's repo word from git (#C742, collector/repo-words.mjs). Only a card that has none takes it: a word already set,
+// by an agent or an earlier fill, is never changed here, and nothing else on the card is touched (not even its updated time).
+export async function fillCardRepo(db, now, id, repo) {
+  if (typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) return refuse(db, now, { rule: "card-id", detail: String(id).slice(0, 40) }, null, "probe");
+  if (typeof repo !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(repo)) return refuse(db, now, { rule: "card-repo", detail: "repo is lower case letters, digits and -, up to 40" }, id, "probe");
+  const row = await db.prepare("SELECT repo FROM cards WHERE id = ?").bind(id).first();
+  if (!row) return refuse(db, now, { rule: "card-unknown", detail: id }, null, "probe");
+  if (typeof row.repo === "string" && row.repo !== "") return { ok: true, set: false, repo: row.repo };
+  await db.prepare("UPDATE cards SET repo = ? WHERE id = ? AND (repo IS NULL OR repo = '')").bind(repo, id).run();
+  return { ok: true, set: true, repo };
+}
 export async function createListItem(db, now, who, fields) {
   const bad = listWriteRefusal(fields, { create: true });
   if (bad) return refuse(db, now, bad, null, who);

@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { runActionsUsage } from "./actions-usage.mjs";
+import { fillRepoWords } from "./repo-words.mjs";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
 import { loadEnv, accessHeaders, FETCH_TIMEOUT_MS } from "./probe-board.mjs";
 import { prepareStoreState } from "./store-cards.mjs";
@@ -139,14 +140,21 @@ export async function actionsUsageStep({ base, headers, fetchImpl, origConfig, s
 export const defaultGhCheck = (env = childEnv(), exec = execFileSync) => { try { exec("gh", ["--version"], { env, timeout: 5000, stdio: "ignore" }); return true; } catch { return false; } };
 export const GH_MISSING = "gh was not found on PATH: the deploy and CI runs were not read, so cards of the main repository cannot show live";
 
-export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck, actions = {} }) {
+export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {} }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const t0 = Date.now();
   const ghOk = job === "evidence" ? ghCheck(env) : true;
   if (!ghOk) log(GH_MISSING);
   const finish = (r) => { if (!ghOk) throw new Error(GH_MISSING); return r; };
   const origConfig = configPath;
-  if (privateDir) ({ configPath, stateFile } = await prepare({ privateDir, stateFile, configPath, base, headers, fetchImpl, log }));
+  let storeCardList = null;
+  if (privateDir) ({ configPath, stateFile, cards: storeCardList } = await prepare({ privateDir, stateFile, configPath, base, headers, fetchImpl, log }));
+  // #C742: a card with no repo word whose Board-Id is in a configured repository gets that repository's name (never over a word already set).
+  if (job === "evidence" && Array.isArray(storeCardList)) {
+    let repos = [];
+    try { repos = JSON.parse(read(origConfig))?.collector?.repos ?? []; } catch { log("repo words: the board config could not be read"); }
+    await fillRepoWords({ cards: storeCardList, repos, base, headers, fetchImpl, log, ...repoWords });
+  }
   // #C737: only the evidence job reads cards; it tells the state child what is deployed.
   const extra = job === "evidence" ? deployEnv(await deployRead({ base, headers, fetchImpl, log })) : {};
   await build(stateArgs(configPath), (JOBS[job].limitSec - 15) * 1000, extra);

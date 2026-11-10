@@ -11,7 +11,7 @@ import { routeWrite } from "./compat-write.mjs";
 import { COMPAT_SHIM } from "./compat-shim.mjs";
 import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.mjs";
 import { writeUsageDay } from "./compat-usage.mjs";
-import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox } from "./board-store.mjs";
+import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const obj = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
@@ -288,6 +288,14 @@ export default {
       if (auth.role !== "probe") return bare(403);
       const sha = typeof env.BUILD_SHA === "string" && /^[0-9a-f]{40}$/.test(env.BUILD_SHA) ? env.BUILD_SHA : null;
       return json(200, { sha }, { "cache-control": "no-store" });
+    }
+    // #C742: the probe fills in a card's repo word from git; only a card with none takes it, a word already set is never changed.
+    if (url.pathname === "/api/probe/card-repo" && request.method === "POST") {
+      if (auth.role !== "probe") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await fillCardRepo(env.DB, now, b?.id, b?.repo);
+      return json(r.ok ? 200 : 422, r);
     }
     // A day's runner and automation minutes and Actions cost (#C726 C3), probe only: the usage collection's rows.
     if (url.pathname === "/api/probe/usage" && request.method === "POST") {
