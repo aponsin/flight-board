@@ -5,9 +5,11 @@
 //   evidence job (60 s): cards.<id> {lit:[phase], ...the card's reading}, agents, ctx, board
 //   usage job (300 s):   usage
 // A key whose reading is missing is not written (the store then shows it as unknown/silent, never as a guess).
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { runActionsUsage } from "./actions-usage.mjs";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
 import { loadEnv, accessHeaders, FETCH_TIMEOUT_MS } from "./probe-board.mjs";
 import { prepareStoreState } from "./store-cards.mjs";
@@ -98,6 +100,36 @@ export async function liveWrite(configText, { fetchImpl = fetch, log = () => {} 
   } catch (e) { log(`live ${url.host} unreadable: ${String(e.message).slice(0, 80)}`); return null; }
 }
 
+// #C736: the usage job also posts the day's runner and Actions usage (collector/actions-usage.mjs) to POST /api/probe/usage, which the
+// store's Time spent chart and tiles read. It reads the team repository's workflow runs through gh in the repository folder of the board
+// config (collector.repoPath), at most every 30 minutes for today and until read after the day ended for yesterday (the days read last are
+// kept beside the state, in actions-usage.json). Anything that goes wrong here is logged and never fails the usage job: the usage tile above is
+// posted first.
+const defaultGh = (repoPath, env, exec = execFileSync) => (args, left = 60_000) => JSON.parse(exec("gh", ["api", ...args], { cwd: repoPath, env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: Math.max(1000, Math.min(60_000, left)), maxBuffer: 32 * 1024 * 1024 }));
+// The config's paths may start with "~" (as state.mjs reads them); a spawn's cwd does not expand it.
+export const expandHome = (p, home = homedir()) => String(p).replace(/^~(?=\/|$)/, home);
+// Every gh call checks the clock first: past the deadline (the job's limit less a margin) it stops, the day in hand stays due and nothing is
+// saved for it, so the watchdog never kills the job between a post and its record, and the next run starts on it again.
+// gh is told how long is left, so its own timeout is never longer than that.
+const withDeadline = (gh, deadline, clock) => (args) => { const left = deadline - clock(); if (left <= 0) throw new Error("the job's time is spent"); return gh(args, left); };
+export async function actionsUsageStep({ base, headers, fetchImpl, origConfig, stateFile, env, read, log, now = Date.now(), gh = null, write = (p, t) => writeFileSync(p, t), deadline = Infinity, clock = Date.now, home = homedir(), exec = execFileSync }) {
+  try {
+    const repoPath = JSON.parse(read(origConfig))?.collector?.repoPath;
+    if (typeof repoPath !== "string" || !repoPath) { log("actions usage: the board config has no collector.repoPath"); return; }
+    const file = join(dirname(stateFile), "actions-usage.json");
+    let seen = {};
+    try { const s = JSON.parse(read(file)); if (s && typeof s === "object" && !Array.isArray(s)) seen = s; } catch { /* first run */ }
+    const post = async (row) => {
+      const r = await fetchImpl(`${base}/api/probe/usage`, { method: "POST", headers, body: JSON.stringify(row), redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      if (!r.ok) log(`actions usage ${row.day} answered ${r.status}`);
+      return r.ok;
+    };
+    const r = await runActionsUsage({ now, seen, gh: withDeadline(gh ?? defaultGh(expandHome(repoPath, home), env, exec), deadline, clock), post, log });
+    if (r.posted) write(file, JSON.stringify(r.seen));
+    log(`actions usage: ${r.posted} day(s) posted`);
+  } catch (e) { log(`actions usage failed: ${String(e.message).slice(0, 120)}`); }
+}
+
 // One run: build the state, read it, post the job's keys.
 // With privateDir, the cards come from the store (collector/store-cards.mjs), not from the old board's mirror, and the state is
 // built and left in that private directory; without it, the job reads the old location as before.
@@ -107,8 +139,9 @@ export async function liveWrite(configText, { fetchImpl = fetch, log = () => {} 
 export const defaultGhCheck = (env = childEnv(), exec = execFileSync) => { try { exec("gh", ["--version"], { env, timeout: 5000, stdio: "ignore" }); return true; } catch { return false; } };
 export const GH_MISSING = "gh was not found on PATH: the deploy and CI runs were not read, so cards of the main repository cannot show live";
 
-export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck }) {
+export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck, actions = {} }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
+  const t0 = Date.now();
   const ghOk = job === "evidence" ? ghCheck(env) : true;
   if (!ghOk) log(GH_MISSING);
   const finish = (r) => { if (!ghOk) throw new Error(GH_MISSING); return r; };
@@ -121,6 +154,7 @@ export async function evidenceJob({ job, base, headers, configPath, stateFile, p
   const writes = evidenceWrites(state, job);
   log(`${writes.length} key(s) to write`);
   const done = await postWrites(writes, { base, headers, fetchImpl, log });
+  if (job === "usage") await actionsUsageStep({ base, headers, fetchImpl, origConfig, stateFile, env, read, log, deadline: t0 + (JOBS.usage.limitSec - 15) * 1000, ...actions });
   if (job !== "evidence") return done;
   // Live last, so a product site that answers slowly (or not at all) can never hold up the evidence above.
   let cfg = null;
