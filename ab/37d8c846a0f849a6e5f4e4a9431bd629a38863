@@ -1,0 +1,1 @@
+PASS Checker #C828 v2 store-stall-no-session at ab37d8c, one commit on #C825 v2 0afb2df. Full. Suite 1956/1956. Against my PASS of 226dc2b only the #C825 v2 delta below it and one CHANGELOG line differ; the worker and its tests are the same.
