@@ -87,6 +87,30 @@ test("an Approval takes only Approve: Done, Ack or a note through Needs you are 
   assert.equal(rpc.result, undefined, "an agent has no answer tool"); assert.ok(rpc.error, JSON.stringify(rpc));
 });
 
+test("an Approval answered with any status is refused approval-answer, and nothing is stored (#C725 B2)", async () => {
+  const { env, tool } = make();
+  const { id } = await tool("reviewer", "ask", approval());
+  for (const status of ["done", "help", "ack", "chose"]) {
+    const r = await answerAsk(env.DB, NOW, "owner", { id, answer: "Approve", status, note: "Approve" });
+    assert.equal(r.refused?.rule, "approval-answer", `${status}: ${JSON.stringify(r)}`);
+  }
+  const row = await env.DB.prepare("SELECT answered_at, answer, answer_status, answer_note FROM asks WHERE id = ?").bind(id).first();
+  assert.deepEqual(row, { answered_at: null, answer: null, answer_status: null, answer_note: null });
+});
+
+test("Withdraw clears the answer's status and note with the answer (#C725 B2)", async () => {
+  const { env, tool } = make();
+  const { id } = await tool("reviewer", "ask", approval());
+  assert.equal((await answerAsk(env.DB, NOW, "owner", { id, answer: "Approve" })).ok, true);
+  // Nothing in the code gives an Approval a status; set one by hand so the clear is what the test sees.
+  await env.DB.prepare("UPDATE asks SET answer_status = 'done', answer_note = 'a note' WHERE id = ?").bind(id).run();
+  assert.equal((await withdrawAsk(env.DB, NOW, "owner", id, "owner")).ok, true);
+  const row = await env.DB.prepare("SELECT answer_status, answer_note FROM asks WHERE id = ?").bind(id).first();
+  assert.deepEqual(row, { answer_status: null, answer_note: null });
+  const ask = (await readView(env.DB, NOW)).asks.find((a) => a.id === id);
+  assert.equal(ask.answer_status, null); assert.equal(ask.answer_note, null); assert.equal(ask.answered_at, null);
+});
+
 test("a closed Approval takes no answer, even unanswered (merged or replaced)", async () => {
   const { env, tool } = make();
   const { id } = await tool("reviewer", "ask", approval());

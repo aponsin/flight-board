@@ -37,16 +37,17 @@ export async function routeWrite(db, now, who, { op, path, data } = {}) {
       const fl = await filesRefusal(db, r.files);
       if (fl.refused) return refuse(db, now, fl.refused, ask.card_id, who);
       const note = typeof r.note === "string" ? r.note.trim() : "";
-      let answer;
+      // B2: the page's button (chose, done, help, ack) and the note beside it are stored whole; "something else" is a chose
+      // whose choice is not an option's key.
+      const args = { id, status: r.status, note, hasFiles: fl.ids.length > 0 };
       if (r.status === "chose") {
-        if (note) return refuse(db, now, NO_ROUTE(path, "a note with a choice arrives with B2"), ask.card_id, who);
-        answer = optionOfKey(JSON.parse(ask.body).options, r.choice);
-        if (answer === undefined) return refuse(db, now, { rule: "answer-not-an-option", detail: String(r.choice) }, ask.card_id, who);
-      } else if (r.status === "ack" || r.status === "done") {
-        if (ask.type === "Decision") return refuse(db, now, { rule: "answer-not-an-option", detail: "a Decision is answered with one of its options" }, ask.card_id, who);
-        answer = note || (r.status === "ack" ? "Ack" : "Done");
-      } else return refuse(db, now, NO_ROUTE(path, `answer status ${String(r.status).slice(0, 20)} arrives with B2`), ask.card_id, who);
-      const done = await answerAsk(db, now, who, { id, answer });
+        const options = ask.type === "Decision" ? JSON.parse(ask.body).options : undefined;
+        const picked = optionOfKey(options, r.choice);
+        if (picked !== undefined) args.answer = picked;
+        else if (r.choice === "something else") args.other = true;
+        else return refuse(db, now, { rule: "answer-not-an-option", detail: String(r.choice).slice(0, 40) }, ask.card_id, who);
+      }
+      const done = await answerAsk(db, now, who, args);
       if (!done.ok) return done;
       await linkFiles(db, now, "answer", id, fl.ids);
       if (d.done === true) return closeAsk(db, now, who, id, "owner");

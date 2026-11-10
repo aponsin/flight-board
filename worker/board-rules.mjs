@@ -39,6 +39,7 @@ export function askRefusal(ask, now) {
     if (!Array.isArray(ask.options) || ask.options.length < 2 || ask.options.length > 4) return refuse("ask-missing-part", "Decision needs 2 to 4 options");
     if (!ask.options.includes(ask.recommended)) return refuse("ask-missing-part", "recommended must be one of the options");
   }
+  if (ask.type === "Action") { const bad = stepsRefusal(ask.steps); if (bad) return bad; }
   if (ask.type === "Approval") {
     // Asked by the role that signs pull requests (Reviewer) or the lead; for one pull request, at one full commit, with its own link.
     if (!APPROVAL_ASKERS.includes(ask.asked_by)) return refuse("approval-asker", `${ask.asked_by} cannot ask for an approval; ${APPROVAL_ASKERS.join(" or ")} can`);
@@ -72,6 +73,54 @@ export function closeRefusal(ask, who, role) {
   return null;
 }
 
+// The owner's answer in full (#C725 B2): the button he pressed (status), the note beside it, and "something else" on a Decision.
+// chose = an option (with an optional note); other = "something else" (a Decision, the note says what); done and help = an action,
+// terminal, session start or later (help needs its note); ack = an answer or thread (a note is a follow-up). Returns null when fine.
+export const ANSWER_NOTE_MAX = 2000;
+const STATUS_OF_TYPE = { Decision: ["chose"], Answer: ["ack"], Thread: ["ack"], Action: ["done", "help", "ack"], Terminal: ["done", "help", "ack"], SessionStart: ["done", "help", "ack"], Later: ["done", "help", "ack"] };
+export function answerShapeRefusal(ask, { status, note, other, hasFiles } = {}) {
+  const allowed = STATUS_OF_TYPE[ask.type] ?? [];
+  if (!allowed.includes(status)) return refuse("answer-status", `${ask.type} is answered with ${allowed.join(" or ") || "Approve only"}, not ${String(status).slice(0, 20)}`);
+  if (note !== undefined && !(typeof note === "string" && note.length <= ANSWER_NOTE_MAX)) return refuse("answer-shape", `a note is text up to ${ANSWER_NOTE_MAX} characters`);
+  if (other !== undefined && typeof other !== "boolean") return refuse("answer-shape", "other is true or false");
+  if (other && ask.type !== "Decision") return refuse("answer-shape", "only a Decision has a something-else answer");
+  const text = typeof note === "string" ? note.trim() : "";
+  if ((other || status === "help") && !text && !hasFiles) return refuse("answer-needs-note", "say in a few words what you want, or attach a file");
+  return null;
+}
+
+// An agent's message may carry a kind (a short lower-case word, as the page draws it) and, with the kind "decision", two to four
+// options {key A to D, label}: the page shows them as buttons under the message, and the owner's pick is his own message
+// ("Chose A: Red"). The owner's messages carry neither (#C725 B1b). Returns null when fine.
+const MESSAGE_KIND = /^[a-z][a-z-]{0,19}$/;
+export function messageExtrasRefusal(m, who) {
+  if (m.kind === undefined && m.options === undefined) return null;
+  if (who === "owner") return refuse("message-shape", "the owner's message carries no kind or options");
+  if (m.kind !== undefined && !(typeof m.kind === "string" && MESSAGE_KIND.test(m.kind))) return refuse("message-shape", "kind is a short lower-case word");
+  if (m.options !== undefined) {
+    if (m.kind !== "decision") return refuse("message-shape", "options go with the kind decision");
+    const o = m.options;
+    if (!Array.isArray(o) || o.length < 2 || o.length > 4) return refuse("message-options", "two to four options");
+    const keys = new Set();
+    for (const x of o) {
+      const ok = x && typeof x === "object" && !Array.isArray(x) && Object.keys(x).every((k) => k === "key" || k === "label") && /^[A-D]$/.test(x.key) && typeof x.label === "string" && x.label.trim() && x.label.length <= 200 && !keys.has(x.key);
+      if (!ok) return refuse("message-options", "each option is {key: A to D, once; label: 1 to 200 characters}");
+      keys.add(x.key);
+    }
+  }
+  return null;
+}
+
+// An Action's steps: plain text, or {text, cmd} where cmd is a command the page shows with a Copy button.
+export function stepsRefusal(steps) {
+  if (!Array.isArray(steps) || steps.length > 30) return refuse("ask-missing-part", "steps are a list of at most 30");
+  for (const s of steps) {
+    const ok = typeof s === "string" ? s.length <= 2000 : s && typeof s === "object" && !Array.isArray(s) && Object.keys(s).every((k) => k === "text" || k === "cmd") && typeof s.text === "string" && s.text.length <= 2000 && (s.cmd === undefined || (typeof s.cmd === "string" && s.cmd.length <= 4000));
+    if (!ok) return refuse("steps-shape", "a step is text, or {text, cmd} with the command as text");
+  }
+  return null;
+}
+
 // Withdrawing the owner's approval (#C727): the owner's alone, on an open Approval that is approved. It clears the answer, so the
 // pull request needs his Approve again; Release reads only an approval that stands.
 export function withdrawRefusal(ask, role) {
@@ -102,7 +151,8 @@ export function listWriteRefusal(fields, { create = false } = {}) {
 }
 
 // Card words: only these fields are typed; status, phase, evidence and numbers are never written by a session.
-const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip"]);
+const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos"]);
+export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
 const CARD_FORBIDDEN = new Set(["status", "phase", "num", "live_version", "signed", "on_main", "ci", "evidence"]);
 
 export function cardWriteRefusal(fields, evidence) {
@@ -116,6 +166,10 @@ export function cardWriteRefusal(fields, evidence) {
   // The old board's skip lists also carry words that are no phase of ours (such as "look"); state.mjs ignores a word it does not know,
   // so the store keeps a list of plain lowercase words as it is and refuses anything else (it never rewrites an old card's list).
   if (fields.skip !== undefined && fields.skip !== null && !(Array.isArray(fields.skip) && fields.skip.length <= 16 && fields.skip.every((p) => typeof p === "string" && /^[a-z]{2,20}$/.test(p)))) return refuse("card-skip", "skip is a list of up to 16 lowercase words, such as language or security");
+  // #C729 B4a: what the card waits on, its issue counts and its place in its owner's queue.
+  if (fields.depends_on !== undefined && fields.depends_on !== null && !(Array.isArray(fields.depends_on) && fields.depends_on.length <= 8 && fields.depends_on.every((c) => typeof c === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(c)) && new Set(fields.depends_on).size === fields.depends_on.length)) return refuse("card-depends", "depends_on is a list of up to 8 different card ids");
+  if (fields.issues !== undefined && fields.issues !== null && !(typeof fields.issues === "object" && !Array.isArray(fields.issues) && Object.entries(fields.issues).every(([k, v]) => ISSUE_KINDS.includes(k) && Number.isInteger(v) && v >= 0 && v <= 99))) return refuse("card-issues", `issues is counts from 0 to 99 for ${ISSUE_KINDS.join(", ")}`);
+  if (fields.queue_pos !== undefined && fields.queue_pos !== null && !(Number.isInteger(fields.queue_pos) && fields.queue_pos >= 1 && fields.queue_pos <= 999)) return refuse("card-queue", "queue_pos is a whole number from 1 to 999");
   if ((fields.blocked_reason !== undefined || fields.paused === 1 || fields.paused === true) && !present(fields.next_note)) {
     return refuse("blocked-needs-note", "Blocked or Paused needs a current next_note");
   }
