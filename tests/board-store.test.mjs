@@ -7,6 +7,18 @@ const NOW = 1_800_000_000_000;
 const refusals = async (db) => (await db.prepare("SELECT rule, card_id, who FROM refusals ORDER BY id").all()).results;
 const decision = { type: "Decision", title: "Pick", asked_by: "Manager", question: "A or B?", options: ["A", "B"], recommended: "A" };
 
+test("a Later ask keeps its steps and expect, and the page's waiting doc carries them (#C747)", async () => {
+  const db = makeDb();
+  const r = await createAsk(db, NOW, { type: "Later", title: "L", asked_by: "Manager", text: "t", eta_at: NOW + 86_400_000, steps: ["one", { text: "two", cmd: "ls" }], expect: "all green" });
+  assert.equal(r.ok, true);
+  const { waitingDoc } = await import("../worker/compat-view.mjs");
+  const row = (await db.prepare("SELECT * FROM asks WHERE id = ?").bind(r.id).all()).results[0];
+  const doc = waitingDoc(row);
+  assert.deepEqual(doc.steps, ["one", { text: "two", cmd: "ls" }]);
+  assert.equal(doc.expect, "all green");
+  assert.equal(doc.kind, "later");
+});
+
 test("a card carries the review-skip words (customer_text, look_change, skip): written, read back, changed, and a bad value is refused", async () => {
   const db = makeDb();
   assert.equal((await createCard(db, NOW, "Manager", { id: "c-one", title: "One", customer_text: false, look_change: true, skip: ["security"] })).ok, true);

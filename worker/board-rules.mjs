@@ -19,6 +19,8 @@ export const ASK_PARTS = {
   Answer: ["question"],
   Thread: ["text"],
 };
+// #C747: parts a type may carry besides the required ones. A Later ask keeps the steps and the expected result the old board gave it.
+export const ASK_OPTIONAL_PARTS = { Later: ["steps", "expect"] };
 const ASK_ALLOWED = new Set(["type", "title", "asked_by", "card_id", "eta_at", "eta_precondition", ...Object.values(ASK_PARTS).flat(), "screenshots"]);
 
 const refuse = (rule, detail) => ({ rule, detail });
@@ -49,6 +51,8 @@ export function askRefusal(ask, now) {
     if (!u || Number(u[1]) !== ask.pr) return refuse("approval-shape", `url is https://github.com/<owner>/<repo>/pull/${ask.pr}`);
   }
   if (ask.type === "Later") {
+    if (ask.steps !== undefined) { const bad = stepsRefusal(ask.steps); if (bad) return bad; }
+    if (ask.expect !== undefined && !present(ask.expect)) return refuse("ask-missing-part", "Later expect is empty");
     const dated = Number.isFinite(ask.eta_at) && ask.eta_at > 0;
     if (!dated && !(present(ask.eta_precondition) && Number.isFinite(ask.eta_at))) return refuse("later-without-eta", "a date, or a precondition plus its expected date");
     if (Number.isFinite(now) && ask.eta_at < now - 60_000) return refuse("later-without-eta", "the ETA is in the past");

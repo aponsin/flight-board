@@ -25,6 +25,14 @@ test("a Later without an ETA is refused; with a future date it passes", () => {
   assert.equal(askRefusal({ ...later, eta_at: NOW - 3600_000 }, NOW).rule, "later-without-eta");
 });
 
+test("a Later ask may carry steps and expect (#C747); a malformed step or an empty expect is refused", () => {
+  const later = { type: "Later", title: "t", asked_by: "Manager", text: "do it", eta_at: NOW + 3600_000 };
+  assert.equal(askRefusal({ ...later, steps: ["one", { text: "two", cmd: "ls" }], expect: "it works" }, NOW), null);
+  assert.equal(askRefusal({ ...later, steps: [{ text: "x", note: "y" }] }, NOW).rule, "steps-shape");
+  assert.equal(askRefusal({ ...later, steps: "one" }, NOW).rule, "ask-missing-part");
+  assert.equal(askRefusal({ ...later, expect: " " }, NOW).rule, "ask-missing-part");
+});
+
 test("a session cannot type status or phase; the probe can write evidence", () => {
   assert.equal(cardWriteRefusal({ id: "x", status: "done" }).rule, "only-probe-writes-status");
   assert.equal(cardWriteRefusal({ id: "x", phase: "live" }).rule, "only-probe-writes-status");

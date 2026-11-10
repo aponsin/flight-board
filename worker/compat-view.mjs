@@ -34,7 +34,7 @@ export function waitingDoc(a) {
     case "Action": doc.text = a.title; doc.steps = b.steps; doc.expect = b.expect; break;
     case "Terminal": doc.text = a.title; doc.steps = (b.commands ?? []).map((cmd) => ({ text: "Run this in Terminal:", cmd })); break;
     case "SessionStart": doc.text = a.title; doc.steps = [{ text: "Start the session and type:", cmd: b.words }]; break;
-    case "Later": doc.text = b.text ?? a.title; doc.eta = num(a.eta_at); doc.etaWhen = a.eta_precondition ?? undefined; break;
+    case "Later": doc.text = b.text ?? a.title; doc.eta = num(a.eta_at); doc.etaWhen = a.eta_precondition ?? undefined; doc.steps = b.steps; doc.expect = b.expect; break;
     case "Approval": doc.text = a.title; break;
     case "Answer": doc.question = b.question; doc.text = a.title; break;
     default: doc.text = b.text ?? a.title;
