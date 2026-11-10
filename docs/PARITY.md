@@ -18,7 +18,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | "⚠ Manager missed" after Live now | hidden on the store: a typed-field gap (row 37, "Mostly deleted with the typed fields") | |
 | Clock, "Studio checked N s" | same | probe reading via the shim |
 | "Board data behind, reloading" | gone: "Delete: row 2's 'fetched N s ago' covers it once there is one store" (row 3) | |
-| Manager chip | not yet (#C728): the whole chip, "Manager not listening" and "seen your HH:MM message · answer coming" alike, is hidden on the store. It reads the old wake watch's heartbeat and seen time (`probe.board.wakeAliveAt`, `wakeSeenAt`), not the store's wake, so it was red on every load; it comes back when it reads `wakeState` | `wakeState` |
+| Manager chip | same (#C730): on the store it reads the store's own wake, not the old wake watch's keys. "Manager listening" while the probe asks the store; red "Manager not listening · <the store's fix>" when the probe stopped asking (3 min), a send failed, or a batch went untaken; "seen your HH:MM message · answer coming" from Manager's last typed read. Hidden until the probe has asked the store once (as the old page hid it for a probe without the keys). The "Collector has not published" red is not drawn on the store (the Collector is gone, row 38) | `wakeState`, `wake.seen_at` (compat `probe.board.wake`) |
 | Safe to restart, "Don't restart: shipping" | same (data in; drawn from real readings after the deploy) | probe `agents`, `ship` (evidence keys `agents`, `ship`) |
 | Board vX · page abc | same | the build's stamp |
 | "Manager stuck on …" | not yet: B4 (refusals in the old shape, with the "You:" action) | `refusals` |
@@ -50,7 +50,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Reply box per kind (A/B, OK/Change, Ack, Done/Help) | same for an option, Ack and Done; not yet: B2 for a note, "Something else", files | `POST /api/compat/write` |
 | Sent line "You chose …" | same for the choice; not yet: B2 for the note and files | |
 | "Manager missed" on an ask | hidden on the store until B4 (Manager, 2026-11-09): its fields are not in the store yet | |
-| Thread messages, "seen HH:MM" | partly: the messages are the same (B1): they come with their kind, resolved flag and files, and the owner's reply, Ack and Close are written as messages. The per-message "seen HH:MM" ticks read the old wake watch's seen time (`probe.board.wakeSeenAt`), so they show only while the probe still carries it; they read `wakeState` with the Manager chip (#C728 follow-up) | compat `messages`, `POST /api/compat/write` |
+| Thread messages, "seen HH:MM" | same: the messages (B1) come with their kind, resolved flag and files, and the owner's reply, Ack and Close are written as messages. The per-message "seen HH:MM" ticks read Manager's last typed read of the store (`wake.seen_at`, #C730), not the old wake watch's seen time | compat `messages`, `probe.board.wake`, `POST /api/compat/write` |
 | Thread buttons: Close, options, Rename | same (B1): Close and Ack are resolving messages (an ask is also closed), a reply on a closed ask reopens it, Rename sets the title; an agent's message does not offer options yet (the `options` column is stored, no tool writes it) | compat `threads` |
 | Later tab | same | compat `waiting` (Later) |
 | With the team, sub-step line | same for threads (B1); the sub-step line: B3a | |

@@ -98,6 +98,10 @@ export function probeDoc(view) {
   // stuck and ship are written only while they hold (the probe leaves the key out when nothing is stuck or no candidate is pushed),
   // so the store keeps the last value: it counts only while the probe keeps rewriting it (a reading older than 3 minutes is gone).
   for (const k of ["stuck", "ship"]) if (ev[k] && view.now - ev[k].readAt <= STALE_AFTER_MS) out[k] = ev[k].value;
+  // #C730: the store's own wake (row 4) for the Manager chip and the "seen" ticks, in place of the old wake watch's
+  // wakeAliveAt / wakeSeenAt. askAge is left out until the probe has asked the store once; seenAt is Manager's last typed read.
+  const w = view.wakeState;
+  if (w && typeof w === "object") out.board = { ...out.board, wake: prune({ state: w.state, reason: w.reason, fix: w.fix, askAge: num(w.askAge), seenAt: view.wake?.seen_at > 0 ? view.wake.seen_at : undefined }) };
   return out;
 }
 

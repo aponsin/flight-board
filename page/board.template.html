@@ -2737,10 +2737,17 @@ const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHA
 const WAKE_ALIVE_MAX=3*60e3,CARDS_STALE=5*60e3,EVIDENCE_STALE=10*60e3,QUIET_MAX_MIN=75;
 function ownerUnanswered(){const own=state.messages.filter(m=>m&&m.from===OWNER&&isT(m.at)).sort((a,b)=>b.at-a.at)[0];
   return own&&!state.messages.some(m=>m&&m.thread===own.thread&&m.from!==OWNER&&isT(m.at)&&m.at>own.at)?own:null}
-// #C728: on the store the chip is "not yet" (PARITY: B1); it read the old wake watch's file and showed red on every load.
-function managerChip(now=Date.now()){if(STORE||!liveOn(now)||!Object.hasOwn(probe.board,"wakeAliveAt"))return null;
-  const b=probe.board,alive=isT(b.wakeAliveAt)?b.wakeAliveAt:null;
-  if(alive==null||b.at-alive>WAKE_ALIVE_MAX)return {cls:"bad",text:alive==null?"Manager not listening · say wake up the team":`Manager not listening since ${hhmm(alive)} · say wake up the team`};
+// #C730: on the store the chip and the ticks read the store's own wake (probe.board.wake, worker/compat-view.mjs), not the old
+// wake watch's wakeAliveAt / wakeSeenAt (#C728 hid the chip: those were never there, so it was red on every load). Red with the
+// store's fix when its wake says so; hidden until the probe has asked the store once, as an old probe without the keys hid it.
+const storeWake=()=>{const w=probe&&probe.board&&probe.board.wake;return w&&typeof w==="object"&&Number.isFinite(w.askAge)?w:null};
+const wakeSeen=()=>{const s=STORE?(storeWake()||{}).seenAt:probe.board.wakeSeenAt;return isT(s)?s:null};
+function managerChip(now=Date.now()){if(!liveOn(now))return null;const b=probe.board;
+  if(STORE){const w=storeWake();if(!w)return null;
+    if(w.state==="red")return {cls:"bad",text:`Manager not listening · ${typeof w.fix==="string"&&w.fix?w.fix:"say wake up the team"}`}}
+  else{if(!Object.hasOwn(b,"wakeAliveAt"))return null;
+    const alive=isT(b.wakeAliveAt)?b.wakeAliveAt:null;
+    if(alive==null||b.at-alive>WAKE_ALIVE_MAX)return {cls:"bad",text:alive==null?"Manager not listening · say wake up the team":`Manager not listening since ${hhmm(alive)} · say wake up the team`}}
   // #C591: the probe's last full read of the repositories (board.cardsCheckedAt); red 5 minutes after it. A probe from
   // before it carries no key, and the chip says nothing of cards.
   const hasCards=Object.hasOwn(b,"cardsCheckedAt"),cc=isT(b.cardsCheckedAt)?b.cardsCheckedAt:null;
@@ -2753,11 +2760,13 @@ function managerChip(now=Date.now()){if(STORE||!liveOn(now)||!Object.hasOwn(prob
   // the Collector's own schedule (board.quietMin, 8 am to 8 pm Mountain time, worked out by the probe), so a night is no outage. A probe
   // from before it carries neither key, and the chip says nothing of it.
   const qm=b.quietMin;
-  if(Number.isInteger(qm)&&qm>QUIET_MAX_MIN)return {cls:"bad",text:isT(b.derivedAt)?`Collector has not published since ${hhmm(b.derivedAt)}`:"Collector has not published"};
+  // #C730: not on the store, where the Collector is gone (PARITY row "Check button": "Delete with the Collector").
+  if(!STORE&&Number.isInteger(qm)&&qm>QUIET_MAX_MIN)return {cls:"bad",text:isT(b.derivedAt)?`Collector has not published since ${hhmm(b.derivedAt)}`:"Collector has not published"};
   // #C606: the chip says Manager's state alone; the Studio's check is the header stamp's "Studio checked …", so the probe's
   // reading is shown once, not here too.
   const open=ownerUnanswered();
-  if(open&&isT(b.wakeSeenAt)&&b.wakeSeenAt>=open.at)return {cls:"warn",text:`seen your ${hhmm(open.at)} message · answer coming`};
+  const seen=wakeSeen();
+  if(open&&seen!=null&&seen>=open.at)return {cls:"warn",text:`seen your ${hhmm(open.at)} message · answer coming`};
   return {cls:"ok",text:"Manager listening"}}
 // #C609: "Board v3.45 · page c647307" under the title. The page's commit and the pack's name are stamped when the page is built
 // (scripts/build-page.mjs; the pack name only when Release passes BOARD_PACK); with no pack name the board's own part is the
@@ -2774,9 +2783,9 @@ function renderBoardVer(){const el=$("boardver");if(!el)return;const t=boardVerT
 function renderManagerChip(){const el=$("mgrchip");if(!el)return;const c=managerChip();el.hidden=!c;if(c){el.className="mgr-chip "+c.cls;el.textContent=c.text}}
 // Under the owner's message: "seen" once the watch has handled a wake at or after it; the time is the wake's, shown on the
 // newest such message (the older ones are before it, with no time of their own).
-function seenTick(m,now=Date.now()){if(m.from!==OWNER||!liveOn(now)||!isT(probe.board.wakeSeenAt)||!isT(m.at)||m.at>probe.board.wakeSeenAt)return "";
-  const newest=!state.messages.some(x=>x&&x.from===OWNER&&isT(x.at)&&x.at>m.at&&x.at<=probe.board.wakeSeenAt);
-  return `<div class="t-seen">${newest?"seen "+hhmm(probe.board.wakeSeenAt):"seen"}</div>`}
+function seenTick(m,now=Date.now()){const seen=liveOn(now)?wakeSeen():null;if(m.from!==OWNER||seen==null||!isT(m.at)||m.at>seen)return "";
+  const newest=!state.messages.some(x=>x&&x.from===OWNER&&isT(x.at)&&x.at>m.at&&x.at<=seen);
+  return `<div class="t-seen">${newest?"seen "+hhmm(seen):"seen"}</div>`}
 // Data behind (#C452, the owner at 23:44Z: "Needs you 0" and "No initiatives in flight" while the db held both, the
 // header "live · 1 min": the db's stream had gone quiet with no error). The live state carries the db's last write
 // (board.lastWriteAt, the gate's journal); the page holds data up to dbHeld(), its newest doc `at` or its last receipt,
