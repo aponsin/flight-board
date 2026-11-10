@@ -170,7 +170,19 @@ test("the done-test hold (B4b, Designer's gap 1): check_at is written, drawn as 
   assert.equal((await get()).checkAt, 1_791_000_000_000);
   assert.equal((await tool("manager", "card_update", { id: "card-h", check_at: null })).ok, true);
   assert.equal((await get()).checkAt, undefined);
-  for (const bad of [0, 5, 4_200_000_000_000, 1.5, "1790000000000"]) { const r = await tool("manager", "card_update", { id: "card-h", check_at: bad }); assert.equal(r.refused?.rule, "card-check", String(bad)); }
+  for (const bad of [0, 5, 4_200_000_000_000, 1.5, 1_790_000_000_000.5, "1790000000000"]) { const r = await tool("manager", "card_update", { id: "card-h", check_at: bad }); assert.equal(r.refused?.rule, "card-check", String(bad)); }
+});
+
+test("what a card's expected version is worked out from (B4b): repo, batch and bump are card words, drawn on the initiative, and bad ones are refused", async () => {
+  const { tool, compat } = make();
+  assert.equal((await tool("manager", "card_create", { id: "card-v", title: "V", repo: "elsewhere", batch: "pair", bump: "minor" })).ok, true);
+  const get = async () => (await compat()).collections.initiatives.find((x) => x.id === "card-v");
+  const d = await get(); assert.equal(d.repo, "elsewhere"); assert.equal(d.batch, "pair"); assert.equal(d.bump, "minor");
+  assert.equal((await tool("manager", "card_update", { id: "card-v", repo: null, batch: null, bump: "patch" })).ok, true);
+  const after = await get(); assert.equal(after.repo, undefined); assert.equal(after.batch, undefined); assert.equal(after.bump, "patch");
+  for (const [f, rule] of [[{ repo: "Elsewhere" }, "card-repo"], [{ repo: "x".repeat(41) }, "card-repo"], [{ batch: "a b" }, "card-batch"], [{ batch: 3 }, "card-batch"], [{ bump: "huge" }, "card-bump"]]) {
+    const r = await tool("manager", "card_update", { id: "card-v", ...f }); assert.equal(r.refused?.rule, rule, JSON.stringify(f));
+  }
 });
 
 test("a malformed step is refused when the ask is made", async () => {

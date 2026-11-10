@@ -70,7 +70,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Status pill | same where the probe has evidence; not yet: B3a for the rest | `derived/all.cards` |
 | Check button, "checked by the Collector" | gone: "Delete with the Collector" (row 38) | |
 | Source-disagreement flag | gone: "Delete: one source, nothing to flag" (row 28) | |
-| ETA box | partly: the probe's readyAt, firm and waitingFor are in (B4b part 1, #C731); the expected version and the release times follow in part 2 | `derived/all.cards` |
+| ETA box | partly: the probe's readyAt, firm and waitingFor (B4b part 1, #C731) and, with part 2, the expected version (`expected`, from collector/expected.mjs, with the card words repo, batch and bump, migration 0016) and `releaseTimes` (the release log's CI times, the probe's `releases` key) are in; still to come: shippedAt, abandonedAt, workSeen, reviews and the red lines | `derived/all.cards`, `derived/all.releaseTimes` |
 | Held for its done test ("Live, still open") | same where the lead sets it: card word check_at (B4b part 1, #C731), drawn as checkAt; the page already honours it | `cards` |
 | Version note, "Next: vX" | not yet: B3a, B4 | |
 | Track: lit phase, skips | same | `derived/all.cards` |

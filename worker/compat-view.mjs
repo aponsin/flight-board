@@ -6,7 +6,8 @@
 // readings and the live version), meta/live, and the probe document. Left out until their stage: messages, threads, steps,
 // events, usage, plan, timings, ctx*, checkRequests, threadPings, pingThreads, agentPrs, approvals.
 
-import { STALE_AFTER_MS } from "./board-rules.mjs";
+import { STALE_AFTER_MS, PHASES } from "./board-rules.mjs";
+import { expectedVersions } from "../collector/expected.mjs";
 import { applyFiles } from "./file-store.mjs";
 import { applyShips } from "./compat-ships.mjs";
 import { applyThreads } from "./compat-threads.mjs";
@@ -69,6 +70,7 @@ export function initiativeDoc(c, ev) {
     queuePos: Number.isInteger(c.queue_pos) && c.queue_pos > 0 ? c.queue_pos : undefined,
     // #C731 B4b: the done-test hold. A card with a checkAt is not closed by the page on the live reading ("Live, still open").
     checkAt: Number.isInteger(c.check_at) && c.check_at > 0 ? c.check_at : undefined,
+    repo: c.repo, batch: c.batch, bump: c.bump,
   });
 }
 
@@ -88,7 +90,18 @@ export function derivedDoc(view) {
       readyAt: num(v.readyAt), firm: v.firm === false ? false : undefined, waitingFor: Array.isArray(v.waitingFor) && v.waitingFor.length ? v.waitingFor : undefined });
   }
   const live = view.live?.state === "live" ? { version: String(view.live.version).replace(/^v/, ""), at: view.now - (view.live.age ?? 0) } : undefined;
-  return prune({ id: "all", at: view.now, cards, times: {}, live });
+  // #C731 B4b: each card's expected version, from collector/expected.mjs (the Collector's own rule, never written by hand).
+  // A card with a repo of its own is not in the team's queue (the config's repos are the names the cards carry); the ship candidate
+  // the probe reads names the run on now, so a shipping card's version is that candidate's.
+  const run = view.evidence?.ship?.value, runOf = {};
+  if (run && typeof run.version === "string") for (const [id, c] of Object.entries(cards)) if (c.shipping) runOf[id] = `build/ship-v${run.version.replace(/^v/, "")}`;
+  const own = (view.cards ?? []).filter((c) => !c.dropped).map((c) => ({ id: c.id, repo: c.repo ?? undefined, batch: c.batch ?? undefined, bump: c.bump ?? undefined }));
+  const config = { phases: PHASES.map((p) => [p]), collector: { shipPhase: "ship", buildPhase: "build", lanePhases: ["build", "test"], repos: [...new Set(own.map((c) => c.repo).filter(Boolean))].map((name) => ({ name })) } };
+  let expected = {};
+  try { expected = expectedVersions({ cards: own, derived: cards, live: live ? { version: live.version } : {}, runOf, config }); } catch { expected = {}; }
+  for (const [id, x] of Object.entries(expected)) if (cards[id]) cards[id].expected = x;
+  const rel = view.evidence?.releases?.value;
+  return prune({ id: "all", at: view.now, cards, times: {}, live, releaseTimes: rel && typeof rel === "object" && !Array.isArray(rel) && Object.keys(rel).length ? rel : undefined });
 }
 
 // The probe document the old `board_state` tool returned, from the evidence keys.

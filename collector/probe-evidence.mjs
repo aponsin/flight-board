@@ -32,6 +32,8 @@ export function evidenceWrites(state, job) {
   // pushed) read these two; a state without them (a probe before them, or nothing stuck and no candidate) writes nothing.
   if (plain(state.stuck)) out.push({ key: "stuck", value: state.stuck });
   if (plain(state.ship)) out.push({ key: "ship", value: state.ship });
+  // #C731 B4b: the release log's CI times by version, for the page's ETA box (derived/all's releaseTimes).
+  if (plain(state.releases)) out.push({ key: "releases", value: state.releases });
   return out;
 }
 

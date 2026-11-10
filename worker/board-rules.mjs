@@ -151,7 +151,7 @@ export function listWriteRefusal(fields, { create = false } = {}) {
 }
 
 // Card words: only these fields are typed; status, phase, evidence and numbers are never written by a session.
-const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at"]);
+const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump"]);
 export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
 const CARD_FORBIDDEN = new Set(["status", "phase", "num", "live_version", "signed", "on_main", "ci", "evidence"]);
 
@@ -170,6 +170,9 @@ export function cardWriteRefusal(fields, evidence) {
   if (fields.depends_on !== undefined && fields.depends_on !== null && !(Array.isArray(fields.depends_on) && fields.depends_on.length <= 8 && fields.depends_on.every((c) => typeof c === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(c)) && new Set(fields.depends_on).size === fields.depends_on.length)) return refuse("card-depends", "depends_on is a list of up to 8 different card ids");
   if (fields.issues !== undefined && fields.issues !== null && !(typeof fields.issues === "object" && !Array.isArray(fields.issues) && Object.entries(fields.issues).every(([k, v]) => ISSUE_KINDS.includes(k) && Number.isInteger(v) && v >= 0 && v <= 99))) return refuse("card-issues", `issues is counts from 0 to 99 for ${ISSUE_KINDS.join(", ")}`);
   if (fields.queue_pos !== undefined && fields.queue_pos !== null && !(Number.isInteger(fields.queue_pos) && fields.queue_pos >= 1 && fields.queue_pos <= 999)) return refuse("card-queue", "queue_pos is a whole number from 1 to 999");
+  // #C731 B4b: the repository a card lives in, the batch it ships with, and its bump: what its expected version is worked out from.
+  for (const f of ["repo", "batch"]) if (fields[f] !== undefined && fields[f] !== null && !(typeof fields[f] === "string" && /^[a-z0-9][a-z0-9-]{0,39}$/.test(fields[f]))) return refuse(`card-${f}`, `${f} is lower case letters, digits and -, up to 40`);
+  if (fields.bump !== undefined && fields.bump !== null && !["patch", "minor", "major"].includes(fields.bump)) return refuse("card-bump", "bump is patch, minor or major");
   // #C731 B4b: the done-test hold, a time in ms (2020 to 2100), or null to lift it.
   if (fields.check_at !== undefined && fields.check_at !== null && !(Number.isInteger(fields.check_at) && fields.check_at >= 1577836800000 && fields.check_at <= 4102444800000)) return refuse("card-check", "check_at is a time in milliseconds, or null to lift the hold");
   if ((fields.blocked_reason !== undefined || fields.paused === 1 || fields.paused === true) && !present(fields.next_note)) {

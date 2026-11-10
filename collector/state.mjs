@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS } from "./state-schema.mjs";
+import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { PUBLISHED_FILE } from "./export.mjs";
 import { journalCards, readJournal } from "../gate/gate.mjs";
@@ -656,8 +656,24 @@ export function usageTile({ scriptText = null, dir, roster, now, run, quota = 0,
 }
 
 // The state that leaves, checked against the allowlist before it does.
-export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, usage = null, ship = null, published = null }) {
-  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }), ...(published ? { derivedAt: published.at, quietMin: published.quietMin } : {}) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}), ...(ship ? { ship } : {}) };
+// #C731 B4b: the release log's CI times by version (a copy of collector/facts.mjs's releaseTimes, which this pinned file cannot import):
+// each row of the log (collector.releaseTimes, read on main) that names a version and both run times, the newest MAX_RELEASES kept.
+export function releaseTimesOf(git, ref, path) {
+  if (typeof path !== "string" || !path || path.startsWith("-") || path.split("/").includes("..")) return null;
+  let text = "";
+  try { text = git(["show", `${ref}:${path}`]); } catch { return null; }
+  const rows = [];
+  for (const line of String(text).split("\n").slice(-5000)) {
+    const cells = line.split("|").map((s) => s.trim());
+    const v = /^v?(\d{1,4}\.\d{1,4}\.\d{1,4})$/.exec(cells[2] ?? "");
+    const m = /(?:candidate|dev) run (\d{1,6}(?:\.\d{1,3})?) min, main run (\d{1,6}(?:\.\d{1,3})?) min/.exec(line);
+    if (v && m) rows.push([v[1], { testsMin: Number(m[1]), deployMin: Number(m[2]) }]);
+  }
+  const out = Object.fromEntries(rows.slice(-MAX_RELEASES));
+  return Object.keys(out).length ? out : null;
+}
+export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, usage = null, ship = null, releases = null, published = null }) {
+  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }), ...(published ? { derivedAt: published.at, quietMin: published.quietMin } : {}) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}), ...(ship ? { ship } : {}), ...(releases ? { releases } : {}) };
   const errs = stateErrors(s);
   if (errs.length) throw new Error(`the state doesn't fit the plan (${errs.length} problem(s), first: ${errs[0]})`);
   return pickState(s);
@@ -837,7 +853,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let ship = null;
     const team = repos[""];
     if (team && c.candidatePattern) { try { ship = shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ok(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci }); } catch { /* no reading: the badge stays as the cards say */ } }
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, usage: spend.tile, ship, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
+    // #C731 B4b: the release log's CI times (the team's repository only, as the ship runs are).
+    let releases = null;
+    if (team && c.releaseTimes) { try { releases = releaseTimesOf(team.git, `${team.remote}/${team.main}`, c.releaseTimes); } catch { /* no reading */ } }
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, usage: spend.tile, ship, releases, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
     writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
     writeAtomic(wakePath, JSON.stringify({ at: now, roles: wakeAsk.roles, missing: missingAsk.roles }));

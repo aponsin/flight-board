@@ -97,7 +97,11 @@ const AGENT = {
 //   ship (#C679, optional): { version, ci, at } a ship candidate branch (collector.candidatePattern, "build/ship-v1.2.3") is pushed and not
 //          on main yet: version its number or null, ci its CI run (none | queued | running | passed), at the branch tip's time.
 //          The page's "Safe to restart" badge is never green while it is there. A probe before it leaves the key out.
-export const EXTRA_KEYS = ["ctx", "stuck", "usage", "ship"];
+//   releases (#C731 B4b, optional): { "x.y.z": { testsMin, deployMin } } the newest versions' CI times from the release log on main
+//          (collector.releaseTimes), minutes as numbers, at most MAX_RELEASES versions; the page's ETA box reads them.
+export const EXTRA_KEYS = ["ctx", "stuck", "usage", "ship", "releases"];
+export const MAX_RELEASES = 100;
+const RELEASE = { testsMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000, deployMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000 };
 export const SHIP_CI = ["none", "queued", "running", "passed"];
 export const STUCK_KINDS = ["step", "user"], USAGE_LEVELS = ["ok", "amber", "red"], MAX_TOP = 5;
 const whole = (lo, hi) => (v) => Number.isInteger(v) && v >= lo && v <= hi;
@@ -132,6 +136,14 @@ export function stateErrors(s) {
     }
   }
   if (Object.hasOwn(s, "ship")) fields("ship", s.ship, SHIP, errs);
+  if (Object.hasOwn(s, "releases")) {
+    if (!plain(s.releases)) errs.push("releases: not an object");
+    else {
+      const keys = Object.keys(s.releases);
+      if (keys.length > MAX_RELEASES) errs.push(`releases: more than ${MAX_RELEASES}`);
+      for (const k of keys.slice(0, MAX_RELEASES)) { if (!/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(k)) { errs.push("releases: a key that isn't a version"); continue; } fields(`releases.${k}`, s.releases[k], RELEASE, errs); }
+    }
+  }
   if (Object.hasOwn(s, "usage")) {
     fields("usage", s.usage, USAGE, errs);
     const top = plain(s.usage) && Array.isArray(s.usage.top) ? s.usage.top : [];
@@ -211,6 +223,7 @@ export function pickState(s) {
   if (Object.hasOwn(s, "ctx")) out.ctx = map(s.ctx, CTX);
   if (Object.hasOwn(s, "stuck")) out.stuck = map(s.stuck, STUCK);
   if (Object.hasOwn(s, "ship")) out.ship = take(s.ship, SHIP);
+  if (Object.hasOwn(s, "releases")) out.releases = Object.fromEntries(Object.keys(s.releases).sort().map((k) => [k, take(s.releases[k], RELEASE)]));
   if (Object.hasOwn(s, "usage")) out.usage = { ...take(s.usage, USAGE), top: s.usage.top.map((t) => take(t, USAGE_TOP)) };
   return out;
 }

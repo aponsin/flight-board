@@ -29,6 +29,9 @@ export const changeKey = (s) => JSON.stringify([
   s.usage ? [s.usage.weekPct, s.usage.pace, s.usage.level, s.usage.asOf ?? null, s.usage.top.map((t) => [t.src, t.pct])] : null,
   // #C679: a ship candidate pushed and not on main (the restart badge): stored the minute it appears, changes or goes.
   s.ship ? [s.ship.version, s.ship.ci] : null,
+  // #C731 B4b: the release log's CI times, version by version (at most 100 small rows): a new release or a changed time is a
+  // change, whereas the count stays at the cap once the log is long.
+  s.releases ? Object.entries(s.releases).map(([v, r]) => [v, r.testsMin, r.deployMin]) : null,
 ]);
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 export const TOOL = {
