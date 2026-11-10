@@ -19,7 +19,7 @@ export function makePair({ name, card, what, signed, deployOk, treeOk }) {
   if (!/^[0-9a-f]{40}$/.test(String(signed))) throw new Error("signed: a full 40-hex sha");
   for (const [k, v] of Object.entries({ card, what, deployOk, treeOk })) if (!plain(v)) throw new Error(`${k}: a short plain sentence (no quotes, backslashes, newlines, $ or @@)`);
   const file = { deploy: `board-store-deploy-${name}.mjs`, tree: `board-store-tree-${name}.mjs` }, from = `board-store-tree-${name}.from`;
-  const fill = (text, extra) => Object.entries({ CARD: card, WHAT: what, SIGNED: signed, SHORT: signed.slice(0, 8), FROM: from, ...extra }).reduce((t, [k, v]) => t.split(`@@${k}@@`).join(v), text);
+  const fill = (text, extra) => Object.entries({ CARD: card, WHAT: what, SIGNED: signed, SHORT: signed.slice(0, 8), FROM: from, DEPLOYDONE: `board-store-deploy-${name}.done`, ...extra }).reduce((t, [k, v]) => t.split(`@@${k}@@`).join(v), text);
   const deploy = fill(readFileSync(join(HERE, "deploy.template.mjs"), "utf8"), { SUCCESS: deployOk, FILE: file.deploy });
   const tree = fill(readFileSync(join(HERE, "tree.template.mjs"), "utf8"), { SUCCESS: treeOk, FILE: file.tree });
   if ((deploy + tree).split("@@GUARD-START@@").join("").split("@@GUARD-END@@").join("").includes("@@")) throw new Error("a placeholder was left");

@@ -5,12 +5,12 @@
 // the Worker back behind migrations already applied. It works whether or not the earlier deltas ran: step (2) applies only the D1
 // migrations not yet applied (additive). It works in its OWN checkout (board-store-pa), never in board-store-v4, which the three launchd
 // jobs run from. Then: (1) it builds the old board page from the team's board.config.json into worker/store-assets (git-ignored); (2)
-// applies the unapplied migrations; (3) redeploys the Worker (no route change, no new secret). Wrangler is pinned. It reads no secret and
+// applies the unapplied migrations; (3) redeploys the Worker with BUILD_SHA set to the signed commit (no route change, no new secret), then writes @@DEPLOYDONE@@ beside this file. Wrangler is pinned. It reads no secret and
 // writes none. It prints one success or failure line. It does NOT import anything and touches no data.
 // Undo: the Worker's previous version stays in Cloudflare: `npx wrangler@4.150.0 rollback --config <board-store-pa>/worker/wrangler.board.toml`
 // (new columns stay, empty and unused by the older code).
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -80,11 +80,15 @@ function main() {
   const mig = spawnSync("npx", ["--yes", WRANGLER, "d1", "migrations", "apply", "flight-board-store", "--remote", "--config", CONFIG], { stdio: "inherit" });
   if (mig.status !== 0) fail(`migration exited ${mig.status ?? mig.error?.message}`);
 
-  const dep = spawnSync("npx", ["--yes", WRANGLER, "deploy", "--config", CONFIG], { encoding: "utf8" });
+  // #C737: the Worker is told which commit it was deployed from (BUILD_SHA); the probe reads it to decide when a board card is live.
+  const dep = spawnSync("npx", ["--yes", WRANGLER, "deploy", "--config", CONFIG, "--var", `BUILD_SHA:${SIGNED}`], { encoding: "utf8" });
   const said = (dep.stdout ?? "") + (dep.stderr ?? "") + (dep.error?.message ?? "");
   if (dep.status !== 0) fail(`deploy exited ${dep.status}: ${said.slice(-200).replace(/\s+/g, " ")}`);
   const id = /Current Version ID:\s*([0-9a-f-]{36})/i.exec(said)?.[1];
   if (!id) fail("deployed, but no version id was printed");
+  // #C737: the tree step of this pair refuses to move the tree until this file says the Worker carries the signed commit, so the new probe
+  // code never runs against a Worker that reports nothing.
+  writeFileSync(`${HERE}/@@DEPLOYDONE@@`, `${SIGNED}\n`);
   console.log(`DEPLOY OK: ${SUCCESS.replace("<version>", id).replace("<sha>", SIGNED.slice(0, 8))}`);
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();

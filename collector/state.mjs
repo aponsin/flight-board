@@ -441,6 +441,22 @@ export function seenPhases(config, facts) {
 // installed; any other run (a checkout, another install root) reads the link as before. null when nothing is installed.
 // The link's target is compared as written, so it must be absolute, as swapLink writes it: a pack that made the link with
 // a relative `ln -s` would read as the link's sha (Checker).
+// #C737: on the store a board-repository card is live only when its commit is inside BOTH the commit the store Worker was deployed from and
+// the commit of the tree the probe runs from (the launchd jobs'); the installed link is not read for it. The one sha both contain: the older
+// of the two when one is an ancestor of the other. Either unknown (not 40 hex), not in this repository, or the two on different lines: null,
+// and the card stays at ship (never live).
+export function deployedSha(git, worker, tree) {
+  const hex = (v) => /^[0-9a-f]{40}$/.test(String(v ?? ""));
+  if (!hex(worker) || !hex(tree)) return null;
+  try {
+    for (const s of [worker, tree]) git(["cat-file", "-e", `${s}^{commit}`]);
+    if (worker === tree) return worker;
+    const behind = (a, b) => { try { git(["merge-base", "--is-ancestor", a, b]); return true; } catch { return false; } };
+    if (behind(worker, tree)) return worker;
+    if (behind(tree, worker)) return tree;
+  } catch { /* not in this repository */ }
+  return null;
+}
 export function installedSha(link, code = CODE, readlink = readlinkSync) {
   let target = null;
   try { target = readlink(link); } catch { /* no link: nothing installed */ }
@@ -826,7 +842,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   }
   for (const x of c.repos) {
     const installed = installedSha(home(x.installedLink ?? ""));
-    repos[x.name] = { ...repoAt(home(x.path), x.remote ?? "origin", x.mainBranch ?? "main", x.notes), gh: null, live: installed, versionPattern: null };
+    const at = repoAt(home(x.path), x.remote ?? "origin", x.mainBranch ?? "main", x.notes);
+    // #C737: the evidence job of the store sets FB_DEPLOY_RULE; the old state job does not, and keeps reading the installed link.
+    const live = process.env.FB_DEPLOY_RULE === "1" ? deployedSha(at.git, process.env.FB_DEPLOY_WORKER, process.env.FB_DEPLOY_TREE) : installed;
+    repos[x.name] = { ...at, gh: null, live, versionPattern: null };
   }
   // #C642: what the Collector's last run saved is merged into the mirror first, so this minute reads the board as of that run. The merge
   // and the derive after it are collect.mjs --probe-step, a child process (the collector's code is the release's, not this pinned file's).

@@ -1,6 +1,6 @@
 // Run by the owner in Terminal (@@CARD@@), the DELTA tree step: `node @@FILE@@ update` or `... back`. Made from scripts/pair/tree.template.mjs by
 // scripts/pair/make-pair.mjs. FORWARD ONLY (#C734).
-// update: moves the probe's code tree (board-store-v4, which the three launchd jobs run from: evidence, usage, ask) to exactly @@SHORT@@. That
+// update: first checks the deploy of this pair has run (@@DEPLOYDONE@@ names the signed commit); moves the probe's code tree (board-store-v4, which the three launchd jobs run from: evidence, usage, ask) to exactly @@SHORT@@. That
 //         commit has to be ON main (an ancestor of the fetched main; main may be ahead of it). It is refused when the tree is not behind
 //         it (an older pair run after a newer one), when the tree is already there, or when it has local changes. It writes down which
 //         commit it started from in @@FROM@@ (outside the tree, so the tree stays clean), then moves it.
@@ -38,7 +38,9 @@ export function forwardOnly(git, signed, ref = "main") {
 // @@GUARD-END@@
 
 // update or back on the tree at `tree`, remembering the start in `fromFile`. { ok, why, to }; nothing is changed unless ok.
-export function treeStep({ mode, tree, fromFile, signed = NEW, ref = REF }) {
+// deployDone (update only, when given): the file the pair's deploy writes once the Worker carries the signed commit; the tree does not move
+// before it says so (#C737), so the probe code that reads the Worker's build never runs against a Worker that reports nothing.
+export function treeStep({ mode, tree, fromFile, signed = NEW, ref = REF, deployDone = null }) {
   const git = (...a) => spawnSync("git", ["-C", tree, ...a], { encoding: "utf8" });
   if (!["update", "back"].includes(mode)) return { ok: false, why: "say update or back" };
   const head = String(git("rev-parse", "HEAD").stdout).trim();
@@ -46,6 +48,7 @@ export function treeStep({ mode, tree, fromFile, signed = NEW, ref = REF }) {
   let to;
   if (mode === "update") {
     if (head === signed) return { ok: false, why: `the tree is already at ${signed.slice(0, 8)}; nothing was changed` };
+    if (deployDone !== null && (!existsSync(deployDone) || readFileSync(deployDone, "utf8").trim() !== signed)) return { ok: false, why: `the deploy of this pair has not run (${deployDone.split("/").pop()} is missing or names another commit): run the deploy first; nothing was changed` };
     const g = forwardOnly(git, signed, ref);
     if (!g.ok) return { ok: false, why: `${g.why}; nothing was changed` };
     if (g.current !== head) return { ok: false, why: "the tree has no commit checked out; nothing was changed" };
@@ -70,7 +73,7 @@ function main() {
   const TREE = `${HERE}/board-store-v4`;
   const FROM_FILE = `${HERE}/@@FROM@@`;
   const mode = process.argv[2];
-  const r = treeStep({ mode, tree: TREE, fromFile: FROM_FILE });
+  const r = treeStep({ mode, tree: TREE, fromFile: FROM_FILE, deployDone: `${HERE}/@@DEPLOYDONE@@` });
   if (!r.ok) { console.log(`TREE FAILED: ${r.why}. Paste this line to Manager.`); process.exit(1); }
   console.log(`TREE OK: board-store-v4 is at ${r.to.slice(0, 7)}${mode === "update" ? ` (${SUCCESS}). Undo: node @@FILE@@ back` : " (where it started)"}.`);
 }

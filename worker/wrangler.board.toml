@@ -31,3 +31,5 @@ html_handling = "none"
 
 [vars]
 BOARD_VERSION = ""
+# #C737: the commit the Worker was deployed from; the pair's deploy sets it (wrangler deploy --var BUILD_SHA:<signed commit>).
+BUILD_SHA = ""

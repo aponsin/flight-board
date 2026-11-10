@@ -38,7 +38,10 @@ test("the job's default build runs the state child with gh's folders on a launch
     assert.equal(child.cmd, process.execPath); assert.ok(child.args.includes("--no-post"));
     assert.equal(child.opts.env.PATH, `${GH_DIRS.join(":")}:/usr/bin:/bin:/usr/sbin:/sbin`, "the child gets gh's folders");
     assert.ok(child.opts.timeoutMs > 0);
-    assert.equal(checked, child.opts.env, "the check is asked about the very environment the child gets");
+    // #C737: the child also gets what is deployed (FB_DEPLOY_*); apart from those it is the very environment the check was asked about.
+    const { FB_DEPLOY_RULE, FB_DEPLOY_WORKER, FB_DEPLOY_TREE, ...rest } = child.opts.env;
+    assert.equal(FB_DEPLOY_RULE, "1"); assert.equal(FB_DEPLOY_WORKER, "", "this Worker answered nothing usable"); assert.equal(typeof FB_DEPLOY_TREE, "string");
+    assert.deepEqual(rest, checked, "the check is asked about the very environment the child gets");
   } finally { process.env.PATH = was; }
 });
 

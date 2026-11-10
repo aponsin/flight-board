@@ -59,7 +59,25 @@ export function childEnv(env = process.env) {
   const have = String(env.PATH ?? "").split(":").filter(Boolean);
   return { ...env, PATH: [...GH_DIRS.filter((d) => !have.includes(d)), ...have].join(":") };
 }
-export const defaultBuild = (args, ms, runner = runChild, env = childEnv()) => runner(process.execPath, args, { timeoutMs: ms, env });
+export const defaultBuild = (args, ms, runner = runChild, env = childEnv(), extra = {}) => runner(process.execPath, args, { timeoutMs: ms, env: { ...env, ...extra } });
+
+// #C737: what the store says is deployed. The commit the Worker was deployed from (its probe-only /api/probe/build) and the commit of the
+// tree this code runs from. Each is "" when unknown. The state child gets them (FB_DEPLOY_*) and a board-repository card is live only
+// when inside both; the old state job sets none of it and keeps reading the installed link.
+export const FULL_SHA = /^[0-9a-f]{40}$/;
+export const defaultTreeSha = () => { const s = execFileSync("git", ["-C", join(import.meta.dirname, ".."), "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); return FULL_SHA.test(s) ? s : ""; };
+export async function readDeploy({ base, headers, fetchImpl = fetch, treeSha = defaultTreeSha, log = () => {} }) {
+  let worker = "";
+  try {
+    const r = await fetchImpl(`${base}/api/probe/build`, { headers, redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!r.ok) log(`deploy: the Worker's build answered ${r.status}`);
+    else { const s = (await r.json())?.sha; if (typeof s === "string" && FULL_SHA.test(s)) worker = s; else log("deploy: the Worker does not say which commit it was deployed from"); }
+  } catch (e) { log(`deploy: the Worker's build is unreadable (${String(e.message).slice(0, 60)})`); }
+  let tree = "";
+  try { tree = treeSha(); } catch { log("deploy: the tree's commit is unreadable"); }
+  return { worker, tree: FULL_SHA.test(tree) ? tree : "" };
+}
+export const deployEnv = (d) => ({ FB_DEPLOY_RULE: "1", FB_DEPLOY_WORKER: d.worker, FB_DEPLOY_TREE: d.tree });
 
 export const stateArgs = (configPath) => [join(import.meta.dirname, "state.mjs"), "--config", configPath, "--no-post", "--no-derive"];
 
@@ -89,14 +107,16 @@ export async function liveWrite(configText, { fetchImpl = fetch, log = () => {} 
 export const defaultGhCheck = (env = childEnv(), exec = execFileSync) => { try { exec("gh", ["--version"], { env, timeout: 5000, stdio: "ignore" }); return true; } catch { return false; } };
 export const GH_MISSING = "gh was not found on PATH: the deploy and CI runs were not read, so cards of the main repository cannot show live";
 
-export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms) => defaultBuild(args, ms, runner, env), read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck }) {
+export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const ghOk = job === "evidence" ? ghCheck(env) : true;
   if (!ghOk) log(GH_MISSING);
   const finish = (r) => { if (!ghOk) throw new Error(GH_MISSING); return r; };
   const origConfig = configPath;
   if (privateDir) ({ configPath, stateFile } = await prepare({ privateDir, stateFile, configPath, base, headers, fetchImpl, log }));
-  await build(stateArgs(configPath), (JOBS[job].limitSec - 15) * 1000);
+  // #C737: only the evidence job reads cards; it tells the state child what is deployed.
+  const extra = job === "evidence" ? deployEnv(await deployRead({ base, headers, fetchImpl, log })) : {};
+  await build(stateArgs(configPath), (JOBS[job].limitSec - 15) * 1000, extra);
   const state = JSON.parse(read(stateFile));
   const writes = evidenceWrites(state, job);
   log(`${writes.length} key(s) to write`);

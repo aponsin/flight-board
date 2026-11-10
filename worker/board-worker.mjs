@@ -279,6 +279,14 @@ export default {
       const r = await writeEvidence(env.DB, now, "probe", b?.key, b?.value, b?.track);
       return json(r.ok ? 200 : 422, r);
     }
+    // #C737: the commit this Worker was deployed from (the pair's deploy sets BUILD_SHA to its signed commit), probe only. A board
+    // card is live only when its commit is inside this and inside the probe's own code tree. Anything but 40 hex reads as null:
+    // an unset var, a hand-set value and a deploy that did not say all mean "the Worker does not say".
+    if (url.pathname === "/api/probe/build" && request.method === "GET") {
+      if (auth.role !== "probe") return bare(403);
+      const sha = typeof env.BUILD_SHA === "string" && /^[0-9a-f]{40}$/.test(env.BUILD_SHA) ? env.BUILD_SHA : null;
+      return json(200, { sha }, { "cache-control": "no-store" });
+    }
     // A day's runner and automation minutes and Actions cost (#C726 C3), probe only: the usage collection's rows.
     if (url.pathname === "/api/probe/usage" && request.method === "POST") {
       if (auth.role !== "probe") return bare(403);
