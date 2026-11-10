@@ -1,0 +1,1 @@
+PASS #C741 v4 build/c741-c5-delta-import-v4 by Checker 2026-11-10. One commit on main 9839164. Suite 1893/1893. Security fixes reviewed: number range 1..1e6, card-id rule on every file-name id incl done cards, control characters refused in plan and in the SQL writer. Mutation check: pass on 8 guards, the non-finite number throw is an unreachable backstop. Replaces v3 56bccfb.
