@@ -1,0 +1,1 @@
+PASS Quick: C732 page item at 5c29fec on main 61c2dd3. A paused or parked card keeps its status while read in a phase, loses its version line, and becomes active once read live. Fix unchanged from 423ad28, plus a direct byEvidence test. 35 of 35 view and page tests pass. Mutations caught: hold dropped, version line kept, live exception dropped, parked missing.
