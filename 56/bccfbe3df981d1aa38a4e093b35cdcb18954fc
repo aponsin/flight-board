@@ -1,0 +1,1 @@
+PASS #C741 v3, v2 487c605 re-cut on main 9839164. Range-diff: the code is identical to v2, which Checker passed, and only CHANGELOG context and the message differ. The patch only adds lines: import-delta and its test, plus 3 CHANGELOG lines. Replaces v2. Checker 2026-11-10
