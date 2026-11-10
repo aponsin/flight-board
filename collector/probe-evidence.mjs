@@ -6,6 +6,7 @@
 //   usage job (300 s):   usage
 // A key whose reading is missing is not written (the store then shows it as unknown/silent, never as a guess).
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
 import { loadEnv, accessHeaders, FETCH_TIMEOUT_MS } from "./probe-board.mjs";
@@ -48,6 +49,16 @@ export async function postWrites(writes, { base, headers, fetchImpl = fetch, log
   return { written, refused };
 }
 
+// The state child's environment. A launchd job starts with PATH=/usr/bin:/bin:/usr/sbin:/sbin, where git is but gh (Homebrew) is not, so every
+// gh call of the state build failed (ENOENT): CI never read, the deploy run never read, the gh back-off at its 30-minute maximum, and the
+// board showed every card of the main repository as shipped, not live (#C731, #C722 and #C724). The usual install folders are put on PATH.
+export const GH_DIRS = ["/opt/homebrew/bin", "/usr/local/bin"];
+export function childEnv(env = process.env) {
+  const have = String(env.PATH ?? "").split(":").filter(Boolean);
+  return { ...env, PATH: [...GH_DIRS.filter((d) => !have.includes(d)), ...have].join(":") };
+}
+export const defaultBuild = (args, ms, runner = runChild, env = childEnv()) => runner(process.execPath, args, { timeoutMs: ms, env });
+
 export const stateArgs = (configPath) => [join(import.meta.dirname, "state.mjs"), "--config", configPath, "--no-post", "--no-derive"];
 
 // "Live now": the product's own /version.json, on the host of the board config's liveUrl, read by the probe each evidence run.
@@ -70,7 +81,17 @@ export async function liveWrite(configText, { fetchImpl = fetch, log = () => {} 
 // One run: build the state, read it, post the job's keys.
 // With privateDir, the cards come from the store (collector/store-cards.mjs), not from the old board's mirror, and the state is
 // built and left in that private directory; without it, the job reads the old location as before.
-export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, build = (args, ms) => runChild(process.execPath, args, { timeoutMs: ms }), read = (p) => readFileSync(p, "utf8"), log = () => {} }) {
+// Whether gh can be run from the state child's environment. The evidence job still posts what git alone shows, but a run that cannot find
+// gh ends as a failed run with a plain line in the log: it used to back off quietly for 30 minutes while the board showed every card
+// of the main repository as shipped, never live (#C731).
+export const defaultGhCheck = (env = childEnv(), exec = execFileSync) => { try { exec("gh", ["--version"], { env, timeout: 5000, stdio: "ignore" }); return true; } catch { return false; } };
+export const GH_MISSING = "gh was not found on PATH: the deploy and CI runs were not read, so cards of the main repository cannot show live";
+
+export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms) => defaultBuild(args, ms, runner, env), read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck }) {
+  // One environment for both: the check asks whether gh runs in the very environment the state child gets.
+  const ghOk = job === "evidence" ? ghCheck(env) : true;
+  if (!ghOk) log(GH_MISSING);
+  const finish = (r) => { if (!ghOk) throw new Error(GH_MISSING); return r; };
   const origConfig = configPath;
   if (privateDir) ({ configPath, stateFile } = await prepare({ privateDir, stateFile, configPath, base, headers, fetchImpl, log }));
   await build(stateArgs(configPath), (JOBS[job].limitSec - 15) * 1000);
@@ -83,8 +104,8 @@ export async function evidenceJob({ job, base, headers, configPath, stateFile, p
   let cfg = null;
   try { cfg = read(origConfig); } catch { log("live: the board config could not be read"); }
   const live = cfg && await liveWrite(cfg, { fetchImpl: liveFetch, log });
-  if (live) { const l = await postWrites([live], { base, headers, fetchImpl, log }); return { written: done.written + l.written, refused: done.refused + l.refused }; }
-  return done;
+  if (live) { const l = await postWrites([live], { base, headers, fetchImpl, log }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
+  return finish(done);
 }
 
 // node probe-evidence.mjs --job evidence|usage --env <file> --config <board config> --state <state.json> [--base <url>] [--private-dir <dir>]
