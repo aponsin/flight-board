@@ -1,0 +1,1 @@
+PASS Full: C734 v2 at 3465988 on main 61c2dd3, a re-cut of the signed e29c379. Scripts and tests byte-identical, range-diff shows only the CHANGELOG placement and one commit-message line. Review and mutations as on e29c379.
