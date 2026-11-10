@@ -151,7 +151,8 @@ export function listWriteRefusal(fields, { create = false } = {}) {
 }
 
 // Card words: only these fields are typed; status, phase, evidence and numbers are never written by a session.
-const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip"]);
+const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos"]);
+export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
 const CARD_FORBIDDEN = new Set(["status", "phase", "num", "live_version", "signed", "on_main", "ci", "evidence"]);
 
 export function cardWriteRefusal(fields, evidence) {
@@ -165,6 +166,10 @@ export function cardWriteRefusal(fields, evidence) {
   // The old board's skip lists also carry words that are no phase of ours (such as "look"); state.mjs ignores a word it does not know,
   // so the store keeps a list of plain lowercase words as it is and refuses anything else (it never rewrites an old card's list).
   if (fields.skip !== undefined && fields.skip !== null && !(Array.isArray(fields.skip) && fields.skip.length <= 16 && fields.skip.every((p) => typeof p === "string" && /^[a-z]{2,20}$/.test(p)))) return refuse("card-skip", "skip is a list of up to 16 lowercase words, such as language or security");
+  // #C729 B4a: what the card waits on, its issue counts and its place in its owner's queue.
+  if (fields.depends_on !== undefined && fields.depends_on !== null && !(Array.isArray(fields.depends_on) && fields.depends_on.length <= 8 && fields.depends_on.every((c) => typeof c === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(c)) && new Set(fields.depends_on).size === fields.depends_on.length)) return refuse("card-depends", "depends_on is a list of up to 8 different card ids");
+  if (fields.issues !== undefined && fields.issues !== null && !(typeof fields.issues === "object" && !Array.isArray(fields.issues) && Object.entries(fields.issues).every(([k, v]) => ISSUE_KINDS.includes(k) && Number.isInteger(v) && v >= 0 && v <= 99))) return refuse("card-issues", `issues is counts from 0 to 99 for ${ISSUE_KINDS.join(", ")}`);
+  if (fields.queue_pos !== undefined && fields.queue_pos !== null && !(Number.isInteger(fields.queue_pos) && fields.queue_pos >= 1 && fields.queue_pos <= 999)) return refuse("card-queue", "queue_pos is a whole number from 1 to 999");
   if ((fields.blocked_reason !== undefined || fields.paused === 1 || fields.paused === true) && !present(fields.next_note)) {
     return refuse("blocked-needs-note", "Blocked or Paused needs a current next_note");
   }

@@ -44,6 +44,10 @@ export function applyThreads(collections, view) {
     byId.set(r.id, cur);
   }
   collections.threads = [...byId.values()];
+  // #C729 B4a: a card names the thread it came from by the thread's id (the page links "from #T<n>"); the store keeps the number.
+  const idOfNum = new Map();
+  for (const th of collections.threads) if (Number.isInteger(th.num) && !idOfNum.has(th.num)) idOfNum.set(th.num, th.id);
+  for (const c of collections.initiatives ?? []) if (Number.isInteger(c.fromThread) && idOfNum.has(c.fromThread)) c.thread = idOfNum.get(c.fromThread);
   return collections;
 }
 

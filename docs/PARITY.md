@@ -66,7 +66,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 
 | Item | Status | Where it comes from on the store |
 |---|---|---|
-| Name row: #C, repo badge, "from #T", size | same | compat `initiatives` |
+| Name row: #C, repo badge, "from #T", size | same (the "from #T" link by the thread's id: B4a, #C729) | compat `initiatives` |
 | Status pill | same where the probe has evidence; not yet: B3a for the rest | `derived/all.cards` |
 | Check button, "checked by the Collector" | gone: "Delete with the Collector" (row 38) | |
 | Source-disagreement flag | gone: "Delete: one source, nothing to flag" (row 28) | |
@@ -75,7 +75,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Track: lit phase, skips | same | `derived/all.cards` |
 | Track: who · time on each tile | same (B3b: the store's phase history, with the old board's steps imported) | `derived/all.times` |
 | One track per branch | not yet: B3a | probe `cards.branches` |
-| Queue line, "waits on", Next (written N ago), Started, issue chips | same for next note, waiting on, started; not yet: B4 for the rest | |
+| Queue line, "waits on", Next (written N ago), Started, issue chips | same for next note, waiting on, started, and (B4a, #C729) the queue place, "depends on" and the five issue counts, written by card_create / card_update (depends_on, issues, queue_pos); a card written before has none; not yet: B4b for the lines the probe's readings feed (ETA, waits) | `cards` |
 | "Manager missed" on a card | hidden on the store until B4 (Manager, 2026-11-09; the ETA inputs come in B4) | |
 | Thread fold, closed asks | same (B1) | |
 | Done in the last 24 h, search | same: the old board's done cards come in as history (B3b), and the store's own once the probe reads them at their last phase (live, or install on the board's own track), with doneAt and version (C2) | compat `initiatives` (done), `worker/compat-ships.mjs` |

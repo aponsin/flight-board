@@ -135,6 +135,32 @@ test("options on an agent's message (B1b): drawn from the thread's last word; th
   assert.equal(own.refused?.rule, "message-shape");
 });
 
+test("card fields the old page draws (B4a): depends-on, issue counts with their time, queue place, and the thread a card came from", async () => {
+  const { tool, compat } = make();
+  const ask = await tool("manager", "ask", { type: "Answer", title: "Start?", question: "Start?" });
+  const a = await tool("manager", "card_create", { id: "card-a", title: "A", from_thread: ask.num });
+  assert.equal(a.ok, true, JSON.stringify(a));
+  const b = await tool("manager", "card_create", { id: "card-b", title: "B", depends_on: ["card-a"], issues: { bugs: 2, security: 1 }, queue_pos: 3, owner_role: "Builder" });
+  assert.equal(b.ok, true, JSON.stringify(b));
+  const docs = (await compat()).collections.initiatives, da = docs.find((x) => x.id === "card-a"), db = docs.find((x) => x.id === "card-b");
+  assert.deepEqual(db.dependsOn, ["card-a"]); assert.deepEqual(db.issues, { bugs: 2, security: 1 }); assert.equal(db.queuePos, 3); assert.ok(db.issuesAt > 0);
+  assert.equal(da.dependsOn, undefined); assert.equal(da.issues, undefined); assert.equal(da.queuePos, undefined);
+  assert.equal(da.thread, ask.id, "the card names its thread by id, not by number");
+  // an update changes them; issues_at moves with the counts, and null clears
+  assert.equal((await tool("manager", "card_update", { id: "card-b", issues: { bugs: 3 }, queue_pos: 1 })).ok, true);
+  const after = (await compat()).collections.initiatives.find((x) => x.id === "card-b");
+  assert.deepEqual(after.issues, { bugs: 3 }); assert.equal(after.queuePos, 1);
+  assert.equal((await tool("manager", "card_update", { id: "card-b", issues: null, depends_on: null, queue_pos: null })).ok, true);
+  const gone = (await compat()).collections.initiatives.find((x) => x.id === "card-b");
+  assert.equal(gone.issues, undefined); assert.equal(gone.dependsOn, undefined); assert.equal(gone.queuePos, undefined); assert.equal(gone.issuesAt, undefined);
+  // each bad shape is refused by name
+  for (const [fields, rule] of [
+    [{ depends_on: ["Card A"] }, "card-depends"], [{ depends_on: ["card-a", "card-a"] }, "card-depends"], [{ depends_on: Array.from({ length: 9 }, (_, i) => `c${i}`) }, "card-depends"],
+    [{ issues: { bugs: -1 } }, "card-issues"], [{ issues: { bugs: 100 } }, "card-issues"], [{ issues: { luck: 1 } }, "card-issues"], [{ issues: [1] }, "card-issues"], [{ issues: { bugs: 1.5 } }, "card-issues"],
+    [{ queue_pos: 0 }, "card-queue"], [{ queue_pos: 1000 }, "card-queue"], [{ queue_pos: "2" }, "card-queue"],
+  ]) { const r = await tool("manager", "card_update", { id: "card-b", ...fields }); assert.equal(r.refused?.rule, rule, JSON.stringify(fields)); }
+});
+
 test("a malformed step is refused when the ask is made", async () => {
   const { tool } = make();
   const r = await tool("manager", "ask", { type: "Action", title: "Run it", steps: [{ text: "x", cmd: 5 }], expect: "OK" });

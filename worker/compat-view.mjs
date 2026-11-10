@@ -57,12 +57,16 @@ export function waitingDoc(a) {
 export function initiativeDoc(c, ev) {
   const lit = ev?.value?.lit?.[0];
   const skip = c.skip ? json(`{"s":${c.skip}}`).s : undefined;
+  const deps = c.depends_on ? json(`{"s":${c.depends_on}}`).s : undefined, issues = c.issues ? json(c.issues) : undefined;
   return prune({
     id: c.id, name: c.title, num: c.num, summary: c.summary, size: c.size, level: c.review_level, who: c.owner_role, phase: lit,
     status: c.dropped ? "dropped" : c.paused ? "paused" : c.blocked_reason ? "blocked" : "active", createdAt: c.created_at, updatedAt: c.updated_at,
     nextNote: c.next_note, nextNoteAt: c.next_note_at, waitingOn: c.waiting_on, blocked: c.blocked_reason, fromThread: c.from_thread,
     customerText: c.customer_text === null || c.customer_text === undefined ? undefined : !!c.customer_text, lookChange: c.look_change === null || c.look_change === undefined ? undefined : !!c.look_change,
     skip: Array.isArray(skip) ? skip : undefined, reworkReason: c.rework_reason, plan: c.track,
+    // #C729 B4a: what it waits on, its issue counts (and when set) and its place in its owner's queue.
+    dependsOn: Array.isArray(deps) ? deps : undefined, issues: issues && typeof issues === "object" && !Array.isArray(issues) ? issues : undefined, issuesAt: num(c.issues_at),
+    queuePos: Number.isInteger(c.queue_pos) && c.queue_pos > 0 ? c.queue_pos : undefined,
   });
 }
 

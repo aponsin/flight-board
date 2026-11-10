@@ -26,9 +26,9 @@ const evidenceOf = async (db, key) => {
   try { return r ? JSON.parse(r.value) : null; } catch { return null; }
 };
 
-const COLUMNS = ["title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip"];
-// true/false are stored as 1/0; a skip list is stored as JSON text (null stays null: "not said").
-const bool = (v) => (v === true ? 1 : v === false ? 0 : Array.isArray(v) ? JSON.stringify(v) : v);
+const COLUMNS = ["title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos"];
+// true/false are stored as 1/0; a list or the issue counts are stored as JSON text (null stays null: "not said").
+const bool = (v) => (v === true ? 1 : v === false ? 0 : Array.isArray(v) || (v && typeof v === "object") ? JSON.stringify(v) : v);
 
 // A new card: words only. The id is the caller's, the number the store's.
 export async function createCard(db, now, who, fields) {
@@ -39,8 +39,8 @@ export async function createCard(db, now, who, fields) {
   if (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(fields.id).first()) return refuse(db, now, { rule: "card-exists", detail: fields.id }, fields.id, who);
   const num = await mint(db, "C");
   const row = COLUMNS.map((c) => (c in fields ? bool(fields[c]) : null) ?? defaultFor(c));
-  await db.prepare(`INSERT INTO cards (id, num, ${COLUMNS.join(", ")}, created_at, updated_at) VALUES (?, ?, ${COLUMNS.map(() => "?").join(", ")}, ?, ?)`)
-    .bind(fields.id, num, ...row, now, now).run();
+  await db.prepare(`INSERT INTO cards (id, num, ${COLUMNS.join(", ")}, issues_at, created_at, updated_at) VALUES (?, ?, ${COLUMNS.map(() => "?").join(", ")}, ?, ?, ?)`)
+    .bind(fields.id, num, ...row, fields.issues ? now : null, now, now).run();
   return { ok: true, id: fields.id, num };
 }
 const defaultFor = (c) => (c === "summary" ? "" : c === "track" ? "product" : c === "paused" || c === "dropped" ? 0 : null);
@@ -54,7 +54,10 @@ export async function updateCard(db, now, who, fields) {
   if (bad) return refuse(db, now, bad, id, who);
   const keys = COLUMNS.filter((c) => c in fields);
   if (!keys.length) return { ok: true, id, changed: 0 };
-  await db.prepare(`UPDATE cards SET ${keys.map((k) => `${k} = ?`).join(", ")}, updated_at = ? WHERE id = ?`).bind(...keys.map((k) => bool(fields[k])), now, id).run();
+  // The issue counts carry the time they were last set (the page shows when the chips were counted).
+  const sets = keys.map((k) => `${k} = ?`), vals = keys.map((k) => bool(fields[k]));
+  if (keys.includes("issues")) { sets.push("issues_at = ?"); vals.push(fields.issues ? now : null); }
+  await db.prepare(`UPDATE cards SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`).bind(...vals, now, id).run();
   return { ok: true, id, changed: keys.length };
 }
 
