@@ -1,0 +1,1 @@
+PASS Full: C734 v3 at aafbd1e on main 61c2dd3. Over the signed v2: the maker takes printable ASCII only, blocking U+2028 and U+2029, plus tests for the back sequence and a failed fetch. 11 of 11 pair tests pass. Mutation caught: the ASCII check dropped. Earlier mutations as on e29c379.
