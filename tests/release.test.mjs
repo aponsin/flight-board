@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { verdict, settingsBlock, stepsOf, pageCapabilities, renderPrompt, configFromSettings, leadFromSettings, PAGE_CAPABILITIES, RELEASE_ENTRIES } from "../scripts/board-release.mjs";
+import { verdict, supersededBy, settingsBlock, stepsOf, pageCapabilities, renderPrompt, configFromSettings, leadFromSettings, PAGE_CAPABILITIES, RELEASE_ENTRIES } from "../scripts/board-release.mjs";
 import { importClosure, OWNER_ENTRIES } from "../scripts/current.mjs";
 
 const TASK = (json, steps) => `# The collector's run\n\n## The task itself\n\n  \`\`\`json\n  ${json}\n  \`\`\`\n\n## The steps\n\n${steps}\n`;
@@ -18,6 +18,24 @@ const good = {
   promptChanged: true,
   capabilities: ["db", "comments", "assets", "downloads"],
 };
+
+// #C738: tonight Release landed v1 of a card after its v2 was pushed. A tip is refused when a newer -vN branch of the same card is on origin.
+const H = (c) => String(c).repeat(40);
+test("a v1 tip after a v2 is pushed is refused, naming the newer branch; the newest tip, a re-cut at the same commit and other cards are not", () => {
+  const heads = [{ branch: "build/c9-thing", sha: H("1") }, { branch: "build/c9-thing-v2", sha: H("2") }, { branch: "build/c8-other", sha: H("3") }, { branch: "build/c9-thing-v10", sha: H("4") }];
+  assert.equal(supersededBy(heads, H("1")), "build/c9-thing-v10", "v1 (no suffix), the newest named: v10 beats v2");
+  assert.equal(supersededBy(heads, H("2")), "build/c9-thing-v10");
+  assert.equal(supersededBy(heads, H("4")), null, "the newest is not superseded");
+  assert.equal(supersededBy(heads, H("3")), null, "another card's branch is not touched by c9's");
+  assert.equal(supersededBy(heads, H("5")), null, "a commit that is no branch tip is left to the other checks");
+  assert.equal(supersededBy([{ branch: "build/c9-thing", sha: H("1") }, { branch: "build/c9-thing-v2", sha: H("2") }, { branch: "build/c9-thing-v3", sha: H("1") }], H("1")), null, "v3 is the same commit as v1: one release");
+  assert.equal(supersededBy([{ branch: "build/c9-thing-v2", sha: H("2") }, { branch: "build/c9-thing-v22", sha: H("3") }], H("2")), "build/c9-thing-v22", "v22 is newer than v2");
+  assert.equal(supersededBy([{ branch: "build/c9-thing-v2", sha: H("2") }, { branch: "build/c9-thing-v2x", sha: H("3") }], H("2")), null, "v2x is another name, not a version");
+  assert.equal(supersededBy(null, H("1")), null); assert.equal(supersededBy([{ branch: 5, sha: "x" }], H("1")), null);
+  const v = verdict({ ...good, superseded: "build/c9-thing-v2" });
+  assert.equal(v.ok, false); assert.match(v.refusals.join(), /superseded.*build\/c9-thing-v2.*release that one/);
+  assert.equal(verdict({ ...good, superseded: null }).ok, true);
+});
 
 test("a signed commit that touches nothing pinned goes out: the page, the collector's own code, its steps with their prompt", () => {
   assert.deepEqual(verdict(good), { ok: true, refusals: [], promptNeeded: true });

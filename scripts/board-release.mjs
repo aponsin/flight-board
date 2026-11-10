@@ -7,6 +7,8 @@
 // Before anything changes it checks, and refuses naming why (one summary line per check, exit 1, nothing pushed):
 //   - Checker's PASS and Security's SECURE on this exact commit, read only from origin's notes fetched into private refs;
 //   - the commit continues origin/main (the push is a fast-forward, never forced);
+//   - no newer -vN branch of the same card is on origin (#C738: v1 of a card landed after its v2 was pushed): a tip of build/<card>[-vN] is
+//     refused, naming the newer branch, when build/<card>-vM with a higher M is on origin and is a different commit;
 //   - nothing the owner's install pins changed since the commit the settings pin: the gate's hooks, the refresh hook,
 //     the fence, the memory hook, this release tool and every file they import (importClosure), and collector/TASK.md's
 //     settings block. Those stay the owner's install. Except on top of a waiting install pack (#C412, pendingPack): when
@@ -115,14 +117,30 @@ export function pendingPack({ descends, range, sameAs }) {
   return { sha: r.length ? null : S, refusals: r };
 }
 
+// #C738: a card's branches are build/<card>, build/<card>-v2, build/<card>-v3, ... (no suffix is v1). `heads` are origin's build/ branches,
+// [{ branch, sha }]. For the commit being released: the first branch of the same card with a higher version whose tip is another
+// commit (its name), else null. A commit that is the tip of the card's newest branch, or of a branch that isn't named build/..., is
+// never superseded; two branches at one commit (a v3 re-cut identical to v2) are the same release.
+export function supersededBy(heads, sha) {
+  const parse = (b) => { const m = /^(build\/.+?)(?:-v(\d{1,4}))?$/.exec(String(b)); return m ? { base: m[1], n: m[2] ? Number(m[2]) : 1 } : null; };
+  const list = (Array.isArray(heads) ? heads : []).filter((h) => h && typeof h.branch === "string" && /^[0-9a-f]{40}$/.test(String(h.sha))).map((h) => ({ ...h, ...parse(h.branch) })).filter((h) => h.base);
+  const mine = list.filter((h) => h.sha === sha);
+  if (!mine.length) return null;
+  const top = new Map();
+  for (const m of mine) top.set(m.base, Math.max(top.get(m.base) ?? 0, m.n));
+  const newer = list.filter((h) => h.sha !== sha && top.has(h.base) && h.n > top.get(h.base)).sort((a, b) => b.n - a.n);
+  return newer[0]?.branch ?? null;
+}
+
 // The verdict, from the facts only. changed: the files that differ from the pinned commit (null: no pinned commit);
 // owned: the owner's closure (OWNER_ENTRIES and RELEASE_ENTRIES) at the pinned commit and at this one. pending: what
 // pendingPack found; a waiting pack it accepts (sha set) covers the pinned changes and the settings block.
-export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null }) {
+export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null, superseded = null }) {
   const r = [];
   if (!/^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim())) r.push(`no PASS from Checker on it in ${NOTES.checker}`);
   if (!/^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim())) r.push(`no SECURE from Security on it in ${NOTES.security}`);
   if (!forward) r.push("it doesn't continue origin/main: rebase it on main and sign it again");
+  if (superseded) r.push(`it is superseded: a newer branch of the same card, ${superseded}, is on origin; release that one`);
   if (!pinned || !Array.isArray(changed)) r.push("no pinned commit found in ~/.claude/settings.json to compare with: the owner's install decides");
   else if (pending?.sha) { /* the pinned changes are the waiting pack's, signed; the owner's install takes them */ }
   else if (pending) r.push(...pending.refusals);
@@ -174,6 +192,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", sha])]));
     const forward = quiet(["merge-base", "--is-ancestor", main, sha]) !== null;
     const pinned = pinnedCommit(settingsText);
+    const heads = (quiet(["for-each-ref", "refs/remotes/origin/build", "--format=%(refname:lstrip=3) %(objectname)"]) ?? "").split("\n").filter(Boolean).map((l) => { const [branch, tip] = l.split(" "); return { branch, sha: tip }; });
+    const superseded = supersededBy(heads, sha);
     const known = (c) => Boolean(c) && quiet(["cat-file", "-e", `${c}^{commit}`]) !== null;
     tmp = mkdtempSync(join(tmpdir(), "board-release-"));
     execFileSync("tar", ["-x", "-C", tmp], { input: execFileSync("git", ["archive", "--format=tar", sha], { cwd: repo, maxBuffer: 64 * 1024 * 1024 }) });
@@ -201,7 +221,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const base = known(before) ? before : known(pinned) ? pinned : null; // what the task runs now
     const capabilities = pageCapabilities(at(sha)(PAGE_FILE)), mcpErrors = pageMcpErrors(at(sha)(PAGE_FILE));
     const v = verdict({
-      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending,
+      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending, superseded,
       settingsChanged: known(pinned) && settingsBlock(at(pinned)(TASK_FILE)) !== settingsBlock(at(sha)(TASK_FILE)),
       stepsChanged: base !== null && stepsOf(at(base)(TASK_FILE)) !== stepsOf(at(sha)(TASK_FILE)),
       promptChanged: base === null || at(base)(PROMPT_FILE) !== at(sha)(PROMPT_FILE),
@@ -224,6 +244,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
 
     line(!v.refusals.some((r) => /PASS|SECURE/.test(r)), `sign-offs on ${sha}: Checker "${String(notes.checker ?? "none").split("\n")[0]}", Security "${String(notes.security ?? "none").split("\n")[0]}"`);
     line(forward, `continues origin/main ${main.slice(0, 12)}`);
+    line(!superseded, superseded ? `superseded by ${superseded}` : "no newer branch of the same card on origin");
     line(!v.refusals.some((r) => /owner's install|settings block|no pinned/.test(r)), pending?.sha ? `pinned changes since ${pinned.slice(0, 12)} are the waiting pack's only: ${pending.sha.slice(0, 12)}, signed (they go live with the owner's install; the link's code goes now)` : `nothing pinned changed since ${pinned ? pinned.slice(0, 12) : "(none)"}`);
     line(!v.refusals.some((r) => /PROMPT/.test(r)), v.promptNeeded ? `prompt changed: ${promptPath} (SHA-256 ${sha256(prompt)})` : "prompt unchanged");
     line(!v.refusals.some((r) => /capabilit/.test(r)), `page capabilities: ${capabilities.join(", ")}`);
