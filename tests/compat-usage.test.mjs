@@ -13,6 +13,9 @@ const NOW = Date.now(); // the page reads its own clock for "Today" and "7 days"
 const M = 60_000;
 const today = new Date(NOW).toISOString().slice(0, 10);
 const daysAgo = (n) => new Date(NOW - n * 864e5).toISOString().slice(0, 10);
+// The page keys a day by the viewer's local date (#C728): rows it draws must use it, or in a US evening "today" in UTC is tomorrow.
+const localDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const localToday = localDay(NOW);
 
 test("a day's reading: a real date not in the future, known fields only, numbers in range, at least one", () => {
   assert.equal(usageDayRefusal({ day: today, runner_minutes: 82, automation_minutes: 14, actions_usd: 0.11 }, NOW), null);
@@ -56,15 +59,15 @@ test("the old page draws Time spent and the per-agent table from the store: runn
   await writeEvidence(db, NOW - 3 * 60 * M, "probe", "cards.hero", { lit: ["build"], phase: "build" });
   await writeEvidence(db, NOW - 60 * M, "probe", "agents", { Checker: { state: "working", card: "hero" } });
   await writeEvidence(db, NOW - 60 * M, "probe", "cards.hero", { lit: ["checker"], phase: "checker" });
-  await writeUsageDay(db, NOW, { day: today, runner_minutes: 90, automation_minutes: 30, actions_usd: 0.25 }, refuse);
-  await writeUsageDay(db, NOW, { day: daysAgo(3), runner_minutes: 60 }, refuse);
+  await writeUsageDay(db, NOW, { day: localToday, runner_minutes: 90, automation_minutes: 30, actions_usd: 0.25 }, refuse);
+  await writeUsageDay(db, NOW, { day: localDay(NOW - 3 * 864e5), runner_minutes: 60 }, refuse);
   const view = { ...(await readView(db, NOW)), usage: await readUsage(db) };
   const { collections, probe } = compatView(view);
   const drawn = drawPage(applyUsage(collections, view), { probe, host: "store" });
   const totals = drawn.els.totals.innerHTML;
   assert.match(totals, /Today<\/div><div class="n">[^<]+<\/div><div class="l">\$0\.25 Actions/);
   assert.match(drawn.els.chart.innerHTML, /<svg/, "the chart draws the days");
-  assert.match(drawn.els.chart.innerHTML, new RegExp(`${today}: agents`));
+  assert.match(drawn.els.chart.innerHTML, new RegExp(`${localToday}: agents`));
   // Two hours of Builder's build before Checker took it: "Working" in the table comes from the history alone.
   assert.match(drawn.els.qtable.innerHTML, /<td>Builder<\/td><td>2 ?h/);
   assert.match(drawn.els.qtable.innerHTML, /<td>Checker<\/td>/);
