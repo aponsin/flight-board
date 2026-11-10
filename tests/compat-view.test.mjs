@@ -82,3 +82,19 @@ test("a collection the store cannot fill is left out, never invented", () => {
   assert.deepEqual([c.agentPrs, c.approvals], [[], []]);
   assert.deepEqual(optionObjects(undefined), undefined);
 });
+
+// #C732 (page, Designer on /board): every store card has a probe reading, and the page's evidence step made any card it read
+// active, so #C29, paused, sat among the cards in flight with "In review · then after the queue". A paused card stays paused:
+// last in the list, marked Paused, with no version line; an active card in the same phase keeps its line.
+test("a paused card the probe reads stays paused: after the active ones, marked Paused, no version line", () => {
+  const ev = (id) => ({ [`cards.${id}`]: { value: { lit: ["checker"], phase: "checker", headSha12: "aaaaaaaaaaaa", onMain: false }, readAt: NOW - 60e3 } });
+  const v = view({ cards: [card({ id: "c29", num: 29, title: "Paused one", paused: 1 }), card({ id: "c2", num: 2, title: "Active one" })], evidence: { ...ev("c29"), ...ev("c2") } });
+  assert.equal(compatView(v).collections.initiatives[0].status, "paused");
+  const board = draw(v).board;
+  const rows = board.split('<div class="i-row').slice(1);
+  assert.deepEqual(rows.map((r) => /data-card="([^"]+)"/.exec(r)[1]), ["c2", "c29"], "the paused card comes after the active one");
+  const [active, paused] = rows;
+  assert.match(paused, /<span class="state paused">Paused<\/span>/);
+  assert.doesNotMatch(paused, /class="pv"/, "no version line on the paused card");
+  assert.match(active, /<div class="pv">In review<\/div>/, "control: the active card in the same phase has its line");
+});

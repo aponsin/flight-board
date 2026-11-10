@@ -1924,6 +1924,7 @@ function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
 // to hold the card to: no owner, no ETA. The other gaps stay a line of text. A card held on purpose (a parked status such as
 // paused or parked, or waiting on the owner) has no ETA anyone can give, so its row stays plain (Checker). waitingOn is the
 // lead's routine "next is" field ("Boardsmith", "Checker, Security; then …"): only the owner's name there is a hold.
+const parkedStatus=i=>!!i&&(i.status==="paused"||i.status==="parked"||((CONFIG.nudges||{}).parked||[]).includes(i.status));
 function heldOnPurpose(i){if(!i)return false;const w=typeof i.waitingOn==="string"?i.waitingOn.trim().toLowerCase():"",o=String(OWNER||"").trim().toLowerCase();
   return i.status==="parked"||((CONFIG.nudges||{}).parked||[]).includes(i.status)||(!!o&&(w===o||w.startsWith(o+":")))||!!ownerWait(i)}
 function gapRed(g,i){return (g.includes("no owner")||g.includes("no ETA"))&&!heldOnPurpose(i)}
@@ -2059,7 +2060,8 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   // #C728: on the store the ETA box is "not yet" (PARITY: B3b, B4): its inputs aren't there, and a paused card read as due.
   else if(eta&&!STORE) etaHtml=`<div class="lbl">Live in</div><div class="big" data-eta="${eta}">${eta>Date.now()?dur(eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(eta)}${derivedEta(i)==null?" (declared)":""}</div>`;
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
-  const vn=i.status!=="done"?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
+  // #C732 (page): a paused or parked card ships in no version anyone can name: no version line, as no ETA.
+  const vn=i.status!=="done"&&!parkedStatus(i)?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
   const st=stalled(i),ow=i.status!=="done"?ownerWait(i):null;
   const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":verifying(i)?"Verifying":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:ow?"Waiting on you":st?"Stalled":liveBuilding(i.id)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
   const owHtml=ow?`<span class="ow-line">waiting on you: <a href="#" class="t-ref" data-tref="${esc(ow.id)}">${esc(threadName(ow.id))}</a></span>`:"";
@@ -2409,7 +2411,9 @@ function byEvidence(out){const d=derivedOf(out.id);
   if(!d||!d.phase||d.firm===false||out.status==="done"||!PHASES.some(p=>p[0]===d.phase))return out;
   const stepPhase=out.phase,last=Math.max(num(out.lastStepAt)??0,num(d.readyAt)??0);
   if(stepPhase&&phaseIndex(stepPhase)>phaseIndex(d.phase)&&(num(out.lastStepAt)??0)>(num(d.at)??0))return out;
-  const res={...out,stepPhase,phase:d.phase,byEvidence:true,status:out.status==="queued"&&stepPhase===d.phase?"queued":"active"};
+  // #C732 (page): a card paused (or parked) on purpose stays so while the repository reads its phase; only going live ends the hold.
+  // On the store every card has a reading, and #C29, paused, sat among the active cards with an "In review" version line.
+  const res={...out,stepPhase,phase:d.phase,byEvidence:true,status:d.phase!==LIVE_PHASE&&parkedStatus(out)?out.status:out.status==="queued"&&stepPhase===d.phase?"queued":"active"};
   if(last)res.lastStepAt=last;
   if(d.phase===LIVE_PHASE){res.who=null;res.upNext=false;if(d.version)res.version=d.version;return res}
   if(stepPhase===d.phase)return res;
