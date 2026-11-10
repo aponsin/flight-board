@@ -87,7 +87,10 @@ export function derivedDoc(view) {
     const v = e.value ?? {};
     cards[key.slice(6)] = prune({ phase: v.phase ?? v.lit?.[0], head: v.headSha12, version: v.liveVersion ?? undefined, shipping: v.shipping === true ? true : undefined, evidence: undefined, at: e.readAt,
       // #C731 B4b: the probe's readyAt, firm (only ever false) and waitingFor, as derive.mjs gave the page.
-      readyAt: num(v.readyAt), firm: v.firm === false ? false : undefined, waitingFor: Array.isArray(v.waitingFor) && v.waitingFor.length ? v.waitingFor : undefined });
+      readyAt: num(v.readyAt), firm: v.firm === false ? false : undefined, waitingFor: Array.isArray(v.waitingFor) && v.waitingFor.length ? v.waitingFor : undefined,
+      // #C731 B4b slice 3: workSeen (only ever true), shippedAt and reviews ({ phase: ms }), as collect.mjs and derive.mjs gave the page.
+      workSeen: v.workSeen === true ? true : undefined, shippedAt: num(v.shippedAt),
+      reviews: v.reviews && typeof v.reviews === "object" && !Array.isArray(v.reviews) && Object.keys(v.reviews).length ? Object.fromEntries(Object.entries(v.reviews).filter(([, t]) => Number.isFinite(t))) : undefined });
   }
   const live = view.live?.state === "live" ? { version: String(view.live.version).replace(/^v/, ""), at: view.now - (view.live.age ?? 0) } : undefined;
   // #C731 B4b: each card's expected version, from collector/expected.mjs (the Collector's own rule, never written by hand).

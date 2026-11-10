@@ -471,6 +471,24 @@ export function branchName(branch, taken, n) {
   taken.add(name);
   return name;
 }
+// #C731 B4b slice 3: facts.mjs's signedTimes, copied (this pinned file cannot import it): when each signed review was signed, from
+// the notes ref's own history (the newest commit of the ref that touched the commit's note, at <sha>, <aa>/<rest> or <aa>/<bb>/<rest>);
+// a sign-off the history can't date takes the READY commit's time, never the present. { phase: ms } for the signed phases only.
+export function signedTimesOf(git, sha, notes, signed, fallback = null) {
+  const out = {};
+  if (!/^[0-9a-f]{40}$/.test(String(sha))) return out;
+  const paths = [sha, `${sha.slice(0, 2)}/${sha.slice(2)}`, `${sha.slice(0, 2)}/${sha.slice(2, 4)}/${sha.slice(4)}`];
+  for (const p of signed) {
+    let at = null;
+    try {
+      const t = Number(git(["log", "-1", "--format=%ct", notes[p], "--", ...paths]).trim());
+      if (Number.isFinite(t) && t > 0) at = t * 1000;
+    } catch { /* the ref's history can't date it */ }
+    if (at === null) at = Number.isFinite(fallback) ? fallback : null;
+    if (at !== null && at >= 1577836800000 && at <= 4102444800000) out[p] = at;
+  }
+  return out;
+}
 function tipState(card, tip, repo, config, now, declared) {
   const signedOn = (sha) => Object.entries(repo.notes).filter(([, ref]) => ok(() => repo.git(["notes", `--ref=${ref}`, "show", sha]))).map(([p]) => p).sort();
   const mainRef = `${repo.remote}/${repo.main}`;
@@ -497,7 +515,11 @@ function tipState(card, tip, repo, config, now, declared) {
   const build = phase === config.collector.buildPhase;
   const order = config.phases.map((p) => p[0]);
   const unsigned = onMain ? [] : reviewsFor(card, cfg).filter((p) => !signed.includes(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  // reviews: when each review the repository shows signed on the tip was signed (derive.mjs derivePhase, #C671); none for a bare
+  // branch, a tip read as a main commit, or one with no sign-offs.
+  const reviews = !bare && !onMain && signed.length && typeof repo.git === "function" && repo.notes ? signedTimesOf(repo.git, after ? after.sha : tip.sha, repo.notes, signed, head.at) : {};
   const extra = {
+    ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(phase && build ? { firm: false } : {}),
     ...(phase && !build && Number.isInteger(head.at) && head.at >= 1577836800000 && head.at <= 4102444800000 ? { readyAt: head.at } : {}),
     ...(phase && !build && unsigned.length ? { waitingFor: unsigned.slice(0, 10) } : {}),
@@ -516,6 +538,27 @@ export function trailerHead(repo, id) {
   }
   return null;
 }
+// #C731 B4b slice 3: collect.mjs's workSeen and shippedAt for a card with no head. A commit on the repository's main line (its last
+// 400) whose subject starts "#C<num>:" or cites "#C<num>" is work seen even with no branch left (a squash or a direct commit);
+// a ship commit (the repository's versionPattern) that cites the card also says when it shipped. Read once per repository run.
+// Not read here: a ship commit that names the card only by its branch@sha (collect.mjs's shippedHeads path).
+const MAIN_LINES = new WeakMap();
+export function mainEvidence(repo, card) {
+  if (!repo || typeof repo.git !== "function" || !Number.isInteger(card.num) || card.num < 1 || card.num > 1e6) return null;
+  if (!MAIN_LINES.has(repo)) {
+    let line = [];
+    try {
+      line = repo.git(["log", "--first-parent", "-400", "--format=%H%x1f%ct%x1f%s", `${repo.remote}/${repo.main}`]).split("\n").filter(Boolean)
+        .map((l) => { const [, at, subject] = l.split("\x1f"); return { at: Number(at) * 1000, subject: String(subject ?? "") }; });
+    } catch { line = []; }
+    MAIN_LINES.set(repo, line);
+  }
+  const cite = new RegExp(`(?:^|[^A-Za-z0-9])#C${card.num}(?![0-9])`);
+  const mine = MAIN_LINES.get(repo).filter((l) => new RegExp(`^#C${card.num}:`).test(l.subject) || cite.test(l.subject));
+  if (!mine.length) return null;
+  const ship = repo.versionPattern ? mine.filter((l) => new RegExp(repo.versionPattern).test(l.subject) && Number.isInteger(l.at) && l.at >= 1577836800000 && l.at <= 4102444800000).map((l) => l.at) : [];
+  return { workSeen: true, ...(ship.length ? { shippedAt: Math.max(...ship) } : {}) };
+}
 export function cardState(card, repo, config, now) {
   const declared = config.phases.some((p) => p[0] === card.phase) ? card.phase : null;
   const base = { num: Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? card.num : null, phase: declared, headSha12: null, signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: now };
@@ -526,7 +569,7 @@ export function cardState(card, repo, config, now) {
   // shows it queued or stalled, because the store carries none of the Collector's readings.
   if (!tips.length && typeof repo.git === "function") { const t = trailerHead(repo, card.id); if (t) tips = [t]; }
   const tip = tips[0];
-  if (!tip) return base;
+  if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };
   const one = tipState(card, tip, repo, config, now, declared);
   const out = { ...base, ...one };
   if (tips.length > 1) {

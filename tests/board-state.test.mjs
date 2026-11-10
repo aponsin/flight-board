@@ -324,7 +324,10 @@ test("the probe: a card on a scratch repository: its tip, sign-offs, main, CI; o
   const gh = (args) => { assert.deepEqual(args.slice(0, 4), ["run", "list", "--commit", sha]); return JSON.stringify([{ status: "in_progress", conclusion: "", createdAt: new Date(T - 4 * 60e3).toISOString(), updatedAt: "" }]); };
   const repo = { git, gh, remote: "origin", main: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, tips: [{ branch: "board-state-probe", sha, at: T, message: "work\n\nBoard-Id: board-state-probe" }, { branch: "main", sha: "x", at: T, message: "" }], live: null, versionPattern: null };
   const card = { id: "board-state-probe", num: 420, level: "Full", phase: "plan" };
-  assert.deepEqual(cardState(card, repo, config, T), { num: 420, phase: "security", headSha12: sha.slice(0, 12), signed: ["checker"], onMain: false, ci: "running", ciMin: 4, liveVersion: null, seen: ["build", "checker"], readyAt: T, waitingFor: ["security"], at: T });
+  // reviews: the note was written just now (real git dates), so only its shape is asserted; the rest is exact.
+  const { reviews, ...read } = cardState(card, repo, config, T);
+  assert.deepEqual(Object.keys(reviews), ["checker"]); assert.ok(Number.isInteger(reviews.checker) && reviews.checker > 1_577_836_800_000);
+  assert.deepEqual(read, { num: 420, phase: "security", headSha12: sha.slice(0, 12), signed: ["checker"], onMain: false, ci: "running", ciMin: 4, liveVersion: null, seen: ["build", "checker"], readyAt: T, waitingFor: ["security"], at: T });
   assert.deepEqual(cardState({ ...card, phase: "Whatever Alice said" }, null, config, T).phase, null, "a declared phase not in the config leaves as nothing");
 });
 

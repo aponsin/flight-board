@@ -56,7 +56,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -75,6 +75,12 @@ const CARD = {
   readyAt: isTime,
   firm: (v) => v === false,
   waitingFor: (v) => Array.isArray(v) && v.length >= 1 && v.length <= MAX_SIGNED && v.every(re(PHASE)) && new Set(v).size === v.length,
+  // #C731 B4b slice 3: workSeen (only ever true: a commit on main cites the card, so a build start is not "no work seen"),
+  // shippedAt (when a ship commit on main naming the card landed), reviews ({ phase: ms }: when each signed review was signed,
+  // from the notes ref's history). Optional.
+  workSeen: (v) => v === true,
+  shippedAt: isTime,
+  reviews: (v) => plain(v) && Object.keys(v).length >= 1 && Object.keys(v).length <= MAX_SIGNED && Object.entries(v).every(([p, t]) => PHASE.test(p) && isTime(t)),
   branches: (v) => Array.isArray(v) && v.length >= 2 && v.length <= MAX_BRANCHES,
   at: isTime,
 };
@@ -215,7 +221,7 @@ export function typedClashes(card, s, config) {
 // or null when it doesn't fit.
 export function pickState(s) {
   if (stateErrors(s).length) return null;
-  const take = (rec, spec) => Object.fromEntries(Object.keys(spec).filter((k) => Object.hasOwn(rec, k)).map((k) => [k, Array.isArray(rec[k]) ? [...rec[k]] : rec[k]]));
+  const take = (rec, spec) => Object.fromEntries(Object.keys(spec).filter((k) => Object.hasOwn(rec, k)).map((k) => [k, Array.isArray(rec[k]) ? [...rec[k]] : plain(rec[k]) ? { ...rec[k] } : rec[k]]));
   const map = (m, spec) => Object.fromEntries(Object.keys(m).sort().map((k) => [k, take(m[k], spec)]));
   const cards = map(s.cards, CARD);
   for (const [k, c] of Object.entries(cards)) if (Array.isArray(c.branches)) c.branches = s.cards[k].branches.map((b) => take(b, BRANCH));
