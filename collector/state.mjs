@@ -528,15 +528,23 @@ function tipState(card, tip, repo, config, now, declared) {
 }
 // The newest commit on the repository's main line (its last 400) whose Board-Id trailer is exactly the card's id, as a head
 // { branch: main, sha, at, message }, or null. The id goes to git as a fixed string, never a pattern or an option.
-export function trailerHead(repo, id) {
+export function trailerHead(repo, id, branch = repo.main, depth = 400) {
   let out = "";
-  try { out = repo.git(["log", "-400", "--fixed-strings", `--grep=Board-Id: ${id}`, "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${repo.main}`]); } catch { return null; }
+  try { out = repo.git(["log", `-${depth}`, "--fixed-strings", `--grep=Board-Id: ${id}`, "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${branch}`]); } catch { return null; }
   for (const r of out.split("\x1e")) {
     const [sha, at, message] = r.replace(/^\n/, "").split("\x1f");
     const ids = [...String(message ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)].map((m) => m[1]);
-    if (/^[0-9a-f]{40}$/.test(sha ?? "") && ids.includes(id)) return { branch: repo.main, sha, at: Number(at) * 1000, message };
+    if (/^[0-9a-f]{40}$/.test(sha ?? "") && ids.includes(id)) return { branch, sha, at: Number(at) * 1000, message };
   }
   return null;
+}
+// #C735: a branch named for a card whose tip is another card's commit (a later card stacked on it: #C730's commit on the #C728
+// branch) is read at the card's OWN newest commit on that branch, the one its reviews were signed on, not at the stacked tip.
+// The tip is kept when the card has no commit of its own on the branch within its last 100.
+export function ownHead(repo, card, tip) {
+  const other = boardIdOf(tip?.message);
+  if (!other || other === card.id || typeof repo?.git !== "function" || !/^[A-Za-z0-9._\/-]+$/.test(String(tip.branch)) || String(tip.branch).startsWith("-")) return tip;
+  return trailerHead(repo, card.id, tip.branch, 100) ?? tip;
 }
 // #C731 B4b slice 3: collect.mjs's workSeen and shippedAt for a card with no head. A commit on the repository's main line (its last
 // 400) whose subject starts "#C<num>:" or cites "#C<num>" is work seen even with no branch left (a squash or a direct commit);
@@ -568,6 +576,7 @@ export function cardState(card, repo, config, now) {
   // as the Collector did (collect.mjs trailerOnMain, #C281/#C716). Without it the probe has no head for a shipped card and the board
   // shows it queued or stalled, because the store carries none of the Collector's readings.
   if (!tips.length && typeof repo.git === "function") { const t = trailerHead(repo, card.id); if (t) tips = [t]; }
+  if (tips[0]) tips = [ownHead(repo, card, tips[0]), ...tips.slice(1)];
   const tip = tips[0];
   if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };
   const one = tipState(card, tip, repo, config, now, declared);

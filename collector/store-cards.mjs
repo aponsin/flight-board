@@ -25,6 +25,9 @@ export function mirrorCard(c) {
     customerText: c.customer_text === 1 ? true : c.customer_text === 0 ? false : undefined,
     lookChange: c.look_change === 1 ? true : c.look_change === 0 ? false : undefined,
     skip: skipList(c.skip),
+    // #C735: the repository a card lives in (state.mjs repoOf reads card.repo before any id prefix: a c-numbered board card has no
+    // listed prefix, so without this word it read the team's repository and its notes), and the batch and bump the ETA reads.
+    repo: str(c.repo), batch: str(c.batch), bump: str(c.bump),
   };
   return Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined));
 }

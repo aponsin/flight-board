@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mirrorCard, storeCards, syncMirror, privateConfig, seedUsage, prepareStoreState } from "../collector/store-cards.mjs";
 import { evidenceJob } from "../collector/probe-evidence.mjs";
-import { phaseOf } from "../collector/state.mjs";
+import { phaseOf, repoOf } from "../collector/state.mjs";
 
 const card = (o = {}) => ({ id: "card-a", num: 5, title: "A card", summary: "words", size: "S", review_level: "Quick", owner_role: "Builder", next_note: null, next_note_at: null, waiting_on: null, paused: 0, dropped: 0, rework_reason: null, created_at: 10, updated_at: 20, ...o });
 const view = (cards) => async () => ({ ok: true, status: 200, json: async () => ({ cards }) });
@@ -88,6 +88,16 @@ test("a store card reaches the same review phase as the old card: customer_text 
   assert.equal(phaseFor({ look_change: 0 }, ["checker", "language"]), "security");
   assert.equal(phaseFor({ skip: JSON.stringify(["security"]) }, ["checker", "language"]), "ship", "an explicit skip list is read");
   assert.equal(phaseFor({ skip: "not json" }, ["checker", "language"]), "security", "a damaged skip list is ignored, not guessed");
+});
+
+test("mirrorCard carries repo, batch and bump, and repoOf then sends a c-numbered board card to its own repository, not by an id prefix (#C735)", () => {
+  const d = { ...mirrorCard(card({ id: "c728-parity", repo: "flight-board", batch: "b1", bump: "minor" })), id: "c728-parity" };
+  assert.deepEqual([d.repo, d.batch, d.bump], ["flight-board", "b1", "minor"]);
+  const config = { collector: { repos: [{ name: "flight-board", idPrefixes: ["board-"] }] } };
+  assert.equal(repoOf(d, config)?.name, "flight-board", "the card's own repo word decides");
+  assert.equal(repoOf({ ...d, repo: undefined }, config), null, "without the word the same id reads the team's repository (the defect)");
+  const e = mirrorCard(card());
+  assert.equal("repo" in e || "batch" in e || "bump" in e, false, "not said stays out");
 });
 
 test("mirrorCard carries the three words only when they are said", () => {
