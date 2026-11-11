@@ -148,39 +148,35 @@ export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha,
   const worker = groups.some(([g]) => g === "Worker code" || g === "database migration" || g === "Worker config (check for a new binding or secret)");
   return `# ${name}: ${cards.length ? cards.join(", ") : "main"} at ${s8}
 
-Pinned to flight-board main ${sha}. Each line checks the file's SHA-256 first and prints CHECK FAILED instead of running a changed file. ${hooksSha ? "Three lines (the third installs the hooks, pinned to this main)" : "Two lines"}, in this order, one at a time.
+Pinned to flight-board main ${sha}. Each line checks the file's SHA-256 first and prints CHECK FAILED instead of running a changed file. ${hooksSha ? "Three lines (the third installs the hooks, pinned to this main)" : "Two lines"}, in this order, one at a time, from any folder: every path is full (#C921).
 ${replaces}${worker ? "The Worker changes: deploy it first (line 1), then the tree (line 2)." : "No Worker code changes: line 1 only tells the Worker which commit it carries."} ${migration ? "A database migration is part of this deploy: answer y if it asks." : "No database migration."}${worker ? " A new secret cannot be seen from the diff: read the Worker code and Worker config lines below." : ""}
 If wrangler is not signed in: npx wrangler@4.150.0 login (once).
 
 ${changed.join("\n")}
 
-\`\`\`bash
-cd ${folder}
-\`\`\`
-
 ## Line 1: deploy
 
 \`\`\`bash
-if [ "$(shasum -a 256 board-store-deploy-${name}.mjs | cut -c1-64)" = ${deploySha} ]; then node board-store-deploy-${name}.mjs; else echo 'CHECK FAILED: board-store-deploy-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
+if [ "$(shasum -a 256 ${folder}/board-store-deploy-${name}.mjs | cut -c1-64)" = ${deploySha} ]; then node ${folder}/board-store-deploy-${name}.mjs; else echo 'CHECK FAILED: board-store-deploy-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
 \`\`\`
 
-Last line: \`DEPLOY OK: the Worker carries ${s8}; now run the tree step\`, and a new file \`board-store-deploy-${name}.done\`. On \`DEPLOY FAILED: ...\` stop and paste it to Manager. Undo: \`npx wrangler@4.150.0 rollback --config board-store-pa/worker/wrangler.board.toml\`.
+Last line: \`DEPLOY OK: the Worker carries ${s8}; now run the tree step\`, and a new file \`board-store-deploy-${name}.done\`. On \`DEPLOY FAILED: ...\` stop and paste it to Manager. Undo: \`npx wrangler@4.150.0 rollback --config ${folder}/board-store-pa/worker/wrangler.board.toml\`.
 
 ## Line 2: tree
 
 \`\`\`bash
-if [ "$(shasum -a 256 board-store-tree-${name}.mjs | cut -c1-64)" = ${treeSha} ]; then node board-store-tree-${name}.mjs update; else echo 'CHECK FAILED: board-store-tree-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
+if [ "$(shasum -a 256 ${folder}/board-store-tree-${name}.mjs | cut -c1-64)" = ${treeSha} ]; then node ${folder}/board-store-tree-${name}.mjs update; else echo 'CHECK FAILED: board-store-tree-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
 \`\`\`
 
-Should print \`TREE OK: board-store-v4 is at ${s7}\`. Undo: \`node board-store-tree-${name}.mjs back\`. It refuses if line 1 has not run.
+Should print \`TREE OK: board-store-v4 is at ${s7}\`. Undo: \`node ${folder}/board-store-tree-${name}.mjs back\`. It refuses if line 1 has not run.
 ${hooksSha ? `
 ## Line 3: hooks (the Stop hook and the page-publish hook, pinned to this main)
 
 \`\`\`bash
-if [ "$(shasum -a 256 board-store-hooks-${name}.mjs | cut -c1-64)" = ${hooksSha} ]; then node board-store-hooks-${name}.mjs; else echo 'CHECK FAILED: board-store-hooks-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
+if [ "$(shasum -a 256 ${folder}/board-store-hooks-${name}.mjs | cut -c1-64)" = ${hooksSha} ]; then node ${folder}/board-store-hooks-${name}.mjs; else echo 'CHECK FAILED: board-store-hooks-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
 \`\`\`
 
-It refuses unless line 2 has run (the tree is at ${s7}). Then quit the app and open it again: hooks load when a session starts. Undo: \`node board-store-hooks-${name}.mjs undo\`. It is the last hooks file with only the pin and the pair number changed. Hook files changed since ${prev ? prev.sha.slice(0, 8) : "the start"}: ${hookPaths.join(", ")} (a hook script, the installer, or a file the two gate scripts import).
+It refuses unless line 2 has run (the tree is at ${s7}). Then quit the app and open it again: hooks load when a session starts. Undo: \`node ${folder}/board-store-hooks-${name}.mjs undo\`. It is the last hooks file with only the pin and the pair number changed. Hook files changed since ${prev ? prev.sha.slice(0, 8) : "the start"}: ${hookPaths.join(", ")} (a hook script, the installer, or a file the two gate scripts import).
 ` : ""}
 Full sha256: deploy ${deploySha}, tree ${treeSha}${hooksSha ? `, hooks ${hooksSha}` : ""}.
 `;

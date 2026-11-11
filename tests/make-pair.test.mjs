@@ -33,8 +33,8 @@ test("the three files are written and the hashes in the steps file are the files
   for (const f of ["board-store-deploy-pc1.mjs", "board-store-tree-pc1.mjs"]) {
     const h = sha256(readFileSync(join(out, f), "utf8"));
     assert.equal(r.files[f], h);
-    assert.ok(steps.includes(`shasum -a 256 ${f} | cut -c1-64)" = ${h} ]`), `${f}: the check line holds the file's hash`);
-    assert.ok(steps.includes(`node ${f}`));
+    assert.ok(steps.includes(`shasum -a 256 ${out}/${f} | cut -c1-64)" = ${h} ]`), `${f}: the check line holds the file's hash`);
+    assert.ok(steps.includes(`node ${out}/${f}`));
   }
   assert.match(steps, new RegExp(`Pinned to flight-board main ${a}`));
   assert.match(readFileSync(join(out, "board-store-deploy-pc1.mjs"), "utf8"), new RegExp(`const SIGNED = "${a}"`));
