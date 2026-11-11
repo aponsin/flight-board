@@ -172,6 +172,17 @@ export function e2eWrite(configText, { stateFile, log = () => {}, now = Date.now
   return { key: "e2e", value: { state: "unknown", reason: kept ? "the daily full test run has not been read for over 2 hours" : "the daily full test run has not been read yet", run: null, lastGreenAt: null } };
 }
 
+// #C956: the team's visual lanes (config decisions.visualLanes), posted under the key look so the store's look rule can tell a Decision on a card of
+// those lanes (the Worker has no board config). Posted every run, an empty list too, so a lane taken out of the config stops counting. A config
+// that cannot be read, or whose lanes are not a list of plain names, writes nothing (the store keeps the last good list).
+export function lookWrite(configText, { log = () => {} } = {}) {
+  let lanes;
+  try { lanes = JSON.parse(configText)?.decisions?.visualLanes; } catch { log("look: the board config could not be read"); return null; }
+  if (lanes === undefined) lanes = [];
+  if (!Array.isArray(lanes) || lanes.length > 20 || !lanes.every((r) => typeof r === "string" && /^[^<>{}\n]{1,60}$/.test(r))) { log("look: decisions.visualLanes is not a list of up to 20 role names; not posted"); return null; }
+  return { key: "look", value: { visualLanes: [...lanes] } };
+}
+
 // #C736: the usage job also posts the day's runner and Actions usage (collector/actions-usage.mjs) to POST /api/probe/usage, which the
 // store's Time spent chart and tiles read. It reads the team repository's workflow runs through gh in the repository folder of the board
 // config (collector.repoPath), at most every 30 minutes for today and until read after the day ended for yesterday (the days read last are
@@ -247,7 +258,9 @@ export async function evidenceJob({ job, base, headers, configPath, stateFile, p
   // #C873: the product's daily full test run (the usage job's kept answer), posted with live; a failure reading it is logged and the evidence above stands.
   let e2eW = null;
   try { e2eW = cfg && e2eWrite(cfg, { stateFile, log, ...e2e }); } catch (e) { log(`e2e failed: ${String(e.message).slice(0, 80)}`); }
-  const late = [live, e2eW].filter(Boolean);
+  let lookW = null;
+  try { lookW = cfg && lookWrite(cfg, { log }); } catch (e) { log(`look failed: ${String(e.message).slice(0, 80)}`); }
+  const late = [lookW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
   if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
   return finish(done);
 }
