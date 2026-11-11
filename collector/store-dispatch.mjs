@@ -16,6 +16,34 @@ export const FOREIGN_WRITER_MS = 5 * 60e3;
 
 const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+// #C850 (dispatch by phase): whose turn it is on a card, and for what, from the card's evidence. The lanes are whoForPhase's
+// (worker/board-rules.mjs PHASE_LANES; a test pins that they are the same). [{ role, phase, step, sha?, signed? }]:
+//   no phase or build        the owner builds and pushes (the push is the READY)
+//   language, design         the lane's agent reviews the pushed commit
+//   checker, security        the lane's agent reviews; with review level Full, Security too while its note is missing
+//   ship, not on main        Release lands it (the notes on that exact commit, a clean dry run, the owner's standing go)
+//   ship, on main, repo word the owner builds the deploy pair (the board's own repository: landed, not deployed)
+//   live, or on main with no repo word: nobody (the lead closes it)
+export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security", ship: "Release" };
+const ROLE_OF_NOTE = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security" };
+export function turnsOf(card, e) {
+  const phase = e?.phase ?? e?.lit?.[0];
+  const sha = typeof e?.headSha12 === "string" && /^[0-9a-f]{12}$/.test(e.headSha12) ? e.headSha12 : undefined;
+  const signed = (Array.isArray(e?.signed) ? e.signed : []).filter((s) => typeof s === "string" && Object.hasOwn(ROLE_OF_NOTE, s));
+  const signedBy = signed.map((s) => ROLE_OF_NOTE[s]);
+  const owner = { role: card.owner_role, phase: "build", step: "build" };
+  if (typeof phase !== "string" || phase === "plan" || phase === "build") return [owner];
+  if (phase === "ship") {
+    if (e.onMain === true) return typeof card.repo === "string" && card.repo !== "" ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, signed: signedBy }] : [];
+    return [{ role: PHASE_LANES.ship, phase: "ship", step: "land", sha, signed: signedBy }];
+  }
+  if (!Object.hasOwn(PHASE_LANES, phase)) return [owner];
+  const out = [];
+  if (!signed.includes(phase)) out.push({ role: PHASE_LANES[phase], phase, step: "review", sha, signed: signedBy });
+  if (phase === "checker" && card.review_level === "Full" && !signed.includes("security")) out.push({ role: "Security", phase, step: "review", sha, signed: signedBy });
+  return out;
+}
+
 // The store's view -> { cards, agents, asked } in the shapes dispatchItems reads, or null when the view cannot say who is idle.
 export function dispatchInput(view, now) {
   const ev = view?.evidence ?? {};
@@ -42,7 +70,9 @@ export function dispatchInput(view, now) {
     if (c.paused || c.dropped || c.blocked_reason) continue;
     const e = ev[`cards.${c.id}`]?.value;
     if ((e?.phase ?? e?.lit?.[0]) === "live") continue;
-    cards.push({ id: c.id, who: c.owner_role, status: "active", waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null });
+    // #C850: a hold with an end (a card the lead put on hold) is skipped; the stall rule brings it back when the hold ends.
+    if (c.hold_end) continue;
+    cards.push({ id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: turnsOf(c, e) });
   }
   // A card with an open ask is waiting for the owner or the lead, not for its agent. Open = not closed and not answered, as on the old
   // board (!done && !response): a withdrawn approval has its answer cleared and waits for the owner's Approve again, so it is still open.
