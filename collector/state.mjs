@@ -23,6 +23,7 @@ import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX,
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { PUBLISHED_FILE } from "./export.mjs";
 import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
+import { reviewsFromPaths } from "./review-paths.mjs";
 import { journalCards, readJournal } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
@@ -263,7 +264,7 @@ export function phaseOf(card, facts, config) {
   if (facts.onMain) return facts.deployed ? c.livePhase : c.shipPhase;
   if (boardIdOf(facts.head.message) !== card.id && facts.signed.size === 0) return c.buildPhase;
   const order = config.phases.map((p) => p[0]);
-  const waiting = reviewsFor(card, config).filter((p) => !facts.signed.has(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const waiting = (Array.isArray(facts.needs) ? facts.needs : reviewsFor(card, config)).filter((p) => !facts.signed.has(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
   return waiting[0] ?? c.shipPhase;
 }
 
@@ -553,6 +554,20 @@ export function noInstallLanding(git, sha) {
   try { paths = String(git(["diff", "--name-only", `${sha}^`, sha])).split("\n").map((p) => p.trim()).filter(Boolean); } catch { return false; }
   return paths.length > 0 && paths.every((p) => DOCS_ONLY.test(p));
 }
+// #C897: the paths a branch changed since it left main (git diff main...tip), once per repository run and tip; null when there is no
+// table to read them for, or git cannot say (the typed rule then decides).
+const BRANCH_PATHS = new WeakMap();
+export function branchPaths(repo, mainRef, sha) {
+  if (!repo?.reviewPaths || typeof repo.git !== "function" || !/^[0-9a-f]{40}$/.test(String(sha))) return null;
+  if (!BRANCH_PATHS.has(repo)) BRANCH_PATHS.set(repo, new Map());
+  const memo = BRANCH_PATHS.get(repo);
+  if (!memo.has(sha)) {
+    let paths = null;
+    try { paths = String(repo.git(["diff", "--name-only", "--no-renames", `${mainRef}...${sha}`, "--"])).split("\n").map((p) => p.trim()).filter(Boolean); } catch { /* unread: the typed rule */ }
+    memo.set(sha, paths);
+  }
+  return memo.get(sha);
+}
 function tipState(card, tip, repo, config, now, declared, cover = null) {
   // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
   // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
@@ -579,7 +594,9 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   const noInstall = onMain && typeof repo.git === "function" && noInstallCard(repo, card, mainRef, head.sha);
   const deployed = onMain && (noInstall || (!!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]))));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
-  const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed }, cfg);
+  // #C897: the reviews from the paths the branch changed since it left main, when the repository has a reviewPaths table.
+  const needs = !onMain && !bare ? reviewsFromPaths(card, cfg, reviewsFor(card, cfg), repo.reviewPaths, branchPaths(repo, mainRef, tip.sha)) : null;
+  const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed, ...(needs ? { needs } : {}) }, cfg);
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
   const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed });
@@ -587,7 +604,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   // or a bare branch); otherwise readyAt is the head's time, and a tip still in review lists the reviews unsigned on it.
   const build = phase === config.collector.buildPhase;
   const order = config.phases.map((p) => p[0]);
-  const unsigned = onMain ? [] : reviewsFor(card, cfg).filter((p) => !signed.includes(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const unsigned = onMain ? [] : (needs ?? reviewsFor(card, cfg)).filter((p) => !signed.includes(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
   // reviews: when each review the repository shows signed on the tip was signed (derive.mjs derivePhase, #C671); none for a bare
   // branch, a tip read as a main commit, or one with no sign-offs.
   const reviews = !bare && !onMain && signed.length && typeof repo.git === "function" && repo.notes
@@ -1020,14 +1037,14 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const r = repoAt(home(c.repoPath), c.remote, c.mainBranch, c.notes);
     let live = null;
     if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { /* none */ } }
-    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern };
+    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern, reviewPaths: c.reviewPaths ?? null };
   }
   for (const x of c.repos) {
     const installed = installedSha(home(x.installedLink ?? ""));
     const at = repoAt(home(x.path), x.remote ?? "origin", x.mainBranch ?? "main", x.notes);
     // #C737: the evidence job of the store sets FB_DEPLOY_RULE; the old state job does not, and keeps reading the installed link.
     const live = process.env.FB_DEPLOY_RULE === "1" ? deployedSha(at.git, process.env.FB_DEPLOY_WORKER, process.env.FB_DEPLOY_TREE) : installed;
-    repos[x.name] = { ...at, gh: null, live, versionPattern: null };
+    repos[x.name] = { ...at, gh: null, live, versionPattern: null, reviewPaths: x.reviewPaths ?? null };
   }
   // #C642: what the Collector's last run saved is merged into the mirror first, so this minute reads the board as of that run. The merge
   // and the derive after it are collect.mjs --probe-step, a child process (the collector's code is the release's, not this pinned file's).
