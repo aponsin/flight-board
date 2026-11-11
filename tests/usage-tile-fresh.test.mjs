@@ -5,7 +5,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { usageReading } from "../collector/readings.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
-import { buildState, USAGE_EVERY_MS } from "../collector/state.mjs";
+import { buildState, USAGE_EVERY_MS, usageTile } from "../collector/state.mjs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { changeKey } from "../worker/state-worker.mjs";
 import { loadNames } from "./harness.mjs";
 
@@ -72,4 +75,40 @@ test("a state with no asOf (a probe from before) is aged by the probe's own cloc
   assert.match(page(live(use({ at: NOW - 2 * MIN }))).planTile(), /as of 2 min ago/);
   assert.match(page(live(use({ asOf: NOW + 60 * MIN }))).planTile(), /class="tot plan amber"/);
   assert.equal(page(live(use({ asOf: NOW - 3 * MIN }))).liveUsage(NOW).asOf, NOW - 3 * MIN);
+});
+
+// ---- #C842: a fixed reading pins the number, the window and the label
+// The panel read 39% at 2026-11-11T00:59Z, "Resets in 5d 1h" (reset 2026-11-16T02:00Z, week from 2026-11-09T02:00Z). The spend
+// total for that window, counted by the new script (each call once, subagents in, cache_read not weighed), was 78,377,246 weighted
+// tokens (the old script said 203.5M, counting every call about twice), so the quota that makes that reading 39% is 201,000,000.
+test("a fixed reading: 78,377,246 weighted at 00:59Z on 11-11 over a 201M quota is 39%, from the 11-09 02:00Z reset", () => {
+  const now = Date.parse("2026-11-11T00:59:00Z"), calls = [];
+  const r = usageTile({
+    scriptText: "x", dir: mkdtempSync(join(tmpdir(), "usage-")), roster, now, quota: 201_000_000, resetAt: "2026-11-09T02:00Z",
+    run: (args) => { calls.push(args); return JSON.stringify({ total_weighted: 78_377_246, rows: [{ source: "Manager", share: 1 }] }); },
+  });
+  assert.equal(r.resetsAt, Date.parse("2026-11-16T02:00:00Z"), "the reset the panel showed");
+  assert.deepEqual(calls[0].slice(-2), ["--since", "2026-11-09T02:00"], "the window began at the previous reset");
+  assert.equal(Math.round(r.tile.weekPct), 39);
+});
+
+test("v2b: with no quota the tile reads 'not calibrated yet' and the week's weighted total, and no percent", () => {
+  const now = Date.parse("2026-11-11T00:59:00Z");
+  const r = usageTile({ scriptText: "x", dir: mkdtempSync(join(tmpdir(), "usage-")), roster, now, quota: 0, resetAt: "2026-11-09T02:00Z", run: () => JSON.stringify({ total_weighted: 78_377_246, rows: [{ source: "Manager", share: 1 }] }) });
+  assert.equal(r.tile.weekPct, null);
+  assert.equal(r.tile.weekTotal, 78_377_246);
+  const state = buildState({ id: "b", now, probe: null, pageVersion: null, cards: {}, agents: {}, usage: r.tile });
+  assert.deepEqual(stateErrors(state), []);
+  assert.equal(pickState(state).usage.weekTotal, 78_377_246, "it reaches the Worker's copy");
+  const html = page(live(use({ weekPct: null, weekTotal: 78_377_246, pace: null, level: "ok", asOf: NOW - MIN }))).planTile();
+  assert.match(html, /Plan week \(est\.\)/);
+  assert.match(html, /not calibrated yet · 78\.4M weighted this week/);
+  assert.match(html, /<div class="n">–<\/div>/, "no percent is shown");
+  assert.ok(stateErrors({ ...state, usage: { ...state.usage, weekTotal: -1 } }).some((e) => /usage\.weekTotal/.test(e)));
+});
+
+test("the tile is labelled as an estimate and says what it counts", () => {
+  const html = page(live(use({ asOf: NOW - MIN }))).planTile();
+  assert.match(html, /Plan week \(est\.\)/);
+  assert.match(html, /this Mac's Claude Code only/);
 });

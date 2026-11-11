@@ -56,7 +56,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "weekTotal"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -100,6 +100,7 @@ const AGENT = {
 //   stuck: { <role>: { kind, card, since } }          a role stuck on one step, or waiting on the owner (kind: step | user)
 //   usage: { at, asOf?, weekPct, pace, level, top: [{ src, pct }] }   pace in hundredths (130 = 1.3x); src a role, "scheduled" or "other";
 //          asOf (#C623, optional): when the spend script last ran, the time the numbers are of (at is the probe's clock)
+//          weekTotal (#C842, optional): the week's weighted total from the spend script, a whole number; shown when weekPct is null (not calibrated)
 //   ship (#C679, optional): { version, ci, at } a ship candidate branch (collector.candidatePattern, "build/ship-v1.2.3") is pushed and not
 //          on main yet: version its number or null, ci its CI run (none | queued | running | passed), at the branch tip's time.
 //          The page's "Safe to restart" badge is never green while it is there. A probe before it leaves the key out.
@@ -113,7 +114,7 @@ export const STUCK_KINDS = ["step", "user"], USAGE_LEVELS = ["ok", "amber", "red
 const whole = (lo, hi) => (v) => Number.isInteger(v) && v >= lo && v <= hi;
 const CTX = { pct: whole(0, 100), tokens: nullOr(whole(0, 5e6)), at: isTime, over: (v) => typeof v === "boolean" };
 const STUCK = { kind: (v) => STUCK_KINDS.includes(v), card: nullOr(isId), since: isTime };
-const USAGE = { at: isTime, asOf: isTime, weekPct: nullOr(whole(0, 1000)), pace: nullOr(whole(0, 10000)), level: (v) => USAGE_LEVELS.includes(v), top: (v) => Array.isArray(v) && v.length <= MAX_TOP };
+const USAGE = { at: isTime, asOf: isTime, weekTotal: whole(0, 1e12), weekPct: nullOr(whole(0, 1000)), pace: nullOr(whole(0, 10000)), level: (v) => USAGE_LEVELS.includes(v), top: (v) => Array.isArray(v) && v.length <= MAX_TOP };
 const USAGE_TOP = { src: re(ROLE), pct: whole(0, 100) };
 const SHIP = { version: nullOr(re(VERSION)), ci: (v) => SHIP_CI.includes(v), at: isTime };
 

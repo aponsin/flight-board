@@ -243,5 +243,5 @@ test("the page: stuck roles show as lines, red for the owner's; the usage tile t
   assert.match(html, /Manager 9%/);
   assert.doesNotMatch(html, /bad src/);
   assert.equal(page(live({})).planTile(), "", "no reading, no tile");
-  assert.match(page(live({ usage: { at: NOW, weekPct: null, pace: null, level: "ok", top: [] } })).planTile(), /no plan reading/);
+  assert.match(page(live({ usage: { at: NOW, weekPct: null, pace: null, level: "ok", top: [] } })).planTile(), /not calibrated yet/);
 });
