@@ -1,0 +1,1 @@
+PASS Quick: #C844 terminal-done-note re-cut, commit 1 of 2 on main a49e425c. Same patch as 98b3898, range-diff equal. A note on a Terminal or Action ask that only says done, ok or closed is stored as Done, anything else stays Help. Suite at this commit 2025 of 2025 green.
