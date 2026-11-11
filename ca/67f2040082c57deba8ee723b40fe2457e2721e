@@ -1,0 +1,1 @@
+SECURE #C955 stop-hook-skips-compaction-summary (Security 2026-11-11): ownTurnText only adds Stop-hook duties, so dropping the summary can remove a nag but never grants a write or a go; the skip is anchored at the text's start or the app's own isCompactSummary mark, which board text cannot set. Mutation check: pass (mark skip removed). Full suite 2523/2523.
