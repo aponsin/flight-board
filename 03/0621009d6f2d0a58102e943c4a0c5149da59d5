@@ -1,0 +1,1 @@
+SECURE #C953 build/stack-cross-repo-chain@0306210 on main e05063b: dispatch names a stack branch only to cards of the same repo word; repo is only compared, never run or printed beyond the branch it already named. - Security
