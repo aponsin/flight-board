@@ -1,0 +1,1 @@
+PASS Full: #C829 v4 store-root-is-board, chain commit 2 of 5 on 71e22ee. Range-diff against signed v2 1fcd6fcb and reviewed v3 a35486f: only CHANGELOG context differs. Full suite 1980 of 1980 green on this commit, on the second run. The first run missed one page speed test, board-fast-threads, at 536 ms under load, and this commit does not touch the page code.
