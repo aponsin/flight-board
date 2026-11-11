@@ -154,9 +154,10 @@ test("(b) a card with an open hold_end is not dispatched; once its ask is closed
 const draw = (f) => { const b = loadBoard(); b.state.steps = []; b.state.waiting = []; return b.initRow(b.gates(b.enrich({ id: "x", level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", phase: "ship", ...f }))); };
 const SLOW_SHIP = { shipAt: Date.now() - 30 * MIN };
 test("(c) waiting_on shows on the tile as 'Held: <reason>'; a hold end alone shows 'Held: waiting on <id>'", () => {
-  assert.match(draw({ waitingOn: "Checker: a verdict" }), /<span class="held-line">Held: Checker: a verdict, until no end set<\/span>/);
+  // #C935: the reason stays in view; the end is "Until: <end>" inside the card's Details fold.
+  assert.match(draw({ waitingOn: "Checker: a verdict" }), /<span class="held-line">Held: Checker: a verdict<\/span>[\s\S]*<span class="held-line">Until: no end set<\/span>/);
   assert.match(draw({ holdEnd: "t-100" }), /<span class="held-line">Held: waiting on t-100<\/span>/);
-  assert.match(draw({ waitingOn: "the owner", holdEnd: "t-100" }), /Held: the owner, until t-100/);
+  assert.match(draw({ waitingOn: "the owner", holdEnd: "t-100" }), /Held: the owner<\/span>[\s\S]*Until: t-100/);
 });
 
 test("(c) the reason is escaped like every card text on the page", () => {
