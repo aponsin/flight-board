@@ -167,10 +167,12 @@ export async function screenshotsRefusal(db, list) {
 }
 
 // What the view needs: every link with its file, and the stored images the asks' screenshots name.
-export async function readFiles(db, asks = []) {
+export async function readFiles(db, asks = [], messages = []) {
   const links = (await db.prepare("SELECT l.ref_kind, l.ref_id, l.pos, f.id, f.name, f.type, f.size FROM file_links l JOIN files f ON f.id = l.file_id ORDER BY l.ref_kind, l.ref_id, l.pos").all()).results;
   const want = new Set();
   for (const a of asks) { let b; try { b = JSON.parse(a.body); } catch { continue; } for (const s of Array.isArray(b?.screenshots) ? b.screenshots : []) { const p = parseShot(s); if (p) want.add(p.id); } }
+  // #C936: the pictures an agent's message carries (messages.screenshots, a JSON list) are read the same way.
+  for (const m of messages) { let l; try { l = JSON.parse(m.screenshots); } catch { continue; } for (const s of Array.isArray(l) ? l : []) { const p = parseShot(s); if (p) want.add(p.id); } }
   const images = [];
   const ids = [...want];
   for (let i = 0; i < ids.length; i += 90) {
@@ -196,6 +198,14 @@ export function applyFiles(collections, view) {
     const shots = (Array.isArray(body.screenshots) ? body.screenshots : []).map(parseShot).filter((p) => p && images.has(p.id));
     if (shots.length) w.images = shots.map((p) => ({ url: `/_blob/${p.id}`, label: p.label, ...(p.option ? { option: p.option } : {}) }));
   }
-  for (const m of collections.messages ?? []) { const sent = byRef[`message:${m.id}`]; if (sent) m.assets = sent; }
+  for (const m of collections.messages ?? []) {
+    const sent = byRef[`message:${m.id}`]; if (sent) m.assets = sent;
+    // #C936: an agent's message with screenshots: the same images list an ask has ({ url, label, option? }), only stored images.
+    if (m.screenshots !== undefined) {
+      const shots = (Array.isArray(m.screenshots) ? m.screenshots : []).map(parseShot).filter((p) => p && images.has(p.id));
+      if (shots.length) m.images = shots.map((p) => ({ url: `/_blob/${p.id}`, label: p.label, ...(p.option ? { option: p.option } : {}) }));
+      delete m.screenshots;
+    }
+  }
   return collections;
 }

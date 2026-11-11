@@ -125,8 +125,8 @@ export function answerShapeRefusal(ask, { status, note, other, hasFiles } = {}) 
 // ("Chose A: Red"). The owner's messages carry neither (#C725 B1b). Returns null when fine.
 const MESSAGE_KIND = /^[a-z][a-z-]{0,19}$/;
 export function messageExtrasRefusal(m, who) {
-  if (m.kind === undefined && m.options === undefined) return null;
-  if (who === "owner") return refuse("message-shape", "the owner's message carries no kind or options");
+  if (m.kind === undefined && m.options === undefined && m.screenshots === undefined) return null;
+  if (who === "owner") return refuse("message-shape", "the owner's message carries no kind, options or screenshots");
   if (m.kind !== undefined && !(typeof m.kind === "string" && MESSAGE_KIND.test(m.kind))) return refuse("message-shape", "kind is a short lower-case word");
   if (m.options !== undefined) {
     if (m.kind !== "decision") return refuse("message-shape", "options go with the kind decision");
