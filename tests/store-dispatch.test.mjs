@@ -80,6 +80,10 @@ test("#C845: a card whose depends_on is not live is not dispatched; once each is
   assert.equal(run(withDep({ dropped: 1 }), dir()).items.filter((i) => i.card === "c900-thing").length, 1, "a dropped dependency holds nothing");
   assert.equal(run(withDep({}, null, '["no-such-card"]'), dir()).items.filter((i) => i.card === "c900-thing").length, 1, "an unknown one holds nothing");
   assert.equal(run(withDep({}, null, "not json"), dir()).items.filter((i) => i.card === "c900-thing").length, 1, "an unreadable list holds nothing");
+  assert.equal(run(view({ card: { depends_on: '["c900-thing"]' } }), dir()).items.length, 1, "a card that lists itself does not wait for itself");
+  const lit = withDep();
+  lit.evidence["cards.c901-dep"] = { readAt: NOW - 10_000, value: { lit: ["live"] } };
+  assert.equal(run(lit, dir()).items.filter((i) => i.card === "c900-thing").length, 1, "the dependency's live phase is read from lit[0] when there is no phase");
 });
 
 test("a blocked card (a blocked_reason) is not dispatched, as on the old shape and in the store's stall rule", () => {

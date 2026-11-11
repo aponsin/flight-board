@@ -75,15 +75,16 @@ test("the page: one 'waits on #Cn, …', a link per open dependency; done ones a
   assert.doesNotMatch(b.dependsLine(card("after", { dependsOn: ["evil"] })), /<img/, "a name is escaped");
 });
 
-test("the page names only the dependencies that hold the build: still on plan or build, the repository's word first (Checker)", () => {
+test("the page names every dependency that is not live yet (the dispatch's rule, #C845): at checker too, the repository's word first", () => {
   const b = loadNames(["dependsLine", "derivedOf"]);
   const cards = [card("held", { num: 1, phase: "build" }), card("planned", { num: 2, phase: "plan" }), card("review", { num: 3, phase: "checker" }),
-    card("says-build", { num: 4, phase: "build" }), card("says-review", { num: 5, phase: "checker" }),
-    card("after", { dependsOn: ["held", "planned", "review", "says-build", "says-review"] })];
-  Object.assign(b.state, { initiatives: cards, initRaw: cards, derived: [{ id: "all", cards: { "says-build": { phase: "security" }, "says-review": { phase: "build" } } }] });
+    card("says-live", { num: 4, phase: "build" }), card("says-review", { num: 5, phase: "live" }), card("is-live", { num: 6, phase: "live" }),
+    card("after", { dependsOn: ["held", "planned", "review", "says-live", "says-review", "is-live"] })];
+  Object.assign(b.state, { initiatives: cards, initRaw: cards, derived: [{ id: "all", cards: { "says-live": { phase: "live" }, "says-review": { phase: "checker" } } }] });
   const nums = (h) => [...h.matchAll(/>#C(\d+)</g)].map((m) => Number(m[1]));
-  assert.deepEqual(nums(b.dependsLine(cards[5])), [1, 2, 5], "plan and build hold; review and ship don't; the repository's phase over the card's");
-  assert.equal(b.dependsLine(card("x", { dependsOn: ["review"] })), "", "past build: it no longer waits");
+  assert.deepEqual(nums(b.dependsLine(cards[6])), [1, 2, 3, 5], "plan, build and checker hold; live doesn't; the repository's phase over the card's");
+  assert.match(b.dependsLine(card("x", { dependsOn: ["review"] })), /waits on .*#C3/, "a dependency at checker (the #C843 case) is named");
+  assert.equal(b.dependsLine(card("x", { dependsOn: ["is-live"] })), "", "live: it no longer waits");
 });
 
 // Security (LOW on f6a2c7c): the lead-only fields can't be cleared around the rule, by a whole-card set without them or a
