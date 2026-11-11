@@ -1,0 +1,1 @@
+SECURE #C952 build/store-look-decision-rule@ab75cb8 (on 8d29962): refuse-only; LOOK_RE from a fixed list, simple suffixes, no backtracking risk on the 8000-char body; reads already-validated text; refusal names only option letters; imports (now = null) skipped. - Security
