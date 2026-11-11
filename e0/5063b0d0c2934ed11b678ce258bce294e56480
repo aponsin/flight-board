@@ -1,0 +1,1 @@
+PASS Quick: #C928 LOW2 at e05063b (build/pair-chain-b tip, on a6d3645). CHANGELOG only, the same change as d88e7bb and 4ac1cf5; the range-diff differs only in context lines. Full suite on this tip 2502 of 2502.
