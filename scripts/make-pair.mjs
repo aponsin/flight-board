@@ -172,7 +172,15 @@ if [ "$(shasum -a 256 ${folder}/board-store-deploy-${name}.mjs | cut -c1-64)" = 
 \`\`\`
 
 Last line: \`DEPLOY OK: the Worker carries ${s8}; now run the tree step\`, and a new file \`board-store-deploy-${name}.done\`. On \`DEPLOY FAILED: ...\` stop and paste it to Manager. Undo: \`npx wrangler@4.150.0 rollback --config ${folder}/board-store-pa/worker/wrangler.board.toml\`.
+${boardDeploySha ? `
+### Undo line 1 in one command (the same token, works over SSH)
 
+\`\`\`bash
+if [ "$(shasum -a 256 ${folder}/board-deploy.mjs | cut -c1-64)" = ${boardDeploySha} ]; then node ${folder}/board-deploy.mjs rollback ${name} ${deploySha}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi
+\`\`\`
+
+It checks the deploy file against the hash on the line (and against this steps file), then puts the Worker back on its previous version with the token from board.private.json; wrangler asks you to confirm: answer y. It ends with \`ROLLBACK OK\` or \`ROLLBACK FAILED\`. The database keeps its new columns, and the file \`board-store-deploy-${name}.done\` is removed, so the tree step refuses until line 1 runs again. The tree step has its own undo, below.
+` : ""}
 ## Line 2: tree${boardDeploySha ? " (by hand)" : ""}
 
 \`\`\`bash

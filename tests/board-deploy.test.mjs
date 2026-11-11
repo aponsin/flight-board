@@ -12,7 +12,7 @@ import { createHash } from "node:crypto";
 import { spawnSync, execFileSync } from "node:child_process";
 import { makePair } from "../scripts/pair/make-pair.mjs";
 import { makeAll, stepsText } from "../scripts/make-pair.mjs";
-import { boardDeploy, readSteps } from "../scripts/pair/board-deploy.mjs";
+import { boardDeploy, boardRollback, readSteps } from "../scripts/pair/board-deploy.mjs";
 import { lintPack } from "../scripts/pack-lint.mjs";
 import { scanCommit, neverCommit, NEVER_COMMIT } from "../scripts/scan.mjs";
 
@@ -471,4 +471,120 @@ test("copying the script is the only way it travels: it names no secret and no r
   const text = bd.toString("utf8");
   assert.ok(!/CLOUDFLARE_API_TOKEN|cloudflareApiToken/.test(text.replace(/^\/\/.*$/gm, "")), "no credential handling in the generic script's code");
   assert.ok(!/process\.env/.test(text), "it reads no environment");
+});
+
+// ---------------------------------------------------------------------------------------------------------------- #C928: the rollback form
+// The undo with the same token: the deploy file's `rollback` (rollbackRun) and board-deploy.mjs's `rollback pc<n> <deploy sha256>`.
+const { rollbackRun } = await import(pathToFileURL(join(gen, "board-store-deploy-pc34.mjs")).href);
+const CONFIG = `${DIR}/board-store-pa/worker/wrangler.board.toml`, MARKER = `${DIR}/board-store-deploy-pc34.done`;
+
+// An in-memory folder for rollbackRun: o.checkout false (no deploy checkout), o.marker false (no marker), o.file as in world().
+function rworld(o = {}) {
+  const file = o.file === undefined ? { mode: 0o600, text: GOOD } : o.file;
+  const lines = [], calls = [], removed = [];
+  const fs = {
+    existsSync: (p) => (p === CONFIG && o.checkout !== false) || (p === MARKER && o.marker !== false),
+    lstatSync: (p) => { if (p === FILE && file) return { isFile: () => true, mode: 0o100000 | file.mode }; throw new Error("ENOENT"); },
+    readFileSync: (p) => { if (p === FILE && file) return file.text; throw new Error("ENOENT"); },
+    unlinkSync: (p) => removed.push(p),
+  };
+  const spawn = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return typeof o.wr === "function" ? o.wr() : o.wr ?? { status: 0 }; };
+  return { go: () => rollbackRun({ here: DIR, spawn, fs, say: (l) => lines.push(l) }), lines, calls, removed };
+}
+
+test("rollback with the token: one pinned wrangler rollback on the checkout's config, both variables in its environment, the marker removed, nothing prints the token", () => {
+  const w = rworld();
+  const r = w.go();
+  assert.equal(r.ok, true, r.line);
+  assert.equal(w.calls.length, 1, "wrangler rollback and nothing else");
+  assert.deepEqual([w.calls[0].cmd, w.calls[0].args], ["npx", ["--yes", "wrangler@4.150.0", "rollback", "--config", CONFIG]]);
+  assert.equal(w.calls[0].opts.stdio, "inherit", "wrangler's own confirmation prompt reaches the owner");
+  assert.equal(w.calls[0].opts.env.CLOUDFLARE_API_TOKEN, TOKEN);
+  assert.equal(w.calls[0].opts.env.CLOUDFLARE_ACCOUNT_ID, ACCOUNT);
+  assert.deepEqual(w.removed, [MARKER], "the tree step refuses until line 1 runs again");
+  assert.match(w.lines.at(-1), /^ROLLBACK OK: .*tree step refuses until line 1 runs again/);
+  assert.ok(!JSON.stringify([w.lines, w.calls.map((c) => [c.cmd, c.args])]).includes(TOKEN), "the token is in no line and no argument");
+});
+
+test("rollback with no token file: wrangler's own login, no environment added; a marker that is not there is no failure", () => {
+  const w = rworld({ file: null, marker: false });
+  const r = w.go();
+  assert.equal(r.ok, true, r.line);
+  assert.equal(w.calls[0].opts.env, undefined);
+  assert.deepEqual(w.removed, []);
+  assert.match(w.lines[0], /No token in .*board\.private\.json/);
+});
+
+test("rollback that fails says so and keeps the marker: wrangler exits 1, cannot start, or prints the token; no checkout; a settings file others can read", () => {
+  const cases = {
+    "wrangler exits 1": { wr: { status: 1 } },
+    "wrangler cannot start": { wr: { status: null, error: new Error(`cannot start ${TOKEN}`) } },
+    "wrangler throws": { wr: () => { throw new Error(`boom ${TOKEN} ${ACCOUNT}`); } },
+    "no deploy checkout": { checkout: false },
+    "a settings file others can read": { file: { mode: 0o644, text: GOOD } },
+  };
+  for (const [why, o] of Object.entries(cases)) {
+    const w = rworld(o);
+    const r = w.go();
+    assert.equal(r.ok, false, why);
+    assert.match(r.line, /^ROLLBACK FAILED: /, why);
+    assert.deepEqual(w.removed, [], `${why}: the marker stays, the Worker was not put back`);
+    assert.ok(!JSON.stringify([w.lines, w.calls.map((c) => [c.cmd, c.args])]).includes(TOKEN) && !JSON.stringify(w.lines).includes(ACCOUNT), `${why}: no token and no account id in anything printed`);
+    if (o.checkout === false || o.file) assert.equal(w.calls.length, 0, `${why}: wrangler was not run`);
+  }
+});
+
+test("board-deploy rollback form: checks the deploy file against the pasted hash and the steps file, then runs that file with rollback and nothing else", () => {
+  const f = folder();
+  const [deploySha] = f.hashes;
+  const calls = [], lines = [];
+  const spawn = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { status: 0 }; };
+  const r = boardRollback({ name: NAME, dir: f.dir, deploySha, spawn, say: (l) => lines.push(l), node: "node" });
+  assert.equal(r.ok, true);
+  assert.deepEqual(calls.map((c) => [c.cmd, c.args.map((a) => a.split("/").pop())]), [["node", [DEPLOY_F, "rollback"]]]);
+  assert.equal(calls[0].opts.stdio, "inherit"); assert.equal(calls[0].opts.env, undefined, "the environment is passed on as it is: the deploy file adds the token");
+  // a failing run is reported and returns not ok
+  assert.equal(boardRollback({ name: NAME, dir: f.dir, deploySha, spawn: () => ({ status: 1 }), say: (l) => lines.push(l), node: "node" }).code, 1);
+  assert.match(lines.at(-1), /rollback did not finish/);
+});
+
+test("board-deploy rollback form refuses and runs nothing: usage, a bad hash, a missing or disagreeing steps file, a changed deploy file", () => {
+  const f = folder();
+  const [deploySha] = f.hashes;
+  const say = [], none = () => assert.fail("ran");
+  assert.equal(boardRollback({ name: NAME, dir: f.dir, spawn: none, say: (l) => say.push(l) }).code, 2, "no hash");
+  assert.equal(boardRollback({ name: "pc34; x", dir: f.dir, deploySha, spawn: none, say: (l) => say.push(l) }).code, 2, "bad name");
+  assert.equal(boardRollback({ name: NAME, dir: f.dir, deploySha: deploySha.toUpperCase(), spawn: none, say: (l) => say.push(l) }).code, 2, "upper case hash");
+  assert.equal(boardRollback({ name: "pc99", dir: f.dir, deploySha, spawn: none, say: (l) => say.push(l) }).ok, false);
+  assert.match(say.at(-1), /CHECK FAILED: board-store-pc99-steps\.md is not in this folder/);
+  assert.equal(boardRollback({ name: NAME, dir: f.dir, deploySha: "0".repeat(64), spawn: none, say: (l) => say.push(l) }).ok, false);
+  assert.match(say.at(-1), /the steps file names .* but the command line gives/);
+  const g = folder({ tamper: { [DEPLOY_F]: "// changed\n" } });
+  assert.equal(boardRollback({ name: NAME, dir: g.dir, deploySha: g.hashes[0], spawn: none, say: (l) => say.push(l) }).ok, false);
+  assert.match(say.at(-1), /is not the signed file/);
+});
+
+test("the steps file gives the undo as a one-command line bound to the deploy hash; run against a changed board-deploy.mjs it refuses", () => {
+  const f = folder();
+  const undo = f.steps.split("\n").find((l) => l.startsWith("if [ ") && l.includes("board-deploy.mjs rollback "));
+  assert.ok(undo, "the undo line is in the steps");
+  assert.ok(undo.includes(`board-deploy.mjs rollback ${NAME} ${f.hashes[0]};`), "it carries the deploy file's hash");
+  assert.ok(f.steps.includes("npx wrangler@4.150.0 rollback --config"), "the by-hand undo stays");
+  assert.equal(oneLiner(f.steps).includes(" rollback "), false, "the deploy one-liner is still first and unchanged");
+  const tampered = folder();
+  writeFileSync(join(tampered.dir, "board-deploy.mjs"), "// changed\n");
+  const r = sh(tampered.dir, undo.replaceAll(f.dir, tampered.dir));
+  assert.match(r.stdout, /CHECK FAILED/);
+  assert.ok(!tampered.ran("deploy.ran"));
+});
+
+test("a real run of the rollback form against a stub deploy file passes `rollback` and opens no browser", () => {
+  const stub = `import { writeFileSync } from "node:fs";\nwriteFileSync(new URL("./deploy.ran", import.meta.url), process.argv.slice(2).join(" ") + "\\n");\nconsole.log("ROLLBACK OK: stub");\n`;
+  const f = folder({ deployBody: stub });
+  const r = spawnSync(process.execPath, [join(f.dir, "board-deploy.mjs"), "rollback", NAME, f.hashes[0]], { cwd: f.dir, encoding: "utf8", env: { PATH: `${bin(f.dir)}:${process.env.PATH}`, SSH_CONNECTION: "10.0.0.2 51234 10.0.0.3 22" } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(readFileSync(join(f.dir, "deploy.ran"), "utf8"), "rollback\n");
+  assert.ok(!existsSync(join(f.dir, "browser.opened")));
+  assert.match(r.stdout, /ROLLBACK OK: stub/);
+  assert.equal(spawnSync(process.execPath, [join(f.dir, "board-deploy.mjs"), "rollback", NAME, "0".repeat(64)], { cwd: f.dir, encoding: "utf8" }).status, 1, "a hash the steps file does not name: refused, exit 1");
 });

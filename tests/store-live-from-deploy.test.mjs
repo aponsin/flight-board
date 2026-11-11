@@ -123,7 +123,10 @@ test("a pair made from the templates: the deploy sets BUILD_SHA to the signed co
   assert.match(deploy, /if \(checkedOut !== signed\) return stop\(/, "and it must be the signed commit");
   assert.equal((deploy.match(/BUILD_SHA:/g) ?? []).length, 1, "BUILD_SHA is set in exactly one place");
   // #C924: no argument reaches the deploy; the environment is read in exactly one place, to carry the two Cloudflare values from the private file.
-  assert.ok(!/process\.argv\.slice|process\.argv\[2\]/.test(deploy), "no argument reaches the deploy");
+  // #C928: the one argument it reads is the word rollback, compared and never used as a value (the undo, which runs rollbackRun and no deploy).
+  assert.ok(!/process\.argv\.slice/.test(deploy), "no argument list reaches the deploy");
+  assert.deepEqual([...deploy.matchAll(/process\.argv\[(\d+)\]/g)].map((m) => m[1]).filter((i) => i !== "1"), ["2"], "the only argument read (argv[1] is the file's own name) is argv[2]");
+  assert.equal((deploy.match(/process\.argv\[2\] === "rollback"/g) ?? []).length, 1, "and it is only compared with the word rollback");
   assert.equal((deploy.match(/process\.env/g) ?? []).length, 1, "process.env is read in one place only");
   assert.match(deploy, /\{ \.\.\.opts, env: \{ \.\.\.process\.env, \.\.\.creds \} \}/);
   assert.ok(deploy.includes("board-store-deploy-pc11.done") && tree.includes("board-store-deploy-pc11.done"), "one marker name in both");

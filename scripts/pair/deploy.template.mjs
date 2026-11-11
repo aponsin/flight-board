@@ -10,10 +10,11 @@
 // #C924: when the owner's private settings file board.private.json (in this folder, outside any repository, mode 600) holds cloudflareApiToken
 // and cloudflareAccountId, each wrangler call gets them as CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in its environment, so nothing opens a
 // browser (works over SSH). They are never an argument, never written anywhere and never printed. Without the file: the browser login, as before.
-// Undo: the Worker's previous version stays in Cloudflare: `npx wrangler@4.150.0 rollback --config <board-store-pa>/worker/wrangler.board.toml`
-// (new columns stay, empty and unused by the older code).
+// Undo: the Worker's previous version stays in Cloudflare: `node <this file> rollback` (#C928: the same token, so it works over SSH; see
+// rollbackRun), or by hand `npx wrangler@4.150.0 rollback --config <board-store-pa>/worker/wrangler.board.toml` (new columns stay, empty and
+// unused by the older code).
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -147,9 +148,39 @@ export function deployRun({ here, spawn = spawnSync, fs = { existsSync, lstatSyn
   }
 }
 
+// #C928: the undo, with the same token. `node <this file> rollback` puts the Worker back on its previous version (wrangler's rollback, pinned,
+// against the deploy checkout's own config) with the credentials from the private settings file, so it opens no browser and works over SSH, as the
+// deploy does. wrangler asks you to confirm: answer y. It rolls back the Worker only: D1 migrations stay applied (new columns stay, unused by the older
+// code) and the tree step is not undone (that has its own `back`). It then removes @@DEPLOYDONE@@ (the marker that says the Worker carries the signed
+// commit), so the tree step of this pair refuses until line 1 runs again; a marker that was not there is no failure. { ok, line }; `say` gets each line.
+export function rollbackRun({ here, spawn = spawnSync, fs = { existsSync, lstatSync, readFileSync, unlinkSync }, say = console.log }) {
+  const CONFIG = `${here}/board-store-pa/worker/wrangler.board.toml`;
+  let creds = null, file = join(here, PRIVATE_FILE);
+  const stop = (why) => { const line = `ROLLBACK FAILED: ${redact(why, creds)}. Nothing further was run. Paste this line to Manager.`; say(line); return { ok: false, line }; };
+  try {
+    if (!fs.existsSync(CONFIG)) return stop("this folder has no deploy checkout (board-store-pa), so there is nothing to roll back from here");
+    const c = loadCloudflare({ dir: here, fs });
+    file = c.file;
+    if (!c.ok) return stop(`${c.why}; nothing was run`);
+    creds = c.creds;
+    if (creds) say(`Cloudflare: the token and account in ${file} are used (never shown).`);
+    else say(`No token in ${file}: wrangler uses its own login (run npx ${WRANGLER} login first if it is not signed in).`);
+    const r = spawn("npx", ["--yes", WRANGLER, "rollback", "--config", CONFIG], withCreds({ stdio: "inherit" }, creds));
+    if (r.status !== 0) return stop(`wrangler rollback exited ${r.status ?? (redact(r.error?.message, creds) || "none")}${creds ? "" : `. If wrangler is not signed in: fill cloudflareApiToken and cloudflareAccountId in ${file} (chmod 600), or run npx ${WRANGLER} login`}`);
+    const marker = `${here}/@@DEPLOYDONE@@`;
+    if (fs.existsSync(marker)) fs.unlinkSync(marker);
+    const line = `ROLLBACK OK: the Worker is back on its previous version; @@DEPLOYDONE@@ is removed, so the tree step refuses until line 1 runs again. The database keeps any new columns.`;
+    say(line);
+    return { ok: true, line };
+  } catch (e) {
+    return stop(`unexpected error: ${String(e?.message ?? e).slice(0, 200)}`);
+  }
+}
+
 function main() {
   // The folder this file sits in (the owner's board folder, where board.config.json and the checkouts are).
-  const r = deployRun({ here: dirname(fileURLToPath(import.meta.url)) });
+  const here = dirname(fileURLToPath(import.meta.url));
+  const r = process.argv[2] === "rollback" ? rollbackRun({ here }) : deployRun({ here });
   if (!r.ok) process.exit(1);
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
