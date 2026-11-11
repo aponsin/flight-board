@@ -1,0 +1,1 @@
+PASS Quick: #C942 at 25efdad, second commit on e41cab1, which I passed. Fixes my LOW1, comment and tooltip text only: working now reads as mid-turn and touched in the last 15 min, and the tooltip adds that a turn quiet over 15 minutes reads idle. No logic change. Suite 2456 of 2456.
