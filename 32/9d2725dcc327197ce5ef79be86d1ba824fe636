@@ -1,0 +1,1 @@
+PASS Quick: #C917 landing-no-artifact-republish at 329d272 with 89b14b1, re-cut of 945487a onto main a8333ea. Diff check: range-diff shows 945487a and 329d272 equal, and 89b14b1 differs from e3c6baa only in CHANGELOG context. Suite 2310/2310 at the stack tip e749019. The verdict on 945487a holds.
