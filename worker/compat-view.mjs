@@ -144,7 +144,8 @@ export function probeDoc(view) {
   for (const k of ["ctx", "usage"]) if (part(k) !== undefined) out[k] = part(k);
   // stuck and ship are written only while they hold (the probe leaves the key out when nothing is stuck or no candidate is pushed),
   // so the store keeps the last value: it counts only while the probe keeps rewriting it (a reading older than 3 minutes is gone).
-  for (const k of ["stuck", "ship"]) if (ev[k] && view.now - ev[k].readAt <= STALE_AFTER_MS) out[k] = ev[k].value;
+  // #C873: so does e2e (the product's daily full test run), rewritten every evidence run from the probe's own half-hour reading.
+  for (const k of ["stuck", "ship", "e2e"]) if (ev[k] && view.now - ev[k].readAt <= STALE_AFTER_MS) out[k] = ev[k].value;
   // #C730: the store's own wake (row 4) for the Manager chip and the "seen" ticks, in place of the old wake watch's
   // wakeAliveAt / wakeSeenAt. askAge is left out until the probe has asked the store once; seenAt is Manager's last typed read.
   // A `wake` key in the probe's own board reading is never passed on: only the store's.

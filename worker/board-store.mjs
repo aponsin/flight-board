@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
+import { E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -269,13 +269,27 @@ async function syncStalls(db, now) {
     const card = cards.find((c) => c.id === ref);
     if (card && (card.dropped || evidence[ref]?.lit?.[0] === "live")) endsPassed.add(ref);
   }
-  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }), ...heldWakes({ now, cards, endsPassed })];
+  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }), ...heldWakes({ now, cards, endsPassed }), ...await syncE2e(db, now)];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.
   const current = new Set(stalls.map((s) => `${s.card_id}|${s.reason}`));
   const pending = (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE taken_at IS NULL").all()).results;
   for (const p of pending) if (!current.has(`${p.card_id}|${p.reason}`)) await db.prepare("UPDATE stall_wakes SET taken_at = ? WHERE card_id = ? AND reason = ?").bind(now, p.card_id, p.reason).run();
+}
+// #C873: the product's daily full test run (evidence e2e). Manager's batch gets ONE line when it turns red, missed or unknown from something else:
+// the row stays (taken or not) while the state holds, so a later probe run never tells it again; it goes when the state changes or turns ok.
+// A reading gone stale or absent leaves the row alone (nothing current, so an untaken line is dropped as over, as any stall).
+async function syncE2e(db, now) {
+  const row = await db.prepare("SELECT value, read_at FROM evidence WHERE key = 'e2e'").first();
+  let value = null; try { value = row ? JSON.parse(row.value) : null; } catch { /* none */ }
+  const fresh = row && now - row.read_at <= STALE_AFTER_MS;
+  if (fresh && value?.state === "ok") { await db.prepare("DELETE FROM stall_wakes WHERE card_id = ?").bind(E2E_CARD).run(); return []; }
+  const wake = e2eWake({ now, value, readAt: row?.read_at ?? 0 });
+  if (!wake) return [];
+  await db.prepare("DELETE FROM stall_wakes WHERE card_id = ? AND reason NOT LIKE ?").bind(E2E_CARD, `${e2eWakeLine(wake.state)}%`).run();
+  const had = await db.prepare("SELECT reason FROM stall_wakes WHERE card_id = ?").bind(E2E_CARD).first();
+  return [{ card_id: E2E_CARD, num: null, reason: had?.reason ?? wake.reason }];
 }
 const wakeFacts = (w, askedAt) => ({ askedAt, batchId: w.batch_id, count: w.batch_count, batchAt: w.batch_at, takenAt: w.taken_at, lastSendAt: w.last_send_at ?? undefined, lastSendBatch: w.last_send_batch, lastSendOk: w.last_send_ok === null ? undefined : w.last_send_ok === 1, lastSendReason: w.last_send_reason ?? undefined, lastSendFix: w.last_send_fix ?? undefined });
 
