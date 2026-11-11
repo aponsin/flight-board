@@ -670,6 +670,18 @@ export function cardState(card, repo, config, now, opts = {}) {
   let tip = tips[0];
   if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };
   let one = tipState(card, tip, repo, config, now, declared, opts.cover ?? null);
+  // #C915 (incident 11-11: a card's v2 shipped in v1.209.9 and its v1 branch stayed, read "signed but behind main, re-cut" and dispatched to the
+  // builder; a landed card's stale tip went to Checker five times): when none of the card's branch tips is on main but a commit on main carries
+  // its Board-Id trailer, that main commit is the card (landed, or live once deployed) and the older tips are no longer worked. The branch of the
+  // newer version is often deleted at merge, so the tips alone cannot show it. A tip that is built ON the main commit (the commit is its ancestor)
+  // is rework after the landing, not an older version: it stays the card's tip (tests/probe-trailer-fallback.test.mjs).
+  if (!one.onMain && typeof repo.git === "function") {
+    const landedHead = trailerHead(repo, card.id);
+    if (landedHead && !ok(() => repo.git(["merge-base", "--is-ancestor", landedHead.sha, tip.sha]))) {
+      const m = tipState(card, landedHead, repo, config, now, declared, null);
+      if (m.onMain === true) { tips = [landedHead]; tip = landedHead; one = m; }
+    }
+  }
   // #C886 (the owner, 2026-11-10 10:02 pm: 15 blue tiles while every agent was idle): a card draws ONE row. Once one branch of the card is on main,
   // the card is that branch alone; before that, of the versions of a branch (build/x, build/x-v2, build/x-v3: the same family) only the newest
   // pushed one is a row. Branches of different names stay rows of their own (#C621). The card's own fields, its phase included, are those of
