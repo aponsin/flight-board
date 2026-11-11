@@ -249,7 +249,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // The prompt and the page, both from the commit's snapshot, before anything leaves.
     const out = dirname(configPath);
     const prompt = renderPrompt(at(sha)(PROMPT_FILE) ?? "", { CONFIG: configPath, BOARD: config.artifactUrl, LEAD_ROLE: config.gate.managerRole, LEAD: lead, CURRENT: link, OUT: home(config.collector.outDir) });
-    const page = join(out, `board-${sha.slice(0, 7)}.html`), promptPath = join(out, `collector-prompt-${sha.slice(0, 7)}.txt`);
+    // #C917: the page is built only to check it (its scenarios), in the tool's own temporary folder, never beside the config:
+    // the old artifact board is frozen and the store page ships with the owner's deploy pair, so nothing is left to republish.
+    const page = join(tmp, `board-${sha.slice(0, 7)}.html`), promptPath = join(out, `collector-prompt-${sha.slice(0, 7)}.txt`);
     let built = true;
     if (v.ok) {
       // The installed pack's label goes on the page (#C609): BOARD_PACK or the pack-label file beside the config. None: no page (Version 147 nearly went out with an empty one).
@@ -268,7 +270,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     line(!v.refusals.some((r) => /owner's install|settings block|no pinned/.test(r)), pending?.sha ? `pinned changes since ${pinned.slice(0, 12)} are the waiting pack's only: ${pending.sha.slice(0, 12)}, signed (they go live with the owner's install; the link's code goes now)` : `nothing pinned changed since ${pinned ? pinned.slice(0, 12) : "(none)"}`);
     line(!v.refusals.some((r) => /PROMPT/.test(r)), v.promptNeeded ? `prompt changed: ${promptPath} (SHA-256 ${sha256(prompt)})` : "prompt unchanged");
     line(!v.refusals.some((r) => /capabilit/.test(r)), `page capabilities: ${capabilities.join(", ")}`);
-    if (v.ok) line(built, built ? `page built and its scenarios pass: ${page} (SHA-256 ${sha256(readFileSync(page))})` : "page not built");
+    if (v.ok) line(built, built ? `page builds and its scenarios pass (SHA-256 ${sha256(readFileSync(page))})` : "page not built");
     if (v.refusals.length) { console.error(`Not released: ${sha.slice(0, 12)}\n- ${v.refusals.join("\n- ")}\nNothing changed. What the owner's install pins goes out with the owner's install, not this.`); process.exit(1); }
     if (v.promptNeeded) writeFileSync(promptPath, prompt);
     if (dry) { console.log(`Dry run: ${sha.slice(0, 12)} passes every check; nothing pushed, the link not moved.`); process.exit(0); }
@@ -279,7 +281,6 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     execFileSync(process.execPath, [join(self, "current.mjs"), sha, "--repo", repo], { stdio: "inherit" });
     if (linkedCommit(link) !== sha) throw new Error(`main is ${sha.slice(0, 12)} but the current link is not: tell the lead`);
     console.log(`Released ${sha.slice(0, 12)} to flight-board main; the collector's next run uses it.`);
-    console.log(`Page: ${page}. Republish it as the board, with exactly the capabilities ${PAGE_CAPABILITIES.join(", ")} (when declared: ${JSON.stringify(PAGE_DECLARATION)}).`);
     if (v.promptNeeded) console.log(`Prompt: ${promptPath}. Save it into the task: update_scheduled_task ${config.collector.refresh.taskId}, the prompt set to the whole file.`);
     else console.log("Prompt: unchanged; the task stays as it is.");
   } catch (e) { console.error(`Not released: ${String(e.message).split("\n")[0]}`); process.exit(1); }
