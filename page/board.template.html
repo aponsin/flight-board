@@ -1556,7 +1556,7 @@ function fitBox(t){if(!t||t.tagName!=="TEXTAREA"||!t.style)return;cmpHas(t);
   if(top<t.scrollTop)t.scrollTop=top;else if(top+lh>t.scrollTop+t.clientHeight)t.scrollTop=top+lh-t.clientHeight}
 document.addEventListener("input",e=>fitBox(e.target));
 function msgHtml(m){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&blobId(f.id));
-  return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${askText(m.text||"")}</div>${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}${seenTick(m)}</div>`}
+  return `<div class="t-msg${m.from===OWNER?" t-owner":""}"><span class="t-from">${esc(m.from||"?")}</span> <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${askText(m.text||"")}</div>${shots({images:m.images})}${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}${seenTick(m)}</div>`}
 // A thread: its reply box at the top, then the messages, newest first (display only: threadOf stays oldest first). An
 // unanswered ask draws it with box false, so its own response box above is the only one. where: the place it is drawn
 // (the same thread can show in two places), for unique ids.

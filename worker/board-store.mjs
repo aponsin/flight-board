@@ -2,7 +2,7 @@
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
 import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_LINE_TAIL, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
-import { readFiles, screenshotsRefusal } from "./file-store.mjs";
+import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
 import { readUsage } from "./compat-usage.mjs";
 import { readThreads } from "./compat-threads.mjs";
@@ -175,25 +175,34 @@ export async function askFromTool(db, now, who, args) {
   const bad = askRefusal(ask, now);
   if (bad) return refuse(db, now, bad, ask.card_id, who);
   if (ask.eta_at !== undefined) return no("decision-not-before", "a Decision posted in a thread has no not-before time; leave eta_at out");
-  // A message carries no pictures: a Decision with screenshots would reach the owner without them and still answer ok (Checker F1 on 7868461).
-  if (Array.isArray(ask.screenshots) ? ask.screenshots.length : ask.screenshots !== undefined && ask.screenshots !== null) return no("decision-screenshots-in-thread", "a Decision posted in a thread cannot carry screenshots (a message has none): send it with related_thread \"none\" so it is an ask, or leave the screenshots out");
+  // #C936: the screenshots go with the message (postMessage checks them as an ask's are: stored images, "<id> A: label", the letter one
+  // of this decision's options). Checker F1 on 7868461: a message used to drop them silently, so they were refused; now it keeps them.
   const known = (await db.prepare("SELECT 1 AS x FROM asks WHERE id = ?").bind(rel).first()) || (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(rel).first()) || (await db.prepare("SELECT 1 AS x FROM threads WHERE id = ?").bind(rel).first());
   if (!known) return no("decision-thread-unknown", rel);
   const options = ask.options.map((label, i) => ({ key: KEYS[i], label }));
   const rec = options[ask.options.indexOf(ask.recommended)];
   const body = `${ask.title}\n\n${ask.question}\n\nRecommended: ${rec.key}${typeof ask.card_id === "string" && ask.card_id ? `\n\nCard: ${ask.card_id}` : ""}`;
-  const r = await postMessage(db, now, who, { thread_id: rel, body, kind: "decision", options });
+  const r = await postMessage(db, now, who, { thread_id: rel, body, kind: "decision", options, ...(ask.screenshots !== undefined && !(Array.isArray(ask.screenshots) && !ask.screenshots.length) ? { screenshots: ask.screenshots } : {}) });
   return r.ok ? { ...r, thread_id: rel, posted_in_thread: true } : r;
 }
 
 // A message on a thread (a card id, an ask id or a free thread name). Delivery to Manager is the wake's business.
 export async function postMessage(db, now, who, m) {
-  const ok = m && typeof m === "object" && Object.keys(m).every((k) => ["thread_id", "body", "kind", "options"].includes(k)) && typeof m.thread_id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(m.thread_id) && typeof m.body === "string" && m.body.trim() && m.body.length <= 8000;
-  if (!ok) return refuse(db, now, { rule: "message-shape", detail: "thread_id and body, body 1 to 8000 characters, and for an agent a kind and options; nothing else" }, m?.thread_id, who);
+  const ok = m && typeof m === "object" && Object.keys(m).every((k) => ["thread_id", "body", "kind", "options", "screenshots"].includes(k)) && typeof m.thread_id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(m.thread_id) && typeof m.body === "string" && m.body.trim() && m.body.length <= 8000;
+  if (!ok) return refuse(db, now, { rule: "message-shape", detail: "thread_id and body, body 1 to 8000 characters, and for an agent a kind, options and screenshots; nothing else" }, m?.thread_id, who);
   const extra = messageExtrasRefusal(m, who);
   if (extra) return refuse(db, now, extra, m.thread_id, who);
+  // #C936: an agent's message may carry screenshots, as an ask does. An empty list carries nothing; a picture that names an option (A to D)
+  // names one of this message's own options, so a plain post cannot letter a picture.
+  if (m.screenshots !== undefined) {
+    const badShots = await screenshotsRefusal(db, m.screenshots);
+    if (badShots) return refuse(db, now, badShots, m.thread_id, who);
+    const keys = new Set((m.options ?? []).map((o) => o.key));
+    for (const s of m.screenshots) { const p = parseShot(s); if (p.option && !keys.has(p.option)) return refuse(db, now, { rule: "screenshots-option", detail: `${p.id} names option ${p.option}, which this message does not offer` }, m.thread_id, who); }
+  }
+  const shots = Array.isArray(m.screenshots) && m.screenshots.length ? JSON.stringify(m.screenshots) : null;
   const id = `m-${now}-${crypto.randomUUID().slice(0, 8)}`;
-  await db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, kind, options) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(id, m.thread_id, who, m.body, now, m.kind ?? null, m.options ? JSON.stringify(m.options) : null).run();
+  await db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, kind, options, screenshots) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(id, m.thread_id, who, m.body, now, m.kind ?? null, m.options ? JSON.stringify(m.options) : null, shots).run();
   return { ok: true, id };
 }
 
@@ -602,7 +611,7 @@ export async function readView(db, now) {
   const history = await all("SELECT id, card_id, phase, kind, at, who, wait FROM phase_history ORDER BY at, id");
   const historyCards = await all("SELECT id, num, title, size, review_level, created_at, done_at FROM history_cards ORDER BY done_at");
   const stackSwitch = (await all("SELECT repo, stack, set_by, set_at FROM stack_switch ORDER BY repo")).map((r) => ({ ...r, stack: r.stack === 1 }));
-  const files = await readFiles(db, asks), ships = await readShips(db), usage = await readUsage(db), threads = await readThreads(db);
+  const threads = await readThreads(db), files = await readFiles(db, asks, threads.messages), ships = await readShips(db), usage = await readUsage(db);
   const reworkHistory = await all("SELECT card_id, reason, at, who FROM rework_history ORDER BY at, id");
   const content = { cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reworkHistory };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.

@@ -18,7 +18,7 @@ const MSG_ID = /^m[A-Za-z0-9-]{1,63}$/;
 const json = (s) => { try { return JSON.parse(s); } catch { return undefined; } };
 
 export async function readThreads(db) {
-  const messages = (await db.prepare("SELECT id, thread_id, author, body, created_at, kind, resolved, options FROM messages ORDER BY created_at, id").all()).results;
+  const messages = (await db.prepare("SELECT id, thread_id, author, body, created_at, kind, resolved, options, screenshots FROM messages ORDER BY created_at, id").all()).results;
   const threads = (await db.prepare("SELECT id, num, title, created_at FROM threads ORDER BY created_at, id").all()).results;
   return { messages, threads };
 }
@@ -33,6 +33,9 @@ export function applyThreads(collections, view) {
     if (m.resolved) o.resolved = true;
     const options = json(m.options);
     if (Array.isArray(options)) o.options = options;
+    // #C936: an agent's pictures, as the raw list; applyFiles (after this) turns them into the images the page draws.
+    const shots = json(m.screenshots);
+    if (Array.isArray(shots) && shots.length) o.screenshots = shots;
     return o;
   });
   const byId = new Map();
