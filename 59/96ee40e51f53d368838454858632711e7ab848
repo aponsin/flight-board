@@ -1,0 +1,1 @@
+PASS Full, line-scoped for 6eba96f..058c1ed: #C916 v3, re-pick of 7a6f710 onto main 6eba96f. range-diff: identical patch, only a hunk header moved past #C914's writeStackQueue. The full review is at ceabb63 and holds.
