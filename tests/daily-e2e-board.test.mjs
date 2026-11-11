@@ -192,7 +192,8 @@ function product({ withScript = true } = {}) {
   if (withScript) {
     mkdirSync(join(clone, "scripts", "lib"), { recursive: true });
     writeFileSync(join(clone, "scripts", "lib", "workflow-checks.mjs"), 'export const WORD = "from the library";\n');
-    writeFileSync(join(clone, "scripts", "daily-e2e.mjs"), 'import { WORD } from "./lib/workflow-checks.mjs";\nconsole.log(JSON.stringify({ state: "red", reason: WORD, run: "https://github.com/acme/p/actions/runs/9", lastGreenAt: null }));\nprocess.exit(1);\n');
+    // The product's own entry-point guard (scripts/daily-e2e.mjs): a script run from a path with a symlink in it (macOS /var -> /private/var) prints nothing.
+    writeFileSync(join(clone, "scripts", "daily-e2e.mjs"), 'import { pathToFileURL } from "node:url";\nimport { WORD } from "./lib/workflow-checks.mjs";\nif (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {\n  console.log(JSON.stringify({ state: "red", reason: WORD, run: "https://github.com/acme/p/actions/runs/9", lastGreenAt: null }));\n  process.exit(1);\n}\n');
     g(clone, "add", "-A"); g(clone, "commit", "-qm", "the daily script"); g(clone, "push", "-q", "origin", "main");
     // The working tree goes back to the old commit, as the probe's clone is: behind origin/main, without the script.
     g(clone, "reset", "-q", "--hard", "HEAD~1");

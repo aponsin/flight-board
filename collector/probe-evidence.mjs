@@ -5,7 +5,7 @@
 //   evidence job (60 s): cards.<id> {lit:[phase], ...the card's reading}, agents, ctx, board
 //   usage job (300 s):   usage
 // A key whose reading is missing is not written (the store then shows it as unknown/silent, never as a guess).
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync, realpathSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -122,7 +122,9 @@ export function defaultE2eRun({ cwd, ref }, env, exec = spawnSync) {
     if (!r || r.error || r.status !== 0) return { status: 2, stdout: JSON.stringify({ state: "unknown", reason: `the product's ${ref} has no ${p} yet`, run: null, lastGreenAt: null }) };
     files[p] = r.stdout;
   }
-  const dir = mkdtempSync(join(tmpdir(), "fb-e2e-"));
+  // The real path: on macOS tmpdir() is /var/folders/..., a symlink to /private/var/...; node gives import.meta.url the real path but process.argv[1]
+  // stays as given, so the product script's "am I the entry point" guard is false and it prints nothing (Checker F1 on b9f4946).
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "fb-e2e-")));
   try {
     for (const [p, text] of Object.entries(files)) { mkdirSync(dirname(join(dir, p)), { recursive: true }); writeFileSync(join(dir, p), text); }
     return exec(process.execPath, [join(dir, E2E_FILES[0]), "--status"], { cwd: dir, env, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
