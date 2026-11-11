@@ -24,8 +24,19 @@ export function dispatchInput(view, now) {
   if (!agents || typeof agents !== "object" || Array.isArray(agents)) return null;
   if (!Number.isFinite(readAt) || now - readAt > AGENTS_FRESH_MS || readAt > now + 5_000) return null;
   const cards = [];
-  for (const c of Array.isArray(view?.cards) ? view.cards : []) {
+  const all = Array.isArray(view?.cards) ? view.cards : [];
+  const phaseOf = (id) => { const e = ev[`cards.${id}`]?.value; return e?.phase ?? e?.lit?.[0]; };
+  // #C845: a card waits for the cards it depends on (depends_on, a JSON list of ids) until each is live. A dependency the board doesn't
+  // have, or one that was dropped, holds nothing (as the gate's dependsOnErrors reads it).
+  const open = new Map(all.filter((k) => k && typeof k.id === "string" && !k.dropped).map((k) => [k.id, k]));
+  const waitsOn = (c) => {
+    let list = c.depends_on;
+    if (typeof list === "string") { try { list = JSON.parse(list); } catch { return []; } }
+    return Array.isArray(list) ? list.filter((d) => typeof d === "string" && d !== c.id && open.has(d) && phaseOf(d) !== "live") : [];
+  };
+  for (const c of all) {
     if (!c || typeof c.id !== "string" || !CARD_ID.test(c.id) || typeof c.owner_role !== "string") continue;
+    if (waitsOn(c).length) continue;
     // Active: not paused, not dropped, not blocked (a blocked card is "blocked" on the old shape and the store's stall rule skips it), and
     // not already live (a live card waits for the lead to close it, not for its owner). The phase is read as compat-view reads it.
     if (c.paused || c.dropped || c.blocked_reason) continue;

@@ -67,6 +67,21 @@ test("a withdrawn approval is still open (its answer is cleared, it waits for th
   assert.deepEqual(run(view({ asks: [withdrawn] }), dir()).items, []);
 });
 
+test("#C845: a card whose depends_on is not live is not dispatched; once each is live, or gone, or dropped, it is", () => {
+  const dep = { id: "c901-dep", owner_role: "Checker", waiting_on: null, paused: 0, dropped: 0 };
+  const withDep = (extra = {}, depPhase = null, list = '["c901-dep"]') => {
+    const v = view({ card: { depends_on: list }, extraCards: [{ ...dep, ...extra }] });
+    if (depPhase) v.evidence["cards.c901-dep"] = { readAt: NOW - 10_000, value: { phase: depPhase } };
+    return v;
+  };
+  assert.deepEqual(run(withDep(), dir()).items.filter((i) => i.card === "c900-thing"), [], "the dependency is on plan");
+  assert.deepEqual(run(withDep({}, "build"), dir()).items.filter((i) => i.card === "c900-thing"), [], "the dependency is at build");
+  assert.equal(run(withDep({}, "live"), dir()).items.filter((i) => i.card === "c900-thing").length, 1, "the dependency is live");
+  assert.equal(run(withDep({ dropped: 1 }), dir()).items.filter((i) => i.card === "c900-thing").length, 1, "a dropped dependency holds nothing");
+  assert.equal(run(withDep({}, null, '["no-such-card"]'), dir()).items.filter((i) => i.card === "c900-thing").length, 1, "an unknown one holds nothing");
+  assert.equal(run(withDep({}, null, "not json"), dir()).items.filter((i) => i.card === "c900-thing").length, 1, "an unreadable list holds nothing");
+});
+
 test("a blocked card (a blocked_reason) is not dispatched, as on the old shape and in the store's stall rule", () => {
   assert.deepEqual(run(view({ card: { blocked_reason: "waiting for a DNS change" } }), dir()).items, []);
   assert.equal(run(view({ card: { blocked_reason: null } }), dir()).items.length, 1);
