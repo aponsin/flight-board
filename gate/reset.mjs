@@ -159,7 +159,8 @@ export const DISPATCH_STEPS = {
   rework: "came back with findings; fix them and push the new commit (the push hands it back to review)",
   review: "is pushed; review it (your verdict is the git note on that commit)",
   land: "is signed; land it (the notes on that exact commit, a clean dry run, the owner's standing go)",
-  pair: "is landed and not deployed; build the deploy pair",
+  pair: "is landed and not deployed: build the deploy pair (node scripts/make-pair.mjs <sha> <n>) and, if hooks changed, the pack",
+  recut: "is signed but behind main, so Release cannot take it; re-cut it on main and push (a new commit needs new signatures)",
   outside: "is outside the stack (its branch was not cut from the stack tip); re-cut it on the stack tip and push",
 };
 // #C859 slice 3 (stack mode, design 3): the stack branch a builder's turn names, a plain branch name only (the line is built from fixed text).

@@ -545,10 +545,14 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   // branch, a tip read as a main commit, or one with no sign-offs.
   const reviews = !bare && !onMain && signed.length && typeof repo.git === "function" && repo.notes
     ? { ...(coverSha ? signedTimesOf(repo.git, coverSha, repo.notes, signed, head.at) : {}), ...signedTimesOf(repo.git, after ? after.sha : tip.sha, repo.notes, signed, head.at) } : {};
+  // #C854: a tip that has its sign-offs (the phase is ship) but does not continue main (main has a commit the tip lacks) cannot be landed as it
+  // is: it goes back to its builder to re-cut. Read only for a tip waiting at ship, so a card in review costs no extra git call.
+  const behindMain = !onMain && !bare && phase === config.collector.shipPhase && typeof repo.git === "function" && !ok(() => repo.git(["merge-base", "--is-ancestor", mainRef, tip.sha]));
   const findings = bare || onMain ? [] : [...new Set([...findingsOn(after ? after.sha : tip.sha), ...(coverSha ? findingsOn(coverSha) : [])])].sort();
   const extra = {
     ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(findings.length ? { findings } : {}),
+    ...(behindMain ? { behindMain: true } : {}),
     ...(phase && build ? { firm: false } : {}),
     ...(phase && !build && Number.isInteger(head.at) && head.at >= 1577836800000 && head.at <= 4102444800000 ? { readyAt: head.at } : {}),
     ...(phase && !build && unsigned.length ? { waitingFor: unsigned.slice(0, 10) } : {}),
