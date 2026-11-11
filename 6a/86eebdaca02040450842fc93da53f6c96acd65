@@ -1,0 +1,1 @@
+PASS Full, Cards stack v2, #C886 at 6a86eeb: range-diff equal to 57cf0b6. One row per card: the landed branch alone, else the newest of each version family, newest by commit time. Mutation check: 3 of 3 killed - the family filter, landed wins, the kept row's phase. Suite on the stack tip 559e6ce: 2223 pass, 0 fail.
