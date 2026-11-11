@@ -634,16 +634,33 @@ export function cardState(card, repo, config, now, opts = {}) {
   if (!tips.length && opts.head) tips = [opts.head];
   if (!tips.length && typeof repo.git === "function") { const t = trailerHead(repo, card.id); if (t) tips = [t]; }
   if (tips[0]) tips = [ownHead(repo, card, tips[0]), ...tips.slice(1)];
-  const tip = tips[0];
+  let tip = tips[0];
   if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };
-  const one = tipState(card, tip, repo, config, now, declared, opts.cover ?? null);
-  const out = { ...base, ...one };
+  let one = tipState(card, tip, repo, config, now, declared, opts.cover ?? null);
+  // #C886 (the owner, 2026-11-10 10:02 pm: 15 blue tiles while every agent was idle): a card draws ONE row. Once one branch of the card is on main,
+  // the card is that branch alone; before that, of the versions of a branch (build/x, build/x-v2, build/x-v3: the same family) only the newest
+  // pushed one is a row. Branches of different names stay rows of their own (#C621). The card's own fields, its phase included, are those of
+  // the row that is kept, so a v1 unsigned and a v3 on main read at v3's phase and the old version's frozen tile is gone.
   if (tips.length > 1) {
-    const taken = new Set();
-    out.branches = tips.slice(0, MAX_BRANCH_ROWS).map((t, n) => ({ name: branchName(t.branch, taken, n), ci: "none", ciMin: null, ...(t === tip ? one : tipState(card, t, repo, config, now, declared)) }));
+    tips = tips.slice(0, MAX_BRANCH_ROWS);
+    const read = new Map([[tip, one]]);
+    const stateOf = (t) => { if (!read.has(t)) read.set(t, tipState(card, t, repo, config, now, declared, t === tips[0] ? opts.cover ?? null : null)); return read.get(t); };
+    const landed = tips.find((t) => stateOf(t).onMain === true);
+    if (landed) tips = [landed];
+    else { const seen = new Set(); tips = tips.filter((t) => { const f = branchFamily(t.branch); if (seen.has(f)) return false; seen.add(f); return true; }); }
+    if (tips[0] !== tip) { tip = tips[0]; one = stateOf(tip); }
+    const out = { ...base, ...one };
+    if (tips.length > 1) {
+      const taken = new Set();
+      out.branches = tips.map((t, n) => ({ name: branchName(t.branch, taken, n), ci: "none", ciMin: null, ...stateOf(t) }));
+    }
+    return out;
   }
-  return out;
+  return { ...base, ...one };
 }
+// A branch's family: the whole branch name without a version suffix, so build/x, build/x-v2 and build/x-v3 are versions of one thing (the
+// re-cut naming is <id>-v<N>). The path stays in it: build/x and admin/x are twins (#C621), two rows, not versions.
+export const branchFamily = (branch) => String(branch).toLowerCase().replace(/-v\d{1,3}$/, "");
 
 // #C859 slice 3: the repositories whose stack switch is on, as the evidence job left them beside the mirror it built from the same read of the
 // store (collector/store-cards.mjs stacksOn). A file older than STACKS_FRESH_MS, or none, reads as off: the switch off is today's reading.
