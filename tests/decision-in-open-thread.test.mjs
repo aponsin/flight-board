@@ -116,10 +116,9 @@ test("the thread path keeps every guard of the ask path: screenshots refused, a 
   await ownerThread(db, "t-100", { title: "Pack order", text: "what next?" });
   const posted = async () => count(db, "messages");
   const before = await posted();
-  // screenshots would be dropped silently by a message: refused, nothing posted (Checker F1)
+  // screenshots go with the message since #C936 (tests/thread-decision-screenshots.test.mjs); one that is not a stored image is refused as an ask's is, nothing posted
   const shots = await askFromTool(db, NOW, "Manager", decision({ related_thread: "t-100", screenshots: ["/images/a.png"] }));
-  assert.equal(shots.refused.rule, "decision-screenshots-in-thread");
-  assert.match(shots.refused.detail, /related_thread "none"/);
+  assert.equal(shots.refused.rule, "screenshots-shape");
   // an empty list carries nothing, so it is fine
   assert.equal((await askFromTool(db, NOW, "Manager", decision({ related_thread: "t-100", screenshots: [] }))).ok, true);
   assert.equal(await posted(), before + 1);
