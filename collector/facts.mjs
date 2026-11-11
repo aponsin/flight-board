@@ -43,6 +43,13 @@ export function signedTimes(git, sha, notes, signed, fallback = null) {
 
 export const isAncestor = (git, a, b) => ok(() => git(["merge-base", "--is-ancestor", a, b]));
 
+// #C897 (Checker F1 on 532b9f8): the paths a branch changed since it left main (git diff main...tip), as the probe reads them (collector/state.mjs
+// branchPaths), so the collector's own derive needs the same reviews. null for a sha that is not a full one, or when git cannot say.
+export function branchPathsOf(git, mainRef, sha) {
+  if (typeof git !== "function" || !/^[0-9a-f]{40}$/.test(String(sha))) return null;
+  try { return String(git(["diff", "--name-only", "--no-renames", `${mainRef}...${sha}`, "--"])).split("\n").map((p) => p.trim()).filter(Boolean); } catch { return null; }
+}
+
 // The version a commit shipped in: the first commit on the main branch's first-parent line, from the one that brought it
 // in onwards, whose subject matches the version pattern. [{ sha, subject }] is the main line, oldest first.
 export function versionFor(git, sha, mainLine, pattern) {
