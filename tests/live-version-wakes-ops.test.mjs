@@ -74,3 +74,18 @@ test("Still allowed and held back: a busy Ops is woken when it goes idle; a stal
   const r3 = dispatchRun(view({ version: "v1.213.0", at: t }), { dir: d3, roster: ["Manager"], lead: LEAD, now: t });
   assert.deepEqual(opsItems(r3), []); assert.equal(read(d3, DISPATCH_STATE_FILE).live.wokenAt, undefined);
 });
+
+// #C931 (5), Checker's LOW on #C909: an Ops reading with no since and no lastActivityAt. Woken and now busy, the turn is done (it worked after
+// the wake); woken and idle with no time to compare, the turn holds (it may not have looked yet); not yet woken, a busy Ops is not done.
+test("an Ops reading with no since: busy after the wake ends the turn; idle with no time holds it; busy before any wake does not end it", () => {
+  const v = { live: { state: "live", version: "v1.300.0", age: 1 } };
+  const before = { live: { version: "1.300.0", at: NOW - MIN, done: false, wokenAt: NOW - MIN } };
+  assert.equal(afterShip(v, before, { Ops: { state: "working" } }, NOW).live.done, true, "busy, no since: done");
+  const idle = afterShip(v, before, { Ops: { state: "idle" } }, NOW);
+  assert.equal(idle.live.done, false, "idle, no since: still owed");
+  assert.equal(idle.card?.who, "Ops");
+  const unwoken = { live: { version: "1.300.0", at: NOW - MIN, done: false } };
+  const busy = afterShip(v, unwoken, { Ops: { state: "working" } }, NOW);
+  assert.equal(busy.live.done, false, "never woken: a busy Ops has not done this check");
+  assert.equal(busy.card?.id, "after-ship-v1-300-0");
+});

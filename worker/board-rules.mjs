@@ -30,7 +30,11 @@ export const APPROVE = "Approve";
 export const PROMISE_ROLES = ["Manager"];
 const PR_URL = /^https:\/\/github\.com\/[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}\/pull\/([1-9][0-9]{0,6})$/;
 // A Terminal line that only changes folder: "cd", "cd <path>", "pushd <path>", with nothing chained after it.
-const BARE_CD = /^\s*(cd|pushd)\b[^;&|\n]*$/;
+// #C931 (Checker's LOWs on #C921): the line is trimmed first, so "cd ~/x" plus a newline is still bare; "cd" must be the whole word (cd-tool
+// and cdk are commands of their own); the same test runs on every step's cmd (an Action's or a Later's Copy box), not only Terminal lines.
+const BARE_CD = /^(cd|pushd)(\s[^;&|\n]*)?$/;
+export const bareCd = (c) => typeof c === "string" && BARE_CD.test(c.trim());
+const BARE_CD_FIX = "give each line full or ~ paths, or put the cd in the same line (cd <folder> && <command>)";
 const present = (v) => v !== undefined && v !== null && !(typeof v === "string" && v.trim() === "") && !(Array.isArray(v) && v.length === 0);
 
 // An ask missing a required part, an unknown field, or a Later without an ETA.
@@ -53,8 +57,8 @@ export function askRefusal(ask, now) {
   // #C921 (#T1802): the owner may run any one line alone, so no line may be a bare "cd" that a later line relies on. A cd in the
   // same line as its command ("cd ~/x && node y") is fine; so is a full or ~ path with no cd at all.
   if (ask.type === "Terminal" && Array.isArray(ask.commands)) {
-    const bare = ask.commands.find((c) => typeof c === "string" && BARE_CD.test(c));
-    if (bare !== undefined) return refuse("terminal-bare-cd", `"${bare.trim().slice(0, 80)}" is a cd on its own line: give each line full or ~ paths, or put the cd in the same line (cd <folder> && <command>)`);
+    const bare = ask.commands.find(bareCd);
+    if (bare !== undefined) return refuse("terminal-bare-cd", `"${bare.trim().slice(0, 80)}" is a cd on its own line: ${BARE_CD_FIX}`);
   }
   if (ask.where !== undefined && (typeof ask.where !== "string" || !ask.where.trim() || ask.where.length > 300 || !(ask.type in ASK_OPTIONAL_PARTS && ASK_OPTIONAL_PARTS[ask.type].includes("where")))) return refuse("ask-missing-part", `${ask.type} where is a short line (a Later or an Action only)`);
   if (ask.type === "Approval") {
@@ -158,6 +162,7 @@ export function stepsRefusal(steps, { needCmd = false } = {}) {
   for (const s of steps) {
     const ok = typeof s === "string" ? s.length <= 2000 : s && typeof s === "object" && !Array.isArray(s) && Object.keys(s).every((k) => k === "text" || k === "cmd") && typeof s.text === "string" && s.text.length <= 2000 && (s.cmd === undefined || (typeof s.cmd === "string" && s.cmd.length <= 4000));
     if (!ok) return refuse("steps-shape", "a step is text, or {text, cmd} with the command as text");
+    if (s && typeof s === "object" && bareCd(s.cmd)) return refuse("terminal-bare-cd", `the step "${String(s.text).trim().slice(0, 60)}" copies a cd on its own: ${BARE_CD_FIX}`);
     if (needCmd && typedWithoutCmd(s)) return refuse("step-types-without-cmd", "a step that tells the owner to type, paste or say something carries that exact text in its cmd (the Copy box)");
   }
   return null;

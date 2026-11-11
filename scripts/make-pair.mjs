@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { makePair } from "./pair/make-pair.mjs";
 
 const FULL = /^[0-9a-f]{40}$/;
+export const SAFE_FOLDER = /^\/[A-Za-z0-9._\/-]{0,500}$/;
 const sha256 = (text) => createHash("sha256").update(text).digest("hex");
 const plain = (v) => String(v).replace(/[^\x20-\x7e]/g, " ").replace(/["\\`$]|@@/g, "").replace(/\s+/g, " ").trim();
 
@@ -162,7 +163,7 @@ ${boardDeploySha ? `
 if [ "$(shasum -a 256 ${folder}/board-deploy.mjs | cut -c1-64)" = ${boardDeploySha} ]; then node ${folder}/board-deploy.mjs ${name} ${deploySha} ${treeSha}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi
 \`\`\`
 
-The line itself carries the deploy file's and the tree file's hashes, so what runs is bound to what was signed, not to a file on this disk. It checks the deploy file and the tree file against those two hashes first (CHECK FAILED, nothing run, if either differs, or if the hashes in this steps file disagree with them), runs line 1, then line 2, and stops at the first one that fails. It ends with the DEPLOY OK and TREE OK lines. The hooks step, when this pair has one, stays by hand: it prints the line to paste. If you run this, skip the two lines below: they are the same two steps, by hand.
+The line itself carries the deploy file's and the tree file's hashes, so what runs is bound to what was signed, not to a file on this disk. It checks the deploy file and the tree file against those two hashes first (CHECK FAILED, nothing run, if either differs, or if the hashes in this steps file disagree with them), runs line 1, then line 2, and stops at the first one that fails. It ends with the DEPLOY OK and TREE OK lines. The hooks step, when this pair has one, stays by hand: the command only reminds you of it and prints no line for it, so paste line 3 below from the pair's post. If you run this, skip the two lines below: they are the same two steps, by hand.
 
 ` : ""}## Line 1: deploy${boardDeploySha ? " (by hand)" : ""}
 
@@ -195,6 +196,9 @@ Full sha256: deploy ${deploySha}, tree ${treeSha}${boardDeploySha ? `, board-dep
 // Writes the three files into `out`. { ok, why, files: { name: sha256 } }; nothing is written unless ok.
 export function makeAll({ repo, sha, n, out, git = (...a) => spawnSync("git", ["-C", repo, ...a], { encoding: "utf8" }) }) {
   if (!Number.isInteger(n) || n < 1 || n > 999999) return { ok: false, why: "n is the pair's number, a whole number from 1" };
+  // #C931 (Checker LOW 3 on #C921): every line names the folder unquoted (a quoted ~ would not expand), so a folder the shell would split or
+  // read (a space, a quote, $, ;, &, a glob) is refused, and nothing is written.
+  if (!SAFE_FOLDER.test(String(out))) return { ok: false, why: "the --out folder must be a plain path (letters, digits, / . _ - only; no space or quote): every line names it unquoted" };
   const m = onMain(git, sha);
   if (!m.ok) return m;
   const name = `pc${n}`;
