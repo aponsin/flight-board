@@ -1,0 +1,1 @@
+SECURE. The tip of Builder's stack re-cut #3 (959cc5a..ee3e1d3, 7 commits, each signed). New: staleCopies also skips a card with done_at, as it skips a dropped one; that is display and stall logic only. #C902's LOW (anchor DONE_EVIDENCE) stands. The pair needs migration 0025 and the hooks line.
