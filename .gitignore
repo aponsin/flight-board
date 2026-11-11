@@ -3,5 +3,6 @@ worker/store-assets/*
 !worker/store-assets/.assetsignore
 node_modules/
 board.config.json
+board.private.json
 *.local.*
 .DS_Store

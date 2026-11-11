@@ -119,12 +119,15 @@ test("a pair made from the templates: the deploy sets BUILD_SHA to the signed co
   const files = makePair({ name: "pc11", card: "#C737", what: "w", signed: "d".repeat(40), deployOk: "ok", treeOk: "ok" });
   const [deploy, tree] = [files["board-store-deploy-pc11.mjs"], files["board-store-tree-pc11.mjs"]];
   assert.match(deploy, /"--var", `BUILD_SHA:\$\{checkedOut\}`/);
-  assert.match(deploy, /const checkedOut = String\(spawnSync\("git", \["-C", TREE, "rev-parse", "HEAD"\]/, "the value is read back from the checkout");
-  assert.match(deploy, /if \(checkedOut !== SIGNED\) fail\(/, "and it must be the signed commit");
+  assert.match(deploy, /const checkedOut = String\(spawn\("git", \["-C", TREE, "rev-parse", "HEAD"\]/, "the value is read back from the checkout");
+  assert.match(deploy, /if \(checkedOut !== signed\) return stop\(/, "and it must be the signed commit");
   assert.equal((deploy.match(/BUILD_SHA:/g) ?? []).length, 1, "BUILD_SHA is set in exactly one place");
-  assert.ok(!/process\.env|process\.argv\.slice|process\.argv\[2\]/.test(deploy), "no argument or environment reaches the deploy");
+  // #C924: no argument reaches the deploy; the environment is read in exactly one place, to carry the two Cloudflare values from the private file.
+  assert.ok(!/process\.argv\.slice|process\.argv\[2\]/.test(deploy), "no argument reaches the deploy");
+  assert.equal((deploy.match(/process\.env/g) ?? []).length, 1, "process.env is read in one place only");
+  assert.match(deploy, /\{ \.\.\.opts, env: \{ \.\.\.process\.env, \.\.\.creds \} \}/);
   assert.ok(deploy.includes("board-store-deploy-pc11.done") && tree.includes("board-store-deploy-pc11.done"), "one marker name in both");
-  assert.ok(deploy.indexOf('"--var"') < deploy.indexOf("writeFileSync(`${HERE}"), "the marker is written after the deploy");
+  assert.ok(deploy.indexOf('"--var"') < deploy.indexOf("fs.writeFileSync(`${here}"), "the marker is written after the deploy");
   const dir = mkdtempSync(join(tmpdir(), "fb-c737files-"));
   for (const [f, text] of Object.entries(files)) { writeFileSync(join(dir, f), text); execFileSync("node", ["--check", join(dir, f)], { stdio: "pipe" }); }
 });
