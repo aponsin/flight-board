@@ -1,0 +1,1 @@
+SECURE #C934 LOW build/inbox-sign-chain@8d29962 (tip, pinned scripts/board-release.mjs): lineCovers also requires merge-base(main, c) to be an ancestor of the base, so a line sign covers only the branch's own commits; fails closed when git returns nothing; end-to-end test for an older base (refused) and the branch point (covers). Tests 5/5. - Security
