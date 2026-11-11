@@ -370,8 +370,8 @@ async function syncStalls(db, now) {
   for (const id of had.keys()) if (!copies.some((s) => s.card_id === id)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ?").bind(id).run();
   const copyStalls = copies.map((s) => ({ ...s, reason: had.get(s.card_id) ?? s.reason }));
   // #C885: a read-only role's own card is worked by posts on its thread; the newest post by the card's owner, per card.
-  // #C931 (6), Security's note on #C885: only the last POSTED_FRESH_MS of messages is read, the only window the rule looks at, so the scan stays small.
-  const postedAt = new Map((await db.prepare("SELECT m.thread_id AS card_id, MAX(m.created_at) AS at FROM messages m JOIN cards c ON c.id = m.thread_id AND m.author = c.owner_role WHERE m.created_at > ? GROUP BY m.thread_id").bind(now - POSTED_FRESH_MS).all()).results.map((r) => [r.card_id, r.at]));
+  // #C931 (6), Security's note on #C885: only the last POSTED_FRESH_MS of messages is read, the only window the rule looks at, so the scan stays small; >= keeps the boundary the rule counts as fresh (#C943).
+  const postedAt = new Map((await db.prepare("SELECT m.thread_id AS card_id, MAX(m.created_at) AS at FROM messages m JOIN cards c ON c.id = m.thread_id AND m.author = c.owner_role WHERE m.created_at >= ? GROUP BY m.thread_id").bind(now - POSTED_FRESH_MS).all()).results.map((r) => [r.card_id, r.at]));
   // #C915 (d): the usual time of each work phase, from the finished rows of the history (newest 5000), for the "slow with no reason" line.
   const medians = phaseMedians((await db.prepare("SELECT id, card_id, phase, kind, at FROM phase_history WHERE wait IS NULL AND kind IN ('start', 'end') ORDER BY id DESC LIMIT 5000").all()).results);
   // A card already named by a "waits at" line this round is not named twice: that line is its one stall.
