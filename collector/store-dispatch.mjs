@@ -169,6 +169,33 @@ export function dispatchInput(view, now) {
   return { cards, agents, asked };
 }
 
+// #C909 (prevention, 11-11: after v1.209.8 Release thought Ops was archived and asked Manager to wake it by hand; a hand-off resting on a
+// model): a new live product version (the view's `live`, as the page header reads it) wakes Ops once for its after-ship check, the way a
+// pushed commit wakes a reviewer. The turn is a card of its own, `after-ship-v<x>-<y>-<z>`, so the DISPATCH line names the version.
+// dispatch-state.json keeps `live`: { version, at (first seen), wokenAt?, done }. The turn holds until Ops has worked after it was woken
+// (no longer idle, or idle since after the wake), so it fires once per version. The version already live the first time this runs, a
+// version older than AFTER_SHIP_WINDOW_MS, and an unchanged version wake nobody.
+export const AFTER_SHIP_ROLE = "Ops", AFTER_SHIP_WINDOW_MS = 24 * 3600e3;
+export const afterShipId = (version) => {
+  const v = typeof version === "string" ? version.replace(/^v/, "") : "";
+  return /^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(v) ? `after-ship-v${v.replace(/\./g, "-")}` : null;
+};
+// { card: the turn to add or null, live: the state to keep }.
+export function afterShip(view, before, agents, now) {
+  const prev = before && typeof before.live === "object" && before.live && !Array.isArray(before.live) ? before.live : null;
+  const id = view?.live?.state === "live" ? afterShipId(String(view.live.version ?? "")) : null;
+  if (!id) return { card: null, live: prev };
+  const version = String(view.live.version).replace(/^v/, "");
+  if (!prev || typeof prev.version !== "string") return { card: null, live: { version, at: now, done: true } };
+  let live = prev.version === version ? { ...prev } : { version, at: now, done: false };
+  const ag = agents && Object.hasOwn(agents, AFTER_SHIP_ROLE) ? agents[AFTER_SHIP_ROLE] : null;
+  const idleSince = ag && (Number.isFinite(ag.since) ? ag.since : ag.lastActivityAt);
+  if (!live.done && Number.isFinite(live.wokenAt) && ag && (ag.state !== "idle" || (Number.isFinite(idleSince) && idleSince > live.wokenAt))) live.done = true;
+  if (!live.done && !(Number.isFinite(live.at) && now - live.at <= AFTER_SHIP_WINDOW_MS)) live.done = true;
+  if (live.done) return { card: null, live };
+  return { card: { id, who: AFTER_SHIP_ROLE, status: "active", num: null, waitingOn: null, turns: [{ role: AFTER_SHIP_ROLE, phase: "live", step: "aftership" }] }, live };
+}
+
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; } };
 const writeAtomic = (path, text) => { const tmp = `${path}.${process.pid}.part`; writeFileSync(tmp, text, { mode: 0o600 }); renameSync(tmp, path); };
 
@@ -183,9 +210,11 @@ export function dispatchRun(view, { dir, roster, lead, now = Date.now(), log = (
   }
   const state = readJson(join(dir, DISPATCH_STATE_FILE));
   mkdirSync(dir, { recursive: true, mode: 0o700 }); // the board's state folder may not exist yet when the old state job never ran here
-  const r = dispatchItems({ cards: input.cards, agents: input.agents, asked: input.asked, roster, lead, now, before: state });
+  const ship = afterShip(view, state, input.agents, now);
+  const r = dispatchItems({ cards: ship.card ? [...input.cards, ship.card] : input.cards, agents: input.agents, asked: input.asked, roster, lead, now, before: state });
+  const live = ship.card && r.items.some((i) => i.card === ship.card.id) && !Number.isFinite(ship.live.wokenAt) ? { ...ship.live, wokenAt: now } : ship.live;
   writeAtomic(join(dir, DISPATCH_FILE), JSON.stringify({ at: now, source: "store", items: r.items }));
-  writeAtomic(join(dir, DISPATCH_STATE_FILE), JSON.stringify(r.state));
+  writeAtomic(join(dir, DISPATCH_STATE_FILE), JSON.stringify(live ? { ...r.state, live } : r.state));
   log(`dispatch: ${r.items.length} item(s)`);
   return { wrote: true, items: r.items };
 }
