@@ -8,7 +8,8 @@
 //   answer in a comment the board never shows); or
 // - the board holds something that needs the lead: the owner's word unanswered, or an ask the owner answered (needsYou).
 // Exit 2 sends the reason back, so the lead writes it and finishes. A second stop in a row (stop_hook_active) passes.
-import { realpathSync, readFileSync } from "node:fs";
+import { realpathSync, readFileSync, mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
@@ -260,14 +261,46 @@ export function wokenCheck(woken, checkedAt, calls, started = true) {
   if (!left.length) return { judged: true, ask: null };
   return { judged: true, ask: `Nobody reads this chat. The board woke you for ${left.map(idText).join(", ")}, and this turn pushed nothing and posted nothing on ${left.length === 1 ? "its" : "their"} thread. If it is in your lane, do it (pushing your own build branch, sending READY and taking your next queued card need no go from anyone); otherwise post the question on the card's thread for Manager.` };
 }
-export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null, wake = null, dispatch = null, store = false }) {
+// #C853 (stop-hook-unpushed-build; R2: models do judgment, programs do hand-offs): a turn that ends on a local build branch with commits
+// origin does not have is refused once per tip, whatever the turn said. The evidence is git, read in the session's own folder (the board's
+// repository or a product worktree): the branch is build/..., and `git rev-list --count HEAD --not --remotes=origin` counts the commits no
+// origin ref holds (a branch never pushed counts too). Once per tip: unpushed-refused-<Role>.json keeps { branch: sha } of the last refusal.
+const BUILD_BRANCH = /^build\/[A-Za-z0-9._\/-]{1,120}$/;
+export function supersededBy(branch, heads) {
+  const m = /^(.*?)(?:-v([0-9]{1,4}))?$/.exec(String(branch)), base = m[1], n = m[2] ? Number(m[2]) : 1;
+  return (Array.isArray(heads) ? heads : []).find((h) => { const k = /^(.*?)-v([0-9]{1,4})$/.exec(String(h)); return k && k[1] === base && Number(k[2]) > n; }) ?? null;
+}
+// A turn that leaves a background task running (a Bash call with run_in_background) is not judged: the agent ends it to wait, and a push now would wake the reviewer on unchecked work.
+export function backgroundRunning(calls) { return (Array.isArray(calls) ? calls : []).some((c) => c.name === "Bash" && c.input?.run_in_background === true); }
+export function unpushedState(cwd, run = (args) => execFileSync("git", args, { cwd, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] })) {
+  try {
+    if (typeof cwd !== "string" || !cwd.startsWith("/")) return null;
+    const branch = run(["symbolic-ref", "--short", "-q", "HEAD"]).trim();
+    if (!BUILD_BRANCH.test(branch)) return null;
+    const sha = run(["rev-parse", "HEAD"]).trim();
+    const ahead = Number(run(["rev-list", "--count", "HEAD", "--not", "--remotes=origin"]).trim());
+    if (!/^[0-9a-f]{40}$/.test(sha) || !Number.isInteger(ahead) || ahead < 0) return null;
+    // A re-cut lands and the older -vN is deleted from origin: a session still on it is not asked to push the dead branch back.
+    const heads = run(["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/build/"]).split("\n").map((l) => l.trim().replace(/^origin\//, ""));
+    if (supersededBy(branch, heads)) return null;
+    return { branch, sha, ahead };
+  } catch { return null; }
+}
+export function unpushedCheck(state, refused) {
+  if (!state || !BUILD_BRANCH.test(String(state.branch)) || !(state.ahead > 0) || !/^[0-9a-f]{40}$/.test(String(state.sha))) return { ask: null, judged: null };
+  if (refused && typeof refused === "object" && refused[state.branch] === state.sha) return { ask: null, judged: null };
+  const n = state.ahead;
+  return { judged: { branch: state.branch, sha: state.sha }, ask: `Your build branch ${state.branch} has ${n} commit${n === 1 ? "" : "s"} that origin does not have (tip ${state.sha.slice(0, 12)}). Push it once the work is green, if it is your own build branch (the owner authorises pushing your own build branch: git push origin ${state.branch}), then send READY. This is asked once per tip.` };
+}
+export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null, wake = null, dispatch = null, store = false, unpushed = null }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
   if (store && role === config.gate.managerRole) return { errs: [], record: null, note: null, liveNext: null, dispatchAsked: false };
   if (role !== config.gate.managerRole) {
     const ask = dispatch && role && config.roster.includes(role) ? dispatchAsk(dispatch, now) : null;
     const wait = dispatch && role && config.roster.includes(role) ? wokenCheck(dispatch.woken, dispatch.checkedAt, turnCalls(currentTurn(lines)), startedByWake(currentTurn(lines), lines)) : { judged: false, ask: null };
-    const errs = [ask, wait.ask].filter(Boolean);
-    return { errs, record: null, note: null, liveNext: null, dispatchAsked: !!ask, waitJudged: wait.judged };
+    const push = unpushed && role && config.roster.includes(role) && !backgroundRunning(turnCalls(currentTurn(lines))) ? unpushedCheck(unpushed.state, unpushed.refused) : { ask: null, judged: null };
+    const errs = [ask, wait.ask, push.ask].filter(Boolean);
+    return { errs, record: null, note: null, liveNext: null, dispatchAsked: !!ask, waitJudged: wait.judged, unpushedJudged: push.judged };
   }
   const id = boardId(config);
   const turn = currentTurn(lines);
@@ -368,7 +401,16 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const sessionRoleName = sessionRole(lines, process.env.FLIGHT_BOARD_ROLE).role;
     let dispatch = null;
     if (sessionRoleName && sessionRoleName !== config.gate.managerRole && config.roster.includes(sessionRoleName)) { try { dispatch = dispatchState(config, process.argv[at + 1], sessionRoleName, now); } catch { /* none: no ask */ } }
-    const { errs, record, note, liveNext, dispatchAsked, waitJudged } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true }, wake: wakeState(config, process.argv[at + 1]), dispatch, store });
+    // #C853: the session's own folder, read as git sees it; the last refusal per branch (one per tip).
+    const refusedPath = join(home(config.gate.stateDir), boardId(config) ?? "no-board", `unpushed-refused-${sessionRoleName}.json`);
+    let unpushed = null;
+    if (sessionRoleName && sessionRoleName !== config.gate.managerRole && config.roster.includes(sessionRoleName)) {
+      let refused = null;
+      try { refused = JSON.parse(readFileSync(refusedPath, "utf8")); } catch { /* none */ }
+      unpushed = { state: unpushedState(input.cwd), refused };
+    }
+    const { errs, record, note, liveNext, dispatchAsked, waitJudged, unpushedJudged } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true }, wake: wakeState(config, process.argv[at + 1]), dispatch, store, unpushed });
+    if (unpushedJudged) { try { mkdirSync(dirname(refusedPath), { recursive: true, mode: 0o700 }); writeAtomic(refusedPath, JSON.stringify(Object.fromEntries([...Object.entries(unpushed.refused && typeof unpushed.refused === "object" ? unpushed.refused : {}), [unpushedJudged.branch, unpushedJudged.sha]].slice(-20)))); } catch { /* asked again at this tip */ } }
     if (dispatchAsked && !input.stop_hook_active) { try { writeAtomic(join(home(config.gate.stateDir), boardId(config) ?? "no-board", `dispatch-asked-${sessionRoleName}.json`), JSON.stringify({ at: now })); } catch { /* asks again */ } }
     if (waitJudged) { try { writeAtomic(join(home(config.gate.stateDir), boardId(config) ?? "no-board", dispatchWaitCheckedFile(sessionRoleName)), JSON.stringify({ at: now })); } catch { /* judged again next stop */ } }
     if (!errs.length && record != null) { try { recordPass(path, key, record); } catch { /* no record: a day back next turn */ } }
