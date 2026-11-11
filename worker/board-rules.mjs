@@ -131,6 +131,17 @@ export function stepsRefusal(steps) {
   return null;
 }
 
+// #C859: the stack switch of one repository. The owner's alone: an agent, the probe and Manager are refused, whatever they claim. A repository is a
+// short lower-case word (board, product); the switch is a true or false.
+export const STACK_REPO = /^[a-z][a-z0-9-]{0,30}$/;
+export function stackSwitchRefusal(b, who) {
+  if (who !== "owner") return refuse("stack-switch-owner", `${who ?? "unknown"} cannot set a stack switch; only the owner can`);
+  if (b === null || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => k !== "repo" && k !== "stack")) return refuse("stack-switch-shape", "a stack switch is {repo, stack}");
+  if (typeof b.repo !== "string" || !STACK_REPO.test(b.repo)) return refuse("stack-switch-shape", "repo is a short lower-case word");
+  if (typeof b.stack !== "boolean") return refuse("stack-switch-shape", "stack is true or false");
+  return null;
+}
+
 // Withdrawing the owner's approval (#C727): the owner's alone, on an open Approval that is approved. It clears the answer, so the
 // pull request needs his Approve again; Release reads only an approval that stands.
 export function withdrawRefusal(ask, role) {
