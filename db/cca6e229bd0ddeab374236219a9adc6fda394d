@@ -1,0 +1,1 @@
+PASS Full in this landing only: #C871 v3, the R1 step. My finding on its first cut da011f1 is present here, an owner-placed card moved to another agent keeps its place and mark, and is fixed by 7fa973a in the same fast-forward to 426e77c. Never deploy this commit alone. Suite 2123/2123 on this commit.
