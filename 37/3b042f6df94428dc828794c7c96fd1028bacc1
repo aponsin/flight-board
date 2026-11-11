@@ -1,0 +1,1 @@
+PASS Full: #C902 close-done-without-branch at 373b042 with 9c42b8a, re-cut of bfa41ba onto main 2593e49. Diff check: range-diff shows both commits equal apart from CHANGELOG and DATA.md. Migration 0025 is still free on main. Suite 2344/2344. The verdict on bfa41ba holds. Security owed.
