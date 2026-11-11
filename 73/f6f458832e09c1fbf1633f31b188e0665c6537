@@ -1,0 +1,1 @@
+PASS Full: #C859 stack-switch slice 2. Same commit I reviewed in the stack signed at 15882e6, range-diff identical. The stack is read from git, branch names checked before they reach git, a card mid-chain found by its Board-Id trailer. Suite 2097/2097 on this commit.
