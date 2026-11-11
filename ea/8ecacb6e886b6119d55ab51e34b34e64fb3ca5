@@ -1,0 +1,1 @@
+PASS Quick #C879 part 1 at ea8ecac, re-cut of 1f8a368 on d338f0d. The change is line for line that of 1f8a368, which carries my PASS, apart from CHANGELOG. Suite 2186 green at the stack tip 5cc9166. Signed on its own: the tip above it has FINDINGS, so land this and d338f0d without the tip, or wait.
