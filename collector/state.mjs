@@ -523,6 +523,36 @@ export function repoFullOf(repo) {
   return full;
 }
 const BRANCH_NAME = /^[A-Za-z0-9._\/-]{1,100}$/;
+// #C882: whether the commit changed only paths nothing is deployed or installed from (docs, the readme, the changelog, tests: the groups
+// scripts/make-pair.mjs lists apart from the Worker, migrations, config, page, probe, gate and hooks). A commit whose changes cannot be read, or
+// that changed nothing, is not one: it keeps waiting for the install, as before. `git` is (args) -> text.
+export const DOCS_ONLY = /^(docs\/|tests\/|README\.md$|CHANGELOG\.md$)/;
+// Security R1 on 212d6b1: the card's LAST commit alone is not the landing. A card whose first commit changes the Worker and whose tip is a docs-only
+// fix-up would read Live while its Worker change was never deployed. So every commit on main that carries the card's Board-Id counts (the last
+// 400 of main, at most 30 of them), and the card needs no install only when ALL of them changed nothing but docs and tests; more than 30, or a
+// log that cannot be read, keeps it waiting.
+const MAX_CARD_COMMITS = 30;
+const NO_INSTALL = new WeakMap(); // a commit's paths never change, so one diff per commit and repository run
+function noInstallCard(repo, card, mainRef, headSha) {
+  if (!NO_INSTALL.has(repo)) NO_INSTALL.set(repo, new Map());
+  const memo = NO_INSTALL.get(repo), byCommit = (sha) => { if (!memo.has(sha)) memo.set(sha, noInstallLanding(repo.git, sha)); return memo.get(sha); };
+  const shas = new Set([headSha]);
+  try {
+    const out = String(repo.git(["log", "-400", "--fixed-strings", `--grep=Board-Id: ${card.id}`, "--format=%H%x1f%B%x1e", mainRef]));
+    for (const r of out.split("\x1e")) {
+      const [h, body] = r.replace(/^\n/, "").split("\x1f");
+      const ids = [...String(body ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)].map((m) => m[1]);
+      if (/^[0-9a-f]{40}$/.test(h ?? "") && ids.includes(card.id)) shas.add(h);
+    }
+  } catch { return false; }
+  return shas.size <= MAX_CARD_COMMITS && [...shas].every(byCommit);
+}
+export function noInstallLanding(git, sha) {
+  if (!/^[0-9a-f]{40}$/.test(String(sha))) return false;
+  let paths;
+  try { paths = String(git(["diff", "--name-only", `${sha}^`, sha])).split("\n").map((p) => p.trim()).filter(Boolean); } catch { return false; }
+  return paths.length > 0 && paths.every((p) => DOCS_ONLY.test(p));
+}
 function tipState(card, tip, repo, config, now, declared, cover = null) {
   // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
   // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
@@ -545,7 +575,9 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   const sentBack = coverSha ? findingsOn(coverSha) : [];
   const signed = bare ? [] : [...new Set([...signedOn(after ? after.sha : tip.sha), ...(coverSha ? signedOn(coverSha) : [])])].filter((p) => !sentBack.includes(p)).sort();
   const onMain = atMain && !bare;
-  const deployed = onMain && !!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
+  // #C882: a landing that changed only docs and tests has nothing to deploy or install: it is live the moment it is on main, not "waiting for install".
+  const noInstall = onMain && typeof repo.git === "function" && noInstallCard(repo, card, mainRef, head.sha);
+  const deployed = onMain && (noInstall || (!!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]))));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed }, cfg);
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
@@ -568,6 +600,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
     ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(findings.length ? { findings } : {}),
     ...(behindMain ? { behindMain: true } : {}),
+    ...(noInstall ? { noInstall: true } : {}),
     ...(phase && build ? { firm: false } : {}),
     ...(phase && !build && Number.isInteger(head.at) && head.at >= 1577836800000 && head.at <= 4102444800000 ? { readyAt: head.at } : {}),
     ...(phase && !build && unsigned.length ? { waitingFor: unsigned.slice(0, 10) } : {}),
