@@ -207,9 +207,9 @@ export const dispatchLine = (i) => {
     const signers = Array.isArray(i.signed) ? i.signed.filter((s) => typeof s === "string" && PLAIN_ROLE.test(s)).slice(0, 4) : [];
     const who = signers.length ? ` signed by ${signers.join(" and ")}` : "";
     const card = Number.isInteger(i.num) ? `#C${i.num}` : i.card;
-    return `DISPATCH ${card} at ${i.phase}: ${SHA12.test(String(i.sha)) ? `${i.sha}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]} (${i.role}'s turn; no go from anyone, act on this)`;
+    return `DISPATCH ${card} at ${i.phase}: ${SHA12.test(String(i.sha)) ? `${i.sha}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
   }
-  return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now`;
+  return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;
 };
 export const dispatchLateLine = (i) => `DISPATCH-LATE ${i.card}: ${i.role} was woken at ${new Date(i.since).toISOString().slice(11, 16)} UTC and nothing has moved in 30 minutes; look at it`;
 // Whether a role's dispatch watch is running: its pid file names a live process and was beaten within DISPATCH_ALIVE_MS.

@@ -86,6 +86,12 @@ def used(u):
     n = [u.get(k) for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")]
     return sum(x for x in n if isinstance(x, int) and not isinstance(x, bool) and x >= 0)
 red = wrote = question = answered = cleared = False
+# #C848: any titled agent but Manager whose turn ends on a question, in a turn that sent nothing to Manager, is refused once: nobody reads
+# that chat. last_text is the turn's last text block (the first met going backwards); sent_manager, any send to Manager (SendMessage to
+# Manager or to a session id, send_message, or the store's ask or post).
+last_text = None
+sent_manager = False
+QUESTION_END = re.compile(r"\?[\s*_`\"')\]]*$")
 closed = set()  # waiting items this turn marked done or deleted (#C582)
 tokens = None  # the latest call's context; a compaction after it leaves none
 for line in reversed(lines):
@@ -114,10 +120,16 @@ for line in reversed(lines):
         break  # start of this turn
     if e.get("type") != "assistant" or not isinstance(content, list):
         continue
-    for c in content:
+    for c in reversed(content):
+        if c.get("type") == "text" and last_text is None and not e.get("isSidechain") and (c.get("text") or "").strip():
+            last_text = c["text"]
         if c.get("type") == "text" and RED.search(c.get("text") or ""):
             red = True
         _in = c.get("input") or {}
+        if c.get("type") == "tool_use" and not e.get("isSidechain"):
+            _to = str(_in.get("to") or "")
+            if (c.get("name") == "SendMessage" and (_to.lower().startswith("manager") or _to.startswith("local_"))) or c.get("name") == "mcp__ccd_session_mgmt__send_message" or STORE_TOOL.match(str(c.get("name") or "")):
+                sent_manager = True
         if c.get("type") == "tool_use" and ((c.get("name") == "mcp__ccd_session_mgmt__clear_session" and _in.get("session_id") in (None, "", "self")) or (c.get("name") == "Skill" and re.fullmatch(r"(?:[\w-]+:)?handoff", str(_in.get("skill") or "")))):
             cleared = True  # this turn handed off or asked the app to clear it (itself: clearing another session isn't this one's reset)
         # The board's writes: the old ArtifactData, or the claude-artifacts server's db_write (#C652), whose ops carry
@@ -157,6 +169,8 @@ for line in reversed(lines):
 reasons = []
 if red and not wrote:
     reasons.append("Your reply has a red ask (🔴) but you wrote nothing to the flight board's 'waiting' collection this turn. Manager: raise it now with the store's ask tool, then finish. Any other agent: don't ask the owner directly; send the question to Manager and remove the 🔴.")
+elif TITLE and not MANAGER and last_text and QUESTION_END.search(last_text.rstrip()) and not sent_manager:
+    reasons.append("Nobody reads this chat. If it is in your lane, do it; otherwise send the question to Manager.")
 elif MANAGER and question and not answered:
     reasons.append("The owner asked a question this turn, but you wrote no board answer. Manager: answer it in its thread with the store's post tool; if it has no thread, raise an Answer with the store's ask tool. Then finish.")
 # The cue waits one turn while the owner is in the middle of something (#C392): Manager's 06:31Z reset threw away the
