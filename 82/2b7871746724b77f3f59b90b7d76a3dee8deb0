@@ -1,0 +1,1 @@
+PASS Full: #C853 v3 stop-hook-unpushed-build. My F1 and F2 on eeae556 fixed: a turn that leaves a background task running is not judged, a branch with a newer -vN on origin is not asked to push, and the text says push once the work is green. Suite 2072/2072 on this commit. Mutants killed: background skip dropped, superseded skip dropped.
