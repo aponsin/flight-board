@@ -1,0 +1,1 @@
+SECURE. #C925 v3, re-cut on main 6eba96f: identical patch to a046297 (SECURE) outside CHANGELOG.md. Needs migration 0026, a Worker deploy and the hooks line. Line-scoped for 6eba96f..058c1ed.
