@@ -8,17 +8,24 @@
   --accent:#1f5fd6; --accent-soft:#e3ecfc;
   --ok:#1b7f4b; --ok-ink:#17703f; --ok-soft:#dff3e8; --warn:#a85f00; --warn-soft:#fdf0d9; --warn-ink:#9a5700; --bad:#b4232c; --bad-soft:#fbe2e3;
   --track:#e7ecf2;
+  --sb-thumb:#6b7a8a; --sb-track:#dfe5ec;
   --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
   --body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0f141a; --panel:#171e26; --ink:#e7edf3; --muted:#93a2b2; --line:#2a3542;
-  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-ink:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --warn-ink:#f2b45c; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; color-scheme:dark}}
+  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-ink:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --warn-ink:#f2b45c; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; --sb-thumb:#8696a8; --sb-track:#222c37; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0f141a; --panel:#171e26; --ink:#e7edf3; --muted:#93a2b2; --line:#2a3542;
-  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-ink:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --warn-ink:#f2b45c; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; color-scheme:dark}
+  --accent:#7aa7ff; --accent-soft:#1c2b45; --ok:#5cd394; --ok-ink:#5cd394; --ok-soft:#173528; --warn:#f2b45c; --warn-soft:#3a2b14; --warn-ink:#f2b45c; --bad:#ff7b82; --bad-soft:#3d1c20; --track:#24303d; --sb-thumb:#8696a8; --sb-track:#222c37; color-scheme:dark}
 *{box-sizing:border-box}
+/* store-page-scrollbars: a scroll bar you can see. A bare page gets the thin overlay bar that hides itself (a grey sliver on the pale page); naming its colors
+   makes the browser draw a classic always-visible bar, thumb against track at 3:1 or better in both themes. Safari before 18.2 reads the -webkit rules. The tab strip hides its own. */
+*{scrollbar-color:var(--sb-thumb) var(--sb-track)}
+::-webkit-scrollbar{width:12px;height:12px}
+::-webkit-scrollbar-track{background:var(--sb-track)}
+::-webkit-scrollbar-thumb{background:var(--sb-thumb);border-radius:6px;border:2px solid var(--sb-track)}
 body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);padding:20px 16px 40px}
 .wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
 /* #C675: the header (title, live version, badge and version chip, clock, sources line) stays on screen while the page scrolls. It sits
