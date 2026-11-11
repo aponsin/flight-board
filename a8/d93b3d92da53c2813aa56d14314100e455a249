@@ -1,0 +1,1 @@
+SECURE. Builder's stack re-cut #3 on 959cc5a: 9c42b8a (SECURE) merged with #C927; syncStalls keeps #C927's read_at and adds done_at to the cards SELECT, still bound queries. Line-scoped for 959cc5a..ee3e1d3.
