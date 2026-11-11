@@ -1,0 +1,1 @@
+PASS Quick, line-scoped: #C939 re-cut on build/small-stack-b (main c2ab7a6), identical to bafa722 (644cd7d's CHANGELOG line folded in). range-diff without CHANGELOG is '=' against the commit I signed; CHANGELOG adds the card's line; suite on the stack tip f091faa 2496 of 2496.
