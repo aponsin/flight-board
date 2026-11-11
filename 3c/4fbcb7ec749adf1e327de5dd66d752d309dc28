@@ -1,0 +1,1 @@
+SECURE #C947 build/no-session-role-alarm@3c4fbcb (stacked on #C940 v3 0de3dc4): stalledWaits adds a no-session line per role; owner_role is checked against the role pattern before it reaches text; an empty reading raises nothing; one line per role, no time in it. Mutation (drop the blind-reading guard) fails a test. Suite green. - Security
