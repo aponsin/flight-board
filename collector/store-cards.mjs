@@ -3,7 +3,7 @@
 // directory of its own, writes the store's open cards there in that shape, and points a copy of the board config at it
 // (gate.stateDir). The Collector's merge, which state.mjs calls first, finds no deltas in that directory and changes nothing,
 // and the old board's mirror is never read or written. Everything here is plain functions and one fetch; no secrets are written.
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, copyFileSync, existsSync, renameSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, copyFileSync, existsSync, renameSync, chmodSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { FETCH_TIMEOUT_MS } from "./probe-board.mjs";
 
@@ -51,6 +51,21 @@ export function stacksOn(stackSwitch) {
   return (Array.isArray(stackSwitch) ? stackSwitch : []).some((s) => s && s.repo === "board" && (s.stack === true || s.stack === 1)) ? [""] : [];
 }
 
+// #C900 (the board half of #C860): the product's stack switch, for the product's own release tool. The probe writes a fixed file, whole, on every
+// evidence run: { at: <ms of its store read>, product: true|false } from the store's product row (stackSwitch repo "product"), to a temporary name
+// and renamed, mode 600. The path is fixed (~/.flight-board/stack-switch.json), so the product never needs the board's private id. A missing
+// file, a missing key or a stale "at" is OFF on the product's side, so the two halves can land in either order.
+export function productSwitchOn(stackSwitch) {
+  return (Array.isArray(stackSwitch) ? stackSwitch : []).some((s) => s && s.repo === "product" && (s.stack === true || s.stack === 1));
+}
+export function writeProductSwitch({ file, at, product }) {
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ at, product: product === true }), { mode: 0o600 });
+  chmodSync(tmp, 0o600); // a leftover temporary file from a crash keeps its old mode under writeFileSync's mode argument
+  renameSync(tmp, file);
+}
+
 // Writes <dir>/<id>/mirror/initiatives/<card>.json for every card and removes the ones the store no longer has, then stamps the
 // mirror (_at.json) with the time of this read. Each file is written whole under a temporary name and renamed into place.
 export function syncMirror({ cards, dir, boardId, now }) {
@@ -77,7 +92,7 @@ export function privateConfig(raw, dir) {
 // Everything the evidence job needs before it builds the state from the store's cards: the mirror, the private config, the
 // seeded usage history. Returns where to point state.mjs (--config) and where it leaves its state.json.
 // `stateFile` is the old location (<dir>/<board id>/state.json); only its board id and its usage history are used.
-export async function prepareStoreState({ privateDir, stateFile, configPath, base, headers, fetchImpl = fetch, now = Date.now(), readText = (p) => readFileSync(p, "utf8"), log = () => {} }) {
+export async function prepareStoreState({ privateDir, stateFile, configPath, base, headers, fetchImpl = fetch, now = Date.now(), readText = (p) => readFileSync(p, "utf8"), log = () => {}, switchFile = null }) {
   const boardId = basename(dirname(stateFile));
   if (!/^[A-Za-z0-9]{6,64}$/.test(boardId)) throw new Error("the state path has no board id");
   const { cards, stackSwitch } = await storeRead({ base, headers, fetchImpl });
@@ -86,6 +101,8 @@ export async function prepareStoreState({ privateDir, stateFile, configPath, bas
   const sf = join(privateDir, boardId, STACKS_FILE);
   writeFileSync(`${sf}.tmp`, JSON.stringify({ at: now, stacks: stacksOn(stackSwitch) }), { mode: 0o600 });
   renameSync(`${sf}.tmp`, sf);
+  // #C900: the product's switch, to the fixed file the product's release tool reads. A failed write never stops the evidence run.
+  if (switchFile) { try { writeProductSwitch({ file: switchFile, at: now, product: productSwitchOn(stackSwitch) }); } catch (e) { log(`stack-switch.json not written: ${e?.code ?? e?.message ?? e}`); } }
   const seeded = seedUsage({ from: dirname(stateFile), to: join(privateDir, boardId) });
   const cfgPath = join(privateDir, boardId, "config.json");
   writeFileSync(cfgPath, JSON.stringify(privateConfig(JSON.parse(readText(configPath)), privateDir)), { mode: 0o600 });
