@@ -1,0 +1,1 @@
+PASS Full: #C920 decision-in-open-thread at a8333ea, fix on 7868461. F1 fixed: the thread path refuses screenshots with a plain reason and carries the card id in the body. F2 fixed: askRefusal before the post, the eta_at refusal and the Recommended key now tested. Suite 2293/2293. Mutation check: pass, 13 of 13 killed.
