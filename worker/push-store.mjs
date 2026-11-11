@@ -4,7 +4,17 @@ import { endpointAllowed, b64u, sendPush, vapidJwk, publicPoint } from "./web-pu
 import { pushesDue } from "./push-rules.mjs";
 
 export const MAX_SUBSCRIPTIONS = 5;
+// #C922 (Checker's LOW1 on #C904): a device that fails this many sends in a row without a 404 or 410 (a 403 after the key
+// was replaced, say) is removed, so it is not retried forever and the page stops saying "on" for it.
+export const MAX_FAILS = 5;
 const RESULT_MAX = 200;
+
+// #C922: whether this endpoint is one of the owner's devices, so the page shows "on" only for a device the board still has.
+export async function pushKnown(db, endpoint) {
+  if (typeof endpoint !== "string") return refused("push-endpoint", "the endpoint to look up");
+  const row = await db.prepare("SELECT 1 AS k FROM push_subscriptions WHERE endpoint = ?").bind(endpoint).first();
+  return { ok: true, known: !!row };
+}
 
 const refused = (rule, detail) => ({ ok: false, refused: { rule, detail } });
 function decodes(text, bytes, first) {
@@ -61,7 +71,11 @@ export async function pushRun(db, now, env, fetchFn = fetch) {
     try { r = await sendPush({ subscription, payload: due.payload, jwk, subject: typeof jwk.sub === "string" ? jwk.sub : "https://flight-board.invalid", now, fetchFn }); } catch { r = { ok: false, gone: false }; }
     if (r.ok) { delivered++; await db.prepare("UPDATE push_subscriptions SET ok_at = ?, fails = 0 WHERE endpoint = ?").bind(now, subscription.endpoint).run(); }
     else if (r.gone) { gone++; await db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(subscription.endpoint).run(); }
-    else { failed++; await db.prepare("UPDATE push_subscriptions SET fail_at = ?, fails = fails + 1 WHERE endpoint = ?").bind(now, subscription.endpoint).run(); }
+    else {
+      failed++;
+      await db.prepare("UPDATE push_subscriptions SET fail_at = ?, fails = fails + 1 WHERE endpoint = ?").bind(now, subscription.endpoint).run();
+      await db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ? AND fails >= ?").bind(subscription.endpoint, MAX_FAILS).run();
+    }
   }
   if (delivered || !subs.length) {
     for (const a of due.asks) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ask', ?, ?)").bind(a.id, now).run();

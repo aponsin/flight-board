@@ -2321,7 +2321,9 @@ async function pushRead(){const nav=navigator,ios=/iP(hone|ad|od)/.test(nav.user
   if(!supported)return {supported,ios,standalone};
   let facts={};try{const r=await fetch("/api/push",{credentials:"same-origin",cache:"no-store"});if(r.ok)facts=await r.json()}catch(_){}
   const reg=await nav.serviceWorker.register("/sw.js"),sub=await reg.pushManager.getSubscription();
-  return {supported,ios,standalone,ready:!!facts.ready,key:facts.publicKey,permission:Notification.permission,subscribed:!!sub,reg,sub}}
+  // #C922: "on" only while the board still has this device (it drops one that keeps failing, say after the key changed).
+  let known=false;if(sub){try{const r=await fetch("/api/push/known",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({endpoint:sub.endpoint})});known=r.ok&&!!(await r.json()).known}catch(_){}}
+  return {supported,ios,standalone,ready:!!facts.ready,key:facts.publicKey,permission:Notification.permission,subscribed:!!sub&&known,reg,sub}}
 async function pushDraw(){const btn=$("pushbtn");if(!STORE||!btn)return;
   try{PUSH=await pushRead()}catch(_){PUSH={supported:false}}
   const l=pushLabel(PUSH);btn.hidden=!l;if(!l)return;btn.textContent=l.text;btn.disabled=!l.act;btn.dataset.act=l.act||""}
@@ -2332,6 +2334,8 @@ document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e
     if(act==="on"){
       // The permission prompt first, straight from the tap (iPhone shows it only from a user's tap).
       if(await Notification.requestPermission()!=="granted"){await pushDraw();return}
+      // #C922: a subscription the board no longer has (an old key's) is dropped first; the browser keeps one per site.
+      if(PUSH.sub){try{await PUSH.sub.unsubscribe()}catch(_){}}
       const sub=await PUSH.reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushKey(PUSH.key)});
       const r=await post("/api/push/subscribe",sub.toJSON());
       if(!r.ok){await sub.unsubscribe();throw new Error("refused")}

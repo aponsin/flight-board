@@ -11,7 +11,7 @@ import { routeWrite } from "./compat-write.mjs";
 import { COMPAT_SHIM } from "./compat-shim.mjs";
 import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.mjs";
 import { writeUsageDay } from "./compat-usage.mjs";
-import { subscribePush, unsubscribePush, pushFacts, pushRun } from "./push-store.mjs";
+import { subscribePush, unsubscribePush, pushKnown, pushFacts, pushRun } from "./push-store.mjs";
 import { SW_SOURCE, MANIFEST } from "./push-page.mjs";
 import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, moveInQueue } from "./board-store.mjs";
 
@@ -370,11 +370,12 @@ export default {
       if (auth.role !== "owner") return bare(403);
       return json(200, await pushFacts(env.DB, env), { "cache-control": "no-store" });
     }
-    if ((url.pathname === "/api/push/subscribe" || url.pathname === "/api/push/unsubscribe") && request.method === "POST") {
+    // #C922: /api/push/known tells the page whether its own device is still one of the board's (a POST: the endpoint never goes in a URL).
+    if (["/api/push/subscribe", "/api/push/unsubscribe", "/api/push/known"].includes(url.pathname) && request.method === "POST") {
       if (auth.role !== "owner") return bare(403);
       let b;
       try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
-      const r = url.pathname.endsWith("/subscribe") ? await subscribePush(env.DB, now, b) : await unsubscribePush(env.DB, b?.endpoint);
+      const r = url.pathname.endsWith("/subscribe") ? await subscribePush(env.DB, now, b) : url.pathname.endsWith("/known") ? await pushKnown(env.DB, b?.endpoint) : await unsubscribePush(env.DB, b?.endpoint);
       if (!r.ok) await refuse(env.DB, now, r.refused, null, auth.who);
       return json(r.ok ? 200 : 422, r);
     }

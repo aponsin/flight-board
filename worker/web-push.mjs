@@ -114,6 +114,9 @@ export async function sendPush({ subscription, payload, jwk, subject, now, fetch
       authorization: `vapid t=${token}, k=${b64u.encode(publicPoint(jwk))}`,
     },
     body,
+    // #C922 (Security's LOW on #C904): never follow a redirect, so a push service's 3xx can't carry our signed POST elsewhere.
+    // A 3xx is a failed send like any other non-2xx.
+    redirect: "manual",
   });
   return { ok: res.status >= 200 && res.status < 300, gone: res.status === 404 || res.status === 410, status: res.status };
 }

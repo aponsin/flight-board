@@ -22,11 +22,12 @@ export function askWaitsFrom(a) {
 const waited = (a, now, min) => { const from = askWaitsFrom(a); return from !== null && now - from >= min * MIN; };
 
 // Manager's wake lines: one row per ask (the stall_wakes key is "ask:<id>"), a reason that never changes for that ask, so
-// it is told once.
+// it is told once. #C922 (Checker's LOW2 on #C904): it promises no push, since the owner may have no key or device set; it
+// says the push comes only if one is, so the words never change with the setup (a new reason would wake Manager again).
 export function askWakes({ asks, now }) {
   return asks.filter((a) => waited(a, now, MANAGER_NUDGE_MIN)).map((a) => ({
     card_id: `${ASK_WAKE_PREFIX}${a.id}`,
-    reason: `ask #T${Number(a.num)} has waited ${MANAGER_NUDGE_MIN} min for the owner: make it clearer or answer what you can; the owner's phone gets it at ${OWNER_PUSH_MIN} min`,
+    reason: `ask #T${Number(a.num)} has waited ${MANAGER_NUDGE_MIN} min for the owner: make it clearer or answer what you can; at ${OWNER_PUSH_MIN} min it goes to the owner's phone, if phone pushes are on`,
   }));
 }
 
