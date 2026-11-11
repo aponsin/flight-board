@@ -1,0 +1,1 @@
+SECURE. #C937 v2, re-cut of e558598 (SECURE) onto main c8a457d. Range-diff excluding CHANGELOG.md: the patch's own lines (waitsForInstall, landed, idleWord, sm) are unchanged; the rest is context from #C915 v3 (heldLine, the held ship cell) now on main. Page only, still through esc(). Line-scoped for c8a457d..8d8ab69.
