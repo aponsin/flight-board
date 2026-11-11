@@ -1,0 +1,1 @@
+SECURE. Worker card-size guard mutation-checked (caught). Informational: test (b)'s Object.prototype asserts run in the test realm, not the page's vm context, so the page guard's mutation survives; assert inside the page's context.
