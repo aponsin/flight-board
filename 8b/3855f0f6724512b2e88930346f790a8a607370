@@ -1,0 +1,1 @@
+PASS Quick: #C844 terminal-done-note re-cut tip, on main a49e425c. Same patches as 98b3898 and 799f774, range-diff equal, which I passed: a test drives onReply and checks the stored status, the Done button has not moved. Suite at this commit 2026 of 2026 green. Mutation check on the same content: pass, 4 of 4 killed.
