@@ -20,7 +20,7 @@ async function seeded() {
 
 test("the Worker's look words are the config's defaults, word for word", () => {
   assert.deepEqual(LOOK_WORDS, DEFAULTS.decisions.lookWords);
-  assert.deepEqual(DEFAULTS.decisions.visualLanes, [], "and the lane list the Worker does not read is empty by default");
+  assert.deepEqual(DEFAULTS.decisions.visualLanes, [], "and the lane list is empty by default (the team's lanes reach the Worker as the probe's evidence look, #C956)");
 });
 
 test("what is a look: a whole word or its plural in the title or the question; not part of another word", () => {

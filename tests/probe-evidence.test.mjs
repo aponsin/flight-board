@@ -30,8 +30,9 @@ test("the evidence job posts live last; the usage job never reads it", async () 
   const run = (job) => evidenceJob({ job, base: "https://x.test", headers: {}, configPath: "/c.json", stateFile: "/s.json", build: async () => {},
     read: (p) => (p === "/c.json" ? cfg : JSON.stringify(state)), liveFetch: ok({ version: "1.209.0" }),
     fetchImpl: async (_u, o) => { posted.push(JSON.parse(o.body).key); return { ok: true, status: 200 }; } });
-  assert.equal((await run("evidence")).written, 6, "the five keys and this run's own reading (#C962)");
+  assert.equal((await run("evidence")).written, 7, "the state's four keys, this run's own reading (#C962), look (#C956), then live");
   assert.equal(posted.at(-1), "live");
+  assert.equal(posted.at(-2), "look");
   posted.length = 0;
   await run("usage");
   assert.deepEqual(posted, ["usage"]);
@@ -43,8 +44,8 @@ test("a product site that never answers delays no evidence write: live is read a
     read: (p) => (p === "/c.json" ? cfg : JSON.stringify(state)),
     liveFetch: async () => { order.push("live read"); throw new Error("timed out"); },
     fetchImpl: async (_u, o) => { order.push(JSON.parse(o.body).key); return { ok: true, status: 200 }; } });
-  assert.deepEqual(order, ["cards.card-a", "agents", "ctx", "board", "run.evidence", "live read"]);
-  assert.equal(r.written, 5);
+  assert.deepEqual(order, ["cards.card-a", "agents", "ctx", "board", "run.evidence", "live read", "look"], "look (#C956) is posted after the product site was asked, and never waits on it");
+  assert.equal(r.written, 6);
 });
 
 const state = {
@@ -96,6 +97,6 @@ test("the job builds the state without posting it, reads it, and posts the job's
   });
   assert.ok(args.includes("--no-post") && args.includes("--no-derive"));
   assert.deepEqual(stateArgs("/c.json").slice(1, 3), ["--config", "/c.json"]);
-  assert.equal(r.written, 5);
-  assert.deepEqual(posted, ["cards.card-a", "agents", "ctx", "board", "run.evidence"]);
+  assert.equal(r.written, 6);
+  assert.deepEqual(posted, ["cards.card-a", "agents", "ctx", "board", "run.evidence", "look"], "the state's keys and this run's reading, then the lanes from the config (#C956)");
 });
