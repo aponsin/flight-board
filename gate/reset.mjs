@@ -162,7 +162,12 @@ export const DISPATCH_STEPS = {
   pair: "is landed and not deployed: build the deploy pair (node scripts/make-pair.mjs <sha> <n>) and, if hooks changed, the pack",
   recut: "is signed but behind main, so Release cannot take it; re-cut it on main and push (a new commit needs new signatures)",
   outside: "is outside the stack (its branch was not cut from the stack tip); re-cut it on the stack tip and push",
+  decision: "had its decision answered; act on the answer",
 };
+// #C872: an answered Decision on a card wakes the card's owner with the answer quoted. The answer is the owner's choice (an option Manager
+// wrote, or the owner's own words), so it is cut to plain words before it goes in a line an agent reads: letters, digits, spaces and
+// ordinary punctuation, 120 characters at most, one line. Empty when nothing is left.
+export const plainAnswer = (s) => (typeof s === "string" ? s.replace(/[^\p{L}\p{N} .,:;'()\/&+%#?!-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 120).trim() : "");
 // #C859 slice 3 (stack mode, design 3): the stack branch a builder's turn names, a plain branch name only (the line is built from fixed text).
 export const STACK_BRANCH = /^[A-Za-z0-9._\/-]{1,100}$/;
 const stackBranch = (b) => (typeof b === "string" && STACK_BRANCH.test(b) && !b.startsWith("-") ? b : null);
@@ -198,6 +203,7 @@ export function dispatchItems({ cards, agents, asked = new Set(), roster = [], l
         ...(phase && SHA12.test(String(t.sha)) ? { sha: t.sha } : {}),
         ...(phase && stackBranch(t.stack) ? { stack: t.stack } : {}),
         ...(phase && Array.isArray(t.signed) ? { signed: t.signed.filter((s) => PLAIN_ROLE.test(String(s))).slice(0, 4) } : {}),
+        ...(phase && t.step === "decision" && Number.isInteger(t.ask) && t.ask >= 1 && t.ask <= 1e7 ? { ask: t.ask, answer: plainAnswer(t.answer) } : {}),
       });
     }
   }
@@ -218,6 +224,8 @@ export const dispatchLine = (i) => {
     const who = signers.length ? ` signed by ${signers.join(" and ")}` : "";
     const card = Number.isInteger(i.num) ? `#C${i.num}` : i.card;
     const on = stackBranch(i.stack) ? `; stack mode is on, the stack branch is ${i.stack}: one commit per card, rebased on its tip before you push` : "";
+    // #C872: `DISPATCH #C862 at decision: DECISION #T1782 answered: "A, the ship's run too"; go (Builder's turn; ...)`. The answer is cut again here.
+    if (i.step === "decision" && Number.isInteger(i.ask) && i.ask >= 1 && i.ask <= 1e7) return `DISPATCH ${card} at decision: DECISION #T${i.ask} answered: "${plainAnswer(i.answer)}"; go (${i.role}'s turn; read the answer on the ask's thread, act on it, push your own build branch and send READY: no go needed from anyone)`;
     return `DISPATCH ${card} at ${i.phase}: ${SHA12.test(String(i.sha)) ? `${i.sha}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
   }
   return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;
