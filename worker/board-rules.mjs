@@ -214,6 +214,7 @@ export function listWriteRefusal(fields, { create = false } = {}) {
 // Card words: only these fields are typed; status, phase, evidence and numbers are never written by a session.
 const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end"]);
 export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
+export const CARD_SIZES = ["XS", "S", "M", "L", "XL"];
 const CARD_FORBIDDEN = new Set(["status", "phase", "num", "live_version", "signed", "on_main", "ci", "evidence"]);
 
 export function cardWriteRefusal(fields, evidence) {
@@ -222,6 +223,8 @@ export function cardWriteRefusal(fields, evidence) {
   if (typed.length) return refuse("only-probe-writes-status", typed.join(", "));
   const unknown = Object.keys(fields).filter((k) => !CARD_WORDS.has(k));
   if (unknown.length) return refuse("unknown-field", unknown.join(", "));
+  // #C877 (Security R1 on 1be0ac1): the page keys the estimate's medians on the size, so a size is one of the card words, never any text.
+  if (fields.size !== undefined && fields.size !== null && !CARD_SIZES.includes(fields.size)) return refuse("card-size", `size is one of ${CARD_SIZES.join(", ")}`);
   if (fields.rework_reason !== undefined && !REWORK_REASONS.includes(fields.rework_reason)) return refuse("rework-reason", `one of ${REWORK_REASONS.join(", ")}`);
   for (const k of ["customer_text", "look_change"]) if (fields[k] !== undefined && fields[k] !== null && ![0, 1, true, false].includes(fields[k])) return refuse("card-flag", `${k} is true or false`);
   // The old board's skip lists also carry words that are no phase of ours (such as "look"); state.mjs ignores a word it does not know,
