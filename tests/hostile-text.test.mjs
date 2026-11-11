@@ -132,6 +132,8 @@ for (const host of ["store", null]) for (const mode of ["all", "end", "start"]) 
 
 // #C874 added one: renderFeed's "Went live, not yet acknowledged" list (#unacked). Its words are the events' version and text,
 // each through esc() (the text then through cardLinks, as the feed's own row), and the hostile passes above draw it on the store's page.
-test("the page's innerHTML sinks are the 42 audited (41 for #C723, 1 for #C874): a new one fails here until it is audited", () => {
-  assert.equal((template.match(/innerHTML/g) ?? []).length, 42);
+// #C919 added one: renderTeam's Team notes list. Its words are the card's title or the thread's name, each through esc() (teamRow), and the thread
+// under a row is threadHtml's, as every other thread's.
+test("the page's innerHTML sinks are the 43 audited (41 for #C723, 1 for #C874, 1 for #C919): a new one fails here until it is audited", () => {
+  assert.equal((template.match(/innerHTML/g) ?? []).length, 43);
 });
