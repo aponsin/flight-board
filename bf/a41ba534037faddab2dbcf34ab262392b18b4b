@@ -1,0 +1,1 @@
+SECURE. #C902 v2 tip, one commit on e7490195 (SECURE): tests plus one page line. cardLine picks the fixed words 'Done' or 'Live' from doneEvidence's truthiness; the value itself is never rendered. page/board.template.html changed, so the next pair needs its hooks line. The LOW to anchor DONE_EVIDENCE stands.
