@@ -2,7 +2,7 @@
 // old board's export and the store's own view and writes nothing itself; --sql gives the file the owner would run, signed, and --put the
 // object-store commands for the pictures.
 //   node collector/import-gaps.mjs --export <dir with waiting/ threads/ messages/> --store <a read of the store's view as JSON>
-//        [--blobs <dir of the old board's picture files, one per file id>] [--bucket <r2 bucket>] [--sql <out>] [--put <out>] [--report <out>] [--now N]
+//        [--blobs <dir of the old board's picture files, one per file id>] [--bucket <r2 bucket>] [--sql <out>] [--put <out>] [--missing <out>] [--report <out>] [--now N]
 // The four gaps, and the rule each is held to (nothing the store has written since the switch is ever overwritten):
 //  1 pictures. An ask's screenshots are file ids; the store holds no bytes for the old ones (/_blob answers 404), and #T1701's were saved as
 //    "[object Object]". The list is repaired only where it is missing, empty or still holds that text; the bytes come from --blobs (fetched
@@ -12,7 +12,10 @@
 //    the store has no note and no status, and only when the store's answer is the very option the old response chose;
 //  3 messages posted on the old board that the store lacks, on a thread the store holds (an ask, a card, a thread or one with messages),
 //    INSERT OR IGNORE by old id. A message is flagged resolved only when the old one was and the store's ask is closed;
-//  4 a thread's old title, as the owner's rename row (num NULL, like a rename), only while the store's thread has no title.
+//  4 a thread's old title, as the owner's rename row (num NULL, like a rename), only while the store's thread has no title;
+//  5 (#C913) the pictures of old MESSAGES: a message the store holds gets its screenshot list (messages.screenshots, migration 0027) only while
+//    it has none; a message the store lacks is imported with its list; a message of pictures alone is let through with an empty body. The
+//    picture files follow gap 1's rules, and --missing writes the fetch list (file id, label, ask|message|both).
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, basename, extname, resolve } from "node:path";
@@ -49,6 +52,20 @@ export function imageTypeOf(b) {
   return null;
 }
 
+// The pictures an old MESSAGE carried (#C913), as the store's screenshot strings: its `images` (agents' pictures, with a label and an option)
+// and its `assets` (the owner's attachments: { id, name, size, type }, "<id> <name>"); an asset that is not an image type is not a picture.
+// Eight at most, like the store's lists.
+export function messagePictures(m) {
+  const out = shotsOf(m?.images);
+  for (const a of Array.isArray(m?.assets) ? m.assets : []) {
+    if (!a || typeof a !== "object" || typeof a.id !== "string" || !FILE_ID.test(a.id) || typeof a.type !== "string" || !a.type.startsWith("image/")) continue;
+    if (out.some((s) => s === a.id || s.startsWith(`${a.id} `))) continue;
+    const name = typeof a.name === "string" ? a.name.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 200) : "";
+    out.push(name ? `${a.id} ${name}` : a.id);
+  }
+  return out.slice(0, 8);
+}
+
 // docs: the old board's { waiting, threads, messages } (readMirror). view: the store's view ({ asks, cards, threads: { threads, messages }, files: { images } }).
 // blobs: { <file id>: Uint8Array } the old pictures' bytes. now: the time the file rows are stamped with.
 export function planGaps(docs, view, { blobs = {}, now = Date.now() } = {}) {
@@ -59,9 +76,9 @@ export function planGaps(docs, view, { blobs = {}, now = Date.now() } = {}) {
   const holds = new Set([...asks.keys(), ...(view.cards ?? []).map((c) => c.id), ...threadRows.keys(), ...storeMsgs.map((m) => m.thread_id)]);
   const knownFiles = new Set((view.files?.images ?? []).map((f) => f.id));
   const out = {
-    notes: [], shots: [], files: [], puts: [], messages: [], titles: [],
+    notes: [], shots: [], files: [], puts: [], messages: [], msgShots: [], titles: [],
     missingBlobs: [], refused: [],
-    held: { notes: 0, shots: 0, messages: 0, titles: 0 },
+    held: { notes: 0, shots: 0, messages: 0, msgShots: 0, titles: 0 },
   };
   const refuse = (gap, id, rule, detail) => out.refused.push({ gap, id, rule, ...(detail ? { detail } : {}) });
 
@@ -83,7 +100,14 @@ export function planGaps(docs, view, { blobs = {}, now = Date.now() } = {}) {
 
   // Gap 1: the screenshot lists and the picture files.
   const wanted = new Map(); // file id -> a name for it
-  const wantFile = (shot) => { const p = parseShot(shot); if (p && FILE_ID.test(p.id) && !wanted.has(p.id)) wanted.set(p.id, p.label || p.id); };
+  const usedBy = new Map(); // file id -> "ask", "message" or "both" (#C913: who points at the picture, so the fetch list says it)
+  const wantFile = (shot, by = "ask") => {
+    const p = parseShot(shot);
+    if (!p || !FILE_ID.test(p.id)) return;
+    if (!wanted.has(p.id)) wanted.set(p.id, p.label || p.id);
+    const was = usedBy.get(p.id);
+    usedBy.set(p.id, !was || was === by ? by : "both");
+  };
   for (const [aid, d] of live(docs.waiting)) {
     const s = asks.get(aid);
     if (!s) continue;
@@ -96,10 +120,43 @@ export function planGaps(docs, view, { blobs = {}, now = Date.now() } = {}) {
     out.shots.push({ id: aid, screenshots: list });
     for (const x of list) wantFile(x);
   }
+  // Gap 3: messages the store lacks, on a thread it holds. Gap 5 (#C913) rides on it: the pictures an old message carried. A message the store
+  // holds gets its picture list only while it has none; a message the store lacks is imported with its pictures, and a message of pictures
+  // alone (no text) is let through with an empty body, as the old board allowed it.
+  const storeShots = new Map(storeMsgs.map((m) => [m.id, m.screenshots]));
+  const hasShots = (v) => { if (Array.isArray(v)) return v.length > 0; if (typeof v !== "string" || !v) return false; try { const j = JSON.parse(v); return Array.isArray(j) && j.length > 0; } catch { return true; } };
+  for (const [id, m] of live(docs.messages)) {
+    const tid = typeof m.thread === "string" ? m.thread : "";
+    if (!holds.has(tid)) continue;
+    const list = messagePictures(m);
+    if (messageIds.has(id)) {
+      out.held.messages++;
+      if (!list.length) continue;
+      for (const x of list) wantFile(x, "message");
+      if (hasShots(storeShots.get(id))) { out.held.msgShots++; continue; }
+      out.msgShots.push({ id, screenshots: list });
+      continue;
+    }
+    const pictureOnly = typeof m.text === "string" && !m.text.trim() && list.length > 0;
+    if (!MSG_ID.test(id)) { refuse("message", id, "message-id"); continue; }
+    if (!str(m.from) || typeof m.text !== "string" || (!m.text.trim() && !pictureOnly)) { refuse("message", id, "message-shape"); continue; }
+    if (CTRL.test(m.text) || m.text.length > MAX_TEXT) { refuse("message", id, CTRL.test(m.text) ? "control-char" : "too-long"); continue; }
+    if (CTRL.test(m.from) || m.from.length > 64) { refuse("message", id, "message-shape", "author"); continue; }
+    if (int(m.at) === null || m.at === 0) { refuse("message", id, "message-time"); continue; }
+    const kind = typeof m.kind === "string" && KIND.test(m.kind) ? m.kind : null;
+    const resolved = m.resolved === true && !!asks.get(tid)?.closed_at ? 1 : 0;
+    const row = { id, thread_id: tid, author: m.from, body: m.text, created_at: m.at, kind, resolved, delivered_at: m.at, screenshots: list.length ? JSON.stringify(list) : null };
+    for (const x of list) wantFile(x, "message");
+    out.messages.push(row);
+  }
+  out.messages.sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
+  out.msgShots.sort((a, b) => a.id.localeCompare(b.id));
+
+  // The picture files: the ones the asks and the messages point at, with their bytes where given.
   for (const [id, label] of wanted) {
     if (knownFiles.has(id)) continue;
     const bytes = blobs[id];
-    if (!bytes) { out.missingBlobs.push({ id, label }); continue; }
+    if (!bytes) { out.missingBlobs.push({ id, label, for: usedBy.get(id) }); continue; }
     const type = imageTypeOf(bytes);
     if (!type) { refuse("file", id, "file-type", "the bytes are not a PNG, JPEG, GIF or WebP picture"); continue; }
     if (!bytes.length || bytes.length > MAX_FILE_BYTES) { refuse("file", id, "file-size", `${bytes.length} bytes`); continue; }
@@ -108,23 +165,6 @@ export function planGaps(docs, view, { blobs = {}, now = Date.now() } = {}) {
     out.files.push({ id, name: cleanName(label), type, size: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex"), added_by: "import", added_at: now });
     out.puts.push({ id, type, size: bytes.length });
   }
-
-  // Gap 3: messages the store lacks, on a thread it holds.
-  for (const [id, m] of live(docs.messages)) {
-    const tid = typeof m.thread === "string" ? m.thread : "";
-    if (!holds.has(tid)) continue;
-    if (messageIds.has(id)) { out.held.messages++; continue; }
-    if (!MSG_ID.test(id)) { refuse("message", id, "message-id"); continue; }
-    if (!str(m.from) || typeof m.text !== "string" || !m.text.trim()) { refuse("message", id, "message-shape"); continue; }
-    if (CTRL.test(m.text) || m.text.length > MAX_TEXT) { refuse("message", id, CTRL.test(m.text) ? "control-char" : "too-long"); continue; }
-    if (CTRL.test(m.from) || m.from.length > 64) { refuse("message", id, "message-shape", "author"); continue; }
-    if (int(m.at) === null || m.at === 0) { refuse("message", id, "message-time"); continue; }
-    const kind = typeof m.kind === "string" && KIND.test(m.kind) ? m.kind : null;
-    const resolved = m.resolved === true && !!asks.get(tid)?.closed_at ? 1 : 0;
-    const row = { id, thread_id: tid, author: m.from, body: m.text, created_at: m.at, kind, resolved, delivered_at: m.at };
-    out.messages.push(row);
-  }
-  out.messages.sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
 
   // Gap 4: a thread's old title.
   for (const [tid, t] of live(docs.threads)) {
@@ -147,7 +187,9 @@ export function gapsSql(p) {
     ...p.files.map((f) => insert("files", f)),
     ...p.shots.map((s) => `UPDATE asks SET body = json_patch(body, ${q(JSON.stringify({ screenshots: s.screenshots }))}) WHERE id = ${q(s.id)} AND (json_extract(body, '$.screenshots') IS NULL OR json_extract(body, '$.screenshots') = '[]' OR json_extract(body, '$.screenshots') LIKE '%[object%');`),
     ...p.notes.map((n) => `UPDATE asks SET answer_status = 'chose', answer_note = ${q(n.note)} WHERE id = ${q(n.id)} AND answered_at = ${q(n.answered_at)} AND answer_note IS NULL AND answer_status IS NULL;`),
-    ...p.messages.map((m) => insert("messages", { id: m.id, thread_id: m.thread_id, author: m.author, body: m.body, created_at: m.created_at, kind: m.kind, resolved: m.resolved, delivered_at: m.delivered_at })),
+    ...p.messages.map((m) => insert("messages", { id: m.id, thread_id: m.thread_id, author: m.author, body: m.body, created_at: m.created_at, kind: m.kind, resolved: m.resolved, delivered_at: m.delivered_at, screenshots: m.screenshots })),
+    // #C913: the picture list of a message the store already holds, only while it has none.
+    ...p.msgShots.map((s) => `UPDATE messages SET screenshots = ${q(JSON.stringify(s.screenshots))} WHERE id = ${q(s.id)} AND (screenshots IS NULL OR screenshots = '' OR screenshots = '[]');`),
     ...p.titles.map((t) => `INSERT INTO threads (id, num, title, created_at) VALUES (${q(t.id)}, NULL, ${q(t.title)}, ${q(t.created_at)}) ON CONFLICT (id) DO UPDATE SET title = excluded.title WHERE threads.title IS NULL;`),
   ].join("\n");
 }
@@ -159,11 +201,16 @@ export function putCommands(p, { bucket, dir, ext = {} }) {
 }
 const shellQuote = (s) => `'${String(s).replaceAll("'", `'\\''`)}'`;
 
+// The pictures with no bytes yet, as the fetch list (#C913): <file id> TAB <label> TAB <ask|message|both>, the format of c901-missing-pictures.tsv plus who points at it.
+export function missingList(p) {
+  return p.missingBlobs.map((b) => `${b.id}\t${String(b.label).replace(/[\t\r\n]+/g, " ")}\t${b.for ?? "ask"}`).join("\n");
+}
+
 export function report(p) {
   return {
     notes: p.notes.map((n) => n.id), shots: p.shots.map((s) => ({ id: s.id, pictures: s.screenshots.length })),
     files: p.files.map((f) => ({ id: f.id, type: f.type, size: f.size })), missingBlobs: p.missingBlobs,
-    messages: p.messages.map((m) => ({ id: m.id, thread: m.thread_id })), titles: p.titles.map((t) => ({ id: t.id, title: t.title })),
+    messages: p.messages.map((m) => ({ id: m.id, thread: m.thread_id })), msgShots: p.msgShots.map((s) => ({ id: s.id, pictures: s.screenshots.length })), titles: p.titles.map((t) => ({ id: t.id, title: t.title })),
     held: p.held, refused: p.refused,
   };
 }
@@ -190,5 +237,6 @@ if (process.argv[1] && same(fileURLToPath(import.meta.url), process.argv[1])) {
   const whole = JSON.stringify(report(p), null, 2);
   if (get("--report")) { writeFileSync(get("--report"), whole + "\n"); console.log(`report written to ${get("--report")}: ${p.notes.length} notes, ${p.shots.length} picture lists, ${p.files.length} pictures with bytes, ${p.missingBlobs.length} without, ${p.messages.length} messages, ${p.titles.length} titles, ${p.refused.length} refused`); } else console.log(whole);
   if (get("--sql")) writeFileSync(get("--sql"), gapsSql(p) + "\n");
+  if (get("--missing")) writeFileSync(get("--missing"), missingList(p) + "\n");
   if (get("--put")) writeFileSync(get("--put"), putCommands(p, { bucket: get("--bucket"), dir: get("--blobs"), ext: bl.ext }) + "\n");
 }
