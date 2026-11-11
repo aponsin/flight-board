@@ -31,13 +31,17 @@ const DAY = 864e5;
 // #C954: text another session or the app put into the turn is never the owner's: a message from another session (also inside a system
 // reminder), a background task's notification, the app's side-sessions or CI events, a cross-session delivery or idle notice.
 const NOT_THE_OWNERS = /<cross-session-message\b|^\s*Another Claude session sent a message|<task-notification\b|<side-sessions-event\b|<ci-monitor-event\b|\[Cross-session (?:delivery|idle) notice\]/;
+// #C955: the app's compaction summary opens a turn with a user message that quotes the owner's earlier chat lines; it is the app's, not a
+// new question. The transcript marks the line (isCompactSummary) and the text begins with a fixed sentence; a line is skipped on either,
+// but only a text that BEGINS with the sentence (an owner quoting it in the middle of a question still counts).
+const COMPACTION_SUMMARY = /^\s*This session is being continued from a previous conversation/;
 export function ownTurnText(turn) {
   const parts = [];
   for (const l of turn) {
-    if (l?.type !== "user") continue;
+    if (l?.type !== "user" || l.isCompactSummary === true) continue;
     const c = l.message?.content;
     for (const t of typeof c === "string" ? [c] : Array.isArray(c) ? c.filter((p) => p?.type === "text").map((p) => p.text ?? "") : []) {
-      if (NOT_THE_OWNERS.test(t)) continue;
+      if (NOT_THE_OWNERS.test(t) || COMPACTION_SUMMARY.test(t)) continue;
       parts.push(t.replace(/<system-reminder[\s\S]*<\/system-reminder>/g, ""));
     }
   }
