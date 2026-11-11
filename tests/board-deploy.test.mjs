@@ -256,7 +256,7 @@ test("by hand, the two long lines still run as before: line 1 then line 2 print 
   assert.match(c.stdout, new RegExp(`CHECK FAILED: ${DEPLOY_F} is not the signed file`)); assert.ok(!t.ran("deploy.ran"));
 });
 
-test("the one-line command runs both lines over SSH (SSH_CONNECTION set, no display), ends with DEPLOY OK then TREE OK, never opens a browser, and prints line 3 to paste", () => {
+test("the one-line command runs both lines over SSH (SSH_CONNECTION set, no display), ends with DEPLOY OK then TREE OK, never opens a browser, and only names line 3 (prints no hooks line to paste)", () => {
   const f = folder();
   const r = sh(f.dir, oneLiner(f.steps));
   assert.equal(r.status, 0, r.stdout + r.stderr);

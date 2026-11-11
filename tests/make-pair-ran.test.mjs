@@ -125,6 +125,9 @@ test("a gate/stop.mjs change writes the hooks file from the last one, moves the 
   assert.ok(steps.includes(`shasum -a 256 ${out}/board-store-hooks-pc8.mjs | cut -c1-64)" = ${h} ]; then node ${out}/board-store-hooks-pc8.mjs;`));
   assert.match(steps, /Hook files changed since .*: gate\/stop\.mjs, hooks\/send-refused-cue\.py/);
   assert.match(steps, new RegExp(`hooks ${h}\\.`));
+  // (#C938) The one-command paragraph says the command only reminds of the hooks step and prints no line for it; it never says it prints one.
+  assert.match(steps, /the command only reminds you of it and prints no line for it, so paste line 3 below from the pair's post/);
+  assert.doesNotMatch(steps, /(prints|print) (the |a )?(hooks|line 3)(?! below)/i);
 });
 
 test("a change to a file the gate scripts import counts, one level down (gate/tools.mjs) and two levels down (collector/fence.mjs)", () => {
