@@ -1,0 +1,1 @@
+PASS Quick: #C942 at 5e9f136, a doc-only commit on 25efdad, on e41cab1, both of which I passed. It adds the missing CHANGELOG line under 0.3.4 Unreleased; the line matches the code: restartState, the working reading, the tooltip, still-safe cases, tests. Code unchanged since 25efdad, suite 2456 of 2456. Lifts my STOP to Release.
