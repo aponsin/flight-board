@@ -2,6 +2,8 @@
 
 ## 0.3.4 - Unreleased
 
+### Fixed
+
 - The owner-phone-push cron test no longer fails by chance (push-test-flaky-bytes, #C950; it failed about 0.3% of runs). It searched the random encrypted bytes of each push for the text `#T`, which those bytes held by chance. It now opens each sealed push with the receiving device's own key (RFC 8291, one record) and checks the plaintext: exactly the four fields `title`, `body`, `url` and `tag`, none of the ask's title or text, and the ask's own number as the only thread id; and that what was sent is not the plaintext. A leaked title, a fifth field or another thread id fails it every time. Test-only: no Worker, probe, gate or hook file changes. Test: `tests/owner-phone-push.test.mjs`.
 
 ### Added
