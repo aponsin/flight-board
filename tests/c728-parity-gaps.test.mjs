@@ -41,17 +41,23 @@ test("(3) the Manager chip is not drawn on the store from the old wake watch's k
   assert.match(artifact.b.managerChip()?.text ?? "", /Manager not listening/, "the same data on the artifact page draws the chip");
 });
 
-test("(4) on the store a card's ETA box says — even with a history to estimate from; the artifact page still estimates", async () => {
+test("(4) #C877: on the store a card's ETA box draws the estimate (Live in), as the artifact page does; a paused card still says —", async () => {
   const db = await store();
   const withEta = (c) => ({ ...c, initiatives: c.initiatives.map((i) => ({ ...i, etaLive: NOW + 5 * M })) });
   const onStore = await draw(db, "store", withEta);
-  assert.match(onStore.html, /<div class="lbl">ETA<\/div><div class="big">—<\/div>/);
-  assert.doesNotMatch(onStore.html, /Live in/);
+  assert.match(onStore.html, /<div class="lbl">Live in<\/div>/);
   const artifact = await draw(db, null, withEta);
   assert.match(artifact.html, /Live in/, "the artifact page draws its ETA");
+  // A card the lead paused, with no one working it (the page lights a card an agent works as in flight whatever is stored).
+  const db2 = makeDb();
+  await createCard(db2, NOW, "Manager", { id: "hero", title: "Hero band", owner_role: "Builder" });
+  await db2.prepare("UPDATE cards SET paused = 1 WHERE id = 'hero'").run();
+  const held = await draw(db2, "store", withEta);
+  assert.match(held.html, /<div class="lbl">ETA<\/div><div class="big">—<\/div>/, "a paused card read as due (#C728): no ETA");
+  assert.doesNotMatch(held.html, /<div class="lbl">Live in<\/div>/);
 });
 
-test("(4) on the store no ETA in the card number's bubble or a thread's card line either; the artifact page keeps both", async () => {
+test("(4) #C877: the ETA is in the card number's bubble and a thread's card line on the store too, as on the artifact page", async () => {
   const db = await store();
   const withEta = (c) => ({ ...c, initiatives: c.initiatives.map((i) => ({ ...i, etaLive: NOW + 5 * M, thread: "t-1" })) });
   const at = async (host) => {
@@ -64,7 +70,7 @@ test("(4) on the store no ETA in the card number's bubble or a thread's card lin
   const store_ = await at("store"), artifact = await at(null);
   assert.ok(card(artifact), "the artifact page's card line exists");
   assert.match(artifact.bubble, /due ~/); assert.match(artifact.line, /~\d/);
-  assert.doesNotMatch(store_.bubble, /due ~/); assert.doesNotMatch(store_.line, /~\d/);
+  assert.match(store_.bubble, /due ~/); assert.match(store_.line, /~\d/);
   function card(x) { return x.line.length > 0; }
 });
 

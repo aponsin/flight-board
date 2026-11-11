@@ -957,7 +957,7 @@ function cardLinks(html){return String(html).replace(/(?<![\w\/#&;.=?-])#C(\d{1,
 // step, cut so it stays two lines.
 function cardBubble(i,now=Date.now()){const done=i.status==="done",cut=(s,n)=>s.length>n?s.slice(0,n-1)+"…":s;
   const ph=done?(i.dropped?"Dropped":"Live"+(i.version?" "+i.version:"")):notStarted(i)?"Queued":(PHASES.find(p=>p[0]===i.phase)||[,i.phase||""])[1];
-  const eta=done?(num(i.doneAt)?dayLabel(i.doneAt,now):""):!STORE&&cardEta(i)?dueText(cardEta(i)):""; // #C728: no ETA on the store
+  const eta=done?(num(i.doneAt)?dayLabel(i.doneAt,now):""):shownEta(i)?dueText(shownEta(i)):""; // #C877: the store has the ETA too (not for a paused or blocked card)
   const next=!done&&i.nextNote?"Next: "+cut(String(i.nextNote),90):"";
   return `<b>${Number.isInteger(i.num)?"#C"+i.num+" ":""}${esc(i.name||i.id)}</b><br>${esc([ph,!done&&i.who!==ph&&i.who,eta,next].filter(Boolean).join(" · "))}`}
 // A card's number opens it: on the board, or under Done (opened), clearing its list's search when that hides it. null
@@ -1419,7 +1419,7 @@ function optionText(id,key){const o=threadOptions(id).find(o=>String(o.key)===St
 function cardLine(id,now=Date.now()){const c=threadCardAny(id);if(!c)return "";
   const link=`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>`;
   if(c.status==="done"&&!c.dropped)return `→ ${link} · Live`;if(c.status==="dropped"||c.dropped)return `→ ${link} · Dropped`;
-  const eta=STORE?null:cardEta(c),s=liveSubstep(c.id); // #C728: no ETA on the store (PARITY: not yet)
+  const eta=shownEta(c),s=liveSubstep(c.id); // #C877: the store has the ETA too
   if(s){const med=stepMedians()[s.phase],age=Math.max(0,now-s.at),slow=med!=null&&age>2*med,nx=nextPhaseLabel(c,s.phase);
     const verb=s.phase==="test"?"e2e running":`${esc(s.who||"")} ${SUB_VERB[s.phase]||"reviewing"}`.trim();
     const ci=s.phase==="ship"?stepMedians().ci:null;
@@ -1817,8 +1817,15 @@ function repoBadge(i){const r=cardRepo(i);return `<span class="c-repo${r===BOARD
 const SHIP_MS=10*60e3, MIN_LEFT=5*60e3;
 // The medians of the time each phase took, from the cards that went live (their phase logs, waits left out; a dropped
 // card shows as done but never went live).
-function phaseMedians(cards){const by={};(cards||[]).forEach(i=>{if(!i||i.status!=="done"||i.dropped)return;const t=phaseTimes(i.phaseLog,i.doneAt);Object.entries(t).forEach(([k,ms])=>{if(ms>0)(by[k]=by[k]||[]).push(ms)})});
-  const med={};Object.entries(by).forEach(([k,a])=>{a.sort((x,y)=>x-y);const m=a.length>>1;med[k]=a.length%2?a[m]:(a[m-1]+a[m])/2});return med}
+// #C877: and by the card's size (the card words' XS S M L): a size's median for a phase needs 3 cards of that size, else the overall median
+// stands (medFor). The by-size medians ride on the result as a hidden __size, so Object.entries of the medians is what it was.
+const MED_SIZE_MIN=3;
+function medOf(a){a=a.slice().sort((x,y)=>x-y);const m=a.length>>1;return a.length%2?a[m]:(a[m-1]+a[m])/2}
+function phaseMedians(cards,upTo=null){const by={},bySize={};(cards||[]).forEach(i=>{if(!i||i.status!=="done"||i.dropped)return;if(upTo!=null&&!(num(i.doneAt)!=null&&i.doneAt<=upTo))return;const t=phaseTimes(i.phaseLog,i.doneAt);Object.entries(t).forEach(([k,ms])=>{if(ms>0){(by[k]=by[k]||[]).push(ms);if(i.size)((bySize[i.size]=bySize[i.size]||{})[k]=bySize[i.size][k]||[]).push(ms)}})});
+  const med={};Object.entries(by).forEach(([k,a])=>{med[k]=medOf(a)});
+  const sz={};Object.entries(bySize).forEach(([s,o])=>{Object.entries(o).forEach(([k,a])=>{if(a.length>=MED_SIZE_MIN)(sz[s]=sz[s]||{})[k]=medOf(a)})});
+  Object.defineProperty(med,"__size",{value:sz,enumerable:false});return med}
+function medFor(i,med){const s=i&&i.size&&med&&med.__size&&med.__size[i.size];return s?{...med,...s}:med}
 // The ETA, derived, never declared (the declared etaLive is only the fallback when there is no data): in ship, the
 // release start plus the estimate; before it, now plus what is left of this phase plus the medians of the phases still
 // ahead up to the last (live), skips left out. null when a phase ahead has no history yet.
@@ -1826,11 +1833,13 @@ function derivedEta(i,med=state.phaseMed||{},now=Date.now()){
   if(!i||i.status==="done"||i.status==="dropped")return null;
   if(i.phase==="ship"&&num(i.shipAt)!=null)return Math.max(i.shipAt+SHIP_MS,now+60e3);
   const idx=phaseIndex(i.phase);if(idx<0)return null;
-  const skip=new Set(Array.isArray(i.skip)?i.skip:[]),spent=phaseTimes(i.phaseLog,now);let left=0;
+  const skip=new Set(Array.isArray(i.skip)?i.skip:[]),spent=phaseTimes(i.phaseLog,now),mz=medFor(i,med);let left=0;
   for(let n=idx;n<PHASES.length-1;n++){const k=PHASES[n][0];if(n>idx&&skip.has(k))continue;
-    const m=med[k];if(m==null)return null;left+=n===idx?Math.max(m-(spent[k]||0),MIN_LEFT):m}
+    const m=mz[k];if(m==null)return null;left+=n===idx?Math.max(m-(spent[k]||0),MIN_LEFT):m}
   return now+left}
 function cardEta(i){return queueEta(i)??derivedEta(i)??num(i&&i.etaLive)}
+// #C877: what the page shows. On the store a paused or blocked card has no ETA (it read as due, #C728); everywhere else it is cardEta.
+function shownEta(i){return STORE&&i&&(i.status==="paused"||i.status==="blocked")?null:cardEta(i)}
 // How long a step should take (#C348, the owner: "missing timings"): the median hours by card size (nudges.etaHours),
 // in ms, or null for a size it doesn't know.
 function stepMs(i){const h=((CONFIG.nudges||{}).etaHours||{})[i&&i.size];return typeof h==="number"&&h>0?h*3600e3:null}
@@ -1863,7 +1872,7 @@ function waitingTurn(i){return !!(i&&i.who&&isQueued(i)&&qPos(i)<Infinity&&queue
 // 3 h"): when the card ahead is expected to finish its build (now if that build is done; the rest of its build median if
 // it is building; its own turn plus a build median if it waits too), then its own phases from build on. null (as before)
 // for a card without a place or with no build median yet.
-function buildFree(c,med,now){const mb=med[BUILD_PHASE];if(mb==null)return null;
+function buildFree(c,med,now){const mb=medFor(c,med)[BUILD_PHASE];if(mb==null)return null;
   if(!isQueued(c))return phaseIndex(c.phase)>phaseIndex(BUILD_PHASE)?now:now+Math.max(mb-(phaseTimes(c.phaseLog,now)[BUILD_PHASE]||0),MIN_LEFT);
   const s=turnAt(c,med,now);return s==null?null:s+mb}
 function turnAt(i,med,now){const q=queueOf(i.who),k=q.indexOf(i);return k<=0?now:buildFree(q[k-1],med,now)}
@@ -2110,7 +2119,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
     const sm=k==="ship"&&n===idx&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
     const sd=sm!=null?`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`:k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";const vf=k===LIVE_PHASE&&n===idx&&verifying(i);return pre+`<div class="${vf?"step verifying":c+(t.includes('class="norec"')?" norec":"")}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:t}${sd}</div>`}).join("");
   const chips=issueChips(i);
-  const eta=cardEta(i);
+  const eta=shownEta(i);
   let etaHtml;
   // Live by the evidence while still open (Designer on live-source: the live state shows this on every ship): no ETA to
   // be due, its version or "now"; the waits and the missed-fields line are of the stage before, so they go, and the
@@ -2118,8 +2127,8 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const liveOpen=i.status!=="done"&&i.byEvidence&&i.phase===LIVE_PHASE;
   if(i.status==="done") etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"")}</div><div class="lbl">${num(i.doneAt)?dayLabel(i.doneAt):""}</div>`;
   else if(liveOpen) etaHtml=`<div class="lbl">Live</div><div class="big">${esc(i.version||"now")}</div>`;
-  // #C728: on the store the ETA box is "not yet" (PARITY: B3b, B4): its inputs aren't there, and a paused card read as due.
-  else if(eta&&!STORE) etaHtml=`<div class="lbl">Live in</div><div class="big" data-eta="${eta}">${eta>Date.now()?dur(eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(eta)}${derivedEta(i)==null?" (declared)":""}</div>`;
+  // #C877: the ETA box on the store too, estimated from the queue order and the medians by size (a paused or blocked card has none: it read as due, #C728).
+  else if(eta) etaHtml=`<div class="lbl">Live in</div><div class="big" data-eta="${eta}">${eta>Date.now()?dur(eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(eta)}${derivedEta(i)==null?" (declared)":""}</div>`;
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   // #C732 (page): a paused or parked card ships in no version anyone can name: no version line, as no ETA.
   const vn=i.status!=="done"&&!parkedStatus(i)?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
