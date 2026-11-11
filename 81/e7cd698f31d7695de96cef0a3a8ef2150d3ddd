@@ -1,0 +1,1 @@
+PASS Full, line-scoped: #C909 live-version-wakes-ops at 81e7cd6, re-cut of b0cf6a2 onto 2641eba. range-diff: patch identical, only the CHANGELOG context moved. Suite at the #C885 v2 tip 52688cb, which holds this commit: 2381/2381. The verdict on b0cf6a2 holds.
