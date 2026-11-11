@@ -1,0 +1,1 @@
+PASS Quick: #C928 LOW2 at 4ac1cf5 (build/c928-changelog-refusal), one commit on main 4f27ff1, CHANGELOG.md only. The #C928 line now says pickMode refuses an unknown argument with NOT RUN and exit 1, and it names the filled-file test. Both statements match the code and the test at 4f27ff1. No code changed, so the suite is not affected.
