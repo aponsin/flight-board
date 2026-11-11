@@ -290,6 +290,8 @@ export function unpushedState(cwd, run = (args) => execFileSync("git", args, { c
 // often on main and the build branch with the unpushed commit is in a linked worktree. The hook reads the session's folder AND the repository's
 // worktrees whose path holds the session's id (its scratchpad); another session's worktrees are never counted. The folder's own state wins when it
 // is ahead; otherwise the first worktree of this session that is.
+// A stack built on purpose needs no way to say so: once stack mode is live a push no longer wakes the reviewers per slice (they are woken once, when no
+// builder has a queued card left for the repository), so pushing every slice is harmless and this check and stack mode do not fight (Manager, #C888).
 const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export function ownWorktrees(cwd, sessionId, run = (args) => execFileSync("git", args, { cwd, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] })) {
   try {
