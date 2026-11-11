@@ -246,7 +246,7 @@ export function cardWriteRefusal(fields, evidence) {
   if ((fields.dropped === 1 || fields.dropped === true) && evidence?.phase === "live") return refuse("contradicts-evidence", "the probe reads this card as live");
   // Rework: a commit after a sign-off puts the card in Rework; until a reason is attached, other card writes are refused.
   if (evidence?.rework === true && !present(fields.rework_reason) && Object.keys(fields).some((k) => k !== "id" && k !== "rework_reason")) {
-    return refuse("rework-reason-missing", "attach a rework_reason before other writes");
+    return refuse("rework-reason-missing", `Rework: reason missing. Attach a rework_reason (${REWORK_REASONS.join(", ")}) before other writes`);
   }
   return null;
 }
@@ -330,6 +330,23 @@ export function evidenceRefusal(key, value, who, track) {
   return null;
 }
 
+// #C875 (audit 2026-11-10, group B row 36): Rework is read from evidence. The rule that refuses other card writes while a rework has no reason
+// existed (cardWriteRefusal, evidence.rework), but nothing ever set it. It is set on a TRANSITION between two readings of a card, never on a
+// state, so a reading repeated every minute cannot set it again once its reason is attached:
+//   a commit after a sign-off or after a review sent the tip back   (a new tip while the last reading had sign-offs or findings),
+//   a review sends the tip back                                      (findings appear where the last reading had none),
+//   the card goes back to build                                      (from a review or ship phase to plan, build or test).
+// Never for a card on main or live. `prev` is the card's last stored reading (null the first time: nothing to compare with), `next` the new one.
+const REVIEWED = ["language", "design", "checker", "security", "ship"], BEFORE_REVIEW = ["plan", "build", "test"];
+export function reworkTriggered(prev, next) {
+  if (!prev || typeof prev !== "object" || !next || typeof next !== "object") return false;
+  if (prev.onMain === true || next.onMain === true || next.lit?.[0] === "live") return false;
+  const had = (v) => Array.isArray(v) && v.length > 0;
+  const newTip = typeof prev.headSha12 === "string" && typeof next.headSha12 === "string" && prev.headSha12 !== next.headSha12;
+  if (newTip && (had(prev.signed) || had(prev.findings))) return true;
+  if (!had(prev.findings) && had(next.findings)) return true;
+  return REVIEWED.includes(prev.lit?.[0]) && BEFORE_REVIEW.includes(next.lit?.[0]);
+}
 // Phase history (#C723 B3b): who a phase change is put down to when no agent is working on the card at that moment: the phase's lane
 // role; the early phases (and any not named here) belong to the card's own owner_role.
 export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security", ship: "Release", live: "Release", pack: "Release", install: "Release" };
