@@ -25,6 +25,12 @@ export const optionOfKey = (options, key) => (Array.isArray(options) ? options.f
 
 const KINDS = { Decision: "decision", Action: "action", Terminal: "action", SessionStart: "session", Later: "later", Approval: "action", Answer: "answer", Thread: "answer" };
 
+// #C912: an answer string that is an old response object (a JSON object with the owner's typed `note`): that object, else null.
+const typedOther = (answer) => {
+  if (typeof answer !== "string" || answer[0] !== "{") return null;
+  try { const v = JSON.parse(answer); return v && typeof v === "object" && !Array.isArray(v) && typeof v.note === "string" ? v : null; } catch { return null; }
+};
+
 // One ask as an old `waiting` doc.
 export function waitingDoc(a) {
   const b = json(a.body);
@@ -49,6 +55,11 @@ export function waitingDoc(a) {
     if (a.answer_status) {
       const other = a.answer_status === "other";
       doc.response = prune({ status: other ? "chose" : a.answer_status, choice: other ? "something else" : idx >= 0 ? KEY(idx) : undefined, note: a.answer_note ?? "", at: a.answered_at, taken });
+    } else if (a.type === "Decision" && idx < 0 && typedOther(a.answer)) {
+      // #C912: an imported "something else" (collector/import-mirror.mjs `askRow` kept the old response object whole as the answer
+      // string, with no answer_status): the owner's typed text, as a native "other" answer reads, never the object as JSON.
+      const o = typedOther(a.answer);
+      doc.response = prune({ status: "chose", choice: "something else", note: o.note, at: a.answered_at, taken, files: Array.isArray(o.files) && o.files.length ? o.files : undefined });
     } else
     doc.response = prune({ status: a.type === "Decision" ? "chose" : /^ack/i.test(a.answer ?? "") ? "ack" : "done", choice: idx >= 0 ? KEY(idx) : undefined, note: idx >= 0 ? "" : a.type === "Decision" ? a.answer : "", at: a.answered_at, taken });
     doc.respondedAt = a.answered_at;
