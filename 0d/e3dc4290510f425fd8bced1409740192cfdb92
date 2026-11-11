@@ -1,0 +1,1 @@
+SECURE #C940 v3 build/idle-wake-missed-1215-v3@0de3dc4: F1 fixed, the stalledWaits state guard is pinned (my any-state mutation fails the new working/blocked/waiting case). Checker LOW1: an unknown reading waits the full DISPATCH_IDLE_MS. Suite on the stacked tip green. - Security
