@@ -3,8 +3,9 @@
 // time rests on memory (principle 1). A repository's reviewPaths (board config: collector.reviewPaths for the team's repository,
 // collector.repos[].reviewPaths for another) maps a review phase to path patterns: the phase is needed when a changed path matches one of them.
 // A typed field can only RAISE a review, never lower it: the config's skips rule for that phase read the other way round (a level equal to
-// unlessLevel, a field true for whenFalse or unlessTrue) adds it. A phase the table does not name keeps the typed rule. With no table, or no
-// diff read, the typed rule decides as before. Pure: no git, no file, no clock.
+// unlessLevel, a field true for whenFalse or unlessTrue) adds it. Only a review gated on a card flag can be lowered by the paths; one gated on
+// the level, or on nothing, is raise-only. A phase the table does not name keeps the typed rule. With no table, or no diff read, the typed
+// rule decides as before. Pure: no git, no file, no clock.
 
 import { REVIEW_PATTERN as PATTERN, reviewPathsErrors } from "../scripts/config.mjs";
 export { reviewPathsErrors };
@@ -40,8 +41,17 @@ function raised(card, phase, config) {
 
 // The review phases the card needs, in the config's notes order. typed: the phases the typed rule gives (reviewsFor). table and paths: the
 // repository's reviewPaths and the branch's changed paths; either missing (or paths not a list) leaves the typed rule.
+// Security LOW on 532b9f8: the paths may LOWER only a review the typed rule gates on a card flag (a whenFalse or unlessTrue skip: the language
+// review on customerText, the design review on lookChange), the reviews #C894 was sent to wrongly. A review gated on the level (Security
+// unless Full) or on nothing (Checker) is raise-only: the paths can add it, never take it away.
+function lowerable(phase, config) {
+  return (config.skips ?? []).some((k) => k.phase === phase && (k.whenFalse || k.unlessTrue));
+}
 export function reviewsFromPaths(card, config, typed, table, paths) {
   if (!table || typeof table !== "object" || Array.isArray(table) || !Array.isArray(paths)) return typed;
   const hit = pathPhases(table, paths);
-  return Object.keys(config.collector.notes).filter((p) => (Object.hasOwn(table, p) ? hit.has(p) || raised(card, p, config) : typed.includes(p)));
+  return Object.keys(config.collector.notes).filter((p) => {
+    if (!Object.hasOwn(table, p)) return typed.includes(p);
+    return lowerable(p, config) ? hit.has(p) || raised(card, p, config) : typed.includes(p) || hit.has(p);
+  });
 }
