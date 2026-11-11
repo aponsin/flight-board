@@ -48,7 +48,9 @@ export const DEFAULTS = {
   // each from the session titled exactly as the role (collector/context.mjs); empty for none. repos: other repositories
   // whose cards the collector reads (#C278): [{ name, path (a clone of its own), mainBranch, remote, notes: {phase: ref},
   // idPrefixes (card ids it holds; a card's own repo field wins), installedLink (the link whose commit is what's installed) }].
-  collector: { contextRoles: [], repos: [], repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", releaseTimes: "docs/RELEASE-TIMES.md", liveUrl: "", usageScript: "", usageScriptSha256: "", usageQuota: 0, usageResetAt: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
+  // dailyE2eRepo (#C873): the name of the repos entry that is the product, whose scripts/daily-e2e.mjs --status the probe runs (collector/probe-evidence.mjs)
+  // so the page shows the daily full test run red, missed or unknown; empty (the default) reads nothing.
+  collector: { contextRoles: [], repos: [], dailyE2eRepo: "", repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", releaseTimes: "docs/RELEASE-TIMES.md", liveUrl: "", usageScript: "", usageScriptSha256: "", usageQuota: 0, usageResetAt: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
     // Runs on demand (collector/refresh.mjs): the checkouts whose origin/main moving means a ship (local refs, no fetch), the
     // scheduled task the lead is told to run, the quiet minutes after a run (or an ask) and how long a run may take.
     // off: true retires the on-demand run (#C641): the Stop hook never asks the lead to start the collector.
@@ -218,6 +220,7 @@ export function checkConfig(c) {
           if (new Set(names).size !== names.length) out.push("collector.repos: each name once");
         }
       }
+      if (k.dailyE2eRepo !== undefined && !(k.dailyE2eRepo === "" || (typeof k.dailyE2eRepo === "string" && Array.isArray(k.repos) && k.repos.some((r) => r?.name === k.dailyE2eRepo)))) out.push("collector.dailyE2eRepo: empty, or the name of an entry of collector.repos");
       if (k.refresh !== undefined) {
         const r = k.refresh;
         if (!r || typeof r !== "object" || Array.isArray(r)) out.push("collector.refresh: an object");

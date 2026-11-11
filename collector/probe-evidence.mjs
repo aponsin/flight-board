@@ -6,7 +6,7 @@
 //   usage job (300 s):   usage
 // A key whose reading is missing is not written (the store then shows it as unknown/silent, never as a guess).
 import { readFileSync, writeFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { runActionsUsage } from "./actions-usage.mjs";
@@ -101,6 +101,57 @@ export async function liveWrite(configText, { fetchImpl = fetch, log = () => {} 
   } catch (e) { log(`live ${url.host} unreadable: ${String(e.message).slice(0, 80)}`); return null; }
 }
 
+// #C873: the product's daily full test run. The product's own scripts/daily-e2e.mjs --status (run in its checkout, which is the path of the
+// collector.repos entry named by collector.dailyE2eRepo; empty = skipped) prints one JSON line {state, reason, run, lastGreenAt} and exits 1 for
+// red or missed, 2 for unknown: the line is read, never the exit code. The USAGE job (every 5 min, room for a slow gh) asks it at most every 30
+// minutes and keeps the answer beside the state (e2e.json); the evidence job writes the kept answer under the key e2e every run (like live,
+// after the evidence, never failing the job), so the page's 3-minute freshness holds. A script that fails to run or answers nothing readable is
+// kept as unknown, never as ok, and a kept answer older than 2 h is written as unknown too (the asking stopped).
+export const E2E_EVERY_MS = 30 * 60_000, E2E_STALE_MS = 2 * 3_600_000;
+const E2E_STATES = ["ok", "red", "missed", "unknown"];
+const defaultE2eRun = (cwd, env) => spawnSync(process.execPath, ["scripts/daily-e2e.mjs", "--status"], { cwd, env, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
+export function e2eReading(r) {
+  const unknown = (reason) => ({ state: "unknown", reason, run: null, lastGreenAt: null });
+  if (!r || r.error) return unknown(`the product's daily-e2e script did not run (${String(r?.error?.code ?? "no answer").slice(0, 30)})`);
+  const line = String(r.stdout ?? "").split("\n").map((s) => s.trim()).filter(Boolean).pop();
+  let j; try { j = JSON.parse(line); } catch { return unknown(`the product's daily-e2e script answered nothing readable (exit ${r.status})`); }
+  if (!plain(j) || !E2E_STATES.includes(j.state)) return unknown(`the product's daily-e2e script answered an unknown state (exit ${r.status})`);
+  const run = typeof j.run === "string" && j.run.length <= 300 && /^https:\/\/[^\s"'<>\\]+$/.test(j.run) ? j.run : null;
+  const green = typeof j.lastGreenAt === "string" && Number.isFinite(Date.parse(j.lastGreenAt)) ? j.lastGreenAt : null;
+  return { state: j.state, reason: String(j.reason ?? "").replace(/[\u0000-\u001f\u007f]+/g, " ").slice(0, 200), run, lastGreenAt: green };
+}
+// The checkout folder of the product, from the board config: null (and a log line) when collector.dailyE2eRepo is empty or names no repos entry.
+function e2eFolder(configText, log, home) {
+  let name, repos;
+  try { const k = JSON.parse(configText)?.collector; name = k?.dailyE2eRepo; repos = k?.repos; } catch { log("e2e: the board config could not be read"); return null; }
+  if (typeof name !== "string" || !name) { log("e2e: the board config has no collector.dailyE2eRepo, the daily run is not read"); return null; }
+  const path = Array.isArray(repos) ? repos.find((r) => r?.name === name)?.path : null;
+  if (typeof path !== "string" || !path) { log(`e2e: collector.repos has no entry named ${name} with a path`); return null; }
+  return expandHome(path, home);
+}
+const e2eFile = (stateFile) => join(dirname(stateFile), "e2e.json");
+const e2eKept = (read, file) => { try { const k = JSON.parse(read(file)); return plain(k) && Number.isFinite(k.at) && plain(k.value) && E2E_STATES.includes(k.value.state) ? k : null; } catch { return null; } };
+// Usage job: ask the script when the kept answer is 30 minutes old (or none), and keep what it says. Never throws.
+export function e2eStep(configText, { stateFile, env, log = () => {}, now = Date.now(), run = defaultE2eRun, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t), home = homedir() } = {}) {
+  try {
+    const cwd = e2eFolder(configText, log, home);
+    if (!cwd) return null;
+    const file = e2eFile(stateFile), kept = e2eKept(read, file);
+    if (kept && kept.at <= now && now - kept.at < E2E_EVERY_MS) return kept.value;
+    const value = e2eReading(run(cwd, env));
+    log(`e2e: the daily run reads ${value.state}`);
+    write(file, JSON.stringify({ at: now, value }));
+    return value;
+  } catch (e) { log(`e2e failed: ${String(e.message).slice(0, 80)}`); return null; }
+}
+// Evidence job: the kept answer as the write for key e2e; unknown when it is missing or over 2 h old; null (written nothing) when not configured.
+export function e2eWrite(configText, { stateFile, log = () => {}, now = Date.now(), read = (p) => readFileSync(p, "utf8"), home = homedir() } = {}) {
+  if (!e2eFolder(configText, log, home)) return null;
+  const kept = e2eKept(read, e2eFile(stateFile));
+  if (kept && now - kept.at <= E2E_STALE_MS) return { key: "e2e", value: kept.value };
+  return { key: "e2e", value: { state: "unknown", reason: kept ? "the daily full test run has not been read for over 2 hours" : "the daily full test run has not been read yet", run: null, lastGreenAt: null } };
+}
+
 // #C736: the usage job also posts the day's runner and Actions usage (collector/actions-usage.mjs) to POST /api/probe/usage, which the
 // store's Time spent chart and tiles read. It reads the team repository's workflow runs through gh in the repository folder of the board
 // config (collector.repoPath), at most every 30 minutes for today and until read after the day ended for yesterday (the days read last are
@@ -140,7 +191,7 @@ export async function actionsUsageStep({ base, headers, fetchImpl, origConfig, s
 export const defaultGhCheck = (env = childEnv(), exec = execFileSync) => { try { exec("gh", ["--version"], { env, timeout: 5000, stdio: "ignore" }); return true; } catch { return false; } };
 export const GH_MISSING = "gh was not found on PATH: the deploy and CI runs were not read, so cards of the main repository cannot show live";
 
-export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {} }) {
+export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {} }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const t0 = Date.now();
   const ghOk = job === "evidence" ? ghCheck(env) : true;
@@ -162,13 +213,19 @@ export async function evidenceJob({ job, base, headers, configPath, stateFile, p
   const writes = evidenceWrites(state, job);
   log(`${writes.length} key(s) to write`);
   const done = await postWrites(writes, { base, headers, fetchImpl, log });
+  // #C873: before the Actions step, which stops at the job's deadline; the script's own wait is capped at 30 s here.
+  if (job === "usage") { let cfg2 = null; try { cfg2 = read(origConfig); } catch { log("e2e: the board config could not be read"); } if (cfg2) e2eStep(cfg2, { stateFile, env, log, ...e2e }); }
   if (job === "usage") await actionsUsageStep({ base, headers, fetchImpl, origConfig, stateFile, env, read, log, deadline: t0 + (JOBS.usage.limitSec - 15) * 1000, ...actions });
   if (job !== "evidence") return done;
   // Live last, so a product site that answers slowly (or not at all) can never hold up the evidence above.
   let cfg = null;
   try { cfg = read(origConfig); } catch { log("live: the board config could not be read"); }
   const live = cfg && await liveWrite(cfg, { fetchImpl: liveFetch, log });
-  if (live) { const l = await postWrites([live], { base, headers, fetchImpl, log }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
+  // #C873: the product's daily full test run (the usage job's kept answer), posted with live; a failure reading it is logged and the evidence above stands.
+  let e2eW = null;
+  try { e2eW = cfg && e2eWrite(cfg, { stateFile, log, ...e2e }); } catch (e) { log(`e2e failed: ${String(e.message).slice(0, 80)}`); }
+  const late = [live, e2eW].filter(Boolean);
+  if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
   return finish(done);
 }
 

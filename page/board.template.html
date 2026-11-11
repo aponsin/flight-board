@@ -1340,8 +1340,14 @@ function keeperLine(){if(STORE)return "";const all=state.derived.find(d=>d.id===
 // min (the lead's to look at). The probe's reading, no model; it clears when the role moves on.
 function liveStuckLines(now=Date.now()){return liveStuck(now).map(k=>{const at=new Date(k.since).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
   return k.kind==="user"?{you:true,text:`${k.role} has been waiting on you since ${at}${k.card?` (${k.card})`:""}.`}:{you:false,text:`${k.role} has been on one step since ${at}${k.card?` (${k.card})`:""}.`}})}
-function renderStuck(){const el=$("stuck"),l=[...stuckLines(),...liveStuckLines()],d=deafLine()+keeperLine();el.hidden=!l.length&&!d;
-  el.innerHTML=l.map(t=>`<div class="${t.you?"sl-you":"sl-owner"}">${esc(t.text)}</div>`).join("")+d;el.classList.toggle("amber",!d&&!l.some(t=>t.you))}
+// #C873: the product's daily full test run (probe.e2e). Nothing while it is ok, stale or absent; red and missed are red lines (the owner's to look
+// at) with the run's link, unknown a quieter one. The link is only an https address, escaped like the rest of the board's text.
+function liveE2eLine(now=Date.now()){const e=liveOn(now)&&probe.e2e;if(!e||typeof e!=="object"||!["red","missed","unknown"].includes(e.state)||typeof e.reason!=="string")return null;
+  const run=typeof e.run==="string"&&e.run.length<=300&&/^https:\/\/[^\s"'<>\\]+$/.test(e.run)?e.run:null,bad=e.state!=="unknown",
+    head=e.state==="red"?"The daily full test run failed":e.state==="missed"?"The daily full test run has not passed in a day":"The daily full test run cannot be read";
+  return {you:bad,html:`${esc(head)}: ${esc(e.reason.slice(0,200))}${run?` · <a href="${esc(run)}" target="_blank" rel="noopener">the run</a>`:""}`}}
+function renderStuck(){const el=$("stuck"),l=[...stuckLines(),...liveStuckLines()],d=deafLine()+keeperLine(),e=liveE2eLine();el.hidden=!l.length&&!d&&!e;
+  el.innerHTML=l.map(t=>`<div class="${t.you?"sl-you":"sl-owner"}">${esc(t.text)}</div>`).join("")+(e?`<div class="${e.you?"sl-you":"sl-owner"}">${e.html}</div>`:"")+d;el.classList.toggle("amber",!d&&!l.some(t=>t.you)&&!(e&&e.you))}
 
 // ---- Threads (board v2) ----
 // Every item is a thread: messages {thread, from: "<owner>" | "<Role>", text, at, assets?, kind?, resolved?}, oldest first.
