@@ -79,12 +79,13 @@ test("a state with no asOf (a probe from before) is aged by the probe's own cloc
 
 // ---- #C842: a fixed reading pins the number, the window and the label
 // The panel read 39% at 2026-11-11T00:59Z, "Resets in 5d 1h" (reset 2026-11-16T02:00Z, week from 2026-11-09T02:00Z). The spend
-// total for that window was 203,484,943 weighted tokens, so the first-reading quota is 521,700,000 (203.48M / 0.39).
-test("a fixed reading: 203,484,943 weighted at 00:59Z on 11-11 over the 521.7M quota is 39%, from the 11-09 02:00Z reset", () => {
+// total for that window, counted by the new script (each call once, subagents in, cache_read not weighed), was 78,377,246 weighted
+// tokens (the old script said 203.5M, counting every call about twice), so the quota that makes that reading 39% is 201,000,000.
+test("a fixed reading: 78,377,246 weighted at 00:59Z on 11-11 over a 201M quota is 39%, from the 11-09 02:00Z reset", () => {
   const now = Date.parse("2026-11-11T00:59:00Z"), calls = [];
   const r = usageTile({
-    scriptText: "x", dir: mkdtempSync(join(tmpdir(), "usage-")), roster, now, quota: 521_700_000, resetAt: "2026-11-09T02:00Z",
-    run: (args) => { calls.push(args); return JSON.stringify({ total_weighted: 203_484_943, rows: [{ source: "Manager", share: 1 }] }); },
+    scriptText: "x", dir: mkdtempSync(join(tmpdir(), "usage-")), roster, now, quota: 201_000_000, resetAt: "2026-11-09T02:00Z",
+    run: (args) => { calls.push(args); return JSON.stringify({ total_weighted: 78_377_246, rows: [{ source: "Manager", share: 1 }] }); },
   });
   assert.equal(r.resetsAt, Date.parse("2026-11-16T02:00:00Z"), "the reset the panel showed");
   assert.deepEqual(calls[0].slice(-2), ["--since", "2026-11-09T02:00"], "the window began at the previous reset");

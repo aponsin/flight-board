@@ -114,7 +114,7 @@ for f in glob.glob(home + "/*/*.jsonl") + glob.glob(home + "/*/*/subagents/*.jso
         if k.lower() in t.lower():
             t = "scheduled: " + k
             break
-    for line in open(f, errors="ignore"):
+    for n, line in enumerate(open(f, errors="ignore")):
         if '"usage"' not in line:
             continue
         try:
@@ -128,7 +128,7 @@ for f in glob.glob(home + "/*/*.jsonl") + glob.glob(home + "/*/*/subagents/*.jso
         if not u:
             continue
         out = u.get("output_tokens", 0)
-        key = (m.get("id"), d.get("requestId")) if m.get("id") else (f, id(d))
+        key = (m.get("id"), d.get("requestId")) if m.get("id") else (f, n)
         if key in best and best[key][4] >= out:
             continue
         best[key] = (t, m.get("model"), u.get("input_tokens", 0), u.get("cache_creation_input_tokens", 0), out, u.get("cache_read_input_tokens", 0))
