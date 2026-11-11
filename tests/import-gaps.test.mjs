@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { planGaps, gapsSql, putCommands, imageTypeOf, readBlobs, report } from "../collector/import-gaps.mjs";
+import { planGaps, gapsSql, putCommands, imageTypeOf, readBlobs, report, missingList, messagePictures } from "../collector/import-gaps.mjs";
 
 const PNG = (n = 1) => new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array(n).fill(7)]);
 const ID_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1", ID_B = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2", ID_C = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3", ID_D = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4";
@@ -219,15 +219,103 @@ test("gap 4: the old thread title is kept as the owner's rename row, only while 
   assert.deepEqual(p2.refused.map((r) => [r.gap, r.rule]), [["title", "thread-title"]]);
 });
 
+// ---- #C913: the pictures of old messages (gap 5) ----
+const TID = "switch-go-differences-1794341236469";
+const ID_E = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5", ID_F = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6";
+const imgs = (...ids) => ids.map((id, i) => ({ label: `pic ${i + 1}`, option: "A", url: `/_blob/${id}` }));
+const shotsOfRow = async (db, id) => (await one(db, `SELECT screenshots FROM messages WHERE id = '${id}'`)).screenshots;
+
+test("gap 5: a message the store holds gets the old message's picture list, only while it has none, and a second run changes nothing", async () => {
+  const { db, docs } = await seeded();
+  docs.messages["manager-switch-go-ack-1794341664529"].images = imgs(ID_E, ID_F);
+  const p = await plan(db, docs);
+  assert.deepEqual(p.msgShots, [{ id: "manager-switch-go-ack-1794341664529", screenshots: [`${ID_E} A: pic 1`, `${ID_F} A: pic 2`] }]);
+  await runSql(db, gapsSql(p));
+  assert.deepEqual(JSON.parse(await shotsOfRow(db, "manager-switch-go-ack-1794341664529")), [`${ID_E} A: pic 1`, `${ID_F} A: pic 2`]);
+  const again = await plan(db, docs);
+  assert.equal(again.msgShots.length, 0);
+  assert.equal(again.held.msgShots, 1, "a list the store has is held, and said");
+  // A list the store gets after the plan is never overwritten by the earlier plan's SQL.
+  await db.prepare("UPDATE messages SET screenshots = ? WHERE id = 'manager-switch-go-ack-1794341664529'").bind(JSON.stringify([`${ID_A} mine`])).run();
+  await runSql(db, gapsSql(p));
+  assert.deepEqual(JSON.parse(await shotsOfRow(db, "manager-switch-go-ack-1794341664529")), [`${ID_A} mine`]);
+});
+
+test("gap 5: a message the store lacks comes back with its pictures, and a message of pictures alone is let through with an empty body", async () => {
+  const { db, docs } = await seeded();
+  docs.messages["m1794342483518-9e4b9g"].images = imgs(ID_E);
+  docs.messages["m-only-pictures"] = { thread: TID, from: "Designer", text: "", at: 1794342500000, images: imgs(ID_F) };
+  docs.messages["m-nothing"] = { thread: TID, from: "Designer", text: "", at: 1794342500001 };
+  docs.messages["m-only-bad-image"] = { thread: TID, from: "Designer", text: "  ", at: 1794342500002, images: [{ label: "x", url: "https://elsewhere/x.png" }] };
+  const p = await plan(db, docs);
+  const by = Object.fromEntries(p.messages.map((m) => [m.id, m]));
+  assert.equal(by["m1794342483518-9e4b9g"].body, "ok go");
+  assert.deepEqual(JSON.parse(by["m1794342483518-9e4b9g"].screenshots), [`${ID_E} A: pic 1`]);
+  assert.equal(by["m-only-pictures"].body, "");
+  assert.deepEqual(JSON.parse(by["m-only-pictures"].screenshots), [`${ID_F} A: pic 1`]);
+  assert.equal(by["manager-switch-waiting-1794342513368"].screenshots, null, "a message with no picture carries none");
+  assert.deepEqual(p.refused.filter((r) => r.gap === "message").map((r) => [r.id, r.rule]).sort(), [["m-nothing", "message-shape"], ["m-only-bad-image", "message-shape"]], "no text and no picture is still refused");
+  await runSql(db, gapsSql(p));
+  assert.deepEqual(JSON.parse(await shotsOfRow(db, "m-only-pictures")), [`${ID_F} A: pic 1`]);
+  assert.equal(await shotsOfRow(db, "manager-switch-waiting-1794342513368"), null);
+  assert.equal((await one(db, "SELECT body FROM messages WHERE id = 'm-only-pictures'")).body, "");
+  await runSql(db, gapsSql(p));
+  assert.equal((await one(db, "SELECT COUNT(*) AS n FROM messages WHERE id = 'm-only-pictures'")).n, 1, "a second run adds nothing");
+});
+
+test("gap 5: the owner's attachments (assets) are pictures too: image types only, no repeat of an image, eight at most; a picture-only message of assets is let through", async () => {
+  const asset = (id, type = "image/png", name = "Monosnap shot.png") => ({ id, name, size: 10, type });
+  assert.deepEqual(messagePictures({ assets: [asset(ID_E), asset(ID_F, "application/pdf", "plan.pdf"), asset("short"), null, { id: ID_A }] }), [`${ID_E} Monosnap shot.png`], "a pdf, a bad id, a null and an asset with no type are not pictures");
+  assert.deepEqual(messagePictures({ images: imgs(ID_E), assets: [asset(ID_E), asset(ID_F, "image/jpeg", "b.jpg")] }), [`${ID_E} A: pic 1`, `${ID_F} b.jpg`], "an asset an image already names is not listed twice");
+  assert.equal(messagePictures({ assets: Array.from({ length: 12 }, (_, i) => asset(`bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb${String(i).padStart(2, "0")}`)) }).length, 8);
+  assert.deepEqual(messagePictures({}), []);
+  const { db, docs } = await seeded();
+  docs.messages["m-asset-only"] = { thread: TID, from: "Owner", text: "", at: 1794342500000, assets: [asset(ID_E)] };
+  docs.messages["manager-switch-go-ack-1794341664529"].assets = [asset(ID_F, "image/png", "other.png")];
+  const p = await plan(db, docs);
+  assert.deepEqual(p.msgShots, [{ id: "manager-switch-go-ack-1794341664529", screenshots: [`${ID_F} other.png`] }]);
+  const row = p.messages.find((m) => m.id === "m-asset-only");
+  assert.equal(row.body, "");
+  assert.deepEqual(JSON.parse(row.screenshots), [`${ID_E} Monosnap shot.png`]);
+  assert.deepEqual(p.missingBlobs.filter((b) => b.for === "message").map((b) => b.id).sort(), [ID_E, ID_F]);
+});
+
+test("gap 5: a thread the store lacks gets nothing and a deleted message none, and their pictures are not asked for", async () => {
+  const { db, docs } = await seeded();
+  docs.messages["m-elsewhere"] = { thread: "not-in-the-store", from: "Designer", text: "x", at: 7, images: imgs(ID_E) };
+  docs.messages["m-gone"] = { deleted: true, thread: TID, from: "Designer", text: "x", at: 8, images: imgs(ID_F) };
+  const p = await plan(db, docs);
+  assert.ok(!p.messages.some((m) => m.id === "m-elsewhere" || m.id === "m-gone"));
+  assert.ok(![...p.missingBlobs].some((b) => b.id === ID_E || b.id === ID_F), "a picture only an unplanned message points at is not asked for");
+});
+
+test("gap 5: the pictures of messages follow gap 1's rules: bytes become files under the old id, the rest are listed with who points at them", async () => {
+  const { db, docs } = await seeded();
+  docs.messages["manager-switch-go-ack-1794341664529"].images = imgs(ID_E, ID_A);
+  docs.messages["m1794342483518-9e4b9g"].images = imgs(ID_F);
+  const p = await plan(db, docs, { [ID_E]: PNG(3), [ID_F]: new Uint8Array([1, 2, 3]) });
+  assert.deepEqual(p.files.map((f) => f.id), [ID_E], "only the picture with real bytes becomes a file");
+  assert.deepEqual(p.refused.filter((r) => r.gap === "file").map((r) => [r.id, r.rule]), [[ID_F, "file-type"]]);
+  const miss = Object.fromEntries(p.missingBlobs.map((b) => [b.id, b.for]));
+  assert.equal(miss[ID_A], "both", "the ask and the message both point at it");
+  assert.equal(miss[ID_B], "ask");
+  assert.equal(miss[ID_E], undefined);
+  const list = missingList(p).split("\n").map((l) => l.split("\t"));
+  assert.deepEqual(list.find((r) => r[0] === ID_A), [ID_A, "Laptop: the section, close-up", "both"]);
+  assert.ok(list.every((r) => r.length === 3 && ["ask", "message", "both"].includes(r[2])));
+  await runSql(db, gapsSql(p));
+  assert.equal((await one(db, `SELECT COUNT(*) AS n FROM files WHERE id = '${ID_E}'`)).n, 1);
+});
+
 test("the whole delta is additive: the SQL holds only guarded INSERT OR IGNORE, UPDATE ... WHERE and the one title upsert; its report names every part", async () => {
   const { db, docs } = await seeded();
   const p = await plan(db, docs, { [ID_A]: PNG(2) });
   for (const line of gapsSql(p).split("\n")) {
-    assert.ok(/^INSERT OR IGNORE INTO (files|messages) /.test(line) || /^UPDATE asks SET .* WHERE id = '.*' AND /.test(line) || /^INSERT INTO threads .* ON CONFLICT \(id\) DO UPDATE SET title = excluded\.title WHERE threads\.title IS NULL;$/.test(line), line.slice(0, 80));
+    assert.ok(/^INSERT OR IGNORE INTO (files|messages) /.test(line) || /^UPDATE (asks|messages) SET .* WHERE id = '.*' AND /.test(line) || /^INSERT INTO threads .* ON CONFLICT \(id\) DO UPDATE SET title = excluded\.title WHERE threads\.title IS NULL;$/.test(line), line.slice(0, 80));
   }
   assert.ok(!/DELETE|DROP|TRUNCATE/i.test(gapsSql(p)));
   const r = report(p);
-  assert.deepEqual(Object.keys(r).sort(), ["files", "held", "messages", "missingBlobs", "notes", "refused", "shots", "titles"]);
+  assert.deepEqual(Object.keys(r).sort(), ["files", "held", "messages", "missingBlobs", "msgShots", "notes", "refused", "shots", "titles"]);
   // A value with a control character never reaches the SQL text.
   p.titles.push({ id: "t", title: "a\u0000b", created_at: 1 });
   assert.throws(() => gapsSql(p), /control character/);
