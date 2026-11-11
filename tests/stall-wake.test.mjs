@@ -182,7 +182,7 @@ test("#C846 stalledWaits: a queued card with an idle owner is a stall; the exemp
   const D = 24 * 3600e3, now = T + STALL_AFTER_MS, idle = { Boardsmith: { state: "idle", since: T } };
   const card = (o = {}) => ({ id: "c", num: 6, owner_role: "Boardsmith", updated_at: T, ...o });
   const run = (o = {}, w = {}) => stalledWaits({ now, cards: [card(o.card)], evidence: {}, agents: idle, openAskCards: new Set(), phaseStart: new Map(), ...w });
-  assert.deepEqual(run().map((s) => s.reason), [`#C6: nothing pushed, Boardsmith idle since ${hhmm(T)}`]);
+  assert.deepEqual(run().map((s) => s.reason), [`Boardsmith idle since ${hhmm(T)}, 1 queued, next #C6`]);
   assert.equal(run({}, { now: T + STALL_AFTER_MS - 1 }).length, 0, "14 min 59 s is not yet");
   assert.equal(run({}, { agents: { Boardsmith: { state: "working", card: "x", since: T } } }).length, 0, "an owner who is working");
   assert.equal(run({}, { agents: { Boardsmith: { state: "idle", since: T + 60e3 } } }).length, 0, "idle under 15 min");
@@ -211,7 +211,7 @@ test("#C846 end to end: a queued card of an idle owner reaches Manager's inbox o
   await writeEvidence(db, T, "probe", "agents", { Boardsmith: { state: "idle", tool: null, card: null, since: T } });
   assert.equal(await pending(db, T + 14 * MIN), 0);
   assert.equal(await pending(db, T + 15 * MIN), 1);
-  assert.deepEqual((await takeInbox(db, T + 16 * MIN)).stalls.map((s) => s.reason), [`#C1: nothing pushed, Boardsmith idle since ${hhmm(T)}`]);
+  assert.deepEqual((await takeInbox(db, T + 16 * MIN)).stalls.map((s) => s.reason), [`Boardsmith idle since ${hhmm(T)}, 1 queued, next #C1`]);
   assert.equal(await pending(db, T + 60 * MIN), 0, "sent once");
 });
 
