@@ -550,7 +550,9 @@ export async function takeInbox(db, now) {
   await filesOf("answer", answers);
   // #C932: an imported "something else" kept the old response object whole as the answer string (no answer_status): Manager reads the owner's
   // typed text, as for a native answer, never the object as JSON. Only what is returned changes; no row is rewritten.
-  for (const a of answers) { const o = a.answer_status ? null : typedOther(a.answer); if (o) a.answer = o.note.trim() || "Something else"; }
+  // Only that: the import kept every old response object whole (Ack, Done, Help with files, a picked letter), and those read as they were stored
+  // (Checker F1): the object must say its choice was "something else", as the view's rule does (a Decision whose answer matches no option).
+  for (const a of answers) { const o = a.answer_status ? null : typedOther(a.answer); if (o && o.choice === "something else") a.answer = o.note.trim() || "Something else"; }
   // Mark exactly the rows returned: one written between the SELECT and the UPDATE stays for the next read, never lost (Checker).
   // D1 binds at most 100 values per statement (Checker): mark in chunks of 90 ids plus the time.
   const mark = async (sql, rows) => { for (let i = 0; i < rows.length; i += 90) { const ids = rows.slice(i, i + 90).map((r) => r.id); await db.prepare(sql.replace("(?)", `(${ids.map(() => "?").join(", ")})`)).bind(now, ...ids).run(); } };
