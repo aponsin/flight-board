@@ -71,6 +71,19 @@ test("a Decision on a card of a visual lane needs a picture per option, though i
   assert.equal(viaThread.refused?.rule, "look-needs-screenshots", "Manager's Decision with related_thread none goes through the same rule");
 });
 
+// Checker F1 on 9ca3004: askFromTool's related_thread path checks the lane once, before postMessage (which reads words only). Dropping lookContext
+// there left every test green, because the none path was covered by createAsk's own check.
+test("a Decision posted in a known thread (related_thread, not none) on a lane card needs its pictures too, and posts with them", async () => {
+  const db = await seeded({ lanes: ["Designer"] });
+  const bad = await askFromTool(db, NOW, "Manager", plain({ card_id: "design-card", related_thread: "code-card" }));
+  assert.equal(bad.ok, false);
+  assert.equal(bad.refused?.rule, "look-needs-screenshots", JSON.stringify(bad));
+  const other = await askFromTool(db, NOW, "Manager", plain({ card_id: "code-card", related_thread: "design-card" }));
+  assert.equal(other.ok, true, "a card outside the lanes is not held to it: " + JSON.stringify(other));
+  const ok = await askFromTool(db, NOW, "Manager", plain({ card_id: "design-card", related_thread: "code-card", screenshots: [`${RED} A: left`, `${BLUE} B: right`] }));
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+});
+
 test("must still allow: a non-look Decision on a card outside the lanes, one with no card, a lane card's Decision with a picture per option or with Something else / Not now, and a config with no lanes", async () => {
   const db = await seeded({ lanes: ["Designer", "Demos"] });
   assert.equal((await createAsk(db, NOW, plain({ card_id: "code-card" }))).ok, true, "a card of another role");
