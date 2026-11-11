@@ -3,10 +3,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, updateCard, postMessage, readView } from "../worker/board-store.mjs";
-import { cardWriteRefusal } from "../worker/board-rules.mjs";
+import { createCard, updateCard, postMessage, readView, recordBuildStart, queueCards, moveInQueue, takeInbox, wakeAsk } from "../worker/board-store.mjs";
+import { cardWriteRefusal, stalledWaits, heldWakes, dependsNotLive } from "../worker/board-rules.mjs";
 import { initiativeDoc } from "../worker/compat-view.mjs";
 import { dispatchInput } from "../collector/store-dispatch.mjs";
+import { mirrorCard } from "../collector/store-cards.mjs";
+import { loadNames } from "./harness.mjs";
 
 const T = 1_800_000_000_000;
 const card = async (db, id, extra = {}) => { const r = await createCard(db, T, "Manager", { id, title: id, owner_role: "Designer", ...extra }); assert.equal(r.ok, true, JSON.stringify(r)); };
@@ -79,4 +81,87 @@ test("the probe stops dispatching a done card", async () => {
 test("the pure rule: done_evidence alone, or done false, is refused before the store is asked", () => {
   assert.equal(cardWriteRefusal({ id: "x", done_evidence: "/tmp/a" }, null).rule, "card-done");
   assert.equal(cardWriteRefusal({ id: "x", done: true, done_evidence: "/tmp/a" }, null), null);
+});
+
+// ---- Checker F1 on e7490195: every place that skips a closed card skips a done one; each test fails with its check removed. ----
+const MIN = 60_000, DONE = { done_at: T + 1, done_evidence: "/tmp/r.md" };
+const idle = (now) => ({ Designer: { state: "idle", since: now - 20 * MIN } });
+
+test("F1 stalledWaits: a done card at a phase never wakes Manager as stalled (the bug this card prevents)", () => {
+  const now = T + 60 * MIN;
+  const run = (extra) => stalledWaits({ now, cards: [{ id: "s", num: 1, owner_role: "Designer", updated_at: now, ...extra }], evidence: { s: { lit: ["build"] } }, agents: idle(now), openAskCards: new Set(), phaseStart: new Map([["s|build", now - 30 * MIN]]) });
+  assert.equal(run({}).length, 1, "control: the open card is a stall");
+  assert.deepEqual(run(DONE), []);
+});
+
+test("F1 heldWakes: a done card's hold wakes nobody", () => {
+  const now = T + 5 * 3_600_000;
+  const run = (extra) => heldWakes({ now, cards: [{ id: "h", num: 2, waiting_on: "keys", held_at: T, updated_at: T, ...extra }], endsPassed: new Set() });
+  assert.equal(run({}).length, 1, "control: held 2 h with no end wakes Manager");
+  assert.deepEqual(run(DONE), []);
+});
+
+test("F1 dependsNotLive: a done card holds nothing that depends on it", () => {
+  const a = { id: "a", depends_on: ["b"] };
+  assert.equal(dependsNotLive(a, [a, { id: "b" }], {}), true, "control: an open dependency holds");
+  assert.equal(dependsNotLive(a, [a, { id: "b", ...DONE }], {}), false);
+});
+
+test("F1 dispatch: a card that depends on a done card is dispatched", async () => {
+  const run = async (closeB) => {
+    const db = makeDb(); await card(db, "b"); await card(db, "a", { depends_on: ["b"] });
+    if (closeB) assert.equal((await updateCard(db, T + 1, "Designer", { id: "b", done: true, done_evidence: "/tmp/b.md" })).ok, true);
+    const view = await readView(db, T + 2), now = T + 10_000;
+    return dispatchInput({ ...view, evidence: { ...(view.evidence ?? {}), agents: { value: { Designer: { state: "idle", since: T } }, readAt: now } } }, now).cards.map((c) => c.id);
+  };
+  assert.ok(!(await run(false)).includes("a"), "control: a waits for an open b");
+  assert.ok((await run(true)).includes("a"));
+});
+
+test("F1 holdEndUnknown: a hold cannot end on a done card", async () => {
+  const db = makeDb(); await card(db, "x"); await card(db, "open"); await card(db, "closed");
+  assert.equal((await updateCard(db, T + 1, "Designer", { id: "closed", done: true, done_evidence: "/tmp/c.md" })).ok, true);
+  assert.equal((await updateCard(db, T + 2, "Manager", { id: "x", blocked_reason: "r", next_note: "n", hold_end: "open" })).ok, true, "control: an open card is an end");
+  const r = await updateCard(db, T + 3, "Manager", { id: "x", blocked_reason: "r", next_note: "n", hold_end: "closed" });
+  assert.equal(r.ok, false); assert.equal(r.refused.rule, "hold-end-unknown");
+});
+
+test("F1 syncStalls: a hold whose end card is closed as done has passed, and wakes Manager", async () => {
+  const run = async (close) => {
+    const db = makeDb(); await card(db, "x"); await card(db, "end");
+    assert.equal((await updateCard(db, T + 1, "Manager", { id: "x", blocked_reason: "waits for end", next_note: "n", hold_end: "end" })).ok, true);
+    if (close) assert.equal((await updateCard(db, T + 2, "Designer", { id: "end", done: true, done_evidence: "/tmp/e.md" })).ok, true);
+    await wakeAsk(db, T + 3); // the wake runs the stall sync, as in holds-need-an-end
+    return (await takeInbox(db, T + 3)).stalls.map((s) => s.reason).filter((r) => /its end has passed/.test(r));
+  };
+  assert.deepEqual(await run(false), [], "control: the end card is open");
+  assert.equal((await run(true)).length, 1);
+});
+
+test("F1 recordBuildStart, queueCards and moveInQueue leave a done card out", async () => {
+  const db = makeDb(); await card(db, "d"); await card(db, "o");
+  assert.ok((await queueCards(db, "Designer")).some((r) => r.id === "d"), "control: in the queue while open");
+  assert.equal((await updateCard(db, T + 1, "Designer", { id: "d", done: true, done_evidence: "/tmp/d.md" })).ok, true);
+  assert.deepEqual(await recordBuildStart(db, T + 2, "d"), { ok: true, recorded: false, why: "done" });
+  const q = (await queueCards(db, "Designer")).map((r) => r.id);
+  assert.ok(!q.includes("d")); assert.ok(q.includes("o"));
+  const m = await moveInQueue(db, T + 3, "owner", { id: "d", dir: "up" });
+  assert.equal(m.ok, false); assert.equal(m.refused.rule, "card-unknown");
+});
+
+test("F2 the probe's mirror reads a done card as done (dropped still wins)", () => {
+  assert.equal(mirrorCard({ id: "m", ...DONE }).status, "done");
+  assert.equal(mirrorCard({ id: "m", dropped: 1, ...DONE }).status, "dropped");
+  assert.equal(mirrorCard({ id: "m" }).status, "active");
+});
+
+test("F3 the page's thread line says Done for a card closed with evidence, Live for one that shipped", () => {
+  const line = (c) => {
+    const b = loadNames(["cardLine", "withLine", "liveSubstep", "stepMedians"]);
+    Object.assign(b.state, { steps: [], derived: [], waiting: [], messages: [], threads: [], initRaw: [c], initiatives: [c] });
+    return b.cardLine("t-1", T).replace(/<[^>]+>/g, "");
+  };
+  const base = { id: "card-a", num: 410, name: "n", status: "done", thread: "t-1", who: "Designer" };
+  assert.equal(line({ ...base, doneEvidence: "/tmp/r.md" }), "→ #C410 · Done");
+  assert.equal(line(base), "→ #C410 · Live");
 });
