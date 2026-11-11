@@ -1,0 +1,1 @@
+SECURE. #C901 v2, re-cut of ef07e9f (SECURE) on main 8c1e498: range-diff shows only the commit message and CHANGELOG context; collector/import-gaps.mjs and tests/import-gaps.test.mjs identical. Informational as on ef07e9f: message author copied from the old board as the first import did.
