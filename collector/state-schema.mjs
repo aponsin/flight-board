@@ -56,12 +56,17 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "weekTotal", "stack", "behindMain"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "weekTotal", "stack", "behindMain", "headSha", "headBranch", "repoFull"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
   phase: nullOr(re(PHASE)),
   headSha12: nullOr(re(SHA12)),
+  // #C895: what a DISPATCH line names so a reader can find the commit without asking: the head's full sha, the branch it is on (main for a
+  // card read from main) and the repository (owner/name). Optional: a probe from before them still fits.
+  headSha: re(/^[0-9a-f]{40}$/),
+  headBranch: (v) => typeof v === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(v) && !v.startsWith("-"),
+  repoFull: re(/^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/),
   signed: (v) => Array.isArray(v) && v.length <= MAX_SIGNED && v.every(re(PHASE)) && new Set(v).size === v.length,
   onMain: (v) => typeof v === "boolean",
   ci: (v) => CI_STATES.includes(v),
@@ -89,7 +94,8 @@ const CARD = {
   // #C859 slice 2: where the card stands in its repository's stack, read from git (collector/stack.mjs): { tip, size } for a card under the
   // stack tip (a stack of two or more), or { outside: true } for a card not cut from it. Only for a repository whose stack switch is on.
   // branch (optional) is the stack's branch: the builder's wake names it, an outsider is told which tip to cut from.
-  stack: (v) => plain(v) && Object.keys(v).every((k) => ["tip", "size", "branch", "outside"].includes(k))
+  stack: (v) => plain(v) && Object.keys(v).every((k) => ["tip", "tipSha", "size", "branch", "outside"].includes(k))
+    && (v.tipSha === undefined || (/^[0-9a-f]{40}$/.test(String(v.tipSha)) && v.outside === undefined && String(v.tipSha).startsWith(String(v.tip))))
     && (v.branch === undefined || (typeof v.branch === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(v.branch) && !v.branch.startsWith("-")))
     && ((v.outside === true && v.tip === undefined && v.size === undefined) || (v.outside === undefined && SHA12.test(v.tip) && Number.isInteger(v.size) && v.size >= 2 && v.size <= MAX_CARDS)),
   at: isTime,

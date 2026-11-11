@@ -172,6 +172,7 @@ export const dispatchSeenFile = (role) => `dispatch-seen-${role}.json`, dispatch
 // the turn that followed, so a wake is judged once.
 export const dispatchWokenFile = (role) => `dispatch-woken-${role}.json`, dispatchWaitCheckedFile = (role) => `dispatch-wait-checked-${role}.json`;
 const pairKey = (role, card, phase = null) => (phase === null ? `${role} ${card}` : `${role} ${card} ${phase}`);
+const SHA40 = /^[0-9a-f]{40}$/, REPO_FULL = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
 const SHA12 = /^[0-9a-f]{12}$/, TURN_PHASE = /^[a-z]{2,16}$/, PLAIN_ROLE = /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/;
 export function dispatchItems({ cards, agents, asked = new Set(), roster = [], lead = "", now, before = null }) {
   const first = before && typeof before.items === "object" && before.items && !Array.isArray(before.items) ? before.items : {};
@@ -196,6 +197,10 @@ export function dispatchItems({ cards, agents, asked = new Set(), roster = [], l
         ...(phase && Object.hasOwn(DISPATCH_STEPS, t.step) ? { phase, step: t.step } : {}),
         ...(phase && Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? { num: card.num } : {}),
         ...(phase && SHA12.test(String(t.sha)) ? { sha: t.sha } : {}),
+        // #C895: the full sha (it must be the 12 the line would have named), the repository (owner/name) and the branch.
+        ...(phase && SHA12.test(String(t.sha)) && SHA40.test(String(t.fullSha)) && String(t.fullSha).startsWith(t.sha) ? { fullSha: t.fullSha } : {}),
+        ...(phase && SHA12.test(String(t.sha)) && REPO_FULL.test(String(t.repo)) ? { repo: t.repo } : {}),
+        ...(phase && SHA12.test(String(t.sha)) && stackBranch(t.onBranch) ? { onBranch: t.onBranch } : {}),
         ...(phase && stackBranch(t.stack) ? { stack: t.stack } : {}),
         ...(phase && Array.isArray(t.signed) ? { signed: t.signed.filter((s) => PLAIN_ROLE.test(String(s))).slice(0, 4) } : {}),
       });
@@ -218,7 +223,10 @@ export const dispatchLine = (i) => {
     const who = signers.length ? ` signed by ${signers.join(" and ")}` : "";
     const card = Number.isInteger(i.num) ? `#C${i.num}` : i.card;
     const on = stackBranch(i.stack) ? `; stack mode is on, the stack branch is ${i.stack}: one commit per card, rebased on its tip before you push` : "";
-    return `DISPATCH ${card} at ${i.phase}: ${SHA12.test(String(i.sha)) ? `${i.sha}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
+    // #C895: with the full sha the line says where the commit is (repository, branch, all 40 characters), so nobody has to ask or guess; checked again here.
+    const at = SHA40.test(String(i.fullSha)) && SHA12.test(String(i.sha)) && String(i.fullSha).startsWith(i.sha)
+      ? `${REPO_FULL.test(String(i.repo)) ? `repo ${i.repo}, ` : ""}${stackBranch(i.onBranch) ? `branch ${i.onBranch}, ` : ""}commit ${i.fullSha}` : SHA12.test(String(i.sha)) ? i.sha : "";
+    return `DISPATCH ${card} at ${i.phase}: ${at ? `${at}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
   }
   return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;
 };

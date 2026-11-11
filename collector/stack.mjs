@@ -36,7 +36,9 @@ export function stackFields(stack) {
   if (!stack || stack.members.length < 2) return {};
   const out = {};
   const branch = STACK_BRANCH.test(stack.branch) && !stack.branch.startsWith("-") ? { branch: stack.branch } : {};
-  for (const id of stack.members) out[id] = { tip: stack.tip.slice(0, 12), size: stack.members.length, ...branch };
+  // tipSha (#C895): the tip's full sha, so a DISPATCH line names the exact commit and not twelve characters of it.
+  const full = /^[0-9a-f]{40}$/.test(String(stack.tip)) ? { tipSha: stack.tip } : {};
+  for (const id of stack.members) out[id] = { tip: stack.tip.slice(0, 12), ...full, size: stack.members.length, ...branch };
   for (const id of stack.outside) out[id] = { outside: true, ...branch };
   return out;
 }

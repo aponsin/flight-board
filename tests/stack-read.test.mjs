@@ -86,7 +86,7 @@ test("cardStates adds no stack field for a switch that is off, and reads the cha
   const run = (stacks) => cardStates({ cards, config: cfg, repos: { "": s.repo() }, now: (T0 + 100) * 1000, stacks });
   for (const id of Object.keys(run([]))) assert.equal(run([])[id].stack, undefined, `${id}: the switch off is today's reading`);
   const on = run([""]);
-  for (const id of ["card-one", "card-two", "card-three"]) assert.deepEqual(on[id].stack, { tip: three.slice(0, 12), size: 3, branch: "build/stack" }, id);
+  for (const id of ["card-one", "card-two", "card-three"]) assert.deepEqual(on[id].stack, { tip: three.slice(0, 12), tipSha: three, size: 3, branch: "build/stack" }, id); // tipSha: #C895, the whole sha for the DISPATCH line
   assert.deepEqual(on["card-four"].stack, { outside: true, branch: "build/stack" });
   assert.deepEqual(["card-one", "card-two", "card-three"].map((id) => on[id].headSha12 !== null), [true, true, true], "the middle card is read at its own commit too");
   assert.deepEqual(stateErrors({ v: 1, id: "t", cards: { k: { ...on["card-two"] } } }).filter((e) => /stack/.test(e)), [], "the field passes the schema");
