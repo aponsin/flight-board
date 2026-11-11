@@ -14,8 +14,8 @@
 // rollbackRun), or by hand `npx wrangler@4.150.0 rollback --config <board-store-pa>/worker/wrangler.board.toml` (new columns stay, empty and
 // unused by the older code).
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, lstatSync, readFileSync, unlinkSync, writeFileSync, realpathSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SIGNED = "@@SIGNED@@", REF = "main";
@@ -195,4 +195,9 @@ function main() {
   const r = mode === "rollback" ? rollbackRun({ here }) : deployRun({ here });
   if (!r.ok) process.exit(1);
 }
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
+// #C929: run only when this file is the one node was started with. Both sides go through realpath, so a folder reached through a link (macOS
+// /var -> /private/var, say) still runs; and a file started under its own name that still does not match says so and exits 1, never silently nothing.
+const real = (p) => { try { return realpathSync(p); } catch { return null; } };
+const selfFile = fileURLToPath(import.meta.url);
+if (process.argv[1] && real(process.argv[1]) !== null && real(process.argv[1]) === real(selfFile)) main();
+else if (process.argv[1] && basename(process.argv[1]) === basename(selfFile)) { console.log("NOT RUN: could not tell that this is the file node was started with (its folder path does not resolve to the same place). Nothing was run. Paste this line to Manager."); process.exit(1); }
