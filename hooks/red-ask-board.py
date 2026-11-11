@@ -85,7 +85,46 @@ def used(u):
         return None
     n = [u.get(k) for k in ("input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")]
     return sum(x for x in n if isinstance(x, int) and not isinstance(x, bool) and x >= 0)
+# #C957 (false positive 11-11 ~3:55 pm MT: Manager's reply repeated a red reminder for the open ask #T1830 and the hook demanded a second ask, which would
+# duplicate it): a red line that names an ask (#T<n>) the store holds open needs no new one. The probe's dispatch job writes the open asks' numbers
+# to <gate.stateDir>/<board>/open-asks.json every minute ({at, asks: [n, ...]}); the hook reads it from the board config the Stop gate is registered
+# with (as RESET_AT does). Every number a line names must be in it; a line naming no ask, a closed or withdrawn one, or one the file does not hold,
+# and a file that is missing, unreadable or older than 10 minutes, change nothing: the red line still needs its ask written this turn.
+OPEN_ASKS_MAX_AGE_MS = 10 * 60000
+NAMED_ASK = re.compile(r"#T(\d{1,7})\b")
+def open_asks():
+    try:
+        with open(os.path.join(os.path.expanduser("~"), ".claude", "settings.json"), encoding="utf-8") as f:
+            m = re.search(r"/gate/stop\.mjs' --config '([^'\n]{1,300})'", f.read())
+        if not m:
+            return None
+        with open(os.path.expanduser(m.group(1)), encoding="utf-8") as f:
+            cfg = json.load(f)
+        gate = cfg.get("gate") if isinstance(cfg.get("gate"), dict) else {}
+        sd = gate.get("stateDir") if isinstance(gate.get("stateDir"), str) and gate.get("stateDir") else "~/.flight-board"
+        bid = re.search(r"artifact/([A-Za-z0-9-]+)$", str(cfg.get("artifactUrl") or ""))
+        with open(os.path.join(os.path.expanduser(sd), bid.group(1) if bid else "no-board", "open-asks.json"), encoding="utf-8") as f:
+            j = json.load(f)
+        at, asks = j.get("at"), j.get("asks")
+        now_ms = datetime.now().timestamp() * 1000
+        if isinstance(at, bool) or not isinstance(at, (int, float)) or not isinstance(asks, list) or now_ms - at > OPEN_ASKS_MAX_AGE_MS or at - now_ms > 60000:
+            return None
+        return {n for n in asks if isinstance(n, int) and not isinstance(n, bool)}
+    except Exception:
+        return None
+def unexcused(red_lines):
+    held, out = None, []
+    for l in red_lines:
+        nums = {int(n) for n in NAMED_ASK.findall(l)}
+        if nums:
+            if held is None:
+                held = open_asks() or set()
+            if nums <= held:
+                continue
+        out.append(l)
+    return out
 red = wrote = question = answered = cleared = False
+red_lines = []  # the red lines of this turn's replies
 closed = set()  # waiting items this turn marked done or deleted (#C582)
 tokens = None  # the latest call's context; a compaction after it leaves none
 for line in reversed(lines):
@@ -117,6 +156,7 @@ for line in reversed(lines):
     for c in content:
         if c.get("type") == "text" and RED.search(c.get("text") or ""):
             red = True
+            red_lines.extend(l for l in (c.get("text") or "").splitlines() if RED.match(l))
         _in = c.get("input") or {}
         if c.get("type") == "tool_use" and ((c.get("name") == "mcp__ccd_session_mgmt__clear_session" and _in.get("session_id") in (None, "", "self")) or (c.get("name") == "Skill" and re.fullmatch(r"(?:[\w-]+:)?handoff", str(_in.get("skill") or "")))):
             cleared = True  # this turn handed off or asked the app to clear it (itself: clearing another session isn't this one's reset)
@@ -157,6 +197,9 @@ for line in reversed(lines):
             if '"messages"' in s and writes:
                 answered = True  # answered in the thread (board v2): never push Manager into a new ans- item
 reasons = []
+red_open = red  # a red ask this turn, named or not: an ask of the owner's is open (the reset cue's deferral below)
+if red and not wrote and not unexcused(red_lines):
+    red = False  # every red line names an ask the store already holds open (#C957): nothing new to write
 if red and not wrote:
     reasons.append("Your reply has a red ask (🔴) but you wrote nothing to the flight board's 'waiting' collection this turn. Manager: raise it now with the store's ask tool (a decision that follows the owner's thread goes in that thread: post kind decision with options), then finish. Any other agent: don't ask the owner directly; send the question to Manager and remove the 🔴.")
 elif MANAGER and question and not answered:
@@ -215,7 +258,7 @@ except Exception:
     now = owner_at = None
     deferred = True
 fresh = now is not None and owner_at is not None and now - owner_at < OWNER_FRESH_MS
-pending = red or (question and not answered)
+pending = red_open or (question and not answered)
 LIMIT = f"{RESET_AT // 1000}k"
 # The reset itself, named (#C434: Manager wrote the handoff and kept working, clearing 140k past the line): the clear is
 # the turn's last action, and this hook reads that call as the turn's reset (cleared, above).

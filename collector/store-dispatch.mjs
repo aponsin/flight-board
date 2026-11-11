@@ -283,6 +283,18 @@ export function writeStackQueue(view, { dir, now = Date.now() }) {
   writeAtomic(join(dir, STACK_QUEUE_FILE), JSON.stringify(stackQueueFile(view, now)));
 }
 
+// #C957: <dir>/open-asks.json { at, asks: [<ask number>, ...] }, the asks the store holds open (not closed, not withdrawn), by the same atomic
+// writer. The Stop hook reads it so a reply whose red line names an ask that is already open does not demand a second one. 1000 numbers at most.
+export const OPEN_ASKS_FILE = "open-asks.json", OPEN_ASKS_MAX = 1000;
+export function openAsksFile(view, now) {
+  const asks = (Array.isArray(view?.asks) ? view.asks : []).filter((a) => a && Number.isInteger(a.num) && a.num > 0 && !a.closed_at && !a.withdrawn_at).map((a) => a.num).sort((a, b) => a - b).slice(-OPEN_ASKS_MAX);
+  return { at: now, asks };
+}
+export function writeOpenAsks(view, { dir, now = Date.now() }) {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeAtomic(join(dir, OPEN_ASKS_FILE), JSON.stringify(openAsksFile(view, now)));
+}
+
 // One run over a view. Returns { wrote, why?, items }. `dir` is <stateDir>/<board>.
 export function dispatchRun(view, { dir, roster, lead, now = Date.now(), log = () => {} }) {
   const input = dispatchInput(view, now, { lead });
