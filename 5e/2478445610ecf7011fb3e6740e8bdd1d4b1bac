@@ -1,0 +1,1 @@
+PASS Full: #C859 stack-switch slice 3. Same commit I reviewed in the stack signed at 15882e6, range-diff identical. The switch reaches the probe, a note on the stack tip covers the cards under it and a FINDINGS on the tip cancels that cover, the dispatch names the stack branch and wakes reviewers once for the tip. Suite 2106/2106 on this commit.
