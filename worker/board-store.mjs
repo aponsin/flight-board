@@ -271,6 +271,19 @@ export async function wakeResult(db, now, batchId, exit, text) {
 export async function takeInbox(db, now) {
   const messages = (await db.prepare("SELECT id, thread_id, author, body, created_at FROM messages WHERE delivered_at IS NULL AND author = 'owner' ORDER BY created_at").all()).results;
   const answers = (await db.prepare("SELECT id, num, title, answer, answer_status, answer_note, answered_at, answered_by FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL ORDER BY answered_at").all()).results;
+  // The files attached to each message and answer (store-inbox-shows-files, #C837): [{ id, name, type, size, fetch }], in the order attached, empty when none.
+  // `fetch` is the path under the board's address (GET <address>/_blob/<id>, a signed-in session; no tool returns the bytes). Chunks of 90 ids plus the kind stay under D1's 100 binds.
+  const filesOf = async (kind, rows) => {
+    const by = new Map();
+    for (let i = 0; i < rows.length; i += 90) {
+      const ids = rows.slice(i, i + 90).map((r) => r.id);
+      const found = (await db.prepare(`SELECT l.ref_id, f.id, f.name, f.type, f.size FROM file_links l JOIN files f ON f.id = l.file_id WHERE l.ref_kind = ? AND l.ref_id IN (${ids.map(() => "?").join(", ")}) ORDER BY l.ref_id, l.pos`).bind(kind, ...ids).all()).results;
+      for (const f of found) (by.get(f.ref_id) ?? by.set(f.ref_id, []).get(f.ref_id)).push({ id: f.id, name: f.name, type: f.type, size: f.size, fetch: `/_blob/${f.id}` });
+    }
+    for (const r of rows) r.files = by.get(r.id) ?? [];
+  };
+  await filesOf("message", messages);
+  await filesOf("answer", answers);
   // Mark exactly the rows returned: one written between the SELECT and the UPDATE stays for the next read, never lost (Checker).
   // D1 binds at most 100 values per statement (Checker): mark in chunks of 90 ids plus the time.
   const mark = async (sql, rows) => { for (let i = 0; i < rows.length; i += 90) { const ids = rows.slice(i, i + 90).map((r) => r.id); await db.prepare(sql.replace("(?)", `(${ids.map(() => "?").join(", ")})`)).bind(now, ...ids).run(); } };
