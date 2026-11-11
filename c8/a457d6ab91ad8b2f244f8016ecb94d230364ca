@@ -1,0 +1,1 @@
+SECURE. #C915 v3, re-cut of 171845d (SECURE) onto 52688cb (#C885 v2). Range-diff excluding CHANGELOG.md: identical except the two merge lines, stalledWaits({..., postedAt, endsPassed}) and its call in syncStalls passing both; #C885's postedAt query and read-only-role branch are kept as signed. Line-scoped for 52688cb..c8a457d.
