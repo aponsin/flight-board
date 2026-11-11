@@ -1,0 +1,1 @@
+PASS Full: #C859 stack-switch slice 1 v2, re-cut on #C857 v3 d71c01c. Range-diff against my signed cec9cd4 shows only CHANGELOG context lines changed, code and tests identical. Suite 2084/2084 on this commit.
