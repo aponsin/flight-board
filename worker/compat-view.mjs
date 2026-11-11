@@ -41,7 +41,8 @@ export function waitingDoc(a) {
     case "Action": doc.text = a.title; doc.steps = b.steps; doc.expect = b.expect; doc.where = b.where; break;
     case "Terminal": doc.text = a.title; doc.steps = (b.commands ?? []).map((cmd) => ({ text: "Run this in Terminal:", cmd })); break;
     case "SessionStart": doc.text = a.title; doc.steps = [{ text: "Start the session and type:", cmd: b.words }]; break;
-    case "Later": doc.text = b.text ?? a.title; doc.eta = num(a.eta_at); doc.etaWhen = a.eta_precondition ?? undefined; doc.steps = b.steps; doc.expect = b.expect; doc.where = b.where; break;
+    // #C925: a promise (owed_by) carries who owes it; the page keeps it under Later, badged "<role> owes you this", past its date.
+    case "Later": doc.text = b.text ?? a.title; doc.eta = num(a.eta_at); doc.etaWhen = a.eta_precondition ?? undefined; doc.steps = b.steps; doc.expect = b.expect; doc.where = b.where; if (typeof a.owed_by === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(a.owed_by)) doc.owedBy = a.owed_by; break;
     case "Approval": doc.text = a.title; break;
     case "Answer": doc.question = b.question; doc.text = a.title; break;
     default: doc.text = b.text ?? a.title;
