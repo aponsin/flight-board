@@ -1,0 +1,1 @@
+SECURE in this landing only: R1 (owner_role-only write carries a queue place) is present here and fixed by 7fa973a in the same fast-forward to 426e77c. Never deploy this commit alone.
