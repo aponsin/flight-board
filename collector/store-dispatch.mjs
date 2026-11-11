@@ -76,7 +76,9 @@ export function turnsOf(card, e, ctx = {}) {
   if (!Object.hasOwn(PHASE_LANES, phase)) return [owner];
   const out = [];
   if (!signed.includes(phase)) out.push({ role: PHASE_LANES[phase], phase, step: "review", sha, ...where, signed: signedBy });
-  if (phase === "checker" && card.review_level === "Full" && !signed.includes("security")) out.push({ role: "Security", phase, step: "review", sha, ...where, signed: signedBy });
+  // #C897: Security beside Checker for a Full card, or when the probe read a security review as needed from the branch's paths.
+  const wantsSecurity = card.review_level === "Full" || (Array.isArray(e?.waitingFor) && e.waitingFor.includes("security"));
+  if (phase === "checker" && wantsSecurity && !signed.includes("security")) out.push({ role: "Security", phase, step: "review", sha, ...where, signed: signedBy });
   return out;
 }
 
