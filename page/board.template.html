@@ -2948,10 +2948,14 @@ const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHA
 // chip stays hidden. A message is answered once anyone but the owner wrote after it in its thread.
 const WAKE_ALIVE_MAX=3*60e3,CARDS_STALE=5*60e3,EVIDENCE_STALE=10*60e3,QUIET_MAX_MIN=75;
 // #C887: a message that only acknowledges (a fixed list, whole message, case and end marks aside) needs no answer.
-const ACK_WORDS=["ack","acked","ok","okay","k","kk","thanks","thank you","thx","ty","got it","noted","sounds good","will do","great","perfect","cool","yes","yep","yup","nice","👍"];
-const isAckText=t=>typeof t==="string"&&ACK_WORDS.includes(t.trim().toLowerCase().replace(/[\s.!,]+$/g,"").replace(/^[\s]+/,""));
+// #C933: yes, yep, yup, great and perfect can be real answers, so they are acks only when the team's last post in the thread asked nothing.
+const ACK_WORDS=["ack","acked","ok","okay","k","kk","thanks","thank you","thx","ty","got it","noted","sounds good","will do","cool","nice","👍"];
+const ACK_IF_NO_QUESTION=["yes","yep","yup","great","perfect"];
+const ackKey=t=>typeof t==="string"?t.trim().toLowerCase().replace(/[\s.!,]+$/g,"").replace(/^[\s]+/,""):"";
+const teamAsked=own=>{const last=state.messages.filter(m=>m&&m.thread===own.thread&&m.from!==OWNER&&isT(m.at)&&m.at<own.at).sort((a,b)=>b.at-a.at)[0];return !!last&&typeof last.text==="string"&&last.text.includes("?")};
+const isAckText=(t,own)=>ACK_WORDS.includes(ackKey(t))||(ACK_IF_NO_QUESTION.includes(ackKey(t))&&!(own&&teamAsked(own)));
 function ownerUnanswered(){const own=state.messages.filter(m=>m&&m.from===OWNER&&isT(m.at)).sort((a,b)=>b.at-a.at)[0];
-  return own&&!isAckText(own.text)&&!state.messages.some(m=>m&&m.thread===own.thread&&m.from!==OWNER&&isT(m.at)&&m.at>own.at)?own:null}
+  return own&&!isAckText(own.text,own)&&!state.messages.some(m=>m&&m.thread===own.thread&&m.from!==OWNER&&isT(m.at)&&m.at>own.at)?own:null}
 // #C730: on the store the chip and the ticks read the store's own wake (probe.board.wake, worker/compat-view.mjs), not the old
 // wake watch's wakeAliveAt / wakeSeenAt (#C728 hid the chip: those were never there, so it was red on every load). Red with the
 // store's fix when its wake says so; hidden until the probe has asked the store once, as an old probe without the keys hid it.
