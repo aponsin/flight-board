@@ -59,7 +59,7 @@ test("hop 4, language and design reviews go to their lanes", () => {
 test("hop 5, signed and not on main (ship): Release lands it, and the line names the commit and who signed", () => {
   const items = run(world({ ev: { lit: ["ship"], phase: "ship", headSha12: SHA, signed: ["checker", "security"], onMain: false } }));
   assert.deepEqual(items.map((i) => `${i.role}:${i.step}`), ["Release:land"]);
-  assert.equal(dispatchLine(items[0]), `DISPATCH #C900 at ship: ${SHA} signed by Checker and Security; it ${DISPATCH_STEPS.land} (Release's turn; no go from anyone, act on this)`);
+  assert.equal(dispatchLine(items[0]), `DISPATCH #C900 at ship: ${SHA} signed by Checker and Security; it ${DISPATCH_STEPS.land} (Release's turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`);
 });
 
 test("hop 6, landed and not deployed, a board-repository card (a repo word): the owner builds the deploy pair; with no repo word nobody", () => {

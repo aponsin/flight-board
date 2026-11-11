@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { home } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, ALIVE_MAX_MS, MAX_RUN_MS } from "../gate/wake.mjs";
-import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine, TRUTH_FILE, TRUTH_SEEN_FILE, SHIP_ROLE, truthPending, truthSeen, truthLine, NOEVIDENCE_FILE, NOEVIDENCE_SEEN_FILE, noEvidencePending, noEvidenceLine, DISPATCH_FILE, DISPATCH_LATE_SEEN_FILE, dispatchSeenFile, dispatchPidFile, dispatchPending, dispatchSeen, dispatchLine, dispatchLateLine, dispatchWatchAlive, LINES_FILE, LINES_SEEN_FILE, linesPending, linesSeen, linesSeenFile, routeOf } from "../gate/reset.mjs";
+import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine, TRUTH_FILE, TRUTH_SEEN_FILE, SHIP_ROLE, truthPending, truthSeen, truthLine, NOEVIDENCE_FILE, NOEVIDENCE_SEEN_FILE, noEvidencePending, noEvidenceLine, DISPATCH_FILE, DISPATCH_LATE_SEEN_FILE, dispatchSeenFile, dispatchWokenFile, dispatchPidFile, dispatchPending, dispatchSeen, dispatchLine, dispatchLateLine, dispatchWatchAlive, LINES_FILE, LINES_SEEN_FILE, linesPending, linesSeen, linesSeenFile, routeOf } from "../gate/reset.mjs";
 
 // One look: the heartbeat, then the line to print, or null. Marks the wake seen only once it is returned.
 export function tick(dir, now, pid = process.pid, roster = null, lead = null) {
@@ -35,7 +35,10 @@ export function roleTick(dir, role, now, pid = process.pid) {
   const batch = read(LINES_FILE), lseen = read(linesSeenFile(role)), mine = linesPending(batch, lseen, { role, now });
   if (Number.isInteger(batch?.at) && batch.at !== lseen?.at) writeAtomic(join(dir, linesSeenFile(role)), JSON.stringify(linesSeen(batch, lseen, mine, now)));
   if (!due.length && !mine.length) return null;
-  if (due.length) writeAtomic(join(dir, dispatchSeenFile(role)), JSON.stringify(dispatchSeen(seen, due)));
+  if (due.length) {
+    writeAtomic(join(dir, dispatchSeenFile(role)), JSON.stringify(dispatchSeen(seen, due)));
+    writeAtomic(join(dir, dispatchWokenFile(role)), JSON.stringify({ at: now, cards: due.map((i) => i.card).slice(0, 8) }));
+  }
   return [...due.map(dispatchLine), ...mine].join("\n");
 }
 
