@@ -149,22 +149,46 @@ export const noEvidenceLine = (since) => `NOEVIDENCE: the probe's card checks fo
 // stall starts again at level 1); each watch keeps what it printed in its seen file.
 export const DISPATCH_FILE = "dispatch.json", DISPATCH_STATE_FILE = "dispatch-state.json", DISPATCH_LATE_SEEN_FILE = "dispatch-late-seen.json";
 export const DISPATCH_IDLE_MS = 15 * 60e3, DISPATCH_LATE_MS = 30 * 60e3;
+// #C850 (dispatch by phase): a card that carries `turns` ([{ role, phase, step, sha?, signed? }], whose turn it is now and what for) is
+// dispatched to those roles, not to its owner, and the wake comes after DISPATCH_TURN_IDLE_MS of the role's idleness (a phase change wakes
+// an idle agent at once; the 15 minutes above stay for a card without turns, the old rule). A pair is a role, a card AND the phase, so a
+// new phase is a new first wake, and an old phase's pair is forgotten when the card moves on.
+export const DISPATCH_TURN_IDLE_MS = 60e3;
+export const DISPATCH_STEPS = {
+  build: "has nothing pushed; build it and push the branch (the push is the READY)",
+  review: "is pushed; review it (your verdict is the git note on that commit)",
+  land: "is signed; land it (the notes on that exact commit, a clean dry run, the owner's standing go)",
+  pair: "is landed and not deployed; build the deploy pair",
+};
 export const dispatchSeenFile = (role) => `dispatch-seen-${role}.json`, dispatchPidFile = (role) => `dispatch-watch-${role}.json`;
-const pairKey = (role, card) => `${role} ${card}`;
+const pairKey = (role, card, phase = null) => (phase === null ? `${role} ${card}` : `${role} ${card} ${phase}`);
+const SHA12 = /^[0-9a-f]{12}$/, TURN_PHASE = /^[a-z]{2,16}$/, PLAIN_ROLE = /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/;
 export function dispatchItems({ cards, agents, asked = new Set(), roster = [], lead = "", now, before = null }) {
   const first = before && typeof before.items === "object" && before.items && !Array.isArray(before.items) ? before.items : {};
   const items = [], kept = {};
   for (const card of cards ?? []) {
-    const role = card?.who, a = agents && Object.hasOwn(agents, role) ? agents[role] : null;
-    if (card?.status !== "active" || typeof role !== "string" || role === lead || !roster.includes(role) || !CARD.test(String(card.id))) continue;
-    if (!a || a.state !== "idle") continue;
-    const idleSince = Number.isFinite(a.since) ? a.since : a.lastActivityAt;
-    if (!Number.isFinite(idleSince) || now - idleSince < DISPATCH_IDLE_MS) continue;
-    if (asked.has(card.id)) continue;
-    if (typeof card.waitingOn === "string" && card.waitingOn.trim() && !card.waitingOn.trim().startsWith(role)) continue;
-    const k = pairKey(role, card.id), since = Number.isInteger(first[k]) && first[k] <= now ? first[k] : now;
-    kept[k] = since;
-    items.push({ card: card.id, role, level: now - since >= DISPATCH_LATE_MS ? 2 : 1, since });
+    if (card?.status !== "active" || !CARD.test(String(card.id)) || asked.has(card.id)) continue;
+    // Whose turn: the card's turns, else its owner (the old rule).
+    const turns = Array.isArray(card.turns) ? card.turns : [{ role: card.who, phase: null }];
+    for (const t of turns) {
+      const role = t?.role, a = agents && typeof role === "string" && Object.hasOwn(agents, role) ? agents[role] : null;
+      if (typeof role !== "string" || role === lead || !roster.includes(role)) continue;
+      if (!a || a.state !== "idle") continue;
+      const idleSince = Number.isFinite(a.since) ? a.since : a.lastActivityAt;
+      const need = Array.isArray(card.turns) ? DISPATCH_TURN_IDLE_MS : DISPATCH_IDLE_MS;
+      if (!Number.isFinite(idleSince) || now - idleSince < need) continue;
+      if (typeof card.waitingOn === "string" && card.waitingOn.trim() && !card.waitingOn.trim().startsWith(role)) continue;
+      const phase = Array.isArray(card.turns) && TURN_PHASE.test(String(t.phase)) ? t.phase : null;
+      const k = pairKey(role, card.id, phase), since = Number.isInteger(first[k]) && first[k] <= now ? first[k] : now;
+      kept[k] = since;
+      items.push({
+        card: card.id, role, level: now - since >= DISPATCH_LATE_MS ? 2 : 1, since,
+        ...(phase && Object.hasOwn(DISPATCH_STEPS, t.step) ? { phase, step: t.step } : {}),
+        ...(phase && Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? { num: card.num } : {}),
+        ...(phase && SHA12.test(String(t.sha)) ? { sha: t.sha } : {}),
+        ...(phase && Array.isArray(t.signed) ? { signed: t.signed.filter((s) => PLAIN_ROLE.test(String(s))).slice(0, 4) } : {}),
+      });
+    }
   }
   items.sort((x, y) => (x.role + x.card < y.role + y.card ? -1 : 1));
   return { items, state: { items: kept } };
@@ -174,7 +198,18 @@ const dispatchSeenItems = (seen) => (seen && typeof seen.items === "object" && s
 const dispatchList = (f) => (Array.isArray(f?.items) ? f.items.filter((i) => i && CARD.test(String(i.card)) && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(String(i.role)) && [1, 2].includes(i.level) && Number.isInteger(i.since)) : []);
 export const dispatchPending = (asked, seen, { role = null, level }) => dispatchList(asked).filter((i) => i.level >= level && (role === null || i.role === role) && dispatchSeenItems(seen)[i.card] !== i.since);
 export const dispatchSeen = (seen, printed) => ({ items: { ...dispatchSeenItems(seen), ...Object.fromEntries(printed.map((i) => [i.card, i.since])) } });
-export const dispatchLine = (i) => `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now`;
+// The line of a card with a turn names the step and the exact commit, built only from the fixed step texts, a 12-hex sha and plain
+// role names: `DISPATCH #C844 at ship: 8b3855f0f672 signed by Checker and Security; it is signed; land it (...)`.
+export const dispatchLine = (i) => {
+  // dispatch.json is read back from disk, so the phase and signers are checked again here, not trusted from the write.
+  if (typeof i.phase === "string" && TURN_PHASE.test(i.phase) && Object.hasOwn(DISPATCH_STEPS, i.step)) {
+    const signers = Array.isArray(i.signed) ? i.signed.filter((s) => typeof s === "string" && PLAIN_ROLE.test(s)).slice(0, 4) : [];
+    const who = signers.length ? ` signed by ${signers.join(" and ")}` : "";
+    const card = Number.isInteger(i.num) ? `#C${i.num}` : i.card;
+    return `DISPATCH ${card} at ${i.phase}: ${SHA12.test(String(i.sha)) ? `${i.sha}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]} (${i.role}'s turn; no go from anyone, act on this)`;
+  }
+  return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now`;
+};
 export const dispatchLateLine = (i) => `DISPATCH-LATE ${i.card}: ${i.role} was woken at ${new Date(i.since).toISOString().slice(11, 16)} UTC and nothing has moved in 30 minutes; look at it`;
 // Whether a role's dispatch watch is running: its pid file names a live process and was beaten within DISPATCH_ALIVE_MS.
 export const DISPATCH_ALIVE_MS = 90e3;

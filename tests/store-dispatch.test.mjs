@@ -39,14 +39,16 @@ test("the owner's own watch prints the DISPATCH line from the store's file, once
   const d = dir();
   run(view(), d);
   const line = roleTick(d, "Builder", NOW + 1000, 4242);
-  assert.match(line, /^DISPATCH c900-thing: it waits on you \(Builder\)/);
+  assert.match(line, /^DISPATCH c900-thing at build: it has nothing pushed; build it and push the branch/);
+  assert.match(line, /Builder's turn; no go from anyone/);
   assert.equal(roleTick(d, "Builder", NOW + 2000, 4242), null, "printed once");
   assert.equal(roleTick(d, "Checker", NOW + 2000, 4243), null, "another role's watch prints nothing");
 });
 
-test("nothing is dispatched for an owner who is working, idle under 15 minutes, or the lead", () => {
+test("nothing is dispatched for an owner who is working, idle under one minute (#C850), or the lead", () => {
   assert.deepEqual(run(view({ state: "working" }), dir()).items, []);
-  assert.deepEqual(run(view({ idleFor: 14 * MIN }), dir()).items, []);
+  assert.deepEqual(run(view({ idleFor: 50_000 }), dir()).items, []);
+  assert.equal(run(view({ idleFor: 61_000 }), dir()).items.length, 1, "a phase change wakes an idle agent at once: one idle minute");
   assert.deepEqual(run(view({ card: { owner_role: "Manager" } }), dir()).items, []);
 });
 
