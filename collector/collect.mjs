@@ -15,8 +15,9 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home, liveMirror } from "../gate/gate.mjs";
 import { cardProblems } from "../gate/card-rules.mjs";
-import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, abandonedAt, subjectNum } from "./derive.mjs";
-import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor } from "./facts.mjs";
+import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, abandonedAt, subjectNum, reviewsFor } from "./derive.mjs";
+import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor, branchPathsOf } from "./facts.mjs";
+import { reviewsFromPaths } from "./review-paths.mjs";
 import { shippedBase, afterShipText, fetchBranches } from "./after-ship.mjs";
 import { evidenceTimes } from "./timings.mjs";
 import { nudges, roleFor } from "./nudges.mjs";
@@ -405,6 +406,13 @@ export function trailerOnMain(git, remote, main, id) {
 // installedLink points at. Every review signed is then a wait with a known cause, never a stall: "release" (not on main
 // yet: queued for a board release) or "install" (on main, not installed yet). use: { git, installed }, or nothing when
 // the repository couldn't be read, which leaves the card as declared.
+// #C897 (Checker F1 on 532b9f8): the collector's derive reads the reviews from the branch's paths as the probe does (collector/state.mjs
+// tipState), so its phase and its wait ("release", "install") agree with the probe's. A head on main, no table or no diff: the facts as they are.
+export function withNeeds(card, cfg, facts, git, mainRef, table) {
+  if (!facts?.head || facts.onMain || !table) return facts;
+  const paths = branchPathsOf(git, mainRef, facts.head.sha);
+  return paths ? { ...facts, needs: reviewsFromPaths(card, cfg, reviewsFor(card, cfg), table, paths) } : facts;
+}
 export function inRepo(card, r, use, config, now, ids = new Set()) {
   const c = config.collector;
   if (!use?.git) return { phase: null, evidence: `${r.name}: its repository was not read this run`, repo: r.name, at: now };
@@ -418,7 +426,7 @@ export function inRepo(card, r, use, config, now, ids = new Set()) {
   // A branch deleted after it merged leaves only its Board-Id trailer on main (#C281).
   const tips = live.length ? live : [trailerOnMain(use.git, remote, main, card.id)].filter(Boolean);
   const derive = (h) => {
-    const facts = factsFor(use.git, h, { config: cfg, line: [], deployed: use.installed ?? null });
+    const facts = withNeeds(card, cfg, factsFor(use.git, h, { config: cfg, line: [], deployed: use.installed ?? null }), use.git, `${remote}/${main}`, r.reviewPaths);
     const d = afterShipNote(h, settledNote(h, derivePhase(card, facts, cfg)));
     return d.phase === c.shipPhase ? { ...d, wait: facts.onMain ? "install" : "release" } : d;
   };
@@ -469,7 +477,7 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
     // card's commit is found there, so the sign-offs on it are read and a shipped card can close.
     const tips = found.length ? found : [trailerOnMain(git, c.remote, c.mainBranch, card.id)].filter(Boolean);
     tipsOf[card.id] = tips; supersededOf[card.id] = superseded;
-    return { ...supersededNote(superseded, leastAdvanced(card, tips, (h) => afterShipNote(h, settledNote(h, derivePhase(card, factsFor(git, h, { config: cfg, line, deployed }), cfg))), config, stackedOn(card, ids))), at: now };
+    return { ...supersededNote(superseded, leastAdvanced(card, tips, (h) => afterShipNote(h, settledNote(h, derivePhase(card, withNeeds(card, cfg, factsFor(git, h, { config: cfg, line, deployed }), git, `${c.remote}/${c.mainBranch}`, c.reviewPaths), cfg))), config, stackedOn(card, ids))), at: now };
   };
   for (const card of open) {
     let r = repoOf(card, config);

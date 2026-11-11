@@ -122,6 +122,51 @@ test("Security LOW on 532b9f8: Security and Checker are raise-only; only the fla
   assert.deepEqual(reviewsFromPaths({ level: "Full" }, cfg, ["language", "checker", "security"], TABLE, ["scripts/a.mjs"]), ["checker", "security"]);
 });
 
+// Checker F1 on 532b9f8: the collector's own derive (collect.mjs inRepo and the team repository's read) must read the same reviews as the probe,
+// or the page shows a card the probe holds at Security as "Queued for board release".
+test("the collector's derive agrees with the probe: a Quick card changing a Worker route, Checker signed, waits at security, not 'release'", async () => {
+  const { inRepo, withNeeds } = await import("../collector/collect.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "fb-paths-collect-"));
+  const work = join(dir, "repo"), bare = join(dir, "origin.git");
+  const g = (args) => execFileSync("git", args, { cwd: work, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_COMMITTER_DATE: `${T0} +0000`, GIT_AUTHOR_DATE: `${T0} +0000` } });
+  execFileSync("git", ["init", "-q", "--bare", bare]);
+  execFileSync("git", ["init", "-q", "-b", "main", work]);
+  g(["config", "user.email", "t@example.com"]); g(["config", "user.name", "T"]); g(["remote", "add", "origin", bare]);
+  writeFileSync(join(work, "base.md"), "start\n"); g(["add", "-A"]); g(["commit", "-qm", "start"]);
+  g(["checkout", "-qb", "new-route"]);
+  mkdirSync(join(work, "worker", "routes"), { recursive: true }); writeFileSync(join(work, "worker", "routes", "x.js"), "x\n");
+  g(["add", "-A"]); g(["commit", "-qm", "A route\n\nBoard-Id: new-route"]);
+  const sha = g(["rev-parse", "HEAD"]).trim();
+  g(["push", "-q", "--all", "origin"]); g(["fetch", "-q", "origin"]);
+  // the collector reads its notes under refs/notes/flight-board/ (localNotes): Checker signs there
+  g(["notes", "--ref=refs/notes/flight-board/checker", "add", "-m", "PASS", sha]);
+  const r = { name: "board", path: work, notes: NOTES, reviewPaths: TABLE };
+  const card = { id: "new-route", num: 903, level: "Quick", customerText: false };
+  const d = inRepo(card, r, { git: (a) => g(a), installed: null }, cfg, T0 * 1000);
+  assert.equal(d.phase, "security", JSON.stringify(d));
+  assert.equal(d.wait, undefined, "not queued for a release: Security has not signed");
+  // without the table, the typed rule: Quick, Checker signed, so ship, queued for a release (as before)
+  const typed = inRepo(card, { ...r, reviewPaths: undefined }, { git: (a) => g(a), installed: null }, cfg, T0 * 1000);
+  assert.equal(typed.phase, "ship"); assert.equal(typed.wait, "release");
+  // the probe reads the same card the same way
+  const local = { language: "refs/notes/flight-board/linguist", design: "refs/notes/flight-board/designer", checker: "refs/notes/flight-board/checker", security: "refs/notes/flight-board/security" };
+  const probe = cardState({ ...card, phase: "plan" }, { git: (a) => g(a), remote: "origin", main: "main", notes: local, live: null, versionPattern: null, reviewPaths: TABLE, tips: [{ branch: "main", sha: "x", at: T0, message: "" }, { branch: "origin/new-route", sha, at: (T0 + 10) * 1000, message: "A route\n\nBoard-Id: new-route" }] }, cfg, T0 * 1000);
+  assert.equal(probe.phase, d.phase, "probe and collector agree");
+  // the team's own repository (collect()'s phaseOf), the second path: the same card, the same answer
+  const { collect } = await import("../collector/collect.mjs");
+  const teamCfg = fullConfig({ owner: "Sam", phases: PHASES, skips: SKIPS, collector: { repoPath: work, notes: NOTES, reviewPaths: TABLE } });
+  const team = collect({ config: teamCfg, cards: [{ ...card, status: "active", phase: "build" }], git: (a) => g(a), gh: () => "[]", now: 5 }).doc.cards["new-route"];
+  assert.equal(team.phase, "security", JSON.stringify(team));
+  assert.equal(team.wait, undefined);
+  const teamTyped = collect({ config: fullConfig({ owner: "Sam", phases: PHASES, skips: SKIPS, collector: { repoPath: work, notes: NOTES } }), cards: [{ ...card, status: "active", phase: "build" }], git: (a) => g(a), gh: () => "[]", now: 5 }).doc.cards["new-route"];
+  assert.equal(teamTyped.phase, "ship", "no table: the typed rule, as before");
+  // withNeeds leaves a head on main, no table, or no head alone
+  const f = { head: { sha }, onMain: false, signed: new Set() };
+  assert.equal(withNeeds(card, cfg, { ...f, onMain: true }, (a) => g(a), "origin/main", TABLE).needs, undefined);
+  assert.equal(withNeeds(card, cfg, f, (a) => g(a), "origin/main", null).needs, undefined);
+  assert.deepEqual(withNeeds(card, cfg, f, (a) => g(a), "origin/main", TABLE).needs, ["checker", "security"]);
+});
+
 test("the config check: reviewPaths names review phases with path patterns, for the team's repository and another", () => {
   const base = { owner: "Sam", phases: PHASES, collector: { repoPath: "/x", notes: NOTES } };
   assert.deepEqual(checkConfig({ ...base, collector: { ...base.collector, reviewPaths: TABLE } }), []);
