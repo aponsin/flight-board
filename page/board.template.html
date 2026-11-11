@@ -1626,7 +1626,7 @@ function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWit
 // "Team notes" (#C919): the threads the team keeps among itself, each as one quiet line: its card's one-line title in plain
 // words (else the thread's name), and when it last moved. It opens to the thread; the owner has nothing to answer there.
 function teamRow(id,now){const c=threadCardAny(id),title=c&&(c.name||c.title)?String(c.name||c.title):threadName(id);
-  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">Team</span><div class="w-text"><b class="t-name">${esc(title.replace(/\s+/g," ").trim())}</b></div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"team",{box:false})}</details>`}
+  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind later">Team</span><div class="w-text"><b class="t-name">${esc(title.replace(/\s+/g," ").trim())}</b></div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"team",{box:false})}</details>`}
 function teamHtml(now){const q=qOf("team"),ids=threadSets(now,q).team;
   return ids.length?ids.map(id=>teamRow(id,now)).join(""):isOn(q)?NO_MATCH:'<div class="empty">No team notes.</div>'}
 function renderTeam(){const el=$("teamnotes");if(!el)return;keep(el,()=>{el.innerHTML=teamHtml(Date.now())})}

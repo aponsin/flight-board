@@ -21,6 +21,9 @@ test("an agent-only thread is listed under Team notes with its card's title, and
   assert.equal(c.team, 1);
   assert.equal(c.you, 0);
   assert.match(b.teamHtml(T), /Fix the footer link/);
+  // #C944 (Designer): the plain .kind chip is the red one for the owner's asks; a quiet Team notes row wears the muted grey one (.kind.later).
+  assert.match(b.teamHtml(T), /<span class="kind later">Team<\/span>/);
+  assert.ok(!/<span class="kind">Team<\/span>/.test(b.teamHtml(T)), "never the red chip");
   assert.match(b.tabsHtml(T), /Team notes <span class="tcount">1<\/span>/);
   assert.match(b.tabsHtml(T), /data-tab="later"[^>]*>Later[\s\S]*data-tab="team"[^>]*>Team notes/, "beside Later");
 });
