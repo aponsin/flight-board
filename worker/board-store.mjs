@@ -171,6 +171,22 @@ export async function writeStep(db, now, who, a) {
   await db.prepare("INSERT OR IGNORE INTO phase_history (card_id, phase, kind, at, who, source, wait) VALUES (?, ?, ?, ?, ?, 'tool', ?)").bind(a.init, a.phase, a.kind, at, who, wait).run();
   return { ok: true };
 }
+// #C903: the build starts when the dispatch wakes the builder, so build time is real. The probe sees a card only once something is pushed, so
+// a store-era card's history used to begin at "checker" and the build medians came from old imported cards. The probe (its dispatch job)
+// posts the card it woke its owner for with nothing pushed; the row is the build's start, who = the card's owner, source evidence. Only a card
+// with NO history row of its own and no lit phase takes it, so a second wake (every dispatch run repeats the item) writes nothing, a pushed
+// card is left to the evidence, and a dropped card gets none. The first push confirms it: the evidence write finds the build start as the
+// card's open phase and closes it when the lit phase moves on (writeEvidence).
+export async function recordBuildStart(db, now, id) {
+  if (typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) return refuse(db, now, { rule: "card-id", detail: String(id).slice(0, 40) }, null, "probe");
+  const card = await db.prepare("SELECT owner_role, dropped FROM cards WHERE id = ?").bind(id).first();
+  if (!card) return refuse(db, now, { rule: "build-start-card-unknown", detail: id }, null, "probe");
+  if (card.dropped) return { ok: true, recorded: false, why: "dropped" };
+  if (await db.prepare("SELECT 1 AS x FROM phase_history WHERE card_id = ? AND wait IS NULL LIMIT 1").bind(id).first()) return { ok: true, recorded: false, why: "has-history" };
+  if ((await evidenceOf(db, `cards.${id}`))?.lit?.length) return { ok: true, recorded: false, why: "lit" };
+  await db.prepare("INSERT OR IGNORE INTO phase_history (card_id, phase, kind, at, who, source) VALUES (?, 'build', 'start', ?, ?, 'evidence')").bind(id, now, card.owner_role ?? null).run();
+  return { ok: true, recorded: true };
+}
 // The probe fills in a card's repo word from git (#C742, collector/repo-words.mjs). Only a card that has none takes it: a word already set,
 // by an agent or an earlier fill, is never changed here, and nothing else on the card is touched (not even its updated time).
 export async function fillCardRepo(db, now, id, repo) {
