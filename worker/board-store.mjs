@@ -6,6 +6,7 @@ import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
 import { readUsage } from "./compat-usage.mjs";
 import { readThreads } from "./compat-threads.mjs";
+import { askWakes } from "./push-rules.mjs";
 
 export const PROBE_SILENT_MS = 3 * 60_000;
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -290,7 +291,9 @@ async function syncStalls(db, now) {
     const card = cards.find((c) => c.id === ref);
     if (card && (card.dropped || evidence[ref]?.lit?.[0] === "live")) endsPassed.add(ref);
   }
-  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }), ...heldWakes({ now, cards, endsPassed }), ...await syncE2e(db, now)];
+  // #C904: an ask the owner has left 10 min wakes Manager once, before the owner's phone gets it at 30 (push-rules.mjs).
+  const openAsks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL").all()).results;
+  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }), ...heldWakes({ now, cards, endsPassed }), ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now })];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.

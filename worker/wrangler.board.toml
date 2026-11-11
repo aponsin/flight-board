@@ -29,6 +29,11 @@ binding = "ASSETS"
 run_worker_first = true
 html_handling = "none"
 
+# #C904: the phone push. Every 5 minutes the Worker's `scheduled` sends what is due to the owner's subscribed devices. Its key is
+# the secret PUSH_VAPID_JWK (scripts/push-keys.mjs makes it; never committed); without it the cron sends nothing and says so.
+[triggers]
+crons = ["*/5 * * * *"]
+
 [vars]
 BOARD_VERSION = ""
 # #C737: the commit the Worker was deployed from; the pair's deploy sets it (wrangler deploy --var BUILD_SHA:<signed commit>).

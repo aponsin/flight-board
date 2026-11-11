@@ -37,7 +37,8 @@ export function storePage(built) {
   const page = built.replace(block, () => `<style>\n${fontFaceCss()}\n</style>`);
   if (/fonts\.(googleapis|gstatic)\.com/.test(page)) throw new Error("the page still names Google's font servers");
   // data-host="store" tells the page it runs on the store (#C723 A4): it leaves out what the owner agreed is gone.
-  return `<!doctype html>\n<html lang="en" data-host="store">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n</head>\n<body>\n${page}\n</body>\n</html>\n`;
+  // #C904: the manifest and the Home Screen tags, so an iPhone can add the board and get its pushes (iOS allows Web Push only there).
+  return `<!doctype html>\n<html lang="en" data-host="store">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<link rel="manifest" href="/manifest.webmanifest">\n<meta name="apple-mobile-web-app-capable" content="yes">\n<meta name="apple-mobile-web-app-title" content="Board">\n</head>\n<body>\n${page}\n</body>\n</html>\n`;
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
