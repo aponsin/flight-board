@@ -1,0 +1,1 @@
+PASS Quick: #C943 posted-fresh-boundary v2 at 33b736c, re-cut of 380fdfc onto main 933b10c. Range-diff: code and test identical to the v1 I passed with mutation 1 of 1 killed; only CHANGELOG differs, the #C931 line repaired to one line with its dollar sign back, noted in the #C943 entry. Suite 2456 of 2456. Touches worker/board-store.mjs, so Security's sign is needed too.
