@@ -1,0 +1,1 @@
+PASS Full: #C936 v2 at 33f6721, a re-cut of 9e24327 onto main 33b736c. Range-diff over worker, page and tests: identical; only CHANGELOG context differs. Suite 2462 of 2462. Same verdict as 9e24327, mutation 2 of 2. Card clause 3, the look rule, is still for its own card. Needs Security.
