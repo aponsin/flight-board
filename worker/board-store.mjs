@@ -368,7 +368,9 @@ async function syncStalls(db, now) {
   const had = new Map((await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE card_id LIKE ?").bind(`${COPY_CARD}%`).all()).results.map((r) => [r.card_id, r.reason]));
   for (const id of had.keys()) if (!copies.some((s) => s.card_id === id)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ?").bind(id).run();
   const copyStalls = copies.map((s) => ({ ...s, reason: had.get(s.card_id) ?? s.reason }));
-  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }), ...heldWakes({ now, cards, endsPassed }), ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...copyStalls];
+  // #C885: a read-only role's own card is worked by posts on its thread; the newest post by the card's owner, per card.
+  const postedAt = new Map((await db.prepare("SELECT m.thread_id AS card_id, MAX(m.created_at) AS at FROM messages m JOIN cards c ON c.id = m.thread_id AND m.author = c.owner_role GROUP BY m.thread_id").all()).results.map((r) => [r.card_id, r.at]));
+  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt }), ...heldWakes({ now, cards, endsPassed }), ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...copyStalls];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.
