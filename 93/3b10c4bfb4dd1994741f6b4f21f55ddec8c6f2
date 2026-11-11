@@ -1,0 +1,1 @@
+PASS Full: #C897 review-roles-from-paths v4 at 933b10c, re-cut of v3 894cd93 onto main c93d95a. Line-scoped: range-diff of 9222e64..894cd93 against c93d95a..933b10c differs only in CHANGELOG context, with the #C937 line and the #C897 line both kept. Code identical to the v3 I passed. Suite 2455 of 2455. Needs Security: pinned collector and dispatch code.
