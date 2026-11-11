@@ -457,7 +457,7 @@ export function dependsNotLive(c, cards, evidence) {
 // Map card id -> ms of the owner's newest post on the card's thread (the store passes it; missing = none).
 export const READ_ONLY_ROLES = ["Designer", "Checker", "Security", "Linguist"], POSTED_FRESH_MS = 60 * 60_000;
 export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed }) {
-  const out = [], queued = new Map(), idleOf = new Map();
+  const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
   for (const c of cards ?? []) {
@@ -471,9 +471,16 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
       const o = typeof c.owner_role === "string" ? roster[c.owner_role] : null;
       // #C940: a reset session reads "unknown" with no `since` until it has said something: idle since its own last activity (see dispatchItems).
       const idleFrom = !o ? null : o.state === "idle" ? o.since : o.state === "unknown" ? o.lastActivityAt : null;
-      if (!o || !Number.isFinite(idleFrom) || now - idleFrom < STALL_AFTER_MS) continue;
-      if (c.owner_role === "Manager" || !/^[A-Za-z0-9 _-]{1,24}$/.test(c.owner_role) || isHeld(c) || holdOpen(c, now, endsPassed) || !Number.isFinite(c.updated_at) || now - c.updated_at > 3 * 24 * 3600e3) continue;
+      if (c.owner_role === "Manager" || typeof c.owner_role !== "string" || !/^[A-Za-z0-9 _-]{1,24}$/.test(c.owner_role) || isHeld(c) || holdOpen(c, now, endsPassed) || !Number.isFinite(c.updated_at) || now - c.updated_at > 3 * 24 * 3600e3) continue;
       if (dependsNotLive(c, cards, evidence)) continue;
+      // #C947 (the gap #C940 left, seen as Role=none in the dispatch log): a card whose owner has NO open session at all, in a reading that lists
+      // others (an empty reading is a blind probe, never a stall), has nobody to start it. One line per role, below. A card younger than the stall time
+      // is not news. An idle, working or unknown session, a held card, a dependency not live and a closed card raise nothing here.
+      if (!o) {
+        if (Object.keys(roster).length && now - c.updated_at >= STALL_AFTER_MS) noSession.set(c.owner_role, [...(noSession.get(c.owner_role) ?? []), c]);
+        continue;
+      }
+      if (!Number.isFinite(idleFrom) || now - idleFrom < STALL_AFTER_MS) continue;
       if (READ_ONLY_ROLES.includes(c.owner_role)) {
         const posted = postedAt instanceof Map ? postedAt.get(c.id) : undefined;
         if (Number.isFinite(posted) && now - posted <= POSTED_FRESH_MS) continue;
@@ -507,6 +514,11 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   }
   // #C910: one line per idle agent, not one per queued card (22 queued cards were 22 lines): "Boardsmith idle since 07:31Z, 22 queued, next #C901".
   // The next card is the first of the agent's queue (queueRank, as the dispatch wakes it); the line is its row, so it changes with the count or the next card.
+  // #C947: one line per role with no open session, not one per card; the row is its text, so the same count and next card is the same row (not sent every minute).
+  for (const [role, list] of noSession) {
+    const next = [...list].sort((x, y) => queueRank({ queue_pos: x.queue_pos, owner: x.queue_set_by === "owner", num: x.num, id: x.id }, { queue_pos: y.queue_pos, owner: y.queue_set_by === "owner", num: y.num, id: y.id }))[0];
+    out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} has no open session, ${list.length} queued, next #C${next.num}` });
+  }
   for (const [role, list] of queued) {
     const next = [...list].sort((x, y) => queueRank({ queue_pos: x.queue_pos, owner: x.queue_set_by === "owner", num: x.num, id: x.id }, { queue_pos: y.queue_pos, owner: y.queue_set_by === "owner", num: y.num, id: y.id }))[0];
     out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} idle since ${hhmmZ(idleOf.get(role))}, ${list.length} queued, next #C${next.num}` });
