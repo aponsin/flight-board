@@ -1,0 +1,1 @@
+PASS Quick: #C933 ack-words-not-answers at 2641eba, re-cut of 3795e35 onto main ee3e1d3. Diff check: range-diff shows the patch identical. The touched page tests pass on the new base, with the #C902 page line: 22/22. The verdict on 3795e35 holds. The page is in make-pair HOOK_READS, so the next pair carries a hooks line.
