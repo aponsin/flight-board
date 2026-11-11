@@ -303,6 +303,14 @@ export function whoForPhase(cardId, phase, agents, ownerRole) {
 // `agents` evidence; openAskCards = Set of card ids with an open ask; phaseStart = Map "<card>|<phase>" -> ms. Times are UTC ("Z").
 export const STALL_AFTER_MS = 15 * 60_000;
 const hhmmZ = (ms) => `${new Date(ms).toISOString().slice(11, 16)}Z`;
+// #C846: whether a card waits for a card it depends on (depends_on, a JSON list of ids): one that is on the board, not dropped and not
+// live. One the board does not have, or a dropped one, holds nothing (as the dispatch reads it, #C845).
+function dependsNotLive(c, cards, evidence) {
+  let list = c.depends_on;
+  if (typeof list === "string") { try { list = JSON.parse(list); } catch { return false; } }
+  if (!Array.isArray(list)) return false;
+  return list.some((d) => typeof d === "string" && d !== c.id && (cards ?? []).some((k) => k && k.id === d && !k.dropped) && evidence?.[d]?.lit?.[0] !== "live");
+}
 export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }) {
   const out = [];
   const roster = agents && typeof agents === "object" ? agents : {};
@@ -310,6 +318,17 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   for (const c of cards ?? []) {
     if (!Number.isInteger(c.num) || c.dropped || c.paused || c.blocked_reason || c.waiting_on || openAskCards?.has(c.id) || working.has(c.id)) continue;
     const v = evidence?.[c.id], phase = v?.lit?.[0];
+    // #C846: a card with no lit phase (nothing pushed to origin) whose owner has been idle 15 min is a stall of its own: nobody has
+    // started it. It is not held, not behind a depends_on that is not live, not the lead's, and touched in the last 3 days (an old
+    // card nobody has pushed for is not news). The owner's other cards do not matter: one at review and the rest queued still wake.
+    if (phase === undefined || phase === null) {
+      const o = typeof c.owner_role === "string" ? roster[c.owner_role] : null;
+      if (!o || o.state !== "idle" || !Number.isFinite(o.since) || now - o.since < STALL_AFTER_MS) continue;
+      if (c.owner_role === "Manager" || !/^[A-Za-z0-9 _-]{1,24}$/.test(c.owner_role) || isHeld(c) || c.hold_end || !Number.isFinite(c.updated_at) || now - c.updated_at > 3 * 24 * 3600e3) continue;
+      if (dependsNotLive(c, cards, evidence)) continue;
+      out.push({ card_id: c.id, num: c.num, phase: null, role: c.owner_role, reason: `#C${c.num}: nothing pushed, ${c.owner_role} idle since ${hhmmZ(o.since)}` });
+      continue;
+    }
     if (typeof phase !== "string" || phase === "live" || !PHASES.includes(phase)) continue;
     if (v.ci === "running" || v.ci === "queued" || v.shipping === true) continue;
     // #C737: a card of another repository (a repo word) that is on main and read at ship is waiting for the owner's deploy, not for Release:
