@@ -22,11 +22,12 @@ export const ASK_PARTS = {
 // #C747: parts a type may carry besides the required ones. A Later ask keeps the steps and the expected result the old board gave it.
 // #C748: and `where`, the line under the ask that says where to do it, on a Later and an Action.
 export const ASK_OPTIONAL_PARTS = { Later: ["steps", "expect", "where"], Action: ["where"] };
-const ASK_ALLOWED = new Set(["type", "title", "asked_by", "card_id", "eta_at", "eta_precondition", ...Object.values(ASK_PARTS).flat(), ...Object.values(ASK_OPTIONAL_PARTS).flat(), "screenshots"]);
+const ASK_ALLOWED = new Set(["type", "title", "asked_by", "card_id", "eta_at", "eta_precondition", "owed_by",...Object.values(ASK_PARTS).flat(), ...Object.values(ASK_OPTIONAL_PARTS).flat(), "screenshots"]);
 
 const refuse = (rule, detail) => ({ rule, detail });
 export const APPROVAL_ASKERS = ["Reviewer", "Manager"];
 export const APPROVE = "Approve";
+export const PROMISE_ROLES = ["Manager"];
 const PR_URL = /^https:\/\/github\.com\/[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}\/pull\/([1-9][0-9]{0,6})$/;
 // A Terminal line that only changes folder: "cd", "cd <path>", "pushd <path>", with nothing chained after it.
 const BARE_CD = /^\s*(cd|pushd)\b[^;&|\n]*$/;
@@ -70,6 +71,14 @@ export function askRefusal(ask, now) {
     const dated = Number.isFinite(ask.eta_at) && ask.eta_at > 0;
     if (!dated && !(present(ask.eta_precondition) && Number.isFinite(ask.eta_at))) return refuse("later-without-eta", "a date, or a precondition plus its expected date");
     if (Number.isFinite(now) && ask.eta_at < now - 60_000) return refuse("later-without-eta", "the ETA is in the past");
+  }
+  // #C925 (11-11: #T1779 and #T1785 were Manager's own dated promises, read "waiting on you" at 8 am, and woke nobody): owed_by marks a
+  // Later the asker owes the owner. Only the lead may promise, only for itself, and only with a date (eta_at): no precondition, which
+  // nothing could wake on.
+  if (ask.owed_by !== undefined) {
+    if (ask.type !== "Later") return refuse("promise-shape", "owed_by is on a Later ask only");
+    if (!PROMISE_ROLES.includes(ask.owed_by) || ask.owed_by !== ask.asked_by) return refuse("promise-shape", `owed_by is the asker itself, and only ${PROMISE_ROLES.join(" or ")} promises`);
+    if (!Number.isFinite(ask.eta_at) || ask.eta_precondition !== undefined) return refuse("promise-shape", "a promise has a date (eta_at) and no precondition");
   }
   return null;
 }
