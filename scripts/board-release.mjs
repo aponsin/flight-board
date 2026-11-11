@@ -98,6 +98,17 @@ export const leadFromSettings = (text) => /collector\/fence\.mjs'? [^"]*?--send-
 
 const signed = (notes) => /^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim()) && /^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim());
 
+// #C934: a review of a stack's tip may be a review of its whole line. Both notes on the commit (Checker's PASS, Security's SECURE) say, on their
+// first line, "line from <40-hex sha>" with the same sha: they read every commit from that base (not included) up to this one. Returns the base
+// sha, else null. It is only a claim: the release tool still requires the base to be an ancestor of main and this commit, and counts only the
+// commits between (lineCovers); a note that says nothing, or two different bases, covers nothing.
+export function lineSign(notes) {
+  if (!signed(notes)) return null;
+  const base = (t) => /\bline from ([0-9a-f]{40})\b/.exec(String(t ?? "").split("\n")[0])?.[1] ?? null;
+  const c = base(notes.checker), s = base(notes.security);
+  return c && c === s ? c : null;
+}
+
 // A page release while an install pack waits (#C412, Director: v3.19's pack waited 564 min and held four page releases;
 // Security's ruling on plan A): a commit built on a signed pack S may go out before the owner installs S, if it adds no
 // pinned change of its own. S is never named by anyone: it is the newest commit on the line from the installed pin to
@@ -116,7 +127,10 @@ export function pendingPack({ descends, range, sameAs }) {
   if (!descends) r.push("it doesn't descend from the commit the owner's install pins");
   const side = (range ?? []).filter((c) => !c.fromPin).map((c) => c.sha.slice(0, 12));
   if (side.length) r.push(`commits on its line don't descend from the commit the owner's install pins (a side branch): ${side.join(", ")}`);
-  const unsigned = touching.filter((c) => !signed(c.notes)).map((c) => c.sha.slice(0, 12));
+  // #C934: a commit is also signed when a later commit's line sign covers it (c.covers: the shas in base..c that the caller verified, base an
+  // ancestor of main and of c). A lower commit with its own FINDINGS is covered by a later line sign too: its reviewers read the line as it ended.
+  const covered = new Set((range ?? []).filter((c) => signed(c.notes) && Array.isArray(c.covers)).flatMap((c) => c.covers));
+  const unsigned = touching.filter((c) => !signed(c.notes) && !covered.has(c.sha)).map((c) => c.sha.slice(0, 12));
   if (unsigned.length) r.push(`a change to what the owner's install pins, on its line, isn't signed by both Checker and Security: ${unsigned.join(", ")}`);
   if (!sameAs(S)) r.push(`it changes what the owner's install pins after the waiting pack ${S.slice(0, 12)}: a pinned change goes out with an install pack`);
   return { sha: r.length ? null : S, refusals: r };
@@ -233,7 +247,13 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
         if (!p) return true;
         return list(["diff", "--name-only", p, c]).some((f) => owned.includes(f)) || settingsBlock(at(p)(TASK_FILE)) !== settingsBlock(at(c)(TASK_FILE));
       };
-      const range = list(["rev-list", "--reverse", `${pinned}..${sha}`]).map((c) => ({ sha: c, fromPin: path.has(c), touches: touches(c), notes: Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", c])])) }));
+      // #C934: a commit whose notes both say "line from <base>" covers base..c, when base is an ancestor of main and of c; otherwise nothing.
+      const lineCovers = (c, notes) => {
+        const b = lineSign(notes);
+        if (!b || quiet(["merge-base", "--is-ancestor", b, main]) === null || quiet(["merge-base", "--is-ancestor", b, c]) === null) return undefined;
+        return list(["rev-list", `${b}..${c}`]);
+      };
+      const range = list(["rev-list", "--reverse", `${pinned}..${sha}`]).map((c) => { const notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", c])])); return { sha: c, fromPin: path.has(c), touches: touches(c), notes, covers: lineCovers(c, notes) }; });
       const sameAs = (s) => [...new Set([...importClosure(entries, at(sha)), ...importClosure(entries, at(s))])].every((f) => at(s)(f) === at(sha)(f)) && settingsBlock(at(s)(TASK_FILE)) === settingsBlock(at(sha)(TASK_FILE));
       pending = pendingPack({ descends: quiet(["merge-base", "--is-ancestor", pinned, sha]) !== null, range, sameAs });
     }
