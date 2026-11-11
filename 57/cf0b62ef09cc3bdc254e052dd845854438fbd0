@@ -1,0 +1,1 @@
+SECURE. Probe display logic only: one row per card (the landed branch, else the newest of each -vN family). No new input, route, secret or write path.
