@@ -112,19 +112,43 @@ test("F1: after the owner puts a card first, the lead cannot put an older card a
 });
 
 // Security R1 on 15fc8fe: a card_update of owner_role alone (no queue_pos) carried the card's old place into the new queue, past the owner's floor.
-test("R1: an owner_role-only write cannot carry a card's old place into a queue ahead of the owner's; behind them it can", async () => {
+test("R1: an owner_role-only write by an agent-placed card enters the new queue unplaced, so it cannot sit ahead of the owner's places", async () => {
   const db = makeDb();
   for (const [n, id] of ["c1-one", "c2-two"].entries()) assert.ok((await createCard(db, T + n + 1, "Manager", { id, title: id, owner_role: "Boardsmith" })).ok);
   for (const [i, id] of ["c1-one", "c2-two"].entries()) assert.ok((await updateCard(db, T + 100 + i, "Manager", { id, queue_pos: i + 1 })).ok);
   await moveInQueue(db, T + 500, "owner", { id: "c2-two", dir: "up" });
   assert.ok((await createCard(db, T + 10, "Manager", { id: "c5-ahead", title: "Ahead", owner_role: "Builder", queue_pos: 1 })).ok);
   assert.ok((await createCard(db, T + 11, "Manager", { id: "c6-behind", title: "Behind", owner_role: "Builder", queue_pos: 7 })).ok);
-  const r = await updateCard(db, T + 600, "Manager", { id: "c5-ahead", owner_role: "Boardsmith" });
-  assert.equal(r.ok, false, "place 1 carried into the owner's queue is refused");
-  assert.equal(r.refused?.rule ?? r.rule, "queue-owner-set");
-  assert.equal((await cardOf(db, "c5-ahead")).owner_role, "Builder", "and the card stays where it was");
-  assert.ok((await updateCard(db, T + 601, "Manager", { id: "c6-behind", owner_role: "Boardsmith" })).ok, "a place behind the owner's is open");
+  assert.ok((await updateCard(db, T + 600, "Manager", { id: "c5-ahead", owner_role: "Boardsmith" })).ok);
+  const ahead = await cardOf(db, "c5-ahead");
+  assert.equal(ahead.owner_role, "Boardsmith");
+  assert.equal(ahead.queue_pos, null, "place 1 is not carried into the owner's queue: the card enters it unplaced");
+  assert.equal(ahead.queue_set_by, null);
+  assert.equal((await order(db))[0], "c2-two", "so the owner's first card stays first");
+  assert.ok((await updateCard(db, T + 601, "Manager", { id: "c6-behind", owner_role: "Boardsmith" })).ok);
+  assert.equal((await cardOf(db, "c6-behind")).queue_pos, null, "a place behind the owner's is not carried either");
+  const named = await updateCard(db, T + 603, "Manager", { id: "c6-behind", owner_role: "Builder", queue_pos: 1 });
+  assert.ok(named.ok, "a write that names its own place in a queue with no owner floor is as before");
   assert.ok((await updateCard(db, T + 602, "owner", { id: "c5-ahead", owner_role: "Boardsmith" })).ok, "the owner may move it");
+});
+
+// Checker on da011f1: moving an owner-placed card to another agent must not carry the owner's place and mark into that queue.
+test("R1b: an agent's owner_role change on an owner-placed card clears its place and mark; the owner's own move keeps them", async () => {
+  const db = makeDb();
+  for (const [n, [id, role]] of [["b1-one", "Boardsmith"], ["b2-two", "Boardsmith"], ["u1-one", "Builder"], ["u2-two", "Builder"]].entries()) assert.ok((await createCard(db, T + n + 1, "Manager", { id, title: id, owner_role: role })).ok);
+  for (const [i, id] of ["b1-one", "b2-two"].entries()) assert.ok((await updateCard(db, T + 100 + i, "Manager", { id, queue_pos: i + 1 })).ok);
+  for (const [i, id] of ["u1-one", "u2-two"].entries()) assert.ok((await updateCard(db, T + 110 + i, "Manager", { id, queue_pos: i + 1 })).ok);
+  await moveInQueue(db, T + 500, "owner", { id: "b2-two", dir: "up" });
+  await moveInQueue(db, T + 501, "owner", { id: "u2-two", dir: "up" });
+  assert.ok((await updateCard(db, T + 600, "Manager", { id: "b2-two", owner_role: "Builder" })).ok);
+  const moved = await cardOf(db, "b2-two");
+  assert.equal(moved.owner_role, "Builder");
+  assert.equal(moved.queue_pos, null, "its place is cleared");
+  assert.equal(moved.queue_set_by, null, "and so is the owner's mark");
+  const builder = (await readView(db, T + 9000)).cards.filter((c) => c.owner_role === "Builder" && c.queue_pos != null).sort((a, b) => a.queue_pos - b.queue_pos);
+  assert.equal(builder[0].id, "u2-two", "the owner's first Builder card stays first");
+  assert.ok((await updateCard(db, T + 601, "owner", { id: "u1-one", owner_role: "Boardsmith" })).ok);
+  assert.equal((await cardOf(db, "u1-one")).queue_set_by, "owner", "the owner's own move keeps the mark");
 });
 
 function items(view) {

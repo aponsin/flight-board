@@ -66,11 +66,7 @@ export async function updateCard(db, now, who, fields) {
   const id = fields?.id;
   const card = typeof id === "string" ? await db.prepare("SELECT id, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, queue_pos, owner_role FROM cards WHERE id = ?").bind(id).first() : null;
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
-  // Security R1 on 15fc8fe: an owner_role change with no queue_pos carries the card's old place into the new queue, so the floor is checked against that place.
-  const carried = who !== "owner" && !("queue_pos" in fields) && typeof fields.owner_role === "string" && fields.owner_role !== card.owner_role && card.queue_set_by !== "owner" && Number.isInteger(card.queue_pos);
-  const owned = carried
-    ? queueWriteRefusal({ queue_pos: card.queue_pos }, null, who, await ownerFloor(db, fields.owner_role, id))
-    : queueWriteRefusal(fields, card, who, who !== "owner" && Number.isInteger(fields?.queue_pos) ? await ownerFloor(db, fields.owner_role ?? card.owner_role, id) : 0);
+  const owned = queueWriteRefusal(fields, card, who, who !== "owner" && Number.isInteger(fields?.queue_pos) ? await ownerFloor(db, fields.owner_role ?? card.owner_role, id) : 0);
   if (owned) return refuse(db, now, owned, id, who);
   const bad = cardWriteRefusal(fields, await evidenceOf(db, `cards.${id}`));
   if (bad) return refuse(db, now, bad, id, who);
@@ -85,6 +81,9 @@ export async function updateCard(db, now, who, fields) {
   if (keys.includes("issues")) { sets.push("issues_at = ?"); vals.push(fields.issues ? now : null); }
   // #C871: who placed the card in its queue, and when (the owner's placement outranks an agent's: queueWriteRefusal).
   if (keys.includes("queue_pos")) { sets.push("queue_set_by = ?", "queue_set_at = ?"); vals.push(fields.queue_pos === null ? null : who ?? null, fields.queue_pos === null ? null : now); }
+  // Security R1/R1b and Checker on da011f1: a place in one agent's queue says nothing about another's, so when someone but the owner changes owner_role
+  // (with no queue_pos of its own, which the floor rule above checks against the new queue), the card enters the new queue unplaced and unmarked.
+  if (who !== "owner" && !keys.includes("queue_pos") && typeof fields.owner_role === "string" && fields.owner_role !== card.owner_role) sets.push("queue_pos = NULL", "queue_set_by = NULL", "queue_set_at = NULL");
   // When the hold began: set by the write that makes the card held, kept while it stays held, cleared (with its end) when it is lifted.
   if (keys.includes("waiting_on") || keys.includes("blocked_reason")) {
     const after = { waiting_on: "waiting_on" in fields ? fields.waiting_on : card.waiting_on, blocked_reason: "blocked_reason" in fields ? fields.blocked_reason : card.blocked_reason };
