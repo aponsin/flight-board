@@ -96,10 +96,12 @@ const CARD = {
   // #C859 slice 2: where the card stands in its repository's stack, read from git (collector/stack.mjs): { tip, size } for a card under the
   // stack tip (a stack of two or more), or { outside: true } for a card not cut from it. Only for a repository whose stack switch is on.
   // branch (optional) is the stack's branch: the builder's wake names it, an outsider is told which tip to cut from.
-  stack: (v) => plain(v) && Object.keys(v).every((k) => ["tip", "tipSha", "size", "branch", "outside"].includes(k))
+  // #C914: { hold: true } (with the optional branch) is a card whose reviewers are not woken yet: no stack-ready signal covers its head.
+  stack: (v) => plain(v) && Object.keys(v).every((k) => ["tip", "tipSha", "size", "branch", "outside", "hold"].includes(k))
+    && (v.hold === undefined || (v.hold === true && v.tip === undefined && v.tipSha === undefined && v.size === undefined && v.outside === undefined))
     && (v.tipSha === undefined || (/^[0-9a-f]{40}$/.test(String(v.tipSha)) && v.outside === undefined && String(v.tipSha).startsWith(String(v.tip))))
     && (v.branch === undefined || (typeof v.branch === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(v.branch) && !v.branch.startsWith("-")))
-    && ((v.outside === true && v.tip === undefined && v.size === undefined) || (v.outside === undefined && SHA12.test(v.tip) && Number.isInteger(v.size) && v.size >= 2 && v.size <= MAX_CARDS)),
+    && (v.hold === true || (v.outside === true && v.tip === undefined && v.size === undefined) || (v.outside === undefined && SHA12.test(v.tip) && Number.isInteger(v.size) && v.size >= 2 && v.size <= MAX_CARDS)),
   at: isTime,
 };
 const { num: _n, at: _a, branches: _b, stack: _s, ...BRANCH_FIELDS } = CARD;

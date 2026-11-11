@@ -22,7 +22,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { PUBLISHED_FILE } from "./export.mjs";
-import { readStack, stackFields } from "./stack.mjs";
+import { readStack, stackFields, STACK_BRANCH } from "./stack.mjs";
 import { journalCards, readJournal } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
@@ -726,6 +726,15 @@ export function stackHeads(repo, tips, open) {
   return heads;
 }
 
+// #C914: the commits carrying a stack-ready note (the builder's signal, scripts/stack-ready.mjs): `git notes list` prints "<note> <commit>" pairs.
+// The collector fetches every notes ref into refs/notes/flight-board/<name>. Any failure (no such ref yet) is no notes.
+export const STACK_READY_REF = "refs/notes/flight-board/stack-ready";
+export function stackReadyCommits(repo) {
+  try {
+    return String(repo.git(["notes", `--ref=${STACK_READY_REF}`, "list"])).split("\n").map((l) => l.trim().split(/\s+/)[1]).filter((c) => /^[0-9a-f]{40}$/.test(String(c)));
+  } catch { return []; }
+}
+
 export function cardStates({ cards, config, repos, now, stacks = [] }) {
   const out = {}, repoOfCard = {}, cardOf = {};
   for (const card of cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX).slice(0, MAX_CARDS)) {
@@ -755,12 +764,24 @@ export function cardStates({ cards, config, repos, now, stacks = [] }) {
     const found = stackHeads(repo, tips, open);
     const heads = Object.fromEntries(Object.entries(found).map(([id, h]) => [id, h.sha]));
     for (const id of open) if (!heads[id] && out[id].headSha12) heads[id] = out[id].headSha12;
-    const stack = readStack({ heads, tips, isAncestor: (a, b) => a === b || String(b).startsWith(a) || ok(() => repo.git(["merge-base", "--is-ancestor", a, b])) });
-    for (const [id, field] of Object.entries(stackFields(stack))) {
+    const isAncestor = (a, b) => a === b || String(b).startsWith(a) || ok(() => repo.git(["merge-base", "--is-ancestor", a, b]));
+    const stack = readStack({ heads, tips, isAncestor });
+    const fields = stackFields(stack);
+    for (const [id, field] of Object.entries(fields)) {
       // A member is read again at its own commit with the stack tip as cover (design 4: a note on the tip counts for every card under it),
       // and a middle-of-chain card, which the first pass could not find, is read at the commit its trailer names. An outsider keeps its reading.
       const again = field.outside ? out[id] : cardState(cardOf[id], repo, config, now, { head: found[id], cover: stack.tip });
       out[id] = { ...again, stack: field };
+    }
+    // #C914: until the builder's push command (scripts/stack-ready.mjs) has written its signal on a commit this card's head is under (or is), reviewers
+    // are not woken for the card, a stack of one included: a base card pushed alone is told from a lone card only by that signal. A card that already
+    // carries a review note or findings is not pulled back. An outsider keeps its reading. Same input, same answer: no clock.
+    const noted = stackReadyCommits(repo);
+    for (const id of open) {
+      if (!heads[id] || fields[id]?.outside || out[id].signed?.length || out[id].findings?.length) continue;
+      if (noted.some((c) => isAncestor(heads[id], c))) continue;
+      const branch = stack?.branch ?? found[id]?.branch;
+      out[id] = { ...out[id], stack: { hold: true, ...(typeof branch === "string" && STACK_BRANCH.test(branch) && !branch.startsWith("-") ? { branch } : {}) } };
     }
   }
   return out;

@@ -58,6 +58,7 @@ export function waitingDoc(a) {
 // The probe's stack reading of a card ({ tip, size, branch } or { outside, branch }), copied field by field so nothing else rides along.
 const stackOf = (s) => {
   if (!s || typeof s !== "object" || Array.isArray(s)) return undefined;
+  if (s.hold === true) return undefined; // #C914: a hold is the dispatch's, not the page's (the page says nothing of it yet: Designer's)
   const o = {};
   if (typeof s.tip === "string" && /^[0-9a-f]{12}$/.test(s.tip)) o.tip = s.tip;
   if (Number.isInteger(s.size) && s.size >= 2 && s.size <= 200) o.size = s.size;

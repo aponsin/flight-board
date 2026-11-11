@@ -82,6 +82,7 @@ test("cardStates adds no stack field for a switch that is off, and reads the cha
   s.commit(40, "d.md", "card-four");
   s.g(["checkout", "-q", "main"]);
   s.sync();
+  s.g(["notes", "--ref=refs/notes/flight-board/stack-ready", "add", "-m", "stack-ready", three]); // #C914: the builder's READY signal; without it the cards read as held
   const cards = ["card-one", "card-two", "card-three", "card-four"].map((id) => ({ id }));
   const run = (stacks) => cardStates({ cards, config: cfg, repos: { "": s.repo() }, now: (T0 + 100) * 1000, stacks });
   for (const id of Object.keys(run([]))) assert.equal(run([])[id].stack, undefined, `${id}: the switch off is today's reading`);
@@ -137,9 +138,10 @@ test("FINDINGS on the tip beats a PASS on a card's own commit: no card under the
 test("a repository the switch names but the probe has no clone for is skipped, and a stack of one card carries nothing", () => {
   const s = scratch();
   s.g(["checkout", "-qb", "build/solo"]);
-  s.commit(10, "a.md", "solo");
+  const solo = s.commit(10, "a.md", "solo");
   s.g(["checkout", "-q", "main"]);
   s.sync();
+  s.g(["notes", "--ref=refs/notes/flight-board/stack-ready", "add", "-m", "stack-ready", solo]); // #C914: without the signal a lone card reads as held
   const out = cardStates({ cards: [{ id: "solo" }], config: cfg, repos: { "": s.repo() }, now: (T0 + 100) * 1000, stacks: ["", "nowhere"] });
   assert.equal(out.solo.stack, undefined);
 });
