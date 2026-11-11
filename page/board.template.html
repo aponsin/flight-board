@@ -1451,7 +1451,8 @@ function optionText(id,key){const o=threadOptions(id).find(o=>String(o.key)===St
 // median the row goes amber, the usual time replaces the ETA. No running sub-step: the phase and the ETA, as before.
 function cardLine(id,now=Date.now()){const c=threadCardAny(id);if(!c)return "";
   const link=`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>`;
-  if(c.status==="done"&&!c.dropped)return `→ ${link} · Live`;if(c.status==="dropped"||c.dropped)return `→ ${link} · Dropped`;
+  // #C902 (Checker F3): a card closed as done with evidence never shipped: "Done", not "Live".
+  if(c.status==="done"&&!c.dropped)return `→ ${link} · ${c.doneEvidence?"Done":"Live"}`;if(c.status==="dropped"||c.dropped)return `→ ${link} · Dropped`;
   const eta=shownEta(c),s=liveSubstep(c.id); // #C877: the store has the ETA too
   if(s){const med=stepMedians()[s.phase],age=Math.max(0,now-s.at),slow=med!=null&&age>2*med,nx=nextPhaseLabel(c,s.phase);
     const verb=s.phase==="test"?"e2e running":`${esc(s.who||"")} ${SUB_VERB[s.phase]||"reviewing"}`.trim();
