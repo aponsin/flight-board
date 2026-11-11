@@ -1,0 +1,1 @@
+PASS Full, line-scoped: #C940 v3 squashed on build/small-stack-b: its diff outside CHANGELOG equals 933b10c..0de3dc4 (b1c8775 + 0de3dc4, both signed Full). CHANGELOG adds the card's line; suite on the stack tip f091faa 2496 of 2496. Needs SECURE.
