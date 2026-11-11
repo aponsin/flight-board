@@ -8,14 +8,15 @@ import { readFileSync } from "node:fs";
 import { loadNames, step } from "./harness.mjs";
 
 const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
-const NOW = Date.now(), MIN = 60e3, HEAD = "a1b2c3d4e5f6" + "0".repeat(28);
+// A fixed clock (CLAUDE.md section 7): the page is given a Date whose now() is NOW, so "40 s ago" is exactly 40 s however loaded the machine is (#C840).
+const NOW = 1_800_000_000_000, MIN = 60e3, HEAD = "a1b2c3d4e5f6" + "0".repeat(28);
 const reading = (at, extra = {}) => ({
   v: 1, board: { boardId: "TestBoard42xyz", at, probe: null, pageVersion: null },
   cards: { "live-card": { num: 9, phase: "checker", headSha12: HEAD.slice(0, 12), signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at }, ...extra.cards },
   agents: { Checker: { state: "working", lastActivityAt: at, tool: "Bash", card: "live-card", since: at - 4 * MIN }, ...extra.agents },
 });
 function board({ live = null, derived = { phase: "build", head: HEAD, readyAt: NOW - 30 * MIN, waitingFor: ["checker", "security"], at: NOW - 40 * MIN } } = {}) {
-  const b = loadNames(["derivedOf", "liveCard", "liveAgent", "liveSubstep", "agentOn", "stampText", "probeEvent", "enrich", "crewHtml", "renderAll", "initRow", "stampLine", "evidence", "oldestText"]);
+  const b = loadNames(["derivedOf", "liveCard", "liveAgent", "liveSubstep", "agentOn", "stampText", "probeEvent", "enrich", "crewHtml", "renderAll", "initRow", "stampLine", "evidence", "oldestText"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(NOW); } static now() { return NOW; } } });
   Object.assign(b.state, {
     initRaw: [], steps: [], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [],
     derived: [{ id: "all", at: NOW - 40 * MIN, cards: { "live-card": derived } }],
