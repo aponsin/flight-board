@@ -54,11 +54,11 @@ test("in flight is what the page draws: live + on main + no check date is hidden
   const view = { now: NOW, cards, asks: [], threads: { messages: [] }, evidence: { "cards.live-1": ev("live", true), "cards.checked-1": ev("live", true), "cards.ship-1": ev("ship", false) } };
   const docs = { initiatives: { "live-1": { status: "active" }, "checked-1": { status: "active" }, "ship-1": { status: "active" }, "bare-1": { status: "active" }, "drop-1": { status: "dropped" }, "done-1": { status: "done" } }, messages: {}, waiting: {} };
   const t = compareTabs({ docs, view, p: { insert: [] }, a: { counts: {} }, h: null, now: NOW, expect: { inflight: 4 } });
-  // The store's compat view marks a card read at its last phase done (applyShips), a check date or not: the page then does not draw it.
-  // That is read off the page here, not decided here.
-  assert.deepEqual(t.inflight.hiddenByEvidence.ids, ["checked-1", "live-1"]);
-  assert.deepEqual(t.inflight.drawn.map((d) => d.id), ["bare-1", "ship-1"]);
-  assert.equal(t.inflight.ours, 2);
+  // The store's compat view marks a card read at its last phase done (applyShips) unless it has a check date (store-check-date-holds-card): the page
+  // hides the first and draws the held one ("Live, still open"). That is read off the page here, not decided here.
+  assert.deepEqual(t.inflight.hiddenByEvidence.ids, ["live-1"]);
+  assert.deepEqual(t.inflight.drawn.map((d) => d.id), ["bare-1", "checked-1", "ship-1"]);
+  assert.equal(t.inflight.ours, 3);
   assert.equal(t.inflight.storeOpen, 4);
   assert.equal(t.inflight.oldPageByRule, 4, "the dropped card is not counted open on the old side");
   assert.equal(t.inflight.drawn.find((d) => d.id === "bare-1").why, "no evidence (no commit carries its id yet)");

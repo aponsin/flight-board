@@ -56,6 +56,27 @@ test("a card at its last phase is done, with when it got there and its version; 
   assert.deepEqual(c.events, [{ id: "v1.3.0", version: "1.3.0", at: NOW - 2 * 60 * M, cards: ["live-one"], text: "#C1 Hero band" }]);
 });
 
+test("a card at its last phase with a check date is held: not done, no doneAt, no version, until the lead lifts the date (store-check-date-holds-card)", async () => {
+  const db = makeDb();
+  await createCard(db, NOW, "Manager", { id: "held", title: "Held", check_at: NOW + 86_400_000 });
+  await createCard(db, NOW, "Manager", { id: "free", title: "Free" });
+  await read(db, NOW - 60 * M, "held", "live", { liveVersion: "v1.4.0" });
+  await read(db, NOW - 60 * M, "free", "live", { liveVersion: "v1.4.0" });
+  const { updateCard } = await import("../worker/board-store.mjs");
+  let view = await viewOf(db, NOW);
+  let c = applyShips(compatView(view).collections, view);
+  let by = Object.fromEntries(c.initiatives.map((i) => [i.id, i]));
+  assert.equal(by.held.status, "active", "a check date holds the card open on the live reading");
+  assert.equal(by.held.doneAt, undefined); assert.equal(by.held.version, undefined); assert.equal(by.held.checkAt, NOW + 86_400_000);
+  assert.equal(by.free.status, "done", "a card with no check date is closed by the reading as before");
+  assert.deepEqual(c.events[0].cards, ["held", "free"], "the version still shipped, with both cards");
+  assert.equal((await updateCard(db, NOW, "Manager", { id: "held", check_at: null })).ok, true);
+  view = await viewOf(db, NOW);
+  c = applyShips(compatView(view).collections, view);
+  by = Object.fromEntries(c.initiatives.map((i) => [i.id, i]));
+  assert.equal(by.held.status, "done", "lifted by the lead, the reading closes it");
+});
+
 test("a wait step on the end phase does not date the card's arrival there: doneAt is the probe's own row (#C739, Checker F4)", () => {
   const view = {
     cards: [{ id: "c1" }],

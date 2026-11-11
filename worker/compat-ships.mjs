@@ -57,7 +57,9 @@ export function applyShips(collections, view) {
     const c = cards[i.id];
     const ev = view.evidence?.[`cards.${i.id}`];
     const lit = ev?.value?.lit?.[0];
-    if (!c || !END_PHASES.includes(lit) || c.dropped) continue;
+    // A card with a check date is held open past its live reading until the lead lifts the date (#C731 B4b, as on the old board;
+    // store-check-date-holds-card): it stays as the compat view made it, with no doneAt and no version. The ship of its version is unaffected.
+    if (!c || !END_PHASES.includes(lit) || c.dropped || (Number.isInteger(c.check_at) && c.check_at > 0)) continue;
     i.status = "done";
     i.doneAt = doneAtOf(i.id, lit, view.history, ev.readAt);
     const v = plainVersion(ev.value.liveVersion);
