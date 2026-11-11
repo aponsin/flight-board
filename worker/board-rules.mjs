@@ -28,6 +28,8 @@ const refuse = (rule, detail) => ({ rule, detail });
 export const APPROVAL_ASKERS = ["Reviewer", "Manager"];
 export const APPROVE = "Approve";
 const PR_URL = /^https:\/\/github\.com\/[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}\/pull\/([1-9][0-9]{0,6})$/;
+// A Terminal line that only changes folder: "cd", "cd <path>", "pushd <path>", with nothing chained after it.
+const BARE_CD = /^\s*(cd|pushd)\b[^;&|\n]*$/;
 const present = (v) => v !== undefined && v !== null && !(typeof v === "string" && v.trim() === "") && !(Array.isArray(v) && v.length === 0);
 
 // An ask missing a required part, an unknown field, or a Later without an ETA.
@@ -47,6 +49,12 @@ export function askRefusal(ask, now) {
     if (ask.eta_precondition !== undefined) return refuse("decision-not-before", "a Decision takes eta_at (not before) and no precondition");
   }
   if (ask.type === "Action") { const bad = stepsRefusal(ask.steps, { needCmd: true }); if (bad) return bad; }
+  // #C921 (#T1802): the owner may run any one line alone, so no line may be a bare "cd" that a later line relies on. A cd in the
+  // same line as its command ("cd ~/x && node y") is fine; so is a full or ~ path with no cd at all.
+  if (ask.type === "Terminal" && Array.isArray(ask.commands)) {
+    const bare = ask.commands.find((c) => typeof c === "string" && BARE_CD.test(c));
+    if (bare !== undefined) return refuse("terminal-bare-cd", `"${bare.trim().slice(0, 80)}" is a cd on its own line: give each line full or ~ paths, or put the cd in the same line (cd <folder> && <command>)`);
+  }
   if (ask.where !== undefined && (typeof ask.where !== "string" || !ask.where.trim() || ask.where.length > 300 || !(ask.type in ASK_OPTIONAL_PARTS && ASK_OPTIONAL_PARTS[ask.type].includes("where")))) return refuse("ask-missing-part", `${ask.type} where is a short line (a Later or an Action only)`);
   if (ask.type === "Approval") {
     // Asked by the role that signs pull requests (Reviewer) or the lead; for one pull request, at one full commit, with its own link.
