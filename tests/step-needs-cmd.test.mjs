@@ -24,9 +24,19 @@ test("the real targets are refused without the text in the cmd, and pass with it
   assert.equal(askRefusal(action([{ text: "Type: yes.", cmd: "yes" }]), NOW), null, "the full stop is the sentence's");
 });
 
-test("the cmd must hold the text the step names: another text, a blank cmd and no cmd are all refused", () => {
-  assert.equal(askRefusal(action([{ text: "type: yes", cmd: "no" }]), NOW)?.rule, "step-types-without-cmd");
+test("a step that names a text needs a cmd that is not blank: a blank cmd and no cmd are refused", () => {
   assert.equal(askRefusal(action([{ text: "type: yes", cmd: "   " }]), NOW)?.rule, "step-types-without-cmd");
+  assert.equal(askRefusal(action([{ text: "type: yes", cmd: "" }]), NOW)?.rule, "step-types-without-cmd");
+});
+
+test("a step fixed the way the refusal asks passes even when the sentence goes on after the colon (Checker F1)", () => {
+  for (const [text, cmd] of [
+    ["Type: yes, then press Enter", "yes"], ["Say: go ahead, and wait for READY", "go ahead"], ["Then paste: the line below", "node x.mjs"],
+    ["Paste: the command in the box", "npm run ship"], ["In the session, type: ship it (one line)", "ship it"],
+  ]) {
+    assert.equal(askRefusal(action([{ text }]), NOW)?.rule, "step-types-without-cmd", `${text} without a cmd`);
+    assert.equal(askRefusal(action([{ text, cmd }]), NOW), null, `${text} with its cmd`);
+  }
 });
 
 test("the false positives of the first rule pass: no text named, expected output, the owner's own words, a field to fill", () => {

@@ -129,10 +129,11 @@ export function messageExtrasRefusal(m, who) {
 const NAMED = /(?:^|[.;!?]\s+|\bthen\s+|[,(]\s*)(?:type|paste|say)\b\s*(?::\s*|["\u201c'`]\s*)([^"\u201d'`\n]+?)\s*(?:["\u201d'`]|$)/i;
 export function typedWithoutCmd(step) {
   const text = typeof step === "string" ? step : step && typeof step.text === "string" ? step.text : "";
-  const named = NAMED.exec(text)?.[1]?.trim().replace(/[.,;]+$/, "");
-  if (!named) return false;
+  if (!NAMED.test(text)) return false;
+  // A step that names a text needs a cmd that is not blank. The cmd is not matched against the words after the colon: the sentence can go on
+  // there ("type: yes, then press Enter"), so no part of it can be told apart from the text (Checker, F1).
   const cmd = step && typeof step === "object" && typeof step.cmd === "string" ? step.cmd : "";
-  return !cmd.includes(named);
+  return !cmd.trim();
 }
 // An Action's steps: plain text, or {text, cmd} where cmd is a command the page shows with a Copy button.
 export function stepsRefusal(steps, { needCmd = false } = {}) {
