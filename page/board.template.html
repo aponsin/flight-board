@@ -1420,7 +1420,17 @@ function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"
 // An owner's Ack on a building thread (#C510, ackWrites) is resolved for Manager's gates (nothing for it to answer) but
 // leaves the thread with the team while its card is in flight.
 function threadResolved(id){if(threadOpen(id))return false;const it=itemOf(id),t=threadOf(id),last=t[t.length-1];
-  if(last&&last.resolved&&!(last.kind==="ack"&&threadCard(id)))return true;if(!it)return false;return it.coll==="initiatives"?it.doc.status==="done":it.coll==="waiting"?settled(it.doc):!!it.doc.done}
+  if(last&&last.resolved&&!(last.kind==="ack"&&threadCard(id)))return true;if(!it)return false;
+  const done=it.coll==="initiatives"?it.doc.status==="done":it.coll==="waiting"?settled(it.doc):!!it.doc.done;
+  return done&&!postAfterClose(id,it)}
+// #C941 (the owner on #T1825: Manager closed an ask, then answered his follow-up in the same thread; it had gone to Resolved and he never
+// saw the answer): when the owner wrote after the item's close (doneAt, else the answer's time) and a team post is newer than that word of
+// his, the thread is his to read again, under Needs you with an Ack, until his own word (an Ack or Close, ackWrites / closeWrites) is the
+// newest. Still resolved: a thread where he wrote nothing after the close (a reply stamped just after the close is part of the close:
+// fixture 30-closed-asks), a team-only note (#C919: every message an agent's), and his own Ack after the answer.
+// Asks only: a done card's or idea's thread ends with a thanks and a "shipped" as a matter of course (tests/tref-any-tab).
+function postAfterClose(id,it){if(it.coll!=="waiting")return false;const at=num(it.doc.doneAt)??num(it.doc.respondedAt);if(at==null||teamOnly(id))return false;
+  const mine=threadOf(id).filter(m=>m.from===OWNER&&m.at>at);return mine.length>0&&leadLast(id,mine[mine.length-1].at)}
 // The cards a thread became (#C364): a card names its thread (thread) or several (threads: []). Indexed once per data
 // update (renderAll makes state.initiatives anew).
 let tcOf=null,tcIx=new Map();
