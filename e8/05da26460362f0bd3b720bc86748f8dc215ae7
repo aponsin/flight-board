@@ -1,0 +1,1 @@
+SECURE #C939 build/ctx-list-vanishes@e805da2: page only; ctxAgents keeps the last non-empty list in state.ctxKept and returns it on an empty read; same render path, no new sink, no top-level code. - Security
