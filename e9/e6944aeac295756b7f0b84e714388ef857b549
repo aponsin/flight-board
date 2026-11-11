@@ -1,0 +1,1 @@
+SECURE. #C935 v4 collapse-next-held on main c93d95a, one commit, page only (HOOK_READS): a native details fold for the Next line and the hold end. heldShort and the 'Until:' text go through esc(); the fold's data-id is esc(i.id); next is the existing escaped markup moved, not rebuilt; new CSS is static. A test pins a hostile hold end being escaped.
