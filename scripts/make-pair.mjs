@@ -162,10 +162,10 @@ ${boardDeploySha ? `
 ## One command: lines 1 and 2 together (works over SSH)
 
 \`\`\`bash
-if [ "$(shasum -a 256 board-deploy.mjs | cut -c1-64)" = ${boardDeploySha} ]; then node board-deploy.mjs ${name}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi
+if [ "$(shasum -a 256 board-deploy.mjs | cut -c1-64)" = ${boardDeploySha} ]; then node board-deploy.mjs ${name} ${deploySha} ${treeSha}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi
 \`\`\`
 
-It checks the deploy file and the tree file against the hashes in this file first (CHECK FAILED, nothing run, if either differs), runs line 1, then line 2, and stops at the first one that fails. It ends with the DEPLOY OK and TREE OK lines. The hooks step, when this pair has one, stays by hand: it prints the line to paste. If you run this, skip the two lines below: they are the same two steps, by hand.
+The line itself carries the deploy file's and the tree file's hashes, so what runs is bound to what was signed, not to a file on this disk. It checks the deploy file and the tree file against those two hashes first (CHECK FAILED, nothing run, if either differs, or if the hashes in this steps file disagree with them), runs line 1, then line 2, and stops at the first one that fails. It ends with the DEPLOY OK and TREE OK lines. The hooks step, when this pair has one, stays by hand: it prints the line to paste. If you run this, skip the two lines below: they are the same two steps, by hand.
 
 ` : ""}## Line 1: deploy${boardDeploySha ? " (by hand)" : ""}
 

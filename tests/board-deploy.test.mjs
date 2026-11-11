@@ -203,15 +203,19 @@ const DEPLOY_F = `board-store-deploy-${NAME}.mjs`, TREE_F = `board-store-tree-${
 const bd = readFileSync(new URL("../scripts/pair/board-deploy.mjs", import.meta.url));
 // A folder like the owner's: stub deploy and tree files that leave a marker when they run, a hooks file, the generic script and a steps file in
 // the real form (stepsText), unless `tamper` changes a file after the hashes were taken.
-function folder({ deployBody, treeBody, tamper = {}, noHooks = false } = {}) {
+// `restamp`: the attack, a writer of the folder changes the file AND the steps file's two hash lines together (the steps then match the disk).
+// The returned `hashes` are the signed ones (of the untampered files): what the pasted line carries.
+function folder({ deployBody, treeBody, tamper = {}, noHooks = false, restamp = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "fb-c924-dir-"));
   const stub = (marker, ok, code = 0) => `import { writeFileSync } from "node:fs";\nwriteFileSync(new URL("./${marker}", import.meta.url), process.argv.slice(2).join(" ") + "\\n");\nconsole.log("${ok}");\nprocess.exit(${code});\n`;
   const text = { [DEPLOY_F]: deployBody ?? stub("deploy.ran", "DEPLOY OK: stub deployed"), [TREE_F]: treeBody ?? stub("tree.ran", "TREE OK: stub moved"), [HOOKS_F]: "// hooks\n" };
-  const steps = stepsText({ name: NAME, sha: SIGNED, prev: null, commits: [], paths: [], deploySha: sha256(text[DEPLOY_F]), treeSha: sha256(text[TREE_F]), folder: dir, hooksSha: noHooks ? null : sha256(text[HOOKS_F]), hookPaths: ["hooks/x.py"], boardDeploySha: sha256(bd) });
+  const hashes = [sha256(text[DEPLOY_F]), sha256(text[TREE_F])];
+  const inSteps = restamp ? [sha256(tamper[DEPLOY_F] ?? text[DEPLOY_F]), sha256(tamper[TREE_F] ?? text[TREE_F])] : hashes;
+  const steps = stepsText({ name: NAME, sha: SIGNED, prev: null, commits: [], paths: [], deploySha: inSteps[0], treeSha: inSteps[1], folder: dir, hooksSha: noHooks ? null : sha256(text[HOOKS_F]), hookPaths: ["hooks/x.py"], boardDeploySha: sha256(bd) });
   for (const [f, t] of Object.entries(text)) writeFileSync(join(dir, f), tamper[f] ?? t);
   writeFileSync(join(dir, "board-deploy.mjs"), bd);
   writeFileSync(join(dir, `board-store-${NAME}-steps.md`), steps);
-  return { dir, steps, ran: (m) => existsSync(join(dir, m)) };
+  return { dir, steps, hashes, ran: (m) => existsSync(join(dir, m)) };
 }
 const bin = (dir) => { // fake open / xdg-open that leave a marker if anything tries to open a browser
   const b = join(dir, "bin"); mkdirSync(b, { recursive: true });
@@ -220,12 +224,15 @@ const bin = (dir) => { // fake open / xdg-open that leave a marker if anything t
 };
 const sh = (dir, line, env = {}) => spawnSync("sh", ["-c", line], { cwd: dir, encoding: "utf8", env: { PATH: `${bin(dir)}:${process.env.PATH}`, SSH_CONNECTION: "10.0.0.2 51234 10.0.0.3 22", ...env } });
 const oneLiner = (steps) => steps.split("\n").find((l) => l.includes("shasum -a 256 board-deploy.mjs"));
-const runBd = (dir, name = NAME, env = {}) => spawnSync(process.execPath, [join(dir, "board-deploy.mjs"), name], { cwd: dir, encoding: "utf8", env: { PATH: `${bin(dir)}:${process.env.PATH}`, SSH_CONNECTION: "10.0.0.2 51234 10.0.0.3 22", ...env } });
+// Runs board-deploy.mjs as the pasted line does: name, deploy hash, tree hash (`hashes` null: no hash arguments).
+const runBd = (f, hashes = f.hashes, name = NAME, env = {}) => spawnSync(process.execPath, [join(f.dir, "board-deploy.mjs"), name, ...(hashes ?? [])], { cwd: f.dir, encoding: "utf8", env: { PATH: `${bin(f.dir)}:${process.env.PATH}`, SSH_CONNECTION: "10.0.0.2 51234 10.0.0.3 22", ...env } });
 
 test("steps file: the one-line command first, with board-deploy.mjs's own hash and the exact check form; the two long lines stay below it, unchanged", () => {
   const { steps } = folder();
   const h = sha256(bd);
-  assert.equal(oneLiner(steps), `if [ "$(shasum -a 256 board-deploy.mjs | cut -c1-64)" = ${h} ]; then node board-deploy.mjs ${NAME}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi`);
+  const dh0 = steps.match(/shasum -a 256 board-store-deploy-pc34\.mjs \| cut -c1-64\)" = ([0-9a-f]{64}) \]/)[1];
+  const th0 = steps.match(/shasum -a 256 board-store-tree-pc34\.mjs \| cut -c1-64\)" = ([0-9a-f]{64}) \]/)[1];
+  assert.equal(oneLiner(steps), `if [ "$(shasum -a 256 board-deploy.mjs | cut -c1-64)" = ${h} ]; then node board-deploy.mjs ${NAME} ${dh0} ${th0}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi`);
   assert.ok(!/shasum -c/.test(steps) && !/echo "[0-9a-f]{64} {2}/.test(steps), "never the echo-into-shasum -c form");
   const dh = steps.match(/shasum -a 256 board-store-deploy-pc34\.mjs \| cut -c1-64\)" = ([0-9a-f]{64}) \]/)[1];
   const th = steps.match(/shasum -a 256 board-store-tree-pc34\.mjs \| cut -c1-64\)" = ([0-9a-f]{64}) \]/)[1];
@@ -262,13 +269,13 @@ test("the one-line command runs both lines over SSH (SSH_CONNECTION set, no disp
   assert.ok(hookLine && r.stdout.includes("Line 3 (hooks) is still to be run by hand") && r.stdout.includes(hookLine), "line 3 is named, with the exact line from the steps file");
   assert.ok(!r.stdout.includes("DISPLAY"));
   const none = folder({ noHooks: true });
-  assert.match(runBd(none.dir).stdout, /no hooks step/);
+  assert.match(runBd(none).stdout, /no hooks step/);
 });
 
 test("a changed deploy or tree file is refused with CHECK FAILED and nothing runs, not even the other file", () => {
   for (const f of [DEPLOY_F, TREE_F]) {
     const w = folder({ tamper: { [f]: "// changed after signing\nconsole.log('DEPLOY OK: fake');\n" } });
-    const r = runBd(w.dir);
+    const r = runBd(w);
     assert.equal(r.status, 1);
     assert.match(r.stdout, new RegExp(`^CHECK FAILED: ${f} is not the signed file\\. Nothing was run\\. Paste this line to Manager\\.`, "m"));
     assert.ok(!w.ran("deploy.ran") && !w.ran("tree.ran"), `${f}: nothing ran`);
@@ -283,7 +290,7 @@ test("a changed deploy or tree file is refused with CHECK FAILED and nothing run
 
 test("line 2 never runs after a failed line 1; line 1's failure line is the last word", () => {
   const w = folder({ deployBody: 'console.log("DEPLOY FAILED: stub. Nothing further was run. Paste this line to Manager.");\nprocess.exit(1);\n' });
-  const r = runBd(w.dir);
+  const r = runBd(w);
   assert.equal(r.status, 1);
   assert.match(r.stdout, /DEPLOY FAILED: stub/);
   assert.ok(!w.ran("tree.ran"), "the tree step did not run");
@@ -291,36 +298,38 @@ test("line 2 never runs after a failed line 1; line 1's failure line is the last
   assert.match(r.stdout, /Stopped: board-store-deploy-pc34\.mjs did not finish/);
   // And a failed line 2 is reported, with the deploy having run.
   const t = folder({ treeBody: 'console.log("TREE FAILED: stub. Paste this line to Manager.");\nprocess.exit(1);\n' });
-  const r2 = runBd(t.dir);
+  const r2 = runBd(t);
   assert.equal(r2.status, 1); assert.ok(t.ran("deploy.ran")); assert.match(r2.stdout, /TREE FAILED/);
 });
 
 test("board-deploy over injected spawn: the two files in order as plain node runs, tree with update, no other command, no browser, whatever the environment", () => {
-  const { dir } = folder();
+  const { dir, hashes } = folder();
+  const [deploySha, treeSha] = hashes;
   const calls = [], lines = [];
   const spawn = (cmd, args, opts) => { calls.push({ cmd, args, opts }); return { status: 0 }; };
-  const r = boardDeploy({ name: NAME, dir, spawn, say: (l) => lines.push(l), node: "node" });
+  const r = boardDeploy({ name: NAME, dir, deploySha, treeSha, spawn, say: (l) => lines.push(l), node: "node" });
   assert.equal(r.ok, true);
   assert.deepEqual(calls.map((c) => [c.cmd, c.args.map((a) => a.split("/").pop())]), [["node", [DEPLOY_F]], ["node", [TREE_F, "update"]]]);
   for (const c of calls) { assert.equal(c.opts.stdio, "inherit"); assert.equal(c.opts.env, undefined, "the environment is passed on as it is"); }
   assert.ok(!JSON.stringify(calls.map((c) => [c.cmd, ...c.args.map((a) => a.split("/").pop())])).match(/login|open|browser|npx|wrangler/), "no login, no browser, no wrangler from this script");
   // A failing first spawn stops the run.
   const seen = [];
-  const r2 = boardDeploy({ name: NAME, dir, spawn: (c, a) => { seen.push(a[0].split("/").pop()); return { status: 1 }; }, say: () => {}, node: "node" });
+  const r2 = boardDeploy({ name: NAME, dir, deploySha, treeSha, spawn: (c, a) => { seen.push(a[0].split("/").pop()); return { status: 1 }; }, say: () => {}, node: "node" });
   assert.equal(r2.ok, false); assert.deepEqual(seen, [DEPLOY_F]);
   // A spawn that could not start at all stops it too.
   const seen2 = [];
-  assert.equal(boardDeploy({ name: NAME, dir, spawn: (c, a) => { seen2.push(1); return { status: null, error: new Error("ENOENT") }; }, say: () => {}, node: "node" }).ok, false);
+  assert.equal(boardDeploy({ name: NAME, dir, deploySha, treeSha, spawn: (c, a) => { seen2.push(1); return { status: null, error: new Error("ENOENT") }; }, say: () => {}, node: "node" }).ok, false);
   assert.equal(seen2.length, 1);
 });
 
 test("board-deploy refuses a wrong argument, a missing steps file, and a steps file whose two hashes disagree or are missing", () => {
-  const { dir, steps } = folder();
+  const { dir, steps, hashes } = folder();
+  const [deploySha, treeSha] = hashes;
   const say = [];
   for (const bad of [undefined, "", "34", "pc", "pc34; rm", "../pc34", "PC34"]) {
-    assert.equal(boardDeploy({ name: bad, dir, spawn: () => assert.fail("ran"), say: (l) => say.push(l) }).code, 2, String(bad));
+    assert.equal(boardDeploy({ name: bad, dir, deploySha, treeSha, spawn: () => assert.fail("ran"), say: (l) => say.push(l) }).code, 2, String(bad));
   }
-  assert.equal(boardDeploy({ name: "pc99", dir, spawn: () => assert.fail("ran"), say: (l) => say.push(l) }).ok, false);
+  assert.equal(boardDeploy({ name: "pc99", dir, deploySha, treeSha, spawn: () => assert.fail("ran"), say: (l) => say.push(l) }).ok, false);
   assert.match(say.at(-1), /CHECK FAILED: board-store-pc99-steps\.md is not in this folder/);
   const dh = steps.match(/Full sha256: deploy ([0-9a-f]{64})/)[1];
   const variants = {
@@ -330,7 +339,7 @@ test("board-deploy refuses a wrong argument, a missing steps file, and a steps f
   };
   for (const [why, text] of Object.entries(variants)) {
     writeFileSync(join(dir, `board-store-${NAME}-steps.md`), text);
-    const r = boardDeploy({ name: NAME, dir, spawn: () => assert.fail("ran"), say: (l) => say.push(l) });
+    const r = boardDeploy({ name: NAME, dir, deploySha, treeSha, spawn: () => assert.fail("ran"), say: (l) => say.push(l) });
     assert.equal(r.ok, false, why); assert.match(say.at(-1), /^CHECK FAILED: /, why);
   }
   assert.equal(readSteps("nothing", NAME).why.includes("Full sha256"), true);
@@ -351,11 +360,12 @@ test("make-pair copies board-deploy.mjs byte for byte and puts its sha256 in the
   assert.ok(readFileSync(join(out, "board-deploy.mjs")).equals(bd), "byte-identical");
   assert.equal(r.files["board-deploy.mjs"], sha256(bd));
   const steps = readFileSync(join(out, "board-store-pc34-steps.md"), "utf8");
-  assert.ok(oneLiner(steps).includes(`= ${sha256(bd)} ]; then node board-deploy.mjs pc34;`));
+  const dsha = sha256(readFileSync(join(out, "board-store-deploy-pc34.mjs"))), tsha = sha256(readFileSync(join(out, "board-store-tree-pc34.mjs")));
+  assert.ok(oneLiner(steps).includes(`= ${sha256(bd)} ]; then node board-deploy.mjs pc34 ${dsha} ${tsha};`), "the line carries all three hashes, in place");
   // The real generated pair is readable by the script: both hashes agree and match the files written.
   const parsed = readSteps(steps, "pc34");
-  assert.equal(parsed.deploy, sha256(readFileSync(join(out, "board-store-deploy-pc34.mjs"))));
-  assert.equal(parsed.tree, sha256(readFileSync(join(out, "board-store-tree-pc34.mjs"))));
+  assert.equal(parsed.deploy, dsha);
+  assert.equal(parsed.tree, tsha);
   assert.equal(parsed.hooksLine, null);
   // The generated deploy file and board-deploy.mjs parse.
   for (const f of ["board-deploy.mjs", "board-store-deploy-pc34.mjs", "board-store-tree-pc34.mjs"]) execFileSync(process.execPath, ["--check", join(out, f)], { stdio: "pipe" });
@@ -373,6 +383,75 @@ test("the private settings file is never committed: the push scan names it by it
   const hits = scanCommit("a".repeat(40), [], git);
   assert.ok(hits.some((h) => h.where.endsWith(":board.private.json") && /private settings file/.test(h.what)));
   assert.ok(!asked.some((a) => a.includes("board.private.json") && a.startsWith("cat-file")), "its text was never read");
+});
+
+test("the attack: a changed deploy or tree file with the steps file's hash lines edited to match is REFUSED, because the pasted hash differs; nothing runs", () => {
+  for (const f of [DEPLOY_F, TREE_F]) {
+    const w = folder({ tamper: { [f]: "// attacker's file\nconsole.log('DEPLOY OK: fake');\n" }, restamp: true });
+    // The steps file really does agree with the disk now (the attacker's edit is complete as far as the disk goes).
+    const parsed = readSteps(readFileSync(join(w.dir, `board-store-${NAME}-steps.md`), "utf8"), NAME);
+    assert.equal(parsed[f === DEPLOY_F ? "deploy" : "tree"], sha256(readFileSync(join(w.dir, f))), "the steps file matches the changed file");
+    const r = runBd(w);
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stdout, /^CHECK FAILED: /m);
+    assert.match(r.stdout, /Nothing was run/);
+    assert.ok(!w.ran("deploy.ran") && !w.ran("tree.ran"), `${f}: nothing ran`);
+  }
+});
+
+test("a steps file that disagrees with the pasted hashes is refused, naming both", () => {
+  const w = folder();
+  const other = "9".repeat(64);
+  const r = runBd(w, [other, w.hashes[1]]);
+  assert.equal(r.status, 1);
+  assert.ok(r.stdout.includes(w.hashes[0]) && r.stdout.includes(other), "both hashes are named");
+  assert.ok(!w.ran("deploy.ran") && !w.ran("tree.ran"));
+});
+
+test("the hashes are required: none or one is a usage line, exit 2, nothing runs", () => {
+  for (const hashes of [null, [], [sha256("x")]]) {
+    const w = folder();
+    const r = runBd(w, hashes);
+    assert.equal(r.status, 2, JSON.stringify(hashes));
+    assert.match(r.stdout, /^usage: node board-deploy\.mjs pc<n> <deploy sha256> <tree sha256>/m);
+    assert.ok(!w.ran("deploy.ran") && !w.ran("tree.ran"));
+  }
+});
+
+test("a malformed hash is refused and nothing runs: short, long, upper case, not hex, with spaces", () => {
+  const w = folder();
+  const good = w.hashes[0];
+  for (const bad of [good.slice(1), good + "0", good.toUpperCase(), "z".repeat(64), `${good.slice(0, 63)} `, "", "-c"]) {
+    for (const hashes of [[bad, w.hashes[1]], [w.hashes[0], bad]]) {
+      const r = runBd(w, hashes);
+      assert.notEqual(r.status, 0, JSON.stringify(hashes));
+      assert.ok(/CHECK FAILED|usage:/.test(r.stdout), r.stdout);
+      assert.ok(!w.ran("deploy.ran") && !w.ran("tree.ran"));
+    }
+  }
+});
+
+test("the matching case still runs both lines through the pasted line, ending with DEPLOY OK then TREE OK", () => {
+  const w = folder();
+  const r = runBd(w);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const out = r.stdout.trim().split("\n");
+  assert.match(out.at(-2), /^DEPLOY OK: /);
+  assert.match(out.at(-1), /^TREE OK: /);
+  assert.ok(w.ran("deploy.ran") && w.ran("tree.ran"));
+});
+
+test("the generated one-liner carries all three hashes in the right places, and run through sh against a rewritten folder it refuses", () => {
+  const w = folder();
+  const line = oneLiner(w.steps);
+  const [d, t] = w.hashes;
+  assert.equal(line, `if [ "$(shasum -a 256 board-deploy.mjs | cut -c1-64)" = ${sha256(bd)} ]; then node board-deploy.mjs ${NAME} ${d} ${t}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi`);
+  // The pasted line from the real steps file, against a folder an attacker rewrote (file and steps file together).
+  const a = folder({ tamper: { [TREE_F]: "// attacker\nconsole.log('TREE OK: fake');\n" }, restamp: true });
+  const stale = line.replace(new RegExp(`${NAME} [0-9a-f]{64} [0-9a-f]{64};`), `${NAME} ${d} ${t};`);
+  const r = sh(a.dir, stale);
+  assert.match(r.stdout, /CHECK FAILED/);
+  assert.ok(!a.ran("deploy.ran") && !a.ran("tree.ran"));
 });
 
 test("copying the script is the only way it travels: it names no secret and no real account", () => {
