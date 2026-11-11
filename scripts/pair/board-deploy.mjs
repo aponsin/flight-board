@@ -30,7 +30,8 @@ export function readSteps(text, name) {
   for (const kind of ["deploy", "tree"]) {
     const f = files[kind];
     // The hash in the file's own hash-checked line: the one the owner would check by hand.
-    const m = new RegExp(`shasum -a 256 ${f.replace(/\./g, "\\.")} \\| cut -c1-64\\)" = ([0-9a-f]{64}) \\]`).exec(text);
+    // #C921: since make-pair writes full paths, the file may carry its folder ("~/x/board-store-deploy-pc34.mjs"); the bare name still reads.
+    const m = new RegExp(`shasum -a 256 (?:[^\\s"'|]*/)?${f.replace(/\./g, "\\.")} \\| cut -c1-64\\)" = ([0-9a-f]{64}) \\]`).exec(text);
     if (!m || !listed[kind]) return { why: `the steps file does not carry a hash for ${f}` };
     if (m[1] !== listed[kind]) return { why: `the steps file names two different hashes for ${f}` };
     out[kind] = m[1];

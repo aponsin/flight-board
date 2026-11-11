@@ -223,23 +223,23 @@ const bin = (dir) => { // fake open / xdg-open that leave a marker if anything t
   return b;
 };
 const sh = (dir, line, env = {}) => spawnSync("sh", ["-c", line], { cwd: dir, encoding: "utf8", env: { PATH: `${bin(dir)}:${process.env.PATH}`, SSH_CONNECTION: "10.0.0.2 51234 10.0.0.3 22", ...env } });
-const oneLiner = (steps) => steps.split("\n").find((l) => l.includes("shasum -a 256 board-deploy.mjs"));
+// #C921: the line names board-deploy.mjs by the folder's full path.
+const oneLiner = (steps) => steps.split("\n").find((l) => l.startsWith("if [ ") && l.includes("/board-deploy.mjs | cut"));
 // Runs board-deploy.mjs as the pasted line does: name, deploy hash, tree hash (`hashes` null: no hash arguments).
 const runBd = (f, hashes = f.hashes, name = NAME, env = {}) => spawnSync(process.execPath, [join(f.dir, "board-deploy.mjs"), name, ...(hashes ?? [])], { cwd: f.dir, encoding: "utf8", env: { PATH: `${bin(f.dir)}:${process.env.PATH}`, SSH_CONNECTION: "10.0.0.2 51234 10.0.0.3 22", ...env } });
 
 test("steps file: the one-line command first, with board-deploy.mjs's own hash and the exact check form; the two long lines stay below it, unchanged", () => {
-  const { steps } = folder();
+  const { steps, dir } = folder();
   const h = sha256(bd);
-  const dh0 = steps.match(/shasum -a 256 board-store-deploy-pc34\.mjs \| cut -c1-64\)" = ([0-9a-f]{64}) \]/)[1];
-  const th0 = steps.match(/shasum -a 256 board-store-tree-pc34\.mjs \| cut -c1-64\)" = ([0-9a-f]{64}) \]/)[1];
-  assert.equal(oneLiner(steps), `if [ "$(shasum -a 256 board-deploy.mjs | cut -c1-64)" = ${h} ]; then node board-deploy.mjs ${NAME} ${dh0} ${th0}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi`);
+  const dh = steps.match(/shasum -a 256 \S*\/board-store-deploy-pc34\.mjs \| cut -c1-64\)" = ([0-9a-f]{64}) \]/)[1];
+  const th = steps.match(/shasum -a 256 \S*\/board-store-tree-pc34\.mjs \| cut -c1-64\)" = ([0-9a-f]{64}) \]/)[1];
+  // #C921: every file by the folder's full path, so the line runs from any folder.
+  assert.equal(oneLiner(steps), `if [ "$(shasum -a 256 ${dir}/board-deploy.mjs | cut -c1-64)" = ${h} ]; then node ${dir}/board-deploy.mjs ${NAME} ${dh} ${th}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi`);
   assert.ok(!/shasum -c/.test(steps) && !/echo "[0-9a-f]{64} {2}/.test(steps), "never the echo-into-shasum -c form");
-  const dh = steps.match(/shasum -a 256 board-store-deploy-pc34\.mjs \| cut -c1-64\)" = ([0-9a-f]{64}) \]/)[1];
-  const th = steps.match(/shasum -a 256 board-store-tree-pc34\.mjs \| cut -c1-64\)" = ([0-9a-f]{64}) \]/)[1];
-  // The by-hand lines, character for character as they were before #C924.
-  assert.ok(steps.includes(`if [ "$(shasum -a 256 ${DEPLOY_F} | cut -c1-64)" = ${dh} ]; then node ${DEPLOY_F}; else echo 'CHECK FAILED: ${DEPLOY_F} is not the signed file. Paste this line to Manager.'; fi\n`));
-  assert.ok(steps.includes(`if [ "$(shasum -a 256 ${TREE_F} | cut -c1-64)" = ${th} ]; then node ${TREE_F} update; else echo 'CHECK FAILED: ${TREE_F} is not the signed file. Paste this line to Manager.'; fi\n`));
-  assert.ok(steps.indexOf("board-deploy.mjs |") < steps.indexOf(`shasum -a 256 ${DEPLOY_F}`), "the one command comes first");
+  // The by-hand lines: as before #C924, with the full path (#C921).
+  assert.ok(steps.includes(`if [ "$(shasum -a 256 ${dir}/${DEPLOY_F} | cut -c1-64)" = ${dh} ]; then node ${dir}/${DEPLOY_F}; else echo 'CHECK FAILED: ${DEPLOY_F} is not the signed file. Paste this line to Manager.'; fi\n`));
+  assert.ok(steps.includes(`if [ "$(shasum -a 256 ${dir}/${TREE_F} | cut -c1-64)" = ${th} ]; then node ${dir}/${TREE_F} update; else echo 'CHECK FAILED: ${TREE_F} is not the signed file. Paste this line to Manager.'; fi\n`));
+  assert.ok(steps.indexOf("board-deploy.mjs |") < steps.indexOf(`${DEPLOY_F} |`), "the one command comes first");
   assert.match(steps, new RegExp(`Full sha256: deploy ${dh}, tree ${th}, board-deploy ${h}, hooks [0-9a-f]{64}\\.`));
   assert.deepEqual(lintPack(oneLiner(steps)), [], "the pack lint is clean on the new line");
   assert.deepEqual(lintPack(steps.split("\n").filter((l) => l.startsWith("if [ ")).join("\n")), []);
@@ -336,7 +336,7 @@ test("board-deploy refuses a wrong argument, a missing steps file, and a steps f
   const variants = {
     "two different deploy hashes": steps.replace(`Full sha256: deploy ${dh}`, `Full sha256: deploy ${"0".repeat(64)}`),
     "no Full line": steps.replace(/^Full sha256:.*$/m, ""),
-    "no hash-checked line for the tree": steps.split("\n").filter((l) => !l.includes(`shasum -a 256 ${TREE_F}`)).join("\n"),
+    "no hash-checked line for the tree": steps.split("\n").filter((l) => !l.includes(`${TREE_F} | cut`)).join("\n"),
   };
   for (const [why, text] of Object.entries(variants)) {
     writeFileSync(join(dir, `board-store-${NAME}-steps.md`), text);
@@ -344,6 +344,17 @@ test("board-deploy refuses a wrong argument, a missing steps file, and a steps f
     assert.equal(r.ok, false, why); assert.match(say.at(-1), /^CHECK FAILED: /, why);
   }
   assert.equal(readSteps("nothing", NAME).why.includes("Full sha256"), true);
+});
+
+test("#C921: readSteps reads a hash line that names the file by a full or ~ path; Still allowed: the bare name", () => {
+  const [d, t] = ["a".repeat(64), "b".repeat(64)];
+  const text = (pre) => [DEPLOY_F, TREE_F].map((f, i) => `if [ "$(shasum -a 256 ${pre}${f} | cut -c1-64)" = ${[d, t][i]} ]; then node ${pre}${f}; fi`).join("\n") + `\nFull sha256: deploy ${d}, tree ${t}.\n`;
+  for (const pre of ["", "/Users/o/board/", "~/Documents/Board/"]) {
+    const r = readSteps(text(pre), NAME);
+    assert.equal(r.deploy, d, pre); assert.equal(r.tree, t, pre);
+  }
+  // A path is not a way round the check: another file's name with the right ending, or a quote or space in the folder, does not read.
+  for (const pre of ["/x/evil-", "/x y/", "\"/x/"]) assert.ok(readSteps(text(pre), NAME).why, pre);
 });
 
 test("make-pair copies board-deploy.mjs byte for byte and puts its sha256 in the steps file's one-line command", () => {
@@ -362,7 +373,7 @@ test("make-pair copies board-deploy.mjs byte for byte and puts its sha256 in the
   assert.equal(r.files["board-deploy.mjs"], sha256(bd));
   const steps = readFileSync(join(out, "board-store-pc34-steps.md"), "utf8");
   const dsha = sha256(readFileSync(join(out, "board-store-deploy-pc34.mjs"))), tsha = sha256(readFileSync(join(out, "board-store-tree-pc34.mjs")));
-  assert.ok(oneLiner(steps).includes(`= ${sha256(bd)} ]; then node board-deploy.mjs pc34 ${dsha} ${tsha};`), "the line carries all three hashes, in place");
+  assert.ok(oneLiner(steps).includes(`= ${sha256(bd)} ]; then node ${out}/board-deploy.mjs pc34 ${dsha} ${tsha};`), "the line carries all three hashes, in place");
   // The real generated pair is readable by the script: both hashes agree and match the files written.
   const parsed = readSteps(steps, "pc34");
   assert.equal(parsed.deploy, dsha);
@@ -446,10 +457,11 @@ test("the generated one-liner carries all three hashes in the right places, and 
   const w = folder();
   const line = oneLiner(w.steps);
   const [d, t] = w.hashes;
-  assert.equal(line, `if [ "$(shasum -a 256 board-deploy.mjs | cut -c1-64)" = ${sha256(bd)} ]; then node board-deploy.mjs ${NAME} ${d} ${t}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi`);
+  assert.equal(line, `if [ "$(shasum -a 256 ${w.dir}/board-deploy.mjs | cut -c1-64)" = ${sha256(bd)} ]; then node ${w.dir}/board-deploy.mjs ${NAME} ${d} ${t}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi`);
   // The pasted line from the real steps file, against a folder an attacker rewrote (file and steps file together).
   const a = folder({ tamper: { [TREE_F]: "// attacker\nconsole.log('TREE OK: fake');\n" }, restamp: true });
-  const stale = line.replace(new RegExp(`${NAME} [0-9a-f]{64} [0-9a-f]{64};`), `${NAME} ${d} ${t};`);
+  // #C921: the line names its folder, so it is pointed at the rewritten one.
+  const stale = line.replaceAll(w.dir, a.dir).replace(new RegExp(`${NAME} [0-9a-f]{64} [0-9a-f]{64};`), `${NAME} ${d} ${t};`);
   const r = sh(a.dir, stale);
   assert.match(r.stdout, /CHECK FAILED/);
   assert.ok(!a.ran("deploy.ran") && !a.ran("tree.ran"));

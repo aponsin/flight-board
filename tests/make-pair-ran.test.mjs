@@ -122,7 +122,7 @@ test("a gate/stop.mjs change writes the hooks file from the last one, moves the 
   const steps = readFileSync(join(out, "board-store-pc8-steps.md"), "utf8");
   assert.match(steps, /Three lines \(the third installs the hooks/);
   assert.match(steps, /## Line 3: hooks/);
-  assert.ok(steps.includes(`shasum -a 256 board-store-hooks-pc8.mjs | cut -c1-64)" = ${h} ]; then node board-store-hooks-pc8.mjs;`));
+  assert.ok(steps.includes(`shasum -a 256 ${out}/board-store-hooks-pc8.mjs | cut -c1-64)" = ${h} ]; then node ${out}/board-store-hooks-pc8.mjs;`));
   assert.match(steps, /Hook files changed since .*: gate\/stop\.mjs, hooks\/send-refused-cue\.py/);
   assert.match(steps, new RegExp(`hooks ${h}\\.`));
 });
