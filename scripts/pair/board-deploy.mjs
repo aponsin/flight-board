@@ -10,6 +10,7 @@
 //      first). Each prints its own DEPLOY OK or TREE OK line, which are the last lines printed.
 // Line 3 (the hooks) stays by hand: this file only says it is still to be run, and prints no line for it. A hooks line read from the steps file on
 // disk could carry another hash, so the owner pastes line 3 from the pair's post, never from this output.
+// The undo is `node board-deploy.mjs rollback pc34 <deploySha>` (#C928, boardRollback below), bound the same way.
 // It opens no browser and needs no display: wrangler gets the owner's Cloudflare token from board.private.json (the deploy file reads it);
 // without that file the deploy file's own login applies. It reads, prints and writes no secret.
 import { spawnSync } from "node:child_process";
@@ -75,9 +76,35 @@ export function boardDeploy({ name, dir, deploySha, treeSha, spawn = spawnSync, 
   return { ok: true, code: 0 };
 }
 
+// #C928: the undo, with the same token: `node board-deploy.mjs rollback pc34 <deploySha>`. It is bound the same way (the pasted line carries the
+// deploy file's hash; the steps file must name the same one and the file on disk must be that file) and then runs the signed deploy file with
+// `rollback`, which puts the Worker back on its previous version with the credentials from board.private.json (no browser, works over SSH). It
+// needs no tree hash: it runs nothing else, and the tree step has its own `back`. The deploy file prints ROLLBACK OK or ROLLBACK FAILED.
+export function boardRollback({ name, dir, deploySha, spawn = spawnSync, read = readFileSync, exists = existsSync, say = console.log, node = process.execPath }) {
+  const refuse = (why) => { say(`CHECK FAILED: ${why}. Nothing was run. Paste this line to Manager.`); return { ok: false, code: 1 }; };
+  const usage = "usage: node board-deploy.mjs rollback pc<n> <deploy sha256>   (both are on the pasted line, for example pc34)";
+  if (!/^pc\d{1,6}$/.test(String(name)) || deploySha === undefined) { say(usage); return { ok: false, code: 2 }; }
+  if (!HASH.test(String(deploySha))) { say("CHECK FAILED: the hash on the command line is not 64 hex characters. Nothing was run."); say(usage); return { ok: false, code: 2 }; }
+  const stepsFile = `board-store-${name}-steps.md`, f = `board-store-deploy-${name}.mjs`;
+  if (!exists(join(dir, stepsFile))) return refuse(`${stepsFile} is not in this folder`);
+  const steps = readSteps(String(read(join(dir, stepsFile), "utf8")), name);
+  if (steps.why) return refuse(steps.why);
+  if (steps.deploy !== String(deploySha)) return refuse(`the steps file names ${steps.deploy} for ${f} but the command line gives ${deploySha}`);
+  let bytes;
+  try { bytes = read(join(dir, f)); } catch { return refuse(`${f} cannot be read`); }
+  if (sha256(bytes) !== String(deploySha)) return refuse(`${f} is not the signed file`);
+  say(`${name}: rolling the Worker back with ${f} (it matches its signed hash). wrangler asks you to confirm: answer y.`);
+  const r = spawn(node, [join(dir, f), "rollback"], { cwd: dir, stdio: "inherit" });
+  if (r.status !== 0) { say(`Stopped: ${f} rollback did not finish (exit ${r.status ?? r.error?.message ?? "none"}).`); return { ok: false, code: 1 }; }
+  return { ok: true, code: 0 };
+}
+
 // Run as a script (compared by real path: a folder reached through a link, as /tmp is on a Mac, must still run, never print nothing and exit 0).
 const asScript = (() => { try { return Boolean(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (asScript) {
-  const r = boardDeploy({ name: process.argv[2], deploySha: process.argv[3], treeSha: process.argv[4], dir: dirname(realpathSync(fileURLToPath(import.meta.url))) });
+  const dir = dirname(realpathSync(fileURLToPath(import.meta.url)));
+  const r = process.argv[2] === "rollback"
+    ? boardRollback({ name: process.argv[3], deploySha: process.argv[4], dir })
+    : boardDeploy({ name: process.argv[2], deploySha: process.argv[3], treeSha: process.argv[4], dir });
   if (!r.ok) process.exit(r.code);
 }

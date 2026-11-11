@@ -52,7 +52,8 @@ test("make-pair writes every line with the folder's full path and no cd line", (
   assert.equal(r.ok, true, r.why);
   const steps = readFileSync(join(out, "board-store-pc1-steps.md"), "utf8");
   const blocks = [...steps.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1].trim());
-  assert.equal(blocks.length, 3, "the one command (#C924) and the two lines by hand, nothing else to paste");
+  assert.equal(blocks.length, 4, "the one command (#C924), the one-command undo of line 1 (#C928) and the two lines by hand, nothing else to paste");
+  assert.ok(blocks[2].includes(`node ${out}/board-deploy.mjs rollback pc1 `), "the undo follows line 1 (blocks: the one command, line 1, its undo, line 2)");
   for (const b of blocks) {
     assert.equal(askRefusal(terminal([b])), null, "each line passes the Terminal rule");
     assert.doesNotMatch(b, /(^|\s)node board-|256 board-/, "no relative file");
