@@ -14,9 +14,11 @@ export function remoteHeads(git, remote) {
 
 const ok = (fn) => { try { fn(); return true; } catch { return false; } };
 
-// The review phases whose notes ref holds a note on the commit.
+// The review phases whose notes ref holds a note on the commit. A note that starts "FINDINGS" is the review sending the commit back, not a
+// sign-off (#C852, as collector/state.mjs tipState reads it).
 export function signedPhases(git, sha, notes) {
-  return new Set(Object.entries(notes).filter(([, ref]) => ok(() => git(["notes", `--ref=${ref}`, "show", sha]))).map(([p]) => p));
+  const note = (ref) => { try { return String(git(["notes", `--ref=${ref}`, "show", sha])); } catch { return null; } };
+  return new Set(Object.entries(notes).filter(([, ref]) => { const t = note(ref); return t !== null && !/^\s*FINDINGS\b/.test(t); }).map(([p]) => p));
 }
 
 // #C671: when each signed review was signed, from the notes ref itself: the newest commit of that ref that touched the
