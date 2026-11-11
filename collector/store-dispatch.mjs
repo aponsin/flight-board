@@ -26,17 +26,24 @@ const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 //   live, or on main with no repo word: nobody (the lead closes it)
 export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security", ship: "Release" };
 const ROLE_OF_NOTE = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security" };
-export function turnsOf(card, e) {
+// #C859 slice 3 (stack mode): ctx.stackBranch is the branch of the stack the card's repository has (when its switch is on), named in a
+// builder's turn; a card the evidence reads as outside the stack (e.stack.outside) is told to re-cut; a reviewer is sent the stack tip.
+export function turnsOf(card, e, ctx = {}) {
   const phase = e?.phase ?? e?.lit?.[0];
-  const sha = typeof e?.headSha12 === "string" && /^[0-9a-f]{12}$/.test(e.headSha12) ? e.headSha12 : undefined;
+  // Only with the switch on for the card's repository (ctx.stackOn): evidence left from when it was on says nothing once it is off.
+  const stack = ctx.stackOn === true && e?.stack && typeof e.stack === "object" ? e.stack : null;
+  const tip = stack && typeof stack.tip === "string" && /^[0-9a-f]{12}$/.test(stack.tip) ? stack.tip : undefined;
+  const branch = ctx.stackBranch ?? (typeof stack?.branch === "string" ? stack.branch : undefined);
+  const sha = tip ?? (typeof e?.headSha12 === "string" && /^[0-9a-f]{12}$/.test(e.headSha12) ? e.headSha12 : undefined);
   const signed = (Array.isArray(e?.signed) ? e.signed : []).filter((s) => typeof s === "string" && Object.hasOwn(ROLE_OF_NOTE, s));
   const signedBy = signed.map((s) => ROLE_OF_NOTE[s]);
-  const owner = { role: card.owner_role, phase: "build", step: "build" };
+  const owner = { role: card.owner_role, phase: "build", step: "build", ...(branch ? { stack: branch } : {}) };
+  if (stack?.outside === true && e?.onMain !== true) return [{ role: card.owner_role, phase: "build", step: "outside", ...(branch ? { stack: branch } : {}) }];
   if (typeof phase !== "string" || phase === "plan" || phase === "build") return [owner];
   // #C852: a review whose note on this commit starts FINDINGS has sent it back: the fix is the owner's turn, and no reviewer is woken to
   // look at a commit already rejected. It is a fact of this sha (evidence.findings), so a new commit clears it without anyone's step.
   const findings = (Array.isArray(e?.findings) ? e.findings : []).filter((s) => typeof s === "string" && Object.hasOwn(ROLE_OF_NOTE, s));
-  if (findings.length && Object.hasOwn(ROLE_OF_NOTE, phase)) return [{ role: card.owner_role, phase: "build", step: "rework", sha, signed: signedBy }];
+  if (findings.length && Object.hasOwn(ROLE_OF_NOTE, phase)) return [{ role: card.owner_role, phase: "build", step: "rework", sha, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
   if (phase === "ship") {
     if (e.onMain === true) return typeof card.repo === "string" && card.repo !== "" ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, signed: signedBy }] : [];
     return [{ role: PHASE_LANES.ship, phase: "ship", step: "land", sha, signed: signedBy }];
@@ -66,6 +73,13 @@ export function dispatchInput(view, now) {
     if (typeof list === "string") { try { list = JSON.parse(list); } catch { return []; } }
     return Array.isArray(list) ? list.filter((d) => typeof d === "string" && d !== c.id && open.has(d) && phaseOf(d) !== "live") : [];
   };
+  // #C859 slice 3 (stack mode): the board repository's switch is on (a card with no repo word, or "flight-board", is the board's). The stack's
+  // branch is the one the evidence names on any of its cards; a builder's turn carries it, and a reviewer is not woken for a card in the stack
+  // while a card of the same repository still has a build turn (design 3: Checker and Security are woken once, when no builder has a card queued).
+  const switchOn = (Array.isArray(view?.stackSwitch) ? view.stackSwitch : []).some((s) => s && s.repo === "board" && s.stack === 1);
+  const boardCard = (c) => !c.repo || c.repo === "flight-board";
+  const stackBranch = switchOn ? all.filter((c) => c && typeof c.id === "string" && boardCard(c)).map((c) => ev[`cards.${c.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
+  const BUILD_STEPS = new Set(["build", "rework", "outside"]);
   for (const c of all) {
     if (!c || typeof c.id !== "string" || !CARD_ID.test(c.id) || typeof c.owner_role !== "string") continue;
     if (waitsOn(c).length) continue;
@@ -76,8 +90,13 @@ export function dispatchInput(view, now) {
     if ((e?.phase ?? e?.lit?.[0]) === "live") continue;
     // #C850: a hold with an end (a card the lead put on hold) is skipped; the stall rule brings it back when the hold ends.
     if (c.hold_end) continue;
-    cards.push({ id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: turnsOf(c, e) });
+    const inBoard = switchOn && boardCard(c);
+    cards.push({ id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: turnsOf(c, e, inBoard ? { stackOn: true, stackBranch } : {}), inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true });
   }
+  if (switchOn && cards.some((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step)))) {
+    for (const k of cards) if (k.inStack) k.turns = k.turns.filter((t) => t.step !== "review");
+  }
+  for (const k of cards) { delete k.inBoard; delete k.inStack; }
   // A card with an open ask is waiting for the owner or the lead, not for its agent. Open = not closed and not answered, as on the old
   // board (!done && !response): a withdrawn approval has its answer cleared and waits for the owner's Approve again, so it is still open.
   const asked = new Set();

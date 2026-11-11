@@ -160,7 +160,11 @@ export const DISPATCH_STEPS = {
   review: "is pushed; review it (your verdict is the git note on that commit)",
   land: "is signed; land it (the notes on that exact commit, a clean dry run, the owner's standing go)",
   pair: "is landed and not deployed; build the deploy pair",
+  outside: "is outside the stack (its branch was not cut from the stack tip); re-cut it on the stack tip and push",
 };
+// #C859 slice 3 (stack mode, design 3): the stack branch a builder's turn names, a plain branch name only (the line is built from fixed text).
+export const STACK_BRANCH = /^[A-Za-z0-9._\/-]{1,100}$/;
+const stackBranch = (b) => (typeof b === "string" && STACK_BRANCH.test(b) && !b.startsWith("-") ? b : null);
 export const dispatchSeenFile = (role) => `dispatch-seen-${role}.json`, dispatchPidFile = (role) => `dispatch-watch-${role}.json`;
 // #C848: what the board woke a role for, kept past the moment dispatch.json drops the pair (the role is working then, not idle). The role's
 // watch writes { at, cards } when it prints a DISPATCH line; the Stop hook reads it, and writes { at } in the checked file once it has judged
@@ -191,6 +195,7 @@ export function dispatchItems({ cards, agents, asked = new Set(), roster = [], l
         ...(phase && Object.hasOwn(DISPATCH_STEPS, t.step) ? { phase, step: t.step } : {}),
         ...(phase && Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? { num: card.num } : {}),
         ...(phase && SHA12.test(String(t.sha)) ? { sha: t.sha } : {}),
+        ...(phase && stackBranch(t.stack) ? { stack: t.stack } : {}),
         ...(phase && Array.isArray(t.signed) ? { signed: t.signed.filter((s) => PLAIN_ROLE.test(String(s))).slice(0, 4) } : {}),
       });
     }
@@ -211,7 +216,8 @@ export const dispatchLine = (i) => {
     const signers = Array.isArray(i.signed) ? i.signed.filter((s) => typeof s === "string" && PLAIN_ROLE.test(s)).slice(0, 4) : [];
     const who = signers.length ? ` signed by ${signers.join(" and ")}` : "";
     const card = Number.isInteger(i.num) ? `#C${i.num}` : i.card;
-    return `DISPATCH ${card} at ${i.phase}: ${SHA12.test(String(i.sha)) ? `${i.sha}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
+    const on = stackBranch(i.stack) ? `; stack mode is on, the stack branch is ${i.stack}: one commit per card, rebased on its tip before you push` : "";
+    return `DISPATCH ${card} at ${i.phase}: ${SHA12.test(String(i.sha)) ? `${i.sha}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
   }
   return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;
 };

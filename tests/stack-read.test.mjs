@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
-import { cardStates, remoteTips } from "../collector/state.mjs";
+import { cardStates, remoteTips, readStacks } from "../collector/state.mjs";
+import { stacksOn } from "../collector/store-cards.mjs";
 import { stateErrors } from "../collector/state-schema.mjs";
 
 // parents: { sha: parentSha }. isAncestor(a, b): a is b or on b's first-parent line.
@@ -17,14 +18,15 @@ const P = { c1: "c0", c2: "c1", c3: "c2", c4: "c3", x1: "c0", c0: null };
 test("three cards on one chain are one stack under the tip, in id order, with the tip and the size", () => {
   const s = readStack({ heads: { a: "c1", b: "c2", c: "c3" }, tips: [{ branch: "build/c", sha: "c3", at: 3 }, { branch: "build/b", sha: "c2", at: 2 }], isAncestor: history(P) });
   assert.deepEqual(s, { tip: "c3", branch: "build/c", members: ["a", "b", "c"], outside: [] });
-  assert.deepEqual(stackFields(s), { a: { tip: "c3", size: 3 }, b: { tip: "c3", size: 3 }, c: { tip: "c3", size: 3 } });
+  assert.deepEqual(stackFields(s), { a: { tip: "c3", size: 3, branch: "build/c" }, b: { tip: "c3", size: 3, branch: "build/c" }, c: { tip: "c3", size: 3, branch: "build/c" } });
+  assert.deepEqual(stackFields({ ...s, branch: "--all" }).a, { tip: "c3", size: 3 }, "a branch name git could take for a flag is not carried");
 });
 
 test("a branch not cut from the stack tip is outside the stack, whoever built it", () => {
   const s = readStack({ heads: { a: "c1", b: "c2", z: "x1" }, tips: [{ branch: "build/b", sha: "c2", at: 2 }, { branch: "build/z", sha: "x1", at: 9 }], isAncestor: history(P) });
   assert.deepEqual(s.members, ["a", "b"]);
   assert.deepEqual(s.outside, ["z"]);
-  assert.deepEqual(stackFields(s).z, { outside: true });
+  assert.deepEqual(stackFields(s).z, { outside: true, branch: "build/b" });
 });
 
 test("a tie goes to the newest tip, then the branch name; the same input gives the same answer", () => {
@@ -84,9 +86,52 @@ test("cardStates adds no stack field for a switch that is off, and reads the cha
   const run = (stacks) => cardStates({ cards, config: cfg, repos: { "": s.repo() }, now: (T0 + 100) * 1000, stacks });
   for (const id of Object.keys(run([]))) assert.equal(run([])[id].stack, undefined, `${id}: the switch off is today's reading`);
   const on = run([""]);
-  for (const id of ["card-one", "card-two", "card-three"]) assert.deepEqual(on[id].stack, { tip: three.slice(0, 12), size: 3 }, id);
-  assert.deepEqual(on["card-four"].stack, { outside: true });
+  for (const id of ["card-one", "card-two", "card-three"]) assert.deepEqual(on[id].stack, { tip: three.slice(0, 12), size: 3, branch: "build/stack" }, id);
+  assert.deepEqual(on["card-four"].stack, { outside: true, branch: "build/stack" });
+  assert.deepEqual(["card-one", "card-two", "card-three"].map((id) => on[id].headSha12 !== null), [true, true, true], "the middle card is read at its own commit too");
   assert.deepEqual(stateErrors({ v: 1, id: "t", cards: { k: { ...on["card-two"] } } }).filter((e) => /stack/.test(e)), [], "the field passes the schema");
+});
+
+test("the switch reaches the probe through stacks.json: the board row on is [\"\"], anything else is off, and a stale or odd file is off", () => {
+  assert.deepEqual(stacksOn([{ repo: "board", stack: 1 }, { repo: "product", stack: 0 }]), [""]);
+  assert.deepEqual(stacksOn([{ repo: "board", stack: 0 }, { repo: "product", stack: 1 }]), [], "the product's switch is its own card");
+  assert.deepEqual(stacksOn(undefined), []);
+  const NOW2 = 5_000_000;
+  const file = (f) => () => ({ whole: true, text: JSON.stringify(f) });
+  assert.deepEqual(readStacks("d", NOW2, file({ at: NOW2 - 1000, stacks: [""] })), [""]);
+  assert.deepEqual(readStacks("d", NOW2, file({ at: NOW2 - 31 * 60e3, stacks: [""] })), [], "older than 30 minutes");
+  assert.deepEqual(readStacks("d", NOW2, file({ at: NOW2, stacks: "x" })), []);
+  assert.deepEqual(readStacks("d", NOW2, () => null), []);
+  assert.deepEqual(readStacks("d", NOW2, () => { throw new Error("none"); }), []);
+});
+
+function chain() {
+  const s = scratch();
+  s.g(["checkout", "-qb", "build/stack"]);
+  const one = s.commit(10, "a.md", "card-one"); s.commit(20, "b.md", "card-two"); const three = s.commit(30, "c.md", "card-three");
+  s.g(["checkout", "-q", "main"]);
+  s.sync();
+  const run = () => cardStates({ cards: ["card-one", "card-two", "card-three"].map((id) => ({ id })), config: cfg, repos: { "": s.repo() }, now: (T0 + 100) * 1000, stacks: [""] });
+  return { s, one, three, run };
+}
+
+test("a note on the stack tip signs every card under it (design 4); without the switch the notes stay the card's own", () => {
+  const { s, three, run } = chain();
+  for (const ref of Object.values(cfg.collector.notes)) s.g(["notes", `--ref=${ref}`, "add", "-m", "PASS", three]);
+  const on = run();
+  for (const id of ["card-one", "card-two", "card-three"]) assert.deepEqual(on[id].signed, ["checker", "security"], id);
+  const off = cardStates({ cards: ["card-one", "card-two", "card-three"].map((id) => ({ id })), config: cfg, repos: { "": s.repo() }, now: (T0 + 100) * 1000 });
+  assert.deepEqual(off["card-three"].signed, ["checker", "security"], "the tip's own card");
+  assert.deepEqual(off["card-one"].signed, [], "a card under it, switch off: not covered");
+});
+
+test("FINDINGS on the tip beats a PASS on a card's own commit: no card under the tip reads as signed by that review", () => {
+  const { s, one, three, run } = chain();
+  s.g(["notes", "--ref=refs/notes/checker", "add", "-m", "PASS", one]);
+  s.g(["notes", "--ref=refs/notes/checker", "add", "-m", "FINDINGS F1 something", three]);
+  const on = run();
+  assert.deepEqual(on["card-one"].signed, [], "card-one's own PASS is overruled");
+  assert.deepEqual(on["card-two"].findings, ["checker"]);
 });
 
 test("a repository the switch names but the probe has no clone for is skipped, and a stack of one card carries nothing", () => {

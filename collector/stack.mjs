@@ -30,10 +30,13 @@ export function readStack({ heads, tips, isAncestor }) {
 
 // What each card's state carries for the page and the dispatch: { tip: <12 hex>, size } for a member, { outside: true } for a card not cut
 // from the tip. A stack of one card is no stack: it carries nothing (the switch off is today's reading).
+// The stack's branch rides along (design 3: the builder's wake names it, and an outsider is told which tip to cut from) when it is a plain name.
+export const STACK_BRANCH = /^[A-Za-z0-9._\/-]{1,100}$/;
 export function stackFields(stack) {
   if (!stack || stack.members.length < 2) return {};
   const out = {};
-  for (const id of stack.members) out[id] = { tip: stack.tip.slice(0, 12), size: stack.members.length };
-  for (const id of stack.outside) out[id] = { outside: true };
+  const branch = STACK_BRANCH.test(stack.branch) && !stack.branch.startsWith("-") ? { branch: stack.branch } : {};
+  for (const id of stack.members) out[id] = { tip: stack.tip.slice(0, 12), size: stack.members.length, ...branch };
+  for (const id of stack.outside) out[id] = { outside: true, ...branch };
   return out;
 }

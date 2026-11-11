@@ -86,7 +86,10 @@ const CARD = {
   branches: (v) => Array.isArray(v) && v.length >= 2 && v.length <= MAX_BRANCHES,
   // #C859 slice 2: where the card stands in its repository's stack, read from git (collector/stack.mjs): { tip, size } for a card under the
   // stack tip (a stack of two or more), or { outside: true } for a card not cut from it. Only for a repository whose stack switch is on.
-  stack: (v) => plain(v) && ((Object.keys(v).length === 2 && SHA12.test(v.tip) && Number.isInteger(v.size) && v.size >= 2 && v.size <= MAX_CARDS) || (Object.keys(v).length === 1 && v.outside === true)),
+  // branch (optional) is the stack's branch: the builder's wake names it, an outsider is told which tip to cut from.
+  stack: (v) => plain(v) && Object.keys(v).every((k) => ["tip", "size", "branch", "outside"].includes(k))
+    && (v.branch === undefined || (typeof v.branch === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(v.branch) && !v.branch.startsWith("-")))
+    && ((v.outside === true && v.tip === undefined && v.size === undefined) || (v.outside === undefined && SHA12.test(v.tip) && Number.isInteger(v.size) && v.size >= 2 && v.size <= MAX_CARDS)),
   at: isTime,
 };
 const { num: _n, at: _a, branches: _b, stack: _s, ...BRANCH_FIELDS } = CARD;

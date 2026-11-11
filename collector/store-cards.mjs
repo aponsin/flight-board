@@ -33,12 +33,22 @@ export function mirrorCard(c) {
 }
 
 // The store's open cards, from its own typed read as the probe.
-export async function storeCards({ base, headers, fetchImpl = fetch }) {
+export async function storeCards(opts) { return (await storeRead(opts)).cards; }
+// The cards and the stack switch of one read of the view. The switch rows are { repo, stack } ("board": the team's own repository, "" in the
+// probe's repository map); a view from before the switch has none, which reads as off.
+export async function storeRead({ base, headers, fetchImpl = fetch }) {
   const r = await fetchImpl(`${base}/api/view`, { headers, redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!r.ok) throw new Error(`view answered ${r.status}`);
   const v = await r.json();
   if (!Array.isArray(v?.cards)) throw new Error("view has no cards");
-  return v.cards.filter((c) => c && CARD_ID.test(String(c.id)));
+  return { cards: v.cards.filter((c) => c && CARD_ID.test(String(c.id))), stackSwitch: Array.isArray(v.stackSwitch) ? v.stackSwitch : [] };
+}
+
+// #C859 slice 3: the repositories (by the probe's names: "" is the team's own) whose stack switch is on. Only the board repository's switch
+// reaches the probe here; the product's is its own card.
+export const STACKS_FILE = "stacks.json";
+export function stacksOn(stackSwitch) {
+  return (Array.isArray(stackSwitch) ? stackSwitch : []).some((s) => s && s.repo === "board" && s.stack === 1) ? [""] : [];
 }
 
 // Writes <dir>/<id>/mirror/initiatives/<card>.json for every card and removes the ones the store no longer has, then stamps the
@@ -70,8 +80,12 @@ export function privateConfig(raw, dir) {
 export async function prepareStoreState({ privateDir, stateFile, configPath, base, headers, fetchImpl = fetch, now = Date.now(), readText = (p) => readFileSync(p, "utf8"), log = () => {} }) {
   const boardId = basename(dirname(stateFile));
   if (!/^[A-Za-z0-9]{6,64}$/.test(boardId)) throw new Error("the state path has no board id");
-  const cards = await storeCards({ base, headers, fetchImpl });
+  const { cards, stackSwitch } = await storeRead({ base, headers, fetchImpl });
   const m = syncMirror({ cards, dir: privateDir, boardId, now });
+  // state.mjs reads it (readStacks); written whole under a temporary name, as the mirror's files are.
+  const sf = join(privateDir, boardId, STACKS_FILE);
+  writeFileSync(`${sf}.tmp`, JSON.stringify({ at: now, stacks: stacksOn(stackSwitch) }), { mode: 0o600 });
+  renameSync(`${sf}.tmp`, sf);
   const seeded = seedUsage({ from: dirname(stateFile), to: join(privateDir, boardId) });
   const cfgPath = join(privateDir, boardId, "config.json");
   writeFileSync(cfgPath, JSON.stringify(privateConfig(JSON.parse(readText(configPath)), privateDir)), { mode: 0o600 });

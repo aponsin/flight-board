@@ -506,7 +506,9 @@ export function signedTimesOf(git, sha, notes, signed, fallback = null) {
   }
   return out;
 }
-function tipState(card, tip, repo, config, now, declared) {
+// `cover` (#C859 slice 3, design 4): the full sha of the stack tip the card sits under. A note on the tip counts for every card whose commits
+// are ancestors of it, so the card's sign-offs (and findings) are its own commit's together with the tip's.
+function tipState(card, tip, repo, config, now, declared, cover = null) {
   // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
   // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
   const notesOn = (sha) => Object.entries(repo.notes).map(([p, ref]) => { let t = null; try { t = repo.git(["notes", `--ref=${ref}`, "show", sha]); } catch { /* none */ } return t === null || t === undefined || t === false ? null : [p, String(t)]; }).filter(Boolean);
@@ -523,7 +525,10 @@ function tipState(card, tip, repo, config, now, declared) {
   // #C671: a pushed branch named for the card with no commit of its own sits at a main commit: it is work started (build), and
   // main's sign-off notes and deploy are not the card's.
   const bare = !landed && !after && atMain && bareBranch(card, head);
-  const signed = bare ? [] : signedOn(after ? after.sha : tip.sha);
+  const coverSha = cover && !bare && !landed && !after && /^[0-9a-f]{40}$/.test(String(cover)) ? cover : null;
+  // A review that sent the tip back (FINDINGS) is no sign-off for any card under it, whatever its note on the card's own commit says.
+  const sentBack = coverSha ? findingsOn(coverSha) : [];
+  const signed = bare ? [] : [...new Set([...signedOn(after ? after.sha : tip.sha), ...(coverSha ? signedOn(coverSha) : [])])].filter((p) => !sentBack.includes(p)).sort();
   const onMain = atMain && !bare;
   const deployed = onMain && !!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
@@ -538,8 +543,9 @@ function tipState(card, tip, repo, config, now, declared) {
   const unsigned = onMain ? [] : reviewsFor(card, cfg).filter((p) => !signed.includes(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
   // reviews: when each review the repository shows signed on the tip was signed (derive.mjs derivePhase, #C671); none for a bare
   // branch, a tip read as a main commit, or one with no sign-offs.
-  const reviews = !bare && !onMain && signed.length && typeof repo.git === "function" && repo.notes ? signedTimesOf(repo.git, after ? after.sha : tip.sha, repo.notes, signed, head.at) : {};
-  const findings = bare || onMain ? [] : findingsOn(after ? after.sha : tip.sha);
+  const reviews = !bare && !onMain && signed.length && typeof repo.git === "function" && repo.notes
+    ? { ...(coverSha ? signedTimesOf(repo.git, coverSha, repo.notes, signed, head.at) : {}), ...signedTimesOf(repo.git, after ? after.sha : tip.sha, repo.notes, signed, head.at) } : {};
+  const findings = bare || onMain ? [] : [...new Set([...findingsOn(after ? after.sha : tip.sha), ...(coverSha ? findingsOn(coverSha) : [])])].sort();
   const extra = {
     ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(findings.length ? { findings } : {}),
@@ -590,7 +596,9 @@ export function mainEvidence(repo, card) {
   const ship = repo.versionPattern ? mine.filter((l) => new RegExp(repo.versionPattern).test(l.subject) && Number.isInteger(l.at) && l.at >= 1577836800000 && l.at <= 4102444800000).map((l) => l.at) : [];
   return { workSeen: true, ...(ship.length ? { shippedAt: Math.max(...ship) } : {}) };
 }
-export function cardState(card, repo, config, now) {
+// opts (#C859 slice 3, stack mode): head { branch, sha, at, message } is the card's commit found by its trailer on a stack branch, used when
+// neither its branch name nor a branch tip names it; cover is the full sha of the stack tip, whose notes count for the card (design 4).
+export function cardState(card, repo, config, now, opts = {}) {
   const declared = config.phases.some((p) => p[0] === card.phase) ? card.phase : null;
   const base = { num: Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? card.num : null, phase: declared, headSha12: null, signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: now };
   if (!repo) return base;
@@ -598,11 +606,12 @@ export function cardState(card, repo, config, now) {
   // #C725: a card whose branch is gone (merged, then deleted) is read from the commit on main that carries its Board-Id trailer,
   // as the Collector did (collect.mjs trailerOnMain, #C281/#C716). Without it the probe has no head for a shipped card and the board
   // shows it queued or stalled, because the store carries none of the Collector's readings.
+  if (!tips.length && opts.head) tips = [opts.head];
   if (!tips.length && typeof repo.git === "function") { const t = trailerHead(repo, card.id); if (t) tips = [t]; }
   if (tips[0]) tips = [ownHead(repo, card, tips[0]), ...tips.slice(1)];
   const tip = tips[0];
   if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };
-  const one = tipState(card, tip, repo, config, now, declared);
+  const one = tipState(card, tip, repo, config, now, declared, opts.cover ?? null);
   const out = { ...base, ...one };
   if (tips.length > 1) {
     const taken = new Set();
@@ -611,26 +620,39 @@ export function cardState(card, repo, config, now) {
   return out;
 }
 
-// { cardId: sha }: for each open card, the newest commit with its Board-Id trailer on any branch tip's commits beyond main (last 100 per branch),
-// taken from the newest branch first. A branch name that git could take for a flag is never passed to it.
+// #C859 slice 3: the repositories whose stack switch is on, as the evidence job left them beside the mirror it built from the same read of the
+// store (collector/store-cards.mjs stacksOn). A file older than STACKS_FRESH_MS, or none, reads as off: the switch off is today's reading.
+export const STACKS_FRESH_MS = 30 * 60e3;
+export function readStacks(dir, now, read = readTail) {
+  try {
+    const r = read(join(dir, "stacks.json"), 4096);
+    if (!r?.whole) return [];
+    const f = JSON.parse(r.text);
+    if (!Number.isFinite(f?.at) || f.at > now + 60e3 || now - f.at > STACKS_FRESH_MS || !Array.isArray(f.stacks)) return [];
+    return f.stacks.filter((s) => typeof s === "string" && s.length <= 40);
+  } catch { return []; }
+}
+
+// { cardId: { branch, sha, at, message } }: for each open card, the newest commit with its Board-Id trailer on any branch tip's commits beyond main
+// (last 100 per branch), taken from the newest branch first. A branch name that git could take for a flag is never passed to it.
 export function stackHeads(repo, tips, open) {
   const heads = {};
   if (!open.size || typeof repo.git !== "function") return heads;
   for (const t of [...tips].sort((a, b) => (b.at ?? 0) - (a.at ?? 0))) {
     if (!/^[A-Za-z0-9._\/-]+$/.test(String(t.branch)) || String(t.branch).startsWith("-")) continue;
     let log = "";
-    try { log = String(repo.git(["log", "-100", "--format=%H%x1f%B%x1e", `${repo.remote}/${t.branch}`, "--not", `${repo.remote}/${repo.main}`])); } catch { continue; }
+    try { log = String(repo.git(["log", "-100", "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${t.branch}`, "--not", `${repo.remote}/${repo.main}`])); } catch { continue; }
     for (const rec of log.split("\x1e")) {
-      const [sha, message] = rec.replace(/^\n/, "").split("\x1f");
+      const [sha, at, message] = rec.replace(/^\n/, "").split("\x1f");
       if (!/^[0-9a-f]{40}$/.test(String(sha))) continue;
-      for (const m of String(message ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)) if (open.has(m[1]) && !heads[m[1]]) heads[m[1]] = sha;
+      for (const m of String(message ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)) if (open.has(m[1]) && !heads[m[1]]) heads[m[1]] = { branch: t.branch, sha, at: Number(at) * 1000, message };
     }
   }
   return heads;
 }
 
 export function cardStates({ cards, config, repos, now, stacks = [] }) {
-  const out = {}, repoOfCard = {};
+  const out = {}, repoOfCard = {}, cardOf = {};
   for (const card of cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX).slice(0, MAX_CARDS)) {
     const r = repoOf(card, config);
     let repo = repos[r ? r.name : ""] ?? null;
@@ -644,6 +666,7 @@ export function cardStates({ cards, config, repos, now, stacks = [] }) {
     }
     out[card.id] = cardState(card, repo, config, now);
     repoOfCard[card.id] = repo;
+    cardOf[card.id] = card;
   }
   // #C859 slice 2: for a repository whose stack switch is on (`stacks`: the repository names, "" for the team's own), the stack read from git.
   // Nothing is added for a switch that is off, which is the default: the switch off is today's reading.
@@ -654,10 +677,16 @@ export function cardStates({ cards, config, repos, now, stacks = [] }) {
     // A card in the middle of a chain has its commit on the branch but not at its tip, and the branch is not named for it: headsFor does not
     // find it. The stack reads every commit the branch holds beyond main (its last 100) for the Board-Id trailers of the repository's open cards.
     const open = new Set(Object.keys(out).filter((id) => repoOfCard[id] === repo && !out[id].onMain));
-    const heads = stackHeads(repo, tips, open);
+    const found = stackHeads(repo, tips, open);
+    const heads = Object.fromEntries(Object.entries(found).map(([id, h]) => [id, h.sha]));
     for (const id of open) if (!heads[id] && out[id].headSha12) heads[id] = out[id].headSha12;
-    const found = readStack({ heads, tips, isAncestor: (a, b) => a === b || String(b).startsWith(a) || ok(() => repo.git(["merge-base", "--is-ancestor", a, b])) });
-    for (const [id, field] of Object.entries(stackFields(found))) out[id] = { ...out[id], stack: field };
+    const stack = readStack({ heads, tips, isAncestor: (a, b) => a === b || String(b).startsWith(a) || ok(() => repo.git(["merge-base", "--is-ancestor", a, b])) });
+    for (const [id, field] of Object.entries(stackFields(stack))) {
+      // A member is read again at its own commit with the stack tip as cover (design 4: a note on the tip counts for every card under it),
+      // and a middle-of-chain card, which the first pass could not find, is read at the commit its trailer names. An outsider keeps its reading.
+      const again = field.outside ? out[id] : cardState(cardOf[id], repo, config, now, { head: found[id], cover: stack.tip });
+      out[id] = { ...again, stack: field };
+    }
   }
   return out;
 }
@@ -943,7 +972,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const cardsChecked = cardsCheckedAt(Object.values(repos), now, checkedBefore);
   let cardsNow;
   try {
-    cardsNow = cardStates({ cards, config, repos, now });
+    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now) });
     // #C632: the last time any open card past plan showed a branch commit; kept from run to run, and the lead's watch told once
     // per outage (gate/reset.mjs evidenceAt).
     const evidencePath = join(stateDir, id, "evidence.json");
