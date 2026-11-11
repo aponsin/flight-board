@@ -1,0 +1,1 @@
+PASS Full: #C904 v2 owner-phone-push, re-cut of d4e8c9c with Board-Id in the trailer block. Same tree 4093400 and same parent e01271e as d4e8c9c, which I passed: suite 2280/2280, mutation check 23 of 24 killed, survivor equivalent. Lows unchanged: a device failing without 404 or 410 is never dropped, and the 10-minute line promises a push with no key or device.
