@@ -1,0 +1,1 @@
+SECURE. #C941 resolved-thread-new-post-returns on main c93d95a, one commit, page only (HOOK_READS): threadResolved gains postAfterClose, pure logic over the page's own state (times and authors); no new DOM sink, input, write or network; the gate's vm only gains an uncalled function.
