@@ -259,6 +259,14 @@ export default {
       const r = await setStackSwitch(env.DB, now, auth.who, b);
       return json(r.ok ? 200 : 422, r);
     }
+    // The owner's acknowledgement of a ship (#C874): the same rule as the typed `ack` tool (a version the probe recorded, once).
+    if (url.pathname === "/api/ack" && request.method === "POST") {
+      if (auth.role !== "owner") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await ackShip(env.DB, now, auth.who, b?.version);
+      return json(r.ok ? 200 : 422, r);
+    }
     // The owner's up or down on a queued card (#C871): the same rule as the typed tool.
     if (url.pathname === "/api/queue-move" && request.method === "POST") {
       if (auth.role !== "owner") return bare(403);
