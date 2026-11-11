@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
+import { reworkTriggered, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -93,6 +93,11 @@ export async function updateCard(db, now, who, fields) {
     sets.push("hold_until = ?"); vals.push(isHeld(after) ? autoHoldEnd(fields, card, now) : null);
   }
   await db.prepare(`UPDATE cards SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`).bind(...vals, now, id).run();
+  // #C875: a reason attached ends the rework's wait for one (the flag in the card's evidence goes) and is kept in the card's reason history.
+  if (keys.includes("rework_reason") && typeof fields.rework_reason === "string") {
+    await db.prepare("INSERT INTO rework_history (card_id, reason, at, who) VALUES (?, ?, ?, ?)").bind(id, fields.rework_reason, now, who ?? null).run();
+    await db.prepare("UPDATE evidence SET value = json_remove(value, '$.rework') WHERE key = ? AND json_extract(value, '$.rework') IS NOT NULL").bind(`cards.${id}`).run();
+  }
   return { ok: true, id, changed: keys.length };
 }
 
@@ -457,12 +462,18 @@ export async function takeInbox(db, now) {
 export async function writeEvidence(db, now, who, key, value, track) {
   const bad = evidenceRefusal(key, value, who, track);
   if (bad) return refuse(db, now, bad, key.startsWith?.("cards.") ? key.slice(6) : null, who);
-  const upsert = db.prepare("INSERT INTO evidence (key, value, read_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, read_at = excluded.read_at").bind(key, JSON.stringify(value), now);
-  if (!key.startsWith("cards.")) { await upsert.run(); return { ok: true }; }
+  const upsertOf = (v) => db.prepare("INSERT INTO evidence (key, value, read_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, read_at = excluded.read_at").bind(key, JSON.stringify(v), now);
+  if (!key.startsWith("cards.")) { await upsertOf(value).run(); return { ok: true }; }
   // A card's lit phase changed (or is read for the first time): the phase history gets its rows in the same write (#C723 B3b).
   // The phase it was in: the last evidence reading, else (the first reading after the one-time import) the phase the history left open.
   const cardId = key.slice(6), next = value.lit[0];
-  let prev = (await evidenceOf(db, key))?.lit?.[0] ?? null;
+  const before = await evidenceOf(db, key);
+  // #C875: the Rework flag is the Worker's, never the probe's: a `rework` the probe sends is dropped. It is set on a transition between two readings
+  // (reworkTriggered), kept across the readings that follow, and cleared when a reason is attached (updateCard) or the card is on main or live.
+  const { rework: _sent, ...reading } = value;
+  const rework = before?.rework === true && reading.onMain !== true && next !== "live" ? true : reworkTriggered(before, reading);
+  const upsert = upsertOf(rework ? { ...reading, rework: true } : reading);
+  let prev = before?.lit?.[0] ?? null;
   // A wait step (the step tool, #C739) is not the lit phase: the three reads of the history below take the probe's own rows only (wait IS NULL).
   if (!prev) { const last = await db.prepare("SELECT phase, kind FROM phase_history WHERE card_id = ? AND wait IS NULL ORDER BY at DESC, id DESC LIMIT 1").bind(cardId).first(); if (last?.kind === "start") prev = last.phase; }
   const prevWho = prev && prev !== next ? (await db.prepare("SELECT who FROM phase_history WHERE card_id = ? AND phase = ? AND kind = 'start' AND wait IS NULL ORDER BY at DESC, id DESC LIMIT 1").bind(cardId, prev).first())?.who ?? null : null;
@@ -493,7 +504,8 @@ export async function readView(db, now) {
   const historyCards = await all("SELECT id, num, title, size, review_level, created_at, done_at FROM history_cards ORDER BY done_at");
   const stackSwitch = (await all("SELECT repo, stack, set_by, set_at FROM stack_switch ORDER BY repo")).map((r) => ({ ...r, stack: r.stack === 1 }));
   const files = await readFiles(db, asks), ships = await readShips(db), usage = await readUsage(db), threads = await readThreads(db);
-  const content = { cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch };
+  const reworkHistory = await all("SELECT card_id, reason, at, who FROM rework_history ORDER BY at, id");
+  const content = { cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reworkHistory };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
   const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now);
   const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);
