@@ -1,0 +1,1 @@
+SECURE (deploy only after product #C894 is live). Informational: the bad-ref test passes with the ref guard removed; assert defaultE2eRun(...).error.code === 'bad-ref'.
