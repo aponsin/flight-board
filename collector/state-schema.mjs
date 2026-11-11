@@ -56,7 +56,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "weekTotal", "stack", "behindMain", "headSha", "headBranch", "repoFull", "noInstall"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "weekTotal", "stack", "stackHold", "behindMain", "headSha", "headBranch", "repoFull", "noInstall"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -100,9 +100,12 @@ const CARD = {
     && (v.tipSha === undefined || (/^[0-9a-f]{40}$/.test(String(v.tipSha)) && v.outside === undefined && String(v.tipSha).startsWith(String(v.tip))))
     && (v.branch === undefined || (typeof v.branch === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(v.branch) && !v.branch.startsWith("-")))
     && ((v.outside === true && v.tip === undefined && v.size === undefined) || (v.outside === undefined && SHA12.test(v.tip) && Number.isInteger(v.size) && v.size >= 2 && v.size <= MAX_CARDS)),
+  // #C914: true only: the card is pushed, in a stack-mode repository, and no stack-ready signal covers its head. The probe's fact; the dispatch
+  // decides from it whether a card with a declared stack partner waits. The page never reads it.
+  stackHold: (v) => v === true,
   at: isTime,
 };
-const { num: _n, at: _a, branches: _b, stack: _s, ...BRANCH_FIELDS } = CARD;
+const { num: _n, at: _a, branches: _b, stack: _s, stackHold: _h, ...BRANCH_FIELDS } = CARD;
 const BRANCH = { name: isId, ...BRANCH_FIELDS };
 const AGENT = {
   state: (v) => AGENT_STATES.includes(v),
