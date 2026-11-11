@@ -15,7 +15,7 @@ const make = () => {
   const compat = async () => (await call("owner", "/api/compat")).json();
   return { env, call, tool, write, compat };
 };
-const decision = { type: "Decision", title: "Hero", question: "Which hero?", options: ["Blue", "Green"], recommended: "Blue", related_thread: "none" };
+const decision = { type: "Decision", title: "Pick", question: "Which one?", options: ["Blue", "Green"], recommended: "Blue", related_thread: "none" };
 
 test("GET /api/compat answers in the old shapes, with an ETag and a 304", async () => {
   const { call, tool } = make();
@@ -106,7 +106,7 @@ test("options on an agent's message (B1b): drawn from the thread's last word; th
   const { env, tool, write, compat } = make();
   const { id } = await tool("manager", "ask", { type: "Answer", title: "Colour?", question: "Colour?" });
   const options = [{ key: "A", label: "Red" }, { key: "B", label: "Blue" }];
-  const ok = await tool("manager", "post", { thread_id: id, body: "Which colour?", kind: "decision", options });
+  const ok = await tool("manager", "post", { thread_id: id, body: "Which one, red or blue?", kind: "decision", options });
   assert.equal(ok.ok, true, JSON.stringify(ok));
   const m = (await compat()).collections.messages.find((x) => x.id === ok.id);
   assert.equal(m.kind, "decision"); assert.deepEqual(m.options, options); assert.equal(m.from, "Manager");

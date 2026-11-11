@@ -77,7 +77,7 @@ test("none plus an unrelated card is accepted and creates the ask", async () => 
   assert.equal(await count(db, "asks"), 1);
   assert.equal((await db.prepare("SELECT body FROM asks").first()).body.includes("related_thread"), false, "the argument is not stored");
   // no card or ask named at all: nothing to overlap
-  const plain = await askFromTool(db, NOW, "Manager", decision({ title: "Which colour?", related_thread: "none" }));
+  const plain = await askFromTool(db, NOW, "Manager", decision({ title: "Which day?", related_thread: "none" }));
   assert.equal(plain.ok, true);
 });
 

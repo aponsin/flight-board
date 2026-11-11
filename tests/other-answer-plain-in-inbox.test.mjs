@@ -7,12 +7,12 @@ import { createAsk, answerAsk, takeInbox } from "../worker/board-store.mjs";
 
 const T = 1_800_000_000_000;
 const TEXT = "Use the green one, but darker";
-const decision = (title) => ({ type: "Decision", title, question: "Which colour?", options: ["Blue", "Green"], recommended: "Green", asked_by: "Manager" });
+const decision = (title) => ({ type: "Decision", title, question: "Which one?", options: ["Blue", "Green"], recommended: "Green", asked_by: "Manager" });
 const asked = async (db, title, d = decision(title)) => { const r = await createAsk(db, T, d); assert.equal(r.ok, true, JSON.stringify(r)); return r.id; };
 const importAnswer = (db, id, answer) => db.prepare("UPDATE asks SET answered_at = ?, answer = ?, answered_by = 'owner', answer_status = NULL, answer_note = NULL WHERE id = ?").bind(T + 5, answer, id).run();
 
 test("an imported something-else answer reaches the inbox as the typed text, not as the response object; the stored row stays as it was", async () => {
-  const db = makeDb(), id = await asked(db, "Hero colour");
+  const db = makeDb(), id = await asked(db, "Pick one");
   const raw = JSON.stringify({ status: "chose", choice: "something else", note: TEXT, at: T + 5 });
   await importAnswer(db, id, raw);
   const got = await takeInbox(db, T + 10);

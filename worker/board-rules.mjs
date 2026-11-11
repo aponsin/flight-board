@@ -37,6 +37,23 @@ export const bareCd = (c) => typeof c === "string" && BARE_CD.test(c.trim());
 const BARE_CD_FIX = "give each line full or ~ paths, or put the cd in the same line (cd <folder> && <command>)";
 const present = (v) => v !== undefined && v !== null && !(typeof v === "string" && v.trim() === "") && !(Array.isArray(v) && v.length === 0);
 
+// #C952: a look decision needs a picture per option, as the old board's gate did (gate/rules.mjs lookErrors, page lookDecision). It is a look
+// when its text or title names one of the look words (a whole word, a plural too). The Worker has no board config, so the words are the
+// default list copied from scripts/config.mjs DEFAULTS.decisions.lookWords (a test holds the two equal), and the visual-lane list is empty
+// until the Worker has a config path (a card's lane is therefore not read here). "Something else" and "Not now" need no picture. A picture
+// names its option with the letter in front of its label ("<id> A: label", file-store parseShot): A is the first option, B the second.
+export const LOOK_WORDS = ["mock-up", "mockup", "screenshot", "layout", "band", "icon", "colour", "color", "font", "spacing", "px", "hero", "banner", "logo", "photo", "button", "text size"];
+const LOOK_RE = new RegExp("(?<![A-Za-z])(?:" + LOOK_WORDS.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")).join("|") + ")(?:e?s)?(?![A-Za-z])", "i");
+export const isLookText = (...texts) => texts.some((t) => typeof t === "string" && LOOK_RE.test(t));
+const NO_PICTURE = /^(?:something else|not now)[.!]?$/i;
+// options: [{ key, label }]; shots: the screenshot strings. null when fine, else the refusal naming the options without a picture.
+export function lookRefusal({ texts, options, shots }) {
+  if (!isLookText(...texts)) return null;
+  const shown = new Set((Array.isArray(shots) ? shots : []).map((s) => /^\s*[A-Za-z0-9_-]{16,64}\s+([A-D]):/.exec(String(s ?? ""))?.[1]).filter(Boolean));
+  const missing = (options ?? []).filter((o) => o && !NO_PICTURE.test(String(o.label ?? "").trim()) && !shown.has(o.key)).map((o) => o.key);
+  return missing.length ? refuse("look-needs-screenshots", `a look decision needs a screenshot for each option (missing: ${missing.join(", ")}); add each as "<file id> A: label" in screenshots, the letter being the option's`) : null;
+}
+
 // An ask missing a required part, an unknown field, or a Later without an ETA.
 export function askRefusal(ask, now) {
   if (ask === null || typeof ask !== "object" || Array.isArray(ask)) return refuse("ask-shape", "an ask is an object");
@@ -52,6 +69,8 @@ export function askRefusal(ask, now) {
     // future when written (an import passes now = null: the date may be past by the time it runs); no precondition on a Decision.
     if (ask.eta_at !== undefined && (!Number.isFinite(ask.eta_at) || ask.eta_at <= 0 || (Number.isFinite(now) && ask.eta_at < now - 60_000))) return refuse("decision-not-before", "eta_at is a time, not in the past");
     if (ask.eta_precondition !== undefined) return refuse("decision-not-before", "a Decision takes eta_at (not before) and no precondition");
+    // #C952: a live look Decision (an import, now = null, keeps its old shape) needs a picture per option.
+    if (Number.isFinite(now)) { const look = lookRefusal({ texts: [ask.title, ask.question], options: ask.options.map((label, i) => ({ key: "ABCD"[i], label })), shots: ask.screenshots }); if (look) return look; }
   }
   if (ask.type === "Action") { const bad = stepsRefusal(ask.steps, { needCmd: true }); if (bad) return bad; }
   // #C921 (#T1802): the owner may run any one line alone, so no line may be a bare "cd" that a later line relies on. A cd in the
@@ -138,6 +157,9 @@ export function messageExtrasRefusal(m, who) {
       if (!ok) return refuse("message-options", "each option is {key: A to D, once; label: 1 to 200 characters}");
       keys.add(x.key);
     }
+    // #C952: a look decision in a thread carries a picture per option too ("<id> A: label"), the same shape an ask's pictures read.
+    const look = lookRefusal({ texts: [m.body], options: o, shots: m.screenshots });
+    if (look) return look;
   }
   return null;
 }
