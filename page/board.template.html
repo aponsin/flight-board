@@ -686,7 +686,9 @@ function settled(w){if(!w)return false;if(w.done)return true;const r=w.response;
   return (w.kind==="answer"&&r.status==="ack")||(w.kind!=="decision"&&r.status==="done")}
 function needsYou(w,now){return !settled(w)&&!answered(w,now)}
 // #C823: a Decision may carry notBefore (the ask's eta_at): until that time it waits on Later, and at the date it moves to Needs you.
-function isLater(w,now){return w.kind==="later"||(w.kind==="decision"&&num(w.notBefore)!=null&&w.notBefore>now)}
+// #C879 (DATA.md row 19): a Later ask moves to Needs you at its ETA too, with no write in between; one with no date, or only a
+// precondition the probe can't see yet, stays under Later.
+function isLater(w,now){return (w.kind==="later"&&!(num(w.eta)!=null&&w.eta<=now))||(w.kind==="decision"&&num(w.notBefore)!=null&&w.notBefore>now)}
 function onLead(w,now){return !settled(w)&&answered(w,now)}
 // Who something waits on now: the one answer its badge and its section both come from, so they can never disagree
 // (#C236: an answered ask under "Waiting on Manager" still said "waiting on you"). An open ask: "you" (unanswered) or
@@ -2860,7 +2862,7 @@ function managerChip(now=Date.now()){if(!liveOn(now))return null;const b=probe.b
   // reading is shown once, not here too.
   const open=ownerUnanswered();
   const seen=wakeSeen();
-  if(open&&seen!=null&&seen>=open.at)return {cls:"warn",text:`seen your ${hhmm(open.at)} message · answer coming`};
+  if(open&&seen!=null&&seen>=open.at)return {cls:"warn",text:`delivered your ${hhmm(open.at)} message · answer coming`};
   return {cls:"ok",text:"Manager listening"}}
 // #C609: "Board v3.45 · page c647307" under the title. The page's commit and the pack's name are stamped when the page is built
 // (scripts/build-page.mjs; the pack name only when Release passes BOARD_PACK); with no pack name the board's own part is the
@@ -2875,11 +2877,12 @@ function renderBoardVer(){const el=$("boardver");if(!el)return;const t=boardVerT
   if(typeof ResizeObserver==="function")new ResizeObserver(set).observe(h);
   window.addEventListener("resize",set)})();
 function renderManagerChip(){const el=$("mgrchip");if(!el)return;const c=managerChip();el.hidden=!c;if(c){el.className="mgr-chip "+c.cls;el.textContent=c.text}}
-// Under the owner's message: "seen" once the watch has handled a wake at or after it; the time is the wake's, shown on the
-// newest such message (the older ones are before it, with no time of their own).
+// Under the owner's message: "delivered" once the watch has handled a wake at or after it (#C879, DATA.md row 20: it was
+// handed to Manager, which is not the same as read); the time is the wake's, shown on the newest such message (the older
+// ones are before it, with no time of their own).
 function seenTick(m,now=Date.now()){const seen=liveOn(now)?wakeSeen():null;if(m.from!==OWNER||seen==null||!isT(m.at)||m.at>seen)return "";
   const newest=!state.messages.some(x=>x&&x.from===OWNER&&isT(x.at)&&x.at>m.at&&x.at<=seen);
-  return `<div class="t-seen">${newest?"seen "+hhmm(seen):"seen"}</div>`}
+  return `<div class="t-seen">${newest?"delivered "+hhmm(seen):"delivered"}</div>`}
 // Data behind (#C452, the owner at 23:44Z: "Needs you 0" and "No initiatives in flight" while the db held both, the
 // header "live · 1 min": the db's stream had gone quiet with no error). The live state carries the db's last write
 // (board.lastWriteAt, the gate's journal); the page holds data up to dbHeld(), its newest doc `at` or its last receipt,

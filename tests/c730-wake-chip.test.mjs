@@ -91,15 +91,15 @@ test("on the store \"seen\" and \"answer coming\" come from Manager's last typed
   ({ b } = await draw(db));
   b.state.messages = msgs(b);
   // The page's own hhmm gives the expected time, so the test holds in any locale (the review: a 12-hour clock, U+202F before AM).
-  assert.equal(b.seenTick(b.state.messages[0]), `<div class="t-seen">seen ${b.hhmm(NOW - 9 * M)}</div>`);
+  assert.equal(b.seenTick(b.state.messages[0]), `<div class="t-seen">delivered ${b.hhmm(NOW - 9 * M)}</div>`);
   assert.equal(b.seenTick(b.state.messages[1]), "");
 
   await takeInbox(db, NOW - 5 * M);
   ({ b } = await draw(db));
   b.state.messages = msgs(b);
-  assert.equal(b.seenTick(b.state.messages[0]), `<div class="t-seen">seen</div>`, "the older one: no time of its own");
-  assert.equal(b.seenTick(b.state.messages[1]), `<div class="t-seen">seen ${b.hhmm(NOW - 5 * M)}</div>`);
-  assert.equal(b.managerChip()?.text, `seen your ${b.hhmm(NOW - 8 * M)} message · answer coming`);
+  assert.equal(b.seenTick(b.state.messages[0]), `<div class="t-seen">delivered</div>`, "the older one: no time of its own");
+  assert.equal(b.seenTick(b.state.messages[1]), `<div class="t-seen">delivered ${b.hhmm(NOW - 5 * M)}</div>`);
+  assert.equal(b.managerChip()?.text, `delivered your ${b.hhmm(NOW - 8 * M)} message · answer coming`);
   assert.equal(b.managerChip()?.cls, "warn");
 });
 
@@ -114,8 +114,8 @@ test("on the artifact page a wakeSeenAt that is not a time gives no seen tick an
 
   feed(NOW - 5 * M);
   b.state.messages = msgs;
-  assert.equal(b.seenTick(msgs[0]), `<div class="t-seen">seen ${b.hhmm(NOW - 5 * M)}</div>`, "control: a real time gives the tick");
-  assert.equal(b.managerChip()?.text, `seen your ${b.hhmm(NOW - 10 * M)} message · answer coming`);
+  assert.equal(b.seenTick(msgs[0]), `<div class="t-seen">delivered ${b.hhmm(NOW - 5 * M)}</div>`, "control: a real time gives the tick");
+  assert.equal(b.managerChip()?.text, `delivered your ${b.hhmm(NOW - 10 * M)} message · answer coming`);
 
   for (const bad of [String(NOW - 5 * M), 5_000_000_000_000, NOW - 5 * M + 0.5, { at: NOW - 5 * M }, [NOW - 5 * M]]) {
     feed(bad);
