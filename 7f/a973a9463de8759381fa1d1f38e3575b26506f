@@ -1,0 +1,1 @@
+PASS Full: #C871 v4 agent-queues-owner-order, re-cut 7fa973a. Same tree as c61168e, which I signed inside 15882e6, only the Board-Id trailer added. Covers dbcca6e below it, the R1 step, whose gap this commit closes: a card anyone but the owner moves to another agent enters unplaced and unmarked. Suite 2124/2124 on this commit.
