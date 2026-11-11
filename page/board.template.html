@@ -1340,7 +1340,16 @@ function stuckLines(){const m=state.meta.find(d=>d.id==="stuck")||{},lead=(CONFI
 // command to send Manager, until Manager answers or raises waiting/rearm-pings (its own ask with the same command).
 // The collector pushes the same words to Manager by message (collector/owner-push.mjs), so this is the owner's half.
 const REARM_ID="rearm-pings";
+// #C923: on the store there is no "turn the auto-replies back on" command (it named the frozen artifact), and no board ping to arm.
+// What the store knows is whether Manager took an answer: its ask's answer carries taken (compat-view: answer_taken_at is set).
+// An answer untaken DEAF_MIN minutes on says so and points to the header's own "not listening" line, never to a link; a taken
+// one never fires it, closed or not. Only an answer whose reading says taken is false counts (an older Worker sends no key).
+function storeDeafLine(lead,min,now){
+  const ats=state.waiting.filter(w=>w&&!w.done&&!settled(w)&&w.response&&w.response.taken===false&&num(w.response.at)!=null&&now-w.response.at<864e5&&now-w.response.at>=min*60000).map(w=>w.response.at);
+  if(!ats.length)return "";
+  return `<div class="deaf">${esc(lead)} has not taken your answer for ${Math.floor((now-Math.min(...ats))/60000)} min. The "${esc(lead)} not listening" line at the top of the page says what to do.</div>`}
 function deafLine(now=Date.now()){const lead=(CONFIG.gate&&CONFIG.gate.managerRole)||"Manager",min=(CONFIG.nudges&&num(CONFIG.nudges.deafMin))||30;
+  if(STORE)return storeDeafLine(lead,min,now);
   if(state.waiting.some(w=>w&&w.id===REARM_ID&&!w.done))return "";
   // As the rest of the page reads a thread (Checker on 26bca32): in threadOf's order, the owner's newest word after the
   // lead's last (another role's word isn't the lead's), not closed, not an Ack on a settled ask, its item not done.

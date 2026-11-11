@@ -41,14 +41,16 @@ export function waitingDoc(a) {
     default: doc.text = b.text ?? a.title;
   }
   if (a.answered_at) {
+    // #C923: whether Manager has taken the answer (answer_taken_at); the store page's "not taken" line reads it. A boolean, never the time.
+    const taken = !!a.answer_taken_at;
     const options = a.type === "Decision" ? b.options : undefined;
     const idx = options ? options.indexOf(a.answer) : -1;
     // B2: an answer given in full keeps its button and note (answer_status); "other" is the Decision's something-else.
     if (a.answer_status) {
       const other = a.answer_status === "other";
-      doc.response = prune({ status: other ? "chose" : a.answer_status, choice: other ? "something else" : idx >= 0 ? KEY(idx) : undefined, note: a.answer_note ?? "", at: a.answered_at });
+      doc.response = prune({ status: other ? "chose" : a.answer_status, choice: other ? "something else" : idx >= 0 ? KEY(idx) : undefined, note: a.answer_note ?? "", at: a.answered_at, taken });
     } else
-    doc.response = prune({ status: a.type === "Decision" ? "chose" : /^ack/i.test(a.answer ?? "") ? "ack" : "done", choice: idx >= 0 ? KEY(idx) : undefined, note: idx >= 0 ? "" : a.type === "Decision" ? a.answer : "", at: a.answered_at });
+    doc.response = prune({ status: a.type === "Decision" ? "chose" : /^ack/i.test(a.answer ?? "") ? "ack" : "done", choice: idx >= 0 ? KEY(idx) : undefined, note: idx >= 0 ? "" : a.type === "Decision" ? a.answer : "", at: a.answered_at, taken });
     doc.respondedAt = a.answered_at;
   }
   if (a.closed_at) { doc.done = true; doc.doneAt = a.closed_at; }

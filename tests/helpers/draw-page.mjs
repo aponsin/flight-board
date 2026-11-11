@@ -4,9 +4,11 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 export const TEMPLATE = readFileSync(new URL("../../page/board.template.html", import.meta.url), "utf8");
-const SCRIPT = TEMPLATE.match(/<script>([\s\S]*?)<\/script>/)[1];
+const SCRIPT0 = TEMPLATE.match(/<script>([\s\S]*?)<\/script>/)[1];
 
-export function drawPage(docs, { probe = null, host = null, expose = [] } = {}) {
+// config: keys laid over the page's built-in config, as a built page carries (artifactUrl, say).
+export function drawPage(docs, { probe = null, host = null, expose = [], config = null } = {}) {
+  const SCRIPT = config ? SCRIPT0.replace(/\/\*BOARD_CONFIG\*\/([\s\S]*?)\/\*END_CONFIG\*\//, (_, j) => JSON.stringify({ ...JSON.parse(j), ...config })) : SCRIPT0;
   const els = {}, attrs = [];
   const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, scrollTop: 0, dataset: {}, style: {},
     classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, addEventListener() {}, setAttribute: (k, v) => attrs.push(`${k}=${v}`), removeAttribute() {},
