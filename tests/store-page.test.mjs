@@ -35,16 +35,16 @@ test("the store page loads nothing from another site and runs no inline handler:
   assert.doesNotMatch(markup, /javascript:/i);
 });
 
-test("the Worker serves the old page at /board behind the identity check, its script by a fresh nonce", async () => {
+test("the Worker serves the old page at / (and /board redirects there, #C829) behind the identity check, its script by a fresh nonce", async () => {
   const assets = { "/board.html": page };
   const env = { DB: makeDb(), ASSETS: { fetch: async (req) => { const p = new URL(req.url).pathname; return p in assets ? new Response(assets[p]) : new Response("", { status: 404 }); } } };
   const get = (path, as = "owner", init = {}) => worker.fetch(new Request(`https://board.test${path}`, init), env, null, 1_800_000_000_000, async () => (as ? { who: as, role: as === "owner" ? "owner" : "agent" } : null));
   assert.equal(OLD_PAGE_PATH, "/board");
-  assert.equal((await get("/board", null)).status, 401, "no identity, no page");
-  const asProbe = await worker.fetch(new Request("https://board.test/board"), env, null, 1_800_000_000_000, async () => ({ who: "probe", role: "probe" }));
+  assert.equal((await get("/", null)).status, 401, "no identity, no page");
+  const asProbe = await worker.fetch(new Request("https://board.test/"), env, null, 1_800_000_000_000, async () => ({ who: "probe", role: "probe" }));
   assert.equal(asProbe.status, 403, "the probe gets no page, as it gets no /api/compat");
 
-  const r1 = await get("/board"), r2 = await get("/board");
+  const r1 = await get("/"), r2 = await get("/");
   assert.equal(r1.status, 200);
   assert.equal(r1.headers.get("content-type"), "text/html; charset=utf-8");
   for (const [h, v] of [["cache-control", "no-store"], ["x-content-type-options", "nosniff"], ["referrer-policy", "no-referrer"], ["x-frame-options", "DENY"]]) assert.equal(r1.headers.get(h), v, h);
@@ -64,7 +64,7 @@ test("the Worker serves the old page at /board behind the identity check, its sc
   assert.doesNotMatch(COMPAT_SHIM, /<\/?script|<!--/i, "the shim can't close its own element");
   assert.notEqual(/'nonce-([^']+)'/.exec(r2.headers.get("content-security-policy"))[1], nonce, "a new nonce per response");
 
-  assert.equal((await get("/board", "owner", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 404, "GET only");
+  assert.equal((await get("/", "owner", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status, 404, "GET only");
   assert.equal((await get("/board.html")).status, 404, "the asset itself is not a route");
 });
 
@@ -84,7 +84,7 @@ test("the Worker serves only the six named font files, behind the identity check
 
 test("without its built assets the Worker says the page is not built (503), never an empty page", async () => {
   const env = { DB: makeDb() };
-  const r = await worker.fetch(new Request("https://board.test/board"), env, null, 1_800_000_000_000, async () => ({ who: "owner", role: "owner" }));
+  const r = await worker.fetch(new Request("https://board.test/"), env, null, 1_800_000_000_000, async () => ({ who: "owner", role: "owner" }));
   assert.equal(r.status, 503);
   assert.match(await r.text(), /not built/);
 });
@@ -109,6 +109,6 @@ test("the Worker config ships the built page as assets, Worker first, exact path
 
 test("an asset is its exact path: a redirect from the assets is not the page (503), never followed", async () => {
   const env = { DB: makeDb(), ASSETS: { fetch: async (req) => (req.redirect === "manual" ? new Response(null, { status: 307, headers: { location: "/board" } }) : new Response("followed")) } };
-  const r = await worker.fetch(new Request("https://board.test/board"), env, null, 1_800_000_000_000, async () => ({ who: "owner", role: "owner" }));
+  const r = await worker.fetch(new Request("https://board.test/"), env, null, 1_800_000_000_000, async () => ({ who: "owner", role: "owner" }));
   assert.equal(r.status, 503);
 });

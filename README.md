@@ -128,7 +128,7 @@ A probe job killed by its watchdog (`collector/run-watchdog.mjs`) logs and exits
 
 ## The old page on the store (#C723, board parity)
 
-The store Worker serves the old board page at `/board`, behind Access, with the same look as the artifact; the small page stays at `/` until the owner switches. The page reads and writes the store through a shim (`worker/compat-shim.mjs`) over `GET /api/compat` and `POST /api/compat/write`. What it shows and what is still missing, row by row: `docs/PARITY.md`.
+The store Worker serves the old board page at `/` (#C829), behind Access, with the same look as the artifact; `/board` is only a redirect to `/`, for old links. The earlier small page is gone. The page reads and writes the store through a shim (`worker/compat-shim.mjs`) over `GET /api/compat` and `POST /api/compat/write`. What it shows and what is still missing, row by row: `docs/PARITY.md`.
 
 The commit the Worker was deployed from is set by the pair's deploy (`BUILD_SHA`, from the commit the checkout is at) and read by the probe at `GET /api/probe/build` (#C737); with the tree's commit it decides when a board card is live. A deploy made without the pair leaves it empty, which reads as unknown (the card stays at ship). So the switch condition (the deployed commit is main's tip and a signed tip) can be read from the store: a board card merged at main's tip reads live only once the Worker and the tree both carry it.
 

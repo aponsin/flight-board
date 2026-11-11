@@ -1,11 +1,11 @@
 // Board Worker (#C719): HTTP + typed MCP tools over the D1 store. Behind Cloudflare Access; `authenticate(request, env)` returns
 // { who, role } or null (role: "agent" | "owner" | "probe") and is the only place identity comes from. No tool writes status:
 // evidence is a probe-only endpoint, and status is never a field of any tool.
+//   GET  /                  the board page (the old-look page from the assets, by a per-response nonce; #C829); GET /board redirects to /
 //   GET  /api/view          the one JSON view (ETag; If-None-Match answers 304 with no body)
 //   POST /api/probe/evidence  { key, value, track? }   role probe only
 //   POST /mcp               JSON-RPC: initialize, ping, tools/list, tools/call
 import { ASK_TYPES, ASK_PARTS, ASK_OPTIONAL_PARTS, ROSTER_ROLES } from "./board-rules.mjs";
-import { pageHtml } from "./page.mjs";
 import { compatView } from "./compat-view.mjs";
 import { routeWrite } from "./compat-write.mjs";
 import { COMPAT_SHIM } from "./compat-shim.mjs";
@@ -219,8 +219,12 @@ export default {
     }
     // The page is for people and agents, as /api/compat is: the probe gets neither.
     const fontFile = request.method === "GET" && FONT_PATH.exec(url.pathname);
-    if (((url.pathname === OLD_PAGE_PATH && request.method === "GET") || fontFile) && auth.role === "probe") return bare(403);
-    if (url.pathname === OLD_PAGE_PATH && request.method === "GET") return oldPage(env, url);
+    // #C829: the old-look page is served at "/" (the root is the board); "/board" is only a redirect to it, for old links. Both stay
+    // behind the identity check above, and the probe gets neither.
+    const pageGet = request.method === "GET" && (url.pathname === "/" || url.pathname === OLD_PAGE_PATH);
+    if ((pageGet || fontFile) && auth.role === "probe") return bare(403);
+    if (pageGet && url.pathname === OLD_PAGE_PATH) return new Response(null, { status: 302, headers: { location: "/", "cache-control": "no-store" } });
+    if (pageGet) return oldPage(env, url);
     if (fontFile) return font(env, url, fontFile[1]);
     // Files and screenshots (#C726 C1): read by people and agents at /_blob/<id>; the owner's page uploads through /api/files
     // (JSON with base64 bytes, so the same-site and application/json checks above hold for it too).
@@ -232,9 +236,6 @@ export default {
       try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
       const r = await putFile({ db: env.DB, bucket: env.FILES, now, who: auth.who, refuse }, { name: b?.name, type: b?.type, data: b?.data });
       return json(r.ok ? 200 : 422, r);
-    }
-    if (url.pathname === "/" && request.method === "GET") {
-      return new Response(pageHtml({ version: env.BOARD_VERSION ?? "" }), { status: 200, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer" } });
     }
     // The owner's click on the page: the same rules as the typed tool (a Decision's answer must be an option).
     if (url.pathname === "/api/answer" && request.method === "POST") {

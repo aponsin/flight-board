@@ -155,6 +155,8 @@ setInterval(() => { if (document.visibilityState === "visible") draw(); }, 1000)
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") poll(); });
 `;
 
+// NOTE (#C829): no route serves pageHtml any more; "/" serves the old-look page from the assets. It is kept with the list helpers above
+// (page-lists.test.mjs) and the BOARD_VERSION var it reads, until a card removes the small page and its tests.
 export function pageHtml({ version = "" } = {}) {
   const safe = String(version).replace(/[^A-Za-z0-9 ._+-]/g, "").slice(0, 40);
   return `<!doctype html>
