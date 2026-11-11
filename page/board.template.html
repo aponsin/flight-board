@@ -299,6 +299,9 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .ttab:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .tcount{display:inline-block;min-width:1.5em;margin-left:4px;padding:0 5px;border:1px solid var(--line);border-radius:999px;font-weight:600;text-align:center;letter-spacing:0}
 .tcount.hot{color:var(--bad);border-color:var(--bad)}
+.i-acts{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:flex-start;gap:0 18px}
+.i-det>summary{cursor:pointer;font-size:.85rem;color:var(--muted);margin:4px 0 0}.i-det-body{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--muted);font-size:.88rem;margin-top:4px}.i-det-body b{color:var(--ink);font-weight:600}
+.i-det[open],.i-acts .i-thread[open]{flex:1 0 100%}
 .i-thread{grid-column:1/-1}.i-thread>summary{cursor:pointer;font-size:.85rem;color:var(--muted);margin:4px 0 0}.i-thread .thread{margin-left:0}
 .i-asks{margin:8px 0 0;border-top:1px solid var(--line)}.i-asks-h{font-size:.82rem;color:var(--muted);margin:6px 0 2px}.i-asks .w-item .thread{margin-left:0}.i-asks .w-row{padding:10px 0}
 /* A card's closed asks on a phone: the kind and the age on one line, the name under them at full width (#C288). */
@@ -2237,7 +2240,11 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   // An agent the live state shows working on it since then has moved too (#C449).
   const nAt=num(i.nextNoteAt),stale=liveOpen||nAt!=null&&(num(i.lastStepAt)!=null&&i.lastStepAt>nAt||liveWorkers(i.id).some(n=>{const a=liveAgent(n);return !!a&&num(a.since)!=null&&a.since>nAt}));
   const next=i.nextNote?`<span${stale?' style="opacity:.6"':""}>Next: <b>${esc(i.nextNote)}</b>${num(i.nextAt)?` <span data-next="${i.nextAt}">${i.nextAt>Date.now()?"in "+dur(i.nextAt-Date.now()):"due now"}</span>`:""}${nAt!=null?` <span data-ago="${nAt}">(written ${dur(Date.now()-nAt)} ago${stale?"; an agent has moved since":""})</span>`:" (not dated)"}</span>`:"";
-  const held=heldLine(i),wait=held&&!liveOpen?`<span class="held-line">${esc(held)}</span>`:i.waitingOn&&!liveOpen?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
+  // #C935 (the owner's pick B): the "Held: <reason>" words stay in view; the end time and the Next line fold into one "Details" button
+  // beside "Start a thread", so a card is a few lines until the owner asks for more.
+  const held=heldLine(i),heldShort=held.replace(/, until .*$/,""),wait=held&&!liveOpen?`<span class="held-line">${esc(heldShort)}</span>`:i.waitingOn&&!liveOpen?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
+  // Designer's look: the reason is already in view, so the fold says only when the hold ends ("Until: <end>"), not "Held: <reason>" twice.
+  const heldFull=held&&!liveOpen&&heldShort!==held?`<span class="held-line">Until: ${esc(held.slice(heldShort.length).replace(/^, until /,""))}</span>`:"";
   // One ETA per card, the ETA box's (#C450, the owner on #C448: "Live in 18 min · around 04:32 PM" against "expected L
   // 6 h, due ~09:05 PM"): the size's median is only a hint here, "(usually 6 h for L)", with no due time of its own.
   const usual=sMs?` <span class="usual">(usually ${sMs/3600e3} h for ${esc(i.size)})</span>`:"";
@@ -2245,13 +2252,14 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w)}${closed}</details>`;
+  const detBody=`${next}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
   const gp=liveOpen?[]:gaps(i),red=gapRed(gp,i);
   const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip):"";
   return `<div class="i-row${red?" gap-red":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track">${steps}</div>`}
-   <div class="i-meta">${queueLine(i)}${stackTag(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div>${thread}</div>`;
+   <div class="i-meta">${queueLine(i)}${stackTag(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div><div class="i-acts">${det}${thread}</div></div>`;
 }
 // The card rules' red lines (#C662, gate/card-rules.mjs): the probe writes them into derived/all for an open card that breaks one
 // (queued with a step of its own, past build with no build end step, on ship with nothing on main, a field outside its list),

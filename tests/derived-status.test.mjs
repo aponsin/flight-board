@@ -107,7 +107,7 @@ test("no clash where nothing contradicts: a wait on a card not building; the lea
   const idle = reading(NOW - 30e3, { card: { headSha12: null }, agent: { card: "other-card" } }), card = { ...typed, status: "active", waitingOn: "Checker's word" };
   assert.deepEqual(typedClashes(card, idle, cfg), [], "the Collector's rule");
   assert.equal(board(idle, card).typedClashes(card).length, 0, "the page's");
-  assert.equal(board(idle, card).initRow(board(idle, card).state.initiatives[0]).includes("Held: Checker&#39;s word, until no end set"), true, "the wait shows");
+  assert.equal(board(idle, card).initRow(board(idle, card).state.initiatives[0]).includes("Held: Checker&#39;s word</span>"), true, "the wait shows (#C935: its end sits in the Details fold)");
   const lead = { ...reading(NOW - 30e3), agents: { Manager: { state: "working", lastActivityAt: NOW, tool: "Bash", card: ID, since: NOW - MIN } } };
   assert.deepEqual(typedClashes({ ...typed, status: "active" }, lead, cfg), [], "the lead reading a card is no one else on it");
 });
