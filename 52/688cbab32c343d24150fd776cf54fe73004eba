@@ -1,0 +1,1 @@
+SECURE. #C885 v2, re-cut on #C909 v2 81e7cd6 (main 2641eba): range-diff excluding CHANGELOG.md shows an identical patch to 9aa68f3 (SECURE). Line-scoped for 2641eba..52688cb. Builder takes the postedAt one-hour bound on #C931.
