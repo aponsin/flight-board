@@ -268,7 +268,9 @@ export function cardWriteRefusal(fields, evidence) {
   }
   // #C902: done closes a card whose work leaves no branch (a review, a file). Only true (closing), always with its evidence, never with dropped.
   if (fields.done !== undefined || fields.done_evidence !== undefined) {
-    if (fields.done !== true) return refuse("card-done", "done is true, with done_evidence; a done card is not reopened by a write");
+    // #C949: say which part is missing, so a write that only lacks `done` does not read as "already done".
+    if (fields.done === undefined) return refuse("card-done", "done_evidence was sent without done: send done: true together with done_evidence to close the card (nothing was changed)");
+    if (fields.done !== true) return refuse("card-done", "done can only be set to true, with done_evidence: a write never reopens a done card (nothing was changed)");
     const ev = fields.done_evidence;
     if (typeof ev !== "string" || ev.length > 500 || !DONE_EVIDENCE.test(ev.trim())) return refuse("done-needs-evidence", "done needs done_evidence: a file path (~/ or /), an https link, or a thread message id (m-...)");
     if (fields.dropped === true || fields.dropped === 1) return refuse("card-done", "a card is done or dropped, not both");
