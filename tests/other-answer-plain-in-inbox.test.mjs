@@ -28,6 +28,24 @@ test("an imported answer whose note is empty reads as Something else, as a nativ
   assert.equal((await takeInbox(db, T + 10)).answers[0].answer, "Something else");
 });
 
+// Checker F1: the import kept EVERY old response object whole. Only the something-else one is read as text; the rest read as stored.
+test("an imported ack, done, help (with files) and a picked letter read exactly as stored; an empty ack is not 'Something else'", async () => {
+  const db = makeDb();
+  const rows = {
+    ack: JSON.stringify({ status: "ack", note: "" }),
+    done: JSON.stringify({ status: "done", note: "" }),
+    help: JSON.stringify({ status: "help", note: "I am stuck on step 2", files: [{ name: "shot.png" }] }),
+    letter: JSON.stringify({ status: "chose", choice: "B", note: "" }),
+    letterNote: JSON.stringify({ status: "chose", choice: "A", note: "this one, please" }),
+    other: JSON.stringify({ status: "chose", choice: "something else", note: TEXT }),
+  };
+  const ids = {};
+  for (const [k, raw] of Object.entries(rows)) { ids[k] = await asked(db, k); await importAnswer(db, ids[k], raw); }
+  const by = Object.fromEntries((await takeInbox(db, T + 10)).answers.map((a) => [a.title, a.answer]));
+  for (const k of ["ack", "done", "help", "letter", "letterNote"]) assert.equal(by[k], rows[k], `${k} reads as stored`);
+  assert.equal(by.other, TEXT, "only the something-else one is text");
+});
+
 test("must still read as before: a native something-else, a chosen option, an answer with a status, plain text, and text that only looks like JSON", async () => {
   const db = makeDb();
   const native = await asked(db, "Native other"), option = await asked(db, "Option"), plain = await asked(db, "Plain"), broken = await asked(db, "Broken"), withStatus = await asked(db, "Has status");
