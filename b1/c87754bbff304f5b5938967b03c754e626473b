@@ -1,0 +1,1 @@
+FINDINGS #C940 v2 build/idle-wake-missed-1215-v2@b1c87754bbff304f5b5938967b03c754e626473b: identical to 66716fb (range-diff), so F1 LOW from note 741c646 stands: no test pins the stalledWaits state guard (worker/board-rules.mjs). - Security
