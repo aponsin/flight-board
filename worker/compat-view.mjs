@@ -86,7 +86,9 @@ export function initiativeDoc(c, ev) {
   const deps = c.depends_on ? json(`{"s":${c.depends_on}}`).s : undefined, issues = c.issues ? json(c.issues) : undefined;
   return prune({
     id: c.id, name: c.title, num: c.num, summary: c.summary, size: c.size, level: c.review_level, who: c.owner_role, phase: lit,
-    status: c.dropped ? "dropped" : c.paused ? "paused" : c.blocked_reason ? "blocked" : "active", createdAt: c.created_at, updatedAt: c.updated_at,
+    status: c.dropped ? "dropped" : c.done_at ? "done" : c.paused ? "paused" : c.blocked_reason ? "blocked" : "active", createdAt: c.created_at, updatedAt: c.updated_at,
+    // #C902: a card closed as done by an agent (its work left no branch), with what shows it.
+    doneAt: num(c.done_at), doneEvidence: c.done_evidence ?? undefined,
     nextNote: c.next_note, nextNoteAt: c.next_note_at, waitingOn: c.waiting_on, blocked: c.blocked_reason, fromThread: c.from_thread,
     customerText: c.customer_text === null || c.customer_text === undefined ? undefined : !!c.customer_text, lookChange: c.look_change === null || c.look_change === undefined ? undefined : !!c.look_change,
     skip: Array.isArray(skip) ? skip : undefined, reworkReason: c.rework_reason, plan: c.track,
