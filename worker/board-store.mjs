@@ -296,6 +296,47 @@ export async function wakeResult(db, now, batchId, exit, text) {
   return { ok: true, send: c };
 }
 
+// ---- The door guard (store-manager-door-guard, #C827) ------------------------------------------------------------------
+// Manager's connector shows up in other sessions too, and a read_inbox from any of them takes Manager's wake batch. The Worker cannot see
+// which session sent a call, so read_inbox carries the caller's session id and the Worker compares it with the one Manager or the owner set.
+// This guards against accidents (another session using the connector), not against someone who copies the id. With no id set the take goes
+// through and is logged as unguarded, so a deploy never shuts Manager out.
+export const DOOR_SESSION_SHAPE = /^[A-Za-z0-9_-]{8,80}$/;
+export async function setDoorSession(db, now, who, session, current) {
+  if (who !== "Manager" && who !== "owner") return refuse(db, now, { rule: "door-session-writer", detail: `${who ?? "unknown"} cannot set the door's session; Manager or the owner can` }, null, who);
+  if (typeof session !== "string" || !DOOR_SESSION_SHAPE.test(session)) return refuse(db, now, { rule: "door-session-shape", detail: "session is 8 to 80 letters, digits, - or _" }, null, who);
+  const prev = await db.prepare("SELECT session FROM door_session WHERE id = 1").first();
+  // Security's F1: the session this guards against can read set_door_session in tools/list and set its own id. So on Manager's door, CHANGING an id that
+  // is already set needs the current id (`current`); the owner (Access) may set it freely. The first id, with none set, needs nothing.
+  if (who === "Manager") {
+    const row = await db.prepare("SELECT session FROM door_session WHERE id = 1").first();
+    if (row && current !== row.session) return refuse(db, now, { rule: "door-session-mismatch", detail: "changing the door's session needs `current`: the session id now set" }, null, who);
+  }
+  await db.prepare("INSERT INTO door_session (id, session, set_by, set_at) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET session = excluded.session, set_by = excluded.set_by, set_at = excluded.set_at").bind(session, who, now).run();
+  // Checker's F1: replacing a DIFFERENT id that was already set is flagged: a log row, and Manager's next successful read says so (notices).
+  if (prev && prev.session !== session) await db.prepare("INSERT INTO inbox_takes (at, claimed, ok, reason) VALUES (?, NULL, 1, ?)").bind(now, `door session replaced by ${who}`).run();
+  return { ok: true, session };
+}
+export async function guardedInbox(db, now, session) {
+  const expected = await db.prepare("SELECT session, set_by, set_at FROM door_session WHERE id = 1").first();
+  const claimed = typeof session === "string" ? session.slice(0, 80) : null;
+  const log = (ok, reason) => db.prepare("INSERT INTO inbox_takes (at, claimed, ok, reason) VALUES (?, ?, ?, ?)").bind(now, claimed, ok ? 1 : 0, reason).run();
+  if (expected && claimed !== expected.session) {
+    await log(false, claimed === null ? "no session given" : "session does not match");
+    // The expected id is never echoed back.
+    const lastSet = `the door's session was last set by ${expected.set_by} at ${new Date(expected.set_at).toISOString().slice(0, 16)}Z`;
+    return refuse(db, now, { rule: "door-session-mismatch", detail: `${claimed === null ? "read_inbox needs the \`session\` argument: Manager's own session id." : "the session given is not the one set for Manager's door."} If you are not Manager's session, stop and tell Manager; never call set_door_session to get past this refusal. (${lastSet})` }, null, "Manager");
+  }
+  await log(true, expected ? "match" : "no session set: unguarded");
+  const notes = (await db.prepare("SELECT id, at, reason FROM inbox_takes WHERE noticed_at IS NULL AND reason LIKE 'door session replaced by %' ORDER BY id").all()).results;
+  const got = await takeInbox(db, now);
+  if (notes.length) {
+    for (const n of notes) await db.prepare("UPDATE inbox_takes SET noticed_at = ? WHERE id = ?").bind(now, n.id).run();
+    got.notices = notes.map((n) => `${n.reason} at ${new Date(n.at).toISOString().slice(0, 16)}Z`);
+  }
+  return got;
+}
+
 // Manager's typed read: returns what is for Manager as data and marks it taken (the batch closes, wake.seen_at moves).
 export async function takeInbox(db, now) {
   const messages = (await db.prepare("SELECT id, thread_id, author, body, created_at FROM messages WHERE delivered_at IS NULL AND author = 'owner' ORDER BY created_at").all()).results;
