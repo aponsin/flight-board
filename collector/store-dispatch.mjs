@@ -76,7 +76,7 @@ export function turnsOf(card, e, ctx = {}) {
 }
 
 // The store's view -> { cards, agents, asked } in the shapes dispatchItems reads, or null when the view cannot say who is idle.
-export function dispatchInput(view, now) {
+export function dispatchInput(view, now, { lead = "Manager" } = {}) {
   const ev = view?.evidence ?? {};
   const agents = ev.agents?.value;
   const readAt = ev.agents?.readAt;
@@ -136,6 +136,22 @@ export function dispatchInput(view, now) {
     const idleSince = ag && (Number.isFinite(ag.since) ? ag.since : ag.lastActivityAt);
     if (!d || ag?.state !== "idle" || !Number.isFinite(idleSince) || idleSince > d.answered_at) continue;
     k.turns = [...k.turns.filter((t) => t.role !== k.who), { role: k.who, phase: "decision", step: "decision", ask: d.num, answer: d.answer }];
+  }
+  // #C916 (11-11 ~3 am MT: the app capped Manager's SendMessage; Manager posted the #C914 pick on the card's thread and Boardsmith never saw
+  // it): a post by the lead on a card's thread in the last DECISION_FRESH_MS is that card's owner's turn while the owner has stayed idle since
+  // the post, as an answered Decision is (#C872): once per post, with no state of its own. A card whose owner is the lead, or that already has a
+  // decision turn, is left as it is.
+  const posted = new Map();
+  for (const m of Array.isArray(view?.threads?.messages) ? view.threads.messages : []) {
+    if (!m || m.author !== lead || typeof m.thread_id !== "string" || !Number.isFinite(m.created_at)) continue;
+    if (now - m.created_at > DECISION_FRESH_MS || m.created_at > now + 5_000) continue;
+    if ((posted.get(m.thread_id) ?? -Infinity) < m.created_at) posted.set(m.thread_id, m.created_at);
+  }
+  for (const k of cards) {
+    const at = posted.get(k.id), ag = Number.isFinite(at) && k.who !== lead && Object.hasOwn(agents, k.who) ? agents[k.who] : null;
+    const idleSince = ag && (Number.isFinite(ag.since) ? ag.since : ag.lastActivityAt);
+    if (!ag || ag.state !== "idle" || !Number.isFinite(idleSince) || idleSince > at || k.turns.some((t) => t.step === "decision")) continue;
+    k.turns = [...k.turns.filter((t) => t.role !== k.who), { role: k.who, phase: "post", step: "post" }];
   }
   // #C871 (item 4): an agent's queue is in the owner's order (queue_pos, then the card's number), and an idle agent is woken for the FIRST card
   // of it that can start (nothing pushed, not held by a depends_on, which was skipped above), not for every queued card at once.
@@ -201,7 +217,7 @@ const writeAtomic = (path, text) => { const tmp = `${path}.${process.pid}.part`;
 
 // One run over a view. Returns { wrote, why?, items }. `dir` is <stateDir>/<board>.
 export function dispatchRun(view, { dir, roster, lead, now = Date.now(), log = () => {} }) {
-  const input = dispatchInput(view, now);
+  const input = dispatchInput(view, now, { lead });
   if (!input) { log("dispatch: the store's agent reading is missing or older than 5 minutes; nothing written"); return { wrote: false, why: "agents-stale", items: [] }; }
   const file = readJson(join(dir, DISPATCH_FILE));
   if (file && file.source !== "store" && Number.isFinite(file.at) && now - file.at < FOREIGN_WRITER_MS) {

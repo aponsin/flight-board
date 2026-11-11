@@ -163,6 +163,8 @@ export const DISPATCH_STEPS = {
   recut: "is signed but behind main, so Release cannot take it; re-cut it on main and push (a new commit needs new signatures)",
   outside: "is outside the stack (its branch was not cut from the stack tip); re-cut it on the stack tip and push",
   decision: "had its decision answered; act on the answer",
+  // #C916: the lead posted on the card's thread after its owner went idle.
+  post: "has a new post from the lead on its thread; read the thread on the board and act on it",
 };
 // #C872: an answered Decision on a card wakes the card's owner with the answer quoted. The answer is the owner's choice (an option Manager
 // wrote, or the owner's own words), so it is cut to plain words before it goes in a line an agent reads: letters, digits, spaces and
