@@ -33,6 +33,10 @@ export function turnsOf(card, e) {
   const signedBy = signed.map((s) => ROLE_OF_NOTE[s]);
   const owner = { role: card.owner_role, phase: "build", step: "build" };
   if (typeof phase !== "string" || phase === "plan" || phase === "build") return [owner];
+  // #C852: a review whose note on this commit starts FINDINGS has sent it back: the fix is the owner's turn, and no reviewer is woken to
+  // look at a commit already rejected. It is a fact of this sha (evidence.findings), so a new commit clears it without anyone's step.
+  const findings = (Array.isArray(e?.findings) ? e.findings : []).filter((s) => typeof s === "string" && Object.hasOwn(ROLE_OF_NOTE, s));
+  if (findings.length && Object.hasOwn(ROLE_OF_NOTE, phase)) return [{ role: card.owner_role, phase: "build", step: "rework", sha, signed: signedBy }];
   if (phase === "ship") {
     if (e.onMain === true) return typeof card.repo === "string" && card.repo !== "" ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, signed: signedBy }] : [];
     return [{ role: PHASE_LANES.ship, phase: "ship", step: "land", sha, signed: signedBy }];

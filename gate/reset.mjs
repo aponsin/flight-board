@@ -156,6 +156,7 @@ export const DISPATCH_IDLE_MS = 15 * 60e3, DISPATCH_LATE_MS = 30 * 60e3;
 export const DISPATCH_TURN_IDLE_MS = 60e3;
 export const DISPATCH_STEPS = {
   build: "has nothing pushed; build it and push the branch (the push is the READY)",
+  rework: "came back with findings; fix them and push the new commit (the push hands it back to review)",
   review: "is pushed; review it (your verdict is the git note on that commit)",
   land: "is signed; land it (the notes on that exact commit, a clean dry run, the owner's standing go)",
   pair: "is landed and not deployed; build the deploy pair",

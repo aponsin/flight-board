@@ -506,7 +506,11 @@ export function signedTimesOf(git, sha, notes, signed, fallback = null) {
   return out;
 }
 function tipState(card, tip, repo, config, now, declared) {
-  const signedOn = (sha) => Object.entries(repo.notes).filter(([, ref]) => ok(() => repo.git(["notes", `--ref=${ref}`, "show", sha]))).map(([p]) => p).sort();
+  // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
+  // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
+  const notesOn = (sha) => Object.entries(repo.notes).map(([p, ref]) => { let t = null; try { t = repo.git(["notes", `--ref=${ref}`, "show", sha]); } catch { /* none */ } return t === null || t === undefined || t === false ? null : [p, String(t)]; }).filter(Boolean);
+  const signedOn = (sha) => notesOn(sha).filter(([, t]) => !/^\s*FINDINGS\b/.test(t)).map(([p]) => p).sort();
+  const findingsOn = (sha) => notesOn(sha).filter(([, t]) => /^\s*FINDINGS\b/.test(t)).map(([p]) => p).sort();
   const mainRef = `${repo.remote}/${repo.main}`;
   const landed = ok(() => repo.git(["merge-base", "--is-ancestor", tip.sha, mainRef])) ? null : landedOn(repo.git, mainRef, tip.sha, repo.ids);
   // A tip with commits after the card's shipped one (#C527, collector/after-ship.mjs) is read as that commit, with its
@@ -534,8 +538,10 @@ function tipState(card, tip, repo, config, now, declared) {
   // reviews: when each review the repository shows signed on the tip was signed (derive.mjs derivePhase, #C671); none for a bare
   // branch, a tip read as a main commit, or one with no sign-offs.
   const reviews = !bare && !onMain && signed.length && typeof repo.git === "function" && repo.notes ? signedTimesOf(repo.git, after ? after.sha : tip.sha, repo.notes, signed, head.at) : {};
+  const findings = bare || onMain ? [] : findingsOn(after ? after.sha : tip.sha);
   const extra = {
     ...(Object.keys(reviews).length ? { reviews } : {}),
+    ...(findings.length ? { findings } : {}),
     ...(phase && build ? { firm: false } : {}),
     ...(phase && !build && Number.isInteger(head.at) && head.at >= 1577836800000 && head.at <= 4102444800000 ? { readyAt: head.at } : {}),
     ...(phase && !build && unsigned.length ? { waitingFor: unsigned.slice(0, 10) } : {}),
