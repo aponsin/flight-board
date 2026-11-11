@@ -82,8 +82,19 @@ export async function liveJob({ base, headers, productUrl, fetchImpl = fetch, lo
 export async function dispatchJob({ base, headers, fetchImpl = fetch, dir, roster, lead, now = Date.now, log = () => {} }) {
   const r = await fetchImpl(`${base}/api/view`, { method: "GET", headers, redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!r.ok) throw new Error(`view answered ${r.status}`);
-  return dispatchRun(await r.json(), { dir, roster, lead, now: now(), log });
+  const run = dispatchRun(await r.json(), { dir, roster, lead, now: now(), log });
+  // #C903: a builder woken for a card with nothing pushed starts that card's build. The Worker writes it once (a card with any history is
+  // left alone), so the item repeating on every run adds nothing; a failed post is logged and never stops the dispatch.
+  for (const card of buildStarts(run.items)) {
+    try {
+      const w = await post(fetchImpl, base, headers, "/api/probe/build-start", { id: card });
+      if (!w.ok) log(`dispatch: build start for ${card} answered ${w.status}`);
+    } catch (e) { log(`dispatch: build start for ${card} not posted: ${e?.message ?? e}`); }
+  }
+  return run;
 }
+// The cards whose builder the dispatch wakes to build from nothing: step build, no sha (a rework has a sha, an outside card another step).
+export const buildStarts = (items) => [...new Set((Array.isArray(items) ? items : []).filter((i) => i && i.step === "build" && i.phase === "build" && !i.sha && typeof i.card === "string").map((i) => i.card))];
 
 // The CLI entry: node probe-board.mjs --job ask|live|dispatch --env <file> [--product <url>] [--base <url>] [--config <board.config.json>]
 export async function main(argv, { env = process.env, exit = (c) => process.exit(c), fetchImpl = fetch } = {}) {

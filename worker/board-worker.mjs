@@ -11,7 +11,7 @@ import { routeWrite } from "./compat-write.mjs";
 import { COMPAT_SHIM } from "./compat-shim.mjs";
 import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.mjs";
 import { writeUsageDay } from "./compat-usage.mjs";
-import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, moveInQueue } from "./board-store.mjs";
+import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, moveInQueue } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const obj = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
@@ -326,6 +326,14 @@ export default {
       let b;
       try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
       const r = await fillCardRepo(env.DB, now, b?.id, b?.repo);
+      return json(r.ok ? 200 : 422, r);
+    }
+    // #C903: the dispatch woke a card's owner with nothing pushed: the card's build starts now (once; the history decides). Probe only.
+    if (url.pathname === "/api/probe/build-start" && request.method === "POST") {
+      if (auth.role !== "probe") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await recordBuildStart(env.DB, now, b?.id);
       return json(r.ok ? 200 : 422, r);
     }
     // A day's runner and automation minutes and Actions cost (#C726 C3), probe only: the usage collection's rows.

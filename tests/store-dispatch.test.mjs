@@ -155,7 +155,8 @@ test("dispatchJob reads GET /api/view with the probe's headers and writes the fi
   const d = dir(), seen = [];
   const ok = async (url, init) => { seen.push([url, init.method, init.headers["cf-access-client-id"]]); return { ok: true, status: 200, json: async () => view() }; };
   const r = await dispatchJob({ base: "https://board.test", headers: { "cf-access-client-id": "id-1" }, fetchImpl: ok, dir: d, roster: ROSTER, lead: LEAD, now: () => NOW });
-  assert.deepEqual(seen, [["https://board.test/api/view", "GET", "id-1"]]);
+  // The view, then (#C903) the build start of the card it woke its owner for with nothing pushed.
+  assert.deepEqual(seen, [["https://board.test/api/view", "GET", "id-1"], ["https://board.test/api/probe/build-start", "POST", "id-1"]]);
   assert.equal(r.wrote, true);
   const d2 = dir();
   await assert.rejects(() => dispatchJob({ base: "https://board.test", headers: {}, fetchImpl: async () => ({ ok: false, status: 503 }), dir: d2, roster: ROSTER, lead: LEAD, now: () => NOW }), /view answered 503/);
