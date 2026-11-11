@@ -72,6 +72,8 @@ export function initiativeDoc(c, ev) {
     // #C731 B4b: the done-test hold. A card with a checkAt is not closed by the page on the live reading ("Live, still open").
     checkAt: Number.isInteger(c.check_at) && c.check_at > 0 ? c.check_at : undefined,
     repo: c.repo, batch: c.batch, bump: c.bump,
+    // holds-need-an-end (#C838): the id of the ask or card whose closing ends the hold, and when the hold began (the page draws "held: <reason>, until <end>").
+    holdEnd: typeof c.hold_end === "string" && c.hold_end ? c.hold_end : undefined, heldAt: num(c.held_at), holdUntil: num(c.hold_until),
   });
 }
 
@@ -111,6 +113,8 @@ export function derivedDoc(view) {
     const v = view.evidence?.[`cards.${id}`]?.value;
     if (!rows.get(id)?.repo || c.phase !== "ship" || typeof v?.onMain !== "boolean") continue;
     c.wait = v.onMain ? "install" : "release";
+    // #C838: a card waiting for the install names the deploy ask it waits on (its newest open ask, as #T<n>); the page says "no deploy ask yet" when it has none.
+    if (v.onMain) { const open = (view.asks ?? []).filter((a) => a.card_id === id && !a.closed_at && Number.isInteger(a.num)); if (open.length) c.waitAsk = Math.max(...open.map((a) => a.num)); }
   }
   const rel = view.evidence?.releases?.value;
   return prune({ id: "all", at: view.now, cards, times: {}, live, releaseTimes: rel && typeof rel === "object" && !Array.isArray(rel) && Object.keys(rel).length ? rel : undefined });

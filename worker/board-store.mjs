@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
+import { holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -26,7 +26,7 @@ const evidenceOf = async (db, key) => {
   try { return r ? JSON.parse(r.value) : null; } catch { return null; }
 };
 
-const COLUMNS = ["title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump"];
+const COLUMNS = ["title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end"];
 // true/false are stored as 1/0; a list or the issue counts are stored as JSON text (null stays null: "not said").
 const bool = (v) => (v === true ? 1 : v === false ? 0 : Array.isArray(v) || (v && typeof v === "object") ? JSON.stringify(v) : v);
 
@@ -36,32 +36,52 @@ export async function createCard(db, now, who, fields) {
   if (fields && typeof fields === "object" && "check_at" in fields && !CHECK_AT_WRITERS.includes(who)) return refuse(db, now, { rule: "check-at-lead-only", detail: `${who ?? "unknown"} cannot set a card's check date; ${CHECK_AT_WRITERS.join(" or ")} can` }, fields.id, who);
   const bad = cardWriteRefusal(fields, null);
   if (bad) return refuse(db, now, bad, fields?.id, who);
+  const noEnd = holdEndRefusal(fields, null) ?? (await holdEndUnknown(db, fields));
+  if (noEnd) return refuse(db, now, noEnd, fields?.id, who);
   if (typeof fields.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(fields.id)) return refuse(db, now, { rule: "card-id", detail: "lowercase letters, digits, hyphens" }, fields.id, who);
   if (typeof fields.title !== "string" || !fields.title.trim()) return refuse(db, now, { rule: "card-shape", detail: "title is required" }, fields.id, who);
   if (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(fields.id).first()) return refuse(db, now, { rule: "card-exists", detail: fields.id }, fields.id, who);
   const num = await mint(db, "C");
   const row = COLUMNS.map((c) => (c in fields ? bool(fields[c]) : null) ?? defaultFor(c));
-  await db.prepare(`INSERT INTO cards (id, num, ${COLUMNS.join(", ")}, issues_at, created_at, updated_at) VALUES (?, ?, ${COLUMNS.map(() => "?").join(", ")}, ?, ?, ?)`)
-    .bind(fields.id, num, ...row, fields.issues ? now : null, now, now).run();
+  await db.prepare(`INSERT INTO cards (id, num, ${COLUMNS.join(", ")}, issues_at, held_at, hold_until, created_at, updated_at) VALUES (?, ?, ${COLUMNS.map(() => "?").join(", ")}, ?, ?, ?, ?, ?)`)
+    .bind(fields.id, num, ...row, fields.issues ? now : null, isHeld(fields) ? now : null, autoHoldEnd(fields, null, now), now, now).run();
   return { ok: true, id: fields.id, num };
 }
 const defaultFor = (c) => (c === "summary" ? "" : c === "track" ? "product" : c === "paused" || c === "dropped" ? 0 : null);
+
+// holds-need-an-end (#C838): hold_end names an OPEN ask or a card that is not dropped; null lifts it.
+const holdEndUnknown = async (db, fields) => {
+  const ref = fields.hold_end;
+  if (ref === undefined || ref === null) return null;
+  const ok = await db.prepare("SELECT 1 AS x FROM asks WHERE id = ? AND closed_at IS NULL UNION ALL SELECT 1 AS x FROM cards WHERE id = ? AND dropped = 0").bind(ref, ref).first();
+  return ok ? null : { rule: "hold-end-unknown", detail: `${ref} is no open ask and no live card` };
+};
 
 const CHECK_AT_WRITERS = ["Manager", "owner"];
 // Card words changed later: checked against the probe's reading of this card (a typed word cannot contradict it).
 export async function updateCard(db, now, who, fields) {
   const id = fields?.id;
-  const card = typeof id === "string" ? await db.prepare("SELECT id FROM cards WHERE id = ?").bind(id).first() : null;
+  const card = typeof id === "string" ? await db.prepare("SELECT id, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until FROM cards WHERE id = ?").bind(id).first() : null;
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
   const bad = cardWriteRefusal(fields, await evidenceOf(db, `cards.${id}`));
   if (bad) return refuse(db, now, bad, id, who);
   // #C748: the check date holds a card open past its live reading, so only the lead (or the owner) sets it or lifts it (null), as on the old board.
   if ("check_at" in fields && !CHECK_AT_WRITERS.includes(who)) return refuse(db, now, { rule: "check-at-lead-only", detail: `${who ?? "unknown"} cannot set or lift a card's check date; ${CHECK_AT_WRITERS.join(" or ")} can` }, id, who);
+  const noEnd = holdEndRefusal(fields, card) ?? (await holdEndUnknown(db, fields));
+  if (noEnd) return refuse(db, now, noEnd, id, who);
   const keys = COLUMNS.filter((c) => c in fields);
   if (!keys.length) return { ok: true, id, changed: 0 };
   // The issue counts carry the time they were last set (the page shows when the chips were counted).
   const sets = keys.map((k) => `${k} = ?`), vals = keys.map((k) => bool(fields[k]));
   if (keys.includes("issues")) { sets.push("issues_at = ?"); vals.push(fields.issues ? now : null); }
+  // When the hold began: set by the write that makes the card held, kept while it stays held, cleared (with its end) when it is lifted.
+  if (keys.includes("waiting_on") || keys.includes("blocked_reason")) {
+    const after = { waiting_on: "waiting_on" in fields ? fields.waiting_on : card.waiting_on, blocked_reason: "blocked_reason" in fields ? fields.blocked_reason : card.blocked_reason };
+    sets.push("held_at = ?"); vals.push(isHeld(after) ? (isHeld(card) ? card.held_at ?? now : now) : null);
+    if (!isHeld(after) && !("hold_end" in fields)) sets.push("hold_end = NULL");
+    // a waiting_on with no explicit end gets one from the store (now + 2 h, renewed by each such write); lifting the hold, or an explicit end, clears it
+    sets.push("hold_until = ?"); vals.push(isHeld(after) ? autoHoldEnd(fields, card, now) : null);
+  }
   await db.prepare(`UPDATE cards SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`).bind(...vals, now, id).run();
   return { ok: true, id, changed: keys.length };
 }
@@ -224,13 +244,22 @@ const pendingForManager = async (db) => {
 // (card, reason): a new reason for a card is pending for Manager once, an older untaken reason of the card is replaced by it, and a stall
 // that is over is no longer pending. A reason already sent is never sent again.
 async function syncStalls(db, now) {
-  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, waiting_on, repo FROM cards").all()).results;
+  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, waiting_on, repo, check_at, hold_end, held_at, hold_until, updated_at FROM cards").all()).results;
   const evRows = (await db.prepare("SELECT key, value FROM evidence WHERE key = 'agents' OR key LIKE 'cards.%'").all()).results;
   let agents = {}; const evidence = {};
   for (const r of evRows) { let v; try { v = JSON.parse(r.value); } catch { continue; } if (r.key === "agents") agents = v; else evidence[r.key.slice(6)] = v; }
   const openAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
   const phaseStart = new Map((await db.prepare("SELECT card_id, phase, MAX(at) AS at FROM phase_history WHERE kind = 'start' AND wait IS NULL GROUP BY card_id, phase").all()).results.map((r) => [`${r.card_id}|${r.phase}`, r.at]));
-  const stalls = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart });
+  // holds-need-an-end (#C838): a held card whose end has passed, or that has had none for 2 h, wakes Manager once (one row per card and reason).
+  const refs = [...new Set(cards.filter((c) => isHeld(c) && c.hold_end).map((c) => c.hold_end))];
+  const endsPassed = new Set();
+  for (const ref of refs) {
+    const ask = await db.prepare("SELECT closed_at FROM asks WHERE id = ?").bind(ref).first();
+    if (ask) { if (ask.closed_at) endsPassed.add(ref); continue; }
+    const card = cards.find((c) => c.id === ref);
+    if (card && (card.dropped || evidence[ref]?.lit?.[0] === "live")) endsPassed.add(ref);
+  }
+  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }), ...heldWakes({ now, cards, endsPassed })];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.

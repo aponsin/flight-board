@@ -27,12 +27,12 @@ test("a message with an image lists it in the inbox: id, name, type, size and th
 
 test("an answer with files lists them too, in the order they were attached", async () => {
   const db = makeDb(), bucket = fakeR2();
-  const one = await store(db, bucket, "one.png"), two = await store(db, bucket, "notes.txt", "text/plain", Buffer.from("hello").toString("base64"));
+  const one = await store(db, bucket, "z.png"), two = await store(db, bucket, "a.txt", "text/plain", Buffer.from("hello").toString("base64"));
   const ask = await createAsk(db, T, { type: "Decision", title: "Pick", asked_by: "Manager", question: "A or B?", options: ["A", "B"], recommended: "A" });
   await answerAsk(db, T + 1000, "owner", { id: ask.id, answer: "B" });
-  await linkFiles(db, T + 1000, "answer", ask.id, [two.id, one.id]);
+  await linkFiles(db, T + 1000, "answer", ask.id, [one.id, two.id]);
   const got = await takeInbox(db, T + 2000);
-  assert.deepEqual(got.answers[0].files.map((f) => [f.name, f.type, f.fetch]), [["notes.txt", "text/plain", `/_blob/${two.id}`], ["one.png", "image/png", `/_blob/${one.id}`]]);
+  assert.deepEqual(got.answers[0].files.map((f) => [f.name, f.type, f.fetch]), [["z.png", "image/png", `/_blob/${one.id}`], ["a.txt", "text/plain", `/_blob/${two.id}`]]);
 });
 
 test("250 unread messages with files read without a statement binding more than 100 values (D1's limit)", async () => {

@@ -161,7 +161,7 @@ export function listWriteRefusal(fields, { create = false } = {}) {
 }
 
 // Card words: only these fields are typed; status, phase, evidence and numbers are never written by a session.
-const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump"]);
+const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end"]);
 export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
 const CARD_FORBIDDEN = new Set(["status", "phase", "num", "live_version", "signed", "on_main", "ci", "evidence"]);
 
@@ -195,6 +195,55 @@ export function cardWriteRefusal(fields, evidence) {
     return refuse("rework-reason-missing", "attach a rework_reason before other writes");
   }
   return null;
+}
+
+// holds-need-an-end (#C838, prevention for #T1761: #C826 sat silent because stalledWaits skips any card with a hold, and its hold had no end).
+// A hold is waiting_on or blocked_reason with words in it. Its end is the card's check_at (a time) or hold_end (the id of an ask or a card
+// whose closing ends it). A write that SETS a hold must leave the card with an end (this write's or one already there), else it is refused
+// in the same call. holdEndRefusal is pure: `fields` is the write, `existing` the card's row (null for a new card).
+export const HOLD_NO_END_AFTER_MS = 2 * 3_600_000;
+const heldWord = (v) => typeof v === "string" && v.trim() !== "";
+export const isHeld = (c) => !!c && (heldWord(c.waiting_on) || heldWord(c.blocked_reason));
+export function holdEndRefusal(fields, existing) {
+  if (fields.hold_end !== undefined && fields.hold_end !== null && !(typeof fields.hold_end === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(fields.hold_end))) return refuse("hold-end-shape", "hold_end is the id of an ask or a card, or null");
+  // A blocked card must keep an end: refused when the write sets a blocked_reason, or strips the end (check_at or hold_end) of a blocked card, and leaves none.
+  // A waiting_on gets its end from the store (autoHoldEnd). A write that touches none of the three is never refused for an older hold with no end.
+  const blocked = "blocked_reason" in fields ? fields.blocked_reason : existing?.blocked_reason;
+  if (!heldWord(blocked) || !("blocked_reason" in fields || "check_at" in fields || "hold_end" in fields)) return null;
+  if (hasExplicitEnd(fields, existing)) return null;
+  return refuse("hold-needs-end", "a blocked_reason needs an end: check_at, or hold_end (the id of an ask or card whose closing ends it)");
+}
+// The explicit end a card ends up with after a write: its check_at (a time) or hold_end (an id).
+export function hasExplicitEnd(fields, existing) {
+  const at = "check_at" in fields ? fields.check_at : existing?.check_at, ref = "hold_end" in fields ? fields.hold_end : existing?.hold_end;
+  return (Number.isInteger(at) && at > 0) || heldWord(ref);
+}
+// A waiting_on written with no end (the lead's routine "next is") is given one by the store: now + 2 h, kept in hold_until. null when the write sets no
+// waiting_on, sets a blocked_reason (which brings its own end) or the card already has an explicit end.
+export function autoHoldEnd(fields, existing, now) {
+  return heldWord(fields.waiting_on) && !heldWord(fields.blocked_reason) && !hasExplicitEnd(fields, existing) ? now + HOLD_NO_END_AFTER_MS : null;
+}
+// Held cards that need Manager: `endsPassed` is the Set of hold_end ids whose closing has happened (the ask is closed, the card is dropped or live).
+// (b) a hold whose end has passed: "#Cn held on <reason>, its end has passed: lift or renew"; (c) a hold with no end for 2 h (counted from
+// held_at, else the card's updated_at): "#Cn held on <reason>, no end set after 2 h: lift it or give it an end". One row per (card, reason).
+const zDay = (ms) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")}Z`;
+export function heldWakes({ now, cards, endsPassed }) {
+  const out = [];
+  for (const c of cards ?? []) {
+    if (!Number.isInteger(c.num) || c.dropped || !isHeld(c)) continue;
+    const why = String(heldWord(c.blocked_reason) ? c.blocked_reason : c.waiting_on).trim().replace(/\s+/g, " ").slice(0, 80);
+    const timed = Number.isInteger(c.check_at) && c.check_at > 0, ref = heldWord(c.hold_end) ? c.hold_end : null, until = Number.isInteger(c.hold_until) && c.hold_until > 0 ? c.hold_until : null;
+    if (timed || ref || until) { // an explicit end (check_at, hold_end) wins over the one the store gave (hold_until)
+      const passed = timed || ref ? (timed && c.check_at <= now) || (ref && endsPassed?.has(ref)) : until <= now;
+      // The end is in the reason (the row is keyed by card and reason): a hold renewed with the same words and a new end wakes Manager again when that one passes.
+      const endTxt = timed ? zDay(c.check_at) : ref ? ref : zDay(until);
+      if (passed) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} held on ${why}, its end has passed: lift or renew (end ${endTxt})` });
+      continue;
+    }
+    const since = Number.isFinite(c.held_at) ? c.held_at : c.updated_at;
+    if (Number.isFinite(since) && now - since >= HOLD_NO_END_AFTER_MS) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} held on ${why}, no end set after 2 h: lift it or give it an end (held since ${zDay(since)})` });
+  }
+  return out;
 }
 
 // Evidence: one lit phase per card, and only the probe writes it.

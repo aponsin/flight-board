@@ -1917,6 +1917,11 @@ function waitBoxes(log,doneAt){const out={};const l=(Array.isArray(log)?log:[]).
 // and waiting for the owner's install. Nobody owes a step meanwhile, so no stall, no "never started", no stale next step.
 const KNOWN_WAITS={release:"Queued for board release",install:"Waiting for install"};
 function knownWait(i){const d=derivedOf(i&&i.id);return d&&Object.hasOwn(KNOWN_WAITS,d.wait)?d.wait:null}
+// A card waiting for the install names the deploy ask it waits on, or says there is none yet (#C838).
+function knownWaitText(i){const k=knownWait(i);if(!k)return "";if(k!=="install")return KNOWN_WAITS[k];const d=derivedOf(i.id);return KNOWN_WAITS[k]+": "+(d&&num(d.waitAsk)!=null?"#T"+d.waitAsk:"no deploy ask yet")}
+// A hold (waiting_on or blocked) shows its end (#C838): "held: <reason>, until <end>" (the check date, the ask or card whose closing ends it, or no end set).
+function heldLine(i){const r=typeof i.blocked==="string"&&i.blocked.trim()?i.blocked.trim():typeof i.waitingOn==="string"&&i.waitingOn.trim()?i.waitingOn.trim():"";if(!r)return "";
+  const end=num(i.checkAt)!=null?dayLabel(i.checkAt):typeof i.holdEnd==="string"&&i.holdEnd?i.holdEnd:num(i.holdUntil)!=null?dayLabel(i.holdUntil):"no end set";return "held: "+r+", until "+end}
 // Waiting on the owner (#C376): an ask tied to the card that the owner hasn't answered. Nobody owes a step meanwhile, so
 // its timers pause (no stall, no "never started", no stale next step, no passed ETA) and the card names the ask.
 function ownerWait(i,now=Date.now()){return i&&i.id?(state.waiting||[]).find(w=>w&&w.initiative===i.id&&waitsOn(w.id,now)==="you")||null:null}
@@ -2075,13 +2080,13 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   // #C732 (page): a paused or parked card ships in no version anyone can name: no version line, as no ETA.
   const vn=i.status!=="done"&&!parkedStatus(i)?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
   const st=stalled(i),ow=i.status!=="done"?ownerWait(i):null;
-  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":verifying(i)?"Verifying":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?KNOWN_WAITS[knownWait(i)]:ow?"Waiting on you":st?"Stalled":liveBuilding(i.id)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
+  const statusTxt=stuck?"Blocked":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":verifying(i)?"Verifying":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?knownWaitText(i):ow?"Waiting on you":st?"Stalled":liveBuilding(i.id)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
   const owHtml=ow?`<span class="ow-line">waiting on you: <a href="#" class="t-ref" data-tref="${esc(ow.id)}">${esc(threadName(ow.id))}</a></span>`:"";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
   // An agent the live state shows working on it since then has moved too (#C449).
   const nAt=num(i.nextNoteAt),stale=liveOpen||nAt!=null&&(num(i.lastStepAt)!=null&&i.lastStepAt>nAt||liveWorkers(i.id).some(n=>{const a=liveAgent(n);return !!a&&num(a.since)!=null&&a.since>nAt}));
   const next=i.nextNote?`<span${stale?' style="opacity:.6"':""}>Next: <b>${esc(i.nextNote)}</b>${num(i.nextAt)?` <span data-next="${i.nextAt}">${i.nextAt>Date.now()?"in "+dur(i.nextAt-Date.now()):"due now"}</span>`:""}${nAt!=null?` <span data-ago="${nAt}">(written ${dur(Date.now()-nAt)} ago${stale?"; an agent has moved since":""})</span>`:" (not dated)"}</span>`:"";
-  const wait=i.waitingOn&&!liveOpen?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
+  const held=heldLine(i),wait=held&&!liveOpen?`<span class="held-line">${esc(held)}</span>`:i.waitingOn&&!liveOpen?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
   // One ETA per card, the ETA box's (#C450, the owner on #C448: "Live in 18 min · around 04:32 PM" against "expected L
   // 6 h, due ~09:05 PM"): the size's median is only a hint here, "(usually 6 h for L)", with no due time of its own.
   const usual=sMs?` <span class="usual">(usually ${sMs/3600e3} h for ${esc(i.size)})</span>`:"";
