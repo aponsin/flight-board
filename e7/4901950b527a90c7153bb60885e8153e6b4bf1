@@ -1,0 +1,1 @@
+SECURE. #C902 v2, the re-cut of 3df9ce34 (SECURE) on 8f07de7: the range-diff outside CHANGELOG shows only DATA.md context and the board-worker.mjs TOOLS conflict, resolved by keeping #C920's ask description beside #C902's card_update schema; the code patch is the same. The LOW from 3df9ce34 stands: anchor DONE_EVIDENCE whole.
