@@ -178,11 +178,12 @@ test("heldWakes is pure: a dropped card, a card with no hold and a card with a f
 test("(d) the page shows 'Held: <reason>, until <end>' for a check date, an ask, and no end", () => {
   const b = loadBoard();
   const draw = (f) => { b.state.steps = []; b.state.waiting = []; return b.initRow(b.gates(b.enrich({ id: "x", level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", ...f }))); };
-  assert.match(draw({ waitingOn: "the deploy", holdEnd: "t1763" }), /Held: the deploy, until t1763/);
-  assert.match(draw({ waitingOn: "the owner", checkAt: Date.now() + DAY }), /Held: the owner, until /);
-  assert.match(draw({ waitingOn: "someone" }), /Held: someone, until no end set/);
-  assert.match(draw({ waitingOn: "Checker", holdUntil: Date.now() + 2 * H }), /Held: Checker, until (?!no end)/);
-  assert.match(draw({ blocked: "keys", status: "blocked" }), /Held: keys, until no end set/);
+  // #C935: the reason stays in view, the end sits inside the card's Details fold as "Until: <end>".
+  assert.match(draw({ waitingOn: "the deploy", holdEnd: "t1763" }), /Held: the deploy<[\s\S]*Until: t1763/);
+  assert.match(draw({ waitingOn: "the owner", checkAt: Date.now() + DAY }), /Held: the owner<[\s\S]*Until: (?!no end)/);
+  assert.match(draw({ waitingOn: "someone" }), /Held: someone<[\s\S]*Until: no end set/);
+  assert.match(draw({ waitingOn: "Checker", holdUntil: Date.now() + 2 * H }), /Held: Checker<[\s\S]*Until: (?!no end)/);
+  assert.match(draw({ blocked: "keys", status: "blocked" }), /Held: keys<[\s\S]*Until: no end set/);
 });
 
 test("(d) the compat view carries holdEnd and heldAt", async () => {
