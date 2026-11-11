@@ -1,0 +1,1 @@
+SECURE. Dispatch choice and stall grouping only. The new stall reason line is built from owner_role (held to ^[A-Za-z0-9 _-]{1,24}$ above), an hhmmZ time, a count and #C numbers: no free text reaches Manager's line. syncStalls selects two existing columns. No migration, route, secret or new write.
