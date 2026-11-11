@@ -19,7 +19,7 @@ export function mirrorCard(c) {
     name: str(c.title), summary: str(c.summary), who: str(c.owner_role), size: str(c.size), level: str(c.review_level),
     num: num(c.num), nextNote: str(c.next_note), nextNoteAt: num(c.next_note_at), waitingOn: str(c.waiting_on), phaseReason: str(c.rework_reason),
     createdAt: num(c.created_at), updatedAt: num(c.updated_at),
-    status: c.dropped ? "dropped" : c.paused ? "paused" : "active",
+    status: c.dropped ? "dropped" : c.done_at ? "done" : c.paused ? "paused" : "active", // #C902
     // The words the review skips read (state.mjs reviewsFor): customerText false skips the language review, lookChange true is
     // what keeps the design review, skip names phases to leave out. Not said (null) stays out, as on an old card without them.
     customerText: c.customer_text === 1 ? true : c.customer_text === 0 ? false : undefined,
