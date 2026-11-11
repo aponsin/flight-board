@@ -1,0 +1,1 @@
+PASS Full: #C902 close-done-without-branch, signed only as part of the line ending at 373b042, re-cut of e749019 onto 2593e49. Diff check: code identical. This commit alone must not ship.
