@@ -111,6 +111,33 @@ test("only Manager's Decision is gated: another role's Decision, and Manager's o
   assert.equal((await askFromTool(db, NOW, "Builder", decision({ asked_by: "Builder", related_thread: "none" }))).refused.rule, "unknown-field", "no related_thread for other roles");
 });
 
+test("the thread path keeps every guard of the ask path: screenshots refused, a recommended outside the options refused, no eta_at, the right key, the card carried", async () => {
+  const db = makeDb();
+  await ownerThread(db, "t-100", { title: "Pack order", text: "what next?" });
+  const posted = async () => count(db, "messages");
+  const before = await posted();
+  // screenshots would be dropped silently by a message: refused, nothing posted (Checker F1)
+  const shots = await askFromTool(db, NOW, "Manager", decision({ related_thread: "t-100", screenshots: ["/images/a.png"] }));
+  assert.equal(shots.refused.rule, "decision-screenshots-in-thread");
+  assert.match(shots.refused.detail, /related_thread "none"/);
+  // an empty list carries nothing, so it is fine
+  assert.equal((await askFromTool(db, NOW, "Manager", decision({ related_thread: "t-100", screenshots: [] }))).ok, true);
+  assert.equal(await posted(), before + 1);
+  // askRefusal runs before the post: a recommended that is not among the options is refused, never a thrown error
+  const bad = await askFromTool(db, NOW, "Manager", decision({ related_thread: "t-100", recommended: "Maybe" }));
+  assert.ok(bad.refused, JSON.stringify(bad));
+  assert.notEqual(bad.refused.rule, "decision-thread-unknown");
+  assert.equal(await posted(), before + 1, "nothing posted for it");
+  // eta_at has no meaning in a message
+  assert.equal((await askFromTool(db, NOW, "Manager", decision({ related_thread: "t-100", eta_at: NOW + HOUR }))).refused.rule, "decision-not-before");
+  assert.equal(await posted(), before + 1);
+  // the recommended key is the letter of the recommended option, and the card id is carried in the body
+  const second = await askFromTool(db, NOW, "Manager", decision({ related_thread: "t-100", recommended: "No", card_id: "card-a" }));
+  assert.equal(second.ok, true, JSON.stringify(second));
+  const m = await db.prepare("SELECT body FROM messages WHERE thread_id = 't-100' AND author = 'Manager' ORDER BY created_at DESC, id DESC").all();
+  assert.ok(m.results.some((r) => /Recommended: B/.test(r.body) && /Card: card-a/.test(r.body)), "key B and the card id are in the body");
+});
+
 test("through the tool: the ask tool's schema and description name related_thread, and a Manager Decision without it is refused", async () => {
   const ask = TOOLS.find((t) => t.name === "ask");
   assert.ok(ask.inputSchema.properties.related_thread);

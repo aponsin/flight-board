@@ -166,11 +166,13 @@ export async function askFromTool(db, now, who, args) {
   const bad = askRefusal(ask, now);
   if (bad) return refuse(db, now, bad, ask.card_id, who);
   if (ask.eta_at !== undefined) return no("decision-not-before", "a Decision posted in a thread has no not-before time; leave eta_at out");
+  // A message carries no pictures: a Decision with screenshots would reach the owner without them and still answer ok (Checker F1 on 7868461).
+  if (Array.isArray(ask.screenshots) ? ask.screenshots.length : ask.screenshots !== undefined && ask.screenshots !== null) return no("decision-screenshots-in-thread", "a Decision posted in a thread cannot carry screenshots (a message has none): send it with related_thread \"none\" so it is an ask, or leave the screenshots out");
   const known = (await db.prepare("SELECT 1 AS x FROM asks WHERE id = ?").bind(rel).first()) || (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(rel).first()) || (await db.prepare("SELECT 1 AS x FROM threads WHERE id = ?").bind(rel).first());
   if (!known) return no("decision-thread-unknown", rel);
   const options = ask.options.map((label, i) => ({ key: KEYS[i], label }));
   const rec = options[ask.options.indexOf(ask.recommended)];
-  const body = `${ask.title}\n\n${ask.question}\n\nRecommended: ${rec.key}`;
+  const body = `${ask.title}\n\n${ask.question}\n\nRecommended: ${rec.key}${typeof ask.card_id === "string" && ask.card_id ? `\n\nCard: ${ask.card_id}` : ""}`;
   const r = await postMessage(db, now, who, { thread_id: rel, body, kind: "decision", options });
   return r.ok ? { ...r, thread_id: rel, posted_in_thread: true } : r;
 }
