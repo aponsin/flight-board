@@ -491,6 +491,18 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .crew3-mem .sv{color:var(--bad);text-transform:uppercase}
 .crew3-on{display:flex;flex-direction:column;gap:2px;font-size:.92rem}
 .crew3-on .idle{color:var(--muted)}
+/* #C871 the queue on a tile, #C859 the stack bar and a card's stack tag */
+.crew3-q,.stkbar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:8px;font-size:.84rem;color:var(--muted)}
+.stkbar{margin:0 0 10px}
+.ql{font:600 .76rem var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.qc{display:inline-flex;align-items:center;gap:2px;font:600 .82rem var(--mono);color:var(--ink)}
+.qm,.stkbar button{font:inherit;line-height:1;min-width:24px;min-height:24px;padding:0 6px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink);cursor:pointer}
+.qm{padding:0 4px}
+.qm:disabled{opacity:.35;cursor:default}
+.qo{flex-basis:100%;font-size:.78rem}
+.stkbar .sw{display:inline-flex;align-items:center;gap:6px}
+.stk{font:600 .8rem var(--mono);color:var(--ink)}
+.stk.out{color:var(--warn)}
 table.crew3-ph{margin-top:14px}
 .now-group{margin-bottom:16px}
 .now-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:0 0 6px;font-weight:600}
@@ -1858,6 +1870,26 @@ function queueLabel(i){if(!i.who)return "queued";const k=qPos(i)<Infinity?queueO
 function queueLine(i){if(!i.who||!isQueued(i))return "";const q=queueOf(i.who);if(!q.includes(i)||q.length<2)return "";
   const at=c=>c===i?"<b>this</b>":`<a href="#" class="t-ref c-ref" data-cref="${esc(c.id)}">${Number.isInteger(c.num)?"#C"+c.num:esc(c.name||c.id)}</a>${isQueued(c)?"":phaseIndex(c.phase)>phaseIndex(BUILD_PHASE)?" (in review)":" (building)"}`;
   return `<span class="q-line">${esc(i.who)}&#39;s queue: ${q.map(at).join(" → ")}</span>`}
+// #C871: an agent's queue on its Crew tile, as #C numbers in the order the dispatch follows (the name on hover), and on the store the owner's
+// up and down buttons. "order set by the owner" when the owner has placed any of them (the Worker then refuses an agent's write to it).
+function queueTile(n){if(!STORE)return "";const q=queueOf(n).filter(isQueued);if(!q.length)return "";
+  const label=i=>Number.isInteger(i.num)?"#C"+i.num:i.id;
+  const cell=(i,k)=>`<span class="qc" title="${esc(i.name||i.id)}">${esc(label(i))}<button type="button" class="qm" data-qmove="${esc(i.id)}" data-dir="up" aria-label="Move ${esc(label(i))} up the queue"${k===0?" disabled":""}>↑</button><button type="button" class="qm" data-qmove="${esc(i.id)}" data-dir="down" aria-label="Move ${esc(label(i))} down the queue"${k===q.length-1?" disabled":""}>↓</button></span>`;
+  return `<div class="crew3-q"><span class="ql">Queue</span>${q.map(cell).join("")}${q.some(i=>i.queueSetBy==="owner")?'<small class="qo">order set by the owner</small>':""}</div>`}
+// #C859: a repository's stack switch, as the store's view says it; the stack bar on the Crew view and a card's own stack tag.
+function stackRow(repo){const m=(state.meta||[]).find(d=>d&&d.id==="stackSwitch");return m&&Array.isArray(m.rows)?m.rows.find(r=>r&&r.repo===repo)||null:null}
+function stackBar(){if(!STORE)return "";const rows=[["board","Board"],["product","Product"]].map(([k,l])=>[k,l,stackRow(k)]).filter(([,,r])=>r);if(!rows.length)return "";
+  return `<div class="stkbar"><span class="ql">Stack mode</span>${rows.map(([k,l,r])=>`<span class="sw">${esc(l)}: <b>${r.stack?"on":"off"}</b><button type="button" data-sw="${esc(k)}" data-on="${r.stack?"0":"1"}">${r.stack?"Turn off":"Turn on"}</button>${r.setBy&&r.setBy!=="default"&&num(r.setAt)?`<small>by ${esc(r.setBy)}, ${esc(hhmm(r.setAt))}</small>`:""}</span>`).join("")}<small class="qo">On: a repository's open cards are built, reviewed, landed and deployed as one stack. Off: each card on its own.</small></div>`}
+function stackTag(i){const s=i&&i.stack;if(!STORE||!s)return "";
+  if(s.outside)return `<span class="stk out" title="${s.branch?esc("Cut from a branch other than the stack branch "+s.branch):"Not cut from the stack tip"}">outside the stack${s.branch?" · "+esc(s.branch):""}</span>`;
+  return s.tip&&s.size?`<span class="stk" title="One review, one landing, one deploy for the stack">stack of ${s.size} · tip <code>${esc(s.tip.slice(0,7))}</code></span>`:""}
+// The owner's clicks on the queue arrows and the stack switch: the store's own routes, the same rules as the typed tools; the page re-reads on its next poll.
+document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e.target.closest("[data-qmove],[data-sw]"):null;if(!b||!STORE||b.disabled)return;
+  const q=b.dataset.qmove!==undefined,was=b.textContent;b.disabled=true;
+  try{const r=await fetch(q?"/api/queue-move":"/api/stack-switch",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(q?{id:b.dataset.qmove,dir:b.dataset.dir}:{repo:b.dataset.sw,stack:b.dataset.on==="1"})});
+    if(!r.ok)throw new Error("refused");
+    try{renderCrew3()}catch(_){}}
+  catch(_){b.textContent="Not saved";setTimeout(()=>{b.textContent=was;b.disabled=false},4000)}});
 // What an open card waits on (#C444, initiatives.dependsOn, the lead's): one "waits on #C440, #C441" with a link per
 // dependency that is not live yet (Designer: one label, not one per item): open, on the board, at any phase before live, the
 // repository's phase over the card's, the same rule as the dispatch (#C845: a card is not dispatched while a card it depends on is
@@ -2104,7 +2136,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track">${steps}</div>`}
-   <div class="i-meta">${queueLine(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div>${thread}</div>`;
+   <div class="i-meta">${queueLine(i)}${stackTag(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${next}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div>${thread}</div>`;
 }
 // The card rules' red lines (#C662, gate/card-rules.mjs): the probe writes them into derived/all for an open card that breaks one
 // (queued with a step of its own, past build with no build end step, on ship with nothing on main, a field outside its list),
@@ -2627,11 +2659,11 @@ function crewHtml(now=Date.now()){
     const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1];return `<span>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(note)}</span>`;
     return `<div class="panel crew3-t" data-agent="${esc(n)}"><h3><span>${esc(n)}</span>${md.model||md.effort?`<span class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</span>`:""}${liveAgent(n,now)&&probe.agents[n].by==="title"?'<span class="mdl" title="No session id for this role in the config: its agent is the newest session with this title">found by title</span>':""}</h3>`+
       (L?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${esc(L.txt)}</span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${clearMe(m)&&!STORE?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
-      `<div class="crew3-on">${on}</div></div>`}).join("");
+      `<div class="crew3-on">${on}</div>${queueTile(n)}</div>`}).join("");
   const tot=logTotals("phase",now),fmt=ms=>ms?dur(ms):"—";
   const rows=PHASES.filter(([k])=>tot[k]).map(([k,label])=>`<tr><td>${esc(label)}</td><td>${fmt(tot[k].work)}</td><td>${fmt(tot[k].busy)}</td><td>${fmt(tot[k].gate)}</td></tr>`).join("");
   const table=rows?`<div class="chart-wrap"><table class="qt crew3-ph"><caption>Last 7 days, by phase</caption><thead><tr><th>Phase</th><th>Working</th><th>Queued (busy)</th><th>Gated</th></tr></thead><tbody>${rows}</tbody></table></div>`:"";
-  return (tiles?`<div class="crew3">${tiles}</div>`:'<div class="empty">No agents yet.</div>')+table}
+  return stackBar()+(tiles?`<div class="crew3">${tiles}</div>`:'<div class="empty">No agents yet.</div>')+table}
 function renderCrew3(){const el=$("crew3");if(!$("v3").hidden&&!$("v3crew").hidden)el.innerHTML=crewHtml()}
 // The new layout's view (Now, Plan or Crew), this browser's choice only.
 let v3view="now";

@@ -55,6 +55,17 @@ export function waitingDoc(a) {
   return prune(doc);
 }
 
+// The probe's stack reading of a card ({ tip, size, branch } or { outside, branch }), copied field by field so nothing else rides along.
+const stackOf = (s) => {
+  if (!s || typeof s !== "object" || Array.isArray(s)) return undefined;
+  const o = {};
+  if (typeof s.tip === "string" && /^[0-9a-f]{12}$/.test(s.tip)) o.tip = s.tip;
+  if (Number.isInteger(s.size) && s.size >= 2 && s.size <= 200) o.size = s.size;
+  if (s.outside === true) o.outside = true;
+  if (typeof s.branch === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(s.branch)) o.branch = s.branch;
+  return Object.keys(o).length ? o : undefined;
+};
+
 // One card as an old `initiatives` doc; the phase and status are the probe's reading, never typed.
 export function initiativeDoc(c, ev) {
   const lit = ev?.value?.lit?.[0];
@@ -69,6 +80,9 @@ export function initiativeDoc(c, ev) {
     // #C729 B4a: what it waits on, its issue counts (and when set) and its place in its owner's queue.
     dependsOn: Array.isArray(deps) ? deps : undefined, issues: issues && typeof issues === "object" && !Array.isArray(issues) ? issues : undefined, issuesAt: num(c.issues_at),
     queuePos: Number.isInteger(c.queue_pos) && c.queue_pos > 0 ? c.queue_pos : undefined,
+    // #C871: who placed it in the queue and when (the page says "order set by the owner"); #C859: where it stands in its repository's stack.
+    queueSetBy: typeof c.queue_set_by === "string" && c.queue_set_by ? c.queue_set_by : undefined, queueSetAt: num(c.queue_set_at),
+    stack: stackOf(ev?.value?.stack),
     // #C731 B4b: the done-test hold. A card with a checkAt is not closed by the page on the live reading ("Live, still open").
     checkAt: Number.isInteger(c.check_at) && c.check_at > 0 ? c.check_at : undefined,
     repo: c.repo, batch: c.batch, bump: c.bump,
@@ -157,6 +171,8 @@ export function compatView(view) {
   // The phase history as the old step log's shape (B3b): the page's own code reads who, times, ETAs and medians from it.
   if ((view.history ?? []).length) collections.steps = view.history.map((h) => prune({ id: `h${h.id}`, init: h.card_id, phase: h.phase, kind: h.kind, at: h.at, who: h.who, wait: h.wait ?? undefined }));
   if (view.live?.state === "live") collections.meta = [{ id: "live", version: String(view.live.version).replace(/^v/, ""), at: view.now - (view.live.age ?? 0) }];
+  // #C859: each repository's stack switch, for the page's switch and its stack groups.
+  if ((view.stackSwitch ?? []).length) collections.meta = [...(collections.meta ?? []), { id: "stackSwitch", rows: view.stackSwitch.map((r) => ({ repo: r.repo, stack: r.stack === true, setBy: r.set_by, setAt: r.set_at })) }];
   applyThreads(collections, view); // before applyFiles: it adds assets to the messages
   applyFiles(collections, view);
   applyShips(collections, view);

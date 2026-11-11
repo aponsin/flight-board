@@ -157,6 +157,20 @@ export function stackSwitchRefusal(b, who) {
   return null;
 }
 
+// #C871: an agent's queue is in an order the owner sets. A card the owner has placed (queue_set_by "owner") keeps its place against an agent's
+// write: the Worker refuses it by program, whoever the agent is, the lead included. The owner moves a card that has not started up or down.
+export function queueWriteRefusal(fields, card, who) {
+  if (fields && "queue_pos" in fields && card?.queue_set_by === "owner" && who !== "owner") return refuse("queue-owner-set", `${who ?? "unknown"} cannot move a card the owner has placed in the queue (its order was set by the owner)`);
+  return null;
+}
+export function queueMoveRefusal(b, who) {
+  if (who !== "owner") return refuse("queue-move-owner", `${who ?? "unknown"} cannot reorder a queue by the owner's hand; only the owner can`);
+  if (b === null || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => k !== "id" && k !== "dir")) return refuse("queue-move-shape", "a queue move is {id, dir}");
+  if (typeof b.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(b.id)) return refuse("queue-move-shape", "id is a card id");
+  if (b.dir !== "up" && b.dir !== "down") return refuse("queue-move-shape", "dir is up or down");
+  return null;
+}
+
 // Withdrawing the owner's approval (#C727): the owner's alone, on an open Approval that is approved. It clears the answer, so the
 // pull request needs his Approve again; Release reads only an approval that stands.
 export function withdrawRefusal(ask, role) {

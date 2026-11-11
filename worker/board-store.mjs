@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, stackSwitchRefusal, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
+import { holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -61,8 +61,10 @@ const CHECK_AT_WRITERS = ["Manager", "owner"];
 // Card words changed later: checked against the probe's reading of this card (a typed word cannot contradict it).
 export async function updateCard(db, now, who, fields) {
   const id = fields?.id;
-  const card = typeof id === "string" ? await db.prepare("SELECT id, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until FROM cards WHERE id = ?").bind(id).first() : null;
+  const card = typeof id === "string" ? await db.prepare("SELECT id, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by FROM cards WHERE id = ?").bind(id).first() : null;
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
+  const owned = queueWriteRefusal(fields, card, who);
+  if (owned) return refuse(db, now, owned, id, who);
   const bad = cardWriteRefusal(fields, await evidenceOf(db, `cards.${id}`));
   if (bad) return refuse(db, now, bad, id, who);
   // #C748: the check date holds a card open past its live reading, so only the lead (or the owner) sets it or lifts it (null), as on the old board.
@@ -74,6 +76,8 @@ export async function updateCard(db, now, who, fields) {
   // The issue counts carry the time they were last set (the page shows when the chips were counted).
   const sets = keys.map((k) => `${k} = ?`), vals = keys.map((k) => bool(fields[k]));
   if (keys.includes("issues")) { sets.push("issues_at = ?"); vals.push(fields.issues ? now : null); }
+  // #C871: who placed the card in its queue, and when (the owner's placement outranks an agent's: queueWriteRefusal).
+  if (keys.includes("queue_pos")) { sets.push("queue_set_by = ?", "queue_set_at = ?"); vals.push(fields.queue_pos === null ? null : who ?? null, fields.queue_pos === null ? null : now); }
   // When the hold began: set by the write that makes the card held, kept while it stays held, cleared (with its end) when it is lifted.
   if (keys.includes("waiting_on") || keys.includes("blocked_reason")) {
     const after = { waiting_on: "waiting_on" in fields ? fields.waiting_on : card.waiting_on, blocked_reason: "blocked_reason" in fields ? fields.blocked_reason : card.blocked_reason };
@@ -324,6 +328,31 @@ export async function setStackSwitch(db, now, who, b) {
   if (bad) return refuse(db, now, bad, null, who);
   await db.prepare("INSERT INTO stack_switch (repo, stack, set_by, set_at) VALUES (?, ?, ?, ?) ON CONFLICT(repo) DO UPDATE SET stack = excluded.stack, set_by = excluded.set_by, set_at = excluded.set_at").bind(b.repo, b.stack ? 1 : 0, who, now).run();
   return { ok: true, repo: b.repo, stack: b.stack };
+}
+// #C871: the owner moves a card that has not started up or down in its agent's queue. The queue is the agent's cards not dropped and with no
+// commit pushed (the probe's reading), in queue_pos order (a card with none after those with one), then by number. The queue is renumbered
+// 1..n, and the two cards swapped carry the owner's stamp, so an agent cannot move them back (queueWriteRefusal).
+export async function moveInQueue(db, now, who, b) {
+  const bad = queueMoveRefusal(b, who);
+  if (bad) return refuse(db, now, bad, b?.id, who);
+  const card = await db.prepare("SELECT id, owner_role, dropped FROM cards WHERE id = ?").bind(b.id).first();
+  if (!card || card.dropped) return refuse(db, now, { rule: "card-unknown", detail: String(b.id) }, b.id, who);
+  const rows = (await db.prepare("SELECT id, num, queue_pos FROM cards WHERE owner_role = ? AND dropped = 0").bind(card.owner_role).all()).results ?? [];
+  const queue = [];
+  for (const r of rows) { const e = await evidenceOf(db, `cards.${r.id}`); if (!e?.headSha12 && e?.phase !== "live") queue.push(r); }
+  queue.sort((x, y) => (x.queue_pos ?? 1e6) - (y.queue_pos ?? 1e6) || (x.num ?? 1e9) - (y.num ?? 1e9) || (x.id < y.id ? -1 : 1));
+  const at = queue.findIndex((r) => r.id === b.id);
+  if (at < 0) return refuse(db, now, { rule: "queue-started", detail: `${b.id} has started: only a card with nothing pushed is in the queue` }, b.id, who);
+  const to = b.dir === "up" ? at - 1 : at + 1;
+  if (to < 0 || to >= queue.length) return { ok: true, id: b.id, moved: false, order: queue.map((r) => r.id) };
+  [queue[at], queue[to]] = [queue[to], queue[at]];
+  const swapped = new Set([queue[at].id, queue[to].id]);
+  for (let n = 0; n < queue.length; n++) {
+    const r = queue[n];
+    if (swapped.has(r.id)) await db.prepare("UPDATE cards SET queue_pos = ?, queue_set_by = ?, queue_set_at = ?, updated_at = ? WHERE id = ?").bind(n + 1, who, now, now, r.id).run();
+    else if (r.queue_pos !== n + 1) await db.prepare("UPDATE cards SET queue_pos = ?, updated_at = ? WHERE id = ?").bind(n + 1, now, r.id).run();
+  }
+  return { ok: true, id: b.id, moved: true, order: queue.map((r) => r.id) };
 }
 export async function guardedInbox(db, now, session) {
   const expected = await db.prepare("SELECT session, set_by, set_at FROM door_session WHERE id = 1").first();

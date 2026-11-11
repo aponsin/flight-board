@@ -14,7 +14,7 @@ const TIP = "abcdef012345";
 const idle = { state: "idle", lastActivityAt: NOW - 2 * MIN, since: NOW - 2 * MIN };
 const card = (id, extra = {}) => ({ id, num: Number(id.replace(/\D/g, "")) || null, owner_role: "Boardsmith", review_level: "Quick", waiting_on: null, paused: 0, dropped: 0, repo: "", ...extra });
 const world = ({ cards, ev = {}, on = true }) => ({
-  cards, asks: [], stackSwitch: [{ repo: "board", stack: on ? 1 : 0 }, { repo: "product", stack: 0 }],
+  cards, asks: [], stackSwitch: [{ repo: "board", stack: on, set_by: "default", set_at: 0 }, { repo: "product", stack: false, set_by: "default", set_at: 0 }],
   evidence: { agents: { readAt: NOW - 5_000, value: Object.fromEntries(ROSTER.map((r) => [r, idle])) }, ...Object.fromEntries(Object.entries(ev).map(([id, v]) => [`cards.${id}`, { readAt: NOW - 5_000, value: v }])) },
 });
 const items = (v) => dispatchRun(v, { dir: mkdtempSync(join(tmpdir(), "sd-")), roster: ROSTER, lead: LEAD, now: NOW }).items;

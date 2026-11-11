@@ -93,8 +93,8 @@ test("cardStates adds no stack field for a switch that is off, and reads the cha
 });
 
 test("the switch reaches the probe through stacks.json: the board row on is [\"\"], anything else is off, and a stale or odd file is off", () => {
-  assert.deepEqual(stacksOn([{ repo: "board", stack: 1 }, { repo: "product", stack: 0 }]), [""]);
-  assert.deepEqual(stacksOn([{ repo: "board", stack: 0 }, { repo: "product", stack: 1 }]), [], "the product's switch is its own card");
+  assert.deepEqual(stacksOn([{ repo: "board", stack: true }, { repo: "product", stack: false }]), [""], "the view's rows carry a boolean");
+  assert.deepEqual(stacksOn([{ repo: "board", stack: false }, { repo: "product", stack: true }]), [], "the product's switch is its own card");
   assert.deepEqual(stacksOn(undefined), []);
   const NOW2 = 5_000_000;
   const file = (f) => () => ({ whole: true, text: JSON.stringify(f) });

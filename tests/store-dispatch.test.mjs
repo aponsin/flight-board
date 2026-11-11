@@ -143,11 +143,12 @@ test("the store's own earlier file is always replaced, and a pair keeps its firs
 });
 
 test("hostile card fields never reach the file: a bad id, a non-string owner or waiting_on", () => {
-  const v = view({ extraCards: [{ id: "BAD ID\n", owner_role: "Builder" }, { id: "c901-x", owner_role: { r: 1 } }, { id: "c902-y", owner_role: "Builder", waiting_on: { a: 1 } }] });
+  const v = view({ extraCards: [{ id: "BAD ID\n", owner_role: "Builder" }, { id: "c901-x", owner_role: { r: 1 } }, { id: "c902-y", owner_role: "Builder", waiting_on: { a: 1 }, queue_pos: 1 }] });
   const d = dir();
   run(v, d);
   const ids = read(d, "dispatch.json").items.map((i) => i.card).sort();
-  assert.deepEqual(ids, ["c900-thing", "c902-y"]);
+  // #C871: the owner's agent is woken for the first card of its queue, not each: c902-y has the place, c900-thing waits behind it.
+  assert.deepEqual(ids, ["c902-y"]);
 });
 
 test("dispatchJob reads GET /api/view with the probe's headers and writes the files; a failed read throws and writes nothing", async () => {

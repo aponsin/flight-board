@@ -76,7 +76,7 @@ export function dispatchInput(view, now) {
   // #C859 slice 3 (stack mode): the board repository's switch is on (a card with no repo word, or "flight-board", is the board's). The stack's
   // branch is the one the evidence names on any of its cards; a builder's turn carries it, and a reviewer is not woken for a card in the stack
   // while a card of the same repository still has a build turn (design 3: Checker and Security are woken once, when no builder has a card queued).
-  const switchOn = (Array.isArray(view?.stackSwitch) ? view.stackSwitch : []).some((s) => s && s.repo === "board" && s.stack === 1);
+  const switchOn = (Array.isArray(view?.stackSwitch) ? view.stackSwitch : []).some((s) => s && s.repo === "board" && (s.stack === true || s.stack === 1));
   const boardCard = (c) => !c.repo || c.repo === "flight-board";
   const stackBranch = switchOn ? all.filter((c) => c && typeof c.id === "string" && boardCard(c)).map((c) => ev[`cards.${c.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
   const BUILD_STEPS = new Set(["build", "rework", "outside"]);
@@ -91,12 +91,22 @@ export function dispatchInput(view, now) {
     // #C850: a hold with an end (a card the lead put on hold) is skipped; the stall rule brings it back when the hold ends.
     if (c.hold_end) continue;
     const inBoard = switchOn && boardCard(c);
-    cards.push({ id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: turnsOf(c, e, inBoard ? { stackOn: true, stackBranch } : {}), inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true });
+    cards.push({ queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: turnsOf(c, e, inBoard ? { stackOn: true, stackBranch } : {}), inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true });
   }
   if (switchOn && cards.some((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step)))) {
     for (const k of cards) if (k.inStack) k.turns = k.turns.filter((t) => t.step !== "review");
   }
   for (const k of cards) { delete k.inBoard; delete k.inStack; }
+  // #C871 (item 4): an agent's queue is in the owner's order (queue_pos, then the card's number), and an idle agent is woken for the FIRST card
+  // of it that can start (nothing pushed, not held by a depends_on, which was skipped above), not for every queued card at once.
+  const notStarted = (k) => k.turns.some((t) => t.step === "build" && !t.sha);
+  const byRole = new Map();
+  for (const k of cards.filter(notStarted)) byRole.set(k.who, [...(byRole.get(k.who) ?? []), k]);
+  for (const list of byRole.values()) {
+    list.sort((x, y) => (x.queuePos ?? 1e6) - (y.queuePos ?? 1e6) || (x.num ?? 1e9) - (y.num ?? 1e9) || (x.id < y.id ? -1 : 1));
+    for (const k of list.slice(1)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
+  }
+  for (const k of cards) delete k.queuePos;
   // A card with an open ask is waiting for the owner or the lead, not for its agent. Open = not closed and not answered, as on the old
   // board (!done && !response): a withdrawn approval has its answer cleared and waits for the owner's Approve again, so it is still open.
   const asked = new Set();

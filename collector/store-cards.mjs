@@ -34,7 +34,7 @@ export function mirrorCard(c) {
 
 // The store's open cards, from its own typed read as the probe.
 export async function storeCards(opts) { return (await storeRead(opts)).cards; }
-// The cards and the stack switch of one read of the view. The switch rows are { repo, stack } ("board": the team's own repository, "" in the
+// The cards and the stack switch of one read of the view. The switch rows are { repo, stack: true|false } ("board": the team's own repository, "" in the
 // probe's repository map); a view from before the switch has none, which reads as off.
 export async function storeRead({ base, headers, fetchImpl = fetch }) {
   const r = await fetchImpl(`${base}/api/view`, { headers, redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
@@ -48,7 +48,7 @@ export async function storeRead({ base, headers, fetchImpl = fetch }) {
 // reaches the probe here; the product's is its own card.
 export const STACKS_FILE = "stacks.json";
 export function stacksOn(stackSwitch) {
-  return (Array.isArray(stackSwitch) ? stackSwitch : []).some((s) => s && s.repo === "board" && s.stack === 1) ? [""] : [];
+  return (Array.isArray(stackSwitch) ? stackSwitch : []).some((s) => s && s.repo === "board" && (s.stack === true || s.stack === 1)) ? [""] : [];
 }
 
 // Writes <dir>/<id>/mirror/initiatives/<card>.json for every card and removes the ones the store no longer has, then stamps the
