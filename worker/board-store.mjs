@@ -319,8 +319,8 @@ export async function setDoorSession(db, now, who, session, current) {
 }
 // #C859: the stack switch of a repository, the owner's alone (stackSwitchRefusal). Recorded with who and when; setting it to what it is
 // changes nothing but the stamp. A repository with no row reads as off.
-export async function setStackSwitch(db, now, who, b) {
-  const bad = stackSwitchRefusal(b, who);
+export async function setStackSwitch(db, now, who, b, role) {
+  const bad = stackSwitchRefusal(b, who, role);
   if (bad) return refuse(db, now, bad, null, who);
   await db.prepare("INSERT INTO stack_switch (repo, stack, set_by, set_at) VALUES (?, ?, ?, ?) ON CONFLICT(repo) DO UPDATE SET stack = excluded.stack, set_by = excluded.set_by, set_at = excluded.set_at").bind(b.repo, b.stack ? 1 : 0, who, now).run();
   return { ok: true, repo: b.repo, stack: b.stack };

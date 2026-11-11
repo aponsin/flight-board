@@ -14,41 +14,41 @@ const call = async (env, who, role, name, args) => {
   return r.json();
 };
 
-test("the view carries the switches: the board on, the product off, both by default", async () => {
+test("the view carries the switches: the board repository on, the product off, both by default", async () => {
   const db = makeDb();
   const v = await readView(db, T);
   assert.deepEqual(v.stackSwitch, [
-    { repo: "board", stack: true, set_by: "default", set_at: 0 },
+    { repo: "flight-board", stack: true, set_by: "default", set_at: 0 },
     { repo: "product", stack: false, set_by: "default", set_at: 0 },
   ]);
 });
 
 test("the owner flips a switch: recorded with who and when, and a repository with no row can be set", async () => {
   const db = makeDb();
-  assert.deepEqual(await setStackSwitch(db, T + 1, "owner", { repo: "product", stack: true }), { ok: true, repo: "product", stack: true });
-  assert.deepEqual(await setStackSwitch(db, T + 2, "owner", { repo: "site-one", stack: true }), { ok: true, repo: "site-one", stack: true });
+  assert.deepEqual(await setStackSwitch(db, T + 1, "owner", { repo: "product", stack: true }, "owner"), { ok: true, repo: "product", stack: true });
+  assert.deepEqual(await setStackSwitch(db, T + 2, "owner", { repo: "site-one", stack: true }, "owner"), { ok: true, repo: "site-one", stack: true });
   const v = (await readView(db, T + 3)).stackSwitch;
   assert.deepEqual(v.find((r) => r.repo === "product"), { repo: "product", stack: true, set_by: "owner", set_at: T + 1 });
   assert.deepEqual(v.find((r) => r.repo === "site-one"), { repo: "site-one", stack: true, set_by: "owner", set_at: T + 2 });
-  await setStackSwitch(db, T + 4, "owner", { repo: "board", stack: false });
-  assert.equal((await readView(db, T + 5)).stackSwitch.find((r) => r.repo === "board").stack, false, "off again");
+  await setStackSwitch(db, T + 4, "owner", { repo: "flight-board", stack: false }, "owner");
+  assert.equal((await readView(db, T + 5)).stackSwitch.find((r) => r.repo === "flight-board").stack, false, "off again");
 });
 
 test("nobody else writes it: an agent, Manager and the probe are refused and logged, and nothing changes", async () => {
   const db = makeDb();
-  for (const who of ["Manager", "Builder", "probe", undefined, "Owner"]) {
-    const r = await setStackSwitch(db, T + 1, who, { repo: "product", stack: true });
-    assert.equal(r.ok, false, String(who));
+  for (const [who, role] of [["Manager", "agent"], ["Builder", "agent"], ["probe", "probe"], [undefined, "agent"], ["Owner", "agent"], ["owner", "agent"], ["owner", undefined]]) {
+    const r = await setStackSwitch(db, T + 1, who, { repo: "product", stack: true }, role);
+    assert.equal(r.ok, false, `${who} ${role}`);
     assert.equal(r.refused.rule, "stack-switch-owner");
   }
   assert.equal((await readView(db, T + 2)).stackSwitch.find((r) => r.repo === "product").stack, false);
-  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM refusals WHERE rule = 'stack-switch-owner'").first()).n, 5, "each refusal is in the log");
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM refusals WHERE rule = 'stack-switch-owner'").first()).n, 7, "each refusal is in the log");
 });
 
 test("the shape is checked: a repository is a short lower-case word, the switch is true or false, nothing else rides along", () => {
-  assert.equal(stackSwitchRefusal({ repo: "board", stack: true }, "owner"), null);
+  assert.equal(stackSwitchRefusal({ repo: "board", stack: true }, "owner", "owner"), null);
   for (const bad of [null, [], { repo: "Board", stack: true }, { repo: "board", stack: "yes" }, { repo: "board", stack: 1 }, { repo: "", stack: true }, { repo: "a".repeat(40), stack: true }, { repo: "board; drop", stack: true }, { repo: "board", stack: true, extra: 1 }, { stack: true }]) {
-    assert.equal(stackSwitchRefusal(bad, "owner")?.rule, "stack-switch-shape", JSON.stringify(bad));
+    assert.equal(stackSwitchRefusal(bad, "owner", "owner")?.rule, "stack-switch-shape", JSON.stringify(bad));
   }
 });
 

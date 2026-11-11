@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
+import { stackOf, STACK_SWITCH_FILE, stackOnNames } from "./stack.mjs";
 import { PUBLISHED_FILE } from "./export.mjs";
 import { journalCards, readJournal } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
@@ -505,7 +506,7 @@ export function signedTimesOf(git, sha, notes, signed, fallback = null) {
   }
   return out;
 }
-function tipState(card, tip, repo, config, now, declared) {
+function tipState(card, tip, repo, config, now, declared, stackTip = null) {
   // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
   // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
   const notesOn = (sha) => Object.entries(repo.notes).map(([p, ref]) => { let t = null; try { t = repo.git(["notes", `--ref=${ref}`, "show", sha]); } catch { /* none */ } return t === null || t === undefined || t === false ? null : [p, String(t)]; }).filter(Boolean);
@@ -522,7 +523,9 @@ function tipState(card, tip, repo, config, now, declared) {
   // #C671: a pushed branch named for the card with no commit of its own sits at a main commit: it is work started (build), and
   // main's sign-off notes and deploy are not the card's.
   const bare = !landed && !after && atMain && bareBranch(card, head);
-  const signed = bare ? [] : signedOn(after ? after.sha : tip.sha);
+  // #C859: a note on the stack's tip counts for every card under it (stack-tip-signs-all): a member's sign-offs are its own commit's and the tip's.
+  const viaTip = stackTip && stackTip !== tip.sha ? signedOn(stackTip) : [];
+  const signed = bare ? [] : [...new Set([...signedOn(after ? after.sha : tip.sha), ...viaTip])].sort();
   const onMain = atMain && !bare;
   const deployed = onMain && !!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
@@ -538,7 +541,7 @@ function tipState(card, tip, repo, config, now, declared) {
   // reviews: when each review the repository shows signed on the tip was signed (derive.mjs derivePhase, #C671); none for a bare
   // branch, a tip read as a main commit, or one with no sign-offs.
   const reviews = !bare && !onMain && signed.length && typeof repo.git === "function" && repo.notes ? signedTimesOf(repo.git, after ? after.sha : tip.sha, repo.notes, signed, head.at) : {};
-  const findings = bare || onMain ? [] : findingsOn(after ? after.sha : tip.sha);
+  const findings = bare || onMain ? [] : [...new Set([...findingsOn(after ? after.sha : tip.sha), ...(stackTip && stackTip !== tip.sha ? findingsOn(stackTip) : [])])].sort();
   const extra = {
     ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(findings.length ? { findings } : {}),
@@ -589,7 +592,7 @@ export function mainEvidence(repo, card) {
   const ship = repo.versionPattern ? mine.filter((l) => new RegExp(repo.versionPattern).test(l.subject) && Number.isInteger(l.at) && l.at >= 1577836800000 && l.at <= 4102444800000).map((l) => l.at) : [];
   return { workSeen: true, ...(ship.length ? { shippedAt: Math.max(...ship) } : {}) };
 }
-export function cardState(card, repo, config, now) {
+export function cardState(card, repo, config, now, stack = null) {
   const declared = config.phases.some((p) => p[0] === card.phase) ? card.phase : null;
   const base = { num: Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? card.num : null, phase: declared, headSha12: null, signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: now };
   if (!repo) return base;
@@ -598,11 +601,16 @@ export function cardState(card, repo, config, now) {
   // as the Collector did (collect.mjs trailerOnMain, #C281/#C716). Without it the probe has no head for a shipped card and the board
   // shows it queued or stalled, because the store carries none of the Collector's readings.
   if (!tips.length && typeof repo.git === "function") { const t = trailerHead(repo, card.id); if (t) tips = [t]; }
+  // #C859: a member of the repository's stack is read at its own commit on the stack branch (that branch is named for no card), with the stack tip's
+  // sign-offs; a card outside the stack or next in it says so.
+  const member = stack?.members?.find((m) => m.id === card.id) ?? null;
+  if (member) tips = [{ branch: stack.branch, sha: member.sha, at: member.at, message: member.message }];
   if (tips[0]) tips = [ownHead(repo, card, tips[0]), ...tips.slice(1)];
   const tip = tips[0];
-  if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };
-  const one = tipState(card, tip, repo, config, now, declared);
-  const out = { ...base, ...one };
+  const place = member ? { stack: { branch: stack.branch, size: stack.members.length, tip: sha12(stack.tip) } } : stack?.outside?.[card.id] ? { stack: { outside: stack.outside[card.id] } } : stack?.next?.includes(card.id) ? { stack: { next: stack.next.indexOf(card.id) + 1 } } : {};
+  if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}), ...place };
+  const one = tipState(card, tip, repo, config, now, declared, member ? stack.tip : null);
+  const out = { ...base, ...one, ...place };
   if (tips.length > 1) {
     const taken = new Set();
     out.branches = tips.slice(0, MAX_BRANCH_ROWS).map((t, n) => ({ name: branchName(t.branch, taken, n), ci: "none", ciMin: null, ...(t === tip ? one : tipState(card, t, repo, config, now, declared)) }));
@@ -610,9 +618,10 @@ export function cardState(card, repo, config, now) {
   return out;
 }
 
-export function cardStates({ cards, config, repos, now }) {
+export function cardStates({ cards, config, repos, now, stackOn = [] }) {
   const out = {};
-  for (const card of cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX).slice(0, MAX_CARDS)) {
+  const open = cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX).slice(0, MAX_CARDS);
+  const placed = open.map((card) => {
     const r = repoOf(card, config);
     let repo = repos[r ? r.name : ""] ?? null;
     // #C632: a card with no repo field and no id prefix of a listed repository belongs to the one whose branches name it
@@ -623,8 +632,17 @@ export function cardStates({ cards, config, repos, now }) {
       const found = Object.values(repos).map((x) => [x, tipOf(x)]).filter(([, t]) => t).sort((a, b) => (b[1].at ?? 0) - (a[1].at ?? 0))[0];
       if (found && !(repo && tipOf(repo))) repo = found[0];
     }
-    out[card.id] = cardState(card, repo, config, now);
+    return [card, repo];
+  });
+  // #C859: each repository whose stack switch is on has its stack read once, from its open cards in number order (the order they were made).
+  const stacks = new Map();
+  for (const name of stackOn) {
+    const repo = repos[name];
+    if (!repo || typeof repo.git !== "function" || !Array.isArray(repo.tips)) continue;
+    const ids = placed.filter(([, r]) => r === repo).map(([c]) => c).sort((a, b) => (a.num ?? 1e9) - (b.num ?? 1e9)).map((c) => c.id);
+    try { const st = stackOf({ git: repo.git, remote: repo.remote, main: repo.main, tips: repo.tips, open: ids }); if (st) stacks.set(repo, st); } catch { /* no stack read: each card as before */ }
   }
+  for (const [card, repo] of placed) out[card.id] = cardState(card, repo, config, now, repo ? stacks.get(repo) ?? null : null);
   return out;
 }
 
@@ -909,7 +927,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const cardsChecked = cardsCheckedAt(Object.values(repos), now, checkedBefore);
   let cardsNow;
   try {
-    cardsNow = cardStates({ cards, config, repos, now });
+    // #C859: the stack switches the store view carried at the probe's last read (the store-cards snapshot): which repositories are stacked.
+    let stackOn = [];
+    try { const r = readTail(join(stateDir, id, STACK_SWITCH_FILE), 16 * 1024); if (r?.whole) stackOn = stackOnNames(JSON.parse(r.text)?.switches); } catch { /* none: nothing is stacked */ }
+    cardsNow = cardStates({ cards, config, repos, now, stackOn });
     // #C632: the last time any open card past plan showed a branch commit; kept from run to run, and the lead's watch told once
     // per outage (gate/reset.mjs evidenceAt).
     const evidencePath = join(stateDir, id, "evidence.json");

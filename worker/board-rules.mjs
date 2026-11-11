@@ -132,10 +132,11 @@ export function stepsRefusal(steps) {
 }
 
 // #C859: the stack switch of one repository. The owner's alone: an agent, the probe and Manager are refused, whatever they claim. A repository is a
-// short lower-case word (board, product); the switch is a true or false.
+// short lower-case word (flight-board, product); the switch is a true or false.
 export const STACK_REPO = /^[a-z][a-z0-9-]{0,30}$/;
-export function stackSwitchRefusal(b, who) {
-  if (who !== "owner") return refuse("stack-switch-owner", `${who ?? "unknown"} cannot set a stack switch; only the owner can`);
+export function stackSwitchRefusal(b, who, role) {
+  // The owner is a role, never a name (access-auth gives the name "owner" to the owner role alone): the role decides.
+  if (role !== "owner") return refuse("stack-switch-owner", `${who ?? "unknown"} cannot set a stack switch; only the owner can`);
   if (b === null || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => k !== "repo" && k !== "stack")) return refuse("stack-switch-shape", "a stack switch is {repo, stack}");
   if (typeof b.repo !== "string" || !STACK_REPO.test(b.repo)) return refuse("stack-switch-shape", "repo is a short lower-case word");
   if (typeof b.stack !== "boolean") return refuse("stack-switch-shape", "stack is true or false");
