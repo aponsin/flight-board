@@ -64,9 +64,13 @@ const CHECK_AT_WRITERS = ["Manager", "owner"];
 // Card words changed later: checked against the probe's reading of this card (a typed word cannot contradict it).
 export async function updateCard(db, now, who, fields) {
   const id = fields?.id;
-  const card = typeof id === "string" ? await db.prepare("SELECT id, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, owner_role FROM cards WHERE id = ?").bind(id).first() : null;
+  const card = typeof id === "string" ? await db.prepare("SELECT id, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, queue_pos, owner_role FROM cards WHERE id = ?").bind(id).first() : null;
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
-  const owned = queueWriteRefusal(fields, card, who, who !== "owner" && Number.isInteger(fields?.queue_pos) ? await ownerFloor(db, fields.owner_role ?? card.owner_role, id) : 0);
+  // Security R1 on 15fc8fe: an owner_role change with no queue_pos carries the card's old place into the new queue, so the floor is checked against that place.
+  const carried = who !== "owner" && !("queue_pos" in fields) && typeof fields.owner_role === "string" && fields.owner_role !== card.owner_role && card.queue_set_by !== "owner" && Number.isInteger(card.queue_pos);
+  const owned = carried
+    ? queueWriteRefusal({ queue_pos: card.queue_pos }, null, who, await ownerFloor(db, fields.owner_role, id))
+    : queueWriteRefusal(fields, card, who, who !== "owner" && Number.isInteger(fields?.queue_pos) ? await ownerFloor(db, fields.owner_role ?? card.owner_role, id) : 0);
   if (owned) return refuse(db, now, owned, id, who);
   const bad = cardWriteRefusal(fields, await evidenceOf(db, `cards.${id}`));
   if (bad) return refuse(db, now, bad, id, who);
