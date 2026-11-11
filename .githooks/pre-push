@@ -1,4 +1,7 @@
 #!/bin/sh
 # Nothing about the team that uses this board leaves this machine: every pushed commit and tag is scanned, against what
 # this remote ($1) already has (refs on stdin).
-node scripts/scan.mjs --pre-push "$1" || exit 1
+# #C896: then every commit a build/ branch would land carries a Board-Id trailer, read as the landing reads it.
+refs=$(cat)
+printf '%s\n' "$refs" | node scripts/scan.mjs --pre-push "$1" || exit 1
+printf '%s\n' "$refs" | node scripts/trailer-check.mjs "$1" || exit 1
