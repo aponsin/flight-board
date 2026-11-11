@@ -176,3 +176,41 @@ test("#C828 stalledWaits: no session needs the phase's start; a lane agent that 
   assert.equal(stalledWaits({ ...base, agents: { ...someone, Checker: { state: "working", card: "x", since: T } } }).length, 0);
   assert.equal(stalledWaits({ ...base, agents: { ...someone, Checker: { state: "idle", since: T + STALL_AFTER_MS * 2 - 1000 } } }).length, 0, "listed and idle: the idle rule, not 'no session'");
 });
+
+// #C846: a card with nothing pushed (no lit phase) whose owner has been idle 15 min wakes Manager once: "#Cn: nothing pushed, <Role> idle since hh:mm".
+test("#C846 stalledWaits: a queued card with an idle owner is a stall; the exemptions and the owner's other cards", () => {
+  const D = 24 * 3600e3, now = T + STALL_AFTER_MS, idle = { Boardsmith: { state: "idle", since: T } };
+  const card = (o = {}) => ({ id: "c", num: 6, owner_role: "Boardsmith", updated_at: T, ...o });
+  const run = (o = {}, w = {}) => stalledWaits({ now, cards: [card(o.card)], evidence: {}, agents: idle, openAskCards: new Set(), phaseStart: new Map(), ...w });
+  assert.deepEqual(run().map((s) => s.reason), [`#C6: nothing pushed, Boardsmith idle since ${hhmm(T)}`]);
+  assert.equal(run({}, { now: T + STALL_AFTER_MS - 1 }).length, 0, "14 min 59 s is not yet");
+  assert.equal(run({}, { agents: { Boardsmith: { state: "working", card: "x", since: T } } }).length, 0, "an owner who is working");
+  assert.equal(run({}, { agents: { Boardsmith: { state: "idle", since: T + 60e3 } } }).length, 0, "idle under 15 min");
+  assert.equal(run({}, { agents: {} }).length, 0, "no reading of the owner");
+  for (const [name, o] of [["paused", { paused: 1 }], ["dropped", { dropped: 1 }], ["blocked", { blocked_reason: "waiting for DNS" }], ["held on someone", { waiting_on: "Security: a verdict" }], ["the lead's", { owner_role: "Manager" }], ["an old card", { updated_at: T - 4 * D }], ["no number", { num: null }]]) {
+    const w = o.owner_role === "Manager" ? { agents: { Manager: { state: "idle", since: T } } } : {};
+    assert.equal(run({ card: o }, w).length, 0, name);
+  }
+  assert.equal(run({}, { openAskCards: new Set(["c"]) }).length, 0, "an open ask");
+  // behind a depends_on that is not live: no stall; once it is live, or gone, or dropped, it is
+  const dep = { id: "dep", num: 5, owner_role: "Builder", updated_at: T };
+  const behind = { cards: [card({ depends_on: '["dep"]' }), dep] };
+  const forC = (w) => run({}, w).filter((s) => s.card_id === "c").length;
+  assert.equal(forC({ ...behind, evidence: { dep: { lit: ["checker"] } } }), 0, "dependency at checker");
+  assert.equal(forC({ ...behind, evidence: { dep: { lit: ["live"] } } }), 1, "dependency live");
+  assert.equal(forC({ cards: [card({ depends_on: '["dep"]' }), { ...dep, dropped: 1 }] }), 1, "dependency dropped");
+  assert.equal(forC({ cards: [card({ depends_on: '["ghost"]' })] }), 1, "dependency the board does not have");
+  // the owner's other cards do not matter: one at review (its phase agent working) and the rest queued still wake
+  const two = stalledWaits({ now, cards: [card({ id: "r", num: 7 }), card({ id: "q", num: 8 })], evidence: { r: { lit: ["checker"] } }, agents: { ...idle, Checker: { state: "working", card: "r", since: T } }, openAskCards: new Set(), phaseStart: new Map([["r|checker", T]]) });
+  assert.deepEqual(two.map((s) => s.card_id), ["q"]);
+});
+
+test("#C846 end to end: a queued card of an idle owner reaches Manager's inbox once", async () => {
+  const db = makeDb();
+  await createCard(db, T, "Manager", { id: "card-q", title: "Queued", owner_role: "Boardsmith" });
+  await writeEvidence(db, T, "probe", "agents", { Boardsmith: { state: "idle", tool: null, card: null, since: T } });
+  assert.equal(await pending(db, T + 14 * MIN), 0);
+  assert.equal(await pending(db, T + 15 * MIN), 1);
+  assert.deepEqual((await takeInbox(db, T + 16 * MIN)).stalls.map((s) => s.reason), [`#C1: nothing pushed, Boardsmith idle since ${hhmm(T)}`]);
+  assert.equal(await pending(db, T + 60 * MIN), 0, "sent once");
+});
