@@ -54,7 +54,7 @@ test("asks in full (B2): a note with a choice, something else, help, and the but
   // a choice with a note: the option's own text is the answer, the note rides along
   const d1 = await tool("manager", "ask", decision);
   assert.equal((await write({ op: "update", path: `waiting/${d1.id}`, data: { response: { status: "chose", choice: "B", note: "  but keep the logo  ", at: 1 } } })).status, 200);
-  assert.deepEqual({ ...await resp(d1.id), at: 0 }, { status: "chose", choice: "B", note: "but keep the logo", at: 0 });
+  assert.deepEqual({ ...await resp(d1.id), at: 0 }, { status: "chose", choice: "B", note: "but keep the logo", at: 0, taken: false });
   // something else: needs its note; the note is what the agent reads
   const d2 = await tool("manager", "ask", decision);
   const bare = await write({ op: "update", path: `waiting/${d2.id}`, data: { response: { status: "chose", choice: "something else", note: "", at: 1 } } });
