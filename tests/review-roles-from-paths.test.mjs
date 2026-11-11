@@ -111,6 +111,17 @@ test("the pure rule: patterns, phases the table names and does not, raises only"
   assert.equal(d.phase, "ship");
 });
 
+test("Security LOW on 532b9f8: Security and Checker are raise-only; only the flag-gated reviews (language, design) can be lowered by the paths", () => {
+  const s = scratch();
+  // a card with no level: the typed rule gives Security, and a docs-only diff does not take it away
+  assert.deepEqual(s.read({ id: "no-level-docs" }, ["docs/notes.md"]).waitingFor, ["checker", "security"]);
+  // a table that names checker can add nothing to it and never drops it
+  const withChecker = { ...TABLE, checker: ["worker/**"] };
+  assert.deepEqual(reviewsFromPaths({ level: "Quick" }, cfg, ["language", "checker"], withChecker, ["docs/x.md"]), ["checker"]);
+  // the flag-gated reviews still go when the paths miss them (#C894)
+  assert.deepEqual(reviewsFromPaths({ level: "Full" }, cfg, ["language", "checker", "security"], TABLE, ["scripts/a.mjs"]), ["checker", "security"]);
+});
+
 test("the config check: reviewPaths names review phases with path patterns, for the team's repository and another", () => {
   const base = { owner: "Sam", phases: PHASES, collector: { repoPath: "/x", notes: NOTES } };
   assert.deepEqual(checkConfig({ ...base, collector: { ...base.collector, reviewPaths: TABLE } }), []);
