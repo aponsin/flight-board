@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, appendFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
 import { cardState, deployedSha } from "../collector/state.mjs";
 import { readDeploy, deployEnv, evidenceJob, defaultBuild } from "../collector/probe-evidence.mjs";
@@ -126,7 +126,7 @@ test("a pair made from the templates: the deploy sets BUILD_SHA to the signed co
   // #C928: the one argument it reads is the word rollback, compared and never used as a value (the undo, which runs rollbackRun and no deploy).
   assert.ok(!/process\.argv\.slice/.test(deploy), "no argument list reaches the deploy");
   assert.deepEqual([...deploy.matchAll(/process\.argv\[(\d+)\]/g)].map((m) => m[1]).filter((i) => i !== "1"), ["2"], "the only argument read (argv[1] is the file's own name) is argv[2]");
-  assert.equal((deploy.match(/process\.argv\[2\] === "rollback"/g) ?? []).length, 1, "and it is only compared with the word rollback");
+  assert.equal((deploy.match(/pickMode\(process\.argv\[2\]\)/g) ?? []).length, 1, "and it is only handed to pickMode, which compares it with the word rollback");
   assert.equal((deploy.match(/process\.env/g) ?? []).length, 1, "process.env is read in one place only");
   assert.match(deploy, /\{ \.\.\.opts, env: \{ \.\.\.process\.env, \.\.\.creds \} \}/);
   assert.ok(deploy.includes("board-store-deploy-pc11.done") && tree.includes("board-store-deploy-pc11.done"), "one marker name in both");
@@ -182,4 +182,45 @@ test("the tree step refuses to move before this pair's deploy has run, and after
   writeFileSync(done, `${r.c3}\n`);
   assert.equal(step().ok, true);
   assert.equal(execFileSync("git", ["-C", tree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), r.c3);
+});
+
+// #C928 (Checker F1): the filled deploy file really routes its argument. Run as the owner runs it (node <file> ...), in a folder with a
+// deploy checkout's config and a stub npx first on PATH that only records its arguments.
+test("the filled deploy file: `rollback` runs wrangler rollback and no deploy and removes the marker; a typo runs nothing; no argument is the deploy", async () => {
+  const { makePair } = await import("../scripts/pair/make-pair.mjs");
+  const { mkdirSync, chmodSync, existsSync, realpathSync } = await import("node:fs");
+  const files = makePair({ name: "pc11", card: "#C737", what: "w", signed: "d".repeat(40), deployOk: "ok", treeOk: "ok" });
+  const rig2 = () => {
+    // realpath: on macOS tmpdir() is behind a /var -> /private/var link, and the file only runs main() when argv[1] is its real path.
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "fb-c928route-")));
+    mkdirSync(join(dir, "board-store-pa", "worker"), { recursive: true });
+    writeFileSync(join(dir, "board-store-pa", "worker", "wrangler.board.toml"), "name = \"x\"\n");
+    writeFileSync(join(dir, "board.config.json"), "{}\n");
+    writeFileSync(join(dir, "board-store-deploy-pc11.mjs"), files["board-store-deploy-pc11.mjs"]);
+    const bin = join(dir, "bin"), log = join(dir, "npx.log"), marker = join(dir, "board-store-deploy-pc11.done");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "npx"), `#!/bin/sh\necho "$@" >> "${log}"\nexit 0\n`);
+    chmodSync(join(bin, "npx"), 0o755);
+    writeFileSync(marker, `${"d".repeat(40)}\n`);
+    const run = (...args) => spawnSync("node", [join(dir, "board-store-deploy-pc11.mjs"), ...args], { encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+    return { run, marker, calls: () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : []) };
+  };
+  const a = rig2();
+  const rb = a.run("rollback");
+  assert.equal(rb.status, 0, rb.stdout + rb.stderr);
+  assert.match(rb.stdout, /ROLLBACK OK/);
+  assert.equal(a.calls().length, 1, "wrangler was called once");
+  assert.match(a.calls()[0], /^--yes wrangler@[\d.]+ rollback --config .*board-store-pa\/worker\/wrangler\.board\.toml$/);
+  assert.ok(!a.calls().some((l) => /deploy|migrations/.test(l)), "no deploy and no migration ran");
+  assert.equal(existsSync(a.marker), false, "the marker is removed");
+  const b = rig2();
+  const typo = b.run("rolback");
+  assert.equal(typo.status, 1);
+  assert.match(typo.stdout, /NOT RUN/);
+  assert.deepEqual(b.calls(), [], "nothing was run");
+  assert.equal(existsSync(b.marker), true, "the marker stays");
+  const c = rig2();
+  const dep = c.run();
+  assert.match(dep.stdout, /DEPLOY (FAILED|OK)/, "no argument takes the deploy path");
+  assert.ok(!/ROLLBACK/.test(dep.stdout));
 });

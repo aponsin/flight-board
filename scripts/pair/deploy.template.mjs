@@ -177,10 +177,22 @@ export function rollbackRun({ here, spawn = spawnSync, fs = { existsSync, lstatS
   }
 }
 
+// The one argument: none runs the deploy, the word rollback runs the undo; anything else (a typo included) is refused and runs nothing, so a
+// mistyped undo can never start a full deploy. "deploy" | "rollback" | null.
+export function pickMode(arg) {
+  if (arg === undefined) return "deploy";
+  return arg === "rollback" ? "rollback" : null;
+}
+
 function main() {
   // The folder this file sits in (the owner's board folder, where board.config.json and the checkouts are).
   const here = dirname(fileURLToPath(import.meta.url));
-  const r = process.argv[2] === "rollback" ? rollbackRun({ here }) : deployRun({ here });
+  const mode = pickMode(process.argv[2]);
+  if (mode === null) {
+    console.log("NOT RUN: the only argument this file takes is the word rollback (or none, to deploy). Nothing was run.");
+    process.exit(1);
+  }
+  const r = mode === "rollback" ? rollbackRun({ here }) : deployRun({ here });
   if (!r.ok) process.exit(1);
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
