@@ -1,0 +1,1 @@
+SECURE. #C917 v3 (0e6223a + 2979c91, identical patches to 89b14b1 + 329d272), the release tool scripts/board-release.mjs. The page is still built and its scenarios still checked before anything leaves, but in the tool's temporary folder instead of beside the config, and the republish line is gone. Every refusal, the scan, the push and the current-link move are unchanged.
