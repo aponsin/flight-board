@@ -13,6 +13,8 @@ import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset
 export const AGENTS_FRESH_MS = 5 * 60e3;
 // A dispatch.json another writer (the old state job) made this recently is left alone: two writers would each reset the other's `since`.
 export const FOREIGN_WRITER_MS = 5 * 60e3;
+// #C872: how long an answered Decision may still wake its card's owner (a day: an owner idle longer than that is someone else's problem).
+export const DECISION_FRESH_MS = 24 * 3600e3;
 
 const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -107,6 +109,24 @@ export function dispatchInput(view, now) {
     for (const k of cards) if (k.inStack) k.turns = k.turns.filter((t) => t.step !== "review");
   }
   for (const k of cards) { delete k.inBoard; delete k.inStack; }
+  // #C872 (2026-11-10: the owner answered A on #T1782 for #C862 and Builder sat idle 20 minutes; the answer only reached it through Manager's
+  // chat): a Decision on a card that the owner answered in the last DECISION_FRESH_MS is that card's owner's turn while the owner has stayed
+  // idle since the answer came. The wake ends the idleness, so the turn goes by itself: once per answer, with no state of its own. It takes the
+  // place of the owner's other turns on that card (one turn per role and card). The newest answered Decision of a card counts; a closed one
+  // too, since the lead may close it at once and the owner still has not heard.
+  const answered = new Map();
+  for (const a of Array.isArray(view?.asks) ? view.asks : []) {
+    if (!a || a.type !== "Decision" || typeof a.card_id !== "string" || !Number.isFinite(a.answered_at) || !Number.isInteger(a.num)) continue;
+    if (now - a.answered_at > DECISION_FRESH_MS || a.answered_at > now + 5_000) continue;
+    const had = answered.get(a.card_id);
+    if (!had || a.answered_at > had.answered_at) answered.set(a.card_id, a);
+  }
+  for (const k of cards) {
+    const d = answered.get(k.id), ag = d && Object.hasOwn(agents, k.who) ? agents[k.who] : null;
+    const idleSince = ag && (Number.isFinite(ag.since) ? ag.since : ag.lastActivityAt);
+    if (!d || ag?.state !== "idle" || !Number.isFinite(idleSince) || idleSince > d.answered_at) continue;
+    k.turns = [...k.turns.filter((t) => t.role !== k.who), { role: k.who, phase: "decision", step: "decision", ask: d.num, answer: d.answer }];
+  }
   // #C871 (item 4): an agent's queue is in the owner's order (queue_pos, then the card's number), and an idle agent is woken for the FIRST card
   // of it that can start (nothing pushed, not held by a depends_on, which was skipped above), not for every queued card at once.
   const notStarted = (k) => k.turns.some((t) => t.step === "build" && !t.sha);
