@@ -1,0 +1,1 @@
+FINDINGS Quick: #C849 v4 send-cap-fallback c58a2e8. Content OK, same as v2 e033123. Not signed only because it sits on #C848 v4 6f18a17, which has FINDINGS. Re-cut it on the fixed #C848 v5 and it can be signed.
