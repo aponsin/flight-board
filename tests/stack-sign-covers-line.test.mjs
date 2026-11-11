@@ -97,3 +97,42 @@ test("board-release --dry-run: a line sign on the tip covers a FINDINGS pack bel
     assert.ok(!notBelow.ok && unsigned.test(notBelow.out), notBelow.out);
   } finally { rmSync(D, { recursive: true, force: true }); }
 });
+
+// Security's LOW on #C934: a line sign covers only the branch's own commits. A base older than the branch point would also take in main's commits
+// between the base and where the branch left main; that is refused. A line from the branch point itself signs as in the test above.
+test("board-release --dry-run: the base must be where the line left main; an older base on main is refused, the branch point itself covers the branch", () => {
+  const REPO = new URL("..", import.meta.url).pathname, D = mkdtempSync(join(tmpdir(), "line-fork-"));
+  const git = (cwd, ...a) => execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "user.email=t@example.com", "-c", "user.name=T", ...a], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  try {
+    const BASE = git(REPO, "rev-parse", "HEAD");
+    execFileSync("git", ["init", "-q", "--bare", join(D, "origin.git")]);
+    git(REPO, "push", "-q", join(D, "origin.git"), `${BASE}:refs/heads/main`);
+    const W = join(D, "work");
+    execFileSync("git", ["clone", "-q", join(D, "origin.git"), W]);
+    const commit = (file, msg) => { appendFileSync(join(W, file), file.endsWith(".html") ? "\n<!-- x -->\n" : "\n// x\n"); git(W, "commit", "-qam", `${msg}\n\nBoard-Id: fork-card`); return git(W, "rev-parse", "HEAD"); };
+    const note = (sha, checker, security) => { git(W, "notes", "--ref=checker", "add", "-f", "-m", checker, sha); git(W, "notes", "--ref=security", "add", "-f", "-m", security, sha); };
+    const push = () => git(W, "push", "-q", "-f", "origin", "refs/notes/checker", "refs/notes/security");
+    // main moves on by one commit M1 (not pinned); the line (a pack Sx and a tip P2) is cut from M1.
+    const M1 = commit("CHANGELOG.md", "main moves on"); git(W, "push", "-q", "origin", `${M1}:refs/heads/main`);
+    const Sx = commit("gate/rules.mjs", "the pack"), P2 = commit("gate/gate.mjs", "a newer pack");
+    const H = join(D, "home"), cfg = join(H, "board.config.json");
+    mkdirSync(join(H, ".claude"), { recursive: true });
+    const conf = JSON.parse(readFileSync(join(REPO, "board.config.example.json"), "utf8"));
+    writeFileSync(cfg, JSON.stringify({ ...conf, artifactUrl: "https://claude.ai/" + "artifact/AbCdEfGh123", collector: { ...conf.collector, outDir: join(H, "out") } }));
+    mkdirSync(join(H, ".flight-board/AbCdEfGh123/.claude"), { recursive: true });
+    writeFileSync(join(H, ".flight-board/AbCdEfGh123/.claude/settings.local.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '${H}/x/collector/fence.mjs' --send-to Manager` }] }] } }));
+    writeFileSync(join(H, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: `node '${H}/.flight-board/install/${BASE}/gate/gate.mjs' --config '${cfg}'` }] }] } }));
+    const run = (sha) => { try { return { ok: true, out: execFileSync(process.execPath, [join(REPO, "scripts/board-release.mjs"), sha, "--dry-run"], { env: { ...process.env, HOME: H, FLIGHT_BOARD_REPO: W, BOARD_PACK: "v3.51" }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; } catch (e) { return { ok: false, out: `${e.stdout}${e.stderr}` }; } };
+    const unsigned = new RegExp(`isn't signed by both Checker and Security: ${Sx.slice(0, 12)}`);
+    note(Sx, "FINDINGS", "SECURE");
+    // The base is the pin, older than the branch point M1: it would also cover M1 (main's commit), so it covers nothing.
+    note(P2, `PASS Full line from ${BASE}`, `SECURE line from ${BASE}`); push();
+    const older = run(P2);
+    assert.ok(!older.ok && unsigned.test(older.out), older.out);
+    // The base is the branch point M1 itself: the branch's own commits, signed as before.
+    note(P2, `PASS Full line from ${M1}`, `SECURE line from ${M1}`); push();
+    const own = run(P2);
+    assert.ok(own.ok, own.out);
+    assert.match(own.out, new RegExp(`the waiting pack's only: ${P2.slice(0, 12)}`));
+  } finally { rmSync(D, { recursive: true, force: true }); }
+});

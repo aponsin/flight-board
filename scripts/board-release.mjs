@@ -251,6 +251,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       const lineCovers = (c, notes) => {
         const b = lineSign(notes);
         if (!b || quiet(["merge-base", "--is-ancestor", b, main]) === null || quiet(["merge-base", "--is-ancestor", b, c]) === null) return undefined;
+        // Security's LOW on #C934: the base is where the commit's line left main (git merge-base main c, or an ancestor-equal point on it),
+        // so the sign covers only the branch's own commits, never main's commits between an older base and the branch point.
+        const fork = quiet(["merge-base", main, c]);
+        if (!fork || quiet(["merge-base", "--is-ancestor", fork, b]) === null) return undefined;
         return list(["rev-list", `${b}..${c}`]);
       };
       const range = list(["rev-list", "--reverse", `${pinned}..${sha}`]).map((c) => { const notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", c])])); return { sha: c, fromPin: path.has(c), touches: touches(c), notes, covers: lineCovers(c, notes) }; });
