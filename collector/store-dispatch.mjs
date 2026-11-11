@@ -25,6 +25,9 @@ export function askCardId(ask, idByNum) {
 }
 
 const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+// #C915 (b): worker/board-rules.mjs holdOpen, copied (this pinned file imports only gate/): a hold_end whose end has not come (endPassed(ref) false),
+// or a check_at in the future. A test fails if the two differ.
+export const holdOpen = (c, now, endPassed) => !!c && ((typeof c.hold_end === "string" && c.hold_end.trim() !== "" && !endPassed(c.hold_end)) || (Number.isInteger(c.check_at) && c.check_at > now));
 
 // #C850 (dispatch by phase): whose turn it is on a card, and for what, from the card's evidence. The lanes are whoForPhase's
 // (worker/board-rules.mjs PHASE_LANES; a test pins that they are the same). [{ role, phase, step, sha?, signed? }]:
@@ -100,6 +103,13 @@ export function dispatchInput(view, now) {
   const boardCard = (c) => !c.repo || c.repo === "flight-board";
   const stackBranch = switchOn ? all.filter((c) => c && typeof c.id === "string" && boardCard(c)).map((c) => ev[`cards.${c.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
   const BUILD_STEPS = new Set(["build", "rework", "outside"]);
+  // #C915 (b): whether a hold_end has come: its ask is closed, or its card is dropped or live. An id the view does not hold stays open.
+  const endPassed = (ref) => {
+    const ask = (Array.isArray(view?.asks) ? view.asks : []).find((a) => a && a.id === ref);
+    if (ask) return ask.closed_at != null;
+    const k = all.find((x) => x && x.id === ref);
+    return !!k && (!!k.dropped || phaseOf(ref) === "live");
+  };
   for (const c of all) {
     if (!c || typeof c.id !== "string" || !CARD_ID.test(c.id) || typeof c.owner_role !== "string") continue;
     if (waitsOn(c).length) continue;
@@ -109,7 +119,9 @@ export function dispatchInput(view, now) {
     const e = ev[`cards.${c.id}`]?.value;
     if ((e?.phase ?? e?.lit?.[0]) === "live") continue;
     // #C850: a hold with an end (a card the lead put on hold) is skipped; the stall rule brings it back when the hold ends.
-    if (c.hold_end) continue;
+    // #C915 (b): skipped while the hold is OPEN (holdOpen: hold_end on an open ask or card, or a check_at to come); once its end has passed the
+    // card is dispatched again, and the store's held-card line has already told Manager to lift or renew it.
+    if (holdOpen(c, now, endPassed)) continue;
     const inBoard = switchOn && boardCard(c);
     cards.push({ queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: turnsOf(c, e, inBoard ? { stackOn: true, stackBranch } : {}), inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true });
   }

@@ -1,5 +1,5 @@
 // holds-need-an-end (#C838, prevention for #T1761): a hold (waiting_on or blocked_reason) carries an end the store can check; a held card past its
-// end, or held with no end for 2 h, wakes Manager once; the page shows "held: <reason>, until <end>"; a card waiting for the install names its ask.
+// end, or held with no end for 2 h, wakes Manager once; the page shows "Held: <reason>, until <end>"; a card waiting for the install names its ask.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
@@ -175,14 +175,14 @@ test("heldWakes is pure: a dropped card, a card with no hold and a card with a f
 });
 
 // ---- (d) the page ----
-test("(d) the page shows 'held: <reason>, until <end>' for a check date, an ask, and no end", () => {
+test("(d) the page shows 'Held: <reason>, until <end>' for a check date, an ask, and no end", () => {
   const b = loadBoard();
   const draw = (f) => { b.state.steps = []; b.state.waiting = []; return b.initRow(b.gates(b.enrich({ id: "x", level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", ...f }))); };
-  assert.match(draw({ waitingOn: "the deploy", holdEnd: "t1763" }), /held: the deploy, until t1763/);
-  assert.match(draw({ waitingOn: "the owner", checkAt: Date.now() + DAY }), /held: the owner, until /);
-  assert.match(draw({ waitingOn: "someone" }), /held: someone, until no end set/);
-  assert.match(draw({ waitingOn: "Checker", holdUntil: Date.now() + 2 * H }), /held: Checker, until (?!no end)/);
-  assert.match(draw({ blocked: "keys", status: "blocked" }), /held: keys, until no end set/);
+  assert.match(draw({ waitingOn: "the deploy", holdEnd: "t1763" }), /Held: the deploy, until t1763/);
+  assert.match(draw({ waitingOn: "the owner", checkAt: Date.now() + DAY }), /Held: the owner, until /);
+  assert.match(draw({ waitingOn: "someone" }), /Held: someone, until no end set/);
+  assert.match(draw({ waitingOn: "Checker", holdUntil: Date.now() + 2 * H }), /Held: Checker, until (?!no end)/);
+  assert.match(draw({ blocked: "keys", status: "blocked" }), /Held: keys, until no end set/);
 });
 
 test("(d) the compat view carries holdEnd and heldAt", async () => {
