@@ -207,6 +207,8 @@ export function dispatchItems({ cards, agents, asked = new Set(), roster = [], l
         ...(phase && SHA12.test(String(t.sha)) && REPO_FULL.test(String(t.repo)) ? { repo: t.repo } : {}),
         ...(phase && SHA12.test(String(t.sha)) && stackBranch(t.onBranch) ? { onBranch: t.onBranch } : {}),
         ...(phase && stackBranch(t.stack) ? { stack: t.stack } : {}),
+        // #C914: a builder's turn for a card of a stack-mode repository: the line names the stack-ready command as the push.
+        ...(phase && t.stackMode === true && ["build", "rework", "outside"].includes(t.step) ? { stackMode: true } : {}),
         ...(phase && Array.isArray(t.signed) ? { signed: t.signed.filter((s) => PLAIN_ROLE.test(String(s))).slice(0, 4) } : {}),
         ...(phase && t.step === "decision" && Number.isInteger(t.ask) && t.ask >= 1 && t.ask <= 1e7 ? { ask: t.ask, answer: plainAnswer(t.answer) } : {}),
       });
@@ -228,7 +230,9 @@ export const dispatchLine = (i) => {
     const signers = Array.isArray(i.signed) ? i.signed.filter((s) => typeof s === "string" && PLAIN_ROLE.test(s)).slice(0, 4) : [];
     const who = signers.length ? ` signed by ${signers.join(" and ")}` : "";
     const card = Number.isInteger(i.num) ? `#C${i.num}` : i.card;
-    const on = stackBranch(i.stack) ? `; stack mode is on, the stack branch is ${i.stack}: one commit per card, rebased on its tip before you push` : "";
+    // #C914: in stack mode the push is `node scripts/stack-ready.mjs`: it pushes the branch and decides by itself whether cards are still queued.
+    const cmd = i.stackMode === true && ["build", "rework", "outside"].includes(i.step) ? "push with node scripts/stack-ready.mjs --config <the board.config.json path of your wake-watch line> (it pushes the branch and decides by itself whether cards are still queued)" : "";
+    const on = stackBranch(i.stack) ? `; stack mode is on, the stack branch is ${i.stack}: one commit per card, rebased on its tip${cmd ? `; ${cmd}` : " before you push"}` : cmd ? `; stack mode is on: ${cmd}` : "";
     // #C872: `DISPATCH #C862 at decision: DECISION #T1782 answered: "A, the ship's run too"; go (Builder's turn; ...)`. The answer is cut again here.
     if (i.step === "decision" && Number.isInteger(i.ask) && i.ask >= 1 && i.ask <= 1e7) return `DISPATCH ${card} at decision: DECISION #T${i.ask} answered: "${plainAnswer(i.answer)}"; go (${i.role}'s turn; read the answer on the ask's thread, act on it, push your own build branch and send READY: no go needed from anyone)`;
     // #C895: with the full sha the line says where the commit is (repository, branch, all 40 characters), so nobody has to ask or guess; checked again here.

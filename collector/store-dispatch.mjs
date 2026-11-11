@@ -55,13 +55,15 @@ export function turnsOf(card, e, ctx = {}) {
   const where = { ...(fullSha ? { fullSha } : {}), ...(inRepo ? { repo: inRepo } : {}), ...(fullSha && onBranch ? { onBranch } : {}) };
   const signed = (Array.isArray(e?.signed) ? e.signed : []).filter((s) => typeof s === "string" && Object.hasOwn(ROLE_OF_NOTE, s));
   const signedBy = signed.map((s) => ROLE_OF_NOTE[s]);
-  const owner = { role: card.owner_role, phase: "build", step: "build", ...(branch ? { stack: branch } : {}) };
-  if (stack?.outside === true && e?.onMain !== true) return [{ role: card.owner_role, phase: "build", step: "outside", ...(branch ? { stack: branch } : {}) }];
+  // #C914: stackMode marks a builder's turn for a card of a stack-mode repository: its wake names the stack-ready command as the push.
+  const mode = ctx.stackOn === true ? { stackMode: true } : {};
+  const owner = { role: card.owner_role, phase: "build", step: "build", ...(branch ? { stack: branch } : {}), ...mode };
+  if (stack?.outside === true && e?.onMain !== true) return [{ role: card.owner_role, phase: "build", step: "outside", ...(branch ? { stack: branch } : {}), ...mode }];
   if (typeof phase !== "string" || phase === "plan" || phase === "build") return [owner];
   // #C852: a review whose note on this commit starts FINDINGS has sent it back: the fix is the owner's turn, and no reviewer is woken to
   // look at a commit already rejected. It is a fact of this sha (evidence.findings), so a new commit clears it without anyone's step.
   const findings = (Array.isArray(e?.findings) ? e.findings : []).filter((s) => typeof s === "string" && Object.hasOwn(ROLE_OF_NOTE, s));
-  if (findings.length && Object.hasOwn(ROLE_OF_NOTE, phase)) return [{ role: card.owner_role, phase: "build", step: "rework", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
+  if (findings.length && Object.hasOwn(ROLE_OF_NOTE, phase)) return [{ role: card.owner_role, phase: "build", step: "rework", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}), ...mode }];
   if (phase === "ship") {
     if (e.onMain === true) return typeof card.repo === "string" && card.repo !== "" ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, ...where, signed: signedBy }] : [];
     // #C854: signed but no longer continuing main: Release cannot take it. The turn is the owner's, to re-cut it on main (a new commit has a new sha, so a reviewer is woken again).
@@ -73,6 +75,37 @@ export function turnsOf(card, e, ctx = {}) {
   if (!signed.includes(phase)) out.push({ role: PHASE_LANES[phase], phase, step: "review", sha, ...where, signed: signedBy });
   if (phase === "checker" && card.review_level === "Full" && !signed.includes("security")) out.push({ role: "Security", phase, step: "review", sha, ...where, signed: signedBy });
   return out;
+}
+
+// A card's depends_on (a JSON list of ids, or a list) as plain strings; a list that does not parse is none.
+const dependsOf = (c) => {
+  let list = c?.depends_on;
+  if (typeof list === "string") { try { list = JSON.parse(list); } catch { return []; } }
+  return Array.isArray(list) ? list.filter((d) => typeof d === "string") : [];
+};
+const hasHeadEvidence = (v) => !!v && typeof v === "object" && (typeof v.headSha12 === "string" || typeof v.headSha === "string");
+
+// #C914 (R6): what the stack-ready command (scripts/stack-ready.mjs) reads to tell whether cards are still queued behind the one just pushed:
+// { at, cards: [{ id, owner_role, repo, dependsOn: [ids], started }] } for every open (not dropped, not live) card, ids and plain words only,
+// 500 cards at most. started = the card has a pushed head. Pure: the view in, the object out.
+export const STACK_QUEUE_FILE = "stack-queue.json", STACK_QUEUE_MAX = 500;
+export function stackQueueFile(view, now) {
+  const ev = view?.evidence ?? {};
+  const cards = [];
+  for (const c of Array.isArray(view?.cards) ? view.cards : []) {
+    if (!c || typeof c.id !== "string" || !CARD_ID.test(c.id) || c.dropped) continue;
+    const e = ev[`cards.${c.id}`]?.value;
+    if ((e?.phase ?? e?.lit?.[0]) === "live") continue;
+    cards.push({
+      id: c.id,
+      owner_role: typeof c.owner_role === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(c.owner_role) ? c.owner_role : "",
+      repo: typeof c.repo === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(c.repo) ? c.repo : "",
+      dependsOn: [...new Set(dependsOf(c).filter((d) => CARD_ID.test(d) && d !== c.id))].slice(0, 50),
+      started: hasHeadEvidence(e),
+    });
+    if (cards.length >= STACK_QUEUE_MAX) break;
+  }
+  return { at: now, cards };
 }
 
 // The store's view -> { cards, agents, asked } in the shapes dispatchItems reads, or null when the view cannot say who is idle.
@@ -88,16 +121,22 @@ export function dispatchInput(view, now) {
   // #C845: a card waits for the cards it depends on (depends_on, a JSON list of ids) until each is live. A dependency the board doesn't
   // have, or one that was dropped, holds nothing (as the gate's dependsOnErrors reads it).
   const open = new Map(all.filter((k) => k && typeof k.id === "string" && !k.dropped && !k.done_at).map((k) => [k.id, k]));
-  const waitsOn = (c) => {
-    let list = c.depends_on;
-    if (typeof list === "string") { try { list = JSON.parse(list); } catch { return []; } }
-    return Array.isArray(list) ? list.filter((d) => typeof d === "string" && d !== c.id && open.has(d) && phaseOf(d) !== "live") : [];
-  };
   // #C859 slice 3 (stack mode): the board repository's switch is on (a card with no repo word, or "flight-board", is the board's). The stack's
   // branch is the one the evidence names on any of its cards; a builder's turn carries it, and a reviewer is not woken for a card in the stack
   // while a card of the same repository still has a build turn (design 3: Checker and Security are woken once, when no builder has a card queued).
   const switchOn = (Array.isArray(view?.stackSwitch) ? view.stackSwitch : []).some((s) => s && s.repo === "board" && (s.stack === true || s.stack === 1));
   const boardCard = (c) => !c.repo || c.repo === "flight-board";
+  // #C914 (R4): in stack mode a dependency the same builder has PUSHED (not yet live) is satisfied for a card of the board's repository: card 2 of a
+  // stack starts while card 1 waits for its review. Another role's card, or any other repository, still has to be live.
+  const hasHead = (id) => hasHeadEvidence(ev[`cards.${id}`]?.value);
+  const pushed = (id) => hasHead(id) && ev[`cards.${id}`].value.stack?.outside !== true;
+  const waitsOn = (c) => dependsOf(c).filter((d) => d !== c.id && open.has(d) && phaseOf(d) !== "live"
+    && !(switchOn && boardCard(c) && boardCard(open.get(d)) && open.get(d).owner_role === c.owner_role && pushed(d)));
+  // #C914 (R3): a card WAITS (the probe's stackHold is applied) only when it has a declared stack partner: another open card of the same builder
+  // and repository that depends on it and has nothing pushed yet. The instant the partner is pushed the hold lifts by itself.
+  const activeCard = (k) => !k.paused && !k.dropped && !k.blocked_reason && phaseOf(k.id) !== "live";
+  const hasPartner = (c) => all.some((k) => k && typeof k.id === "string" && k.id !== c.id && activeCard(k) && k.owner_role === c.owner_role && boardCard(k) === boardCard(c)
+    && (boardCard(c) || k.repo === c.repo) && !hasHead(k.id) && dependsOf(k).includes(c.id));
   const stackBranch = switchOn ? all.filter((c) => c && typeof c.id === "string" && boardCard(c)).map((c) => ev[`cards.${c.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
   const BUILD_STEPS = new Set(["build", "rework", "outside"]);
   for (const c of all) {
@@ -111,7 +150,11 @@ export function dispatchInput(view, now) {
     // #C850: a hold with an end (a card the lead put on hold) is skipped; the stall rule brings it back when the hold ends.
     if (c.hold_end) continue;
     const inBoard = switchOn && boardCard(c);
-    cards.push({ queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: turnsOf(c, e, inBoard ? { stackOn: true, stackBranch } : {}), inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true });
+    // #C914: a card the probe marks stackHold (pushed, no stack-ready signal covers its head) AND that has a declared stack partner waiting to
+    // start has no review turn, and is no builder turn either. Any other card dispatches as it always did.
+    const held = inBoard && e?.stackHold === true && hasPartner(c);
+    const turns = turnsOf(c, e, inBoard ? { stackOn: true, stackBranch } : {});
+    cards.push({ queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: held ? turns.filter((t) => t.step !== "review") : turns, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }
   if (switchOn && cards.some((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step)))) {
     for (const k of cards) if (k.inStack) k.turns = k.turns.filter((t) => t.step !== "review");
@@ -198,6 +241,12 @@ export function afterShip(view, before, agents, now) {
 
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; } };
 const writeAtomic = (path, text) => { const tmp = `${path}.${process.pid}.part`; writeFileSync(tmp, text, { mode: 0o600 }); renameSync(tmp, path); };
+
+// #C914 (R6): <dir>/stack-queue.json, by the same atomic writer as dispatch.json (mode 0600, rename into place). Read-only for the builder.
+export function writeStackQueue(view, { dir, now = Date.now() }) {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeAtomic(join(dir, STACK_QUEUE_FILE), JSON.stringify(stackQueueFile(view, now)));
+}
 
 // One run over a view. Returns { wrote, why?, items }. `dir` is <stateDir>/<board>.
 export function dispatchRun(view, { dir, roster, lead, now = Date.now(), log = () => {} }) {
