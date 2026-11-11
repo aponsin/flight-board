@@ -6,7 +6,7 @@
 // readings and the live version), meta/live, and the probe document. Left out until their stage: messages, threads, steps,
 // events, usage, plan, timings, ctx*, checkRequests, threadPings, pingThreads, agentPrs, approvals.
 
-import { STALE_AFTER_MS, PHASES } from "./board-rules.mjs";
+import { STALE_AFTER_MS, PHASES, typedOther } from "./board-rules.mjs";
 import { expectedVersions } from "../collector/expected.mjs";
 import { applyFiles } from "./file-store.mjs";
 import { applyShips } from "./compat-ships.mjs";
@@ -24,12 +24,6 @@ export const optionObjects = (options) => (Array.isArray(options) ? options.map(
 export const optionOfKey = (options, key) => (Array.isArray(options) ? options.find((_, i) => KEY(i) === key) : undefined);
 
 const KINDS = { Decision: "decision", Action: "action", Terminal: "action", SessionStart: "session", Later: "later", Approval: "action", Answer: "answer", Thread: "answer" };
-
-// #C912: an answer string that is an old response object (a JSON object with the owner's typed `note`): that object, else null.
-const typedOther = (answer) => {
-  if (typeof answer !== "string" || answer[0] !== "{") return null;
-  try { const v = JSON.parse(answer); return v && typeof v === "object" && !Array.isArray(v) && typeof v.note === "string" ? v : null; } catch { return null; }
-};
 
 // One ask as an old `waiting` doc.
 export function waitingDoc(a) {

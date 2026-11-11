@@ -241,6 +241,12 @@ export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
 export const CARD_SIZES = ["XS", "S", "M", "L", "XL"];
 const CARD_FORBIDDEN = new Set(["status", "phase", "num", "live_version", "signed", "on_main", "ci", "evidence"]);
 
+// #C912, #C932: an answer string that is an old response object (an imported "something else": a JSON object with the owner's typed `note`,
+// kept whole as the answer with no answer_status): that object, else null. The view and Manager's inbox both read it.
+export const typedOther = (answer) => {
+  if (typeof answer !== "string" || answer[0] !== "{") return null;
+  try { const v = JSON.parse(answer); return v && typeof v === "object" && !Array.isArray(v) && typeof v.note === "string" ? v : null; } catch { return null; }
+};
 // #C949: the card ids the probe reads (the same as collector/state-schema.mjs CARD_ID and CARD_ID_MAX; a test holds the two equal). The Worker
 // is bundled without collector/, so the pattern is copied here, not imported.
 export const PROBE_CARD_ID = /^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/;
