@@ -28,13 +28,16 @@ const DAY = 864e5;
 // The owner's own words in a turn: what a person sent, never a message from another session, whole, whatever its body
 // holds (#C298: a plan quoting the ping's format "Board thread [id]: …" read as the owner writing in a thread named
 // "id"; a closing tag inside a sender's body must not end the cut early, Security), nor a system reminder.
+// #C954: text another session or the app put into the turn is never the owner's: a message from another session (also inside a system
+// reminder), a background task's notification, the app's side-sessions or CI events, a cross-session delivery or idle notice.
+const NOT_THE_OWNERS = /<cross-session-message\b|^\s*Another Claude session sent a message|<task-notification\b|<side-sessions-event\b|<ci-monitor-event\b|\[Cross-session (?:delivery|idle) notice\]/;
 export function ownTurnText(turn) {
   const parts = [];
   for (const l of turn) {
     if (l?.type !== "user") continue;
     const c = l.message?.content;
     for (const t of typeof c === "string" ? [c] : Array.isArray(c) ? c.filter((p) => p?.type === "text").map((p) => p.text ?? "") : []) {
-      if (/<cross-session-message\b|^\s*Another Claude session sent a message/.test(t)) continue;
+      if (NOT_THE_OWNERS.test(t)) continue;
       parts.push(t.replace(/<system-reminder[\s\S]*<\/system-reminder>/g, ""));
     }
   }
