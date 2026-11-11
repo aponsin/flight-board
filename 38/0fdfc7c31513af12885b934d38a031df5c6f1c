@@ -1,0 +1,1 @@
+SECURE #C943 build/c943-posted-fresh-boundary@380fdfc7c31513af12885b934d38a031df5c6f1c: syncStalls post query > becomes >=, still a bound parameter (now - POSTED_FRESH_MS), matches the rule's <=; window grows by one ms, no new input, no auth change. Boundary test 5/5; mutation (back to >) fails it. - Security
