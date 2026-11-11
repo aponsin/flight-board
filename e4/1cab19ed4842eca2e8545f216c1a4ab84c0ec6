@@ -1,0 +1,1 @@
+SECURE #C942 build/safe-restart-badge-truth@e41cab1: page only; restartState names working roles, shown via textContent (no HTML); roles from config; no new top-level code that runs anything. - Security
