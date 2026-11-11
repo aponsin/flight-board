@@ -139,7 +139,11 @@ export function dispatchInput(view, now) {
   }
   // #C871 (item 4): an agent's queue is in the owner's order (queue_pos, then the card's number), and an idle agent is woken for the FIRST card
   // of it that can start (nothing pushed, not held by a depends_on, which was skipped above), not for every queued card at once.
-  const notStarted = (k) => k.turns.some((t) => t.step === "build" && !t.sha);
+  // #C910: the first card that can start is the first one dispatchItems would not drop. Choosing before its filters let a first card with an open
+  // ask, or waiting on someone else, take the agent's only turn and then be dropped: the agent was woken for nothing and its 22 other cards lost theirs.
+  const askedCards = new Set();
+  for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null) askedCards.add(a.card_id);
+  const notStarted = (k) => k.turns.some((t) => t.step === "build" && !t.sha) && !askedCards.has(k.id) && !(typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(k.who));
   const byRole = new Map();
   for (const k of cards.filter(notStarted)) byRole.set(k.who, [...(byRole.get(k.who) ?? []), k]);
   for (const list of byRole.values()) {
@@ -148,6 +152,7 @@ export function dispatchInput(view, now) {
     list.sort((x, y) => (x.queuePos ?? 1e6) - (y.queuePos ?? 1e6) || (x.ownerPlaced ? 0 : 1) - (y.ownerPlaced ? 0 : 1) || (x.num ?? 1e9) - (y.num ?? 1e9) || (x.id < y.id ? -1 : 1));
     for (const k of list.slice(1)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
   }
+  // The cards left out of the lists above (asked, or waiting on someone else) keep their turn, which dispatchItems drops by the same rule.
   for (const k of cards) { delete k.queuePos; delete k.ownerPlaced; }
   // #C858: the deploy pair is one per repository main, not one per landed card: of the cards a role is woken for to build the pair, the newest
   // (highest number) keeps the turn, and the line names the step; the others are covered by the same pair.

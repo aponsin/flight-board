@@ -275,7 +275,7 @@ const pendingForManager = async (db) => {
 // (card, reason): a new reason for a card is pending for Manager once, an older untaken reason of the card is replaced by it, and a stall
 // that is over is no longer pending. A reason already sent is never sent again.
 async function syncStalls(db, now) {
-  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, waiting_on, repo, check_at, hold_end, held_at, hold_until, depends_on, updated_at FROM cards").all()).results;
+  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, waiting_on, repo, check_at, hold_end, held_at, hold_until, depends_on, updated_at, queue_pos, queue_set_by FROM cards").all()).results;
   const evRows = (await db.prepare("SELECT key, value FROM evidence WHERE key = 'agents' OR key LIKE 'cards.%'").all()).results;
   let agents = {}; const evidence = {};
   for (const r of evRows) { let v; try { v = JSON.parse(r.value); } catch { continue; } if (r.key === "agents") agents = v; else evidence[r.key.slice(6)] = v; }
