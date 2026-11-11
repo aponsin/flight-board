@@ -2542,6 +2542,10 @@ function ctxAgents(now=Date.now()){const m=state.meta.find(d=>d.id==="context")|
   // than the tile's replaces its count and keeps its saved flags.
   Object.entries(liveCtx(now)).forEach(([n,v])=>{const cur=a[n]||{};if(num(cur.at)&&!(v.at>cur.at))return;
     a[n]={...cur,pct:v.pct,tokens:v.tokens,at:v.at}});
+  // #C939: with no reading at all now (the store's streams restart empty after an install or a resubscribe, or a read lands
+  // mid-write) the last good list stays, each tile with its own age (dimmed over 2 h); "No check yet" is only for a board that
+  // never had a reading. A later read with rows but without an agent replaces the list whole, so a removed agent drops off.
+  if(Object.keys(a).length)state.ctxKept=a;else if(state.ctxKept)return state.ctxKept;
   return a}
 // "439k", "1.2M": cut down, so a count under a line never reads as the line.
 function fmtTokens(t){return t>=1e6?`${Math.floor(t/1e5)/10}M`:t>=1e3?`${Math.floor(t/1e3)}k`:String(t)}
