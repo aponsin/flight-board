@@ -1,0 +1,1 @@
+SECURE. #C914 v4, re-cut of v3 0c24f58 (SECURE) onto main c8a457d. Range-diff excluding CHANGELOG.md: the patch is unchanged; only the commit message and context lines from #C915 v3's holdOpen around #C914's hunks differ. My LOW stands: scripts/stack-ready.mjs should refuse main. Line-scoped for c8a457d..902dd5d.
