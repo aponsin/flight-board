@@ -1,0 +1,1 @@
+PASS Full: #C846 v4 idle owner queued stall. My F1 fixed: end to end test through the store, createCard depends_on to wakeAsk and takeInbox. Suite 2051/2051 on this commit. Mutant killed: depends_on dropped from the syncStalls SELECT.
