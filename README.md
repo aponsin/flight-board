@@ -170,6 +170,16 @@ It refuses a sha that is not on the fetched `origin/main` (and one behind the la
 - **tree** (`update`, or `back`) moves the probe's code tree `board-store-v4`, which the launchd jobs run from, to the signed commit. It refuses unless the deploy's `.done` file names that commit, so the new probe never runs against a Worker that reports nothing. `back` returns it to the commit recorded in `board-store-tree-<name>.from`.
 - **steps** (`board-store-<name>-steps.md`): the pin, what changed since the last pair (Worker code, probe and gate code, page, any migration, any secret), and the two lines, each checking its file's sha256 before running, in the deploy-then-tree order.
 
+### From the laptop, over SSH (#C924)
+
+`make-pair` also copies `scripts/pair/board-deploy.mjs` into the owner's folder, byte for byte, as `board-deploy.mjs`, and the steps file's first command is one line that checks its sha256 and runs `node board-deploy.mjs pc<n> <deploy sha256> <tree sha256>`: the pasted line carries all three hashes, so what runs is bound to what Security signed out of band, not to the steps file on the disk (anything that can write the board folder could change that file and its hash lines together). That command checks the pair's deploy file and tree file against the two hashes on the line (`CHECK FAILED` and nothing run if either differs, or if the steps file names different ones; without both hashes it prints a usage line, exits 2 and runs nothing), runs line 1 then line 2, stops at the first failure and ends with the `DEPLOY OK` and `TREE OK` lines; line 3 (hooks) stays by hand and the command prints the line to paste. The two long lines stay in the steps file as the by-hand way.
+
+For nothing to need a browser (SSH, or no display), wrangler gets an API token from the owner's private settings file, `board.private.json`, in the owner's board folder next to `board.config.json` (never inside a repository):
+
+    { "cloudflareApiToken": "<the token>", "cloudflareAccountId": "<the 32-hex account id>" }
+
+The owner writes it himself in Terminal or over SSH, never in a chat, then runs `chmod 600` on it. The token is a Cloudflare API token limited to the one account with Workers Scripts: Edit and D1: Edit (the lead confirms the exact clicks and any read scope wrangler also asks for). The deploy file refuses a file that group or others can read (naming it and `chmod 600`, without opening it), passes the two values only in wrangler's environment, and never prints or writes them; `scripts/scan.mjs` refuses a push that holds a file of that name. Without the file the deploy is as before (`npx wrangler@4.150.0 login` in a browser), and a failure line names the file and the two values. The token is a deploy-capable secret on a disk the agents can read; wrangler's own login already keeps one there, so this is not a new exposure, but the file belongs in the agents' read-deny list.
+
 Send the files and their sha256 to Security for SAFE before the owner is told; when a Worker change adds a field the probe writes (as `findings` did), the Worker goes first.
 
 ## Tests

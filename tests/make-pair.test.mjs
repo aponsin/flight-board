@@ -28,7 +28,8 @@ test("the three files are written and the hashes in the steps file are the files
   g("push", "-q", "origin", "main");
   const r = makeAll({ repo: work, sha: a, n: 1, out });
   assert.equal(r.ok, true, r.why);
-  assert.deepEqual(readdirSync(out).sort(), ["board-store-deploy-pc1.mjs", "board-store-pc1-steps.md", "board-store-tree-pc1.mjs"]);
+  // #C924: board-deploy.mjs, the one command for lines 1 and 2, is copied in beside them.
+  assert.deepEqual(readdirSync(out).sort(), ["board-deploy.mjs", "board-store-deploy-pc1.mjs", "board-store-pc1-steps.md", "board-store-tree-pc1.mjs"]);
   const steps = readFileSync(join(out, "board-store-pc1-steps.md"), "utf8");
   for (const f of ["board-store-deploy-pc1.mjs", "board-store-tree-pc1.mjs"]) {
     const h = sha256(readFileSync(join(out, f), "utf8"));

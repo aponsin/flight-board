@@ -24,6 +24,11 @@ const PATTERNS = [
   ["a token", /\b(?:sk-[A-Za-z0-9_-]{20,}|(?:sk|rk)_live_[A-Za-z0-9]{16,}|whsec_[A-Za-z0-9]{16,}|re_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{40,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b/g],
 ];
 
+// #C924: files that live outside the repository and must never enter it, whatever they hold: the owner's private board settings (the Cloudflare
+// token the deploy files read). A path with one of these names is a hit by its NAME, and the scan never reads such a file's text.
+export const NEVER_COMMIT = ["board.private.json"];
+export const neverCommit = (path) => NEVER_COMMIT.includes(String(path).split("/").pop());
+
 // Hits in one file's text: [{ line, what }]. words: the private list, already lower case.
 export function scanText(text, words) {
   const hits = [];
@@ -63,6 +68,7 @@ export function scanCommit(commit, words, git) {
   const hits = [];
   const paths = [...new Set(git(["diff-tree", "-r", "-m", "--root", "--no-commit-id", "--name-only", "--diff-filter=ACMRT", "-z", commit]).split("\0").filter(Boolean))];
   for (const path of paths) {
+    if (neverCommit(path)) { hits.push({ where: `${commit.slice(0, 8)}:${path}`, line: 0, what: "a private settings file (it never goes in the repository)" }); continue; }
     const text = git(["cat-file", "blob", `${commit}:${path}`]);
     if (text.includes("\0")) continue;
     for (const h of scanText(text, words)) hits.push({ where: `${commit.slice(0, 8)}:${path}`, ...h });
@@ -110,6 +116,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   } else {
     const files = git(["ls-tree", "-r", "-z", "--name-only", "HEAD"]).split("\0").filter(Boolean);
     for (const f of files) {
+      if (neverCommit(f)) { hits.push({ where: f, line: 0, what: "a private settings file (it never goes in the repository)" }); continue; }
       const text = git(["cat-file", "blob", `HEAD:${f}`]);
       if (!text.includes("\0")) for (const h of scanText(text, words)) hits.push({ where: f, ...h });
     }

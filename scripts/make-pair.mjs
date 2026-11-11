@@ -2,7 +2,8 @@
 // and the steps file with the hash-checked lines, and lists what changed since the last pair. Usage:
 //   node scripts/make-pair.mjs <40-hex sha on origin/main> <n> [--out <the folder the owner runs the files from>] [--repo <checkout>]
 // It writes board-store-deploy-pc<n>.mjs, board-store-tree-pc<n>.mjs (made by scripts/pair/make-pair.mjs from the reviewed templates) and
-// board-store-pc<n>-steps.md, and prints each file's sha256. The sha must be on the fetched origin main, else nothing is written. The last pair
+// board-store-pc<n>-steps.md, and (#C924) copies scripts/pair/board-deploy.mjs byte for byte as board-deploy.mjs (the one command that runs lines 1 and
+// 2 over SSH; its sha256 is the steps file's first command), and prints each file's sha256. The sha must be on the fetched origin main, else nothing is written. The last pair
 // is the highest earlier board-store-deploy-pc<k>.mjs that has its .done marker (#C889: a pair nobody ran deployed nothing); its pinned commit
 // is where "changed since" starts, and the steps say the new pair REPLACES each never-run pair after it. When a hook file changed since then
 // (HOOK_PINNED) a board-store-hooks-pc<n>.mjs is written too, from the newest earlier hooks file, and the steps get a third line. The steps file lists
@@ -133,7 +134,7 @@ export function onMain(git, sha) {
   return { ok: true, tip };
 }
 
-export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha, folder, skipped = [], hooksSha = null, hookPaths = [] }) {
+export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha, folder, skipped = [], hooksSha = null, hookPaths = [], boardDeploySha = null }) {
   const s8 = sha.slice(0, 8), s7 = sha.slice(0, 7);
   const cards = [...new Set(commits.flatMap((c) => c.match(/#C\d+/g) ?? []))];
   const groups = groupPaths(paths);
@@ -150,15 +151,23 @@ export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha,
 
 Pinned to flight-board main ${sha}. Each line checks the file's SHA-256 first and prints CHECK FAILED instead of running a changed file. ${hooksSha ? "Three lines (the third installs the hooks, pinned to this main)" : "Two lines"}, in this order, one at a time.
 ${replaces}${worker ? "The Worker changes: deploy it first (line 1), then the tree (line 2)." : "No Worker code changes: line 1 only tells the Worker which commit it carries."} ${migration ? "A database migration is part of this deploy: answer y if it asks." : "No database migration."}${worker ? " A new secret cannot be seen from the diff: read the Worker code and Worker config lines below." : ""}
-If wrangler is not signed in: npx wrangler@4.150.0 login (once).
+If wrangler is not signed in: fill cloudflareApiToken and cloudflareAccountId in ${folder}/board.private.json (mode 600, made once by you in Terminal, never in a chat; with it nothing opens a browser, so it works over SSH), or sign in once with a browser: npx wrangler@4.150.0 login.
 
 ${changed.join("\n")}
 
 \`\`\`bash
 cd ${folder}
 \`\`\`
+${boardDeploySha ? `
+## One command: lines 1 and 2 together (works over SSH)
 
-## Line 1: deploy
+\`\`\`bash
+if [ "$(shasum -a 256 board-deploy.mjs | cut -c1-64)" = ${boardDeploySha} ]; then node board-deploy.mjs ${name} ${deploySha} ${treeSha}; else echo 'CHECK FAILED: board-deploy.mjs is not the signed file. Paste this line to Manager.'; fi
+\`\`\`
+
+The line itself carries the deploy file's and the tree file's hashes, so what runs is bound to what was signed, not to a file on this disk. It checks the deploy file and the tree file against those two hashes first (CHECK FAILED, nothing run, if either differs, or if the hashes in this steps file disagree with them), runs line 1, then line 2, and stops at the first one that fails. It ends with the DEPLOY OK and TREE OK lines. The hooks step, when this pair has one, stays by hand: it prints the line to paste. If you run this, skip the two lines below: they are the same two steps, by hand.
+
+` : ""}## Line 1: deploy${boardDeploySha ? " (by hand)" : ""}
 
 \`\`\`bash
 if [ "$(shasum -a 256 board-store-deploy-${name}.mjs | cut -c1-64)" = ${deploySha} ]; then node board-store-deploy-${name}.mjs; else echo 'CHECK FAILED: board-store-deploy-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
@@ -166,7 +175,7 @@ if [ "$(shasum -a 256 board-store-deploy-${name}.mjs | cut -c1-64)" = ${deploySh
 
 Last line: \`DEPLOY OK: the Worker carries ${s8}; now run the tree step\`, and a new file \`board-store-deploy-${name}.done\`. On \`DEPLOY FAILED: ...\` stop and paste it to Manager. Undo: \`npx wrangler@4.150.0 rollback --config board-store-pa/worker/wrangler.board.toml\`.
 
-## Line 2: tree
+## Line 2: tree${boardDeploySha ? " (by hand)" : ""}
 
 \`\`\`bash
 if [ "$(shasum -a 256 board-store-tree-${name}.mjs | cut -c1-64)" = ${treeSha} ]; then node board-store-tree-${name}.mjs update; else echo 'CHECK FAILED: board-store-tree-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
@@ -182,7 +191,7 @@ if [ "$(shasum -a 256 board-store-hooks-${name}.mjs | cut -c1-64)" = ${hooksSha}
 
 It refuses unless line 2 has run (the tree is at ${s7}). Then quit the app and open it again: hooks load when a session starts. Undo: \`node board-store-hooks-${name}.mjs undo\`. It is the last hooks file with only the pin and the pair number changed. Hook files changed since ${prev ? prev.sha.slice(0, 8) : "the start"}: ${hookPaths.join(", ")} (a hook script, the installer, or a file the two gate scripts import).
 ` : ""}
-Full sha256: deploy ${deploySha}, tree ${treeSha}${hooksSha ? `, hooks ${hooksSha}` : ""}.
+Full sha256: deploy ${deploySha}, tree ${treeSha}${boardDeploySha ? `, board-deploy ${boardDeploySha}` : ""}${hooksSha ? `, hooks ${hooksSha}` : ""}.
 `;
 }
 
@@ -215,8 +224,10 @@ export function makeAll({ repo, sha, n, out, git = (...a) => spawnSync("git", ["
   }
   const hashes = Object.fromEntries(Object.entries(files).map(([f, t]) => [f, sha256(t)]));
   const hooksName = `board-store-hooks-${name}.mjs`;
-  const steps = stepsText({ name, sha, prev, commits, paths, deploySha: hashes[`board-store-deploy-${name}.mjs`], treeSha: hashes[`board-store-tree-${name}.mjs`], folder: out.startsWith(homedir() + "/") ? "~" + out.slice(homedir().length) : out, skipped: neverRun(out, n), hooksSha: hooks ? sha256(hooks) : null, hookPaths });
-  const all = { ...files, ...(hooks ? { [hooksName]: hooks } : {}), [`board-store-${name}-steps.md`]: steps };
+  // #C924: the generic one-command runner, copied byte for byte (the same file for every pair; its hash is in the steps file).
+  const boardDeploy = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "pair", "board-deploy.mjs"));
+  const steps = stepsText({ name, sha, prev, commits, paths, deploySha: hashes[`board-store-deploy-${name}.mjs`], treeSha: hashes[`board-store-tree-${name}.mjs`], folder: out.startsWith(homedir() + "/") ? "~" + out.slice(homedir().length) : out, skipped: neverRun(out, n), hooksSha: hooks ? sha256(hooks) : null, hookPaths, boardDeploySha: sha256(boardDeploy) });
+  const all = { ...files, ...(hooks ? { [hooksName]: hooks } : {}), "board-deploy.mjs": boardDeploy, [`board-store-${name}-steps.md`]: steps };
   for (const [f, t] of Object.entries(all)) writeFileSync(join(out, f), t);
   return { ok: true, files: Object.fromEntries(Object.entries(all).map(([f, t]) => [f, sha256(t)])) };
 }

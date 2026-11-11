@@ -5,13 +5,16 @@
 // the Worker back behind migrations already applied. It works whether or not the earlier deltas ran: step (2) applies only the D1
 // migrations not yet applied (additive). It works in its OWN checkout (board-store-pa), never in board-store-v4, which the three launchd
 // jobs run from. Then: (1) it builds the old board page from the team's board.config.json into worker/store-assets (git-ignored); (2)
-// applies the unapplied migrations; (3) redeploys the Worker with BUILD_SHA set to the signed commit (no route change, no new secret), then writes @@DEPLOYDONE@@ beside this file. Wrangler is pinned. It reads no secret and
-// writes none. It prints one success or failure line. It does NOT import anything and touches no data.
+// applies the unapplied migrations; (3) redeploys the Worker with BUILD_SHA set to the signed commit (no route change, no new secret), then writes @@DEPLOYDONE@@ beside this file. Wrangler is pinned. It reads one private
+// settings file (see #C924 below) and writes no secret. It prints one success or failure line. It does NOT import anything and touches no data.
+// #C924: when the owner's private settings file board.private.json (in this folder, outside any repository, mode 600) holds cloudflareApiToken
+// and cloudflareAccountId, each wrangler call gets them as CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in its environment, so nothing opens a
+// browser (works over SSH). They are never an argument, never written anywhere and never printed. Without the file: the browser login, as before.
 // Undo: the Worker's previous version stays in Cloudflare: `npx wrangler@4.150.0 rollback --config <board-store-pa>/worker/wrangler.board.toml`
 // (new columns stay, empty and unused by the older code).
 import { spawnSync } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SIGNED = "@@SIGNED@@", REF = "main";
@@ -62,36 +65,91 @@ export function prepareCheckout({ tree, repo = REPO, signed = SIGNED, ref = REF 
   return { ok: true, tip: g.tip };
 }
 
+// #C924: the owner's private settings file, in the folder this file sits in (the folder board.config.json is in). It is only ever read from
+// there, never from a repository, and only when it is mode 600. { ok, creds, file, why }: creds is null when the file is absent (the browser
+// login, as before) or holds neither value. Nothing it holds is ever in `why`. fs: { lstatSync, existsSync, readFileSync }.
+export const PRIVATE_FILE = "board.private.json";
+export function loadCloudflare({ dir, fs }) {
+  const file = join(dir, PRIVATE_FILE);
+  const no = (why) => ({ ok: false, creds: null, file, why });
+  let st;
+  try { st = fs.lstatSync(file); } catch { return { ok: true, creds: null, file }; }
+  if (!st.isFile()) return no(`${file} is not a plain file (a link or a folder is refused)`);
+  // Outside any repository: no folder from here up holds a .git, so a settings file can never be committed or pushed by accident.
+  for (let d = dir; ; d = dirname(d)) {
+    if (fs.existsSync(join(d, ".git"))) return no(`${file} is inside a git repository (${d}); move it to a folder that is not one`);
+    if (dirname(d) === d) break;
+  }
+  if ((st.mode & 0o077) !== 0) return no(`${file} can be read by other users (mode ${(st.mode & 0o777).toString(8)}); run: chmod 600 ${file} (its contents were not read)`);
+  let data;
+  try { data = JSON.parse(String(fs.readFileSync(file, "utf8"))); } catch { return no(`${file} is not valid JSON (its contents are not shown)`); }
+  if (!data || typeof data !== "object" || Array.isArray(data)) return no(`${file} must be a JSON object with cloudflareApiToken and cloudflareAccountId`);
+  const token = data.cloudflareApiToken, account = data.cloudflareAccountId;
+  const set = (v) => v !== undefined && v !== null && v !== "";
+  if (!set(token) && !set(account)) return { ok: true, creds: null, file };
+  if (!set(token) || !set(account)) return no(`${file} needs both cloudflareApiToken and cloudflareAccountId, or neither`);
+  if (typeof token !== "string" || !/^[A-Za-z0-9_-]{8,200}$/.test(token)) return no(`cloudflareApiToken in ${file} is not a Cloudflare API token (letters, digits, - and _ only; its value is not shown)`);
+  if (typeof account !== "string" || !/^[0-9a-f]{32}$/.test(account)) return no(`cloudflareAccountId in ${file} is not an account id (32 hex digits; its value is not shown)`);
+  return { ok: true, creds: { CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: account }, file };
+}
+// Text with the token (and the account id) taken out: every line this file prints, and every error text, goes through it.
+export function redact(text, creds) {
+  let t = String(text ?? "");
+  for (const v of Object.values(creds ?? {})) if (v) t = t.split(v).join("[hidden]");
+  return t;
+}
+// The spawn options with the two variables added to the environment (only when there are creds: without them the options are left as they were).
+const withCreds = (opts, creds) => (creds ? { ...opts, env: { ...process.env, ...creds } } : opts);
+
+// The deploy over injectable spawn, fs and output: { ok, line }. `say` gets each line printed; nothing here exits the process.
+export function deployRun({ here, spawn = spawnSync, fs = { existsSync, lstatSync, readFileSync, writeFileSync }, say = console.log, prepare = prepareCheckout, signed = SIGNED, success = SUCCESS }) {
+  const TREE = `${here}/board-store-pa`;
+  const CONFIG = `${TREE}/worker/wrangler.board.toml`;
+  const BOARD_CONFIG = `${here}/board.config.json`;
+  let creds = null, file = join(here, PRIVATE_FILE);
+  const stop = (why) => { const line = `DEPLOY FAILED: ${redact(why, creds)}. Nothing further was run. Paste this line to Manager.`; say(line); return { ok: false, line }; };
+  // Without the token the failure line names the file and the two values to fill, not only the login.
+  const hint = () => (creds ? "" : `. If wrangler is not signed in: fill cloudflareApiToken and cloudflareAccountId in ${file} (chmod 600), or run npx ${WRANGLER} login`);
+  try {
+    if (!fs.existsSync(BOARD_CONFIG)) return stop("board.config.json is not in the folder this file is in");
+    const c = loadCloudflare({ dir: here, fs });
+    file = c.file;
+    if (!c.ok) return stop(`${c.why}; nothing was run`);
+    creds = c.creds;
+    if (creds) say(`Cloudflare: the token and account in ${file} are used (never shown).`);
+    const p = prepare({ tree: TREE });
+    if (!p.ok) return stop(`${p.why}; nothing was changed`);
+
+    const build = spawn("node", [`${TREE}/scripts/build-store-page.mjs`, BOARD_CONFIG], { encoding: "utf8" });
+    if (build.status !== 0) return stop(`the page build exited ${build.status}: ${(build.stderr ?? "").slice(-200).replace(/\s+/g, " ")}`);
+
+    // The migration may ask you to confirm: answer y.
+    const mig = spawn("npx", ["--yes", WRANGLER, "d1", "migrations", "apply", "flight-board-store", "--remote", "--config", CONFIG], withCreds({ stdio: "inherit" }, creds));
+    if (mig.status !== 0) return stop(`migration exited ${mig.status ?? mig.error?.message}${hint()}`);
+
+    // #C737: the Worker is told which commit it was deployed from (BUILD_SHA); the probe reads it to decide when a board card is live.
+    // The value is the commit the checkout is at (read back from git, and the same as the signed one or the run stops): never an argument.
+    const checkedOut = String(spawn("git", ["-C", TREE, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout ?? "").trim();
+    if (checkedOut !== signed) return stop("the checkout is not at the signed commit; nothing was deployed");
+    const dep = spawn("npx", ["--yes", WRANGLER, "deploy", "--config", CONFIG, "--var", `BUILD_SHA:${checkedOut}`], withCreds({ encoding: "utf8" }, creds));
+    const said = redact((dep.stdout ?? "") + (dep.stderr ?? "") + (dep.error?.message ?? ""), creds);
+    if (dep.status !== 0) return stop(`deploy exited ${dep.status}: ${said.slice(-200).replace(/\s+/g, " ")}${hint()}`);
+    const id = /Current Version ID:\s*([0-9a-f-]{36})/i.exec(said)?.[1];
+    if (!id) return stop("deployed, but no version id was printed");
+    // #C737: the tree step of this pair refuses to move the tree until this file says the Worker carries the signed commit, so the new probe
+    // code never runs against a Worker that reports nothing.
+    fs.writeFileSync(`${here}/@@DEPLOYDONE@@`, `${signed}\n`);
+    const line = `DEPLOY OK: ${success.replace("<version>", id).replace("<sha>", signed.slice(0, 8))}`;
+    say(line);
+    return { ok: true, line };
+  } catch (e) {
+    return stop(`unexpected error: ${String(e?.message ?? e).slice(0, 200)}`);
+  }
+}
+
 function main() {
   // The folder this file sits in (the owner's board folder, where board.config.json and the checkouts are).
-  const HERE = dirname(fileURLToPath(import.meta.url));
-  const TREE = `${HERE}/board-store-pa`;
-  const CONFIG = `${TREE}/worker/wrangler.board.toml`;
-  const BOARD_CONFIG = `${HERE}/board.config.json`;
-  const fail = (why) => { console.log(`DEPLOY FAILED: ${why}. Nothing further was run. Paste this line to Manager.`); process.exit(1); };
-  if (!existsSync(BOARD_CONFIG)) fail("board.config.json is not in the folder this file is in");
-  const p = prepareCheckout({ tree: TREE });
-  if (!p.ok) fail(`${p.why}; nothing was changed`);
-
-  const build = spawnSync("node", [`${TREE}/scripts/build-store-page.mjs`, BOARD_CONFIG], { encoding: "utf8" });
-  if (build.status !== 0) fail(`the page build exited ${build.status}: ${(build.stderr ?? "").slice(-200).replace(/\s+/g, " ")}`);
-
-  // The migration may ask you to confirm: answer y.
-  const mig = spawnSync("npx", ["--yes", WRANGLER, "d1", "migrations", "apply", "flight-board-store", "--remote", "--config", CONFIG], { stdio: "inherit" });
-  if (mig.status !== 0) fail(`migration exited ${mig.status ?? mig.error?.message}`);
-
-  // #C737: the Worker is told which commit it was deployed from (BUILD_SHA); the probe reads it to decide when a board card is live.
-  // The value is the commit the checkout is at (read back from git, and the same as the signed one or the run stops): never an argument.
-  const checkedOut = String(spawnSync("git", ["-C", TREE, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout ?? "").trim();
-  if (checkedOut !== SIGNED) fail("the checkout is not at the signed commit; nothing was deployed");
-  const dep = spawnSync("npx", ["--yes", WRANGLER, "deploy", "--config", CONFIG, "--var", `BUILD_SHA:${checkedOut}`], { encoding: "utf8" });
-  const said = (dep.stdout ?? "") + (dep.stderr ?? "") + (dep.error?.message ?? "");
-  if (dep.status !== 0) fail(`deploy exited ${dep.status}: ${said.slice(-200).replace(/\s+/g, " ")}`);
-  const id = /Current Version ID:\s*([0-9a-f-]{36})/i.exec(said)?.[1];
-  if (!id) fail("deployed, but no version id was printed");
-  // #C737: the tree step of this pair refuses to move the tree until this file says the Worker carries the signed commit, so the new probe
-  // code never runs against a Worker that reports nothing.
-  writeFileSync(`${HERE}/@@DEPLOYDONE@@`, `${SIGNED}\n`);
-  console.log(`DEPLOY OK: ${SUCCESS.replace("<version>", id).replace("<sha>", SIGNED.slice(0, 8))}`);
+  const r = deployRun({ here: dirname(fileURLToPath(import.meta.url)) });
+  if (!r.ok) process.exit(1);
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
