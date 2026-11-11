@@ -273,3 +273,37 @@ test("a db_write to waiting/<id> is the board write a red ask needs; a write els
   assert.match(hook(red([{ slug: "x", ops: [{ op: "set", path: "steps/s", data: { at: 1 } }] }])), /wrote nothing/, "a write elsewhere is not the waiting item");
   assert.match(hook(red([{ slug: "x", ops: [{ op: "delete", path: "waiting/pick" }] }])), /wrote nothing/, "a delete is not a write of the item");
 });
+
+// #C848: an agent (any titled session but Manager) that ends its turn on a question, in a turn that sent nothing to Manager, is refused:
+// nobody reads that chat.
+const NOBODY = "Nobody reads this chat. If it is in your lane, do it; otherwise send the question to Manager.";
+const ends = (final, { title = "Boardsmith", calls = [] } = {}) => [
+  { type: "custom-title", customTitle: title },
+  { type: "user", message: { content: [{ type: "text", text: "go on" }] } },
+  { type: "assistant", message: { content: [...calls.map((c, n) => ({ type: "tool_use", id: `q${n}`, ...c })), { type: "text", text: final }] } },
+];
+test("#C848: an agent's turn that ends on a question and sent nothing to Manager is refused once", () => {
+  assert.equal(hook(ends("Should I push the branch?")), NOBODY);
+  assert.equal(hook(ends("Should I push the branch? ")), NOBODY, "trailing space");
+  assert.equal(hook(ends("Shall I take it next?**")), NOBODY, "closing markup");
+  assert.equal(hook(ends("Pushed and READY sent.")), "", "a statement");
+  assert.equal(hook(ends("Is it done? Yes, it is done.")), "", "a question in the middle is not the end");
+  assert.equal(hook(ends("Should I push?", { title: "Manager" })), "", "Manager has its own rules");
+  assert.equal(hook(ends("Should I push?", { title: "" })), "", "a session with no title is not an agent");
+});
+test("#C848: a turn that sent something to Manager may end on a question; a send to another role does not count", () => {
+  assert.equal(hook(ends("Which one?", { calls: [{ name: "SendMessage", input: { to: "Manager", message: "READY" } }] })), "");
+  assert.equal(hook(ends("Which one?", { calls: [{ name: "SendMessage", input: { to: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de", message: "x" } }] })), "", "a reply by session id");
+  assert.equal(hook(ends("Which one?", { calls: [{ name: "mcp__fe72f1dc-8018-4725-bcb7-ea5c039a64c3__post", input: { thread_id: "t", body: "x" } }] })), "", "a post on the store");
+  assert.equal(hook(ends("Which one?", { calls: [{ name: "SendMessage", input: { to: "Checker", message: "READY" } }] })), NOBODY);
+  assert.equal(hook(ends("Which one?", { calls: [{ name: "Bash", input: { command: "ls" } }] })), NOBODY);
+});
+test("#C848: the hook's stop_hook_active turn is let through, so the refusal comes once", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fb-redask-"));
+  try {
+    const path = join(dir, "s.jsonl");
+    writeFileSync(path, ends("Should I push?").map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const r = spawnSync("python3", [HOOK], { input: JSON.stringify({ transcript_path: path, stop_hook_active: true }), encoding: "utf8", env: { ...process.env, HOME: dir } });
+    assert.equal(r.stdout.trim(), "");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
