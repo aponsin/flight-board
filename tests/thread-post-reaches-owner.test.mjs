@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dispatchRun, DECISION_FRESH_MS } from "../collector/store-dispatch.mjs";
+import { dispatchRun, dispatchInput, DECISION_FRESH_MS } from "../collector/store-dispatch.mjs";
 import { dispatchLine, DISPATCH_STEPS } from "../gate/reset.mjs";
 
 const NOW = 1_800_000_000_000, MIN = 60e3;
@@ -49,6 +49,10 @@ test("Still allowed: with no post the card keeps its turns (Checker's review, no
   assert.deepEqual(forOwner(items), []);
   const own = run(view({ msgs: [msg({ created_at: NOW - 10 * MIN })], card: { owner_role: "Manager" } }));
   assert.deepEqual(own.filter((i) => i.step === "post"), []);
+  // The same, one level down (dispatchItems drops the lead anyway): the lead's own card gets no post turn, even with the lead idle since before it.
+  const ov = view({ msgs: [msg({ created_at: NOW - 10 * MIN })], card: { owner_role: "Manager" } });
+  ov.evidence.agents.value.Manager = { state: "idle", since: NOW - 30 * MIN, lastActivityAt: NOW - 30 * MIN, card: null };
+  assert.deepEqual(dispatchInput(ov, NOW, { lead: LEAD }).cards[0].turns.filter((t) => t.step === "post"), []);
   // A builder's card with nothing pushed and a post: the post turn takes the build turn's place (one wake for the card, naming the post).
   const b = { ...view({ msgs: [msg({ created_at: NOW - 10 * MIN })] }) };
   b.evidence = { ...b.evidence, "cards.c914-pick": undefined };
