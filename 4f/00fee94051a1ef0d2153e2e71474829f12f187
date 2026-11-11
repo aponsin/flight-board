@@ -1,0 +1,1 @@
+PASS #C903 v2 at 4f00fee, on b8e6b1d. Re-cut of 950a572, which carries my PASS: range-diff shows only the CHANGELOG differs. Suite on this tip: 2209 pass, 0 fail. As before: it adds a Worker route, so SECURE is needed before it lands.
