@@ -1,0 +1,1 @@
+PASS Quick: #C849 v5 send-cap-fallback. Same code as v2 e033123, content passed before, only the base and a CHANGELOG line differ. Suite 2065/2065 on this commit.
