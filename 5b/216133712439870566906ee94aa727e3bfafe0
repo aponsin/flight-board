@@ -1,0 +1,1 @@
+PASS Full: #C910 v3 idle-builder-gets-next-card, re-cut of 1a9728c on eaa2386. Range-diff: code and tests identical to 1a9728c, only the commit message and the CHANGELOG context differ, both entries kept. Suite 2244/2244 at this sha. Mutation check carried from 1a9728c: 10 of 10 killed.
