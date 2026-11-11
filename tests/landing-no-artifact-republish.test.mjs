@@ -6,21 +6,22 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const src = readFileSync(new URL("../scripts/board-release.mjs", import.meta.url), "utf8");
+const has = (re) => re.test(src);
 
 test("the landing prints no republish line and names no page to publish", () => {
-  assert.doesNotMatch(src, /Republish it/i);
-  assert.doesNotMatch(src, /console\.log\(`Page:/);
+  assert.equal(has(/Republish it/i), false, "a 'Republish it' line is back");
+  assert.equal(has(/console\.log\(`Page:/), false, "a 'Page:' line is back");
 });
 
 test("the page is built only in the tool's temporary folder, never beside the config", () => {
-  assert.match(src, /const page = join\(tmp, `board-\$\{sha\.slice\(0, 7\)\}\.html`\)/);
-  assert.doesNotMatch(src, /join\(out, `board-/);
-  assert.match(src, /finally \{ if \(tmp\) rmSync\(tmp, \{ recursive: true, force: true \}\); \}/, "and the folder goes when the run ends");
+  assert.equal(has(/const page = join\(tmp, `board-\$\{sha\.slice\(0, 7\)\}\.html`\)/), true, "the page is not built in tmp");
+  assert.equal(has(/join\(out, `board-/), false, "a page is written beside the config");
+  assert.equal(has(/finally \{ if \(tmp\) rmSync\(tmp, \{ recursive: true, force: true \}\); \}/), true, "the temporary folder is not removed");
 });
 
 test("Still allowed: the page still builds and its scenarios are still a check, and a changed prompt is still printed", () => {
-  assert.match(src, /scripts\/build-page\.mjs"\), configPath, page\]/);
-  assert.match(src, /page builds and its scenarios pass/);
-  assert.match(src, /the page didn't build/);
-  assert.match(src, /console\.log\(`Prompt: \$\{promptPath\}/);
+  assert.equal(has(/scripts\/build-page\.mjs"\), configPath, page\]/), true, "the page is no longer built");
+  assert.equal(has(/page builds and its scenarios pass/), true);
+  assert.equal(has(/the page didn't build/), true, "a page that does not build no longer refuses");
+  assert.equal(has(/console\.log\(`Prompt: \$\{promptPath\}/), true, "a changed prompt is no longer printed");
 });
