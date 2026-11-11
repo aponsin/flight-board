@@ -22,8 +22,14 @@ const view = (cards, agents) => ({
 });
 const items = (v) => dispatchRun(v, { dir: mkdtempSync(join(tmpdir(), "iw-")), roster: ROSTER, lead: LEAD, now: NOW }).items.map((i) => `${i.card}:${i.role}`);
 
-test("dispatch: a reset session reading 'unknown' for 3 minutes is woken for its startable card, as an idle one is", () => {
-  assert.deepEqual(items(view([card("c935-fold")], { Boardsmith: unknown(3) })), ["c935-fold:Boardsmith"]);
+test("dispatch: a reset session reading 'unknown' for 16 minutes is woken for its startable card, as an idle one is", () => {
+  assert.deepEqual(items(view([card("c935-fold")], { Boardsmith: unknown(16) })), ["c935-fold:Boardsmith"]);
+});
+
+test("dispatch: an 'unknown' reading waits the full 15 minutes (Checker's LOW1: a busy session with an unreadable transcript reads unknown, and lastActivityAt lags)", () => {
+  assert.deepEqual(items(view([card("c935-fold")], { Boardsmith: unknown(3) })), [], "3 minutes: could be mid-turn");
+  assert.deepEqual(items(view([card("c935-fold")], { Boardsmith: unknown(14) })), [], "14 minutes");
+  assert.deepEqual(items(view([card("c935-fold")], { Boardsmith: idle })), ["c935-fold:Boardsmith"], "an idle reading still goes after 60 s for a phase turn, as before");
 });
 
 test("dispatch still quiet: a working agent, an unknown one with no session time, a held card, one waiting on a dependency", () => {
@@ -56,6 +62,10 @@ test("stalledWaits: a reset session 'unknown' for 20 minutes with a queued unsta
 
 test("stalledWaits still quiet: a working agent, no session time, a held card, the lead's own card", () => {
   assert.deepEqual(wake([row()], { Boardsmith: { state: "working", lastActivityAt: NOW, since: NOW - 30 * MIN, card: null } }), []);
+  // Security's F1: the state check itself, not the timing (these have a session time 30+ min old, so only the state keeps them quiet).
+  for (const state of ["working", "blocked", "waiting", "other"]) {
+    assert.deepEqual(wake([row()], { Boardsmith: { state, lastActivityAt: NOW - 45 * MIN, since: NOW - 45 * MIN, card: null } }), [], `a ${state} owner with an old session time raises nothing`);
+  }
   assert.deepEqual(wake([row()], { Boardsmith: { state: "unknown", lastActivityAt: null, since: null } }), []);
   assert.deepEqual(wake([row({ waiting_on: "Checker" })], { Boardsmith: unknown(30) }), []);
   assert.deepEqual(wake([row({ owner_role: "Manager" })], { Manager: unknown(30) }), []);

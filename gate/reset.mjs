@@ -196,7 +196,9 @@ export function dispatchItems({ cards, agents, asked = new Set(), roster = [], l
       const unread = a?.state === "unknown" && Number.isFinite(a.lastActivityAt);
       if (!a || (a.state !== "idle" && !unread)) continue;
       const idleSince = unread ? a.lastActivityAt : Number.isFinite(a.since) ? a.since : a.lastActivityAt;
-      const need = Array.isArray(card.turns) ? DISPATCH_TURN_IDLE_MS : DISPATCH_IDLE_MS;
+      // Checker's LOW1 on #C940: a BUSY session whose transcript cannot be read reads "unknown" too, and the app's lastActivityAt lags about 2 minutes
+      // mid-turn, so an unreadable reading waits the full idle time (15 min), not the 60 s a phase turn waits for a reading that says idle.
+      const need = unread ? DISPATCH_IDLE_MS : Array.isArray(card.turns) ? DISPATCH_TURN_IDLE_MS : DISPATCH_IDLE_MS;
       if (!Number.isFinite(idleSince) || now - idleSince < need) continue;
       if (typeof card.waitingOn === "string" && card.waitingOn.trim() && !card.waitingOn.trim().startsWith(role)) continue;
       const phase = Array.isArray(card.turns) && TURN_PHASE.test(String(t.phase)) ? t.phase : null;
