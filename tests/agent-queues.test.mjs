@@ -111,6 +111,22 @@ test("F1: after the owner puts a card first, the lead cannot put an older card a
   assert.ok((await createCard(db, T + 604, "Manager", { id: "c8-new", title: "New", owner_role: "Boardsmith", queue_pos: 9 })).ok);
 });
 
+// Security R1 on 15fc8fe: a card_update of owner_role alone (no queue_pos) carried the card's old place into the new queue, past the owner's floor.
+test("R1: an owner_role-only write cannot carry a card's old place into a queue ahead of the owner's; behind them it can", async () => {
+  const db = makeDb();
+  for (const [n, id] of ["c1-one", "c2-two"].entries()) assert.ok((await createCard(db, T + n + 1, "Manager", { id, title: id, owner_role: "Boardsmith" })).ok);
+  for (const [i, id] of ["c1-one", "c2-two"].entries()) assert.ok((await updateCard(db, T + 100 + i, "Manager", { id, queue_pos: i + 1 })).ok);
+  await moveInQueue(db, T + 500, "owner", { id: "c2-two", dir: "up" });
+  assert.ok((await createCard(db, T + 10, "Manager", { id: "c5-ahead", title: "Ahead", owner_role: "Builder", queue_pos: 1 })).ok);
+  assert.ok((await createCard(db, T + 11, "Manager", { id: "c6-behind", title: "Behind", owner_role: "Builder", queue_pos: 7 })).ok);
+  const r = await updateCard(db, T + 600, "Manager", { id: "c5-ahead", owner_role: "Boardsmith" });
+  assert.equal(r.ok, false, "place 1 carried into the owner's queue is refused");
+  assert.equal(r.refused?.rule ?? r.rule, "queue-owner-set");
+  assert.equal((await cardOf(db, "c5-ahead")).owner_role, "Builder", "and the card stays where it was");
+  assert.ok((await updateCard(db, T + 601, "Manager", { id: "c6-behind", owner_role: "Boardsmith" })).ok, "a place behind the owner's is open");
+  assert.ok((await updateCard(db, T + 602, "owner", { id: "c5-ahead", owner_role: "Boardsmith" })).ok, "the owner may move it");
+});
+
 function items(view) {
   const cards = view.cards.map((c) => ({ ...c, repo: "" }));
   return dispatchRun({ cards, asks: [], stackSwitch: [], evidence: { agents: { readAt: T - 5_000, value: { Boardsmith: idle, Manager: idle } } } }, { dir: mkdtempSync(join(tmpdir(), "aq-")), roster: ROSTER, lead: LEAD, now: T }).items;
