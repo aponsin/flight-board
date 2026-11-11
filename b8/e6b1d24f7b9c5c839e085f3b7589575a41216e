@@ -1,0 +1,1 @@
+PASS Quick #C900 v5 at b8e6b1d, on 3dc482e, the landed #C901. Re-cut of v3 cf2a6e4, which carries my PASS: the code and test diff outside CHANGELOG is byte for byte that of v3 and v4. Suite on this tip: 2202 pass, 0 fail. v4 2b004f0 is superseded and unsigned.
