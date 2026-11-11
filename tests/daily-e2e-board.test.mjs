@@ -6,7 +6,7 @@ import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { drawPage } from "./helpers/draw-page.mjs";
 import { writeEvidence, readView, wakeAsk, takeInbox } from "../worker/board-store.mjs";
 import { compatView, probeDoc } from "../worker/compat-view.mjs";
-import { e2eReading, e2eStep, e2eWrite, defaultE2eRun, E2E_EVERY_MS, E2E_STALE_MS } from "../collector/probe-evidence.mjs";
+import { e2eReading, e2eStep, e2eWrite, defaultE2eRun, evidenceJob, E2E_EVERY_MS, E2E_STALE_MS } from "../collector/probe-evidence.mjs";
 import { checkConfig as validate, DEFAULTS } from "../scripts/config.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -217,7 +217,49 @@ test("a product whose origin/main has no daily script yet reads unknown with tha
   assert.match(v.reason, /origin\/main has no scripts\/daily-e2e\.mjs yet/);
   for (const ref of ["--output=/tmp/x", "a b", "", "x".repeat(200)]) {
     assert.equal(e2eReading(defaultE2eRun({ cwd: clone, ref }, process.env)).state, "unknown", ref);
+    // Security: the state alone does not prove git never ran (a failed git also reads unknown): the bad ref is refused before any command.
+    assert.equal(defaultE2eRun({ cwd: clone, ref }, process.env).error?.code, "bad-ref", ref);
   }
+});
+
+// Checker F1 on 2f47c63: the probe half was untested. A broken wiring draws nothing, which looks the same as ok, so each job is driven through
+// the e2e seam: the usage job asks the script once and keeps the answer; the evidence job posts it under key e2e.
+const CONFIG = JSON.stringify({ collector: { repoPath: "/r" } });
+const jobRead = (extra = {}) => (p) => { if (p === "/c") return CONFIG; if (p === "/s/state.json") return JSON.stringify({ v: 1, board: { boardId: "b", at: 1 }, cards: {}, agents: {} }); if (p in extra) return extra[p]; throw new Error("none"); };
+
+test("the usage job asks the product's script once (through the job, not the step) and keeps the answer beside the state", async () => {
+  const asked = [], kept = new Map();
+  await evidenceJob({
+    job: "usage", base: "https://b.example", headers: {}, configPath: "/c", stateFile: "/s/state.json", build: async () => {}, read: jobRead(),
+    fetchImpl: async () => ({ ok: true, status: 200 }), log: () => {}, actions: { gh: () => ({ workflow_runs: [], jobs: [] }), write: () => {} },
+    e2e: { run: (target) => { asked.push(target); return { status: 1, stdout: JSON.stringify({ state: "red", reason: "r", run: RUN, lastGreenAt: null }) }; }, read: (p) => { if (kept.has(p)) return kept.get(p); throw new Error("none"); }, write: (p, t) => kept.set(p, t) },
+  });
+  assert.deepEqual(asked, [{ cwd: "/r", ref: "origin/main" }], "asked once, in the board config's repoPath, at its origin/main");
+  const [file, text] = [...kept.entries()][0];
+  assert.equal(file, "/s/e2e.json", "kept beside the state file");
+  assert.equal(JSON.parse(text).value.state, "red");
+});
+
+test("the evidence job posts the kept answer under key e2e, with the evidence, and never fails the job when it cannot", async () => {
+  const posted = [];
+  const run = (e2e, read) => evidenceJob({
+    job: "evidence", base: "https://x.example", headers: {}, configPath: "/c", stateFile: "/s/state.json", build: async () => {}, read, ghCheck: () => true,
+    deployRead: async () => ({ worker: "", tree: "" }), liveFetch: async () => ({ ok: false, status: 500 }), log: () => {},
+    fetchImpl: async (url, o) => { const b = JSON.parse(o.body); posted.push(b); return { ok: true, status: 200 }; }, e2e,
+  });
+  const kept = JSON.stringify({ at: Date.now() - 1000, value: { state: "red", reason: "r", run: RUN, lastGreenAt: null } });
+  await run({ read: (p) => (p === "/s/e2e.json" ? kept : jobRead()(p)) }, jobRead({ "/s/e2e.json": kept }));
+  const w = posted.find((b) => b.key === "e2e");
+  assert.ok(w, `key e2e was posted (${posted.map((b) => b.key).join()})`);
+  assert.deepEqual(w.value, { state: "red", reason: "r", run: RUN, lastGreenAt: null });
+  // Nothing kept yet: it posts unknown, never nothing (which would look like ok).
+  posted.length = 0;
+  await run({}, jobRead());
+  assert.equal(posted.find((b) => b.key === "e2e")?.value.state, "unknown");
+  // A reading that throws is logged and the job stands.
+  posted.length = 0;
+  const r = await run({ read: () => { throw new Error("boom"); } }, jobRead());
+  assert.ok(r.written >= 0);
 });
 
 test("the temporary folder the script runs in is removed", () => {
