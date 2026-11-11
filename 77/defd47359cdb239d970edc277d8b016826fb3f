@@ -1,0 +1,1 @@
+SECURE #C932 build/other-answer-plain-in-inbox@77defd4 on main e05063b: takeInbox returns the note of an imported something-else answer instead of its JSON; typedOther moved unchanged to board-rules; answers are owner-only (answer tool roles), so no new author reaches Manager; no row rewritten. - Security
