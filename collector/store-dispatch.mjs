@@ -295,6 +295,8 @@ export function dispatchRun(view, { dir, roster, lead, now = Date.now(), log = (
   const live = ship.card && r.items.some((i) => i.card === ship.card.id) && !Number.isFinite(ship.live.wokenAt) ? { ...ship.live, wokenAt: now } : ship.live;
   writeAtomic(join(dir, DISPATCH_FILE), JSON.stringify({ at: now, source: "store", items: r.items }));
   writeAtomic(join(dir, DISPATCH_STATE_FILE), JSON.stringify(live ? { ...r.state, live } : r.state));
+  // #C940: the roles' states in the log, so a minute with nothing dispatched can be told from a blind or missing session (role names and one word each).
+  log(`dispatch: agents ${(Array.isArray(roster) ? roster : []).filter((x) => typeof x === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(x)).map((x) => `${x}=${input.agents[x] ? String(input.agents[x].state).replace(/[^a-z]/g, "") || "?" : "none"}`).join(" ")}`);
   log(`dispatch: ${r.items.length} item(s)`);
   return { wrote: true, items: r.items };
 }

@@ -191,8 +191,11 @@ export function dispatchItems({ cards, agents, asked = new Set(), roster = [], l
     for (const t of turns) {
       const role = t?.role, a = agents && typeof role === "string" && Object.hasOwn(agents, role) ? agents[role] : null;
       if (typeof role !== "string" || role === lead || !roster.includes(role)) continue;
-      if (!a || a.state !== "idle") continue;
-      const idleSince = Number.isFinite(a.since) ? a.since : a.lastActivityAt;
+      // #C940: a session just started or reset has no assistant entry in its transcript yet (or no transcript file), so the probe reads it "unknown"
+      // with no `since`. That is a session nobody is using, not a busy one: it is idle since the session's own last activity.
+      const unread = a?.state === "unknown" && Number.isFinite(a.lastActivityAt);
+      if (!a || (a.state !== "idle" && !unread)) continue;
+      const idleSince = unread ? a.lastActivityAt : Number.isFinite(a.since) ? a.since : a.lastActivityAt;
       const need = Array.isArray(card.turns) ? DISPATCH_TURN_IDLE_MS : DISPATCH_IDLE_MS;
       if (!Number.isFinite(idleSince) || now - idleSince < need) continue;
       if (typeof card.waitingOn === "string" && card.waitingOn.trim() && !card.waitingOn.trim().startsWith(role)) continue;
