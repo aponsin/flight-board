@@ -63,6 +63,24 @@ test("#C953: a stack branch is named only to cards of its own repository; a card
   assert.equal(byId(flip, "c6-prod").stack, undefined);
 });
 
+// #C953 (Checker F1): the positive half. A card with NO stack evidence of its own (nothing for turnsOf to fall back to) is told the branch of
+// the stack its own repository has, from another card of that repository. Without stackBranchFor this fails.
+test("#C953: a waiting card with no stack of its own is told its own repository's stack branch (flight-board cards, and cards with no repo word)", () => {
+  const pushedStack = (branch) => inStack({ stack: { tip: TIP, size: 2, branch } });
+  const waiting = () => inStack({ phase: "build", lit: [], stack: undefined, headSha12: undefined });
+  const buildOf = (v, id) => items(v).find((i) => i.card === id && i.step === "build");
+  for (const repo of ["flight-board", null, ""]) {
+    const v = world({ cards: [card("c1-one", { repo }), card("c2-two", { repo })], ev: { "c1-one": pushedStack("build/x"), "c2-two": waiting() } });
+    const b = buildOf(v, "c2-two");
+    assert.ok(b, `a build turn for the waiting card (repo ${JSON.stringify(repo)})`);
+    assert.equal(b.stack, "build/x", `told the same-repo stack branch (repo ${JSON.stringify(repo)})`);
+    assert.match(dispatchLine(b), /the stack branch is build\/x/);
+  }
+  // The same card with the other repository's stack only: no branch named.
+  const other = world({ cards: [card("c1-one", { repo: "flight-board" }), card("c2-two", { repo: null })], ev: { "c1-one": pushedStack("build/x"), "c2-two": waiting() } });
+  assert.equal(buildOf(other, "c2-two").stack, undefined);
+});
+
 test("switch off: nothing about a stack in any turn or line (today's dispatch)", () => {
   const v = world({ on: false, cards: [card("c1-one"), card("c2-two")], ev: { "c1-one": inStack(), "c2-two": inStack({ phase: "build", lit: [] }) } });
   for (const i of items(v)) { assert.equal(i.stack, undefined); assert.doesNotMatch(dispatchLine(i), /stack/); }
