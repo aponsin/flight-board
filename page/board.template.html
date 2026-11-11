@@ -3112,6 +3112,10 @@ function restartState(now=Date.now()){if(!liveOn(now))return null;
     if(n===SHIP_ROLE)return {ok:false,why:`${n} is publishing`};
     if(L&&L.phase===SHIP_PHASE)return {ok:false,why:`${n} is pushing or installing`}}
   for(const n of roles){const c=cmd(n);if(c&&c.age<=CMD_NOW)return {ok:false,why:`${n} is running a command`}}
+  // #C942: an agent mid-turn (the probe's state "working", from the session's own running flag) is not safe to cut, whatever its
+  // last tool was: name who is busy. Idle agents, the lead, and scheduled or watchdog sessions (not team agents) don't count.
+  const busy=roles.filter(n=>{const la=liveAgent(n,now);return !!la&&la.state==="working"});
+  if(busy.length)return {ok:false,why:`${busy.join(", ")} working`};
   return {ok:true,why:""}}
 const RESTART_TIP="An estimate from each agent's last tool call (and how recent it was), not from the command itself.";
 function renderRestart(){const el=$("restartbadge");if(!el)return;const r=restartState();el.hidden=!r;if(!r)return;

@@ -120,8 +120,8 @@ const pill = (b) => { b.renderRestart(); return { hidden: b.els.restartbadge.hid
 test("Safe to restart when nothing runs: agents idle, between commands (a command over 15 s old off the ship phase), or on another tool", () => {
   assert.deepEqual(pill(restartBoard({ agents: { Release: { state: "idle", card: null, lastActivityAt: Date.now() - 5 * 60e3 } } })), { hidden: false, cls: "rb ok", text: "Safe to restart" });
   const build = { "c-2": { phase: "build", headSha12: "a1b2c3d4e5f6" } };
-  assert.equal(pill(restartBoard({ agents: { Builder: bash(20e3, { card: "c-2" }) }, cards: build })).text, "Safe to restart", "a builder's command 20 s ago: between commands");
-  assert.equal(pill(restartBoard({ agents: { Builder: bash(5e3, { card: "c-2", tool: "Edit" }) }, cards: build })).text, "Safe to restart", "an edit is not a push");
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(20e3, { card: "c-2", state: "idle" }) }, cards: build })).text, "Safe to restart", "a builder's command 20 s ago: between commands");
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(5e3, { card: "c-2", tool: "Edit", state: "idle" }) }, cards: build })).text, "Safe to restart", "an edit is not a push");
 });
 
 // Checker's finding on 787b376: Builder, Boardsmith and Checker push from the build, test and checker phases.
@@ -130,6 +130,15 @@ test("Not now while any agent but the lead runs a command in the last 15 s, in a
   assert.deepEqual(pill(restartBoard({ agents: { Builder: bash(10e3, { card: "c-2" }) }, cards: build })), { hidden: false, cls: "rb bad", text: "Not now: Builder is running a command" });
   assert.equal(pill(restartBoard({ agents: { Checker: bash(10e3, { card: null }) } })).text, "Not now: Checker is running a command", "no card needed");
   assert.equal(pill(restartBoard({ agents: { Builder: bash(10e3, { card: "c-2" }), Checker: bash(2e3, { card: "c-2" }) }, cards: build })).text, "Not now: Builder is running a command", "the first by name");
+});
+
+// #C942: the badge said "Safe to restart" while Builder and Boardsmith were both mid-turn.
+test("Not now while any agent but the lead is mid-turn, naming who is busy, whatever its last tool was", () => {
+  const turn = (extra = {}) => ({ state: "working", tool: "Edit", lastActivityAt: Date.now() - 5 * 60e3, since: Date.now() - 5 * 60e3, ...extra });
+  assert.deepEqual(pill(restartBoard({ agents: { Builder: turn(), Boardsmith: turn() } })), { hidden: false, cls: "rb bad", text: "Not now: Boardsmith, Builder working" });
+  assert.equal(pill(restartBoard({ agents: { Builder: turn(), Checker: { state: "idle", lastActivityAt: Date.now() - 60e3 } } })).text, "Not now: Builder working", "only the busy one is named");
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(60e3, { card: "c-1" }) } })).text, "Not now: Builder working", "a stale command does not make a mid-turn agent safe");
+  assert.equal(pill(restartBoard({ agents: { Manager: turn(), Builder: { state: "idle", lastActivityAt: Date.now() - 60e3 } } })).text, "Safe to restart", "the lead and idle agents are not a reason");
 });
 
 test("the pill's tooltip says it is an estimate from each agent's last tool, not the command", () => {
@@ -147,8 +156,8 @@ test("Not now while a ship runs, Release is on a command, or another agent runs 
 });
 
 test("a command more than 45 s old, a non-command tool, or the lead's own command is not a reason", () => {
-  assert.equal(pill(restartBoard({ agents: { Builder: bash(60e3, { card: "c-1" }) } })).text, "Safe to restart");
-  assert.equal(pill(restartBoard({ agents: { Builder: bash(5e3, { card: "c-1", tool: "Edit" }) } })).text, "Safe to restart");
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(60e3, { card: "c-1", state: "idle" }) } })).text, "Safe to restart");
+  assert.equal(pill(restartBoard({ agents: { Builder: bash(5e3, { card: "c-1", tool: "Edit", state: "idle" }) } })).text, "Safe to restart");
   assert.equal(pill(restartBoard({ agents: { Manager: bash(5e3, { card: "c-1" }) } })).text, "Safe to restart");
 });
 
