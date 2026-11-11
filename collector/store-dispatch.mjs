@@ -87,7 +87,7 @@ export function dispatchInput(view, now) {
   const phaseOf = (id) => { const e = ev[`cards.${id}`]?.value; return e?.phase ?? e?.lit?.[0]; };
   // #C845: a card waits for the cards it depends on (depends_on, a JSON list of ids) until each is live. A dependency the board doesn't
   // have, or one that was dropped, holds nothing (as the gate's dependsOnErrors reads it).
-  const open = new Map(all.filter((k) => k && typeof k.id === "string" && !k.dropped).map((k) => [k.id, k]));
+  const open = new Map(all.filter((k) => k && typeof k.id === "string" && !k.dropped && !k.done_at).map((k) => [k.id, k]));
   const waitsOn = (c) => {
     let list = c.depends_on;
     if (typeof list === "string") { try { list = JSON.parse(list); } catch { return []; } }
@@ -105,7 +105,7 @@ export function dispatchInput(view, now) {
     if (waitsOn(c).length) continue;
     // Active: not paused, not dropped, not blocked (a blocked card is "blocked" on the old shape and the store's stall rule skips it), and
     // not already live (a live card waits for the lead to close it, not for its owner). The phase is read as compat-view reads it.
-    if (c.paused || c.dropped || c.blocked_reason) continue;
+    if (c.paused || c.dropped || c.done_at || c.blocked_reason) continue; // #C902: a card closed as done is never dispatched
     const e = ev[`cards.${c.id}`]?.value;
     if ((e?.phase ?? e?.lit?.[0]) === "live") continue;
     // #C850: a hold with an end (a card the lead put on hold) is skipped; the stall rule brings it back when the hold ends.

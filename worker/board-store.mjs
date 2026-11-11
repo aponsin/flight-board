@@ -37,6 +37,7 @@ export async function createCard(db, now, who, fields) {
   if (fields && typeof fields === "object" && "check_at" in fields && !CHECK_AT_WRITERS.includes(who)) return refuse(db, now, { rule: "check-at-lead-only", detail: `${who ?? "unknown"} cannot set a card's check date; ${CHECK_AT_WRITERS.join(" or ")} can` }, fields.id, who);
   const bad = cardWriteRefusal(fields, null);
   if (bad) return refuse(db, now, bad, fields?.id, who);
+  if ("done" in fields || "done_evidence" in fields) return refuse(db, now, { rule: "card-done", detail: "a new card is not done: create it, then close it with card_update" }, fields.id, who);
   const noEnd = holdEndRefusal(fields, null) ?? (await holdEndUnknown(db, fields));
   if (noEnd) return refuse(db, now, noEnd, fields?.id, who);
   if (typeof fields.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(fields.id)) return refuse(db, now, { rule: "card-id", detail: "lowercase letters, digits, hyphens" }, fields.id, who);
@@ -57,7 +58,7 @@ const defaultFor = (c) => (c === "summary" ? "" : c === "track" ? "product" : c 
 const holdEndUnknown = async (db, fields) => {
   const ref = fields.hold_end;
   if (ref === undefined || ref === null) return null;
-  const ok = await db.prepare("SELECT 1 AS x FROM asks WHERE id = ? AND closed_at IS NULL UNION ALL SELECT 1 AS x FROM cards WHERE id = ? AND dropped = 0").bind(ref, ref).first();
+  const ok = await db.prepare("SELECT 1 AS x FROM asks WHERE id = ? AND closed_at IS NULL UNION ALL SELECT 1 AS x FROM cards WHERE id = ? AND dropped = 0 AND done_at IS NULL").bind(ref, ref).first();
   return ok ? null : { rule: "hold-end-unknown", detail: `${ref} is no open ask and no live card` };
 };
 
@@ -65,8 +66,15 @@ const CHECK_AT_WRITERS = ["Manager", "owner"];
 // Card words changed later: checked against the probe's reading of this card (a typed word cannot contradict it).
 export async function updateCard(db, now, who, fields) {
   const id = fields?.id;
-  const card = typeof id === "string" ? await db.prepare("SELECT id, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, queue_pos, owner_role FROM cards WHERE id = ?").bind(id).first() : null;
+  const card = typeof id === "string" ? await db.prepare("SELECT id, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, queue_pos, owner_role, dropped, done_at FROM cards WHERE id = ?").bind(id).first() : null;
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
+  // #C902: done closes the card once, on a card that is not dropped; a thread message named as evidence must be on the board.
+  if (fields.done === true) {
+    if (card.done_at) return refuse(db, now, { rule: "card-done", detail: `${id} is already done` }, id, who);
+    if (card.dropped) return refuse(db, now, { rule: "card-done", detail: `${id} is dropped: a card is done or dropped, not both` }, id, who);
+    const ev = String(fields.done_evidence ?? "").trim();
+    if (ev.startsWith("m-") && !(await db.prepare("SELECT 1 AS x FROM messages WHERE id = ?").bind(ev).first())) return refuse(db, now, { rule: "done-needs-evidence", detail: `no message ${ev} on the board` }, id, who);
+  }
   const owned = queueWriteRefusal(fields, card, who, who !== "owner" && Number.isInteger(fields?.queue_pos) ? await ownerFloor(db, fields.owner_role ?? card.owner_role, id) : 0);
   if (owned) return refuse(db, now, owned, id, who);
   const bad = cardWriteRefusal(fields, await evidenceOf(db, `cards.${id}`));
@@ -76,9 +84,10 @@ export async function updateCard(db, now, who, fields) {
   const noEnd = holdEndRefusal(fields, card) ?? (await holdEndUnknown(db, fields));
   if (noEnd) return refuse(db, now, noEnd, id, who);
   const keys = COLUMNS.filter((c) => c in fields);
-  if (!keys.length) return { ok: true, id, changed: 0 };
+  if (!keys.length && fields.done !== true) return { ok: true, id, changed: 0 };
   // The issue counts carry the time they were last set (the page shows when the chips were counted).
   const sets = keys.map((k) => `${k} = ?`), vals = keys.map((k) => bool(fields[k]));
+  if (fields.done === true) { sets.push("done_at = ?", "done_evidence = ?"); vals.push(now, String(fields.done_evidence).trim()); }
   if (keys.includes("issues")) { sets.push("issues_at = ?"); vals.push(fields.issues ? now : null); }
   // #C871: who placed the card in its queue, and when (the owner's placement outranks an agent's: queueWriteRefusal).
   if (keys.includes("queue_pos")) { sets.push("queue_set_by = ?", "queue_set_at = ?"); vals.push(fields.queue_pos === null ? null : who ?? null, fields.queue_pos === null ? null : now); }
@@ -99,7 +108,7 @@ export async function updateCard(db, now, who, fields) {
     await db.prepare("INSERT INTO rework_history (card_id, reason, at, who) VALUES (?, ?, ?, ?)").bind(id, fields.rework_reason, now, who ?? null).run();
     await db.prepare("UPDATE evidence SET value = json_remove(value, '$.rework') WHERE key = ? AND json_extract(value, '$.rework') IS NOT NULL").bind(`cards.${id}`).run();
   }
-  return { ok: true, id, changed: keys.length };
+  return { ok: true, id, changed: keys.length + (fields.done === true ? 1 : 0) };
 }
 
 // An ask of one of the eight types. The parts of the type go in body as JSON; the store mints the #T number.
@@ -185,9 +194,10 @@ export async function writeStep(db, now, who, a) {
 // card's open phase and closes it when the lit phase moves on (writeEvidence).
 export async function recordBuildStart(db, now, id) {
   if (typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(id)) return refuse(db, now, { rule: "card-id", detail: String(id).slice(0, 40) }, null, "probe");
-  const card = await db.prepare("SELECT owner_role, dropped FROM cards WHERE id = ?").bind(id).first();
+  const card = await db.prepare("SELECT owner_role, dropped, done_at FROM cards WHERE id = ?").bind(id).first();
   if (!card) return refuse(db, now, { rule: "build-start-card-unknown", detail: id }, null, "probe");
   if (card.dropped) return { ok: true, recorded: false, why: "dropped" };
+  if (card.done_at) return { ok: true, recorded: false, why: "done" };
   if (await db.prepare("SELECT 1 AS x FROM phase_history WHERE card_id = ? AND wait IS NULL LIMIT 1").bind(id).first()) return { ok: true, recorded: false, why: "has-history" };
   if ((await evidenceOf(db, `cards.${id}`))?.lit?.length) return { ok: true, recorded: false, why: "lit" };
   await db.prepare("INSERT OR IGNORE INTO phase_history (card_id, phase, kind, at, who, source) VALUES (?, 'build', 'start', ?, ?, 'evidence')").bind(id, now, card.owner_role ?? null).run();
@@ -276,7 +286,7 @@ const pendingForManager = async (db) => {
 // (card, reason): a new reason for a card is pending for Manager once, an older untaken reason of the card is replaced by it, and a stall
 // that is over is no longer pending. A reason already sent is never sent again.
 async function syncStalls(db, now) {
-  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, waiting_on, repo, check_at, hold_end, held_at, hold_until, depends_on, updated_at, queue_pos, queue_set_by FROM cards").all()).results;
+  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, done_at, waiting_on, repo, check_at, hold_end, held_at, hold_until, depends_on, updated_at, queue_pos, queue_set_by FROM cards").all()).results;
   const evRows = (await db.prepare("SELECT key, value FROM evidence WHERE key = 'agents' OR key LIKE 'cards.%'").all()).results;
   let agents = {}; const evidence = {};
   for (const r of evRows) { let v; try { v = JSON.parse(r.value); } catch { continue; } if (r.key === "agents") agents = v; else evidence[r.key.slice(6)] = v; }
@@ -289,7 +299,7 @@ async function syncStalls(db, now) {
     const ask = await db.prepare("SELECT closed_at FROM asks WHERE id = ?").bind(ref).first();
     if (ask) { if (ask.closed_at) endsPassed.add(ref); continue; }
     const card = cards.find((c) => c.id === ref);
-    if (card && (card.dropped || evidence[ref]?.lit?.[0] === "live")) endsPassed.add(ref);
+    if (card && (card.dropped || card.done_at || evidence[ref]?.lit?.[0] === "live")) endsPassed.add(ref);
   }
   // #C904: an ask the owner has left 10 min wakes Manager once, before the owner's phone gets it at 30 (push-rules.mjs).
   const openAsks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL").all()).results;
@@ -379,11 +389,11 @@ export async function setStackSwitch(db, now, who, b) {
 // An agent's queue, in order (queueRank): its cards not dropped and with nothing pushed (the probe's reading), each { id, num, queue_pos, owner
 // (the owner placed it), held (a depends_on that is not live) }. The same list serves the move, and the floor an agent's write may not pass.
 export async function queueCards(db, role) {
-  const all = (await db.prepare("SELECT id, num, owner_role, queue_pos, queue_set_by, depends_on, dropped FROM cards").all()).results ?? [];
+  const all = (await db.prepare("SELECT id, num, owner_role, queue_pos, queue_set_by, depends_on, dropped, done_at FROM cards").all()).results ?? [];
   const evidence = {};
   for (const c of all) if (c.depends_on) for (const d of (() => { try { const l = JSON.parse(c.depends_on); return Array.isArray(l) ? l : []; } catch { return []; } })()) if (typeof d === "string" && !(d in evidence)) evidence[d] = await evidenceOf(db, `cards.${d}`);
   const queue = [];
-  for (const r of all.filter((c) => c.owner_role === role && !c.dropped)) {
+  for (const r of all.filter((c) => c.owner_role === role && !c.dropped && !c.done_at)) {
     const e = await evidenceOf(db, `cards.${r.id}`);
     if (e?.headSha12 || e?.phase === "live") continue;
     queue.push({ id: r.id, num: r.num, queue_pos: r.queue_pos, owner: r.queue_set_by === "owner", held: dependsNotLive(r, all, evidence) });
@@ -395,8 +405,8 @@ const ownerFloor = async (db, role, exceptId) => Math.max(0, ...(await queueCard
 export async function moveInQueue(db, now, who, b) {
   const bad = queueMoveRefusal(b, who);
   if (bad) return refuse(db, now, bad, b?.id, who);
-  const card = await db.prepare("SELECT id, owner_role, dropped FROM cards WHERE id = ?").bind(b.id).first();
-  if (!card || card.dropped) return refuse(db, now, { rule: "card-unknown", detail: String(b.id) }, b.id, who);
+  const card = await db.prepare("SELECT id, owner_role, dropped, done_at FROM cards WHERE id = ?").bind(b.id).first();
+  if (!card || card.dropped || card.done_at) return refuse(db, now, { rule: "card-unknown", detail: String(b.id) }, b.id, who);
   const queue = await queueCards(db, card.owner_role);
   const at = queue.findIndex((r) => r.id === b.id);
   if (at < 0) return refuse(db, now, { rule: "queue-started", detail: `${b.id} has started: only a card with nothing pushed is in the queue` }, b.id, who);
