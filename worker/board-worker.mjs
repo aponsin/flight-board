@@ -11,6 +11,8 @@ import { routeWrite } from "./compat-write.mjs";
 import { COMPAT_SHIM } from "./compat-shim.mjs";
 import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.mjs";
 import { writeUsageDay } from "./compat-usage.mjs";
+import { subscribePush, unsubscribePush, pushFacts, pushRun } from "./push-store.mjs";
+import { SW_SOURCE, MANIFEST } from "./push-page.mjs";
 import { createCard, updateCard, createAsk, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, moveInQueue } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -51,7 +53,8 @@ const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
 // with them, and no script runs from one (Boardsmith's split).
 export const OLD_PAGE_PATH = "/board";
 const FONT_PATH = /^\/fonts\/([a-z0-9-]+\.woff2)$/;
-export const oldPageCsp = (nonce) => `default-src 'none'; script-src 'nonce-${nonce}'; style-src-elem 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`;
+// #C904: worker-src and manifest-src 'self' for the phone push's /sw.js and /manifest.webmanifest, nothing wider.
+export const oldPageCsp = (nonce) => `default-src 'none'; script-src 'nonce-${nonce}'; style-src-elem 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`;
 // The page's script and style elements carry the nonce (the built page has one bare <script> and bare <style>s, and no inline
 // handlers), and the window.claude shim (Boardsmith's worker/compat-shim.mjs) runs just before the page's script, so the page's
 // data block finds window.claude reading /api/compat and writing /api/compat/write.
@@ -356,7 +359,31 @@ export default {
       if (!Number.isInteger(b?.exit)) return json(422, { error: "exit is the send's exit code" });
       return json(200, await wakeResult(env.DB, now, b.batchId, b.exit, String(b.text ?? "").slice(0, 2000)));
     }
+    // #C904: the phone push. The service worker and the manifest are for people (the probe gets neither); the subscription
+    // and the push facts are the owner's alone, same-origin JSON like every write above.
+    if (request.method === "GET" && (url.pathname === "/sw.js" || url.pathname === "/manifest.webmanifest")) {
+      if (auth.role === "probe") return bare(403);
+      const sw = url.pathname === "/sw.js";
+      return new Response(sw ? SW_SOURCE : MANIFEST, { status: 200, headers: { "content-type": sw ? "text/javascript; charset=utf-8" : "application/manifest+json", "cache-control": "no-store", "x-content-type-options": "nosniff" } });
+    }
+    if (url.pathname === "/api/push" && request.method === "GET") {
+      if (auth.role !== "owner") return bare(403);
+      return json(200, await pushFacts(env.DB, env), { "cache-control": "no-store" });
+    }
+    if ((url.pathname === "/api/push/subscribe" || url.pathname === "/api/push/unsubscribe") && request.method === "POST") {
+      if (auth.role !== "owner") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = url.pathname.endsWith("/subscribe") ? await subscribePush(env.DB, now, b) : await unsubscribePush(env.DB, b?.endpoint);
+      if (!r.ok) await refuse(env.DB, now, r.refused, null, auth.who);
+      return json(r.ok ? 200 : 422, r);
+    }
     if (url.pathname === "/mcp" && request.method === "POST") return mcp(request, env, auth, now);
     return bare(404);
+  },
+  // #C904: the Worker's cron (wrangler.board.toml [triggers]) sends what is due to the owner's phone. No identity, no request:
+  // it reads the store and writes only push rows.
+  async scheduled(_event, env, _ctx, now = Date.now(), fetchFn = fetch) {
+    return pushRun(env.DB, now, env, fetchFn);
   },
 };

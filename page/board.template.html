@@ -186,6 +186,8 @@ details.done-list summary{cursor:pointer;color:var(--muted);padding:10px 16px}
 .unacked ul{list-style:none;margin:0;padding:0}
 .unacked li{padding:3px 0}
 @media (pointer:coarse){.ackbtn{min-height:44px;padding:0 14px}}
+/* #C904: the phone push's switch, in the header on the store only. */
+.pushbtn{margin-right:8px}
 .feed time{font:400 .82rem var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 /* Shipped and reported (#C362): Time spent beside it sets the row's height on a laptop, and the list scrolls inside,
    under its search box; on a phone, a fixed height. */
@@ -559,7 +561,7 @@ table.crew3-ph{margin-top:14px}
 <div class="wrap">
   <header>
     <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="hdr-badges"><div class="rb" id="restartbadge" role="status" hidden></div><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div></div></div>
-    <div class="hdr-right"><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div></div>
+    <div class="hdr-right"><button type="button" class="ackbtn pushbtn" id="pushbtn" hidden></button><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div></div>
   </header>
   <div class="shipline" id="shipline" role="status" hidden></div>
   <div class="stuckline" id="threadsfull" role="status" hidden></div>
@@ -2302,6 +2304,41 @@ document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e
   try{const r=await fetch("/api/ack",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({version:b.dataset.ack})});
     if(!r.ok)throw new Error("refused");b.textContent="Acknowledged"}
   catch(_){b.textContent="Not saved";setTimeout(()=>{b.textContent=was;b.disabled=false},4000)}});
+// #C904: the phone push's switch (store only). The Worker pushes what is live to acknowledge and asks left 30 min; this only
+// subscribes this browser or turns it off. iPhone allows Web Push only from the board added to the Home Screen (iOS 16.4+).
+// pushLabel is pure: what the switch says and does for a state; null hides it (a laptop browser with no push at all).
+function pushLabel(s){
+  if(!s||!s.supported)return s&&s.ios&&!s.standalone?{text:"Phone pushes: add the board to your Home Screen, then open it there",act:null}:null;
+  if(!s.ready)return {text:"Phone pushes: not set up yet",act:null};
+  if(s.permission==="denied")return {text:"Phone pushes: blocked in this browser's settings",act:null};
+  return s.subscribed?{text:"Phone pushes: on",act:"off"}:{text:"Turn on phone pushes",act:"on"};
+}
+const pushKey=t=>{const s=String(t).replace(/-/g,"+").replace(/_/g,"/");return Uint8Array.from(atob(s+"=".repeat((4-s.length%4)%4)),c=>c.charCodeAt(0))};
+let PUSH=null;
+async function pushRead(){const nav=navigator,ios=/iP(hone|ad|od)/.test(nav.userAgent||"");
+  const standalone=nav.standalone===true||(!!window.matchMedia&&matchMedia("(display-mode: standalone)").matches);
+  const supported="serviceWorker" in nav&&"PushManager" in window&&"Notification" in window;
+  if(!supported)return {supported,ios,standalone};
+  let facts={};try{const r=await fetch("/api/push",{credentials:"same-origin",cache:"no-store"});if(r.ok)facts=await r.json()}catch(_){}
+  const reg=await nav.serviceWorker.register("/sw.js"),sub=await reg.pushManager.getSubscription();
+  return {supported,ios,standalone,ready:!!facts.ready,key:facts.publicKey,permission:Notification.permission,subscribed:!!sub,reg,sub}}
+async function pushDraw(){const btn=$("pushbtn");if(!STORE||!btn)return;
+  try{PUSH=await pushRead()}catch(_){PUSH={supported:false}}
+  const l=pushLabel(PUSH);btn.hidden=!l;if(!l)return;btn.textContent=l.text;btn.disabled=!l.act;btn.dataset.act=l.act||""}
+document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e.target.closest("#pushbtn"):null;if(!b||!STORE||b.disabled||!PUSH)return;
+  const act=b.dataset.act;b.disabled=true;
+  const post=(path,body)=>fetch(path,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(body)});
+  try{
+    if(act==="on"){
+      // The permission prompt first, straight from the tap (iPhone shows it only from a user's tap).
+      if(await Notification.requestPermission()!=="granted"){await pushDraw();return}
+      const sub=await PUSH.reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushKey(PUSH.key)});
+      const r=await post("/api/push/subscribe",sub.toJSON());
+      if(!r.ok){await sub.unsubscribe();throw new Error("refused")}
+    }else if(act==="off"&&PUSH.sub){const endpoint=PUSH.sub.endpoint;await PUSH.sub.unsubscribe();await post("/api/push/unsubscribe",{endpoint})}
+    await pushDraw();
+  }catch(_){b.textContent="Phone pushes: not saved, try again";setTimeout(()=>pushDraw(),4000)}});
+if(STORE)pushDraw();
 const OPEN_CAP=2*36e5, BOARD_START=String(CONFIG.boardStart||"");
 // A time's local calendar day, YYYY-MM-DD (the key agentMinutesByDay and the usage chart use).
 function localDay(t){const d=new Date(t);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}

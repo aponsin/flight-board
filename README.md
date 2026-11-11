@@ -144,6 +144,18 @@ Files and screenshots (#C726) are stored in an R2 bucket bound as `FILES`. Creat
 
 then apply the D1 migrations as for any store change (`0010_files.sql` holds the file list). Without the bucket the deploy fails. A Worker with no `FILES` binding refuses uploads as "file-store-off". The probe writes each day's runner and automation minutes and Actions cost to `POST /api/probe/usage`.
 
+## Phone pushes (#C904)
+
+The board pushes to the owner's phone itself, every 5 minutes from the Worker's cron: something went live and is not acknowledged yet, or an ask has waited 30 minutes unanswered (Manager is woken at 10). A push says counts, ask numbers and versions only. Set it up once, after the deploy pair that brings it:
+
+1. On the Mac, in the board folder's checkout (`board-store-pa`), set the key. It is made, handed to Cloudflare and never shown:
+   `node scripts/push-keys.mjs --subject https://<the board's address>`
+   You should see `PUSH KEY SET.` Running it again replaces the key, and every device must then turn pushes on again.
+2. On the iPhone (iOS 16.4 or later), in Safari: open the board, tap **Share**, then **Add to Home Screen**. Open the board from that icon and sign in. Web Push on iPhone works only from the Home Screen, never from a Safari tab.
+3. Tap **Turn on phone pushes** at the top of the board, then **Allow**. It then reads **Phone pushes: on**; tap it to turn them off. On a laptop the same switch works in any browser tab.
+
+If the switch says "not set up yet", step 1 hasn't run (or ran before the deploy). "Blocked in this browser's settings" means notifications were denied: allow them for the board in the phone's Settings, under Notifications. At most 5 devices.
+
 ## Putting a main live: the deploy pair (#C734)
 
 A deploy pair is the set of files the owner runs in Terminal to put a signed commit of main live. Nobody else deploys: the pair is made, signed and handed over, and the owner runs two hash-checked lines.

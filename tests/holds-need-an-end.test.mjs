@@ -95,6 +95,8 @@ test("(b) a held card whose check date has passed goes into Manager's wake once,
 test("(b) a hold whose ask is closed, or whose card is dropped or live, has passed its end", async () => {
   const db = makeDb(); await card(db, "h1"); await card(db, "h2"); await card(db, "dep");
   const t = await ask(db, "h1");
+  // Answered, not closed: the hold's end is still open, and #C904's 10-minute ask line (not this test's subject) stays out.
+  await db.prepare("UPDATE asks SET answered_at = ?, answer_taken_at = ? WHERE id = ?").bind(T, T, t.id).run();
   await updateCard(db, T, "Boardsmith", { id: "h1", waiting_on: "owner", hold_end: t.id });
   await updateCard(db, T, "Boardsmith", { id: "h2", waiting_on: "dep", hold_end: "dep" });
   await wakeAsk(db, T + H);

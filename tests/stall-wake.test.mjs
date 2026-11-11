@@ -1,6 +1,8 @@
 // #C732 (the owner's pick A on #T1681): on the new store a card that waits 15 min at ANY phase while that phase's agent is idle (and no CI run is
 // going) wakes Manager once with the reason, and again only when the reason changes. Gated (an open ask), Blocked, Paused and Dropped
 // cards are exempt, each with a test. The wake is the store's "anything for Manager?" answer; the reason is read through read_inbox.
+// The gating ask here is answered and still open (#C904: an ask the owner leaves unanswered 10 min wakes Manager on its own line, which
+// these tests are not about; an answered ask still gates its card until it is closed).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
@@ -89,7 +91,7 @@ const exempt = (name, fix) => test(`exempt: ${name}`, async () => {
   assert.equal(await pending(db, T + 60 * MIN), 0);
   assert.deepEqual((await takeInbox(db, T + 61 * MIN)).stalls, []);
 });
-exempt("Gated: an open ask on the card", (db) => db.prepare("INSERT INTO asks (id, num, type, title, asked_by, card_id, body, created_at) VALUES ('t1', 1, 'Answer', 'q', 'Manager', 'card-a', '{}', ?)").bind(T).run());
+exempt("Gated: an open ask on the card", (db) => db.prepare("INSERT INTO asks (id, num, type, title, asked_by, card_id, body, created_at, answered_at, answer_taken_at) VALUES ('t1', 1, 'Answer', 'q', 'Manager', 'card-a', '{}', ?, ?, ?)").bind(T, T, T).run());
 exempt("Blocked: the card has a blocked reason", (db) => db.prepare("UPDATE cards SET blocked_reason = 'waiting for a key' WHERE id = 'card-a'").run());
 exempt("Paused", (db) => db.prepare("UPDATE cards SET paused = 1 WHERE id = 'card-a'").run());
 exempt("Dropped", (db) => db.prepare("UPDATE cards SET dropped = 1 WHERE id = 'card-a'").run());
@@ -153,7 +155,7 @@ test("#C828 an empty or missing agents reading is a blind probe, never a stall; 
   await writeEvidence(none, T, "probe", "cards.card-a", { lit: ["checker"], phase: "checker", ci: "none" });
   assert.equal(await pending(none, T + 60 * MIN), 0, "no agents reading at all");
   for (const [name, fix] of [
-    ["Gated", (db) => db.prepare("INSERT INTO asks (id, num, type, title, asked_by, card_id, body, created_at) VALUES ('t1', 1, 'Answer', 'q', 'Manager', 'card-a', '{}', ?)").bind(T).run()],
+    ["Gated", (db) => db.prepare("INSERT INTO asks (id, num, type, title, asked_by, card_id, body, created_at, answered_at, answer_taken_at) VALUES ('t1', 1, 'Answer', 'q', 'Manager', 'card-a', '{}', ?, ?, ?)").bind(T, T, T).run()],
     ["Blocked", (db) => db.prepare("UPDATE cards SET blocked_reason = 'waiting for a key' WHERE id = 'card-a'").run()],
     ["Paused", (db) => db.prepare("UPDATE cards SET paused = 1 WHERE id = 'card-a'").run()],
     ["a CI run is going", (db) => writeEvidence(db, T + 1000, "probe", "cards.card-a", { lit: ["checker"], phase: "checker", ci: "running" })],
