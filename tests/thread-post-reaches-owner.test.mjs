@@ -44,6 +44,17 @@ test("held back: the owner active since the post, busy now, the post over a day 
   assert.deepEqual(forOwner(run(view({ msgs: [p], card: { paused: 1 } }))), []);
 });
 
+// Checker's F1 on c8d80d5: an answered Decision, then the lead's post on the same card ("A is set"): the decision turn stays, with its
+// answer, so the DISPATCH line still quotes it; the post does not replace it.
+test("an answered Decision and a newer lead post on the same card: the one owner turn is the decision, with its answer", () => {
+  const v = view({ msgs: [msg({ created_at: NOW - 10 * MIN, body: "A is set" })], idle: 30 * MIN,
+    asks: [{ id: "t1782", num: 1782, type: "Decision", card_id: "c914-pick", title: "#C914: which?", answered_at: NOW - 15 * MIN, answer: "A", closed_at: null }] });
+  const turns = dispatchInput(v, NOW, { lead: LEAD }).cards[0].turns.filter((t) => t.role === "Boardsmith");
+  assert.deepEqual(turns.map((t) => t.step), ["decision"]);
+  assert.equal(turns[0].answer, "A"); assert.equal(turns[0].ask, 1782);
+  assert.match(dispatchLine(forOwner(run(v))[0]), /^DISPATCH #C914 at decision: DECISION #T1782 answered: "A"/);
+});
+
 test("Still allowed: with no post the card keeps its turns (Checker's review, nothing for Boardsmith); the lead's own card is not woken by its own post", () => {
   const items = run(view());
   assert.deepEqual(forOwner(items), []);
