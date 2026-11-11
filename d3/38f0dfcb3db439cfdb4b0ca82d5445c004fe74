@@ -1,0 +1,1 @@
+PASS Full #C874 at d338f0d, re-cut of 2bee16a on 65e5b7c. The change is line for line that of 2bee16a, which carries my PASS Full, apart from CHANGELOG. Suite 2186 green at the stack tip 5cc9166. Its LOW stands: the click handler is tested only against the page source.
