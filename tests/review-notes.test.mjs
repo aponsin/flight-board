@@ -40,6 +40,18 @@ test("signedTimes: each sign-off is dated by the notes ref's own history; an uns
   assert.deepEqual(signedTimes(git, sha, NOTES, new Set(), 7), {});
 });
 
+// #C852 (Checker): a note that starts FINDINGS is the review sending the commit back, not a sign-off, here as in the probe.
+test("signedPhases: a FINDINGS note is no sign-off (a leading space is the same); a PASS or another word still is", () => {
+  const { git, sha } = scratch();
+  git(["notes", "--ref=refs/notes/checker", "add", "-m", "FINDINGS two bugs", sha], at(100));
+  git(["notes", "--ref=refs/notes/security", "add", "-m", "SECURE", sha], at(120));
+  assert.deepEqual([...signedPhases(git, sha, NOTES)], ["security"]);
+  git(["notes", "--ref=refs/notes/security", "add", "-f", "-m", "  FINDINGS the lot", sha], at(130));
+  assert.deepEqual([...signedPhases(git, sha, NOTES)], []);
+  git(["notes", "--ref=refs/notes/checker", "add", "-f", "-m", "PASS Quick", sha], at(140));
+  assert.deepEqual([...signedPhases(git, sha, NOTES)], ["checker"], "re-signed PASS counts");
+});
+
 test("signedTimes: a note re-signed later takes the later time; another commit's note does not move it", () => {
   const { git, sha } = scratch();
   git(["notes", "--ref=refs/notes/checker", "add", "-m", "PASS", sha], at(100));
