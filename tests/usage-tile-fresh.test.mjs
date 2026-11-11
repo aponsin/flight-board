@@ -92,6 +92,21 @@ test("a fixed reading: 78,377,246 weighted at 00:59Z on 11-11 over a 201M quota 
   assert.equal(Math.round(r.tile.weekPct), 39);
 });
 
+test("v2b: with no quota the tile reads 'not calibrated yet' and the week's weighted total, and no percent", () => {
+  const now = Date.parse("2026-11-11T00:59:00Z");
+  const r = usageTile({ scriptText: "x", dir: mkdtempSync(join(tmpdir(), "usage-")), roster, now, quota: 0, resetAt: "2026-11-09T02:00Z", run: () => JSON.stringify({ total_weighted: 78_377_246, rows: [{ source: "Manager", share: 1 }] }) });
+  assert.equal(r.tile.weekPct, null);
+  assert.equal(r.tile.weekTotal, 78_377_246);
+  const state = buildState({ id: "b", now, probe: null, pageVersion: null, cards: {}, agents: {}, usage: r.tile });
+  assert.deepEqual(stateErrors(state), []);
+  assert.equal(pickState(state).usage.weekTotal, 78_377_246, "it reaches the Worker's copy");
+  const html = page(live(use({ weekPct: null, weekTotal: 78_377_246, pace: null, level: "ok", asOf: NOW - MIN }))).planTile();
+  assert.match(html, /Plan week \(est\.\)/);
+  assert.match(html, /not calibrated yet · 78\.4M weighted this week/);
+  assert.match(html, /<div class="n">–<\/div>/, "no percent is shown");
+  assert.ok(stateErrors({ ...state, usage: { ...state.usage, weekTotal: -1 } }).some((e) => /usage\.weekTotal/.test(e)));
+});
+
 test("the tile is labelled as an estimate and says what it counts", () => {
   const html = page(live(use({ asOf: NOW - MIN }))).planTile();
   assert.match(html, /Plan week \(est\.\)/);

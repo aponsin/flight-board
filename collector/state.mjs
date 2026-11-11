@@ -720,7 +720,7 @@ export function usageTile({ scriptText = null, dir, roster, now, run, quota = 0,
   const ranAt = Number.isInteger(save?.ranAt) ? save.ranAt : plain(kept) && Number.isInteger(kept.ranAt) ? kept.ranAt : null;
   const asOf = ranAt !== null && ranAt <= now ? ranAt : null;
   const plan = quota > 0 && resetsAt && Number.isFinite(total) ? { weekPct: (total / quota) * 100, resetsAt } : null;
-  return { tile: usageReading({ rows, roster, plan, now, asOf }), save, rows, total, resetsAt, asOf };
+  return { tile: usageReading({ rows, roster, plan, now, asOf, total }), save, rows, total, resetsAt, asOf };
 }
 
 // The state that leaves, checked against the allowlist before it does.

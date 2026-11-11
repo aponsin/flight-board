@@ -26,7 +26,7 @@ export const changeKey = (s) => JSON.stringify([
   s.board.probe, s.board.pageVersion,
   Object.entries(s.ctx ?? {}).map(([r, c]) => [r, Math.floor(c.pct / 5), c.over]),
   Object.entries(s.stuck ?? {}).map(([r, k]) => [r, k.kind, k.card, k.since]),
-  s.usage ? [s.usage.weekPct, s.usage.pace, s.usage.level, s.usage.asOf ?? null, s.usage.top.map((t) => [t.src, t.pct])] : null,
+  s.usage ? [s.usage.weekPct, s.usage.pace, s.usage.level, s.usage.asOf ?? null, s.usage.weekTotal ?? null,s.usage.top.map((t) => [t.src, t.pct])] : null,
   // #C679: a ship candidate pushed and not on main (the restart badge): stored the minute it appears, changes or goes.
   s.ship ? [s.ship.version, s.ship.ci] : null,
   // #C731 B4b: the release log's CI times, version by version (at most 100 small rows): a new release or a changed time is a

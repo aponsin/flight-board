@@ -130,7 +130,7 @@ export function stuckReadings({ agents, prompts, now, lead = "" }) {
 export const WEEK_MS = 7 * 24 * 3600e3, AMBER_PACE = 1.3, RED_PACE = 1.6;
 // asOf (#C623): when the spend script last ran, the time the numbers are of; at is the probe's clock and moves every minute, so
 // the page needs asOf to say how old the tile is. Left out when it is not a past time.
-export function usageReading({ rows, roster, plan, now, asOf = null }) {
+export function usageReading({ rows, roster, plan, now, asOf = null, total = null }) {
   const by = new Map();
   for (const r of Array.isArray(rows) ? rows : []) {
     if (!r || typeof r.source !== "string" || !Number.isFinite(r.share) || r.share < 0) continue;
@@ -145,5 +145,5 @@ export function usageReading({ rows, roster, plan, now, asOf = null }) {
     if (gone >= 0.02 && gone <= 1) pace = Math.min(10000, Math.round((plan.weekPct / 100 / gone) * 100));
   }
   const x = pace === null ? 0 : pace / 100;
-  return { at: now, ...(Number.isInteger(asOf) && asOf > 0 && asOf <= now ? { asOf } : {}), weekPct, pace, level: x >= RED_PACE ? "red" : x >= AMBER_PACE ? "amber" : "ok", top };
+  return { at: now, ...(Number.isInteger(asOf) && asOf > 0 && asOf <= now ? { asOf } : {}), ...(Number.isFinite(total) && total >= 0 && total <= 1e12 ? { weekTotal: Math.round(total) } : {}), weekPct, pace, level: x >= RED_PACE ? "red" : x >= AMBER_PACE ? "amber" : "ok", top };
 }

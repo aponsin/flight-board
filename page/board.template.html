@@ -2226,7 +2226,7 @@ function planAt(u){return u.asOf==null?u.at:u.asOf}
 function planAge(u,now=Date.now()){return "as of "+dur(Math.max(0,now-planAt(u)))+" ago"}
 function planTile(){const u=liveUsage();if(!u)return "";
   const pace=u.pace==null?"":` · ${(u.pace/100).toFixed(1)}x pace`,top=u.top.map(t=>`${esc(t.src)} ${t.pct}%`).join(", "),old=Date.now()-planAt(u)>PLAN_STALE;
-  return `<div class="tot plan ${old?"stale":u.level}" data-plan-at="${planAt(u)}" data-plan-level="${u.level}"><div class="l">Plan week (est.)</div><div class="n">${u.weekPct==null?"–":u.weekPct+"%"}</div><div class="l">${u.weekPct==null?"no plan reading":"used"}${pace}</div><div class="l plan-scope">this Mac's Claude Code only</div>${top?`<div class="l">${top}</div>`:""}<div class="l plan-age" data-plan-age>${planAge(u)}</div></div>`}
+  return `<div class="tot plan ${old?"stale":u.level}" data-plan-at="${planAt(u)}" data-plan-level="${u.level}"><div class="l">Plan week (est.)</div><div class="n">${u.weekPct==null?"–":u.weekPct+"%"}</div><div class="l">${u.weekPct==null?"not calibrated yet"+(u.weekTotal==null?"":" · "+(u.weekTotal/1e6).toFixed(1)+"M weighted this week"):"used"}${pace}</div><div class="l plan-scope">this Mac's Claude Code only</div>${top?`<div class="l">${top}</div>`:""}<div class="l plan-age" data-plan-age>${planAge(u)}</div></div>`}
 function renderUsage(){
   const am=agentMinutesByDay();
   const byDay={};state.usage.filter(u=>u.day).forEach(u=>{byDay[u.day]={...u}});
@@ -2723,7 +2723,7 @@ function liveCtx(now=Date.now()){const out={};if(!liveOn(now)||!probe.ctx||typeo
 function liveStuck(now=Date.now()){if(!liveOn(now)||!probe.stuck||typeof probe.stuck!=="object")return [];
   return Object.keys(probe.stuck).filter(n=>LIVE_ROLE.test(n)).map(n=>({role:n,...probe.stuck[n]})).filter(k=>(k.kind==="step"||k.kind==="user")&&isT(k.since)).sort((a,b)=>a.since-b.since)}
 function liveUsage(now=Date.now()){const u=liveOn(now)&&probe.usage;if(!u||typeof u!=="object"||!isT(u.at)||!["ok","amber","red"].includes(u.level)||!Array.isArray(u.top))return null;
-  return {at:u.at,asOf:isT(u.asOf)&&u.asOf<=u.at?u.asOf:null,weekPct:Number.isInteger(u.weekPct)?u.weekPct:null,pace:Number.isInteger(u.pace)?u.pace:null,level:u.level,
+  return {at:u.at,asOf:isT(u.asOf)&&u.asOf<=u.at?u.asOf:null,weekPct:Number.isInteger(u.weekPct)?u.weekPct:null,weekTotal:Number.isInteger(u.weekTotal)&&u.weekTotal>=0?u.weekTotal:null,pace:Number.isInteger(u.pace)?u.pace:null,level:u.level,
     top:u.top.filter(t=>t&&LIVE_ROLE.test(t.src)&&isPct(t.pct)).slice(0,5)}}
 // An agent as the live state reads it: { state: working|idle, card, since: its last activity }, or null.
 function liveAgent(n,now=Date.now()){if(!liveOn(now)||typeof n!=="string"||!LIVE_ROLE.test(n)||!Object.hasOwn(probe.agents,n))return null;
