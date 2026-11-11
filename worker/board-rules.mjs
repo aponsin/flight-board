@@ -457,7 +457,7 @@ export function dependsNotLive(c, cards, evidence) {
 // Map card id -> ms of the owner's newest post on the card's thread (the store passes it; missing = none).
 export const READ_ONLY_ROLES = ["Designer", "Checker", "Security", "Linguist"], POSTED_FRESH_MS = 60 * 60_000;
 export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed }) {
-  const out = [], queued = new Map();
+  const out = [], queued = new Map(), idleOf = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
   for (const c of cards ?? []) {
@@ -469,16 +469,19 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     // card nobody has pushed for is not news). The owner's other cards do not matter: one at review and the rest queued still wake.
     if (phase === undefined || phase === null) {
       const o = typeof c.owner_role === "string" ? roster[c.owner_role] : null;
-      if (!o || o.state !== "idle" || !Number.isFinite(o.since) || now - o.since < STALL_AFTER_MS) continue;
+      // #C940: a reset session reads "unknown" with no `since` until it has said something: idle since its own last activity (see dispatchItems).
+      const idleFrom = !o ? null : o.state === "idle" ? o.since : o.state === "unknown" ? o.lastActivityAt : null;
+      if (!o || !Number.isFinite(idleFrom) || now - idleFrom < STALL_AFTER_MS) continue;
       if (c.owner_role === "Manager" || !/^[A-Za-z0-9 _-]{1,24}$/.test(c.owner_role) || isHeld(c) || holdOpen(c, now, endsPassed) || !Number.isFinite(c.updated_at) || now - c.updated_at > 3 * 24 * 3600e3) continue;
       if (dependsNotLive(c, cards, evidence)) continue;
       if (READ_ONLY_ROLES.includes(c.owner_role)) {
         const posted = postedAt instanceof Map ? postedAt.get(c.id) : undefined;
         if (Number.isFinite(posted) && now - posted <= POSTED_FRESH_MS) continue;
-        out.push({ card_id: c.id, num: c.num, phase: null, role: c.owner_role, reason: `#C${c.num} nothing posted on its thread in the last hour, ${c.owner_role} idle since ${hhmmZ(o.since)}` });
+        out.push({ card_id: c.id, num: c.num, phase: null, role: c.owner_role, reason: `#C${c.num} nothing posted on its thread in the last hour, ${c.owner_role} idle since ${hhmmZ(idleFrom)}` });
         continue;
       }
       queued.set(c.owner_role, [...(queued.get(c.owner_role) ?? []), c]);
+      idleOf.set(c.owner_role, idleFrom);
       continue;
     }
     if (typeof phase !== "string" || phase === "live" || !PHASES.includes(phase)) continue;
@@ -506,7 +509,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   // The next card is the first of the agent's queue (queueRank, as the dispatch wakes it); the line is its row, so it changes with the count or the next card.
   for (const [role, list] of queued) {
     const next = [...list].sort((x, y) => queueRank({ queue_pos: x.queue_pos, owner: x.queue_set_by === "owner", num: x.num, id: x.id }, { queue_pos: y.queue_pos, owner: y.queue_set_by === "owner", num: y.num, id: y.id }))[0];
-    out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} idle since ${hhmmZ(roster[role].since)}, ${list.length} queued, next #C${next.num}` });
+    out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} idle since ${hhmmZ(idleOf.get(role))}, ${list.length} queued, next #C${next.num}` });
   }
   return out;
 }
