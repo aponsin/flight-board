@@ -694,7 +694,9 @@ function needsYou(w,now){return !settled(w)&&!answered(w,now)}
 // #C823: a Decision may carry notBefore (the ask's eta_at): until that time it waits on Later, and at the date it moves to Needs you.
 // #C879 (DATA.md row 19): a Later ask moves to Needs you at its ETA too, with no write in between; one with no date, or only a
 // precondition the probe can't see yet, stays under Later.
-function isLater(w,now){return (w.kind==="later"&&!(num(w.eta)!=null&&w.eta<=now))||(w.kind==="decision"&&num(w.notBefore)!=null&&w.notBefore>now)}
+// #C925: a promise (owedBy: Manager's own dated promise to the owner) never waits on the owner, so it stays under Later past its date.
+function owedOf(w){return w&&w.kind==="later"&&typeof w.owedBy==="string"&&w.owedBy?w.owedBy:null}
+function isLater(w,now){return (w.kind==="later"&&(!!owedOf(w)||!(num(w.eta)!=null&&w.eta<=now)))||(w.kind==="decision"&&num(w.notBefore)!=null&&w.notBefore>now)}
 function onLead(w,now){return !settled(w)&&answered(w,now)}
 // Who something waits on now: the one answer its badge and its section both come from, so they can never disagree
 // (#C236: an answered ask under "Waiting on Manager" still said "waiting on you"). An open ask: "you" (unanswered) or
@@ -722,7 +724,7 @@ function teamOnly(id){const t=threadOf(id);if(!t.length)return false;
   const w=state.waiting.find(x=>x.id===id);if(w&&!settled(w))return false;
   return t.every(m=>m.from!==OWNER&&m.from!==LEAD_ROLE)}
 // The badge for a waitsOn answer: the only place the page writes one. "lead" is the With the team tab (#C364).
-function badge(on){return on==="you"?'<span class="t-badge you">waiting on you</span>':on==="lead"?'<span class="t-badge open">with the team</span>':on==="resolved"?'<span class="t-badge res">resolved</span>':on==="answered"?'<span class="t-badge ">answered</span>':""}
+function badge(on,who){return on==="owes"?`<span class="t-badge open">${esc(who||"Manager")} owes you this</span>`:on==="you"?'<span class="t-badge you">waiting on you</span>':on==="lead"?'<span class="t-badge open">with the team</span>':on==="resolved"?'<span class="t-badge res">resolved</span>':on==="answered"?'<span class="t-badge ">answered</span>':""}
 // Whether an item is drawn with its thread under it: an open ask (either section), a closed one whose thread waits on
 // Manager (a real question after it closed: the ask itself shows, never a second "Reply to" row, #C268), or an
 // initiative in flight. Its thread then stays there (a reply under an item once showed as a card of its own).
@@ -742,7 +744,7 @@ const typeCopy=(w,s)=>{const t=w&&w.rearm===true&&!(s&&s.cmd)?typeLine(typeof s=
 function askHtml(w,open,at=w.since,sub="",qn=null){const steps=Array.isArray(w.steps)?w.steps:[];
    const nk=askNeed(w);
    const head=`<span class="kind ${esc(nk)}">${qn?qn+". ":""}${esc(ASKLABEL[nk]||nk||"Ask")}</span>
-   <div class="w-text">${threadTag(w.id)}${badge(waitsOn(w.id,Date.now()))}${lateTag(w.id,Date.now())}${pingHtml(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${!STORE&&waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
+   <div class="w-text">${threadTag(w.id)}${badge(owedOf(w)?"owes":waitsOn(w.id,Date.now()),owedOf(w))}${lateTag(w.id,Date.now())}${pingHtml(w.id,Date.now())}${w.question?`<div class="w-sub">You asked: ${esc(w.question)}</div>`:""}${w.kind==="answer"?`<div class="w-answer">${askText(w.text||"")}</div>`:`<div class="w-body">${askText(w.text||"")}</div>`}${w.where?`<div class="w-sub">${esc(w.where)}</div>`:""}${w.initiative?`<div class="w-sub">For: ${esc(w.initiative)}</div>`:""}${!STORE&&waitGaps(w).length?`<div class="gaps">Manager missed: ${esc(waitGaps(w).join(" · "))}</div>`:""}${sub}</div>
    <span class="age">${num(at)?dur(Date.now()-at)+'<span class="ago"> ago</span>':""} <span class="caret" aria-hidden="true">▸</span></span>`;
    // Every ask opens, with or without steps, so the reply buttons are always reachable.
    // Answers start folded with their first three lines showing; opening one shows all of it, Ack and the box.
@@ -1000,7 +1002,8 @@ let cbubFor=null;
 // A thread's bubble (#C380, the owner in t-1793164921212: "just like for Initiatives", a #T link in text names only its
 // number): its number and title, then whom it waits on, its newest word (who and the first words) and how long ago.
 function threadBubble(id,now=Date.now()){const cut=(s,n)=>s.length>n?s.slice(0,n-1)+"…":s,n=threadNum(id),t=threadOf(id),last=t[t.length-1];
-  const on={you:"Waiting on you",lead:"With the team",resolved:"Resolved",answered:"Answered"}[waitsOn(id,now)]||"";
+  const ow=itemOf(id),owes=ow&&ow.coll==="waiting"?owedOf(ow.doc):null;
+  const on=owes&&waitsOn(id,now)==="you"?`${owes} owes you this`:{you:"Waiting on you",lead:"With the team",resolved:"Resolved",answered:"Answered"}[waitsOn(id,now)]||"";
   const word=last?`${last.from||""}: ${cut(String(last.text||"").replace(/\s+/g," ").trim(),80)}`:"";
   return `<b>${n?"#T"+n+" ":""}${esc(cut(threadName(id),120))}</b><br>${esc([on,word,last?dur(now-last.at)+" ago":""].filter(Boolean).join(" · "))}`}
 function cbubShow(a){const b=$("cbub");if(!b)return;
@@ -2034,7 +2037,7 @@ function heldLine(i){const r=typeof i.blocked==="string"&&i.blocked.trim()?i.blo
   const end=num(i.checkAt)!=null?dayLabel(i.checkAt):typeof i.holdEnd==="string"&&i.holdEnd?i.holdEnd:num(i.holdUntil)!=null?dayLabel(i.holdUntil):"no end set";return "held: "+r+", until "+end}
 // Waiting on the owner (#C376): an ask tied to the card that the owner hasn't answered. Nobody owes a step meanwhile, so
 // its timers pause (no stall, no "never started", no stale next step, no passed ETA) and the card names the ask.
-function ownerWait(i,now=Date.now()){return i&&i.id?(state.waiting||[]).find(w=>w&&w.initiative===i.id&&waitsOn(w.id,now)==="you")||null:null}
+function ownerWait(i,now=Date.now()){return i&&i.id?(state.waiting||[]).find(w=>w&&w.initiative===i.id&&!owedOf(w)&&waitsOn(w.id,now)==="you")||null:null}
 // What Manager forgot, flagged by the board itself instead of relying on memory.
 function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
   if(i.status==="done"){const shipped=(Array.isArray(i.phaseLog)?i.phaseLog:[]).some(e=>e&&e.phase==="ship"&&!e.wait);if(shipped&&!i.shipDetail)g.push("no ship times");return g}

@@ -6,7 +6,7 @@ import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
 import { readUsage } from "./compat-usage.mjs";
 import { readThreads } from "./compat-threads.mjs";
-import { askWakes } from "./push-rules.mjs";
+import { askWakes, promiseWakes } from "./push-rules.mjs";
 
 export const PROBE_SILENT_MS = 3 * 60_000;
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -122,8 +122,8 @@ export async function createAsk(db, now, ask) {
   const body = {};
   for (const k of [...ASK_PARTS[ask.type], ...(ASK_OPTIONAL_PARTS[ask.type] ?? []), "screenshots"]) if (ask[k] !== undefined) body[k] = ask[k];
   const id = `t${num}`;
-  await db.prepare("INSERT INTO asks (id, num, type, title, asked_by, card_id, body, eta_at, eta_precondition, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, num, ask.type, ask.title, ask.asked_by, ask.card_id ?? null, JSON.stringify(body), ask.eta_at ?? null, ask.eta_precondition ?? null, now).run();
+  await db.prepare("INSERT INTO asks (id, num, type, title, asked_by, card_id, body, eta_at, eta_precondition, owed_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, num, ask.type, ask.title, ask.asked_by, ask.card_id ?? null, JSON.stringify(body), ask.eta_at ?? null, ask.eta_precondition ?? null, ask.owed_by ?? null, now).run();
   return { ok: true, id, num };
 }
 
@@ -361,7 +361,7 @@ async function syncStalls(db, now) {
     if (card && (card.dropped || card.done_at || evidence[ref]?.lit?.[0] === "live")) endsPassed.add(ref);
   }
   // #C904: an ask the owner has left 10 min wakes Manager once, before the owner's phone gets it at 30 (push-rules.mjs).
-  const openAsks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL").all()).results;
+  const openAsks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at, owed_by FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL").all()).results;
   // #C927: a repository whose oldest open card reading is over an hour old wakes Manager once per spell (staleCopies, board-rules.mjs). The row is
   // kept (taken or not) while the spell lasts, so a later sync never tells it again; it goes when the repository's readings are fresh again.
   const copies = staleCopies({ now, cards, evidence, readAt });
@@ -370,7 +370,7 @@ async function syncStalls(db, now) {
   const copyStalls = copies.map((s) => ({ ...s, reason: had.get(s.card_id) ?? s.reason }));
   // #C885: a read-only role's own card is worked by posts on its thread; the newest post by the card's owner, per card.
   const postedAt = new Map((await db.prepare("SELECT m.thread_id AS card_id, MAX(m.created_at) AS at FROM messages m JOIN cards c ON c.id = m.thread_id AND m.author = c.owner_role GROUP BY m.thread_id").all()).results.map((r) => [r.card_id, r.at]));
-  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt }), ...heldWakes({ now, cards, endsPassed }), ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...copyStalls];
+  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt }), ...heldWakes({ now, cards, endsPassed }), ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...promiseWakes({ asks: openAsks, now }), ...copyStalls];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.

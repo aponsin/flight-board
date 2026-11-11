@@ -15,6 +15,8 @@ export const ASK_WAKE_PREFIX = "ask:";
 
 export function askWaitsFrom(a) {
   if (!a || a.closed_at != null || a.answered_at != null || a.withdrawn_at != null) return null;
+  // #C925: a promise (owed_by) waits on its promiser, never on the owner: no 10-minute nudge, no phone push (promiseWakes below).
+  if (typeof a.owed_by === "string" && a.owed_by) return null;
   if (a.type === "Later") return typeof a.eta_at === "number" ? a.eta_at : null;
   if (a.type === "Decision" && typeof a.eta_at === "number" && a.eta_at > a.created_at) return a.eta_at;
   return typeof a.created_at === "number" ? a.created_at : null;
@@ -28,6 +30,17 @@ export function askWakes({ asks, now }) {
   return asks.filter((a) => waited(a, now, MANAGER_NUDGE_MIN)).map((a) => ({
     card_id: `${ASK_WAKE_PREFIX}${a.id}`,
     reason: `ask #T${Number(a.num)} has waited ${MANAGER_NUDGE_MIN} min for the owner: make it clearer or answer what you can; at ${OWNER_PUSH_MIN} min it goes to the owner's phone, if phone pushes are on`,
+  }));
+}
+
+// #C925: at a promise's date the store wakes its promiser (the lead) once, through the same stall rows: one row per ask
+// ("promise:<id>"), a reason that never changes for that ask, so it is told once. Open only: a closed or answered promise is kept.
+export const PROMISE_WAKE_PREFIX = "promise:";
+export function promiseWakes({ asks, now }) {
+  return asks.filter((a) => a && typeof a.owed_by === "string" && a.owed_by && a.type === "Later" && a.closed_at == null && a.answered_at == null && a.withdrawn_at == null
+    && typeof a.eta_at === "number" && a.eta_at <= now && Number.isInteger(Number(a.num))).map((a) => ({
+    card_id: `${PROMISE_WAKE_PREFIX}${a.id}`,
+    reason: `#T${Number(a.num)} is due now: you promised it to the owner for this time; do it, or post on its thread when it will be`,
   }));
 }
 
