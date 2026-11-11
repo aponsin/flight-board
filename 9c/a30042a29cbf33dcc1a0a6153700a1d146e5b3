@@ -1,0 +1,1 @@
+SECURE #C956 look-rule-config-visual-lanes (Security 2026-11-11): look evidence written by the probe only, shape-checked (only visualLanes, up to 20 names by the config NAME rule); the lane rule only adds refusals; the card lookup is a bound query, same exposure as before. Mutation check: pass (look-shape guard removed). Full suite 2528/2528.
