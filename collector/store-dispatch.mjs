@@ -15,6 +15,14 @@ export const AGENTS_FRESH_MS = 5 * 60e3;
 export const FOREIGN_WRITER_MS = 5 * 60e3;
 // #C872: how long an answered Decision may still wake its card's owner (a day: an owner idle longer than that is someone else's problem).
 export const DECISION_FRESH_MS = 24 * 3600e3;
+// #C872 (Checker's F1): the card an ask is about. Its card_id when the store has one; else the one card its title names, as the lead writes
+// them ("#C862: should ship CI…"): on the live store none of the 528 answered Decisions carried a card_id, and 25 began with "#C<n>". A
+// title naming two cards, or a card the view doesn't hold, names none. idByNum: the view's cards, number to id.
+export function askCardId(ask, idByNum) {
+  if (typeof ask?.card_id === "string" && ask.card_id) return ask.card_id;
+  const named = [...new Set(String(ask?.title ?? "").match(/#C\d{1,7}\b/g) ?? [])];
+  return named.length === 1 ? idByNum.get(Number(named[0].slice(2))) ?? null : null;
+}
 
 const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -115,11 +123,13 @@ export function dispatchInput(view, now) {
   // place of the owner's other turns on that card (one turn per role and card). The newest answered Decision of a card counts; a closed one
   // too, since the lead may close it at once and the owner still has not heard.
   const answered = new Map();
+  const idByNum = new Map((Array.isArray(view?.cards) ? view.cards : []).filter((c) => Number.isInteger(c?.num) && typeof c.id === "string").map((c) => [c.num, c.id]));
   for (const a of Array.isArray(view?.asks) ? view.asks : []) {
-    if (!a || a.type !== "Decision" || typeof a.card_id !== "string" || !Number.isFinite(a.answered_at) || !Number.isInteger(a.num)) continue;
+    const card = askCardId(a, idByNum);
+    if (!a || a.type !== "Decision" || !card || !Number.isFinite(a.answered_at) || !Number.isInteger(a.num)) continue;
     if (now - a.answered_at > DECISION_FRESH_MS || a.answered_at > now + 5_000) continue;
-    const had = answered.get(a.card_id);
-    if (!had || a.answered_at > had.answered_at) answered.set(a.card_id, a);
+    const had = answered.get(card);
+    if (!had || a.answered_at > had.answered_at) answered.set(card, a);
   }
   for (const k of cards) {
     const d = answered.get(k.id), ag = d && Object.hasOwn(agents, k.who) ? agents[k.who] : null;

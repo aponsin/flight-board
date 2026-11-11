@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dispatchInput, dispatchRun, DECISION_FRESH_MS } from "../collector/store-dispatch.mjs";
+import { dispatchInput, dispatchRun, DECISION_FRESH_MS, askCardId } from "../collector/store-dispatch.mjs";
 import { dispatchLine, plainAnswer } from "../gate/reset.mjs";
 import { roleTick } from "../scripts/wake-watch.mjs";
 
@@ -38,6 +38,29 @@ test("once: an owner who moved after the answer (the wake, or Manager's word) is
   assert.deepEqual(turnsOfOwner(view({ asks: [decision({ card_id: null })] })), [], "only one that names a card");
   assert.deepEqual(turnsOfOwner(view({ asks: [decision({ answered_at: NOW - DECISION_FRESH_MS - MIN })], idleFor: 2 * DECISION_FRESH_MS })), [], "older than a day");
   assert.equal(turnsOfOwner(view({ asks: [decision({ closed_at: NOW - 5 * MIN })] })).length, 1, "the lead closing it at once doesn't stop the owner's wake");
+});
+
+// Checker's F1: on the live store no answered Decision carries a card_id; the lead names the card in the title. T1782 as the store holds it
+// (read_view, 2026-11-11), times moved to NOW: card_id null, the card in the title.
+const T1782 = { id: "t1782", num: 1782, type: "Decision", title: "#C862: should ship CI also run only the tests a change needs?", asked_by: "Manager", card_id: null, body: "{\"question\":\"Should the ship's CI use the tests-by-what-changed table too (A), or only the Mac (B)?\",\"options\":[\"A: CI uses the table too\",\"B: Mac only\"],\"recommended\":\"A: CI uses the table too\"}", eta_at: null, eta_precondition: null, created_at: NOW - 12 * MIN, answered_at: NOW - 10 * MIN, answer: "Ok, lets go A", closed_at: NOW - 9 * MIN, answer_taken_at: NOW - 10 * MIN, answered_by: "owner", closed_by: "Manager", withdrawn_at: null, withdrawn_by: null, answer_status: "chosen", answer_note: null };
+
+test("a Decision as the store holds it, card_id null and the card in its title, wakes that card's owner (Checker's F1)", () => {
+  assert.deepEqual(turnsOfOwner(view({ asks: [T1782] })), [{ role: "Builder", phase: "decision", step: "decision", ask: 1782, answer: "Ok, lets go A" }]);
+  assert.deepEqual(turnsOfOwner(view({ asks: [{ ...T1782, title: "#C862 or #C700: which first?" }] })), [], "two cards named: none");
+  assert.deepEqual(turnsOfOwner(view({ asks: [{ ...T1782, title: "#C999: a card the view doesn't hold" }] })), []);
+  assert.deepEqual(turnsOfOwner(view({ asks: [{ ...T1782, title: "Which Cloudflare account runs the board?" }] })), [], "no card named");
+});
+
+test("askCardId: the card_id first, else the one #C<n> the title names, as a card id of the view", () => {
+  const ids = new Map([[862, "tests-scope"], [200, "look-editor"]]);
+  assert.equal(askCardId({ card_id: "look-editor", title: "#C862: x" }, ids), "look-editor");
+  assert.equal(askCardId({ card_id: null, title: "#C862: x" }, ids), "tests-scope");
+  assert.equal(askCardId({ title: "Look editor (#C200): after you try a look" }, ids), "look-editor", "anywhere in the title");
+  assert.equal(askCardId({ title: "#C862 then #C862 again" }, ids), "tests-scope", "the same card twice is one card");
+  assert.equal(askCardId({ title: "#C862 and #C200" }, ids), null);
+  assert.equal(askCardId({ title: "#C8620: not #C862" }, ids), null, "a longer number is another card");
+  assert.equal(askCardId({ title: null }, ids), null);
+  assert.equal(askCardId(null, ids), null);
 });
 
 test("the newest answered Decision of a card is the one quoted, and it replaces the owner's build turn on that card", () => {
