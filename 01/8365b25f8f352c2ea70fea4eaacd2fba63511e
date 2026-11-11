@@ -1,0 +1,1 @@
+PASS Quick: #C938 steps-text-hooks-line at 018365b (one commit on main ab75cb8). Tests and CHANGELOG only, with a card line. The new assertion in make-pair-ran holds the steps sentence, and my own mutant (the steps text says the command prints the hooks line) fails it. The board-deploy test title is corrected. make-pair-ran and board-deploy pass 43 of 43.
