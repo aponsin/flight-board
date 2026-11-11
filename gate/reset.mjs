@@ -161,6 +161,10 @@ export const DISPATCH_STEPS = {
   pair: "is landed and not deployed; build the deploy pair",
 };
 export const dispatchSeenFile = (role) => `dispatch-seen-${role}.json`, dispatchPidFile = (role) => `dispatch-watch-${role}.json`;
+// #C848: what the board woke a role for, kept past the moment dispatch.json drops the pair (the role is working then, not idle). The role's
+// watch writes { at, cards } when it prints a DISPATCH line; the Stop hook reads it, and writes { at } in the checked file once it has judged
+// the turn that followed, so a wake is judged once.
+export const dispatchWokenFile = (role) => `dispatch-woken-${role}.json`, dispatchWaitCheckedFile = (role) => `dispatch-wait-checked-${role}.json`;
 const pairKey = (role, card, phase = null) => (phase === null ? `${role} ${card}` : `${role} ${card} ${phase}`);
 const SHA12 = /^[0-9a-f]{12}$/, TURN_PHASE = /^[a-z]{2,16}$/, PLAIN_ROLE = /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/;
 export function dispatchItems({ cards, agents, asked = new Set(), roster = [], lead = "", now, before = null }) {
@@ -206,9 +210,9 @@ export const dispatchLine = (i) => {
     const signers = Array.isArray(i.signed) ? i.signed.filter((s) => typeof s === "string" && PLAIN_ROLE.test(s)).slice(0, 4) : [];
     const who = signers.length ? ` signed by ${signers.join(" and ")}` : "";
     const card = Number.isInteger(i.num) ? `#C${i.num}` : i.card;
-    return `DISPATCH ${card} at ${i.phase}: ${SHA12.test(String(i.sha)) ? `${i.sha}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]} (${i.role}'s turn; no go from anyone, act on this)`;
+    return `DISPATCH ${card} at ${i.phase}: ${SHA12.test(String(i.sha)) ? `${i.sha}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
   }
-  return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now`;
+  return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;
 };
 export const dispatchLateLine = (i) => `DISPATCH-LATE ${i.card}: ${i.role} was woken at ${new Date(i.since).toISOString().slice(11, 16)} UTC and nothing has moved in 30 minutes; look at it`;
 // Whether a role's dispatch watch is running: its pid file names a live process and was beaten within DISPATCH_ALIVE_MS.

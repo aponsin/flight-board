@@ -40,7 +40,7 @@ test("the owner's own watch prints the DISPATCH line from the store's file, once
   run(view(), d);
   const line = roleTick(d, "Builder", NOW + 1000, 4242);
   assert.match(line, /^DISPATCH c900-thing at build: it has nothing pushed; build it and push the branch/);
-  assert.match(line, /Builder's turn; no go from anyone/);
+  assert.match(line, /need no go from anyone/, "#C848: pushing your own branch, READY and the next queued card need no go");
   assert.equal(roleTick(d, "Builder", NOW + 2000, 4242), null, "printed once");
   assert.equal(roleTick(d, "Checker", NOW + 2000, 4243), null, "another role's watch prints nothing");
 });

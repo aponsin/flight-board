@@ -19,7 +19,7 @@ import { turnLive, nextLive, liveAsk, liveSince, livePath, readLive, writeLive, 
 import { idText } from "../collector/text.mjs";
 import { dbWritesOf } from "./tools.mjs";
 import { wakePaths, watchAsk, readWakeFile, shQuote, writeAtomic } from "./wake.mjs";
-import { DISPATCH_FILE, dispatchPidFile, dispatchWatchAlive } from "./reset.mjs";
+import { DISPATCH_FILE, dispatchPidFile, dispatchWatchAlive, dispatchWokenFile, dispatchWaitCheckedFile } from "./reset.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const DAY = 864e5;
@@ -224,12 +224,39 @@ export const dispatchAsk = ({ on, alive, askedAt, command }, now) =>
   on && !alive && !(Number.isFinite(askedAt) && askedAt <= now + 5_000 && now - askedAt < DISPATCH_ASK_GAP_MS)
     ? `Dispatch watch: the board wakes you through it when a card of yours waits and you are idle, and it isn't running. Arm it now (Bash with run_in_background true and no timeout): ${command}. When it ends it has printed a DISPATCH line: act on it, then arm it again.`
     : null;
+// #C848 (no-unread-questions, reshaped): nobody reads an agent's chat, so a turn that ends while the board woke the role for a card, with
+// nothing pushed and nothing posted on that card's thread, is refused once. The evidence is the board's wake (the DISPATCH its watch printed,
+// kept in dispatch-woken-<Role>.json: { at, cards }) and what the turn did (a `git push` in a Bash call, a store `post` to the card's thread),
+// never the wording of the last message. Judged once per wake: `checkedAt` is when the last judgment was made.
+const WOKEN_CARD = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const STORE_POST = /^mcp__[0-9A-Za-z-]{8,64}__post$/;
+const GIT_PUSH = /(?:^|[\s;&|(])git\b(?:\s+-[-\w]+(?:[= ]\S+)?)*\s+push\b/;
+// A turn the board's wake started is one a background task's notification (the watch ended) or a DISPATCH line opened; a turn a person
+// typed into the role's session or another session sent is not judged, and the wake stays unjudged for the turn that is.
+const WAKE_TURN = /<task-notification>|\bDISPATCH(?:-LATE)?\b/;
+export function startedByWake(turn) {
+  const first = (Array.isArray(turn) ? turn : []).find((l) => l?.type === "user" && !l.isMeta);
+  const c = first?.message?.content;
+  const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((p) => (p?.type === "text" ? p.text ?? "" : p?.type === "tool_result" ? JSON.stringify(p.content ?? "") : "")).join("\n") : "";
+  return WAKE_TURN.test(text);
+}
+export function wokenCheck(woken, checkedAt, calls, started = true) {
+  if (!started || !woken || !Number.isFinite(woken.at) || (Number.isFinite(checkedAt) && woken.at <= checkedAt)) return { judged: false, ask: null };
+  const cards = (Array.isArray(woken.cards) ? woken.cards : []).filter((c) => typeof c === "string" && WOKEN_CARD.test(c));
+  const pushed = calls.some((c) => c.name === "Bash" && GIT_PUSH.test(String(c.input?.command ?? "")));
+  const posted = new Set(calls.filter((c) => STORE_POST.test(String(c.name))).map((c) => c.input?.thread_id));
+  const left = cards.filter((c) => !pushed && !posted.has(c));
+  if (!left.length) return { judged: true, ask: null };
+  return { judged: true, ask: `Nobody reads this chat. The board woke you for ${left.map(idText).join(", ")}, and this turn pushed nothing and posted nothing on ${left.length === 1 ? "its" : "their"} thread. If it is in your lane, do it (pushing your own build branch, sending READY and taking your next queued card need no go from anyone); otherwise post the question on the card's thread for Manager.` };
+}
 export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null, wake = null, dispatch = null, store = false }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
   if (store && role === config.gate.managerRole) return { errs: [], record: null, note: null, liveNext: null, dispatchAsked: false };
   if (role !== config.gate.managerRole) {
     const ask = dispatch && role && config.roster.includes(role) ? dispatchAsk(dispatch, now) : null;
-    return { errs: ask ? [ask] : [], record: null, note: null, liveNext: null, dispatchAsked: !!ask };
+    const wait = dispatch && role && config.roster.includes(role) ? wokenCheck(dispatch.woken, dispatch.checkedAt, turnCalls(currentTurn(lines)), startedByWake(currentTurn(lines))) : { judged: false, ask: null };
+    const errs = [ask, wait.ask].filter(Boolean);
+    return { errs, record: null, note: null, liveNext: null, dispatchAsked: !!ask, waitJudged: wait.judged };
   }
   const id = boardId(config);
   const turn = currentTurn(lines);
@@ -289,7 +316,9 @@ export function dispatchState(config, configPath, role, now) {
   let askedAt = null;
   try { const a = JSON.parse(readFileSync(join(dir, `dispatch-asked-${role}.json`), "utf8")); askedAt = Number.isFinite(a?.at) ? a.at : null; } catch { /* never */ }
   const script = join(dirname(dirname(fileURLToPath(import.meta.url))), "scripts", "wake-watch.mjs");
-  return { on, alive: dispatchWatchAlive(join(dir, dispatchPidFile(role)), now), askedAt, command: `node ${shQuote(script)} --config ${shQuote(configPath)} --role ${shQuote(role)} --once` };
+  const readJ = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
+  const checked = readJ(dispatchWaitCheckedFile(role));
+  return { on, woken: readJ(dispatchWokenFile(role)), checkedAt: Number.isFinite(checked?.at) ? checked.at : null, alive: dispatchWatchAlive(join(dir, dispatchPidFile(role)), now), askedAt, command: `node ${shQuote(script)} --config ${shQuote(configPath)} --role ${shQuote(role)} --once` };
 }
 
 // The wake watch's state for the ask: wake.json there (the probe polls the Worker), the heartbeat's time, and the command
@@ -328,8 +357,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const sessionRoleName = sessionRole(lines, process.env.FLIGHT_BOARD_ROLE).role;
     let dispatch = null;
     if (sessionRoleName && sessionRoleName !== config.gate.managerRole && config.roster.includes(sessionRoleName)) { try { dispatch = dispatchState(config, process.argv[at + 1], sessionRoleName, now); } catch { /* none: no ask */ } }
-    const { errs, record, note, liveNext, dispatchAsked } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true }, wake: wakeState(config, process.argv[at + 1]), dispatch, store });
+    const { errs, record, note, liveNext, dispatchAsked, waitJudged } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true }, wake: wakeState(config, process.argv[at + 1]), dispatch, store });
     if (dispatchAsked && !input.stop_hook_active) { try { writeAtomic(join(home(config.gate.stateDir), boardId(config) ?? "no-board", `dispatch-asked-${sessionRoleName}.json`), JSON.stringify({ at: now })); } catch { /* asks again */ } }
+    if (waitJudged) { try { writeAtomic(join(home(config.gate.stateDir), boardId(config) ?? "no-board", dispatchWaitCheckedFile(sessionRoleName)), JSON.stringify({ at: now })); } catch { /* judged again next stop */ } }
     if (!errs.length && record != null) { try { recordPass(path, key, record); } catch { /* no record: a day back next turn */ } }
     // The live check's messages are kept even on a refused or second stop: they are what the lead's query saw.
     if (liveNext) { try { writeLive(lp, key, liveNext); } catch { /* none kept: the next query reads a day back */ } }
