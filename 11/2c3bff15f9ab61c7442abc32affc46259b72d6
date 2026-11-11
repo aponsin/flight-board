@@ -1,0 +1,1 @@
+PASS Quick: #C881 v3 phase-tile-start-time, re-cut of 6f79a2b on #C876 v3 f70e707. Range-diff: code and tests identical to 6f79a2b, only the commit message and CHANGELOG context differ. Suite 2250/2250 at this sha. Mutation check carried from 6f79a2b: 5 of 5 killed.
