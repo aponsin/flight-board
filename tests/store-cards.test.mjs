@@ -70,8 +70,8 @@ test("the evidence job with a private dir builds the state from the store's card
     build: async (a) => { args = a; }, read: (p) => (p === "/priv/B/state.json" ? JSON.stringify({ cards: { "card-a": { phase: "build" } } }) : "{}"),
     fetchImpl: async (_u, o) => { posted.push(JSON.parse(o.body).key); return { ok: true, status: 200 }; } });
   assert.equal(args[args.indexOf("--config") + 1], "/priv/B/config.json");
-  assert.deepEqual(posted, ["cards.card-a", "run.evidence"]);
-  assert.equal(r.written, 2);
+  assert.deepEqual(posted, ["cards.card-a", "run.evidence", "look"], "the card, this run's reading, then the lanes from the config (#C956)");
+  assert.equal(r.written, 3);
 });
 
 // Checker on v7: the review skips read customerText, lookChange and skip off the card; a store card must carry them.
