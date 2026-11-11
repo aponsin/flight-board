@@ -1,5 +1,18 @@
 // board.config.json: everything particular to one team. The page, the gate, the collector and the nudges read it; nothing
 // team-specific lives in this repository. checkConfig returns the problems, one line each; an empty list means it is good.
+// #C897: a review path pattern (collector/review-paths.mjs reads it): a path relative to the repository, with * (any characters but /) and
+// ** (any characters, / too). Kept here, with no import, because pinned copies hold this file alone.
+export const REVIEW_PATTERN = /^[A-Za-z0-9_.*][A-Za-z0-9_.*\/-]{0,199}$/, MAX_REVIEW_PATTERNS = 200;
+export function reviewPathsErrors(v, phaseKeys, at = "reviewPaths") {
+  if (v === undefined || v === null) return [];
+  if (typeof v !== "object" || Array.isArray(v)) return [`${at}: { phase: [path patterns] }`];
+  const out = [];
+  for (const [p, list] of Object.entries(v)) {
+    if (!phaseKeys.includes(p)) out.push(`${at}.${p}: not one of the review phases`);
+    if (!Array.isArray(list) || list.length > MAX_REVIEW_PATTERNS || !list.every((s) => typeof s === "string" && REVIEW_PATTERN.test(s) && !s.split("/").includes(".."))) out.push(`${at}.${p}: a list of up to ${MAX_REVIEW_PATTERNS} path patterns (letters, digits, . _ - / and *)`);
+  }
+  return out;
+}
 export const DEFAULTS = {
   title: "Flight Board",
   owner: "Owner",
@@ -48,7 +61,7 @@ export const DEFAULTS = {
   // each from the session titled exactly as the role (collector/context.mjs); empty for none. repos: other repositories
   // whose cards the collector reads (#C278): [{ name, path (a clone of its own), mainBranch, remote, notes: {phase: ref},
   // idPrefixes (card ids it holds; a card's own repo field wins), installedLink (the link whose commit is what's installed) }].
-  collector: { contextRoles: [], repos: [], repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", releaseTimes: "docs/RELEASE-TIMES.md", liveUrl: "", usageScript: "", usageScriptSha256: "", usageQuota: 0, usageResetAt: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
+  collector: { contextRoles: [], repos: [], reviewPaths: null, repoPath: "", outDir: "", remote: "origin", mainBranch: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", deployWorkflow: "", lanePhases: ["build", "test"], versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b", shippedPattern: "", candidatePattern: "", releaseTimes: "docs/RELEASE-TIMES.md", liveUrl: "", usageScript: "", usageScriptSha256: "", usageQuota: 0, usageResetAt: "", liveTag: "<meta name=\"generator\" content=\"[^\"]*?v?(\\d+\\.\\d+\\.\\d+) ([0-9a-f]{7,40})\"",
     // Runs on demand (collector/refresh.mjs): the checkouts whose origin/main moving means a ship (local refs, no fetch), the
     // scheduled task the lead is told to run, the quiet minutes after a run (or an ask) and how long a run may take.
     // off: true retires the on-demand run (#C641): the Stop hook never asks the lead to start the collector.
@@ -168,6 +181,7 @@ export function checkConfig(c) {
           if (!/^refs\/notes\/[A-Za-z0-9._-]{1,60}$/.test(String(ref))) out.push(`collector.notes.${p}: a refs/notes/<name> ref`);
         }
       }
+      out.push(...reviewPathsErrors(k.reviewPaths, Object.keys(k.notes ?? DEFAULTS.collector.notes), "collector.reviewPaths"));
       for (const f of ["buildPhase", "shipPhase", "livePhase"]) if (k[f] !== undefined && !phaseKeys2.includes(k[f])) out.push(`collector.${f}: one of the phases`);
       if (k.lanePhases !== undefined && !(Array.isArray(k.lanePhases) && k.lanePhases.every((p) => phaseKeys2.includes(p)))) out.push("collector.lanePhases: a list of phases");
       for (const f of ["versionPattern", "shippedPattern", "liveTag", "candidatePattern"]) if (k[f] !== undefined) { try { new RegExp(k[f]); } catch { out.push(`collector.${f}: a regular expression`); } }
@@ -201,7 +215,7 @@ export function checkConfig(c) {
       if (k.liveUrl !== undefined && !(k.liveUrl === "" || (typeof k.liveUrl === "string" && k.liveUrl.length <= 300 && /^https:\/\/[^\s/?#]+(\/[^\s]*)?$/.test(k.liveUrl)))) out.push("collector.liveUrl: an https address, or empty");
       if (k.contextRoles !== undefined && !(Array.isArray(k.contextRoles) && k.contextRoles.length <= 40 && k.contextRoles.every((r) => typeof r === "string" && /^[A-Za-z0-9_-]{1,60}$/.test(r)))) out.push("collector.contextRoles: a list of up to 40 role names (letters, digits, _ and -), each a session's exact title");
       if (k.repos !== undefined) {
-        const REPO = ["name", "path", "mainBranch", "remote", "notes", "idPrefixes", "installedLink"];
+        const REPO = ["name", "path", "mainBranch", "remote", "notes", "idPrefixes", "installedLink", "reviewPaths"];
         if (!Array.isArray(k.repos) || k.repos.length > 5) out.push("collector.repos: a list of up to 5 repositories");
         else {
           k.repos.forEach((r, n) => {
@@ -212,6 +226,7 @@ export function checkConfig(c) {
             for (const f of ["path", "installedLink"]) if (r[f] !== undefined || f === "path") if (!(typeof r[f] === "string" && r[f].length > 0 && r[f].length <= 300 && !/[\n\0]/.test(r[f]))) out.push(`${at}.${f}: a folder path`);
             for (const f of ["mainBranch", "remote"]) if (r[f] !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,99}$/.test(String(r[f]))) out.push(`${at}.${f}: a git name`);
             if (!r.notes || typeof r.notes !== "object" || Array.isArray(r.notes) || Object.entries(r.notes).some(([p, ref]) => !phaseKeys2.includes(p) || !/^refs\/notes\/[A-Za-z0-9._-]{1,60}$/.test(String(ref)))) out.push(`${at}.notes: { phase: refs/notes/<name> }`);
+            if (r.notes && typeof r.notes === "object" && !Array.isArray(r.notes)) out.push(...reviewPathsErrors(r.reviewPaths, Object.keys(r.notes), `${at}.reviewPaths`));
             if (r.idPrefixes !== undefined && !(Array.isArray(r.idPrefixes) && r.idPrefixes.length <= 10 && r.idPrefixes.every((p) => /^[a-z0-9-]{1,40}$/.test(String(p))))) out.push(`${at}.idPrefixes: a list of card id prefixes`);
           });
           const names = k.repos.map((r) => r?.name);

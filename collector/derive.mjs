@@ -123,7 +123,8 @@ function phaseFromFacts(card, facts, config) {
   // Without a trailer or a note the head may still be READY, unsigned yet: build is only what the evidence can show.
   if (!ready) return { phase: c.buildPhase, head, firm: false, evidence: `${facts.head.branch} at ${short}, no READY trailer or sign-off yet` };
   const order = config.phases.map((p) => p[0]);
-  const waiting = reviewsFor(card, config).filter((p) => !facts.signed.has(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  // #C897: facts.needs, when given, is the reviews read from the branch's paths (collector/review-paths.mjs); else the typed rule.
+  const waiting = (Array.isArray(facts.needs) ? facts.needs : reviewsFor(card, config)).filter((p) => !facts.signed.has(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
   // waitingFor and branch: the reviews still unsigned on this READY commit, for the dispatch nudge (#C290).
   if (waiting.length) return { phase: waiting[0], head, readyAt, waitingFor: waiting, branch: facts.head.branch, evidence: `READY at ${short}; waiting for ${waiting.join(", ")}` };
   return { phase: c.shipPhase, head, readyAt, evidence: `READY at ${short}; every review signed` };
