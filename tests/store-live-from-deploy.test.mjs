@@ -224,3 +224,34 @@ test("the filled deploy file: `rollback` runs wrangler rollback and no deploy an
   assert.match(dep.stdout, /DEPLOY (FAILED|OK)/, "no argument takes the deploy path");
   assert.ok(!/ROLLBACK/.test(dep.stdout));
 });
+
+// #C929: node gives import.meta.url the real path but process.argv[1] the path as typed, so a file run through a linked folder (macOS /var ->
+// /private/var, a symlinked Documents folder) used to match nothing and print nothing, exit 0. Both generated files compare realpaths now.
+test("a generated deploy or tree file run through a symlinked folder still runs; it never exits silently", async () => {
+  const { makePair } = await import("../scripts/pair/make-pair.mjs");
+  const { mkdirSync, chmodSync, realpathSync, symlinkSync, existsSync } = await import("node:fs");
+  const files = makePair({ name: "pc12", card: "#C929", what: "w", signed: "d".repeat(40), deployOk: "ok", treeOk: "ok" });
+  const real = realpathSync(mkdtempSync(join(tmpdir(), "fb-c929real-")));
+  const link = join(realpathSync(mkdtempSync(join(tmpdir(), "fb-c929link-"))), "folder");
+  symlinkSync(real, link);
+  mkdirSync(join(real, "board-store-pa", "worker"), { recursive: true });
+  writeFileSync(join(real, "board-store-pa", "worker", "wrangler.board.toml"), "name = \"x\"\n");
+  writeFileSync(join(real, "board.config.json"), "{}\n");
+  for (const f of ["board-store-deploy-pc12.mjs", "board-store-tree-pc12.mjs"]) writeFileSync(join(real, f), files[f]);
+  mkdirSync(join(real, "bin"));
+  writeFileSync(join(real, "bin", "npx"), "#!/bin/sh\nexit 0\n");
+  chmodSync(join(real, "bin", "npx"), 0o755);
+  const env = { ...process.env, PATH: `${join(real, "bin")}:${process.env.PATH}` };
+  const viaLink = spawnSync("node", [join(link, "board-store-deploy-pc12.mjs"), "rollback"], { encoding: "utf8", env });
+  assert.equal(viaLink.status, 0, viaLink.stdout + viaLink.stderr);
+  assert.match(viaLink.stdout, /ROLLBACK OK/, "the deploy file ran through the link");
+  const tree = spawnSync("node", [join(link, "board-store-tree-pc12.mjs"), "update"], { encoding: "utf8", env });
+  assert.ok(tree.stdout.trim().length > 0, "the tree file said something through the link (it refuses here: no deploy marker), not nothing");
+  assert.ok(!existsSync(join(real, "board-store-deploy-pc12.done")));
+  // The source guard is the realpath one in both files, and says so when it cannot tell.
+  for (const f of ["board-store-deploy-pc12.mjs", "board-store-tree-pc12.mjs"]) {
+    assert.match(files[f], /real\(process\.argv\[1\]\) === real\(selfFile\)/, f);
+    assert.ok(!/fileURLToPath\(import\.meta\.url\) === process\.argv\[1\]/.test(files[f]), `${f}: the plain string compare is gone`);
+    assert.match(files[f], /NOT RUN: could not tell/, f);
+  }
+});

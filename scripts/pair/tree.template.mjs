@@ -9,8 +9,8 @@
 //         uses whichever code is checked out.
 // It changes nothing else: no launchd job, no installed copy, no remote system, no data.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync, writeFileSync, unlinkSync, realpathSync } from "node:fs";
+import { basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const NEW = "@@SIGNED@@", REF = "main";
@@ -77,4 +77,9 @@ function main() {
   if (!r.ok) { console.log(`TREE FAILED: ${r.why}. Paste this line to Manager.`); process.exit(1); }
   console.log(`TREE OK: board-store-v4 is at ${r.to.slice(0, 7)}${mode === "update" ? ` (${SUCCESS}). Undo: node @@FILE@@ back` : " (where it started)"}.`);
 }
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
+// #C929: run only when this file is the one node was started with. Both sides go through realpath, so a folder reached through a link (macOS
+// /var -> /private/var, say) still runs; and a file started under its own name that still does not match says so and exits 1, never silently nothing.
+const real = (p) => { try { return realpathSync(p); } catch { return null; } };
+const selfFile = fileURLToPath(import.meta.url);
+if (process.argv[1] && real(process.argv[1]) !== null && real(process.argv[1]) === real(selfFile)) main();
+else if (process.argv[1] && basename(process.argv[1]) === basename(selfFile)) { console.log("NOT RUN: could not tell that this is the file node was started with (its folder path does not resolve to the same place). Nothing was run. Paste this line to Manager."); process.exit(1); }

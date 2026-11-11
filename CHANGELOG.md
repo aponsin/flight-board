@@ -298,6 +298,10 @@
 - Memory tiles from the app's own numbers (#C274): with `collector.contextRoles`, each collector run reads every listed role's context from the app (`list_sessions`, then `get_usage` of the newest session titled as the role) and writes `ctx/<Role>` and `meta/context` `agents.<Role>`. A PostToolUse hook in the collector's folder (`collector/context.mjs`, pinned like the fence) saves the readings, and the run writes them from files; the fence allows only those calls, and the gate lets the Collector write exactly `{pct, at}` for the listed roles. A session the app can't read keeps its last reading.
 - Fixtures for a bare Ack and a bare Done; the fixture reader also reads a row's position in its section and its age (#C272, Checker).
 
+### Fixed
+
+- The generated deploy and tree files run when started through a linked folder, and never exit silently (pair-files-realpath, #C929; found while testing #C928). Each ended with `if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main()`, but node gives `import.meta.url` the real path and `process.argv[1]` the path as typed, so a file run from a folder reached through a link (macOS `/var` to `/private/var`, a symlinked Documents folder) matched nothing: no output, exit 0, and the owner could read that as done. Both templates (`scripts/pair/deploy.template.mjs`, `scripts/pair/tree.template.mjs`) now compare `realpathSync` of both sides; and if the file was started under its own name but still does not match, it prints `NOT RUN: could not tell that this is the file node was started with ...` and exits 1. Importing a template from a test is unchanged (its argv[1] is another file). Owner-side pair scripts only: no Worker, probe, gate or hook file. Test: `tests/store-live-from-deploy.test.mjs` (the deploy file's `rollback` and the tree file's `update` run through a symlinked folder and print; mutation-checked: the old compare fails it).
+
 ## 0.3.3 - 2026-10-26
 
 ### Added
