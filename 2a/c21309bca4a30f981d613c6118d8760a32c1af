@@ -1,0 +1,1 @@
+PASS Full: #C896 board-id-trailer-checked-at-ready at 2ac2130, re-cut of c6816d4 onto main 959cc5a. Diff check: code identical apart from CHANGELOG. Suite 2370/2370 at the stack tip ee3e1d3. Security owed for the pre-push hook.
