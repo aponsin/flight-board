@@ -422,7 +422,12 @@ export function dependsNotLive(c, cards, evidence) {
   if (!Array.isArray(list)) return false;
   return list.some((d) => typeof d === "string" && d !== c.id && (cards ?? []).some((k) => k && k.id === d && !k.dropped && !k.done_at) && evidence?.[d]?.lit?.[0] !== "live");
 }
-export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }) {
+// #C885 (11-10 9:45 pm MT: #C884, Designer's own card, stalled as "nothing pushed, Designer idle"): a read-only role never pushes for its own
+// card; its work is a post or a note on the card's thread. For such a card with nothing pushed, a post by its owner on the card's thread in the
+// last POSTED_FRESH_MS means it is being worked (no stall); with none, it stalls on a line of its own that says "nothing posted". postedAt:
+// Map card id -> ms of the owner's newest post on the card's thread (the store passes it; missing = none).
+export const READ_ONLY_ROLES = ["Designer", "Checker", "Security", "Linguist"], POSTED_FRESH_MS = 60 * 60_000;
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt }) {
   const out = [], queued = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
@@ -437,6 +442,12 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
       if (!o || o.state !== "idle" || !Number.isFinite(o.since) || now - o.since < STALL_AFTER_MS) continue;
       if (c.owner_role === "Manager" || !/^[A-Za-z0-9 _-]{1,24}$/.test(c.owner_role) || isHeld(c) || c.hold_end || !Number.isFinite(c.updated_at) || now - c.updated_at > 3 * 24 * 3600e3) continue;
       if (dependsNotLive(c, cards, evidence)) continue;
+      if (READ_ONLY_ROLES.includes(c.owner_role)) {
+        const posted = postedAt instanceof Map ? postedAt.get(c.id) : undefined;
+        if (Number.isFinite(posted) && now - posted <= POSTED_FRESH_MS) continue;
+        out.push({ card_id: c.id, num: c.num, phase: null, role: c.owner_role, reason: `#C${c.num} nothing posted on its thread in the last hour, ${c.owner_role} idle since ${hhmmZ(o.since)}` });
+        continue;
+      }
       queued.set(c.owner_role, [...(queued.get(c.owner_role) ?? []), c]);
       continue;
     }
