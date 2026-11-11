@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
+import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_LINE_TAIL, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -352,7 +352,8 @@ async function syncStalls(db, now) {
   const openAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
   const phaseStart = new Map((await db.prepare("SELECT card_id, phase, MAX(at) AS at FROM phase_history WHERE kind = 'start' AND wait IS NULL GROUP BY card_id, phase").all()).results.map((r) => [`${r.card_id}|${r.phase}`, r.at]));
   // holds-need-an-end (#C838): a held card whose end has passed, or that has had none for 2 h, wakes Manager once (one row per card and reason).
-  const refs = [...new Set(cards.filter((c) => isHeld(c) && c.hold_end).map((c) => c.hold_end))];
+  // #C915 (b): a hold_end on any card (held or not) is read, so an open one silences the card's stall and a passed one does not.
+  const refs = [...new Set(cards.filter((c) => c.hold_end).map((c) => c.hold_end))];
   const endsPassed = new Set();
   for (const ref of refs) {
     const ask = await db.prepare("SELECT closed_at FROM asks WHERE id = ?").bind(ref).first();
@@ -370,7 +371,17 @@ async function syncStalls(db, now) {
   const copyStalls = copies.map((s) => ({ ...s, reason: had.get(s.card_id) ?? s.reason }));
   // #C885: a read-only role's own card is worked by posts on its thread; the newest post by the card's owner, per card.
   const postedAt = new Map((await db.prepare("SELECT m.thread_id AS card_id, MAX(m.created_at) AS at FROM messages m JOIN cards c ON c.id = m.thread_id AND m.author = c.owner_role GROUP BY m.thread_id").all()).results.map((r) => [r.card_id, r.at]));
-  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt }), ...heldWakes({ now, cards, endsPassed }), ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...copyStalls];
+  // #C915 (d): the usual time of each work phase, from the finished rows of the history (newest 5000), for the "slow with no reason" line.
+  const medians = phaseMedians((await db.prepare("SELECT id, card_id, phase, kind, at FROM phase_history WHERE wait IS NULL AND kind IN ('start', 'end') ORDER BY id DESC LIMIT 5000").all()).results);
+  // A card already named by a "waits at" line this round is not named twice: that line is its one stall.
+  const waits = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed });
+  const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed });
+  const slow = slowAll.filter((s) => !waits.some((w) => w.card_id === s.card_id));
+  // The slow line's words are the same every spell, so its row (card, reason) must not outlive the spell: once a card is no longer slow with no
+  // reason (a reason given, a hold, the card moved on), its row goes, taken or not, and a later spell wakes Manager again (Checker F1; as copyStalls).
+  const slowRows = (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE reason LIKE ?").bind(`%${SLOW_LINE_TAIL}`).all()).results;
+  for (const r of slowRows) if (!slowAll.some((s) => s.card_id === r.card_id && s.reason === r.reason)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ? AND reason = ?").bind(r.card_id, r.reason).run();
+  const stalls = [...waits, ...heldWakes({ now, cards, endsPassed }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...copyStalls];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.

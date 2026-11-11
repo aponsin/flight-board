@@ -294,6 +294,12 @@ export function hasExplicitEnd(fields, existing) {
 export function autoHoldEnd(fields, existing, now) {
   return heldWord(fields.waiting_on) && !heldWord(fields.blocked_reason) && !hasExplicitEnd(fields, existing) ? now + HOLD_NO_END_AFTER_MS : null;
 }
+// #C915 (b): a hold is OPEN while its end has not come: a hold_end naming an ask that is not closed (or a card not dropped or live; one the
+// store cannot find stays open), or a check_at still in the future. `endsPassed` is the Set of hold_end ids whose closing has happened.
+// An open hold is somebody's decision, not a stall and not a dispatch (collector/store-dispatch.mjs holdOpen is the same rule; a test pins it).
+export function holdOpen(c, now, endsPassed) {
+  return !!c && ((heldWord(c.hold_end) && !endsPassed?.has(c.hold_end)) || (Number.isInteger(c.check_at) && c.check_at > now));
+}
 // Held cards that need Manager: `endsPassed` is the Set of hold_end ids whose closing has happened (the ask is closed, the card is dropped or live).
 // (b) a hold whose end has passed: "#Cn held on <reason>, its end has passed: lift or renew"; (c) a hold with no end for 2 h (counted from
 // held_at, else the card's updated_at): "#Cn held on <reason>, no end set after 2 h: lift it or give it an end". One row per (card, reason).
@@ -301,7 +307,16 @@ const zDay = (ms) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " "
 export function heldWakes({ now, cards, endsPassed }) {
   const out = [];
   for (const c of cards ?? []) {
-    if (!Number.isInteger(c.num) || c.dropped || c.done_at || !isHeld(c)) continue;
+    if (!Number.isInteger(c.num) || c.dropped || c.done_at) continue;
+    if (!isHeld(c)) {
+      // #C915 (Checker F2): a hold that is only a hold_end (no waiting_on) hides the card from the stall rule, the slow rule and the dispatch while its end has
+      // not come; an end that stays open for 2 h (an answer nobody closed, say) is a line to Manager, so the card cannot disappear for ever. One row per (card, end, since).
+      if (heldWord(c.hold_end) && !endsPassed?.has(c.hold_end)) {
+        const since = Number.isFinite(c.held_at) ? c.held_at : c.updated_at;
+        if (Number.isFinite(since) && now - since >= HOLD_NO_END_AFTER_MS) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} waits on ${String(c.hold_end).trim().slice(0, 80)}, whose end has not come after 2 h: close it or lift the hold (since ${zDay(since)})` });
+      }
+      continue;
+    }
     const why = String(heldWord(c.blocked_reason) ? c.blocked_reason : c.waiting_on).trim().replace(/\s+/g, " ").slice(0, 80);
     const timed = Number.isInteger(c.check_at) && c.check_at > 0, ref = heldWord(c.hold_end) ? c.hold_end : null, until = Number.isInteger(c.hold_until) && c.hold_until > 0 ? c.hold_until : null;
     if (timed || ref || until) { // an explicit end (check_at, hold_end) wins over the one the store gave (hold_until)
@@ -427,12 +442,13 @@ export function dependsNotLive(c, cards, evidence) {
 // last POSTED_FRESH_MS means it is being worked (no stall); with none, it stalls on a line of its own that says "nothing posted". postedAt:
 // Map card id -> ms of the owner's newest post on the card's thread (the store passes it; missing = none).
 export const READ_ONLY_ROLES = ["Designer", "Checker", "Security", "Linguist"], POSTED_FRESH_MS = 60 * 60_000;
-export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt }) {
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed }) {
   const out = [], queued = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
   for (const c of cards ?? []) {
-    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || c.blocked_reason || c.waiting_on || openAskCards?.has(c.id) || working.has(c.id)) continue;
+    // #C915 (b): a card with an open hold end (hold_end on an open ask or card, or a check_at to come) raises no stall: the hold says why it waits.
+    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || c.blocked_reason || c.waiting_on || holdOpen(c, now, endsPassed) || openAskCards?.has(c.id) || working.has(c.id)) continue;
     const v = evidence?.[c.id], phase = v?.lit?.[0];
     // #C846: a card with no lit phase (nothing pushed to origin) whose owner has been idle 15 min is a stall of its own: nobody has
     // started it. It is not held, not behind a depends_on that is not live, not the lead's, and touched in the last 3 days (an old
@@ -440,7 +456,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     if (phase === undefined || phase === null) {
       const o = typeof c.owner_role === "string" ? roster[c.owner_role] : null;
       if (!o || o.state !== "idle" || !Number.isFinite(o.since) || now - o.since < STALL_AFTER_MS) continue;
-      if (c.owner_role === "Manager" || !/^[A-Za-z0-9 _-]{1,24}$/.test(c.owner_role) || isHeld(c) || c.hold_end || !Number.isFinite(c.updated_at) || now - c.updated_at > 3 * 24 * 3600e3) continue;
+      if (c.owner_role === "Manager" || !/^[A-Za-z0-9 _-]{1,24}$/.test(c.owner_role) || isHeld(c) || holdOpen(c, now, endsPassed) || !Number.isFinite(c.updated_at) || now - c.updated_at > 3 * 24 * 3600e3) continue;
       if (dependsNotLive(c, cards, evidence)) continue;
       if (READ_ONLY_ROLES.includes(c.owner_role)) {
         const posted = postedAt instanceof Map ? postedAt.get(c.id) : undefined;
@@ -455,6 +471,8 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     if (v.ci === "running" || v.ci === "queued" || v.shipping === true) continue;
     // #C737: a card of another repository (a repo word) that is on main and read at ship is waiting for the owner's deploy, not for Release:
     // it never wakes Manager as stalled.
+    // #C915 (a): this is the "landed" case: a board-repository card read as ship + onMain raises no stall (the probe now reads a card whose Board-Id
+    // commit is on main this way, where its stale tip used to read checker). A team-flow card with no repo word still waits on Release (#C737's control).
     if (phase === "ship" && v.onMain === true && typeof c.repo === "string" && c.repo !== "") continue;
     // #C854: a signed tip that no longer continues main cannot be landed as it is: Release cannot take it, so the wait is its builder's (re-cut).
     const behind = phase === "ship" && v.onMain !== true && v.behindMain === true;
@@ -475,6 +493,42 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   for (const [role, list] of queued) {
     const next = [...list].sort((x, y) => queueRank({ queue_pos: x.queue_pos, owner: x.queue_set_by === "owner", num: x.num, id: x.id }, { queue_pos: y.queue_pos, owner: y.queue_set_by === "owner", num: y.num, id: y.id }))[0];
     out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} idle since ${hhmmZ(roster[role].since)}, ${list.length} queued, next #C${next.num}` });
+  }
+  return out;
+}
+
+// #C915 (d): a card that runs past its estimate with nobody having said why. The estimate is the page's: Release's ship is about 10 min (slow from
+// the 11th), any other phase is slow past twice the usual time of that phase (`medians`: { phase: ms }, taken by the store from the phase history).
+// "No reason" = no waiting_on, no blocked_reason, no pause, no open hold end, no open ask, no unfinished dependency. A card landed on main and not
+// deployed is waiting for the install, not slow. One row per card ("#Cn is slow with no reason: add one or unstick it"): giving a reason (or the
+// card moving on) ends it, and a row Manager has read is not sent again.
+export const SHIP_SLOW_MS = 11 * 60_000;
+export const SLOW_LINE_TAIL = " is slow with no reason: add one or unstick it";
+export const slowLine = (num) => `#C${num}${SLOW_LINE_TAIL}`;
+// The usual time of each work phase: the median of the finished (start then end) work rows of the history, a phase with 3 or more of them.
+// rows: [{ id, card_id, phase, kind, at }] with no wait rows, any order. A row of 0 ms or less says nothing (a card first read at a later phase).
+export function phaseMedians(rows) {
+  const open = new Map(), by = {};
+  for (const r of [...(rows ?? [])].sort((a, b) => a.id - b.id)) {
+    const key = `${r.card_id}|${r.phase}`;
+    if (r.kind === "start") open.set(key, r.at);
+    else if (r.kind === "end" && open.has(key)) { const ms = r.at - open.get(key); open.delete(key); if (ms > 0) (by[r.phase] ??= []).push(ms); }
+  }
+  const out = {};
+  for (const [p, l] of Object.entries(by)) if (l.length >= 3) { l.sort((a, b) => a - b); out[p] = l[Math.floor(l.length / 2)]; }
+  return out;
+}
+export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed }) {
+  const out = [];
+  for (const c of cards ?? []) {
+    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || isHeld(c) || holdOpen(c, now, endsPassed) || openAskCards?.has(c.id) || dependsNotLive(c, cards, evidence)) continue;
+    const v = evidence?.[c.id], phase = v?.lit?.[0];
+    if (typeof phase !== "string" || !PHASES.includes(phase) || ["live", "pack", "install"].includes(phase)) continue;
+    if (phase === "ship" && v.onMain === true) continue;
+    const start = phaseStart?.get(`${c.id}|${phase}`);
+    if (!Number.isFinite(start) || start > now) continue;
+    const limit = phase === "ship" ? SHIP_SLOW_MS : Number.isFinite(medians?.[phase]) && medians[phase] > 0 ? 2 * medians[phase] : null;
+    if (limit !== null && now - start > limit) out.push({ card_id: c.id, num: c.num, reason: slowLine(c.num) });
   }
   return out;
 }
