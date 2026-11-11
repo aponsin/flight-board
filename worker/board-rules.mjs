@@ -46,7 +46,7 @@ export function askRefusal(ask, now) {
     if (ask.eta_at !== undefined && (!Number.isFinite(ask.eta_at) || ask.eta_at <= 0 || (Number.isFinite(now) && ask.eta_at < now - 60_000))) return refuse("decision-not-before", "eta_at is a time, not in the past");
     if (ask.eta_precondition !== undefined) return refuse("decision-not-before", "a Decision takes eta_at (not before) and no precondition");
   }
-  if (ask.type === "Action") { const bad = stepsRefusal(ask.steps); if (bad) return bad; }
+  if (ask.type === "Action") { const bad = stepsRefusal(ask.steps, { needCmd: true }); if (bad) return bad; }
   if (ask.where !== undefined && (typeof ask.where !== "string" || !ask.where.trim() || ask.where.length > 300 || !(ask.type in ASK_OPTIONAL_PARTS && ASK_OPTIONAL_PARTS[ask.type].includes("where")))) return refuse("ask-missing-part", `${ask.type} where is a short line (a Later or an Action only)`);
   if (ask.type === "Approval") {
     // Asked by the role that signs pull requests (Reviewer) or the lead; for one pull request, at one full commit, with its own link.
@@ -121,12 +121,26 @@ export function messageExtrasRefusal(m, who) {
   return null;
 }
 
+// #C855 (principle 8: the owner's part is exact, never a line to retype): a step that tells the owner to type, paste or say something carries
+// that exact text in its cmd, which the page shows with a Copy button. `type: X` or `say "X"` names the text, and the cmd must hold it; a step that
+// only says to type, paste or say (no text named) still needs a cmd. A step with nothing to type needs none.
+const TYPES = /(?:^|[\s(])(?:type|paste|say)\b/i;
+const NAMED = /(?:^|[\s(])(?:type|paste|say)\b\s*(?::\s*|["\u201c'`]\s*)([^"\u201d'`\n]+?)\s*(?:["\u201d'`]|$)/i;
+export function typedWithoutCmd(step) {
+  const text = typeof step === "string" ? step : step && typeof step.text === "string" ? step.text : "";
+  if (!TYPES.test(text)) return false;
+  const cmd = step && typeof step === "object" && typeof step.cmd === "string" ? step.cmd : "";
+  if (!cmd.trim()) return true;
+  const named = NAMED.exec(text)?.[1]?.trim().replace(/[.,;]+$/, "");
+  return !!named && !cmd.includes(named);
+}
 // An Action's steps: plain text, or {text, cmd} where cmd is a command the page shows with a Copy button.
-export function stepsRefusal(steps) {
+export function stepsRefusal(steps, { needCmd = false } = {}) {
   if (!Array.isArray(steps) || steps.length > 30) return refuse("ask-missing-part", "steps are a list of at most 30");
   for (const s of steps) {
     const ok = typeof s === "string" ? s.length <= 2000 : s && typeof s === "object" && !Array.isArray(s) && Object.keys(s).every((k) => k === "text" || k === "cmd") && typeof s.text === "string" && s.text.length <= 2000 && (s.cmd === undefined || (typeof s.cmd === "string" && s.cmd.length <= 4000));
     if (!ok) return refuse("steps-shape", "a step is text, or {text, cmd} with the command as text");
+    if (needCmd && typedWithoutCmd(s)) return refuse("step-types-without-cmd", "a step that tells the owner to type, paste or say something carries that exact text in its cmd (the Copy box)");
   }
   return null;
 }
