@@ -1,0 +1,1 @@
+SECURE #C949 (c)@b946d68: createCard id check is stricter (PROBE_CARD_ID, anchored and bounded, plus a 40-character cap); refuse-only; a test keeps it equal to the probe's pattern. - Security
