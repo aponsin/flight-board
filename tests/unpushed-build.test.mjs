@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
-import { stopRun, unpushedState, unpushedCheck } from "../gate/stop.mjs";
+import { stopRun, unpushedState, unpushedCheck, supersededBy, backgroundRunning } from "../gate/stop.mjs";
 
 const roster = ["Manager", "Builder", "Checker"];
 const config = fullConfig({ roster, gate: { managerRole: "Manager" } });
@@ -53,7 +53,7 @@ test("the check refuses once per tip: ahead refuses, the same tip again passes, 
   const sha = "a".repeat(40), sha2 = "b".repeat(40);
   const ahead = { branch: "build/menu", sha, ahead: 2 };
   const first = unpushedCheck(ahead, null);
-  assert.match(first.ask, /^Your build branch build\/menu has 2 commits that origin does not have \(tip aaaaaaaaaaaa\)\. Push it now: the owner authorises pushing your own build branch \(git push origin build\/menu\), then send READY\./);
+  assert.match(first.ask, /^Your build branch build\/menu has 2 commits that origin does not have \(tip aaaaaaaaaaaa\)\. Push it once the work is green, if it is your own build branch \(the owner authorises pushing your own build branch: git push origin build\/menu\), then send READY\./);
   assert.deepEqual(first.judged, { branch: "build/menu", sha });
   assert.equal(unpushedCheck(ahead, { "build/menu": sha }).ask, null, "the same tip, refused already");
   assert.match(unpushedCheck({ ...ahead, sha: sha2 }, { "build/menu": sha }).ask, /bbbbbbbbbbbb/, "a new tip");
@@ -76,7 +76,7 @@ test("the hook as it runs: blocks the first stop on an unpushed tip with the own
   g("switch", "-q", "-c", "build/menu"); commit("one");
   const first = hook();
   assert.equal(first.decision, "block");
-  assert.match(first.reason, /Your build branch build\/menu has 1 commit that origin does not have .*the owner authorises pushing your own build branch \(git push origin build\/menu\)/);
+  assert.match(first.reason, /Your build branch build\/menu has 1 commit that origin does not have .*the owner authorises pushing your own build branch: git push origin build\/menu/);
   assert.equal(hook(), null, "the same tip: not again");
   commit("two");
   assert.equal(hook().decision, "block", "a new tip");
@@ -96,4 +96,26 @@ test("the Stop hook: a roster role is refused, the lead and a role off the roste
   assert.deepEqual(run("Manager", { state, refused: null }).errs, [], "the lead builds nothing");
   assert.deepEqual(run("Ghost", { state, refused: null }).errs, [], "off the roster");
   assert.deepEqual(run("Builder", null).errs, [], "no git reading");
+});
+
+test("a branch with a newer -vN on origin is superseded and gives nothing; the newest, or one with no newer twin, still counts", () => {
+  assert.equal(supersededBy("build/x-v3", ["build/x-v4"]), "build/x-v4");
+  assert.equal(supersededBy("build/x", ["build/x-v2"]), "build/x-v2", "the first cut is v1");
+  assert.equal(supersededBy("build/x-v3", ["build/x-v3", "build/x-v2", "build/y-v9", "build/x-v3a"]), null);
+  const { g, work, commit } = repo();
+  g("switch", "-q", "-c", "build/menu-v2"); commit("one");
+  assert.equal(unpushedState(work).ahead, 1);
+  g("push", "-q", "origin", "HEAD:refs/heads/build/menu-v3");
+  g("fetch", "-q", "origin");
+  assert.equal(unpushedState(work), null, "build/menu-v3 is on origin");
+});
+
+test("a turn that leaves a background task running is not judged and records nothing, so the next stop asks", () => {
+  const state = { branch: "build/menu", sha: "d".repeat(40), ahead: 1 };
+  const bg = { type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "npm test", run_in_background: true } }] } };
+  const lines = [{ type: "user", message: { content: "go" } }, bg];
+  assert.equal(backgroundRunning([{ name: "Bash", input: { run_in_background: true } }]), true);
+  assert.equal(backgroundRunning([{ name: "Bash", input: { command: "ls" } }]), false);
+  const r = stopRun(lines, { config, env: { FLIGHT_BOARD_ROLE: "Builder" }, now: 1_800_000_000_000, unpushed: { state, refused: null } });
+  assert.deepEqual(r.errs, []); assert.equal(r.unpushedJudged, null);
 });

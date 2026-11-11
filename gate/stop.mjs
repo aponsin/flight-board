@@ -255,6 +255,12 @@ export function wokenCheck(woken, checkedAt, calls, started = true) {
 // repository or a product worktree): the branch is build/..., and `git rev-list --count HEAD --not --remotes=origin` counts the commits no
 // origin ref holds (a branch never pushed counts too). Once per tip: unpushed-refused-<Role>.json keeps { branch: sha } of the last refusal.
 const BUILD_BRANCH = /^build\/[A-Za-z0-9._\/-]{1,120}$/;
+export function supersededBy(branch, heads) {
+  const m = /^(.*?)(?:-v([0-9]{1,4}))?$/.exec(String(branch)), base = m[1], n = m[2] ? Number(m[2]) : 1;
+  return (Array.isArray(heads) ? heads : []).find((h) => { const k = /^(.*?)-v([0-9]{1,4})$/.exec(String(h)); return k && k[1] === base && Number(k[2]) > n; }) ?? null;
+}
+// A turn that leaves a background task running (a Bash call with run_in_background) is not judged: the agent ends it to wait, and a push now would wake the reviewer on unchecked work.
+export function backgroundRunning(calls) { return (Array.isArray(calls) ? calls : []).some((c) => c.name === "Bash" && c.input?.run_in_background === true); }
 export function unpushedState(cwd, run = (args) => execFileSync("git", args, { cwd, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] })) {
   try {
     if (typeof cwd !== "string" || !cwd.startsWith("/")) return null;
@@ -263,6 +269,9 @@ export function unpushedState(cwd, run = (args) => execFileSync("git", args, { c
     const sha = run(["rev-parse", "HEAD"]).trim();
     const ahead = Number(run(["rev-list", "--count", "HEAD", "--not", "--remotes=origin"]).trim());
     if (!/^[0-9a-f]{40}$/.test(sha) || !Number.isInteger(ahead) || ahead < 0) return null;
+    // A re-cut lands and the older -vN is deleted from origin: a session still on it is not asked to push the dead branch back.
+    const heads = run(["for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/build/"]).split("\n").map((l) => l.trim().replace(/^origin\//, ""));
+    if (supersededBy(branch, heads)) return null;
     return { branch, sha, ahead };
   } catch { return null; }
 }
@@ -270,7 +279,7 @@ export function unpushedCheck(state, refused) {
   if (!state || !BUILD_BRANCH.test(String(state.branch)) || !(state.ahead > 0) || !/^[0-9a-f]{40}$/.test(String(state.sha))) return { ask: null, judged: null };
   if (refused && typeof refused === "object" && refused[state.branch] === state.sha) return { ask: null, judged: null };
   const n = state.ahead;
-  return { judged: { branch: state.branch, sha: state.sha }, ask: `Your build branch ${state.branch} has ${n} commit${n === 1 ? "" : "s"} that origin does not have (tip ${state.sha.slice(0, 12)}). Push it now: the owner authorises pushing your own build branch (git push origin ${state.branch}), then send READY. This is asked once per tip.` };
+  return { judged: { branch: state.branch, sha: state.sha }, ask: `Your build branch ${state.branch} has ${n} commit${n === 1 ? "" : "s"} that origin does not have (tip ${state.sha.slice(0, 12)}). Push it once the work is green, if it is your own build branch (the owner authorises pushing your own build branch: git push origin ${state.branch}), then send READY. This is asked once per tip.` };
 }
 export function stopRun(lines, { config, env = {}, now = Date.now(), since = sinceOf(null, now), view = null, live = null, wake = null, dispatch = null, store = false, unpushed = null }) {
   const { role } = sessionRole(lines, env.FLIGHT_BOARD_ROLE);
@@ -278,7 +287,7 @@ export function stopRun(lines, { config, env = {}, now = Date.now(), since = sin
   if (role !== config.gate.managerRole) {
     const ask = dispatch && role && config.roster.includes(role) ? dispatchAsk(dispatch, now) : null;
     const wait = dispatch && role && config.roster.includes(role) ? wokenCheck(dispatch.woken, dispatch.checkedAt, turnCalls(currentTurn(lines)), startedByWake(currentTurn(lines))) : { judged: false, ask: null };
-    const push = unpushed && role && config.roster.includes(role) ? unpushedCheck(unpushed.state, unpushed.refused) : { ask: null, judged: null };
+    const push = unpushed && role && config.roster.includes(role) && !backgroundRunning(turnCalls(currentTurn(lines))) ? unpushedCheck(unpushed.state, unpushed.refused) : { ask: null, judged: null };
     const errs = [ask, wait.ask, push.ask].filter(Boolean);
     return { errs, record: null, note: null, liveNext: null, dispatchAsked: !!ask, waitJudged: wait.judged, unpushedJudged: push.judged };
   }
