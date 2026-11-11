@@ -1,0 +1,1 @@
+SECURE. #C900 v4 on 8c1e498: collector code identical to SECURE v2 4d6616c (range-diff on collector: message only); adds tests/stack-switch-file.test.mjs (Checker F1). Fixed path, tmp+rename, mode 600, dir 700, only {at, product:boolean} written; a failed write is logged, never fatal.
