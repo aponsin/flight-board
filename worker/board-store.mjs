@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
+import { reworkTriggered, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -477,7 +477,14 @@ export async function writeEvidence(db, now, who, key, value, track) {
   // A wait step (the step tool, #C739) is not the lit phase: the three reads of the history below take the probe's own rows only (wait IS NULL).
   if (!prev) { const last = await db.prepare("SELECT phase, kind FROM phase_history WHERE card_id = ? AND wait IS NULL ORDER BY at DESC, id DESC LIMIT 1").bind(cardId).first(); if (last?.kind === "start") prev = last.phase; }
   const prevWho = prev && prev !== next ? (await db.prepare("SELECT who FROM phase_history WHERE card_id = ? AND phase = ? AND kind = 'start' AND wait IS NULL ORDER BY at DESC, id DESC LIMIT 1").bind(cardId, prev).first())?.who ?? null : null;
-  const rows = prev === next ? [] : historyRows(cardId, prev, next, now, whoForPhase(cardId, next, (await evidenceOf(db, "agents")) ?? {}, (await db.prepare("SELECT owner_role FROM cards WHERE id = ?").bind(cardId).first())?.owner_role), prevWho);
+  const agents = (await evidenceOf(db, "agents")) ?? {}, ownerRole = (await db.prepare("SELECT owner_role FROM cards WHERE id = ?").bind(cardId).first())?.owner_role;
+  const rows = prev === next ? [] : historyRows(cardId, prev, next, now, whoForPhase(cardId, next, agents, ownerRole), prevWho);
+  // #C881: Started is the first push (PARITY row 35). A card whose first reading is already past build, with no row of its own (the probe sees a
+  // card only once something is pushed), gets its build start and end at that first push, so every lit card has a build row and a start time.
+  if (!prev && next !== "build" && PHASES.indexOf(next) > PHASES.indexOf("build") && next !== "live" && !(await db.prepare("SELECT 1 AS x FROM phase_history WHERE card_id = ? AND wait IS NULL LIMIT 1").bind(cardId).first())) {
+    const who = whoForPhase(cardId, "build", agents, ownerRole);
+    rows.unshift({ card_id: cardId, phase: "build", kind: "start", at: now, who }, { card_id: cardId, phase: "build", kind: "end", at: now, who });
+  }
   const ins = rows.map((r) => db.prepare("INSERT OR IGNORE INTO phase_history (card_id, phase, kind, at, who, source) VALUES (?, ?, ?, ?, ?, 'evidence')").bind(r.card_id, r.phase, r.kind, r.at, r.who));
   await db.batch([upsert, ...ins]);
   await noteShip(db, now, cardId, value);

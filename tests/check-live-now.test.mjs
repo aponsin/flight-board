@@ -96,7 +96,8 @@ test("the owner's #C448 case: the track lights Language with Linguist, the revie
   const html = row(b);
   assert.match(html, /<div class="step now"[^>]*>Language<small>Linguist/, "Language lit, named");
   assert.doesNotMatch(html, /class="step[^"]*\bnow\b[^"]*"[^>]*>Build</, "Build not current");
-  assert.doesNotMatch(html, /up next|Builder · /, "no 'up next', no builder's clock");
+  // The builder's clock is "Builder · 2 h"; the finished Build tile's own "Builder · Nov 10 ..." start time (#C881) is not a clock.
+  assert.doesNotMatch(html, /up next|Builder · \d/, "no 'up next', no builder's clock");
   const two = board(), later = reading(NOW - 12e3);
   later.cards[ID].phase = "checker";
   two.probeEvent({ type: "data", result: { payload: later } }, {});
