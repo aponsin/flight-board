@@ -1,0 +1,1 @@
+SECURE #C928 build/small-stack-b@4f27ff1 (on f091faa): pickMode makes an unknown argument run nothing (a typo can no longer start a deploy); the argument is never printed; argv[2] still read only by pickMode (test kept strict); new end-to-end routing test with a stub npx. No new credential path. - Security
