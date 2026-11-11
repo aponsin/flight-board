@@ -104,6 +104,10 @@ test("staleCopies: the oldest open reading of a repository decides; dropped, liv
   assert.deepEqual(out.map((s) => s.card_id), [`${COPY_CARD}site-one`], "the board's own repository is fresh");
   assert.match(out[0].reason, /site-one is 2 h old/);
   assert.equal(staleCopies({ now: T, cards, evidence, readAt: { a: T - COPY_STALE_MS } }).length, 0, "exactly an hour is not over it");
+  // #C902: a card closed as done (done_at) does not count, as a dropped one; Still allowed: the same card open (done_at null) does.
+  const closed = { id: "closed", repo: "site-two", done_at: T - 80 * HOUR };
+  assert.deepEqual(staleCopies({ now: T, cards: [closed], evidence: { closed: checker }, readAt: { closed: T - 80 * HOUR } }), [], "a done card's old reading is not a stale copy");
+  assert.deepEqual(staleCopies({ now: T, cards: [{ ...closed, done_at: null }], evidence: { closed: checker }, readAt: { closed: T - 80 * HOUR } }).map((s) => s.card_id), [`${COPY_CARD}site-two`]);
 });
 
 test("the evidence job says so when the state child read a copy it could not fetch (the failed fetch was silent)", async () => {

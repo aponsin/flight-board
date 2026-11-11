@@ -480,13 +480,14 @@ export function liveNow(reading, now) {
 // is as old as the last time it wrote that repository's cards. The evidence of every open card carries its read time (read_at); a repository's
 // word (the card's `repo`, "board" for a card with none) whose OLDEST open reading is over COPY_STALE_MS old is stale. ONE stall per repository
 // word and spell (the row's card_id is COPY_CARD + word; the store keeps its reason while the spell lasts, as the daily run's). A card that is
-// dropped, live (done) or has no reading is not counted: a reading never written is not an old one.
+// dropped, closed as done (#C902), live or has no reading is not counted: a reading never written is not an old one.
 export const COPY_STALE_MS = 60 * 60_000, COPY_CARD = "repo-copy:";
 export const copyWord = (c) => (typeof c?.repo === "string" && /^[A-Za-z0-9._-]{1,40}$/.test(c.repo) ? c.repo : "board");
 export function staleCopies({ now, cards, evidence, readAt }) {
   const oldest = new Map();
   for (const c of cards ?? []) {
-    if (!c || c.dropped || evidence?.[c.id]?.lit?.[0] === "live") continue;
+    // #C902: a card closed as done (done_at) is closed like a dropped one: its reading is no longer rewritten.
+    if (!c || c.dropped || c.done_at || evidence?.[c.id]?.lit?.[0] === "live") continue;
     const at = readAt?.[c.id];
     if (!Number.isFinite(at)) continue;
     const w = copyWord(c), age = Math.max(0, now - at);
