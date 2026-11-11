@@ -46,6 +46,8 @@ export function turnsOf(card, e, ctx = {}) {
   if (findings.length && Object.hasOwn(ROLE_OF_NOTE, phase)) return [{ role: card.owner_role, phase: "build", step: "rework", sha, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
   if (phase === "ship") {
     if (e.onMain === true) return typeof card.repo === "string" && card.repo !== "" ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, signed: signedBy }] : [];
+    // #C854: signed but no longer continuing main: Release cannot take it. The turn is the owner's, to re-cut it on main (a new commit has a new sha, so a reviewer is woken again).
+    if (e.behindMain === true) return [{ role: card.owner_role, phase: "ship", step: "recut", sha, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
     return [{ role: PHASE_LANES.ship, phase: "ship", step: "land", sha, signed: signedBy }];
   }
   if (!Object.hasOwn(PHASE_LANES, phase)) return [owner];
@@ -107,6 +109,14 @@ export function dispatchInput(view, now) {
     for (const k of list.slice(1)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
   }
   for (const k of cards) delete k.queuePos;
+  // #C858: the deploy pair is one per repository main, not one per landed card: of the cards a role is woken for to build the pair, the newest
+  // (highest number) keeps the turn, and the line names the step; the others are covered by the same pair.
+  const pairs = new Map();
+  for (const k of cards) if (k.turns.some((t) => t.step === "pair")) pairs.set(k.who, [...(pairs.get(k.who) ?? []), k]);
+  for (const list of pairs.values()) {
+    list.sort((x, y) => (y.num ?? 0) - (x.num ?? 0) || (x.id < y.id ? -1 : 1));
+    for (const k of list.slice(1)) k.turns = k.turns.filter((t) => t.step !== "pair");
+  }
   // A card with an open ask is waiting for the owner or the lead, not for its agent. Open = not closed and not answered, as on the old
   // board (!done && !response): a withdrawn approval has its answer cleared and waits for the owner's Approve again, so it is still open.
   const asked = new Set();
