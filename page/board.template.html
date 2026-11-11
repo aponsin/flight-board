@@ -1153,9 +1153,13 @@ function replyBox(w){
     :[b("done","ok","Done")+b("help","help","Something went wrong, help"),narrow?"A note (optional)":"A note (optional): what you saw","help","Send",CMP_HINT.help];
   return cmpWrap(w.id,`<div class="cchoice btns">${choices}</div>${cmpBox(w.id,"note-"+w.id,{ph,hint,send:b(act,"ok",label," data-csend")})}<div class="msg" id="msg-${id}" role="status"></div>`);
 }
+// #C844: the note box's Send on an action or terminal ask is "help"; a note that only says done, ok or closed (and no files) is Done.
+// Anything else, a question or pasted output included, stays Help.
+function replyAct(act,note,hasFiles){return act==="help"&&!hasFiles&&/^\s*(done|ok|okay|closed|finished|complete|completed|all done|all good)[\s.!]*$/i.test(note||"")?"done":act}
 async function onReply(e){
-  const id=e.currentTarget.dataset.id, act=e.currentTarget.dataset.act, choice=e.currentTarget.dataset.choice||null;
+  const id=e.currentTarget.dataset.id, choice=e.currentTarget.dataset.choice||null;
   const note=(document.getElementById("note-"+id)||{}).value||"";
+  const act=replyAct(e.currentTarget.dataset.act,note,(pendingFiles.get(id)||[]).length>0);
   const msg=document.getElementById("msg-"+id);
   if(!dbRef){msg.textContent="Can't save from here. Tell Manager in chat instead.";return}
   const files=pendingFiles.get(id)||[];
