@@ -1,0 +1,1 @@
+SECURE. #C916 v3, re-cut on main 6eba96f: range-diff excluding CHANGELOG.md shows the same patch as 7a6f710 (SECURE); only hunk headers moved around #C914's stackQueueFile/writeStackQueue. Line-scoped for 6eba96f..058c1ed.
