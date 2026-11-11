@@ -458,3 +458,24 @@ export function liveNow(reading, now) {
   const age = Math.max(0, now - reading.readAt);
   return { state: age > STALE_AFTER_MS ? "stale" : "live", version: reading.version, age };
 }
+
+// #C927 (the owner, 11-11: a card's tile read "repository copy 47 h 56 min old" and nothing told Manager): the probe's copy of a repository
+// is as old as the last time it wrote that repository's cards. The evidence of every open card carries its read time (read_at); a repository's
+// word (the card's `repo`, "board" for a card with none) whose OLDEST open reading is over COPY_STALE_MS old is stale. ONE stall per repository
+// word and spell (the row's card_id is COPY_CARD + word; the store keeps its reason while the spell lasts, as the daily run's). A card that is
+// dropped, live (done) or has no reading is not counted: a reading never written is not an old one.
+export const COPY_STALE_MS = 60 * 60_000, COPY_CARD = "repo-copy:";
+export const copyWord = (c) => (typeof c?.repo === "string" && /^[A-Za-z0-9._-]{1,40}$/.test(c.repo) ? c.repo : "board");
+export function staleCopies({ now, cards, evidence, readAt }) {
+  const oldest = new Map();
+  for (const c of cards ?? []) {
+    if (!c || c.dropped || evidence?.[c.id]?.lit?.[0] === "live") continue;
+    const at = readAt?.[c.id];
+    if (!Number.isFinite(at)) continue;
+    const w = copyWord(c), age = Math.max(0, now - at);
+    if (age > (oldest.get(w) ?? -1)) oldest.set(w, age);
+  }
+  const hours = (ms) => Math.floor(ms / 3_600_000);
+  return [...oldest].filter(([, age]) => age > COPY_STALE_MS).sort(([a], [b]) => (a < b ? -1 : 1))
+    .map(([w, age]) => ({ card_id: COPY_CARD + w, num: null, word: w, reason: `the probe's copy of ${w} is ${hours(age)} h old: a fetch may be failing, or a card's reading has stopped being rewritten` }));
+}

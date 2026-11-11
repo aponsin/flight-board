@@ -232,6 +232,9 @@ export async function evidenceJob({ job, base, headers, configPath, stateFile, p
   const state = JSON.parse(read(stateFile));
   const writes = evidenceWrites(state, job);
   log(`${writes.length} key(s) to write`);
+  // #C927: the state child swallows a failed fetch (state.mjs repoAt: it reads what is in the clone and marks the run not fresh, and its own output is
+  // dropped here), so the cards were read from an old copy and nothing said so. cardsCheckedAt is the last run every repository was read fresh.
+  if (job === "evidence") { const ok = state?.board?.cardsCheckedAt; if (Number.isFinite(ok) && Number.isFinite(state.board.at) && state.board.at - ok > 2 * 60_000) log(`repository copy not fresh: a fetch failed, the cards were read from the clone as it was ${Math.round((state.board.at - ok) / 60_000)} min ago (retried next run)`); }
   const done = await postWrites(writes, { base, headers, fetchImpl, log });
   // #C873: before the Actions step, which stops at the job's deadline; the script's own wait is capped at 30 s here.
   if (job === "usage") { let cfg2 = null; try { cfg2 = read(origConfig); } catch { log("e2e: the board config could not be read"); } if (cfg2) e2eStep(cfg2, { stateFile, env, log, ...e2e }); }

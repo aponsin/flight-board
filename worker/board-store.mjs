@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
+import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -336,9 +336,9 @@ const pendingForManager = async (db) => {
 // that is over is no longer pending. A reason already sent is never sent again.
 async function syncStalls(db, now) {
   const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, waiting_on, repo, check_at, hold_end, held_at, hold_until, depends_on, updated_at, queue_pos, queue_set_by FROM cards").all()).results;
-  const evRows = (await db.prepare("SELECT key, value FROM evidence WHERE key = 'agents' OR key LIKE 'cards.%'").all()).results;
-  let agents = {}; const evidence = {};
-  for (const r of evRows) { let v; try { v = JSON.parse(r.value); } catch { continue; } if (r.key === "agents") agents = v; else evidence[r.key.slice(6)] = v; }
+  const evRows = (await db.prepare("SELECT key, value, read_at FROM evidence WHERE key = 'agents' OR key LIKE 'cards.%'").all()).results;
+  let agents = {}; const evidence = {}, readAt = {};
+  for (const r of evRows) { let v; try { v = JSON.parse(r.value); } catch { continue; } if (r.key === "agents") agents = v; else { evidence[r.key.slice(6)] = v; readAt[r.key.slice(6)] = r.read_at; } }
   const openAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
   const phaseStart = new Map((await db.prepare("SELECT card_id, phase, MAX(at) AS at FROM phase_history WHERE kind = 'start' AND wait IS NULL GROUP BY card_id, phase").all()).results.map((r) => [`${r.card_id}|${r.phase}`, r.at]));
   // holds-need-an-end (#C838): a held card whose end has passed, or that has had none for 2 h, wakes Manager once (one row per card and reason).
@@ -352,7 +352,13 @@ async function syncStalls(db, now) {
   }
   // #C904: an ask the owner has left 10 min wakes Manager once, before the owner's phone gets it at 30 (push-rules.mjs).
   const openAsks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL").all()).results;
-  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }), ...heldWakes({ now, cards, endsPassed }), ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now })];
+  // #C927: a repository whose oldest open card reading is over an hour old wakes Manager once per spell (staleCopies, board-rules.mjs). The row is
+  // kept (taken or not) while the spell lasts, so a later sync never tells it again; it goes when the repository's readings are fresh again.
+  const copies = staleCopies({ now, cards, evidence, readAt });
+  const had = new Map((await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE card_id LIKE ?").bind(`${COPY_CARD}%`).all()).results.map((r) => [r.card_id, r.reason]));
+  for (const id of had.keys()) if (!copies.some((s) => s.card_id === id)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ?").bind(id).run();
+  const copyStalls = copies.map((s) => ({ ...s, reason: had.get(s.card_id) ?? s.reason }));
+  const stalls = [...stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }), ...heldWakes({ now, cards, endsPassed }), ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...copyStalls];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.

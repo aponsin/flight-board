@@ -21,7 +21,12 @@ async function world({ phase = "checker", role = "Checker", idleSince = T, ci = 
   return db;
 }
 const agents = (db, now, roster) => writeEvidence(db, now, "probe", "agents", roster);
-const pending = async (db, now) => (await wakeAsk(db, now)).count;
+// The probe rewrites every card's reading each minute; these tests jump hours, so the readings are touched to `now` first (#C927: a reading over an
+// hour old is its own stall to Manager, which these tests are not about).
+const pending = async (db, now) => {
+  await db.prepare("UPDATE evidence SET read_at = ? WHERE key LIKE 'cards.%'").bind(now).run();
+  return (await wakeAsk(db, now)).count;
+};
 
 test("a card waiting 15 min at a phase with its agent idle wakes Manager once, with the reason; not before", async () => {
   const db = await world();

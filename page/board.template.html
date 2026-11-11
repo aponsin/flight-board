@@ -2667,7 +2667,10 @@ function fromSteps(i){
     // never a lit build, never STALLED. The probe's ship commit on main (derived shippedAt) says the same for a card with no branch.
     const sa=num((derivedOf(i.id)||{}).shippedAt),written=num(i.updatedAt)??num(i.nextNoteAt),lastAt=num(out.lastStepAt)??0;
     const behindTo=sa!=null&&phaseIndex(SHIP_PHASE)>phaseIndex(out.phase)?SHIP_PHASE:(i.phase&&written!=null&&written>lastAt&&phaseIndex(i.phase)>phaseIndex(out.phase)?i.phase:null);
-    if(behindTo){out.phase=behindTo;out.stepLogBehind=true;out.who=null;out.upNext=false;out.status="active";out.nowPhases={}}}
+    if(behindTo){out.phase=behindTo;out.stepLogBehind=true;out.who=null;out.upNext=false;out.status="active";out.nowPhases={}}
+    // #C927: a paused card stays paused whatever its steps say (the store opens a phase row from the repository's reading, and an open
+    // step made the card "active" with its phase lit, #C29 paused since Oct 16 read as a reviewer on it). The phase stays, nothing is lit.
+    if(i.status==="paused"){out.status="paused";out.nowPhases={};out.upNext=false;out.who=null}}
   return out;
 }
 // A question to the owner tied to an initiative holds it: open, it shows as "Gated · the owner" at the phase it holds;
