@@ -89,6 +89,51 @@ test("the page's feed carries who placed a card, its stack reading (field by fie
   assert.deepEqual(feed.collections.meta.find((m) => m.id === "stackSwitch").rows.map((r) => [r.repo, r.stack]), [["board", true], ["product", false]]);
 });
 
+// Checker F1 on ac3d31b: an agent's write could put a card ahead of the owner's first card, and the number tie-break then woke the agent's pick.
+test("F1: after the owner puts a card first, the lead cannot put an older card at or ahead of his places; behind them it can", async () => {
+  const db = makeDb();
+  // c0-old is the oldest card (the lowest number) and nobody has placed it; the others are placed 1 to 3 by the lead.
+  for (const [n, id] of ["c0-old", "c1-one", "c2-two", "c3-three"].entries()) assert.ok((await createCard(db, T + n + 1, "Manager", { id, title: id, owner_role: "Boardsmith" })).ok);
+  for (const [i, id] of ["c1-one", "c2-two", "c3-three"].entries()) assert.ok((await updateCard(db, T + 100 + i, "Manager", { id, queue_pos: i + 1 })).ok);
+  await moveInQueue(db, T + 500, "owner", { id: "c3-three", dir: "up" });
+  await moveInQueue(db, T + 501, "owner", { id: "c3-three", dir: "up" });
+  assert.deepEqual(await order(db), ["c3-three", "c1-one", "c2-two", "c0-old"], "the move renumbers the queue 1..n; the unplaced older card is last");
+  for (const pos of [1, 2, 3]) {
+    const r = await updateCard(db, T + 600, "Manager", { id: "c0-old", queue_pos: pos });
+    assert.equal(r.ok, false, `place ${pos}`);
+    assert.equal(r.refused?.rule ?? r.rule, "queue-owner-set");
+  }
+  assert.ok((await updateCard(db, T + 601, "Manager", { id: "c0-old", queue_pos: 4 })).ok, "behind the owner's places is open");
+  assert.equal(items(await readView(db, T + 9000)).map((i) => i.card).join(), "c3-three", "and the wake names the owner's first card");
+  assert.ok((await updateCard(db, T + 602, "owner", { id: "c0-old", queue_pos: 1 })).ok, "the owner may put it anywhere");
+  const fresh = await createCard(db, T + 603, "Manager", { id: "c7-new", title: "New", owner_role: "Boardsmith", queue_pos: 1 });
+  assert.equal(fresh.ok, false, "a new card cannot take a place at or ahead of one the owner holds either");
+  assert.ok((await createCard(db, T + 604, "Manager", { id: "c8-new", title: "New", owner_role: "Boardsmith", queue_pos: 9 })).ok);
+});
+
+function items(view) {
+  const cards = view.cards.map((c) => ({ ...c, repo: "" }));
+  return dispatchRun({ cards, asks: [], stackSwitch: [], evidence: { agents: { readAt: T - 5_000, value: { Boardsmith: idle, Manager: idle } } } }, { dir: mkdtempSync(join(tmpdir(), "aq-")), roster: ROSTER, lead: LEAD, now: T }).items;
+}
+
+test("F1: at one place a card the owner placed wins the tie, in the move and in the dispatch (not the lower number)", async () => {
+  const v = viewOf([["c1-one", 1], ["c2-two", 1]]);
+  assert.deepEqual(run(v).map((i) => i.card), ["c1-one"], "no owner: the number breaks the tie");
+  v.cards.find((c) => c.id === "c2-two").queue_set_by = "owner";
+  assert.deepEqual(run(v).map((i) => i.card), ["c2-two"], "the owner's card wins it");
+});
+
+test("F2: a card held by a depends_on sits after those that can start, in the move, the wake and the order shown", async () => {
+  const db = await queue("c1-one", "c2-two");
+  assert.ok((await createCard(db, T + 20, "Manager", { id: "c9-dep", title: "Dep", owner_role: "Checker" })).ok);
+  assert.ok((await updateCard(db, T + 700, "Manager", { id: "c1-one", depends_on: ["c9-dep"] })).ok);
+  const down = await moveInQueue(db, T + 701, "owner", { id: "c2-two", dir: "down" });
+  assert.deepEqual(down.order, ["c2-two", "c1-one"], "c1 holds place 1 but waits on c9, so c2 comes first");
+  assert.equal(down.moved, false, "and nothing crosses the line between held and startable");
+  assert.equal((await moveInQueue(db, T + 702, "owner", { id: "c1-one", dir: "up" })).moved, false);
+  assert.equal(items(await readView(db, T + 9000)).filter((i) => i.role === "Boardsmith").map((i) => i.card).join(), "c2-two", "the wake names the card that can start");
+});
+
 test("the order is the store's: the same answer from a fresh read after every session is cleared", async () => {
   const db = await queue("c1-one", "c2-two", "c3-three");
   await moveInQueue(db, T + 500, "owner", { id: "c3-three", dir: "up" });

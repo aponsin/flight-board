@@ -30,6 +30,20 @@ test("a tile lists the agent's queued cards in the dispatch's order, the name on
   assert.equal(b.queueTile("Checker"), "", "an agent with nothing queued has no line");
 });
 
+test("a card held by a card it depends on sits after those that can start; at one place the owner's card comes first (Checker F1, F2)", () => {
+  const { b } = store("store");
+  const dep = card(9, "c9-dep", { who: "Checker", phase: "build" });
+  const cs = [card(1, "c1-one", { queuePos: 1, dependsOn: ["c9-dep"] }), card(2, "c2-two", { queuePos: 2 }), dep];
+  b.state.initiatives = cs; b.state.initRaw = cs;
+  const ids = (html) => [...html.matchAll(/data-qmove="([^"]+)" data-dir="up"/g)].map((m) => m[1]);
+  assert.deepEqual(ids(b.queueTile("Boardsmith")), ["c2-two", "c1-one"], "c1 holds place 1 but waits on c9");
+  dep.phase = "live";
+  assert.deepEqual(ids(b.queueTile("Boardsmith")), ["c1-one", "c2-two"], "once c9 is live it is not held");
+  const tie = [card(3, "c3-agent", { queuePos: 1 }), card(4, "c4-owner", { queuePos: 1, queueSetBy: "owner" })];
+  b.state.initiatives = tie; b.state.initRaw = tie;
+  assert.deepEqual(ids(b.queueTile("Boardsmith")), ["c4-owner", "c3-agent"], "the owner's card wins the tie");
+});
+
 test("an order nobody but an agent set does not say the owner did", () => {
   const { b } = store("store");
   for (const i of b.state.initiatives) delete i.queueSetBy;

@@ -91,7 +91,7 @@ export function dispatchInput(view, now) {
     // #C850: a hold with an end (a card the lead put on hold) is skipped; the stall rule brings it back when the hold ends.
     if (c.hold_end) continue;
     const inBoard = switchOn && boardCard(c);
-    cards.push({ queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: turnsOf(c, e, inBoard ? { stackOn: true, stackBranch } : {}), inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true });
+    cards.push({ queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: turnsOf(c, e, inBoard ? { stackOn: true, stackBranch } : {}), inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true });
   }
   if (switchOn && cards.some((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step)))) {
     for (const k of cards) if (k.inStack) k.turns = k.turns.filter((t) => t.step !== "review");
@@ -103,10 +103,12 @@ export function dispatchInput(view, now) {
   const byRole = new Map();
   for (const k of cards.filter(notStarted)) byRole.set(k.who, [...(byRole.get(k.who) ?? []), k]);
   for (const list of byRole.values()) {
-    list.sort((x, y) => (x.queuePos ?? 1e6) - (y.queuePos ?? 1e6) || (x.num ?? 1e9) - (y.num ?? 1e9) || (x.id < y.id ? -1 : 1));
+    // The same order as the store's (worker/board-rules.mjs queueRank; a held card was skipped above): at one place a card the owner placed comes
+    // before one an agent placed (Checker F1 on ac3d31b), then the card's number.
+    list.sort((x, y) => (x.queuePos ?? 1e6) - (y.queuePos ?? 1e6) || (x.ownerPlaced ? 0 : 1) - (y.ownerPlaced ? 0 : 1) || (x.num ?? 1e9) - (y.num ?? 1e9) || (x.id < y.id ? -1 : 1));
     for (const k of list.slice(1)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
   }
-  for (const k of cards) delete k.queuePos;
+  for (const k of cards) { delete k.queuePos; delete k.ownerPlaced; }
   // A card with an open ask is waiting for the owner or the lead, not for its agent. Open = not closed and not answered, as on the old
   // board (!done && !response): a withdrawn approval has its answer cleared and waits for the owner's Approve again, so it is still open.
   const asked = new Set();

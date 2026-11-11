@@ -159,9 +159,20 @@ export function stackSwitchRefusal(b, who) {
 
 // #C871: an agent's queue is in an order the owner sets. A card the owner has placed (queue_set_by "owner") keeps its place against an agent's
 // write: the Worker refuses it by program, whoever the agent is, the lead included. The owner moves a card that has not started up or down.
-export function queueWriteRefusal(fields, card, who) {
-  if (fields && "queue_pos" in fields && card?.queue_set_by === "owner" && who !== "owner") return refuse("queue-owner-set", `${who ?? "unknown"} cannot move a card the owner has placed in the queue (its order was set by the owner)`);
+// `floor` is the last place the owner holds in the card's queue (0 when he holds none): an agent's write may not put a card at or ahead of it
+// (Checker F1 on ac3d31b: an older unplaced card written to place 1 tied the owner's first card, and the number tie-break woke the agent's pick).
+export function queueWriteRefusal(fields, card, who, floor = 0) {
+  if (who === "owner" || !fields || !("queue_pos" in fields)) return null;
+  if (card?.queue_set_by === "owner") return refuse("queue-owner-set", `${who ?? "unknown"} cannot move a card the owner has placed in the queue (its order was set by the owner)`);
+  // Only a valid place (1 to 999) is held to the floor; a malformed one is refused by the card shape rule (card-queue) as before.
+  if (Number.isInteger(fields.queue_pos) && fields.queue_pos >= 1 && fields.queue_pos <= floor) return refuse("queue-owner-set", `${who ?? "unknown"} cannot put a card at place ${fields.queue_pos}: the owner holds the queue up to place ${floor}; ${floor + 1} or later is open`);
   return null;
+}
+// The order of an agent's queue, one rule for the store, the dispatch and the page: a card held by a depends_on after those that can start (Checker F2),
+// then by queue_pos (none last), a card the owner placed before one an agent placed at the same place (F1), then by number.
+export const QUEUE_NONE = 1e6;
+export function queueRank(a, b) {
+  return (a.held ? 1 : 0) - (b.held ? 1 : 0) || (a.queue_pos ?? QUEUE_NONE) - (b.queue_pos ?? QUEUE_NONE) || (a.owner ? 0 : 1) - (b.owner ? 0 : 1) || (a.num ?? 1e9) - (b.num ?? 1e9) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 }
 export function queueMoveRefusal(b, who) {
   if (who !== "owner") return refuse("queue-move-owner", `${who ?? "unknown"} cannot reorder a queue by the owner's hand; only the owner can`);
@@ -345,7 +356,7 @@ export const STALL_AFTER_MS = 15 * 60_000;
 const hhmmZ = (ms) => `${new Date(ms).toISOString().slice(11, 16)}Z`;
 // #C846: whether a card waits for a card it depends on (depends_on, a JSON list of ids): one that is on the board, not dropped and not
 // live. One the board does not have, or a dropped one, holds nothing (as the dispatch reads it, #C845).
-function dependsNotLive(c, cards, evidence) {
+export function dependsNotLive(c, cards, evidence) {
   let list = c.depends_on;
   if (typeof list === "string") { try { list = JSON.parse(list); } catch { return false; } }
   if (!Array.isArray(list)) return false;

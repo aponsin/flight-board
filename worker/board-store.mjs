@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
+import { holdEndRefusal, autoHoldEnd, heldWakes, isHeld, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, stalledWaits, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -41,6 +41,9 @@ export async function createCard(db, now, who, fields) {
   if (typeof fields.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(fields.id)) return refuse(db, now, { rule: "card-id", detail: "lowercase letters, digits, hyphens" }, fields.id, who);
   if (typeof fields.title !== "string" || !fields.title.trim()) return refuse(db, now, { rule: "card-shape", detail: "title is required" }, fields.id, who);
   if (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(fields.id).first()) return refuse(db, now, { rule: "card-exists", detail: fields.id }, fields.id, who);
+  // #C871: a new card may not take a place at or ahead of one the owner holds in its agent's queue (queueWriteRefusal).
+  const floorBad = who !== "owner" && Number.isInteger(fields.queue_pos) && typeof fields.owner_role === "string" ? queueWriteRefusal(fields, null, who, await ownerFloor(db, fields.owner_role, fields.id)) : null;
+  if (floorBad) return refuse(db, now, floorBad, fields.id, who);
   const num = await mint(db, "C");
   const row = COLUMNS.map((c) => (c in fields ? bool(fields[c]) : null) ?? defaultFor(c));
   await db.prepare(`INSERT INTO cards (id, num, ${COLUMNS.join(", ")}, issues_at, held_at, hold_until, created_at, updated_at) VALUES (?, ?, ${COLUMNS.map(() => "?").join(", ")}, ?, ?, ?, ?, ?)`)
@@ -61,9 +64,9 @@ const CHECK_AT_WRITERS = ["Manager", "owner"];
 // Card words changed later: checked against the probe's reading of this card (a typed word cannot contradict it).
 export async function updateCard(db, now, who, fields) {
   const id = fields?.id;
-  const card = typeof id === "string" ? await db.prepare("SELECT id, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by FROM cards WHERE id = ?").bind(id).first() : null;
+  const card = typeof id === "string" ? await db.prepare("SELECT id, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, owner_role FROM cards WHERE id = ?").bind(id).first() : null;
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
-  const owned = queueWriteRefusal(fields, card, who);
+  const owned = queueWriteRefusal(fields, card, who, who !== "owner" && Number.isInteger(fields?.queue_pos) ? await ownerFloor(db, fields.owner_role ?? card.owner_role, id) : 0);
   if (owned) return refuse(db, now, owned, id, who);
   const bad = cardWriteRefusal(fields, await evidenceOf(db, `cards.${id}`));
   if (bad) return refuse(db, now, bad, id, who);
@@ -332,19 +335,33 @@ export async function setStackSwitch(db, now, who, b) {
 // #C871: the owner moves a card that has not started up or down in its agent's queue. The queue is the agent's cards not dropped and with no
 // commit pushed (the probe's reading), in queue_pos order (a card with none after those with one), then by number. The queue is renumbered
 // 1..n, and the two cards swapped carry the owner's stamp, so an agent cannot move them back (queueWriteRefusal).
+// An agent's queue, in order (queueRank): its cards not dropped and with nothing pushed (the probe's reading), each { id, num, queue_pos, owner
+// (the owner placed it), held (a depends_on that is not live) }. The same list serves the move, and the floor an agent's write may not pass.
+export async function queueCards(db, role) {
+  const all = (await db.prepare("SELECT id, num, owner_role, queue_pos, queue_set_by, depends_on, dropped FROM cards").all()).results ?? [];
+  const evidence = {};
+  for (const c of all) if (c.depends_on) for (const d of (() => { try { const l = JSON.parse(c.depends_on); return Array.isArray(l) ? l : []; } catch { return []; } })()) if (typeof d === "string" && !(d in evidence)) evidence[d] = await evidenceOf(db, `cards.${d}`);
+  const queue = [];
+  for (const r of all.filter((c) => c.owner_role === role && !c.dropped)) {
+    const e = await evidenceOf(db, `cards.${r.id}`);
+    if (e?.headSha12 || e?.phase === "live") continue;
+    queue.push({ id: r.id, num: r.num, queue_pos: r.queue_pos, owner: r.queue_set_by === "owner", held: dependsNotLive(r, all, evidence) });
+  }
+  return queue.sort(queueRank);
+}
+// The last place the owner holds in a queue, not counting `exceptId`: an agent may not write a place at or ahead of it (queueWriteRefusal).
+const ownerFloor = async (db, role, exceptId) => Math.max(0, ...(await queueCards(db, role)).filter((r) => r.owner && r.id !== exceptId && Number.isInteger(r.queue_pos)).map((r) => r.queue_pos));
 export async function moveInQueue(db, now, who, b) {
   const bad = queueMoveRefusal(b, who);
   if (bad) return refuse(db, now, bad, b?.id, who);
   const card = await db.prepare("SELECT id, owner_role, dropped FROM cards WHERE id = ?").bind(b.id).first();
   if (!card || card.dropped) return refuse(db, now, { rule: "card-unknown", detail: String(b.id) }, b.id, who);
-  const rows = (await db.prepare("SELECT id, num, queue_pos FROM cards WHERE owner_role = ? AND dropped = 0").bind(card.owner_role).all()).results ?? [];
-  const queue = [];
-  for (const r of rows) { const e = await evidenceOf(db, `cards.${r.id}`); if (!e?.headSha12 && e?.phase !== "live") queue.push(r); }
-  queue.sort((x, y) => (x.queue_pos ?? 1e6) - (y.queue_pos ?? 1e6) || (x.num ?? 1e9) - (y.num ?? 1e9) || (x.id < y.id ? -1 : 1));
+  const queue = await queueCards(db, card.owner_role);
   const at = queue.findIndex((r) => r.id === b.id);
   if (at < 0) return refuse(db, now, { rule: "queue-started", detail: `${b.id} has started: only a card with nothing pushed is in the queue` }, b.id, who);
   const to = b.dir === "up" ? at - 1 : at + 1;
-  if (to < 0 || to >= queue.length) return { ok: true, id: b.id, moved: false, order: queue.map((r) => r.id) };
+  // A card held by a depends_on stays after those that can start: it does not cross that line, and nothing crosses it going the other way.
+  if (to < 0 || to >= queue.length || queue[to].held !== queue[at].held) return { ok: true, id: b.id, moved: false, order: queue.map((r) => r.id) };
   [queue[at], queue[to]] = [queue[to], queue[at]];
   const swapped = new Set([queue[at].id, queue[to].id]);
   for (let n = 0; n < queue.length; n++) {

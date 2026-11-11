@@ -1847,7 +1847,7 @@ const qPos=i=>Number.isInteger(i&&i.queuePos)&&i.queuePos>0?i.queuePos:Infinity;
 let qOfI=null,qOfS=null,qMemo=new Map();
 function queueOf(who){if(qOfI!==state.initiatives||qOfS!==state.steps){qOfI=state.initiatives;qOfS=state.steps;qMemo=new Map()}
   if(!qMemo.has(who))qMemo.set(who,sortQueue(who));return qMemo.get(who)}
-function sortQueue(who){return state.initiatives.filter(i=>i&&i.who===who&&i.status!=="done"&&i.status!=="dropped").sort((a,b)=>isQueued(a)-isQueued(b)||qPos(a)-qPos(b)||(num(a.createdAt)??0)-(num(b.createdAt)??0))}
+function sortQueue(who){return state.initiatives.filter(i=>i&&i.who===who&&i.status!=="done"&&i.status!=="dropped").sort((a,b)=>isQueued(a)-isQueued(b)||qPos(a)-qPos(b)||(a.queueSetBy==="owner"?0:1)-(b.queueSetBy==="owner"?0:1)||(num(a.createdAt)??0)-(num(b.createdAt)??0))}
 function ordinal(n){const t=n%100,s=t>10&&t<14?"th":({1:"st",2:"nd",3:"rd"})[n%10]||"th";return n+s}
 const isQueued=i=>notStarted(i)||i.status==="queued";
 // Waiting its turn: queued with a place, and a card ahead of it in its queue still open (Designer and Manager on
@@ -1872,7 +1872,9 @@ function queueLine(i){if(!i.who||!isQueued(i))return "";const q=queueOf(i.who);i
   return `<span class="q-line">${esc(i.who)}&#39;s queue: ${q.map(at).join(" → ")}</span>`}
 // #C871: an agent's queue on its Crew tile, as #C numbers in the order the dispatch follows (the name on hover), and on the store the owner's
 // up and down buttons. "order set by the owner" when the owner has placed any of them (the Worker then refuses an agent's write to it).
-function queueTile(n){if(!STORE)return "";const q=queueOf(n).filter(isQueued);if(!q.length)return "";
+// A card held by a card it depends on (still open and building) sits after those that can start, as the store's order and the dispatch have it.
+const heldByDeps=i=>!!i&&Array.isArray(i.dependsOn)&&i.dependsOn.some(id=>{const c=(state.initRaw||[]).find(x=>x&&x.id===id);return !!c&&c.status!=="done"&&c.status!=="dropped"&&holdsBuild(c)});
+function queueTile(n){if(!STORE)return "";const q=queueOf(n).filter(isQueued).map((i,k)=>[i,k]).sort((a,b)=>heldByDeps(a[0])-heldByDeps(b[0])||a[1]-b[1]).map(x=>x[0]);if(!q.length)return "";
   const label=i=>Number.isInteger(i.num)?"#C"+i.num:i.id;
   const cell=(i,k)=>`<span class="qc" title="${esc(i.name||i.id)}">${esc(label(i))}<button type="button" class="qm" data-qmove="${esc(i.id)}" data-dir="up" aria-label="Move ${esc(label(i))} up the queue"${k===0?" disabled":""}>↑</button><button type="button" class="qm" data-qmove="${esc(i.id)}" data-dir="down" aria-label="Move ${esc(label(i))} down the queue"${k===q.length-1?" disabled":""}>↓</button></span>`;
   return `<div class="crew3-q"><span class="ql">Queue</span>${q.map(cell).join("")}${q.some(i=>i.queueSetBy==="owner")?'<small class="qo">order set by the owner</small>':""}</div>`}
