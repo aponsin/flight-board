@@ -142,7 +142,11 @@ export function dispatchInput(view, now, { lead = "Manager" } = {}) {
   const activeCard = (k) => !k.paused && !k.dropped && !k.done_at && !k.blocked_reason && phaseOf(k.id) !== "live"; // #C902: a card closed as done is no partner
   const hasPartner = (c) => all.some((k) => k && typeof k.id === "string" && k.id !== c.id && activeCard(k) && k.owner_role === c.owner_role && boardCard(k) === boardCard(c)
     && (boardCard(c) || k.repo === c.repo) && !hasHead(k.id) && dependsOf(k).includes(c.id));
-  const stackBranch = switchOn ? all.filter((c) => c && typeof c.id === "string" && boardCard(c)).map((c) => ev[`cards.${c.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
+  // #C953: the stack a card is told to join is one of ITS OWN repository: only a card with the same repo word (none matching none) names the
+  // branch. A product card with no repo word (Builder's #C930 to #C951 stack) no longer hands its branch to a flight-board card (#C928 was told to
+  // stack on #C948's product branch); with no same-repo card on a stack the card builds from main, as with the switch off.
+  const sameRepoWord = (a, b) => (a.repo || null) === (b.repo || null);
+  const stackBranchFor = (card) => switchOn ? all.filter((k) => k && typeof k.id === "string" && boardCard(k) && sameRepoWord(k, card)).map((k) => ev[`cards.${k.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
   const BUILD_STEPS = new Set(["build", "rework", "outside"]);
   // #C915 (b): whether a hold_end has come: its ask is closed, or its card is dropped, done or live. An id the view does not hold stays open.
   // (A hold that stays open for 2 h raises a line to Manager in the store, heldWakes: it cannot hide a card for ever.)
@@ -168,7 +172,7 @@ export function dispatchInput(view, now, { lead = "Manager" } = {}) {
     // #C914: a card the probe marks stackHold (pushed, no stack-ready signal covers its head) AND that has a declared stack partner waiting to
     // start has no review turn, and is no builder turn either. Any other card dispatches as it always did.
     const held = inBoard && e?.stackHold === true && hasPartner(c);
-    const turns = turnsOf(c, e, inBoard ? { stackOn: true, stackBranch } : {});
+    const turns = turnsOf(c, e, inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {});
     cards.push({ queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: held ? turns.filter((t) => t.step !== "review") : turns, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }
   if (switchOn && cards.some((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step)))) {
