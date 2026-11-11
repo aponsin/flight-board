@@ -1346,7 +1346,10 @@ function threadOpen(id){const t=threadOf(id),last=t[t.length-1];if(!last||last.f
   const it=itemOf(id);return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
 function openThreads(){return threadIds().filter(threadOpen)}
 function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"waiting",doc:w};
-  const i=state.initRaw.find(x=>x.id===id);if(i)return {coll:"initiatives",doc:i};
+  // #C831: the card AS SHOWN (asShown: a card closed by evidence, live and on main with no check date, reads done; a dropped one too), as
+  // a Collector-closed card did on the old board. On the store a card never gets status done, so the raw card kept a conversation held on
+  // a finished card (thread id = card id) out of every thread tab for ever. Readers only: the two writers below skip initiatives.
+  const i=state.initRaw.find(x=>x.id===id);if(i)return {coll:"initiatives",doc:asShown(i)};
   const d=state.ideas.find(x=>x.id===id);if(d)return {coll:"ideas",doc:d};return null}
 // Resolved: its item is done (an ask or idea done, an initiative done), or Manager's last word marked it resolved.
 // An owner's Ack on a building thread (#C510, ackWrites) is resolved for Manager's gates (nothing for it to answer) but
