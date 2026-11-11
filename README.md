@@ -298,7 +298,9 @@ its closure, and `collector/TASK.md`'s settings block), that the steps didn't ch
 beyond db, comments, assets and downloads, builds and passes its scenarios. It prints one line per check; on any
 refusal it names each file and changes nothing, and those changes go out with the owner's install. Otherwise it runs
 its own copy's scan, pushes the commit to `main` (a fast-forward), moves the link with its own copy's
-`scripts/current.mjs`, and prints the page to republish and, when it changed, the prompt to save into the task.
+`scripts/current.mjs`, and prints, when it changed, the prompt to save into the task. It no longer writes or names a
+page to republish (#C917): the old artifact board is frozen, and the store page ships only with the
+owner's deploy pair. The page is still built, in the tool's own temporary folder, so its scenarios are still checked.
 
 **The lead's publish of the signed page goes without asking** (#C409): `gate/publish.mjs`, a pinned PreToolUse hook
 on Artifact, allows the lead's publish to this board of exactly the page the signed code builds from the current link
