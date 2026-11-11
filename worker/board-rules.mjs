@@ -385,9 +385,12 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     // #C737: a card of another repository (a repo word) that is on main and read at ship is waiting for the owner's deploy, not for Release:
     // it never wakes Manager as stalled.
     if (phase === "ship" && v.onMain === true && typeof c.repo === "string" && c.repo !== "") continue;
-    const role = PHASE_LANES[phase] ?? c.owner_role;
+    // #C854: a signed tip that no longer continues main cannot be landed as it is: Release cannot take it, so the wait is its builder's (re-cut).
+    const behind = phase === "ship" && v.onMain !== true && v.behindMain === true;
+    const role = behind ? c.owner_role : PHASE_LANES[phase] ?? c.owner_role;
     if (typeof role !== "string" || !/^[A-Za-z0-9 _-]{1,24}$/.test(role)) continue;
-    const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`), at = `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} 15 min`;
+    const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`);
+    const at = behind ? `#C${c.num} signed but behind main${/^[0-9a-f]{12}$/.test(String(v.headSha12)) ? " " + v.headSha12 : ""}, waits at ${role} 15 min` : `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} 15 min`;
     if (!a && Object.keys(roster).length && Number.isFinite(start)) {
       if (now - start >= STALL_AFTER_MS) out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, no session for ${role}` });
       continue;
