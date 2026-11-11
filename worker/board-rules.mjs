@@ -241,6 +241,10 @@ export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
 export const CARD_SIZES = ["XS", "S", "M", "L", "XL"];
 const CARD_FORBIDDEN = new Set(["status", "phase", "num", "live_version", "signed", "on_main", "ci", "evidence"]);
 
+// #C949: the card ids the probe reads (the same as collector/state-schema.mjs CARD_ID and CARD_ID_MAX; a test holds the two equal). The Worker
+// is bundled without collector/, so the pattern is copied here, not imported.
+export const PROBE_CARD_ID = /^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/;
+export const PROBE_CARD_ID_MAX = 40;
 export function cardWriteRefusal(fields, evidence) {
   if (fields === null || typeof fields !== "object" || Array.isArray(fields)) return refuse("card-shape", "card words are an object");
   const typed = Object.keys(fields).filter((k) => CARD_FORBIDDEN.has(k));

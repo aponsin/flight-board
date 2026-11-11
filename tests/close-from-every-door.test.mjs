@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker from "../worker/board-worker.mjs";
 import { createCard } from "../worker/board-store.mjs";
-import { cardWriteRefusal } from "../worker/board-rules.mjs";
+import { cardWriteRefusal, PROBE_CARD_ID, PROBE_CARD_ID_MAX } from "../worker/board-rules.mjs";
 
 const NOW = 1_800_000_000_000;
 const sha = async (s) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -48,6 +48,27 @@ test("a close with valid evidence works from the shared door, Manager's door and
   const reopen = await manager("tools/call", { name: "card_update", arguments: { id: "via-manager", done: false } });
   assert.match(JSON.stringify(reopen), /card-done/);
   assert.notEqual((await done(env, "via-manager")).done_at, null, "still done");
+});
+
+// The probe skips a card whose id its CARD_ID refuses, so such a card gets no evidence row and a landed one is never seen (#C896 had six words).
+test("a new card's id must be one the probe reads: the store's rule is the probe's own, five words at most, and every readable id is still allowed", async () => {
+  const { CARD_ID, CARD_ID_MAX } = await import("../collector/state-schema.mjs");
+  assert.equal(PROBE_CARD_ID.source, CARD_ID.source, "the same pattern");
+  assert.equal(PROBE_CARD_ID_MAX, CARD_ID_MAX, "the same length cap");
+  const { env } = await make();
+  const readable = ["a", "x", "card-a", "c949", "push-test-flaky-bytes", "idle-stall-counts-done-cards", "one-two-three-four-five", "a".repeat(16), `${"a".repeat(16)}-${"b".repeat(16)}-${"c".repeat(6)}`, "9-9", "safe-restart-badge-truth"];
+  for (const id of readable) {
+    assert.ok(CARD_ID.test(id) && id.length <= CARD_ID_MAX, `fixture ${id} is readable by the probe`);
+    const r = await createCard(env.DB, NOW, "Manager", { id, title: id });
+    assert.equal(r.ok, true, `${id}: ${JSON.stringify(r)}`);
+  }
+  const unreadable = ["board-id-trailer-checked-at-ready", "one-two-three-four-five-six", "a".repeat(17), `${"a".repeat(16)}-${"b".repeat(16)}-${"c".repeat(7)}`, "Upper", "-lead", "trail-", "dou--ble", "has space", ""];
+  for (const id of unreadable) {
+    const r = await createCard(env.DB, NOW, "Manager", { id, title: "t" });
+    assert.equal(r.ok, false, id);
+    assert.equal(r.refused.rule, "card-id", id);
+    assert.match(r.refused.detail, /probe can read the card/);
+  }
 });
 
 test("a refusal names what is missing: done without evidence, evidence without done, done false", () => {
