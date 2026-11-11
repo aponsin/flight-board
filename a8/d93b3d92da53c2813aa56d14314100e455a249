@@ -1,0 +1,1 @@
+PASS Full: #C902 close-done-without-branch, signed only as part of the line ending at ee3e1d3, re-cut of 9c42b8a onto 959cc5a. Re-reviewed: the syncStalls cards SELECT merge adds done_at and keeps the read_at evidence lines of #C927. This commit alone must not ship.
