@@ -1,0 +1,5 @@
+FINDINGS Full: #C853 stop-hook-unpushed-build eeae556. Not signed, it also sits on #C848 v4 which has FINDINGS. Re-cut on #C848 v5.
+
+F1 blocking, gate/stop.mjs unpushedCheck: since #C850 the push is the READY, so this forces premature READYs. Our rules make an agent commit before it is done: after every green change, and before mutation checks. Then it often ends the turn to wait on a background suite or mutants. The hook says push it now then send READY, and the push wakes the reviewer on unchecked work. Do not judge a turn that leaves a background task running, or say push when it is green instead of now.
+
+F2, decide and test either way: re-cut branches -v2 and -v3 are deleted from origin after the newer one lands. A session still on build/x-v3 counts its commits as unpushed and is told to push the dead branch back. One way out: skip when a newer build/same-card-vN exists on origin, as board-release supersededBy reads the same heads.
