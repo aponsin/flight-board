@@ -614,7 +614,12 @@ export function cardState(card, repo, config, now, opts = {}) {
   if (!tips.length && typeof repo.git === "function") { const t = trailerHead(repo, card.id); if (t) tips = [t]; }
   if (tips[0]) tips = [ownHead(repo, card, tips[0]), ...tips.slice(1)];
   const tip = tips[0];
-  if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };
+  if (!tip) {
+    const seen = mainEvidence(repo, card) ?? {};
+    // #C892: a card with no head whose ship commit (the repository's versionPattern) is on origin/main is shipped: live, so a card that
+    // depends on it is released. Work seen on main without a ship commit stays what it was (a commit that is not yet a ship is not live).
+    return { ...base, ...seen, ...(seen.shippedAt ? { phase: config.collector.livePhase, onMain: true } : {}) };
+  }
   const one = tipState(card, tip, repo, config, now, declared, opts.cover ?? null);
   const out = { ...base, ...one };
   if (tips.length > 1) {
@@ -667,6 +672,13 @@ export function cardStates({ cards, config, repos, now, stacks = [] }) {
       const tipOf = (x) => headsFor(card.id, (x.tips ?? []).filter((h) => h.branch !== x.main), card.num)[0];
       const found = Object.values(repos).map((x) => [x, tipOf(x)]).filter(([, t]) => t).sort((a, b) => (b[1].at ?? 0) - (a[1].at ?? 0))[0];
       if (found && !(repo && tipOf(repo))) repo = found[0];
+      // #C892: no branch names it anywhere (merged, then deleted): the repository whose origin/main carries its Board-Id trailer or its
+      // "#C<num>" is its own, so a product card that shipped is read from the product's main and not from the team's, which has nothing of it.
+      // The team's own repository keeps a card its own main carries.
+      else if (!found) {
+        const carries = (x) => typeof x?.git === "function" && !!(trailerHead(x, card.id) ?? mainEvidence(x, card));
+        if (!carries(repo)) { const other = Object.values(repos).find((x) => x !== repo && carries(x)); if (other) repo = other; }
+      }
     }
     out[card.id] = cardState(card, repo, config, now);
     repoOfCard[card.id] = repo;
