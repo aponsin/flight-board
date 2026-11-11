@@ -508,6 +508,21 @@ export function signedTimesOf(git, sha, notes, signed, fallback = null) {
 }
 // `cover` (#C859 slice 3, design 4): the full sha of the stack tip the card sits under. A note on the tip counts for every card whose commits
 // are ancestors of it, so the card's sign-offs (and findings) are its own commit's together with the tip's.
+// #C895: the repository as owner/name, from its remote's address (https or ssh, with or without .git), read once per repository run. null when
+// the remote cannot be read or does not look like owner/name: the line then simply does not name a repository.
+const REPO_FULL = new WeakMap();
+export function repoFullOf(repo) {
+  if (!repo || typeof repo.git !== "function") return null;
+  if (REPO_FULL.has(repo)) return REPO_FULL.get(repo);
+  let full = null;
+  try {
+    const m = /[:\/]([A-Za-z0-9._-]{1,100})\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/.exec(String(repo.git(["remote", "get-url", repo.remote])).trim());
+    if (m && !m[1].startsWith("-") && !m[2].startsWith("-")) full = `${m[1]}/${m[2]}`;
+  } catch { /* no such remote */ }
+  REPO_FULL.set(repo, full);
+  return full;
+}
+const BRANCH_NAME = /^[A-Za-z0-9._\/-]{1,100}$/;
 function tipState(card, tip, repo, config, now, declared, cover = null) {
   // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
   // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
@@ -557,7 +572,13 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
     ...(phase && !build && Number.isInteger(head.at) && head.at >= 1577836800000 && head.at <= 4102444800000 ? { readyAt: head.at } : {}),
     ...(phase && !build && unsigned.length ? { waitingFor: unsigned.slice(0, 10) } : {}),
   };
-  return { phase: phase ?? declared, ...extra, headSha12: sha12(head.sha), signed, onMain, ...(ci ? { ci: ci.ci, ciMin: ci.ciMin } : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(shipping === null ? {} : { shipping }), seen };
+  // #C895: the full sha, the branch (main for a card on main) and the repository, for the DISPATCH line.
+  const where = {
+    ...(/^[0-9a-f]{40}$/.test(String(head.sha)) ? { headSha: head.sha } : {}),
+    ...(() => { const b = onMain ? repo.main : head.branch; return typeof b === "string" && BRANCH_NAME.test(b) && !b.startsWith("-") ? { headBranch: b } : {}; })(),
+    ...(repoFullOf(repo) ? { repoFull: repoFullOf(repo) } : {}),
+  };
+  return { phase: phase ?? declared, ...extra, ...where, headSha12: sha12(head.sha), signed, onMain, ...(ci ? { ci: ci.ci, ciMin: ci.ciMin } : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(shipping === null ? {} : { shipping }), seen };
 }
 // The newest commit on the repository's main line (its last 400) whose Board-Id trailer is exactly the card's id, as a head
 // { branch: main, sha, at, message }, or null. The id goes to git as a fixed string, never a pattern or an option.

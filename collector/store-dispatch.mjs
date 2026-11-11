@@ -35,6 +35,14 @@ export function turnsOf(card, e, ctx = {}) {
   const tip = stack && typeof stack.tip === "string" && /^[0-9a-f]{12}$/.test(stack.tip) ? stack.tip : undefined;
   const branch = ctx.stackBranch ?? (typeof stack?.branch === "string" ? stack.branch : undefined);
   const sha = tip ?? (typeof e?.headSha12 === "string" && /^[0-9a-f]{12}$/.test(e.headSha12) ? e.headSha12 : undefined);
+  // #C895: where to find the commit without asking: its full sha, the repository (owner/name) and the branch (the stack tip's full sha and
+  // the stack's branch when the line names the stack tip; otherwise the card's head, on its own branch, or on main). Each only when the
+  // evidence has it in the plain shape, and the full sha only when it is the 12 the line would have named.
+  const full = (s, short) => (typeof s === "string" && /^[0-9a-f]{40}$/.test(s) && short && s.startsWith(short) ? s : undefined);
+  const fullSha = tip ? full(stack.tipSha, tip) : full(e?.headSha, sha);
+  const onBranch = tip ? (typeof stack?.branch === "string" ? stack.branch : undefined) : (typeof e?.headBranch === "string" ? e.headBranch : undefined);
+  const inRepo = typeof e?.repoFull === "string" ? e.repoFull : undefined;
+  const where = { ...(fullSha ? { fullSha } : {}), ...(inRepo ? { repo: inRepo } : {}), ...(fullSha && onBranch ? { onBranch } : {}) };
   const signed = (Array.isArray(e?.signed) ? e.signed : []).filter((s) => typeof s === "string" && Object.hasOwn(ROLE_OF_NOTE, s));
   const signedBy = signed.map((s) => ROLE_OF_NOTE[s]);
   const owner = { role: card.owner_role, phase: "build", step: "build", ...(branch ? { stack: branch } : {}) };
@@ -43,17 +51,17 @@ export function turnsOf(card, e, ctx = {}) {
   // #C852: a review whose note on this commit starts FINDINGS has sent it back: the fix is the owner's turn, and no reviewer is woken to
   // look at a commit already rejected. It is a fact of this sha (evidence.findings), so a new commit clears it without anyone's step.
   const findings = (Array.isArray(e?.findings) ? e.findings : []).filter((s) => typeof s === "string" && Object.hasOwn(ROLE_OF_NOTE, s));
-  if (findings.length && Object.hasOwn(ROLE_OF_NOTE, phase)) return [{ role: card.owner_role, phase: "build", step: "rework", sha, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
+  if (findings.length && Object.hasOwn(ROLE_OF_NOTE, phase)) return [{ role: card.owner_role, phase: "build", step: "rework", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
   if (phase === "ship") {
-    if (e.onMain === true) return typeof card.repo === "string" && card.repo !== "" ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, signed: signedBy }] : [];
+    if (e.onMain === true) return typeof card.repo === "string" && card.repo !== "" ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, ...where, signed: signedBy }] : [];
     // #C854: signed but no longer continuing main: Release cannot take it. The turn is the owner's, to re-cut it on main (a new commit has a new sha, so a reviewer is woken again).
-    if (e.behindMain === true) return [{ role: card.owner_role, phase: "ship", step: "recut", sha, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
-    return [{ role: PHASE_LANES.ship, phase: "ship", step: "land", sha, signed: signedBy }];
+    if (e.behindMain === true) return [{ role: card.owner_role, phase: "ship", step: "recut", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
+    return [{ role: PHASE_LANES.ship, phase: "ship", step: "land", sha, ...where, signed: signedBy }];
   }
   if (!Object.hasOwn(PHASE_LANES, phase)) return [owner];
   const out = [];
-  if (!signed.includes(phase)) out.push({ role: PHASE_LANES[phase], phase, step: "review", sha, signed: signedBy });
-  if (phase === "checker" && card.review_level === "Full" && !signed.includes("security")) out.push({ role: "Security", phase, step: "review", sha, signed: signedBy });
+  if (!signed.includes(phase)) out.push({ role: PHASE_LANES[phase], phase, step: "review", sha, ...where, signed: signedBy });
+  if (phase === "checker" && card.review_level === "Full" && !signed.includes("security")) out.push({ role: "Security", phase, step: "review", sha, ...where, signed: signedBy });
   return out;
 }
 
