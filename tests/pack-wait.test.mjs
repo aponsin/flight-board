@@ -68,7 +68,7 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
     git(REPO, "push", "-q", join(D, "origin.git"), `${B}:refs/heads/main`);
     const W = join(D, "work");
     execFileSync("git", ["clone", "-q", join(D, "origin.git"), W]);
-    const commit = (file, msg) => { appendFileSync(join(W, file), file.endsWith(".html") ? "\n<!-- x -->\n" : "\n// x\n"); git(W, "commit", "-qam", msg); return git(W, "rev-parse", "HEAD"); };
+    const commit = (file, msg) => { appendFileSync(join(W, file), file.endsWith(".html") ? "\n<!-- x -->\n" : "\n// x\n"); git(W, "commit", "-qam", `${msg}\n\nBoard-Id: pack-card`); return git(W, "rev-parse", "HEAD"); };
     const sign = (sha, checker = "PASS Quick") => { git(W, "notes", "--ref=checker", "add", "-f", "-m", checker, sha); git(W, "notes", "--ref=security", "add", "-f", "-m", "SECURE", sha); };
     const Sx = commit("gate/rules.mjs", "the pack"); sign(Sx);
     const P = commit("page/board.template.html", "a page"); sign(P);
