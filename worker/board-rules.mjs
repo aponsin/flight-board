@@ -220,7 +220,9 @@ export function listWriteRefusal(fields, { create = false } = {}) {
 }
 
 // Card words: only these fields are typed; status, phase, evidence and numbers are never written by a session.
-const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end"]);
+const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end", "done", "done_evidence"]);
+// #C902: what shows a card with no branch is done: a file path (~/ or /), an https link, or a thread message's id (m-<time>-<8 hex>).
+export const DONE_EVIDENCE = /^(?:(?:~\/|\/)[^\s]|https:\/\/[^\s]|m-\d{10,16}-[0-9a-f]{8}$)/;
 export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
 export const CARD_SIZES = ["XS", "S", "M", "L", "XL"];
 const CARD_FORBIDDEN = new Set(["status", "phase", "num", "live_version", "signed", "on_main", "ci", "evidence"]);
@@ -249,6 +251,13 @@ export function cardWriteRefusal(fields, evidence) {
   if (fields.check_at !== undefined && fields.check_at !== null && !(Number.isInteger(fields.check_at) && fields.check_at >= 1577836800000 && fields.check_at <= 4102444800000)) return refuse("card-check", "check_at is a time in milliseconds, or null to lift the hold");
   if ((fields.blocked_reason !== undefined || fields.paused === 1 || fields.paused === true) && !present(fields.next_note)) {
     return refuse("blocked-needs-note", "Blocked or Paused needs a current next_note");
+  }
+  // #C902: done closes a card whose work leaves no branch (a review, a file). Only true (closing), always with its evidence, never with dropped.
+  if (fields.done !== undefined || fields.done_evidence !== undefined) {
+    if (fields.done !== true) return refuse("card-done", "done is true, with done_evidence; a done card is not reopened by a write");
+    const ev = fields.done_evidence;
+    if (typeof ev !== "string" || ev.length > 500 || !DONE_EVIDENCE.test(ev.trim())) return refuse("done-needs-evidence", "done needs done_evidence: a file path (~/ or /), an https link, or a thread message id (m-...)");
+    if (fields.dropped === true || fields.dropped === 1) return refuse("card-done", "a card is done or dropped, not both");
   }
   // A typed word that contradicts the probe's reading: Dropped on a card the probe reads as live.
   if ((fields.dropped === 1 || fields.dropped === true) && evidence?.phase === "live") return refuse("contradicts-evidence", "the probe reads this card as live");
@@ -292,7 +301,7 @@ const zDay = (ms) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " "
 export function heldWakes({ now, cards, endsPassed }) {
   const out = [];
   for (const c of cards ?? []) {
-    if (!Number.isInteger(c.num) || c.dropped || !isHeld(c)) continue;
+    if (!Number.isInteger(c.num) || c.dropped || c.done_at || !isHeld(c)) continue;
     const why = String(heldWord(c.blocked_reason) ? c.blocked_reason : c.waiting_on).trim().replace(/\s+/g, " ").slice(0, 80);
     const timed = Number.isInteger(c.check_at) && c.check_at > 0, ref = heldWord(c.hold_end) ? c.hold_end : null, until = Number.isInteger(c.hold_until) && c.hold_until > 0 ? c.hold_until : null;
     if (timed || ref || until) { // an explicit end (check_at, hold_end) wins over the one the store gave (hold_until)
@@ -411,14 +420,14 @@ export function dependsNotLive(c, cards, evidence) {
   let list = c.depends_on;
   if (typeof list === "string") { try { list = JSON.parse(list); } catch { return false; } }
   if (!Array.isArray(list)) return false;
-  return list.some((d) => typeof d === "string" && d !== c.id && (cards ?? []).some((k) => k && k.id === d && !k.dropped) && evidence?.[d]?.lit?.[0] !== "live");
+  return list.some((d) => typeof d === "string" && d !== c.id && (cards ?? []).some((k) => k && k.id === d && !k.dropped && !k.done_at) && evidence?.[d]?.lit?.[0] !== "live");
 }
 export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart }) {
   const out = [], queued = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
   for (const c of cards ?? []) {
-    if (!Number.isInteger(c.num) || c.dropped || c.paused || c.blocked_reason || c.waiting_on || openAskCards?.has(c.id) || working.has(c.id)) continue;
+    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || c.blocked_reason || c.waiting_on || openAskCards?.has(c.id) || working.has(c.id)) continue;
     const v = evidence?.[c.id], phase = v?.lit?.[0];
     // #C846: a card with no lit phase (nothing pushed to origin) whose owner has been idle 15 min is a stall of its own: nobody has
     // started it. It is not held, not behind a depends_on that is not live, not the lead's, and touched in the last 3 days (an old
