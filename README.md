@@ -144,6 +144,24 @@ Files and screenshots (#C726) are stored in an R2 bucket bound as `FILES`. Creat
 
 then apply the D1 migrations as for any store change (`0010_files.sql` holds the file list). Without the bucket the deploy fails. A Worker with no `FILES` binding refuses uploads as "file-store-off". The probe writes each day's runner and automation minutes and Actions cost to `POST /api/probe/usage`.
 
+## Putting a main live: the deploy pair (#C734)
+
+A deploy pair is the set of files the owner runs in Terminal to put a signed commit of main live. Nobody else deploys: the pair is made, signed and handed over, and the owner runs two hash-checked lines.
+
+Make it from the repository at the signed commit (a full 40-hex sha that is on `origin/main`):
+
+    node scripts/pair/make-pair.mjs --name pc23 --card "#C846 and #C852" --what "<a short plain phrase>" \
+         --signed <40-hex sha> --deploy-ok "the Worker carries <sha8>; now run the tree step" --tree-ok "board-store-v4 is at <sha7>" \
+         --out <the owner's board folder>
+
+It writes `board-store-deploy-<name>.mjs` and `board-store-tree-<name>.mjs` from `scripts/pair/deploy.template.mjs` and `tree.template.mjs` (so the forward-only rule is reviewed once) and prints each file's sha256. Values must be plain printable ASCII with no quote, backslash, backtick, `$` or `@@`.
+
+- **deploy** works in its own checkout (`board-store-pa`), never in `board-store-v4`: it moves that checkout to exactly the signed commit (refused if the checkout is not behind it, so an older pair run late cannot roll the Worker back), builds the old board page, applies the D1 migrations not yet applied, redeploys the Worker with `BUILD_SHA` set to the signed commit, and writes `board-store-deploy-<name>.done`. Wrangler is pinned.
+- **tree** (`update`, or `back`) moves the probe's code tree `board-store-v4`, which the launchd jobs run from, to the signed commit. It refuses unless the deploy's `.done` file names that commit, so the new probe never runs against a Worker that reports nothing. `back` returns it to the commit recorded in `board-store-tree-<name>.from`.
+- **steps** (`board-store-<name>-steps.md`): the pin, what changed since the last pair (Worker code, probe and gate code, page, any migration, any secret), and the two lines, each checking its file's sha256 before running, in the deploy-then-tree order. Copy the last pair's file for the layout.
+
+Send the files and their sha256 to Security for SAFE before the owner is told; when a Worker change adds a field the probe writes (as `findings` did), the Worker goes first.
+
 ## Tests
 
 `npm test` runs every rule's test. Each rule also had a mutation check: break the rule on purpose, a test must fail, restore.
