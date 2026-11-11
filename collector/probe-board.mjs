@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
-import { dispatchRun } from "./store-dispatch.mjs";
+import { dispatchRun, writeStackQueue } from "./store-dispatch.mjs";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { home } from "../gate/gate.mjs";
 
@@ -82,7 +82,10 @@ export async function liveJob({ base, headers, productUrl, fetchImpl = fetch, lo
 export async function dispatchJob({ base, headers, fetchImpl = fetch, dir, roster, lead, now = Date.now, log = () => {} }) {
   const r = await fetchImpl(`${base}/api/view`, { method: "GET", headers, redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!r.ok) throw new Error(`view answered ${r.status}`);
-  const run = dispatchRun(await r.json(), { dir, roster, lead, now: now(), log });
+  const view = await r.json();
+  const run = dispatchRun(view, { dir, roster, lead, now: now(), log });
+  // #C914: the queue file the builder's stack-ready command reads (ids only). A failed write never stops the dispatch.
+  try { writeStackQueue(view, { dir, now: now() }); } catch (e) { log(`dispatch: stack-queue.json not written: ${e?.message ?? e}`); }
   // #C903: a builder woken for a card with nothing pushed starts that card's build. The Worker writes it once (a card with any history is
   // left alone), so the item repeating on every run adds nothing; a failed post is logged and never stops the dispatch.
   for (const card of buildStarts(run.items)) {

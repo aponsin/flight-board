@@ -28,6 +28,10 @@ export function readStack({ heads, tips, isAncestor }) {
   return { tip: best.tip, branch: best.branch, members: best.members, outside: ids.filter((id) => !inside.has(id)) };
 }
 
+// #C914: cards whose head was committed before this time dispatch as they always did (grandfathered: nobody had the stack-ready command yet).
+// 1_794_420_000_000 ms = 2026-11-11T18:00:00Z (checked with node).
+export const STACK_HOLD_FROM = 1_794_420_000_000;
+
 // What each card's state carries for the page and the dispatch: { tip: <12 hex>, size } for a member, { outside: true } for a card not cut
 // from the tip. A stack of one card is no stack: it carries nothing (the switch off is today's reading).
 // The stack's branch rides along (design 3: the builder's wake names it, and an outsider is told which tip to cut from) when it is a plain name.

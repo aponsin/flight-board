@@ -26,7 +26,19 @@ test("switch on: the builder's wake names the stack branch, and the line says on
   const build = items(v).find((i) => i.step === "build");
   assert.equal(build.card, "c2-two");
   assert.equal(build.stack, "build/stack");
-  assert.match(dispatchLine(build), new RegExp(`it ${DISPATCH_STEPS.build.replace(/[()]/g, "\\$&")}; stack mode is on, the stack branch is build/stack: one commit per card, rebased on its tip before you push \\(Boardsmith's turn;`));
+  assert.match(dispatchLine(build), new RegExp(`it ${DISPATCH_STEPS.build.replace(/[()]/g, "\\$&")}; stack mode is on, the stack branch is build/stack: one commit per card, rebased on its tip; push with node scripts\\/stack-ready\\.mjs --config <the board\\.config\\.json path of your wake-watch line> \\(it pushes the branch and decides by itself whether cards are still queued\\) \\(Boardsmith's turn;`));
+});
+
+test("#C914: with the switch on a builder's line names the stack-ready command even before any stack branch exists; not for a reviewer, not with the switch off", () => {
+  const v = world({ cards: [card("c1-one")], ev: {} });
+  const [build] = items(v);
+  assert.equal(build.stackMode, true);
+  assert.match(dispatchLine(build), /; stack mode is on: push with node scripts\/stack-ready\.mjs --config <the board\.config\.json path of your wake-watch line> \(it pushes the branch and decides by itself whether cards are still queued\) \(Boardsmith's turn;/);
+  const review = items(world({ cards: [card("c1-one")], ev: { "c1-one": inStack({ stack: undefined }) } }))[0];
+  assert.equal(review.role, "Checker");
+  assert.equal(review.stackMode, undefined);
+  assert.doesNotMatch(dispatchLine(review), /stack-ready/);
+  assert.doesNotMatch(dispatchLine(items(world({ on: false, cards: [card("c1-one")], ev: {} }))[0]), /stack-ready/);
 });
 
 test("switch off: nothing about a stack in any turn or line (today's dispatch)", () => {
