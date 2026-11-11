@@ -56,7 +56,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "weekTotal"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "weekTotal", "stack"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -84,9 +84,12 @@ const CARD = {
   shippedAt: isTime,
   reviews: (v) => plain(v) && Object.keys(v).length >= 1 && Object.keys(v).length <= MAX_SIGNED && Object.entries(v).every(([p, t]) => PHASE.test(p) && isTime(t)),
   branches: (v) => Array.isArray(v) && v.length >= 2 && v.length <= MAX_BRANCHES,
+  // #C859 slice 2: where the card stands in its repository's stack, read from git (collector/stack.mjs): { tip, size } for a card under the
+  // stack tip (a stack of two or more), or { outside: true } for a card not cut from it. Only for a repository whose stack switch is on.
+  stack: (v) => plain(v) && ((Object.keys(v).length === 2 && SHA12.test(v.tip) && Number.isInteger(v.size) && v.size >= 2 && v.size <= MAX_CARDS) || (Object.keys(v).length === 1 && v.outside === true)),
   at: isTime,
 };
-const { num: _n, at: _a, branches: _b, ...BRANCH_FIELDS } = CARD;
+const { num: _n, at: _a, branches: _b, stack: _s, ...BRANCH_FIELDS } = CARD;
 const BRANCH = { name: isId, ...BRANCH_FIELDS };
 const AGENT = {
   state: (v) => AGENT_STATES.includes(v),

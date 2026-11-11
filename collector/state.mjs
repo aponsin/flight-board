@@ -22,6 +22,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { PUBLISHED_FILE } from "./export.mjs";
+import { readStack, stackFields } from "./stack.mjs";
 import { journalCards, readJournal } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
@@ -610,8 +611,26 @@ export function cardState(card, repo, config, now) {
   return out;
 }
 
-export function cardStates({ cards, config, repos, now }) {
-  const out = {};
+// { cardId: sha }: for each open card, the newest commit with its Board-Id trailer on any branch tip's commits beyond main (last 100 per branch),
+// taken from the newest branch first. A branch name that git could take for a flag is never passed to it.
+export function stackHeads(repo, tips, open) {
+  const heads = {};
+  if (!open.size || typeof repo.git !== "function") return heads;
+  for (const t of [...tips].sort((a, b) => (b.at ?? 0) - (a.at ?? 0))) {
+    if (!/^[A-Za-z0-9._\/-]+$/.test(String(t.branch)) || String(t.branch).startsWith("-")) continue;
+    let log = "";
+    try { log = String(repo.git(["log", "-100", "--format=%H%x1f%B%x1e", `${repo.remote}/${t.branch}`, "--not", `${repo.remote}/${repo.main}`])); } catch { continue; }
+    for (const rec of log.split("\x1e")) {
+      const [sha, message] = rec.replace(/^\n/, "").split("\x1f");
+      if (!/^[0-9a-f]{40}$/.test(String(sha))) continue;
+      for (const m of String(message ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)) if (open.has(m[1]) && !heads[m[1]]) heads[m[1]] = sha;
+    }
+  }
+  return heads;
+}
+
+export function cardStates({ cards, config, repos, now, stacks = [] }) {
+  const out = {}, repoOfCard = {};
   for (const card of cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX).slice(0, MAX_CARDS)) {
     const r = repoOf(card, config);
     let repo = repos[r ? r.name : ""] ?? null;
@@ -624,6 +643,21 @@ export function cardStates({ cards, config, repos, now }) {
       if (found && !(repo && tipOf(repo))) repo = found[0];
     }
     out[card.id] = cardState(card, repo, config, now);
+    repoOfCard[card.id] = repo;
+  }
+  // #C859 slice 2: for a repository whose stack switch is on (`stacks`: the repository names, "" for the team's own), the stack read from git.
+  // Nothing is added for a switch that is off, which is the default: the switch off is today's reading.
+  for (const name of stacks) {
+    const repo = repos[name];
+    if (!repo || typeof repo.git !== "function") continue;
+    const tips = (repo.tips ?? []).filter((t) => t.branch !== repo.main);
+    // A card in the middle of a chain has its commit on the branch but not at its tip, and the branch is not named for it: headsFor does not
+    // find it. The stack reads every commit the branch holds beyond main (its last 100) for the Board-Id trailers of the repository's open cards.
+    const open = new Set(Object.keys(out).filter((id) => repoOfCard[id] === repo && !out[id].onMain));
+    const heads = stackHeads(repo, tips, open);
+    for (const id of open) if (!heads[id] && out[id].headSha12) heads[id] = out[id].headSha12;
+    const found = readStack({ heads, tips, isAncestor: (a, b) => a === b || String(b).startsWith(a) || ok(() => repo.git(["merge-base", "--is-ancestor", a, b])) });
+    for (const [id, field] of Object.entries(stackFields(found))) out[id] = { ...out[id], stack: field };
   }
   return out;
 }
