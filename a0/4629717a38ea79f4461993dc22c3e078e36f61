@@ -1,0 +1,1 @@
+SECURE. #C925 v2, re-cut of ac2e963 (SECURE) on ceabb63 (main c8a457d). Range-diff excluding CHANGELOG.md: identical except the merge into #C915's stalls line, which adds ...promiseWakes({ asks: openAsks, now }); promise:<id> rows do not match #C915's slow-row cleanup (LIKE '%'+SLOW_LINE_TAIL). Line-scoped for c8a457d..a046297.
