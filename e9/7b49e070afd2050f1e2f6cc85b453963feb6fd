@@ -1,0 +1,1 @@
+PASS Quick: #C840 live-source-test-clock. tests/live-source.test.mjs now gives the page a Date whose now is a fixed time, so 40 s ago no longer depends on load, as CLAUDE.md section 7 asks. No other real-clock read left in the file. Tests only, nothing deployed. Suite 2010 of 2010 green. Mutation check: pass, 2 of 2 killed - a clock drifting 1.5 s, and the real clock put back.
