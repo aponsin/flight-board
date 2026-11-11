@@ -55,3 +55,17 @@ test("through the store: the owner's post on the card's thread holds the stall b
   assert.equal((await wakeAsk(db2, NOW)).count, 1);
   assert.match((await takeInbox(db2, NOW + MIN)).stalls[0].reason, /^#C\d+ nothing posted on its thread in the last hour, Designer idle since /);
 });
+
+// #C943 (Checker's LOW on #C931): the store's post query and the rule share one boundary. The rule counts a post exactly POSTED_FRESH_MS
+// old as fresh (now - posted <= POSTED_FRESH_MS), so the query must read it too (created_at >= now - POSTED_FRESH_MS); one ms older is not.
+test("through the store, at the boundary: a post exactly an hour old holds the stall back; one a millisecond older does not", async () => {
+  const at = async (postAt) => {
+    const db = makeDb();
+    await createCard(db, T - 90 * MIN, "Manager", { id: "c884-look", title: "Look review", owner_role: "Designer" });
+    await writeEvidence(db, T, "probe", "agents", { Designer: { state: "idle", tool: null, card: null, since: T } });
+    await postMessage(db, postAt, "Designer", { thread_id: "c884-look", body: "Reviewing the screens now." });
+    return (await wakeAsk(db, NOW)).count;
+  };
+  assert.equal(await at(NOW - POSTED_FRESH_MS), 0, "exactly an hour old: still fresh");
+  assert.equal(await at(NOW - POSTED_FRESH_MS - 1), 1, "a millisecond older: the card stalls");
+});
