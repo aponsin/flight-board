@@ -5,7 +5,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { usageReading } from "../collector/readings.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
-import { buildState, USAGE_EVERY_MS } from "../collector/state.mjs";
+import { buildState, USAGE_EVERY_MS, usageTile } from "../collector/state.mjs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { changeKey } from "../worker/state-worker.mjs";
 import { loadNames } from "./harness.mjs";
 
@@ -72,4 +75,24 @@ test("a state with no asOf (a probe from before) is aged by the probe's own cloc
   assert.match(page(live(use({ at: NOW - 2 * MIN }))).planTile(), /as of 2 min ago/);
   assert.match(page(live(use({ asOf: NOW + 60 * MIN }))).planTile(), /class="tot plan amber"/);
   assert.equal(page(live(use({ asOf: NOW - 3 * MIN }))).liveUsage(NOW).asOf, NOW - 3 * MIN);
+});
+
+// ---- #C842: a fixed reading pins the number, the window and the label
+// The panel read 39% at 2026-11-11T00:59Z, "Resets in 5d 1h" (reset 2026-11-16T02:00Z, week from 2026-11-09T02:00Z). The spend
+// total for that window was 203,484,943 weighted tokens, so the first-reading quota is 521,700,000 (203.48M / 0.39).
+test("a fixed reading: 203,484,943 weighted at 00:59Z on 11-11 over the 521.7M quota is 39%, from the 11-09 02:00Z reset", () => {
+  const now = Date.parse("2026-11-11T00:59:00Z"), calls = [];
+  const r = usageTile({
+    scriptText: "x", dir: mkdtempSync(join(tmpdir(), "usage-")), roster, now, quota: 521_700_000, resetAt: "2026-11-09T02:00Z",
+    run: (args) => { calls.push(args); return JSON.stringify({ total_weighted: 203_484_943, rows: [{ source: "Manager", share: 1 }] }); },
+  });
+  assert.equal(r.resetsAt, Date.parse("2026-11-16T02:00:00Z"), "the reset the panel showed");
+  assert.deepEqual(calls[0].slice(-2), ["--since", "2026-11-09T02:00"], "the window began at the previous reset");
+  assert.equal(Math.round(r.tile.weekPct), 39);
+});
+
+test("the tile is labelled as an estimate and says what it counts", () => {
+  const html = page(live(use({ asOf: NOW - MIN }))).planTile();
+  assert.match(html, /Plan week \(est\.\)/);
+  assert.match(html, /this Mac's Claude Code only/);
 });

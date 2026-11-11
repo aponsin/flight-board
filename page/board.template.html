@@ -2226,7 +2226,7 @@ function planAt(u){return u.asOf==null?u.at:u.asOf}
 function planAge(u,now=Date.now()){return "as of "+dur(Math.max(0,now-planAt(u)))+" ago"}
 function planTile(){const u=liveUsage();if(!u)return "";
   const pace=u.pace==null?"":` · ${(u.pace/100).toFixed(1)}x pace`,top=u.top.map(t=>`${esc(t.src)} ${t.pct}%`).join(", "),old=Date.now()-planAt(u)>PLAN_STALE;
-  return `<div class="tot plan ${old?"stale":u.level}" data-plan-at="${planAt(u)}" data-plan-level="${u.level}"><div class="l">Plan week</div><div class="n">${u.weekPct==null?"–":u.weekPct+"%"}</div><div class="l">${u.weekPct==null?"no plan reading":"used"}${pace}</div>${top?`<div class="l">${top}</div>`:""}<div class="l plan-age" data-plan-age>${planAge(u)}</div></div>`}
+  return `<div class="tot plan ${old?"stale":u.level}" data-plan-at="${planAt(u)}" data-plan-level="${u.level}"><div class="l">Plan week (est.)</div><div class="n">${u.weekPct==null?"–":u.weekPct+"%"}</div><div class="l">${u.weekPct==null?"no plan reading":"used"}${pace}</div><div class="l plan-scope">this Mac's Claude Code only</div>${top?`<div class="l">${top}</div>`:""}<div class="l plan-age" data-plan-age>${planAge(u)}</div></div>`}
 function renderUsage(){
   const am=agentMinutesByDay();
   const byDay={};state.usage.filter(u=>u.day).forEach(u=>{byDay[u.day]={...u}});
