@@ -1,0 +1,16 @@
+{
+  "_about": "#C883: a row of docs/PARITY.md is 'same' only when a test proves it: the named test DRAWS the page from store data (a store view or store rows, through the compat view or the Worker, then the page's own script) and asserts the row's text, named in 'find' (a text that appears in the test's body). Key: the row's Item cell, as written. tests/parity-same-rows.test.mjs fails for a 'same' row with no entry, a test that is not in its file, a test body that draws no page or lacks its 'find' text, and an entry for a row that is not 'same'. A row with no such test is 'untested', not 'same' (Checker F1 on bcd8723: a title is a sentence).",
+  "rows": {
+    "Manager chip": { "test": "c730-wake-chip.test.mjs::on the store the chip is red with the store's fix: a probe that stopped asking, a send that failed", "find": "Manager not listening · the probe has not asked the store for 3 min" },
+    "Needs you: asks, \"Your queue\"": { "test": "compat-view.test.mjs::an open Action ask is under Needs you, waiting on the owner", "find": "waiting on you" },
+    "Thread messages, \"seen HH:MM\"": { "test": "c730-wake-chip.test.mjs::on the store \"seen\" and \"answer coming\" come from Manager's last typed read, not the old wakeSeenAt", "find": "t-seen\">seen" },
+    "Later tab": { "test": "decision-not-before.test.mjs::a Decision with a future date is not on Needs you, and is drawn under Later with its options", "find": "Decide future" },
+    "Pull request panel": { "test": "compat-approvals.test.mjs::the panel shows an approved pull request apart with its Withdraw; a merged one (closed) leaves the panel", "find": "1 approved: merge at the next ship" },
+    "Status pill": { "test": "compat-view.test.mjs::a paused card the probe reads stays paused: after the active ones, marked Paused, no version line", "find": "<span class=\"state paused\">Paused" },
+    "Track: lit phase, skips": { "test": "compat-view.test.mjs::a card is drawn on the board at the probe's lit phase, never a typed one", "find": "<div class=\"step now\" title=\"Build\">" },
+    "Track: who · time on each tile": { "test": "phase-history.test.mjs::the compat view gives the history as the old steps, and the old page puts the who on the tile", "find": "Plan<small>50 min" },
+    "Done in the last 24 h, search": { "test": "compat-ships.test.mjs::the old page draws them: the Done list in the last 24 h with its version, and the shipped feed with the card links", "find": "Done in the last 24 h" },
+    "Shipped feed, search": { "test": "compat-ships.test.mjs::the old page draws them: the Done list in the last 24 h with its version, and the shipped feed with the card links", "find": "<span class=\"ver\">" },
+    "Fonts": { "test": "store-page.test.mjs::the store page: Google's font links become @font-face rules on /fonts/, inside a whole document", "find": "src:url(/fonts/" }
+  }
+}
