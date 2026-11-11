@@ -2,6 +2,8 @@
 
 ## 0.3.4 - Unreleased
 
+### Changed
+
 - A new card's id must be one the probe can read, and a refused close says what is missing (idle-stall-counts-done-cards, #C949). The probe (`collector/state-schema.mjs` `CARD_ID`) reads ids of up to 5 hyphen-separated words, each up to 16 letters or digits, 40 characters in all; the store used to accept up to 64, so a longer id (#C896's six words) got no `cards.<id>` evidence row and a landed card was never seen. `createCard` now refuses such an id with rule `card-id` and says why (`PROBE_CARD_ID` in `worker/board-rules.mjs`, a copy of the probe's pattern because the Worker is bundled without `collector/`; a test holds the two equal). Cards that already exist are not touched, and every id the probe reads today is still allowed. The card-done refusals are split: `done_evidence` without `done` says to send `done: true` with it, and `done: false` says a write never reopens a done card (it used to read as "already done" for both). Not code: the live connector's `card_update` lists no `done` or `done_evidence` while the source does; see the card for which side is stale. Tests: `tests/close-from-every-door.test.mjs` (both connector doors list the fields; a close with evidence works from the shared door, Manager's door and the Access path; a done card is not reopened or closed twice; the id rule and its parity with the probe's; the refusal texts).
 
 ### Added
