@@ -159,7 +159,7 @@ test("the To-do and Ideas lists: agents add and change rows over MCP, the owner 
 
 test("card and answer round trip: a Decision answer must be an option", async () => {
   const { tool } = make();
-  const ask = await tool("manager", "ask", { type: "Decision", title: "Pick", question: "A or B?", options: ["A", "B"], recommended: "A" });
+  const ask = await tool("manager", "ask", { type: "Decision", title: "Pick", question: "A or B?", options: ["A", "B"], recommended: "A", related_thread: "none" });
   const id = ask.structuredContent.id;
   assert.equal((await tool("owner", "answer", { id, answer: "C" })).structuredContent.refused.rule, "answer-not-an-option");
   assert.equal((await tool("owner", "answer", { id, answer: "B" })).structuredContent.ok, true);

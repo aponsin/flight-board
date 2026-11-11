@@ -127,6 +127,8 @@ for line in reversed(lines):
         if c.get("type") == "tool_use" and STORE_TOOL.match(str(c.get("name") or "")):
             if c["name"].endswith("__ask"):
                 wrote = True
+            elif _in.get("kind") == "decision" and isinstance(_in.get("options"), list) and len(_in["options"]) >= 2:
+                wrote = True  # #C920: a decision posted in the owner's thread, with its options, is the ask (no separate ask item)
             answered = True
         if c.get("type") == "tool_use" and c.get("name") in ("ArtifactData", "mcp__claude-artifacts__db_write"):
             new = c.get("name") != "ArtifactData"
@@ -156,7 +158,7 @@ for line in reversed(lines):
                 answered = True  # answered in the thread (board v2): never push Manager into a new ans- item
 reasons = []
 if red and not wrote:
-    reasons.append("Your reply has a red ask (🔴) but you wrote nothing to the flight board's 'waiting' collection this turn. Manager: raise it now with the store's ask tool, then finish. Any other agent: don't ask the owner directly; send the question to Manager and remove the 🔴.")
+    reasons.append("Your reply has a red ask (🔴) but you wrote nothing to the flight board's 'waiting' collection this turn. Manager: raise it now with the store's ask tool (a decision that follows the owner's thread goes in that thread: post kind decision with options), then finish. Any other agent: don't ask the owner directly; send the question to Manager and remove the 🔴.")
 elif MANAGER and question and not answered:
     reasons.append("The owner asked a question this turn, but you wrote no board answer. Manager: answer it in its thread with the store's post tool; if it has no thread, raise an Answer with the store's ask tool. Then finish.")
 # The cue waits one turn while the owner is in the middle of something (#C392): Manager's 06:31Z reset threw away the

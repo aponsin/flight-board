@@ -15,7 +15,7 @@ const make = () => {
   const compat = async () => (await call("owner", "/api/compat")).json();
   return { env, call, tool, write, compat };
 };
-const decision = { type: "Decision", title: "Hero", question: "Which hero?", options: ["Blue", "Green"], recommended: "Blue" };
+const decision = { type: "Decision", title: "Hero", question: "Which hero?", options: ["Blue", "Green"], recommended: "Blue", related_thread: "none" };
 
 test("GET /api/compat answers in the old shapes, with an ETag and a 304", async () => {
   const { call, tool } = make();

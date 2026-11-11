@@ -207,6 +207,18 @@ test("the store's ask is the board write a red ask needs; its post answers a que
   assert.match(hook(storeTurn(STORE + "card_update")), /asked a question this turn/);
   assert.match(hook(storeTurn(STORE + "ask", { text: "Is it?", title: "Manager", reply: red })), /^$/, "ask wrote the waiting item");
 });
+// #C920: a decision follows the owner's question in his thread, so a post of kind decision with options is the ask a red turn needs.
+test("a red turn with a decision post (kind decision, options) passes; a plain post, a one-option decision or neither still fails", () => {
+  const red = "\u{1F534} Owner: which one?";
+  const withInput = (input) => { const l = storeTurn(STORE + "post", { text: "status", reply: red }); l[2].message.content[0].input = input; return l; };
+  const opts = [{ key: "A", label: "Yes" }, { key: "B", label: "No" }];
+  assert.equal(hook(withInput({ thread_id: "t-100", body: "Which?", kind: "decision", options: opts })), "", "the decision post is the ask");
+  assert.match(hook(withInput({ thread_id: "t-100", body: "Which?" })), /red ask/, "a plain post is not");
+  assert.match(hook(withInput({ thread_id: "t-100", body: "Which?", kind: "decision", options: [opts[0]] })), /red ask/, "a decision with one option is not");
+  assert.match(hook(withInput({ thread_id: "t-100", body: "Which?", kind: "ack", options: opts })), /red ask/, "options on another kind are not");
+  assert.match(hook(storeTurn(STORE + "card_update", { text: "status", reply: red })), /red ask/, "neither: still fails");
+  assert.match(hook(withInput({ thread_id: "t-100", body: "Which?", kind: "decision", options: opts }).slice(0, 2).concat([{ type: "assistant", message: { content: [{ type: "text", text: red }] } }])), /red ask/, "the red text with no write at all");
+});
 test("the hook's reasons name the store's tools, and never tell a role to call read_inbox (the lead's door only)", () => {
   const src = readFileSync(HOOK, "utf8");
   assert.doesNotMatch(src, /read_inbox|db_write update|db_get/);

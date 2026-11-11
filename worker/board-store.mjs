@@ -118,6 +118,63 @@ export async function createAsk(db, now, ask) {
   return { ok: true, id, num };
 }
 
+// #C920: a Decision that follows the owner's question goes in his thread, not in a new ask. Manager's Decision ask carries
+// related_thread: an owner thread's id (the decision is posted there as kind "decision" with its options as buttons, and no ask
+// item is made) or the literal "none" (refused only when the decision names a card #C<n> or an ask #T<n> that an open thread of the
+// owner's from the last 2 hours also names; the refusal names that thread). Other roles' asks are as before. The tool layer calls
+// this; createAsk itself stays the plain store write.
+export const THREAD_WINDOW_MS = 2 * 3_600_000;
+const REF = /#([CT])(\d{1,7})\b/gi;
+const refsOf = (...texts) => { const out = new Set(); for (const t of texts) for (const m of String(t ?? "").matchAll(REF)) out.add(`${m[1].toUpperCase()}${Number(m[2])}`); return out; };
+const KEYS = ["A", "B", "C", "D"];
+
+// The owner's open threads whose last owner message is within the window: { id, title, refs }.
+async function openOwnerThreads(db, now) {
+  const rows = (await db.prepare("SELECT thread_id, MAX(created_at) AS last FROM messages WHERE author = 'owner' AND created_at >= ? GROUP BY thread_id").bind(now - THREAD_WINDOW_MS).all()).results;
+  const out = [];
+  for (const { thread_id: id } of rows) {
+    const ask = await db.prepare("SELECT num, title, closed_at FROM asks WHERE id = ?").bind(id).first();
+    if (ask?.closed_at) continue;
+    const card = await db.prepare("SELECT num, title FROM cards WHERE id = ?").bind(id).first();
+    const free = await db.prepare("SELECT num, title FROM threads WHERE id = ?").bind(id).first();
+    const msgs = (await db.prepare("SELECT body, resolved FROM messages WHERE thread_id = ? ORDER BY created_at DESC, id DESC").bind(id).all()).results;
+    if (msgs[0]?.resolved) continue; // the thread's last word resolved it
+    const title = free?.title || ask?.title || card?.title || id;
+    const own = [ask?.num ? `#T${ask.num}` : "", free?.num ? `#T${free.num}` : "", card?.num ? `#C${card.num}` : ""];
+    out.push({ id, title, refs: refsOf(title, ask?.title, card?.title, ...own, ...msgs.map((m) => m.body)) });
+  }
+  return out;
+}
+
+export async function askFromTool(db, now, who, args) {
+  const a = args ?? {};
+  if (!(who === "Manager" && a.type === "Decision")) return createAsk(db, now, a);
+  const { related_thread: rel, ...ask } = a;
+  const no = (rule, detail) => refuse(db, now, { rule, detail }, ask.card_id, who);
+  if (typeof rel !== "string" || !rel.trim()) return no("decision-thread-missing", "a Decision from Manager carries related_thread: the owner thread's id if it follows something he said there, or \"none\"");
+  if (rel === "none") {
+    const bad = askRefusal(ask, now);
+    if (bad) return refuse(db, now, bad, ask.card_id, who);
+    const card = ask.card_id ? await db.prepare("SELECT num FROM cards WHERE id = ?").bind(ask.card_id).first() : null;
+    const mine = refsOf(ask.title, ask.question, ask.recommended, ...(Array.isArray(ask.options) ? ask.options : []), card ? `#C${card.num}` : "");
+    if (mine.size) {
+      const hit = (await openOwnerThreads(db, now)).find((t) => [...mine].some((r) => t.refs.has(r)));
+      if (hit) return no("decision-belongs-in-thread", `this Decision names ${[...mine].filter((r) => hit.refs.has(r)).map((r) => "#" + r).join(", ")}, which the owner's open thread ${hit.id} ("${hit.title}") also names: send it again with related_thread: "${hit.id}" and it is posted in that thread with its options`);
+    }
+    return createAsk(db, now, ask);
+  }
+  const bad = askRefusal(ask, now);
+  if (bad) return refuse(db, now, bad, ask.card_id, who);
+  if (ask.eta_at !== undefined) return no("decision-not-before", "a Decision posted in a thread has no not-before time; leave eta_at out");
+  const known = (await db.prepare("SELECT 1 AS x FROM asks WHERE id = ?").bind(rel).first()) || (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(rel).first()) || (await db.prepare("SELECT 1 AS x FROM threads WHERE id = ?").bind(rel).first());
+  if (!known) return no("decision-thread-unknown", rel);
+  const options = ask.options.map((label, i) => ({ key: KEYS[i], label }));
+  const rec = options[ask.options.indexOf(ask.recommended)];
+  const body = `${ask.title}\n\n${ask.question}\n\nRecommended: ${rec.key}`;
+  const r = await postMessage(db, now, who, { thread_id: rel, body, kind: "decision", options });
+  return r.ok ? { ...r, thread_id: rel, posted_in_thread: true } : r;
+}
+
 // A message on a thread (a card id, an ask id or a free thread name). Delivery to Manager is the wake's business.
 export async function postMessage(db, now, who, m) {
   const ok = m && typeof m === "object" && Object.keys(m).every((k) => ["thread_id", "body", "kind", "options"].includes(k)) && typeof m.thread_id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(m.thread_id) && typeof m.body === "string" && m.body.trim() && m.body.length <= 8000;

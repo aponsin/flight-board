@@ -20,7 +20,7 @@ const make = () => {
   const upload = async (name, type, bytes) => (await (await call("owner", "/api/files", { method: "POST", body: JSON.stringify({ name, type, data: Buffer.from(bytes).toString("base64") }) })).json());
   return { env, tool, write, upload };
 };
-const decision = { type: "Decision", title: "Hero", question: "Which hero?", options: ["Blue", "Green"], recommended: "Blue" };
+const decision = { type: "Decision", title: "Hero", question: "Which hero?", options: ["Blue", "Green"], recommended: "Blue", related_thread: "none" };
 const count = async (env, sql) => (await env.DB.prepare(sql).first()).n;
 
 test("an ask whose screenshots name an unknown id, a non-image file or a plain URL is refused and stores no ask (createAsk hook)", async () => {
