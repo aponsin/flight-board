@@ -1,0 +1,1 @@
+PASS Full: #C921 terminal-lines-self-contained at 3dd9454, re-cut of f0fdeaf onto main 959cc5a. Diff check: range-diff shows the code equal apart from CHANGELOG. Suite 2370/2370 at the stack tip ee3e1d3. The verdict on f0fdeaf holds. Security owed.
