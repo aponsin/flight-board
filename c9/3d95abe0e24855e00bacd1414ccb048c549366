@@ -1,0 +1,1 @@
+SECURE. #C937 v5, re-cut onto main 9222e64. Range-diff against my signed v2 8d8ab69 (c8a457d..8d8ab69) excluding CHANGELOG.md: identical patch, only the commit message differs. Page only (HOOK_READS), still through esc(). Line-scoped for 9222e64..c93d95a.
