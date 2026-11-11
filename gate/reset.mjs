@@ -174,7 +174,7 @@ const dispatchSeenItems = (seen) => (seen && typeof seen.items === "object" && s
 const dispatchList = (f) => (Array.isArray(f?.items) ? f.items.filter((i) => i && CARD.test(String(i.card)) && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(String(i.role)) && [1, 2].includes(i.level) && Number.isInteger(i.since)) : []);
 export const dispatchPending = (asked, seen, { role = null, level }) => dispatchList(asked).filter((i) => i.level >= level && (role === null || i.role === role) && dispatchSeenItems(seen)[i.card] !== i.since);
 export const dispatchSeen = (seen, printed) => ({ items: { ...dispatchSeenItems(seen), ...Object.fromEntries(printed.map((i) => [i.card, i.since])) } });
-export const dispatchLine = (i) => `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now`;
+export const dispatchLine = (i) => `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;
 export const dispatchLateLine = (i) => `DISPATCH-LATE ${i.card}: ${i.role} was woken at ${new Date(i.since).toISOString().slice(11, 16)} UTC and nothing has moved in 30 minutes; look at it`;
 // Whether a role's dispatch watch is running: its pid file names a live process and was beaten within DISPATCH_ALIVE_MS.
 export const DISPATCH_ALIVE_MS = 90e3;
