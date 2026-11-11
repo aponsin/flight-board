@@ -3,7 +3,7 @@
   "rows": {
     "Manager chip": { "test": "c730-wake-chip.test.mjs::on the store the chip is red with the store's fix: a probe that stopped asking, a send that failed", "find": "Manager not listening · the probe has not asked the store for 3 min" },
     "Needs you: asks, \"Your queue\"": { "test": "compat-view.test.mjs::an open Action ask is under Needs you, waiting on the owner", "find": "waiting on you" },
-    "Thread messages, \"seen HH:MM\"": { "test": "c730-wake-chip.test.mjs::on the store \"seen\" and \"answer coming\" come from Manager's last typed read, not the old wakeSeenAt", "find": "t-seen\">seen" },
+    "Thread messages, \"seen HH:MM\"": { "test": "c730-wake-chip.test.mjs::on the store \"seen\" and \"answer coming\" come from Manager's last typed read, not the old wakeSeenAt", "find": "t-seen\">delivered" },
     "Later tab": { "test": "decision-not-before.test.mjs::a Decision with a future date is not on Needs you, and is drawn under Later with its options", "find": "Decide future" },
     "Pull request panel": { "test": "compat-approvals.test.mjs::the panel shows an approved pull request apart with its Withdraw; a merged one (closed) leaves the panel", "find": "1 approved: merge at the next ship" },
     "Status pill": { "test": "compat-view.test.mjs::a paused card the probe reads stays paused: after the active ones, marked Paused, no version line", "find": "<span class=\"state paused\">Paused" },

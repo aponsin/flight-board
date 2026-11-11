@@ -56,7 +56,7 @@ test("the chip: green caught up, amber for a seen unanswered message, red when t
   const msg = (from, at, thread = "t1") => ({ id: `m${at}`, thread, from, text: "hi", at });
   b = page({ wakeAliveAt: now - 5e3, wakeSeenAt: now - MIN }, []);
   b.state.messages = [msg(owner(b), now - 2 * MIN)];
-  assert.deepEqual(chip(b), { cls: "warn", text: `seen your ${hh(now - 2 * MIN)} message · answer coming` });
+  assert.deepEqual(chip(b), { cls: "warn", text: `delivered your ${hh(now - 2 * MIN)} message · answer coming` });
   b.state.messages.push(msg("Manager", now - 30e3));
   assert.equal(b.managerChip(now).cls, "ok", "answered");
   b.state.messages = [msg(owner(b), now - 30e3)];
@@ -75,8 +75,8 @@ test("a 'seen' tick under the owner's messages the watch has handled: the time o
   const m = (from, at) => ({ id: `m${at}`, thread: "t1", from, text: "hi", at });
   b.state.messages = [m(owner(b), now - 5 * MIN), m(owner(b), now - 2 * MIN), m(owner(b), now - 10e3), m("Manager", now - 4 * MIN)];
   const [a, c, late, mgr] = b.state.messages;
-  assert.equal(b.seenTick(a), '<div class="t-seen">seen</div>');
-  assert.equal(b.seenTick(c), `<div class="t-seen">seen ${hh(now - MIN)}</div>`);
+  assert.equal(b.seenTick(a), '<div class="t-seen">delivered</div>');
+  assert.equal(b.seenTick(c), `<div class="t-seen">delivered ${hh(now - MIN)}</div>`);
   assert.equal(b.seenTick(late), "", "after the last wake it handled");
   assert.equal(b.seenTick(mgr), "", "only the owner's");
 });
