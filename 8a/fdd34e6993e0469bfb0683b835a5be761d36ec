@@ -1,0 +1,1 @@
+PASS Full: #C921 terminal-lines-self-contained at 8afdd34, re-cut of 5475089 onto main a8333ea. Diff check: range-diff shows the code identical, only CHANGELOG and DATA.md context from #C920 differ. Suite 2310/2310 at the stack tip e749019. The verdict on 5475089 holds, with its three LOWs and Security still owed. Landing order with #C924 still applies.
