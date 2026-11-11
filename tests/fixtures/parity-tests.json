@@ -1,0 +1,40 @@
+{
+  "_about": "#C883: every row of docs/PARITY.md marked 'same' names the test(s) that find it from store data (a store view or store rows, through the compat view or the Worker, and the page's own script where the row is drawn). Key: the row's Item cell, as written. Value: 'tests/<file>::<exact test title>'. tests/parity-same-rows.test.mjs fails for a 'same' row with no entry, an entry whose test is not in its file, and an entry for a row that is not 'same'. A row with no such test is 'untested', not 'same'.",
+  "rows": {
+    "Live now \"deploying vY\"": ["compat-view.test.mjs::stuck and ship count only while fresh: a reading the probe stopped rewriting drops out after 3 minutes"],
+    "Manager chip": ["c730-wake-chip.test.mjs::on the store the chip is red with the store's fix: a probe that stopped asking, a send that failed"],
+    "\"X waiting on you since\"": ["compat-view.test.mjs::the probe document is reassembled from the evidence keys; stuck and ship appear only when written"],
+    "\"You wrote, Manager silent N min\"": ["compat-threads.test.mjs::an agent's message and the owner's reply come back as the old messages, in order, with the ask's #T number as the thread's"],
+    "Needs you: asks, \"Your queue\"": ["compat-view.test.mjs::an open Action ask is under Needs you, waiting on the owner"],
+    "Ask row: kind, #T, title, badge, age, \"For: card\"": ["compat-view.test.mjs::a Decision keeps its options as A, B and an answer maps back to the store's string"],
+    "Ask steps with Copy per command, \"You should see\"": ["compat-view.test.mjs::a Terminal ask carries each command as a step with a Copy command; the doc has no status or phase of the ask's own"],
+    "Ask screenshots, picture viewer": ["file-store.test.mjs::an ask's screenshots must be stored images; the view turns them into the old images list, and links into files and assets"],
+    "Reply box per kind (A/B, OK/Change, Ack, Done/Help)": ["compat-routes.test.mjs::asks in full (B2): a note with a choice, something else, help, and the button and note come back whole"],
+    "Thread messages, \"seen HH:MM\"": [
+      "c730-wake-chip.test.mjs::on the store \"seen\" and \"answer coming\" come from Manager's last typed read, not the old wakeSeenAt",
+      "compat-threads.test.mjs::Ack and Close are messages that resolve; a kind is kept; the options an agent's message offers are not invented"
+    ],
+    "Thread buttons: Close, options, Rename": [
+      "compat-threads.test.mjs::Ack and Close are messages that resolve; a kind is kept; the options an agent's message offers are not invented",
+      "compat-routes.test.mjs::options on an agent's message (B1b): drawn from the thread's last word; the owner's pick is his own message; bad shapes are refused",
+      "compat-threads.test.mjs::a rename sets the title only, on an ask, a card or a free thread; an unknown thread and any other field are refused"
+    ],
+    "Later tab": ["decision-not-before.test.mjs::a Decision with a future date is not on Needs you, and is drawn under Later with its options"],
+    "With the team, sub-step line": ["compat-view.test.mjs::a Decision keeps its options as A, B and an answer maps back to the store's string"],
+    "Resolved tab, search": ["store-page-card-threads.test.mjs::a card that reads live and on main is done for its thread: the thread lists under Resolved"],
+    "Pull request panel": ["compat-approvals.test.mjs::the panel shows an approved pull request apart with its Withdraw; a merged one (closed) leaves the panel"],
+    "To-do: rank, up/down, Done, Add": ["compat-routes.test.mjs::to-do and idea rows: add, done, move"],
+    "Ideas: kind, Close, Add": ["compat-view.test.mjs::to-do and idea rows land in their own collections, with the done flag"],
+    "Files: attach, paste, drop, thumbnails, save": ["compat-threads.test.mjs::files on a message are linked and shown; a refused file list stores no message and no new thread"],
+    "Name row: #C, repo badge, \"from #T\", size": ["compat-routes.test.mjs::card fields the old page draws (B4a): depends-on, issue counts with their time, queue place, and the thread a card came from"],
+    "Status pill": ["compat-view.test.mjs::a paused card the probe reads stays paused: after the active ones, marked Paused, no version line"],
+    "Held for its done test (\"Live, still open\")": ["compat-ships.test.mjs::a card at its last phase with a check date is held: not done, no doneAt, no version, until the lead lifts the date (store-check-date-holds-card)"],
+    "Track: lit phase, skips": ["compat-view.test.mjs::a card is drawn on the board at the probe's lit phase, never a typed one"],
+    "Track: who · time on each tile": ["phase-history.test.mjs::the compat view gives the history as the old steps, and the old page puts the who on the tile"],
+    "Queue line, \"waits on\", Next (written N ago), Started, issue chips": ["compat-routes.test.mjs::card fields the old page draws (B4a): depends-on, issue counts with their time, queue place, and the thread a card came from"],
+    "Done in the last 24 h, search": ["compat-ships.test.mjs::the old page draws them: the Done list in the last 24 h with its version, and the shipped feed with the card links"],
+    "Shipped feed, search": ["compat-ships.test.mjs::the old page draws them: the Done list in the last 24 h with its version, and the shipped feed with the card links"],
+    "Fonts": ["store-page.test.mjs::the store page: Google's font links become @font-face rules on /fonts/, inside a whole document"],
+    "Lightbox buttons": ["store-page.test.mjs::the store page loads nothing from another site and runs no inline handler: one script tag, by nonce"]
+  }
+}
