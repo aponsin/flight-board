@@ -27,6 +27,15 @@ const evidenceOf = async (db, key) => {
   try { return r ? JSON.parse(r.value) : null; } catch { return null; }
 };
 
+// #C956: what the look rule needs from the store for a Decision: the team's visual lanes (the probe posts them as evidence `look`, from the board
+// config's decisions.visualLanes) and the owner role of the ask's card. Nothing posted yet, or no card: the words decide alone, as before.
+async function lookContext(db, ask) {
+  const lanes = (await evidenceOf(db, "look"))?.visualLanes;
+  if (!Array.isArray(lanes) || !lanes.length || !ask?.card_id) return {};
+  const card = await db.prepare("SELECT owner_role FROM cards WHERE id = ?").bind(ask.card_id).first();
+  return { lanes, cardOwner: card?.owner_role ?? null };
+}
+
 const COLUMNS = ["title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end"];
 // true/false are stored as 1/0; a list or the issue counts are stored as JSON text (null stays null: "not said").
 const bool = (v) => (v === true ? 1 : v === false ? 0 : Array.isArray(v) || (v && typeof v === "object") ? JSON.stringify(v) : v);
@@ -114,7 +123,7 @@ export async function updateCard(db, now, who, fields) {
 
 // An ask of one of the eight types. The parts of the type go in body as JSON; the store mints the #T number.
 export async function createAsk(db, now, ask) {
-  const bad = askRefusal(ask, now);
+  const bad = askRefusal(ask, now, await lookContext(db, ask));
   if (bad) return refuse(db, now, bad, ask?.card_id, ask?.asked_by);
   const badShots = await screenshotsRefusal(db, ask.screenshots);
   if (badShots) return refuse(db, now, badShots, ask.card_id, ask.asked_by);
@@ -163,7 +172,7 @@ export async function askFromTool(db, now, who, args) {
   const no = (rule, detail) => refuse(db, now, { rule, detail }, ask.card_id, who);
   if (typeof rel !== "string" || !rel.trim()) return no("decision-thread-missing", "a Decision from Manager carries related_thread: the owner thread's id if it follows something he said there, or \"none\"");
   if (rel === "none") {
-    const bad = askRefusal(ask, now);
+    const bad = askRefusal(ask, now, await lookContext(db, ask));
     if (bad) return refuse(db, now, bad, ask.card_id, who);
     const card = ask.card_id ? await db.prepare("SELECT num FROM cards WHERE id = ?").bind(ask.card_id).first() : null;
     const mine = refsOf(ask.title, ask.question, ask.recommended, ...(Array.isArray(ask.options) ? ask.options : []), card ? `#C${card.num}` : "");
@@ -173,7 +182,7 @@ export async function askFromTool(db, now, who, args) {
     }
     return createAsk(db, now, ask);
   }
-  const bad = askRefusal(ask, now);
+  const bad = askRefusal(ask, now, await lookContext(db, ask));
   if (bad) return refuse(db, now, bad, ask.card_id, who);
   if (ask.eta_at !== undefined) return no("decision-not-before", "a Decision posted in a thread has no not-before time; leave eta_at out");
   // #C936: the screenshots go with the message (postMessage checks them as an ask's are: stored images, "<id> A: label", the letter one

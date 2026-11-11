@@ -39,23 +39,29 @@ const present = (v) => v !== undefined && v !== null && !(typeof v === "string" 
 
 // #C952: a look decision needs a picture per option, as the old board's gate did (gate/rules.mjs lookErrors, page lookDecision). It is a look
 // when its text or title names one of the look words (a whole word, a plural too). The Worker has no board config, so the words are the
-// default list copied from scripts/config.mjs DEFAULTS.decisions.lookWords (a test holds the two equal), and the visual-lane list is empty
-// until the Worker has a config path (a card's lane is therefore not read here). "Something else" and "Not now" need no picture. A picture
+// default list copied from scripts/config.mjs DEFAULTS.decisions.lookWords (a test holds the two equal). The team's visual lanes (#C956) reach
+// the Worker as the probe's evidence `look`, and a Decision on a card of one of those lanes is a look one whatever its words say; the team's own
+// look words are still not read. "Something else" and "Not now" need no picture. A picture
 // names its option with the letter in front of its label ("<id> A: label", file-store parseShot): A is the first option, B the second.
 export const LOOK_WORDS = ["mock-up", "mockup", "screenshot", "layout", "band", "icon", "colour", "color", "font", "spacing", "px", "hero", "banner", "logo", "photo", "button", "text size"];
 const LOOK_RE = new RegExp("(?<![A-Za-z])(?:" + LOOK_WORDS.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")).join("|") + ")(?:e?s)?(?![A-Za-z])", "i");
 export const isLookText = (...texts) => texts.some((t) => typeof t === "string" && LOOK_RE.test(t));
 const NO_PICTURE = /^(?:something else|not now)[.!]?$/i;
 // options: [{ key, label }]; shots: the screenshot strings. null when fine, else the refusal naming the options without a picture.
-export function lookRefusal({ texts, options, shots }) {
-  if (!isLookText(...texts)) return null;
+// #C956: lane is true when the Decision's card is built in one of the team's visual lanes (config decisions.visualLanes, which the probe posts
+// as evidence `look`): such a Decision is a look one whatever its words say, as the old board's gate held.
+export const LANE_NAME = /^[^<>{}\n]{1,60}$/; // the config's own NAME rule (scripts/config.mjs), so a lane the config accepts is one the store takes
+export const inVisualLane = (owner, lanes) => typeof owner === "string" && Array.isArray(lanes) && lanes.includes(owner);
+export function lookRefusal({ texts, options, shots, lane = false }) {
+  if (!lane && !isLookText(...texts)) return null;
   const shown = new Set((Array.isArray(shots) ? shots : []).map((s) => /^\s*[A-Za-z0-9_-]{16,64}\s+([A-D]):/.exec(String(s ?? ""))?.[1]).filter(Boolean));
   const missing = (options ?? []).filter((o) => o && !NO_PICTURE.test(String(o.label ?? "").trim()) && !shown.has(o.key)).map((o) => o.key);
   return missing.length ? refuse("look-needs-screenshots", `a look decision needs a screenshot for each option (missing: ${missing.join(", ")}); add each as "<file id> A: label" in screenshots, the letter being the option's`) : null;
 }
 
 // An ask missing a required part, an unknown field, or a Later without an ETA.
-export function askRefusal(ask, now) {
+// look: { lanes, cardOwner } from the store (#C956): the visual lanes the probe posted and the owner role of the ask's card.
+export function askRefusal(ask, now, look = {}) {
   if (ask === null || typeof ask !== "object" || Array.isArray(ask)) return refuse("ask-shape", "an ask is an object");
   if (!ASK_TYPES.includes(ask.type)) return refuse("ask-type", `type is one of ${ASK_TYPES.join(", ")}`);
   const unknown = Object.keys(ask).filter((k) => !ASK_ALLOWED.has(k));
@@ -70,7 +76,7 @@ export function askRefusal(ask, now) {
     if (ask.eta_at !== undefined && (!Number.isFinite(ask.eta_at) || ask.eta_at <= 0 || (Number.isFinite(now) && ask.eta_at < now - 60_000))) return refuse("decision-not-before", "eta_at is a time, not in the past");
     if (ask.eta_precondition !== undefined) return refuse("decision-not-before", "a Decision takes eta_at (not before) and no precondition");
     // #C952: a live look Decision (an import, now = null, keeps its old shape) needs a picture per option.
-    if (Number.isFinite(now)) { const look = lookRefusal({ texts: [ask.title, ask.question], options: ask.options.map((label, i) => ({ key: "ABCD"[i], label })), shots: ask.screenshots }); if (look) return look; }
+    if (Number.isFinite(now)) { const bad = lookRefusal({ texts: [ask.title, ask.question], options: ask.options.map((label, i) => ({ key: "ABCD"[i], label })), shots: ask.screenshots, lane: inVisualLane(look?.cardOwner, look?.lanes) }); if (bad) return bad; }
   }
   if (ask.type === "Action") { const bad = stepsRefusal(ask.steps, { needCmd: true }); if (bad) return bad; }
   // #C921 (#T1802): the owner may run any one line alone, so no line may be a bare "cd" that a later line relies on. A cd in the
@@ -401,6 +407,8 @@ export function evidenceRefusal(key, value, who, track) {
   if (who !== "probe") return refuse("only-probe-writes-status", `${who ?? "unknown"} cannot write evidence`);
   if (typeof key !== "string" || !/^[a-z][a-z0-9]*(\.[A-Za-z0-9._-]+)?$/.test(key)) return refuse("evidence-key", String(key));
   if (key === "e2e" && !e2eShape(value)) return refuse("e2e-shape", "e2e is { state: ok|red|missed|unknown, reason, run, lastGreenAt }");
+  // #C956: the team's visual lanes, from the board config: { visualLanes: [role names], up to 20 }.
+  if (key === "look" && !(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((k) => k === "visualLanes") && Array.isArray(value.visualLanes) && value.visualLanes.length <= 20 && value.visualLanes.every((r) => typeof r === "string" && LANE_NAME.test(r)))) return refuse("look-shape", "look is { visualLanes: [up to 20 role names] }");
   if (key.startsWith("cards.")) {
     const lit = value?.lit;
     if (!Array.isArray(lit) || lit.length !== 1) return refuse("one-lit-phase", `${key} has ${Array.isArray(lit) ? lit.length : 0} lit phases`);
