@@ -130,6 +130,8 @@ for (const host of ["store", null]) for (const mode of ["all", "end", "start"]) 
   });
 }
 
-test("the page's innerHTML sinks are the 41 audited for #C723: a new one fails here until it is audited", () => {
-  assert.equal((template.match(/innerHTML/g) ?? []).length, 41);
+// #C874 added one: renderFeed's "Went live, not yet acknowledged" list (#unacked). Its words are the events' version and text,
+// each through esc() (the text then through cardLinks, as the feed's own row), and the hostile passes above draw it on the store's page.
+test("the page's innerHTML sinks are the 42 audited (41 for #C723, 1 for #C874): a new one fails here until it is audited", () => {
+  assert.equal((template.match(/innerHTML/g) ?? []).length, 42);
 });
