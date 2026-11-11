@@ -96,6 +96,18 @@ export function listDoc(l) {
   return prune({ id: l.id, text: l.text, area: l.area, category: l.category, note: l.note, rank: l.rank ?? undefined, done: !!l.done, doneAt: l.done_at ?? undefined, addedAt: l.added_at, kind: l.kind === "idea" ? "idea" : undefined });
 }
 
+// #C881: derived/all `times` = { card: { phase: { start } } } from the phase history (the probe's own rows, not waits). A phase's start is the
+// FIRST time it began: a card that flips back to a phase (checker, ship, checker) keeps the first start, never the newest. Live is not a work phase.
+export function timesOfHistory(history) {
+  const times = {};
+  for (const h of history ?? []) {
+    if (h.kind !== "start" || h.wait || h.phase === "live" || !Number.isFinite(h.at)) continue;
+    const t = (times[h.card_id] ??= {});
+    if (!t[h.phase] || h.at < t[h.phase].start) t[h.phase] = { start: h.at };
+  }
+  return times;
+}
+
 // derived/all {cards, times, live}: the probe's readings by card, in the shape the page's derivedOf reads.
 export function derivedDoc(view) {
   const cards = {};
@@ -131,7 +143,7 @@ export function derivedDoc(view) {
     if (v.onMain) { const open = (view.asks ?? []).filter((a) => a.card_id === id && !a.closed_at && Number.isInteger(a.num)); if (open.length) c.waitAsk = Math.max(...open.map((a) => a.num)); }
   }
   const rel = view.evidence?.releases?.value;
-  return prune({ id: "all", at: view.now, cards, times: {}, live, releaseTimes: rel && typeof rel === "object" && !Array.isArray(rel) && Object.keys(rel).length ? rel : undefined });
+  return prune({ id: "all", at: view.now, cards, times: timesOfHistory(view.history), live, releaseTimes: rel && typeof rel === "object" && !Array.isArray(rel) && Object.keys(rel).length ? rel : undefined });
 }
 
 // The probe document the old `board_state` tool returned, from the evidence keys.

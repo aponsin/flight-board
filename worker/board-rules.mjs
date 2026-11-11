@@ -375,10 +375,13 @@ export function historyRows(cardId, prev, next, at, who, prevWho = null) {
   if (prev === next) return [];
   return [...(prev ? [{ card_id: cardId, phase: prev, kind: "end", at, who: prevWho }] : []), { card_id: cardId, phase: next, kind: "start", at, who }];
 }
-// The role to put a phase on: an agent the `agents` evidence shows working on this card now, else the phase's lane, else the owner.
+// The role to put a phase on: a phase with a lane (a review or the release) is the lane's role, whoever else works the card at that moment
+// (#C881: the builder still on a card read as the "who" of its Checker start, and a reviewer left on it as the "who" of its ship start);
+// the early phases (plan, build, test) are the agent the `agents` evidence shows working on this card now, else the card's owner.
 export function whoForPhase(cardId, phase, agents, ownerRole) {
+  if (PHASE_LANES[phase]) return PHASE_LANES[phase];
   const working = Object.entries(agents && typeof agents === "object" ? agents : {}).find(([, a]) => a && a.state === "working" && a.card === cardId);
-  return working ? working[0] : PHASE_LANES[phase] ?? ownerRole ?? null;
+  return working ? working[0] : ownerRole ?? null;
 }
 
 // #C732 (the owner's pick A on #T1681, 11-09): "Stalled" for the wake covers every phase. A card that has waited STALL_AFTER_MS at its phase
