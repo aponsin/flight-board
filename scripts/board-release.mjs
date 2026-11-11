@@ -140,8 +140,20 @@ export function supersededBy(heads, sha) {
 // The verdict, from the facts only. changed: the files that differ from the pinned commit (null: no pinned commit);
 // owned: the owner's closure (OWNER_ENTRIES and RELEASE_ENTRIES) at the pinned commit and at this one. pending: what
 // pendingPack found; a waiting pack it accepts (sha set) covers the pinned changes and the settings block.
-export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null, superseded = null }) {
+// #C847: the probe finds a landed card on main by the Board-Id trailer of a main commit (the card's branch is pruned after landing), so a
+// tip is refused when any commit it would land lacks one that names a card (a card id's shape: lower-case words with dashes). commits:
+// [{ sha, ids }], ids the values of the commit's Board-Id trailers. Returns the shas without a good one.
+export const CARD_ID_SHAPE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+export const TRAILER_LOG = "%H%x1f%(trailers:key=Board-Id,valueonly,separator=%x2c)%x1e";
+export function parseTrailerLog(text) {
+  return String(text ?? "").split("\x1e").map((s) => s.trim()).filter(Boolean).map((rec) => { const [sha, ids = ""] = rec.split("\x1f"); return { sha, ids: ids.split(",").map((x) => x.trim()).filter(Boolean) }; });
+}
+export function untrailered(commits) {
+  return (Array.isArray(commits) ? commits : []).filter((c) => !(Array.isArray(c?.ids) && c.ids.some((id) => CARD_ID_SHAPE.test(String(id))))).map((c) => String(c?.sha ?? ""));
+}
+export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null, superseded = null, noTrailer = [] }) {
   const r = [];
+  if (noTrailer.length) r.push(`${noTrailer.length === 1 ? "a commit has" : `${noTrailer.length} commits have`} no Board-Id trailer naming a card: ${noTrailer.slice(0, 5).map((s) => s.slice(0, 12)).join(", ")}${noTrailer.length > 5 ? ", ..." : ""} (the probe finds a landed card by it: add "Board-Id: <card id>" and sign again)`);
   if (!/^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim())) r.push(`no PASS from Checker on it in ${NOTES.checker}`);
   if (!/^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim())) r.push(`no SECURE from Security on it in ${NOTES.security}`);
   if (!forward) r.push("it doesn't continue origin/main: rebase it on main and sign it again");
@@ -199,6 +211,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const pinned = pinnedCommit(settingsText);
     const heads = (quiet(["for-each-ref", "refs/remotes/origin/build", "--format=%(refname:lstrip=3) %(objectname)"]) ?? "").split("\n").filter(Boolean).map((l) => { const [branch, tip] = l.split(" "); return { branch, sha: tip }; });
     const superseded = supersededBy(heads, sha);
+    // #C847: every commit this release lands (main..sha) carries a Board-Id trailer naming a card.
+    const noTrailer = untrailered(parseTrailerLog(quiet(["log", `--format=${TRAILER_LOG}`, `${main}..${sha}`])));
     const known = (c) => Boolean(c) && quiet(["cat-file", "-e", `${c}^{commit}`]) !== null;
     tmp = mkdtempSync(join(tmpdir(), "board-release-"));
     execFileSync("tar", ["-x", "-C", tmp], { input: execFileSync("git", ["archive", "--format=tar", sha], { cwd: repo, maxBuffer: 64 * 1024 * 1024 }) });
@@ -226,7 +240,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const base = known(before) ? before : known(pinned) ? pinned : null; // what the task runs now
     const capabilities = pageCapabilities(at(sha)(PAGE_FILE)), mcpErrors = pageMcpErrors(at(sha)(PAGE_FILE));
     const v = verdict({
-      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending, superseded,
+      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending, superseded, noTrailer,
       settingsChanged: known(pinned) && settingsBlock(at(pinned)(TASK_FILE)) !== settingsBlock(at(sha)(TASK_FILE)),
       stepsChanged: base !== null && stepsOf(at(base)(TASK_FILE)) !== stepsOf(at(sha)(TASK_FILE)),
       promptChanged: base === null || at(base)(PROMPT_FILE) !== at(sha)(PROMPT_FILE),
@@ -250,6 +264,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     line(!v.refusals.some((r) => /PASS|SECURE/.test(r)), `sign-offs on ${sha}: Checker "${String(notes.checker ?? "none").split("\n")[0]}", Security "${String(notes.security ?? "none").split("\n")[0]}"`);
     line(forward, `continues origin/main ${main.slice(0, 12)}`);
     line(!superseded, superseded ? `superseded by ${superseded}` : "no newer branch of the same card on origin");
+    line(!noTrailer.length, noTrailer.length ? `no Board-Id trailer on ${noTrailer.length} commit(s)` : "every commit carries a Board-Id trailer");
     line(!v.refusals.some((r) => /owner's install|settings block|no pinned/.test(r)), pending?.sha ? `pinned changes since ${pinned.slice(0, 12)} are the waiting pack's only: ${pending.sha.slice(0, 12)}, signed (they go live with the owner's install; the link's code goes now)` : `nothing pinned changed since ${pinned ? pinned.slice(0, 12) : "(none)"}`);
     line(!v.refusals.some((r) => /PROMPT/.test(r)), v.promptNeeded ? `prompt changed: ${promptPath} (SHA-256 ${sha256(prompt)})` : "prompt unchanged");
     line(!v.refusals.some((r) => /capabilit/.test(r)), `page capabilities: ${capabilities.join(", ")}`);

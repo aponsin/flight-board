@@ -68,7 +68,7 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
     git(REPO, "push", "-q", join(D, "origin.git"), `${B}:refs/heads/main`);
     const W = join(D, "work");
     execFileSync("git", ["clone", "-q", join(D, "origin.git"), W]);
-    const commit = (file, msg) => { appendFileSync(join(W, file), file.endsWith(".html") ? "\n<!-- x -->\n" : "\n// x\n"); git(W, "commit", "-qam", msg); return git(W, "rev-parse", "HEAD"); };
+    const commit = (file, msg) => { appendFileSync(join(W, file), file.endsWith(".html") ? "\n<!-- x -->\n" : "\n// x\n"); git(W, "commit", "-qam", `${msg}\n\nBoard-Id: pack-card`); return git(W, "rev-parse", "HEAD"); };
     const sign = (sha, checker = "PASS Quick") => { git(W, "notes", "--ref=checker", "add", "-f", "-m", checker, sha); git(W, "notes", "--ref=security", "add", "-f", "-m", "SECURE", sha); };
     const Sx = commit("gate/rules.mjs", "the pack"); sign(Sx);
     const P = commit("page/board.template.html", "a page"); sign(P);
@@ -99,5 +99,14 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
       const r = run(sha);
       assert.ok(!r.ok && new RegExp(`isn't signed by both Checker and Security: ${Sx.slice(0, 12)}`).test(r.out), r.out);
     }
+    // #C847: the CLI refuses a tip when a lower commit on main..tip has no Board-Id trailer, even though the tip itself has one (the log is
+    // main..sha, not the tip alone, and the verdict gets it). Both are signed and the unsigned pack is signed again, so only this refuses.
+    sign(Sx); git(W, "push", "-q", "-f", "origin", "refs/notes/checker", "refs/notes/security");
+    appendFileSync(join(W, "gate/gate.mjs"), "\n// y\n"); git(W, "commit", "-qam", "no trailer here"); const Nt = git(W, "rev-parse", "HEAD"); sign(Nt);
+    const T = commit("gate/gate.mjs", "a trailered tip on it"); sign(T);
+    git(W, "push", "-q", "-f", "origin", "refs/notes/checker", "refs/notes/security");
+    const bare = run(T);
+    assert.ok(!bare.ok && new RegExp(`no Board-Id trailer naming a card: ${Nt.slice(0, 12)} `).test(bare.out), bare.out);
+    assert.match(bare.out, /a commit has no Board-Id trailer/, "one commit, not two: the trailered tip is not named");
   } finally { rmSync(D, { recursive: true, force: true }); }
 });
