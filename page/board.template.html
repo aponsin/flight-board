@@ -602,6 +602,7 @@ table.crew3-ph{margin-top:14px}
       <div class="rsearch" id="tsearch"><div class="sbox"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="rsearch" placeholder="Search: name, #T number, any word" aria-label="Search threads, to-dos and ideas" autocomplete="off"></div><span class="tstat" id="tstat" role="status"></span></div>
       <div id="tp-you" role="tabpanel" aria-labelledby="tab-you"><div class="gprs" id="agentprs" hidden></div><div class="waiting" id="waiting"><div class="empty">Nothing needs you.</div></div></div>
       <div id="tp-later" role="tabpanel" aria-labelledby="tab-later" hidden><div class="waiting" id="later"></div></div>
+      <div id="tp-team" role="tabpanel" aria-labelledby="tab-team" hidden><div class="waiting" id="teamnotes"><div class="empty">No team notes.</div></div></div>
       <div id="tp-lead" role="tabpanel" aria-labelledby="tab-lead" hidden><div class="waiting" id="threads"><div class="empty">Nothing with the team.</div></div></div>
       <div id="tp-todo" role="tabpanel" aria-labelledby="tab-todo" hidden>
         <div id="todolist"><div class="empty">Nothing on the list yet.</div></div>
@@ -712,7 +713,14 @@ function leadLast(id,after=0){const t=threadOf(id),last=t[t.length-1];
 function waitsOn(id,now){const it=itemOf(id);
   if(it&&it.coll==="waiting"&&!settled(it.doc))return needsYou(it.doc,now)||leadLast(id,num(it.doc.response&&it.doc.response.at)??0)?"you":"lead";
   if(!threadOf(id).length)return null;
+  if(teamOnly(id)&&!threadResolved(id))return "team";
   return threadOpen(id)?"lead":threadResolved(id)?"resolved":threadState(id)==="building"&&!leadLast(id)?"lead":"answered"}
+// #C919 (Team notes): a thread where nothing is addressed to the owner, so it is not his to read. Every message is an agent's
+// (none is the owner's, none is the lead's, who is the one who answers or asks him), and no ask of his sits on it. The
+// first Manager answer or ask for him that lands makes it his again, with no write in between.
+function teamOnly(id){const t=threadOf(id);if(!t.length)return false;
+  const w=state.waiting.find(x=>x.id===id);if(w&&!settled(w))return false;
+  return t.every(m=>m.from!==OWNER&&m.from!==LEAD_ROLE)}
 // The badge for a waitsOn answer: the only place the page writes one. "lead" is the With the team tab (#C364).
 function badge(on){return on==="you"?'<span class="t-badge you">waiting on you</span>':on==="lead"?'<span class="t-badge open">with the team</span>':on==="resolved"?'<span class="t-badge res">resolved</span>':on==="answered"?'<span class="t-badge ">answered</span>':""}
 // Whether an item is drawn with its thread under it: an open ask (either section), a closed one whose thread waits on
@@ -1590,7 +1598,15 @@ function threadRow(id,now,where="panel",ask=null){const on=waitsOn(id,now),st=as
   return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${pingHtml(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it."}:{acts:true})}</details>`}
 function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id,q));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
-    answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a))}}
+    answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a)),
+    team:ids.filter(id=>waitsOn(id,now)==="team").sort((a,b)=>threadLast(b)-threadLast(a))}}
+// "Team notes" (#C919): the threads the team keeps among itself, each as one quiet line: its card's one-line title in plain
+// words (else the thread's name), and when it last moved. It opens to the thread; the owner has nothing to answer there.
+function teamRow(id,now){const c=threadCardAny(id),title=c&&(c.name||c.title)?String(c.name||c.title):threadName(id);
+  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind">Team</span><div class="w-text"><b class="t-name">${esc(title.replace(/\s+/g," ").trim())}</b></div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"team",{box:false})}</details>`}
+function teamHtml(now){const q=qOf("team"),ids=threadSets(now,q).team;
+  return ids.length?ids.map(id=>teamRow(id,now)).join(""):isOn(q)?NO_MATCH:'<div class="empty">No team notes.</div>'}
+function renderTeam(){const el=$("teamnotes");if(!el)return;keep(el,()=>{el.innerHTML=teamHtml(Date.now())})}
 function threadRows(now,q=rQuery){const s=threadSets(now,q);
   return {open:s.open.map(id=>threadRow(id,now)).join(""),answered:s.answered.map(id=>threadRow(id,now)).join("")}}
 // Resolved threads, folded at the panel's end: those of the last 7 days, and a search box that finds any resolved
@@ -1648,7 +1664,7 @@ function searchNow(q){clearTimeout(searchTimer);rQuery=String(q??"");rShown=RMAX
   renderTab(tab);const st=$("tstat");if(st)st.innerHTML=searchStatus(Date.now())}
 function setSearch(q){clearTimeout(searchTimer);searchTimer=setTimeout(()=>searchNow(q),SEARCH_WAIT)}
 // One tab's list drawn again.
-function renderTab(k){({you:renderWaiting,later:renderLater,lead:renderThreads,todo:()=>renderList("todo"),ideas:()=>renderList("ideas"),resolved:renderResolved})[k]?.()}
+function renderTab(k){({you:renderWaiting,later:renderLater,team:renderTeam,lead:renderThreads,todo:()=>renderList("todo"),ideas:()=>renderList("ideas"),resolved:renderResolved})[k]?.()}
 document.addEventListener("input",e=>{if(e.target&&e.target.id==="rsearch")setSearch(e.target.value)});
 // "Later": asks the owner can leave for now, in a tab of their own (#C351: no longer a fold-out).
 const laterAsks=(now,q=rQuery)=>state.waiting.filter(w=>waitsOn(w.id,now)==="you"&&isLater(w,now)&&askHit(w,q)).sort((a,b)=>(num(a.since)??0)-(num(b.since)??0));
@@ -1696,10 +1712,10 @@ document.addEventListener("input",e=>{if(e.target&&e.target.id==="nttext"){ntHas
 // The Threads box's tabs (#C351, the owner's pick B and the change in #T957): each over its own list, with its count.
 // Needs you opens by default; the open tab is this viewer's, for this visit.
 // "Waiting on Manager" is "With the team" (#C364): it holds threads that became cards too.
-const TABS=[["you","Needs you"],["later","Later"],["lead","With the team"],["todo","To-do"],["ideas","Ideas"],["resolved","Resolved, 7 days"]];
+const TABS=[["you","Needs you"],["later","Later"],["team","Team notes"],["lead","With the team"],["todo","To-do"],["ideas","Ideas"],["resolved","Resolved, 7 days"]];
 let tab="you";
 function tabCounts(now,q=rQuery){const s=threadSets(now,q);
-  return {you:youCount(now,q),later:laterAsks(now,q).length,
+  return {you:youCount(now,q),later:laterAsks(now,q).length,team:s.team.length,
     lead:leadAsks(now,q).length+s.open.length,todo:listOpen("todo").filter(t=>listHit(t,q)).length,ideas:listOpen("ideas").filter(t=>listHit(t,q)).length,
     resolved:resolvedMatches(q,now).length}}
 // Every tab's count is its real total, whatever is typed (#C363; Needs you red when anything waits on the owner).
@@ -1707,14 +1723,14 @@ function tabsHtml(now,active=tab){const c=tabCounts(now,"");
   return TABS.map(([k,l])=>`<button type="button" role="tab" id="tab-${k}" class="ttab${k===active?" on":""}" aria-selected="${k===active}" aria-controls="tp-${k}" tabindex="${k===active?0:-1}" data-tab="${k}">${l} <span class="tcount${k==="you"&&c[k]?" hot":""}">${c[k]}</span></button>`).join("")}
 // The open tab's matches alone (one list, not six, per key).
 function tabMatches(k,now,q){const s=()=>threadSets(now,q);
-  return k==="you"?youCount(now,q):k==="later"?laterAsks(now,q).length:
+  return k==="you"?youCount(now,q):k==="later"?laterAsks(now,q).length:k==="team"?s().team.length:
     k==="lead"?leadAsks(now,q).length+s().open.length:k==="todo"||k==="ideas"?listOpen(k).filter(t=>listHit(t,q)).length:resolvedMatches(q,now).length}
 // The search row says a search is on (Designer on f1c9f73): the open tab's matches, and Clear.
 function searchStatus(now){if(!searching())return "";const n=tabMatches(tab,now,rQuery);
   return `${n?`${n} match${n>1?"es":""}`:"No matches."} · <button type="button" class="tclear" data-tclear>Clear</button>`}
 // Once a reply counts as sent (SENT_MS), its ask moves from Needs you to With the team: both lists and the pills
 // are drawn again together (#C366: the timer redrew Needs you alone, and the pills kept the old numbers).
-function settleRedraw(){renderWaiting();renderThreads();renderTabs()}
+function settleRedraw(){renderWaiting();renderThreads();renderTeam();renderTabs()}
 function renderTabs(){const el=$("ttabs");if(!el)return;const now=Date.now();el.innerHTML=tabsHtml(now);TABS.forEach(([k])=>{const p=$("tp-"+k);if(p)p.hidden=k!==tab});
   const st=$("tstat");if(st)st.innerHTML=searchStatus(now);ttMore()}
 document.addEventListener("click",e=>{if(e.target.closest&&e.target.closest("[data-tclear]")){searchNow("");const box=$("rsearch");if(box&&box.focus)box.focus()}});
@@ -1764,7 +1780,7 @@ function trefPlace(id,now){const it=itemOf(id);
   if(it&&it.coll==="initiatives"&&it.doc.status!=="done")return {card:true};
   const on=waitsOn(id,now);
   if(it&&it.coll==="waiting"&&itemShown(id,now))return {tab:on==="you"?(isLater(it.doc,now)?"later":"you"):"lead"};
-  if(on==="answered")return {tab:"you"};if(on==="lead")return {tab:"lead"};if(on==="resolved")return {tab:"resolved"};
+  if(on==="team")return {tab:"team"};if(on==="answered")return {tab:"you"};if(on==="lead")return {tab:"lead"};if(on==="resolved")return {tab:"resolved"};
   return it&&it.coll==="ideas"&&!it.doc.done?{tab:"ideas"}:null}
 // #T27 opens its item: its tab (or the board, for a card), clearing a search that hides it, then its row by id (an ask,
 // a thread row "th-", a card's thread "ith-"), its folds, and scrolls there. A resolved thread is searched for by its
@@ -3075,7 +3091,7 @@ function renderRestart(){const el=$("restartbadge");if(!el)return;const r=restar
 function renderShipLine(){const el=$("shipline");if(!el)return;const s=shipNow();el.hidden=!s;if(!s){el.innerHTML="";return}
   const i=state.initRaw.find(x=>x&&x.id===s.id),n=i&&Number.isInteger(i.num)?`#C${i.num}`:esc(s.id);
   el.innerHTML=`<b>Don't restart: shipping.</b> ${esc(SHIP_ROLE)} is shipping ${s.version?`<b>v${esc(s.version)}</b> `:""}(${n}); closing the agents now would stop it halfway.`}
-function renderAll(){qText.clear();msgIxOf=null;state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();renderAgentPrs();liveWas=liveOn();renderStamp()}
+function renderAll(){qText.clear();msgIxOf=null;state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderTeam();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();renderAgentPrs();liveWas=liveOn();renderStamp()}
 let liveWas=false;
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
