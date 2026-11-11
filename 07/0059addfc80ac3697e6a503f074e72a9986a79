@@ -1,0 +1,1 @@
+PASS Full: small-stack-a, #C926 commit, signed only as part of the line from main 2593e49 ending at 959cc5a. The PASS on 959cc5a covers all 8 commits together. This commit alone must not ship.
