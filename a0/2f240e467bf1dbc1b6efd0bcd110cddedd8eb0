@@ -1,0 +1,1 @@
+SECURE. #C897 v2 base: re-cut of 532b9f8 (SECURE with LOW) onto main 058c1ed; range-diff excluding CHANGELOG.md shows only the docs/DATA.md merge. The LOW is closed by the next commit, 5310d63. Line-scoped for 058c1ed..5310d63.
