@@ -286,6 +286,26 @@ export function unpushedState(cwd, run = (args) => execFileSync("git", args, { c
     return { branch, sha, ahead };
   } catch { return null; }
 }
+// #C888: a builder works in worktrees it cuts under its own session folder (`git -C <worktree> commit`), so the folder the session started in is
+// often on main and the build branch with the unpushed commit is in a linked worktree. The hook reads the session's folder AND the repository's
+// worktrees whose path holds the session's id (its scratchpad); another session's worktrees are never counted. The folder's own state wins when it
+// is ahead; otherwise the first worktree of this session that is.
+// A stack built on purpose needs no way to say so: once stack mode is live a push no longer wakes the reviewers per slice (they are woken once, when no
+// builder has a queued card left for the repository), so pushing every slice is harmless and this check and stack mode do not fight (Manager, #C888).
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export function ownWorktrees(cwd, sessionId, run = (args) => execFileSync("git", args, { cwd, encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] })) {
+  try {
+    if (typeof cwd !== "string" || !cwd.startsWith("/") || !SESSION_ID.test(String(sessionId))) return [];
+    return run(["worktree", "list", "--porcelain"]).split("\n").filter((l) => l.startsWith("worktree ")).map((l) => l.slice(9).trim())
+      .filter((p) => p.startsWith("/") && p !== cwd && p.split("/").includes(sessionId));
+  } catch { return []; }
+}
+export function unpushedAcross(cwd, sessionId, state = unpushedState, list = ownWorktrees) {
+  const here = state(cwd);
+  if (here && here.ahead > 0) return here;
+  for (const p of list(cwd, sessionId)) { const s = state(p); if (s && s.ahead > 0) return s; }
+  return here;
+}
 export function unpushedCheck(state, refused) {
   if (!state || !BUILD_BRANCH.test(String(state.branch)) || !(state.ahead > 0) || !/^[0-9a-f]{40}$/.test(String(state.sha))) return { ask: null, judged: null };
   if (refused && typeof refused === "object" && refused[state.branch] === state.sha) return { ask: null, judged: null };
@@ -407,7 +427,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     if (sessionRoleName && sessionRoleName !== config.gate.managerRole && config.roster.includes(sessionRoleName)) {
       let refused = null;
       try { refused = JSON.parse(readFileSync(refusedPath, "utf8")); } catch { /* none */ }
-      unpushed = { state: unpushedState(input.cwd), refused };
+      unpushed = { state: unpushedAcross(input.cwd, input.session_id ?? basename(String(input.transcript_path), ".jsonl")), refused };
     }
     const { errs, record, note, liveNext, dispatchAsked, waitJudged, unpushedJudged } = stopRun(lines, { config, env: process.env, now, since: sinceOf(lastPass(path, key, now), now), view, live: { stored: readLive(lp, key), require: true }, wake: wakeState(config, process.argv[at + 1]), dispatch, store, unpushed });
     if (unpushedJudged) { try { mkdirSync(dirname(refusedPath), { recursive: true, mode: 0o700 }); writeAtomic(refusedPath, JSON.stringify(Object.fromEntries([...Object.entries(unpushed.refused && typeof unpushed.refused === "object" ? unpushed.refused : {}), [unpushedJudged.branch, unpushedJudged.sha]].slice(-20)))); } catch { /* asked again at this tip */ } }

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
-import { stopRun, unpushedState, unpushedCheck, supersededBy, backgroundRunning } from "../gate/stop.mjs";
+import { stopRun, unpushedState, unpushedCheck, supersededBy, backgroundRunning, ownWorktrees, unpushedAcross } from "../gate/stop.mjs";
 
 const roster = ["Manager", "Builder", "Checker"];
 const config = fullConfig({ roster, gate: { managerRole: "Manager" } });
@@ -118,4 +118,39 @@ test("a turn that leaves a background task running is not judged and records not
   assert.equal(backgroundRunning([{ name: "Bash", input: { command: "ls" } }]), false);
   const r = stopRun(lines, { config, env: { FLIGHT_BOARD_ROLE: "Builder" }, now: 1_800_000_000_000, unpushed: { state, refused: null } });
   assert.deepEqual(r.errs, []); assert.equal(r.unpushedJudged, null);
+});
+
+// #C888: the 10:02 pm turn. The session started in the repository's folder (on main) and built in a worktree under its own scratchpad
+// (git -C <worktree> commit), so the folder's HEAD showed nothing and the turn ended on a question with a commit origin lacked.
+const SID = "eab1c60d-e4fb-4ff6-a75d-1e25ea1b73b2", OTHER = "11111111-2222-3333-4444-555555555555";
+function withWorktree(sid, branch) {
+  const r = repo();
+  const dir = join(mkdtempSync(join(tmpdir(), "fb-wt-")), sid, "scratchpad", "fb-x");
+  r.g("worktree", "add", "-q", "-b", branch, dir);
+  const gw = (...a) => execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=T", "-c", "commit.gpgsign=false", ...a], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  appendFileSync(join(dir, "f"), "wt\n"); gw("commit", "-qam", "wt");
+  return { ...r, dir };
+}
+
+test("C888: a build branch with an unpushed commit in a worktree of this session is found though the folder is on main; another session's worktree is not", () => {
+  const { work } = withWorktree(SID, "build/stack-x");
+  assert.equal(unpushedState(work), null, "the folder alone sees nothing: main is not a build branch (the miss)");
+  assert.equal(ownWorktrees(work, SID).length, 1);
+  assert.ok(ownWorktrees(work, SID)[0].endsWith(`/${SID}/scratchpad/fb-x`));
+  const s = unpushedAcross(work, SID);
+  assert.equal(s.branch, "build/stack-x"); assert.equal(s.ahead, 1);
+  assert.equal(unpushedAcross(work, OTHER), null, "a session that did not cut the worktree is not asked about it");
+  assert.equal(unpushedAcross(work, "not-a-session-id"), null, "no usable session id: the folder only");
+  assert.deepEqual(ownWorktrees(work, undefined), []);
+  assert.deepEqual(ownWorktrees("relative", SID), []);
+});
+
+test("C888: the folder's own ahead state wins; once pushed the worktree's is next, then nothing is ahead", () => {
+  const { g, work, commit } = withWorktree(SID, "build/stack-y");
+  g("switch", "-q", "-c", "build/own"); commit("own");
+  assert.equal(unpushedAcross(work, SID).branch, "build/own", "the folder's");
+  g("push", "-q", "origin", "build/own");
+  assert.equal(unpushedAcross(work, SID).branch, "build/stack-y", "now the worktree's");
+  g("push", "-q", "origin", "build/stack-y");
+  assert.equal(unpushedAcross(work, SID).ahead, 0, "all pushed");
 });
