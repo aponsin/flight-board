@@ -72,9 +72,25 @@ test("pushWords: counts, ask numbers and versions only; never an ask's title or 
 });
 
 // A real browser subscription's shape: a P-256 point and a 16-byte secret.
+const UA_KEYS = new Map(); // endpoint -> the device's private key, so a test can open what was sent to it
 async function device(endpoint = "https://fcm.googleapis.com/fcm/send/dev1") {
   const ua = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
-  return { endpoint, keys: { p256dh: b64u.encode(await crypto.subtle.exportKey("raw", ua.publicKey)), auth: b64u.encode(crypto.getRandomValues(new Uint8Array(16))) } };
+  const d = { endpoint, keys: { p256dh: b64u.encode(await crypto.subtle.exportKey("raw", ua.publicKey)), auth: b64u.encode(crypto.getRandomValues(new Uint8Array(16))) } };
+  UA_KEYS.set(endpoint, { privateKey: ua.privateKey, d });
+  return d;
+}
+// RFC 8291 / 8188, one record: the receiving side of encryptPayload, so a test reads the plaintext that was sealed (#C950: no assertion on random bytes).
+async function openPush(endpoint, body) {
+  const { privateKey, d } = UA_KEYS.get(endpoint), b = new Uint8Array(body), enc = new TextEncoder();
+  const salt = b.slice(0, 16), idlen = b[20], asPub = b.slice(21, 21 + idlen), sealed = b.slice(21 + idlen), uaPub = b64u.decode(d.keys.p256dh);
+  const hkdf = async (s, ikm, info, n) => new Uint8Array(await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt: s, info }, await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]), n * 8));
+  const as = await crypto.subtle.importKey("raw", asPub, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const ecdh = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: as }, privateKey, 256));
+  const ikm = await hkdf(b64u.decode(d.keys.auth), ecdh, new Uint8Array([...enc.encode("WebPush: info\0"), ...uaPub, ...asPub]), 32);
+  const key = await crypto.subtle.importKey("raw", await hkdf(salt, ikm, enc.encode("Content-Encoding: aes128gcm\0"), 16), "AES-GCM", false, ["decrypt"]);
+  const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: await hkdf(salt, ikm, enc.encode("Content-Encoding: nonce\0"), 12) }, key, sealed));
+  assert.equal(plain.at(-1), 2, "one record: the last-record delimiter");
+  return new TextDecoder().decode(plain.slice(0, -1));
 }
 const call = (db, path, { role = "owner", who = role, body, method = body === undefined ? "GET" : "POST", env = {}, headers = {} } = {}) =>
   worker.fetch(new Request(`https://b.test${path}`, { method, headers: { ...(method === "POST" ? { "content-type": "application/json" } : {}), ...headers }, body: body === undefined ? undefined : JSON.stringify(body) }), { DB: db, ...env }, null, T, async () => ({ who, role }));
@@ -128,7 +144,16 @@ test("the cron: nothing before 30 minutes; at 30 one push per device, each item 
   assert.equal(sent.length, 0, "29 min");
   await worker.scheduled({}, { DB: db, ...env }, null, T + 30 * MIN, fetchFn);
   assert.deepEqual(sent.map((s) => s.url).sort(), ["https://fcm.googleapis.com/fcm/send/dev1", "https://web.push.apple.com/dev2"]);
-  for (const s of sent) assert.doesNotMatch(Buffer.from(s.init.body).toString("latin1"), /SECRET|run the pair|#T/, "encrypted, no ask text");
+  // #C950: read the sealed plaintext instead of searching random ciphertext (which held "#T" by chance about 0.3% of runs). The payload is
+  // exactly the four fields, names only the ask's number, and holds none of its text; a leaked title or another thread id fails here every time.
+  const num = (await db.prepare("SELECT num FROM asks").first()).num;
+  for (const s of sent) {
+    const plain = await openPush(s.url, s.init.body), p = JSON.parse(plain);
+    assert.deepEqual(Object.keys(p).sort(), ["body", "tag", "title", "url"]);
+    assert.doesNotMatch(plain, /SECRET|run the pair/, "no ask text");
+    assert.deepEqual(plain.match(/#T\d+/g), [`#T${Number(num)}`], "the only thread id is the waiting ask's own number");
+    assert.ok(!Buffer.from(s.init.body).includes(Buffer.from(p.body)), "and what was sent is not the plaintext");
+  }
   await worker.scheduled({}, { DB: db, ...env }, null, T + 35 * MIN, fetchFn);
   assert.equal(sent.length, 2, "once");
   const facts = await (await call(db, "/api/push", { env })).json();
