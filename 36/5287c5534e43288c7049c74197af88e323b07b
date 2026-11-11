@@ -1,0 +1,1 @@
+PASS Quick: #C847 Board-Id trailer check. Same content as e0fb4e9 on the signed #C850 v4. Suite 2048/2048 on this commit. Mutant killed: CLI log of the tip only instead of main..sha.
