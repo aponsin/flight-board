@@ -44,19 +44,25 @@ export function promiseWakes({ asks, now }) {
   }));
 }
 
-// What is due on the phone now and not pushed yet: { asks, ships } (each an array of rows), and the push's words.
-export function pushesDue({ asks, ships, sent, now }) {
+// What is due on the phone now and not pushed yet: { asks, ships, deploy } (asks and ships arrays of rows, deploy a 40-hex commit or null), and the push's words.
+// #C968: deploy is the commit the Worker was deployed from (BUILD_SHA), told once per commit ("board deployed <short sha>"), so a deploy the owner did
+// not start by hand is seen within minutes. Anything that is not a full lower-case sha is no deploy.
+export const DEPLOY_SHA = /^[0-9a-f]{40}$/;
+export function pushesDue({ asks, ships, sent, now, deploy = null }) {
   const was = (kind, ref) => sent.has(`${kind}:${ref}`);
+  // Recorded in push_sent as kind 'ship', ref "deploy:<sha>" (its kind is checked to ask or ship, and a ship's ref is a version, never "deploy:..."): no migration.
+  const dueDeploy = typeof deploy === "string" && DEPLOY_SHA.test(deploy) && !was("ship", `deploy:${deploy}`) ? deploy : null;
   const dueAsks = asks.filter((a) => waited(a, now, OWNER_PUSH_MIN) && !was("ask", a.id)).sort((x, y) => x.num - y.num);
   const dueShips = ships.filter((s) => s.acked_at == null && typeof s.shipped_at === "number" && now - s.shipped_at <= SHIP_DAYS * DAY && !was("ship", s.version))
     .sort((x, y) => x.shipped_at - y.shipped_at);
-  return { asks: dueAsks, ships: dueShips, payload: dueAsks.length || dueShips.length ? pushWords(dueAsks, dueShips) : null };
+  return { asks: dueAsks, ships: dueShips, deploy: dueDeploy, payload: dueAsks.length || dueShips.length || dueDeploy ? pushWords(dueAsks, dueShips, dueDeploy) : null };
 }
 
 const VERSION = /^v?\d+(?:\.\d+){1,3}$/;
 const list = (items) => (items.length <= 3 ? items.join(", ") : `${items.slice(0, 3).join(", ")} and ${items.length - 3} more`);
-export function pushWords(asks, ships) {
+export function pushWords(asks, ships, deploy = null) {
   const parts = [];
+  if (typeof deploy === "string" && DEPLOY_SHA.test(deploy)) parts.push(`board deployed ${deploy.slice(0, 7)}`);
   if (ships.length) {
     const vs = ships.map((s) => (VERSION.test(String(s.version)) ? String(s.version) : "a version"));
     parts.push(`${list(vs)} went live: acknowledge ${ships.length === 1 ? "it" : "them"}`);
