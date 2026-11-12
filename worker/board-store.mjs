@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, installWaitStep, INSTALL_WAIT } from "./board-rules.mjs";
+import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -204,7 +204,8 @@ export async function postMessage(db, now, who, m) {
   // #C979: an agent's post in a thread the owner reads carries no UTC "Z" time (Mountain Time only). The owner reads an ask's thread, a free
   // thread (his) and any thread he has written in; a card thread only agents have written in is theirs, and keeps its Z times.
   if (who !== "owner") {
-    const z = zTimeRefusal([m.body, ...(Array.isArray(m.options) ? m.options.map((o) => o?.label) : [])]);
+    const prose = [m.body, ...(Array.isArray(m.options) ? m.options.map((o) => o?.label) : [])];
+    const z = zTimeRefusal(prose) ?? inlineListRefusal(prose); // #C965: one numbered line per point, as for an ask
     if (z && await ownerReads(db, m.thread_id)) return refuse(db, now, z, m.thread_id, who);
   }
   // #C936: an agent's message may carry screenshots, as an ask does. An empty list carries nothing; a picture that names an option (A to D)

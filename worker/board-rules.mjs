@@ -72,6 +72,26 @@ export function zTimeRefusal(texts) {
   }
   return null;
 }
+// #C965 (the owner on #T1779, 11-11 ~8:15 pm MT: "Multiples points, and not numbered list ?"): four points packed as "(1) … (2) … (3) … (4)" in
+// one paragraph. A paragraph (text between blank lines) holding 3 or more inline markers "(1)" or "1)" is refused: one numbered line per point.
+// A marker at the start of its line is a list, not inline. Still allowed: a "1." list, one or two inline mentions, option lines "A: …", code spans.
+const LIST_MARK = /(?<![\w#:().])\(?\d{1,2}\)(?=\s)/g;
+export const INLINE_LIST_MIN = 3;
+export function inlineListIn(text) {
+  if (typeof text !== "string") return null;
+  for (const para of text.replace(CODE_SPANS, " ").split(/\n[ \t]*\n/)) {
+    const inline = [...para.matchAll(LIST_MARK)].filter((m) => !/^[ \t]*$/.test(para.slice(para.lastIndexOf("\n", m.index - 1) + 1, m.index)));
+    if (inline.length >= INLINE_LIST_MIN) return inline.map((m) => m[0]).slice(0, 4).join(" ");
+  }
+  return null;
+}
+export function inlineListRefusal(texts) {
+  for (const t of texts) {
+    const l = inlineListIn(t);
+    if (l) return refuse("one-point-per-line", `${l}: points packed in one paragraph; write one numbered line per point ("1. …" on its own line, then "2. …")`);
+  }
+  return null;
+}
 // The parts of an ask the owner reads as prose: its title and every part but the ones he copies (commands, words, a step's cmd).
 export function askProse(ask) {
   const steps = Array.isArray(ask.steps) ? ask.steps.map((s) => (typeof s === "string" ? s : s?.text)) : [];
@@ -128,7 +148,7 @@ export function askRefusal(ask, now) {
     if (!Number.isFinite(ask.eta_at) || ask.eta_precondition !== undefined) return refuse("promise-shape", "a promise has a date (eta_at) and no precondition");
   }
   // #C979: no UTC time in what the owner reads. A live write only: an import (now = null) keeps the old ask's words.
-  if (Number.isFinite(now)) { const z = zTimeRefusal(askProse(ask)); if (z) return z; }
+  if (Number.isFinite(now)) { const z = zTimeRefusal(askProse(ask)) ?? inlineListRefusal(askProse(ask)); if (z) return z; }
   return null;
 }
 
