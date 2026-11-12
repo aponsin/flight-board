@@ -22,13 +22,13 @@ test("the owner's 23:44Z case: the live state knows a write the page never recei
   const b = board(NOW - 3 * MIN);
   b.probeEvent({ type: "data", result: { payload: reading(NOW - 140e3) } }, {});
   assert.equal(b.dataBehind(NOW), true);
-  assert.equal(b.stampText(NOW), "Board data behind, reloading · Studio checked 30 s ago · Data 3 min");
+  assert.equal(b.stampText(NOW), "Board data behind, reloading · Studio checked 30 s ago · Data 3 min old");
 });
 
 test("caught up, or the write under 2 min old: both ages, never the live age alone", () => {
   const b = board(NOW - 3 * MIN);
   b.probeEvent({ type: "data", result: { payload: reading(NOW - 3 * MIN) } }, {});
-  assert.equal(b.stampText(NOW), "Studio checked 30 s ago · Data 3 min", "the page holds the db's last write");
+  assert.equal(b.stampText(NOW), "Studio checked 30 s ago · Data 3 min old", "the page holds the db's last write");
   const fresh = board(NOW - 3 * MIN);
   fresh.probeEvent({ type: "data", result: { payload: reading(NOW - 60e3) } }, {});
   assert.equal(fresh.dataBehind(NOW), false, "a write a minute old may still be on its way");
@@ -39,7 +39,7 @@ test("caught up, or the write under 2 min old: both ages, never the live age alo
   assert.equal(skew.dataBehind(NOW), false, "the newest doc held counts, not only its arrival");
   const old = board(NOW - 3 * MIN);
   old.probeEvent({ type: "data", result: { payload: { ...reading(null), board: { ...reading(null).board, lastWriteAt: undefined } } } }, {});
-  assert.equal(old.stampText(NOW), "Studio checked 30 s ago · Data 3 min", "a probe from before lastWriteAt: nothing to compare");
+  assert.equal(old.stampText(NOW), "Studio checked 30 s ago · Data 3 min old", "a probe from before lastWriteAt: nothing to compare");
 });
 
 // A page's world with a sessionStorage that survives its reloads (one tab's), and a reload that counts.

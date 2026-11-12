@@ -228,7 +228,7 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .reply label{font-size:.82rem;color:var(--muted)}
 .reply textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%;resize:vertical}
 .btns{display:flex;flex-wrap:wrap;gap:8px}
-.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}.evidence.old{background:var(--line);border-color:var(--line);color:var(--ink)}.oldsrc{display:block;font:.82rem var(--mono);color:var(--muted)}.oldsrc.stale{color:var(--warn-ink);font-weight:600}
+.evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}.evidence.old{background:var(--line);border-color:var(--line);color:var(--ink)}.oldsrc{display:block;font:.82rem var(--mono);color:var(--muted)}.oldsrc.stale{color:var(--warn-ink);font-weight:600}#synced.stale{color:var(--warn-ink);font-weight:600}.newboard{display:block;font:600 .82rem var(--mono);color:var(--warn-ink)}
 .shipline{margin:0;padding:8px 12px;border:1px solid var(--warn);border-radius:8px;background:var(--warn-soft);color:var(--warn-ink);font-size:.9rem}
 .shipline b{font-weight:700}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
@@ -565,7 +565,7 @@ table.crew3-ph{margin-top:14px}
 
 <div class="wrap">
   <header>
-    <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="hdr-badges"><div class="rb" id="restartbadge" role="status" hidden></div><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div></div></div>
+    <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="hdr-badges"><div class="rb" id="restartbadge" role="status" hidden></div><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div><button type="button" class="newboard" id="newboard" hidden>A newer board is live: reload</button></div></div>
     <div class="hdr-right"><button type="button" class="ackbtn pushbtn" id="pushbtn" hidden></button><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div></div>
   </header>
   <div class="pushhelp" id="pushhelp" role="region" aria-label="How to allow phone pushes" hidden></div>
@@ -1342,7 +1342,9 @@ function stuckLines(){const m=state.meta.find(d=>d.id==="stuck")||{},lead=(CONFI
       // The banner contract (#C433): it ends with the owner's exact action, or says it isn't his. An entry with
       // neither (one written before the rule) is the lead's.
       const you=typeof v.you==="string"&&v.you.trim()?v.you.trim():"",owner=typeof v.owner==="string"&&/^[A-Za-z][A-Za-z0-9]{1,23}$/.test(v.owner)?v.owner:lead;
-      return {you:!!you,text:`${lead} stuck on ${it?(it.coll==="initiatives"?it.doc.name:it.doc.text)||id:id}: ${v.reason||"refused three times"} · ${you?"You: "+you:"Nothing for you · owner: "+owner}`}})}
+      // #C880: the store names who was refused (v.who, a role the store checked); the old gate's lines name none, so they stay the lead's.
+      const who=typeof v.who==="string"&&/^[A-Za-z][A-Za-z0-9]{1,23}$/.test(v.who)?v.who:lead;
+      return {you:!!you,text:`${who} stuck on ${it?(it.coll==="initiatives"?it.doc.name:it.doc.text)||id:id}: ${v.reason||"refused three times"} · ${you?"You: "+you:"Nothing for you · owner: "+owner}`}})}
 // The deaf line (#C392): Manager's board pings arm only when the owner's own message carries the board's link, so after
 // a clear Manager missed ~40 board messages. The owner's word with nothing from Manager after it (a thread's newest
 // owner word not closed, or an answered ask not done; the last day's only), DEAF_MIN minutes on, shows here with the
@@ -3054,7 +3056,15 @@ function managerChip(now=Date.now()){if(!liveOn(now))return null;const b=probe.b
 // installed code the live probe reports (its pinned copy's first 7 characters). A part that isn't there is left out.
 function boardVerText(pack,commit,installed){const p=/^v\d+\.\d+[a-z]?$/.test(pack||"")?pack:"",c=/^[0-9a-f]{7,12}$/.test(commit||"")?commit:"",i=/^[0-9a-f]{12}$/.test(installed||"")?installed.slice(0,7):"";
   return [p||i?"Board "+(p||i):"",c?"page "+c:""].filter(Boolean).join(" · ")}
-function renderBoardVer(){const el=$("boardver");if(!el)return;const t=boardVerText(el.dataset.pack,el.dataset.commit,liveOn(Date.now())&&probe&&probe.board?probe.board.pageVersion:null);el.hidden=!t;el.textContent=t}
+// #C880: "A newer board is live: reload". The Worker names the commit it was deployed from on every answer to the page's polling (the shim writes it as
+// data-live-build); the first one the page sees is the board it loaded, and a different one later means a deploy since. Nothing is said before two
+// readings, with no build set on the Worker (an empty header), or on a build the page cannot read.
+let bootBuild=null;
+const liveBuild=()=>{try{const b=document.documentElement.getAttribute("data-live-build");return /^[0-9a-f]{12}$/.test(b||"")?b:null}catch(e){return null}};
+function newBoard(){const b=liveBuild();if(b==null)return false;if(bootBuild==null){bootBuild=b;return false}return b!==bootBuild}
+document.addEventListener("click",e=>{if(e.target&&e.target.id==="newboard"){try{location.reload()}catch(x){}}});
+function renderBoardVer(){const el=$("boardver");if(!el)return;const t=boardVerText(el.dataset.pack,el.dataset.commit,liveOn(Date.now())&&probe&&probe.board?probe.board.pageVersion:null);el.hidden=!t;el.textContent=t;
+  const nb=$("newboard");if(nb)nb.hidden=!newBoard()}
 // #C675: the sticky header's height, for whatever sticks below it; it changes when the header wraps or its lines change.
 (function(){const h=document.querySelector("header");if(!h||!document.documentElement)return;
   // 0 when the header is not sticky (under 600px), so the strip and the scroll padding go back to the top of the page there.
@@ -3085,7 +3095,13 @@ function dataBehind(now=Date.now()){if(STORE)return false;const w=liveWriteAt(no
 const ageText=ms=>{const s=Math.max(0,Math.round(ms/1e3));return s<60?s+" s":dur(s*1e3)};
 // The header stamp: which source the board reads, and how old it is; while live, the data's age beside it, never the
 // live age alone (#C452).
-function stampText(now=Date.now()){if(liveOn(now)){const h=dbHeld(),both="Studio checked "+ageText(now-probe.board.at)+" ago · "+(h?"Data "+ageText(now-h):"no data yet");
+// #C880: the data's age. On the store the page's own polling counts too: every good answer (a 304, "nothing changed", included) is the data being
+// current now, which the shim writes as data-fetched-at. Past 2 minutes it reads "Data N min old" in the warning colour (the #synced span's stale class).
+const DATA_OLD=2*60e3;
+const polledAt=()=>{if(!STORE)return 0;try{const v=Number(document.documentElement.getAttribute("data-fetched-at"));return Number.isFinite(v)&&v>0?v:0}catch(e){return 0}};
+const dataHeldAt=()=>Math.max(dbHeld()||0,polledAt())||null;
+const dataOld=(now=Date.now())=>{const h=dataHeldAt();return h!=null&&now-h>DATA_OLD};
+function stampText(now=Date.now()){if(liveOn(now)){const h=dataHeldAt(),both="Studio checked "+ageText(now-probe.board.at)+" ago · "+(h?"Data "+ageText(now-h)+(now-h>DATA_OLD?" old":""):"no data yet");
     return dataBehind(now)?"Board data behind, reloading · "+both:both}
   const all=state.derived.find(d=>d.id==="all"),at=num(all&&all.at);return at!=null?"from "+hhmm(at):dbSynced?"from "+hhmm(dbSynced):"connecting…"}
 // What the page does while its data is behind: every collection read again (resubscribed), then, if it is still behind
@@ -3109,7 +3125,7 @@ let dbSynced=null,dbState="";
 function renderStamp(){renderManagerChip();renderBoardVer();renderRestart();const el=$("synced");if(!el)return;if(dbState){el.textContent=dbState;return}
   // Why the board reads the db (a lapsed connector, an odd reading) shows as words, not only on hover: a phone has none
   // (Checker on live-source).
-  el.textContent=stampLine();
+  el.textContent=stampLine();el.classList.toggle("stale",dataOld(Date.now()));
   if(probeAsk&&liveMcp){const mcp=liveMcp;const b=document.createElement("button");b.type="button";b.className="viewlink";b.id="probe-allow";b.textContent="Allow live";el.append(" · ",b);
     b.addEventListener("click",()=>{readLiveNow(mcp)},{once:true})}
   // After the button (Designer): its own line, so no stray " · " begins it.
