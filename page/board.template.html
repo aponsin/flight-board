@@ -1950,7 +1950,10 @@ const qPos=i=>Number.isInteger(i&&i.queuePos)&&i.queuePos>0?i.queuePos:Infinity;
 let qOfI=null,qOfS=null,qMemo=new Map();
 function queueOf(who){if(qOfI!==state.initiatives||qOfS!==state.steps){qOfI=state.initiatives;qOfS=state.steps;qMemo=new Map()}
   if(!qMemo.has(who))qMemo.set(who,sortQueue(who));return qMemo.get(who)}
-function sortQueue(who){return state.initiatives.filter(i=>i&&i.who===who&&i.status!=="done"&&i.status!=="dropped").sort((a,b)=>isQueued(a)-isQueued(b)||qPos(a)-qPos(b)||(a.queueSetBy==="owner"?0:1)-(b.queueSetBy==="owner"?0:1)||(num(a.createdAt)??0)-(num(b.createdAt)??0))}
+// #C971: a queued card held by an open card it depends on sits after the queued ones that can start, as the Crew tile,
+// the store's order and the dispatch have it; the card's own line and its "3rd" said otherwise.
+const heldQueued=i=>isQueued(i)&&heldByDeps(i);
+function sortQueue(who){return state.initiatives.filter(i=>i&&i.who===who&&i.status!=="done"&&i.status!=="dropped").sort((a,b)=>isQueued(a)-isQueued(b)||heldQueued(a)-heldQueued(b)||qPos(a)-qPos(b)||(a.queueSetBy==="owner"?0:1)-(b.queueSetBy==="owner"?0:1)||(num(a.createdAt)??0)-(num(b.createdAt)??0))}
 function ordinal(n){const t=n%100,s=t>10&&t<14?"th":({1:"st",2:"nd",3:"rd"})[n%10]||"th";return n+s}
 const isQueued=i=>notStarted(i)||i.status==="queued";
 // Waiting its turn: queued with a place, and a card ahead of it in its queue still open (Designer and Manager on
