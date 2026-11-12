@@ -1,0 +1,1 @@
+SECURE #C1040 9a3ede1 as part of G1 ending b3958bf (Security 11-12): closes my LOW on #C1018: at most 6 open claims per checker (the claimed sha excluded), and claims on done or dropped cards are released first; bound SQL only.
