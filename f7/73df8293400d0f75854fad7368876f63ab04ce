@@ -1,0 +1,1 @@
+SECURE #C1013 v3 re-cut f773df8 onto main 3378785adeee621c5523ce61c6502a5e46c61a2a (Security 11-12): range-diff outside CHANGELOG.md equal to signed 170f980. Pinned probe code: needs the owner's install.
