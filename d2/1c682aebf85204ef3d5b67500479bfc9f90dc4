@@ -1,0 +1,1 @@
+SECURE line from 250b8ce304e4f79e5e6a60e1845f9f74de3018f7 (#C1029 newboard-banner-always-shows, Quick): one CSS rule .newboard[hidden]{display:none} plus a test that reads the repo's own page file; no script, network, input or secret surface
