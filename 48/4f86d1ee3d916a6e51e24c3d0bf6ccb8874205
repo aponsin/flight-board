@@ -1,0 +1,1 @@
+PASS Checker 2 #C969 v6 with #C1027: carry-over of v5 PASS (b273449); range-diff both identical onto main 3ab5085, touched and changelog tests 55/55, root clean (commit 484f86d1 of stack tip 248edd87)
