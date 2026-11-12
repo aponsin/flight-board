@@ -1,0 +1,1 @@
+SECURE #C987 bbdbf59 (Security 11-12): fixes my F1. compat-view sets autoClosed only for closed_by board; the page needs it. Only the store writes closed_by board: a caller's who is a roster role (as-not-in-roster), owner or probe.
