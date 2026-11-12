@@ -383,8 +383,20 @@ const pendingForManager = async (db) => {
 const ownerWaiting = async (db) => {
   const m = await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE delivered_at IS NULL AND author = 'owner'").first();
   const a = await db.prepare("SELECT COUNT(*) AS n FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL").first();
-  return m.n + a.n > 0;
+  const p = await db.prepare("SELECT COUNT(*) AS n FROM stall_wakes WHERE taken_at IS NULL AND card_id LIKE ?").bind(`${PING_CARD}%`).first();
+  return m.n + a.n + p.n > 0;
 };
+// #C1009: the owner's Ping on a thread is a wake of its own, not a comment: one row per (thread, minute) in stall_wakes under card_id
+// "ping:<thread id>", which Manager's next read takes with the rest. A second press in the same minute renews the same row (untaken again).
+// syncStalls leaves these rows alone (they are not a stall that can be over), and the view's threadPings gives the page "Pinged HH:MM".
+export const PING_CARD = "ping:";
+export async function pingThread(db, now, who, id) {
+  const known = (await db.prepare("SELECT 1 AS x FROM asks WHERE id = ?").bind(id).first()) || (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(id).first()) || (await db.prepare("SELECT 1 AS x FROM threads WHERE id = ?").bind(id).first());
+  if (!known) return refuse(db, now, { rule: "thread-unknown", detail: String(id).slice(0, 64) }, null, who);
+  const reason = `The owner pinged thread ${id} at ${mtDayTime(now)}: his newest word there has not been answered`;
+  await db.prepare("INSERT INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?) ON CONFLICT (card_id, reason) DO UPDATE SET created_at = excluded.created_at, taken_at = NULL").bind(`${PING_CARD}${id}`, reason, now).run();
+  return { ok: true, id };
+}
 // #C732: the cards that wait 15 min at a phase while its agent is idle (stalledWaits, board-rules.mjs), kept as one row per
 // (card, reason): a new reason for a card is pending for Manager once, an older untaken reason of the card is replaced by it, and a stall
 // that is over is no longer pending. A reason already sent is never sent again.
@@ -443,7 +455,7 @@ async function syncStalls(db, now) {
   // replaced by its new one here, so Manager never reads both.
   const current = new Set(stalls.map((s) => `${s.card_id}|${s.reason}`));
   const pending = (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE taken_at IS NULL").all()).results;
-  for (const p of pending) if (!current.has(`${p.card_id}|${p.reason}`)) await db.prepare("UPDATE stall_wakes SET taken_at = ? WHERE card_id = ? AND reason = ?").bind(now, p.card_id, p.reason).run();
+  for (const p of pending) if (!p.card_id.startsWith(PING_CARD) && !current.has(`${p.card_id}|${p.reason}`)) await db.prepare("UPDATE stall_wakes SET taken_at = ? WHERE card_id = ? AND reason = ?").bind(now, p.card_id, p.reason).run();
 }
 // #C873: the product's daily full test run (evidence e2e). Manager's batch gets ONE line when it turns red, missed or unknown from something else:
 // the row stays (taken or not) while the state holds, so a later probe run never tells it again; it goes when the state changes or turns ok.
@@ -697,7 +709,8 @@ export async function readView(db, now) {
   const stackSwitch = (await all("SELECT repo, stack, set_by, set_at FROM stack_switch ORDER BY repo")).map((r) => ({ ...r, stack: r.stack === 1 }));
   const threads = await readThreads(db), files = await readFiles(db, asks, threads.messages), ships = await readShips(db), usage = await readUsage(db);
   const reworkHistory = await all("SELECT card_id, reason, at, who FROM rework_history ORDER BY at, id");
-  const content = { cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reworkHistory };
+  const pings = (await db.prepare("SELECT card_id, MAX(created_at) AS at FROM stall_wakes WHERE card_id LIKE ? GROUP BY card_id").bind(`${PING_CARD}%`).all()).results.map((r) => ({ id: r.card_id.slice(PING_CARD.length), at: r.at }));
+  const content = { pings, cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reworkHistory };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
   const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now);
   const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);
