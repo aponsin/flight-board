@@ -1,0 +1,1 @@
+SECURE #C969 v4 7e5bc25, tip of build/c969-tracks-per-repo-v4, line from a7c973c4b1d92e2eede269aeb95dc0e0f334fdd5 (Security 11-12): covers c887f36 and 7e5bc25, each signed on its own; both equal my SECURE v3 (2b73c84, bdffd5e), range-diff '=' on the whole commits, re-cut onto a7c973c (#C1023, replyBox, another hunk).
