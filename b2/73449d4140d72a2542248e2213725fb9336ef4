@@ -1,0 +1,1 @@
+SECURE #C969 v5 b273449, tip of build/c969-tracks-per-repo-v5, line from a7c973c4b1d92e2eede269aeb95dc0e0f334fdd5 (Security 11-12): covers 1e4e89a and b273449, each signed on its own; b273449 equals my SECURE 7e5bc25 (range-diff '='). Main has since moved to 3ab5085 (#C906 first commit: scripts/changelog.mjs and its test, no shared file).
