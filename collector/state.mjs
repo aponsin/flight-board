@@ -811,7 +811,7 @@ export function stackReadyCommits(repo) {
 }
 
 export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] }) {
-  const out = {}, repoOfCard = {}, cardOf = {};
+  const out = {}, repoOfCard = {}, cardOf = {}, todo = [];
   for (const card of cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX).slice(0, MAX_CARDS)) {
     const r = repoOf(card, config);
     let repo = repos[r ? r.name : ""] ?? null;
@@ -823,10 +823,28 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
       const found = Object.values(repos).map((x) => [x, tipOf(x)]).filter(([, t]) => t).sort((a, b) => (b[1].at ?? 0) - (a[1].at ?? 0))[0];
       if (found && !(repo && tipOf(repo))) repo = found[0];
     }
-    out[card.id] = cardState(card, repo, config, now);
+    todo.push([card, repo]);
     repoOfCard[card.id] = repo;
     cardOf[card.id] = card;
   }
+  // #C1044: a group branch holds one commit per member card, but the tip names only the last one: the other members never found a head and read as
+  // not built, so stack-ready and the dispatch's batch hold waited forever. For a branch whose tip's card has a batch, the Board-Id trailer of every
+  // commit in main..tip gives each open batched card with no head of its own that commit as its head (stackHeads). A single-card branch is unchanged.
+  const batchOf = (c) => (typeof c?.batch === "string" && c.batch.trim() !== "" ? c.batch.trim() : "");
+  const batchedIds = new Set(todo.map(([c]) => c).filter((c) => batchOf(c)).map((c) => c.id));
+  const wantsHead = new Map();
+  for (const [card, repo] of todo) {
+    if (!repo || typeof repo.git !== "function" || !batchedIds.has(card.id)) continue;
+    if (headsFor(card.id, (repo.tips ?? []).filter((h) => h.branch !== repo.main), card.num).length) continue;
+    if (!wantsHead.has(repo)) wantsHead.set(repo, new Set());
+    wantsHead.get(repo).add(card.id);
+  }
+  const groupHead = {};
+  for (const [repo, ids] of wantsHead) {
+    const groupTips = (repo.tips ?? []).filter((h) => h.branch !== repo.main && batchedIds.has(boardIdOf(h.message)));
+    Object.assign(groupHead, stackHeads(repo, groupTips, ids));
+  }
+  for (const [card, repo] of todo) out[card.id] = cardState(card, repo, config, now, groupHead[card.id] ? { head: groupHead[card.id] } : {});
   // #C859 slice 2: for a repository whose stack switch is on (`stacks`: the repository names, "" for the team's own), the stack read from git.
   // Nothing is added for a switch that is off, which is the default: the switch off is today's reading.
   for (const name of stacks) {
