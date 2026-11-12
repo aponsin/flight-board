@@ -22,9 +22,20 @@ const first = (t) => String(t ?? "").split("\n")[0].trim();
 
 // The verdict, from the facts only. commit, tip, current: shas (current null/"" when unreadable); notes { checker, security }: the note texts or null;
 // descends: the current BUILD_SHA is an ancestor of commit. Returns { ok, same, refusals }.
-export function gateVerdict({ commit, tip, notes, current, descends }) {
+// Security F1 on 9977c28: Workers Builds installs dependencies BEFORE the build command, so a preinstall or prepare script on main would run ahead of this
+// pinned gate (and could put its own sha256sum, node or git first on PATH). The build must set SKIP_DEPENDENCY_INSTALL=1; the gate refuses unless it is "1" or "true".
+// Security F2: main can be pushed to directly, so every commit this deploy would add (current BUILD_SHA..commit) must be signed, not only the tip. range:
+// [{ sha, notes: { checker, security }, covered }], covered: the tip's two notes carry the same "line from <sha>" base (an ancestor of the commit) and this
+// commit is on that line, as the release tool counts a chain; otherwise a commit needs its own PASS and SECURE.
+export const LINE_FROM = /^line from ([0-9a-f]{40})\b/;
+export const lineBase = (notes) => { const a = LINE_FROM.exec(first(notes?.checker))?.[1], b = LINE_FROM.exec(first(notes?.security))?.[1]; return a && a === b ? a : null; };
+export const skipsInstall = (v) => ["1", "true"].includes(String(v ?? "").trim().toLowerCase());
+export function gateVerdict({ commit, tip, notes, current, descends, skipInstall = false, range = [] }) {
   const r = [];
   if (!FULL.test(String(commit))) return { ok: false, same: false, refusals: ["the build's commit is not a full sha"] };
+  if (!skipInstall) r.push("the build installs dependencies before the gate runs: set the build variable SKIP_DEPENDENCY_INSTALL=1");
+  const unsigned = (Array.isArray(range) ? range : []).filter((c) => !c.covered && !(/^SECURE\b/.test(first(c.notes?.security)) && /^PASS\b/.test(first(c.notes?.checker)))).map((c) => String(c.sha).slice(0, 12));
+  if (unsigned.length) r.push(`${unsigned.length === 1 ? "a commit" : `${unsigned.length} commits`} since the Worker's BUILD_SHA ${unsigned.length === 1 ? "has" : "have"} no SECURE and PASS: ${unsigned.slice(0, 3).join(", ")}${unsigned.length > 3 ? ", ..." : ""}`);
   if (!FULL.test(String(tip))) r.push("origin/main's tip could not be read");
   else if (commit !== tip) r.push(`the build's commit ${commit.slice(0, 12)} is not main's tip ${tip.slice(0, 12)}`);
   if (!/^SECURE\b/.test(first(notes?.security))) r.push("no SECURE from Security on this commit");
@@ -58,6 +69,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const quiet = (a) => { try { return git(a); } catch { return null; } };
   const refuse = (lines) => { console.log(`GATE REFUSED: nothing was deployed\n- ${lines.join("\n- ")}`); process.exit(1); };
   if (!FULL.test(commit)) refuse(["the build's commit is not a full sha (WORKERS_CI_COMMIT_SHA or --commit)"]);
+  // Security LOW1: a shallow clone has no history to test "ahead of" against, so every build would refuse: deepen it first.
+  if (quiet(["rev-parse", "--is-shallow-repository"]) === "true") quiet(["fetch", "-q", "--unshallow", "origin"]);
   quiet(["fetch", "-q", "origin", "main"]);
   const tip = quiet(["rev-parse", "FETCH_HEAD"]);
   for (const [, ref] of Object.entries(NOTES)) quiet(["fetch", "-q", "origin", `+${ref}:${ref}`]);
@@ -65,7 +78,13 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const toml = existsSync("worker/wrangler.board.toml") ? readFileSync("worker/wrangler.board.toml", "utf8") : "";
   const current = await currentBuildSha({ accountId: process.env.CLOUDFLARE_ACCOUNT_ID, token: process.env.CLOUDFLARE_API_TOKEN, script: scriptName(toml) });
   const descends = FULL.test(String(current)) && quiet(["merge-base", "--is-ancestor", current, commit]) !== null;
-  const v = gateVerdict({ commit, tip, notes, current, descends });
+  // Every commit this deploy adds, each with its own notes, or covered by the tip's "line from <base>" signs.
+  const base = lineBase(notes), baseOk = base && quiet(["merge-base", "--is-ancestor", base, commit]) !== null;
+  const covered = new Set(baseOk ? (quiet(["rev-list", `${base}..${commit}`]) ?? "").split("\n").filter(Boolean) : []);
+  const shas = FULL.test(String(current)) && descends ? (quiet(["rev-list", `${current}..${commit}`]) ?? "").split("\n").filter(Boolean) : [];
+  const noteOf = (who, ref, sha) => (sha === commit ? notes[who] : quiet(["notes", `--ref=${ref.replace(/^refs\/notes\//, "")}`, "show", sha]));
+  const range = shas.map((sha) => ({ sha, covered: covered.has(sha), notes: { security: noteOf("security", NOTES.security, sha), checker: noteOf("checker", NOTES.checker, sha) } }));
+  const v = gateVerdict({ commit, tip, notes, current, descends, skipInstall: skipsInstall(process.env.SKIP_DEPENDENCY_INSTALL), range });
   if (!v.ok) refuse(v.refusals);
   if (v.same) { console.log(`GATE SKIP: the Worker already carries ${commit.slice(0, 12)}; nothing to deploy`); process.exit(0); }
   writeFileSync(MARKER, `${commit}\n`);

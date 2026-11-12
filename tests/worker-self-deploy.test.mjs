@@ -5,12 +5,12 @@
 // Must still allow: a signed main tip ahead of the Worker (deploys), and the same commit twice (nothing to do, exit 0).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { gateVerdict, currentBuildSha, scriptName } from "../scripts/self-deploy-gate.mjs";
+import { gateVerdict, currentBuildSha, scriptName, skipsInstall, lineBase } from "../scripts/self-deploy-gate.mjs";
 import { selfDeployRun, redact, WRANGLER } from "../scripts/self-deploy-run.mjs";
 
 const A = "a".repeat(40), B = "b".repeat(40), C = "c".repeat(40);
 const ok = { security: "SECURE #C968: reviewed\nmore", checker: "PASS Full at aaaa" };
-const facts = (over = {}) => ({ commit: A, tip: A, notes: ok, current: B, descends: true, ...over });
+const facts = (over = {}) => ({ commit: A, tip: A, notes: ok, current: B, descends: true, skipInstall: true, range: [], ...over });
 
 test("a signed main tip ahead of the Worker passes; the same commit as the Worker is nothing to deploy", () => {
   assert.deepEqual(gateVerdict(facts()), { ok: true, same: false, refusals: [] });
@@ -41,6 +41,44 @@ test("must still refuse: a commit not ahead of the Worker (forward only), and a 
     assert.equal(v.ok, false, String(current));
     assert.match(v.refusals.join(), /current BUILD_SHA could not be read/);
   }
+});
+
+test("must still refuse (Security F1): a build that installs dependencies before the gate; only SKIP_DEPENDENCY_INSTALL=1 or true passes", () => {
+  for (const v of [undefined, "", "0", "false", "no", "yes", "2"]) assert.equal(skipsInstall(v), false, String(v));
+  for (const v of ["1", "true", "TRUE", " 1 "]) assert.equal(skipsInstall(v), true, String(v));
+  const r = gateVerdict(facts({ skipInstall: false }));
+  assert.equal(r.ok, false);
+  assert.match(r.refusals.join(), /SKIP_DEPENDENCY_INSTALL=1/);
+  assert.equal(gateVerdict(facts({ skipInstall: undefined })).ok, false, "no reading is a refusal: the default fails closed");
+});
+
+test("must still refuse (Security F2): every commit since the Worker's BUILD_SHA needs SECURE and PASS, not only the tip, unless the tip's line sign covers it", () => {
+  const s = (n) => String(n).repeat(40).slice(0, 40), signed = (sha, covered = false) => ({ sha, covered, notes: ok });
+  assert.equal(gateVerdict(facts({ range: [signed(s(1)), signed(A)] })).ok, true, "all signed");
+  for (const bad of [{ security: null, checker: ok.checker }, { security: ok.security, checker: null }, { security: "STOP", checker: ok.checker }, { security: ok.security, checker: "FINDINGS" }, {}]) {
+    const v = gateVerdict(facts({ range: [{ sha: s(1), covered: false, notes: bad }, signed(A)] }));
+    assert.equal(v.ok, false, JSON.stringify(bad));
+    assert.match(v.refusals.join(), /a commit since the Worker's BUILD_SHA has no SECURE and PASS: 111111111111/);
+  }
+  assert.equal(gateVerdict(facts({ range: [{ sha: s(1), covered: true, notes: {} }, signed(A)] })).ok, true, "covered by the tip's line sign");
+  const many = gateVerdict(facts({ range: [1, 2, 3, 4, 5].map((n) => ({ sha: s(n), covered: false, notes: {} })) }));
+  assert.match(many.refusals.join(), /5 commits since the Worker's BUILD_SHA have no SECURE and PASS: 111111111111, 222222222222, 333333333333, \.\.\./);
+  const base = "e".repeat(40);
+  assert.equal(lineBase({ checker: `PASS line from ${base}`, security: `SECURE line from ${base}` }), null, "the base is read from the first words only, never from later text");
+  assert.equal(lineBase({ checker: `line from ${base} PASS Full`, security: `line from ${base} SECURE` }), base);
+  assert.equal(lineBase({ checker: `line from ${base}`, security: `line from ${"f".repeat(40)}` }), null, "two different bases cover nothing");
+  assert.equal(lineBase({ checker: "PASS", security: "SECURE" }), null);
+  assert.equal(lineBase({}), null);
+});
+
+test("the gate's own source holds the shallow clone fix, the install check and the range read (the CLI half is not run here)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../scripts/self-deploy-gate.mjs", import.meta.url), "utf8");
+  assert.match(src, /--is-shallow-repository/);
+  assert.match(src, /"fetch", "-q", "--unshallow", "origin"/);
+  assert.ok(src.indexOf("--unshallow") < src.indexOf('"merge-base", "--is-ancestor", current, commit'), "deepened before the ancestor check");
+  assert.match(src, /skipInstall: skipsInstall\(process\.env\.SKIP_DEPENDENCY_INSTALL\)/);
+  assert.match(src, /rev-list", `\$\{current\}\.\.\$\{commit\}`/);
 });
 
 test("must still refuse: a commit that is no full sha is refused whatever else holds", () => {
