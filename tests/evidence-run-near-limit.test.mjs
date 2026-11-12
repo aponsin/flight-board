@@ -7,7 +7,8 @@ import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { writeEvidence, readView } from "../worker/board-store.mjs";
 import { evidenceRefusal, runShape } from "../worker/board-rules.mjs";
 import { headerHtml } from "../worker/page-header.mjs";
-import { evidenceJob, childLine, reportRunFailure, SLOW_RUN_MS, CHILD_LINE_MAX } from "../collector/probe-evidence.mjs";
+import { evidenceJob, childLine, plainLine, reportRunFailure, SLOW_RUN_MS, CHILD_LINE_MAX } from "../collector/probe-evidence.mjs";
+import { runChild } from "../collector/probe-run.mjs";
 
 const T = 1_800_000_000_000;
 const STATE = JSON.stringify({ v: 1, board: { boardId: "b", at: T, cardsCheckedAt: T }, cards: {}, agents: {} });
@@ -21,10 +22,45 @@ const job = (over = {}, posted = [], lines = []) => ({
 test("the child's last stderr line is what is kept: plain text, cut at 160, empty when it said nothing", () => {
   assert.equal(childLine({ stderr: "warming up\nstate: the state doesn't fit the plan (1 problem(s), first: agents.Security.card: not allowed)\n\n" }), "state: the state doesn't fit the plan (1 problem(s), first: agents.Security.card: not allowed)");
   assert.equal(childLine({ stderr: "a\u001b[31mb\u0000c\r\n" }), "a[31mbc", "control characters are dropped");
-  assert.equal(childLine({ stderr: "x".repeat(400) }).length, CHILD_LINE_MAX);
+  assert.equal(childLine({ stderr: "ab ".repeat(100) }).length, CHILD_LINE_MAX, "cut at 160");
   assert.equal(childLine({ stderr: "" }), "");
   assert.equal(childLine(new Error("no stderr")), "");
   assert.equal(childLine(null), "");
+});
+
+// Checker F1 on fcaaa63: a crash outside the state child's handlers ends with Node's own "Node.js v24.21.0", which was shown instead of why.
+test("a crash's reason is its Error line, not Node's version trailer, a stack frame or the source excerpt (a real child)", async () => {
+  const child = await runChild(process.execPath, ["-e", "function f() { throw new Error('the state is wrong'); } f();"], {}).then(() => null, (e) => e);
+  assert.ok(child, "the child failed");
+  assert.match(child.stderr, /Node\.js v\d/, "a real crash does end with Node's version line");
+  assert.equal(childLine(child), "Error: the state is wrong");
+  const typed = await runChild(process.execPath, ["-e", "class StateError extends Error {}; throw new StateError('bad');"], {}).then(() => null, (e) => e);
+  assert.match(childLine(typed), /^(Error|StateError): bad$/, "an error of a named class is read as an error line too");
+  const ownLine = "state: the state doesn't fit the plan (1 problem(s), first: agents.Security.card: not allowed)";
+  assert.equal(childLine({ stderr: `${ownLine}\n` }), ownLine, "the child's own line is still the reason");
+  assert.equal(childLine({ stderr: `${ownLine}\nError: later noise\n    at x (file:1:1)\n\nNode.js v24.21.0\n` }), "Error: later noise", "the last of the two kinds");
+  assert.equal(childLine({ stderr: "plain last words\nNode.js v24.21.0\n" }), "plain last words", "neither kind: the last line left");
+  assert.equal(childLine({ stderr: "Node.js v24.21.0\n    at x (a:1:1)\n^^^\n" }), "", "nothing but the trailer, a frame and a caret");
+});
+
+// Checker LOW1 on fcaaa63 and Security's suggestion: what leaves the Mac holds no path and no token-like run.
+test("the line that leaves is plain: a path is <path>, a token-like run is hidden, and the store's shape still takes it", () => {
+  assert.equal(plainLine("ENOENT: no such file or directory, open '/Users/someone/Library/Application Support/x.json'"), "ENOENT: no such file or directory, open <path> <path>", "each word that holds a slash is a path");
+  assert.doesNotMatch(plainLine("open '/Users/someone/secret folder/a'"), /someone|Users/);
+  assert.doesNotMatch(plainLine("EACCES ~/.flight-board/abc/state.json and ./rel/path and C:/x/y"), /flight-board|rel|x\/y/);
+  assert.equal(plainLine("key abcdefghijklmnopqrstuvwx ok"), "key <hidden> ok");
+  assert.equal(plainLine("a 23-letter run abcdefghijklmnopqrstuvw is left"), "a 23-letter run abcdefghijklmnopqrstuvw is left");
+  assert.equal(plainLine("tok_ABCDEF-ghijklmnop_abcdefghij!"), "<hidden>!");
+  assert.equal(plainLine("x".repeat(500)), "<hidden>");
+  assert.equal(plainLine("ab ".repeat(200)).length, CHILD_LINE_MAX);
+  assert.equal(plainLine(null), "");
+  for (const s of ["open '/Users/someone/x'", "key abcdefghijklmnopqrstuvwxyz0123", "a\u0000b"]) assert.equal(runShape({ ok: false, at: T, line: plainLine(s) }), true, s);
+  const e = Object.assign(new Error("EACCES: permission denied, open '/Users/someone/x'"), { childLine: "" });
+  const posted = [];
+  return reportRunFailure(e, { base: "https://x.example", headers: {}, fetchImpl: async (u, o) => { posted.push(JSON.parse(o.body)); return { ok: true }; } }).then(() => {
+    assert.doesNotMatch(posted[0].value.line, /someone|Users/, "the message fallback is cleaned too");
+    assert.match(posted[0].value.line, /<path>/);
+  });
 });
 
 test("a state child that fails leaves its last line in the log and on the error, and the run still fails", async () => {

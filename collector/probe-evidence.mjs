@@ -215,9 +215,17 @@ export const GH_MISSING = "gh was not found on PATH: the deploy and CI runs were
 // freeze of 15:50 to 20:03 MT was one line, "agents.Security.card: not allowed", found only by running the child by hand). The child's own text
 // never carries a card's words (the schema's errors name a field, not a value), and it is cut to 160 characters of plain text anyway.
 export const CHILD_LINE_MAX = 160;
+// What may leave the Mac as the reason: plain text, every word that holds a "/" (a file path, with the user's name and folders) shown as <path>, and
+// every run of 24 or more letters, digits, - or _ (a token or key an error might ever quote) hidden, cut to CHILD_LINE_MAX (Checker LOW1 and
+// Security's suggestion on fcaaa63).
+export const plainLine = (s) => String(s ?? "").replace(/[^\x20-\x7e]/g, "").replace(/\S*\/\S*/g, "<path>").replace(/[A-Za-z0-9_-]{24,}/g, "<hidden>").replace(/\s+/g, " ").trim().slice(0, CHILD_LINE_MAX);
+// The child's reason is its last "state: ..." line or its last "...Error: ..." line, not simply its last line: a crash outside the state child's own
+// handlers ends with Node's "Node.js v24.21.0" after the stack (Checker F1 on fcaaa63, proved with a real child). Stack frames, the source excerpt's
+// caret and Node's version trailer are never the reason; with neither kind of line, the last line left.
 export const childLine = (e) => {
-  const lines = String(e?.stderr ?? "").split(/\r?\n/).map((l) => l.replace(/[^\x20-\x7e]/g, "").trim()).filter(Boolean);
-  return lines.length ? lines.at(-1).slice(0, CHILD_LINE_MAX) : "";
+  const lines = String(e?.stderr ?? "").split(/\r?\n/).map((l) => l.replace(/[^\x20-\x7e]/g, "").trim()).filter((l) => l && !/^at\s/.test(l) && !/^Node\.js v\d/.test(l) && !/^[\^~|\s]+$/.test(l));
+  const pick = lines.findLast((l) => /^state: /.test(l) || /^[A-Za-z]*(Error|Exception)\b/.test(l)) ?? lines.at(-1);
+  return pick ? plainLine(pick) : "";
 };
 // A run over this is logged and shown as slow: the job's limit is 90 s and the interval 60 s (11-11: good runs took 60 to 88 s, one was killed).
 export const SLOW_RUN_MS = 75_000;
@@ -285,7 +293,7 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
 // #C962: a failed run tells the store why (the state child's last stderr line, else the error's message), so the page's Probe chip says it.
 // Best effort and bounded: it never keeps the run alive, and a store that is the reason the run failed simply does not hear it.
 export async function reportRunFailure(e, { base, headers, fetchImpl = fetch, waitMs = 5000 }) {
-  const line = String(e?.childLine || e?.message || "").replace(/[^\x20-\x7e]/g, "").slice(0, CHILD_LINE_MAX);
+  const line = plainLine(e?.childLine || e?.message || "");
   try { await Promise.race([post(fetchImpl, base, headers, { key: "run.evidence", value: { ok: false, at: Date.now(), line } }), new Promise((r) => setTimeout(r, waitMs).unref())]); } catch { /* the store may be the reason */ }
 }
 
