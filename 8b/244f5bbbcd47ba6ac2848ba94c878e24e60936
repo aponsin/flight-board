@@ -1,0 +1,3 @@
+PASS Full: #C987 answered-ask-left-open 8b244f5, covering 1ab7673, bbdbf59, 34ee28d, 63dc7dc and this tests-only commit (Checker 2, 2026-11-12)
+
+My F1 on 1ab7673 (closed over the owner's follow-up) and my F1 on 63dc7dc (Security's page guard untested) are both fixed. All six mutants are killed: the follow-up ignored (2 tests), its time widened (2), the page hiding on any close (1), doneAt for respondedAt (1), autoClosed never set in the view (1), lastWord not read in the store (1). Store probe: a follow-up keeps the ask open for hours; a team reply lets the board close it with autoClosed in the view. Touched tests 30/30 (answered-ask-closes, compat-view, ship-row-install-wait). Merges onto main 1f5fbef cleanly. Full: needs SECURE too.
