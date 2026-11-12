@@ -1,0 +1,1 @@
+SECURE #C1042 5d9331c as part of G1 ending b3958bf (Security 11-12): wording only in current.mjs (goesLive names page/, hooks/ and owner-closure files as needing the owner's pack); no check changed.
