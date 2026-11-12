@@ -13,7 +13,7 @@ import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.
 import { writeUsageDay } from "./compat-usage.mjs";
 import { subscribePush, unsubscribePush, pushKnown, pushFacts, pushRun } from "./push-store.mjs";
 import { SW_SOURCE, MANIFEST } from "./push-page.mjs";
-import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, moveInQueue } from "./board-store.mjs";
+import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, moveInQueue } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const obj = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
@@ -41,6 +41,8 @@ export const TOOLS = [
   { name: "set_stack_switch", description: "Turn a repository's stack mode on or off (the owner's alone): on, its open cards are built, reviewed, landed and deployed as one stack; off, each card goes out on its own. repo is a short lower-case word (board, product).", inputSchema: obj({ repo: str, stack: { type: "boolean" } }, ["repo", "stack"]), roles: ["owner"] },
   { name: "queue_move", description: "Move a card that has not started one place up or down in its agent's queue (the owner's alone). The card keeps the owner's mark: an agent's card_update of its queue_pos is refused from then on.", inputSchema: obj({ id: str, dir: { type: "string", enum: ["up", "down"] } }, ["id", "dir"]), roles: ["owner"] },
   { name: "ack", description: "Acknowledge a ship by version, digits only with no v (1.2.0).", inputSchema: obj({ version: str }, ["version"]), roles: ["owner"] },
+  // #C988: the week's plan usage as Claude shows it; the dispatch's quota stop and the Plan week tile read it while it is under an hour old.
+  { name: "week_usage", description: "Write the week's plan usage as Claude shows it: call get_usage and pass its \"Weekly · all models\" window, percentUsed as percent (a whole number) and resetsAt as resets_at. The board's quota stop and Plan week tile use it for an hour; after that it counts as unknown until written again.", inputSchema: obj({ percent: { type: "integer" }, resets_at: str }, ["percent", "resets_at"]), roles: ["agent"] },
   // #C726 C1: a screenshot or file for an ask. Returns its id; an ask's screenshots name it as "<id>", "<id> label" or "<id> A: label".
   { name: "file_put", description: "Store a file (a screenshot for an ask, or a file to show the owner): base64 bytes, 15 MB at most. Returns its id. Name it in an ask's screenshots as \"<id>\", \"<id> label\" or \"<id> A: label\" (A to D: the option it shows).", inputSchema: obj({ name: str, type: { type: "string", enum: FILE_TYPES }, data_base64: str }, ["name", "type", "data_base64"]), roles: ["agent", "owner"] },
 ];
@@ -103,6 +105,7 @@ async function callTool(db, now, who, role, name, args, env = {}) {
       if (args.asked_by !== undefined && args.asked_by !== who) return text(await refuse(db, now, { rule: "asked-by-mismatch", detail: `${args.asked_by} is not ${who}` }, args.card_id, who));
       return text(await askFromTool(db, now, who, { ...args, asked_by: who }));
     case "step": return text(await writeStep(db, now, who, args));
+    case "week_usage": return text(await writeWeekUsage(db, now, who, args));
     case "post": return text(await postMessage(db, now, who, args));
     case "answer": return text(await answerAsk(db, now, who, args));
     case "list_add": return text(await createListItem(db, now, who, args));

@@ -8,6 +8,7 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
+import { sessionWeek } from "./week-usage.mjs";
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -120,8 +121,13 @@ export function stackQueueFile(view, now) {
 // #C973: the week's share of quota used, from the probe's usage reading (evidence.usage weekPct), when it is fresh; null when unknown. At or past
 // the ceiling (collector.quotaCeilingPct, 90 by default) no builder is woken for new build work; reviews, landing, fixes and the rest go on, so what
 // is built still ships. An unknown or stale reading never stops anything.
+// #C988: a session's own reading (usage.week, collector/week-usage.mjs) wins while it is fresh; once written, an hour-old one is unknown (no
+// stop, a warning in the dispatch log), never the probe's estimate. The estimate counts only while no session has written a reading.
 export const USAGE_FRESH_MS = 26 * 3600e3, QUOTA_CEILING_DEFAULT = 90;
 export function weekPctOf(view, now) {
+  const s = sessionWeek(view, now);
+  if (s.state === "fresh") return s.pct;
+  if (s.state === "stale") return null;
   const u = view?.evidence?.usage, pct = u?.value?.weekPct, at = u?.readAt;
   if (!Number.isFinite(pct) || pct < 0 || pct > 1000 || !Number.isFinite(at) || now - at > USAGE_FRESH_MS || at > now + 60e3) return null;
   return pct;
@@ -317,6 +323,8 @@ export function writeOpenAsks(view, { dir, now = Date.now() }) {
 // One run over a view. Returns { wrote, why?, items }. `dir` is <stateDir>/<board>.
 export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_DEFAULT, now = Date.now(), log = () => {} }) {
   const input = dispatchInput(view, now, { lead, ceiling });
+  const sw = sessionWeek(view, now);
+  if (sw.state === "stale") log(`dispatch: warning: the session's week reading is ${Math.round(sw.ageMs / 60e3)} min old (or from a week that reset): week usage unknown, the quota stop is off until a session writes it again`);
   if (input && atCeiling(view, now, ceiling)) log(`dispatch: week at ${Math.round(weekPctOf(view, now))}% of quota, ceiling ${ceiling}%: no new build work dispatched`);
   if (!input) { log("dispatch: the store's agent reading is missing or older than 5 minutes; nothing written"); return { wrote: false, why: "agents-stale", items: [] }; }
   const file = readJson(join(dir, DISPATCH_FILE));

@@ -8,6 +8,7 @@ import { readUsage } from "./compat-usage.mjs";
 import { mtDayTime } from "./team-time.mjs";
 import { readThreads } from "./compat-threads.mjs";
 import { askWakes, promiseWakes } from "./push-rules.mjs";
+import { weekUsageValue, WEEK_USAGE_KEY } from "../collector/week-usage.mjs";
 
 export const PROBE_SILENT_MS = 5 * 60_000; // #C996: was 3 min while the evidence job ran every minute; reverts with its cadence
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -662,6 +663,15 @@ export async function writeEvidence(db, now, who, key, value, track) {
     ? [db.prepare("UPDATE cards SET done_at = ?, done_evidence = ?, updated_at = ? WHERE id = ? AND done_at IS NULL AND dropped = 0 AND check_at IS NULL").bind(now, link, now, cardId)] : [];
   await db.batch([upsert, ...ins, ...closes]);
   await noteShip(db, now, cardId, value);
+  return { ok: true };
+}
+
+// #C988: a session's reading of the week ("Weekly · all models" from get_usage), through the week_usage door tool. It is no status (the
+// probe alone writes those, evidenceRefusal): one key, usage.week, of its own shape, and the writer recorded in it.
+export async function writeWeekUsage(db, now, who, args) {
+  const r = weekUsageValue(args, now, who);
+  if (r.refused) return refuse(db, now, { rule: "week-usage-shape", detail: r.refused }, null, who);
+  await db.prepare("INSERT INTO evidence (key, value, read_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, read_at = excluded.read_at").bind(WEEK_USAGE_KEY, JSON.stringify(r.value), now).run();
   return { ok: true };
 }
 
