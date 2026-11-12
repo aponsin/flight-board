@@ -1,0 +1,1 @@
+PASS Checker 2 #C968 v7: carry-over of v6 PASS (333f7b3); range-diff outside CHANGELOG all equal, CHANGELOG context only, doccheck and merge-tree clean on main 257c0aa (commit d7c7629e of stack tip d7c7629e)
