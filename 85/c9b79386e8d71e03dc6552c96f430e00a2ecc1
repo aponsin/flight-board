@@ -1,0 +1,2 @@
+PASS Quick: config-live-after-pass #C974 commit 1 of 3 at 85c9b79 (Checker, 2026-11-12; reviewed as part of #C974, PASS on its tip feb895a)
+Same tree change as 795328c, which I reviewed (range-diff identical). Its wiring test gap (F1) and the merged-check test (F2) were closed in feb895a, which is on main above it. Full suite at feb895a: 2609 pass; mutants K1-K13 and the F1/F2 reruns are all killed.
