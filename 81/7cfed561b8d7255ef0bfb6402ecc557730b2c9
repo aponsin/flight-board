@@ -1,0 +1,1 @@
+SECURE #C967 v5 re-cut 817cfed onto main 4d4ae8f (Security 11-12): range-diff equal to signed 5121e46. Still reaches: any Worker incl. production and flight-board-state, every D1 (#C968 open).
