@@ -188,6 +188,8 @@ details.done-list summary{cursor:pointer;color:var(--muted);padding:10px 16px}
 @media (pointer:coarse){.ackbtn{min-height:44px;padding:0 14px}}
 /* #C904: the phone push's switch, in the header on the store only. */
 .pushbtn{margin-right:8px}
+.pushhelp{margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);font-size:.9rem}
+.pushhelp ol{margin:6px 0 0;padding-left:1.4em}.pushhelp li{margin:2px 0}
 .feed time{font:400 .82rem var(--mono);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 /* Shipped and reported (#C362): Time spent beside it sets the row's height on a laptop, and the list scrolls inside,
    under its search box; on a phone, a fixed height. */
@@ -566,6 +568,7 @@ table.crew3-ph{margin-top:14px}
     <div class="hdr-left"><h1>{{TITLE}}<span class="livever" id="livever"></span></h1><div class="hdr-badges"><div class="rb" id="restartbadge" role="status" hidden></div><div class="boardver" id="boardver" data-pack="{{BOARD_PACK}}" data-commit="{{PAGE_COMMIT}}" hidden></div></div></div>
     <div class="hdr-right"><button type="button" class="ackbtn pushbtn" id="pushbtn" hidden></button><span class="mgr-chip" id="mgrchip" hidden></span><div class="clock"><span class="live-dot" id="dot"></span><span id="clock">--:--</span> · <span id="synced">connecting…</span></div></div>
   </header>
+  <div class="pushhelp" id="pushhelp" role="region" aria-label="How to allow phone pushes" hidden></div>
   <div class="shipline" id="shipline" role="status" hidden></div>
   <div class="stuckline" id="threadsfull" role="status" hidden></div>
   <div class="stuckline" id="stuck" hidden></div>
@@ -2368,9 +2371,21 @@ document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e
 function pushLabel(s){
   if(!s||!s.supported)return s&&s.ios&&!s.standalone?{text:"Phone pushes: add the board to your Home Screen, then open it there",act:null}:null;
   if(!s.ready)return {text:"Phone pushes: not set up yet",act:null};
-  if(s.permission==="denied")return {text:"Phone pushes: blocked in this browser's settings",act:null};
+  // #C972 (the owner, 11-11: "how do we solve this?"): a blocked browser's badge is a button that shows how to allow it, for this browser.
+  if(s.permission==="denied")return {text:"Phone pushes: blocked in this browser. How to allow",act:"how"};
   return s.subscribed?{text:"Phone pushes: on",act:"off"}:{text:"Turn on phone pushes",act:"on"};
 }
+// #C972: pure: the browser a user agent names, and the steps that allow notifications for this site in it. iPhone pushes come only
+// from the board on the Home Screen, so its steps start there. Unknown browsers get the general steps.
+function pushSteps(ua,standalone){ua=String(ua||"");
+  const ios=/iP(hone|ad|od)/.test(ua),android=/Android/.test(ua),edge=/Edg\//.test(ua),firefox=/Firefox\//.test(ua),chrome=/(Chrome|CriOS)\//.test(ua)&&!edge,safari=/Safari\//.test(ua)&&!chrome&&!edge&&!firefox;
+  if(ios)return {browser:"iPhone",steps:[...(standalone?[]:["Open the board from its Home Screen icon (Safari's Share, then Add to Home Screen, if it has none)."]),"Open Settings, then Notifications.","Find the board in the list and turn on Allow Notifications.","Come back to the board and tap Turn on phone pushes."]};
+  if(android&&chrome)return {browser:"Chrome on Android",steps:["Tap the icon left of the address, then Permissions.","Set Notifications to Allow.","Reload the board and tap Turn on phone pushes."]};
+  if(chrome||edge)return {browser:edge?"Edge":"Chrome",steps:["Click the icon left of the address, then Site settings.","Set Notifications to Allow.","Reload the board and click Turn on phone pushes."]};
+  if(safari)return {browser:"Safari on Mac",steps:["Open Safari, then Settings, then Websites.","Choose Notifications, find the board and set it to Allow.","Reload the board and click Turn on phone pushes."]};
+  if(firefox)return {browser:"Firefox",steps:["Click the lock left of the address.","Clear the blocked Send Notifications permission.","Reload the board and click Turn on phone pushes, then Allow."]};
+  return {browser:"this browser",steps:["Open this site's settings in the browser (usually the icon left of the address).","Set Notifications to Allow.","Reload the board and turn on phone pushes."]}}
+function pushHelpHtml(h){return `<strong>Allow phone pushes in ${esc(h.browser)}</strong><ol>${h.steps.map(s=>`<li>${esc(s)}</li>`).join("")}</ol>`}
 const pushKey=t=>{const s=String(t).replace(/-/g,"+").replace(/_/g,"/");return Uint8Array.from(atob(s+"=".repeat((4-s.length%4)%4)),c=>c.charCodeAt(0))};
 let PUSH=null;
 async function pushRead(){const nav=navigator,ios=/iP(hone|ad|od)/.test(nav.userAgent||"");
@@ -2384,9 +2399,17 @@ async function pushRead(){const nav=navigator,ios=/iP(hone|ad|od)/.test(nav.user
   return {supported,ios,standalone,ready:!!facts.ready,key:facts.publicKey,permission:Notification.permission,subscribed:!!sub&&known,reg,sub}}
 async function pushDraw(){const btn=$("pushbtn");if(!STORE||!btn)return;
   try{PUSH=await pushRead()}catch(_){PUSH={supported:false}}
-  const l=pushLabel(PUSH);btn.hidden=!l;if(!l)return;btn.textContent=l.text;btn.disabled=!l.act;btn.dataset.act=l.act||""}
+  const l=pushLabel(PUSH);btn.hidden=!l;
+  // #C972: the steps go away once the browser allows it again.
+  const help=$("pushhelp");if(help&&(!l||l.act!=="how"))help.hidden=true;
+  if(!l)return;btn.textContent=l.text;btn.disabled=!l.act;btn.dataset.act=l.act||"";btn.setAttribute("aria-expanded",l.act==="how"&&help&&!help.hidden?"true":"false")}
+// #C972: the badge follows the permission as it changes (the settings are changed in another app or tab, then the owner comes back).
+if(STORE){try{navigator.permissions&&navigator.permissions.query({name:"notifications"}).then(p=>{p.onchange=()=>pushDraw()}).catch(()=>{})}catch(_){}
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")pushDraw()})}
 document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e.target.closest("#pushbtn"):null;if(!b||!STORE||b.disabled||!PUSH)return;
-  const act=b.dataset.act;b.disabled=true;
+  const act=b.dataset.act;
+  if(act==="how"){const help=$("pushhelp");if(!help)return;help.hidden=!help.hidden;if(!help.hidden)help.innerHTML=pushHelpHtml(pushSteps(navigator.userAgent,PUSH.standalone));b.setAttribute("aria-expanded",String(!help.hidden));return}
+  b.disabled=true;
   const post=(path,body)=>fetch(path,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(body)});
   try{
     if(act==="on"){
