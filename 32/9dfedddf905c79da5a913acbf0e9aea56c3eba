@@ -1,0 +1,1 @@
+PASS Full Checker 2 #C906 second commit v3: F1 on 59afe67 fixed (the last-commit-only mutant now fails the new stack test); full suite 2821/2821; else as 59afe67 (commit 329dfedd of stack tip 329dfedd)
