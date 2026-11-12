@@ -1,0 +1,14 @@
+FINDINGS Full: restart-app-when-safe part A #C861 v2 ae7ce89 (Checker 2, 2026-11-12, one test and a re-cut)
+
+F1, F2, F3 and the LOW on edd743f are fixed, checked live on this machine (11-12 about noon MT):
+- F1: with the owner's board.config.json (gate.stateDir not set) the dry run reads the store probe's state (written seconds before) and says "wait agents: Boardsmith, Ops active in the last 2 min"; the dead old state.json (11-10, 4:12 pm MT) is not read.
+- F2 and F3: with a copy of that config pointing gate.stateDir at the old folder, ship and agents both read unknown ("can't read a fresh live state"), never ok.
+- LOW: --force-at 00:01 at noon is refused (exit 2).
+restart-check.mjs (the pack restart step) with the owner's config: "ok: no ship running; restart now", now from the live state.
+
+F1 (LOW, tests only): restart-check.mjs's switch to liveStateFile has no test. Mutant: put back its old read (join(home(config.gate.stateDir), boardId(config), "state.json")) and restart-ready, restart-check and restart-orphan-runs stay green. The commit says a test holds that the old file is never read when the store file exists; it holds that for restart-ready only. This is the script every pack's restart step runs, so it matters more than the dry run: with the old read, a ship in the ship phase is invisible to it (a stale state reads as no ship). Fix: the same source assertion restart-ready has (it reads liveStateFile(config, raw)), or a CLI test with the two-folder layout.
+
+Re-cut: the branch sits on a131ef8 and conflicts with main 0f69c8d in CHANGELOG.md only. Re-cut onto main with the test.
+
+Checked and fine: range-diff (edd743f unchanged as 7bfa30a; three fix commits: live-state.mjs, restart-ready.mjs, restart-check.mjs, tests); restart-check.mjs is not an owner-install pin (not in the release tool's owned list); touched tests 36/36 (restart-ready, restart-check, restart-orphan-runs). Mutation check: 9 of 10 killed (N7 agents not fresh-gated, stale ship read as live, no-live branch dropped, a seen run still unknown, old path always, store even with stateDir set, store always, restart-ready old path, past force-at allowed); survivor F1 above.
+On the fix: rerun mutate861 and the three live dry runs.
