@@ -143,7 +143,8 @@ test("(2) Checker 2 F1: the owner's follow-up after his answer (before the close
 });
 
 test("(2) Security F1: an asker's own close never hides the owner's earlier word; it still lists With the team", () => {
-  const b = page([{ id: "t-1", kind: "decision", done: true, doneAt: T + 10 * MIN, since: T }], [OWNER_SAYS(T + 5 * MIN, "Before you build it: what about the phone?")]);
+  // Checker 2 F1 on 63dc7dc: the word is before the answer (respondedAt), so only autoClosed decides; without it the mutant that hides on any close survived.
+  const b = page([{ id: "t-1", kind: "decision", done: true, doneAt: T + 10 * MIN, respondedAt: T + 6 * MIN, response: { status: "chose", choice: "B", at: T + 6 * MIN }, since: T }], [OWNER_SAYS(T + 5 * MIN, "Before you build it: what about the phone?")]);
   assert.equal(b.threadOpen("t-1"), true);
   assert.equal(b.waitsOn("t-1", T + 60 * MIN), "lead");
 });
