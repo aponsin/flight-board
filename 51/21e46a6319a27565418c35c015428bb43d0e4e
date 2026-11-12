@@ -1,0 +1,8 @@
+FINDINGS Full: program-lands-signed-commits #C967 v4 5121e46 (Checker 2, 2026-11-12, tests only)
+
+F1 and F2 on 98cefa1 are fixed in code: an open ask (not closed, answered or withdrawn) writes 'asked' (fields match the raw asks rows the view sends and the dispatch's own askedCards); a waiting_on starting with Checker, Security or Release is no hold. Replay on the live view (65 open cards): 'Checker 2 diff-check...', 'Release: land on 441be59', 'Checker and Security on v2' now free; Manager, owner and builder pointers still held.
+
+F1 (LOW, tests only): the ^ anchor in LANDING_ROLES has no test. Mutant: drop the ^ (match the role anywhere) and the suite stays green. On the live board that frees exactly the cards waiting on a fix: #C967, #C968 and #C861 read 'Boardsmith: fix Checker 2 findings', #C880 'Boardsmith: fix Checker F1/F2'. Fix: add those real strings (and one like 'Builder: after Security LOW') to the held list in the F2 test.
+
+Checked and fine: re-cut onto db2de94 (range-diff: only the F1/F2 code, Security F1 pin and LOW1 from 98cefa1, merged CHANGELOG/DATA/release test lines); touched tests 52/52; mutants 12/13 killed (asked dropped; answered, withdrawn, closed still hold; asked before dropped; any waiting_on holds; no word boundary; Security left out; case-sensitive; any word frees; board-land unpinned; malformed Board-Id dropped).
+Not a finding (to Manager): blocked_reason is also used as a queue pointer ('Queued on Boardsmith behind ...: fix findings'), so a fixed, signed tip still waits as blocked until the lead clears it. Fails safe.
