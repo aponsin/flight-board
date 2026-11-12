@@ -87,18 +87,81 @@ export function mainLine(git, remote, main, limit = 400) {
 
 // Branches the main line says it shipped, with the commit it shipped of each (shippedPattern's groups: branch, sha):
 // the heads of branches deleted since. [{ branch, sha, at, message: "" }]
-export function shippedHeads(git, line, pattern) {
+// #C996: a git that answers a question it was already asked in this run from memory (a derive of 12 shipped cards started 136 processes, 36 of
+// them exact repeats: the same `merge-base --is-ancestor`, the same `log --first-parent --ancestry-path` for versionFor and again for
+// evidenceTimes). Only the commands that read (a subcommand on the list; `notes` only as `show`), and its answer or its error is what the first
+// asking got. Made once per collect(), so a repository that changes between runs is read afresh: nothing here outlives a run.
+const READS = new Set(["log", "rev-list", "rev-parse", "merge-base", "for-each-ref", "show", "diff", "cat-file"]);
+export function memoGit(git) {
+  const seen = new Map();
+  return (args) => {
+    const reads = Array.isArray(args) && (READS.has(args[0]) || (args[0] === "notes" && args[2] === "show"));
+    if (!reads) return git(args);
+    const key = args.join("\0");
+    if (!seen.has(key)) { try { seen.set(key, { value: git(args) }); } catch (error) { seen.set(key, { error }); } }
+    const r = seen.get(key);
+    if (r.error) throw r.error;
+    return r.value;
+  };
+}
+
+// #C996: one git process for all the shas, not one each (a derive started 290 `git rev-parse` for 145 shipped branches: it named each
+// pair twice, and 70 to 100 ms a process at the machine's load made them half a minute). `memo` (sha as named -> the commit it is, or
+// null) lives for one run: the second caller finds every sha in it and starts nothing. Only a plain hex sha is ever an argument.
+const HEX_SHA = /^[0-9a-f]{7,40}$/, BATCH = 200;
+export function resolveCommits(git, shas, memo = new Map()) {
+  const todo = [...new Set(shas)].filter((s) => HEX_SHA.test(s) && !memo.has(s));
+  for (let i = 0; i < todo.length; i += BATCH) {
+    const part = todo.slice(i, i + BATCH);
+    let out = null;
+    // One call; any sha git cannot resolve (or reads as ambiguous) makes git stop, and then each sha is asked alone, as before.
+    try { out = String(git(["rev-parse", ...part.map((s) => `${s}^{commit}`)])).split("\n").map((l) => l.trim()).filter(Boolean); } catch { out = null; }
+    if (out && out.length === part.length) { part.forEach((s, k) => memo.set(s, out[k])); continue; }
+    for (const s of part) {
+      let sha = null;
+      try { sha = git(["rev-parse", "--verify", "--quiet", `${s}^{commit}`]).trim() || null; } catch { sha = null; }
+      memo.set(s, sha);
+    }
+  }
+  return memo;
+}
+
+export function shippedHeads(git, line, pattern, memo = new Map()) {
   if (!pattern) return [];
   const re = new RegExp(pattern, "g");
-  const out = [];
+  const pairs = [];
   for (const c of line) for (const m of c.subject.matchAll(re)) {
     // Only a plain hex sha reaches git: subject text must never look like an option.
-    if (!m[1] || !/^[0-9a-f]{7,40}$/.test(m[2])) continue;
-    let sha = m[2];
-    try { sha = git(["rev-parse", "--verify", "--quiet", `${m[2]}^{commit}`]).trim(); } catch { continue; }
-    out.push({ branch: m[1], sha, at: c.at, message: "", shipped: true }); // shipped: not a branch on the remote (a bare one is, #C671)
+    if (!m[1] || !HEX_SHA.test(m[2])) continue;
+    pairs.push({ branch: m[1], short: m[2], at: c.at });
   }
-  return out;
+  resolveCommits(git, pairs.map((p) => p.short), memo);
+  // shipped: not a branch on the remote (a bare one is, #C671)
+  return pairs.filter((p) => memo.get(p.short)).map((p) => ({ branch: p.branch, sha: memo.get(p.short), at: p.at, message: "", shipped: true }));
+}
+
+// The messages of commits, one process for up to BATCH of them (`git log -1 --format=%B <sha>` for each was the next 145). memo: sha ->
+// message, kept for the run; a sha git cannot read has the empty message, as before. The shas are the full ones resolveCommits gave.
+export function commitMessages(git, shas, memo = new Map()) {
+  const todo = [...new Set(shas)].filter((s) => /^[0-9a-f]{7,40}$/.test(s) && !memo.has(s));
+  for (let i = 0; i < todo.length; i += BATCH) {
+    const part = todo.slice(i, i + BATCH);
+    let out = null;
+    try { out = String(git(["log", "--no-walk=unsorted", `--format=%H${US}%B${RS}`, ...part])); } catch { out = null; }
+    const got = new Map();
+    if (out !== null) for (const r of out.split(RS)) {
+      const [sha, message] = r.replace(/^\n/, "").split(US);
+      if (/^[0-9a-f]{40}$/.test(sha ?? "")) got.set(sha, message ?? "");
+    }
+    for (const s of part) {
+      if (got.has(s)) { memo.set(s, got.get(s)); continue; }
+      // One the batch did not print (it failed, or an abbreviated sha was asked for): asked alone, as before.
+      let m = "";
+      try { m = git(["log", "-1", "--format=%B", s]); } catch { m = ""; }
+      memo.set(s, m);
+    }
+  }
+  return memo;
 }
 
 // The newest successful deploy run's commit on the main branch, or null (no workflow named, or none succeeded).

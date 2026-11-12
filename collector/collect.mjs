@@ -16,7 +16,7 @@ import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home, liveMirror } from "../gate/gate.mjs";
 import { cardProblems } from "../gate/card-rules.mjs";
 import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, namedRepo, abandonedAt, subjectNum, reviewsFor } from "./derive.mjs";
-import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor, branchPathsOf } from "./facts.mjs";
+import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, commitMessages, memoGit, mainVersion, liveBuild, releaseTimes, isAncestor, branchPathsOf } from "./facts.mjs";
 import { reviewsFromPaths } from "./review-paths.mjs";
 import { shippedBase, afterShipText, fetchBranches } from "./after-ship.mjs";
 import { evidenceTimes } from "./timings.mjs";
@@ -391,15 +391,34 @@ export { repoOf };
 
 // The newest commit on a repository's main line (its last 400) whose Board-Id trailer is exactly the card's id, as a
 // head { branch: main, sha, at, message }, or null. The id goes to git as a fixed string, never a pattern or an option.
-export function trailerOnMain(git, remote, main, id) {
+// #C996: with `index` (trailerIndex's answer, made once for the run) it starts no process: a derive started one `git log` per card
+// that has no branch (about 30 of them, 300 ms each at the machine's load).
+export function trailerOnMain(git, remote, main, id, index = null) {
+  if (index) return index.get(id) ?? null;
   let out = "";
   try { out = git(["log", "-400", "--fixed-strings", `--grep=Board-Id: ${id}`, "--format=%H%x1f%ct%x1f%B%x1e", `${remote}/${main}`]); } catch { return null; }
+  return firstTrailer(out, main, (bid) => bid === id).get(id) ?? null;
+}
+// Each Board-Id on main's history, newest first, as the head trailerOnMain gives for it: one `git log` for every commit that carries a
+// trailer (the per-card call matched the same commits: its -400 counted commits that matched that one id, so it reached as far back as
+// the id's own commit, however old; this takes up to INDEX_MAX trailer commits). null when git cannot say: the per-card call is then used.
+export const INDEX_MAX = 5000;
+export function trailerIndex(git, remote, main) {
+  let out = "";
+  try { out = git(["log", `-${INDEX_MAX}`, "--fixed-strings", "--grep=Board-Id: ", "--format=%H%x1f%ct%x1f%B%x1e", `${remote}/${main}`]); } catch { return null; }
+  return firstTrailer(out, main, () => true);
+}
+function firstTrailer(out, main, want) {
+  const found = new Map();
   for (const r of out.split("\x1e")) {
     const [sha, at, message] = r.replace(/^\n/, "").split("\x1f");
-    if (/^[0-9a-f]{40}$/.test(sha ?? "") && boardIdOf(message) === id) return { branch: main, sha, at: Number(at) * 1000, message };
+    const bid = boardIdOf(message);
+    if (/^[0-9a-f]{40}$/.test(sha ?? "") && bid !== null && want(bid) && !found.has(bid)) found.set(bid, { branch: main, sha, at: Number(at) * 1000, message });
   }
-  return null;
+  return found;
 }
+// A lazy index for one repository (a function: the first call makes it, the rest reuse it).
+const lazyTrailers = (git, remote, main) => { let made = false, idx = null; return () => { if (!made) { made = true; idx = trailerIndex(git, remote, main); } return idx; }; };
 
 // A card in another repository, by the same derivation from its branch's current tip (#C237), with that repository's
 // notes and main branch, and "deployed" meaning installed: on main and inside the commit the repository's
@@ -424,7 +443,7 @@ export function inRepo(card, r, use, config, now, ids = new Set()) {
   const settle = (list) => afterShipTips(use.git, `${remote}/${main}`, settledTips(use.git, remote, main, list), card.id, r.shippedPattern ?? "");
   const { tips: live, superseded } = unsuperseded(use.git, `${remote}/${main}`, settle(headsFor(card.id, work, card.num)), settle(recutsFor(card.id, work, ids)));
   // A branch deleted after it merged leaves only its Board-Id trailer on main (#C281).
-  const tips = live.length ? live : [trailerOnMain(use.git, remote, main, card.id)].filter(Boolean);
+  const tips = live.length ? live : [trailerOnMain(use.git, remote, main, card.id, (use.trailers ??= lazyTrailers(use.git, remote, main))())].filter(Boolean);
   const derive = (h) => {
     const facts = withNeeds(card, cfg, factsFor(use.git, h, { config: cfg, line: [], deployed: use.installed ?? null }), use.git, `${remote}/${main}`, r.reviewPaths);
     const d = afterShipNote(h, settledNote(h, derivePhase(card, facts, cfg)));
@@ -457,12 +476,17 @@ export function underLive(d, l, phases) {
 }
 
 const RED_MAX = 3;
-export function collect({ config, cards, git, gh, now, plan = [], waiting = [], live = null, repos = {}, liveState = null, steps = [] }) {
+export function collect({ config, cards, git: gitIn, gh, now, plan = [], waiting = [], live = null, repos: reposIn = {}, liveState = null, steps = [] }) {
   const c = config.collector;
+  // #C996: each repository's git answers a repeated question from memory, for this run only.
+  const git = memoGit(gitIn);
+  const repos = Object.fromEntries(Object.entries(reposIn).map(([k, v]) => [k, v?.git ? { ...v, git: memoGit(v.git) } : v]));
   const cfg = { ...config, collector: { ...c, notes: localNotes(c.notes) } };
   const line = mainLine(git, c.remote, c.mainBranch);
   const remote = remoteHeads(git, c.remote);
-  const heads = [...remote, ...tipsOnly(remote, shippedHeads(git, line, c.shippedPattern))];
+  // #C996: the shipped branches' shas are resolved once for the whole derive (here and again below for the ship lines), in one process.
+  const resolved = new Map(), mainTrailers = lazyTrailers(git, c.remote, c.mainBranch);
+  const heads = [...remote, ...tipsOnly(remote, shippedHeads(git, line, c.shippedPattern, resolved))];
   const runs = deployRuns(gh, c.deployWorkflow, c.mainBranch);
   const deployed = runs[0]?.headSha ?? null;
   const open = cards.filter((k) => !closed(k));
@@ -475,7 +499,7 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
     const { tips: found, superseded } = unsuperseded(git, `${c.remote}/${c.mainBranch}`, settle(headsFor(card.id, work, card.num)), settle(recutsFor(card.id, work, ids)));
     // #C716: a branch deleted after it merged leaves only its Board-Id trailer on main, here as in another repository (#C281): the
     // card's commit is found there, so the sign-offs on it are read and a shipped card can close.
-    const tips = found.length ? found : [trailerOnMain(git, c.remote, c.mainBranch, card.id)].filter(Boolean);
+    const tips = found.length ? found : [trailerOnMain(git, c.remote, c.mainBranch, card.id, mainTrailers())].filter(Boolean);
     tipsOf[card.id] = tips; supersededOf[card.id] = superseded;
     return { ...supersededNote(superseded, leastAdvanced(card, tips, (h) => afterShipNote(h, settledNote(h, derivePhase(card, withNeeds(card, cfg, factsFor(git, h, { config: cfg, line, deployed }), git, `${c.remote}/${c.mainBranch}`, c.reviewPaths), cfg))), config, stackedOn(card, ids))), at: now };
   };
@@ -509,11 +533,12 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
   // Real ship commits name the branch and commit ("v1.200.2: manager/start-on-work-rule@ab632436") and no card: the card is the one
   // whose commit at that sha starts "#C<num>:" or carries its Board-Id trailer (Checker, #C655 1b). Read once per sha.
   const shipLine = shipSubject ? line.filter((l) => shipSubject.test(String(l.subject ?? ""))) : [];
-  const shipped = c.shippedPattern ? shippedHeads(git, shipLine, c.shippedPattern) : [];
+  const shipped = c.shippedPattern ? shippedHeads(git, shipLine, c.shippedPattern, resolved) : [];
+  // Their messages, read the first time one is needed and all in one process (it was one `git log -1` for each).
   const messageAt = new Map();
   const messageOf = (sha) => {
-    if (!messageAt.has(sha)) { let m = ""; try { m = git(["log", "-1", "--format=%B", sha]); } catch { m = ""; } messageAt.set(sha, m); }
-    return messageAt.get(sha);
+    if (!messageAt.has(sha)) commitMessages(git, [sha, ...shipped.filter((h) => Number.isFinite(h.at)).map((h) => h.sha)], messageAt);
+    return messageAt.get(sha) ?? "";
   };
   for (const card of open) {
     const d = derived[card.id];
@@ -646,7 +671,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     swapMirror(dir, boardId(config));
   } catch (e) { console.error(`Collector: ${e.message}`); process.exit(1); }
   // The derive step (--from-mirror) sees the cards as the board has them now: the gate's journal over the mirror's cards (#C697, #C701).
-  const mirror = fromMirror ? liveMirror(join(dir, "mirror"), join(dir, "gate.json")) : readMirror(join(dir, "mirror"));
+  // #C996: the derive keeps the documents it parsed (mirror-parsed.json beside the mirror, not in it), so it parses only what changed.
+  const mirror = fromMirror ? liveMirror(join(dir, "mirror"), join(dir, "gate.json"), join(dir, "mirror-parsed.json")) : readMirror(join(dir, "mirror"));
   if (!mirror?.docs.initiatives) { console.error(`Collector: no mirror at ${join(dir, "mirror")}: export the board first (collector/TASK.md, step 1).`); process.exit(1); }
   if (!process.argv.includes("--no-fetch")) {
     git(fetchBranches(config.collector.remote));

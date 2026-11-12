@@ -6,7 +6,7 @@
 // The gate keeps its state (refusals in a row, stuck items, cards it has let through) in <stateDir>/<board>/gate.json and
 // reads the board's mirror (an export of its collections) from <stateDir>/<board>/mirror.
 import { realpathSync } from "node:fs";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, renameSync, unlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL, fileURLToPath } from "node:url";
@@ -74,10 +74,22 @@ export function withLiveMessages(mirror, msgs) {
 // The collections whose deletions are tombstones (collector/delta.mjs MUTABLE; a test ties the two lists, because the gate does not
 // import the collector's code).
 export const TOMBSTONED = ["initiatives", "waiting", "ideas", "threads", "plan"];
-export function readMirror(dir) {
+// #C996: `cache`, a file outside the mirror folder, keeps each document as parsed with the file's size and time, so a run reads and parses only
+// the files that changed since the last (the derive read all 8,100 on every run: 13.7 s of a 94 s run at the machine's load; it grows with the
+// board's history). A document counts as the file's own only while both still match; a cache that is missing, odd or from another version is
+// ignored whole, and one that cannot be written is skipped. Off unless asked: the gate's hooks read as before.
+export const MIRROR_CACHE_V = 1;
+function readParsed(path) {
+  try {
+    const j = JSON.parse(readFileSync(path, "utf8"));
+    return j && j.v === MIRROR_CACHE_V && j.files && typeof j.files === "object" && !Array.isArray(j.files) ? j.files : null;
+  } catch { return null; }
+}
+export function readMirror(dir, { cache = null } = {}) {
   if (!existsSync(dir)) return null;
   const docs = {}, atBy = {}, atDoc = {};
-  let at = 0;
+  const kept = cache ? readParsed(cache) : null, parsed = {};
+  let at = 0, misses = 0;
   for (const c of readdirSync(dir)) {
     const cdir = join(dir, c);
     if (!statSync(cdir).isDirectory()) continue;
@@ -86,9 +98,17 @@ export function readMirror(dir) {
     for (const f of readdirSync(cdir)) {
       if (!f.endsWith(".json")) continue;
       const path = join(cdir, f);
-      const t = statSync(path).mtimeMs;
+      const st = statSync(path), t = st.mtimeMs;
       let doc;
-      try { doc = { id: f.slice(0, -5), ...JSON.parse(readFileSync(path, "utf8")) }; } catch { continue; /* half written */ }
+      const key = `${c}/${f}`, hit = kept && Object.hasOwn(kept, key) ? kept[key] : null;
+      if (cache && Array.isArray(hit) && hit.length === 3 && hit[0] === t && hit[1] === st.size && hit[2] && typeof hit[2] === "object" && !Array.isArray(hit[2])) {
+        doc = { id: f.slice(0, -5), ...hit[2] };
+        parsed[key] = hit;
+      } else {
+        let raw;
+        try { raw = JSON.parse(readFileSync(path, "utf8")); doc = { id: f.slice(0, -5), ...raw }; } catch { continue; /* half written */ }
+        if (cache && raw && typeof raw === "object" && !Array.isArray(raw)) { parsed[key] = [t, st.size, raw]; misses++; }
+      }
       // A deleted document of the five edited collections (a tombstone, #C642) is no card, wherever it was left (Checker).
       if (doc.deleted === true && TOMBSTONED.includes(c)) continue;
       docs[c].push(doc);
@@ -102,6 +122,11 @@ export function readMirror(dir) {
   let stamp = null;
   try { const s = JSON.parse(readFileSync(join(dir, "_at.json"), "utf8")); if (Number.isFinite(s?.at) && s.at > 0) stamp = s.at; } catch { /* a mirror from a whole export: its files' times */ }
   if (stamp !== null) { at = Math.max(at, stamp); for (const c of Object.keys(docs)) atBy[c] = Math.max(atBy[c] ?? 0, stamp); }
+  // Written whole and moved into place, only when a file was read or one went away; never a reason to fail the read.
+  if (cache && (misses > 0 || !kept || Object.keys(kept).length !== Object.keys(parsed).length)) {
+    const tmp = `${cache}.${process.pid}.part`;
+    try { writeFileSync(tmp, JSON.stringify({ v: MIRROR_CACHE_V, files: parsed }), { mode: 0o600 }); renameSync(tmp, cache); } catch { try { unlinkSync(tmp); } catch { /* none */ } }
+  }
   return { docs, at, atBy, atDoc, stamp };
 }
 
@@ -158,7 +183,7 @@ export function journalCards(mirror, journal) {
   return { ...mirror, docs: { ...mirror.docs, initiatives: over.docs.initiatives } };
 }
 // The mirror in <dir> with the gate's journal (the file at `journalFile`) laid over its cards: what the derive step reads.
-export const liveMirror = (dir, journalFile) => journalCards(readMirror(dir), readJournal(journalFile));
+export const liveMirror = (dir, journalFile, cache = null) => journalCards(readMirror(dir, { cache }), readJournal(journalFile));
 // The gate's journal as the gate keeps it (<stateDir>/<board>/gate.json, "journal"); none readable is none.
 export function readJournal(path) {
   try { const j = JSON.parse(readFileSync(path, "utf8")); return Array.isArray(j?.journal) ? j.journal : []; } catch { return []; }
