@@ -1,0 +1,1 @@
+PASS Full Checker 2 #C1020: full suite 2802/2802, root clean; mutants no-Live-light (1 fail) and stop-at-first-holding-pair (2 fail); real pair .done files hold their pins; LOWs: done board cards show Pack/Install unlit, and packOf asks every pin for an unpacked card (commit ab46d92f of stack tip ab46d92f)
