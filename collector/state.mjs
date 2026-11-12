@@ -997,26 +997,45 @@ const writeAtomic = (path, text) => { const tmp = `${path}.${process.pid}.part`;
 // #C974 (Manager's A on the card, 11-11 ~11 pm MT; #C897: reviewPaths went into the live config before review and skipped the Language review on
 // Spanish files): the team's config is a file in the team's repository (collector.configInRepo, e.g. "board/board.config.json"), changed by a branch,
 // signed and landed like code. Each minute the probe copies the copy on main over the live file every reader is given (--config), so only what
-// landed goes live. Kept from the live copy: the session ids (rosterSessions, gate.managerSession), which change at every restart and are no rule.
-// Never blanks it: a copy missing on main, unreadable or refused by checkConfig leaves the live file as it is, and the line says why.
+// landed goes live. Never blanks it: a copy missing on main, unreadable or refused by checkConfig leaves the live file as it is, and the line says why.
+// Security's F1 on 795328c: main may change only the rule fields in RULE_FIELDS. Every other field keeps the live copy's value, new fields
+// included: the session ids, the board's addresses (storeUrl, artifactUrl), the paths the probe runs git in, writes to or runs a script from
+// (repoPath, outDir, repos, refresh, keeper, gate.stateDir, usageScript and its sha256), the notes refs, remote, mainBranch and configInRepo itself.
+// Security's F2: reviewPaths and skips sit in the same file, so a change could drop its own review. A change is taken only when the commit that
+// last changed the file on main (lastChange()) carries a note starting "SECURE" in the live config's security notes ref (securityNote(sha)).
 // show() -> the file's text on main (throws when git has none); liveText: the live file's text. Pure: { text: new live text or null, line }.
-export const SESSION_KEYS = ["rosterSessions"];
-export function teamConfigSync({ show, liveText, file }) {
+export const RULE_FIELDS = Object.freeze({
+  top: ["title", "owner", "resetAt", "contextWindows", "phases", "roster", "order", "skips", "boardStart", "prAgent", "usageNote", "runnerLabel", "automationLabel", "nudges", "traffic", "repos", "cardFields", "decisions"],
+  gate: ["managerRole", "cardOwners", "keeperRole", "reviewerRole", "releaseRole", "transientPrefixes", "verdictWords", "mirrorMaxAgeMin", "requireUpdatedAt"],
+  collector: ["contextRoles", "reviewPaths", "buildPhase", "shipPhase", "livePhase", "deployWorkflow", "lanePhases", "versionPattern", "shippedPattern", "candidatePattern", "releaseTimes", "usageQuota", "usageResetAt", "quotaCeilingPct", "liveTag"],
+});
+const takeRules = (into, from, keys) => { for (const k of keys) { if (from[k] !== undefined) into[k] = from[k]; else delete into[k]; } };
+export function teamConfigSync({ show, liveText, file, lastChange, securityNote }) {
   let live;
   try { live = JSON.parse(liveText); } catch { return { text: null, line: "config: the live copy does not parse; not replaced" }; }
+  if (!plain(live)) return { text: null, line: "config: the live copy is not an object; not replaced" };
   let main;
   try { main = JSON.parse(show()); } catch { return { text: null, line: `config: no readable ${file} on main; the live copy is kept` }; }
   if (!plain(main)) return { text: null, line: `config: ${file} on main is not an object; the live copy is kept` };
-  const merged = { ...main };
-  for (const k of SESSION_KEYS) { if (live[k] !== undefined) merged[k] = live[k]; else delete merged[k]; }
-  if (plain(main.gate) || live.gate?.managerSession !== undefined) {
-    merged.gate = { ...(plain(main.gate) ? main.gate : {}) };
-    if (live.gate?.managerSession !== undefined) merged.gate.managerSession = live.gate.managerSession; else delete merged.gate.managerSession;
+  const mainProblems = checkConfig(main);
+  if (mainProblems.length) return { text: null, line: `config: ${file} on main is refused (${String(mainProblems[0]).slice(0, 120)}); the live copy is kept` };
+  const merged = structuredClone(live);
+  takeRules(merged, main, RULE_FIELDS.top);
+  for (const sec of ["gate", "collector"]) {
+    if (!plain(merged[sec]) && !plain(main[sec])) continue;
+    const into = plain(merged[sec]) ? merged[sec] : {};
+    takeRules(into, plain(main[sec]) ? main[sec] : {}, RULE_FIELDS[sec]);
+    if (Object.keys(into).length) merged[sec] = into; else delete merged[sec];
   }
   const problems = checkConfig(merged);
   if (problems.length) return { text: null, line: `config: ${file} on main is refused (${String(problems[0]).slice(0, 120)}); the live copy is kept` };
   if (JSON.stringify(merged) === JSON.stringify(live)) return { text: null, line: null };
-  return { text: `${JSON.stringify(merged, null, 2)}\n`, line: `config: the live copy now matches ${file} on main` };
+  let sha = null, note = null;
+  try { sha = String(lastChange() ?? "").trim(); } catch { sha = null; }
+  if (!/^[0-9a-f]{40}$/.test(sha ?? "")) return { text: null, line: `config: no commit on main found for ${file}; the live copy is kept` };
+  try { note = securityNote(sha); } catch { note = null; }
+  if (typeof note !== "string" || !/^\s*SECURE\b/.test(note)) return { text: null, line: `config: ${file} last changed on main in ${sha.slice(0, 7)}, which carries no SECURE note; the live copy is kept` };
+  return { text: `${JSON.stringify(merged, null, 2)}\n`, line: `config: the live copy now takes the rules in ${file} on main (${sha.slice(0, 7)}, SECURE)` };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
@@ -1068,7 +1087,12 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     if (c.configInRepo) {
       try {
         const livePath = process.argv[at + 1];
-        const s = teamConfigSync({ show: () => r.git(["show", `${c.remote}/${c.mainBranch}:${c.configInRepo}`]), liveText: readFileSync(livePath, "utf8"), file: c.configInRepo });
+        const tip = `${c.remote}/${c.mainBranch}`;
+        const s = teamConfigSync({
+          show: () => r.git(["show", `${tip}:${c.configInRepo}`]), liveText: readFileSync(livePath, "utf8"), file: c.configInRepo,
+          lastChange: () => r.git(["log", "-1", "--format=%H", tip, "--", c.configInRepo]),
+          securityNote: (sha) => { if (!r.notes.security) return null; try { return String(r.git(["notes", `--ref=${r.notes.security}`, "show", sha])); } catch { return null; } },
+        });
         if (s.text) writeAtomic(livePath, s.text);
         if (s.line) console.log(s.line);
       } catch (e) { console.log(`config: not synced (${String(e?.code ?? e?.message ?? e).slice(0, 80)})`); }
