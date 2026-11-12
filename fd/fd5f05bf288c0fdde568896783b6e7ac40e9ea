@@ -1,0 +1,2 @@
+PASS Full: ping-not-sent-after-answer #C1009 v3 commit 1 of 2 (fdfd5f0, re-cut of c586ccb onto main c78de5e) (Checker, 2026-11-12)
+range-diff: identical to c586ccb, which I read in full (threadPings route, pingThread wake row, syncStalls skip, ownerWaiting count, view threadPings, page STORE lines, the Ack rule; a waiting/<id> ping update stays a harmless no-op). npm test at this commit: 2670 pass, 0 fail. My FINDINGS on c586ccb (three untested guards) are answered by commit 2.
