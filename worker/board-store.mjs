@@ -533,6 +533,7 @@ export async function setStackSwitch(db, now, who, b) {
 // checker is told "<checker> has this" (a refusal, logged). The same checker claiming again is fine. A tip that already carries a Checker note (the probe's
 // reading: signed or findings by the checker lane) is refused too: the review is done. A re-cut keeps the claim: with card_id, the checker who holds
 // another tip of the card holds the new one, and anyone else is refused. Manager claims a tip for a named checker up front.
+const MAX_OPEN_CLAIMS = 6;
 const hasCheckerNote = (v) => [...(Array.isArray(v?.signed) ? v.signed : []), ...(Array.isArray(v?.findings) ? v.findings : [])].some((x) => /checker/i.test(String(x)));
 export async function claimReview(db, now, who, b) {
   const bad = reviewClaimRefusal(b, who, "claim");
@@ -554,6 +555,10 @@ export async function claimReview(db, now, who, b) {
     const other = await db.prepare("SELECT sha, checker FROM review_claims WHERE card_id = ? AND released_at IS NULL AND sha <> ? AND checker <> ?").bind(card, b.sha, checker).first();
     if (other) return refuse(db, now, { rule: "review-claim-held", detail: `${other.checker} has this` }, card, who);
   }
+  // #C1040: a claim on a card that is done (its tip landed) or dropped is stale: free it, then cap what one checker holds at once.
+  await db.prepare("UPDATE review_claims SET released_at = ?, released_by = 'landed' WHERE released_at IS NULL AND card_id IN (SELECT id FROM cards WHERE done_at IS NOT NULL OR dropped = 1)").bind(now).run();
+  const held = await db.prepare("SELECT COUNT(*) AS n FROM review_claims WHERE checker = ? AND released_at IS NULL AND sha <> ?").bind(checker, b.sha).first();
+  if (held.n >= MAX_OPEN_CLAIMS) return refuse(db, now, { rule: "review-claim-cap", detail: `${checker} already holds ${held.n} open claims (the most is ${MAX_OPEN_CLAIMS}): release one first` }, card, who);
   await db.prepare("INSERT INTO review_claims (sha, card_id, checker, claimed_by, claimed_at, released_at, released_by) VALUES (?, ?, ?, ?, ?, NULL, NULL) ON CONFLICT(sha) DO UPDATE SET card_id = excluded.card_id, checker = excluded.checker, claimed_by = excluded.claimed_by, claimed_at = excluded.claimed_at, released_at = NULL, released_by = NULL WHERE review_claims.released_at IS NOT NULL").bind(b.sha, card, checker, who, now).run();
   const row = await db.prepare("SELECT checker FROM review_claims WHERE sha = ?").bind(b.sha).first();
   if (row.checker !== checker) return refuse(db, now, { rule: "review-claim-held", detail: `${row.checker} has this` }, card, who);

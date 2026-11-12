@@ -1,0 +1,1 @@
+- A checker can hold at most six open review claims, and a claim on a card that is done or dropped is freed on the next claim (#C1040).
