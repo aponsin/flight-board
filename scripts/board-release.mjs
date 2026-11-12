@@ -32,7 +32,9 @@ import { packLabel } from "./pack-label.mjs";
 
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
 // The release tool and what it runs are the owner's too (Security): a release can't loosen the next one.
-export const RELEASE_ENTRIES = ["scripts/board-release.mjs", "scripts/current.mjs", "scripts/scan.mjs"];
+// #C967 (Security F1): the landing job runs from the same linked copy every release moves, so it is the owner's too: a landed change to it would otherwise
+// govern the next landing without his install.
+export const RELEASE_ENTRIES = ["scripts/board-release.mjs", "scripts/board-land.mjs", "scripts/current.mjs", "scripts/scan.mjs"];
 // The capabilities the board page is published with; a new one is the owner's (README, "The page").
 // mcp (#C420, #C580): the Studio's state through the owner's "Flight Board State" connector: board_state (read) and
 // board_wake (the owner's word reaching the lead's session), those two tools only.

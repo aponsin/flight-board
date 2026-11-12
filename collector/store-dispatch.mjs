@@ -320,6 +320,31 @@ export function writeOpenAsks(view, { dir, now = Date.now() }) {
   writeAtomic(join(dir, OPEN_ASKS_FILE), JSON.stringify(openAsksFile(view, now)));
 }
 
+// #C967: <dir>/land-holds.json { at, cards: { <card id>: "" | "paused" | "dropped" | "blocked" | "asked" | "waiting_on" } }, what the landing job
+// (scripts/board-land.mjs) reads to tell a card held from a card free to land. One entry per card the store knows ("" = no hold), plain words
+// only (never a reason text), by the same atomic writer. A card the file does not list is unknown to the job, which then lands nothing for it.
+export const LAND_HOLDS_FILE = "land-holds.json", LAND_HOLDS_MAX = 2000;
+// Checker 2 on 98cefa1: (F1) an open ask on a card (not closed, not answered, not withdrawn) is the owner's or the lead's to settle, so it holds the
+// card ("asked"); an install (Terminal) ask from an earlier landing of the same card holds a v2 too, the safe side until the owner says otherwise.
+// (F2) `waiting_on` is the lead's routine "next is" pointer ("Checker: PASS at ...", "Release"): one that starts with a review or landing role is no
+// hold, since after Checker and Security sign the landing is the very next step; any other (the owner, Manager, another builder) still is.
+export const LANDING_ROLES = /^\s*(?:Checker|Security|Release)\b/i;
+export function landHoldsFile(view, now) {
+  const cards = {};
+  const asked = new Set();
+  for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null && a.withdrawn_at == null) asked.add(a.card_id);
+  for (const c of Array.isArray(view?.cards) ? view.cards : []) {
+    if (!c || typeof c.id !== "string" || !CARD_ID.test(c.id) || Object.keys(cards).length >= LAND_HOLDS_MAX) continue;
+    const has = (v) => typeof v === "string" && v.trim() !== "";
+    cards[c.id] = c.dropped ? "dropped" : c.paused ? "paused" : has(c.blocked_reason) ? "blocked" : asked.has(c.id) ? "asked" : has(c.waiting_on) && !LANDING_ROLES.test(c.waiting_on) ? "waiting_on" : "";
+  }
+  return { at: now, cards };
+}
+export function writeLandHolds(view, { dir, now = Date.now() }) {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeAtomic(join(dir, LAND_HOLDS_FILE), JSON.stringify(landHoldsFile(view, now)));
+}
+
 // One run over a view. Returns { wrote, why?, items }. `dir` is <stateDir>/<board>.
 export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_DEFAULT, now = Date.now(), log = () => {} }) {
   const input = dispatchInput(view, now, { lead, ceiling });
