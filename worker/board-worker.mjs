@@ -297,8 +297,11 @@ export default {
       if (auth.role === "probe") return bare(403);
       const c = compatView(await readView(env.DB, now));
       const etag = `"c-${c.tag}"`;
-      if (request.headers.get("if-none-match") === etag) return bare(304, { etag });
-      return json(200, c, { etag, "cache-control": "no-store" });
+      // #C880: the commit this Worker was deployed from (its first 12 characters, "" when none was set), on every answer including the 304, so a page that
+      // loaded before a deploy sees the build change at its next poll and says "a newer board is live". Not secret: it is the public commit of the repository.
+      const build = typeof env.BUILD_SHA === "string" && /^[0-9a-f]{40}$/.test(env.BUILD_SHA) ? env.BUILD_SHA.slice(0, 12) : "";
+      if (request.headers.get("if-none-match") === etag) return bare(304, { etag, "x-board-build": build });
+      return json(200, c, { etag, "cache-control": "no-store", "x-board-build": build });
     }
     // The old page's writes (#C723 A3): one {op, path, data} per call, owner only, routed to the store's own functions.
     if (url.pathname === "/api/compat/write" && request.method === "POST") {

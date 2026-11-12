@@ -211,34 +211,7 @@ export async function actionsUsageStep({ base, headers, fetchImpl, origConfig, s
 export const defaultGhCheck = (env = childEnv(), exec = execFileSync) => { try { exec("gh", ["--version"], { env, timeout: 5000, stdio: "ignore" }); return true; } catch { return false; } };
 export const GH_MISSING = "gh was not found on PATH: the deploy and CI runs were not read, so cards of the main repository cannot show live";
 
-// #C962: the last line the state child printed to stderr, for the log and the page. A failed child used to leave only "node exited 1" (the 11-11
-// freeze of 15:50 to 20:03 MT was one line, "agents.Security.card: not allowed", found only by running the child by hand). The child's own text
-// never carries a card's words (the schema's errors name a field, not a value), and it is cut to 160 characters of plain text anyway.
-export const CHILD_LINE_MAX = 160;
-// What may leave the Mac as the reason: plain text, every word that holds a "/" (a file path, with the user's name and folders) shown as <path>, and
-// every run of 24 or more letters, digits, - or _ (a token or key an error might ever quote) hidden, cut to CHILD_LINE_MAX (Checker LOW1 and
-// Security's suggestion on fcaaa63).
-export const plainLine = (s) => String(s ?? "").replace(/[^\x20-\x7e]/g, "").replace(/\S*\/\S*/g, "<path>").replace(/[A-Za-z0-9_-]{24,}/g, "<hidden>").replace(/\s+/g, " ").trim().slice(0, CHILD_LINE_MAX);
-// The child's reason is its last "state: ..." line or its last "...Error: ..." line, not simply its last line: a crash outside the state child's own
-// handlers ends with Node's "Node.js v24.21.0" after the stack (Checker F1 on fcaaa63, proved with a real child). Stack frames, the source excerpt's
-// caret and Node's version trailer are never the reason; with neither kind of line, the last line left.
-export const childLine = (e) => {
-  const lines = String(e?.stderr ?? "").split(/\r?\n/).map((l) => l.replace(/[^\x20-\x7e]/g, "").trim()).filter((l) => l && !/^at\s/.test(l) && !/^Node\.js v\d/.test(l) && !/^[\^~|\s]+$/.test(l));
-  const pick = lines.findLast((l) => /^state: /.test(l) || /^[A-Za-z]*(Error|Exception)\b/.test(l)) ?? lines.at(-1);
-  return pick ? plainLine(pick) : "";
-};
-// A run over this is logged and shown as slow: the job's limit is 90 s and the interval 60 s (11-11: good runs took 60 to 88 s, one was killed).
-export const SLOW_RUN_MS = 75_000;
-
-export async function evidenceJob(o) {
-  const t0 = Date.now(), timing = o.timing ?? {};
-  try { return await evidenceJobRun({ ...o, timing }); } finally {
-    const ms = Date.now() - t0;
-    if (o.job === "evidence" && ms > SLOW_RUN_MS) o.log?.(`slow run: ${Math.round(ms / 1000)} s of ${JOBS.evidence.limitSec} s (state child ${timing.stateMs ?? "?"} ms, posts ${timing.postMs ?? "?"} ms)`);
-  }
-}
-
-async function evidenceJobRun({ timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
+export async function evidenceJob({ job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const t0 = Date.now();
   const ghOk = job === "evidence" ? ghCheck(env) : true;
@@ -255,25 +228,14 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   }
   // #C737: only the evidence job reads cards; it tells the state child what is deployed.
   const extra = job === "evidence" ? deployEnv(await deployRead({ base, headers, fetchImpl, log })) : {};
-  const tState = Date.now();
-  try { await build(stateArgs(configPath), (JOBS[job].limitSec - 15) * 1000, extra); } catch (e) {
-    // #C962: say why the child failed, in the log and (through main) on the page.
-    const line = childLine(e);
-    if (line) log(`state child said: ${line}`);
-    throw Object.assign(e, { childLine: line });
-  }
-  timing.stateMs = Date.now() - tState;
+  await build(stateArgs(configPath), (JOBS[job].limitSec - 15) * 1000, extra);
   const state = JSON.parse(read(stateFile));
   const writes = evidenceWrites(state, job);
-  // #C962: this run's own reading, so the page can show a slow run and clear an old failure. Not a heartbeat (the store ignores run.* for that).
-  if (job === "evidence") writes.push({ key: "run.evidence", value: { ok: true, at: Date.now(), ms: Date.now() - t0, stateMs: timing.stateMs, ...(Date.now() - t0 > SLOW_RUN_MS ? { slow: true } : {}) } });
   log(`${writes.length} key(s) to write`);
   // #C927: the state child swallows a failed fetch (state.mjs repoAt: it reads what is in the clone and marks the run not fresh, and its own output is
   // dropped here), so the cards were read from an old copy and nothing said so. cardsCheckedAt is the last run every repository was read fresh.
   if (job === "evidence") { const ok = state?.board?.cardsCheckedAt; if (Number.isFinite(ok) && Number.isFinite(state.board.at) && state.board.at - ok > 2 * 60_000) log(`repository copy not fresh: a fetch failed, the cards were read from the clone as it was ${Math.round((state.board.at - ok) / 60_000)} min ago (retried next run)`); }
-  const tPost = Date.now();
   const done = await postWrites(writes, { base, headers, fetchImpl, log });
-  timing.postMs = Date.now() - tPost;
   // #C873: before the Actions step, which stops at the job's deadline; the script's own wait is capped at 30 s here.
   if (job === "usage") { let cfg2 = null; try { cfg2 = read(origConfig); } catch { log("e2e: the board config could not be read"); } if (cfg2) e2eStep(cfg2, { stateFile, env, log, ...e2e }); }
   if (job === "usage") await actionsUsageStep({ base, headers, fetchImpl, origConfig, stateFile, env, read, log, deadline: t0 + (JOBS.usage.limitSec - 15) * 1000, ...actions });
@@ -288,13 +250,6 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   const late = [live, e2eW].filter(Boolean);
   if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
   return finish(done);
-}
-
-// #C962: a failed run tells the store why (the state child's last stderr line, else the error's message), so the page's Probe chip says it.
-// Best effort and bounded: it never keeps the run alive, and a store that is the reason the run failed simply does not hear it.
-export async function reportRunFailure(e, { base, headers, fetchImpl = fetch, waitMs = 5000 }) {
-  const line = plainLine(e?.childLine || e?.message || "");
-  try { await Promise.race([post(fetchImpl, base, headers, { key: "run.evidence", value: { ok: false, at: Date.now(), line } }), new Promise((r) => setTimeout(r, waitMs).unref())]); } catch { /* the store may be the reason */ }
 }
 
 // node probe-evidence.mjs --job evidence|usage --env <file> --config <board config> --state <state.json> [--base <url>] [--private-dir <dir>]
@@ -312,8 +267,6 @@ export async function main(argv, { exit = (c) => process.exit(c) } = {}) {
     return exit(run.finish(0));
   } catch (e) {
     run.log(`failed: ${String(e.message).slice(0, 200)}`);
-    // #C962: tell the store why, best effort and bounded, so the page says why the probe is failing (never keeps the run alive).
-    if (job === "evidence") await reportRunFailure(e, { base, headers: accessHeaders(cfg) });
     return exit(run.finish(1));
   }
 }

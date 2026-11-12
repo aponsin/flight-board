@@ -385,12 +385,7 @@ export function heldWakes({ now, cards, endsPassed }) {
 export const E2E_STATES = ["ok", "red", "missed", "unknown"];
 export const E2E_CARD = "daily-e2e"; // the stall_wakes row's card_id: not a card, the one line the reading adds to Manager's batch
 export const e2eRun = (v) => (typeof v === "string" && v.length <= 300 && /^https:\/\/[^\s"'<>\\]+$/.test(v) ? v : null);
-// #C962: the evidence job's own reading of its last run (the page shows why the probe is failing, or that it runs slow). Plain words only.
-const RUN_KEYS = ["ok", "at", "line", "ms", "stateMs", "slow"];
-export const runShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => RUN_KEYS.includes(k))
-  && typeof v.ok === "boolean" && Number.isFinite(v.at) && (v.line === undefined || (typeof v.line === "string" && v.line.length <= 160 && /^[\x20-\x7e]*$/.test(v.line)))
-  && [v.ms, v.stateMs].every((n) => n === undefined || Number.isFinite(n)) && (v.slow === undefined || v.slow === true);
-const e2eShape =(v) => v !== null && typeof v === "object" && !Array.isArray(v) && E2E_STATES.includes(v.state) && typeof v.reason === "string" && v.reason.length <= 300
+const e2eShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && E2E_STATES.includes(v.state) && typeof v.reason === "string" && v.reason.length <= 300
   && (v.run === null || v.run === undefined || typeof v.run === "string") && (v.lastGreenAt === null || v.lastGreenAt === undefined || typeof v.lastGreenAt === "string");
 // The one line for Manager's batch when the reading is red, missed or unknown and fresh; null otherwise. Keyed by the state in its first
 // words, so the store tells it once per state change (syncE2e), however the reason's hours or the run's link move on.
@@ -405,7 +400,6 @@ export function e2eWake({ now, value, readAt }) {
 export function evidenceRefusal(key, value, who, track) {
   if (who !== "probe") return refuse("only-probe-writes-status", `${who ?? "unknown"} cannot write evidence`);
   if (typeof key !== "string" || !/^[a-z][a-z0-9]*(\.[A-Za-z0-9._-]+)?$/.test(key)) return refuse("evidence-key", String(key));
-  if (key === "run.evidence" && !runShape(value)) return refuse("run-shape", "run.evidence is { ok: true|false, at, line up to 160 characters, ms, stateMs, slow: true }");
   if (key === "e2e" && !e2eShape(value)) return refuse("e2e-shape", "e2e is { state: ok|red|missed|unknown, reason, run, lastGreenAt }");
   if (key.startsWith("cards.")) {
     const lit = value?.lit;

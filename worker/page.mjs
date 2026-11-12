@@ -84,10 +84,7 @@ function draw() {
   // Live now: re-aged on the client from the probe's own reading time, so it goes stale on screen without a new fetch.
   const lr = view.evidence.live ? { version: view.evidence.live.value.version, readAt: view.evidence.live.readAt } : null;
   const live = lr ? { state: Date.now() - lr.readAt > 180000 ? "stale" : "live", version: lr.version, age: Date.now() - lr.readAt } : { state: "unknown" };
-  const probe0 = view.probe.state === "silent" || Date.now() - (view.probe.lastAt || 0) > 180000 ? { state: "silent", since: view.probe.since || view.probe.lastAt } : view.probe;
-  // #C962: the evidence job's own last run (key run.evidence) says why it is failing, or that it runs slow; only a reading under 5 minutes old counts.
-  const rr = view.evidence["run.evidence"], rv = rr && rr.value && Date.now() - rr.value.at <= 300000 ? rr.value : null;
-  const probe = rv && rv.ok === false ? { ...probe0, why: rv.line || "failed" } : rv && rv.slow ? { ...probe0, slow: Math.round((rv.ms || 0) / 1000) } : probe0;
+  const probe = view.probe.state === "silent" || Date.now() - (view.probe.lastAt || 0) > 180000 ? { state: "silent", since: view.probe.since || view.probe.lastAt } : view.probe;
   $("hd").innerHTML = headerHtml({ live, probe }, { boardVersion: document.body.dataset.version || "", wake: failed ? { state: "red", reason: failed } : view.wakeState });
   $("fetched").textContent = "fetched " + ageText(sinceRead) + " ago";
 

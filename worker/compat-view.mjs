@@ -20,7 +20,31 @@ const json = (s) => { try { const v = JSON.parse(s); return v && typeof v === "o
 const KEY = (i) => String.fromCharCode(65 + i); // a Decision's options are plain strings in the store: A, B, C, D here
 
 // Option objects for the page, and the way back (A3 maps a chosen key to the store's string).
-export const optionObjects = (options) => (Array.isArray(options) ? options.map((label, i) => ({ key: KEY(i), label: String(label) })) : undefined);
+// #C880: the refusals the view already carries (the newest 20, newest first) as the page's stuck document: { id: "stuck", "initiatives:<card>":
+// { reason: <rule>, at, who, owner: <who> } }. One line per role and rule (the newest refusal of that pair that names an open card), nothing older
+// than a day, and a line goes as soon as its card has been written after the refusal (a write for that card passed). A refusal naming no card, an
+// unknown or closed card, or a name that is no role is left out: the page never prints a word the store has not checked.
+export const STUCK_WINDOW_MS = 24 * 3_600_000;
+const STUCK_WHO = /^[A-Za-z][A-Za-z0-9]{1,23}$/;
+export function stuckDoc(view) {
+  const cards = new Map((view.cards ?? []).map((c) => [c.id, c]));
+  const doc = { id: "stuck" };
+  const seen = new Set();
+  for (const r of view.refusals ?? []) {
+    if (typeof r.card_id !== "string" || !STUCK_WHO.test(r.who ?? "") || typeof r.rule !== "string" || !Number.isFinite(r.at)) continue;
+    if (view.now - r.at > STUCK_WINDOW_MS) continue;
+    const c = cards.get(r.card_id);
+    if (!c || c.dropped || c.done_at) continue;
+    const key = `${r.who}|${r.rule}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (Number.isFinite(c.updated_at) && c.updated_at > r.at) continue; // a write for that card has passed since
+    if (`initiatives:${r.card_id}` in doc) continue; // the page keys a line by its card: the newest refusal of a card is its line
+    doc[`initiatives:${r.card_id}`] ={ reason: r.rule, at: r.at, who: r.who, owner: r.who };
+  }
+  return Object.keys(doc).length > 1 ? doc : null;
+}
+export const optionObjects =(options) => (Array.isArray(options) ? options.map((label, i) => ({ key: KEY(i), label: String(label) })) : undefined);
 export const optionOfKey = (options, key) => (Array.isArray(options) ? options.find((_, i) => KEY(i) === key) : undefined);
 
 const KINDS = { Decision: "decision", Action: "action", Terminal: "action", SessionStart: "session", Later: "later", Approval: "action", Answer: "answer", Thread: "answer" };
@@ -196,6 +220,9 @@ export function compatView(view) {
   if (view.live?.state === "live") collections.meta = [{ id: "live", version: String(view.live.version).replace(/^v/, ""), at: view.now - (view.live.age ?? 0) }];
   // #C859: each repository's stack switch, for the page's switch and its stack groups.
   if ((view.stackSwitch ?? []).length) collections.meta = [...(collections.meta ?? []), { id: "stackSwitch", rows: view.stackSwitch.map((r) => ({ repo: r.repo, stack: r.stack === true, setBy: r.set_by, setAt: r.set_at })) }];
+  // #C880: refused writes on the page's "stuck" line (meta/stuck, which the old gate wrote and the page already draws as "<who> stuck on <card>: <why>").
+  const stuck = stuckDoc(view);
+  if (stuck) collections.meta = [...(collections.meta ?? []), stuck];
   applyThreads(collections, view); // before applyFiles: it adds assets to the messages
   applyFiles(collections, view);
   applyShips(collections, view);
