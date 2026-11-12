@@ -39,6 +39,8 @@ export const holdOpen = (c, now, endPassed) => !!c && ((typeof c.hold_end === "s
 //   ship, on main, repo word the owner builds the deploy pair (the board's own repository: landed, not deployed)
 //   live, or on main with no repo word: nobody (the lead closes it)
 export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security", ship: "Release" };
+// The repo words of a card of the board's own repository that gets a deploy pair when it lands (the live board has both: "flight-board" and "board").
+export const BOARD_REPO_WORDS = new Set(["flight-board", "board"]);
 const ROLE_OF_NOTE = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security" };
 // #C859 slice 3 (stack mode): ctx.stackBranch is the branch of the stack the card's repository has (when its switch is on), named in a
 // builder's turn; a card the evidence reads as outside the stack (e.stack.outside) is told to re-cut; a reviewer is sent the stack tip.
@@ -72,7 +74,10 @@ export function turnsOf(card, e, ctx = {}) {
   const findings = (Array.isArray(e?.findings) ? e.findings : []).filter((s) => typeof s === "string" && Object.hasOwn(ROLE_OF_NOTE, s));
   if (findings.length && Object.hasOwn(ROLE_OF_NOTE, phase)) return [{ role: card.owner_role, phase: "build", step: "rework", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}), ...mode }];
   if (phase === "ship") {
-    if (e.onMain === true) return typeof card.repo === "string" && card.repo !== "" ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, ...where, signed: signedBy }] : [];
+    // #C1013: a pair is for the board's own repository only. A product card (any other repo word) is deployed by Release's ship, so it gets no pair turn.
+    // A built pair that waits only for the owner's install and whose pinned commit descends from this card's landing already covers it: no build turn.
+    if (e.onMain === true && fullSha && typeof ctx.pairCovers === "function" && ctx.pairCovers(fullSha) === true) return [];
+    if (e.onMain === true) return typeof card.repo === "string" && BOARD_REPO_WORDS.has(card.repo) ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, ...where, signed: signedBy }] : [];
     // #C854: signed but no longer continuing main: Release cannot take it. The turn is the owner's, to re-cut it on main (a new commit has a new sha, so a reviewer is woken again).
     if (e.behindMain === true) return [{ role: card.owner_role, phase: "ship", step: "recut", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
     return [{ role: PHASE_LANES.ship, phase: "ship", step: "land", sha, ...where, signed: signedBy }];
@@ -136,7 +141,7 @@ export const atCeiling = (view, now, ceiling = QUOTA_CEILING_DEFAULT) => {
   const pct = weekPctOf(view, now), c = Number.isInteger(ceiling) && ceiling >= 1 && ceiling <= 100 ? ceiling : QUOTA_CEILING_DEFAULT;
   return pct !== null && pct >= c;
 };
-export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEILING_DEFAULT } = {}) {
+export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEILING_DEFAULT, pairCovers = null } = {}) {
   const ev = view?.evidence ?? {};
   const agents = ev.agents?.value;
   const readAt = ev.agents?.readAt;
@@ -195,7 +200,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     // #C914: a card the probe marks stackHold (pushed, no stack-ready signal covers its head) AND that has a declared stack partner waiting to
     // start has no review turn, and is no builder turn either. Any other card dispatches as it always did.
     const held = inBoard && e?.stackHold === true && hasPartner(c);
-    const turns = turnsOf(c, e, inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {});
+    const turns = turnsOf(c, e, { ...(inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {}), ...(pairCovers ? { pairCovers } : {}) });
     cards.push({ queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: held ? turns.filter((t) => t.step !== "review") : turns, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }
   if (switchOn && cards.some((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step)))) {
@@ -346,8 +351,8 @@ export function writeLandHolds(view, { dir, now = Date.now() }) {
 }
 
 // One run over a view. Returns { wrote, why?, items }. `dir` is <stateDir>/<board>.
-export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_DEFAULT, now = Date.now(), log = () => {} }) {
-  const input = dispatchInput(view, now, { lead, ceiling });
+export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_DEFAULT, now = Date.now(), log = () => {}, pairCovers = null }) {
+  const input = dispatchInput(view, now, { lead, ceiling, pairCovers });
   const sw = sessionWeek(view, now);
   if (sw.state === "stale") log(`dispatch: warning: the session's week reading is ${Math.round(sw.ageMs / 60e3)} min old (or from a week that reset): week usage unknown, the quota stop is off until a session writes it again`);
   if (input && atCeiling(view, now, ceiling)) log(`dispatch: week at ${Math.round(weekPctOf(view, now))}% of quota, ceiling ${ceiling}%: no new build work dispatched`);
