@@ -1,0 +1,2 @@
+PASS Full: dispatch-sees-waiting-pair #C1013 v3 commit 2 of 2, stack tip 59f8941 (re-cut of my signed 6ab6da2 onto main 3378785) (Checker, 2026-11-12)
+range-diff against v2: CHANGELOG context only. git diff 6ab6da2 59f8941 outside CHANGELOG is exactly main's three #C1014 files, and those equal main's. npm test at the tip: 2716 pass, 1 fail; the failure was git's "unable to create temporary file" in tests/docs-only-no-install.test.mjs (a file this card does not touch), and that file rerun alone passes 4 of 4. My full review and six mutants on v2 stand.
