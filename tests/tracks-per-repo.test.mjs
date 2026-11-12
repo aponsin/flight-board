@@ -108,7 +108,8 @@ test("on the phone the tiles split into even rows, at most 4 a row, no lone tile
 });
 
 test("the unlit tile is styled from the page's own variables, and the page names no repository itself", () => {
-  assert.match(page, /\.step\.unlit\{[^}]*var\(--muted\)[^}]*var\(--line\)/);
+  // #C1020 (Designer): a dotted outline in --muted, faded, so unlit reads unlike skipped (dashed --line, struck through).
+  assert.match(page, /\.step\.unlit\{[^}]*color:var\(--muted\)[^}]*dotted var\(--muted\)/);
   assert.doesNotMatch(page.match(/\.step\.unlit[^\n]*/g).join("\n"), /#[0-9a-f]{3,6}\b/i);
   const fn = page.split("\n").find((l) => l.startsWith("function trackFor(")) ?? "";
   assert.ok(fn.includes("BOARD_REPO") && !/Flight-Board|flight-board/.test(fn), "the board is known by the config's name");

@@ -24,6 +24,7 @@ import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { PUBLISHED_FILE } from "./export.mjs";
 import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
 import { reviewsFromPaths } from "./review-paths.mjs";
+import { pairsIn, packOf, BOARD_REPO_WORDS } from "./pairs.mjs";
 import { journalCards, readJournal } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
@@ -784,7 +785,7 @@ export function stackReadyCommits(repo) {
   } catch { return []; }
 }
 
-export function cardStates({ cards, config, repos, now, stacks = [] }) {
+export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] }) {
   const out = {}, repoOfCard = {}, cardOf = {};
   for (const card of cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX).slice(0, MAX_CARDS)) {
     const r = repoOf(card, config);
@@ -836,6 +837,18 @@ export function cardStates({ cards, config, repos, now, stacks = [] }) {
       if (!(headAt(id) >= STACK_HOLD_FROM)) continue; // before the cutoff, or a time git would not give: today's reading
       if (noted.some((c) => isAncestor(heads[id], c))) continue;
       out[id] = { ...out[id], stackHold: true };
+    }
+  }
+  // #C1020: a board-repository card on main shows packed and installed from the deploy pairs (pairsIn, the owner's pair folder) and git alone:
+  // packed when a pair's pin holds its landing, installed when such a pair's deploy ran. Never for a card of another repository, nor one not on main.
+  const board = Object.entries(repos).find(([name]) => BOARD_REPO_WORDS.has(name))?.[1];
+  if (board && typeof board.git === "function" && pairs.length) {
+    const git = (args) => ({ status: ok(() => board.git(args)) ? 0 : 1 });
+    for (const id of Object.keys(out)) {
+      // The card's own repo word names the board (as the dispatch's pair turn reads it), and it was read from the board's checkout.
+      if (!BOARD_REPO_WORDS.has(String(cardOf[id].repo ?? "")) || repoOfCard[id] !== board || out[id].onMain !== true || !out[id].headSha) continue;
+      const p = packOf(pairs, out[id].headSha, git);
+      if (p.packed) out[id] = { ...out[id], packed: true, ...(p.installed ? { installed: true } : {}) };
     }
   }
   return out;
@@ -1210,7 +1223,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const cardsChecked = cardsCheckedAt(Object.values(repos), now, checkedBefore);
   let cardsNow;
   try {
-    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now) });
+    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now), pairs: c.pairFolder ? pairsIn(home(c.pairFolder)) : [] });
     lap("cardStates");
     // #C632: the last time any open card past plan showed a branch commit; kept from run to run, and the lead's watch told once
     // per outage (gate/reset.mjs evidenceAt).

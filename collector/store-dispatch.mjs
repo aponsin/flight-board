@@ -39,8 +39,10 @@ export const holdOpen = (c, now, endPassed) => !!c && ((typeof c.hold_end === "s
 //   ship, on main, repo word the owner builds the deploy pair (the board's own repository: landed, not deployed)
 //   live, or on main with no repo word: nobody (the lead closes it)
 export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security", ship: "Release" };
-// The repo words of a card of the board's own repository that gets a deploy pair when it lands (the live board has both: "flight-board" and "board").
-export const BOARD_REPO_WORDS = new Set(["flight-board", "board"]);
+// The repo words of a card of the board's own repository that gets a deploy pair when it lands: kept in collector/pairs.mjs (#C1020), which the
+// pinned probe imports; re-exported here for the dispatch's callers.
+import { BOARD_REPO_WORDS } from "./pairs.mjs";
+export { BOARD_REPO_WORDS };
 const ROLE_OF_NOTE = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security" };
 // #C859 slice 3 (stack mode): ctx.stackBranch is the branch of the stack the card's repository has (when its switch is on), named in a
 // builder's turn; a card the evidence reads as outside the stack (e.stack.outside) is told to re-cut; a reviewer is sent the stack tip.

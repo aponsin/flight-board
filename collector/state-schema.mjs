@@ -56,7 +56,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "weekTotal", "stack", "stackHold", "behindMain", "headSha", "headBranch", "repoFull", "noInstall"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "weekTotal", "stack", "stackHold", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -86,6 +86,10 @@ const CARD = {
   behindMain: (v) => v === true,
   // #C882: a landing that changed no deployed or pinned file (only docs and tests) needs no install: the card reads Live. Only ever true.
   noInstall: (v) => v === true,
+  // #C1020: a board card on main whose landing a deploy pair holds (packed), and whose pair's deploy ran (installed). Only ever true; read from the
+  // pair folder's files and git, never from words.
+  packed: (v) => v === true,
+  installed: (v) => v === true,
   // #C731 B4b slice 3: workSeen (only ever true: a commit on main cites the card, so a build start is not "no work seen"),
   // shippedAt (when a ship commit on main naming the card landed), reviews ({ phase: ms }: when each signed review was signed,
   // from the notes ref's history). Optional.

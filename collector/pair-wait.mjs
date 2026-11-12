@@ -6,7 +6,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { BOARD_REPO_WORDS } from "./store-dispatch.mjs";
+import { BOARD_REPO_WORDS, descends } from "./pairs.mjs";
+export { descends };
 
 // { n, sha } of the newest pair when it has not run, else null (no folder, no pair, no pin, or the newest ran).
 export function waitingPair(folder) {
@@ -23,12 +24,7 @@ export function waitingPair(folder) {
   return ran ? null : { n, sha };
 }
 
-// Whether the commit `landing` is the pair's pin or an ancestor of it (the pin descends from the landing). git(args) -> { status }; an answer it cannot give is false.
-export function descends(git, landing, pin) {
-  if (!/^[0-9a-f]{40}$/.test(landing ?? "") || !/^[0-9a-f]{40}$/.test(pin ?? "")) return false;
-  if (landing === pin) return true;
-  try { return git(["merge-base", "--is-ancestor", landing, pin]).status === 0; } catch { return false; }
-}
+// descends (the pin holds the landing) lives in collector/pairs.mjs (#C1020), shared with the probe's Pack and Install reading.
 
 // The checkout the pair's pin and the landed board cards live in (#C1013 Checker F1): the collector.repos entry named for the board's repository (a repo
 // word the board uses), else collector.repoPath, the team's own repository, which is the board's only when the team's repository is the board's.
