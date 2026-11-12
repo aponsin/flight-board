@@ -1,0 +1,1 @@
+SECURE #C996 0d2279d on signed a28461b (Security 11-12): timing only. The post deadline is now the run's start plus its limit less 30 s; board and run.evidence may post once more up to 10 s short of it; the live read is skipped past 20 s short. Same endpoint, headers, redirect error and timeout; no new input.
