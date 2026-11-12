@@ -5,7 +5,8 @@
 
 export const TAKEN_WITHIN_MS = 3 * 60_000; // a batch not taken this long after a good send is a failure
 export const RESEND_MS = 5 * 60_000;       // an untaken batch is re-sent at most this often
-export const ASK_STALE_MS = 3 * 60_000;    // row 4 chip: the last ask is the heartbeat, red after this
+export const RETRY_FAILED_OWNER_MS = 60_000; // #C963: a failed send is retried this soon while the owner's own message or answer is untaken
+export const ASK_STALE_MS =3 * 60_000;    // row 4 chip: the last ask is the heartbeat, red after this
 
 // What a finished send was: from its exit code and the CLI's output text (stdout and stderr together).
 export function classifySend(exit, text) {
@@ -31,7 +32,12 @@ export function shouldSend(wake, now) {
   if (!wake?.batchId || !(wake.count > 0)) return false;       // nothing for Manager: nothing runs
   if (Number.isFinite(wake.takenAt) && wake.takenAt >= (wake.batchAt ?? 0)) return false; // already taken
   if (!Number.isFinite(wake.lastSendAt) || wake.lastSendBatch !== wake.batchId) return true; // first send of this batch
-  return now - wake.lastSendAt >= RESEND_MS;                    // re-send at most once per 5 min
+  // #C963: a send that FAILED (Manager's session was not reachable, for instance during an app restart) while the batch holds the owner's own words
+  // (a message or an answer nobody has read) is tried again on the next minute, not after 5: 11-11 8:00 pm MT, his answer to #T1779 sat 5 min
+  // behind a failed send and Manager read it as "nothing retried". A send that went out (and is not taken) and any batch without the owner's words
+  // keep the 5-minute rule, so a long outage costs one send a minute at most, and only while something of his waits.
+  const failedOwner = wake.lastSendOk === false && wake.ownerWaiting === true;
+  return now - wake.lastSendAt >= (failedOwner ? RETRY_FAILED_OWNER_MS : RESEND_MS);
 }
 
 // Row 4: { state: "ok" | "red" | "idle", reason?, fix?, askAge }.

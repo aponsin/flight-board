@@ -351,6 +351,13 @@ const pendingForManager = async (db) => {
   const s = await db.prepare("SELECT COUNT(*) AS n FROM stall_wakes WHERE taken_at IS NULL").first();
   return m.n + a.n + s.n;
 };
+// #C963: whether the owner's own words wait (a message or an answer Manager has not read), as against a stall line: a failed send is retried
+// sooner for these (shouldSend). The same two counts pendingForManager adds up.
+const ownerWaiting = async (db) => {
+  const m = await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE delivered_at IS NULL AND author = 'owner'").first();
+  const a = await db.prepare("SELECT COUNT(*) AS n FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL").first();
+  return m.n + a.n > 0;
+};
 // #C732: the cards that wait 15 min at a phase while its agent is idle (stalledWaits, board-rules.mjs), kept as one row per
 // (card, reason): a new reason for a card is pending for Manager once, an older untaken reason of the card is replaced by it, and a stall
 // that is over is no longer pending. A reason already sent is never sent again.
@@ -428,7 +435,7 @@ export async function wakeAsk(db, now) {
     await db.prepare("UPDATE wake SET batch_id = ?, batch_count = ?, batch_at = ? WHERE id = 1").bind(`b-${now}`, n, now).run();
   } else if (n > 0) await db.prepare("UPDATE wake SET batch_count = ? WHERE id = 1").bind(n).run();
   w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
-  const facts = wakeFacts(w, now);
+  const facts = { ...wakeFacts(w, now), ownerWaiting: n > 0 && await ownerWaiting(db) };
   const status = wakeStatus(facts, now);
   const tellOwner = shouldTellOwner(status, w.told_reason);
   if (tellOwner) await db.prepare("UPDATE wake SET told_reason = ? WHERE id = 1").bind(status.reason).run();
