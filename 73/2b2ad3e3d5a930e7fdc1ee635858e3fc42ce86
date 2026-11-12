@@ -1,0 +1,1 @@
+PASS Checker 2 #C1019 changelog-no-recut: 7/7 tests, --check clean on the repo, sort mutant fails 3 tests; LOW: a folder inside CHANGELOG.d crashes the read; DOCS_ONLY gap known, carded apart (commit 732b2ad3 of stack tip 732b2ad3)
