@@ -1,0 +1,1 @@
+SECURE #C981 ab0014d in stack small-stack-c (Security 11-11): patch id outside CHANGELOG.md equals signed f797e4c (921f5689). Pinned gate/reset.mjs: needs the owner's install.
