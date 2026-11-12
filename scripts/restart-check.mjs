@@ -16,6 +16,7 @@ import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
+import { liveStateFile } from "./live-state.mjs";
 
 export const SHIP_ROLE = "Release";
 export const SHIP_COMMAND = /(?:^|[\s/])ship\.mjs(?:\s|$)/;
@@ -84,9 +85,9 @@ function candidatesIn(repos, re) {
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const at = process.argv.indexOf("--config");
-  let config;
+  let config, raw;
   try {
-    const raw = JSON.parse(readFileSync(process.argv[at + 1], "utf8"));
+    raw = JSON.parse(readFileSync(process.argv[at + 1], "utf8"));
     if (at < 0 || checkConfig(raw).length) throw new Error();
     config = fullConfig(raw);
   } catch { console.log("wait: can't read the board's config, so can't tell whether a ship is running: ask Release."); process.exit(3); }
@@ -95,7 +96,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try { ps = execFileSync("ps", ["-Ao", "pid=,etime=,command="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }); }
   catch { console.log("wait: can't list this machine's processes, so can't tell whether a ship is running: ask Release."); process.exit(3); }
   let state = null;
-  try { state = JSON.parse(readFileSync(join(home(config.gate.stateDir), boardId(config), "state.json"), "utf8")); } catch { /* none: the process alone decides */ }
+  try { state = JSON.parse(readFileSync(liveStateFile(config, raw), "utf8")); } catch { /* none: the process alone decides */ }
   const runs = shipRuns(ps, now).filter((r) => r.pid !== process.pid);
   const re = c.candidatePattern ? new RegExp(c.candidatePattern) : null;
   const version = runs.length && re ? runVersion(candidatesIn(c.refresh?.repos ?? [], re), runs[0].startedAt, re) : null;
