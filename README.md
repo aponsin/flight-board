@@ -124,7 +124,7 @@ Two standing needs: the command-line login on the Studio stays alive (`claude /l
 
 Row 4 turns red ("not listening since") with its reason and the fix when: **login lapsed** (the send printed "Failed to authenticate"; run `claude /login`), **Manager not reachable** ("No agent named … is reachable": Manager's session is closed, unnamed or has Remote Control off), **batch not taken** (a send went out and Manager has not read the batch 3 minutes later), or the probe has not asked for 3 minutes. The probe tells the owner once per reason, until a good send clears it.
 
-A probe job killed by its watchdog (`collector/run-watchdog.mjs`) logs and exits 2 and tells the store nothing: the store's own silence rule is the only signal. The probe is marked silent 3 minutes after its last write, and the header's Probe chip turns red.
+A probe job killed by its watchdog (`collector/run-watchdog.mjs`) logs and exits 2 and tells the store nothing: the store's own silence rule is the only signal. The probe is marked silent 5 minutes after its last write (3 until #C996's stopgap, while the evidence job ran every minute; it runs every 2 minutes and may take 170 s, for now), and the header's Probe chip turns red.
 
 ## The old page on the store (#C723, board parity)
 
