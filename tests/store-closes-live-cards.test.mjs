@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, updateCard, writeEvidence } from "../worker/board-store.mjs";
+import { createCard, updateCard, writeEvidence, liveDoneEvidence } from "../worker/board-store.mjs";
 import { cardWriteRefusal } from "../worker/board-rules.mjs";
 import { initiativeDoc } from "../worker/compat-view.mjs";
 
@@ -49,6 +49,22 @@ test("a live reading with no full head sha or repository, a dropped card and a c
   assert.equal((await updateCard(db, T + 5, "Manager", { id: "dated", check_at: T + 86_400_000 })).ok, true);
   await read(db, "dated", LIVE, T + 6);
   assert.equal((await row(db, "dated")).done_at, null, "a check date is a wish to look again");
+});
+
+test("only the shapes the probe sends close a card: a short, empty, upper-case or non-string sha and an odd, empty or over-long repository each leave it open (Checker 2 F1, Security LOW)", async () => {
+  const bad = [
+    { headSha: "abc" }, { headSha: "" }, { headSha: SHA.toUpperCase() }, { headSha: SHA + "0" }, { headSha: 7 }, { headSha: null },
+    { repoFull: "x y/<b>z</b>?q=1#" }, { repoFull: "" }, { repoFull: "noslash" }, { repoFull: "a/b/c" }, { repoFull: "a".repeat(101) + "/b" }, { repoFull: "a/" + "b".repeat(600) }, { repoFull: ["a/b"] },
+    { headSha: undefined }, { repoFull: undefined },
+  ];
+  const db = makeDb();
+  for (const [i, over] of bad.entries()) {
+    const id = `bad${i}`; await card(db, id);
+    await read(db, id, { ...LIVE, ...over }, T + 1);
+    assert.equal((await row(db, id)).done_at, null, JSON.stringify(over));
+  }
+  assert.equal(liveDoneEvidence({ headSha: SHA, repoFull: "Acme-1/wid_gets.v2" }), `https://github.com/Acme-1/wid_gets.v2/commit/${SHA}`, "a real name still closes");
+  assert.equal(liveDoneEvidence(null), null);
 });
 
 test("a card already closed by hand keeps its own evidence", async () => {
