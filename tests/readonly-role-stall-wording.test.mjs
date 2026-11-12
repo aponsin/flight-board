@@ -7,7 +7,7 @@ import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { createCard, writeEvidence, wakeAsk, takeInbox, postMessage } from "../worker/board-store.mjs";
 
 const T = 1_800_000_000_000, MIN = 60e3, NOW = T + STALL_AFTER_MS;
-const hhmm = (ms) => `${new Date(ms).toISOString().slice(11, 16)}Z`;
+import { mtTime as hhmm } from "../worker/team-time.mjs"; // #C983
 const card = (o = {}) => ({ id: "c884-look", num: 884, owner_role: "Designer", updated_at: T, ...o });
 const run = (cards, postedAt, agents = { Designer: { state: "idle", since: T }, Builder: { state: "idle", since: T } }) =>
   stalledWaits({ now: NOW, cards, evidence: {}, agents, openAskCards: new Set(), phaseStart: new Map(), postedAt });

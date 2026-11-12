@@ -52,7 +52,7 @@ export function halfLive(card, steps) {
   return card.doneWhen.map((_, i) => i).filter((i) => !closed.has(i));
 }
 
-const hhmm = (t) => new Date(t).toISOString().slice(11, 16);
-// What the signal was, for the nudge and the refusal: "FINDINGS by Designer at 20:52 UTC". who goes through the caller's
-// idText.
-export const signalText = (s, idText) => `${s.kind === "build" ? "a new build start" : "FINDINGS"} by ${idText(s.who ?? "someone")} at ${hhmm(s.at)} UTC`;
+import { mtTime } from "../worker/team-time.mjs";
+// What the signal was, for the nudge and the refusal: "FINDINGS by Designer at 1:52 pm MT" (#C983: Mountain Time). who goes
+// through the caller's idText.
+export const signalText = (s, idText) => `${s.kind === "build" ? "a new build start" : "FINDINGS"} by ${idText(s.who ?? "someone")} at ${mtTime(s.at)}`;

@@ -80,7 +80,7 @@ test("the alarm: one NUDGE once a role has been stopped 15 min, none again for t
   assert.deepEqual(r.lines, [], "10 min: not yet");
   now = T + NEEDS_USER_MS; r = promptAlarm({ config, reading: reading(now, { Mainsite: T }), now, state: r.state });
   assert.equal(r.lines.length, 1);
-  assert.match(r.lines[0], /^NUDGE Mainsite is waiting on a prompt in its session since 05:50Z \(15 min\): raise waiting\/needs-user-mainsite \(kind "action", text "Mainsite is waiting on a prompt in its session: open it in the Claude app and answer it"\) unless it is open, and push the owner once, naming a prompt\.$/);
+  assert.match(r.lines[0], /^NUDGE Mainsite is waiting on a prompt in its session since 11:50 pm MT \(15 min\): raise waiting\/needs-user-mainsite \(kind "action", text "Mainsite is waiting on a prompt in its session: open it in the Claude app and answer it"\) unless it is open, and push the owner once, naming a prompt\.$/);
   for (const m of [20, 60, 600]) { now = T + m * MIN; r = promptAlarm({ config, reading: reading(now, { Mainsite: T }), now, state: r.state }); assert.deepEqual(r.lines, [], `${m} min: no repeat`); }
   now = T + 601 * MIN; r = promptAlarm({ config, reading: reading(now, {}), now, state: r.state });
   assert.deepEqual(r.lines, ["NUDGE Mainsite is past its prompt: mark waiting/needs-user-mainsite done."]);
@@ -92,7 +92,7 @@ test("the alarm: a new stop after one ended is a new alarm; the lead's own stop 
   const now = T + 100 * MIN, later = T + 80 * MIN;
   const r = promptAlarm({ config, reading: reading(now, { Mainsite: later, Manager: T }), now, state: s });
   assert.equal(r.lines[0], "NUDGE Mainsite is past its prompt: mark waiting/needs-user-mainsite done.");
-  assert.match(r.lines[1], /^NUDGE Mainsite is waiting on a prompt in its session since 07:10Z \(20 min\)/, "alarms in role order");
+  assert.match(r.lines[1], /^NUDGE Mainsite is waiting on a prompt in its session since 1:10 am MT \(20 min\)/, "alarms in role order");
   assert.match(r.lines[2], /^NUDGE Manager is waiting on a prompt.*\(It is Manager itself: the keeper or Steward relays this\.\)$/);
   assert.deepEqual(r.state, { Manager: T, Mainsite: later });
 });

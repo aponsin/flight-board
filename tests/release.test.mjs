@@ -79,7 +79,7 @@ test("#C278 (Security): the fence takes only collector/export.mjs, which imports
     "collector/after-ship.mjs", "collector/collect.mjs", "collector/context.mjs", "collector/delta.mjs", "collector/derive.mjs", "collector/expected.mjs", "collector/export.mjs", "collector/facts.mjs", "collector/fence.mjs", "collector/keeper.mjs", "collector/nudges.mjs", "collector/owner-push.mjs", "collector/pickup.mjs", "collector/plan-state.mjs", "collector/prompt-alarm.mjs", "collector/readings.mjs", "collector/refresh.mjs", "collector/review-paths.mjs", "collector/rework.mjs", "collector/stack.mjs", "collector/state-schema.mjs", "collector/state.mjs", "collector/text.mjs", "collector/timings.mjs",
     "gate/after.mjs", "gate/agent-prs.mjs", "gate/build-steps.mjs", "gate/card-rules.mjs", "gate/commit.mjs", "gate/digest.mjs", "gate/gate.mjs", "gate/live.mjs", "gate/owner-waits.mjs", "gate/plan.mjs", "gate/publish.mjs", "gate/reset.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs", "gate/tools.mjs", "gate/traffic.mjs", "gate/wake.mjs",
     "hooks/red-ask-board.py", "scripts/board-release.mjs", "scripts/build-page.mjs", "scripts/config.mjs", "scripts/current.mjs", "scripts/fixtures.mjs", "scripts/hooks.mjs", "scripts/pack-label.mjs", "scripts/scan.mjs", "scripts/state-install.mjs", "scripts/thread-ids.mjs", "scripts/wake-watch.mjs",
-    "worker/state-worker.mjs",
+    "worker/state-worker.mjs", "worker/team-time.mjs",
   ]);
 });
 

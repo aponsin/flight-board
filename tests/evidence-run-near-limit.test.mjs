@@ -146,9 +146,9 @@ test("the header says why the probe is failing, or that it is slow; nothing for 
   const fail = html({ state: "ok", lastAt: T, why: "state: bad (first: agents.Security.card: not allowed)" });
   assert.match(fail, /<span class="chip bad" title="probe failing: state: bad \(first: agents\.Security\.card: not allowed\)">/);
   const both = html({ state: "silent", since: T, why: "node exited 1" });
-  assert.match(both, /silent since \d\d:\d\dZ: node exited 1/);
+  assert.match(both, /silent since \d{1,2}:\d\d [ap]m MT: node exited 1/);
   const slow = html({ state: "ok", lastAt: T, slow: 80 });
   assert.match(slow, /<span class="chip warn" title="probe slow: 80 s of 90">/);
-  assert.match(html({ state: "silent", since: T }), /<span class="chip bad" title="probe silent since \d\d:\d\dZ">/, "silent alone reads as before");
+  assert.match(html({ state: "silent", since: T }), /<span class="chip bad" title="probe silent since \d{1,2}:\d\d [ap]m MT">/, "silent alone reads as before");
   assert.match(html({ state: "ok", why: "<img src=x>" }), /&lt;img src=x&gt;/, "the line is escaped");
 });

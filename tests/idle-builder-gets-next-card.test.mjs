@@ -12,7 +12,7 @@ import { createCard, updateCard, writeEvidence, wakeAsk, takeInbox } from "../wo
 
 const NOW = 1_800_000_000_000, MIN = 60e3, T = NOW;
 const ROSTER = ["Manager", "Builder", "Checker"], LEAD = "Manager";
-const hhmm = (ms) => `${new Date(ms).toISOString().slice(11, 16)}Z`;
+import { mtTime as hhmm } from "../worker/team-time.mjs"; // #C983
 
 // Builder idle 20 min with queued cards (nothing pushed); `cards` are overrides by number.
 const view = (cards, asks = []) => ({

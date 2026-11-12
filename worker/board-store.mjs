@@ -5,6 +5,7 @@ import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
 import { readUsage } from "./compat-usage.mjs";
+import { mtDayTime } from "./team-time.mjs";
 import { readThreads } from "./compat-threads.mjs";
 import { askWakes, promiseWakes } from "./push-rules.mjs";
 
@@ -531,7 +532,7 @@ export async function guardedInbox(db, now, session) {
   if (expected && claimed !== expected.session) {
     await log(false, claimed === null ? "no session given" : "session does not match");
     // The expected id is never echoed back.
-    const lastSet = `the door's session was last set by ${expected.set_by} at ${new Date(expected.set_at).toISOString().slice(0, 16)}Z`;
+    const lastSet = `the door's session was last set by ${expected.set_by} at ${mtDayTime(expected.set_at)}`;
     return refuse(db, now, { rule: "door-session-mismatch", detail: `${claimed === null ? "read_inbox needs the \`session\` argument: Manager's own session id." : "the session given is not the one set for Manager's door."} If you are not Manager's session, stop and tell Manager; never call set_door_session to get past this refusal. (${lastSet})` }, null, "Manager");
   }
   await log(true, expected ? "match" : "no session set: unguarded");
@@ -539,7 +540,7 @@ export async function guardedInbox(db, now, session) {
   const got = await takeInbox(db, now);
   if (notes.length) {
     for (const n of notes) await db.prepare("UPDATE inbox_takes SET noticed_at = ? WHERE id = ?").bind(now, n.id).run();
-    got.notices = notes.map((n) => `${n.reason} at ${new Date(n.at).toISOString().slice(0, 16)}Z`);
+    got.notices = notes.map((n) => `${n.reason} at ${mtDayTime(n.at)}`);
   }
   return got;
 }

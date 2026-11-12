@@ -211,7 +211,7 @@ test("(d) a card already named by a 'waits at' line is not named twice: that lin
   const db = await slowWorld();
   await writeEvidence(db, T + 1, "probe", "agents", { Release: { state: "idle", tool: null, card: null, since: T } });
   assert.equal((await wakeAsk(db, T + 15 * MIN)).count, 1);
-  assert.deepEqual((await takeInbox(db, T + 16 * MIN)).stalls.map((s) => s.reason), [`#C1 waits at Ship 15 min, Release idle since ${new Date(T).toISOString().slice(11, 16)}Z`]);
+  assert.deepEqual((await takeInbox(db, T + 16 * MIN)).stalls.map((s) => s.reason), [`#C1 waits at Ship 15 min, Release idle since 1:00 am MT`]);
 });
 
 test("(d) a card with a reason raises no slow stall: waiting_on, an open hold end, a pause; and one that moved on to live", async () => {

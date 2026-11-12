@@ -3,6 +3,7 @@
 // wraps the header. "Live now" is only the probe's reading of the product's /version.json with its age; past 3 minutes it is
 // marked stale (red), never shown as live. Pure string functions: the Worker serves them inside the page.
 import { STALE_AFTER_MS } from "./board-rules.mjs";
+import { mtTime } from "./team-time.mjs";
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 export const ageText = (ms) => (ms < 90_000 ? `${Math.max(0, Math.round(ms / 1000))} s` : ms < 5_400_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 3_600_000)} h`);
@@ -32,7 +33,7 @@ export function headerHtml(view, { deploying = null, boardVersion = "", wake = {
   // #C962: why the probe is failing (the evidence job's last error line) or that its run is slow (past 75 s of its 90 s limit), beside "silent since".
   const why = typeof view.probe?.why === "string" && view.probe.why ? view.probe.why : "", slow = Number.isFinite(view.probe?.slow) ? view.probe.slow : null;
   const probeDetail = silent || why
-    ? `${silent ? `silent${view.probe?.since ? ` since ${new Date(view.probe.since).toISOString().slice(11, 16)}Z` : ""}` : "failing"}${why ? `: ${why}` : ""}`
+    ? `${silent ? `silent${view.probe?.since ? ` since ${mtTime(view.probe.since)}` : ""}` : "failing"}${why ? `: ${why}` : ""}`
     : `slow: ${slow} s of 90`;
   const probeShown = silent || why || slow !== null;
   const probeCls = silent || why ? "bad" : "warn";

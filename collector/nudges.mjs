@@ -31,6 +31,7 @@ import { repoOf, openAsks } from "./derive.mjs";
 import { typedClashes } from "./state-schema.mjs";
 import { routedLine, plainLine } from "../gate/reset.mjs";
 import { reworkOwed, signalText, halfLive } from "./rework.mjs";
+import { mtDayTime } from "../worker/team-time.mjs";
 
 const MIN = 60e3, HOUR = 36e5, DISPATCH_MIN = 10, TYPED_MIN = 5, IDLE_MIN = 10;
 const closed = (k) => k.status === "done" || k.status === "dropped";
@@ -175,8 +176,7 @@ export function nudges({ config, docs, now, state = {}, waiting = new Set(), der
     const phase = derived[card.id]?.phase ?? card.phase;
     if (closed(card) || !Number.isFinite(card.etaLive) || Math.abs(card.etaLive) > 8.64e15 || now - card.etaLive <= HOUR) continue;
     if (phase === config.collector.livePhase || openAsks(docs.waiting, card.id).length) continue;
-    const d = new Date(card.etaLive), eta = [d.getUTCHours(), d.getUTCMinutes()].map((x) => String(x).padStart(2, "0")).join(":");
-    firing.push({ key: `overdue:${card.id}:${card.etaLive}`, every: true, to: card.who, text: `overdue: ${q(card.id)} (ETA ${eta}Z, phase ${q(phase ?? "?")})` });
+    firing.push({ key: `overdue:${card.id}:${card.etaLive}`, every: true, to: card.who, text: `overdue: ${q(card.id)} (ETA ${mtDayTime(card.etaLive)}, phase ${q(phase ?? "?")})` });
   }
 
   // 8. A typed field the live state contradicts, TYPED_MIN minutes on (a minute's lag between a write and the reading is

@@ -54,7 +54,7 @@ test("recorded: issuesAt at or after the signal; a card counted before this rule
 
 test("the gate refuses the lead's next update until the count goes up with issuesAt, and says what to add", () => {
   const [e] = errs({ nextNote: "ships next" });
-  assert.match(e, /^#C465 went back for rework \(FINDINGS by Designer at \d\d:\d\d UTC\): record it in this update: issues with a higher total than its 0 \(bugs, security, language, design, owner\) and issuesAt: now in ms/);
+  assert.match(e, /^#C465 went back for rework \(FINDINGS by Designer at \d{1,2}:\d\d [ap]m MT\): record it in this update: issues with a higher total than its 0 \(bugs, security, language, design, owner\) and issuesAt: now in ms/);
   assert.equal(errs({ issues: { design: 2 } }).length, 1, "issuesAt is needed too");
   assert.equal(errs({ issues: { bugs: 0 }, issuesAt: NOW }).length, 1, "the total must go up");
   assert.equal(errs({ issues: { ...card.issues, junk: 5 }, issuesAt: NOW }).length, 1, "only the known kinds count (Security on 505d4901)");
@@ -69,7 +69,7 @@ test("the gate refuses the lead's next update until the count goes up with issue
 
 test("the Collector tells the lead: REWORK #C465: record its issues", () => {
   const { lines } = nudges({ config, docs: { initiatives: [card], steps, messages: [], waiting: [] }, now: NOW });
-  assert.ok(lines.some((l) => /^NUDGE REWORK #C465: record its issues \(FINDINGS by Designer at \d\d:\d\d UTC\)/.test(l)), lines.join("\n"));
+  assert.ok(lines.some((l) => /^NUDGE REWORK #C465: record its issues \(FINDINGS by Designer at \d{1,2}:\d\d [ap]m MT\)/.test(l)), lines.join("\n"));
   const done = nudges({ config, docs: { initiatives: [{ ...card, issues: { design: 2 }, issuesAt: NOW - 30 * MIN }], steps, messages: [], waiting: [] }, now: NOW }).lines;
   assert.ok(!done.some((l) => /REWORK/.test(l)), "counted: no nudge");
 });

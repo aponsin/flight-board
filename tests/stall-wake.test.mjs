@@ -10,7 +10,7 @@ import { createCard, writeEvidence, wakeAsk, takeInbox } from "../worker/board-s
 import { stalledWaits, STALL_AFTER_MS } from "../worker/board-rules.mjs";
 
 const T = 1_800_000_000_000, MIN = 60_000;
-const hhmm = (ms) => `${new Date(ms).toISOString().slice(11, 16)}Z`;
+import { mtTime as hhmm } from "../worker/team-time.mjs"; // #C983
 
 // A card at `phase` since T (its phase_history start), with the phase's agent idle since `idleSince`.
 async function world({ phase = "checker", role = "Checker", idleSince = T, ci = "none", owner = "Boardsmith", card = "card-a" } = {}) {

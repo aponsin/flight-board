@@ -87,7 +87,7 @@ test("(b) a held card whose check date has passed goes into Manager's wake once,
   assert.deepEqual(await pending(db, T + 30 * 60_000), [], "not before the end");
   await wakeAsk(db, T + 2 * H);
   const num = (await row(db, "late")).num;
-  assert.deepEqual(await pending(db, T + 2 * H), [`#C${num} held on the owner's deploy, its end has passed: lift or renew (end 2027-01-15 09:00Z)`]);
+  assert.deepEqual(await pending(db, T + 2 * H), [`#C${num} held on the owner's deploy, its end has passed: lift or renew (end Jan 15 2:00 am MT)`]);
   await wakeAsk(db, T + 3 * H);
   assert.deepEqual(await pending(db, T + 3 * H), [], "once");
 });
@@ -151,7 +151,7 @@ test("(b) the end the store gave a routine waiting_on wakes Manager once when it
   assert.deepEqual(await pending(db, T + 2 * H + 1000), []);
   await wakeAsk(db, T + 3 * H);
   const num = (await row(db, "r")).num;
-  assert.deepEqual(await pending(db, T + 3 * H), [`#C${num} held on Security, its end has passed: lift or renew (end 2027-01-15 11:00Z)`]);
+  assert.deepEqual(await pending(db, T + 3 * H), [`#C${num} held on Security, its end has passed: lift or renew (end Jan 15 4:00 am MT)`]);
   await wakeAsk(db, T + 9 * H);
   assert.deepEqual(await pending(db, T + 9 * H), [], "once");
 });
@@ -163,7 +163,7 @@ test("(c) a hold that already has no end wakes Manager once after 2 h (counted f
   assert.deepEqual(await pending(db, T + 2 * H - 1000), []);
   await wakeAsk(db, T + 2 * H);
   const num = (await row(db, "legacy")).num;
-  assert.deepEqual(await pending(db, T + 2 * H), [`#C${num} held on someone, no end set after 2 h: lift it or give it an end (held since 2027-01-15 08:00Z)`]);
+  assert.deepEqual(await pending(db, T + 2 * H), [`#C${num} held on someone, no end set after 2 h: lift it or give it an end (held since Jan 15 1:00 am MT)`]);
   await wakeAsk(db, T + 5 * H);
   assert.deepEqual(await pending(db, T + 5 * H), [], "once");
 });

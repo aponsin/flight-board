@@ -1,6 +1,7 @@
 // Board store write rules (#C719, docs/DATA.md "Refuse early"): every write is checked in the same call and refused with
 // { rule, detail }; the Worker logs each refusal (rule, card, time) to the refusals table. Pure functions, no I/O.
 // A check returns null when the write is allowed.
+import { mtTime, mtDayTime } from "./team-time.mjs";
 
 export const ASK_TYPES = ["Decision", "Action", "Terminal", "SessionStart", "Later", "Approval", "Answer", "Thread"];
 // The language review's key is "language" (its label is Linguist): the board config's phase key, which the probe reads and writes.
@@ -376,7 +377,7 @@ export function holdOpen(c, now, endsPassed) {
 // Held cards that need Manager: `endsPassed` is the Set of hold_end ids whose closing has happened (the ask is closed, the card is dropped or live).
 // (b) a hold whose end has passed: "#Cn held on <reason>, its end has passed: lift or renew"; (c) a hold with no end for 2 h (counted from
 // held_at, else the card's updated_at): "#Cn held on <reason>, no end set after 2 h: lift it or give it an end". One row per (card, reason).
-const zDay = (ms) => `${new Date(ms).toISOString().slice(0, 16).replace("T", " ")}Z`;
+// #C983: the times in these reasons are Mountain Time ("Nov 12 8:45 pm MT"), as Manager and the owner read them.
 export function heldWakes({ now, cards, endsPassed }) {
   const out = [];
   for (const c of cards ?? []) {
@@ -386,7 +387,7 @@ export function heldWakes({ now, cards, endsPassed }) {
       // not come; an end that stays open for 2 h (an answer nobody closed, say) is a line to Manager, so the card cannot disappear for ever. One row per (card, end, since).
       if (heldWord(c.hold_end) && !endsPassed?.has(c.hold_end)) {
         const since = Number.isFinite(c.held_at) ? c.held_at : c.updated_at;
-        if (Number.isFinite(since) && now - since >= HOLD_NO_END_AFTER_MS) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} waits on ${String(c.hold_end).trim().slice(0, 80)}, whose end has not come after 2 h: close it or lift the hold (since ${zDay(since)})` });
+        if (Number.isFinite(since) && now - since >= HOLD_NO_END_AFTER_MS) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} waits on ${String(c.hold_end).trim().slice(0, 80)}, whose end has not come after 2 h: close it or lift the hold (since ${mtDayTime(since)})` });
       }
       continue;
     }
@@ -395,12 +396,12 @@ export function heldWakes({ now, cards, endsPassed }) {
     if (timed || ref || until) { // an explicit end (check_at, hold_end) wins over the one the store gave (hold_until)
       const passed = timed || ref ? (timed && c.check_at <= now) || (ref && endsPassed?.has(ref)) : until <= now;
       // The end is in the reason (the row is keyed by card and reason): a hold renewed with the same words and a new end wakes Manager again when that one passes.
-      const endTxt = timed ? zDay(c.check_at) : ref ? ref : zDay(until);
+      const endTxt = timed ? mtDayTime(c.check_at) : ref ? ref : mtDayTime(until);
       if (passed) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} held on ${why}, its end has passed: lift or renew (end ${endTxt})` });
       continue;
     }
     const since = Number.isFinite(c.held_at) ? c.held_at : c.updated_at;
-    if (Number.isFinite(since) && now - since >= HOLD_NO_END_AFTER_MS) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} held on ${why}, no end set after 2 h: lift it or give it an end (held since ${zDay(since)})` });
+    if (Number.isFinite(since) && now - since >= HOLD_NO_END_AFTER_MS) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} held on ${why}, no end set after 2 h: lift it or give it an end (held since ${mtDayTime(since)})` });
   }
   return out;
 }
@@ -506,7 +507,7 @@ export function whoForPhase(cardId, phase, agents, ownerRole) {
 
 // #C732 (the owner's pick A on #T1681, 11-09): "Stalled" for the wake covers every phase. A card that has waited STALL_AFTER_MS at its phase
 // while that phase's agent is idle (and no agent works the card, no CI or ship run is going) is a stall, with a reason Manager reads:
-// "#C730 waits at Checker 15 min, Checker idle since 04:40Z". The 15 min is the threshold crossed, so the reason is stable while the
+// "#C730 waits at Checker 15 min, Checker idle since 9:40 pm MT". The 15 min is the threshold crossed, so the reason is stable while the
 // stall lasts and changes only with the phase, the agent or the time the agent went idle. The wait counts from the later of the phase's
 // start and the agent going idle (a card queued behind a busy agent has not waited on an idle one). Exempt: a card that is dropped,
 // paused, blocked, held on someone (waiting_on), or gated by an open ask; a live card (done); a card with no agent for its phase.
@@ -514,9 +515,8 @@ export function whoForPhase(cardId, phase, agents, ownerRole) {
 // from the phase's start: nobody is there to take the card, so waiting on an idle one would never fire. The reason says "no session". An empty or
 // missing reading is a blind probe, never a stall: only a reading that lists someone says who is absent.
 // Pure: cards = rows {id, num, owner_role, blocked_reason, paused, dropped, waiting_on}; evidence = {cardId: reading}; agents = the
-// `agents` evidence; openAskCards = Set of card ids with an open ask; phaseStart = Map "<card>|<phase>" -> ms. Times are UTC ("Z").
+// `agents` evidence; openAskCards = Set of card ids with an open ask; phaseStart = Map "<card>|<phase>" -> ms. Times in the reasons are Mountain Time (#C983).
 export const STALL_AFTER_MS = 15 * 60_000;
-const hhmmZ = (ms) => `${new Date(ms).toISOString().slice(11, 16)}Z`;
 // #C846: whether a card waits for a card it depends on (depends_on, a JSON list of ids): one that is on the board, not dropped and not
 // live. One the board does not have, or a dropped one, holds nothing (as the dispatch reads it, #C845).
 export function dependsNotLive(c, cards, evidence) {
@@ -558,7 +558,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
       if (READ_ONLY_ROLES.includes(c.owner_role)) {
         const posted = postedAt instanceof Map ? postedAt.get(c.id) : undefined;
         if (Number.isFinite(posted) && now - posted <= POSTED_FRESH_MS) continue;
-        out.push({ card_id: c.id, num: c.num, phase: null, role: c.owner_role, reason: `#C${c.num} nothing posted on its thread in the last hour, ${c.owner_role} idle since ${hhmmZ(idleFrom)}` });
+        out.push({ card_id: c.id, num: c.num, phase: null, role: c.owner_role, reason: `#C${c.num} nothing posted on its thread in the last hour, ${c.owner_role} idle since ${mtTime(idleFrom)}` });
         continue;
       }
       queued.set(c.owner_role, [...(queued.get(c.owner_role) ?? []), c]);
@@ -584,7 +584,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     }
     if (!a || a.state !== "idle" || !Number.isFinite(a.since) || !Number.isFinite(start)) continue;
     if (now - Math.max(start, a.since) < STALL_AFTER_MS) continue;
-    out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, ${role} idle since ${hhmmZ(a.since)}` });
+    out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, ${role} idle since ${mtTime(a.since)}` });
   }
   // #C910: one line per idle agent, not one per queued card (22 queued cards were 22 lines): "Boardsmith idle since 07:31Z, 22 queued, next #C901".
   // The next card is the first of the agent's queue (queueRank, as the dispatch wakes it); the line is its row, so it changes with the count or the next card.
@@ -595,7 +595,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   }
   for (const [role, list] of queued) {
     const next = [...list].sort((x, y) => queueRank({ queue_pos: x.queue_pos, owner: x.queue_set_by === "owner", num: x.num, id: x.id }, { queue_pos: y.queue_pos, owner: y.queue_set_by === "owner", num: y.num, id: y.id }))[0];
-    out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} idle since ${hhmmZ(idleOf.get(role))}, ${list.length} queued, next #C${next.num}` });
+    out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} idle since ${mtTime(idleOf.get(role))}, ${list.length} queued, next #C${next.num}` });
   }
   return out;
 }

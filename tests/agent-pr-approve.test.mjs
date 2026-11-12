@@ -155,7 +155,7 @@ test("the panel: a count, a button per row ('Approve again' after a push), the s
   assert.match(html, /Checks running/);
   assert.doesNotMatch(html, /#302|Title 302/, "waiting on Reviewer: nothing for him to do");
   assert.match(html, /<details class="gp-done"><summary>1 approved: merge at the next ship<\/summary>/);
-  assert.match(html, /You, 02:31Z, <code>4f2a9c1<\/code>[\s\S]*data-gpw="1" data-n="298">Withdraw/);
+  assert.match(html, /You, Nov 1 7:31 PM MT, <code>4f2a9c1<\/code>[\s\S]*data-gpw="1" data-n="298">Withdraw/);
   assert.match(html, /Approve here, not Merge on GitHub/);
   assert.match(html, /href="https:\/\/github\.com\/example-org\/example-repo\/pull\/301" target="_blank" rel="noopener">Open on GitHub/);
 });

@@ -56,7 +56,7 @@ const wake = (cards, agents) => stalledWaits({ now: NOW, cards, evidence: {}, ag
 test("stalledWaits: a reset session 'unknown' for 20 minutes with a queued unstarted card raises the idle line; 10 minutes does not yet", () => {
   const out = wake([row()], { Boardsmith: unknown(20) });
   assert.equal(out.length, 1);
-  assert.match(out[0].reason, /Boardsmith idle since \d\d:\d\dZ, 1 queued, next #C935/);
+  assert.match(out[0].reason, /Boardsmith idle since \d{1,2}:\d\d [ap]m MT, 1 queued, next #C935/);
   assert.deepEqual(wake([row()], { Boardsmith: unknown(10) }), []);
 });
 

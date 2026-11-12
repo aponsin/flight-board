@@ -65,7 +65,7 @@ const reading = (now, roles, tools = {}) => ({ at: now - 30e3, roles, tools });
 test("the Collector's NUDGE names the prompt from the reading's tools", () => {
   const now = T + 20 * MIN;
   const r = promptAlarm({ config, reading: reading(now, { Mainsite: T }, { Mainsite: "mcp" }), now, state: {} });
-  assert.match(r.lines[0], /^NUDGE Mainsite is waiting on an app or site approval in its session since 11:50Z \(20 min\): .*text "Mainsite is waiting on an app or site approval in its session: open it in the Claude app and answer it"\) unless it is open, and push the owner once, naming an app or site approval\.$/);
+  assert.match(r.lines[0], /^NUDGE Mainsite is waiting on an app or site approval in its session since 5:50 am MT \(20 min\): .*text "Mainsite is waiting on an app or site approval in its session: open it in the Claude app and answer it"\) unless it is open, and push the owner once, naming an app or site approval\.$/);
   const old = promptAlarm({ config, reading: { at: now - 30e3, roles: { Mainsite: T } }, now, state: {} });
   assert.match(old.lines[0], /waiting on a prompt in its session/, "a reading from before #C529 (no tools): 'a prompt'");
 });

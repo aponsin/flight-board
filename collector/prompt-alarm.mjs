@@ -12,7 +12,7 @@ export const NEEDS_USER_MS = 15 * 60e3;
 export const isTime = (v) => Number.isInteger(v) && v >= 1577836800000 && v <= 4102444800000;
 export const plain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 export const askId = (role) => `needs-user-${role.toLowerCase()}`;
-const hhmm = (t) => new Date(t).toISOString().slice(11, 16) + "Z";
+import { mtTime as hhmm } from "../worker/team-time.mjs"; // #C983: Mountain Time, never UTC "Z"
 
 // What the prompt is, from the probe's tool class (#C529, reading.tools): a few fixed words, never anything from the
 // reading itself but a class name the enum knows. Missing or unknown: "a prompt".

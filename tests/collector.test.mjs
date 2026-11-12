@@ -12,6 +12,7 @@ import { remoteHeads, signedPhases, versionFor, mainLine, factsFor, shippedHeads
 import { collect, localNotes, prepareMirror, swapMirror, runNudges, outPath, scratchRoot, findExport, takeExport, EXPORT_NAME, EXPORT_COLLECTIONS, REQUIRED_COLLECTIONS } from "../collector/collect.mjs";
 import { mirrorErrors, checkWrites } from "../gate/rules.mjs";
 import { nudges } from "../collector/nudges.mjs";
+import { mtDayTime } from "../worker/team-time.mjs";
 
 const config = fullConfig({ owner: "Sam", collector: { repoPath: "/x", notes: { language: "refs/notes/linguist", checker: "refs/notes/checker", security: "refs/notes/security" }, deployWorkflow: "CI" } });
 const facts = (over = {}) => ({ head: { branch: "build/tabs", sha: "aaaaaaaa11", message: "x\n\nBoard-Id: tabs" }, signed: new Set(), onMain: false, deployed: false, version: null, ...over });
@@ -193,9 +194,9 @@ test("NUDGE overdue: an open card over an hour past its etaLive, every run, unti
   const over = (lines) => lines.filter((l) => l.startsWith("NUDGE overdue:"));
   const late = { id: "late-one", status: "active", phase: "ship", etaLive: Date.UTC(2027, 0, 15, 9, 30) };
   const first = nudges({ config, docs: docs([late]), now: T });
-  assert.deepEqual(over(first.lines), ["NUDGE overdue: late-one (ETA 09:30Z, phase ship)"]);
+  assert.deepEqual(over(first.lines), ["NUDGE overdue: late-one (ETA Jan 15 2:30 am MT, phase ship)"]);
   assert.deepEqual(over(nudges({ config, docs: docs([late]), now: T + H, state: first.state }).lines).length, 1, "the next run says it again, no quiet period");
-  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, phase: "build" }]), now: T, derived: { "late-one": { phase: "checker" } } }).lines), ["NUDGE overdue: late-one (ETA 09:30Z, phase checker)"], "the phase the repository says");
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, phase: "build" }]), now: T, derived: { "late-one": { phase: "checker" } } }).lines), ["NUDGE overdue: late-one (ETA Jan 15 2:30 am MT, phase checker)"], "the phase the repository says");
   assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, status: "done" }]), now: T }).lines), [], "closed: quiet");
   assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, status: "dropped" }]), now: T }).lines), [], "dropped: quiet");
   assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, etaLive: T + H }]), now: T, state: first.state }).lines), [], "its ETA moved ahead: quiet");
@@ -210,9 +211,9 @@ test("NUDGE overdue: an open card over an hour past its etaLive, every run, unti
   // #C442 (Security): an etaLive no Date can hold (a write that skipped the gate) is skipped, and the run goes on.
   for (const etaLive of [-8.64e15 - 1, -1e16, Number.NaN, -Infinity]) {
     const r = nudges({ config, docs: docs([{ ...late, etaLive }, { ...late, id: "late-two" }]), now: T });
-    assert.deepEqual(over(r.lines), ["NUDGE overdue: late-two (ETA 09:30Z, phase ship)"], `etaLive ${etaLive}: that card skipped, the next still nudged`);
+    assert.deepEqual(over(r.lines), ["NUDGE overdue: late-two (ETA Jan 15 2:30 am MT, phase ship)"], `etaLive ${etaLive}: that card skipped, the next still nudged`);
   }
-  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, etaLive: -8.64e15 }]), now: T }).lines), ["NUDGE overdue: late-one (ETA 00:00Z, phase ship)"], "the bound itself is a date");});
+  assert.deepEqual(over(nudges({ config, docs: docs([{ ...late, etaLive: -8.64e15 }]), now: T }).lines), [`NUDGE overdue: late-one (ETA ${mtDayTime(-8.64e15)}, phase ship)`], "the bound itself is a date");});
 
 test("the gate runs rules 3-5 only with a mirror; without one they pass", () => {
   const w = upd({ phase: "build" });
