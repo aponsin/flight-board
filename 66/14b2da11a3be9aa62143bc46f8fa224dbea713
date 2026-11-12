@@ -1,0 +1,4 @@
+PASS Quick: #C971 check-five-board-parts, build/g1-board-view-v4 @ 6614b2da11a3be9aa62143bc46f8fa224dbea713, line from 3378785adeee621c5523ce61c6502a5e46c61a2a (one commit).
+sortQueue now puts a queued card held by an open dependency after the queued cards that can start, using the page's existing heldByDeps, the same rule queueTile already used; the queue line, place label and ETA now agree with the Crew tile. queueOf's memo resets each renderAll (new initiatives list), so a dependency going live re-sorts on the next update; the stack-queue-page test change mirrors that.
+Tests: touched files 9/9; full board suite 2707/2707 (npm test exit 0). Mutation: dropping heldQueued from sortQueue fails 1 test (break confirmed, restored, clean diff). CHANGELOG line present.
+Not reviewed: the four OK parts were a live look by Builder; nothing in code changed for them.
