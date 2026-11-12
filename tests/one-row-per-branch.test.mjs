@@ -119,7 +119,7 @@ test("the page draws one track per branch, each with a single tile now", () => {
 test("a card with one branch, or a probe without branches, draws the single track as before", () => {
   for (const html of [row(null), row([rec("route", "security", ["build"])]), row([rec("route", "security", ["build"]), { name: "Bad Name", phase: "build", headSha12: "nothex" }])]) {
     assert.doesNotMatch(html, /br-track/);
-    assert.equal((html.match(/<div class="track">/g) ?? []).length, 1);
+    assert.equal((html.match(/<div class="track"[ >]/g) ?? []).length, 1);
   }
 });
 
