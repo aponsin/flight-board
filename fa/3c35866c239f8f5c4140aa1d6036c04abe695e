@@ -1,0 +1,10 @@
+FINDINGS Full: header-shows-deploy-failed #C982 fa3c358 (Checker 2, 2026-11-12)
+The card's three must-allows are tests and hold (a success shows nothing, no deploy yet shows nothing, a later success clears a failure). Two guards the tests name are not held by them.
+
+F1 (MEDIUM, escaping): the chip's visible reason is not tested escaped. Mutant: in worker/page-header.mjs, <span class="detail">${esc(dfail)}</span> -> ${dfail} survives the touched tests. The test's html("<img src=x>") check matches the title attribute's &lt;img, which is still escaped, so the visible span can carry raw markup. The store's shape (deploy-last-shape) admits any printable ASCII, < and > included. Fix: assert the detail span itself, e.g. that html("<img src=x>") has no "<img" anywhere and has <span class="detail">&lt;img src=x&gt;</span>.
+
+F2 (LOW, vacuous test): "the deploy run records its failure with the token taken out" never has a token to take out. Mutant: recordLast(..., line: redact(why, creds)) -> line: why survives. In the test the private file read throws, so creds is null and redact does nothing either way; the test asserts only /dirty/. Fix: give the run creds (a board.private.json with a token and account) and a failing step whose output holds both; assert neither is in board-deploy-last.json.
+
+Checked and fine: tree (65575d2..fa3c358: 10 files, CHANGELOG line present, nothing reverted); suite at fa3c358 2552/2552. Wiring on the real machine: the evidence job's --config is ~/Documents/<team folder>/board.config.json, and board-deploy.mjs and board-store-pa sit in that same folder, so the probe reads the file the deploy writes. The store stamps readAt on every write, so the 5-minute rule is the probe's reading. Mutation check: 8 of 10 killed (failure recorded, success recorded, probe wiring, evidence job only, plainLine, store shape, page freshness, success not shown); survivors F1, F2.
+Note for Manager, not this card: once #C968's self-deploy replaces the pair, nothing writes board-deploy-last.json, so a failed or refused self-deploy shows nowhere (the commit message says so).
+On the fix: rerun D3 and D9, tree check, suite.
