@@ -7,7 +7,7 @@ import { noteShip, readShips } from "./compat-ships.mjs";
 import { readUsage } from "./compat-usage.mjs";
 import { mtDayTime } from "./team-time.mjs";
 import { readThreads } from "./compat-threads.mjs";
-import { askWakes, promiseWakes } from "./push-rules.mjs";
+import { askWakes, promiseWakes, promptWakes } from "./push-rules.mjs";
 import { weekUsageValue, WEEK_USAGE_KEY } from "../collector/week-usage.mjs";
 
 export const PROBE_SILENT_MS = 5 * 60_000; // #C996: was 3 min while the evidence job ran every minute; reverts with its cadence
@@ -463,7 +463,10 @@ async function syncStalls(db, now) {
   const movedOn = movedOnAsks({ now, asks: answered, cards, lastWord });
   for (const m of movedOn.filter((x) => x.due)) await db.prepare("UPDATE asks SET closed_at = ?, closed_by = ?, auto_closed_at = ? WHERE id = ? AND closed_at IS NULL").bind(now, AUTO_CLOSED_BY, now, m.ask_id).run();
   const closing = movedOn.filter((x) => !x.due).map(({ card_id, num, reason }) => ({ card_id, num, reason }));
-  const stalls = [...waits, ...heldWakes({ now, cards, endsPassed }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...promiseWakes({ asks: openAsks, now }), ...copyStalls, ...closing];
+  // #C1005 (b): a role stopped on a prompt for 30+ min (the probe's fresh "stuck" reading, kind user), by day: one line per stop (prompt-watch's rule).
+  const stuckRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = 'stuck'").first();
+  let stuckNow = null; try { stuckNow = stuckRow && now - stuckRow.read_at <= 15 * 60e3 ? JSON.parse(stuckRow.value) : null; } catch { /* none */ }
+  const stalls = [...waits, ...heldWakes({ now, cards, endsPassed }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...promiseWakes({ asks: openAsks, now }), ...promptWakes({ stuck: stuckNow, now }), ...copyStalls, ...closing];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.

@@ -68,22 +68,36 @@ export function stuckDue({ stuck, sent, now }) {
     .filter(([role, s]) => ROLE_WORD.test(role) && s && s.kind === "step" && Number.isInteger(s.since) && s.since > 0 && !sent.has(`ship:stuck:${role}:${s.since}`))
     .map(([role, s]) => ({ role, since: s.since })).sort((a, b) => (a.role < b.role ? -1 : 1));
 }
+// #C1005 (b), the prompt watch (scripts/prompt-watch.mjs's rule): a role stopped on a call the owner must answer (evidence.stuck, kind "user") for PROMPT_MIN
+// is one line to Manager's batch (a stall row "prompt:<role>:<since>", told once) and one phone push (push_sent ship "prompt:<role>:<since>"); both held at
+// night and sent at the first run after 7 am. The words carry a role and a time, never the prompt's text.
+export const PROMPT_MIN = 30;
+const promptRows = (stuck, now) => (stuck && typeof stuck === "object" && !Array.isArray(stuck) && !isNight(now)
+  ? Object.entries(stuck).filter(([role, s]) => ROLE_WORD.test(role) && s && s.kind === "user" && Number.isInteger(s.since) && s.since > 0 && now - s.since >= PROMPT_MIN * MIN)
+    .map(([role, s]) => ({ role, since: s.since })).sort((a, b) => (a.role < b.role ? -1 : 1)) : []);
+export const promptDue = ({ stuck, sent, now }) => promptRows(stuck, now).filter((p) => !sent.has(`ship:prompt:${p.role}:${p.since}`));
+export const PROMPT_WAKE_PREFIX = "prompt:";
+export function promptWakes({ stuck, now }) {
+  return promptRows(stuck, now).map((p) => ({ card_id: `${PROMPT_WAKE_PREFIX}${p.role}:${p.since}`, reason: `${p.role} has waited on a prompt in its session since ${mtDayTime(p.since)} (${PROMPT_MIN}+ min): open it in the Claude app and answer it` }));
+}
 export function pushesDue({ asks, ships, sent, now, deploy = null, lastEvidenceAt = null, stuck = null }) {
   const was = (kind, ref) => sent.has(`${kind}:${ref}`);
   const dueStuck = stuckDue({ stuck, sent, now });
+  const duePrompt = promptDue({ stuck, sent, now });
   const dueSilent = Number.isInteger(lastEvidenceAt) && lastEvidenceAt > 0 && now - lastEvidenceAt >= SILENT_PUSH_MIN * MIN && !was("ship", `silent:${lastEvidenceAt}`) ? lastEvidenceAt : null;
   // Recorded in push_sent as kind 'ship', ref "deploy:<sha>" (its kind is checked to ask or ship, and a ship's ref is a version, never "deploy:..."): no migration.
   const dueDeploy = typeof deploy === "string" && DEPLOY_SHA.test(deploy) && !was("ship", `deploy:${deploy}`) ? deploy : null;
   const dueAsks = asks.filter((a) => waited(a, now, OWNER_PUSH_MIN) && !was("ask", a.id)).sort((x, y) => x.num - y.num);
   const dueShips = ships.filter((s) => s.acked_at == null && typeof s.shipped_at === "number" && now - s.shipped_at <= SHIP_DAYS * DAY && !was("ship", s.version))
     .sort((x, y) => x.shipped_at - y.shipped_at);
-  return { asks: dueAsks, ships: dueShips, deploy: dueDeploy, silent: dueSilent, stuck: dueStuck, payload: dueAsks.length || dueShips.length || dueDeploy || dueSilent || dueStuck.length ? pushWords(dueAsks, dueShips, dueDeploy, dueSilent, dueStuck) : null };
+  return { asks: dueAsks, ships: dueShips, deploy: dueDeploy, silent: dueSilent, stuck: dueStuck, prompts: duePrompt, payload: dueAsks.length || dueShips.length || dueDeploy || dueSilent || dueStuck.length || duePrompt.length ? pushWords(dueAsks, dueShips, dueDeploy, dueSilent, dueStuck, duePrompt) : null };
 }
 
 const VERSION = /^v?\d+(?:\.\d+){1,3}$/;
 const list = (items) => (items.length <= 3 ? items.join(", ") : `${items.slice(0, 3).join(", ")} and ${items.length - 3} more`);
-export function pushWords(asks, ships, deploy = null, silent = null, stuck = []) {
+export function pushWords(asks, ships, deploy = null, silent = null, stuck = [], prompts = []) {
   const parts = [];
+  if (prompts.length) parts.push(`${list(prompts.map((p) => p.role))} ${prompts.length === 1 ? "is" : "are"} waiting on a prompt in ${prompts.length === 1 ? "its session" : "their sessions"}: open ${prompts.length === 1 ? "it" : "each"} in the Claude app and answer`);
   if (stuck.length) parts.push(`${list(stuck.map((s) => `${s.role} (quiet since ${mtDayTime(s.since)})`))} ${stuck.length === 1 ? "looks" : "look"} stuck mid-turn: open ${stuck.length === 1 ? "its" : "each"} session`);
   if (Number.isInteger(silent) && silent > 0) parts.push(`board jobs silent since ${mtDayTime(silent)}: the Mac may have crashed, log back in`);
   if (typeof deploy === "string" && DEPLOY_SHA.test(deploy)) parts.push(`board deployed ${deploy.slice(0, 7)}`);

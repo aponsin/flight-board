@@ -89,9 +89,10 @@ export async function pushRun(db, now, env, fetchFn = fetch) {
     for (const s of due.ships) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(s.version, now).run();
     if (due.deploy) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(`deploy:${due.deploy}`, now).run();
     if (due.silent) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(`silent:${due.silent}`, now).run();
+    for (const p of due.prompts) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(`prompt:${p.role}:${p.since}`, now).run();
     for (const s of due.stuck) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(`stuck:${s.role}:${s.since}`, now).run();
   }
-  const what = `${due.asks.length} ask(s), ${due.ships.length} ship(s)${due.deploy ? ", a deploy" : ""}${due.silent ? ", a silence" : ""}${due.stuck.length ? `, ${due.stuck.length} stuck` : ""}`;
+  const what = `${due.asks.length} ask(s), ${due.ships.length} ship(s)${due.deploy ? ", a deploy" : ""}${due.silent ? ", a silence" : ""}${due.stuck.length ? `, ${due.stuck.length} stuck` : ""}${due.prompts.length ? `, ${due.prompts.length} on a prompt` : ""}`;
   await record(db, now, subs.length ? `${what}: ${delivered} device(s) took it, ${gone} gone, ${failed} failed` : `${what}: no device subscribed`, delivered > 0);
   return { ok: true, sent: delivered, gone, failed };
 }
