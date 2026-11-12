@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker from "../worker/board-worker.mjs";
 import { loadNames } from "./harness.mjs";
-import { takeInbox } from "../worker/board-store.mjs";
+import { takeInbox, wakeAsk, wakeResult, createAsk, pingThread } from "../worker/board-store.mjs";
 
 const NOW = 1_800_000_000_000;
 const WHO = { manager: { who: "Manager", role: "agent" }, owner: { who: "owner", role: "owner" } };
@@ -65,4 +65,36 @@ test("a bare owner Ack after the team spoke leaves the thread answered; a real q
   assert.equal(b.threadOpen("t-a"), false);
   assert.equal(b.threadOpen("t-b"), true);
   assert.equal(b.threadOpen("t-c"), true, "nobody has answered yet: even a lone 'ok' is the owner's word to answer");
+  // Checker F3: the half of the rule that needs the team to have spoken. A thread holding only the owner's "Ack." stays open.
+  Object.assign(b.state, { messages: [m("t-d", "Owner", "Ack.", 1)] });
+  assert.equal(b.threadOpen("t-d"), true, "only the owner's own Ack: nobody to acknowledge, so it is still his word waiting");
+});
+
+// Checker F1: the probe's wakeAsk runs syncStalls every 20 s. Without the ping: skip there, a Ping is marked taken before Manager reads it.
+const T = 1_800_000_000_000, MIN = 60_000;
+const decision = { type: "Decision", title: "Pick", asked_by: "Manager", question: "A or B?", options: ["A", "B"], recommended: "A" };
+test("a Ping survives the probe's wake rounds: it is still in Manager's read after wakeAsk ran", async () => {
+  const db = makeDb();
+  const a = await createAsk(db, T, decision);
+  assert.equal((await pingThread(db, T + 1000, "owner", a.id)).ok, true);
+  const first = await wakeAsk(db, T + 20_000);
+  assert.equal(first.count, 1, "the ping is for Manager");
+  await wakeAsk(db, T + 40_000);
+  await wakeAsk(db, T + 60_000);
+  const got = await takeInbox(db, T + 61_000);
+  assert.equal(got.stalls.length, 1, "wakeAsk (syncStalls) did not take it");
+  assert.match(got.stalls[0].reason, new RegExp(`pinged thread ${a.id}`));
+  assert.equal((await wakeAsk(db, T + 80_000)).count, 0, "taken by the read: nothing left");
+});
+
+// Checker F2: the owner's Ping counts as the owner's own word for the wake, so a failed send is tried again after a minute, not five.
+test("a failed send while a Ping waits is retried after a minute, as for his message or answer", async () => {
+  const db = makeDb();
+  const a = await createAsk(db, T, decision);
+  await pingThread(db, T + 1000, "owner", a.id);
+  const send = await wakeAsk(db, T + 20_000);
+  assert.equal(send.send, true);
+  await wakeResult(db, T + 30_000, send.batchId, 0, "No agent named 'Manager' is reachable.");
+  assert.equal((await wakeAsk(db, T + 30_000 + 20_000)).send, false, "20 s after the failure: not yet");
+  assert.equal((await wakeAsk(db, T + 30_000 + MIN)).send, true, "a minute after: again, because his Ping waits");
 });
