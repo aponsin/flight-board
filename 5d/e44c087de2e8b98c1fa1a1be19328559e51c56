@@ -1,0 +1,1 @@
+SECURE #C996 5de44c0, tip of build/evidence-run-times-out-v5 on signed f7cf1ba (Security 11-12): tests only (tests/evidence-posts.test.mjs; mocked fetches, an example.com live URL, no real network). Every commit a28461b..5de44c0 carries SECURE. Pinned collector/state.mjs (from f7cf1ba): needs the owner's install.
