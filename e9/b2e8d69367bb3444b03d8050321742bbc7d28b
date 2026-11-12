@@ -1,0 +1,1 @@
+SECURE #C832 e9b2e8d, tip of build/store-retire-finished-cards-v3, line from 34dde770a91dedc90fd120800a2d6cdc2ea2573c (Security 11-12): equal to signed 0149583 but for the board-rules import list, which now also names #C987's movedOnAsks and AUTO_CLOSED_BY. Needs a Worker deploy.
