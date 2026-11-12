@@ -37,3 +37,26 @@ test("under an open ask's tile the thread's Decision shows its buttons beside th
   const none = renderWaitingHtml([ask], { messages: [] });
   assert.deepEqual(buttons(none), []);
 });
+
+// Checker F1 on 0c77a9a: decide is passed in three places and only the open ask's tile was tested. The card's own thread and a closed ask's
+// row each get a test of their own (dropping decide from one leaves the other green).
+const T = 1_800_000_000_000;
+const card = { id: "trace", name: "Trace the visits", status: "active", level: "Full", size: "S" };
+const m = (thread, from, text, at, extra = {}) => ({ id: `m${at}-${thread}`, thread, from, text, at, ...extra });
+const cardBoard = (st) => { const b = loadNames(["initRow", "enrich", "gates", "threadHtml", "threadState", "threadOptions", "cardAsks"]); Object.assign(b.state, { initRaw: [card] }, st); return b; };
+const rowOf = (b) => b.initRow(b.gates(b.enrich(card)));
+
+test("a card's own thread whose last word is a Decision draws its option buttons; a plain last word draws none", () => {
+  const withDecision = cardBoard({ messages: [m("trace", "Owner", "which one?", T - 2000), m("trace", "Manager", "Pick one", T - 1000, { kind: "decision", options: two })] });
+  assert.deepEqual(buttons(rowOf(withDecision)), ["trace:A", "trace:B"]);
+  const plainLast = cardBoard({ messages: [m("trace", "Owner", "which one?", T - 2000), m("trace", "Manager", "Just a note", T - 1000)] });
+  assert.deepEqual(buttons(rowOf(plainLast)), []);
+});
+
+test("a closed ask's row on its card draws the options of a Decision that ends its thread; a plain last word draws none", () => {
+  const closed = { id: "zoho", kind: "action", text: "Check your Sent box", since: T - 864e5, initiative: "trace", done: true };
+  const withDecision = cardBoard({ waiting: [closed], threads: [{ id: "zoho", num: 877 }], messages: [m("zoho", "Owner", "not there", T - 2000), m("zoho", "Manager", "Pick one", T - 1000, { kind: "decision", options: two })] });
+  assert.deepEqual(buttons(rowOf(withDecision)), ["zoho:A", "zoho:B"]);
+  const plainLast = cardBoard({ waiting: [closed], threads: [{ id: "zoho", num: 877 }], messages: [m("zoho", "Owner", "not there", T - 2000), m("zoho", "Manager", "Then it is Safari", T - 1000)] });
+  assert.deepEqual(buttons(rowOf(plainLast)), []);
+});
