@@ -20,7 +20,7 @@ function world(n = 3) {
   for (let i = 1; i <= n; i++) c.push(commit(`c${i}`));
   const quiet = (a) => { try { return g(...a); } catch { return null; } };
   const note = (role, sha, text) => g("notes", `--ref=t-${role}`, "add", "-f", "-m", text, sha);
-  const cov = (tip = c[c.length - 1], main = M) => groupCoverage(groupFacts({ quiet, main, tip, noteRef: (r) => `t-${r}` }));
+  const cov = (tip = c[c.length - 1], main = M) => groupCoverage(groupFacts({ quiet, git: (a) => g(...a), main, tip, noteRef: (r) => `t-${r}` }));
   return { g, commit, M0, M, c, note, cov, quiet };
 }
 const sign = (w, shas, roles = ["checker", "security"]) => shas.forEach((s) => { if (roles.includes("checker")) w.note("checker", s, "PASS Quick"); if (roles.includes("security")) w.note("security", s, "SECURE"); });
@@ -105,14 +105,29 @@ test("refuse (f): a merge commit inside the range: groups are linear", () => {
   assert.ok(s);
 });
 
-test("refuse (g): a commit in the range with its own RISKS/FINDINGS/STOP note refuses, even under a valid line note on the tip", () => {
+test("refuse (g), per role (#C934): a commit's own non-word note (RISKS/FINDINGS/STOP/withdrawn) is covered only by that same role's valid line note", () => {
   for (const bad of ["RISKS one", "FINDINGS two", "STOP", "withdrawn: do not release"]) {
+    // Same role's line note over it: covered, and the line note counts as used.
     const w = world(); lineNote(w, w.M); w.note("security", w.c[1], bad);
-    const r = w.cov().refusals.join("\n");
-    assert.ok(r.includes(`${short(w.c[1])} has a Security note that is not SECURE: "${bad.slice(0, 40)}`), bad + " :: " + r);
+    assert.deepEqual(w.cov(), { refusals: [], usedLine: ["checker", "security"] }, bad);
+    // Only the other role's line note on the tip: refused, named.
+    const x = world(); lineNote(x, x.M, x.c[2], ["checker"]); sign(x, x.c, ["security"]); x.note("security", x.c[1], bad);
+    const r = x.cov().refusals.join("\n");
+    assert.ok(r.includes(`${short(x.c[1])} has a Security note that is not SECURE: "${bad.slice(0, 40)}`), bad + " :: " + r);
   }
-  const w = world(); lineNote(w, w.M); w.note("checker", w.c[0], "FINDINGS x");
-  assert.match(w.cov().refusals.join("\n"), /has a Checker note that is not PASS/);
+  const w = world(); w.note("checker", w.c[0], "FINDINGS x"); sign(w, w.c, ["security"]); w.note("checker", w.c[1], "PASS"); w.note("checker", w.c[2], "PASS");
+  assert.match(w.cov().refusals.join("\n"), /has a Checker note that is not PASS/, "no line note at all");
+  // A FINDINGS on a commit the line note does not reach: the base counts only from where the line left main, and a base on the line itself does not count.
+  const y = world(); lineNote(y, y.c[0]); y.note("checker", y.c[0], "FINDINGS x");
+  assert.match(y.cov().refusals.join("\n"), /has a Checker note that is not PASS/);
+});
+
+test("groupFacts: a failed rev-list is an error, not a group of the tip alone; an empty range still falls back to the tip", () => {
+  const w = world(); const tip = w.c[2];
+  const boom = (a) => { throw new Error("rev-list failed"); };
+  assert.throws(() => groupFacts({ quiet: w.quiet, git: boom, main: w.M, tip, noteRef: (r) => `t-${r}` }), /rev-list failed/);
+  sign(w, [tip]);
+  assert.deepEqual(groupCoverage(groupFacts({ quiet: w.quiet, git: (a) => w.g(...a), main: tip, tip, noteRef: (r) => `t-${r}` })), { refusals: [], usedLine: [] });
 });
 
 test("a base that is not 40 hex, or a note whose first line only mentions a base later, is no line note", () => {

@@ -79,10 +79,15 @@ test("board-release --dry-run: a line sign on the tip covers an unsigned pack be
     assert.ok(!plain.ok && unsigned.test(plain.out), plain.out);
     // The tip's notes say line from main's sha (the pin, an ancestor of main and of the tip): it covers the pack.
     note(P2, `PASS Full line from ${BASE}`, `SECURE line from ${BASE}`); push();
-    // #C1032 (Security's rule g, reversing #C934): a pack with a FINDINGS note of its own is NOT covered by a line note on the tip. It refuses, named.
+    // #C934 stands (Security's per-role rule g): a pack with the Checker's FINDINGS of its own is covered by the Checker's own later line note on the tip.
     const withFindings = run(P2);
-    assert.ok(!withFindings.ok && new RegExp(`${Sx.slice(0, 12)} has a Checker note that is not PASS: "FINDINGS"`).test(withFindings.out), withFindings.out);
-    // With the FINDINGS note gone (the pack unsigned by Checker), the line note on the tip covers it.
+    assert.ok(withFindings.ok, withFindings.out);
+    // But only by the same role: with just Security's line note on the tip (the Checker's note there a plain PASS), the Checker's FINDINGS on the pack refuses, named.
+    note(P2, "PASS Full", `SECURE line from ${BASE}`); push();
+    const otherRole = run(P2);
+    assert.ok(!otherRole.ok && new RegExp(`${Sx.slice(0, 12)} has a Checker note that is not PASS: "FINDINGS"`).test(otherRole.out), otherRole.out);
+    // With the FINDINGS note gone (the pack unsigned by Checker) and both line notes back, the line note on the tip covers it.
+    note(P2, `PASS Full line from ${BASE}`, `SECURE line from ${BASE}`);
     git(W, "notes", "--ref=checker", "remove", Sx); push();
     const covered = run(P2);
     assert.ok(covered.ok, covered.out);

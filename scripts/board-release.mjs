@@ -115,7 +115,7 @@ export function lineSign(notes) {
 // in refs/notes/security, each independent), either its own note or that role's line note on the tip: a first line that starts with the role's word and says
 // "line from <40-hex base>", covering base..tip. A line note counts when the base is an ancestor of origin/main and of the tip and is where the tip's line left
 // main (never main's own commits), base..tip has no merge commit and at most GROUP_MAX commits; otherwise it covers nothing and says why. A commit with a
-// note of its own whose first line is not its role's word (FINDINGS, RISKS, STOP, a withdrawal) refuses even under a valid line note. Roles do not need the same
+// note of its own whose first line is not its role's word (FINDINGS, RISKS, STOP, a withdrawal) refuses unless that same role's valid line note covers it (never the other role's). Roles do not need the same
 // base. Release reads origin's notes only. Before this, only the tip's own notes were read, so a stack's lower commits went out unsigned.
 export const GROUP_MAX = 30;
 export const ROLE_WORD = { checker: { re: /^PASS\b/, word: "PASS", who: "Checker" }, security: { re: /^SECURE\b/, word: "SECURE", who: "Security" } };
@@ -126,10 +126,6 @@ const shortList = (l) => `${l.slice(0, 5).map((s) => s.slice(0, 12)).join(", ")}
 // Returns { refusals, usedLine: [roles whose line note covered a commit that had no note of its own] }.
 export function groupCoverage({ tip, commits, notes, line }) {
   const refusals = [], usedLine = [], list = commits?.length ? commits : [tip];
-  for (const c of list) for (const [role, w] of Object.entries(ROLE_WORD)) {
-    const own = firstLine(notes(c)?.[role]);
-    if (own && !w.re.test(own)) refusals.push(`${c.slice(0, 12)} has a ${w.who} note that is not ${w.word}: "${own.slice(0, 60)}" (a line note on the tip does not override it)`);
-  }
   for (const [role, w] of Object.entries(ROLE_WORD)) {
     const base = roleLineBase(role, notes(tip)?.[role]);
     let range = null;
@@ -140,6 +136,11 @@ export function groupCoverage({ tip, commits, notes, line }) {
       else if (r.covers.length > GROUP_MAX) refusals.push(`the ${w.who} line note on ${tip.slice(0, 12)} covers ${r.covers.length} commits: a group is at most ${GROUP_MAX}`);
       else range = new Set(r.covers);
     }
+    // #C934: a commit's own note in this role's ref that is not this role's word (FINDINGS, RISKS, STOP, a withdrawal) is covered only by this same role's valid line note over it. Another role's line note never covers it.
+    for (const c of list) {
+      const own = firstLine(notes(c)?.[role]);
+      if (own && !w.re.test(own) && !(range && range.has(c))) refusals.push(`${c.slice(0, 12)} has a ${w.who} note that is not ${w.word}: "${own.slice(0, 60)}" (only a valid ${w.who} line note over it covers it)`);
+    }
     // A commit with a bad note of its own was named above; the rest with no note of their own and no line note over them are named here.
     const bare = list.filter((c) => !firstLine(notes(c)?.[role]) && !(range && range.has(c)));
     if (bare.length) refusals.push(`${bare.length === 1 ? "a commit has" : `${bare.length} commits have`} no ${w.word} from ${w.who}, by a note of its own or a line note on the tip: ${shortList(bare)}`);
@@ -148,8 +149,10 @@ export function groupCoverage({ tip, commits, notes, line }) {
   return { refusals, usedLine };
 }
 // The facts groupCoverage reads, from git. quiet(args) -> trimmed stdout or null; noteRef(role) -> the private notes ref of origin's notes for that role.
-export function groupFacts({ quiet, main, tip, noteRef }) {
+export function groupFacts({ quiet, main, tip, noteRef, git = quiet }) {
   const list = (a) => (quiet(a) ?? "").split("\n").filter(Boolean);
+  // A failed rev-list must not shrink the group to the tip (that fails open): git() throws; only an empty range falls back to [tip] in groupCoverage.
+  const gitList = (a) => (git(a) ?? "").split("\n").filter(Boolean);
   const cache = new Map();
   const notes = (sha) => { if (!cache.has(sha)) cache.set(sha, Object.fromEntries(Object.keys(ROLE_WORD).map((r) => [r, quiet(["notes", `--ref=${noteRef(r)}`, "show", sha])]))); return cache.get(sha); };
   const anc = (a, b) => quiet(["merge-base", "--is-ancestor", a, b]) !== null;
@@ -161,7 +164,7 @@ export function groupFacts({ quiet, main, tip, noteRef }) {
     if (!fork || !anc(fork, base)) return { why: "it is before the point where the tip's line left origin/main" };
     return { covers: list(["rev-list", `${base}..${tip}`]), merges: list(["rev-list", "--merges", `${base}..${tip}`]).length };
   };
-  return { tip, commits: list(["rev-list", "--reverse", `${main}..${tip}`]), notes, line };
+  return { tip, commits: gitList(["rev-list", "--reverse", `${main}..${tip}`]), notes, line };
 }
 
 // #C1026: a re-cut of a signed commit onto a newer main (a plain cherry-pick that landed nothing under its files) keeps the sign-off of the commit it was cut
@@ -421,7 +424,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       }
     }
     // #C1032: every commit of main..tip is signed, per role, by a note of its own or the tip's line note (a carried sign-off is a single commit's: the tip alone).
-    const gf = groupFacts({ quiet, main, tip: sha, noteRef: (who) => `board-release/${who}` });
+    const gf = groupFacts({ quiet, git, main, tip: sha, noteRef: (who) => `board-release/${who}` });
     const coverage = groupCoverage(carried?.from ? { ...gf, commits: [sha], notes: (c) => (c === sha ? notes : gf.notes(c)) } : { ...gf, notes: (c) => (c === sha ? notes : gf.notes(c)) });
     // A waiting pack (#C412): the line from the pin to this commit, each commit's pinned change against its first parent
     // and its sign-offs, read from origin's notes like this commit's.
