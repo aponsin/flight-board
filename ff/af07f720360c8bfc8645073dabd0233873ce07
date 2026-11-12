@@ -1,0 +1,4 @@
+PASS Full: quota-ceiling-stops-dispatch #C973 ffaf07f, on main 10dc508 (Checker 2, 2026-11-12; 1134483 then ffaf07f)
+1134483 is eabf861 re-cut onto main 10dc508: its changed lines equal eabf861's, file for file. ffaf07f is tests only (tests/quota-ceiling-stops-dispatch.test.mjs) and closes my F1 and LOW on eabf861: the CLI test runs main() with quotaCeilingPct 99 (95% keeps the build turn, 99% drops it), and atCeiling's fallback for a bad ceiling is tested.
+Mutation check: 10 of 10 killed, including both wiring mutants that survived on eabf861 (main() without the config's ceiling; dispatchJob without ceiling) and the fallback. Builder's suite: 2594 pass (board-fast-threads flaked once under load, passes alone).
+Needs SECURE on the re-cut.
