@@ -1,0 +1,1 @@
+SECURE #C1020 250b8ce, tip of build/c1020-pack-install-lit-by-evidence, line from 3ab5085f7cb15d1068e8f4d8983cdd00e26475af (Security 11-12): covers ab46d92 (my SECURE) and 250b8ce; 250b8ce changes one CSS rule (drops opacity on .step.unlit), one test assertion and the CHANGELOG.d line. No code, probe or pinned file change.
