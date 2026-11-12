@@ -5,7 +5,6 @@ CREATE TABLE hold_history (
   at INTEGER NOT NULL,
   waiting_on TEXT,
   blocked_reason TEXT,
-  hold_end TEXT,
-  check_at INTEGER
+  hold_end TEXT
 );
 CREATE INDEX hold_history_card ON hold_history (card_id, at);
