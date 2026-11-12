@@ -11,12 +11,18 @@ const ROLE_WORD = /^[A-Za-z][A-Za-z0-9_-]{0,39}$/;
 
 // The tool's arguments -> { value } to store, or { refused: detail }. percent: a whole percent from 0 to 100, as get_usage gives it;
 // resets_at: get_usage's resetsAt (an ISO time), in the future and at most 8 days away (a week, and a little for clocks).
-export function weekUsageValue(args, now, who) {
+// Security's LOW 2 on 1305a74: a low percent turns the quota stop off for an hour (the costly direction), and usage never falls within a week.
+// So with `prev` (the stored value), a percent under prev.pct for the same week is refused (lower: true). The same week is a reset time within
+// an hour of the stored one (get_usage's resetsAt moves by milliseconds between reads); a new week's reset starts fresh. A high bogus value
+// only stops new build work for an hour, which fails safe.
+export const SAME_WEEK_MS = 3600e3;
+export function weekUsageValue(args, now, who, prev = null) {
   const pct = args?.percent, at = typeof args?.resets_at === "string" && args.resets_at.length <= 40 ? Date.parse(args.resets_at) : NaN;
   if (!Number.isInteger(pct) || pct < 0 || pct > 100) return { refused: "percent is a whole number from 0 to 100: get_usage's \"Weekly · all models\" percentUsed" };
   if (!Number.isFinite(at)) return { refused: "resets_at is get_usage's resetsAt for \"Weekly · all models\" (an ISO time)" };
   if (at <= now || at > now + WEEK_MS + 24 * 3600e3) return { refused: "resets_at must be in the future and at most 8 days away" };
   if (typeof who !== "string" || !ROLE_WORD.test(who)) return { refused: "the writer is a role" };
+  if (prev && Number.isInteger(prev.pct) && Number.isFinite(prev.resetsAt) && Math.abs(prev.resetsAt - at) < SAME_WEEK_MS && pct < prev.pct) return { refused: `percent ${pct} is under the ${prev.pct} already stored for this week: usage never falls within a week`, lower: true };
   return { value: { pct, resetsAt: Math.round(at), by: who } };
 }
 
