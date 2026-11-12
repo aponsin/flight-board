@@ -49,7 +49,7 @@ const page = readFileSync(new URL("../page/board.template.html", import.meta.url
 test("the page's store replies say Manager has it, never Not sent, and sendPing needs no connector there", () => {
   assert.match(page, /async function sendPing\(anchor,text,ref\)\{let opening=false;\s*if\(STORE\)return true;/);
   assert.match(page, /STORE\?"Saved\. Manager has it\."/g);
-  assert.match(page, /STORE\?"Manager has it\."/);
+  assert.match(page, /STORE\?\(r\.taken===false\?"Sending to Manager…":"Manager has it\."\)/, "#C1023: a sent answer on the store says Manager has it once Manager took it");
   assert.match(page, /how==="sent"&&!STORE\?"Sent":"Saved"/);
 });
 
