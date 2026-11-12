@@ -1,0 +1,1 @@
+PASS Checker 2 #C1034 v3: F1 on 4d8c7ad fixed (store-cards carries doneAt; dropping it fails the end-to-end test); parts 1 and 2 identical to v2; touched tests 83/83; the owner's 45 real pins are in ancestry order, so packOf's early stop is safe (commit 925a5d4c of stack tip 325b2d0e)
