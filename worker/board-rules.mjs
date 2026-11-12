@@ -701,7 +701,7 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
 }
 
 // "Live now": only the probe's reading of /version.json counts, and a reading older than 3 min is stale, never live.
-export const STALE_AFTER_MS = 3 * 60_000;
+export const STALE_AFTER_MS = 5 * 60_000; // #C996: was 3 min while the evidence job ran every minute (it runs every 2 min, up to 170 s, for now)
 export function liveNow(reading, now) {
   if (!reading || typeof reading.version !== "string" || !Number.isFinite(reading.readAt)) return { state: "unknown", age: null };
   const age = Math.max(0, now - reading.readAt);

@@ -1,9 +1,10 @@
 // The page header (#C719, brief item 6 "Header check"). It stays on ONE row at phone width (375) and laptop width in every
 // state, the longest included (deploying, from one version to the next): long text shortens or drops its detail, it never
-// wraps the header. "Live now" is only the probe's reading of the product's /version.json with its age; past 3 minutes it is
-// marked stale (red), never shown as live. Pure string functions: the Worker serves them inside the page.
+// wraps the header. "Live now" is only the probe's reading of the product's /version.json with its age; past 5 minutes (3 until #C996's
+// stopgap) it is marked stale (red), never shown as live. Pure string functions: the Worker serves them inside the page.
 import { STALE_AFTER_MS } from "./board-rules.mjs";
 import { mtTime } from "./team-time.mjs";
+import { JOBS } from "./probe-jobs.mjs";
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 export const ageText = (ms) => (ms < 90_000 ? `${Math.max(0, Math.round(ms / 1000))} s` : ms < 5_400_000 ? `${Math.round(ms / 60_000)} min` : `${Math.round(ms / 3_600_000)} h`);
@@ -30,11 +31,11 @@ export function headerHtml(view, { deploying = null, boardVersion = "", wake = {
   const wakeText = wake.state === "red" ? `Manager: ${wake.reason ?? "cannot reach"}` : "Manager listening";
   const wakeDetail = wake.state === "red" ? (wake.reason ?? "cannot reach") : "listening";
   const silent = view.probe?.state === "silent";
-  // #C962: why the probe is failing (the evidence job's last error line) or that its run is slow (past 75 s of its 90 s limit), beside "silent since".
+  // #C962: why the probe is failing (the evidence job's last error line) or that its run is slow (past 150 s of its 170 s limit, worker/probe-jobs.mjs), beside "silent since".
   const why = typeof view.probe?.why === "string" && view.probe.why ? view.probe.why : "", slow = Number.isFinite(view.probe?.slow) ? view.probe.slow : null;
   const probeDetail = silent || why
     ? `${silent ? `silent${view.probe?.since ? ` since ${mtTime(view.probe.since)}` : ""}` : "failing"}${why ? `: ${why}` : ""}`
-    : `slow: ${slow} s of 90`;
+    : `slow: ${slow} s of ${JOBS.evidence.limitSec}`;
   const probeShown = silent || why || slow !== null;
   const probeCls = silent || why ? "bad" : "warn";
   // A one-word label stays on a phone (the detail drops), so two red dots are never indistinguishable.
