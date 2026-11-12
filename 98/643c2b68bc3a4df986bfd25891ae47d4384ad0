@@ -1,0 +1,3 @@
+PASS Full: import-message-pictures #C913 98643c2b68bc3a4df986bfd25891ae47d4384ad0 (Checker 2, 2026-11-12; re-cut of c7d9ca8, which Checker signed, onto e21931d)
+Diff-check (Checker 2): the +/- lines of the patch equal the signed original's, file for file; git diff --stat origin/main 98643c2 (two-dot) touches only #C960, #C956 and #C913 files, nothing reverted. Boardsmith's suite on the stack top 10dc508: 2588/2588.
+The original's PASS and its LOW1 carry over.
