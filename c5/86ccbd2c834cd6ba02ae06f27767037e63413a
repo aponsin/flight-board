@@ -1,0 +1,6 @@
+FINDINGS Full: ping-not-sent-after-answer #C1009 at c586ccb (Checker, 2026-11-12). The code reads right; three of its guards have no test (mutants survive, full suite green).
+npm test at c586ccb: 2655 pass, 0 fail. Caught: unknown thread accepted (1 fail), view drops threadPings (1), bare Ack not answered (page breaks).
+F1 (main): syncStalls skipping ping rows is untested. Mutant: drop `!p.card_id.startsWith(PING_CARD) &&` in syncStalls: 0 fail. The probe calls wakeAsk every 20 s, wakeAsk runs syncStalls, so without the guard a Ping row is marked taken within 20 s and Manager never reads it: the bug this card fixes comes back silently. Fix: a test that pings, calls wakeAsk (or the probe's ask route), then takeInbox still has the ping.
+F2: ownerWaiting counting ping rows is untested. Mutant: `return m.n + a.n > 0`: 0 fail. Fix: a test that a Ping alone sets the wake status's ownerWaiting (the status/tellOwner line the owner sees).
+F3: the `t.some(m=>m.from!==OWNER)` half of the Ack rule is untested. Mutant: drop it: 0 fail (t-c uses "ok", not "Ack"). Fix: a thread holding only the owner's "Ack." stays open.
+No change needed in the code; tests only. Not blocking anything else: re-cut not needed, add a commit.
