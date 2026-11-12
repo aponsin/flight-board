@@ -1,0 +1,1 @@
+SECURE #C1034 v3 part 2 01e9161 as part of the stack ending 325b2d0 (Security 11-12): equals my SECURE 3ba7524 (range-diff '='), re-cut onto 7b1c124 (#C1026: board-release, its test, docs, CHANGELOG.d; no shared file).
