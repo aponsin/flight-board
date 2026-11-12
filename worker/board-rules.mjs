@@ -439,12 +439,16 @@ export function heldWakes({ now, cards, endsPassed }) {
 // the store once and then reopened (auto_closed_at). Returns [{ ask_id, card_id, num, reason, closeAt, due }].
 export const AUTO_CLOSE_AFTER_MS = 30 * 60000;
 export const AUTO_CLOSED_BY = "board";
-export function movedOnAsks({ now, asks, cards }) {
+// lastWord: Map of ask id → its thread's newest message { author, at } (Checker 2 F1 on 1ab7673: the owner's follow-up after his answer,
+// the newest word in the thread, keeps the ask open: it waits on the team, so the board never closes over it).
+export function movedOnAsks({ now, asks, cards, lastWord }) {
   const byId = new Map((cards ?? []).map((c) => [c.id, c]));
   const out = [];
   for (const a of asks ?? []) {
     if (a.type !== "Decision" || !Number.isFinite(a.answered_at) || a.closed_at || a.withdrawn_at || a.auto_closed_at) continue;
     if (!Number.isFinite(a.answer_taken_at) || a.answer_status === "help") continue;
+    const w = lastWord?.get(a.id);
+    if (w && w.author === "owner" && w.at > a.answered_at) continue;
     const c = byId.get(a.card_id);
     if (!c || !Number.isFinite(c.moved_at) || c.moved_at <= a.answered_at) continue;
     const closeAt = Math.max(c.moved_at, a.answer_taken_at) + AUTO_CLOSE_AFTER_MS;

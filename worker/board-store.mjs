@@ -427,7 +427,13 @@ async function syncStalls(db, now) {
   for (const r of slowRows) if (!slowAll.some((s) => s.card_id === r.card_id && s.reason === r.reason)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ? AND reason = ?").bind(r.card_id, r.reason).run();
   // #C987: an answered Decision whose card moved on: one line to Manager, then the store closes it at its time (movedOnAsks, board-rules.mjs).
   const answered = (await db.prepare("SELECT id, num, type, card_id, answered_at, answer_taken_at, answer_status, closed_at, withdrawn_at, auto_closed_at FROM asks WHERE type = 'Decision' AND answered_at IS NOT NULL AND closed_at IS NULL AND withdrawn_at IS NULL AND auto_closed_at IS NULL").all()).results;
-  const movedOn = movedOnAsks({ now, asks: answered, cards });
+  // Each such ask's newest thread message (one bound query per ask; a handful at most).
+  const lastWord = new Map();
+  for (const a of answered) {
+    const m = await db.prepare("SELECT author, created_at FROM messages WHERE thread_id = ? ORDER BY created_at DESC, id DESC LIMIT 1").bind(a.id).first();
+    if (m) lastWord.set(a.id, { author: m.author, at: m.created_at });
+  }
+  const movedOn = movedOnAsks({ now, asks: answered, cards, lastWord });
   for (const m of movedOn.filter((x) => x.due)) await db.prepare("UPDATE asks SET closed_at = ?, closed_by = ?, auto_closed_at = ? WHERE id = ? AND closed_at IS NULL").bind(now, AUTO_CLOSED_BY, now, m.ask_id).run();
   const closing = movedOn.filter((x) => !x.due).map(({ card_id, num, reason }) => ({ card_id, num, reason }));
   const stalls = [...waits, ...heldWakes({ now, cards, endsPassed }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...promiseWakes({ asks: openAsks, now }), ...copyStalls, ...closing];
