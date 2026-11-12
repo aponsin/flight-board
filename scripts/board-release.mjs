@@ -111,6 +111,113 @@ export function lineSign(notes) {
   return c && c === s ? c : null;
 }
 
+// #C1026: a re-cut of a signed commit onto a newer main (a plain cherry-pick that landed nothing under its files) keeps the sign-off of the commit it was cut
+// from, but only for commits that cannot change what the owner's install pins or what runs on the Mac, and only on facts Release reads itself:
+//   - every changed path is under one of CARRY_ALLOW, is not under a CARRY_NEVER_ROOTS folder, is not a wrangler*/package*.json file, has no dotfile component,
+//     and no changed entry (old or new) is a symbolic link (120000) or a submodule (160000); a delete or a rename is a delete plus an add;
+//   - page/ is carried only when the landings between the two parents (o^..c^) touched nothing under page/ or worker/;
+//   - c and o each have exactly one parent, c's parent is origin/main (a single commit, never a stack), their full messages (every trailer) are equal, and the
+//     changed paths, modes and blobs are equal;
+//   - no changed path differs between o^ and c^ (the landings did not touch what the commit changes) and none is in the owner's closure;
+//   - o holds a real PASS (Checker) and SECURE (Security) on its exact sha, read from origin's notes (a carried commit gets no note, so there is no chain);
+//   - NO commit with the card's Board-Id on any origin build branch (outside main) has a note whose first line is not PASS (Checker) / SECURE (Security).
+// It never teaches scripts/self-deploy-gate.mjs the carry: the Worker deploy still wants real notes on the commit (docs/self-deploy.md).
+export const CARRY_ALLOW = ["tests/", "docs/", "CHANGELOG.d/", "page/"];
+export const CARRY_NEVER_ROOTS = ["worker", "hooks", "gate", "collector", "keeper", "scripts", ".github"];
+export const CARRY_NEVER_NAMES = [/^wrangler/, /^package[^/]*\.json$/];
+// Why a changed path may not be carried, or null. mode: the entry's mode(s) as git prints them (an array or one string).
+export function carryPathRefusal(path, modes = []) {
+  const p = String(path ?? ""), parts = p.split("/"), base = parts.at(-1);
+  if ([].concat(modes).some((m) => m === "120000" || m === "160000")) return `${p}: a symbolic link or a submodule is never carried`;
+  if (!p || p.startsWith("/") || parts.some((x) => x === "" || x === "." || x === "..")) return `${p}: not a plain repository path`;
+  if (parts.some((x) => x.startsWith("."))) return `${p}: a dotfile is never carried`;
+  if (CARRY_NEVER_ROOTS.includes(parts[0])) return `${p}: ${parts[0]}/ is never carried`;
+  if (CARRY_NEVER_NAMES.some((re) => re.test(base))) return `${p}: ${base} is never carried`;
+  if (!CARRY_ALLOW.some((d) => p.startsWith(d))) return `${p}: outside ${CARRY_ALLOW.join(", ")}`;
+  return null;
+}
+// `git diff-tree -r --no-renames` raw text -> [{ status, path, src, dst, blob }]
+export function parseChanges(raw) {
+  return String(raw ?? "").split("\n").filter((l) => l.startsWith(":")).map((l) => {
+    const [meta, path] = l.split("\t"), f = meta.slice(1).split(" ");
+    return { status: f[4], path, src: f[0], dst: f[1], blob: f[3] };
+  });
+}
+const noteLine = (t) => String(t ?? "").split("\n")[0].trim();
+const changeKey = (x) => `${x.status}\t${x.path}\t${x.dst}\t${x.blob}`;
+// Whether c may carry o's sign-offs. facts (every value read by Release from git; see gatherCarry): parents(sha) -> [sha], message(sha), changes(sha) -> raw
+// diff-tree text against the first parent, entry(sha, path) -> "mode blob" | null, landed(o, c) -> paths the landings o^..c^ changed, notes(sha) -> { checker,
+// security }, siblings -> [{ sha, notes }] (every commit of this card's Board-Id on origin's build branches, outside main), owned -> the owner's closure.
+// Returns the refusals ([] when it carries).
+export function carryCheck({ c, o, main, facts }) {
+  const r = [], f = facts;
+  const pc = f.parents(c), po = f.parents(o);
+  if (pc.length !== 1) r.push("the commit is not a single commit with one parent");
+  else if (pc[0] !== main) r.push("the commit is not directly on origin/main (a stack is signed by hand)");
+  if (po.length !== 1) r.push(`the signed commit ${o.slice(0, 12)} does not have exactly one parent`);
+  if (r.length) return r;
+  if (f.message(c) !== f.message(o)) r.push("its full message (with every trailer) differs from the signed commit's");
+  const cc = parseChanges(f.changes(c)), co = parseChanges(f.changes(o));
+  if (!cc.length) r.push("it changes no file");
+  if (cc.map(changeKey).sort().join("\n") !== co.map(changeKey).sort().join("\n")) r.push("its changed paths, modes or blobs differ from the signed commit's");
+  for (const x of cc) { const why = carryPathRefusal(x.path, [x.src, x.dst]); if (why) r.push(why); }
+  if (cc.some((x) => x.path.startsWith("page/"))) {
+    const hit = (f.landed(o, c) ?? []).filter((p) => p.startsWith("page/") || p.startsWith("worker/"));
+    if (hit.length) r.push(`page/ is carried only when the landings in between touched nothing under page/ or worker/: ${hit.slice(0, 3).join(", ")}`);
+  }
+  for (const x of cc) {
+    if (f.entry(po[0], x.path) !== f.entry(pc[0], x.path)) r.push(`${x.path} differs between the parents (a landing touched it)`);
+    if ((f.owned ?? []).includes(x.path)) r.push(`${x.path} is in the owner's closure`);
+  }
+  const n = f.notes(o);
+  if (!/^PASS\b/.test(noteLine(n?.checker))) r.push(`the signed commit ${o.slice(0, 12)} has no PASS from Checker`);
+  if (!/^SECURE\b/.test(noteLine(n?.security))) r.push(`the signed commit ${o.slice(0, 12)} has no SECURE from Security`);
+  for (const s of f.siblings ?? []) {
+    const ck = noteLine(s.notes?.checker), sc = noteLine(s.notes?.security);
+    if (ck && !/^PASS\b/.test(ck)) r.push(`${s.sha.slice(0, 12)} of the same card has a Checker note that is not PASS: "${ck.slice(0, 60)}"`);
+    if (sc && !/^SECURE\b/.test(sc)) r.push(`${s.sha.slice(0, 12)} of the same card has a Security note that is not SECURE: "${sc.slice(0, 60)}"`);
+  }
+  return r;
+}
+// Tries every other commit of the card as the signed original. Returns { from, notes, lines } when one carries, else { refusals } (every candidate's reasons,
+// or why there was none).
+export function carryFrom({ c, main, facts }) {
+  const cands = (facts.siblings ?? []).map((s) => s.sha).filter((s) => s !== c);
+  if (!cands.length) return { refusals: ["no other commit of this card on origin's build branches to carry from"] };
+  const all = [];
+  for (const o of cands) {
+    const n = facts.notes(o);
+    if (!signed(n)) { all.push(`${o.slice(0, 12)} does not hold both PASS and SECURE`); continue; }
+    const why = carryCheck({ c, o, main, facts });
+    if (why.length) { all.push(...why.map((w) => `${o.slice(0, 12)}: ${w}`)); continue; }
+    const paths = parseChanges(facts.changes(c)).map((x) => x.path);
+    return { from: o, notes: n, lines: [
+      `carried: ${o} (Checker "${noteLine(n.checker)}", Security "${noteLine(n.security)}") paths: ${paths.join(", ")} landings: ${facts.parents(o)[0].slice(0, 12)}..${facts.parents(c)[0].slice(0, 12)}`,
+      "carried: self-deploy will refuse until signed",
+    ] };
+  }
+  return { refusals: all };
+}
+
+// The facts carryFrom reads, from git. quiet(args) -> trimmed stdout or null (the tool's own runner); noteRef(who) -> the private notes ref name that
+// holds origin's notes of that role (fetched by the caller). Returns null when the commit has no Board-Id naming a card.
+export function gatherCarry({ quiet, sha, main, owned, noteRef }) {
+  const list = (a) => (quiet(a) ?? "").split("\n").filter(Boolean);
+  const id = list(["log", "-1", "--format=%(trailers:key=Board-Id,valueonly)", sha]).map((x) => x.trim()).filter(Boolean).at(-1);
+  if (!id || !CARD_ID_SHAPE.test(id)) return null;
+  const notes = (s) => Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=${noteRef(who)}`, "show", s])]));
+  const rows = parseTrailerLog(quiet(["log", `--format=${TRAILER_LOG}`, "--glob=refs/remotes/origin/build/*", "--not", main]));
+  const siblings = rows.filter((x) => x.ids.includes(id)).map((x) => ({ sha: x.sha, notes: notes(x.sha) }));
+  const parents = (s) => list(["rev-list", "--parents", "-n", "1", s])[0]?.split(" ").slice(1) ?? [];
+  return {
+    siblings, owned, notes, parents,
+    message: (s) => quiet(["log", "-1", "--format=%B", s]) ?? "",
+    changes: (s) => { const p = parents(s)[0]; return p ? (quiet(["diff-tree", "-r", "--no-renames", "--no-commit-id", p, s]) ?? "") : ""; },
+    entry: (s, path) => { const t = quiet(["ls-tree", s, "--", path]); const m = t ? /^(\d+) \w+ ([0-9a-f]+)\t/.exec(t) : null; return m ? `${m[1]} ${m[2]}` : null; },
+    landed: (o, c) => { const a = parents(o)[0], b = parents(c)[0]; return a && b ? list(["log", "--no-renames", "--name-only", "--format=", `${a}..${b}`]) : []; },
+  };
+}
+
 // A page release while an install pack waits (#C412, Director: v3.19's pack waited 564 min and held four page releases;
 // Security's ruling on plan A): a commit built on a signed pack S may go out before the owner installs S, if it adds no
 // pinned change of its own. S is never named by anyone: it is the newest commit on the line from the installed pin to
@@ -167,8 +274,10 @@ export function parseTrailerLog(text) {
 export function untrailered(commits) {
   return (Array.isArray(commits) ? commits : []).filter((c) => !(Array.isArray(c?.ids) && c.ids.some((id) => CARD_ID_SHAPE.test(String(id))))).map((c) => String(c?.sha ?? ""));
 }
-export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null, superseded = null, noTrailer = [] }) {
+export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null, superseded = null, noTrailer = [], carrySuite = null }) {
   const r = [];
+  // #C1026: a carried sign-off is only as good as the suite on the re-cut tip itself; carrySuite is null when nothing was carried, "" when it passed, else why not.
+  if (carrySuite) r.push(`the commit carries a sign-off from the commit it was cut from, and the full suite on it is not green: ${carrySuite}`);
   if (noTrailer.length) r.push(`${noTrailer.length === 1 ? "a commit has" : `${noTrailer.length} commits have`} no Board-Id trailer naming a card: ${noTrailer.slice(0, 5).map((s) => s.slice(0, 12)).join(", ")}${noTrailer.length > 5 ? ", ..." : ""} (the probe finds a landed card by it: add "Board-Id: <card id>" and sign again)`);
   if (!/^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim())) r.push(`no PASS from Checker on it in ${NOTES.checker}`);
   if (!/^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim())) r.push(`no SECURE from Security on it in ${NOTES.security}`);
@@ -222,7 +331,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     for (const [who, ref] of Object.entries(NOTES)) quiet(["fetch", "-q", "origin", `+${ref}:refs/notes/board-release/${who}`]);
     const sha = git(["rev-parse", "--verify", `${commit}^{commit}`]);
     const main = git(["rev-parse", "origin/main"]);
-    const notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", sha])]));
+    let notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", sha])]));
     const forward = quiet(["merge-base", "--is-ancestor", main, sha]) !== null;
     const pinned = pinnedCommit(settingsText);
     const heads = (quiet(["for-each-ref", "refs/remotes/origin/build", "--format=%(refname:lstrip=3) %(objectname)"]) ?? "").split("\n").filter(Boolean).map((l) => { const [branch, tip] = l.split(" "); return { branch, sha: tip }; });
@@ -238,6 +347,21 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const entries = [...OWNER_ENTRIES, ...RELEASE_ENTRIES];
     const changed = known(pinned) ? (quiet(["diff", "--name-only", pinned, sha]) ?? "").split("\n").filter(Boolean) : null;
     const owned = [...new Set([...importClosure(entries, at(sha)), ...(known(pinned) ? importClosure(entries, at(pinned)) : [])])];
+    // #C1026: a re-cut of a signed commit may carry its sign-off (carryCheck says when). The notes below are then the original's, and Release runs the full suite on
+    // this very tip (its own snapshot) and refuses on red. Nothing is written to a note, and self-deploy still wants real notes.
+    let carried = null, carrySuite = null;
+    if (!signed(notes) && forward) {
+      const ownBad = [["checker", /^PASS\b/], ["security", /^SECURE\b/]].some(([k, re]) => notes[k] && !re.test(String(notes[k]).split("\n")[0].trim()));
+      const facts = ownBad ? null : gatherCarry({ quiet, sha, main, owned, noteRef: (who) => `board-release/${who}` });
+      carried = ownBad ? { refusals: ["the commit's own note is not PASS/SECURE"] } : facts ? carryFrom({ c: sha, main, facts }) : { refusals: ["no Board-Id trailer naming a card"] };
+      if (carried.from) {
+        notes = carried.notes;
+        const td = mkdtempSync(join(tmpdir(), "board-release-suite-"));
+        try { execFileSync(process.execPath, ["--test", "tests/*.test.mjs"], { cwd: tmp, env: { ...process.env, TMPDIR: td }, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024 }); carrySuite = ""; }
+        catch (e) { carrySuite = `exit ${e.status ?? "?"}${String(e.stdout ?? "").split("\n").find((l) => /^(not ok|✖)/.test(l)) ? `, ${String(e.stdout).split("\n").find((l) => /^(not ok|✖)/.test(l)).slice(0, 120)}` : ""}`; }
+        finally { rmSync(td, { recursive: true, force: true }); }
+      }
+    }
     // A waiting pack (#C412): the line from the pin to this commit, each commit's pinned change against its first parent
     // and its sign-offs, read from origin's notes like this commit's.
     let pending = null;
@@ -266,7 +390,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const base = known(before) ? before : known(pinned) ? pinned : null; // what the task runs now
     const capabilities = pageCapabilities(at(sha)(PAGE_FILE)), mcpErrors = pageMcpErrors(at(sha)(PAGE_FILE));
     const v = verdict({
-      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending, superseded, noTrailer,
+      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending, superseded, noTrailer, carrySuite,
       settingsChanged: known(pinned) && settingsBlock(at(pinned)(TASK_FILE)) !== settingsBlock(at(sha)(TASK_FILE)),
       stepsChanged: base !== null && stepsOf(at(base)(TASK_FILE)) !== stepsOf(at(sha)(TASK_FILE)),
       promptChanged: base === null || at(base)(PROMPT_FILE) !== at(sha)(PROMPT_FILE),
@@ -290,6 +414,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     }
 
     line(!v.refusals.some((r) => /PASS|SECURE/.test(r)), `sign-offs on ${sha}: Checker "${String(notes.checker ?? "none").split("\n")[0]}", Security "${String(notes.security ?? "none").split("\n")[0]}"`);
+    if (carried?.from) for (const l of carried.lines) line(true, l);
+    else if (carried?.refusals) line(false, `no carried sign-off: ${carried.refusals.slice(0, 6).join("; ")}`);
     line(forward, `continues origin/main ${main.slice(0, 12)}`);
     line(!superseded, superseded ? `superseded by ${superseded}` : "no newer branch of the same card on origin");
     line(!noTrailer.length, noTrailer.length ? `no Board-Id trailer on ${noTrailer.length} commit(s)` : "every commit carries a Board-Id trailer");
