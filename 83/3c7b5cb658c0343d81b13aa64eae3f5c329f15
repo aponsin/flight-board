@@ -1,0 +1,2 @@
+PASS Full: session-writes-week-percent #C988 commit 2 of 3 (833c7b5, Security's LOWs on 1305a74) (Checker, 2026-11-12)
+Adds a lower-percent guard and the `by` wording; commit 3 removes the guard again on Security's FINDINGS, so its code does not reach main. npm test at this commit: 2666 pass, 0 fail.
