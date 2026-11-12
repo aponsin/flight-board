@@ -6,11 +6,16 @@
 //   At OWNER_PUSH_MIN the owner's phone gets it, once per ask.
 //   A ship the probe recorded and the owner hasn't acknowledged, from the last SHIP_DAYS (the page's "Went live, not yet
 //   acknowledged" list), is pushed once per version.
-// A push says only counts, ask numbers and versions: never an ask's, card's or message's text (it leaves through the push
+//   #C1016: when the newest evidence write (the probe's heartbeat, as the page's "probe silent" chip reads it) is SILENT_PUSH_MIN
+//   old, the phone is told once for that silence, with the time the board last heard from the Mac. A write after it ends the
+//   silence, and the next silence is told again.
+// A push says only counts, ask numbers, versions and times: never an ask's, card's or message's text (it leaves through the push
 // service).
 
+import { mtDayTime } from "./team-time.mjs";
+
 const MIN = 60e3, DAY = 864e5;
-export const MANAGER_NUDGE_MIN = 10, OWNER_PUSH_MIN = 30, SHIP_DAYS = 7;
+export const MANAGER_NUDGE_MIN = 10, OWNER_PUSH_MIN = 30, SHIP_DAYS = 7, SILENT_PUSH_MIN = 15;
 export const ASK_WAKE_PREFIX = "ask:";
 
 export function askWaitsFrom(a) {
@@ -48,20 +53,25 @@ export function promiseWakes({ asks, now }) {
 // #C968: deploy is the commit the Worker was deployed from (BUILD_SHA), told once per commit ("board deployed <short sha>"), so a deploy the owner did
 // not start by hand is seen within minutes. Anything that is not a full lower-case sha is no deploy.
 export const DEPLOY_SHA = /^[0-9a-f]{40}$/;
-export function pushesDue({ asks, ships, sent, now, deploy = null }) {
+// #C1016: silent is the time (ms) of the newest evidence write when it is SILENT_PUSH_MIN old or more and this silence has not been told, else null.
+// Recorded in push_sent as kind 'ship', ref "silent:<that time>" (no migration): a new write changes the time, so the next silence is told again.
+// No evidence at all (lastEvidenceAt null or 0) is a board that has not started, not a silence.
+export function pushesDue({ asks, ships, sent, now, deploy = null, lastEvidenceAt = null }) {
   const was = (kind, ref) => sent.has(`${kind}:${ref}`);
+  const dueSilent = Number.isInteger(lastEvidenceAt) && lastEvidenceAt > 0 && now - lastEvidenceAt >= SILENT_PUSH_MIN * MIN && !was("ship", `silent:${lastEvidenceAt}`) ? lastEvidenceAt : null;
   // Recorded in push_sent as kind 'ship', ref "deploy:<sha>" (its kind is checked to ask or ship, and a ship's ref is a version, never "deploy:..."): no migration.
   const dueDeploy = typeof deploy === "string" && DEPLOY_SHA.test(deploy) && !was("ship", `deploy:${deploy}`) ? deploy : null;
   const dueAsks = asks.filter((a) => waited(a, now, OWNER_PUSH_MIN) && !was("ask", a.id)).sort((x, y) => x.num - y.num);
   const dueShips = ships.filter((s) => s.acked_at == null && typeof s.shipped_at === "number" && now - s.shipped_at <= SHIP_DAYS * DAY && !was("ship", s.version))
     .sort((x, y) => x.shipped_at - y.shipped_at);
-  return { asks: dueAsks, ships: dueShips, deploy: dueDeploy, payload: dueAsks.length || dueShips.length || dueDeploy ? pushWords(dueAsks, dueShips, dueDeploy) : null };
+  return { asks: dueAsks, ships: dueShips, deploy: dueDeploy, silent: dueSilent, payload: dueAsks.length || dueShips.length || dueDeploy || dueSilent ? pushWords(dueAsks, dueShips, dueDeploy, dueSilent) : null };
 }
 
 const VERSION = /^v?\d+(?:\.\d+){1,3}$/;
 const list = (items) => (items.length <= 3 ? items.join(", ") : `${items.slice(0, 3).join(", ")} and ${items.length - 3} more`);
-export function pushWords(asks, ships, deploy = null) {
+export function pushWords(asks, ships, deploy = null, silent = null) {
   const parts = [];
+  if (Number.isInteger(silent) && silent > 0) parts.push(`board jobs silent since ${mtDayTime(silent)}: the Mac may have crashed, log back in`);
   if (typeof deploy === "string" && DEPLOY_SHA.test(deploy)) parts.push(`board deployed ${deploy.slice(0, 7)}`);
   if (ships.length) {
     const vs = ships.map((s) => (VERSION.test(String(s.version)) ? String(s.version) : "a version"));

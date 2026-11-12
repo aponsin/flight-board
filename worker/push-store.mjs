@@ -62,7 +62,9 @@ export async function pushRun(db, now, env, fetchFn = fetch) {
   const asks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at, owed_by FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL").all()).results;
   const ships = (await db.prepare("SELECT version, shipped_at, acked_at FROM ships WHERE acked_at IS NULL").all()).results;
   const sent = new Set((await db.prepare("SELECT kind, ref FROM push_sent").all()).results.map((r) => `${r.kind}:${r.ref}`));
-  const due = pushesDue({ asks, ships, sent, now, deploy: env.BUILD_SHA }); // #C968: "board deployed <short sha>", once per deployed commit
+  // #C1016: the newest evidence write that is not a run report (key run.*) is the probe's heartbeat, as the page's silent chip reads it.
+  const lastEvidenceAt = (await db.prepare("SELECT MAX(read_at) AS t FROM evidence WHERE key NOT LIKE 'run.%'").first())?.t ?? null;
+  const due = pushesDue({ asks, ships, sent, now, deploy: env.BUILD_SHA, lastEvidenceAt }); // #C968: "board deployed <short sha>", once per deployed commit
   if (!due.payload) { await record(db, now, "nothing due", false); return { ok: true, sent: 0 }; }
   const subs = (await db.prepare("SELECT endpoint, p256dh, auth FROM push_subscriptions").all()).results;
   let delivered = 0, gone = 0, failed = 0;
@@ -81,8 +83,9 @@ export async function pushRun(db, now, env, fetchFn = fetch) {
     for (const a of due.asks) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ask', ?, ?)").bind(a.id, now).run();
     for (const s of due.ships) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(s.version, now).run();
     if (due.deploy) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(`deploy:${due.deploy}`, now).run();
+    if (due.silent) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(`silent:${due.silent}`, now).run();
   }
-  const what = `${due.asks.length} ask(s), ${due.ships.length} ship(s)${due.deploy ? ", a deploy" : ""}`;
+  const what = `${due.asks.length} ask(s), ${due.ships.length} ship(s)${due.deploy ? ", a deploy" : ""}${due.silent ? ", a silence" : ""}`;
   await record(db, now, subs.length ? `${what}: ${delivered} device(s) took it, ${gone} gone, ${failed} failed` : `${what}: no device subscribed`, delivered > 0);
   return { ok: true, sent: delivered, gone, failed };
 }
