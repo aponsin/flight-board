@@ -1,0 +1,7 @@
+FINDINGS Full: #C987 fix 63dc7dc (on 1ab7673, via bbdbf59 and 34ee28d) (Checker 2, 2026-11-12)
+
+My F1 on 1ab7673 is fixed. Probe on the real store: the owner's follow-up after his answer keeps the ask open past move + 30 min and hours on; a Manager reply after it lets the board close it, and compatView carries autoClosed true (readView selects every ask column, so closed_by reaches the page). Answers go through answerAsk only (the note is on the ask), so a thread message after the answer is a real follow-up.
+
+F1 (MEDIUM, test only): Security's guard on the page is untested. Mutant: threadOpen hides on any close (it.doc.autoClosed===true removed) SURVIVES. The test '(2) Security F1: an asker's own close never hides' builds a doc with no respondedAt, so respondedAt != null already keeps the thread open whatever autoClosed says. Fix: give that doc response and respondedAt after the owner's word (for example respondedAt T + 6 min, word at T + 5 min), so only autoClosed keeps it listed. The other mutants are killed: follow-up ignored (2), its time widened (2), doneAt for respondedAt (1), autoClosed never set in the view (1), lastWord not read in the store (1).
+
+Touched tests 35/35 alone (answered-ask-closes, compat-view, ship-row-install-wait, board-fast-threads: its 500-thread switch took 86 ms here). CHANGELOG and DATA.md updated. Full: Security signs too.
