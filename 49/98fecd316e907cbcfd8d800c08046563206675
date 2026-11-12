@@ -1,0 +1,8 @@
+PASS Full: evidence-run-times-out part 1 #C996 4998fec (Checker 2, 2026-11-12; carded Quick, reviewed Full: worker/ and the pinned probe)
+One commit on main 10dc508; CHANGELOG line present, nothing reverted. Every number matches the READY: evidence interval 120 s, limit 170 s (alarm limit + 15 = 185), SLOW_RUN_MS 150 s, STALE_AFTER_MS and PROBE_SILENT_MS 5 min, the page's two client edges 300000, the chip's limit from the new worker/probe-jobs.mjs (imports nothing). Not moved, as the commit says: LIVE_FRESH_MS and restart-check's LIVE_FRESH (pinned, own pack), the ask job's 3-minute chip.
+Suite at 4998fec: 2588/2588.
+Mutation check: 6 of 8 killed in the touched tests (limit back to 90, interval back to 60, STALE_AFTER_MS and PROBE_SILENT_MS back to 3 min, SLOW_RUN_MS back to 75 s, chip "of 90").
+LOW1: the page's two client edges (worker/page.mjs: Live now stale and probe silent at 300000) are not held by the touched tests: setting either back to 180000 survives them (a full-suite run of those two mutants had not finished when I signed). Left at 3 min they would paint the board stale and the probe silent between runs. Worth a test when part 2 reverts the numbers.
+LOW2: README (the probe is marked silent 3 minutes after its last write) and docs/PARITY.md (Live now and stuck fresh for 3 minutes) still say 3 minutes.
+LOW3 (known, in the commit): state.json readers keep LIVE_FRESH 3 min; with a run every 120 s of up to 170 s, a slow run can leave state.json up to about 290 s old, so restart-check's live half and the prompt alarms can read it as stale for a while. Part 2 or the pinned pack.
+Needs SECURE.
