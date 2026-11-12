@@ -1,0 +1,1 @@
+SECURE #C988 re-cut 323ac34 onto main f93fd0e (Security 11-12): range-diff equal to signed 1305a74 but for the PROBE_SILENT_MS line from #C996, now on main. My two LOWs on 1305a74 stand as accepted if 833c7b5's guard is dropped.
