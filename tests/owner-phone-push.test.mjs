@@ -307,3 +307,42 @@ test("the store page carries the manifest and the Home Screen tags; the template
   assert.match(template, /\nif\(STORE\)pushDraw\(\);\n/, "drawn on the store only");
 });
 
+// #C968: the Worker tells the owner's phone "board deployed <short sha>" once per deployed commit (its BUILD_SHA), so a self-deploy he did not start is seen
+// within minutes. Rules first, then the cron with a real sealed payload.
+const SHA_A = "a".repeat(40), SHA_B = "b".repeat(39) + "c";
+test("pushesDue and pushWords: a deployed commit is due once; only a full lower-case sha is a deploy; the words hold the short sha and nothing else", () => {
+  const due = pushesDue({ asks: [], ships: [], sent: new Set(), now: T, deploy: SHA_A });
+  assert.equal(due.deploy, SHA_A);
+  assert.equal(JSON.parse(due.payload).body, "board deployed aaaaaaa.");
+  assert.equal(pushesDue({ asks: [], ships: [], sent: new Set([`ship:deploy:${SHA_A}`]), now: T, deploy: SHA_A }).payload, null, "once per commit");
+  assert.equal(pushesDue({ asks: [], ships: [], sent: new Set([`ship:deploy:${SHA_A}`]), now: T, deploy: SHA_B }).deploy, SHA_B, "a new commit is told again");
+  for (const bad of [undefined, null, "", "abc", "A".repeat(40), SHA_A.slice(1), `${SHA_A}0`, 7, { x: 1 }]) assert.equal(pushesDue({ asks: [], ships: [], sent: new Set(), now: T, deploy: bad }).payload, null, JSON.stringify(bad));
+  assert.equal(JSON.parse(pushWords([], [{ version: "v3.5" }], SHA_A)).body, "board deployed aaaaaaa. v3.5 went live: acknowledge it.", "beside a ship, first");
+  assert.equal(JSON.parse(pushWords([{ num: 1 }], [], "not a sha")).body, "an ask has waited 30+ min (#T1).", "a bad sha adds nothing");
+  assert.doesNotMatch(pushWords([], [], SHA_A), new RegExp(SHA_A), "never the whole sha");
+});
+
+test("the cron: a deployed BUILD_SHA is pushed once to each device, again for the next commit, never for a bad value; with no device it is marked, so a new device gets no backlog", async () => {
+  const db = makeDb(), env = { PUSH_VAPID_JWK: await jwkSecret() };
+  await call(db, "/api/push/subscribe", { body: await device() });
+  const sent = [];
+  const fetchFn = async (url, init) => { sent.push({ url, init }); return { status: 201 }; };
+  await worker.scheduled({}, { DB: db, ...env, BUILD_SHA: "" }, null, T, fetchFn);
+  await worker.scheduled({}, { DB: db, ...env, BUILD_SHA: "not-a-sha" }, null, T + MIN, fetchFn);
+  assert.equal(sent.length, 0, "nothing deployed, nothing pushed");
+  await worker.scheduled({}, { DB: db, ...env, BUILD_SHA: SHA_A }, null, T + 2 * MIN, fetchFn);
+  assert.equal(sent.length, 1);
+  const p = JSON.parse(await openPush(sent[0].url, sent[0].init.body));
+  assert.deepEqual(Object.keys(p).sort(), ["body", "tag", "title", "url"]);
+  assert.equal(p.body, "board deployed aaaaaaa.");
+  await worker.scheduled({}, { DB: db, ...env, BUILD_SHA: SHA_A }, null, T + 7 * MIN, fetchFn);
+  assert.equal(sent.length, 1, "once per commit");
+  await worker.scheduled({}, { DB: db, ...env, BUILD_SHA: SHA_B }, null, T + 12 * MIN, fetchFn);
+  assert.equal(sent.length, 2, "a new deploy is told");
+  assert.equal(JSON.parse(await openPush(sent[1].url, sent[1].init.body)).body, "board deployed bbbbbbb.");
+  assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM push_sent WHERE kind = 'ship' AND ref LIKE 'deploy:%'").first()).n, 2);
+  const bare = makeDb();
+  await pushRun(bare, T, { ...env, BUILD_SHA: SHA_A }, async () => assert.fail("no device, no fetch"));
+  assert.equal((await bare.prepare("SELECT ref FROM push_sent").first()).ref, `deploy:${SHA_A}`, "marked with no device");
+});
+
