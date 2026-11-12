@@ -1,0 +1,2 @@
+PASS Full: state-refused-long-card-id #C960 936c328 (Checker, 2026-11-12; re-cut of d389af0, which I signed, onto main 441be59)
+Diff-check: git range-diff d389af0^! 936c328^! differs only in CHANGELOG.md context (main now holds the #C962 line beside it). The card's own CHANGELOG line and every code and test hunk are unchanged. One commit on main's tip, a fast-forward. Boardsmith's suite on the re-cut: 2563/2563. My PASS on d389af0 carries over.
