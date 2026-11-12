@@ -1,0 +1,6 @@
+PASS Full: probe-reads-moved-board-cards #C985 441be59 (Checker, 2026-11-12; Collector and the pinned probe copy)
+Tree: git diff --stat main 441be59 (two-dot) touches only #C976/#C983/#C985 files; nothing reverted. CHANGELOG and DATA.md lines present.
+Suite at 441be59: 2562 pass, 0 fail.
+Real data: 9 open cards carry the word "board"; the config lists only "flight-board" (prefixes board-, collector-). Other readers of the raw word (compat-view's wait, store-dispatch's pair turn, expected.mjs) treat any word as "has a repo" and are unaffected.
+Mutation check: pass on the guard. Killed: derive.mjs repoOf back to the old reading, collect.mjs lookup gate back to `!card.repo`, state.mjs lookup gate back to `!card.repo`.
+LOW F1 (follow-up, no change to this sha): state.mjs's own repoOf back to the old reading (an unknown word -> null) survives the whole suite. That copy's prefix fallback for an unknown word is untested; derive.mjs's is. Real effect today: only board-text-mountain-time (word "board", prefix board-), and only before anything is pushed (its branch lookup finds flight-board either way). Ask: a probe-self-check case with an unknown word, a listed prefix and no branch anywhere, as a tests-only commit on top of the stack.
