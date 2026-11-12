@@ -41,7 +41,8 @@ export function loadNames(names, globals = {}, pageHtml = null) {
   const els = {};
   const listeners = {};
   const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });
-  const document = { getElementById: el, querySelectorAll: () => [], querySelector: () => null, addEventListener(type, fn) { (listeners[type] ||= []).push(fn); }, activeElement: null, createRange: () => ({}) };
+  // globals.documentElement (#C972): the page's <html>, so a test can load it as the store page (data-host="store").
+  const document = { getElementById: el, querySelectorAll: () => [], querySelector: () => null, addEventListener(type, fn) { (listeners[type] ||= []).push(fn); }, activeElement: null, createRange: () => ({}), documentElement: globals.documentElement };
   const ctx = { document, window: {}, console, setInterval() {}, setTimeout() {}, clearTimeout() {}, queueMicrotask() {}, navigator: {}, getSelection: () => ({}), Date, Math, JSON, Number, String, Array, Object, Set, Map, isFinite, URLSearchParams, WeakMap, File, ...globals };
   vm.createContext(ctx);
   vm.runInContext(script + `\n;globalThis.__b={state,${names.join(",")}};`, ctx);
