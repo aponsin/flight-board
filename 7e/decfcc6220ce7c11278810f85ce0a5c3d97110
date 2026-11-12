@@ -1,5 +1,5 @@
 PASS Quick: principles-six-and-four #C966 7edecfc (Checker, 2026-11-12; documentation only)
-Tree: git diff --stat main 7edecfc (two-dot): CHANGELOG.md and docs/DATA.md only; parent is main's tip.
+Tree: 7edecfc's parent is 65575d2; its own diff (65575d2..7edecfc) is CHANGELOG.md and docs/DATA.md only. origin/main has since moved to 441be59 (the #C976/#C983/#C985 stack), so a two-dot diff from main shows that stack as removed: that is main moving past this base, not a revert by this commit. To land it must be rebased onto main (the release tool takes fast-forwards only); the rebased sha needs its own note, which I will sign once the rebase diff is these two files only.
 The decision, the owner on #T1779: "Ok, I will take B - All four". B was "Take all four"; change 2 read: "No end-of-turn hooks for board writes. A hook may read git or the wake file, and costs nothing when clean." The branch adds that sentence word for word as principle 9, with a dated Changes line. Matches B.
-Placement: the option said "Principle 4 reworded", but principle 4 here is "One store" (that number came from an older draft's list). Principle 5 already holds the hook wording and doesn't contradict 9. Changes 1, 3 and 4 are already in principle 7 (#C857) and in #C967/#C968.
+Placement: the option said "Principle 4 reworded", but principle 4 here is "One store" (that number came from an older draft's list). Principle 5 already holds the hook wording and doesn't contradict 9.
 No code, schema or rows: no tests touched, no mutation check needed.
