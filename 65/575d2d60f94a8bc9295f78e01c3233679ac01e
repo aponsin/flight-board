@@ -1,0 +1,6 @@
+PASS Full: count-chip-nowrap #C977 65575d2d (Checker, 2026-11-12)
+Tree: git diff --stat main 027616a (two-dot) touches only #C979/#C977/#C976 files; nothing reverted.
+.chip carries white-space:nowrap; no later .chip rule overrides it; issueChips joins chips with a space so a line breaks between chips. CHANGELOG line present.
+Suite at 027616a (holds this commit): 2551 pass, 0 fail.
+Mutation check: pass (nowrap removed -> count-chip-nowrap test fails).
+Page change: needs SECURE (page/) and LOOK-OK (Designer) as carded.
