@@ -1,0 +1,1 @@
+SECURE #C969 v6 248edd8, tip of build/c969-tracks-per-repo-v6, line from 3ab5085f7cb15d1068e8f4d8983cdd00e26475af (Security 11-12): covers 484f86d and 248edd8, each signed on its own; both equal my SECURE v5 (1e4e89a, b273449), range-diff '=' on the whole commits, re-cut onto 3ab5085 (#C906 first commit: changelog.mjs, no shared file).
