@@ -1,0 +1,1 @@
+SECURE #C1044 7198eb1 as part of G1 v2 ending 63437c4 (Security 11-12): pinned collector/state.mjs. For batched open cards with no head of their own, the probe takes a head from the Board-Id trailers of commits on group branch tips (stackHeads); this can only lift a 'not built' batch wait; review, sign-offs and landing are unchanged.
