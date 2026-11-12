@@ -531,7 +531,7 @@ const BRANCH_NAME = /^[A-Za-z0-9._\/-]{1,100}$/;
 // #C882: whether the commit changed only paths nothing is deployed or installed from (docs, the readme, the changelog, tests: the groups
 // scripts/make-pair.mjs lists apart from the Worker, migrations, config, page, probe, gate and hooks). A commit whose changes cannot be read, or
 // that changed nothing, is not one: it keeps waiting for the install, as before. `git` is (args) -> text.
-export const DOCS_ONLY = /^(docs\/|tests\/|README\.md$|CHANGELOG\.md$)/;
+export const DOCS_ONLY = /^(docs\/|tests\/|README\.md$|CHANGELOG\.md$|CHANGELOG\.d\/[^/]+\.md$)/;
 // Security R1 on 212d6b1: the card's LAST commit alone is not the landing. A card whose first commit changes the Worker and whose tip is a docs-only
 // fix-up would read Live while its Worker change was never deployed. So every commit on main that carries the card's Board-Id counts (the last
 // 400 of main, at most 30 of them), and the card needs no install only when ALL of them changed nothing but docs and tests; more than 30, or a

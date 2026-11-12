@@ -31,7 +31,7 @@ export const GROUPS = [
   ["probe and gate code", /^(collector|gate|scripts)\//],
   ["hooks", /^hooks\//],
   ["tests", /^tests\//],
-  ["docs", /^(docs\/|README\.md$|CHANGELOG\.md$)/],
+  ["docs", /^(docs\/|README\.md$|CHANGELOG\.md$|CHANGELOG\.d\/[^/]+\.md$)/],
 ];
 export function groupPaths(paths) {
   const out = new Map(GROUPS.map(([g]) => [g, []]));
