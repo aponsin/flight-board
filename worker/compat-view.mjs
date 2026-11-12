@@ -102,9 +102,14 @@ const stackOf = (s) => {
   return Object.keys(o).length ? o : undefined;
 };
 
+// #C995 (11-11 ~10:40 pm MT: the owner counted 12 cards at the Checker step, four of them dropped or done long ago): the probe stops reading a
+// closed card, and the store keeps its last reading for good, so a card dropped or closed at a review still said "checker". A dropped or done
+// card is in no lane: its phase is shown only when it is live (the Live and history views keep it). Re-opened, it reads its lane again.
+const closedCard = (c) => !!c && (!!c.dropped || !!c.done_at);
+const lanePhase = (c, phase) => (closedCard(c) && phase !== "live" ? undefined : phase);
 // One card as an old `initiatives` doc; the phase and status are the probe's reading, never typed.
 export function initiativeDoc(c, ev) {
-  const lit = ev?.value?.lit?.[0];
+  const lit = lanePhase(c, ev?.value?.lit?.[0]);
   const skip = c.skip ? json(`{"s":${c.skip}}`).s : undefined;
   const deps = c.depends_on ? json(`{"s":${c.depends_on}}`).s : undefined, issues = c.issues ? json(c.issues) : undefined;
   return prune({
@@ -150,11 +155,11 @@ export function timesOfHistory(history) {
 
 // derived/all {cards, times, live}: the probe's readings by card, in the shape the page's derivedOf reads.
 export function derivedDoc(view) {
-  const cards = {};
+  const cards = {}, rowOf = new Map((view.cards ?? []).map((c) => [c.id, c]));
   for (const [key, e] of Object.entries(view.evidence ?? {})) {
     if (!key.startsWith("cards.")) continue;
     const v = e.value ?? {};
-    cards[key.slice(6)] = prune({ phase: v.phase ?? v.lit?.[0], head: v.headSha12, version: v.liveVersion ?? undefined, shipping: v.shipping === true ? true : undefined, evidence: undefined, at: e.readAt,
+    cards[key.slice(6)] = prune({ phase: lanePhase(rowOf.get(key.slice(6)), v.phase ?? v.lit?.[0]), head: v.headSha12, version: v.liveVersion ?? undefined, shipping: v.shipping === true ? true : undefined, evidence: undefined, at: e.readAt,
       // #C731 B4b: the probe's readyAt, firm (only ever false) and waitingFor, as derive.mjs gave the page.
       readyAt: num(v.readyAt), firm: v.firm === false ? false : undefined, waitingFor: Array.isArray(v.waitingFor) && v.waitingFor.length ? v.waitingFor : undefined,
       // #C731 B4b slice 3: workSeen (only ever true), shippedAt and reviews ({ phase: ms }), as collect.mjs and derive.mjs gave the page.
@@ -190,7 +195,11 @@ export function derivedDoc(view) {
 export function probeDoc(view) {
   const ev = view.evidence ?? {};
   const cards = {};
-  for (const [key, e] of Object.entries(ev)) if (key.startsWith("cards.")) { const { lit, ...rest } = e.value ?? {}; cards[key.slice(6)] = rest; }
+  const rowOf = new Map((view.cards ?? []).map((c) => [c.id, c]));
+  for (const [key, e] of Object.entries(ev)) if (key.startsWith("cards.")) {
+    const { lit, phase, ...rest } = e.value ?? {}, p = lanePhase(rowOf.get(key.slice(6)), phase ?? lit?.[0]);
+    cards[key.slice(6)] = p === undefined ? rest : { ...rest, phase };
+  }
   const part = (k) => (ev[k] ? ev[k].value : undefined);
   const out = { v: 1, board: part("board") ?? { boardId: "", at: view.now }, cards, agents: part("agents") ?? {} };
   for (const k of ["ctx", "usage"]) if (part(k) !== undefined) out[k] = part(k);

@@ -2356,7 +2356,8 @@ function crewBy(){
 // card only while it was active in the last PROBE_FRESH (#C428's rule), else "Idle since hh:mm". Without a fresh
 // reading of it, the db's cards (dbItems) and its idle note.
 function agentOn(n,dbItems,dbNote,now=Date.now()){const la=liveAgent(n,now);if(!la)return {items:dbItems,note:dbNote||"Idle"};
-  const lc=la.card&&state.initiatives.find(i=>i.id===la.card);
+  // #C995: a dropped or done card is on nobody's tile, whatever the live reading last named.
+  const lc=la.card&&state.initiatives.find(i=>i.id===la.card&&i.status!=="done"&&i.status!=="dropped");
   const items=lc&&(la.state==="working"||la.since!=null&&now-la.since<PROBE_FRESH)?[lc]:[];
   return {items,note:la.state==="idle"&&la.since!=null?"Idle since "+hhmm(la.since):dbNote||"Idle"}}
 function renderCrew(){
