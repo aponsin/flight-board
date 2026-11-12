@@ -1,0 +1,1 @@
+SECURE #C987 34dde77, tip of build/c987-answered-ask-closes-v3, line from 90eb84326894441d8ce5e0f571dc78c11380aa73 (Security 11-12): covers ca30bc9, 1ce4f64, f7669b6, 4060f90, 34dde77, each signed on its own commit; 34dde77 equals signed 8b244f5 (tests only). Migration 0029 is still the next free number on main. Needs the migration and a Worker deploy.
