@@ -1,0 +1,15 @@
+FINDINGS Full: worker-deploys-from-signed-main #C968 v4 1100168 (Checker 2, 2026-11-12, tests and one doc line)
+
+F1 and F2 on 5c31dbc are fixed in code: lineBase reads a line sign as lineSign does (signed first lines, same base anywhere on the first line), for every signed commit of the range; the base must be an ancestor of the signing commit and not before the Worker's BUILD_SHA; gatherFacts is exported, git injectable, tested on a temp repository, and the CLI passes its range to the verdict (G10 now killed).
+
+Replay with the gate's own gatherFacts and gateVerdict over the real board history and notes: from 34dde77 (per-commit signing began) to main 0f69c8d, 16 commits, ok. From 65575d2 to 0f69c8d: refused, 7 commits without their own PASS and SECURE (the #C987 v3 and #C972 commits, signed on their tips only, and 027616a). Fails closed, and any owner pair at or past 34dde77 moves BUILD_SHA beyond them.
+
+F1 (MEDIUM, tests only): three guards of the F1 fix survive their mutants, and two are the behaviour F1 is about.
+(a) Mutant "only the tip's line sign is read" (const base = sha === commit ? lineBase(n) : null) passes: the F1 test signs the tip c3 "line from c0" too. Add the real shape: c1 FINDINGS, c2 "PASS/SECURE ... line from c0", c3 plain PASS and SECURE (no line sign): ok, c1 covered.
+(b) Mutant "a line sign covers commits above its signer" (rev-list base..commit instead of base..sha) passes. Add: c1 plain signed, c2 line from c0, c3 no notes at all: refused naming c3.
+(c) Mutant "base need not be an ancestor of the signer" passes: the off-line case uses a sha that does not exist, which fails the other checks too. Add a real side-branch base: a commit s on a branch from c1 (Worker at c1), c3 signed "line from s" on both notes, c2 unsigned: refused.
+
+LOW (doc): CHANGELOG says #C976's 027616a under 111e326 "refused before", as if it now passes. On the real notes 111e326 carries no "line from", so 027616a still refuses (replay above). Say instead: commits signed on a tip only stay unsigned for the gate; an owner pair at or past 34dde77 moves BUILD_SHA beyond them, and stacks are now signed per commit (Manager's rule, 11-12).
+
+Checked and fine: re-cut onto a131ef8 (one commit, 10 files, CHANGELOG and DATA lines merged); touched tests 50/50 (worker-self-deploy, owner-phone-push, release). Mutation check: 9 of 12 killed (CLI range dropped, facts range empty, all covered, PASS not required, SECURE not required, bases differ, any note line, base before BUILD_SHA, tip notes read for all); survivors (a), (b), (c) above.
+On the fix: rerun mutate968 (12 mutants) and the replay.
