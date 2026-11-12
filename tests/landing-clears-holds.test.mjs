@@ -9,13 +9,26 @@ const card = (db, id, num, extra = "") => db.prepare(`INSERT INTO cards (id, num
 const read = (db, id, at, onMain) => writeEvidence(db, at, "probe", `cards.${id}`, { lit: ["ship"], phase: "ship", onMain });
 const row = (db, id) => db.prepare("SELECT waiting_on, blocked_reason, hold_end, check_at, held_at, hold_until FROM cards WHERE id = ?").bind(id).first();
 
-test("the first reading on main clears waiting_on, blocked_reason, hold_end, check_at and keeps a copy", async () => {
+test("the first reading on main clears waiting_on, blocked_reason, hold_end and the store's hold times, keeps check_at, and keeps a copy", async () => {
   const db = makeDb();
   await card(db, "landed-card", 1);
   await read(db, "landed-card", T, true);
-  assert.deepEqual(await row(db, "landed-card"), { waiting_on: null, blocked_reason: null, hold_end: null, check_at: null, held_at: null, hold_until: null });
-  const h = await db.prepare("SELECT card_id, waiting_on, blocked_reason, hold_end, check_at FROM hold_history").all();
-  assert.deepEqual(h.results, [{ card_id: "landed-card", waiting_on: "Security", blocked_reason: "old block", hold_end: "some-ask", check_at: T - 1 }]);
+  assert.deepEqual(await row(db, "landed-card"), { waiting_on: null, blocked_reason: null, hold_end: null, check_at: T - 1, held_at: null, hold_until: null });
+  const h = await db.prepare("SELECT card_id, waiting_on, blocked_reason, hold_end FROM hold_history").all();
+  assert.deepEqual(h.results, [{ card_id: "landed-card", waiting_on: "Security", blocked_reason: "old block", hold_end: "some-ask" }]);
+});
+
+test("a card with a check_at lands, then reads live, and stays open: check_at is the lead's or the owner's date, never lifted by a landing (Checker 2's F1)", async () => {
+  const db = makeDb();
+  await card(db, "dated-card", 6);
+  await db.prepare("UPDATE cards SET check_at = ? WHERE id = 'dated-card'").bind(T + 7 * 864e5).run();
+  await read(db, "dated-card", T, true);
+  assert.equal((await row(db, "dated-card")).check_at, T + 7 * 864e5, "kept on landing");
+  const r = await writeEvidence(db, T + 60_000, "probe", "cards.dated-card", { lit: ["live"], phase: "live", onMain: true, headSha: "a".repeat(40), repoFull: "owner/name" });
+  assert.equal(r.ok, true);
+  const c = await db.prepare("SELECT done_at, check_at FROM cards WHERE id = 'dated-card'").first();
+  assert.equal(c.done_at, null, "still open");
+  assert.equal(c.check_at, T + 7 * 864e5);
 });
 
 test("a card not yet on main keeps its hold, and nothing is copied", async () => {

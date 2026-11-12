@@ -725,10 +725,12 @@ export async function writeEvidence(db, now, who, key, value, track) {
   // a card with no hold, a done or dropped card, and a card read on main before change nothing.
   const clears = [];
   if (reading.onMain === true && before?.onMain !== true) {
-    const held = await db.prepare("SELECT waiting_on, blocked_reason, hold_end, check_at FROM cards WHERE id = ? AND done_at IS NULL AND dropped = 0").bind(cardId).first();
-    if (held && (held.waiting_on || held.blocked_reason || held.hold_end || held.check_at != null)) {
-      clears.push(db.prepare("INSERT INTO hold_history (card_id, at, waiting_on, blocked_reason, hold_end, check_at) VALUES (?, ?, ?, ?, ?, ?)").bind(cardId, now, held.waiting_on ?? null, held.blocked_reason ?? null, held.hold_end ?? null, held.check_at ?? null));
-      clears.push(db.prepare("UPDATE cards SET waiting_on = NULL, blocked_reason = NULL, hold_end = NULL, check_at = NULL, held_at = NULL, hold_until = NULL, updated_at = ? WHERE id = ?").bind(now, cardId));
+    // check_at is NOT cleared (Checker 2's F1 on b3958bfd, the lead's ruling on #C1036): it is the lead's or the owner's date that holds a card open past
+    // its live reading, lifted only by them; clearing it here would let the next live reading close the card.
+    const held = await db.prepare("SELECT waiting_on, blocked_reason, hold_end FROM cards WHERE id = ? AND done_at IS NULL AND dropped = 0").bind(cardId).first();
+    if (held && (held.waiting_on || held.blocked_reason || held.hold_end)) {
+      clears.push(db.prepare("INSERT INTO hold_history (card_id, at, waiting_on, blocked_reason, hold_end) VALUES (?, ?, ?, ?, ?)").bind(cardId, now, held.waiting_on ?? null, held.blocked_reason ?? null, held.hold_end ?? null));
+      clears.push(db.prepare("UPDATE cards SET waiting_on = NULL, blocked_reason = NULL, hold_end = NULL, held_at = NULL, hold_until = NULL, updated_at = ? WHERE id = ?").bind(now, cardId));
     }
   }
   await db.batch([upsert, ...ins, ...closes, ...clears]);
