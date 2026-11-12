@@ -1,0 +1,1 @@
+SECURE #C1032 87d76f4 as part of the stack ending 9d594d1 (Security 11-12): the group coverage, per-role line notes, base/merge/30 checks, gap closure and git() notes fetch; its over-broad rule g (my spec) is narrowed by 9d594d1.
