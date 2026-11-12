@@ -14,6 +14,7 @@ import { pairsIn, packOf, MAX_PAIRS, BOARD_REPO_WORDS } from "../collector/pairs
 import { BOARD_REPO_WORDS as DISPATCH_WORDS } from "../collector/store-dispatch.mjs";
 import { descends } from "../collector/pair-wait.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
+import { mirrorCard } from "../collector/store-cards.mjs";
 import { loadNames, step } from "./harness.mjs";
 
 const T0 = 1_790_000_000;
@@ -236,6 +237,20 @@ test("closedPacks: a board card done in the last 14 days reads packed and instal
   assert.deepEqual(closedPacks({ cards, repos: { shopsite: s.repo }, now, pairs }), {});
   assert.deepEqual(closedPacks({ cards, repos: { "flight-board": { ...s.repo, git: () => { throw new Error("no git"); } } }, now, pairs }), {});
   assert.equal(CLOSED_PACK_DAYS, 14);
+});
+
+// Checker 2 F1 on 4d8c7adc: the live probe's cards come from the store through mirrorCard, which had no doneAt, so nothing was in the window.
+test("closedPacks end to end: a store row closed yesterday becomes a mirror card with doneAt, and lights; one with no done_at does not", () => {
+  const s = scratch(), dir = tmp("pairs-"), now = Date.now();
+  pairFile(dir, 40, s.one); done(dir, 40, s.one);
+  const row = { id: "c-one", num: 1, title: "One", repo: "flight-board", created_at: now - 9 * DAY, updated_at: now - DAY, done_at: now - DAY };
+  const m = { ...mirrorCard(row), id: row.id };
+  assert.equal(m.doneAt, now - DAY, "the store's done_at, as doneAt");
+  assert.equal(m.status, "done");
+  assert.deepEqual(closedPacks({ cards: [m], repos: { "flight-board": s.repo }, now, pairs: pairsIn(dir) }), { "c-one": { packed: true, installed: true } });
+  const open = { ...mirrorCard({ ...row, done_at: null }), id: row.id };
+  assert.equal(Object.hasOwn(open, "doneAt"), false, "an open card has no doneAt");
+  assert.deepEqual(closedPacks({ cards: [open], repos: { "flight-board": s.repo }, now, pairs: pairsIn(dir) }), {});
 });
 
 test("closedPacks: one git log, then packOf's capped questions (not one walk per pair per card)", () => {

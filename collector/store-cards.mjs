@@ -19,6 +19,9 @@ export function mirrorCard(c) {
     name: str(c.title), summary: str(c.summary), who: str(c.owner_role), size: str(c.size), level: str(c.review_level),
     num: num(c.num), nextNote: str(c.next_note), nextNoteAt: num(c.next_note_at), waitingOn: str(c.waiting_on), phaseReason: str(c.rework_reason),
     createdAt: num(c.created_at), updatedAt: num(c.updated_at),
+    // #C1034 (Checker 2 F1 on 4d8c7adc): when the card was closed, from the store's own done_at. state.mjs closedPacks reads only
+    // board cards closed in the last 14 days; without it every done card was out of the window and stayed unlit.
+    doneAt: num(c.done_at),
     status: c.dropped ? "dropped" : c.done_at ? "done" : c.paused ? "paused" : "active", // #C902
     // The words the review skips read (state.mjs reviewsFor): customerText false skips the language review, lookChange true is
     // what keeps the design review, skip names phases to leave out. Not said (null) stays out, as on an old card without them.
