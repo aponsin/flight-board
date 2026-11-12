@@ -13,6 +13,7 @@ import { applyShips } from "./compat-ships.mjs";
 import { applyThreads } from "./compat-threads.mjs";
 import { applyUsage } from "./compat-usage.mjs";
 import { applyApprovals } from "./compat-approvals.mjs";
+import { withSessionWeek } from "../collector/week-usage.mjs";
 
 const num = (v) => (Number.isFinite(v) ? v : undefined);
 const prune = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== ""));
@@ -167,6 +168,8 @@ export function probeDoc(view) {
   const part = (k) => (ev[k] ? ev[k].value : undefined);
   const out = { v: 1, board: part("board") ?? { boardId: "", at: view.now }, cards, agents: part("agents") ?? {} };
   for (const k of ["ctx", "usage"]) if (part(k) !== undefined) out[k] = part(k);
+  // #C988 (#C842's line): the Plan week tile shows the percent Claude shows, from a session's fresh reading, in place of the estimate.
+  if (out.usage !== undefined) out.usage = withSessionWeek(out.usage, view, view.now);
   // stuck and ship are written only while they hold (the probe leaves the key out when nothing is stuck or no candidate is pushed),
   // so the store keeps the last value: it counts only while the probe keeps rewriting it (a reading older than 3 minutes is gone).
   // #C873: so does e2e (the product's daily full test run), rewritten every evidence run from the probe's own half-hour reading.

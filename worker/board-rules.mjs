@@ -483,6 +483,8 @@ export function e2eWake({ now, value, readAt }) {
 export function evidenceRefusal(key, value, who, track) {
   if (who !== "probe") return refuse("only-probe-writes-status", `${who ?? "unknown"} cannot write evidence`);
   if (typeof key !== "string" || !/^[a-z][a-z0-9]*(\.[A-Za-z0-9._-]+)?$/.test(key)) return refuse("evidence-key", String(key));
+  // #C988: usage.week is a session's reading (the week_usage tool, worker/board-store.mjs writeWeekUsage), never the probe's.
+  if (key === "usage.week") return refuse("evidence-key", "usage.week is written by the week_usage tool only");
   if (key === "run.evidence" && !runShape(value)) return refuse("run-shape", "run.evidence is { ok: true|false, at, line up to 160 characters, ms, stateMs, slow: true }");
   if (key === "e2e" && !e2eShape(value)) return refuse("e2e-shape", "e2e is { state: ok|red|missed|unknown, reason, run, lastGreenAt }");
   // #C956: the team's visual lanes, from the board config: { visualLanes: [role names], up to 20 }.
