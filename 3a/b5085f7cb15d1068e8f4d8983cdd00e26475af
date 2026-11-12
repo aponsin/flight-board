@@ -1,0 +1,1 @@
+PASS Full Checker 2 #C906 first commit: full suite 2781/2781; mutants statSync-for-lstat (4 fail) and no CHANGELOG.md check (1 fail); merges clean onto main a7c973c (commit 3ab5085f of stack tip 3ab5085f)
