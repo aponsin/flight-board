@@ -1,0 +1,1 @@
+- A failed fetch of origin's notes stops the release and the refusal names the ref, the remote and git's error (release-notes-fetch-loud #C1037; #C1032 had already made the fetch loud, this adds the message and its test).
