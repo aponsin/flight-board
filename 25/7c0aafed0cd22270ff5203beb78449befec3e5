@@ -1,0 +1,1 @@
+SECURE #C861 v5 257c0aa, tip of build/restart-app-when-safe-v5, line from 59f894169a8045a5f5f050e6b21d4c64b66faf90 (Security 11-12): covers e170e62, f4e746b, 200ed07, 533bf6e, 257c0aa, each also signed on its own. Range-diff outside CHANGELOG.md equal to signed v4 (7d47b6e..9acbf7b); same six files over main. Part A, read-only restart check; part B needs its own review.
