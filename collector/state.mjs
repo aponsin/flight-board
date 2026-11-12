@@ -571,10 +571,27 @@ export function branchPaths(repo, mainRef, sha) {
   }
   return memo.get(sha);
 }
+// #C996 part 3: the commits a review ref has a note on, read once per repository run (`git notes --ref=X list`, one process) so a
+// card whose tip no review has seen costs no `notes show`. null when the list is empty or unreadable: the caller then asks per commit.
+const NOTE_LISTS = new WeakMap();
+export function annotatedOn(repo, ref) {
+  if (!repo || typeof repo.git !== "function") return null;
+  if (!NOTE_LISTS.has(repo)) NOTE_LISTS.set(repo, new Map());
+  const memo = NOTE_LISTS.get(repo);
+  if (!memo.has(ref)) {
+    let set = null;
+    try {
+      const shas = String(repo.git(["notes", `--ref=${ref}`, "list"])).split("\n").map((l) => l.trim().split(/\s+/)[1]).filter((c) => /^[0-9a-f]{40}$/.test(String(c)));
+      if (shas.length) set = new Set(shas);
+    } catch { /* ask per commit */ }
+    memo.set(ref, set);
+  }
+  return memo.get(ref);
+}
 function tipState(card, tip, repo, config, now, declared, cover = null) {
   // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
   // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
-  const notesOn = (sha) => Object.entries(repo.notes).map(([p, ref]) => { let t = null; try { t = repo.git(["notes", `--ref=${ref}`, "show", sha]); } catch { /* none */ } return t === null || t === undefined || t === false ? null : [p, String(t)]; }).filter(Boolean);
+  const notesOn = (sha) => Object.entries(repo.notes).map(([p, ref]) => { const have = annotatedOn(repo, ref); if (have && /^[0-9a-f]{40}$/.test(String(sha)) && !have.has(sha)) return null; let t = null; try { t = repo.git(["notes", `--ref=${ref}`, "show", sha]); } catch { /* none */ } return t === null || t === undefined || t === false ? null : [p, String(t)]; }).filter(Boolean);
   const signedOn = (sha) => notesOn(sha).filter(([, t]) => !/^\s*FINDINGS\b/.test(t)).map(([p]) => p).sort();
   const findingsOn = (sha) => notesOn(sha).filter(([, t]) => /^\s*FINDINGS\b/.test(t)).map(([p]) => p).sort();
   const mainRef = `${repo.remote}/${repo.main}`;
