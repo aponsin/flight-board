@@ -4,5 +4,6 @@ worker/store-assets/*
 node_modules/
 board.config.json
 board.private.json
+.self-deploy-ok
 *.local.*
 .DS_Store
