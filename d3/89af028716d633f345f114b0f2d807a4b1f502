@@ -1,0 +1,1 @@
+PASS Full: #C960 state-refused-long-card-id-v2 at d389af0, a re-cut of 4390a13 onto main d85344d. Its diff from main equals 4390a13's from its base in every file but CHANGELOG.md, and the CHANGELOG keeps every line of both sides. Suite 2530 of 2530 on this tip. My PASS Full on 4390a13 carries over (guard, test, mutant). Full: the pinned probe; needs SECURE on this tip.
