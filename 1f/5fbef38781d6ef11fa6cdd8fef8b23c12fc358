@@ -1,0 +1,3 @@
+SECURE #C972 1f5fbef, tip of build/g1-board-view, line from feb895ad269f9a7ccfbc2a33db03d95b12099307 (Security 11-12): covers e5c7c40, cd21c75, 1f5fbef, each also signed on its own commit.
+
+1f5fbef: one CSS token (.pushhelp background var(--panel)) and a test. The pinned 85c9b79 and bae7b19 below feb895a are covered by feb895a's own line sign from ffaf07f, now on both Checker's and Security's notes.
