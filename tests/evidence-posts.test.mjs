@@ -3,6 +3,7 @@
 // reading not rewritten for an hour as a stale repository copy); and posting stops cleanly before the job's limit with what went recorded.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
+import { JOBS } from "../collector/probe-run.mjs";
 import { postWrites, dueWrites, keptAfter, evidenceJob, evidenceWrites, POST_CONCURRENCY, REPOST_MS } from "../collector/probe-evidence.mjs";
 
 const ARGS = { base: "https://x.test", headers: {} };
@@ -145,6 +146,26 @@ test("a run that reaches its post deadline stops cleanly, records what went, and
     again.files["/s/evidence-posted.json"] = r.files["/s/evidence-posted.json"];
     await again.run();
     assert.deepEqual(cardKeys(again.posted).sort(), Object.keys(cards).map((k) => `cards.${k}`).filter((k) => !firstRun.includes(k)).sort());
+  } finally { mock.timers.reset(); }
+});
+
+test("a child that ends at its own cap (limit less 15 s) leaves the job under the limit: no post starts past the deadline, the late writes included", async () => {
+  mock.timers.enable({ apis: ["Date"], now: T });
+  try {
+    const limitMs = JOBS.evidence.limitSec * 1000;
+    const files = {}, posted = [];
+    const r = rig({
+      build: async () => { mock.timers.tick(limitMs - 15_000); return { stdout: "" }; },
+      fetchImpl: async (_u, o) => { posted.push(JSON.parse(o.body).key); mock.timers.tick(1_000); return { ok: true, status: 200 }; },
+    });
+    Object.assign(r.files, files);
+    await r.run();
+    assert.ok(Date.now() - T < limitMs, `the job ended at ${(Date.now() - T) / 1000} s of ${limitMs / 1000}`);
+    assert.ok(Date.now() - T <= limitMs - 8_000, "room left for a post that was under way");
+    assert.equal(cardKeys(posted).length, 0, "the child ended past the deadline: no card went, they lead the next run");
+    assert.ok(posted.includes("board") && posted.includes("run.evidence"), "but the heartbeat and the run's own reading went, so the view does not freeze: " + posted.join(","));
+    assert.ok(!posted.includes("live"), "the live read is skipped when the run is out of time");
+    assert.ok(JSON.parse(r.files["/s/evidence-posted.json"]).keys["cards.a"] === undefined, "no card is recorded as posted");
   } finally { mock.timers.reset(); }
 });
 

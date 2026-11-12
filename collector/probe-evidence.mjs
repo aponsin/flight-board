@@ -48,6 +48,13 @@ const post = (fetchImpl, base, headers, body) => fetchImpl(`${base}/api/probe/ev
 // `posted`, the keys that did go). Past `deadline` no new post starts: the result says `stopped` and which went (`ok`), so the caller records
 // those and the rest go first next run, instead of the watchdog killing the run between a post and its record.
 export const POST_CONCURRENCY = 6;
+// #C996 (Checker 2 F1): the posts' deadline sits at the run's start plus the limit less POST_TAIL_SEC, the room for a post under way (8 s, FETCH_TIMEOUT_MS),
+// the live read (8 s) and the late writes (8 s) and a margin, never later than that however late the child ended; the late writes start no later than
+// LATE_TAIL_SEC short of the limit (one post, 8 s, still fits).
+export const POST_TAIL_SEC = 30;
+export const LATE_TAIL_SEC = 10;
+export const LIVE_SKIP_SEC = 20;
+export const ESSENTIAL_KEYS = ["board", "run.evidence"];
 export async function postWrites(writes, { base, headers, fetchImpl = fetch, log = () => {}, concurrency = POST_CONCURRENCY, deadline = Infinity, clock = Date.now }) {
   let written = 0, refused = 0, stopped = false, fatal = null, next = 0;
   const ok = [];
@@ -336,8 +343,8 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   // dropped here), so the cards were read from an old copy and nothing said so. cardsCheckedAt is the last run every repository was read fresh.
   if (job === "evidence") { const ok = state?.board?.cardsCheckedAt; if (Number.isFinite(ok) && Number.isFinite(state.board.at) && state.board.at - ok > 2 * 60_000) log(`repository copy not fresh: a fetch failed, the cards were read from the clone as it was ${Math.round((state.board.at - ok) / 60_000)} min ago (retried next run)`); }
   const tPost = Date.now();
-  // #C996: only what changed (dueWrites), kept beside the state; the posting stops cleanly before the job's limit (20 s short of it, and never less than
-  // 10 s after the child ended), and what went is recorded even when a post fails, so the keys left over lead the next run.
+  // #C996: only what changed (dueWrites), kept beside the state; the posting stops cleanly before the job's limit (POST_TAIL_SEC short of the run's
+  // start plus its limit, however late the child ended; the late writes stop at LATE_TAIL_SEC), and what went is recorded even when a post fails, so the keys left over lead the next run.
   const keptFile = join(dirname(stateFile), "evidence-posted.json");
   let kept = null;
   if (job === "evidence") { try { const k = JSON.parse(read(keptFile)); if (plain(k) && k.v === 1 && plain(k.keys)) kept = k.keys; } catch { /* the first run: everything is due */ } }
@@ -345,7 +352,15 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   if (job === "evidence") log(`${plan.due.length} of ${writes.length} key(s) due (${writes.length - plan.due.length} unchanged)`);
   const saveKept = (keys) => { if (job !== "evidence") return; try { write(keptFile, JSON.stringify({ v: 1, keys: keptAfter(plan, keys, Date.now()) })); } catch { /* best effort: the next run posts them all */ } };
   let done;
-  try { done = await postWrites(plan.due, { base, headers, fetchImpl, log, deadline: job === "evidence" ? Math.max(t0 + (JOBS[job].limitSec - 20) * 1000, tPost + 10_000) : Infinity }); } catch (e) { saveKept(e.posted ?? []); throw e; }
+  try { done = await postWrites(plan.due, { base, headers, fetchImpl, log, deadline: job === "evidence" ? t0 + (JOBS[job].limitSec - POST_TAIL_SEC) * 1000 : Infinity }); } catch (e) { saveKept(e.posted ?? []); throw e; }
+  // A child that ended past the deadline still posts the heartbeat and the run's own reading (two posts, one round, up to LATE_TAIL_SEC short of the
+  // limit): a slow run must never freeze the view, and its slow mark is the thing the page needs. The cards wait for the next run.
+  if (job === "evidence" && done.stopped) {
+    const wanted = plan.due.filter((w) => ESSENTIAL_KEYS.includes(w.key) && !done.ok.includes(w.key));
+    if (wanted.length) {
+      try { const e = await postWrites(wanted, { base, headers, fetchImpl, log, deadline: t0 + (JOBS[job].limitSec - LATE_TAIL_SEC) * 1000 }); done = { ...done, written: done.written + e.written, refused: done.refused + e.refused, ok: [...done.ok, ...e.ok] }; } catch (e) { saveKept([...done.ok, ...(e.posted ?? [])]); throw e; }
+    }
+  }
   saveKept(done.ok);
   if (done.stopped) log(`posts stopped at the deadline: ${done.written} of ${plan.due.length} written, the rest go first next run`);
   timing.postMs = Date.now() - tPost;
@@ -356,14 +371,17 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   // Live last, so a product site that answers slowly (or not at all) can never hold up the evidence above.
   let cfg = null;
   try { cfg = read(origConfig); } catch { log("live: the board config could not be read"); }
-  const live = cfg && await liveWrite(cfg, { fetchImpl: liveFetch, log });
+  // Past LIVE_SKIP_SEC short of the limit the live read (up to 8 s) and the post after it cannot both fit: skipped this run, and logged.
+  const tooLate = Date.now() > t0 + (JOBS[job].limitSec - LIVE_SKIP_SEC) * 1000;
+  if (cfg && tooLate) log("live: skipped, the run is out of time");
+  const live = cfg && !tooLate && await liveWrite(cfg, { fetchImpl: liveFetch, log });
   // #C873: the product's daily full test run (the usage job's kept answer), posted with live; a failure reading it is logged and the evidence above stands.
   let e2eW = null;
   try { e2eW = cfg && e2eWrite(cfg, { stateFile, log, ...e2e }); } catch (e) { log(`e2e failed: ${String(e.message).slice(0, 80)}`); }
   let lookW = null;
   try { lookW = cfg && lookWrite(cfg, { log }); } catch (e) { log(`look failed: ${String(e.message).slice(0, 80)}`); }
   const late = [lookW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
-  if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
+  if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log, deadline: t0 + (JOBS[job].limitSec - LATE_TAIL_SEC) * 1000 }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
   return finish(done);
 }
 
