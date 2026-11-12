@@ -1,0 +1,2 @@
+PASS Quick: config-live-after-pass #C974 commit 2 of 3 at bae7b19 (Checker, 2026-11-12; reviewed as part of #C974, PASS on its tip feb895a)
+Same tree change as 804d6ff (Security F1, F2), which I reviewed (range-diff identical). The allowlist and SECURE checks are mutation-tested (K1-K10 killed). My FINDINGS on it (untested wiring; untested merged check) were fixed in feb895a, which is on main above it. Full suite at feb895a: 2609 pass.
