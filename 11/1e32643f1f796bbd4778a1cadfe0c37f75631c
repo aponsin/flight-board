@@ -1,0 +1,5 @@
+PASS Full: ship-row-install-wait #C976 111e326 (Checker, 2026-11-12; F1 on 027616a fixed)
+Tree: git diff --stat main 111e326 (two-dot) touches only #C976 files; nothing reverted.
+F1 fix: test where a newer busy start, then a busy end, sits beside the install wait; it still opens once and closes once. The any-wait mutant (M8) now fails 2 tests.
+Suite at 7ad6140 (holds this commit): 2559 pass, 0 fail. The fix adds a test only, so the 9 mutants killed on 027616a still stand.
+Mutation check: pass. Worker change and migration 0028: needs SECURE.
