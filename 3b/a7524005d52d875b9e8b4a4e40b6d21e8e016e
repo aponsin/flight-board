@@ -1,0 +1,1 @@
+SECURE #C1034 part 2 3ba7524 as part of the stack ending 4d8c7ad (Security 11-12): packOf stops at the first pin that does not hold the landing; at worst a tile stays unlit (fails closed). git still only gets 40-hex values.
