@@ -230,6 +230,20 @@ export const childLine = (e) => {
 // A run over this is logged and shown as slow: the job's limit is 90 s and the interval 60 s (11-11: good runs took 60 to 88 s, one was killed).
 export const SLOW_RUN_MS = 75_000;
 
+// #C982: the board Worker deploy's last result. The owner's deploy file leaves board-deploy-last.json { ok, at, line } beside the board config after every
+// run (scripts/pair/deploy.template.mjs, recordLast); the probe posts it as evidence deploy.last so the page header can say "Deploy failed: <reason>" until a
+// later deploy succeeds. No file (no deploy yet), or one that is unreadable or the wrong shape, posts nothing. The reason goes through plainLine: plain text,
+// a path shown as <path>, a token-like run hidden, 160 characters at most. `read` is the job's file reader; the folder is the board config's own.
+export const DEPLOY_LAST_FILE = "board-deploy-last.json";
+export function deployLastWrite({ configPath, read }) {
+  try {
+    const v = JSON.parse(read(join(dirname(configPath), DEPLOY_LAST_FILE)));
+    if (!v || typeof v !== "object" || Array.isArray(v) || typeof v.ok !== "boolean" || !Number.isFinite(v.at)) return null;
+    const line = plainLine(v.line);
+    return { key: "deploy.last", value: { ok: v.ok, at: v.at, ...(line ? { line } : {}) } };
+  } catch { return null; }
+}
+
 export async function evidenceJob(o) {
   const t0 = Date.now(), timing = o.timing ?? {};
   try { return await evidenceJobRun({ ...o, timing }); } finally {
@@ -267,6 +281,8 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   const writes = evidenceWrites(state, job);
   // #C962: this run's own reading, so the page can show a slow run and clear an old failure. Not a heartbeat (the store ignores run.* for that).
   if (job === "evidence") writes.push({ key: "run.evidence", value: { ok: true, at: Date.now(), ms: Date.now() - t0, stateMs: timing.stateMs, ...(Date.now() - t0 > SLOW_RUN_MS ? { slow: true } : {}) } });
+  // #C982: the board Worker deploy's last result, when there is one (the owner's deploy file wrote it beside the board config).
+  if (job === "evidence") { const d = deployLastWrite({ configPath: origConfig, read }); if (d) writes.push(d); }
   log(`${writes.length} key(s) to write`);
   // #C927: the state child swallows a failed fetch (state.mjs repoAt: it reads what is in the clone and marks the run not fresh, and its own output is
   // dropped here), so the cards were read from an old copy and nothing said so. cardsCheckedAt is the last run every repository was read fresh.

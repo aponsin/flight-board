@@ -136,7 +136,7 @@ test("the page reads run.evidence into the probe it draws: a failure gives why, 
   assert.match(src, /Date\.now\(\) - rr\.value\.at <= 300000/);
   assert.match(src, /rv\.ok === false \? \{ \.\.\.probe0, why: rv\.line \|\| "failed" \}/);
   assert.match(src, /rv\.slow \? \{ \.\.\.probe0, slow: Math\.round\(\(rv\.ms \|\| 0\) \/ 1000\) \}/);
-  assert.match(src, /headerHtml\(\{ live, probe \}/, "the header gets the probe with the reading in it");
+  assert.match(src, /headerHtml\(\{ live, probe(, deployFailed)? \}/, "the header gets the probe with the reading in it (and, since #C982, the deploy's failure)");
 });
 
 test("the header says why the probe is failing, or that it is slow; nothing for a healthy one", () => {

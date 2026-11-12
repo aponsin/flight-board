@@ -102,13 +102,21 @@ export function redact(text, creds) {
 // The spawn options with the two variables added to the environment (only when there are creds: without them the options are left as they were).
 const withCreds = (opts, creds) => (creds ? { ...opts, env: { ...process.env, ...creds } } : opts);
 
+// #C982: this deploy's result, kept beside this file as board-deploy-last.json { ok, at, line } (plain text, up to 160 characters, the failure's reason
+// after the token and account were taken out), overwritten by every run, so a later success replaces an earlier failure. The board's probe reads it from
+// this folder and the page header shows "Deploy failed: <reason>" until a deploy succeeds. A result that cannot be written never stops or fails the deploy.
+export const LAST_FILE = "board-deploy-last.json";
+export function recordLast({ fs, here, ok, line, now = Date.now() }) {
+  try { fs.writeFileSync(join(here, LAST_FILE), JSON.stringify({ ok, at: now, line: String(line ?? "").replace(/[^\x20-\x7e]/g, " ").replace(/\s+/g, " ").trim().slice(0, 160) })); } catch { /* never stops the deploy */ }
+}
+
 // The deploy over injectable spawn, fs and output: { ok, line }. `say` gets each line printed; nothing here exits the process.
 export function deployRun({ here, spawn = spawnSync, fs = { existsSync, lstatSync, readFileSync, writeFileSync }, say = console.log, prepare = prepareCheckout, signed = SIGNED, success = SUCCESS }) {
   const TREE = `${here}/board-store-pa`;
   const CONFIG = `${TREE}/worker/wrangler.board.toml`;
   const BOARD_CONFIG = `${here}/board.config.json`;
   let creds = null, file = join(here, PRIVATE_FILE);
-  const stop = (why) => { const line = `DEPLOY FAILED: ${redact(why, creds)}. Nothing further was run. Paste this line to Manager.`; say(line); return { ok: false, line }; };
+  const stop = (why) => { const line = `DEPLOY FAILED: ${redact(why, creds)}. Nothing further was run. Paste this line to Manager.`; say(line); recordLast({ fs, here, ok: false, line: redact(why, creds) }); return { ok: false, line }; };
   // Without the token the failure line names the file and the two values to fill, not only the login.
   const hint = () => (creds ? "" : `. If wrangler is not signed in: fill cloudflareApiToken and cloudflareAccountId in ${file} (chmod 600), or run npx ${WRANGLER} login`);
   try {
@@ -142,6 +150,7 @@ export function deployRun({ here, spawn = spawnSync, fs = { existsSync, lstatSyn
     fs.writeFileSync(`${here}/@@DEPLOYDONE@@`, `${signed}\n`);
     const line = `DEPLOY OK: ${success.replace("<version>", id).replace("<sha>", signed.slice(0, 8))}`;
     say(line);
+    recordLast({ fs, here, ok: true, line });
     return { ok: true, line };
   } catch (e) {
     return stop(`unexpected error: ${String(e?.message ?? e).slice(0, 200)}`);
