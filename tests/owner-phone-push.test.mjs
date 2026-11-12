@@ -253,6 +253,9 @@ test("a blocked browser's steps are for the browser it is; an allowed browser sh
   // The page wires it: the steps box, the permission change and the return to the tab redraw the badge.
   const template = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   assert.match(template, /<div class="pushhelp" id="pushhelp" role="region" aria-label="How to allow phone pushes" hidden><\/div>/);
+  // Designer F1 on bd237c4: every colour token the steps box uses is one the page defines (an undefined one drew it transparent).
+  const rule = template.match(/\.pushhelp\{[^}]*\}/)[0];
+  for (const [, name] of rule.matchAll(/var\((--[\w-]+)\)/g)) assert.match(template, new RegExp(`${name}:`), `${name} is defined`);
   assert.match(template, /permissions\.query\(\{name:"notifications"\}\)\.then\(p=>\{p\.onchange=\(\)=>pushDraw\(\)\}\)/);
   assert.match(template, /visibilitychange",\(\)=>\{if\(document\.visibilityState==="visible"\)pushDraw\(\)\}/);
 });
