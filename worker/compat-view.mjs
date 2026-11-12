@@ -60,6 +60,9 @@ export function waitingDoc(a) {
     doc.respondedAt = a.answered_at;
   }
   if (a.closed_at) { doc.done = true; doc.doneAt = a.closed_at; }
+  // #C987: closed by the board (its card moved on), so the page knows the close answered the owner's earlier word (Security F1 on 1ab7673).
+  // closed_by, not auto_closed_at: a board close that was reopened and then closed by its asker is the asker's close.
+  if (a.closed_at && a.closed_by === "board") doc.autoClosed = true;
   return prune(doc);
 }
 

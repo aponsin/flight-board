@@ -1410,10 +1410,11 @@ function threadOf(id){const ix=msgIndex(),done=msgSorted.get(id);if(done)return 
   t.sort((a,b)=>k(a)-k(b)||a.at-b.at);msgSorted.set(id,t);return t}
 function threadIds(){return [...msgIndex().keys()]}
 // Open: the owner's word is the last, unless it only acknowledges an ask that is settled (#C268).
-// #C987: a closed ask's thread waits on the team only for the owner's word after it closed (a real question then, #C268); his word
-// before the close was what the close answered, so it never lists as unanswered under With the team.
+// #C987: an ask the board closed (its card moved on) waits on the team only for the owner's word after the close (a real question then,
+// #C268); his word before it was what the close answered. Only the board's close (autoClosed): an asker closing its own ask never hides
+// his earlier word (Security F1 on 1ab7673).
 function threadOpen(id){const t=threadOf(id),last=t[t.length-1];if(!last||last.from!==OWNER||last.resolved)return false;
-  const it=itemOf(id);if(it&&it.coll==="waiting"&&it.doc.done&&num(it.doc.doneAt)!=null&&(num(last.at)??0)<=it.doc.doneAt)return false;return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
+  const it=itemOf(id);if(it&&it.coll==="waiting"&&it.doc.done&&it.doc.autoClosed===true&&num(it.doc.doneAt)!=null&&(num(last.at)??0)<=it.doc.doneAt)return false;return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
 function openThreads(){return threadIds().filter(threadOpen)}
 function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"waiting",doc:w};
   // #C831: the card AS SHOWN (asShown: a card closed by evidence, live and on main with no check date, reads done; a dropped one too), as

@@ -6,8 +6,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { loadNames } from "./harness.mjs";
-import { createCard, updateCard, createAsk, answerAsk, wakeAsk, takeInbox, reopenAsk } from "../worker/board-store.mjs";
+import { createCard, updateCard, createAsk, answerAsk, wakeAsk, takeInbox, reopenAsk, readView, closeAsk } from "../worker/board-store.mjs";
 import { movedOnAsks, AUTO_CLOSE_AFTER_MS, AUTO_CLOSED_BY } from "../worker/board-rules.mjs";
+import { compatView } from "../worker/compat-view.mjs";
 
 const T = 1_800_000_000_000, MIN = 60_000;
 const decision = { type: "Decision", title: "Pick", asked_by: "Manager", question: "A or B?", options: ["A", "B"], recommended: "A" };
@@ -108,15 +109,33 @@ function page(waiting, messages) {
 }
 const OWNER_SAYS = (at, text = "Is this done with pc39?") => ({ id: `m-${at}`, thread: "t-1", text, at });
 
-test("(2) a closed ask with the owner's word before the close never lists as unanswered With the team", () => {
-  const b = page([{ id: "t-1", kind: "decision", done: true, doneAt: T + 10 * MIN, since: T }], [OWNER_SAYS(T + 5 * MIN)]);
+test("(2) an ask the board closed, with the owner's word before the close, never lists as unanswered With the team", () => {
+  const b = page([{ id: "t-1", kind: "decision", done: true, doneAt: T + 10 * MIN, autoClosed: true, since: T }], [OWNER_SAYS(T + 5 * MIN)]);
   assert.equal(b.threadOpen("t-1"), false);
   assert.notEqual(b.waitsOn("t-1", T + 60 * MIN), "lead");
   assert.equal(b.lateTag("t-1", T + 60 * MIN), "");
 });
 
-test("(2) must still allow: the owner's real question after the close waits on the team, and an open ask is unchanged", () => {
-  const after = page([{ id: "t-1", kind: "decision", done: true, doneAt: T + 10 * MIN, since: T }], [OWNER_SAYS(T + 20 * MIN)]);
+test("(2) Security F1: an asker's own close never hides the owner's earlier word; it still lists With the team", () => {
+  const b = page([{ id: "t-1", kind: "decision", done: true, doneAt: T + 10 * MIN, since: T }], [OWNER_SAYS(T + 5 * MIN, "Before you build it: what about the phone?")]);
+  assert.equal(b.threadOpen("t-1"), true);
+  assert.equal(b.waitsOn("t-1", T + 60 * MIN), "lead");
+});
+
+test("(2) the view carries autoClosed for the board's close only", async () => {
+  const db = makeDb(); const a = await answered(db);
+  await updateCard(db, T + 10 * MIN, "Manager", { id: "c", next_note: "building" });
+  await wakeAsk(db, T + 10 * MIN + AUTO_CLOSE_AFTER_MS);
+  const doc = (v) => compatView(v).collections.waiting.find((w) => w.id === a.id);
+  assert.equal(doc(await readView(db, T + 50 * MIN)).autoClosed, true);
+  const db2 = makeDb(); const b = await answered(db2);
+  assert.equal((await closeAsk(db2, T + 10 * MIN, "Manager", b.id, "agent")).ok, true);
+  const d2 = doc(await readView(db2, T + 11 * MIN));
+  assert.equal(d2.done, true); assert.equal(d2.autoClosed, undefined, "an asker's close is no board close");
+});
+
+test("(2) must still allow: the owner's real question after the board's close waits on the team, and an open ask is unchanged", () => {
+  const after = page([{ id: "t-1", kind: "decision", done: true, doneAt: T + 10 * MIN, autoClosed: true, since: T }], [OWNER_SAYS(T + 20 * MIN)]);
   assert.equal(after.threadOpen("t-1"), true);
   assert.equal(after.waitsOn("t-1", T + 60 * MIN), "lead");
   const open = page([{ id: "t-1", kind: "decision", since: T, response: { status: "chose", choice: "B", at: T + 2 * MIN } }], [OWNER_SAYS(T + 5 * MIN)]);
