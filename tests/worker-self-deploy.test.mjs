@@ -109,7 +109,7 @@ async function history() {
     const { notes, range } = gatherFacts({ commit, current, descends, quiet });
     return { v: gateVerdict({ commit, tip: commit, notes, current, descends, skipInstall: true, range }), range };
   };
-  return { shas, note, verdict, done: () => rmSync(dir, { recursive: true, force: true }) };
+  return { shas, note, verdict, git, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
 const both = (h, sha, extra = "") => { h.note("checker", sha, `PASS Full${extra}`); h.note("security", sha, `SECURE${extra}`); };
 
@@ -169,6 +169,50 @@ test("history: a line sign covers nothing it should not: a base before the Worke
     // A base that is not an ancestor of the signing commit.
     both(h, c3, ` line from ${"9".repeat(40)}`);
     assert.equal(h.verdict(c3, c1).v.ok, false);
+  } finally { h.done(); }
+});
+
+// Checker 2 on 1100168: three guards of the F1 fix that survived their mutants.
+test("history (a): the real shape of #C976: c1 FINDINGS, c2 signed 'line from c0', c3 plain PASS and SECURE with no line sign: ok, c1 covered by c2's sign, not the tip's", async () => {
+  const h = await history();
+  try {
+    const [c0, c1, c2, c3] = h.shas;
+    h.note("checker", c1, "FINDINGS Full: F1 ...");
+    both(h, c2, ` line from ${c0}`);
+    both(h, c3); // the tip carries no line sign of its own
+    const r = h.verdict(c3, c0);
+    assert.deepEqual(r.range.map((x) => [x.sha, x.covered]), [[c3, false], [c2, true], [c1, true]]);
+    assert.equal(r.v.ok, true, r.v.refusals.join());
+  } finally { h.done(); }
+});
+
+test("history (b): a line sign covers only the commits under its signer, never above it: c1 signed, c2 'line from c0', c3 with no notes refuses, naming c3", async () => {
+  const h = await history();
+  try {
+    const [c0, c1, c2, c3] = h.shas;
+    both(h, c1);
+    both(h, c2, ` line from ${c0}`);
+    const r = h.verdict(c3, c0);
+    assert.equal(r.range.find((x) => x.sha === c3).covered, false, "c3 sits above c2's sign");
+    assert.equal(r.v.ok, false);
+    assert.match(r.v.refusals.join(), new RegExp(`no SECURE and PASS: ${c3.slice(0, 12)}`));
+    assert.doesNotMatch(r.v.refusals.join(), new RegExp(`no SECURE and PASS: [^;]*${c2.slice(0, 12)}`), "c2 is signed");
+  } finally { h.done(); }
+});
+
+test("history (c): a real side-branch base (forked at c1, Worker at c1): c3 'line from s' with c2 unsigned refuses; a base off the line covers nothing", async () => {
+  const h = await history();
+  try {
+    const [, c1, c2, c3] = h.shas;
+    h.git("checkout", "-q", "-b", "side", c1);
+    h.git("commit", "-q", "--allow-empty", "-m", "side");
+    const s = h.git("rev-parse", "HEAD");
+    h.git("checkout", "-q", "main");
+    both(h, c3, ` line from ${s}`); // s exists and is at or after the Worker, but is not an ancestor of c3
+    const r = h.verdict(c3, c1);
+    assert.equal(r.range.find((x) => x.sha === c2).covered, false);
+    assert.equal(r.v.ok, false);
+    assert.match(r.v.refusals.join(), new RegExp(`no SECURE and PASS: ${c2.slice(0, 12)}`));
   } finally { h.done(); }
 });
 
