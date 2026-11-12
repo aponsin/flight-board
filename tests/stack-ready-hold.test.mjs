@@ -127,9 +127,9 @@ test("(q) stackQueueFile: open cards only, ids and plain values, started = a pus
   const q = stackQueueFile(v, NOW);
   assert.equal(q.at, NOW);
   assert.deepEqual(q.cards.map((k) => k.id), ["c1-base", "c2-next", "c5-bad", "c6-self"]);
-  assert.deepEqual(q.cards[0], { id: "c1-base", owner_role: "Boardsmith", repo: "", dependsOn: [], started: true });
-  assert.deepEqual(q.cards[1], { id: "c2-next", owner_role: "Boardsmith", repo: "site-one", dependsOn: ["c1-base"], started: false });
-  assert.deepEqual(q.cards[2], { id: "c5-bad", owner_role: "", repo: "", dependsOn: [], started: false });
+  assert.deepEqual(q.cards[0], { id: "c1-base", owner_role: "Boardsmith", repo: "", dependsOn: [], batch: "", started: true });
+  assert.deepEqual(q.cards[1], { id: "c2-next", owner_role: "Boardsmith", repo: "site-one", dependsOn: ["c1-base"], batch: "", started: false });
+  assert.deepEqual(q.cards[2], { id: "c5-bad", owner_role: "", repo: "", dependsOn: [], batch: "", started: false });
   assert.deepEqual(q.cards[3].dependsOn, ["c1-base"]);
   assert.ok(!JSON.stringify(q).includes("secret"));
   const many = { cards: Array.from({ length: 600 }, (_, n) => card(`k${n}`)), evidence: {} };

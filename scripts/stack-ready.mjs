@@ -49,6 +49,11 @@ export function stackReady({ run, queue = null, now = () => new Date().toISOStri
     const queued = me ? queue.cards.filter((k) => k && k.id !== id && k.started === false && k.owner_role === me.owner_role && k.repo === me.repo
       && Array.isArray(k.dependsOn) && k.dependsOn.includes(id)).map((k) => String(k.id)) : [];
     if (queued.length) return { branch, sha, signal: false, queued, line: `STACK-READY OK: pushed ${branch} at ${at12}, more queued (${queued.join(", ")}): no signal` };
+    // #C1021: a card of a batch (a group) is ready only when every open card of that batch is built: the batch is one review and one pack. Any builder,
+    // the same repository. The lead pulls a card out of its batch (clears the batch) to send it alone.
+    const batch = typeof me?.batch === "string" ? me.batch : "";
+    const waiting = batch ? queue.cards.filter((k) => k && k.id !== id && k.batch === batch && k.repo === me.repo && k.started === false).map((k) => String(k.id)) : [];
+    if (waiting.length) return { branch, sha, signal: false, queued: waiting, line: `STACK-READY OK: pushed ${branch} at ${at12}, waiting for its group ${batch} (${waiting.join(", ")} not built): no signal` };
   }
   // The notes ref is shared by every READY: take what the remote has first, or this checkout's fresh ref would be refused as not a fast-forward.
   // A remote with no such ref yet is fine (nothing to take).
