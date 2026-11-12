@@ -22,8 +22,16 @@ test("inlineListIn: 3 or more inline markers in one paragraph are found; a list,
     "Run `f(1) g(2) h(3)` as written.", // a code span
     "First (1) and (2).\n\nThen (3) alone.", // split across paragraphs
     "#C1) #C2) #C3) are ids, 3:1) 4:2) 5:3) are ratios", // not markers
+    // Checker's LOW F1 on a79f093: the three above end "(2)." or sit in f(1), so they never reached the rule they name. These do.
+    "Run `step (1) then (2) then (3) done` as written.", // a code span
+    "Pick (1) or (2) now.", // two
+    "First (1) and (2) here.\n\nThen (3) alone.", // split across paragraphs
     "", null,
   ]) assert.equal(inlineListIn(text), null, String(text));
+  // Their twins without the exemption are found, so each case above rests on its own rule.
+  assert.equal(inlineListIn("Run step (1) then (2) then (3) done as written."), "(1) (2) (3)", "no code span");
+  assert.equal(inlineListIn("Pick (1) or (2) or (3) now."), "(1) (2) (3)", "three");
+  assert.equal(inlineListIn("First (1) and (2) here.\nThen (3) alone."), "(1) (2) (3)", "one paragraph");
   const r = inlineListRefusal(["fine", PACKED]);
   assert.equal(r.rule, "one-point-per-line");
   assert.match(r.detail, /one numbered line per point/);
