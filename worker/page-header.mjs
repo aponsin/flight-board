@@ -28,13 +28,20 @@ export function headerHtml(view, { deploying = null, boardVersion = "", wake = {
   const wakeCls = wake.state === "red" ? "bad" : "ok";
   const wakeText = wake.state === "red" ? `Manager: ${wake.reason ?? "cannot reach"}` : "Manager listening";
   const wakeDetail = wake.state === "red" ? (wake.reason ?? "cannot reach") : "listening";
-  const probeDetail = `silent${view.probe?.since ? ` since ${new Date(view.probe.since).toISOString().slice(11, 16)}Z` : ""}`;
+  const silent = view.probe?.state === "silent";
+  // #C962: why the probe is failing (the evidence job's last error line) or that its run is slow (past 75 s of its 90 s limit), beside "silent since".
+  const why = typeof view.probe?.why === "string" && view.probe.why ? view.probe.why : "", slow = Number.isFinite(view.probe?.slow) ? view.probe.slow : null;
+  const probeDetail = silent || why
+    ? `${silent ? `silent${view.probe?.since ? ` since ${new Date(view.probe.since).toISOString().slice(11, 16)}Z` : ""}` : "failing"}${why ? `: ${why}` : ""}`
+    : `slow: ${slow} s of 90`;
+  const probeShown = silent || why || slow !== null;
+  const probeCls = silent || why ? "bad" : "warn";
   // A one-word label stays on a phone (the detail drops), so two red dots are never indistinguishable.
   const ver = String(boardVersion), bare = ver.replace(/^board\s+/i, ""), prefix = ver.length > bare.length ? `<span class="detail">board </span>` : "";
   return `<header class="hd" role="banner">
 <span class="chip live ${live.cls}" title="${esc(live.long)}"><b>${esc(live.short)}</b><span class="detail">${esc(live.detail)}</span></span>
 <span class="chip ${wakeCls}" title="${esc(wakeText)}"><span class="dot"></span><span class="lbl">Manager</span><span class="detail">${esc(wakeDetail)}</span></span>
-${view.probe?.state === "silent" ? `<span class="chip bad" title="probe ${esc(probeDetail)}"><span class="dot"></span><span class="lbl">Probe</span><span class="detail">${esc(probeDetail)}</span></span>\n` : ""}<span class="chip ver" title="Board ${esc(ver)}">${prefix}${esc(bare)}</span>
+${probeShown ? `<span class="chip ${probeCls}" title="probe ${esc(probeDetail)}"><span class="dot"></span><span class="lbl">Probe</span><span class="detail">${esc(probeDetail)}</span></span>\n` : ""}<span class="chip ver" title="Board ${esc(ver)}">${prefix}${esc(bare)}</span>
 </header>`;
 }
 
