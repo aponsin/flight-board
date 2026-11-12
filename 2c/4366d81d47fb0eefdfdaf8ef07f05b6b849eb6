@@ -1,0 +1,1 @@
+SECURE #C996 re-cut 2c4366d onto main 1f5fbef (Security 11-12): equal to signed a28461b but for where timingText sits in collector/state.mjs (after #C974's syncLiveConfig); both are called in the main block. Pinned collector/state.mjs: needs the owner's install.
