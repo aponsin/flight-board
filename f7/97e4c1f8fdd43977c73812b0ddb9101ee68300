@@ -1,0 +1,6 @@
+PASS Full: stall-says-rework-reason #C981 f797e4c (Checker, 2026-11-12; carded Quick, reviewed Full: worker/, store-dispatch, gate/)
+Tree: git diff --stat main f797e4c (two-dot) touches only #C976/#C983/#C985/#C981 files; nothing reverted. CHANGELOG and DATA.md lines present.
+Suite at f797e4c: 2567 pass, 0 fail.
+The store now clears every stall row ending ": add one or unstick it": only the slow line and the new rework line end that way (grep of worker/, collector/, gate/).
+Mutation check: pass, 7 of 7 killed: first-push guard off; slow line ignores rework; owner name not sanitised; reason ignored in the slow line; dispatch reason turn off; dispatch ignores a given reason; store clears the old tail only.
+Builder's reading noted: a rework card WITH a reason that is slow keeps the plain slow line.
