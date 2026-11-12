@@ -1,0 +1,2 @@
+PASS Full: dispatch-sees-waiting-pair #C1013 v3 commit 1 of 2 (f773df8, re-cut of my signed 170f980 onto main 3378785) (Checker, 2026-11-12)
+range-diff against v2: CHANGELOG context only (main gained #C1014's bullet; both kept). npm test at this commit: 2715 pass, 0 fail. My full review and mutants on v2 (170f980 + 6ab6da2) stand.
