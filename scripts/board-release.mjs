@@ -111,6 +111,59 @@ export function lineSign(notes) {
   return c && c === s ? c : null;
 }
 
+// #C1032: one sign for a group, and no tip-only gap. Every commit in origin/main..tip needs, per role (Checker's PASS in refs/notes/checker, Security's SECURE
+// in refs/notes/security, each independent), either its own note or that role's line note on the tip: a first line that starts with the role's word and says
+// "line from <40-hex base>", covering base..tip. A line note counts when the base is an ancestor of origin/main and of the tip and is where the tip's line left
+// main (never main's own commits), base..tip has no merge commit and at most GROUP_MAX commits; otherwise it covers nothing and says why. A commit with a
+// note of its own whose first line is not its role's word (FINDINGS, RISKS, STOP, a withdrawal) refuses even under a valid line note. Roles do not need the same
+// base. Release reads origin's notes only. Before this, only the tip's own notes were read, so a stack's lower commits went out unsigned.
+export const GROUP_MAX = 30;
+export const ROLE_WORD = { checker: { re: /^PASS\b/, word: "PASS", who: "Checker" }, security: { re: /^SECURE\b/, word: "SECURE", who: "Security" } };
+const firstLine = (n) => String(n ?? "").split("\n")[0].trim();
+export const roleLineBase = (role, note) => (ROLE_WORD[role].re.test(firstLine(note)) ? /\bline from ([0-9a-f]{40})\b/.exec(firstLine(note))?.[1] ?? null : null);
+const shortList = (l) => `${l.slice(0, 5).map((s) => s.slice(0, 12)).join(", ")}${l.length > 5 ? `, ... (${l.length})` : ""}`;
+// facts: tip, commits (main..tip, oldest first), notes(sha) -> { checker, security }, line(role, base) -> null (the base does not count: why in .why) | { covers: [shas], merges, why }.
+// Returns { refusals, usedLine: [roles whose line note covered a commit that had no note of its own] }.
+export function groupCoverage({ tip, commits, notes, line }) {
+  const refusals = [], usedLine = [], list = commits?.length ? commits : [tip];
+  for (const c of list) for (const [role, w] of Object.entries(ROLE_WORD)) {
+    const own = firstLine(notes(c)?.[role]);
+    if (own && !w.re.test(own)) refusals.push(`${c.slice(0, 12)} has a ${w.who} note that is not ${w.word}: "${own.slice(0, 60)}" (a line note on the tip does not override it)`);
+  }
+  for (const [role, w] of Object.entries(ROLE_WORD)) {
+    const base = roleLineBase(role, notes(tip)?.[role]);
+    let range = null;
+    if (base) {
+      const r = line(role, base);
+      if (!r || !Array.isArray(r.covers)) refusals.push(`the ${w.who} line note on ${tip.slice(0, 12)} names base ${base.slice(0, 12)}, which does not count: ${r?.why ?? "it is not an ancestor of origin/main and of the tip, at or after where the tip's line left main"}`);
+      else if (r.merges > 0) refusals.push(`the ${w.who} line note on ${tip.slice(0, 12)} covers a range with a merge commit: groups are linear`);
+      else if (r.covers.length > GROUP_MAX) refusals.push(`the ${w.who} line note on ${tip.slice(0, 12)} covers ${r.covers.length} commits: a group is at most ${GROUP_MAX}`);
+      else range = new Set(r.covers);
+    }
+    // A commit with a bad note of its own was named above; the rest with no note of their own and no line note over them are named here.
+    const bare = list.filter((c) => !firstLine(notes(c)?.[role]) && !(range && range.has(c)));
+    if (bare.length) refusals.push(`${bare.length === 1 ? "a commit has" : `${bare.length} commits have`} no ${w.word} from ${w.who}, by a note of its own or a line note on the tip: ${shortList(bare)}`);
+    if (range && list.some((c) => !w.re.test(firstLine(notes(c)?.[role])) && range.has(c))) usedLine.push(role);
+  }
+  return { refusals, usedLine };
+}
+// The facts groupCoverage reads, from git. quiet(args) -> trimmed stdout or null; noteRef(role) -> the private notes ref of origin's notes for that role.
+export function groupFacts({ quiet, main, tip, noteRef }) {
+  const list = (a) => (quiet(a) ?? "").split("\n").filter(Boolean);
+  const cache = new Map();
+  const notes = (sha) => { if (!cache.has(sha)) cache.set(sha, Object.fromEntries(Object.keys(ROLE_WORD).map((r) => [r, quiet(["notes", `--ref=${noteRef(r)}`, "show", sha])]))); return cache.get(sha); };
+  const anc = (a, b) => quiet(["merge-base", "--is-ancestor", a, b]) !== null;
+  const line = (role, base) => {
+    if (!anc(base, main)) return { why: "it is not an ancestor of origin/main" };
+    if (!anc(base, tip)) return { why: "it is not an ancestor of the tip" };
+    // The base is where the tip's line left main (git merge-base main tip, or a commit on the line at or after it), never main's own commits.
+    const fork = quiet(["merge-base", main, tip]);
+    if (!fork || !anc(fork, base)) return { why: "it is before the point where the tip's line left origin/main" };
+    return { covers: list(["rev-list", `${base}..${tip}`]), merges: list(["rev-list", "--merges", `${base}..${tip}`]).length };
+  };
+  return { tip, commits: list(["rev-list", "--reverse", `${main}..${tip}`]), notes, line };
+}
+
 // #C1026: a re-cut of a signed commit onto a newer main (a plain cherry-pick that landed nothing under its files) keeps the sign-off of the commit it was cut
 // from, but only for commits that cannot change what the owner's install pins or what runs on the Mac, and only on facts Release reads itself:
 //   - every changed path is under one of CARRY_ALLOW, is not under a CARRY_NEVER_ROOTS folder, is not a wrangler*/package*.json file, has no dotfile component,
@@ -237,7 +290,7 @@ export function pendingPack({ descends, range, sameAs }) {
   const side = (range ?? []).filter((c) => !c.fromPin).map((c) => c.sha.slice(0, 12));
   if (side.length) r.push(`commits on its line don't descend from the commit the owner's install pins (a side branch): ${side.join(", ")}`);
   // #C934: a commit is also signed when a later commit's line sign covers it (c.covers: the shas in base..c that the caller verified, base an
-  // ancestor of main and of c). A lower commit with its own FINDINGS is covered by a later line sign too: its reviewers read the line as it ended.
+  // ancestor of main and of c). A lower commit with its own FINDINGS is covered here by a later line sign (its reviewers read the line as it ended), but since #C1032 the verdict's groupCoverage refuses any commit of main..tip with a note of its own that is not PASS/SECURE, so the release still refuses it.
   const covered = new Set((range ?? []).filter((c) => signed(c.notes) && Array.isArray(c.covers)).flatMap((c) => c.covers));
   const unsigned = touching.filter((c) => !signed(c.notes) && !covered.has(c.sha)).map((c) => c.sha.slice(0, 12));
   if (unsigned.length) r.push(`a change to what the owner's install pins, on its line, isn't signed by both Checker and Security: ${unsigned.join(", ")}`);
@@ -274,13 +327,17 @@ export function parseTrailerLog(text) {
 export function untrailered(commits) {
   return (Array.isArray(commits) ? commits : []).filter((c) => !(Array.isArray(c?.ids) && c.ids.some((id) => CARD_ID_SHAPE.test(String(id))))).map((c) => String(c?.sha ?? ""));
 }
-export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null, superseded = null, noTrailer = [], carrySuite = null }) {
+export function verdict({ forward, notes, pinned, changed, owned, settingsChanged, stepsChanged, promptChanged, capabilities, mcpErrors = [], pending = null, superseded = null, noTrailer = [], carrySuite = null, coverage = null }) {
   const r = [];
   // #C1026: a carried sign-off is only as good as the suite on the re-cut tip itself; carrySuite is null when nothing was carried, "" when it passed, else why not.
   if (carrySuite) r.push(`the commit carries a sign-off from the commit it was cut from, and the full suite on it is not green: ${carrySuite}`);
   if (noTrailer.length) r.push(`${noTrailer.length === 1 ? "a commit has" : `${noTrailer.length} commits have`} no Board-Id trailer naming a card: ${noTrailer.slice(0, 5).map((s) => s.slice(0, 12)).join(", ")}${noTrailer.length > 5 ? ", ..." : ""} (the probe finds a landed card by it: add "Board-Id: <card id>" and sign again)`);
-  if (!/^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim())) r.push(`no PASS from Checker on it in ${NOTES.checker}`);
-  if (!/^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim())) r.push(`no SECURE from Security on it in ${NOTES.security}`);
+  // #C1032: with the run's coverage (every commit of main..tip, per role), its refusals stand in for the tip-only check; without it (the tests' older callers), the tip's notes alone.
+  if (coverage) r.push(...coverage.refusals);
+  else {
+    if (!/^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim())) r.push(`no PASS from Checker on it in ${NOTES.checker}`);
+    if (!/^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim())) r.push(`no SECURE from Security on it in ${NOTES.security}`);
+  }
   if (!forward) r.push("it doesn't continue origin/main: rebase it on main and sign it again");
   if (superseded) r.push(`it is superseded: a newer branch of the same card, ${superseded}, is on origin; release that one`);
   if (!pinned || !Array.isArray(changed)) r.push("no pinned commit found in ~/.claude/settings.json to compare with: the owner's install decides");
@@ -328,7 +385,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
 
     // The facts, from origin and from the commit's own snapshot.
     git(["fetch", "-q", "origin"]);
-    for (const [who, ref] of Object.entries(NOTES)) quiet(["fetch", "-q", "origin", `+${ref}:refs/notes/board-release/${who}`]);
+    // #C1032 (Security's LOW on #C1026): a failed fetch of a notes ref stops the release, never reads a stale private copy as origin's.
+    for (const [who, ref] of Object.entries(NOTES)) git(["fetch", "-q", "origin", `+${ref}:refs/notes/board-release/${who}`]);
     const sha = git(["rev-parse", "--verify", `${commit}^{commit}`]);
     const main = git(["rev-parse", "origin/main"]);
     let notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", sha])]));
@@ -362,6 +420,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
         finally { rmSync(td, { recursive: true, force: true }); }
       }
     }
+    // #C1032: every commit of main..tip is signed, per role, by a note of its own or the tip's line note (a carried sign-off is a single commit's: the tip alone).
+    const gf = groupFacts({ quiet, main, tip: sha, noteRef: (who) => `board-release/${who}` });
+    const coverage = groupCoverage(carried?.from ? { ...gf, commits: [sha], notes: (c) => (c === sha ? notes : gf.notes(c)) } : { ...gf, notes: (c) => (c === sha ? notes : gf.notes(c)) });
     // A waiting pack (#C412): the line from the pin to this commit, each commit's pinned change against its first parent
     // and its sign-offs, read from origin's notes like this commit's.
     let pending = null;
@@ -390,7 +451,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const base = known(before) ? before : known(pinned) ? pinned : null; // what the task runs now
     const capabilities = pageCapabilities(at(sha)(PAGE_FILE)), mcpErrors = pageMcpErrors(at(sha)(PAGE_FILE));
     const v = verdict({
-      forward, notes, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending, superseded, noTrailer, carrySuite,
+      forward, notes, coverage, pinned: known(pinned) ? pinned : null, changed, owned, capabilities, mcpErrors, pending, superseded, noTrailer, carrySuite,
       settingsChanged: known(pinned) && settingsBlock(at(pinned)(TASK_FILE)) !== settingsBlock(at(sha)(TASK_FILE)),
       stepsChanged: base !== null && stepsOf(at(base)(TASK_FILE)) !== stepsOf(at(sha)(TASK_FILE)),
       promptChanged: base === null || at(base)(PROMPT_FILE) !== at(sha)(PROMPT_FILE),
@@ -414,6 +475,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     }
 
     line(!v.refusals.some((r) => /PASS|SECURE/.test(r)), `sign-offs on ${sha}: Checker "${String(notes.checker ?? "none").split("\n")[0]}", Security "${String(notes.security ?? "none").split("\n")[0]}"`);
+    line(!coverage.refusals.length, `${(carried?.from ? [sha] : gf.commits).length || 1} commit(s) of origin/main..tip, each signed by Checker and Security${coverage.usedLine.length ? ` (line note on the tip: ${coverage.usedLine.join(", ")})` : ""}`);
+    if (coverage.usedLine.length) console.log("line sign: self-deploy will refuse until signed per commit (scripts/self-deploy-gate.mjs reads each commit's own notes)");
     if (carried?.from) for (const l of carried.lines) line(true, l);
     else if (carried?.refusals) line(false, `no carried sign-off: ${carried.refusals.slice(0, 6).join("; ")}`);
     line(forward, `continues origin/main ${main.slice(0, 12)}`);

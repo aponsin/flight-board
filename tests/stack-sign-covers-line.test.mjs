@@ -50,7 +50,7 @@ test("pendingPack, still refused: no covers (base not an ancestor of main or of 
 });
 
 // End to end, on a scratch clone, like tests/pack-wait.test.mjs: main is the pin B; a pack Sx (pinned file) and a tip P2 on it.
-test("board-release --dry-run: a line sign on the tip covers a FINDINGS pack below it; a base off main, or a base that is not below the tip, does not", () => {
+test("board-release --dry-run: a line sign on the tip covers an unsigned pack below it but not one with its own FINDINGS (#C1032); a base off main, or a base that is not below the tip, does not", () => {
   const REPO = new URL("..", import.meta.url).pathname, D = mkdtempSync(join(tmpdir(), "line-sign-"));
   const git = (cwd, ...a) => execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "user.email=t@example.com", "-c", "user.name=T", ...a], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   try {
@@ -79,6 +79,11 @@ test("board-release --dry-run: a line sign on the tip covers a FINDINGS pack bel
     assert.ok(!plain.ok && unsigned.test(plain.out), plain.out);
     // The tip's notes say line from main's sha (the pin, an ancestor of main and of the tip): it covers the pack.
     note(P2, `PASS Full line from ${BASE}`, `SECURE line from ${BASE}`); push();
+    // #C1032 (Security's rule g, reversing #C934): a pack with a FINDINGS note of its own is NOT covered by a line note on the tip. It refuses, named.
+    const withFindings = run(P2);
+    assert.ok(!withFindings.ok && new RegExp(`${Sx.slice(0, 12)} has a Checker note that is not PASS: "FINDINGS"`).test(withFindings.out), withFindings.out);
+    // With the FINDINGS note gone (the pack unsigned by Checker), the line note on the tip covers it.
+    git(W, "notes", "--ref=checker", "remove", Sx); push();
     const covered = run(P2);
     assert.ok(covered.ok, covered.out);
     assert.match(covered.out, new RegExp(`the waiting pack's only: ${P2.slice(0, 12)}`));
@@ -124,7 +129,8 @@ test("board-release --dry-run: the base must be where the line left main; an old
     writeFileSync(join(H, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: `node '${H}/.flight-board/install/${BASE}/gate/gate.mjs' --config '${cfg}'` }] }] } }));
     const run = (sha) => { try { return { ok: true, out: execFileSync(process.execPath, [join(REPO, "scripts/board-release.mjs"), sha, "--dry-run"], { env: { ...process.env, HOME: H, FLIGHT_BOARD_REPO: W, BOARD_PACK: "v3.51" }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; } catch (e) { return { ok: false, out: `${e.stdout}${e.stderr}` }; } };
     const unsigned = new RegExp(`isn't signed by both Checker and Security: ${Sx.slice(0, 12)}`);
-    note(Sx, "FINDINGS", "SECURE");
+    // The pack has Security's own SECURE and no Checker note (a FINDINGS note would refuse under any line note since #C1032).
+    git(W, "notes", "--ref=security", "add", "-f", "-m", "SECURE", Sx);
     // The base is the pin, older than the branch point M1: it would also cover M1 (main's commit), so it covers nothing.
     note(P2, `PASS Full line from ${BASE}`, `SECURE line from ${BASE}`); push();
     const older = run(P2);
