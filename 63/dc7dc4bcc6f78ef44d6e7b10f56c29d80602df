@@ -1,0 +1,1 @@
+SECURE #C987 63dc7dc, tip of build/c987-answered-ask-closes, line from feb895ad269f9a7ccfbc2a33db03d95b12099307 (Security 11-12): covers 1ab7673, bbdbf59, 34ee28d, 63dc7dc, each also signed on its own commit. 63dc7dc is CHANGELOG and docs only. Needs migration 0029 and a Worker deploy.
