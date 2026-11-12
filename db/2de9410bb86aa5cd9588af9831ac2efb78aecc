@@ -1,0 +1,1 @@
+SECURE #C1009 db2de94, tip of build/ping-not-sent-after-answer-v3, line from c78de5e0da07239e3203a9ad6f296c31b1e997a6 (Security 11-12): tests only (tests/ping-is-a-store-wake.test.mjs) on signed fdfd5f0; covers fdfd5f0 and db2de94. The Worker needs a deploy.
