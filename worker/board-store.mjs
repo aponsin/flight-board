@@ -670,8 +670,8 @@ export async function writeEvidence(db, now, who, key, value, track) {
 // probe alone writes those, evidenceRefusal): one key, usage.week, of its own shape. Its `by` is the role the caller names (on the shared connector, its own `as`): a claim, never proof
 // of who wrote it, so nothing relies on it (Security's LOW 1 on 1305a74).
 export async function writeWeekUsage(db, now, who, args) {
-  const r = weekUsageValue(args, now, who, await evidenceOf(db, WEEK_USAGE_KEY));
-  if (r.refused) return refuse(db, now, { rule: r.lower ? "week-usage-lower" : "week-usage-shape", detail: r.refused }, null, who);
+  const r = weekUsageValue(args, now, who);
+  if (r.refused) return refuse(db, now, { rule: "week-usage-shape", detail: r.refused }, null, who);
   await db.prepare("INSERT INTO evidence (key, value, read_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, read_at = excluded.read_at").bind(WEEK_USAGE_KEY, JSON.stringify(r.value), now).run();
   return { ok: true };
 }

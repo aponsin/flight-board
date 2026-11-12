@@ -172,22 +172,16 @@ test("the page: src session drops (est.) and says as Claude shows it; the estima
   }
 });
 
-// Security's LOW 2 on 1305a74: usage never falls within a week, so a lower percent for the same week is refused; a new week starts fresh.
-test("a percent under the stored one for the same week is refused as week-usage-lower; equal, higher and a new week are taken", async () => {
+// Security's FINDINGS on 833c7b5: a guard refusing a lower percent was worse than none. Each write replaces the last, so a bad write (a 100 with
+// the stored reset time, or a low one) lasts only until the keeper's next true reading.
+test("each write replaces the last: a bad 100 does not lock out the keeper's true, lower reading, and a low one is replaced by the next", async () => {
   const db = makeDb();
   await writeWeekUsage(db, NOW, "Manager", { percent: 85, resets_at: RESET_ISO });
-  const low = await writeWeekUsage(db, NOW + MIN, "Builder", { percent: 40, resets_at: RESET_ISO });
-  assert.equal(low.ok, false);
-  assert.equal(low.refused.rule, "week-usage-lower");
-  const jitter = await writeWeekUsage(db, NOW + MIN, "Builder", { percent: 84, resets_at: new Date(RESET - 1000).toISOString() });
-  assert.equal(jitter.refused?.rule, "week-usage-lower", "the same week's reset read a second earlier is the same week");
-  assert.equal((await readView(db, NOW + MIN)).evidence[WEEK_USAGE_KEY].value.pct, 85, "the refused writes stored nothing");
-  assert.deepEqual(await writeWeekUsage(db, NOW + 2 * MIN, "Manager", { percent: 85, resets_at: RESET_ISO }), { ok: true }, "the same percent renews the reading");
-  assert.equal((await readView(db, NOW + 2 * MIN)).evidence[WEEK_USAGE_KEY].readAt, NOW + 2 * MIN);
-  assert.deepEqual(await writeWeekUsage(db, NOW + 3 * MIN, "Manager", { percent: 86, resets_at: RESET_ISO }), { ok: true });
-  // The week resets: the next week's reset is 7 days on, and its first reading is low.
-  const later = RESET + 60e3, nextWeek = new Date(RESET + 7 * DAY).toISOString();
-  assert.deepEqual(await writeWeekUsage(db, later, "Manager", { percent: 2, resets_at: nextWeek }), { ok: true }, "a new week starts fresh");
-  assert.equal((await readView(db, later)).evidence[WEEK_USAGE_KEY].value.pct, 2);
-  assert.equal(weekUsageValue({ percent: 10, resets_at: RESET_ISO }, NOW, "Builder", { pct: 50, resetsAt: RESET + 2 * HOUR }).value?.pct, 10, "a reset over an hour apart is another week");
+  assert.deepEqual(await writeWeekUsage(db, NOW + MIN, "Builder", { percent: 100, resets_at: RESET_ISO }), { ok: true });
+  assert.deepEqual(await writeWeekUsage(db, NOW + 2 * MIN, "Manager", { percent: 86, resets_at: RESET_ISO }), { ok: true }, "the keeper's true reading goes in");
+  assert.equal((await readView(db, NOW + 2 * MIN)).evidence[WEEK_USAGE_KEY].value.pct, 86);
+  assert.deepEqual(await writeWeekUsage(db, NOW + 3 * MIN, "Builder", { percent: 5, resets_at: RESET_ISO }), { ok: true });
+  assert.deepEqual(await writeWeekUsage(db, NOW + 4 * MIN, "Manager", { percent: 87, resets_at: RESET_ISO }), { ok: true });
+  assert.equal((await readView(db, NOW + 4 * MIN)).evidence[WEEK_USAGE_KEY].value.pct, 87);
+  assert.equal(weekUsageValue({ percent: 10, resets_at: RESET_ISO }, NOW, "Builder").value?.pct, 10, "the rule takes no stored value");
 });
