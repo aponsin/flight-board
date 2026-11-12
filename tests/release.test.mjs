@@ -43,16 +43,17 @@ test("a signed commit that touches nothing pinned goes out: the page, the collec
   assert.deepEqual(verdict({ ...good, stepsChanged: false }), { ok: true, refusals: [], promptNeeded: true }, "a reworded prompt alone goes out too");
 });
 
-test("refused, naming each file, when anything the owner's install pins changed: the gate, the fence, what they import, and the release tool itself", () => {
-  const v = verdict({ ...good, changed: [...good.changed, "gate/rules.mjs", "collector/collect.mjs", "scripts/board-release.mjs"] });
+test("refused, naming each file, when anything the owner's install pins changed: the gate, the fence, what they import, and the link move", () => {
+  const v = verdict({ ...good, changed: [...good.changed, "gate/rules.mjs", "collector/collect.mjs", "scripts/current.mjs"] });
   assert.equal(v.ok, false);
-  assert.match(v.refusals.join("\n"), /owner's install.*gate\/rules\.mjs, collector\/collect\.mjs, scripts\/board-release\.mjs/);
+  assert.match(v.refusals.join("\n"), /owner's install.*gate\/rules\.mjs, collector\/collect\.mjs, scripts\/current\.mjs/);
 });
 
-test("the release tool and everything it imports are the owner's (Security B): a release can't loosen the next one", () => {
+test("the landing job, the link move and what the owner's hooks import are the owner's (Security B); the release tool itself is not (#C1043, the owner chose B on #T1903)", () => {
   const read = (f) => { try { return readFileSync(new URL(`../${f}`, import.meta.url), "utf8"); } catch { return null; } };
   const owned = importClosure([...OWNER_ENTRIES, ...RELEASE_ENTRIES], read);
-  for (const f of ["scripts/board-release.mjs", "scripts/board-land.mjs", "scripts/current.mjs", "scripts/hooks.mjs", "scripts/config.mjs", "scripts/scan.mjs"]) assert.ok(owned.includes(f), f);
+  assert.ok(!owned.includes("scripts/board-release.mjs") && !RELEASE_ENTRIES.includes("scripts/board-release.mjs"), "the release tool self-updates on land");
+  for (const f of ["scripts/board-land.mjs", "scripts/current.mjs", "scripts/hooks.mjs", "scripts/config.mjs", "scripts/scan.mjs"]) assert.ok(owned.includes(f), f);
   assert.ok(!owned.includes("collector/PROMPT.txt") && !owned.includes("page/board.template.html"), "the prompt and the page stay the release role's");
 });
 
@@ -88,7 +89,7 @@ test("#C278 (Security): the fence takes only collector/export.mjs, which imports
   assert.deepEqual(importClosure([...OWNER_ENTRIES, ...RELEASE_ENTRIES], read), [
     "collector/after-ship.mjs", "collector/collect.mjs", "collector/context.mjs", "collector/delta.mjs", "collector/derive.mjs", "collector/expected.mjs", "collector/export.mjs", "collector/facts.mjs", "collector/fence.mjs", "collector/keeper.mjs", "collector/nudges.mjs", "collector/owner-push.mjs", "collector/pairs.mjs", "collector/pickup.mjs", "collector/plan-state.mjs", "collector/prompt-alarm.mjs", "collector/readings.mjs", "collector/refresh.mjs", "collector/review-paths.mjs", "collector/rework.mjs", "collector/stack.mjs", "collector/state-schema.mjs", "collector/state.mjs", "collector/text.mjs", "collector/timings.mjs",
     "gate/after.mjs", "gate/agent-prs.mjs", "gate/build-steps.mjs", "gate/card-rules.mjs", "gate/commit.mjs", "gate/digest.mjs", "gate/gate.mjs", "gate/live.mjs", "gate/owner-waits.mjs", "gate/plan.mjs", "gate/publish.mjs", "gate/reset.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs", "gate/tools.mjs", "gate/traffic.mjs", "gate/wake.mjs",
-    "hooks/red-ask-board.py", "scripts/board-land.mjs", "scripts/board-release.mjs", "scripts/build-page.mjs", "scripts/config.mjs", "scripts/current.mjs", "scripts/fixtures.mjs", "scripts/hooks.mjs", "scripts/pack-label.mjs", "scripts/scan.mjs", "scripts/state-install.mjs", "scripts/thread-ids.mjs", "scripts/wake-watch.mjs",
+    "hooks/red-ask-board.py", "scripts/board-land.mjs", "scripts/build-page.mjs", "scripts/config.mjs", "scripts/current.mjs", "scripts/fixtures.mjs", "scripts/hooks.mjs", "scripts/pack-label.mjs", "scripts/scan.mjs", "scripts/state-install.mjs", "scripts/thread-ids.mjs", "scripts/wake-watch.mjs",
     "worker/state-worker.mjs", "worker/team-time.mjs",
   ]);
 });
