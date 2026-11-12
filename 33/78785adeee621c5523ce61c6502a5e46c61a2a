@@ -1,0 +1,2 @@
+PASS Full: pair-header-lists-all-cards #C1014 at 3378785 (one commit on main 0f69c8d) (Checker, 2026-11-12)
+makeAll no longer cuts the card list at 120 characters; makePair takes a card list up to CARD_MAX (1000) with the same plain-text rule (printable ASCII, no quotes, backslashes, $ or @@), other fields stay at 300; a longer list is refused with a reason before any file is written. npm test: 2705 pass, 0 fail. Mutants, each caught: the 120 cut put back (2 fail), CARD_MAX 300 (1), the refusal thrown instead of returned (1).
