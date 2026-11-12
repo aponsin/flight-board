@@ -1,0 +1,1 @@
+PASS Checker 2 #C969 v3 with #C1027: F1 and LOW on c27c686 fixed; touched tests 37/37, root clean after, the LOW-fix mutant fails a test, merges clean onto main a7c973c (commit 2b73c84a of stack tip bdffd5e2)
