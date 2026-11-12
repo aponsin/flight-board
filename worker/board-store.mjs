@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
+import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -529,6 +529,49 @@ export async function setStackSwitch(db, now, who, b) {
   await db.prepare("INSERT INTO stack_switch (repo, stack, set_by, set_at) VALUES (?, ?, ?, ?) ON CONFLICT(repo) DO UPDATE SET stack = excluded.stack, set_by = excluded.set_by, set_at = excluded.set_at").bind(b.repo, b.stack ? 1 : 0, who, now).run();
   return { ok: true, repo: b.repo, stack: b.stack };
 }
+// #C1018 / #C1035: one checker per tip. claimReview: the first claim of a tip wins (one statement: an insert that only takes over a RELEASED row), and any other
+// checker is told "<checker> has this" (a refusal, logged). The same checker claiming again is fine. A tip that already carries a Checker note (the probe's
+// reading: signed or findings by the checker lane) is refused too: the review is done. A re-cut keeps the claim: with card_id, the checker who holds
+// another tip of the card holds the new one, and anyone else is refused. Manager claims a tip for a named checker up front.
+const hasCheckerNote = (v) => [...(Array.isArray(v?.signed) ? v.signed : []), ...(Array.isArray(v?.findings) ? v.findings : [])].some((x) => /checker/i.test(String(x)));
+export async function claimReview(db, now, who, b) {
+  const bad = reviewClaimRefusal(b, who, "claim");
+  if (bad) return refuse(db, now, bad, null, who);
+  const checker = b.checker ?? "Checker";
+  // The card comes from the probe's evidence (the card whose head is this commit), not from the caller: a checker that passes no card_id, or the wrong
+  // one, is still held to the re-cut rule below (Checker's F2). The caller's card_id is only the fallback for a tip the probe has not read yet.
+  let card = b.card_id ?? null;
+  // The tip already reviewed by Checker: the probe's evidence for a card whose head is this commit.
+  const evs = (await db.prepare("SELECT key, value FROM evidence WHERE key LIKE 'cards.%'").all()).results ?? [];
+  for (const e of evs) {
+    let v; try { v = JSON.parse(e.value); } catch { continue; }
+    if (v?.headSha12 !== b.sha.slice(0, 12)) continue;
+    card = String(e.key).slice("cards.".length);
+    if (hasCheckerNote(v)) return refuse(db, now, { rule: "review-claim-noted", detail: `${b.sha.slice(0, 12)} already has a Checker note` }, card, who);
+  }
+  // A re-cut keeps the claim: another tip of this card is held by an active claim of someone else.
+  if (card) {
+    const other = await db.prepare("SELECT sha, checker FROM review_claims WHERE card_id = ? AND released_at IS NULL AND sha <> ? AND checker <> ?").bind(card, b.sha, checker).first();
+    if (other) return refuse(db, now, { rule: "review-claim-held", detail: `${other.checker} has this` }, card, who);
+  }
+  await db.prepare("INSERT INTO review_claims (sha, card_id, checker, claimed_by, claimed_at, released_at, released_by) VALUES (?, ?, ?, ?, ?, NULL, NULL) ON CONFLICT(sha) DO UPDATE SET card_id = excluded.card_id, checker = excluded.checker, claimed_by = excluded.claimed_by, claimed_at = excluded.claimed_at, released_at = NULL, released_by = NULL WHERE review_claims.released_at IS NOT NULL").bind(b.sha, card, checker, who, now).run();
+  const row = await db.prepare("SELECT checker FROM review_claims WHERE sha = ?").bind(b.sha).first();
+  if (row.checker !== checker) return refuse(db, now, { rule: "review-claim-held", detail: `${row.checker} has this` }, card, who);
+  // The old tips of the card this checker held are handed on to the new one.
+  if (card) await db.prepare("UPDATE review_claims SET released_at = ?, released_by = ? WHERE card_id = ? AND sha <> ? AND checker = ? AND released_at IS NULL").bind(now, `moved to ${b.sha.slice(0, 12)}`, card, b.sha, checker).run();
+  return { ok: true, sha: b.sha, checker };
+}
+// Released by its holder (a Checker session, when its own name matches the claim's) or by Manager (the checker is gone). Nothing else changes.
+export async function releaseReview(db, now, who, b) {
+  const bad = reviewClaimRefusal(b, who, "release");
+  if (bad) return refuse(db, now, bad, null, who);
+  const row = await db.prepare("SELECT checker, released_at FROM review_claims WHERE sha = ?").bind(b.sha).first();
+  if (!row || row.released_at != null) return { ok: true, sha: b.sha, released: false };
+  // Both Checker sessions authenticate as the role Checker, so the holder is the name the caller gives (the same trust as a claim): it must be the claim's.
+  if (who === "Checker" && (b.checker ?? "Checker") !== row.checker) return refuse(db, now, { rule: "review-claim-held", detail: `${row.checker} has this; only that checker or Manager releases it` }, null, who);
+  await db.prepare("UPDATE review_claims SET released_at = ?, released_by = ? WHERE sha = ?").bind(now, who, b.sha).run();
+  return { ok: true, sha: b.sha, released: true };
+}
 // #C871: the owner moves a card that has not started up or down in its agent's queue. The queue is the agent's cards not dropped and with no
 // commit pushed (the probe's reading), in queue_pos order (a card with none after those with one), then by number. The queue is renumbered
 // 1..n, and the two cards swapped carry the owner's stamp, so an agent cannot move them back (queueWriteRefusal).
@@ -710,7 +753,9 @@ export async function readView(db, now) {
   const threads = await readThreads(db), files = await readFiles(db, asks, threads.messages), ships = await readShips(db), usage = await readUsage(db);
   const reworkHistory = await all("SELECT card_id, reason, at, who FROM rework_history ORDER BY at, id");
   const pings = (await db.prepare("SELECT card_id, MAX(created_at) AS at FROM stall_wakes WHERE card_id LIKE ? GROUP BY card_id").bind(`${PING_CARD}%`).all()).results.map((r) => ({ id: r.card_id.slice(PING_CARD.length), at: r.at }));
-  const content = { pings, cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reworkHistory };
+  // #C1018: the review claims still held (a released one is history): the dispatch reads them so a claimed tip wakes no second checker.
+  const reviewClaims = await all("SELECT sha, card_id, checker, claimed_at FROM review_claims WHERE released_at IS NULL ORDER BY claimed_at, sha");
+  const content = { pings, cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reviewClaims, reworkHistory };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
   const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now);
   const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);
