@@ -1,0 +1,1 @@
+PASS Checker 2 #C969 v5 with #C1027 v5: #C969 identical to v4; #C1027 checks git status at the root, no .gitignore line; touched tests 42/42, root clean, bare-state mutant fails 2 tests; merges clean onto main 3ab5085 (commit b273449d of stack tip b273449d)
