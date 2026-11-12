@@ -1,0 +1,3 @@
+PASS Full: stall-says-rework-reason #C981 ab0014d515681a4fc6ac3114bfb428ad603e173a (Checker 2, 2026-11-12; re-cut of f797e4c, which Checker signed, onto main 98643c2)
+Diff-check (Checker 2): the +/- lines of the patch equal f797e4c's, file for file (7 files); git diff --stat origin/main 10dc508 (two-dot) touches only #C981 and #C965 files, nothing reverted. Parent 98643c2 is main's tip: a fast-forward. Boardsmith's suite on the stack top: 2588/2588.
+The original's PASS carries over.
