@@ -3,7 +3,7 @@
 // A write with no route is REFUSED by name ("no-route-yet", logged like any refusal), never dropped and never half-applied.
 // Owner only (the caller checks the role). A route is added with its stage: threads/messages (B1), the answer's note and files (B2),
 // approvals (C4).
-import { answerAsk, closeAsk, reopenAsk, createListItem, updateListItem, refuse, mint } from "./board-store.mjs";
+import { answerAsk, closeAsk, reopenAsk, pingThread, createListItem, updateListItem, refuse, mint } from "./board-store.mjs";
 import { routeThreadWrite } from "./compat-threads.mjs";
 import { optionOfKey } from "./compat-view.mjs";
 import { filesRefusal, linkFiles } from "./file-store.mjs";
@@ -69,6 +69,12 @@ export async function routeWrite(db, now, who, { op, path, data } = {}) {
     const f = { id };
     for (const k of ["text", "area", "category", "note", "rank", "done"]) if (d[k] !== undefined) f[k] = d[k];
     return updateListItem(db, now, who, f);
+  }
+
+  // #C1009: the Ping button's write is a wake of the thread, kept as a row Manager's next read takes.
+  if (coll === "threadPings") {
+    if (op !== "set") return refuse(db, now, NO_ROUTE(path, "a ping is only added"), null, who);
+    return pingThread(db, now, who, id);
   }
 
   // Threads and messages (#C725 B1): the owner's reply, ack, close and new thread, and a thread's rename.
