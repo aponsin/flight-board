@@ -37,7 +37,8 @@ test("a card held by a card it depends on sits after those that can start; at on
   b.state.initiatives = cs; b.state.initRaw = cs;
   const ids = (html) => [...html.matchAll(/data-qmove="([^"]+)" data-dir="up"/g)].map((m) => m[1]);
   assert.deepEqual(ids(b.queueTile("Boardsmith")), ["c2-two", "c1-one"], "c1 holds place 1 but waits on c9");
-  dep.phase = "live";
+  // A new data update (renderAll makes new lists, so each queue is sorted again: #C971 sorts held cards in queueOf).
+  dep.phase = "live"; b.state.initiatives = [...cs]; b.state.initRaw = [...cs];
   assert.deepEqual(ids(b.queueTile("Boardsmith")), ["c1-one", "c2-two"], "once c9 is live it is not held");
   const tie = [card(3, "c3-agent", { queuePos: 1 }), card(4, "c4-owner", { queuePos: 1, queueSetBy: "owner" })];
   b.state.initiatives = tie; b.state.initRaw = tie;
