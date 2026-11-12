@@ -467,6 +467,15 @@ export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: 
 // The step tool (after B4b): an agent writes a start or an end of a WAIT at a phase for a card (the old step log's wait column). The refusal for
 // one call: the card id, the phase, kind, wait and time. `who` is never an argument: the store takes it from who authenticated.
 export const STEP_WAITS = ["busy", "gate", "decision"], STEP_PAST_MS = 7 * 86_400_000, STEP_FUTURE_MS = 60_000;
+// #C976 (Director check 1c: every board ship row had an empty wait, so landing time and the owner's install time could not be told apart): a
+// card with a repo of its own (a board card), at ship and read on main, waits on the owner's install. The store writes that wait itself, never
+// the step tool: "start" when the wait begins (no install wait open), "end" when it stops (the card goes live, or leaves ship or main) with one
+// open; null otherwise. A product card (no repo) never has one. open: whether the card's newest install-wait row is a start.
+export const INSTALL_WAIT = "install";
+export function installWaitStep({ repo, next, onMain, open }) {
+  const waiting = typeof repo === "string" && repo !== "" && next === "ship" && onMain === true;
+  return waiting && !open ? "start" : !waiting && open ? "end" : null;
+}
 export function stepRefusal(a, now) {
   const refuse = (rule, detail) => ({ rule, detail });
   if (a === null || typeof a !== "object" || Array.isArray(a)) return refuse("step-shape", "a step is an object");

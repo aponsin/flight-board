@@ -6,7 +6,7 @@
 // readings and the live version), meta/live, and the probe document. Left out until their stage: messages, threads, steps,
 // events, usage, plan, timings, ctx*, checkRequests, threadPings, pingThreads, agentPrs, approvals.
 
-import { STALE_AFTER_MS, PHASES, typedOther } from "./board-rules.mjs";
+import { STALE_AFTER_MS, PHASES, typedOther, INSTALL_WAIT } from "./board-rules.mjs";
 import { expectedVersions } from "../collector/expected.mjs";
 import { applyFiles } from "./file-store.mjs";
 import { applyShips } from "./compat-ships.mjs";
@@ -192,7 +192,9 @@ export function compatView(view) {
   const own = new Set((view.cards ?? []).map((c) => c.id));
   for (const h of view.historyCards ?? []) if (!own.has(h.id)) collections.initiatives.push(prune({ id: h.id, name: h.title, num: h.num, size: h.size, level: h.review_level, status: "done", createdAt: h.created_at, doneAt: h.done_at }));
   // The phase history as the old step log's shape (B3b): the page's own code reads who, times, ETAs and medians from it.
-  if ((view.history ?? []).length) collections.steps = view.history.map((h) => prune({ id: `h${h.id}`, init: h.card_id, phase: h.phase, kind: h.kind, at: h.at, who: h.who, wait: h.wait ?? undefined }));
+  // #C976: the install wait rows are stored for measuring the owner's install time, not drawn: the page reads every wait as busy or gate and
+  // an open one as the card's status, and it already says "Waiting for install" from the card's wait. So they stay out of the step log here.
+  if ((view.history ?? []).length) collections.steps = view.history.filter((h) => h.wait !== INSTALL_WAIT).map((h) => prune({ id: `h${h.id}`, init: h.card_id, phase: h.phase, kind: h.kind, at: h.at, who: h.who, wait: h.wait ?? undefined }));
   if (view.live?.state === "live") collections.meta = [{ id: "live", version: String(view.live.version).replace(/^v/, ""), at: view.now - (view.live.age ?? 0) }];
   // #C859: each repository's stack switch, for the page's switch and its stack groups.
   if ((view.stackSwitch ?? []).length) collections.meta = [...(collections.meta ?? []), { id: "stackSwitch", rows: view.stackSwitch.map((r) => ({ repo: r.repo, stack: r.stack === true, setBy: r.set_by, setAt: r.set_at })) }];
