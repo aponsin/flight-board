@@ -1,0 +1,1 @@
+SECURE #C977 65575d2 (Security 2026-11-11): page CSS only (white-space: nowrap on .chip) plus a test; nothing else.
