@@ -432,6 +432,28 @@ export function heldWakes({ now, cards, endsPassed }) {
   return out;
 }
 
+// #C987 (the owner, 11-11 ~11:05 pm MT, on answered asks still listed With the team: "those look stuck?"): an answered Decision that
+// Manager has taken (answer_taken_at), whose card then moved on (its next_note or waiting_on changed after the answer: moved_at), is
+// closed by the store 30 minutes after it moved on, with a line to Manager first. Left open, each a test: an answer Manager has not
+// taken; a "help" answer (it waits for Manager's reply); any other type; a card that has not moved since the answer; an ask closed by
+// the store once and then reopened (auto_closed_at). Returns [{ ask_id, card_id, num, reason, closeAt, due }].
+export const AUTO_CLOSE_AFTER_MS = 30 * 60000;
+export const AUTO_CLOSED_BY = "board";
+export function movedOnAsks({ now, asks, cards }) {
+  const byId = new Map((cards ?? []).map((c) => [c.id, c]));
+  const out = [];
+  for (const a of asks ?? []) {
+    if (a.type !== "Decision" || !Number.isFinite(a.answered_at) || a.closed_at || a.withdrawn_at || a.auto_closed_at) continue;
+    if (!Number.isFinite(a.answer_taken_at) || a.answer_status === "help") continue;
+    const c = byId.get(a.card_id);
+    if (!c || !Number.isFinite(c.moved_at) || c.moved_at <= a.answered_at) continue;
+    const closeAt = Math.max(c.moved_at, a.answer_taken_at) + AUTO_CLOSE_AFTER_MS;
+    const card = Number.isInteger(c.num) ? `#C${c.num}` : "its card";
+    out.push({ ask_id: a.id, card_id: c.id, num: c.num, closeAt, due: now >= closeAt, reason: `#T${a.num} is answered and ${card} has moved on: the board closes it at ${mtTime(closeAt)}` });
+  }
+  return out;
+}
+
 // #C873: the product's daily full test run, as the probe reads it (the product's scripts/daily-e2e.mjs --status):
 // { state: ok|red|missed|unknown, reason, run (an https link or null), lastGreenAt (iso or null) }.
 export const E2E_STATES = ["ok", "red", "missed", "unknown"];

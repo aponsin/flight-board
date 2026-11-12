@@ -92,17 +92,19 @@ test("the probe's own rows and the step tool's waits are untouched, and the page
 
 test("migration 0028 copies every row as it is (old ship rows keep their empty wait, other waits keep theirs) and allows install", () => {
   const dir = fileURLToPath(new URL("../worker/migrations/", import.meta.url));
+  // #C987: 0028 by name, not as the newest file (0029 came after it).
   const files = readdirSync(dir).filter((n) => n.endsWith(".sql")).sort();
-  assert.equal(files.at(-1), "0028_install_wait.sql");
+  const at = files.indexOf("0028_install_wait.sql");
+  assert.ok(at > 0, "0028 is there");
   const sql = new DatabaseSync(":memory:");
-  for (const f of files.slice(0, -1)) sql.exec(readFileSync(dir + f, "utf8"));
+  for (const f of files.slice(0, at)) sql.exec(readFileSync(dir + f, "utf8"));
   const ins = sql.prepare("INSERT INTO phase_history (card_id, phase, kind, at, who, source, wait) VALUES (?, ?, ?, ?, ?, ?, ?)");
   ins.run("old-c", "ship", "start", T, "Release", "evidence", null);
   ins.run("old-c", "ship", "start", T, "Release", "tool", "gate");
   ins.run("old-c", "build", "end", T - 5, "Builder", "import", null);
   assert.throws(() => ins.run("old-c", "ship", "start", T + 1, "owner", "evidence", "install"), /CHECK/, "before 0028 install is refused");
   const before = sql.prepare("SELECT * FROM phase_history ORDER BY id").all().map((r) => ({ ...r }));
-  sql.exec(readFileSync(dir + files.at(-1), "utf8"));
+  sql.exec(readFileSync(dir + files[at], "utf8"));
   assert.deepEqual(sql.prepare("SELECT * FROM phase_history ORDER BY id").all().map((r) => ({ ...r })), before, "no backfill, nothing changed");
   ins.run("old-c", "ship", "start", T + 1, "owner", "evidence", "install");
   assert.throws(() => ins.run("old-c", "ship", "start", T + 2, "owner", "evidence", "waiting"), /CHECK/, "other words still refused");
