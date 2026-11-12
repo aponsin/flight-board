@@ -5,9 +5,13 @@ import { JOBS, OUTER_EXTRA_SEC, makeLogger, startRun, runChild, launchdPlist } f
 
 test("four cadences (#C821 added dispatch), each with an inside limit well under row 4's 3 minutes", () => {
   assert.deepEqual(Object.keys(JOBS), ["ask", "evidence", "usage", "dispatch"]);
-  assert.deepEqual(Object.values(JOBS).map((j) => j.intervalSec), [20, 60, 300, 60]);
-  assert.deepEqual(Object.values(JOBS).map((j) => j.limitSec), [30, 90, 120, 45]);
-  for (const j of Object.values(JOBS)) assert.ok(j.limitSec + OUTER_EXTRA_SEC < 180);
+  assert.deepEqual(Object.values(JOBS).map((j) => j.intervalSec), [20, 120, 300, 60]);
+  assert.deepEqual(Object.values(JOBS).map((j) => j.limitSec), [30, 170, 120, 45]);
+  for (const [name, j] of Object.entries(JOBS)) if (name !== "evidence") assert.ok(j.limitSec + OUTER_EXTRA_SEC < 180);
+  // #C996's stopgap (every number reverts to 60 / 90 when part 2 makes runs fast): evidence may run to 170 s, starts every 2 minutes
+  // (launchd never overlaps two runs of a job), and its alarm is 185 s, past the page's old 3-minute edge (now 5).
+  assert.equal(JOBS.evidence.limitSec + OUTER_EXTRA_SEC, 185);
+  assert.ok(JOBS.evidence.limitSec + OUTER_EXTRA_SEC < 5 * 60);
 });
 
 test("every log line carries the time and a run id; a run logs its start and its end with the duration", () => {
@@ -47,8 +51,8 @@ test("a child process is killed at its own timeout", async () => {
 test("each cadence is its own launchd job with the OS alarm in front of the program", () => {
   const plists = Object.keys(JOBS).map((job) => launchdPlist({ job, label: `com.flight-board.probe.${job}`, nodePath: "/usr/bin/node", script: "/x/probe.mjs", logPath: `/x/${job}.log` }));
   assert.equal(new Set(plists.map((p) => /<key>Label<\/key><string>([^<]+)/.exec(p)[1])).size, 4);
-  assert.deepEqual(plists.map((p) => Number(/<key>StartInterval<\/key><integer>(\d+)/.exec(p)[1])), [20, 60, 300, 60]);
-  assert.deepEqual(plists.map((p) => /alarm (\d+); exec @ARGV/.exec(p)[1]), ["45", "105", "135", "60"]);
+  assert.deepEqual(plists.map((p) => Number(/<key>StartInterval<\/key><integer>(\d+)/.exec(p)[1])), [20, 120, 300, 60]);
+  assert.deepEqual(plists.map((p) => /alarm (\d+); exec @ARGV/.exec(p)[1]), ["45", "185", "135", "60"]);
   for (const p of plists) assert.match(p, /<string>\/usr\/bin\/perl<\/string><string>-e<\/string>/);
 });
 

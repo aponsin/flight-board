@@ -9,7 +9,7 @@ import { mtDayTime } from "./team-time.mjs";
 import { readThreads } from "./compat-threads.mjs";
 import { askWakes, promiseWakes } from "./push-rules.mjs";
 
-export const PROBE_SILENT_MS = 3 * 60_000;
+export const PROBE_SILENT_MS = 5 * 60_000; // #C996: was 3 min while the evidence job ran every minute; reverts with its cadence
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 // The store mints #C and #T numbers: one atomic statement, never a read-then-write.

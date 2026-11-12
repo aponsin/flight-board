@@ -238,8 +238,9 @@ export const childLine = (e) => {
   const pick = lines.findLast((l) => /^state: /.test(l) || /^[A-Za-z]*(Error|Exception)\b/.test(l)) ?? lines.at(-1);
   return pick ? plainLine(pick) : "";
 };
-// A run over this is logged and shown as slow: the job's limit is 90 s and the interval 60 s (11-11: good runs took 60 to 88 s, one was killed).
-export const SLOW_RUN_MS = 75_000;
+// A run over this is logged and shown as slow: the job's limit is 170 s (worker/probe-jobs.mjs, #C996's stopgap; it was 90 s with 75 s
+// here, when good runs took 60 to 88 s and one was killed), so this is as near its limit as 75 s was to 90 s. It reverts with the limit.
+export const SLOW_RUN_MS = 150_000;
 
 export async function evidenceJob(o) {
   const t0 = Date.now(), timing = o.timing ?? {};
