@@ -11,6 +11,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { runActionsUsage } from "./actions-usage.mjs";
 import { fillRepoWords } from "./repo-words.mjs";
+import { createHash } from "node:crypto";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
 import { loadEnv, accessHeaders, FETCH_TIMEOUT_MS } from "./probe-board.mjs";
 import { prepareStoreState } from "./store-cards.mjs";
@@ -42,17 +43,57 @@ export function evidenceWrites(state, job) {
 
 const post = (fetchImpl, base, headers, body) => fetchImpl(`${base}/api/probe/evidence`, { method: "POST", headers, body: JSON.stringify(body), redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 
-// Posts every write; a refusal (422) of one key is logged and the rest still go, any other failure stops the run.
-export async function postWrites(writes, { base, headers, fetchImpl = fetch, log = () => {} }) {
-  let written = 0, refused = 0;
-  for (const w of writes) {
-    const r = await post(fetchImpl, base, headers, w);
-    if (r.ok) { written++; continue; }
-    if (r.status === 422) { refused++; let why = ""; try { why = JSON.stringify((await r.json())?.refusal ?? "").slice(0, 120); } catch { /* none */ } log(`${w.key} refused ${why}`); continue; }
-    throw new Error(`evidence write ${w.key} answered ${r.status}`);
-  }
-  return { written, refused };
+// Posts every write, POST_CONCURRENCY at a time (#C996: 122 posts one after another took 15 to 20 s of a run); a refusal (422) of one key is
+// logged and the rest still go, any other failure stops the run (the posts already under way finish, none new starts, and the error carries
+// `posted`, the keys that did go). Past `deadline` no new post starts: the result says `stopped` and which went (`ok`), so the caller records
+// those and the rest go first next run, instead of the watchdog killing the run between a post and its record.
+export const POST_CONCURRENCY = 6;
+export async function postWrites(writes, { base, headers, fetchImpl = fetch, log = () => {}, concurrency = POST_CONCURRENCY, deadline = Infinity, clock = Date.now }) {
+  let written = 0, refused = 0, stopped = false, fatal = null, next = 0;
+  const ok = [];
+  const worker = async () => {
+    while (fatal === null && next < writes.length) {
+      if (clock() >= deadline) { stopped = true; return; }
+      const w = writes[next++];
+      let r;
+      try { r = await post(fetchImpl, base, headers, w); } catch (e) { fatal ??= e; return; }
+      if (r.ok) { written++; ok.push(w.key); continue; }
+      if (r.status === 422) { refused++; let why = ""; try { why = JSON.stringify((await r.json())?.refusal ?? "").slice(0, 120); } catch { /* none */ } log(`${w.key} refused ${why}`); continue; }
+      fatal ??= new Error(`evidence write ${w.key} answered ${r.status}`);
+      return;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, writes.length)) }, worker));
+  if (fatal) throw Object.assign(fatal, { posted: ok });
+  return { written, refused, ok, stopped };
 }
+
+// #C996: only what changed is posted (a run posted 122 keys, ~110 of them cards that had not changed). A card's reading is posted when it differs from
+// the last one posted, ignoring `at` (the time it was read: every reading's own), and again REPOST_MS after the last post whatever it says, because the
+// store reads a card whose reading is not rewritten for an hour as a repository copy gone stale (board-rules staleCopies, #C927). Every other key
+// (agents, ctx, board, stuck, ship, releases, usage, run.evidence) is posted every run: `board` is the heartbeat, and they are few. kept is
+// { key: { h, at } } as the last run saved it; a key not in the writes any more is dropped; a time in the future (a clock set back) counts as due.
+// Order: every other key first, then the cards, oldest post first and never-posted before all: when a run is cut at its deadline, the keys left over
+// lead the next.
+export const REPOST_MS = 10 * 60_000;
+const readingHash = (value) => { const { at, ...rest } = plain(value) ? value : { v: value }; return createHash("sha256").update(JSON.stringify(rest)).digest("hex").slice(0, 16); };
+export function dueWrites(writes, kept, now) {
+  const due = [], hashes = new Map(), carried = {};
+  const had = plain(kept) ? kept : {};
+  for (const w of writes) {
+    if (!w.key.startsWith("cards.")) { due.push(w); continue; }
+    const h = readingHash(w.value), k = Object.hasOwn(had, w.key) && plain(had[w.key]) ? had[w.key] : null;
+    hashes.set(w.key, h);
+    if (k && k.h === h && Number.isFinite(k.at) && k.at <= now && now - k.at < REPOST_MS) { carried[w.key] = { h: k.h, at: k.at }; continue; }
+    due.push(w);
+  }
+  const lastAt = (w) => (Object.hasOwn(had, w.key) && Number.isFinite(had[w.key]?.at) ? had[w.key].at : 0);
+  const isCard = (w) => (w.key.startsWith("cards.") ? 1 : 0);
+  due.sort((a, b) => isCard(a) - isCard(b) || lastAt(a) - lastAt(b)); // the few other keys first: `board` is the heartbeat, never starved by a long run of cards
+  return { due, carried, hashes };
+}
+// What to keep after a run: the carried entries and the cards that were posted this time.
+export const keptAfter = ({ carried, hashes }, postedKeys, now) => ({ ...carried, ...Object.fromEntries(postedKeys.filter((k) => hashes.has(k)).map((k) => [k, { h: hashes.get(k), at: now }])) });
 
 // The state child's environment. A launchd job starts with PATH=/usr/bin:/bin:/usr/sbin:/sbin, where git is but gh (Homebrew) is not, so every
 // gh call of the state build failed (ENOENT): CI never read, the deploy run never read, the gh back-off at its 30-minute maximum, and the
@@ -238,6 +279,10 @@ export const childLine = (e) => {
   const pick = lines.findLast((l) => /^state: /.test(l) || /^[A-Za-z]*(Error|Exception)\b/.test(l)) ?? lines.at(-1);
   return pick ? plainLine(pick) : "";
 };
+// #C996: the state child's own "timing:" line (collector/state.mjs timingText: fixed phase words and whole numbers), or "". Only a line of exactly that
+// shape is ever logged, whatever else the child printed.
+export const TIMING_LINE = /^timing:(?: [a-z][A-Za-z0-9+]{0,11}[=#]\d{1,9}){1,40}$/;
+export const timingOf = (stdout) => String(stdout ?? "").split(/\r?\n/).map((l) => l.trim()).findLast((l) => TIMING_LINE.test(l)) ?? "";
 // A run over this is logged and shown as slow: the job's limit is 170 s (worker/probe-jobs.mjs, #C996's stopgap; it was 90 s with 75 s
 // here, when good runs took 60 to 88 s and one was killed), so this is as near its limit as 75 s was to 90 s. It reverts with the limit.
 export const SLOW_RUN_MS = 150_000;
@@ -250,7 +295,7 @@ export async function evidenceJob(o) {
   }
 }
 
-async function evidenceJobRun({ timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
+async function evidenceJobRun({ timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const t0 = Date.now();
   const ghOk = job === "evidence" ? ghCheck(env) : true;
@@ -268,10 +313,17 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   // #C737: only the evidence job reads cards; it tells the state child what is deployed.
   const extra = job === "evidence" ? deployEnv(await deployRead({ base, headers, fetchImpl, log })) : {};
   const tState = Date.now();
-  try { await build(stateArgs(configPath), (JOBS[job].limitSec - 15) * 1000, extra); } catch (e) {
+  try {
+    const built = await build(stateArgs(configPath), (JOBS[job].limitSec - 15) * 1000, extra);
+    // #C996: where the child's time went, when it says (collector/state.mjs timingText).
+    const t = timingOf(built?.stdout);
+    if (t) log(`state child ${t}`);
+  } catch (e) {
     // #C962: say why the child failed, in the log and (through main) on the page.
     const line = childLine(e);
     if (line) log(`state child said: ${line}`);
+    const t = timingOf(e?.stdout);
+    if (t) log(`state child ${t}`);
     throw Object.assign(e, { childLine: line });
   }
   timing.stateMs = Date.now() - tState;
@@ -284,7 +336,18 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   // dropped here), so the cards were read from an old copy and nothing said so. cardsCheckedAt is the last run every repository was read fresh.
   if (job === "evidence") { const ok = state?.board?.cardsCheckedAt; if (Number.isFinite(ok) && Number.isFinite(state.board.at) && state.board.at - ok > 2 * 60_000) log(`repository copy not fresh: a fetch failed, the cards were read from the clone as it was ${Math.round((state.board.at - ok) / 60_000)} min ago (retried next run)`); }
   const tPost = Date.now();
-  const done = await postWrites(writes, { base, headers, fetchImpl, log });
+  // #C996: only what changed (dueWrites), kept beside the state; the posting stops cleanly before the job's limit (20 s short of it, and never less than
+  // 10 s after the child ended), and what went is recorded even when a post fails, so the keys left over lead the next run.
+  const keptFile = join(dirname(stateFile), "evidence-posted.json");
+  let kept = null;
+  if (job === "evidence") { try { const k = JSON.parse(read(keptFile)); if (plain(k) && k.v === 1 && plain(k.keys)) kept = k.keys; } catch { /* the first run: everything is due */ } }
+  const plan = job === "evidence" ? dueWrites(writes, kept, tPost) : { due: writes, carried: {}, hashes: new Map() };
+  if (job === "evidence") log(`${plan.due.length} of ${writes.length} key(s) due (${writes.length - plan.due.length} unchanged)`);
+  const saveKept = (keys) => { if (job !== "evidence") return; try { write(keptFile, JSON.stringify({ v: 1, keys: keptAfter(plan, keys, Date.now()) })); } catch { /* best effort: the next run posts them all */ } };
+  let done;
+  try { done = await postWrites(plan.due, { base, headers, fetchImpl, log, deadline: job === "evidence" ? Math.max(t0 + (JOBS[job].limitSec - 20) * 1000, tPost + 10_000) : Infinity }); } catch (e) { saveKept(e.posted ?? []); throw e; }
+  saveKept(done.ok);
+  if (done.stopped) log(`posts stopped at the deadline: ${done.written} of ${plan.due.length} written, the rest go first next run`);
   timing.postMs = Date.now() - tPost;
   // #C873: before the Actions step, which stops at the job's deadline; the script's own wait is capped at 30 s here.
   if (job === "usage") { let cfg2 = null; try { cfg2 = read(origConfig); } catch { log("e2e: the board config could not be read"); } if (cfg2) e2eStep(cfg2, { stateFile, env, log, ...e2e }); }
