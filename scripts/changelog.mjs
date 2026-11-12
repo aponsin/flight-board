@@ -6,7 +6,10 @@
 //   node scripts/changelog.mjs --write    folds the files into CHANGELOG.md and deletes them (a release or a pack does this, once)
 // Order: newest first, by the first "#C<number>" in a bullet, highest first (a bullet with none goes last, by file name). Pure functions
 // below; the command line only reads and writes files. Nothing here reaches a network or runs git.
-import { readFileSync, writeFileSync, readdirSync, rmSync, existsSync } from "node:fs";
+// Security's LOW on #C1019: nothing here follows a symbolic link. CHANGELOG.d, each file in it and CHANGELOG.md must be what they say they are
+// (lstat: a plain folder, plain files), or the run refuses and names it; a link could fold a file from outside the repository into CHANGELOG.md, or
+// make --write delete files outside it. A folder inside CHANGELOG.d is named too, never a crash (Checker 2's LOW).
+import { readFileSync, writeFileSync, readdirSync, rmSync, lstatSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -50,17 +53,30 @@ export function joinChangelog(base, bullets) {
   return lines.join("\n");
 }
 
+// What a path is, by lstat (a link is a link, never what it points at): "file", "dir", "link", "other", or null when there is nothing there.
+const kindOf = (p) => { try { const s = lstatSync(p); return s.isSymbolicLink() ? "link" : s.isFile() ? "file" : s.isDirectory() ? "dir" : "other"; } catch { return null; } };
+const WHAT = { link: "a symbolic link", dir: "a folder", other: "a special file" };
+
+// { files: [{ name, text }] of the plain files, problems: the paths that are not what they must be }.
 export function readFiles(root) {
-  const dir = join(root, DIR);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter((n) => n !== "README.md" && !n.startsWith(".")).sort().map((name) => ({ name, text: readFileSync(join(dir, name), "utf8") }));
+  const dir = join(root, DIR), k = kindOf(dir);
+  if (k === null) return { files: [], problems: [] };
+  if (k !== "dir") return { files: [], problems: [`${DIR}: must be a plain folder, not ${WHAT[k] ?? "a file"}`] };
+  const files = [], problems = [];
+  for (const name of readdirSync(dir).filter((n) => n !== "README.md" && !n.startsWith(".")).sort()) {
+    const fk = kindOf(join(dir, name));
+    if (fk === "file") files.push({ name, text: readFileSync(join(dir, name), "utf8") });
+    else problems.push(`${name}: must be a plain file, not ${WHAT[fk] ?? "missing"}`);
+  }
+  return { files, problems };
 }
 
 // The command line. Returns { code, out } so a test can call it; the file entry below prints and exits.
 export function run(argv, root) {
-  const files = readFiles(root), { bullets, problems } = cardBullets(files);
+  const read = readFiles(root), { files } = read, { bullets, problems: bad } = cardBullets(files), problems = [...read.problems, ...bad];
   if (argv.includes("--check")) return problems.length ? { code: 1, out: problems.join("\n") + "\n" } : { code: 0, out: `${files.length} card file(s), all fine\n` };
   if (problems.length) return { code: 1, out: problems.join("\n") + "\n" };
+  if (kindOf(join(root, FILE)) !== "file") return { code: 1, out: `${FILE}: must be a plain file, not ${WHAT[kindOf(join(root, FILE))] ?? "missing"}\n` };
   const base = readFileSync(join(root, FILE), "utf8");
   let joined;
   try { joined = joinChangelog(base, bullets); } catch (e) { return { code: 1, out: `${e.message}\n` }; }
