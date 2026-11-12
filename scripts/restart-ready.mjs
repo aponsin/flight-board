@@ -3,7 +3,7 @@
 //   node <pinned copy>/scripts/restart-ready.mjs --config <board.config.json> --dry-run [--force-at HH:MM]
 // It has no way to quit, close, signal or open anything: no restart action exists in this file (a test holds that), and it refuses to run without
 // --dry-run. Part B, the action, needs the owner's go. It never writes and never calls the network. restart-check.mjs (what every pack's restart step runs)
-// is untouched.
+// changes only in where it reads the live state from (live-state.mjs).
 // The checks, in the order the first failing one is named:
 //   ship       no ship run alive, and the ship role not working on a card in the ship phase (restart-check.mjs's own rule)
 //   install    no pack install running (a board-store deploy, tree or hooks file, board-deploy.mjs or an install script)
