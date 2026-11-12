@@ -142,7 +142,9 @@ export function cardIn(entries, ids, nums) {
     let last = null;
     for (const m of text.matchAll(re)) {
       const id = m[1] ?? nums.get(Number(m[2]));
-      if (id) last = id;
+      // #C960: a card the probe cannot read (an id over CARD_ID, which the store once took) is never an agent's card, whether named by id or by #C<num>:
+      // the schema refuses the whole state for one such id, and no card's reading was rewritten for an hour.
+      if (id && CARD_ID.test(id) && id.length <= CARD_ID_MAX) last = id;
     }
     if (last) return last;
   }
