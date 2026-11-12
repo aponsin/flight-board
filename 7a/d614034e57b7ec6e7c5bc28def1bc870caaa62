@@ -1,0 +1,7 @@
+PASS Full: board-text-mountain-time #C983 7ad6140 (Checker, 2026-11-12; carded Quick, reviewed Full: worker/, page/ and the pinned Collector)
+Tree: git diff --stat main 7ad6140 (two-dot) touches only #C976/#C983 files; nothing reverted. CHANGELOG and DATA.md lines present.
+Suite at 7ad6140: 2559 pass, 0 fail.
+Formatter probed: 8:45 pm, 12:00 am, 12:00 pm, both 2026 summer-time edges (Mar 8 1:59 -> 3:01 am, Nov 1 1:59 -> 1:01 am), bad values "?", output ASCII only (the narrow space before AM/PM is folded).
+Collector's new import of ../worker/team-time.mjs: the pinned install copies worker/, and four installed collector files already import from ../worker/.
+Mutation check: pass on 12 of 15 call sites. 15 Z-form mutants killed (each site on its own, page included). Raw-number mutants, which the source scan cannot see: overdue nudge, prompt alarm, page approval line, read-only idle, queued line, held-until killed.
+LOW F1 (follow-up, no change to this sha): three sites are guarded only by the source scan, which matches one way of writing Z. A raw-number mutant survives the whole suite at each: heldWakes' hold_end "no end after 2 h" line (worker/board-rules.mjs, "since ${mtDayTime(since)}"), and guardedInbox's door lastSet and notices (worker/board-store.mjs). Only Manager reads these. Ask: one behaviour test per site, as a tests-only commit on top of the stack.
