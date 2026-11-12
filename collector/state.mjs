@@ -371,7 +371,31 @@ export const shipsCard = (ships, tip, head) => ships.some((s) => s.branch === ti
 // stays on GitHub after a red run), whose CI run is not finished badly (failed or cancelled: the ship is over). { version, ci,
 // at } or null. A CI read that can't be made (back-off, the call limit) is "none": the candidate still counts, never a green badge.
 export const SHIP_CANDIDATE_MAX_MS = 6 * 3600e3;
-export function shipCandidate({ tips, pattern, now, onMain, ci }) {
+// #C1038 (2026-11-12: the badge read "Ship v1.210.5 CI running" after v1.210.5 was live and its CI on main green): the merge does not make
+// the candidate's tip an ancestor of main, and the board holds no ship record to close it by. So main's own deploy closes it: the commit
+// of main's newest successful deploy run (repos[""].live) is read back along its first parents, and a candidate whose version that
+// history names (shipped(version): versionsOn) is over, whatever its own run reads. No deploy run read: the candidate stands.
+export const SHIPPED_LOOKBACK = 100;
+export function versionsOn(git, ref, pattern) {
+  const out = new Set();
+  try {
+    const re = new RegExp(pattern);
+    for (const s of git(["log", "--first-parent", `--max-count=${SHIPPED_LOOKBACK}`, "--format=%s", ref]).split("\n")) {
+      const m = re.exec(s), v = m ? m[1] ?? m[0] : null;
+      if (v && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(v)) out.add(v);
+    }
+  } catch { /* no reading: the candidate stands */ }
+  return out;
+}
+// The run's reading of the candidate, from the team's repository ({ git, remote, main, tips, ci, live }) and the collector config: the merge
+// check against main, the CI reader, and (#C1038) main's deployed history read lazily, once, for the shipped check. Exported so a test drives
+// the wiring itself.
+export function teamShip(team, c, now) {
+  let shippedSet = null;
+  return shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ok(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci,
+    shipped: (v) => { if (!c.versionPattern || !team.live) return false; shippedSet ??= versionsOn(team.git, team.live, c.versionPattern); return shippedSet.has(v); } });
+}
+export function shipCandidate({ tips, pattern, now, onMain, ci, shipped = () => false }) {
   if (!pattern) return null;
   let re;
   try { re = new RegExp(pattern); } catch { return null; }
@@ -379,9 +403,10 @@ export function shipCandidate({ tips, pattern, now, onMain, ci }) {
     .sort((a, b) => b.at - a.at).slice(0, 3);
   for (const t of found) {
     if (onMain(t.sha)) continue;
+    const m = /v(\d{1,4}\.\d{1,4}\.\d{1,4})/.exec(t.branch);
+    if (m && shipped(m[1])) continue;
     const r = ci(t.sha), state = r && typeof r.ci === "string" ? r.ci : "none";
     if (state === "failed" || state === "cancelled") continue;
-    const m = /v(\d{1,4}\.\d{1,4}\.\d{1,4})/.exec(t.branch);
     return { version: m ? m[1] : null, ci: state, at: t.at };
   }
   return null;
@@ -1281,7 +1306,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // #C679: a ship candidate pushed and not on main (the team's repository only: the one the ship runs in).
     let ship = null;
     const team = repos[""];
-    if (team && c.candidatePattern) { try { ship = shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ok(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci }); } catch { /* no reading: the badge stays as the cards say */ } }
+    if (team && c.candidatePattern) { try { ship = teamShip(team, c, now); } catch { /* no reading: the badge stays as the cards say */ } }
     // #C731 B4b: the release log's CI times (the team's repository only, as the ship runs are).
     let releases = null;
     if (team && c.releaseTimes) { try { releases = releaseTimesOf(team.git, `${team.remote}/${team.main}`, c.releaseTimes); } catch { /* no reading */ } }

@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { stateErrors, pickState, SHIP_CI, EXTRA_KEYS } from "../collector/state-schema.mjs";
-import { shipCandidate, SHIP_CANDIDATE_MAX_MS, buildState } from "../collector/state.mjs";
+import { shipCandidate, teamShip, versionsOn, SHIP_CANDIDATE_MAX_MS, buildState } from "../collector/state.mjs";
 import worker, { sha256hex, secretName, RATE_MS, changeKey } from "../worker/state-worker.mjs";
 
 const T = Date.UTC(2026, 10, 4, 17, 40);
@@ -41,6 +41,45 @@ test("the newest candidate that is still in flight counts; a failed newer one do
   assert.equal(shipCandidate({ tips, pattern: PATTERN, now: T, onMain: never, ci: ciOf({ [SHA]: "failed", [SHA2]: "queued" }) }).version, "1.200.5", "the next one down");
   assert.deepEqual(shipCandidate({ tips: [tips[1]], pattern: PATTERN, now: T, onMain: never, ci: () => null }), { version: "1.200.6", ci: "none", at: T - 4 * 60e3 }, "no CI reading: pushed and not on main");
   assert.equal(shipCandidate({ tips: [tip("build/ship-vX", SHA, 1)], pattern: "^build/ship-", now: T, onMain: never, ci: ciOf({}) }).version, null, "no version in the name: none, never the name");
+});
+
+// #C1038: v1.210.5 was live and main's CI green, but the badge read "CI running": the candidate's tip is not an ancestor of main (the merge
+// is another commit) and no ship record closes it. Main's deploy closes it.
+test("a candidate whose version main's deployed history already names is over, with no ship record and a run that still reads running (#C1038)", () => {
+  const tips = [tip("build/ship-v1.210.5", SHA, 90)];
+  const args = { tips, pattern: PATTERN, now: T, onMain: never, ci: ciOf({ [SHA]: "running" }) };
+  assert.equal(shipCandidate({ ...args, shipped: (v) => v === "1.210.5" }), null, "shipped: no badge");
+  assert.equal(shipCandidate({ ...args, shipped: (v) => v === "1.210.4" }).ci, "running", "another version shipped: still in flight");
+  assert.equal(shipCandidate(args).ci, "running", "no shipped check given: as before (#C679)");
+  const two = [tip("build/ship-v1.210.6", SHA2, 3), tip("build/ship-v1.210.5", SHA, 90)];
+  assert.equal(shipCandidate({ ...args, tips: two, shipped: (v) => v === "1.210.5" }).version, "1.210.6", "an older shipped one never hides a newer candidate");
+});
+
+test("versionsOn: the versions main's first-parent subjects name (versionPattern), nothing when git or the pattern fails", () => {
+  const log = "v1.210.5: build/a@abc1234\nA merge with no version\nv1.210.4: build/b@def5678\nv12.3\n";
+  let asked;
+  const git = (a) => { asked = a; return log; };
+  assert.deepEqual([...versionsOn(git, SHA, "^v(\\d+\\.\\d+\\.\\d+)\\b")].sort(), ["1.210.4", "1.210.5"]);
+  assert.ok(asked.includes("--first-parent") && asked.includes(SHA), "read from the deployed commit along its first parents");
+  assert.equal(versionsOn(() => { throw new Error("no git"); }, SHA, "^v(\\d+\\.\\d+\\.\\d+)\\b").size, 0);
+  assert.equal(versionsOn(git, SHA, "(").size, 0);
+});
+
+// The wiring the collector run uses (teamShip): the merge check, the CI reader and the deployed history, on a fake repository.
+test("teamShip: the run's wiring drops a shipped candidate by the deployed commit's history, and keeps it when no deploy or no pattern is read (#C1038)", () => {
+  const DEPLOYED = "d".repeat(40), calls = [];
+  const git = (a) => { calls.push(a); if (a[0] === "merge-base") throw new Error("not an ancestor"); if (a[0] === "log") return a.includes(DEPLOYED) ? "v1.210.5: build/a@abc1234\nv1.210.4: build/b@def5678\n" : "v9.9.9: other\n"; return ""; };
+  const team = (extra = {}) => ({ git, remote: "origin", main: "main", tips: [tip("build/ship-v1.210.5", SHA, 90)], ci: ciOf({ [SHA]: "running" }), live: DEPLOYED, ...extra });
+  const c = { candidatePattern: PATTERN, versionPattern: "^v(\\d+\\.\\d+\\.\\d+)\\b" };
+  assert.equal(teamShip(team(), c, T), null, "v1.210.5 is in the deployed history: no badge");
+  assert.ok(calls.some((a) => a[0] === "log" && a.includes(DEPLOYED)), "the history is read from the deployed commit");
+  assert.equal(teamShip(team({ live: null }), c, T).ci, "running", "no deploy run read: the candidate stands");
+  assert.equal(teamShip(team(), { ...c, versionPattern: "" }, T).ci, "running", "no versionPattern: the candidate stands");
+  assert.equal(teamShip(team({ live: "e".repeat(40) }), c, T).ci, "running", "a deployed commit that does not name the version: the candidate stands");
+  assert.equal(teamShip(team({ tips: [tip("build/ship-v1.210.6", SHA2, 3)], ci: ciOf({ [SHA2]: "queued" }) }), c, T).version, "1.210.6", "a newer candidate is in flight");
+  const logs = []; const counting = (a) => { if (a[0] === "log") logs.push(a); return git(a); };
+  teamShip(team({ git: counting, tips: [tip("build/ship-v1.210.6", SHA2, 3), tip("build/ship-v1.210.5", SHA, 90)], ci: ciOf({ [SHA2]: "failed" }) }), c, T);
+  assert.equal(logs.length, 1, "the history is read once, however many candidates ask");
 });
 
 const base = (extra = {}) => ({ id: "TestBoard42xyz", now: T, probe: "ec6b4ed97e39", pageVersion: "842a30f31c16", cards: {}, agents: {}, ...extra });
