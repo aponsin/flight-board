@@ -461,9 +461,12 @@ export function evidenceRefusal(key, value, who, track) {
 // which the Worker does not have; the probe could send an "equal patch" flag one day. Until then only a review's FINDINGS or a return to build counts.
 // Never for a card on main or live. `prev` is the card's last stored reading (null the first time: nothing to compare with), `next` the new one.
 const REVIEWED = ["language", "design", "checker", "security", "ship"], BEFORE_REVIEW = ["plan", "build", "test"];
+// #C981: a card's FIRST push is never rework. #C964 was read at a review phase before anything was pushed (a re-cut kept locally after the
+// pre-push scan refused it), then its first push read as build: a "return to build" that was no return. With no pushed head before, nothing came back.
 export function reworkTriggered(prev, next) {
   if (!prev || typeof prev !== "object" || !next || typeof next !== "object") return false;
   if (prev.onMain === true || next.onMain === true || next.lit?.[0] === "live") return false;
+  if (typeof prev.headSha12 !== "string" || prev.headSha12 === "") return false;
   const had = (v) => Array.isArray(v) && v.length > 0;
   const newTip = typeof prev.headSha12 === "string" && typeof next.headSha12 === "string" && prev.headSha12 !== next.headSha12;
   if (newTip && had(prev.findings)) return true;
@@ -616,6 +619,11 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
 export const SHIP_SLOW_MS = 11 * 60_000;
 export const SLOW_LINE_TAIL = " is slow with no reason: add one or unstick it";
 export const slowLine = (num) => `#C${num}${SLOW_LINE_TAIL}`;
+// #C981: a card in rework whose reason is missing (the evidence's `rework` flag: the store refuses its other writes until one is attached) is
+// not "slow with no reason": its line says what is missing and who attaches it, and the dispatch wakes that owner too (store-dispatch.mjs).
+// The row ends with the same words as the slow line's, so the store keeps and clears it the same way.
+export const SLOW_ROW_END = ": add one or unstick it";
+export const reworkReasonLine = (num, owner) => `#C${num} is slow, rework reason missing (${owner} attaches it)${SLOW_ROW_END}`;
 // The usual time of each work phase: the median of the finished (start then end) work rows of the history, a phase with 3 or more of them.
 // rows: [{ id, card_id, phase, kind, at }] with no wait rows, any order. A row of 0 ms or less says nothing (a card first read at a later phase).
 export function phaseMedians(rows) {
@@ -639,7 +647,9 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
     const start = phaseStart?.get(`${c.id}|${phase}`);
     if (!Number.isFinite(start) || start > now) continue;
     const limit = phase === "ship" ? SHIP_SLOW_MS : Number.isFinite(medians?.[phase]) && medians[phase] > 0 ? 2 * medians[phase] : null;
-    if (limit !== null && now - start > limit) out.push({ card_id: c.id, num: c.num, reason: slowLine(c.num) });
+    const missing = v.rework === true && !(typeof c.rework_reason === "string" && c.rework_reason !== "");
+    const owner = typeof c.owner_role === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(c.owner_role) ? c.owner_role : "the owner";
+    if (limit !== null && now - start > limit) out.push({ card_id: c.id, num: c.num, reason: missing ? reworkReasonLine(c.num, owner) : slowLine(c.num) });
   }
   return out;
 }
