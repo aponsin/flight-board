@@ -1,0 +1,5 @@
+PASS Quick: #C996 v5 5de44c0, covering part 2 a28461b, its fix 0d2279d, part 3 step one f7cf1ba and this tests-only commit (Checker 2, 2026-11-12)
+
+My v4 F1 is fixed: the cap test and a new one run the job on a virtual clock with a liveUrl, an 8 s live read and 8 s posts. All six of my v4 mutants are now killed: the 10 s floor back (2 tests), no essential posts (3), live never skipped (2), late writes with no deadline (2), the notes list ignored (2), an empty list trusted (1). v5 over v4 is tests only (tests/evidence-posts.test.mjs). Touched tests 46/46 (evidence-posts, state-timing, evidence-run-near-limit, probe-evidence, store-cards, state-notes-spawns).
+
+For Release: the stack does not merge onto main 1f5fbef as it is. collector/state.mjs conflicts with #C974's config sync (85c9b79, bae7b19, feb895a) and CHANGELOG.md conflicts too. It needs a re-cut onto main; I check the re-cut by range-diff before it lands.
