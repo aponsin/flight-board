@@ -1,0 +1,4 @@
+PASS Quick: thread-decision-shows-options #C964 74b144d (Checker, 2026-11-12; F1 on 0c77a9a fixed; covers 0c77a9a and 74b144d)
+Tree: main...74b144d (three-dot) is CHANGELOG.md, page/board.template.html and its test only. The base, d85344d, is on main, but main has moved on, so to land this needs a re-cut onto main and a diff-check of the re-cut.
+F1 fix: the card's own thread and a closed ask's row each have a test (Decision last: buttons; plain last word: none).
+Suite at 74b144d: 2534 pass, 0 fail. Mutation check: pass, 5 of 5 killed, each decide call site on its own: open ask tile, the ask tile's box rule, closed ask row, card thread, and the (acts||decide) gate.
