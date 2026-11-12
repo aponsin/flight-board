@@ -1,0 +1,1 @@
+SECURE #C1037 267bcbd as part of G1 ending b3958bf (Security 11-12): a failed notes fetch still throws; the message adds the ref and git's first stderr line (git anonymizes remote URLs in its errors); Release's console only.
