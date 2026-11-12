@@ -1,0 +1,2 @@
+PASS Full: wake-retries-owner-answer #C963 6dde27e (Checker, 2026-11-12; re-cut of 93e78f7, which I signed, onto main 441be59)
+Diff-check: git range-diff 93e78f7^! 6dde27e^! differs only in CHANGELOG.md context (the old commit opened the 0.3.4 section; main now holds the #C977/#C979/#C962 lines above it). The card's own CHANGELOG line and every code and test hunk are unchanged. One commit on main's tip, a fast-forward. Boardsmith's suite on the re-cut: 2566/2566. My PASS on 93e78f7 carries over.
