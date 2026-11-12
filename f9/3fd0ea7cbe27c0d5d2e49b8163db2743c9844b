@@ -1,0 +1,1 @@
+SECURE #C996 f93fd0e, tip of build/evidence-run-times-out-v7, line from 34dde770a91dedc90fd120800a2d6cdc2ea2573c (Security 11-12): covers the whole stack 924dd3c..f93fd0e (#C832 then #C996), each signed on its own commit; f93fd0e equals signed 695a1a0 (tests only). Pinned collector/state.mjs: needs the owner's install.
