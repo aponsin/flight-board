@@ -10,5 +10,8 @@ const DAY = new Intl.DateTimeFormat("en-US", { timeZone: TEAM_TZ, month: "short"
 const clock = (ms) => TIME.format(ms).replace(/\s+/g, " ").replace(/ ([AP])M$/, (_, x) => ` ${x.toLowerCase()}m`);
 // "8:45 pm MT"; a value no Date can hold gives "?".
 export const mtTime = (ms) => (Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? `${clock(ms)} ${TEAM_TZ_LABEL}` : "?");
+// The hour of the day (0-23) in the team's zone, for rules that hold at night (#C1005); null for a value no Date can hold.
+const HOUR = new Intl.DateTimeFormat("en-US", { timeZone: TEAM_TZ, hour: "numeric", hourCycle: "h23" });
+export const mtHour = (ms) => (Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? Number(HOUR.format(ms)) % 24 : null);
 // "Nov 12 8:45 pm MT": the day as well, for an end or a start that may not be today.
 export const mtDayTime = (ms) => (Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? `${DAY.format(ms)} ${clock(ms)} ${TEAM_TZ_LABEL}` : "?");

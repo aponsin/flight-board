@@ -12,7 +12,7 @@
 // A push says only counts, ask numbers, versions and times: never an ask's, card's or message's text (it leaves through the push
 // service).
 
-import { mtDayTime } from "./team-time.mjs";
+import { mtDayTime, mtHour } from "./team-time.mjs";
 
 const MIN = 60e3, DAY = 864e5;
 export const MANAGER_NUDGE_MIN = 10, OWNER_PUSH_MIN = 30, SHIP_DAYS = 7, SILENT_PUSH_MIN = 15;
@@ -56,21 +56,35 @@ export const DEPLOY_SHA = /^[0-9a-f]{40}$/;
 // #C1016: silent is the time (ms) of the newest evidence write when it is SILENT_PUSH_MIN old or more and this silence has not been told, else null.
 // Recorded in push_sent as kind 'ship', ref "silent:<that time>" (no migration): a new write changes the time, so the next silence is told again.
 // No evidence at all (lastEvidenceAt null or 0) is a board that has not started, not a silence.
-export function pushesDue({ asks, ships, sent, now, deploy = null, lastEvidenceAt = null }) {
+// #C1005: a role stuck on a step (the probe's evidence.stuck, kind "step") is told once per session and per `since` (its last activity), as kind 'ship',
+// ref "stuck:<role>:<since>" (no migration). Held from NIGHT_FROM to NIGHT_TO o'clock MT: nothing goes at night, and the first run after 7 am sends what
+// is still stuck. A stuck reading that is gone (the role moved) is never told. A `user` stuck is the prompt watch's, not this push.
+export const NIGHT_FROM = 22, NIGHT_TO = 7;
+export const isNight = (now) => { const h = mtHour(now); return h !== null && (h >= NIGHT_FROM || h < NIGHT_TO); };
+const ROLE_WORD = /^[A-Za-z][A-Za-z0-9 -]{0,31}$/;
+export function stuckDue({ stuck, sent, now }) {
+  if (isNight(now) || !stuck || typeof stuck !== "object" || Array.isArray(stuck)) return [];
+  return Object.entries(stuck)
+    .filter(([role, s]) => ROLE_WORD.test(role) && s && s.kind === "step" && Number.isInteger(s.since) && s.since > 0 && !sent.has(`ship:stuck:${role}:${s.since}`))
+    .map(([role, s]) => ({ role, since: s.since })).sort((a, b) => (a.role < b.role ? -1 : 1));
+}
+export function pushesDue({ asks, ships, sent, now, deploy = null, lastEvidenceAt = null, stuck = null }) {
   const was = (kind, ref) => sent.has(`${kind}:${ref}`);
+  const dueStuck = stuckDue({ stuck, sent, now });
   const dueSilent = Number.isInteger(lastEvidenceAt) && lastEvidenceAt > 0 && now - lastEvidenceAt >= SILENT_PUSH_MIN * MIN && !was("ship", `silent:${lastEvidenceAt}`) ? lastEvidenceAt : null;
   // Recorded in push_sent as kind 'ship', ref "deploy:<sha>" (its kind is checked to ask or ship, and a ship's ref is a version, never "deploy:..."): no migration.
   const dueDeploy = typeof deploy === "string" && DEPLOY_SHA.test(deploy) && !was("ship", `deploy:${deploy}`) ? deploy : null;
   const dueAsks = asks.filter((a) => waited(a, now, OWNER_PUSH_MIN) && !was("ask", a.id)).sort((x, y) => x.num - y.num);
   const dueShips = ships.filter((s) => s.acked_at == null && typeof s.shipped_at === "number" && now - s.shipped_at <= SHIP_DAYS * DAY && !was("ship", s.version))
     .sort((x, y) => x.shipped_at - y.shipped_at);
-  return { asks: dueAsks, ships: dueShips, deploy: dueDeploy, silent: dueSilent, payload: dueAsks.length || dueShips.length || dueDeploy || dueSilent ? pushWords(dueAsks, dueShips, dueDeploy, dueSilent) : null };
+  return { asks: dueAsks, ships: dueShips, deploy: dueDeploy, silent: dueSilent, stuck: dueStuck, payload: dueAsks.length || dueShips.length || dueDeploy || dueSilent || dueStuck.length ? pushWords(dueAsks, dueShips, dueDeploy, dueSilent, dueStuck) : null };
 }
 
 const VERSION = /^v?\d+(?:\.\d+){1,3}$/;
 const list = (items) => (items.length <= 3 ? items.join(", ") : `${items.slice(0, 3).join(", ")} and ${items.length - 3} more`);
-export function pushWords(asks, ships, deploy = null, silent = null) {
+export function pushWords(asks, ships, deploy = null, silent = null, stuck = []) {
   const parts = [];
+  if (stuck.length) parts.push(`${list(stuck.map((s) => `${s.role} (quiet since ${mtDayTime(s.since)})`))} ${stuck.length === 1 ? "looks" : "look"} stuck mid-turn: open ${stuck.length === 1 ? "its" : "each"} session`);
   if (Number.isInteger(silent) && silent > 0) parts.push(`board jobs silent since ${mtDayTime(silent)}: the Mac may have crashed, log back in`);
   if (typeof deploy === "string" && DEPLOY_SHA.test(deploy)) parts.push(`board deployed ${deploy.slice(0, 7)}`);
   if (ships.length) {

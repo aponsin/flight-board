@@ -8,6 +8,7 @@ export const MAX_SUBSCRIPTIONS = 5;
 // was replaced, say) is removed, so it is not retried forever and the page stops saying "on" for it.
 export const MAX_FAILS = 5;
 const RESULT_MAX = 200;
+const STUCK_FRESH_MS = 15 * 60e3; // the stuck reading counts while the probe wrote it within this
 
 // #C922: whether this endpoint is one of the owner's devices, so the page shows "on" only for a device the board still has.
 export async function pushKnown(db, endpoint) {
@@ -64,7 +65,11 @@ export async function pushRun(db, now, env, fetchFn = fetch) {
   const sent = new Set((await db.prepare("SELECT kind, ref FROM push_sent").all()).results.map((r) => `${r.kind}:${r.ref}`));
   // #C1016: the newest evidence write that is not a run report (key run.*) is the probe's heartbeat, as the page's silent chip reads it.
   const lastEvidenceAt = (await db.prepare("SELECT MAX(read_at) AS t FROM evidence WHERE key NOT LIKE 'run.%'").first())?.t ?? null;
-  const due = pushesDue({ asks, ships, sent, now, deploy: env.BUILD_SHA, lastEvidenceAt }); // #C968: "board deployed <short sha>", once per deployed commit
+  // #C1005: the probe's stuck reading (evidence key "stuck"), only while it is fresh: an old one is a silent probe, which has its own push.
+  const stuckRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = 'stuck'").first();
+  let stuck = null;
+  if (stuckRow && now - stuckRow.read_at <= STUCK_FRESH_MS) { try { stuck = JSON.parse(stuckRow.value); } catch { stuck = null; } }
+  const due = pushesDue({ asks, ships, sent, now, deploy: env.BUILD_SHA, lastEvidenceAt, stuck }); // #C968: "board deployed <short sha>", once per deployed commit
   if (!due.payload) { await record(db, now, "nothing due", false); return { ok: true, sent: 0 }; }
   const subs = (await db.prepare("SELECT endpoint, p256dh, auth FROM push_subscriptions").all()).results;
   let delivered = 0, gone = 0, failed = 0;
@@ -84,8 +89,9 @@ export async function pushRun(db, now, env, fetchFn = fetch) {
     for (const s of due.ships) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(s.version, now).run();
     if (due.deploy) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(`deploy:${due.deploy}`, now).run();
     if (due.silent) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(`silent:${due.silent}`, now).run();
+    for (const s of due.stuck) await db.prepare("INSERT OR IGNORE INTO push_sent (kind, ref, at) VALUES ('ship', ?, ?)").bind(`stuck:${s.role}:${s.since}`, now).run();
   }
-  const what = `${due.asks.length} ask(s), ${due.ships.length} ship(s)${due.deploy ? ", a deploy" : ""}${due.silent ? ", a silence" : ""}`;
+  const what = `${due.asks.length} ask(s), ${due.ships.length} ship(s)${due.deploy ? ", a deploy" : ""}${due.silent ? ", a silence" : ""}${due.stuck.length ? `, ${due.stuck.length} stuck` : ""}`;
   await record(db, now, subs.length ? `${what}: ${delivered} device(s) took it, ${gone} gone, ${failed} failed` : `${what}: no device subscribed`, delivered > 0);
   return { ok: true, sent: delivered, gone, failed };
 }

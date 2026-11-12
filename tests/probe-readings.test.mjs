@@ -43,19 +43,22 @@ test("a reset is asked once per crossing, and again only after the role came bac
   assert.deepEqual(resetAsks(over, { roles: [1] }, T).fresh, ["Builder"], "an odd file is none");
 });
 
-test("stuck: over 45 min on one working step, or over 15 min on a call the owner must answer; the lead never on a step", () => {
+test("stuck: a working role whose last activity is 30+ min old, or over 15 min on a call the owner must answer; the lead never on a step (#C1005)", () => {
   const agents = {
-    AA: { state: "working", since: T - STEP_MS - 1, card: "a-card" },
-    BB: { state: "working", since: T - STEP_MS + 60e3, card: null },
-    CC: { state: "idle", since: T - 9e9, card: null },
-    Manager: { state: "working", since: T - 9e9, card: null },
-    DD: { state: "working", since: T - 60e3, card: "d-card" },
+    AA: { state: "working", lastActivityAt: T - STEP_MS, card: "a-card" }, // 30 min: stuck
+    BB: { state: "working", lastActivityAt: T - STEP_MS + 60e3, card: null }, // 29 min: not
+    CC: { state: "idle", lastActivityAt: T - 9e9, card: null }, // idle is not stuck
+    Manager: { state: "working", lastActivityAt: T - 9e9, card: null },
+    DD: { state: "working", lastActivityAt: T - 60e3, card: "d-card" },
+    EE: { state: "working", lastActivityAt: null, card: "e-card" }, // a blind reading is never stuck
+    FF: { state: "working", card: "f-card" },
   };
   const prompts = { DD: T - USER_MS - 1, BB: T - USER_MS + 1000 };
   assert.deepEqual(stuckReadings({ agents, prompts, now: T, lead: "Manager" }), {
-    AA: { kind: "step", card: "a-card", since: T - STEP_MS - 1 },
+    AA: { kind: "step", card: "a-card", since: T - STEP_MS },
     DD: { kind: "user", card: "d-card", since: T - USER_MS - 1 },
   });
+  assert.equal(STEP_MS, 30 * 60e3);
 });
 
 test("usage: top five as shares by role, scheduled and other; pace from the plan's week; amber at 1.3x, red at 1.6x", () => {

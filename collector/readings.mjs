@@ -112,14 +112,17 @@ export function boardTruth({ states, shipPhase, livePhase, hold = new Set(), car
 // A role stuck (#C593): working on one prompt over STEP_MS (the same step, the turn's start unmoved), or stopped on a call
 // the owner must answer over USER_MS (promptSince from the transcript). { <role>: { kind, card, since } }; the lead and
 // the idle are never stuck on a step.
-export const STEP_MS = 45 * 60e3, USER_MS = 15 * 60e3;
+// #C1005 (the watchdog task's rule, from the agents reading the probe already has): a role is stuck on a step when it is mid-turn (working) and the
+// transcript's lastActivityAt has not moved for STEP_MS (30 min, so 29 is not and 30 is); `since` is that last activity, so each quiet stretch is its own
+// reading. An agent with no lastActivityAt (a blind reading) is never stuck on a step.
+export const STEP_MS = 30 * 60e3, USER_MS = 15 * 60e3;
 export function stuckReadings({ agents, prompts, now, lead = "" }) {
   const out = {};
   for (const [role, a] of Object.entries(agents)) {
     if (!ROLE.test(role)) continue;
     const asked = prompts[role];
     if (Number.isInteger(asked) && now - asked > USER_MS) out[role] = { kind: "user", card: a.card ?? null, since: asked };
-    else if (role !== lead && a.state === "working" && Number.isInteger(a.since) && now - a.since > STEP_MS) out[role] = { kind: "step", card: a.card ?? null, since: a.since };
+    else if (role !== lead && a.state === "working" && Number.isInteger(a.lastActivityAt) && now - a.lastActivityAt >= STEP_MS) out[role] = { kind: "step", card: a.card ?? null, since: a.lastActivityAt };
   }
   return out;
 }
