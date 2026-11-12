@@ -7,6 +7,10 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { chmodSync } from "node:fs";
+
+// A PATH whose ps lists nothing, so a ship or an install really running on the machine that runs the tests cannot change the command line's lines.
+const quietPs = () => { const d = mkdtempSync(join(tmpdir(), "rr-ps-")); writeFileSync(join(d, "ps"), "#!/bin/sh\nexit 0\n"); chmodSync(join(d, "ps"), 0o755); return `${d}:${process.env.PATH}`; };
 import { readyVerdict, installRuns, parseForceAt, CHECKS, FORCEABLE, AGENT_QUIET_MS } from "../scripts/restart-ready.mjs";
 
 const T = new Date(2026, 10, 12, 12, 0, 0).getTime(); // local noon, so HH:MM parsing is the same in any zone
@@ -147,7 +151,7 @@ test("F1: the live state is the store's file when it exists and gate.stateDir is
   writeFileSync(conf, JSON.stringify({ artifactUrl: cfg.artifactUrl }));
   mkdirSync(join(base, id), { recursive: true }); mkdirSync(join(base, `${id}-store`, id), { recursive: true });
   const put = (p, state) => writeFileSync(join(base, p, "state.json"), JSON.stringify(state));
-  const run = () => spawnSync(process.execPath, [new URL("../scripts/restart-ready.mjs", import.meta.url).pathname, "--config", conf, "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: home } });
+  const run = () => spawnSync(process.execPath, [new URL("../scripts/restart-ready.mjs", import.meta.url).pathname, "--config", conf, "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: home, PATH: quietPs() } });
   put(id, { board: { at: Date.now() }, agents: { Dead: { state: "working", lastActivityAt: Date.now() } }, cards: {} });
   put(`${id}-store/${id}`, { board: { at: Date.now() }, agents: { Builder: { state: "idle", lastActivityAt: null } }, cards: {} });
   const out = run().stdout;
@@ -167,7 +171,7 @@ test("F3 and a past force time: the command line guards the live state's freshne
   const dir = mkdtempSync(join(tmpdir(), "rr-")), id = "abc123", cfg = join(dir, "c.json");
   writeFileSync(cfg, JSON.stringify({ artifactUrl: `https://claude.ai/artifact/${id}`, gate: { stateDir: dir } }));
   mkdirSync(join(dir, id));
-  const run = (...a) => spawnSync(process.execPath, [new URL("../scripts/restart-ready.mjs", import.meta.url).pathname, "--config", cfg, "--dry-run", ...a], { encoding: "utf8" });
+  const run = (...a) => spawnSync(process.execPath, [new URL("../scripts/restart-ready.mjs", import.meta.url).pathname, "--config", cfg, "--dry-run", ...a], { encoding: "utf8", env: { ...process.env, PATH: quietPs() } });
   const put = (at) => writeFileSync(join(dir, id, "state.json"), JSON.stringify({ board: { at }, agents: { Builder: { state: "idle", lastActivityAt: null } }, cards: {} }));
   put(Date.now() - 10 * 60e3);
   const stale = run();
@@ -177,7 +181,6 @@ test("F3 and a past force time: the command line guards the live state's freshne
   put(Date.now());
   const fresh = run();
   assert.match(fresh.stdout, /^ok   agents: /m, "a fresh state: the agents are read");
-  assert.doesNotMatch(fresh.stdout, /^\?\?\?\? (ship|agents):/m);
-  const nowD = new Date();
+  assert.doesNotMatch(fresh.stdout, /^\?\?\?\? (ship|agents):/m);  const nowD = new Date();
   if (nowD.getHours() || nowD.getMinutes()) { const past = run("--force-at", "00:00"); assert.equal(past.status, 2); assert.match(past.stderr, /already passed/); }
 });
