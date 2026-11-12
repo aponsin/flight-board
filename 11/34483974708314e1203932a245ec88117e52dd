@@ -1,0 +1,2 @@
+PASS Full: quota-ceiling-stops-dispatch #C973 1134483, commit 1 of 2 of the line ending ffaf07f (Checker 2, 2026-11-12)
+A re-cut of eabf861 onto main 10dc508: its changed lines equal eabf861's, file for file. Reviewed with ffaf07f, which adds the tests my FINDINGS on eabf861 asked for.
