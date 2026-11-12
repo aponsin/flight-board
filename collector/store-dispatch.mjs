@@ -117,12 +117,26 @@ export function stackQueueFile(view, now) {
 }
 
 // The store's view -> { cards, agents, asked } in the shapes dispatchItems reads, or null when the view cannot say who is idle.
-export function dispatchInput(view, now, { lead = "Manager" } = {}) {
+// #C973: the week's share of quota used, from the probe's usage reading (evidence.usage weekPct), when it is fresh; null when unknown. At or past
+// the ceiling (collector.quotaCeilingPct, 90 by default) no builder is woken for new build work; reviews, landing, fixes and the rest go on, so what
+// is built still ships. An unknown or stale reading never stops anything.
+export const USAGE_FRESH_MS = 26 * 3600e3, QUOTA_CEILING_DEFAULT = 90;
+export function weekPctOf(view, now) {
+  const u = view?.evidence?.usage, pct = u?.value?.weekPct, at = u?.readAt;
+  if (!Number.isFinite(pct) || pct < 0 || pct > 1000 || !Number.isFinite(at) || now - at > USAGE_FRESH_MS || at > now + 60e3) return null;
+  return pct;
+}
+export const atCeiling = (view, now, ceiling = QUOTA_CEILING_DEFAULT) => {
+  const pct = weekPctOf(view, now), c = Number.isInteger(ceiling) && ceiling >= 1 && ceiling <= 100 ? ceiling : QUOTA_CEILING_DEFAULT;
+  return pct !== null && pct >= c;
+};
+export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEILING_DEFAULT } = {}) {
   const ev = view?.evidence ?? {};
   const agents = ev.agents?.value;
   const readAt = ev.agents?.readAt;
   if (!agents || typeof agents !== "object" || Array.isArray(agents)) return null;
   if (!Number.isFinite(readAt) || now - readAt > AGENTS_FRESH_MS || readAt > now + 5_000) return null;
+  const stopBuild = atCeiling(view, now, ceiling);
   const cards = [];
   const all = Array.isArray(view?.cards) ? view.cards : [];
   const phaseOf = (id) => { const e = ev[`cards.${id}`]?.value; return e?.phase ?? e?.lit?.[0]; };
@@ -182,6 +196,8 @@ export function dispatchInput(view, now, { lead = "Manager" } = {}) {
     for (const k of cards) if (k.inStack) k.turns = k.turns.filter((t) => t.step !== "review");
   }
   for (const k of cards) { delete k.inBoard; delete k.inStack; }
+  // #C973: at the quota ceiling, no new build work: a build turn is dropped; a fix (rework, reason, outside, recut) and every other turn stay.
+  if (stopBuild) for (const k of cards) k.turns = k.turns.filter((t) => t.step !== "build");
   // #C872 (2026-11-10: the owner answered A on #T1782 for #C862 and Builder sat idle 20 minutes; the answer only reached it through Manager's
   // chat): a Decision on a card that the owner answered in the last DECISION_FRESH_MS is that card's owner's turn while the owner has stayed
   // idle since the answer came. The wake ends the idleness, so the turn goes by itself: once per answer, with no state of its own. It takes the
@@ -299,8 +315,9 @@ export function writeOpenAsks(view, { dir, now = Date.now() }) {
 }
 
 // One run over a view. Returns { wrote, why?, items }. `dir` is <stateDir>/<board>.
-export function dispatchRun(view, { dir, roster, lead, now = Date.now(), log = () => {} }) {
-  const input = dispatchInput(view, now, { lead });
+export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_DEFAULT, now = Date.now(), log = () => {} }) {
+  const input = dispatchInput(view, now, { lead, ceiling });
+  if (input && atCeiling(view, now, ceiling)) log(`dispatch: week at ${Math.round(weekPctOf(view, now))}% of quota, ceiling ${ceiling}%: no new build work dispatched`);
   if (!input) { log("dispatch: the store's agent reading is missing or older than 5 minutes; nothing written"); return { wrote: false, why: "agents-stale", items: [] }; }
   const file = readJson(join(dir, DISPATCH_FILE));
   if (file && file.source !== "store" && Number.isFinite(file.at) && now - file.at < FOREIGN_WRITER_MS) {
