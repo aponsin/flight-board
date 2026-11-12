@@ -131,7 +131,11 @@ const AGENT = {
 //          The page's "Safe to restart" badge is never green while it is there. A probe before it leaves the key out.
 //   releases (#C731 B4b, optional): { "x.y.z": { testsMin, deployMin } } the newest versions' CI times from the release log on main
 //          (collector.releaseTimes), minutes as numbers, at most MAX_RELEASES versions; the page's ETA box reads them.
-export const EXTRA_KEYS = ["ctx", "stuck", "usage", "ship", "releases"];
+//   closedPacks (#C1034, optional): { <card id>: { packed: true, installed?: true } } board cards done in the last 14 days whose landing a
+//          deploy pair holds (installed: that pair ran), from the pair folder and git only, at most MAX_CARDS. Only the page's Pack and
+//          Install tiles read it; no card's status, phase or note is in it.
+export const EXTRA_KEYS = ["ctx", "stuck", "usage", "ship", "releases", "closedPacks"];
+const CLOSED_PACK = { packed: (v) => v === true, installed: (v) => v === true };
 export const MAX_RELEASES = 100;
 const RELEASE = { testsMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000, deployMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000 };
 export const SHIP_CI = ["none", "queued", "running", "passed"];
@@ -174,6 +178,18 @@ export function stateErrors(s) {
       const keys = Object.keys(s.releases);
       if (keys.length > MAX_RELEASES) errs.push(`releases: more than ${MAX_RELEASES}`);
       for (const k of keys.slice(0, MAX_RELEASES)) { if (!/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(k)) { errs.push("releases: a key that isn't a version"); continue; } fields(`releases.${k}`, s.releases[k], RELEASE, errs); }
+    }
+  }
+  if (Object.hasOwn(s, "closedPacks")) {
+    if (!plain(s.closedPacks)) errs.push("closedPacks: not an object");
+    else {
+      const keys = Object.keys(s.closedPacks);
+      if (keys.length > MAX_CARDS) errs.push(`closedPacks: more than ${MAX_CARDS}`);
+      for (const k of keys.slice(0, MAX_CARDS)) {
+        if (!isId(k)) { errs.push("closedPacks: a key that isn't an id"); continue; }
+        fields(`closedPacks.${k}`, s.closedPacks[k], CLOSED_PACK, errs);
+        if (plain(s.closedPacks[k]) && s.closedPacks[k].packed !== true) errs.push(`closedPacks.${k}.packed: missing`);
+      }
     }
   }
   if (Object.hasOwn(s, "usage")) {
@@ -257,5 +273,6 @@ export function pickState(s) {
   if (Object.hasOwn(s, "ship")) out.ship = take(s.ship, SHIP);
   if (Object.hasOwn(s, "releases")) out.releases = Object.fromEntries(Object.keys(s.releases).sort().map((k) => [k, take(s.releases[k], RELEASE)]));
   if (Object.hasOwn(s, "usage")) out.usage = { ...take(s.usage, USAGE), top: s.usage.top.map((t) => take(t, USAGE_TOP)) };
+  if (Object.hasOwn(s, "closedPacks")) out.closedPacks = map(s.closedPacks, CLOSED_PACK);
   return out;
 }

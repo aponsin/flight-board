@@ -9,11 +9,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
-import { cardStates, remoteTips } from "../collector/state.mjs";
+import { cardStates, remoteTips, closedPacks, CLOSED_PACK_DAYS, buildState } from "../collector/state.mjs";
 import { pairsIn, packOf, MAX_PAIRS, BOARD_REPO_WORDS } from "../collector/pairs.mjs";
 import { BOARD_REPO_WORDS as DISPATCH_WORDS } from "../collector/store-dispatch.mjs";
 import { descends } from "../collector/pair-wait.mjs";
-import { stateErrors } from "../collector/state-schema.mjs";
+import { stateErrors, pickState } from "../collector/state-schema.mjs";
 import { loadNames, step } from "./harness.mjs";
 
 const T0 = 1_790_000_000;
@@ -207,4 +207,70 @@ test("Designer on #C969 v2 (3): a Gated or Queued wait box counts in the phone's
   assert.equal(per(plain), Math.ceil(n(plain) / Math.ceil(n(plain) / 4)), "the even split of the tiles alone");
   assert.equal(per(waited), Math.ceil(n(waited) / Math.ceil(n(waited) / 4)), "the even split counts the wait box");
   assert.match(TEMPLATE, /@media \(max-width:760px\)\{[^\n]*\.track>\.wait\{flex:1 1 calc\(100% \/ var\(--per,4\) - 4px\)\}/, "on the phone a wait box is a tile's width");
+});
+
+// ---- #C1034 (Checker 2's LOW on #C1020, Manager's pick A): done board cards read Pack and Install from evidence too ----
+const DAY = 864e5;
+const doneCard = (id, num, doneAt, extra = {}) => ({ ...card(id, num), status: "done", phase: "live", doneAt, ...extra });
+
+test("closedPacks: a board card done in the last 14 days reads packed and installed from the pairs and git; nothing else lights it", () => {
+  const s = scratch(), dir = tmp("pairs-"), now = Date.now();
+  pairFile(dir, 40, s.one); done(dir, 40, s.one);
+  pairFile(dir, 41, s.two);
+  const pairs = pairsIn(dir), repos = { "flight-board": s.repo, shopsite: s.repo };
+  const cards = [
+    doneCard("c-one", 1, now - DAY), // pc40 holds it and ran
+    doneCard("c-two", 2, now - 2 * DAY), // pc41 holds it, not run
+    doneCard("c-three", 3, now - DAY), // on main, no pair holds it
+    doneCard("c-four", 4, now - DAY), // its commit is only on a branch: no landing on main
+  ];
+  assert.deepEqual(closedPacks({ cards, repos, now, pairs }), { "c-one": { packed: true, installed: true }, "c-two": { packed: true } });
+  // Words never light it, and neither does a card outside the window, of another repository, dropped, or still open.
+  const not = [doneCard("c-one", 1, now - 15 * DAY), { ...doneCard("c-one", 1, now - DAY), repo: "shopsite" }, { ...doneCard("c-one", 1, now - DAY), status: "dropped" },
+    { ...card("c-one", 1), phase: "live", nextNote: "pc40 installed" }, doneCard("c-one", 1, now + 2 * 36e5), doneCard("c-one", 1, null)];
+  for (const c of not) assert.deepEqual(closedPacks({ cards: [c], repos, now, pairs }), {}, JSON.stringify(c));
+  // A done card that never landed keeps today's look, however its words read.
+  assert.deepEqual(closedPacks({ cards: [doneCard("c-nine", 9, now - DAY, { nextNote: "Pack and Install done" })], repos, now, pairs }), {});
+  // No pairs, no board repository, or a git that fails: nothing (never a throw).
+  assert.deepEqual(closedPacks({ cards, repos, now, pairs: [] }), {});
+  assert.deepEqual(closedPacks({ cards, repos: { shopsite: s.repo }, now, pairs }), {});
+  assert.deepEqual(closedPacks({ cards, repos: { "flight-board": { ...s.repo, git: () => { throw new Error("no git"); } } }, now, pairs }), {});
+  assert.equal(CLOSED_PACK_DAYS, 14);
+});
+
+test("closedPacks: one git log, then packOf's capped questions (not one walk per pair per card)", () => {
+  const s = scratch(), dir = tmp("pairs-"), now = Date.now();
+  for (let n = 1; n <= 46; n++) pairFile(dir, n, s.one); // 46 pairs pinned below c-two and c-three
+  const calls = []; const repo = { ...s.repo, git: (args) => { calls.push(args[0]); return s.repo.git(args); } };
+  const out = closedPacks({ cards: [doneCard("c-two", 2, now - DAY), doneCard("c-three", 3, now - DAY)], repos: { "flight-board": repo }, now, pairs: pairsIn(dir) });
+  assert.deepEqual(out, {});
+  assert.equal(calls.filter((c) => c === "log").length, 1, "one log of main");
+  assert.ok(calls.filter((c) => c === "merge-base").length <= 2, `one pin question per card, got ${calls.filter((c) => c === "merge-base").length}`);
+});
+
+test("the schema takes closedPacks of true values only, and buildState sends it only when a card reads packed", () => {
+  const base = { v: 1, board: { boardId: "TestBoard42xyz", at: Date.now(), probe: null, pageVersion: null }, cards: {}, agents: {} };
+  assert.deepEqual(stateErrors({ ...base, closedPacks: { "c-one": { packed: true, installed: true }, "c-two": { packed: true } } }), []);
+  for (const bad of [{ "c-one": { packed: false } }, { "c-one": { installed: true } }, { "c-one": { packed: true, phase: "live" } }, { "C ONE": { packed: true } }, []])
+    assert.notDeepEqual(stateErrors({ ...base, closedPacks: bad }), [], JSON.stringify(bad));
+  assert.deepEqual(pickState({ ...base, closedPacks: { "c-one": { packed: true } } }).closedPacks, { "c-one": { packed: true } });
+  const built = (packs) => buildState({ id: "TestBoard42xyz", now: Date.now(), probe: "p", pageVersion: "v", cards: {}, agents: {}, packs });
+  assert.equal(Object.hasOwn(built({}), "closedPacks"), false); assert.equal(Object.hasOwn(built(null), "closedPacks"), false);
+  assert.deepEqual(built({ "c-one": { packed: true } }).closedPacks, { "c-one": { packed: true } });
+});
+
+test("the page: a done board card lights Pack and Install from closedPacks; without an entry it keeps today's unlit look", () => {
+  const closedReading = (packs) => ({ ...reading({}), cards: {}, ...(packs ? { closedPacks: packs } : {}) });
+  const fin = { status: "done", phase: "live", doneAt: NOW - H };
+  const both = row(fin, closedReading({ [ID]: { packed: true, installed: true } }));
+  assert.equal(tile(both, "Pack").cls, "step done seen"); assert.equal(tile(both, "Install").cls, "step done seen");
+  const packedOnly = row(fin, closedReading({ [ID]: { packed: true } }));
+  assert.equal(tile(packedOnly, "Pack").cls, "step done seen"); assert.equal(tile(packedOnly, "Install").cls, "step unlit");
+  for (const h of [row(fin, closedReading(null)), row(fin, closedReading({ "other-card": { packed: true, installed: true } })), row(fin, null)]) {
+    assert.equal(tile(h, "Pack").cls, "step unlit"); assert.equal(tile(h, "Install").cls, "step unlit");
+  }
+  // An open card never reads closedPacks: its own reading decides, and with none it stays unlit.
+  for (const open of [row({}, { ...reading({}), closedPacks: { [ID]: { packed: true, installed: true } } }), row({ phase: "live" }, closedReading({ [ID]: { packed: true, installed: true } }))]) {
+    assert.equal(tile(open, "Pack").cls, "step unlit"); assert.equal(tile(open, "Install").cls, "step unlit");
+  }
 });
