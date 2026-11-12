@@ -1,0 +1,7 @@
+PASS Quick: pilot g1-board-view #C972 push-blocked-says-how 3090e71 (Checker 2, 2026-11-12)
+
+One commit on 10dc508; main has moved to ffaf07f, the tree diff beyond this commit is only that landed work. A blocked badge is a button (act how) that toggles #pushhelp from pure pushSteps, through esc in pushHelpHtml; redraw on permission change and tab return. STORE is declared at line 671, before the new top-level listener. CHANGELOG line present.
+
+Touched tests: owner-phone-push and hostile-text, 23/23. Mutation check: pass for esc dropped from the steps (fails: escaped).
+
+LOW 1: the redraw hiding the steps once pushes are allowed again is untested; a mutant that never hides them passes. LOW 2: iPadOS Safari sends a Mac user agent and gets the Safari on Mac steps; Edge on Android (EdgA/) gets the Chrome on Android steps.
