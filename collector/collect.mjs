@@ -15,7 +15,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { readMirror, home, liveMirror } from "../gate/gate.mjs";
 import { cardProblems } from "../gate/card-rules.mjs";
-import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, abandonedAt, subjectNum, reviewsFor } from "./derive.mjs";
+import { headsFor, derivePhase, conflict, staleLive, closed, boardIdOf, repoOf, namedRepo, abandonedAt, subjectNum, reviewsFor } from "./derive.mjs";
 import { remoteHeads, mainLine, deployRuns, factsFor, shippedHeads, mainVersion, liveBuild, releaseTimes, isAncestor, branchPathsOf } from "./facts.mjs";
 import { reviewsFromPaths } from "./review-paths.mjs";
 import { shippedBase, afterShipText, fetchBranches } from "./after-ship.mjs";
@@ -483,7 +483,7 @@ export function collect({ config, cards, git, gh, now, plan = [], waiting = [], 
     let r = repoOf(card, config);
     // #C632: a card with no repo field and no listed prefix whose branch is not in the team's own repository but is in
     // another listed one belongs there (the probe, collector/state.mjs, reads it the same way).
-    if (!r && !card.repo && !headsFor(card.id, work, card.num).length) {
+    if (!r && !namedRepo(card, config) && !headsFor(card.id, work, card.num).length) { // #C985: an unknown repo word counts as none
       r = (config.collector.repos ?? []).find((x) => {
         const use = repos[x.name];
         if (!use?.git) return false;

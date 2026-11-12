@@ -14,10 +14,12 @@ import { idText, lineText } from "./text.mjs";
 
 // The repository a card lives in (#C278): one of collector.repos by the card's own repo field, else the first whose id
 // prefix the card carries; null for the team's own repository (collector.repoPath).
+// #C985: a repo word that names no listed repository ("board" on 10 cards on 11-11, where the list says "flight-board") is read as no
+// word at all: the id prefix, then the repository whose branches name the card (#C632), as for a card with none. namedRepo says which.
+export const namedRepo = (card, config) => (card.repo ? (config.collector.repos ?? []).find((r) => r.name === card.repo) ?? null : null);
 export function repoOf(card, config) {
   const repos = config.collector.repos ?? [];
-  if (card.repo) return repos.find((r) => r.name === card.repo) ?? null;
-  return repos.find((r) => (r.idPrefixes ?? []).some((p) => String(card.id).startsWith(p))) ?? null;
+  return namedRepo(card, config) ?? repos.find((r) => (r.idPrefixes ?? []).some((p) => String(card.id).startsWith(p))) ?? null;
 }
 
 // The id a commit's message names in its "Board-Id:" trailer, or null.

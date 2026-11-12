@@ -223,10 +223,11 @@ export function liveCards(stateDir, id) {
   return journalCards({ docs: { initiatives: cards }, at: 0, atBy: {}, atDoc: { initiatives: cardAt }, stamp }, readJournal(join(stateDir, id, "gate.json"))).docs.initiatives;
 }
 const boardIdOf = (message) => { const m = /^Board-Id:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*$/im.exec(String(message ?? "")); return m ? m[1].toLowerCase() : null; };
+// #C985: a repo word that names no listed repository is read as no word (a copy of derive.mjs's namedRepo and repoOf).
+export const namedRepo = (card, config) => (card.repo ? (config.collector.repos ?? []).find((r) => r.name === card.repo) ?? null : null);
 export function repoOf(card, config) {
   const repos = config.collector.repos ?? [];
-  if (card.repo) return repos.find((r) => r.name === card.repo) ?? null;
-  return repos.find((r) => (r.idPrefixes ?? []).some((p) => String(card.id).startsWith(p))) ?? null;
+  return namedRepo(card, config) ?? repos.find((r) => (r.idPrefixes ?? []).some((p) => String(card.id).startsWith(p))) ?? null;
 }
 // #C649: a commit whose message starts "#C<num>:" belongs to the card with that number too (num, when the card has one), so a card
 // worked on without its Board-Id trailer or a branch named for it still has a head: the board then shows it as build.
@@ -771,8 +772,8 @@ export function cardStates({ cards, config, repos, now, stacks = [] }) {
     let repo = repos[r ? r.name : ""] ?? null;
     // #C632: a card with no repo field and no id prefix of a listed repository belongs to the one whose branches name it
     // (a Board-Id trailer or a branch named for it): the team's own if it has one, else the repository with the newest tip;
-    // none has one: the team's own, as before.
-    if (!r && !card.repo) {
+    // none has one: the team's own, as before. #C985: a word that names no listed repository counts as none.
+    if (!r && !namedRepo(card, config)) {
       const tipOf = (x) => headsFor(card.id, (x.tips ?? []).filter((h) => h.branch !== x.main), card.num)[0];
       const found = Object.values(repos).map((x) => [x, tipOf(x)]).filter(([, t]) => t).sort((a, b) => (b[1].at ?? 0) - (a[1].at ?? 0))[0];
       if (found && !(repo && tipOf(repo))) repo = found[0];

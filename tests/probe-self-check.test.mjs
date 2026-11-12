@@ -41,6 +41,34 @@ test("a card with its own repo field or a listed prefix is not looked up elsewhe
   assert.equal(out["board-x"].headSha12, null, "board- is the flight-board repository's: no tip there, as before");
 });
 
+// #C985: #C979, #C977 and #C976 (owner Builder, repo word "board") had no evidence: the probe gave a word the list does not name to
+// the team's repository. A word that names no listed repository now counts as none.
+test("#C985 a card whose repo word names no listed repository finds its branch where it is, whoever owns it", () => {
+  const fb = repo(["main", "build/c979-store-refuses-z-times", "build/c960-x"]);
+  fb.tips[1].message = "Store refuses Z\n\nBoard-Id: store-refuses-z-times";
+  const repos = { "": repo(["main", "admin/other"]), "flight-board": fb };
+  const cards = [
+    { id: "store-refuses-z-times", num: 979, phase: "build", repo: "board", owner_role: "Builder" },
+    { id: "c960-x", num: 960, phase: "build", repo: "board", owner_role: "Boardsmith" },
+  ];
+  const out = cardStates({ cards, config, repos, now: NOW });
+  assert.equal(out["store-refuses-z-times"].headSha12, "a".repeat(12), "a Builder card with the word 'board'");
+  assert.equal(out["c960-x"].headSha12, "a".repeat(12), "a Boardsmith card with the word 'board'");
+});
+
+test("#C985 still allowed: a listed word reads only its repository, a product card with no word reads the team's, a card with no word falls back", () => {
+  const repos = { "": repo(["main", "build/menu-fix", "build/listed"]), "flight-board": repo(["main", "build/roster"]) };
+  const cards = [
+    { id: "listed", phase: "build", repo: "flight-board", owner_role: "Boardsmith" },
+    { id: "menu-fix", phase: "build", owner_role: "Builder" },
+    { id: "roster", phase: "build", owner_role: "Builder" },
+  ];
+  const out = cardStates({ cards, config, repos, now: NOW });
+  assert.equal(out.listed.headSha12, null, "a listed word is read there only, never looked up elsewhere");
+  assert.equal(out["menu-fix"].headSha12, "a".repeat(12), "a product card: the team's repository, as now");
+  assert.equal(out.roster.headSha12, "a".repeat(12), "no word: found in the repository that has its branch, as now");
+});
+
 test("evidenceAt: now when enough open cards past plan are too few to say or one shows a commit; else the last time, the clock starting at the first empty run", () => {
   const c = (phase, headSha12 = null) => ({ phase, headSha12 });
   const blind = { a: c("build"), b: c("test"), d: c("checker") };

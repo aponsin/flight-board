@@ -67,7 +67,23 @@ test("a card's repository: its own repo field, else the first whose id prefix it
   assert.equal(repoOf({ id: "board-release" }, config)?.name, "flight-board");
   assert.equal(repoOf({ id: "menu-fix", repo: "flight-board" }, config)?.name, "flight-board");
   assert.equal(repoOf({ id: "menu-fix" }, config), null, "the team's own repository");
-  assert.equal(repoOf({ id: "board-x", repo: "elsewhere" }, config), null, "an unknown repo field is the team's");
+  // #C985: an unknown repo word is read as no word: the id prefix still places the card (it was the team's, so "board" cards read nothing).
+  assert.equal(repoOf({ id: "board-x", repo: "elsewhere" }, config)?.name, "flight-board", "an unknown repo word falls back to the id prefix");
+  assert.equal(repoOf({ id: "menu-fix", repo: "elsewhere" }, config), null, "no prefix either: the team's, unless a branch says otherwise");
+});
+
+// #C985: 10 store cards carry the word "board" (the list names "flight-board"); the Collector finds them by their branch, as a card with none.
+test("a card whose repo word names no listed repository is read in the repository that has its branch", () => {
+  const s = scratchBoard();
+  try {
+    const config = fullConfig({ collector: { repoPath: "/srv/team", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, repos: [{ ...BOARD, idPrefixes: ["zzz-"] }] } });
+    const none = (args) => { if (args[0] === "for-each-ref") return ""; if (args[0] === "log") return ""; throw new Error("no repo"); };
+    const cards = [{ id: "board-queued", repo: "board" }, { id: "board-review", repo: "flight-board" }, { id: "menu-fix", repo: "board" }].map((c) => ({ ...c, status: "active", phase: "build", level: "Full" }));
+    const { doc } = collect({ config, cards, git: none, gh: () => "[]", now: 5, repos: { "flight-board": { git: s.git, installed: s.installed } } });
+    assert.deepEqual([doc.cards["board-queued"].repo, doc.cards["board-queued"].phase, doc.cards["board-queued"].wait], ["flight-board", "ship", "release"], "the word 'board': found by its branch");
+    assert.deepEqual([doc.cards["board-review"].repo, doc.cards["board-review"].phase], ["flight-board", "security"], "the listed name: as before");
+    assert.equal(doc.cards["menu-fix"].phase, null, "an unknown word and no branch anywhere: the team's own, as declared");
+  } finally { rmSync(s.dir, { recursive: true, force: true }); }
 });
 
 test("signed, not on main: queued for a board release; on main, not installed: waiting for the install; installed: live", () => {
