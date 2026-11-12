@@ -1,0 +1,1 @@
+SECURE #C1027 2b73c84 as part of the stack ending bdffd5e (Security 11-12): tests and .gitignore only. The evidence job's tests now keep their state in a mkdtemp folder they remove; a test fails if evidence-posted.json is in the repository root; .gitignore lists it. CHANGELOG.d file plain (100644). No code that runs outside tests changes.
