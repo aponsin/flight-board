@@ -1,0 +1,1 @@
+SECURE #C956 tip 41c19e7 (Security 2026-11-11): only tests/look-rule-visual-lanes.test.mjs changed since signed 9ca3004 (one test covering the related_thread path; no code). 9ca3004 keeps its SECURE note.
