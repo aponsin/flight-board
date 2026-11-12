@@ -1432,8 +1432,22 @@ function threadIds(){return [...msgIndex().keys()]}
 // never lists as unanswered. Only the board's close (autoClosed; Security F1 on 1ab7673: an asker's own close hides nothing), and only
 // words up to the answer (Checker 2 F1: a follow-up after it is a real question and still waits on the team).
 // #C1009: a bare owner "Ack." after the team spoke needs no answer, whatever the thread is on: it stays answered.
+// #C1039 (the owner's #T1880, #T1887, #T1892, #T1893: red "unanswered" on threads Manager had answered, the newest word his closer): after the
+// team spoke, his word is not a new question only when the WHOLE message is a known closer (Manager's ruling after Checker's F1, G1 and G2: every
+// rule built from words or sentence forms let some request through, "check it again", "you deleted it"; a red ping on a rare closer is cheap, a
+// missed question is not). After trimming, lowercasing and dropping end punctuation it equals one of CLOSERS; or it is exactly one of the options
+// Manager's decision offered ("Chose B: <its label>", as optionText sends it, nothing after it); or it is the owner's two-sentence "I'll try
+// <something>. I'll let you know" with nothing in it that pushes back or asks. No "?", no files, one line. Everything else is a follow-up.
+const CLOSERS=new Set(["ok","okay","ack","closed","done","thanks","thank you","archived it","got it","i'll let you know","i will let you know"]);
+const TRY_PROMISE=/^i'?ll try\b[^.!?\n]{1,80}[.!]\s+(?:i'?ll|i will) (?:let you know|get back to you)[\s.!]*$/i;
+const PUSHBACK=/\b(?:but|however|still|though|please|pls|can|could|would|should|need|needs|want|doesn'?t|don'?t|isn'?t|aren'?t|won'?t|not|no|wrong|broken|crashed|lost|failed|fails|why|how|what|where|who|revert|restore|reopen|undo|ship|add|fix|change|make|send|tell|show|do|now|next|then|also|first|again)\b/i;
+function pickOptions(t){const o=t.slice(0,-1).reverse().find(m=>m&&m.from!==OWNER&&Array.isArray(m.options)&&m.options.length);return o?o.options.filter(x=>x&&x.key&&x.label):[]}
+function ownerCloser(m,options=[]){const x=String(m&&m.text||"").trim().replace(/[’]/g,"'");if(!x||/\?/.test(x)||(Array.isArray(m.assets)&&m.assets.length)||/\n/.test(x)||x.length>200)return false;
+  if(options.some(o=>x===`Chose ${o.key}: ${o.label}`))return true;
+  if(CLOSERS.has(x.toLowerCase().replace(/[\s.!]+$/,"")))return true;
+  return TRY_PROMISE.test(x)&&!PUSHBACK.test(x)}
 function threadOpen(id){const t=threadOf(id),last=t[t.length-1];if(!last||last.from!==OWNER||last.resolved)return false;
-  const it=itemOf(id);if(/^\s*ack(?:ed|nowledged)?[\s.!]*$/i.test(String(last.text||""))&&!(Array.isArray(last.assets)&&last.assets.length)&&t.some(m=>m.from!==OWNER))return false;if(it&&it.coll==="waiting"&&it.doc.done&&it.doc.autoClosed===true&&num(it.doc.respondedAt)!=null&&(num(last.at)??0)<=it.doc.respondedAt)return false;return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
+  const it=itemOf(id);if(/^\s*ack(?:ed|nowledged)?[\s.!]*$/i.test(String(last.text||""))&&!(Array.isArray(last.assets)&&last.assets.length)&&t.some(m=>m.from!==OWNER))return false;if(ownerCloser(last,pickOptions(t))&&t.some(m=>m.from!==OWNER))return false;if(it&&it.coll==="waiting"&&it.doc.done&&it.doc.autoClosed===true&&num(it.doc.respondedAt)!=null&&(num(last.at)??0)<=it.doc.respondedAt)return false;return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
 function openThreads(){return threadIds().filter(threadOpen)}
 function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"waiting",doc:w};
   // #C831: the card AS SHOWN (asShown: a card closed by evidence, live and on main with no check date, reads done; a dropped one too), as
