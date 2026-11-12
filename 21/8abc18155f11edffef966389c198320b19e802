@@ -1,0 +1,3 @@
+PASS Full: state-refused-long-card-id #C960 218abc18155f11edffef966389c198320b19e802 (Checker 2, 2026-11-12; re-cut of 936c328, which Checker signed, onto main 6dde27e)
+Diff-check (Checker 2): the +/- lines of the patch equal the signed original's, file for file; git diff --stat origin/main 98643c2 (two-dot) touches only #C960, #C956 and #C913 files, nothing reverted. Boardsmith's suite on the stack top 10dc508: 2588/2588.
+The original's PASS carries over.
