@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_LINE_TAIL, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther } from "./board-rules.mjs";
+import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_LINE_TAIL, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -187,12 +187,25 @@ export async function askFromTool(db, now, who, args) {
   return r.ok ? { ...r, thread_id: rel, posted_in_thread: true } : r;
 }
 
+// #C979: whether the owner reads a thread: an ask's, a free thread, or one he has written in.
+async function ownerReads(db, threadId) {
+  return Boolean((await db.prepare("SELECT 1 AS x FROM asks WHERE id = ?").bind(threadId).first())
+    || (await db.prepare("SELECT 1 AS x FROM threads WHERE id = ?").bind(threadId).first())
+    || (await db.prepare("SELECT 1 AS x FROM messages WHERE thread_id = ? AND author = 'owner' LIMIT 1").bind(threadId).first()));
+}
+
 // A message on a thread (a card id, an ask id or a free thread name). Delivery to Manager is the wake's business.
 export async function postMessage(db, now, who, m) {
   const ok = m && typeof m === "object" && Object.keys(m).every((k) => ["thread_id", "body", "kind", "options", "screenshots"].includes(k)) && typeof m.thread_id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(m.thread_id) && typeof m.body === "string" && m.body.trim() && m.body.length <= 8000;
   if (!ok) return refuse(db, now, { rule: "message-shape", detail: "thread_id and body, body 1 to 8000 characters, and for an agent a kind, options and screenshots; nothing else" }, m?.thread_id, who);
   const extra = messageExtrasRefusal(m, who);
   if (extra) return refuse(db, now, extra, m.thread_id, who);
+  // #C979: an agent's post in a thread the owner reads carries no UTC "Z" time (Mountain Time only). The owner reads an ask's thread, a free
+  // thread (his) and any thread he has written in; a card thread only agents have written in is theirs, and keeps its Z times.
+  if (who !== "owner") {
+    const z = zTimeRefusal([m.body, ...(Array.isArray(m.options) ? m.options.map((o) => o?.label) : [])]);
+    if (z && await ownerReads(db, m.thread_id)) return refuse(db, now, z, m.thread_id, who);
+  }
   // #C936: an agent's message may carry screenshots, as an ask does. An empty list carries nothing; a picture that names an option (A to D)
   // names one of this message's own options, so a plain post cannot letter a picture.
   if (m.screenshots !== undefined) {

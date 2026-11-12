@@ -54,6 +54,29 @@ export function lookRefusal({ texts, options, shots }) {
   return missing.length ? refuse("look-needs-screenshots", `a look decision needs a screenshot for each option (missing: ${missing.join(", ")}); add each as "<file id> A: label" in screenshots, the letter being the option's`) : null;
 }
 
+// #C979 (Director check 3e(ii)): the owner reads Mountain Time only, yet three team posts in his threads carried a UTC "Z" time in a week. A
+// time of day followed by Z ("03:45Z", "3:45 Z", "03:45:09Z", "2026-11-12T03:45Z") in what the owner reads is refused. Not a time: a commit
+// or an id with a Z in it (no hh:mm), the word "Z" in prose. Not his reading: text inside a code span (`...`) or a fenced block, a step's cmd
+// (the Copy box), a Terminal ask's commands and a SessionStart's words (what he pastes, exactly). The refusal names the time it found.
+const Z_TIME = /(?<![\w:])(?:\d{4}-\d{2}-\d{2}[T ])?\d{1,2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?\s?Z(?![A-Za-z0-9])/;
+const CODE_SPANS = /```[\s\S]*?```|`[^`\n]*`/g;
+export function zTimeIn(text) {
+  if (typeof text !== "string") return null;
+  return Z_TIME.exec(text.replace(CODE_SPANS, " "))?.[0] ?? null;
+}
+export function zTimeRefusal(texts) {
+  for (const t of texts) {
+    const z = zTimeIn(t);
+    if (z) return refuse("owner-reads-mountain-time", `"${z}" is a UTC time; the owner reads Mountain Time only: write it like "8:45 pm MT" (a time inside a code span or a Copy box may stay)`);
+  }
+  return null;
+}
+// The parts of an ask the owner reads as prose: its title and every part but the ones he copies (commands, words, a step's cmd).
+export function askProse(ask) {
+  const steps = Array.isArray(ask.steps) ? ask.steps.map((s) => (typeof s === "string" ? s : s?.text)) : [];
+  return [ask.title, ask.question, ask.recommended, ...(Array.isArray(ask.options) ? ask.options : []), ask.text, ask.expect, ask.where, ...steps];
+}
+
 // An ask missing a required part, an unknown field, or a Later without an ETA.
 export function askRefusal(ask, now) {
   if (ask === null || typeof ask !== "object" || Array.isArray(ask)) return refuse("ask-shape", "an ask is an object");
@@ -103,6 +126,8 @@ export function askRefusal(ask, now) {
     if (!PROMISE_ROLES.includes(ask.owed_by) || ask.owed_by !== ask.asked_by) return refuse("promise-shape", `owed_by is the asker itself, and only ${PROMISE_ROLES.join(" or ")} promises`);
     if (!Number.isFinite(ask.eta_at) || ask.eta_precondition !== undefined) return refuse("promise-shape", "a promise has a date (eta_at) and no precondition");
   }
+  // #C979: no UTC time in what the owner reads. A live write only: an import (now = null) keeps the old ask's words.
+  if (Number.isFinite(now)) { const z = zTimeRefusal(askProse(ask)); if (z) return z; }
   return null;
 }
 
