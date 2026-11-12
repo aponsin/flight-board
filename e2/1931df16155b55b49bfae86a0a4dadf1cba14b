@@ -1,0 +1,3 @@
+PASS Full: look-rule-config-visual-lanes #C956 e21931df16155b55b49bfae86a0a4dadf1cba14b, line from 218abc18155f11edffef966389c198320b19e802 (Checker 2, 2026-11-12; e517bf3 then e21931d, a re-cut of e08ef4e and 30ae3ec onto 218abc1)
+Diff-check (Checker 2): the +/- lines of the patch equal the signed original's, file for file; git diff --stat origin/main 98643c2 (two-dot) touches only #C960, #C956 and #C913 files, nothing reverted. Boardsmith's suite on the stack top 10dc508: 2588/2588.
+Per commit: e517bf3 = e08ef4e and e21931d = 30ae3ec in changed lines. The original's PASS carries over. Needs SECURE on this tip with the same line.
