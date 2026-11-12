@@ -218,8 +218,10 @@ export function makeAll({ repo, sha, n, out, git = (...a) => spawnSync("git", ["
     commits = String(git("log", "--reverse", "--format=%s", `${prev.sha}..${sha}`).stdout).split("\n").filter(Boolean);
     paths = String(git("diff", "--name-only", prev.sha, sha).stdout).split("\n").filter(Boolean);
   }
-  const cards = [...new Set(commits.flatMap((c) => c.match(/#C\d+/g) ?? []))].join(" and ").slice(0, 120) || "main";
-  const files = makePair({ name, card: cards, what: `${commits.length} commit${commits.length === 1 ? "" : "s"}${prev ? ` since ${prev.sha.slice(0, 8)}` : ""}`, signed: sha, deployOk: `the Worker carries ${sha.slice(0, 8)}; now run the tree step`, treeOk: `board-store-v4 is at ${sha.slice(0, 7)}` });
+  const cards = [...new Set(commits.flatMap((c) => c.match(/#C\d+/g) ?? []))].join(" and ") || "main"; // #C1014: every card the pair carries, never cut (a 120-character cut left "#C880 and," and dropped #C967)
+  let files;
+  try { files = makePair({ name, card: cards, what: `${commits.length} commit${commits.length === 1 ? "" : "s"}${prev ? ` since ${prev.sha.slice(0, 8)}` : ""}`, signed: sha, deployOk: `the Worker carries ${sha.slice(0, 8)}; now run the tree step`, treeOk: `board-store-v4 is at ${sha.slice(0, 7)}` }); }
+  catch (e) { return { ok: false, why: `the pair's header cannot name every card it carries: ${e.message}` }; }
   // A hook file changed since the last pair that ran: the hooks step is written too, from the newest earlier hooks file in the folder.
   // "Hook file" = a hook script, the installer, or any file the two gate entries import (Security R1 on 0f36fd0), read at the new sha.
   let hooks = null;

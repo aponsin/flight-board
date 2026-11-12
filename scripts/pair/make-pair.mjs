@@ -12,12 +12,14 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Printable ASCII only: a control character, and above all U+2028 / U+2029 (they end a // comment line in JS and put live code after it,
 // invisible in a diff), never reach a generated file whose hash Security pins.
-const plain = (v) => typeof v === "string" && v.length > 0 && v.length <= 300 && /^[\x20-\x7e]+$/.test(v) && !/["\\`$]|@@/.test(v);
+// #C1014: the card list of a pair that carries many cards may be longer than a sentence: up to CARD_MAX, never cut (a cut list drops cards from the owner's pack).
+export const CARD_MAX = 1000;
+const plain = (v, max = 300) => typeof v === "string" && v.length > 0 && v.length <= max && /^[\x20-\x7e]+$/.test(v) && !/["\\`$]|@@/.test(v);
 
 export function makePair({ name, card, what, signed, deployOk, treeOk }) {
   if (!/^[a-z0-9]{2,12}$/.test(String(name))) throw new Error("name: letters and digits, 2 to 12");
   if (!/^[0-9a-f]{40}$/.test(String(signed))) throw new Error("signed: a full 40-hex sha");
-  for (const [k, v] of Object.entries({ card, what, deployOk, treeOk })) if (!plain(v)) throw new Error(`${k}: a short plain sentence (no quotes, backslashes, newlines, $ or @@)`);
+  for (const [k, v] of Object.entries({ card, what, deployOk, treeOk })) if (!plain(v, k === "card" ? CARD_MAX : 300)) throw new Error(`${k}: a short plain sentence (no quotes, backslashes, newlines, $ or @@${k === "card" ? `; at most ${CARD_MAX} characters` : ""})`);
   const file = { deploy: `board-store-deploy-${name}.mjs`, tree: `board-store-tree-${name}.mjs` }, from = `board-store-tree-${name}.from`;
   const fill = (text, extra) => Object.entries({ CARD: card, WHAT: what, SIGNED: signed, SHORT: signed.slice(0, 8), FROM: from, DEPLOYDONE: `board-store-deploy-${name}.done`, ...extra }).reduce((t, [k, v]) => t.split(`@@${k}@@`).join(v), text);
   const deploy = fill(readFileSync(join(HERE, "deploy.template.mjs"), "utf8"), { SUCCESS: deployOk, FILE: file.deploy });
