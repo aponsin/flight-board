@@ -2,13 +2,13 @@
 // Pairs are for the board's own repository; a product deploy comes from Release's ship.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { turnsOf, dispatchInput, BOARD_REPO_WORDS } from "../collector/store-dispatch.mjs";
-import { dispatchJob } from "../collector/probe-board.mjs";
-import { waitingPair, descends, pairCoversFor } from "../collector/pair-wait.mjs";
+import { dispatchJob, main } from "../collector/probe-board.mjs";
+import { waitingPair, descends, pairCoversFor, boardRepoPath } from "../collector/pair-wait.mjs";
 import { checkConfig, fullConfig } from "../scripts/config.mjs";
 
 const SHA = "e0582383ef48" + "a".repeat(28);
@@ -116,6 +116,44 @@ test("the dispatch job, from the folder and the repository: the written dispatch
   const itemsFor = async (extra) => { const dir = mkdtempSync(join(tmpdir(), "pw-job-dir-")); const r = await dispatchJob({ base: "https://x.example", headers: {}, fetchImpl, dir, roster: ["Builder"], lead: "Manager", ...extra }); return r.items.map((i) => i.step); };
   assert.deepEqual(await itemsFor({ pairFolder: pairs, repoPath: repo }), [], "the waiting pair covers the landing");
   assert.deepEqual(await itemsFor({ pairFolder: "", repoPath: repo }), ["pair"], "no folder set: today's behaviour");
+});
+
+test("boardRepoPath: the repos entry named for the board's repository, else repoPath", () => {
+  assert.equal(boardRepoPath({ repoPath: "/team", repos: [{ name: "flight-board", path: "/board" }] }), "/board");
+  assert.equal(boardRepoPath({ repoPath: "/team", repos: [{ name: "board", path: "/board2" }] }), "/board2");
+  assert.equal(boardRepoPath({ repoPath: "/team", repos: [{ name: "shopsite", path: "/shop" }] }), "/team", "no board entry: the team's repository");
+  assert.equal(boardRepoPath({ repoPath: "/team" }), "/team");
+  assert.equal(boardRepoPath({ repoPath: "/team", repos: [{ name: "flight-board", path: "" }, null, 5] }), "/team", "an entry with no path is none");
+  assert.equal(boardRepoPath({}), ""); assert.equal(boardRepoPath(undefined), "");
+});
+
+test("main()'s wiring (Checker F1 on 170f980): with the team's repoPath a PRODUCT repository and the board's checkout in collector.repos, the waiting pair still covers the card", async () => {
+  const mk = (name) => { const d = mkdtempSync(join(tmpdir(), name)); const g = (...a) => execFileSync("git", ["-C", d, "-c", "user.name=t", "-c", "user.email=none", ...a], { encoding: "utf8" }).trim(); g("init", "-q", "-b", "main"); return { d, g }; };
+  const board = mk("pw-main-board-"), product = mk("pw-main-product-");
+  writeFileSync(join(board.d, "f"), "1"); board.g("add", "f"); board.g("commit", "-q", "-m", "one"); const landing = board.g("rev-parse", "HEAD");
+  writeFileSync(join(board.d, "f"), "2"); board.g("add", "f"); board.g("commit", "-q", "-m", "two"); const pin = board.g("rev-parse", "HEAD");
+  writeFileSync(join(product.d, "p"), "x"); product.g("add", "p"); product.g("commit", "-q", "-m", "product");
+  const pairs = mkdtempSync(join(tmpdir(), "pw-main-pairs-")); pairFile(pairs, 9, pin);
+  const home = mkdtempSync(join(tmpdir(), "pw-main-home-")), id = "abc123";
+  const cfgPath = join(home, "board.config.json"), envPath = join(home, "board.env");
+  writeFileSync(envPath, "BOARD_BASE_URL=https://x.example\n");
+  const now = Date.now();
+  const view = { evidence: { agents: { value: { Builder: { state: "idle", since: now - 120e3 } }, readAt: now - 1000 }, "cards.landed-card": { value: ev({ headSha: landing, headSha12: landing.slice(0, 12) }) } }, cards: [{ id: "landed-card", num: 1013, owner_role: "Builder", repo: "board" }] };
+  const fetchImpl = async () => ({ ok: true, status: 200, json: async () => view });
+  const itemsWith = async (collector) => {
+    writeFileSync(cfgPath, JSON.stringify({ artifactUrl: `https://claude.ai/artifact/${id}`, roster: ["Builder"], collector }));
+    const prev = process.env.HOME; process.env.HOME = home;
+    try {
+      let code = null;
+      await main(["--job", "dispatch", "--env", envPath, "--base", "https://x.example", "--config", cfgPath], { env: {}, exit: (c) => { code = c; return c; }, fetchImpl });
+      const written = JSON.parse(readFileSync(join(home, ".flight-board", id, "dispatch.json"), "utf8"));
+      return { code, steps: written.items.map((i) => i.step) };
+    } finally { process.env.HOME = prev; }
+  };
+  const withEntry = await itemsWith({ repoPath: product.d, pairFolder: pairs, repos: [{ name: "flight-board", path: board.d, notes: { checker: "refs/notes/checker" } }] });
+  assert.deepEqual(withEntry.steps, [], "the board's checkout answers the ancestor question: covered");
+  const noEntry = await itemsWith({ repoPath: product.d, pairFolder: pairs });
+  assert.deepEqual(noEntry.steps, ["pair"], "only the product repository to ask: it cannot answer, so the card is not skipped (fails safe)");
 });
 
 test("collector.pairFolder is an absolute folder (or ~/…), empty for none, and has no default", () => {

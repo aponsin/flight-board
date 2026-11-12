@@ -6,6 +6,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { BOARD_REPO_WORDS } from "./store-dispatch.mjs";
 
 // { n, sha } of the newest pair when it has not run, else null (no folder, no pair, no pin, or the newest ran).
 export function waitingPair(folder) {
@@ -27,6 +28,14 @@ export function descends(git, landing, pin) {
   if (!/^[0-9a-f]{40}$/.test(landing ?? "") || !/^[0-9a-f]{40}$/.test(pin ?? "")) return false;
   if (landing === pin) return true;
   try { return git(["merge-base", "--is-ancestor", landing, pin]).status === 0; } catch { return false; }
+}
+
+// The checkout the pair's pin and the landed board cards live in (#C1013 Checker F1): the collector.repos entry named for the board's repository (a repo
+// word the board uses), else collector.repoPath, the team's own repository, which is the board's only when the team's repository is the board's.
+// On an install whose repoPath is the product repository, using it would make every ancestor question fail and the skip never fire.
+export function boardRepoPath(collector) {
+  const entry = (Array.isArray(collector?.repos) ? collector.repos : []).find((r) => r && typeof r.name === "string" && BOARD_REPO_WORDS.has(r.name) && typeof r.path === "string" && r.path);
+  return entry ? entry.path : (typeof collector?.repoPath === "string" ? collector.repoPath : "");
 }
 
 // The function the dispatch asks per landed card: (full sha) -> true when the waiting pair covers it. null when no folder is set or no pair waits
