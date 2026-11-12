@@ -996,6 +996,31 @@ export async function getWake(fetchImpl, secrets, id) {
 
 const writeAtomic = (path, text) => { const tmp = `${path}.${process.pid}.part`; writeFileSync(tmp, text, { mode: 0o600, flag: "wx" }); renameSync(tmp, path); };
 
+// #C974 (Manager's A on the card, 11-11 ~11 pm MT; #C897: reviewPaths went into the live config before review and skipped the Language review on
+// Spanish files): the team's config is a file in the team's repository (collector.configInRepo, e.g. "board/board.config.json"), changed by a branch,
+// signed and landed like code. Each minute the probe copies the copy on main over the live file every reader is given (--config), so only what
+// landed goes live. Kept from the live copy: the session ids (rosterSessions, gate.managerSession), which change at every restart and are no rule.
+// Never blanks it: a copy missing on main, unreadable or refused by checkConfig leaves the live file as it is, and the line says why.
+// show() -> the file's text on main (throws when git has none); liveText: the live file's text. Pure: { text: new live text or null, line }.
+export const SESSION_KEYS = ["rosterSessions"];
+export function teamConfigSync({ show, liveText, file }) {
+  let live;
+  try { live = JSON.parse(liveText); } catch { return { text: null, line: "config: the live copy does not parse; not replaced" }; }
+  let main;
+  try { main = JSON.parse(show()); } catch { return { text: null, line: `config: no readable ${file} on main; the live copy is kept` }; }
+  if (!plain(main)) return { text: null, line: `config: ${file} on main is not an object; the live copy is kept` };
+  const merged = { ...main };
+  for (const k of SESSION_KEYS) { if (live[k] !== undefined) merged[k] = live[k]; else delete merged[k]; }
+  if (plain(main.gate) || live.gate?.managerSession !== undefined) {
+    merged.gate = { ...(plain(main.gate) ? main.gate : {}) };
+    if (live.gate?.managerSession !== undefined) merged.gate.managerSession = live.gate.managerSession; else delete merged.gate.managerSession;
+  }
+  const problems = checkConfig(merged);
+  if (problems.length) return { text: null, line: `config: ${file} on main is refused (${String(problems[0]).slice(0, 120)}); the live copy is kept` };
+  if (JSON.stringify(merged) === JSON.stringify(live)) return { text: null, line: null };
+  return { text: `${JSON.stringify(merged, null, 2)}\n`, line: `config: the live copy now matches ${file} on main` };
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const at = process.argv.indexOf("--config");
   let config;
@@ -1041,6 +1066,15 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let live = null;
     if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { /* none */ } }
     repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern, reviewPaths: c.reviewPaths ?? null };
+    // #C974: the live config follows the copy landed on main (the next run reads it). A failure here never stops the run.
+    if (c.configInRepo) {
+      try {
+        const livePath = process.argv[at + 1];
+        const s = teamConfigSync({ show: () => r.git(["show", `${c.remote}/${c.mainBranch}:${c.configInRepo}`]), liveText: readFileSync(livePath, "utf8"), file: c.configInRepo });
+        if (s.text) writeAtomic(livePath, s.text);
+        if (s.line) console.log(s.line);
+      } catch (e) { console.log(`config: not synced (${String(e?.code ?? e?.message ?? e).slice(0, 80)})`); }
+    }
   }
   for (const x of c.repos) {
     const installed = installedSha(home(x.installedLink ?? ""));
