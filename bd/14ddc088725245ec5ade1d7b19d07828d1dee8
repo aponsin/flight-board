@@ -1,0 +1,1 @@
+SECURE #C964 bd14ddc on main 1f5fbef (Security 11-12): page only. A thread under an ask's or a card's tile now draws a Decision's options through threadHtml's existing renderer (esc on id, key and label; the existing data-topt click). No new innerHTML sink, request or store write.
