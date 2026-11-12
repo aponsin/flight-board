@@ -1,0 +1,2 @@
+PASS Quick: thread-decision-shows-options #C964 commit 1 of 2, re-cut v4 at bd14ddc onto main 1f5fbef (Checker, 2026-11-12; diff-check of my PASS on 81f78ba and 74b144d)
+range-diff ecd5342..81f78ba against 1f5fbef..06cd108: both commits are identical. Touched tests at the stack tip 90eb843 (thread-decision-shows-options, board, owner-phone-push, hostile-text): 75 pass. Boardsmith's full suite: 2616 pass.
