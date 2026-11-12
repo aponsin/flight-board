@@ -51,6 +51,15 @@ export function judge({ onMain, note, changed, owned = [] }) {
   return { ok: true, ownerFiles: files.filter((f) => owned.includes(f)), taskChanged: files.includes(TASK_FILE) };
 }
 
+// #C1042: what the link move means for the live board. The link carries the collector's own code only; the page (page/) is built from the owner's
+// pinned tree, and a hook or any owner-closure file runs from the owner's pinned copy, so a change to any of them is not live until the owner's pack.
+export function goesLive(changed, ownerFiles = []) {
+  const files = changed ?? [];
+  const pinnedLike = files.filter((f) => f.startsWith("page/") || f.startsWith("hooks/") || ownerFiles.includes(f));
+  if (!pinnedLike.length) return "The next collector run uses it.";
+  return `Needs the owner's pack (pc<N>): ${pinnedLike.join(", ")} stays on the owner's pinned copy until it is installed; the next collector run does NOT make it live.`;
+}
+
 // Never back (#C412, Security's condition 5): a page release may have gone out on top of a waiting pack, so when the
 // pack moves the link to its commit the link may already be at a later one that has it. The link stays there when that
 // later commit is on origin/main and signed SECURE; anything else moves to sha, as before.
@@ -193,7 +202,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const move = linkMove({ sha, before, beforeHasSha: known(before) && quiet(["merge-base", "--is-ancestor", sha, before]) !== null, beforeOnMain: known(before) && quiet(["merge-base", "--is-ancestor", before, "origin/main"]) !== null, beforeNote: known(before) ? quiet(["notes", "--ref=flight-board-current/security", "show", before]) : null });
     if (move === "keep") console.log(`current: kept at ${before.slice(0, 12)}: it already has ${sha.slice(0, 12)} (a signed release on main after it), so the link never moves back. The pinned copy ${dir} is there for the owner's hooks.`);
     else if (args.includes("--dry-run")) console.log(`Dry run: ${existsSync(dir) ? `${dir} is exactly ${sha.slice(0, 12)}` : `would copy ${sha.slice(0, 12)} to ${dir}`}; would point ${link} at it.`);
-    else { swapLink(link, dir); console.log(`current: ${before ? before.slice(0, 12) : "none"} → ${sha.slice(0, 12)} (${dir}). The next collector run uses it.`); }
+    else { swapLink(link, dir); console.log(`current: ${before ? before.slice(0, 12) : "none"} → ${sha.slice(0, 12)} (${dir}). ${goesLive(fromPin, v.ownerFiles)}`); }
     console.log(fastForwardMain(repo, move === "keep" ? before : sha, { dry: args.includes("--dry-run") }));
     if (fromPin === null) console.log("No pinned commit found in the settings to compare with: check by hand whether the owner's files changed.");
     else if (v.ownerFiles.length) console.log(`The gate's hooks, the fence and the refresh hook keep the owner's pinned copy (${pinned.slice(0, 12)}) until the owner's install; changed since: ${v.ownerFiles.join(", ")}.`);
