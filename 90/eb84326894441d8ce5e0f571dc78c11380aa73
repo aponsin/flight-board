@@ -1,0 +1,2 @@
+PASS Quick: principles-six-and-four #C966 re-cut v3 at 90eb843, on #C964's 06cd108 (Checker, 2026-11-12; diff-check of my PASS on 7edecfc)
+The commit's diff is CHANGELOG.md +1 and docs/DATA.md +2: principle 9 and its dated Changes line, word for word as 7edecfc (the owner's B on #T1779). range-diff differs only in context lines. Documentation only.
