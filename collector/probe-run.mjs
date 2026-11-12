@@ -7,13 +7,9 @@ import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { armWatchdog } from "./run-watchdog.mjs";
 
-// Per cadence: how often it starts and the inside limit in seconds. Row 4 is red at 3 minutes, so none comes near it.
-export const JOBS = {
-  ask: { intervalSec: 20, limitSec: 30 },
-  evidence: { intervalSec: 60, limitSec: 90 },
-  usage: { intervalSec: 300, limitSec: 120 },
-  dispatch: { intervalSec: 60, limitSec: 45 }, // #C821: the owners' DISPATCH files from the store's view
-};
+// Per cadence: how often it starts and the inside limit in seconds (worker/probe-jobs.mjs, which the page header reads too).
+import { JOBS } from "../worker/probe-jobs.mjs";
+export { JOBS };
 export const OUTER_EXTRA_SEC = 15; // the OS alarm fires this long after the inside limit if the process is still stuck
 
 export const newRunId = () => randomBytes(4).toString("hex");

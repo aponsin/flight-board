@@ -50,8 +50,8 @@ test("red, missed and unknown each show one line with the run's link", async () 
 test("a stale or absent reading draws nothing", async () => {
   const db = await store();
   assert.equal((await stuck(db)).hidden, true, "absent");
-  await put(db, read("red"), NOW - 4 * M);
-  assert.equal((await stuck(db)).hidden, true, "older than 3 minutes");
+  await put(db, read("red"), NOW - 6 * M);
+  assert.equal((await stuck(db)).hidden, true, "older than 5 minutes (3 before #C996's stopgap)");
   assert.equal(probeDoc(await readView(db, NOW)).e2e, undefined);
 });
 

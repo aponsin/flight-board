@@ -68,11 +68,12 @@ test("the probe document is reassembled from the evidence keys; stuck and ship a
   assert.deepEqual(compatView(view({ evidence: { ...ev, ship: { value: { version: null, ci: "running", at: NOW }, readAt: NOW } } })).probe.ship, { version: null, ci: "running", at: NOW });
 });
 
-test("stuck and ship count only while fresh: a reading the probe stopped rewriting drops out after 3 minutes", () => {
+test("stuck and ship count only while fresh: a reading the probe stopped rewriting drops out after 5 minutes (3 before #C996's stopgap)", () => {
   const ship = { version: null, ci: "running", at: NOW }, stuck = { Builder: { kind: "step", card: "c1", since: NOW } };
   const at = (age) => compatView(view({ evidence: { ship: { value: ship, readAt: NOW - age }, stuck: { value: stuck, readAt: NOW - age } } })).probe;
   assert.deepEqual(at(60e3).ship, ship); assert.deepEqual(at(60e3).stuck, stuck);
-  assert.equal("ship" in at(4 * 60e3), false); assert.equal("stuck" in at(4 * 60e3), false);
+  assert.deepEqual(at(4 * 60e3).ship, ship, "4 minutes still counts: the job now runs every 2 minutes and up to 170 s");
+  assert.equal("ship" in at(6 * 60e3), false); assert.equal("stuck" in at(6 * 60e3), false);
 });
 
 test("a collection the store cannot fill is left out, never invented", () => {

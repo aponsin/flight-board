@@ -9,6 +9,7 @@ import { evidenceRefusal, runShape } from "../worker/board-rules.mjs";
 import { headerHtml } from "../worker/page-header.mjs";
 import { evidenceJob, childLine, plainLine, reportRunFailure, SLOW_RUN_MS, CHILD_LINE_MAX } from "../collector/probe-evidence.mjs";
 import { runChild } from "../collector/probe-run.mjs";
+import { JOBS } from "../worker/probe-jobs.mjs";
 
 const T = 1_800_000_000_000;
 const STATE = JSON.stringify({ v: 1, board: { boardId: "b", at: T, cardsCheckedAt: T }, cards: {}, agents: {} });
@@ -91,8 +92,8 @@ test("a failed run reports why to the store as run.evidence; a store that does n
   await reportRunFailure(new Error("x"), { base: "https://x.example", headers: {}, fetchImpl: async () => { throw new Error("down"); } });
 });
 
-test("a normal run is quiet and posts run.evidence ok without slow; a run past 75 s is logged with where the time went and posts slow", async () => {
-  assert.equal(SLOW_RUN_MS, 75_000, "the card's line: warn past 75 s of the 90 s limit");
+test("a normal run is quiet and posts run.evidence ok without slow; a run past 150 s is logged with where the time went and posts slow", async () => {
+  assert.equal(SLOW_RUN_MS, 150_000, "warn past 150 s of the 170 s limit (#C996's stopgap; it was 75 s of 90 s)");
   mock.timers.enable({ apis: ["Date"], now: T });
   try {
     const lines = [], posted = [];
@@ -110,7 +111,7 @@ test("a normal run is quiet and posts run.evidence ok without slow; a run past 7
     assert.equal(slow.stateMs, SLOW_RUN_MS + 5000);
     assert.equal(runShape(slow), true);
     const line = slowLines.find((l) => /slow run/.test(l));
-    assert.match(line, /slow run: 80 s of 90 s \(state child 80000 ms, posts \d+ ms\)/);
+    assert.match(line, /slow run: 155 s of 170 s \(state child 155000 ms, posts \d+ ms\)/);
   } finally { mock.timers.reset(); }
 });
 
@@ -147,8 +148,11 @@ test("the header says why the probe is failing, or that it is slow; nothing for 
   assert.match(fail, /<span class="chip bad" title="probe failing: state: bad \(first: agents\.Security\.card: not allowed\)">/);
   const both = html({ state: "silent", since: T, why: "node exited 1" });
   assert.match(both, /silent since \d{1,2}:\d\d [ap]m MT: node exited 1/);
-  const slow = html({ state: "ok", lastAt: T, slow: 80 });
-  assert.match(slow, /<span class="chip warn" title="probe slow: 80 s of 90">/);
+  const slow = html({ state: "ok", lastAt: T, slow: 155 });
+  assert.match(slow, /<span class="chip warn" title="probe slow: 155 s of 170">/);
+  // The limit in the text is the job table's, not a number typed in the header (#C996: it said "of 90" after the limit moved).
+  const was = JOBS.evidence.limitSec;
+  try { JOBS.evidence.limitSec = 99; assert.match(html({ state: "ok", lastAt: T, slow: 80 }), /probe slow: 80 s of 99">/); } finally { JOBS.evidence.limitSec = was; }
   assert.match(html({ state: "silent", since: T }), /<span class="chip bad" title="probe silent since \d{1,2}:\d\d [ap]m MT">/, "silent alone reads as before");
   assert.match(html({ state: "ok", why: "<img src=x>" }), /&lt;img src=x&gt;/, "the line is escaped");
 });
