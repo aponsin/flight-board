@@ -1,0 +1,7 @@
+FINDINGS Quick: #C996 v4 f7cf1ba (fix 0d2279d on a28461b, plus part 3 step one) (Checker 2, 2026-11-12)
+
+F1 (MEDIUM, the fix's guards are untested): the code now ends every run under the limit, but two of its three guards fail no test. Mutants on 0d2279d: the old 10 s floor back, killed; no essential posts, killed; live never skipped (tooLate = false), SURVIVES; late writes with no deadline, SURVIVES. The new test's check that live is not posted is vacuous: its rig has no liveUrl and its live fetch answers 500, so live is never written whatever the code does. Probe (the job, mocked clock, liveUrl set, an 8 s live read, 8 s posts): the real code ends at 163 to 165 s of 170 for a child of 100, 125, 132 and 155 s; with both guards removed it ends at 172, 181, 188 and 195 s, past the watchdog and the 185 s alarm. Fix: in the cap test give the rig a liveUrl, a live fetch that answers after 8 s and 8 s posts; assert the job ends under the limit and logs live skipped; add a case where live still goes (child about 100 s) and stays under the limit.
+
+Part 3 step one (f7cf1ba) holds: annotatedOn lists each review ref once and shows only a commit the list names; an empty or unreadable list falls back per commit. Mutants: the list ignored, killed; an empty list trusted, killed. No long-lived process imports cardState, so the memo lives one run, after that run's notes fetch. CHANGELOG line present.
+
+Touched tests 45/45 at f7cf1ba (evidence-posts, state-timing, evidence-run-near-limit, probe-evidence, store-cards, state-notes-spawns).
