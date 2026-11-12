@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY } from "./board-rules.mjs";
+import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -609,6 +609,17 @@ export async function takeInbox(db, now) {
   return { ok: true, messages, answers, stalls };
 }
 
+// #C832 (Checker 2 F1, Security LOW): the link a live reading closes its card with, built only from what the probe's own state schema takes (a full 40-hex
+// head sha, an owner/name repository) and held to the rule card_update's done_evidence meets (an https link, 500 characters at most). Anything else: null,
+// and nothing closes (evidenceRefusal checks only `lit`, so the shapes are checked here, where the string becomes evidence).
+const LIVE_SHA = /^[0-9a-f]{40}$/, LIVE_REPO = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
+export function liveDoneEvidence(reading) {
+  const { headSha, repoFull } = reading ?? {};
+  if (typeof headSha !== "string" || typeof repoFull !== "string" || !LIVE_SHA.test(headSha) || !LIVE_REPO.test(repoFull)) return null;
+  const link = `https://github.com/${repoFull}/commit/${headSha}`;
+  return link.length <= 500 && DONE_EVIDENCE.test(link) ? link : null;
+}
+
 // Evidence: only the probe writes it; one lit phase per card.
 export async function writeEvidence(db, now, who, key, value, track) {
   const bad = evidenceRefusal(key, value, who, track);
@@ -646,8 +657,9 @@ export async function writeEvidence(db, now, who, key, value, track) {
   // #C832: a card whose reading is live is finished: the program closes it (done_at = when it first read live, done_evidence = its commit's link),
   // nothing is typed. Not a dropped or already-done card, and not one the lead gave a check date (a date is a wish to look again). A reading with
   // no full head sha or repository name has no link to show, so it closes nothing (the next reading with one does).
-  const closes = next === "live" && typeof reading.headSha === "string" && typeof reading.repoFull === "string"
-    ? [db.prepare("UPDATE cards SET done_at = ?, done_evidence = ?, updated_at = ? WHERE id = ? AND done_at IS NULL AND dropped = 0 AND check_at IS NULL").bind(now, `https://github.com/${reading.repoFull}/commit/${reading.headSha}`, now, cardId)] : [];
+  const link = next === "live" ? liveDoneEvidence(reading) : null;
+  const closes = link
+    ? [db.prepare("UPDATE cards SET done_at = ?, done_evidence = ?, updated_at = ? WHERE id = ? AND done_at IS NULL AND dropped = 0 AND check_at IS NULL").bind(now, link, now, cardId)] : [];
   await db.batch([upsert, ...ins, ...closes]);
   await noteShip(db, now, cardId, value);
   return { ok: true };
