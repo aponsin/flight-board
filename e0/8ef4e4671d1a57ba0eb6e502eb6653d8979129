@@ -1,0 +1,1 @@
+SECURE #C956 re-cut e08ef4e onto main 441be59 (Security 11-11): range-diff against signed b5bfb11 shows code unchanged (the look evidence shape check and the lane rule as signed; only main's newer context around them); tests differ only in counting #C962's run.evidence key, already on main, in four probe tests.
