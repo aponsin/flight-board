@@ -1432,8 +1432,17 @@ function threadIds(){return [...msgIndex().keys()]}
 // never lists as unanswered. Only the board's close (autoClosed; Security F1 on 1ab7673: an asker's own close hides nothing), and only
 // words up to the answer (Checker 2 F1: a follow-up after it is a real question and still waits on the team).
 // #C1009: a bare owner "Ack." after the team spoke needs no answer, whatever the thread is on: it stays answered.
+// #C1039 (the owner's #T1880, #T1887, #T1892, #T1893: red "unanswered" on threads Manager had answered, the newest word his closer): after the
+// team spoke, his word is not a new question when it asks nothing: no "?", no files, and either a decision pick ("Chose B: ...", what the
+// page itself sends) or a short closer ("ok", "I'll let you know", "archived it"). A real follow-up (a "?", a request, a long note) still waits.
+const DECISION_PICK=/^chose\s+\S+\s*:/i;
+const CLOSER=/^(?:(?:i'?ll|i will|will)\s+(?:let you know|check|take a look|look|get back)\b|(?:i\s+)?(?:archived|closed|dismissed|deleted|removed|hid|cleared|handled|saw|seen|read)\b(?:\s+(?:it|that|this|them))?(?:\s+already)?|let you know|thanks?\b|thank you\b)/i;
+const ASKS_MORE=/\b(?:but|also|and|please|pls|can|could|would|should|need|needs|want|add|change|make|fix|why|how|what|when|where|who|still|not)\b/i;
+function ownerCloser(m){const x=String(m&&m.text||"").trim();if(!x||/\?/.test(x)||(Array.isArray(m.assets)&&m.assets.length))return false;
+  if(DECISION_PICK.test(x))return true;if(x.length>60||/\n/.test(x))return false;if(ackOnly(x))return true;
+  const c=CLOSER.exec(x);return !!c&&!ASKS_MORE.test(x.slice(c[0].length))&&x.slice(c[0].length).length<=24}
 function threadOpen(id){const t=threadOf(id),last=t[t.length-1];if(!last||last.from!==OWNER||last.resolved)return false;
-  const it=itemOf(id);if(/^\s*ack(?:ed|nowledged)?[\s.!]*$/i.test(String(last.text||""))&&!(Array.isArray(last.assets)&&last.assets.length)&&t.some(m=>m.from!==OWNER))return false;if(it&&it.coll==="waiting"&&it.doc.done&&it.doc.autoClosed===true&&num(it.doc.respondedAt)!=null&&(num(last.at)??0)<=it.doc.respondedAt)return false;return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
+  const it=itemOf(id);if(/^\s*ack(?:ed|nowledged)?[\s.!]*$/i.test(String(last.text||""))&&!(Array.isArray(last.assets)&&last.assets.length)&&t.some(m=>m.from!==OWNER))return false;if(ownerCloser(last)&&t.some(m=>m.from!==OWNER))return false;if(it&&it.coll==="waiting"&&it.doc.done&&it.doc.autoClosed===true&&num(it.doc.respondedAt)!=null&&(num(last.at)??0)<=it.doc.respondedAt)return false;return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
 function openThreads(){return threadIds().filter(threadOpen)}
 function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"waiting",doc:w};
   // #C831: the card AS SHOWN (asShown: a card closed by evidence, live and on main with no check date, reads done; a dropped one too), as
