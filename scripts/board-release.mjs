@@ -10,7 +10,7 @@
 //   - no newer -vN branch of the same card is on origin (#C738: v1 of a card landed after its v2 was pushed): a tip of build/<card>[-vN] is
 //     refused, naming the newer branch, when build/<card>-vM with a higher M is on origin and is a different commit;
 //   - nothing the owner's install pins changed since the commit the settings pin: the gate's hooks, the refresh hook,
-//     the fence, the memory hook, this release tool and every file they import (importClosure), and collector/TASK.md's
+//     the fence, the memory hook, the landing job and the link move, and every file they import (importClosure), and collector/TASK.md's
 //     settings block. Those stay the owner's install. Except on top of a waiting install pack (#C412, pendingPack): when
 //     every such change on the line from the pin is signed and this commit adds none of its own, it goes out, and the
 //     pinned code still waits for the owner's install;
@@ -31,10 +31,12 @@ import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { packLabel } from "./pack-label.mjs";
 
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
-// The release tool and what it runs are the owner's too (Security): a release can't loosen the next one.
-// #C967 (Security F1): the landing job runs from the same linked copy every release moves, so it is the owner's too: a landed change to it would otherwise
-// govern the next landing without his install.
-export const RELEASE_ENTRIES = ["scripts/board-release.mjs", "scripts/board-land.mjs", "scripts/current.mjs", "scripts/scan.mjs"];
+// #C1043 (the owner chose B on #T1903, 2026-11-12): this release tool is NOT the owner's. It runs from ~/.flight-board/current, which a board release moves
+// itself, so a change to it goes live the moment Release lands it; the guard is Checker's PASS and Security's SECURE, not an owner pack. It is no longer
+// listed here, so a change to it is not refused for waiting on a pack.
+// #C967 (Security F1): the landing job and the link move run from the same linked copy every release moves; they stay the owner's: a landed change to them
+// would otherwise govern the next landing without his install.
+export const RELEASE_ENTRIES = ["scripts/board-land.mjs", "scripts/current.mjs", "scripts/scan.mjs"];
 // The capabilities the board page is published with; a new one is the owner's (README, "The page").
 // mcp (#C420, #C580): the Studio's state through the owner's "Flight Board State" connector: board_state (read) and
 // board_wake (the owner's word reaching the lead's session), those two tools only.
