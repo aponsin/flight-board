@@ -110,6 +110,10 @@ export function askRefusal(ask, now, look = {}) {
   if (!ASK_TYPES.includes(ask.type)) return refuse("ask-type", `type is one of ${ASK_TYPES.join(", ")}`);
   const unknown = Object.keys(ask).filter((k) => !ASK_ALLOWED.has(k));
   if (unknown.length) return refuse("unknown-field", unknown.join(", "));
+  // #C1012 (#T1865: a Terminal ask with eta_at 7 am was nudged at 10 minutes and would have pushed to the owner's phone at 30, overnight): only a
+  // Decision ("not before") and a Later (its date) wait for eta_at. Any other type with one is refused on a live write rather than ignored; an
+  // import (now = null) keeps the old ask's shape.
+  if (Number.isFinite(now) && ask.eta_at !== undefined && ask.type !== "Decision" && ask.type !== "Later") return refuse("eta-unsupported", `${ask.type} does not wait for eta_at, so the owner would be asked at once: send it when it is due, or ask a Decision (not before) or a Later`);
   for (const k of ["title", "asked_by"]) if (!present(ask[k])) return refuse("ask-missing-part", k);
   for (const k of ASK_PARTS[ask.type]) if (!present(ask[k])) return refuse("ask-missing-part", `${ask.type} needs ${k}`);
   if (ask.type === "Decision") {
