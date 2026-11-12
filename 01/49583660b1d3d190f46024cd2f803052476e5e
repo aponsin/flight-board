@@ -1,0 +1,3 @@
+SECURE #C832 0149583, tip of build/store-retire-finished-cards-v2, line from 1f5fbef38781d6ef11fa6cdd8fef8b23c12fc358 (Security 11-12): covers 95228c2 and 0149583, each signed on its own commit.
+
+0149583 closes my LOW on aef8785: liveDoneEvidence needs headSha as 40 lowercase hex and repoFull as owner/name, and the built link must pass DONE_EVIDENCE and 500 characters; anything else closes nothing. The Worker needs a deploy.
