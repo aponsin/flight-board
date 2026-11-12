@@ -1183,11 +1183,16 @@ function pingText(w,id,r){
   const fs=(Array.isArray(r.files)?r.files:[]).filter(f=>f&&blobId(f.id));
   const files=fs.length?` Files (${fs.length}): `+fs.map(f=>`${f.name} = ${f.id}`).join(", "):"";
   return `Board reply [${id}]: ${what} on "${w.text||id}".${r.note?" Note: "+r.note:""}${files}`.slice(0,1900)}
+// #C1023: on the store a sent answer's line follows what the store knows. Manager's read takes the answer (compat-view sets taken): until then it says
+// "Sending to Manager…", after it "Manager has it.", and once Manager has written in that thread after the answer, nothing (he has plainly seen it; the owner
+// saw the red line on a picture answer Manager had read and replied to). Pictures change none of this. An older Worker sends no taken key: not "Sending".
+function leadWroteAfter(w,r){const lead=(CONFIG.gate&&CONFIG.gate.managerRole)||"Manager";return num(r.at)!=null&&threadOf(w.id).some(m=>m&&m.from===lead&&num(m.at)!=null&&m.at>r.at)}
 function replyBox(w){
   const r=w.response;
+  if(r&&r.status&&STORE&&!(r.status==="ack"&&!r.note)&&leadWroteAfter(w,r))return "";
   if(r&&r.status){const lbl=r.status==="ack"?"You acknowledged this":r.status==="done"?"You marked this done":r.status==="chose"?"You chose "+esc(r.choice||""):r.status==="ok"?"You said OK":r.status==="change"?"You asked for changes":"You asked for help";
     // The choice is an option's words (an agent's), and the status names a class: escaped, and only a known one (#C723).
-    return `<div class="reply sent ${["ack","done","chose","ok","change","help"].includes(r.status)?r.status:"help"}">${lbl}${num(r.at)?" "+dur(Date.now()-r.at)+" ago":""}${r.note?`: “${esc(r.note)}”`:""}.${sentFiles(r)} ${r.status==="ack"&&!r.note?"":STORE?"Manager has it.":w.ping==="sent"?"Sent to Manager.":w.ping?`Not sent to Manager (${esc(w.ping)}); it picks it up at its next check.`:"Sending to Manager…"}</div>`}
+    return `<div class="reply sent ${["ack","done","chose","ok","change","help"].includes(r.status)?r.status:"help"}">${lbl}${num(r.at)?" "+dur(Date.now()-r.at)+" ago":""}${r.note?`: “${esc(r.note)}”`:""}.${sentFiles(r)} ${r.status==="ack"&&!r.note?"":STORE?(r.taken===false?"Sending to Manager…":"Manager has it."):w.ping==="sent"?"Sent to Manager.":w.ping?`Not sent to Manager (${esc(w.ping)}); it picks it up at its next check.`:"Sending to Manager…"}</div>`}
   // The owner's A (#C368, #T980): the choices as chips above the compact box; the box keeps its own Send, which sends the
   // note as the "with a note" outcome: Something else (a decision), Change something (an approval), Something went
   // wrong (an action), or a follow-up (an answer, whose Ack is its choice).
