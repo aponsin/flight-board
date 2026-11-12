@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
+import { reworkTriggered, signoffClears, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -713,7 +713,7 @@ export async function writeEvidence(db, now, who, key, value, track) {
   // A wait step (the step tool, #C739) is not the lit phase: the three reads of the history below take the probe's own rows only (wait IS NULL).
   if (!prev) { const last = await db.prepare("SELECT phase, kind FROM phase_history WHERE card_id = ? AND wait IS NULL ORDER BY at DESC, id DESC LIMIT 1").bind(cardId).first(); if (last?.kind === "start") prev = last.phase; }
   const prevWho = prev && prev !== next ? (await db.prepare("SELECT who FROM phase_history WHERE card_id = ? AND phase = ? AND kind = 'start' AND wait IS NULL ORDER BY at DESC, id DESC LIMIT 1").bind(cardId, prev).first())?.who ?? null : null;
-  const cardRow = await db.prepare("SELECT owner_role, repo FROM cards WHERE id = ?").bind(cardId).first();
+  const cardRow = await db.prepare("SELECT owner_role, repo, waiting_on, blocked_reason FROM cards WHERE id = ?").bind(cardId).first();
   const agents = (await evidenceOf(db, "agents")) ?? {}, ownerRole = cardRow?.owner_role;
   const rows = prev === next ? [] : historyRows(cardId, prev, next, now, whoForPhase(cardId, next, agents, ownerRole), prevWho);
   // #C881: Started is the first push (PARITY row 35). A card whose first reading is already past build, with no row of its own (the probe sees a
@@ -746,9 +746,16 @@ export async function writeEvidence(db, now, who, key, value, track) {
       clears.push(db.prepare("UPDATE cards SET waiting_on = NULL, blocked_reason = NULL, hold_end = NULL, held_at = NULL, hold_until = NULL, updated_at = ? WHERE id = ?").bind(now, cardId));
     }
   }
-  await db.batch([upsert, ...ins, ...closes, ...clears]);
+  // #C992: the reviewer a card waited on has just signed it: that waiting_on is over. It is cleared with the hold it made (its end goes too unless a
+  // blocked_reason still holds the card), and the card moved on. Only the value read here is cleared (a write that changed it since keeps its own).
+  const signedRole = cardRow ? signoffClears(before, reading, cardRow.waiting_on) : null;
+  const stillBlocked = typeof cardRow?.blocked_reason === "string" && cardRow.blocked_reason.trim() !== "";
+  const unwait = signedRole
+    ? [db.prepare(`UPDATE cards SET waiting_on = NULL, hold_until = NULL${stillBlocked ? "" : ", held_at = NULL, hold_end = NULL"}, moved_at = ?, updated_at = ? WHERE id = ? AND waiting_on = ?`).bind(now, now, cardId, cardRow.waiting_on)] : [];
+  // Both in one batch: a sign-off and a landing in the same reading clear the waiting_on once; #C1036's history keeps the words it read above.
+  await db.batch([upsert, ...ins, ...closes, ...unwait, ...clears]);
   await noteShip(db, now, cardId, value);
-  return { ok: true };
+  return signedRole ? { ok: true, cleared: { waiting_on: cardRow.waiting_on, signedBy: signedRole } } : { ok: true };
 }
 
 // #C988: a session's reading of the week ("Weekly · all models" from get_usage), through the week_usage door tool. It is no status (the

@@ -551,6 +551,22 @@ export function reworkTriggered(prev, next) {
   if (!had(prev.findings) && had(next.findings)) return true;
   return REVIEWED.includes(prev.lit?.[0]) && BEFORE_REVIEW.includes(next.lit?.[0]);
 }
+// #C992 (11-11: #C913 read "Held: Checker: Full review" for hours after Checker's PASS at 3:41 pm, and the dispatch, which drops a turn whose card's
+// waiting_on names someone else, hid Security's turn too): the reviewer roles whose sign-off is NEW in this reading (in next.signed, not in
+// prev.signed), and of those the one a card's waiting_on names first ("Checker: Full review", "checker 2 …"), or null. On the transition only: a
+// waiting_on written after the sign-off, or one naming a reviewer still due, is never matched. A first reading (prev null) counts its sign-offs as new.
+const SIGN_ROLE = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security" };
+const signedOf = (v) => new Set((Array.isArray(v?.signed) ? v.signed : []).filter((s) => typeof s === "string" && Object.hasOwn(SIGN_ROLE, s)));
+export function signoffClears(prev, next, waitingOn) {
+  if (typeof waitingOn !== "string" || !waitingOn.trim()) return null;
+  const had = signedOf(prev), w = waitingOn.trim().toLowerCase();
+  for (const s of signedOf(next)) {
+    if (had.has(s)) continue;
+    const role = SIGN_ROLE[s].toLowerCase();
+    if (w === role || (w.startsWith(role) && !/[a-z]/.test(w.charAt(role.length)))) return SIGN_ROLE[s];
+  }
+  return null;
+}
 // Phase history (#C723 B3b): who a phase change is put down to when no agent is working on the card at that moment: the phase's lane
 // role; the early phases (and any not named here) belong to the card's own owner_role.
 export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security", ship: "Release", live: "Release", pack: "Release", install: "Release" };
