@@ -53,6 +53,23 @@ test("a board card that leaves main at ship (a re-cut) closes the wait, and a ne
   assert.deepEqual((await waits(db, "board-c")).map((r) => [r.kind, r.at]), [["start", T + 1], ["end", T + 2], ["start", T + 3]]);
 });
 
+// Checker F1 on 027616a: the open-row read looks at install rows only. A newer step-tool wait (a busy start, or a busy end) must not
+// stop the install wait opening, open a second one, or stop it closing.
+test("a newer step-tool wait never changes the install wait: it still opens once and closes once", async () => {
+  const db = await seed();
+  await writeEvidence(db, T + 1, "probe", "cards.board-c", at("ship", false));
+  assert.equal((await writeStep(db, T + 2, "Release", { init: "board-c", phase: "ship", kind: "start", wait: "busy" })).ok, true);
+  await writeEvidence(db, T + 3, "probe", "cards.board-c", at("ship", true));
+  assert.deepEqual((await waits(db, "board-c")).filter((r) => r.wait === INSTALL_WAIT).map((r) => [r.kind, r.at]), [["start", T + 3]], "an open busy start does not stop the install wait opening");
+  assert.equal((await writeStep(db, T + 4, "Release", { init: "board-c", phase: "ship", kind: "end", wait: "busy" })).ok, true);
+  await writeEvidence(db, T + 5, "probe", "cards.board-c", at("ship", true));
+  assert.deepEqual((await waits(db, "board-c")).filter((r) => r.wait === INSTALL_WAIT).map((r) => [r.kind, r.at]), [["start", T + 3]], "a newer busy end does not open a second install wait");
+  assert.equal((await writeStep(db, T + 6, "Release", { init: "board-c", phase: "ship", kind: "start", wait: "busy" })).ok, true);
+  await writeEvidence(db, T + 7, "probe", "cards.board-c", at("live", true));
+  await writeEvidence(db, T + 8, "probe", "cards.board-c", at("live", true));
+  assert.deepEqual((await waits(db, "board-c")).filter((r) => r.wait === INSTALL_WAIT).map((r) => [r.kind, r.at]), [["start", T + 3], ["end", T + 7]], "a newer busy start does not stop it closing, once");
+});
+
 test("a product card at ship and on main gets no install wait", async () => {
   const db = await seed();
   await writeEvidence(db, T + 1, "probe", "cards.prod-c", at("ship", true));
