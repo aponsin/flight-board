@@ -1,0 +1,1 @@
+- A card's holds (waiting_on, blocked_reason, hold_end, check_at and the store's own hold times) clear on the first reading with its commit on main, and the words are kept in the new `hold_history` table (migration 0031), so a landed card no longer wakes Manager to "lift or renew" a hold that meant nothing (#C1036).

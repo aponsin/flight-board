@@ -734,7 +734,17 @@ export async function writeEvidence(db, now, who, key, value, track) {
   const link = next === "live" ? liveDoneEvidence(reading) : null;
   const closes = link
     ? [db.prepare("UPDATE cards SET done_at = ?, done_evidence = ?, updated_at = ? WHERE id = ? AND done_at IS NULL AND dropped = 0 AND check_at IS NULL").bind(now, link, now, cardId)] : [];
-  await db.batch([upsert, ...ins, ...closes]);
+  // #C1036: the first reading with the card's commit on main ends its holds: what a hold waited for has landed. The words go to hold_history first;
+  // a card with no hold, a done or dropped card, and a card read on main before change nothing.
+  const clears = [];
+  if (reading.onMain === true && before?.onMain !== true) {
+    const held = await db.prepare("SELECT waiting_on, blocked_reason, hold_end, check_at FROM cards WHERE id = ? AND done_at IS NULL AND dropped = 0").bind(cardId).first();
+    if (held && (held.waiting_on || held.blocked_reason || held.hold_end || held.check_at != null)) {
+      clears.push(db.prepare("INSERT INTO hold_history (card_id, at, waiting_on, blocked_reason, hold_end, check_at) VALUES (?, ?, ?, ?, ?, ?)").bind(cardId, now, held.waiting_on ?? null, held.blocked_reason ?? null, held.hold_end ?? null, held.check_at ?? null));
+      clears.push(db.prepare("UPDATE cards SET waiting_on = NULL, blocked_reason = NULL, hold_end = NULL, check_at = NULL, held_at = NULL, hold_until = NULL, updated_at = ? WHERE id = ?").bind(now, cardId));
+    }
+  }
+  await db.batch([upsert, ...ins, ...closes, ...clears]);
   await noteShip(db, now, cardId, value);
   return { ok: true };
 }
