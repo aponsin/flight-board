@@ -1,0 +1,1 @@
+SECURE #C1027 v5 1e4e89a as part of the stack ending b273449 (Security 11-12): my SECURE c887f36 minus the .gitignore line; the root check is now git status --porcelain for root-level entries before and after the tests (execFileSync git with fixed arguments, in a test only). Tests and CHANGELOG.d only.
