@@ -11,9 +11,10 @@ function board(initRaw, host = "store") {
   const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });
   const document = { documentElement: { getAttribute: () => host }, getElementById: el, querySelectorAll: () => [], querySelector: () => null, addEventListener(t, f) { (listeners[t] ||= []).push(f); }, activeElement: null, createRange: () => ({}) };
   const fetch = async (url, opts) => { calls.push([url, JSON.parse(opts.body)]); return { ok: true }; };
-  const b = loadNames(NAMES, { document, fetch });
+  const timers = [];
+  const b = loadNames(NAMES, { document, fetch, setTimeout: (f, ms) => timers.push([f, ms]) });
   Object.assign(b.state, { initRaw, initiatives: initRaw.map((i) => b.gates(b.enrich(i))), steps: [], waiting: [], derived: [], messages: [], threads: [] });
-  return { ...b, els, listeners, calls };
+  return { ...b, els, listeners, calls, timers };
 }
 const card = (id, num, fields = {}) => ({ id, num, name: `Card ${num}`, size: "S", level: "Quick", status: "active", phase: "build", who: "Boardsmith", createdAt: 1_800_000_000_000 + num * 60e3, ...fields });
 
@@ -63,15 +64,49 @@ test("the board draws one group row with its cards on the rail, each with its st
   assert.match(gr, /title="Security">Security<small>not needed/, "another skipped phase says not needed");
 });
 
-test("Pull out is the store page's only, and posts {id} to the store's route", async () => {
+const button = (id, num) => {
+  const cls = new Set();
+  const btn = { dataset: { pull: id, num: String(num) }, disabled: false, textContent: "Pull out", classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c), has: (c) => cls.has(c) }, closest: (s) => (s === "[data-pull]" ? btn : null) };
+  return btn;
+};
+const tap = async (b, btn) => { for (const f of b.listeners.click) await f({ target: btn }); };
+
+test("Pull out is the store page's only; the first tap asks, only the second posts {id} to the store's route (Designer F1)", async () => {
   const off = board([card("one", 1, { batch: "g2-group-view" })], "artifact");
   off.renderBoard();
   assert.doesNotMatch(off.els.board.innerHTML, /data-pull=/, "no button where there is no store to write to");
-  const b = board([card("one", 1, { batch: "g2-group-view" })]);
-  const btn = { dataset: { pull: "one" }, disabled: false, textContent: "Pull out", closest: (s) => (s === "[data-pull]" ? btn : null) };
-  for (const f of b.listeners.click) await f({ target: btn });
+  const b = board([card("one", 977, { batch: "g2-group-view" })]);
+  b.renderBoard();
+  assert.match(b.els.board.innerHTML, /data-pull="one" data-num="977">Pull out</);
+  const btn = button("one", 977);
+  await tap(b, btn);
+  assert.deepEqual(b.calls, [], "one tap posts nothing");
+  assert.equal(btn.textContent, "Pull #C977 out? Yes");
+  assert.ok(btn.classList.has("armed"));
+  await tap(b, btn);
   assert.deepEqual(b.calls, [["/api/pull-out", { id: "one" }]]);
   assert.equal(btn.textContent, "Pulled out");
+});
+
+test("an unanswered ask goes back to Pull out after its 4 s, and the next tap asks again", async () => {
+  const b = board([card("one", 977, { batch: "g2-group-view" })]);
+  const btn = button("one", 977);
+  await tap(b, btn);
+  const [f, ms] = b.timers.at(-1);
+  assert.equal(ms, 4000);
+  f();
+  assert.equal(btn.textContent, "Pull out");
+  assert.equal(btn.classList.has("armed"), false);
+  await tap(b, btn);
+  assert.deepEqual(b.calls, [], "after the ask lapsed, a tap asks again and posts nothing");
+});
+
+test("an issue chip at exactly one is singular (Designer on #C1008): 1 design fix, 1 bug, 2 design fixes", () => {
+  const b = board([card("one", 977, { batch: "g2-group-view", issues: { design: 1, bugs: 1, security: 2, owner: 1, language: 1 } })]);
+  b.renderBoard();
+  const h = b.els.board.innerHTML;
+  for (const w of ["1 design fix<", "1 bug<", "2 security fixes<", "1 owner change<", "1 wording fix<"]) assert.ok(h.includes(w), w);
+  assert.equal(h.includes("1 design fixes"), false);
 });
 
 test("a pulled-out card's row says where it came from, when and by whom; a card put back in a group, or never pulled, says nothing", () => {

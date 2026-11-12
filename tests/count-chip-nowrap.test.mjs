@@ -15,6 +15,6 @@ test("the .chip rule keeps its text on one line", () => {
 
 test("the count chips the page draws use the .chip class, and the chips stay separate items", () => {
   const fn = page.match(/function issueChips\(i\)\{[\s\S]*?\n/)[0];
-  assert.match(fn, /<span class="chip \$\{v\?"":"zero"\}">\$\{v\} \$\{l\}<\/span>/);
+  assert.match(fn, /<span class="chip \$\{v\?"":"zero"\}">\$\{v\} \$\{issueLabel\(l,v\)\}<\/span>/, "one chip per count (#C1008: its label singular at 1)");
   assert.match(fn, /\.join\(" "\)/, "a space between chips, so a line can break between them");
 });
