@@ -1,0 +1,6 @@
+PASS Full: tests-clean-their-tmp #C989 659a3ef, board half (Checker 2, 2026-11-12)
+npm test runs through scripts/test-tmp.mjs (its own TMPDIR per run, removed at the end, a leftover fails the run) with the preload tests/helpers/clean-tmp.mjs (each test file's mkdtemp folders removed on exit). board-release.mjs removes its snapshot on exit too.
+Real npm test at 659a3ef with a private base temp folder: 2587/2587, exit 0, and the base folder held only node-compile-cache afterwards.
+Manager's ask, live: a test file that leaves a plain folder (mkdirSync, not mkdtemp) makes the guarded run exit 1, naming it ("left 1 temp folder (leakprobe-plain ×1)"). A test file leaking through ESM imports (mkdtempSync from node:fs, mkdtemp from node:fs/promises, the namespace import) leaves nothing with the preload (exit 0), so --import reaches the test files' processes; the same file without the preload fails the run with all three named.
+Mutation check: 8 of 8 killed (leftover does not fail, npm test without preload, without guard, preload removes nothing, run folder kept, keep-* fails, promise mkdtemp untracked, board-release snapshot kept).
+Base: on 98643c2; the re-cut onto main needs only a diff-check. CHANGELOG line present.
