@@ -1,0 +1,1 @@
+SECURE #C968 v7 60f366d as part of the stack ending d7c7629 (Security 11-12): identical to my SECURE v6 7a5e4c8 (range-diff '=' outside CHANGELOG.md), re-cut onto main 257c0aa (#C861 v5), whose files (live-state, restart-check, restart-ready and their tests) this stack does not touch.
