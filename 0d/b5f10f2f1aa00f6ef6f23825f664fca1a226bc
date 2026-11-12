@@ -1,0 +1,1 @@
+SECURE #C1008 0db5f10f: /api/pull-out owner only behind the same-site JSON guard; body exactly {id}; only that route writes pulled_*; page escapes every value. (Security)
