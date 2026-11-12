@@ -62,6 +62,9 @@ export function turnsOf(card, e, ctx = {}) {
   const mode = ctx.stackOn === true ? { stackMode: true } : {};
   const owner = { role: card.owner_role, phase: "build", step: "build", ...(branch ? { stack: branch } : {}), ...mode };
   if (stack?.outside === true && e?.onMain !== true) return [{ role: card.owner_role, phase: "build", step: "outside", ...(branch ? { stack: branch } : {}), ...mode }];
+  // #C981: a rework the store read with no reason attached (evidence `rework`; the store clears it once a reason is set) is the owner's turn
+  // first: until then every other write to the card is refused, so nothing else on it can move.
+  if (e?.rework === true && !(typeof card.rework_reason === "string" && card.rework_reason !== "")) return [{ role: card.owner_role, phase: typeof phase === "string" && /^[a-z]{2,16}$/.test(phase) ? phase : "build", step: "reason" }];
   if (typeof phase !== "string" || phase === "plan" || phase === "build") return [owner];
   // #C852: a review whose note on this commit starts FINDINGS has sent it back: the fix is the owner's turn, and no reviewer is woken to
   // look at a commit already rejected. It is a fact of this sha (evidence.findings), so a new commit clears it without anyone's step.

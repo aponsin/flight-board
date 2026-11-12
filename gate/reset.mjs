@@ -157,6 +157,8 @@ export const DISPATCH_TURN_IDLE_MS = 60e3;
 export const DISPATCH_STEPS = {
   build: "has nothing pushed; build it and push the branch (the push is the READY)",
   rework: "came back with findings; fix them and push the new commit (the push hands it back to review)",
+  // #C981: the store refuses the card's other writes until a rework reason is attached; nobody had been asked for it.
+  reason: "is in rework with no reason, so the store refuses its other writes; attach a rework_reason with card_update (bug found in test, review findings, design change, security finding or owner change)",
   review: "is pushed; review it (your verdict is the git note on that commit)",
   land: "is signed; land it (the notes on that exact commit, a clean dry run, the owner's standing go)",
   pair: "is landed and not deployed: build the deploy pair (node scripts/make-pair.mjs <sha> <n>) and, if hooks changed, the pack",
