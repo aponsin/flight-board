@@ -630,7 +630,12 @@ export async function writeEvidence(db, now, who, key, value, track) {
   const lastWait = await db.prepare("SELECT kind FROM phase_history WHERE card_id = ? AND wait = ? ORDER BY at DESC, id DESC LIMIT 1").bind(cardId, INSTALL_WAIT).first();
   const step = installWaitStep({ repo: cardRow?.repo, next, onMain: reading.onMain, open: lastWait?.kind === "start" });
   if (step) ins.push(db.prepare("INSERT OR IGNORE INTO phase_history (card_id, phase, kind, at, who, source, wait) VALUES (?, 'ship', ?, ?, 'owner', 'evidence', ?)").bind(cardId, step, now, INSTALL_WAIT));
-  await db.batch([upsert, ...ins]);
+  // #C832: a card whose reading is live is finished: the program closes it (done_at = when it first read live, done_evidence = its commit's link),
+  // nothing is typed. Not a dropped or already-done card, and not one the lead gave a check date (a date is a wish to look again). A reading with
+  // no full head sha or repository name has no link to show, so it closes nothing (the next reading with one does).
+  const closes = next === "live" && typeof reading.headSha === "string" && typeof reading.repoFull === "string"
+    ? [db.prepare("UPDATE cards SET done_at = ?, done_evidence = ?, updated_at = ? WHERE id = ? AND done_at IS NULL AND dropped = 0 AND check_at IS NULL").bind(now, `https://github.com/${reading.repoFull}/commit/${reading.headSha}`, now, cardId)] : [];
+  await db.batch([upsert, ...ins, ...closes]);
   await noteShip(db, now, cardId, value);
   return { ok: true };
 }
