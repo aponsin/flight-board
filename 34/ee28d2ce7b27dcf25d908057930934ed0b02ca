@@ -1,0 +1,1 @@
+SECURE #C987 34ee28d (Security 11-12): the owner's newest word after his answer keeps the ask open (one bound query per candidate ask); the page hides only words up to respondedAt.
