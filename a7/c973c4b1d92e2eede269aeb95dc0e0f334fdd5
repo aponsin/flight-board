@@ -1,0 +1,1 @@
+PASS Checker 2 #C1023 v2: carry-over of v1 PASS (3d636aa); range-diff identical patch onto main 5f2f5a1, touched tests 11/11 on the new base (commit a7c973c4 of stack tip a7c973c4)
