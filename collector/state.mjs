@@ -854,6 +854,40 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
   return out;
 }
 
+// #C1034 (Checker 2's LOW on #C1020, Manager's pick A): the probe reads no closed card, so a finished board card drew Pack and Install unlit
+// beside its done Live tile. closedPacks reads them from evidence too, as cardStates does for open cards: a board card done in the last
+// CLOSED_PACK_DAYS days, whose landing (the newest of the board main's last CLOSED_PACK_COMMITS commits carrying its Board-Id trailer) a deploy
+// pair holds, is packed; installed when that pair ran. { id: { packed: true, installed?: true } }, only the cards that read packed. Its status,
+// phase or note never light it (#C1020's rule): no landing on main, or no pair holding it, and the card is not listed. One git log per run, then
+// packOf (which stops at the first pin that does not hold the landing). A separate map, not `cards`: nothing else on the page reads a done card.
+export const CLOSED_PACK_DAYS = 14, CLOSED_PACK_COMMITS = 500;
+export function closedPacks({ cards, repos, now, pairs = [] }) {
+  const out = {};
+  const board = Object.entries(repos ?? {}).find(([name]) => BOARD_REPO_WORDS.has(name))?.[1];
+  if (!board || typeof board.git !== "function" || !Array.isArray(pairs) || !pairs.length) return out;
+  const since = now - CLOSED_PACK_DAYS * 864e5;
+  const recent = (cards ?? []).filter((k) => k?.status === "done" && BOARD_REPO_WORDS.has(String(k.repo ?? "")) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX
+    && Number.isFinite(k.doneAt) && k.doneAt > since && k.doneAt <= now + 60e3).slice(0, MAX_CARDS);
+  if (!recent.length) return out;
+  const want = new Set(recent.map((k) => k.id)), landing = {};
+  const main = `${board.remote}/${board.main}`;
+  if (!/^[A-Za-z0-9._\/-]+$/.test(main) || main.startsWith("-")) return out;
+  let log = "";
+  try { log = String(board.git(["log", `--max-count=${CLOSED_PACK_COMMITS}`, "--format=%H%x1f%B%x1e", main])); } catch { return out; }
+  for (const rec of log.split("\x1e")) {
+    const [sha, message] = rec.replace(/^\n/, "").split("\x1f");
+    if (!/^[0-9a-f]{40}$/.test(String(sha))) continue;
+    const id = boardIdOf(message);
+    if (id && want.has(id) && !landing[id]) landing[id] = sha; // newest first: the first one is the landing
+  }
+  const git = (args) => ({ status: ok(() => board.git(args)) ? 0 : 1 });
+  for (const id of Object.keys(landing)) {
+    const p = packOf(pairs, landing[id], git);
+    if (p.packed) out[id] = { packed: true, ...(p.installed ? { installed: true } : {}) };
+  }
+  return out;
+}
+
 // The board db's last write (#C452, the owner at 23:44Z: "Needs you 0" and no cards in flight while the db held both,
 // the page's stream quiet with no error): the newest `at` in the gate's journal (gate/after.mjs, every write the board
 // applied), as a time only; nothing else of gate.json leaves. null when there is none, or the file isn't this user's.
@@ -972,8 +1006,8 @@ export function releaseTimesOf(git, ref, path) {
   const out = Object.fromEntries(rows.slice(-MAX_RELEASES));
   return Object.keys(out).length ? out : null;
 }
-export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, usage = null, ship = null, releases = null, published = null }) {
-  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }), ...(published ? { derivedAt: published.at, quietMin: published.quietMin } : {}) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}), ...(ship ? { ship } : {}), ...(releases ? { releases } : {}) };
+export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, usage = null, ship = null, releases = null, published = null, packs = null }) {
+  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }), ...(published ? { derivedAt: published.at, quietMin: published.quietMin } : {}) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}), ...(ship ? { ship } : {}), ...(releases ? { releases } : {}), ...(packs && Object.keys(packs).length ? { closedPacks: packs } : {}) };
   const errs = stateErrors(s);
   if (errs.length) throw new Error(`the state doesn't fit the plan (${errs.length} problem(s), first: ${errs[0]})`);
   return pickState(s);
@@ -1221,10 +1255,13 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   let checkedBefore = null;
   try { const r = readTail(checkedPath, 4096); if (r?.whole) checkedBefore = JSON.parse(r.text)?.at; } catch { /* none */ }
   const cardsChecked = cardsCheckedAt(Object.values(repos), now, checkedBefore);
-  let cardsNow;
+  let cardsNow, packs = null;
   try {
-    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now), pairs: c.pairFolder ? pairsIn(home(c.pairFolder)) : [] });
+    const pairs = c.pairFolder ? pairsIn(home(c.pairFolder)) : [];
+    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now), pairs });
     lap("cardStates");
+    try { packs = closedPacks({ cards, repos, now, pairs }); } catch { packs = null; } // #C1034: a failure here leaves done cards unlit, never the state
+    lap("closedPacks");
     // #C632: the last time any open card past plan showed a branch commit; kept from run to run, and the lead's watch told once
     // per outage (gate/reset.mjs evidenceAt).
     const evidencePath = join(stateDir, id, "evidence.json");
@@ -1249,7 +1286,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let releases = null;
     if (team && c.releaseTimes) { try { releases = releaseTimesOf(team.git, `${team.remote}/${team.main}`, c.releaseTimes); } catch { /* no reading */ } }
     lap("ship");
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, usage: spend.tile, ship, releases, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, usage: spend.tile, ship, releases, packs, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
     writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
     writeAtomic(wakePath, JSON.stringify({ at: now, roles: wakeAsk.roles, missing: missingAsk.roles }));
