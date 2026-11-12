@@ -1,0 +1,9 @@
+FINDINGS Full: quota-ceiling-stops-dispatch #C973 eabf861 (Checker 2, 2026-11-12; carded Quick, reviewed Full: store-dispatch and the probe are pinned)
+The rule is right: at or past the ceiling only `build` turns drop; rework, reason, outside, recut, review, land and pair go on; an unknown, null, stale or future reading stops nothing. Replay on the live board view (11-11 about 10:30 pm MT) with weekPct forced to 99: 14 turns become 11, the three dropped all `build` (#C861 Boardsmith, #C974 and #C989 Builder); every review and landing turn stays. Live weekPct is null today, so nothing changes until the week's quota is set.
+
+F1 (MEDIUM, test gap on the owner's number): the config's ceiling never reaches the dispatch in any test. Two mutants in collector/probe-board.mjs survive the ceiling test and tests/probe-board.test.mjs: main() building team without `ceiling: full.collector.quotaCeilingPct`, and dispatchJob calling dispatchRun without `ceiling`. Either one turns the owner's 99 (his number for this week) into the default 90, silently, and only tests/quota-ceiling-stops-dispatch.test.mjs mentions the ceiling at all. Fix: a test that runs dispatchJob (or main with a config) with quotaCeilingPct 99 and a view at 95% and sees the build turn kept, and at 99% dropped.
+
+LOW (no fix asked): the default inside atCeiling for a bad ceiling (Q10) survives; checkConfig refuses a bad value first, so it is belt and braces.
+Checked and fine: tree (a79f093..eabf861: 6 files, CHANGELOG and DATA.md lines present, nothing reverted); suite at eabf861 2575/2575. Mutation check: 7 of 10 killed (ceiling never stops, at-ceiling counted, stale usage, unknown stops, every turn dropped, dispatchRun wiring, config check); survivors F1 (two) and the LOW.
+Base: eabf861 sits on a79f093, the pre-re-cut #C965; the re-cut onto 10dc508 needs only a diff-check after the fix.
+On the fix: rerun Q6 and Q7, tree check, suite.
