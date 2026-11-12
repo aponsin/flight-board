@@ -149,24 +149,52 @@ test("a run that reaches its post deadline stops cleanly, records what went, and
   } finally { mock.timers.reset(); }
 });
 
-test("a child that ends at its own cap (limit less 15 s) leaves the job under the limit: no post starts past the deadline, the late writes included", async () => {
-  mock.timers.enable({ apis: ["Date"], now: T });
+// A virtual clock for the limit tests: Date and setTimeout are mocked, every post and the live read take 8 s (the fetch timeout) and run side by
+// side as they do for real; the driver ticks the clock while the job is awake. Returns how long the job ran, in ms of the virtual clock.
+async function limitRun(childMs, over = {}) {
+  const cards = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`c${i}`, "build"]));
+  const posted = [], lines = [];
+  const wait8 = () => new Promise((res) => setTimeout(res, 8_000));
+  const r = rig({
+    build: async () => { mock.timers.tick(childMs); return { stdout: "" }; },
+    read: (p) => { if (p === "/c") return JSON.stringify({ collector: { repoPath: "/r", liveUrl: "https://product.example" } }); if (p in r.files) return r.files[p]; throw new Error("none"); },
+    fetchImpl: async (_u, o) => { await wait8(); posted.push(JSON.parse(o.body).key); return { ok: true, status: 200 }; },
+    liveFetch: async () => { await wait8(); return { ok: true, status: 200, json: async () => ({ version: "1.2.3" }) }; },
+    log: (l) => lines.push(l), ...over,
+  });
+  r.files["/s/state.json"] = stateOf(cards);
+  let done = false;
+  const job = r.run().finally(() => { done = true; });
+  while (!done) { for (let i = 0; i < 30; i++) await Promise.resolve(); mock.timers.tick(250); await new Promise((res) => setImmediate(res)); }
+  await job;
+  return { ms: Date.now() - T, posted, lines, files: r.files };
+}
+
+test("a child that ends at its own cap (limit less 15 s) leaves the job under the limit with 8 s posts and an 8 s live read: the live read is skipped, no card goes, the heartbeat does", async () => {
+  mock.timers.enable({ apis: ["Date", "setTimeout"], now: T });
   try {
     const limitMs = JOBS.evidence.limitSec * 1000;
-    const files = {}, posted = [];
-    const r = rig({
-      build: async () => { mock.timers.tick(limitMs - 15_000); return { stdout: "" }; },
-      fetchImpl: async (_u, o) => { posted.push(JSON.parse(o.body).key); mock.timers.tick(1_000); return { ok: true, status: 200 }; },
-    });
-    Object.assign(r.files, files);
-    await r.run();
-    assert.ok(Date.now() - T < limitMs, `the job ended at ${(Date.now() - T) / 1000} s of ${limitMs / 1000}`);
-    assert.ok(Date.now() - T <= limitMs - 8_000, "room left for a post that was under way");
-    assert.equal(cardKeys(posted).length, 0, "the child ended past the deadline: no card went, they lead the next run");
-    assert.ok(posted.includes("board") && posted.includes("run.evidence"), "but the heartbeat and the run's own reading went, so the view does not freeze: " + posted.join(","));
-    assert.ok(!posted.includes("live"), "the live read is skipped when the run is out of time");
-    assert.ok(JSON.parse(r.files["/s/evidence-posted.json"]).keys["cards.a"] === undefined, "no card is recorded as posted");
+    const r = await limitRun(limitMs - 15_000);
+    assert.ok(r.ms < limitMs, `the job ended at ${r.ms / 1000} s of ${limitMs / 1000}`);
+    assert.equal(cardKeys(r.posted).length, 0, "the child ended past the deadline: no card went, they lead the next run");
+    assert.ok(r.posted.includes("board") && r.posted.includes("run.evidence"), "the heartbeat and the run's own reading went: " + r.posted.join(","));
+    assert.ok(r.lines.includes("live: skipped, the run is out of time"), r.lines.join(" | "));
+    assert.ok(!r.posted.includes("live"), "the live reading was not posted");
+    assert.equal(JSON.parse(r.files["/s/evidence-posted.json"]).keys["cards.c0"], undefined, "no card is recorded as posted");
   } finally { mock.timers.reset(); }
+});
+
+test("the same limit, children of 100 to 155 s: the job always ends under the limit, and live goes while there is room for it", async () => {
+  const limitMs = JOBS.evidence.limitSec * 1000;
+  for (const childS of [100, 125, 132, 155]) {
+    mock.timers.enable({ apis: ["Date", "setTimeout"], now: T });
+    try {
+      const r = await limitRun(childS * 1000);
+      assert.ok(r.ms < limitMs, `child ${childS} s: the job ended at ${r.ms / 1000} s of ${limitMs / 1000}`);
+      assert.ok(r.posted.includes("board") && r.posted.includes("run.evidence"), `child ${childS} s: the heartbeat went`);
+      if (childS === 100) assert.ok(r.posted.includes("live"), "a child of 100 s leaves room: live is read and posted");
+    } finally { mock.timers.reset(); }
+  }
 });
 
 test("the usage job keeps no record and posts what it always did", async () => {
