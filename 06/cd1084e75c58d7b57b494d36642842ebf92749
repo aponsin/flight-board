@@ -1,0 +1,2 @@
+PASS Quick: thread-decision-shows-options #C964 re-cut v4 at 06cd108, the tip (Checker, 2026-11-12; covers bd14ddc and 06cd108; diff-check of my PASS on 81f78ba and 74b144d)
+range-diff ecd5342..81f78ba against 1f5fbef..06cd108: both commits are identical; the base is main 1f5fbef. The page change sits beside #C972's in page/board.template.html, and the touched tests at 90eb843 pass: 75. Boardsmith's full suite: 2616 pass. A page change: needs a Worker deploy.
