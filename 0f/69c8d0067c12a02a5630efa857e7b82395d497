@@ -1,2 +1,2 @@
-PASS Quick: terminal-ask-honors-eta #C1012 at 0f69c8d (one commit on main a131ef8) (Checker, 2026-11-12)
+PASS Full: terminal-ask-honors-eta #C1012 at 0f69c8d (one commit on main a131ef8) (Checker, 2026-11-12)
 askRefusal refuses eta_at on any type but Decision and Later, on a live write only (an import keeps the old shape), before the other parts are judged. The `!== undefined` test matches the Decision rule beside it, and the tool types eta_at as an integer. npm test: 2702 pass, 0 fail. Mutants, each caught: the rule dropped (2 fail), the import exemption dropped (1), Decision no longer exempt (4), Later no longer exempt (19).
