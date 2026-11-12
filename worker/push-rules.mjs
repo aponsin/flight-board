@@ -80,6 +80,31 @@ export const PROMPT_WAKE_PREFIX = "prompt:";
 export function promptWakes({ stuck, now }) {
   return promptRows(stuck, now).map((p) => ({ card_id: `${PROMPT_WAKE_PREFIX}${p.role}:${p.since}`, reason: `${p.role} has waited on a prompt in its session since ${mtDayTime(p.since)} (${PROMPT_MIN}+ min): open it in the Claude app and answer it` }));
 }
+// #C1005 (c): the watchdog task's other lines to Manager's batch, from the probe's `watch` reading (evidence key "watch", written only on a run that has
+// something): the app restarted, the prompt ledger's new prompts, a silent ledger. One stall row each, keyed by the reading's own time, so each is told once.
+// The words carry roles, tool words, counts and times, never a command or a message. No night hold: Manager reads them whenever it wakes.
+export const WATCH_WAKE_PREFIX = "watch:";
+export const RESTART_LINE = "app restarted: re-watch the board, re-check models and Remote Control";
+export function watchWakes({ watch }) {
+  if (!watch || typeof watch !== "object" || Array.isArray(watch) || !Number.isInteger(watch.at)) return [];
+  const out = [];
+  if (watch.restart === true) out.push({ card_id: `${WATCH_WAKE_PREFIX}restart:${watch.at}`, reason: RESTART_LINE });
+  const l = watch.ledger;
+  if (l && typeof l === "object" && Array.isArray(l.prompts) && Number.isInteger(l.others)) {
+    const bits = l.prompts.filter((p) => p && /^[A-Za-z][A-Za-z0-9]{1,23}$/.test(String(p.role)) && /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/.test(String(p.tool)) && Number.isInteger(p.n) && p.n > 0).slice(0, 12).map((p) => `${p.role} ${p.tool} x${p.n}`);
+    const parts = [];
+    if (bits.length) parts.push(`Permission prompts since the last check: ${bits.join(", ")}`);
+    if (l.others > 0) parts.push(`${l.others} other notification${l.others === 1 ? "" : "s"}`);
+    if (parts.length) out.push({ card_id: `${WATCH_WAKE_PREFIX}ledger:${watch.at}`, reason: parts.join(" | ") });
+  }
+  const q = watch.quiet;
+  if (q && typeof q === "object" && Number.isInteger(q.running) && q.running > 0) {
+    const since = Number.isInteger(q.since) ? q.since : null;
+    const gap = since ? `since ${mtDayTime(since)} (${Number.isInteger(q.days) ? q.days : "?"} days)` : "at all";
+    out.push({ card_id: `${WATCH_WAKE_PREFIX}quiet:${since ?? "none"}`, reason: `Prompt ledger silent: no line ${gap} while ${q.running} agent session(s) ran. The Notification hook may be off: check ~/.claude/settings.json against README "Prompt ledger"` });
+  }
+  return out;
+}
 export function pushesDue({ asks, ships, sent, now, deploy = null, lastEvidenceAt = null, stuck = null }) {
   const was = (kind, ref) => sent.has(`${kind}:${ref}`);
   const dueStuck = stuckDue({ stuck, sent, now });

@@ -29,6 +29,7 @@ import { journalCards, readJournal } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, wakeNeeds, askOnce, ownerAsks, askSince, boardTruth } from "./readings.mjs";
+import { restartReading, ledgerReading, watchReading } from "./watch-readings.mjs";
 
 // The folder this run's code lives in: the pinned copy <install root>/<full sha>, whose sha is the board's probe.
 const CODE = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -1052,10 +1053,12 @@ export function releaseTimesOf(git, ref, path) {
   const out = Object.fromEntries(rows.slice(-MAX_RELEASES));
   return Object.keys(out).length ? out : null;
 }
-export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, usage = null, ship = null, releases = null, published = null, packs = null }) {
+export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, watch = null, usage = null, ship = null, releases = null, published = null, packs = null }) {
   const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }), ...(published ? { derivedAt: published.at, quietMin: published.quietMin } : {}) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}), ...(ship ? { ship } : {}), ...(releases ? { releases } : {}), ...(packs && Object.keys(packs).length ? { closedPacks: packs } : {}) };
   const errs = stateErrors(s);
   if (errs.length) throw new Error(`the state doesn't fit the plan (${errs.length} problem(s), first: ${errs[0]})`);
+  // #C1005 part c: the watch reading rides along only when it fits; one that doesn't is dropped, never the whole state (a bad ledger line must not stop the board).
+  if (watch && !stateErrors({ ...s, watch }).length) return pickState({ ...s, watch });
   return pickState(s);
 }
 
@@ -1294,6 +1297,20 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try { const r = readTail(asksPath, 64 * 1024); if (r?.whole) asksBefore = JSON.parse(r.text); } catch { /* none */ }
   const ownerAsked = askSince(waitingKnown ? ownerAsks({ cards: cards.filter((k) => !closed(k)), waiting: waitingDocs, owner: config.owner }) : [], asksBefore, now);
   lap("asks");
+  // #C1005 part c (the watchdog task's restart and prompt-ledger steps, no script of another repository): a restart is every known roster session gone; the
+  // ledger (collector.promptLedger, read only, at most 8 MB) gives the new permission prompts and a silence of a day while agents worked. The marker and the
+  // line count it reported are the probe's own, in watch-state.json.
+  const watchPath = join(dir, "watch-state.json");
+  let watchBefore = {};
+  try { const r = readTail(watchPath, 64 * 1024); if (r?.whole) watchBefore = JSON.parse(r.text) ?? {}; } catch { /* first run */ }
+  const restartNow = restartReading({ ids: sessions.filter((s) => config.roster.includes(s.title)).map((s) => s.id), before: watchBefore });
+  let ledgerNow = null;
+  if (c.promptLedger) {
+    let lines = [];
+    try { const p = home(c.promptLedger), st = lstatSync(p); if (st.isFile() && st.size <= 8 * 1024 * 1024) lines = readFileSync(p, "utf8").split("\n").filter(Boolean); } catch { /* no ledger yet: nothing asked */ }
+    ledgerNow = ledgerReading({ lines, before: watchBefore.ledger, now, running: Object.values(agents).filter((a) => a.state === "working").length });
+  }
+  const watch = watchReading({ now, restart: restartNow.restart, ledger: ledgerNow });
   let pageVersion = null;
   try { pageVersion = basename(readlinkSync(join(stateDir, "current"))); } catch { /* no link */ }
   let state;
@@ -1332,9 +1349,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let releases = null;
     if (team && c.releaseTimes) { try { releases = releaseTimesOf(team.git, `${team.remote}/${team.main}`, c.releaseTimes); } catch { /* no reading */ } }
     lap("ship");
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, usage: spend.tile, ship, releases, packs, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, watch, usage: spend.tile, ship, releases, packs, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
     writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
+    writeAtomic(watchPath, JSON.stringify({ at: now, ids: restartNow.ids, ...(ledgerNow ? { ledger: { seen: ledgerNow.seen, quiet: ledgerNow.quiet } } : {}) }));
     writeAtomic(wakePath, JSON.stringify({ at: now, roles: wakeAsk.roles, missing: missingAsk.roles }));
     writeAtomic(asksPath, JSON.stringify({ at: now, asks: ownerAsked.asks }));
     // For the lead's Stop hook (collector/refresh.mjs, #C594): the cards whose typed phase the repository contradicts. Only

@@ -56,7 +56,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "weekTotal", "stack", "stackHold", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "weekTotal", "stack", "stackHold", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "restart", "ledger", "quiet"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -134,7 +134,17 @@ const AGENT = {
 //   closedPacks (#C1034, optional): { <card id>: { packed: true, installed?: true } } board cards done in the last 14 days whose landing a
 //          deploy pair holds (installed: that pair ran), from the pair folder and git only, at most MAX_CARDS. Only the page's Pack and
 //          Install tiles read it; no card's status, phase or note is in it.
-export const EXTRA_KEYS = ["ctx", "stuck", "usage", "ship", "releases", "closedPacks"];
+//   watch (#C1005 part c, optional): what the old stuck-agent watchdog task told Manager, as numbers and words from the schema only, written only on the run
+//          that has something: { at, restart?: true, ledger?: { prompts: [{ role, tool, n }], others }, quiet?: { since, days, running } }.
+//          restart: the app restarted (every session the probe knew is gone); ledger: the permission prompts and other notifications the prompt ledger
+//          gained since the last run, counted by role and tool (never a command or a message); quiet: the ledger had no line for a day while `running`
+//          agents worked (since: the newest line's time, null for none; days: whole days). The store turns them into stall wakes for Manager.
+export const EXTRA_KEYS = ["ctx", "stuck", "usage", "ship", "releases", "closedPacks", "watch"];
+export const MAX_WATCH_PROMPTS = 12;
+const WATCH = { at: isTime, restart: (v) => v === true, ledger: (v) => plain(v), quiet: (v) => plain(v) };
+const WATCH_LEDGER = { prompts: (v) => Array.isArray(v) && v.length <= MAX_WATCH_PROMPTS, others: (v) => Number.isInteger(v) && v >= 0 && v <= 1e6 };
+const WATCH_PROMPT = { role: re(ROLE), tool: re(/^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/), n: (v) => Number.isInteger(v) && v >= 1 && v <= 1e6 };
+const WATCH_QUIET = { since: nullOr(isTime), days: nullOr((v) => Number.isInteger(v) && v >= 0 && v <= 36500), running: (v) => Number.isInteger(v) && v >= 1 && v <= 1000 };
 const CLOSED_PACK = { packed: (v) => v === true, installed: (v) => v === true };
 export const MAX_RELEASES = 100;
 const RELEASE = { testsMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000, deployMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000 };
@@ -172,6 +182,17 @@ export function stateErrors(s) {
     }
   }
   if (Object.hasOwn(s, "ship")) fields("ship", s.ship, SHIP, errs);
+  if (Object.hasOwn(s, "watch")) {
+    fields("watch", s.watch, WATCH, errs);
+    if (plain(s.watch)) {
+      if (!Object.hasOwn(s.watch, "at")) errs.push("watch.at: missing");
+      if (plain(s.watch.ledger)) {
+        fields("watch.ledger", s.watch.ledger, WATCH_LEDGER, errs);
+        (Array.isArray(s.watch.ledger.prompts) ? s.watch.ledger.prompts.slice(0, MAX_WATCH_PROMPTS) : []).forEach((p, n) => fields(`watch.ledger.prompts.${n}`, p, WATCH_PROMPT, errs));
+      }
+      if (plain(s.watch.quiet)) fields("watch.quiet", s.watch.quiet, WATCH_QUIET, errs);
+    }
+  }
   if (Object.hasOwn(s, "releases")) {
     if (!plain(s.releases)) errs.push("releases: not an object");
     else {
@@ -271,6 +292,11 @@ export function pickState(s) {
   if (Object.hasOwn(s, "ctx")) out.ctx = map(s.ctx, CTX);
   if (Object.hasOwn(s, "stuck")) out.stuck = map(s.stuck, STUCK);
   if (Object.hasOwn(s, "ship")) out.ship = take(s.ship, SHIP);
+  if (Object.hasOwn(s, "watch")) {
+    out.watch = take(s.watch, WATCH);
+    if (plain(s.watch.ledger)) out.watch.ledger = { prompts: s.watch.ledger.prompts.map((p) => take(p, WATCH_PROMPT)), others: s.watch.ledger.others };
+    if (plain(s.watch.quiet)) out.watch.quiet = take(s.watch.quiet, WATCH_QUIET);
+  }
   if (Object.hasOwn(s, "releases")) out.releases = Object.fromEntries(Object.keys(s.releases).sort().map((k) => [k, take(s.releases[k], RELEASE)]));
   if (Object.hasOwn(s, "usage")) out.usage = { ...take(s.usage, USAGE), top: s.usage.top.map((t) => take(t, USAGE_TOP)) };
   if (Object.hasOwn(s, "closedPacks")) out.closedPacks = map(s.closedPacks, CLOSED_PACK);
