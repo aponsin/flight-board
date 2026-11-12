@@ -35,7 +35,9 @@ export function landPlan({ heads, holds, now }) {
     if (!h || h.onMain) continue; // landed already (a branch under a line that went out)
     if (!signed(h.notes)) { out.waiting.push({ branch: h.branch, sha: h.sha, why: "not signed by Checker and Security on this exact commit" }); continue; }
     if (!fresh) { out.waiting.push({ branch: h.branch, sha: h.sha, why: "the holds file is missing or older than 10 minutes" }); continue; }
-    const cards = (h.cards ?? []).filter((c) => CARD_ID.test(String(c)));
+    const all = Array.isArray(h.cards) ? h.cards : [], cards = all.filter((c) => CARD_ID.test(String(c))), bad = all.filter((c) => !CARD_ID.test(String(c)));
+    // Security LOW1: a Board-Id that is no card id is never dropped quietly (its card's hold would go unread): the tip waits, naming it in plain words.
+    if (bad.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `a Board-Id is not a card id (${String(bad[0]).replace(/[^\x20-\x7e]/g, "").slice(0, 40)}): its hold cannot be read` }); continue; }
     const unknown = cards.filter((c) => !Object.hasOwn(holds.cards, c)), held = cards.filter((c) => Object.hasOwn(holds.cards, c) && holds.cards[c]);
     if (!cards.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: "no Board-Id trailer names a card, so no hold can be read" }); continue; }
     if (unknown.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `the holds file does not list ${unknown.join(", ")}` }); continue; }

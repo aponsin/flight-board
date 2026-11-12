@@ -55,6 +55,15 @@ test("must still refuse: a hold on any card the tip carries, and a card or a fil
   assert.deepEqual(noCard.try, []); assert.match(noCard.waiting[0].why, /Board-Id/);
 });
 
+test("must still refuse (Security LOW1): a malformed Board-Id is never dropped quietly; the tip waits and names it, even when its other cards are free", () => {
+  for (const bad of ["Bad Id", "UPPER", "", "x".repeat(65), "a\u001b[31mb", "-lead"]) {
+    const p = landPlan({ heads: [head(1, { cards: ["card-1", bad] })], holds: holds(free("card-1")), now: NOW });
+    assert.deepEqual(p.try, [], JSON.stringify(bad));
+    assert.match(p.waiting[0].why, /a Board-Id is not a card id \(/);
+    assert.doesNotMatch(p.waiting[0].why, /\u001b/, "plain words only");
+  }
+});
+
 test("must still refuse: a stale tip (main is not its ancestor) is reported to Release, not tried; a branch already on main is ignored", () => {
   const p = landPlan({ heads: [head(1, { forward: false }), head(2, { onMain: true }), head(3)], holds: holds(free("card-1", "card-2", "card-3")), now: NOW });
   assert.deepEqual(p.try.map((h) => h.sha), [sha(3)]);
