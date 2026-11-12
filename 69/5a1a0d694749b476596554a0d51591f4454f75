@@ -1,0 +1,1 @@
+SECURE #C996 695a1a0, tip of build/evidence-run-times-out-v6, line from 1f5fbef38781d6ef11fa6cdd8fef8b23c12fc358 (Security 11-12): covers fc3e3ba, 2c4366d, 700c602, c79c516, 695a1a0, each signed on its own commit; 695a1a0 equals signed 5de44c0 (tests only). Pinned collector/state.mjs: needs the owner's install.
