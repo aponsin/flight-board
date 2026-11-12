@@ -88,7 +88,10 @@ function draw() {
   // #C962: the evidence job's own last run (key run.evidence) says why it is failing, or that it runs slow; only a reading under 5 minutes old counts.
   const rr = view.evidence["run.evidence"], rv = rr && rr.value && Date.now() - rr.value.at <= 300000 ? rr.value : null;
   const probe = rv && rv.ok === false ? { ...probe0, why: rv.line || "failed" } : rv && rv.slow ? { ...probe0, slow: Math.round((rv.ms || 0) / 1000) } : probe0;
-  $("hd").innerHTML = headerHtml({ live, probe }, { boardVersion: document.body.dataset.version || "", wake: failed ? { state: "red", reason: failed } : view.wakeState });
+  // #C982: the board Worker deploy's last result (key deploy.last, the probe's reading of the owner's deploy file): a failure the probe read under 5 minutes ago
+  // is "Deploy failed: <reason>" in the header; the next successful deploy writes ok: true and it goes. The age is the probe's reading, not the deploy's own time.
+  const dl = view.evidence["deploy.last"], deployFailed = dl && dl.value && dl.value.ok === false && Date.now() - dl.readAt <= 300000 ? (dl.value.line || "failed") : null;
+  $("hd").innerHTML = headerHtml({ live, probe, deployFailed }, { boardVersion: document.body.dataset.version || "", wake: failed ? { state: "red", reason: failed } : view.wakeState });
   $("fetched").textContent = "fetched " + ageText(sinceRead) + " ago";
 
   const open = openAsks(view.asks);

@@ -68,8 +68,10 @@ test("with the token in the private file, each wrangler call carries both variab
   }
   assert.ok(!all(w).includes(TOKEN), "the token is in no printed line, no written file and no argument");
   assert.ok(w.lines.at(-1).startsWith("DEPLOY OK: "), "the last line is the DEPLOY OK line");
-  assert.deepEqual(w.writes.map((x) => x[0]), [`${DIR}/board-store-deploy-pc34.done`], "the only file written is the marker, and it holds the signed sha");
+  // #C982: besides the marker, the one file the run leaves is its last result (board-deploy-last.json), which the token is not in (the line above checks every write).
+  assert.deepEqual(w.writes.map((x) => x[0]), [`${DIR}/board-store-deploy-pc34.done`, `${DIR}/board-deploy-last.json`], "the files written are the marker, which holds the signed sha, and the last result");
   assert.equal(w.writes[0][1], `${SIGNED}\n`);
+  assert.equal(JSON.parse(w.writes[1][1]).ok, true);
   // The build and git calls are not given the credentials.
   for (const c of w.calls.filter((x) => x.cmd !== "npx")) assert.equal(c.opts.env, undefined);
 });

@@ -498,6 +498,10 @@ const RUN_KEYS = ["ok", "at", "line", "ms", "stateMs", "slow"];
 export const runShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => RUN_KEYS.includes(k))
   && typeof v.ok === "boolean" && Number.isFinite(v.at) && (v.line === undefined || (typeof v.line === "string" && v.line.length <= 160 && /^[\x20-\x7e]*$/.test(v.line)))
   && [v.ms, v.stateMs].every((n) => n === undefined || Number.isFinite(n)) && (v.slow === undefined || v.slow === true);
+// #C982: the board Worker deploy's last result as the probe reads it from the owner's deploy file: { ok, at, line? }, a plain line of up to 160 characters.
+// The page shows "Deploy failed: <line>" while the reading is a failure and under 5 minutes old; the next success replaces it.
+export const deployLastShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => ["ok", "at", "line"].includes(k))
+  && typeof v.ok === "boolean" && Number.isFinite(v.at) && (v.line === undefined || (typeof v.line === "string" && v.line.length <= 160 && /^[\x20-\x7e]*$/.test(v.line)));
 const e2eShape =(v) => v !== null && typeof v === "object" && !Array.isArray(v) && E2E_STATES.includes(v.state) && typeof v.reason === "string" && v.reason.length <= 300
   && (v.run === null || v.run === undefined || typeof v.run === "string") && (v.lastGreenAt === null || v.lastGreenAt === undefined || typeof v.lastGreenAt === "string");
 // The one line for Manager's batch when the reading is red, missed or unknown and fresh; null otherwise. Keyed by the state in its first
@@ -516,6 +520,7 @@ export function evidenceRefusal(key, value, who, track) {
   // #C988: usage.week is a session's reading (the week_usage tool, worker/board-store.mjs writeWeekUsage), never the probe's.
   if (key === "usage.week") return refuse("evidence-key", "usage.week is written by the week_usage tool only");
   if (key === "run.evidence" && !runShape(value)) return refuse("run-shape", "run.evidence is { ok: true|false, at, line up to 160 characters, ms, stateMs, slow: true }");
+  if (key === "deploy.last" && !deployLastShape(value)) return refuse("deploy-last-shape", "deploy.last is { ok: true|false, at, line up to 160 characters }");
   if (key === "e2e" && !e2eShape(value)) return refuse("e2e-shape", "e2e is { state: ok|red|missed|unknown, reason, run, lastGreenAt }");
   // #C956: the team's visual lanes, from the board config: { visualLanes: [role names], up to 20 }.
   if (key === "look" && !(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((k) => k === "visualLanes") && Array.isArray(value.visualLanes) && value.visualLanes.length <= 20 && value.visualLanes.every((r) => typeof r === "string" && LANE_NAME.test(r)))) return refuse("look-shape", "look is { visualLanes: [up to 20 role names] }");
