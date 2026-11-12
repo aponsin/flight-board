@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { stateErrors, pickState, SHIP_CI, EXTRA_KEYS } from "../collector/state-schema.mjs";
-import { shipCandidate, SHIP_CANDIDATE_MAX_MS, buildState } from "../collector/state.mjs";
+import { shipCandidate, versionsOn, SHIP_CANDIDATE_MAX_MS, buildState } from "../collector/state.mjs";
 import worker, { sha256hex, secretName, RATE_MS, changeKey } from "../worker/state-worker.mjs";
 
 const T = Date.UTC(2026, 10, 4, 17, 40);
@@ -41,6 +41,28 @@ test("the newest candidate that is still in flight counts; a failed newer one do
   assert.equal(shipCandidate({ tips, pattern: PATTERN, now: T, onMain: never, ci: ciOf({ [SHA]: "failed", [SHA2]: "queued" }) }).version, "1.200.5", "the next one down");
   assert.deepEqual(shipCandidate({ tips: [tips[1]], pattern: PATTERN, now: T, onMain: never, ci: () => null }), { version: "1.200.6", ci: "none", at: T - 4 * 60e3 }, "no CI reading: pushed and not on main");
   assert.equal(shipCandidate({ tips: [tip("build/ship-vX", SHA, 1)], pattern: "^build/ship-", now: T, onMain: never, ci: ciOf({}) }).version, null, "no version in the name: none, never the name");
+});
+
+// #C1038: v1.210.5 was live and main's CI green, but the badge read "CI running": the candidate's tip is not an ancestor of main (the merge
+// is another commit) and no ship record closes it. Main's deploy closes it.
+test("a candidate whose version main's deployed history already names is over, with no ship record and a run that still reads running (#C1038)", () => {
+  const tips = [tip("build/ship-v1.210.5", SHA, 90)];
+  const args = { tips, pattern: PATTERN, now: T, onMain: never, ci: ciOf({ [SHA]: "running" }) };
+  assert.equal(shipCandidate({ ...args, shipped: (v) => v === "1.210.5" }), null, "shipped: no badge");
+  assert.equal(shipCandidate({ ...args, shipped: (v) => v === "1.210.4" }).ci, "running", "another version shipped: still in flight");
+  assert.equal(shipCandidate(args).ci, "running", "no shipped check given: as before (#C679)");
+  const two = [tip("build/ship-v1.210.6", SHA2, 3), tip("build/ship-v1.210.5", SHA, 90)];
+  assert.equal(shipCandidate({ ...args, tips: two, shipped: (v) => v === "1.210.5" }).version, "1.210.6", "an older shipped one never hides a newer candidate");
+});
+
+test("versionsOn: the versions main's first-parent subjects name (versionPattern), nothing when git or the pattern fails", () => {
+  const log = "v1.210.5: build/a@abc1234\nA merge with no version\nv1.210.4: build/b@def5678\nv12.3\n";
+  let asked;
+  const git = (a) => { asked = a; return log; };
+  assert.deepEqual([...versionsOn(git, SHA, "^v(\\d+\\.\\d+\\.\\d+)\\b")].sort(), ["1.210.4", "1.210.5"]);
+  assert.ok(asked.includes("--first-parent") && asked.includes(SHA), "read from the deployed commit along its first parents");
+  assert.equal(versionsOn(() => { throw new Error("no git"); }, SHA, "^v(\\d+\\.\\d+\\.\\d+)\\b").size, 0);
+  assert.equal(versionsOn(git, SHA, "(").size, 0);
 });
 
 const base = (extra = {}) => ({ id: "TestBoard42xyz", now: T, probe: "ec6b4ed97e39", pageVersion: "842a30f31c16", cards: {}, agents: {}, ...extra });
