@@ -139,8 +139,9 @@ section{min-width:0}
 .step.skip{background:transparent;color:var(--muted);border:1px dashed var(--line);text-decoration:line-through;text-decoration-color:var(--line)}
 .step.skip small{text-decoration:none}
 /* #C969: Pack and Install on a board card, drawn but not lit until #C1020 lights them from evidence. */
-/* #C1020 (Designer on #C969 v2): unlit is not skipped. Skipped is dashed and struck through; unlit is a dotted outline, faded, no strike. */
-.step.unlit{background:transparent;color:var(--muted);border:1px dotted var(--muted);opacity:.6}
+/* #C1020 (Designer on #C969 v2): unlit is not skipped. Skipped is dashed and struck through; unlit is a dotted outline, no strike. No opacity:
+   faded text fell to 2.46:1 (light) and 3.18:1 (dark); full --muted is 5.46:1 and 6.44:1 (Designer on ab46d92f). */
+.step.unlit{background:transparent;color:var(--muted);border:1px dotted var(--muted)}
 .step.now{background:var(--accent);color:var(--panel);animation:pulse 2.4s ease-in-out infinite}
 .step.upnext{background:var(--panel);color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 /* #C876 (Designer F1): the card stands here and nobody is on it (idle, or waiting on the install or a release): a 2px "now" blue ring on the base fill, no pulse, so it is not mistaken for a phase still to come */

@@ -173,7 +173,8 @@ test("Designer on #C969 v2 (1): an unlit tile looks different from a skipped one
   assert.ok(unlit && skip, "both rules exist");
   assert.match(skip, /line-through/); assert.doesNotMatch(unlit, /line-through/, "unlit is not struck through");
   assert.match(skip, /dashed/); assert.doesNotMatch(unlit, /dashed/, "nor dashed: a dotted outline");
-  assert.match(unlit, /dotted/); assert.match(unlit, /opacity/);
+  assert.match(unlit, /dotted/);
+  assert.doesNotMatch(unlit, /opacity/, "no fading: small text keeps 4.5:1 (Designer on ab46d92f: .6 gave 2.46:1)");
 });
 
 test("Designer on #C969 v2 (3): a Gated or Queued wait box counts in the phone's --per, and takes a tile's width there", () => {
