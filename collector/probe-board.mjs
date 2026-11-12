@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
-import { pairCoversFor } from "./pair-wait.mjs";
+import { pairCoversFor, boardRepoPath } from "./pair-wait.mjs";
 import { dispatchRun, writeStackQueue, writeOpenAsks, writeLandHolds } from "./store-dispatch.mjs";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
 import { home } from "../gate/gate.mjs";
@@ -127,7 +127,7 @@ export async function main(argv, { env = process.env, exit = (c) => process.exit
       if (checkConfig(raw).length) throw new Error("bad config");
       const full = fullConfig(raw), id = boardId(full);
       if (!id) throw new Error("no board link");
-      team = { dir: `${home(full.gate.stateDir)}/${id}`, roster: full.roster, lead: full.gate.managerRole, ceiling: full.collector.quotaCeilingPct, pairFolder: home(full.collector.pairFolder), repoPath: home(full.collector.repoPath) };
+      team = { dir: `${home(full.gate.stateDir)}/${id}`, roster: full.roster, lead: full.gate.managerRole, ceiling: full.collector.quotaCeilingPct, pairFolder: home(full.collector.pairFolder), repoPath: home(boardRepoPath(full.collector)) };
     } catch { console.error("dispatch: pass --config <board.config.json> (a usable team config)"); return exit(64); }
   }
   const run = startRun(job);
