@@ -48,7 +48,7 @@ test("an open ask's red line, the phase strip and the badges stay in view", () =
   const { meta, acts } = parts(html);
   assert.match(meta, /class="redline"[\s\S]*An ask for the owner is open/);
   assert.ok(!/redline/.test(acts), "the red line is not folded away");
-  assert.match(html, /<div class="track">/, "the phase strip is still drawn");
+  assert.match(html, /<div class="track"[ >]/, "the phase strip is still drawn");
 });
 
 test("the card's text is escaped inside the fold like everywhere else", () => {
