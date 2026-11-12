@@ -99,6 +99,8 @@ const dependsOf = (c) => {
   if (typeof list === "string") { try { list = JSON.parse(list); } catch { return []; } }
   return Array.isArray(list) ? list.filter((d) => typeof d === "string") : [];
 };
+// #C1021: a card's batch (the group it ships with, set by the lead; clearing it pulls the card out) as a plain word, "" for none or an odd value.
+export const batchOf = (c) => (typeof c?.batch === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(c.batch.trim()) ? c.batch.trim() : "");
 const hasHeadEvidence = (v) => !!v && typeof v === "object" && (typeof v.headSha12 === "string" || typeof v.headSha === "string");
 
 // #C914 (R6): what the stack-ready command (scripts/stack-ready.mjs) reads to tell whether cards are still queued behind the one just pushed:
@@ -117,6 +119,8 @@ export function stackQueueFile(view, now) {
       owner_role: typeof c.owner_role === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(c.owner_role) ? c.owner_role : "",
       repo: typeof c.repo === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(c.repo) ? c.repo : "",
       dependsOn: [...new Set(dependsOf(c).filter((d) => CARD_ID.test(d) && d !== c.id))].slice(0, 50),
+      batch: batchOf(c), // #C1021: the group the lead put the card in ("" for none); stack-ready waits for every open card of it
+      held: !!(c.paused || c.blocked_reason), // #C1021 (Checker 2 F1): a paused or blocked card is no partner to wait for, as the dispatch's activeCard has it
       started: hasHeadEvidence(e),
     });
     if (cards.length >= STACK_QUEUE_MAX) break;
@@ -171,7 +175,9 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // and repository that depends on it and has nothing pushed yet. The instant the partner is pushed the hold lifts by itself.
   const activeCard = (k) => !k.paused && !k.dropped && !k.done_at && !k.blocked_reason && phaseOf(k.id) !== "live"; // #C902: a card closed as done is no partner
   const hasPartner = (c) => all.some((k) => k && typeof k.id === "string" && k.id !== c.id && activeCard(k) && k.owner_role === c.owner_role && boardCard(k) === boardCard(c)
-    && (boardCard(c) || k.repo === c.repo) && !hasHead(k.id) && dependsOf(k).includes(c.id));
+    && (boardCard(c) || k.repo === c.repo) && !hasHead(k.id) && dependsOf(k).includes(c.id))
+    // #C1021: a card of the same batch (any builder, the same repository) that is not built yet is a partner too: the batch is one review and one pack.
+    || (batchOf(c) !== "" && all.some((k) => k && typeof k.id === "string" && k.id !== c.id && activeCard(k) && batchOf(k) === batchOf(c) && (k.repo || null) === (c.repo || null) && !hasHead(k.id)));
   // #C953: the stack a card is told to join is one of ITS OWN repository: only a card with the same repo word (none matching none) names the
   // branch. A product card with no repo word (Builder's #C930 to #C951 stack) no longer hands its branch to a flight-board card (#C928 was told to
   // stack on #C948's product branch); with no same-repo card on a stack the card builds from main, as with the switch off.
