@@ -1,0 +1,1 @@
+- The link move (`scripts/current.mjs`, run by the release tool) says "Needs the owner's pack (pc<N>)" and names the files when a landing touches `page/`, `hooks/` or an owner-closure file, instead of "The next collector run uses it" (#C1042).
