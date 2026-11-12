@@ -38,7 +38,8 @@ export function pairsIn(folder) {
 // What the pairs show for a landed board card's commit: packed when a pair's pin is the landing or descends from it (a pair built from a main that
 // holds the card), installed when such a pair ran (its .done holds the pin). A pair below the landing shows nothing. Only the files and git decide:
 // nothing a card or a note says is read. Security's SAFE is not read (Manager's pick A on #C1020): packed means built, not signed. Each pin is asked
-// once per landing.
+// once per landing. #C1034 (Checker 2's LOW on #C1020): pins are main commits and pairs come newest first, so once a pin does not hold the landing
+// no older pin does: the walk stops there. A landed card no pair holds yet costs one git question, not one per pair.
 export function packOf(pairs, landing, git) {
   const out = { packed: false, installed: false };
   if (!/^[0-9a-f]{40}$/.test(String(landing ?? "")) || !Array.isArray(pairs)) return out;
@@ -47,7 +48,7 @@ export function packOf(pairs, landing, git) {
     if (out.installed) break;
     if (out.packed && !p.ran) continue;
     if (!asked.has(p.sha)) asked.set(p.sha, descends(git, landing, p.sha));
-    if (!asked.get(p.sha)) continue;
+    if (!asked.get(p.sha)) break;
     out.packed = true;
     if (p.ran) out.installed = true;
   }

@@ -74,6 +74,26 @@ test("packOf: a pair whose pin holds the landing packs it; its .done installs it
   assert.deepEqual({ ...packOf(null, s.two, s.gitStatus) }, { packed: false, installed: false });
 });
 
+// #C1034 (Checker 2's LOW on #C1020): pins are main commits, newest first; the walk stops at the first pin that doesn't hold the landing.
+test("packOf stops at the first pin that does not hold the landing: same answers, a capped count of git questions", () => {
+  const s = scratch();
+  const counted = () => { const c = { n: 0 }; c.git = (args) => { c.n += 1; return s.gitStatus(args); }; return c; };
+  // 46 pairs, every one pinned below c-three (the live board's case: a landed card no pair holds yet).
+  const old = Array.from({ length: 46 }, (_, i) => ({ n: 100 - i, sha: i % 2 ? s.one : s.two, ran: true }));
+  const a = counted();
+  assert.deepEqual({ ...packOf(old, s.three, a.git) }, { packed: false, installed: false });
+  assert.equal(a.n, 1, "one question: the newest pin does not hold it, so no older one does");
+  // The newest holds it unrun, then ran pairs going down: it stops at the first one below the landing.
+  const mixed = [{ n: 9, sha: s.three, ran: false }, { n: 8, sha: s.two, ran: true }, ...old];
+  const b = counted();
+  assert.deepEqual({ ...packOf(mixed, s.three, b.git) }, { packed: true, installed: false });
+  assert.ok(b.n <= 2, `at most two questions, got ${b.n}`);
+  // Today's answers on the fixtures above are unchanged.
+  const c = counted();
+  assert.deepEqual({ ...packOf(mixed, s.two, c.git) }, { packed: true, installed: true }, "pc8 ran and holds c-two");
+  assert.deepEqual({ ...packOf([{ n: 3, sha: s.three, ran: false }, { n: 2, sha: s.two, ran: true }], s.two, s.gitStatus) }, { packed: true, installed: true });
+});
+
 test("cardStates: a landed board card reads packed and installed from the pair folder; product cards and unlanded cards never do", () => {
   const s = scratch(), dir = tmp("pairs-");
   pairFile(dir, 40, s.one); done(dir, 40, s.one);
