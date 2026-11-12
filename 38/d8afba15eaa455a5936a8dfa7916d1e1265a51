@@ -1,0 +1,1 @@
+SECURE #C1036 38d8afb as part of G1 ending b3958bf (Security 11-12): migration 0031 adds hold_history (additive). writeEvidence (probe role only) clears a card's holds in the same D1 batch on the first onMain reading, saving the words first; done or dropped cards and cards already on main are untouched. Bound SQL only. Coordination state, not a gate.
