@@ -124,3 +124,48 @@ test("the compat view carries the stuck document beside the other meta, and the 
   p.state.meta = [{ id: "stuck", "initiatives:c1": { reason: "r", at: NOW, who: "<script>" } }];
   assert.match(p.stuckLines()[0].text, /^Manager stuck on/, "a name that is no role is not printed");
 });
+
+// Checker F1 on 399fbb4 (MEDIUM): the shim counting a 304 as current data. On a quiet board most polls are 304s, so with `if (r.ok)` alone the header
+// would warn "Data N min old" while the data is current. The shim's own text runs in a vm against a fake /api/compat that answers 304 to the etag.
+test("the shim stamps data-fetched-at on a 304 and on a 200, names the build on both, and stamps nothing on a failed poll", async () => {
+  const { default: vm } = await import("node:vm");
+  const { COMPAT_SHIM } = await import("../worker/compat-shim.mjs");
+  const attr = {}, calls = [];
+  let status = 200;
+  const headers = (h) => ({ get: (k) => h[k.toLowerCase()] ?? null });
+  const fetch = async (url, init = {}) => {
+    calls.push(init);
+    if (status === 304) return { status: 304, ok: false, headers: headers({ "x-board-build": "abc123def456" }) };
+    if (status !== 200) return { status, ok: false, headers: headers({}) };
+    return { status: 200, ok: true, headers: headers({ etag: '"c-1"', "x-board-build": "abc123def456" }), json: async () => ({ tag: "1", at: 1, collections: {}, probe: null }) };
+  };
+  const document = { hidden: false, addEventListener() {}, documentElement: { setAttribute: (k, v) => { attr[k] = String(v); } } };
+  const timers = [];
+  const window = {};
+  vm.runInNewContext(COMPAT_SHIM, { window, fetch, document, setInterval: (f) => (timers.push(f), timers.length), JSON, Promise, Object, String, Error, Date });
+  (await window.claude.use("db")).collection("waiting").onSnapshot(() => {});
+  await new Promise((r) => setImmediate(r));
+  assert.ok(Number(attr["data-fetched-at"]) > 0, "a 200 stamps the time");
+  assert.equal(attr["data-live-build"], "abc123def456");
+  // Later the poll answers 304 (nothing changed): the stamp must move and the build still be named.
+  delete attr["data-fetched-at"]; delete attr["data-live-build"];
+  status = 304;
+  await timers[0](); await new Promise((r) => setImmediate(r));
+  assert.equal(calls.at(-1).headers["if-none-match"], '"c-1"', "the poll was conditional");
+  assert.ok(Number(attr["data-fetched-at"]) > 0, "a 304 is the data being current now: data-fetched-at is set");
+  assert.equal(attr["data-live-build"], "abc123def456", "the 304 names the build too");
+  // A failed poll is not fresh data.
+  delete attr["data-fetched-at"];
+  status = 500;
+  await timers[0](); await new Promise((r) => setImmediate(r));
+  assert.equal(attr["data-fetched-at"], undefined, "a 500 stamps nothing");
+});
+
+// Checker F2 (LOW): "one line per role and rule" is the newest refusal of that pair, on whatever card it was; an older one on another card is the same line.
+test("the same role and rule refused on two cards is one line: the newest card's", () => {
+  const rs = [refusal({ at: NOW - MIN, card_id: "c2" }), refusal({ at: NOW - 9 * MIN, card_id: "c1" })];
+  const d = stuckDoc(view({ cards: [{ id: "c1", updated_at: 0 }, { id: "c2", updated_at: 0 }], refusals: rs }));
+  assert.deepEqual(Object.keys(d).sort(), ["id", "initiatives:c2"], "the older refusal of the same role and rule adds no second line");
+  const other = stuckDoc(view({ cards: [{ id: "c1", updated_at: 0 }, { id: "c2", updated_at: 0 }], refusals: [rs[0], { ...rs[1], rule: "another-rule" }] }));
+  assert.deepEqual(Object.keys(other).sort(), ["id", "initiatives:c1", "initiatives:c2"], "a different rule is its own line");
+});
