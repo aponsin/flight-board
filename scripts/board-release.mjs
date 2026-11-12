@@ -389,7 +389,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // The facts, from origin and from the commit's own snapshot.
     git(["fetch", "-q", "origin"]);
     // #C1032 (Security's LOW on #C1026): a failed fetch of a notes ref stops the release, never reads a stale private copy as origin's.
-    for (const [who, ref] of Object.entries(NOTES)) git(["fetch", "-q", "origin", `+${ref}:refs/notes/board-release/${who}`]);
+    // #C1037: it names the remote and git's own error, so the refusal says why.
+    for (const [who, ref] of Object.entries(NOTES)) {
+      try { git(["fetch", "-q", "origin", `+${ref}:refs/notes/board-release/${who}`]); }
+      catch (e) { throw new Error(`the fetch of ${ref} from origin failed, so the notes may be stale: ${String(e.stderr ?? e.message).trim().split("\n")[0]}`); }
+    }
     const sha = git(["rev-parse", "--verify", `${commit}^{commit}`]);
     const main = git(["rev-parse", "origin/main"]);
     let notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", sha])]));
