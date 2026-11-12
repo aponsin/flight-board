@@ -158,7 +158,10 @@ test("an open ask on a card holds it; a closed, answered or withdrawn one, or on
 // Checker 2 F2 on 98cefa1: waiting_on is the lead's routine "next is" pointer; one naming a review or landing role is no hold.
 test("a waiting_on that names Checker, Security or Release is no hold; the owner, Manager or another builder still is (Checker 2 F2)", () => {
   const free = ["Release", "Checker", "Checker: PASS at 5c31dbc", "Checker: PASS at 804d6ff", "Checker: review of ca67f20 ... then Release lands", "Security", "  security: SECURE", "Checker 2"];
-  const held = ["Owner", "Owner: a decision", "Manager", "Builder", "Boardsmith: after #C880", "Releases of the pack", "Checkers"];
+  // Checker 2 LOW on 5121e46: the ^ anchor. A waiting_on that only MENTIONS a role later in the text is a builder's or the lead's pointer and still holds: these are the
+  // live board's own strings for the cards waiting on a fix ("Boardsmith: fix Checker 2 findings" on #C967, #C968 and #C861; "Boardsmith: fix Checker F1/F2" on #C880).
+  const held = ["Owner", "Owner: a decision", "Manager", "Builder", "Boardsmith: after #C880", "Releases of the pack", "Checkers",
+    "Boardsmith: fix Checker 2 findings", "Boardsmith: fix Checker F1/F2", "Builder: after Security LOW", "Manager: Release lands it", "Owner, then Checker"];
   const view = { cards: [...free, ...held].map((w, i) => ({ id: `c-${i}`, waiting_on: w })) };
   const f = landHoldsFile(view, NOW).cards;
   free.forEach((w, i) => assert.equal(f[`c-${i}`], "", `free: ${w}`));
