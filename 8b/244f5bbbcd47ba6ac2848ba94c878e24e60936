@@ -1,0 +1,1 @@
+SECURE #C987 8b244f5, tip of build/c987-answered-ask-closes on signed 63dc7dc, line from feb895ad269f9a7ccfbc2a33db03d95b12099307 (Security 11-12): tests only (tests/answered-ask-closes.test.mjs, 3 lines). Covers 1ab7673, bbdbf59, 34ee28d, 63dc7dc and 8b244f5, each signed on its own commit. Needs migration 0029 and a Worker deploy.
