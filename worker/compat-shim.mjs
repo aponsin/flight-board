@@ -43,6 +43,8 @@ export const COMPAT_SHIM = String.raw`(function () {
     if (busy) return Promise.resolve();
     busy = true;
     return fetch("/api/compat", { headers: etag ? { "if-none-match": etag } : {}, credentials: "same-origin", cache: "no-store" }).then(function (r) {
+      // #C880: every good answer (a 304 too) is the data being current now, and carries the Worker's build: the page reads both off the root element.
+      if (r.ok || r.status === 304) { try { var de = document.documentElement, bd = r.headers.get("x-board-build"); de.setAttribute("data-fetched-at", String(Date.now())); if (bd !== null) de.setAttribute("data-live-build", bd); } catch (x) { /* ignore */ } }
       if (r.status === 304) { failing = false; return; }
       if (!r.ok) throw new Error("answered " + r.status);
       var tag = r.headers.get("etag");
