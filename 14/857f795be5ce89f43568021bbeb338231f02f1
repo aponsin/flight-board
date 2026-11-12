@@ -1,1 +1,1 @@
-PASS Full Checker 2 #C906 second commit v4: carry-over of v3 PASS (329dfed); range-diff identical onto main d21c682; touched tests 45/45 on the new base (commit 14857f79 of stack tip 14857f79)
+PASS Full Checker 2 #C906 second commit v4: carry-over of v3 PASS (329dfed); range-diff identical onto main d21c682; touched tests 35/35 on the new base (commit 14857f79 of stack tip 14857f79)
