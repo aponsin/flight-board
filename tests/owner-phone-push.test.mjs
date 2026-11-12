@@ -215,11 +215,46 @@ test("the page's switch: what it says and does in each state; hidden where there
   const on = { supported: true, ready: true, permission: "default", subscribed: false };
   assert.deepEqual(pushLabel(on), { text: "Turn on phone pushes", act: "on" });
   assert.deepEqual(pushLabel({ ...on, subscribed: true, permission: "granted" }), { text: "Phone pushes: on", act: "off" });
-  assert.deepEqual(pushLabel({ ...on, permission: "denied" }), { text: "Phone pushes: blocked in this browser's settings", act: null });
+  assert.deepEqual(pushLabel({ ...on, permission: "denied" }), { text: "Phone pushes: blocked in this browser. How to allow", act: "how" }, "#C972: blocked opens the steps");
   assert.deepEqual(pushLabel({ ...on, ready: false }), { text: "Phone pushes: not set up yet", act: null });
   assert.deepEqual(pushLabel({ supported: false, ios: true, standalone: false }), { text: "Phone pushes: add the board to your Home Screen, then open it there", act: null }, "an iPhone in a Safari tab");
   assert.equal(pushLabel({ supported: false, ios: false }), null, "a browser without push: no switch");
   assert.equal(pushLabel(null), null);
+});
+
+// #C972 (the owner, 11-11: "Phone pushes: blocked in this browser's settings" ... "how do we solve this?").
+test("a blocked browser's steps are for the browser it is; an allowed browser shows no steps", () => {
+  const page = loadNames(["pushLabel", "pushSteps", "pushHelpHtml", "esc"]), plain = (x) => JSON.parse(JSON.stringify(x));
+  const UA = {
+    iphone: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
+    macChrome: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    macSafari: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15",
+    android: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+    edge: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+    firefox: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.1; rv:132.0) Gecko/20100101 Firefox/132.0",
+  };
+  const iphone = plain(page.pushSteps(UA.iphone, true));
+  assert.equal(iphone.browser, "iPhone");
+  assert.match(iphone.steps[0], /^Open Settings, then Notifications\./, "from the Home Screen icon: Settings first");
+  assert.match(plain(page.pushSteps(UA.iphone, false)).steps[0], /Home Screen icon/, "in a Safari tab: the Home Screen icon first");
+  assert.equal(plain(page.pushSteps(UA.macChrome)).browser, "Chrome");
+  assert.match(plain(page.pushSteps(UA.macChrome)).steps.join(" "), /Site settings.*Notifications to Allow/);
+  assert.equal(plain(page.pushSteps(UA.macSafari)).browser, "Safari on Mac");
+  assert.match(plain(page.pushSteps(UA.macSafari)).steps.join(" "), /Settings, then Websites.*Notifications/);
+  assert.equal(plain(page.pushSteps(UA.android)).browser, "Chrome on Android");
+  assert.equal(plain(page.pushSteps(UA.edge)).browser, "Edge");
+  assert.equal(plain(page.pushSteps(UA.firefox)).browser, "Firefox");
+  assert.equal(plain(page.pushSteps("SomethingNew/1.0")).browser, "this browser");
+  const html = page.pushHelpHtml({ browser: "<b>x</b>", steps: ["a <i>b</i>"] });
+  assert.doesNotMatch(html, /<b>x|<i>b/, "escaped");
+  // Must still allow: an allowed (or not yet asked) browser has no "how" act, so no steps are shown.
+  const on = { supported: true, ready: true, subscribed: false };
+  for (const permission of ["granted", "default"]) assert.notEqual(plain(page.pushLabel({ ...on, permission })).act, "how", permission);
+  // The page wires it: the steps box, the permission change and the return to the tab redraw the badge.
+  const template = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(template, /<div class="pushhelp" id="pushhelp" role="region" aria-label="How to allow phone pushes" hidden><\/div>/);
+  assert.match(template, /permissions\.query\(\{name:"notifications"\}\)\.then\(p=>\{p\.onchange=\(\)=>pushDraw\(\)\}\)/);
+  assert.match(template, /visibilitychange",\(\)=>\{if\(document\.visibilityState==="visible"\)pushDraw\(\)\}/);
 });
 
 test("the store page carries the manifest and the Home Screen tags; the template (the artifact page) does not", () => {

@@ -134,6 +134,8 @@ for (const host of ["store", null]) for (const mode of ["all", "end", "start"]) 
 // each through esc() (the text then through cardLinks, as the feed's own row), and the hostile passes above draw it on the store's page.
 // #C919 added one: renderTeam's Team notes list. Its words are the card's title or the thread's name, each through esc() (teamRow), and the thread
 // under a row is threadHtml's, as every other thread's.
-test("the page's innerHTML sinks are the 43 audited (41 for #C723, 1 for #C874, 1 for #C919): a new one fails here until it is audited", () => {
-  assert.equal((template.match(/innerHTML/g) ?? []).length, 43);
+// #C972 added one: the push steps box (#pushhelp). Its words are pushSteps' own fixed strings and its browser name, each through esc()
+// (pushHelpHtml); nothing from the board or the user agent is written raw (the user agent is only matched, never shown).
+test("the page's innerHTML sinks are the 44 audited (41 for #C723, 1 for #C874, 1 for #C919, 1 for #C972): a new one fails here until it is audited", () => {
+  assert.equal((template.match(/innerHTML/g) ?? []).length, 44);
 });
