@@ -177,6 +177,8 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // stack on #C948's product branch); with no same-repo card on a stack the card builds from main, as with the switch off.
   const sameRepoWord = (a, b) => (a.repo || null) === (b.repo || null);
   const stackBranchFor = (card) => switchOn ? all.filter((k) => k && typeof k.id === "string" && boardCard(k) && sameRepoWord(k, card)).map((k) => ev[`cards.${k.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
+  // #C1018 / #C1035: the first 12 characters of every tip a checker holds a claim on (view.reviewClaims, from the store).
+  const claimed12 = new Set((Array.isArray(view?.reviewClaims) ? view.reviewClaims : []).filter((k) => k && typeof k.sha === "string").map((k) => k.sha.slice(0, 12)));
   const BUILD_STEPS = new Set(["build", "rework", "outside"]);
   // #C915 (b): whether a hold_end has come: its ask is closed, or its card is dropped, done or live. An id the view does not hold stays open.
   // (A hold that stays open for 2 h raises a line to Manager in the store, heldWakes: it cannot hide a card for ever.)
@@ -203,7 +205,10 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     // start has no review turn, and is no builder turn either. Any other card dispatches as it always did.
     const held = inBoard && e?.stackHold === true && hasPartner(c);
     const turns = turnsOf(c, e, { ...(inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {}), ...(pairCovers ? { pairCovers } : {}) });
-    cards.push({ queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: held ? turns.filter((t) => t.step !== "review") : turns, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
+    // #C1018 / #C1035: a tip a Checker session has claimed (the store's review claim) wakes no Checker for its review again: one checker per tip.
+    const mine = held ? turns.filter((t) => t.step !== "review") : turns;
+    const shown = mine.filter((t) => !(t.role === "Checker" && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
+    cards.push({ queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }
   if (switchOn && cards.some((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step)))) {
     for (const k of cards) if (k.inStack) k.turns = k.turns.filter((t) => t.step !== "review");

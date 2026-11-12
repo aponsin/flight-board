@@ -257,6 +257,24 @@ export function stackSwitchRefusal(b, who) {
   return null;
 }
 
+// #C1018 / #C1035: one checker per tip. A Checker session claims a tip (its full 40-hex commit) before it reviews it; the first claim wins. Only Checker
+// (for itself, as "Checker" or "Checker <n>") and Manager (for a named checker, and to release a gone checker's claim) write one. card_id (optional) is the
+// card the tip belongs to: a re-cut of it keeps the claim of the checker who held the old tip.
+export const CHECKER_NAME = /^Checker(?: [0-9]{1,2})?$/;
+export const REVIEW_SHA = /^[0-9a-f]{40}$/;
+export function reviewClaimRefusal(b, who, op = "claim") {
+  if (who !== "Checker" && who !== "Manager") return refuse("review-claim-role", `${who ?? "unknown"} cannot ${op} a review; only Checker and Manager can`);
+  const allowed = op === "claim" ? ["sha", "checker", "card_id"] : ["sha", "checker"];
+  if (b === null || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => !allowed.includes(k))) return refuse("review-claim-shape", `a review ${op} is {${allowed.join(", ")}}`);
+  if (typeof b.sha !== "string" || !REVIEW_SHA.test(b.sha)) return refuse("review-claim-shape", "sha is the tip's full 40-character lower-case hex commit");
+  if (b.checker !== undefined && (typeof b.checker !== "string" || !CHECKER_NAME.test(b.checker))) return refuse("review-claim-shape", "checker is \"Checker\" or \"Checker <n>\"");
+  if (op === "claim") {
+    if (who === "Manager" && b.checker === undefined) return refuse("review-claim-shape", "Manager names the checker the tip is for");
+    if (b.card_id !== undefined && (typeof b.card_id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(b.card_id))) return refuse("review-claim-shape", "card_id is a card id");
+  }
+  return null;
+}
+
 // #C871: an agent's queue is in an order the owner sets. A card the owner has placed (queue_set_by "owner") keeps its place against an agent's
 // write: the Worker refuses it by program, whoever the agent is, the lead included. The owner moves a card that has not started up or down.
 // `floor` is the last place the owner holds in the card's queue (0 when he holds none): an agent's write may not put a card at or ahead of it
