@@ -7,6 +7,10 @@ import { mtTime, mtDayTime, TEAM_TZ } from "../worker/team-time.mjs";
 import { heldWakes, stalledWaits, STALL_AFTER_MS, zTimeIn } from "../worker/board-rules.mjs";
 import { headerHtml } from "../worker/page-header.mjs";
 import { signalText } from "../collector/rework.mjs";
+import { setDoorSession, guardedInbox } from "../worker/board-store.mjs";
+import { makeDb } from "./helpers/d1-sqlite.mjs";
+
+const DOOR_A = "local_aaaaaaaa-1111-2222-3333-444444444444", DOOR_B = "local_bbbbbbbb-1111-2222-3333-444444444444";
 
 const Z_TIME = /\d{1,2}:\d{2}(:\d{2})?\s?Z\b/;
 // 2027-01-15 08:00 UTC is 1:00 am MST (winter, UTC-7).
@@ -41,6 +45,29 @@ test("a held line names its end and its start in Mountain Time, no Z", () => {
     "#C2 held on someone, no end set after 2 h: lift it or give it an end (held since Jan 14 10:00 pm MT)",
   ]);
   for (const l of lines) assert.doesNotMatch(l, Z_TIME);
+});
+
+// Checker's F1 on 7ad6140: one behaviour test per site, each failing if the site printed the raw number instead of the Mountain time.
+test("a hold_end left open 2 h says since when in Mountain Time", () => {
+  const cards = [{ id: "e", num: 7, hold_end: "#T1", held_at: T - 3 * H, updated_at: T - 3 * H }];
+  const lines = heldWakes({ now: T, cards, endsPassed: new Set() }).map((w) => w.reason);
+  assert.deepEqual(lines, ["#C7 waits on #T1, whose end has not come after 2 h: close it or lift the hold (since Jan 14 10:00 pm MT)"]);
+});
+
+test("the door's mismatch refusal says when its session was last set, in Mountain Time", async () => {
+  const db = makeDb();
+  await setDoorSession(db, T, "Manager", DOOR_A);
+  const r = await guardedInbox(db, T + 2000, DOOR_B);
+  assert.match(r.refused.detail, /\(the door's session was last set by Manager at Jan 15 1:00 am MT\)$/);
+  assert.doesNotMatch(r.refused.detail, new RegExp(String(T)));
+});
+
+test("a door replacement notice gives its time in Mountain Time", async () => {
+  const db = makeDb();
+  await setDoorSession(db, T, "Manager", DOOR_A);
+  await setDoorSession(db, T + H, "owner", DOOR_B);
+  const got = await guardedInbox(db, T + 2 * H, DOOR_B);
+  assert.deepEqual(got.notices, ["door session replaced by owner at Jan 15 2:00 am MT"]);
 });
 
 test("a stall reason gives the idle time in Mountain Time, no Z", () => {
