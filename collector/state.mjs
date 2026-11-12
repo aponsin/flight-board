@@ -1040,6 +1040,21 @@ export function teamConfigSync({ show, liveText, file, lastChange, securityNote 
   return { text: `${JSON.stringify(merged, null, 2)}\n`, line: `config: the live copy now takes the rules in ${file} on main (${sha.slice(0, 7)}, SECURE)` };
 }
 
+// Checker's F1 on 804d6ff: the git half of the sync, with git as a parameter so a test runs it on a real repository. tip: "<remote>/<main>";
+// notesRef: the local ref the security notes were fetched into. Writes the live file only when teamConfigSync gives new text; returns the
+// line to print (or null). A failure never stops the probe's run: it is the line.
+export function syncLiveConfig({ git, tip, file, notesRef, livePath }) {
+  try {
+    const s = teamConfigSync({
+      show: () => git(["show", `${tip}:${file}`]), liveText: readFileSync(livePath, "utf8"), file,
+      lastChange: () => git(["log", "-1", "--format=%H", tip, "--", file]),
+      securityNote: (sha) => { if (!notesRef) return null; try { return String(git(["notes", `--ref=${notesRef}`, "show", sha])); } catch { return null; } },
+    });
+    if (s.text) writeAtomic(livePath, s.text);
+    return s.line;
+  } catch (e) { return `config: not synced (${String(e?.code ?? e?.message ?? e).slice(0, 80)})`; }
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const at = process.argv.indexOf("--config");
   let config;
@@ -1086,19 +1101,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { /* none */ } }
     repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern, reviewPaths: c.reviewPaths ?? null };
     // #C974: the live config follows the copy landed on main (the next run reads it). A failure here never stops the run.
-    if (c.configInRepo) {
-      try {
-        const livePath = process.argv[at + 1];
-        const tip = `${c.remote}/${c.mainBranch}`;
-        const s = teamConfigSync({
-          show: () => r.git(["show", `${tip}:${c.configInRepo}`]), liveText: readFileSync(livePath, "utf8"), file: c.configInRepo,
-          lastChange: () => r.git(["log", "-1", "--format=%H", tip, "--", c.configInRepo]),
-          securityNote: (sha) => { if (!r.notes.security) return null; try { return String(r.git(["notes", `--ref=${r.notes.security}`, "show", sha])); } catch { return null; } },
-        });
-        if (s.text) writeAtomic(livePath, s.text);
-        if (s.line) console.log(s.line);
-      } catch (e) { console.log(`config: not synced (${String(e?.code ?? e?.message ?? e).slice(0, 80)})`); }
-    }
+    if (c.configInRepo) { const l = syncLiveConfig({ git: r.git, tip: `${c.remote}/${c.mainBranch}`, file: c.configInRepo, notesRef: r.notes.security, livePath: process.argv[at + 1] }); if (l) console.log(l); }
   }
   for (const x of c.repos) {
     const installed = installedSha(home(x.installedLink ?? ""));

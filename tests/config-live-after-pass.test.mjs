@@ -6,7 +6,11 @@
 // none; a restart's session ids need no landing; board.private.json never comes into it.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { teamConfigSync, RULE_FIELDS } from "../collector/state.mjs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { teamConfigSync, syncLiveConfig, RULE_FIELDS } from "../collector/state.mjs";
 import { checkConfig, fullConfig, DEFAULTS } from "../scripts/config.mjs";
 
 const FILE = "board/board.config.json";
@@ -94,6 +98,54 @@ test("never blanks the live copy: missing, unreadable, not an object or refused 
   }
   assert.match(teamConfigSync({ show: () => JSON.stringify(base), liveText: "{oops", file: FILE }).line, /does not parse; not replaced/);
   assert.match(teamConfigSync({ show: () => JSON.stringify(base), liveText: "[]", file: FILE }).line, /not an object; not replaced/);
+});
+
+// Checker's F2 on 804d6ff: main's copy and the live copy each pass alone, but the merge does not. Without the check on the merge, the probe
+// would write a config its next run refuses at load, and the board would go dark.
+test("never blanks: a merge that fails the config check (main drops a role the live session ids still name) keeps the live copy", () => {
+  const liveTwo = { ...base, roster: ["Manager", "Builder", "Checker"], rosterSessions: { Builder: SID(1), Checker: SID(3) }, gate: { ...base.gate, managerSession: SID(2) } };
+  const mainOne = { ...base, roster: ["Manager", "Builder"] };
+  assert.deepEqual(checkConfig(liveTwo), [], "the live copy passes alone");
+  assert.deepEqual(checkConfig(mainOne), [], "main's copy passes alone");
+  const s = sync(mainOne, liveTwo);
+  assert.equal(s.text, null);
+  assert.match(s.line, /refused \(rosterSessions\.Checker.*\); the live copy is kept/);
+});
+
+// Checker's F1 on 804d6ff: the git half (syncLiveConfig, which the probe's main block calls) on a real repository.
+test("on a real repository: a change whose own commit has no SECURE is never taken, even under a SECURE newer commit; a SECURE change is written to the live file", () => {
+  const d = mkdtempSync(join(tmpdir(), "cfg-sync-")), repo = join(d, "repo"), livePath = join(d, "board.config.json");
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: join(d, "none"), GIT_CONFIG_NOSYSTEM: "1", GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@example.com" };
+  writeFileSync(env.GIT_CONFIG_GLOBAL, "");
+  const git = (args) => execFileSync("git", args, { cwd: repo, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  mkdirSync(join(repo, "board"), { recursive: true });
+  git(["init", "-q", "-b", "main"]);
+  const put = (obj, msg, other = null) => {
+    if (obj) writeFileSync(join(repo, FILE), JSON.stringify(obj, null, 2));
+    if (other) writeFileSync(join(repo, other), msg);
+    git(["add", "-A"]); git(["commit", "-q", "-m", msg]); return git(["rev-parse", "HEAD"]);
+  };
+  const secure = (sha) => git(["notes", "--ref=refs/notes/security", "add", "-f", "-m", "SECURE test", sha]);
+  const run = () => syncLiveConfig({ git, tip: "main", file: FILE, notesRef: "refs/notes/security", livePath });
+  writeFileSync(livePath, JSON.stringify(live));
+  const first = put(base, "the config lands"); secure(first);
+  assert.equal(run(), null, "main equals live: nothing to do");
+  // Case 1: commit A changes the rule with no note; commit B, SECURE, does not touch the file.
+  const A = put({ ...base, title: "From A" }, "A: an unsigned change");
+  const B = put(null, "B: something else", "other.txt"); secure(B);
+  const one = run();
+  assert.match(one, new RegExp(`last changed on main in ${A.slice(0, 7)}, which carries no SECURE note; the live copy is kept`));
+  assert.deepEqual(JSON.parse(readFileSync(livePath, "utf8")), live, "the live file is unchanged");
+  // Case 2: A gets its SECURE: the rule is taken and written, the session ids kept.
+  secure(A);
+  assert.match(run(), new RegExp(`takes the rules in board/board\\.config\\.json on main \\(${A.slice(0, 7)}, SECURE\\)`));
+  const now = JSON.parse(readFileSync(livePath, "utf8"));
+  assert.equal(now.title, "From A");
+  assert.deepEqual([now.rosterSessions, now.gate.managerSession], [live.rosterSessions, live.gate.managerSession]);
+  // No notes ref configured: nothing is ever signed, so nothing new is taken.
+  put({ ...base, title: "From C" }, "C");
+  assert.match(syncLiveConfig({ git, tip: "main", file: FILE, notesRef: undefined, livePath }), /carries no SECURE note/);
+  assert.match(syncLiveConfig({ git, tip: "main", file: FILE, notesRef: "refs/notes/security", livePath: join(d, "missing.json") }), /^config: not synced \(ENOENT\)/, "a missing live file is a line, not a crash");
 });
 
 test("board.private.json and tokens never come into it: the file is the plain config, checked like any config", () => {
