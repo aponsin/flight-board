@@ -1,0 +1,1 @@
+SECURE #C973 eabf861 (Security 11-11), diffed against its parent a79f093: dispatch filter only. quotaCeilingPct is validated (whole 1 to 100) and falls back to 90 in code; the usage reading must be fresh and in range, and an unknown reading stops nothing; only build turns are dropped (fixes, reviews, landing go on). No new input, write or path.
