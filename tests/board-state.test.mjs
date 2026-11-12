@@ -217,6 +217,18 @@ test("the probe: the card a session is on is an exact board id or a #C number of
   assert.equal(cardIn([entry("user", "board-state-probe then #C405", T)], ids, nums), "ship-resume", "the last name in an entry");
 });
 
+// #C960: a #C number of a card whose id the probe cannot read (7 words, which the store once took) gave cardIn that id, the schema refused the whole
+// state ("agents.Security.card: not allowed"), the state child exited 1 and no card's reading was rewritten for an hour.
+test("the probe: a #C number naming a card whose id is over CARD_ID is no agent's card, and the state it would have spoilt still fits the schema", () => {
+  const longId = "stop-hook-red-ask-names-open-ask";
+  const long = new Map([...nums, [957, longId]]);
+  assert.equal(cardIn([entry("user", "see #C957", T)], ids, long), null);
+  assert.equal(cardIn([entry("user", "see #C957 and #C405", T)], ids, long), "ship-resume", "a card it can read is still found");
+  assert.equal(cardIn([entry("user", `see ${longId}`, T)], new Set([...ids, longId]), long), null, "by id too");
+  const a = activity([entry("user", "see #C957", T)], { mtimeMs: T, now: T + 1000, ids, nums: long });
+  assert.equal(a.card, null);
+});
+
 test("the probe: working mid-turn, idle at a turn's end or after a quiet quarter hour; the tool as its class; since", () => {
   const prompt = entry("user", "go", T), use = entry("assistant", [{ type: "tool_use", name: "mcp__x__send", input: {} }], T + 1000, { stop_reason: "tool_use" });
   const result = entry("user", [{ type: "tool_result", content: "secret Alice" }], T + 2000), done = entry("assistant", [{ type: "text", text: "done" }], T + 3000, { stop_reason: "end_turn" });
