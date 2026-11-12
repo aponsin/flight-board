@@ -257,6 +257,44 @@ test("a blocked browser's steps are for the browser it is; an allowed browser sh
   assert.match(template, /visibilitychange",\(\)=>\{if\(document\.visibilityState==="visible"\)pushDraw\(\)\}/);
 });
 
+// #C972, Checker F1 on 5418fc5: the badge's click and the redraw, driven as the store page runs them.
+test("a blocked badge's click shows this browser's steps, a second click hides them, and an allowed browser hides them", async () => {
+  const Notification = { permission: "denied" };
+  const page = loadNames(["pushDraw"], {
+    documentElement: { getAttribute: (a) => (a === "data-host" ? "store" : null) },
+    window: { PushManager: {}, Notification },
+    Notification,
+    navigator: {
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15",
+      serviceWorker: { register: async () => ({ pushManager: { getSubscription: async () => null } }) },
+    },
+    fetch: async () => ({ ok: true, json: async () => ({ ready: true, publicKey: "k" }) }),
+  });
+  const btn = page.els.pushbtn ?? page.document.getElementById("pushbtn"), help = page.document.getElementById("pushhelp");
+  const attrs = {};
+  btn.setAttribute = (k, v) => { attrs[k] = v; };
+  help.hidden = true;
+  await page.pushDraw();
+  assert.equal(btn.dataset.act, "how");
+  const click = async () => { for (const fn of page.listeners.click) await fn({ target: { closest: (s) => (s === "#pushbtn" ? btn : null) } }); };
+  await click();
+  assert.equal(help.hidden, false, "one click shows the steps");
+  assert.match(help.innerHTML, /Allow phone pushes in Safari on Mac/, "for the browser it detects");
+  assert.match(help.innerHTML, /Settings, then Websites/);
+  assert.equal(attrs["aria-expanded"], "true");
+  await click();
+  assert.equal(help.hidden, true, "a second click hides them");
+  assert.equal(attrs["aria-expanded"], "false");
+  await click();
+  assert.equal(help.hidden, false);
+  // The owner allows it in Settings and comes back: the redraw hides the steps.
+  Notification.permission = "granted";
+  await page.pushDraw();
+  assert.equal(help.hidden, true, "allowed again: no steps");
+  assert.equal(btn.dataset.act, "on");
+  assert.equal(attrs["aria-expanded"], "false");
+});
+
 test("the store page carries the manifest and the Home Screen tags; the template (the artifact page) does not", () => {
   const html = storePage("<!--FONTS--><!--END_FONTS--><p>x</p>");
   assert.match(html, /<head>\n<meta charset="utf-8">\n<meta name="viewport"[^\n]*>\n<link rel="manifest" href="\/manifest\.webmanifest">\n<meta name="apple-mobile-web-app-capable" content="yes">\n/);
