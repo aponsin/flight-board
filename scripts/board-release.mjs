@@ -201,6 +201,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const quiet = (a) => { try { return git(a); } catch { return null; } };
   const line = (ok, what) => console.log(`${ok ? "ok  " : "NO  "} ${what}`);
   let tmp = null;
+  // #C989: a refusal, a dry run and a release all end in process.exit inside the try, which skips the finally: the snapshot
+  // folder was left in the temp folder every time. Removed on exit too.
+  process.on("exit", () => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
   try {
     // The owner's install: the settings, the config the gate's hook names, the lead the fence sends to.
     const settingsText = readFileSync(join(homedir(), ".claude/settings.json"), "utf8");

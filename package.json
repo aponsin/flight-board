@@ -5,7 +5,7 @@
   "type": "module",
   "description": "A flight board for a team of AI agents and one owner: what is in flight, what waits on the owner, and a thread under every item.",
   "scripts": {
-    "test": "node --test tests/*.test.mjs",
+    "test": "node scripts/test-tmp.mjs node --import ./tests/helpers/clean-tmp.mjs --test tests/*.test.mjs",
     "build": "node scripts/build-page.mjs",
     "scan": "node scripts/scan.mjs",
     "ship-batch": "node scripts/ship-batch.mjs"
