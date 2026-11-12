@@ -2,7 +2,10 @@
 // quit anything. The action (part B) needs the owner's go. Must still hold: an unknown check is never ok, and a force-at time never cuts a ship.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { liveStateFile } from "../scripts/live-state.mjs";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { readyVerdict, installRuns, parseForceAt, CHECKS, FORCEABLE, AGENT_QUIET_MS } from "../scripts/restart-ready.mjs";
 
@@ -124,4 +127,57 @@ test("the command line: it refuses without --dry-run, with an unknown flag or a 
   assert.equal(run("--config", "/nonexistent/c.json", "--dry-run", "--force-at", "25:00").status, 2);
   const cfg = run("--config", "/nonexistent/c.json", "--dry-run", "--force-at", "23:59");
   assert.equal(cfg.status, 3); assert.match(cfg.stdout, /^would wait: can't read the board's config/);
+});
+
+test("F2: with no fresh live state a quiet process list is not 'no ship': the ship check is unknown; a run seen in the list still waits", () => {
+  const r = v({ ship: { runs: [], live: undefined } });
+  assert.equal(r.ok, false); assert.equal(r.first.name, "ship"); assert.equal(r.first.status, "unknown"); assert.match(r.line, /fresh live state/);
+  assert.equal(v({ ship: { runs: [{ pid: 7, startedAt: T - 60e3 }], live: undefined } }).first.status, "wait");
+  assert.equal(v({ ship: { runs: [], live: null } }).ok, true, "a fresh state that shows no shipping card is ok");
+});
+
+test("F1: the live state is the store's file when it exists and gate.stateDir is not set; a set gate.stateDir wins; the dead old file is then never read", () => {
+  const id = "abc123", cfg = { artifactUrl: `https://claude.ai/artifact/${id}`, gate: { stateDir: "/s" } };
+  const none = () => false, yes = () => true;
+  assert.equal(liveStateFile(cfg, {}, yes), `/s/${id}-store/${id}/state.json`);
+  assert.equal(liveStateFile(cfg, {}, none), `/s/${id}/state.json`, "no store file: the old path");
+  assert.equal(liveStateFile(cfg, { gate: { stateDir: "/s" } }, yes), `/s/${id}/state.json`, "a stateDir the config sets wins");
+  // end to end, on a temp home: the old file is fresh-looking nothing, the store file says Release is shipping; the old one is never read
+  const home = mkdtempSync(join(tmpdir(), "rr-home-")), base = join(home, ".flight-board"), conf = join(home, "c.json");
+  writeFileSync(conf, JSON.stringify({ artifactUrl: cfg.artifactUrl }));
+  mkdirSync(join(base, id), { recursive: true }); mkdirSync(join(base, `${id}-store`, id), { recursive: true });
+  const put = (p, state) => writeFileSync(join(base, p, "state.json"), JSON.stringify(state));
+  const run = () => spawnSync(process.execPath, [new URL("../scripts/restart-ready.mjs", import.meta.url).pathname, "--config", conf, "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: home } });
+  put(id, { board: { at: Date.now() }, agents: { Dead: { state: "working", lastActivityAt: Date.now() } }, cards: {} });
+  put(`${id}-store/${id}`, { board: { at: Date.now() }, agents: { Builder: { state: "idle", lastActivityAt: null } }, cards: {} });
+  const out = run().stdout;
+  assert.match(out, /^ok   agents: /m, "the store file is read");
+  assert.doesNotMatch(out, /Dead/, "the dead old file is never read when the store file exists");
+  // the store file gone stale: unknown, never ok, even though the old file looks fresh? no: the store file still decides
+  put(`${id}-store/${id}`, { board: { at: Date.now() - 10 * 60e3 }, agents: {}, cards: {} });
+  assert.match(run().stdout, /^\?\?\?\? ship: /m, "a stale store file reads as unknown");
+  // no store folder at all: the old path is the fallback, and when it is stale it also reads as unknown
+  rmSync(join(base, `${id}-store`), { recursive: true });
+  put(id, { board: { at: Date.now() - 10 * 60e3 }, agents: {}, cards: {} });
+  const old = run();
+  assert.match(old.stdout, /^\?\?\?\? ship: /m); assert.match(old.stdout, /^\?\?\?\? agents: /m); assert.equal(old.status, 3);
+});
+
+test("F3 and a past force time: the command line guards the live state's freshness, and a force time already past is refused", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rr-")), id = "abc123", cfg = join(dir, "c.json");
+  writeFileSync(cfg, JSON.stringify({ artifactUrl: `https://claude.ai/artifact/${id}`, gate: { stateDir: dir } }));
+  mkdirSync(join(dir, id));
+  const run = (...a) => spawnSync(process.execPath, [new URL("../scripts/restart-ready.mjs", import.meta.url).pathname, "--config", cfg, "--dry-run", ...a], { encoding: "utf8" });
+  const put = (at) => writeFileSync(join(dir, id, "state.json"), JSON.stringify({ board: { at }, agents: { Builder: { state: "idle", lastActivityAt: null } }, cards: {} }));
+  put(Date.now() - 10 * 60e3);
+  const stale = run();
+  assert.match(stale.stdout, /^\?\?\?\? ship: can't read a fresh live state/m, "a stale state: the ship check is unknown");
+  assert.match(stale.stdout, /^\?\?\?\? agents: /m, "a stale state: the agents are unknown");
+  assert.equal(stale.status, 3);
+  put(Date.now());
+  const fresh = run();
+  assert.match(fresh.stdout, /^ok   agents: /m, "a fresh state: the agents are read");
+  assert.doesNotMatch(fresh.stdout, /^\?\?\?\? (ship|agents):/m);
+  const nowD = new Date();
+  if (nowD.getHours() || nowD.getMinutes()) { const past = run("--force-at", "00:00"); assert.equal(past.status, 2); assert.match(past.stderr, /already passed/); }
 });
