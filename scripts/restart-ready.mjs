@@ -23,6 +23,7 @@ import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
+import { liveStateFile } from "./live-state.mjs";
 import { shipRuns, liveShip, verdict as shipVerdict, LIVE_FRESH } from "./restart-check.mjs";
 
 export const AGENT_QUIET_MS = 2 * 60e3, OUTSIDE_QUIET_MS = 5 * 60e3;
@@ -50,6 +51,8 @@ export function readyVerdict({ readings = {}, now, lead = "Manager", forceAt = n
   const r = readings, checks = [];
   const push = (name, c) => checks.push({ name, ...c });
   if (!r.ship) push("ship", unknown("the ship run or the live state"));
+  // live undefined: there is no fresh live state, so only a ship run found in the process list can be seen. No run seen then is not "no ship" (F2 of #C861).
+  else if (r.ship.live === undefined && !(r.ship.runs ?? []).length) push("ship", unknown("a fresh live state, so a ship in the ship phase can't be ruled out"));
   else { const v = shipVerdict({ runs: r.ship.runs ?? [], live: r.ship.live ?? null, version: null, now }); push("ship", v.ok ? ok("no ship running") : wait(v.line.replace(/^wait: /, "").replace(/: restart once.*$/, ""))); }
   push("install", Number.isInteger(r.install) ? (r.install === 0 ? ok("no pack install running") : wait(`${r.install} pack install${r.install > 1 ? "s" : ""} running`)) : unknown("the processes"));
   if (!r.agents || typeof r.agents !== "object") push("agents", unknown("a fresh live state of the agents"));
@@ -90,16 +93,17 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   }
   const now = Date.now(), forceText = val("--force-at"), forceAt = forceText === undefined ? null : parseForceAt(forceText, now);
   if (forceText !== undefined && forceAt === null) { console.error("--force-at takes a clock time today, HH:MM (24 hours)."); process.exit(2); }
-  let config;
-  try { const raw = JSON.parse(readFileSync(val("--config"), "utf8")); if (checkConfig(raw).length) throw new Error(); config = fullConfig(raw); }
+  if (forceAt !== null && forceAt < now) { console.error("--force-at is a time that has already passed today, which would force the restart at once: give a later time."); process.exit(2); }
+  let config, rawConfig;
+  try { const raw = JSON.parse(readFileSync(val("--config"), "utf8")); if (checkConfig(raw).length) throw new Error(); config = fullConfig(raw); rawConfig = raw; }
   catch { console.log("would wait: can't read the board's config, so can't tell what is running."); process.exit(3); }
   let ps = null;
   try { ps = execFileSync("ps", ["-Ao", "pid=,etime=,command="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }); } catch { /* unknown below */ }
   let state = null;
-  try { state = JSON.parse(readFileSync(join(home(config.gate.stateDir), boardId(config), "state.json"), "utf8")); } catch { /* unknown below */ }
+  try { state = JSON.parse(readFileSync(liveStateFile(config, rawConfig), "utf8")); } catch { /* unknown below */ }
   const fresh = state?.board && Number.isFinite(state.board.at) && now - state.board.at <= LIVE_FRESH && now - state.board.at >= -60e3;
   const readings = {
-    ship: ps === null ? null : { runs: shipRuns(ps, now).filter((r) => r.pid !== process.pid), live: liveShip(state, { now, shipPhase: config.collector.shipPhase }) },
+    ship: ps === null ? null : { runs: shipRuns(ps, now).filter((r) => r.pid !== process.pid), live: fresh ? liveShip(state, { now, shipPhase: config.collector.shipPhase }) : undefined },
     install: ps === null ? null : installRuns(ps),
     agents: fresh ? state.agents ?? {} : null,
     // Not readable from a script on this machine: the app's sessions, scheduled tasks and Remote Control, GitHub (no network here), the ship lock.
