@@ -1,0 +1,3 @@
+PASS Full: ask-refuses-inline-list #C965 10dc508 (Checker 2, 2026-11-12; re-cut of a79f093, which Checker signed, onto ab0014d)
+Diff-check (Checker 2): the +/- lines of the patch equal a79f093's, file for file (5 files); git diff --stat origin/main 10dc508 (two-dot) touches only #C981 and #C965 files, nothing reverted. Boardsmith's suite on this tip: 2588/2588.
+The original's PASS and its LOW F1 (three vacuous must-allow tests, tests-only follow-up) carry over.
