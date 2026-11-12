@@ -1,0 +1,1 @@
+PASS Checker 2 #C1029 newboard-banner-always-shows: touched tests 10/10; removing .newboard[hidden] fails the page-wide check (commit d21c682a of stack tip d21c682a)
