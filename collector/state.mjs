@@ -844,7 +844,10 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
     const groupTips = (repo.tips ?? []).filter((h) => h.branch !== repo.main && batchedIds.has(boardIdOf(h.message)));
     Object.assign(groupHead, stackHeads(repo, groupTips, ids));
   }
-  for (const [card, repo] of todo) out[card.id] = cardState(card, repo, config, now, groupHead[card.id] ? { head: groupHead[card.id] } : {});
+  // The group tip's notes cover every member under it (design 4, as the stack path does: one review per group, #C1032), so the cover is the full sha of the
+  // tip of the branch the head was found on; a FINDINGS on the tip reaches the members the same way (tipState).
+  const coverOf = (repo, head) => (repo.tips ?? []).find((t) => t.branch === head.branch)?.sha ?? null;
+  for (const [card, repo] of todo) out[card.id] = cardState(card, repo, config, now, groupHead[card.id] ? { head: groupHead[card.id], cover: coverOf(repo, groupHead[card.id]) } : {});
   // #C859 slice 2: for a repository whose stack switch is on (`stacks`: the repository names, "" for the team's own), the stack read from git.
   // Nothing is added for a switch that is off, which is the default: the switch off is today's reading.
   for (const name of stacks) {

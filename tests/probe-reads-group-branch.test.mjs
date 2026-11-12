@@ -25,8 +25,9 @@ function scratch() {
   writeFileSync(join(work, "base.md"), "start\n"); g(["add", "-A"]); g(["commit", "-qm", "start"]);
   const commit = (t, file, msg) => { at = T0 + t; appendFileSync(join(work, file), `${t}\n`); g(["add", "-A"]); g(["commit", "-qm", msg]); return g(["rev-parse", "HEAD"]).trim(); };
   const sync = () => { g(["push", "-q", "--all", "-f", "origin"]); g(["fetch", "-q", "--prune", "origin"]); };
+  const note = (sha, text) => { for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-f", "-m", text, sha]); };
   const repo = () => ({ git: (args) => g(args), remote: "origin", main: "main", notes: NOTES, tips: remoteTips((a) => g(a), "origin"), live: null, versionPattern: null });
-  return { g, commit, sync, repo };
+  return { g, commit, sync, repo, note };
 }
 
 const card = (id, num, batch) => ({ id, num, level: "Quick", phase: "plan", ...(batch ? { batch } : {}) });
@@ -67,4 +68,32 @@ test("a batched card whose tip is not a batched card's is not searched for", () 
   s.g(["checkout", "-q", "main"]); s.sync();
   const out = read(s, [card("card-a", 901, "g-demo"), card("card-plain", 905)]);
   assert.equal(out["card-a"].headSha12, null, "the tip's card has no batch: the branch is not a group branch");
+});
+
+// Checker 2's F1 on 63437c45: the group tip's notes cover every member under it (one review per group, #C1032), the same cover the stack path passes.
+function group3() {
+  const s = scratch();
+  s.g(["checkout", "-qb", "build/g-demo"]);
+  const a = s.commit(10, "a.md", "a work\n\nBoard-Id: card-a");
+  const b = s.commit(20, "b.md", "b work\n\nBoard-Id: card-b");
+  const c = s.commit(30, "c.md", "c work\n\nBoard-Id: card-c");
+  s.g(["checkout", "-q", "main"]);
+  return { s, a, b, c, cards: [card("card-a", 901, "g-demo"), card("card-b", 902, "g-demo"), card("card-c", 903, "g-demo")] };
+}
+
+test("notes only on the group tip: every member reads as signed and past the reviews, not only the tip's card", () => {
+  const { s, c, cards } = group3();
+  s.note(c, "PASS"); s.sync();
+  const out = read(s, cards);
+  for (const id of ["card-a", "card-b", "card-c"]) {
+    assert.deepEqual(out[id].signed, ["checker", "security"], id);
+    assert.notEqual(out[id].phase, "checker", `${id} is past the checker review`);
+  }
+});
+
+test("a FINDINGS on the group tip reaches the members below it", () => {
+  const { s, c, cards } = group3();
+  s.note(c, "FINDINGS"); s.sync();
+  const out = read(s, cards);
+  for (const id of ["card-a", "card-b", "card-c"]) assert.deepEqual(out[id].findings, ["checker", "security"], id);
 });
