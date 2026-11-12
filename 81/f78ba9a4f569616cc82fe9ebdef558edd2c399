@@ -1,0 +1,4 @@
+PASS Quick: thread-decision-shows-options #C964 re-cut 81f78ba9a4f569616cc82fe9ebdef558edd2c399 (Checker, 2026-11-12; diff-check of the PASS on 74b144d)
+Base: the tip's grandparent is main 10dc508. range-diff 0c77a9a..74b144d against ecd5342..81f78ba: commit 2 identical; commit 1 differs only in CHANGELOG context lines (main's newer entries). page/board.template.html and the test are unchanged.
+Two-dot diff from main: CHANGELOG.md (+ the #C964 line and a blank line, as signed), page/board.template.html, tests/thread-decision-shows-options.test.mjs. Nothing of main's is undone.
+Touched tests at 81f78ba (thread-decision-shows-options, board): 51 pass, 0 fail. Boardsmith ran the full suite: 2593 pass.
