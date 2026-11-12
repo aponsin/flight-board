@@ -13,7 +13,7 @@ import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.
 import { writeUsageDay } from "./compat-usage.mjs";
 import { subscribePush, unsubscribePush, pushKnown, pushFacts, pushRun } from "./push-store.mjs";
 import { SW_SOURCE, MANIFEST } from "./push-page.mjs";
-import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, claimReview, releaseReview, moveInQueue } from "./board-store.mjs";
+import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, claimReview, releaseReview, moveInQueue, pullOutOfGroup } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const obj = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
@@ -283,6 +283,14 @@ export default {
       let b;
       try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
       const r = await moveInQueue(env.DB, now, auth.who, b);
+      return json(r.ok ? 200 : 422, r);
+    }
+    // The owner's Pull out on a card in a group (#C1008): the card leaves its group, tagged with where from, who and when.
+    if (url.pathname === "/api/pull-out" && request.method === "POST") {
+      if (auth.role !== "owner") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await pullOutOfGroup(env.DB, now, auth.who, b);
       return json(r.ok ? 200 : 422, r);
     }
     // The owner's click on a To-do or Ideas row (mark done / not done, edit words): the same rules as the typed tool.

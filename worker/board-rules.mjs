@@ -300,6 +300,14 @@ export function queueMoveRefusal(b, who) {
   return null;
 }
 
+// Pulling a card out of its group (#C1008): the owner's alone, shaped {id}.
+export function pullOutRefusal(b, who) {
+  if (who !== "owner") return refuse("pull-out-owner", `${who ?? "unknown"} cannot pull a card out of its group; only the owner can`);
+  if (b === null || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => k !== "id")) return refuse("pull-out-shape", "a pull-out is {id}");
+  if (typeof b.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(b.id)) return refuse("pull-out-shape", "id is a card id");
+  return null;
+}
+
 // Withdrawing the owner's approval (#C727): the owner's alone, on an open Approval that is approved. It clears the answer, so the
 // pull request needs his Approve again; Release reads only an approval that stands.
 export function withdrawRefusal(ask, role) {

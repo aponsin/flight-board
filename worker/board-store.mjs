@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
+import { reworkTriggered, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -108,6 +108,8 @@ export async function updateCard(db, now, who, fields) {
   // Security R1/R1b and Checker on da011f1: a place in one agent's queue says nothing about another's, so when someone but the owner changes owner_role
   // (with no queue_pos of its own, which the floor rule above checks against the new queue), the card enters the new queue unplaced and unmarked.
   if (who !== "owner" && !keys.includes("queue_pos") && typeof fields.owner_role === "string" && fields.owner_role !== card.owner_role) sets.push("queue_pos = NULL", "queue_set_by = NULL", "queue_set_at = NULL");
+  // #C1008: a card put in a group again is no longer "pulled out".
+  if (keys.includes("batch") && typeof fields.batch === "string" && fields.batch) sets.push("pulled_from = NULL", "pulled_by = NULL", "pulled_at = NULL");
   // When the hold began: set by the write that makes the card held, kept while it stays held, cleared (with its end) when it is lifted.
   if (keys.includes("waiting_on") || keys.includes("blocked_reason")) {
     const after = { waiting_on: "waiting_on" in fields ? fields.waiting_on : card.waiting_on, blocked_reason: "blocked_reason" in fields ? fields.blocked_reason : card.blocked_reason };
@@ -610,6 +612,17 @@ export async function moveInQueue(db, now, who, b) {
     else if (r.queue_pos !== n + 1) await db.prepare("UPDATE cards SET queue_pos = ?, updated_at = ? WHERE id = ?").bind(n + 1, now, r.id).run();
   }
   return { ok: true, id: b.id, moved: true, order: queue.map((r) => r.id) };
+}
+// #C1008: the owner pulls an urgent card out of its group. The card leaves its batch and keeps where it came from, who and when.
+// A card in no group, done or dropped has nothing to pull out of: refused, and logged like every refusal.
+export async function pullOutOfGroup(db, now, who, b) {
+  const bad = pullOutRefusal(b, who);
+  if (bad) return refuse(db, now, bad, b?.id, who);
+  const card = await db.prepare("SELECT id, batch, dropped, done_at FROM cards WHERE id = ?").bind(b.id).first();
+  if (!card || card.dropped || card.done_at) return refuse(db, now, { rule: "card-unknown", detail: String(b.id) }, b.id, who);
+  if (!card.batch) return refuse(db, now, { rule: "pull-out-no-group", detail: `${b.id} is in no group` }, b.id, who);
+  await db.prepare("UPDATE cards SET batch = NULL, pulled_from = ?, pulled_by = ?, pulled_at = ?, updated_at = ? WHERE id = ?").bind(card.batch, who, now, now, b.id).run();
+  return { ok: true, id: b.id, from: card.batch };
 }
 export async function guardedInbox(db, now, session) {
   const expected = await db.prepare("SELECT session, set_by, set_at FROM door_session WHERE id = 1").first();
