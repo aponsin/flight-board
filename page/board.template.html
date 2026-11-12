@@ -1432,8 +1432,24 @@ function threadIds(){return [...msgIndex().keys()]}
 // never lists as unanswered. Only the board's close (autoClosed; Security F1 on 1ab7673: an asker's own close hides nothing), and only
 // words up to the answer (Checker 2 F1: a follow-up after it is a real question and still waits on the team).
 // #C1009: a bare owner "Ack." after the team spoke needs no answer, whatever the thread is on: it stays answered.
+// #C1039 (the owner's #T1880, #T1887, #T1892, #T1893: red "unanswered" on threads Manager had answered, the newest word his closer): after the
+// team spoke, his word is not a new question when it asks nothing. An ALLOW list (Checker's F1: a list of words to refuse passes any request it
+// doesn't name): no "?", no files, and the whole message is closer words and harmless fillers ("ok thanks", "archived it", "I'll let you know"),
+// or exactly one of the options Manager's decision offered ("Chose B: <its label>", as optionText sends it), or a promise to report back after
+// something he does himself ("I'll try X when Y. I'll let you know"), with nothing in it that pushes back or asks. Anything else waits.
+const CLOSER_PHRASES=/will do|sounds good|got it|all good|thank you|let you know|take a look|get back to you|get back/g;
+const CLOSER_WORDS=new Set("ok okay k done thanks thx ty noted yes yep yup sure great perfect good cool nice fine ack acknowledged closed archived dismissed deleted removed hid cleared handled saw seen read it that this them both all already later tonight today soon too so much very a the lot i i'll i'd ill will you for me check look again".split(" "));
+const PROMISE_END=/\b(?:i'?ll|i will)\s+(?:let you know|get back to you|get back)[\s.!]*$/i;
+const PROMISE_START=/^(?:i'?ll|i will|i'?m|i am|i)\b/i;
+const PUSHBACK=/\b(?:but|however|still|though|please|pls|can|could|would|should|need|needs|want|doesn'?t|don'?t|isn'?t|aren'?t|won'?t|not|no|wrong|broken|why|how|what|where|who|revert|restore|reopen|undo|ship|add|fix|change|make|send|tell|show|do|now|next|then|also|first)\b/i;
+function pickOptions(t){const o=t.slice(0,-1).reverse().find(m=>m&&m.from!==OWNER&&Array.isArray(m.options)&&m.options.length);return o?o.options.filter(x=>x&&x.key&&x.label):[]}
+function ownerCloser(m,options=[]){const x=String(m&&m.text||"").trim();if(!x||/\?/.test(x)||(Array.isArray(m.assets)&&m.assets.length)||/\n/.test(x)||x.length>200)return false;
+  if(options.some(o=>x===`Chose ${o.key}: ${o.label}`))return true;
+  if(x.length<=80){const rest=x.toLowerCase().replace(/[’]/g,"'").replace(CLOSER_PHRASES," ").split(/[^a-z0-9']+/).filter(Boolean);
+    if(rest.every(w=>CLOSER_WORDS.has(w)))return true}
+  return PROMISE_END.test(x)&&PROMISE_START.test(x)&&!PUSHBACK.test(x)}
 function threadOpen(id){const t=threadOf(id),last=t[t.length-1];if(!last||last.from!==OWNER||last.resolved)return false;
-  const it=itemOf(id);if(/^\s*ack(?:ed|nowledged)?[\s.!]*$/i.test(String(last.text||""))&&!(Array.isArray(last.assets)&&last.assets.length)&&t.some(m=>m.from!==OWNER))return false;if(it&&it.coll==="waiting"&&it.doc.done&&it.doc.autoClosed===true&&num(it.doc.respondedAt)!=null&&(num(last.at)??0)<=it.doc.respondedAt)return false;return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
+  const it=itemOf(id);if(/^\s*ack(?:ed|nowledged)?[\s.!]*$/i.test(String(last.text||""))&&!(Array.isArray(last.assets)&&last.assets.length)&&t.some(m=>m.from!==OWNER))return false;if(ownerCloser(last,pickOptions(t))&&t.some(m=>m.from!==OWNER))return false;if(it&&it.coll==="waiting"&&it.doc.done&&it.doc.autoClosed===true&&num(it.doc.respondedAt)!=null&&(num(last.at)??0)<=it.doc.respondedAt)return false;return !(it&&it.coll==="waiting"&&settled(it.doc)&&ackOnly(last.text)&&!(Array.isArray(last.assets)&&last.assets.length))}
 function openThreads(){return threadIds().filter(threadOpen)}
 function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"waiting",doc:w};
   // #C831: the card AS SHOWN (asShown: a card closed by evidence, live and on main with no check date, reads done; a dropped one too), as
