@@ -1,0 +1,1 @@
+SECURE #C960 state-refused-long-card-id (Security 2026-11-11): collector/state.mjs only; cardIn now drops a card id outside the schema's CARD_ID/CARD_ID_MAX (same pair as line 137), so it only narrows what reaches the state. Mutation check: pass (id check removed). Full suite 2522/2522.
