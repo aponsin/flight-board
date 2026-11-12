@@ -1,0 +1,5 @@
+PASS Quick: push-blocked-says-how #C972 re-cut at 1f5fbef38781d6ef11fa6cdd8fef8b23c12fc358, line from feb895ad269f9a7ccfbc2a33db03d95b12099307 (Checker, 2026-11-12; covers e5c7c40, cd21c75 and 1f5fbef)
+Re-cut: range-diff against my PASS on bd237c4 (5418fc5, bd237c4): cd21c75 is identical; e5c7c40 differs only in CHANGELOG context (main's #C974 line). Base: main feb895a.
+New commit 1f5fbef (Designer F1): the steps box's background goes from var(--card), which is undefined, to var(--panel), which is defined for light and both dark blocks. A test checks every var() in the .pushhelp rule is defined on the page. Mutation: putting --card back fails "--card is defined".
+Touched tests at 1f5fbef (owner-phone-push, hostile-text): 24 pass. Mutants X1 (esc dropped), X2 (no hide on allow) and X4 (the click no longer toggles) each fail 1 test; X3 is equivalent. Builder's full suite: 2611 pass.
+Two-dot diff from main: CHANGELOG.md, page/board.template.html, tests/harness.mjs, tests/hostile-text.test.mjs, tests/owner-phone-push.test.mjs. Needs Designer's LOOK-OK (look_change).
