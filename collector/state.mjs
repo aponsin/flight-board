@@ -1055,6 +1055,15 @@ export function syncLiveConfig({ git, tip, file, notesRef, livePath }) {
   } catch (e) { return `config: not synced (${String(e?.code ?? e?.message ?? e).slice(0, 80)})`; }
 }
 
+// #C996: the run's timing as one line: "timing: caches=12 repos=830 ... fetch=420 tips=35 cards#61 tips#188 ...". Phase and count names are fixed words
+// (a letter then letters or digits, up to 12), every value a whole number: nothing a card, a session or a path could put in it. The evidence job
+// logs exactly this shape (collector/probe-evidence.mjs timingOf) and drops any line that is not.
+export function timingText(laps, sums, counts) {
+  const word = (k) => /^[a-z][A-Za-z0-9+]{0,11}$/.test(k);
+  const whole = (n) => (Number.isFinite(n) && n >= 0 ? Math.round(n) : 0);
+  return `timing: ${[...laps.filter((l) => word(l.split("=")[0])), ...Object.entries(sums).filter(([k]) => word(k)).map(([k, v]) => `${k}=${whole(v)}`), ...Object.entries(counts).filter(([k]) => word(k)).map(([k, v]) => `${k}#${whole(v)}`)].join(" ")}`;
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const at = process.argv.indexOf("--config");
   let config;
@@ -1067,15 +1076,25 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const id = boardId(config), now = Date.now(), c = config.collector, stateDir = home(config.gate.stateDir);
   if (!id) { console.error("state: the config has no board link"); process.exit(1); }
   const fetchIt = !process.argv.includes("--no-fetch");
+  // #C996: where the run's time goes. One "timing:" line at the end (to the evidence job's log): phase names and whole milliseconds, then counts,
+  // and nothing of a card, a session or a path. Each lap is the time since the one before it; fetch and tips add up over every repository.
+  let lapAt = performance.now();
+  const laps = [], lap = (name) => { const t = performance.now(); laps.push(`${name}=${Math.round(t - lapAt)}`); lapAt = t; };
+  let fetchMs = 0, tipsMs = 0;
+  const timingLine = (counts = {}) => timingText(laps, { fetch: fetchMs, tips: tipsMs }, counts);
   const run = (cwd) => (bin, timeout) => (args) => execFileSync(bin, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout, maxBuffer: 64 * 1024 * 1024 });
   const repoAt = (path, remote, main, notes) => {
     const git = run(path)("git", 30_000);
     // fresh: this run read the repository as GitHub has it now (#C591): the fetch and the tips both worked.
     let fresh = true;
+    const f0 = performance.now();
     if (fetchIt) { try { git(fetchBranches(remote)); git(["fetch", "-q", remote, "+refs/notes/*:refs/notes/flight-board/*"]); } catch { fresh = false; /* read what is here */ } }
+    fetchMs += performance.now() - f0;
     const local = Object.fromEntries(Object.entries(notes).map(([p, ref]) => [p, `refs/notes/flight-board/${ref.slice("refs/notes/".length)}`]));
     let tips = [];
+    const t0 = performance.now();
     try { tips = remoteTips(git, remote); } catch { fresh = false; /* an empty clone */ }
+    tipsMs += performance.now() - t0;
     return { git, gh: run(path)("gh", 15_000), remote, main, notes: local, tips, ids: changeIds, fresh };
   };
   // Finished CI runs, kept by commit from run to run (the newest 500).
@@ -1093,6 +1112,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const shipBackoff = { until: 0, wait: BACKOFF_MIN_MS };
   let ciCache = {};
   try { const r = readTail(ciPath, 1024 * 1024); const o = r?.whole ? JSON.parse(r.text) : null; if (plain(o)) ciCache = Object.fromEntries(Object.entries(o).filter(([k]) => /^[0-9a-f]{40}$/.test(k)).map(([k, v]) => [k, ciEntry(v)]).filter(([, v]) => v)); } catch { /* start afresh */ }
+  lap("caches");
   // A repository git can't read gives no tips: its cards stay as declared.
   const repos = {};
   if (c.repoPath) {
@@ -1116,8 +1136,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     try { return execFileSync(process.execPath, [collectorEntry(), "--config", process.argv[at + 1], "--probe-step", ...extra, ...(fetchIt ? ["--no-fetch"] : [])], { cwd: join(stateDir, id), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 150_000, maxBuffer: 16 * 1024 * 1024 }).trim(); }
     catch (e) { return `probe step failed: ${String(e.message).split("\n")[0].slice(0, 160)}`; }
   };
+  lap("repos");
   const merged = probeStep(["--merge-only"]);
   if (merged) console.log(`state: ${merged.split("\n").join(" / ")}`);
+  lap("merge");
   // The mirror's own stamp (collector/delta.mjs _at.json): when the last merged run began.
   const stampAt = () => { try { const s = JSON.parse(readFileSync(join(stateDir, id, "mirror", "_at.json"), "utf8")); return Number.isFinite(s?.at) ? s.at : 0; } catch { return 0; } };
   // The derive step, after the state is posted (it asks GitHub, which can take a while): when a merge changed the mirror or the last one is 10 minutes old.
@@ -1126,9 +1148,12 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const cards = liveCards(stateDir, id);
   const ids = new Set(cards.filter((k) => !closed(k)).map((k) => k.id));
   const nums = new Map(cards.filter((k) => Number.isInteger(k.num) && ids.has(k.id)).map((k) => [k.num, k.id]));
+  lap("cards");
   const sessions = appSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
+  lap("sessions");
   const prompts = {}, tools = {}, tokens = {};
   const agents = agentStates({ roles: config.roster, sessionIds: { ...config.rosterSessions, ...(config.gate.managerSession ? { [config.gate.managerRole]: config.gate.managerSession } : {}) }, sessions, homeDir: homedir(), now, ids, nums, prompts, tools, tokens });
+  lap("agents");
   // The roles' context, who is stuck, and the usage tile (#C592, #C593, #C595); a role past resetAt is asked to reset once
   // (context-reset.json, which the lead's wake watch prints), and asked again only after it came back under.
   const ctx = ctxReadings({ tokens, resetAt: config.resetAt, now, windows: config.contextWindows });
@@ -1140,6 +1165,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const resets = resetAsks(Object.fromEntries(Object.entries(ctx).filter(([role]) => role !== config.gate.managerRole)), resetBefore, now);
   const dir = join(stateDir, id);
   const spend = usageTile({ scriptText: pinnedScript(c.usageScript, c.usageScriptSha256), dir, roster: config.roster, now, quota: c.usageQuota, resetAt: c.usageResetAt, run: (args, input) => execFileSync("python3", args, { input, encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 60_000, maxBuffer: 16 * 1024 * 1024 }) });
+  lap("usage");
   // Roles to wake (#C583): no open session and work waiting (wake-by-need), asked once per spell; the rest reported missing.
   const wakePath = join(dir, "wake-roles.json");
   let wakeBefore = null;
@@ -1157,6 +1183,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   let asksBefore = null;
   try { const r = readTail(asksPath, 64 * 1024); if (r?.whole) asksBefore = JSON.parse(r.text); } catch { /* none */ }
   const ownerAsked = askSince(waitingKnown ? ownerAsks({ cards: cards.filter((k) => !closed(k)), waiting: waitingDocs, owner: config.owner }) : [], asksBefore, now);
+  lap("asks");
   let pageVersion = null;
   try { pageVersion = basename(readlinkSync(join(stateDir, "current"))); } catch { /* no link */ }
   let state;
@@ -1167,6 +1194,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   let cardsNow;
   try {
     cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now) });
+    lap("cardStates");
     // #C632: the last time any open card past plan showed a branch commit; kept from run to run, and the lead's watch told once
     // per outage (gate/reset.mjs evidenceAt).
     const evidencePath = join(stateDir, id, "evidence.json");
@@ -1190,6 +1218,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // #C731 B4b: the release log's CI times (the team's repository only, as the ship runs are).
     let releases = null;
     if (team && c.releaseTimes) { try { releases = releaseTimesOf(team.git, `${team.remote}/${team.main}`, c.releaseTimes); } catch { /* no reading */ } }
+    lap("ship");
     state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, usage: spend.tile, ship, releases, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
     writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
@@ -1209,10 +1238,14 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     writeAtomic(join(stateDir, id, "waiting-prompt.json"), JSON.stringify({ at: now, roles: prompts, tools }));
     writeAtomic(ciPath, JSON.stringify(Object.fromEntries(Object.entries(ciCache).slice(-500))));
     writeAtomic(idsPath, JSON.stringify(Object.fromEntries(Object.entries(changeIds).slice(-5000))));
-  } catch (e) { console.error(`state: ${String(e.message).split("\n")[0]}`); process.exit(1); }
-  if (process.argv.includes("--no-post")) { console.log(`state: written, ${Object.keys(state.cards).length} card(s), ${Object.keys(state.agents).length} agent(s), not posted`); if (!process.argv.includes("--no-derive")) deriveStep(); process.exit(0); }
+  } catch (e) { lap("failed"); console.log(timingLine()); console.error(`state: ${String(e.message).split("\n")[0]}`); process.exit(1); }
+  lap("write");
+  // What each phase read, as numbers: the open cards, the repositories' tips, the sessions' files, the kept change ids and CI runs.
+  const counts = { cards: cards.filter((k) => !closed(k)).length, all: cards.length, tips: Object.values(repos).reduce((n, r) => n + (r.tips?.length ?? 0), 0), sessions: sessions.length, ids: Object.keys(changeIds).length, ci: Object.keys(ciCache).length, waiting: waitingDocs.length };
+  if (process.argv.includes("--no-post")) { console.log(`state: written, ${Object.keys(state.cards).length} card(s), ${Object.keys(state.agents).length} agent(s), not posted`); console.log(timingLine(counts)); if (!process.argv.includes("--no-derive")) deriveStep(); process.exit(0); }
   const secrets = readSecrets(secretsDir(stateDir, id));
   console.log(secrets ? await postState(fetch, secrets, id, state) : "state: written, not posted (no secrets from the owner's install, or they are open to others)");
+  lap("post");
   // The owner's wake counter (#C580) into wake.json, for the lead's wake watch: only when it changed. A Worker that has no
   // wake route yet (an older deploy: 404) leaves no file, so the lead's Stop hook never asks for a watch it can't use.
   if (secrets) {
@@ -1220,6 +1253,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const next = got.wake ? nextWakeFile(got.wake, readWakeFile(p.wake)) : null;
     if (next) { try { writeAtomic(p.wake, next); console.log(`wake: #${got.wake.seq}`); } catch { console.log("wake: wake.json could not be written"); } }
     else if (got.line) console.log(got.line);
+    lap("wake");
   }
+  console.log(timingLine(counts));
   deriveStep();
 }

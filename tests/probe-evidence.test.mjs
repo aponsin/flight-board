@@ -44,7 +44,8 @@ test("a product site that never answers delays no evidence write: live is read a
     read: (p) => (p === "/c.json" ? cfg : JSON.stringify(state)),
     liveFetch: async () => { order.push("live read"); throw new Error("timed out"); },
     fetchImpl: async (_u, o) => { order.push(JSON.parse(o.body).key); return { ok: true, status: 200 }; } });
-  assert.deepEqual(order, ["cards.card-a", "agents", "ctx", "board", "run.evidence", "live read", "look"], "look (#C956) is posted after the product site was asked, and never waits on it");
+  // #C996: the other keys go before the cards (the heartbeat is never starved by a long run of cards), then live read and look as before.
+  assert.deepEqual(order, ["agents", "ctx", "board", "run.evidence", "cards.card-a", "live read", "look"], "look (#C956) is posted after the product site was asked, and never waits on it");
   assert.equal(r.written, 6);
 });
 
@@ -82,7 +83,9 @@ test("a refused key is logged and the rest still go; another failure stops", asy
   const seen = [], logs = [];
   const f = async (_u, o) => { const k = JSON.parse(o.body).key; seen.push(k); return k === "ctx" ? { ok: false, status: 422, json: async () => ({ refusal: "evidence-key" }) } : { ok: true, status: 200 }; };
   const r = await postWrites([{ key: "cards.a", value: {} }, { key: "ctx", value: {} }, { key: "agents", value: {} }], { base: "https://x.test", headers: {}, fetchImpl: f, log: (l) => logs.push(l) });
-  assert.deepEqual(r, { written: 2, refused: 1 });
+  assert.deepEqual([r.written, r.refused], [2, 1]);
+  assert.deepEqual(r.ok.sort(), ["agents", "cards.a"], "the keys that went (#C996: the caller records them)");
+  assert.equal(r.stopped, false);
   assert.equal(seen.length, 3);
   assert.match(logs[0], /ctx refused/);
   await assert.rejects(postWrites([{ key: "a", value: {} }], { base: "https://x.test", headers: {}, fetchImpl: async () => ({ ok: false, status: 503 }) }), /answered 503/);
@@ -98,5 +101,5 @@ test("the job builds the state without posting it, reads it, and posts the job's
   assert.ok(args.includes("--no-post") && args.includes("--no-derive"));
   assert.deepEqual(stateArgs("/c.json").slice(1, 3), ["--config", "/c.json"]);
   assert.equal(r.written, 6);
-  assert.deepEqual(posted, ["cards.card-a", "agents", "ctx", "board", "run.evidence", "look"], "the state's keys and this run's reading, then the lanes from the config (#C956)");
+  assert.deepEqual(posted, ["agents", "ctx", "board", "run.evidence", "cards.card-a", "look"], "the state's keys (the other keys before the cards, #C996) and this run's reading, then the lanes from the config (#C956)");
 });

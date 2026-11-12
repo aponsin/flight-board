@@ -15,7 +15,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Item | Status | Where it comes from on the store |
 |---|---|---|
 | Live now vX | untested (was same: no test draws it from store data) | evidence `live` (compat `meta/live`, `derived/all.live`) |
-| Live now "deploying vY" | untested (was same (data in; drawn from real readings after the deploy); no test draws it on the page from store data and asserts its text) | the probe's `ship` evidence, written by the evidence job since B3a; the compat probe carries it while the probe keeps rewriting it (under 3 minutes) |
+| Live now "deploying vY" | untested (was same (data in; drawn from real readings after the deploy); no test draws it on the page from store data and asserts its text) | the probe's `ship` evidence, written by the evidence job since B3a; the compat probe carries it while the probe keeps rewriting it (under 5 minutes; 3 before #C996's stopgap) |
 | "⚠ Manager missed" after Live now | hidden on the store: a typed-field gap (row 37, "Mostly deleted with the typed fields") | |
 | Clock, "Studio checked N s" | untested (was same: the only test draws a hand-built probe payload, not store data) | probe reading via the shim |
 | "Board data behind, reloading" | gone: "Delete: row 2's 'fetched N s ago' covers it once there is one store" (row 3) | |
@@ -23,7 +23,7 @@ How it is checked: `tests/store-page.test.mjs` (the page as served), `tests/host
 | Safe to restart, "Don't restart: shipping" | untested (was same: data in; the only test draws a hand-built probe payload, not store data) | probe `agents`, `ship` (evidence keys `agents`, `ship`) |
 | Board vX · page abc | untested (was same: no test asserts the stamp in the store page) | the build's stamp |
 | "Manager stuck on …" | not yet: B5 (refusals in the old shape, with the "You:" action); the page has no code for it on the store yet. **A difference for the owner's list.** | `refusals` |
-| "X waiting on you since" | untested (was same (data in; drawn from real readings after the deploy); no test draws it on the page from store data and asserts its text) | probe `stuck` (evidence key `stuck`, written by the evidence job since B3a, fresh for 3 minutes) |
+| "X waiting on you since" | untested (was same (data in; drawn from real readings after the deploy); no test draws it on the page from store data and asserts its text) | probe `stuck` (evidence key `stuck`, written by the evidence job since B3a, fresh for 5 minutes; 3 before #C996's stopgap) |
 | "You wrote, Manager silent N min" | same (#C923): not drawn on the store (it told the owner to send a command naming the frozen artifact's link, and there are no board pings to arm). In its place, "Manager has not taken your answer for N min" (default 30, last day only) for an answer whose `answer_taken_at` is empty and whose ask is not closed; a taken answer never fires it, closed or not; its fix points to the header's "Manager not listening" line, never a link. The artifact page keeps its own line | compat `waiting[].response.taken` (the ask's `answer_taken_at`) |
 | The daily full test run line | untested (#C873; `tests/daily-e2e-board.test.mjs` draws it from store data through a helper the same-row check does not recognise as a draw): nothing while ok, stale or absent; a red line for red and missed with the run's link, a quieter one for unknown | probe `e2e` (evidence key `e2e`) |
 | Comment threads full | gone: "Delete with the artifact comments" (row 11) | |
