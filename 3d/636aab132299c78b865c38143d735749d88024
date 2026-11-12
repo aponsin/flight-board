@@ -1,0 +1,1 @@
+PASS Checker 2 #C1023 help-banner-clears-on-take: touched tests 11/11, the at-same-moment mutant fails a test, merges clean onto main 5f2f5a1; taken comes from compat-view since #C923 (commit 3d636aab of stack tip 3d636aab)
