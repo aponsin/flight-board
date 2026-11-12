@@ -1,0 +1,2 @@
+PASS Full: ping-not-sent-after-answer #C1009 v3 commit 2 of 2, stack tip db2de94 (tests only, Checker F1 to F3) (Checker, 2026-11-12)
+npm test at the tip: 2672 pass, 0 fail. My three survivors now fail: syncStalls ping skip dropped (2 fail), ownerWaiting ping count dropped (1), the Ack rule's team-word half dropped (1).
