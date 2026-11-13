@@ -1,0 +1,1 @@
+PASS Quick #C1052 #C1051 (G2, Checker 2): open card padding clears the red edge; a live member counts as landed, only Land turns done; touched tests 15/15; mutation check: pass (4 mutations, each caught). Look is Designer's (commit 862a5d4a of stack tip 3432c289)
