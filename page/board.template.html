@@ -3066,7 +3066,7 @@ function scheduleVerdict(t,now=Date.now()){
   if(now-t.at>SCHED_QUIET)return {c:"mute",txt:"no recent run"};
   if(!t.chosen)return {c:"warn",txt:`unset · ran ${t.lastRun||"an unknown model"}`};
   if(!t.lastRun)return {c:"warn",txt:`model not read · chosen ${t.chosen}`};
-  if(t.chosen===t.lastRun)return {c:"ok",txt:t.lastRun};
+  if(t.chosen===t.lastRun)return {c:"ok",txt:`✓ ${t.lastRun}`};
   return {c:"bad",txt:`ran ${t.lastRun}, chosen ${t.chosen}`}}
 function scheduleModelsHtml(now=Date.now()){
   const s=probe&&probe.schedule;if(!s||!Array.isArray(s.tasks)||!s.tasks.length)return "";

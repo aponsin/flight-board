@@ -130,7 +130,7 @@ const task = (chosen, lastRun, at) => ({ id: "w", chosen, lastRun, at });
 
 test("the verdict: same is green; another model is red; no chosen model is amber 'unset', never red; never run or not for a week is grey, never red", () => {
   const b = page(null), v = (t, now) => JSON.parse(JSON.stringify(b.scheduleVerdict(t, now))); // the page's own objects come from another context
-  assert.deepEqual(v(task("claude-haiku-5-5", "claude-haiku-5-5", T - H), T), { c: "ok", txt: "claude-haiku-5-5" });
+  assert.deepEqual(v(task("claude-haiku-5-5", "claude-haiku-5-5", T - H), T), { c: "ok", txt: "✓ claude-haiku-5-5" }, "the green chip says it in words too, a check mark and the model (Designer's finding: not colour alone)");
   assert.deepEqual(v(task("claude-haiku-5-5", "claude-opus-5-5", T - H), T), { c: "bad", txt: "ran claude-opus-5-5, chosen claude-haiku-5-5" });
   assert.deepEqual(v(task(null, "claude-opus-5-5", T - H), T), { c: "warn", txt: "unset · ran claude-opus-5-5" });
   assert.equal(v(task(null, null, T - H), T).c, "warn");
@@ -145,6 +145,7 @@ test("the page draws one chip per task, says when the reading is over 36 h old, 
   const html = page({ at: T - 10 * H, tasks: [task("claude-haiku-5-5", "claude-opus-5-5", T - H), { ...task(null, "claude-opus-5-5", T - H), id: "u" }] }).scheduleModelsHtml(T);
   assert.match(html, /data-task="w"[\s\S]*sm-chip bad">ran claude-opus-5-5, chosen claude-haiku-5-5/);
   assert.match(html, /data-task="u"[\s\S]*sm-chip warn">unset/);
+  assert.match(page({ at: T - H, tasks: [task("m", "m", T - H)] }).scheduleModelsHtml(T), /sm-chip ok">✓ m</, "a matching task reads ✓ and the model");
   assert.doesNotMatch(html, /model reading old/);
   assert.match(page({ at: T - 37 * H, tasks: [task("m", "m", T)] }).scheduleModelsHtml(T), /model reading old/);
   assert.equal(page(null).scheduleModelsHtml(T), "");
