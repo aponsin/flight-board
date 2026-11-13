@@ -63,6 +63,7 @@ test("Security's F1 on 2f30cfc3: a new card is held to the same rule; card_creat
   assert.ok((await make("Manager", "n4", "Security: review")).ok, "the lead");
   assert.ok((await make("Security", "n5", "Security: full review")).ok, "the reviewer it names");
   assert.ok((await make("Boardsmith", "n6", "Security")).ok, "a bare role is an ordinary hold");
+  assert.ok((await make("owner", "n7", "Security: wait for the owner's ok")).ok, "other words are anyone's on a new card too");
 });
 
 test("must still allow: the review hold clears on its reviewer's sign-off", async () => {
