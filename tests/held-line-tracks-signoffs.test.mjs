@@ -26,7 +26,8 @@ test("the rule: a sign-off new in this reading matches a waiting_on that starts 
   assert.equal(signoffClears(rd("checker"), rd("security", ["checker"]), "Checker: Full review"), "Checker");
   assert.equal(signoffClears(rd("checker"), rd("security", ["checker"]), "checker 2: full review"), "Checker", "any case; a numbered second session too");
   assert.equal(signoffClears(rd("checker"), rd("security", ["checker"]), "checker 2 has it"), null, "#C1048: words after the role are not the review-hold form");
-  assert.equal(signoffClears(null, rd("security", ["checker"]), "Checker"), "Checker", "a first reading counts its sign-offs as new");
+  assert.equal(signoffClears(null, rd("security", ["checker"]), "Checker: review"), "Checker", "a first reading counts its sign-offs as new");
+  assert.equal(signoffClears(null, rd("security", ["checker"]), "Checker"), null, "#C1048: a bare role is an ordinary hold");
   assert.equal(signoffClears(rd("security", ["checker"]), rd("security", ["checker"]), "Checker: Full review"), null, "the same sign-off again is no transition");
   assert.equal(signoffClears(rd("checker"), rd("security", ["checker"]), "Security: Full review"), null, "another reviewer still due");
   assert.equal(signoffClears(rd("checker"), rd("security", ["checker"]), "Checkers' lunch"), null, "a longer word is not the role");

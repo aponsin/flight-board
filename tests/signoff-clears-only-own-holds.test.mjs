@@ -20,10 +20,10 @@ async function signedWith(waiting_on) {
   return { r, card: await cardOf(db, "c1048") };
 }
 
-test("the review-hold form: a role, a numbered second session, then nothing or ': [quick |full ]review', any case", () => {
-  for (const w of ["Security", "security: review", "Security: Full review", "SECURITY: quick review", "Security 2: full review", "  Security:   full review "]) assert.equal(reviewHoldRole(w), "Security", w);
+test("the review-hold form: a role, a numbered second session, then ': [quick |full ]review', any case; a bare role is an ordinary hold", () => {
+  for (const w of ["security: review", "Security: Full review", "SECURITY: quick review", "Security 2: full review", "  Security:   full review "]) assert.equal(reviewHoldRole(w), "Security", w);
   assert.equal(reviewHoldRole("Linguist: review"), "Linguist");
-  for (const w of ["Security: wait for the owner's ok", "Security: full review, then the owner", "Securitys", "Release: land", "Manager: review", "", null, 7]) assert.equal(reviewHoldRole(w), null, String(w));
+  for (const w of ["Security", "Checker 2", "Security: wait for the owner's ok", "Security: full review, then the owner", "Securitys", "Release: land", "Manager: review", "", null, 7]) assert.equal(reviewHoldRole(w), null, String(w));
 });
 
 test("Security's case: a hold that only starts with the role stays through that role's sign-off", async () => {
@@ -40,14 +40,15 @@ test("the lead's condition: only the lead or that same reviewer may write a revi
   assert.ok((await write("Manager", "Checker: Full review", 1)).ok, "the lead");
   assert.ok((await write("Security", "Security: review", 2)).ok, "the reviewer it names");
   assert.ok((await write("Checker", "checker 2: full review", 3)).ok, "a reviewer's second session writes as its role");
-  for (const [who, w] of [["Boardsmith", "Checker: Full review"], ["owner", "Security: Full review"], ["Checker", "Security: review"], ["Release", "Security"]]) {
+  for (const [who, w] of [["Boardsmith", "Checker: Full review"], ["owner", "Security: Full review"], ["Checker", "Security: review"], ["Release", "Security: quick review"]]) {
     const r = await write(who, w, 4);
     assert.equal(r.ok, false, `${who} writing "${w}"`);
     assert.equal(r.refused.rule, "review-hold-writer");
   }
   assert.equal((await cardOf(db, "c1048")).waiting_on, "checker 2: full review", "a refused write changes nothing");
   assert.ok((await write("owner", "Security: wait for the owner's ok", 5)).ok, "other words are anyone's");
-  assert.ok((await write("Boardsmith", null, 6)).ok, "lifting a hold is not writing one");
+  assert.ok((await write("Boardsmith", "Checker", 6)).ok, "a bare role is an ordinary hold, a builder's to write");
+  assert.ok((await write("Boardsmith", null, 7)).ok, "lifting a hold is not writing one");
 });
 
 test("must still allow: the review hold clears on its reviewer's sign-off", async () => {

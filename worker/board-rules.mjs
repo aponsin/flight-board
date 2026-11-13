@@ -558,9 +558,10 @@ export function reworkTriggered(prev, next) {
 const SIGN_ROLE = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security" };
 const signedOf = (v) => new Set((Array.isArray(v?.signed) ? v.signed : []).filter((s) => typeof s === "string" && Object.hasOwn(SIGN_ROLE, s)));
 // #C1048 (Security's LOW on G4 v3, the lead's pick A): only a hold in the fixed review-hold form is a review hold, so only it ends when its
-// reviewer signs: the role (a numbered second session too), then nothing, ": review", ": quick review" or ": full review", any case, nothing
-// after. Any other hold ("Security: wait for the owner's ok") stays until the lead or the owner lifts it. Returns the role it names, or null.
-const REVIEW_HOLD = new RegExp(`^(${Object.values(SIGN_ROLE).join("|")})(?: \\d)?(?:: (?:(?:quick|full) )?review)?$`, "i");
+// reviewer signs: the role (a numbered second session too), then ": review", ": quick review" or ": full review", any case, nothing after.
+// A bare role ("Checker", which builders write as an ordinary hold) is not one. Any other hold ("Security: wait for the owner's ok") stays
+// until it is lifted or its end passes. Returns the role it names, or null.
+const REVIEW_HOLD = new RegExp(`^(${Object.values(SIGN_ROLE).join("|")})(?: \\d)?: (?:(?:quick|full) )?review$`, "i");
 export function reviewHoldRole(waitingOn) {
   const m = typeof waitingOn === "string" ? REVIEW_HOLD.exec(waitingOn.trim().replace(/\s+/g, " ")) : null;
   return m ? Object.values(SIGN_ROLE).find((r) => r.toLowerCase() === m[1].toLowerCase()) : null;
