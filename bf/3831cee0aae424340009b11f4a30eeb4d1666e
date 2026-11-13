@@ -1,0 +1,1 @@
+PASS Full G3 v4 #C1005 #C1007 #C996 (Checker 2): F1 and F2 on b39df027 fixed (watch rows kept until taken; night prompt row kept to 7 am), probes rerun; #C1007 daily Ops turn and #C996 trailer index, git memo, batched CI read right; full suite 2982/2982; mutation check: pass (10 mutations, each caught); range-diff vs v3 all '=' (commit bf3831ce of stack tip 212b562f)
