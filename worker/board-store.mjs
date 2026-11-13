@@ -49,7 +49,7 @@ export async function createCard(db, now, who, fields) {
   const bad = cardWriteRefusal(fields, null) ?? reviewHoldWriterRefusal(fields, who);
   if (bad) return refuse(db, now, bad, fields?.id, who);
   if ("done" in fields || "done_evidence" in fields) return refuse(db, now, { rule: "card-done", detail: "a new card is not done: create it, then close it with card_update" }, fields.id, who);
-  const noEnd = holdEndRefusal(fields, null) ?? (await holdEndUnknown(db, fields));
+  const noEnd = holdEndRefusal(fields, null) ?? (await holdEndUnknown(db, fields)) ?? (await dependsOnUnknown(db, fields));
   if (noEnd) return refuse(db, now, noEnd, fields?.id, who);
   // #C949: a new id is one the probe can read (collector/state-schema.mjs CARD_ID): a card it skips gets no evidence row, so a landed card is never seen.
   if (typeof fields.id !== "string" || !PROBE_CARD_ID.test(fields.id) || fields.id.length > PROBE_CARD_ID_MAX) return refuse(db, now, { rule: "card-id", detail: `lowercase letters and digits in up to 5 words joined by hyphens, each word up to 16 characters, up to ${PROBE_CARD_ID_MAX} characters in all, so the probe can read the card` }, fields.id, who);
@@ -72,6 +72,36 @@ const holdEndUnknown = async (db, fields) => {
   if (ref === undefined || ref === null) return null;
   const ok = await db.prepare("SELECT 1 AS x FROM asks WHERE id = ? AND closed_at IS NULL UNION ALL SELECT 1 AS x FROM cards WHERE id = ? AND dropped = 0 AND done_at IS NULL").bind(ref, ref).first();
   return ok ? null : { rule: "hold-end-unknown", detail: `${ref} is no open ask and no live card` };
+};
+
+// #C1003: depends_on names cards that exist (a done or dropped card is still a known id; a list that is empty or null clears it). An unknown id
+// is refused with the closest card id, so a typo (tests-clean-temp-folders for tests-clean-their-tmp) never becomes a dependency that cannot hold.
+const editDistance = (a, b) => {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+};
+// The words an id shares with another count most: "tests-clean-temp-folders" and "tests-clean-their-tmp" share two of three.
+const closeness = (a, b) => {
+  const wa = new Set(a.split("-")), wb = b.split("-");
+  return wb.filter((w) => wa.has(w)).length * 100 - editDistance(a, b);
+};
+const dependsOnUnknown = async (db, fields) => {
+  const list = fields.depends_on;
+  if (!Array.isArray(list) || !list.length) return null;
+  const ids = ((await db.prepare("SELECT id FROM cards").all()).results ?? []).map((r) => r.id);
+  const known = new Set(ids);
+  const missing = list.filter((d) => typeof d === "string" && !known.has(d));
+  if (!missing.length) return null;
+  const hint = (d) => {
+    const best = ids.filter((x) => x !== fields.id).sort((x, y) => closeness(d, y) - closeness(d, x))[0];
+    return best ? `${d} is no card on the board (closest: ${best})` : `${d} is no card on the board`;
+  };
+  return { rule: "depends-on-unknown", detail: missing.map(hint).join("; ") };
 };
 
 const CHECK_AT_WRITERS = ["Manager", "owner"];
@@ -105,7 +135,7 @@ export async function updateCard(db, now, who, fields) {
   // only the lead or that reviewer may write one; anyone else (an agent, the owner's page) writes its hold in other words, which never auto-clear.
   const holdBad = reviewHoldWriterRefusal(fields, who);
   if (holdBad) return refuse(db, now, holdBad, id, who);
-  const noEnd = holdEndRefusal(fields, card) ?? (await holdEndUnknown(db, fields));
+  const noEnd = holdEndRefusal(fields, card) ?? (await holdEndUnknown(db, fields)) ?? (await dependsOnUnknown(db, fields));
   if (noEnd) return refuse(db, now, noEnd, id, who);
   const keys = COLUMNS.filter((c) => c in fields);
   if (!keys.length && fields.done !== true) return { ok: true, id, changed: 0 };
