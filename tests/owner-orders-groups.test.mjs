@@ -68,6 +68,20 @@ test("only the owner orders the groups (Manager's tool is the fallback); every o
   assert.ok((await readView(db, T + 9000)).refusals.some((x) => x.rule === "group-move-owner" && x.who === "Builder"), "logged");
 });
 
+// Checker 2's F1 on e1af62f8: without the dir check, moveGroup read any dir that is not "up" as down.
+test("a move with a bad or missing dir is refused and moves nothing, whoever sends it", async () => {
+  const db = await cards(...GROUPS);
+  for (const who of ["owner", "Manager"]) {
+    for (const b of [{ batch: "g2-b", dir: "sideways" }, { batch: "g2-b" }, { batch: "g2-b", dir: "" }, { batch: "g2-b", dir: "UP" }, { batch: "g2-b", dir: null }, { batch: "g2-b", dir: 1 }]) {
+      const r = await moveGroup(db, T + 500, who, b);
+      assert.equal(r.ok, false, `${who} ${JSON.stringify(b)}`);
+      assert.equal(r.refused?.rule ?? r.rule, "group-move-shape", `${who} ${JSON.stringify(b)}`);
+    }
+  }
+  assert.deepEqual(await openGroups(db), ["g1-a", "g2-b", "g3-c", "g10-d"], "nothing moved");
+  assert.deepEqual((await readView(db, T + 9000)).groupOrder, [], "and nothing was written");
+});
+
 test("the rule: a placed group by its place, a new one after the placed ones, a card in no group after all groups, ties by id with digits as numbers", () => {
   const order = [{ batch: "g5-x", pos: 1 }, { batch: "g1-y", pos: 2 }];
   assert.equal(groupRank("g5-x", order), 1);
@@ -324,6 +338,21 @@ test("an answer with no order (or a store that refuses) leaves the board as it w
   for (const f of no.listeners.click) await f({ target: sad });
   assert.equal(sad.textContent, "Not saved", "a store that refuses (the answer is not ok) says so on the button");
   assert.equal(no.els.board.innerHTML, kept, "and the board is left as it was");
+});
+
+// Checker 2's F2 on e1af62f8: the group id is escaped in the button's data attribute and in its label, so an id with a quote or "<" cannot open a tag.
+test("a group id with a quote or an angle bracket is escaped in the buttons' attribute and label", () => {
+  const b = board([], null);
+  const odd = 'g1-"x"><img src=x onerror=1>';
+  const h = b.groupMoveButtons(odd, { n: 1, of: 2 });
+  assert.doesNotMatch(h, /<img/, "no tag from the id");
+  assert.doesNotMatch(h, /data-gmove="g1-"/, "the quote does not close the attribute");
+  assert.match(h, /data-gmove="g1-&quot;x&quot;&gt;&lt;img src=x onerror=1&gt;"/, "the attribute holds the escaped id");
+  assert.match(h, /aria-label="Move group g1-&quot;x&quot;&gt;&lt;img src=x onerror=1&gt; up/, "and so does the label");
+  const raw = [card("a", 1, { batch: odd }), card("b", 2, { batch: "g2-b" })];
+  const page = board(raw, null);
+  page.renderBoard();
+  assert.doesNotMatch(page.els.board.innerHTML, /<img/, "the whole row, drawn from the card, holds no tag from the id");
 });
 
 test("a tap on a group button posts {batch, dir} to the store's route", async () => {
