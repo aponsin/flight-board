@@ -261,7 +261,7 @@ test("the probe: each roster role's newest open session, read to ids and enums; 
   session(3, "Ops: Alice's leads", [entry("user", leak, T)]);
   session(4, "Builder", [entry("assistant", [{ type: "text", text: leak }], T - 5e3, { stop_reason: "end_turn" })]);
   const sessions = appSessions(root);
-  assert.ok(sessions.every((s) => Object.keys(s).sort().join() === "at,cwd,id,title,transcript"), "nothing else of a session file is kept");
+  assert.ok(sessions.every((s) => Object.keys(s).sort().join() === "at,cwd,from,id,title,transcript"), "nothing else of a session file is kept (from is a session id or null, #C970)");
   const agents = agentStates({ roles: ["Checker", "Builder", "Release"], sessions, homeDir, now: T, ids, nums });
   assert.deepEqual(agents, {
     Checker: { state: "working", lastActivityAt: T - 1, tool: "Bash", card: "board-state-probe", since: T - 60e3, by: "title" },

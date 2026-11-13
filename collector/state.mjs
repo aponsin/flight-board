@@ -96,7 +96,9 @@ export function appSessions(root, uid = process.getuid()) {
       let s;
       try { s = JSON.parse(r.text); } catch { continue; }
       if (!plain(s) || s.isArchived === true || typeof s.title !== "string" || !UUID.test(String(s.cliSessionId ?? "")) || typeof s.cwd !== "string" || !s.cwd.startsWith("/")) continue;
-      out.push({ id: f.slice(0, -5), title: s.title, transcript: s.cliSessionId, cwd: s.cwd, at: Number.isFinite(s.lastActivityAt) ? Math.round(s.lastActivityAt) : null });
+      // #C970: from is the session that started this one (spawnedFrom.sessionId), when it is a session id; nothing else of spawnedFrom is kept.
+      const from = typeof s.spawnedFrom?.sessionId === "string" && /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s.spawnedFrom.sessionId) ? s.spawnedFrom.sessionId : null;
+      out.push({ id: f.slice(0, -5), title: s.title, transcript: s.cliSessionId, cwd: s.cwd, at: Number.isFinite(s.lastActivityAt) ? Math.round(s.lastActivityAt) : null, from });
     }
   }
   return out;
@@ -195,19 +197,34 @@ export function activity(entries, { mtimeMs, now, ids, nums }) {
 // role whose id is set but is not among the open sessions has no agent. prompts, when given, gets each
 // role stopped on a prompt and since when (promptSince), and tools, when given, that prompt's tool class (promptTool):
 // the local waiting-prompt.json, not the state.
-export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = process.getuid(), prompts = null, tools = null, tokens = null, sessionIds = {} }) {
+// #C970 (the owner, 11-12: the tiles did not show Checker 2): besides the roster, every open session started by spawnedBy (the lead's session id: sessions
+// the lead started, not archived) is an agent too, under its title with anything but letters and digits dropped ("Checker 2" is "Checker2", a
+// role name the state takes) and marked by: "spawn", so a new role shows up by itself. A roster role keeps its own rule above; two spawned sessions with the
+// same name give the newest.
+export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = process.getuid(), prompts = null, tools = null, tokens = null, sessionIds = {}, spawnedBy = null }) {
   const out = {};
-  for (const role of roles.filter((r) => ROLE.test(r))) {
-    const byId = Object.hasOwn(sessionIds, role) && sessionIds[role];
-    const s = byId ? sessions.find((x) => x.id === byId) : sessions.filter((x) => x.title === role).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))[0];
-    if (!s) continue;
+  const read = (role, s, by) => {
     const p = transcriptPath(homeDir, s.cwd, s.transcript);
     const tail = p ? readTail(p, TAIL_BYTES, uid) : null;
     const a = tail ? activity(lastEntries(tail), { mtimeMs: tail.mtimeMs, now, ids, nums }) : { state: "unknown", tool: null, card: null, since: null };
-    out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, since: a.since, ...(byId ? {} : { by: "title" }) };
+    out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, since: a.since, ...(by ? { by } : {}) };
     if (prompts && a.prompt != null) prompts[role] = a.prompt;
     if (tools && a.promptTool != null) tools[role] = a.promptTool;
     if (tokens && a.tokens != null) tokens[role] = a.tokens;
+  };
+  const named = roles.filter((r) => ROLE.test(r));
+  for (const role of named) {
+    const byId = Object.hasOwn(sessionIds, role) && sessionIds[role];
+    const s = byId ? sessions.find((x) => x.id === byId) : sessions.filter((x) => x.title === role).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))[0];
+    if (!s) continue;
+    read(role, s, byId ? null : "title");
+  }
+  if (typeof spawnedBy === "string" && spawnedBy) {
+    for (const s of sessions.filter((x) => x.from === spawnedBy).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))) {
+      const role = String(s.title).replace(/[^A-Za-z0-9]/g, "");
+      if (!ROLE.test(role) || named.includes(role) || Object.hasOwn(out, role)) continue;
+      read(role, s, "spawn");
+    }
   }
   return out;
 }
@@ -1352,7 +1369,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const sessions = appSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
   lap("sessions");
   const prompts = {}, tools = {}, tokens = {};
-  const agents = agentStates({ roles: config.roster, sessionIds: { ...config.rosterSessions, ...(config.gate.managerSession ? { [config.gate.managerRole]: config.gate.managerSession } : {}) }, sessions, homeDir: homedir(), now, ids, nums, prompts, tools, tokens });
+  const agents = agentStates({ roles: config.roster, sessionIds: { ...config.rosterSessions, ...(config.gate.managerSession ? { [config.gate.managerRole]: config.gate.managerSession } : {}) }, sessions, homeDir: homedir(), now, ids, nums, prompts, tools, tokens, spawnedBy: config.gate.managerSession || null });
   lap("agents");
   // The roles' context, who is stuck, and the usage tile (#C592, #C593, #C595); a role past resetAt is asked to reset once
   // (context-reset.json, which the lead's wake watch prints), and asked again only after it came back under.
