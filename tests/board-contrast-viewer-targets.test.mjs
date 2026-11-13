@@ -38,3 +38,23 @@ test("the viewer's buttons are 44 px tall on a phone, and the bar wraps so Prev,
   // The five buttons sit in one .lb-bar, so the rule above reaches every one of them.
   assert.equal([...page.matchAll(/<div class="lb-bar">/g)].length, 1);
 });
+
+// Designer's F1 and F2 on 8542956f: the small lines under a step and a wait were dimmed by opacity (3.37 to 4.38:1 in light mode), and the solid text of a
+// done step, a queued step and a wait was 4.33:1 in light mode. The dimming is gone and the ink tokens are used; each text/ground pair is checked in all three rules.
+const rule = (sel) => { const m = page.match(new RegExp(`^${sel.replace(/[.]/g, "\\.")}\\{([^}\\n]*)\\}`, "m")); assert.ok(m, `rule ${sel}`); return m[1]; };
+const tok = (body, name) => { const m = body.match(new RegExp(`(?:^|;)${name}:var\\(--([a-z-]+)\\)`)); assert.ok(m, `${name} in ${body}`); return m[1]; };
+test("no opacity dims the small lines under a step or a wait", () => {
+  for (const sel of [".wait small", ".step small.since"]) assert.doesNotMatch(rule(sel), /opacity/, sel);
+  assert.doesNotMatch(page.match(/^\.step small\{[^}]*\}/m)[0], /opacity/, ".step small");
+});
+const PAIRS = [[".step.done", "color", "background"], [".step.now.queued", "color", "background"], [".wait", "color", "background"]];
+for (const [name, m] of rules) {
+  test(`${name}: a done step, a queued step and a wait have text at 4.5:1 or more on their ground`, () => {
+    const t = tokens(m[1]);
+    for (const [sel, fg, bg] of PAIRS) {
+      const body = rule(sel), a = tok(body, fg), b = tok(body, bg);
+      const r = ratio(t[a], t[b]);
+      assert.ok(r >= 4.5, `${sel}: --${a} ${t[a]} on --${b} ${t[b]} is ${r.toFixed(2)}:1 in ${name}`);
+    }
+  });
+}
