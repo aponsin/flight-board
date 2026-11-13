@@ -136,6 +136,9 @@ test("ask_close over MCP: another agent cannot close Manager's ask, the refusal 
   const v = await (await call("manager", "/api/view", { headers: { "x-as": "manager" } })).json();
   assert.equal(v.asks[0].closed_at, null);
   assert.deepEqual(v.refusals.map((r) => [r.rule, r.who]), [["close-not-yours", "Builder"]]);
+  // #C1046: the asker closes only after the owner's own word on the thread.
+  assert.equal((await tool("manager", "ask_close", { id })).structuredContent.refused.rule, "close-not-after-owner");
+  assert.equal((await tool("owner", "post", { thread_id: id, body: "Done." })).structuredContent.ok, true);
   assert.equal((await tool("manager", "ask_close", { id })).structuredContent.ok, true);
   assert.equal((await tool("probe", "ask_close", { id })), undefined, "the probe has no close tool");
 });
