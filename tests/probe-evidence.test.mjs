@@ -27,12 +27,13 @@ test("live: the version from the liveUrl's /version.json, with a v; anything els
 
 test("the evidence job posts live last; the usage job never reads it", async () => {
   const posted = [];
-  const run = (job) => evidenceJob({ job, base: "https://x.test", headers: {}, configPath: "/c.json", stateFile: "/s.json", build: async () => {},
+  const run = (job) => evidenceJob({ job, base: "https://x.test", headers: {}, configPath: "/c.json", stateFile: "/s.json", build: async () => {}, sessionsRead: () => [],
     read: (p) => (p === "/c.json" ? cfg : JSON.stringify(state)), liveFetch: ok({ version: "1.209.0" }),
     fetchImpl: async (_u, o) => { posted.push(JSON.parse(o.body).key); return { ok: true, status: 200 }; } });
-  assert.equal((await run("evidence")).written, 7, "the state's four keys, this run's own reading (#C962), look (#C956), then live");
+  assert.equal((await run("evidence")).written, 8, "the state's four keys, this run's own reading (#C962), look (#C956), the scheduled tasks' models (#C1006), then live");
   assert.equal(posted.at(-1), "live");
-  assert.equal(posted.at(-2), "look");
+  assert.equal(posted.at(-2), "schedule.models");
+  assert.equal(posted.at(-3), "look");
   posted.length = 0;
   await run("usage");
   assert.deepEqual(posted, ["usage"]);
@@ -40,13 +41,13 @@ test("the evidence job posts live last; the usage job never reads it", async () 
 
 test("a product site that never answers delays no evidence write: live is read after them", async () => {
   const order = [];
-  const r = await evidenceJob({ job: "evidence", base: "https://x.test", headers: {}, configPath: "/c.json", stateFile: "/s.json", build: async () => {},
+  const r = await evidenceJob({ job: "evidence", base: "https://x.test", headers: {}, configPath: "/c.json", stateFile: "/s.json", build: async () => {}, sessionsRead: () => [],
     read: (p) => (p === "/c.json" ? cfg : JSON.stringify(state)),
     liveFetch: async () => { order.push("live read"); throw new Error("timed out"); },
     fetchImpl: async (_u, o) => { order.push(JSON.parse(o.body).key); return { ok: true, status: 200 }; } });
-  // #C996: the other keys go before the cards (the heartbeat is never starved by a long run of cards), then live read and look as before.
-  assert.deepEqual(order, ["agents", "ctx", "board", "run.evidence", "cards.card-a", "live read", "look"], "look (#C956) is posted after the product site was asked, and never waits on it");
-  assert.equal(r.written, 6);
+  // #C996: the other keys go before the cards (the heartbeat is never starved by a long run of cards), then live read, look and the scheduled tasks' models (#C1006) as before.
+  assert.deepEqual(order, ["agents", "ctx", "board", "run.evidence", "cards.card-a", "live read", "look", "schedule.models"], "look (#C956) and the models (#C1006) are posted after the product site was asked, and never wait on it");
+  assert.equal(r.written, 7);
 });
 
 const state = {
@@ -95,11 +96,11 @@ test("the job builds the state without posting it, reads it, and posts the job's
   let args, posted = [];
   const r = await evidenceJob({
     job: "evidence", base: "https://x.test", headers: {}, configPath: "/c.json", stateFile: "/s.json",
-    build: async (a) => { args = a; }, read: () => JSON.stringify(state),
+    build: async (a) => { args = a; }, read: () => JSON.stringify(state), sessionsRead: () => [],
     fetchImpl: async (_u, o) => { posted.push(JSON.parse(o.body).key); return { ok: true, status: 200 }; },
   });
   assert.ok(args.includes("--no-post") && args.includes("--no-derive"));
   assert.deepEqual(stateArgs("/c.json").slice(1, 3), ["--config", "/c.json"]);
-  assert.equal(r.written, 6);
-  assert.deepEqual(posted, ["agents", "ctx", "board", "run.evidence", "cards.card-a", "look"], "the state's keys (the other keys before the cards, #C996) and this run's reading, then the lanes from the config (#C956)");
+  assert.equal(r.written, 7);
+  assert.deepEqual(posted, ["agents", "ctx", "board", "run.evidence", "cards.card-a", "look", "schedule.models"], "the state's keys (the other keys before the cards, #C996) and this run's reading, then the lanes from the config (#C956) and the scheduled tasks' models (#C1006)");
 });

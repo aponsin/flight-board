@@ -566,6 +566,14 @@ export const runShape = (v) => v !== null && typeof v === "object" && !Array.isA
 // The page shows "Deploy failed: <line>" while the reading is a failure and under 5 minutes old; the next success replaces it.
 export const deployLastShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => ["ok", "at", "line"].includes(k))
   && typeof v.ok === "boolean" && Number.isFinite(v.at) && (v.line === undefined || (typeof v.line === "string" && v.line.length <= 160 && /^[\x20-\x7e]*$/.test(v.line)));
+// #C1006: each scheduled task's chosen model against the model its last run used, as the probe reads them (collector/schedule-models.mjs):
+// { at, tasks: [{ id, chosen, lastRun, at }] }, 30 tasks at most; ids and model names are plain words, chosen and lastRun null when not known.
+const SCHED_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/, SCHED_MODEL = /^[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,63}$/;
+const schedWord = (v, re) => v === null || (typeof v === "string" && re.test(v));
+export const scheduleModelsShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => k === "at" || k === "tasks")
+  && Number.isFinite(v.at) && Array.isArray(v.tasks) && v.tasks.length <= 30
+  && v.tasks.every((t) => t !== null && typeof t === "object" && !Array.isArray(t) && Object.keys(t).every((k) => ["id", "chosen", "lastRun", "at"].includes(k))
+    && typeof t.id === "string" && SCHED_ID.test(t.id) && schedWord(t.chosen, SCHED_MODEL) && schedWord(t.lastRun, SCHED_MODEL) && (t.at === null || Number.isFinite(t.at)));
 const e2eShape =(v) => v !== null && typeof v === "object" && !Array.isArray(v) && E2E_STATES.includes(v.state) && typeof v.reason === "string" && v.reason.length <= 300
   && (v.run === null || v.run === undefined || typeof v.run === "string") && (v.lastGreenAt === null || v.lastGreenAt === undefined || typeof v.lastGreenAt === "string");
 // The one line for Manager's batch when the reading is red, missed or unknown and fresh; null otherwise. Keyed by the state in its first
@@ -585,6 +593,7 @@ export function evidenceRefusal(key, value, who, track) {
   if (key === "usage.week") return refuse("evidence-key", "usage.week is written by the week_usage tool only");
   if (key === "run.evidence" && !runShape(value)) return refuse("run-shape", "run.evidence is { ok: true|false, at, line up to 160 characters, ms, stateMs, slow: true }");
   if (key === "deploy.last" && !deployLastShape(value)) return refuse("deploy-last-shape", "deploy.last is { ok: true|false, at, line up to 160 characters }");
+  if (key === "schedule.models" && !scheduleModelsShape(value)) return refuse("schedule-models-shape", "schedule.models is { at, tasks: [up to 30 of { id, chosen, lastRun, at }] }, ids and model names plain words");
   if (key === "e2e" && !e2eShape(value)) return refuse("e2e-shape", "e2e is { state: ok|red|missed|unknown, reason, run, lastGreenAt }");
   // #C956: the team's visual lanes, from the board config: { visualLanes: [role names], up to 20 }.
   if (key === "look" && !(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((k) => k === "visualLanes") && Array.isArray(value.visualLanes) && value.visualLanes.length <= 20 && value.visualLanes.every((r) => typeof r === "string" && LANE_NAME.test(r)))) return refuse("look-shape", "look is { visualLanes: [up to 20 role names] }");
