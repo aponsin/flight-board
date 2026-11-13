@@ -8,7 +8,8 @@
 //   - otherwise (the last card, a lone card, a card the file does not list): writes the note on HEAD and pushes the notes ref.
 // A queue file that is missing, unreadable or older than 15 minutes means no wait is possible: the note is written and the line says so. Never a
 // deadlock. There is no flag to remember. Run it inside your checkout, on the build branch, with a clean tree and HEAD's message carrying a Board-Id
-// trailer. It refuses, changing nothing, printing `STACK-READY FAILED: <why>` and exiting 1.
+// trailer. It refuses, changing nothing, printing `STACK-READY FAILED: <why>` and exiting 1. It also refuses (#C1047) a tip that would undo main: a file
+// the branch changes that main changed after the branch's base, where the tip's version is not main's (the list is printed; rebase onto origin/main).
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
@@ -19,6 +20,25 @@ export const QUEUE_FRESH_MS = 15 * 60e3;
 
 class Refusal extends Error {}
 const fail = (why) => { throw new Refusal(why); };
+
+// #C1047: the files this branch changes that main has also changed since the branch left it (their merge base), where the tip's version is not main's:
+// the tip's version is older than main's, so taking the tip would undo main. Deletes and renames count as a path gone and a path added (--no-renames);
+// the mode counts with the blob (ls-tree), so a lost exec bit is a difference too. Not a file the branch leaves alone, however far behind main it is;
+// not a branch cut on main (its base is main, nothing changed after it), nor a rebase onto main; not a file both sides changed to the same thing.
+// With no origin/main to compare against, or no common base, nothing is judged (never a deadlock). tryOut(args) -> text, or { error } on a failure.
+export const STALE_LISTED = 20;
+export const MAIN_REF = "origin/main";
+export function staleFiles(tryOut) {
+  tryOut(["fetch", "-q", "origin", "main"]);
+  const main = tryOut(["rev-parse", "--verify", "-q", `${MAIN_REF}^{commit}`]);
+  if (typeof main !== "string" || !main) return [];
+  const base = tryOut(["merge-base", "HEAD", main]);
+  if (typeof base !== "string") return [];
+  const names = (a, b) => { const r = tryOut(["diff", "--name-only", "--no-renames", "-z", a, b]); return typeof r === "string" ? r.split("\0").filter(Boolean) : []; };
+  const theirs = new Set(names(base, main));
+  const entry = (rev, path) => { const r = tryOut(["ls-tree", rev, "--", path]); return typeof r === "string" ? r.split("\t")[0] : null; };
+  return names(base, "HEAD").filter((f) => theirs.has(f) && entry("HEAD", f) !== entry(main, f));
+}
 
 // queue: the parsed stack-queue.json ({ at, cards: [{ id, owner_role, repo, dependsOn, started }] }) or null.
 // run(args) -> trimmed stdout; throws on a non-zero exit. Injectable so a test can point it at a temp repo. now() -> an ISO time.
@@ -35,6 +55,13 @@ export function stackReady({ run, queue = null, now = () => new Date().toISOStri
   if (typeof trailer === "object" || !trailer.trim()) fail("HEAD's message has no Board-Id: trailer in its last paragraph");
   const id = trailer.split("\n").map((l) => l.trim()).filter(Boolean).at(-1);
   const sha = out(["rev-parse", "HEAD"]);
+  // #C1047: a tip that carries an older version of a file main has changed since the branch left it would undo main's work if it were taken as it is
+  // (G4 v1 went to review with a pre-#C1008 tree: Pull out, the group rows and the store route were gone). Refused before anything is pushed.
+  const stale = staleFiles(tryOut);
+  if (stale.length) {
+    const shown = stale.slice(0, STALE_LISTED).join(", ") + (stale.length > STALE_LISTED ? ` and ${stale.length - STALE_LISTED} more` : "");
+    fail(`the tip does not carry main's change to ${stale.length} file${stale.length === 1 ? "" : "s"} this branch also changes, so landing it would undo main: ${shown}. Rebase onto origin/main (git fetch origin, git rebase origin/main), run the suite again and push`);
+  }
   const pushed = tryOut(["push", "origin", "HEAD"]);
   if (typeof pushed === "object") fail(`git push failed: ${pushed.error}`);
   const at12 = sha.slice(0, 12);
