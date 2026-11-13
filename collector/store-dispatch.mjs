@@ -156,7 +156,7 @@ export const atCeiling = (view, now, ceiling = QUOTA_CEILING_DEFAULT) => {
 // #C975: the landing job's report (<dir>/land-report.json, scripts/board-land.mjs: { at, landed, refused: [{ sha }], waiting }), read as
 // { fresh, refused: Set of 40-hex shas }. Fresh: written at most LAND_REPORT_FRESH_MS ago and not in the future (a minute's leeway). Anything else
 // (no file, no time, a stale or future one) is not fresh: the job is taken as not running, and Release lands board cards by hand.
-export const LAND_REPORT_FILE = "land-report.json", LAND_REPORT_FRESH_MS = 10 * 60e3;
+export const LAND_REPORT_FILE = "land-report.json", LAND_REPORT_FRESH_MS = 25 * 60e3;
 export function landingFrom(report, now) {
   const at = report?.at;
   const fresh = !!report && typeof report === "object" && Number.isFinite(at) && now - at <= LAND_REPORT_FRESH_MS && at - now <= 60e3;

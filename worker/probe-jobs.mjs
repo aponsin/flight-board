@@ -9,8 +9,10 @@ export const JOBS = {
   evidence: { intervalSec: 120, limitSec: 170 },
   usage: { intervalSec: 300, limitSec: 120 },
   dispatch: { intervalSec: 60, limitSec: 45 }, // #C821: the owners' DISPATCH files from the store's view
-  // #C975: the landing job (scripts/board-land.mjs, #C967), from the signed linked copy, not the probe. A real landing runs the release tool's dry
-  // run and real run (each builds the page, a carried sign-off also runs the suite), so it gets the evidence job's room. Its report counts as fresh
-  // for 10 minutes (collector/store-dispatch.mjs LAND_REPORT_FRESH_MS), so a missed run or two still leaves board landings with the job.
-  land: { intervalSec: 180, limitSec: 170 },
+  // #C975: the landing job (scripts/board-land.mjs, #C967), from the signed linked copy, not the probe. Checker 2's F1 on e03bb4be: one carried
+  // landing runs the suite in the dry run AND the real run (about 125 s each on 11-12), so one tip may take LAND_TIP_SEC; the job starts a tip only
+  // while a whole one fits in limitSec - LAND_MARGIN_SEC, so the alarm never cuts a landing. The report counts as fresh for 25 minutes
+  // (collector/store-dispatch.mjs LAND_REPORT_FRESH_MS), longer than an interval plus a full run, so a slow run never hands board landings to Release.
+  land: { intervalSec: 600, limitSec: 590 },
 };
+export const LAND_TIP_SEC = 360, LAND_MARGIN_SEC = 20;

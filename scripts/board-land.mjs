@@ -59,8 +59,12 @@ export function refusalReasons(text) {
 // One run. readFacts() -> { heads } (a fresh read of origin each time), readHolds() -> the parsed file or null, release(sha, dry) -> { code, text }.
 // Tries the biggest line first; a tip whose dry run is clean is released for real; after a landing the facts are read again (what went out and
 // what sat under it drop out, a sibling that no longer continues main is reported). A refused tip is not tried again in this run.
-export function landRun({ readFacts, readHolds, release, now = Date.now(), dry = false, log = () => {} }) {
-  const landed = [], refused = [], seen = new Set();
+// #C975 (Checker 2's F1 on e03bb4be): run on a schedule, a run must never be cut by its alarm in the middle of a landing (the alarm ends node, not the
+// release tool it spawned, which would push on as an orphan while the next run starts). So a tip is started only while a whole landing still fits:
+// clock() - start + tipMs <= budgetMs. tipMs is one tip's worst case (a carried sign-off runs the suite in the dry run AND the real run); the rest
+// wait for the next run, in the report's `waiting`. With no budget (a hand run) every tip is tried, as before.
+export function landRun({ readFacts, readHolds, release, now = Date.now(), dry = false, log = () => {}, clock = Date.now, budgetMs = Infinity, tipMs = 0 }) {
+  const landed = [], refused = [], seen = new Set(), start = clock();
   let waiting = [];
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const plan = landPlan({ heads: readFacts().heads.filter((h) => !seen.has(h.sha)), holds: readHolds(), now });
@@ -68,6 +72,11 @@ export function landRun({ readFacts, readHolds, release, now = Date.now(), dry =
     for (const b of plan.blocked) if (!seen.has(b.sha)) { seen.add(b.sha); refused.push(b); }
     const next = plan.try[0];
     if (!next) break;
+    if (clock() - start + tipMs > budgetMs) {
+      waiting = [...waiting, ...plan.try.map((h) => ({ branch: h.branch, sha: h.sha, why: "no time left in this run for a whole landing: the next run tries it" }))];
+      log(`time: ${plan.try.length} tip(s) wait for the next run`);
+      break;
+    }
     seen.add(next.sha);
     const check = release(next.sha, true);
     if (check.code !== 0) { refused.push({ branch: next.branch, sha: next.sha, cards: next.cards, reasons: refusalReasons(check.text) }); log(`refused ${next.branch} ${next.sha.slice(0, 12)}`); continue; }
@@ -115,7 +124,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const r = spawnSync(process.execPath, [join(self, "board-release.mjs"), sha, ...(dryRun ? ["--dry-run"] : [])], { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
     return { code: r.status ?? 1, text: `${r.stderr ?? ""}\n${r.stdout ?? ""}` };
   };
-  const report = landRun({ readFacts, readHolds: () => readJson(join(dir, "land-holds.json")), release, dry, log: (s) => console.log(`land: ${s}`) });
+  // #C975: the scheduled run's time budget (worker/probe-jobs.mjs: the land cadence's limit less a margin, and one tip's worst case).
+  const { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC } = await import("../worker/probe-jobs.mjs");
+  const report = landRun({ readFacts, readHolds: () => readJson(join(dir, "land-holds.json")), release, dry, log: (s) => console.log(`land: ${s}`), budgetMs: (JOBS.land.limitSec - LAND_MARGIN_SEC) * 1000, tipMs: LAND_TIP_SEC * 1000 });
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(dir, "land-report.json"), part = `${file}.${process.pid}.part`;
   writeFileSync(part, JSON.stringify(report), { mode: 0o600 }); renameSync(part, file);
