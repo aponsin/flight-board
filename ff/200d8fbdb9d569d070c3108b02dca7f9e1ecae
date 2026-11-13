@@ -1,0 +1,1 @@
+SECURE #C1048 signoff-clears-only-own-holds ff200d8f: option A closes the G4 LOW; F1 on 2f30cfc3 fixed in 6965e13b (createCard now checks the review-hold writer); no other waiting_on writer in worker/; no migration, binding or secret. This line note covers 2f30cfc3 too. line from 9fb55ad574ac2c43488765b49c7dfbfd9f6b625e (Security)
