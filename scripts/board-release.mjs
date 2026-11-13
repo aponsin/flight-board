@@ -110,6 +110,19 @@ const signed = (notes) => /^PASS\b/.test(String(notes?.checker ?? "").split("\n"
 // #C1045: the gate's own lineBase (scripts/self-deploy-gate.mjs), so the two read a line sign the same way.
 export const lineSign = lineBase;
 
+// #C1022 (Security's LOW on #C968; Security chose B): after a real landing the release tool records the tip in refs/notes/landed, an audit trail
+// only. It cannot be enforced: every agent runs as the same Mac user and can write that ref (or any key the tool could hold), so the self-deploy
+// gate does not read it. The git steps, in order: take origin's notes (forced, so a newer landing's note is kept), add this one, push the ref.
+export const LANDED_REF = "refs/notes/landed";
+export function landedNoteSteps(sha, at) {
+  if (!/^[0-9a-f]{40}$/.test(String(sha)) || !(at instanceof Date) || Number.isNaN(at.getTime())) throw new Error("landedNoteSteps: a full sha and a time");
+  return [
+    ["fetch", "-q", "origin", `+${LANDED_REF}:${LANDED_REF}`],
+    ["notes", `--ref=${LANDED_REF}`, "add", "-f", "-m", `LANDED ${at.toISOString()} by scripts/board-release.mjs (audit only, #C1022)`, sha],
+    ["-c", "core.hooksPath=/dev/null", "push", "-q", "origin", LANDED_REF],
+  ];
+}
+
 // #C1032: one sign for a group, and no tip-only gap. Every commit in origin/main..tip needs, per role (Checker's PASS in refs/notes/checker, Security's SECURE
 // in refs/notes/security, each independent), either its own note or that role's line note on the tip: a first line that starts with the role's word and says
 // "line from <40-hex base>", covering base..tip. A line note counts when the base is an ancestor of origin/main and of the tip and is where the tip's line left
@@ -494,6 +507,13 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // Out: this copy's scan of what leaves, the push (a fast-forward; the checkout's own hooks never run), the link.
     execFileSync(process.execPath, [join(self, "scan.mjs"), "--pre-push", "origin"], { cwd: repo, input: `refs/heads/main ${sha} refs/heads/main ${main}\n`, stdio: ["pipe", "inherit", "inherit"] });
     execFileSync("git", ["-c", "core.hooksPath=/dev/null", "push", "-q", "origin", `${sha}:refs/heads/main`], { cwd: repo, stdio: ["ignore", "inherit", "inherit"] });
+    // #C1022 (Security's pick B): the landed tip goes into refs/notes/landed as an audit trail only. Any agent on this Mac can write that ref too, so
+    // nothing trusts it (docs/DECISIONS.md); the owner's phone push on every deploy is the detection. A failed note never fails the landing.
+    const audit = landedNoteSteps(sha, new Date());
+    for (const [n, a] of audit.entries()) {
+      // The first fetch fails when origin has no landed notes yet: that is fine, the note starts the ref.
+      if (quiet(a) === null && n > 0) { console.log(`landed note: not recorded (step ${n + 1} of ${audit.length} failed); the landing stands`); break; }
+    }
     execFileSync(process.execPath, [join(self, "current.mjs"), sha, "--repo", repo], { stdio: "inherit" });
     if (linkedCommit(link) !== sha) throw new Error(`main is ${sha.slice(0, 12)} but the current link is not: tell the lead`);
     console.log(`Released ${sha.slice(0, 12)} to flight-board main; the collector's next run uses it.`);

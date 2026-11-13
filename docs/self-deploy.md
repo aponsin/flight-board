@@ -29,3 +29,6 @@ The release tool reads, for every commit of `origin/main..tip`, a note of its ow
 
 ## What this changes in trust (said once)
 Today a deploy needs the owner to run a pair whose hashes Security signs out of band. After this it needs a push to `main` plus two notes, and agents can push both, so a confused or rogue agent could deploy unreviewed Worker code. It still cannot read the token. The phone push is how the owner would notice.
+
+## The landed note is an audit trail, not a gate (#C1022)
+After each real landing the release tool writes `LANDED <time> by scripts/board-release.mjs` on the tip in `refs/notes/landed`. The gate does not read it: agents run as the same Mac user and could write it too (docs/DECISIONS.md, 2026-11-13). If a deploy ever looks wrong, compare the phone push's sha with that note: a tip with no LANDED note did not come through the release tool.
