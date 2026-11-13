@@ -7,8 +7,7 @@ import { tmpdir } from "node:os";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
 import { pairCoversFor, boardRepoPath } from "./pair-wait.mjs";
 import { dispatchRun, writeStackQueue, writeOpenAsks, writeLandHolds } from "./store-dispatch.mjs";
-import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { home } from "../gate/gate.mjs";
+import { checkConfig, fullConfig, boardId, home } from "../scripts/config.mjs";
 
 export const SEND_TIMEOUT_MS = 25_000;  // inside the ask job's 30 s limit
 export const FETCH_TIMEOUT_MS = 8_000;

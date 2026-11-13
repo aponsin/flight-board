@@ -10,7 +10,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSy
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL, fileURLToPath } from "node:url";
-import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
+import { checkConfig, fullConfig, boardId, home } from "../scripts/config.mjs";
 import { checkWrites, refusalText } from "./rules.mjs";
 import { readLines, sessionRole } from "./session.mjs";
 import { mechanicalClass, refusal } from "./traffic.mjs";
@@ -20,7 +20,7 @@ import { isReady, readyError } from "./build-steps.mjs";
 
 const WRITES = new Set(["set", "update", "delete", "batch", "str_replace"]);
 const SEND_TOOLS = new Set(["SendMessage", "mcp__ccd_session_mgmt__send_message"]);
-export const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
+export { home };
 // The state to save, with what after.mjs keeps taken from the file now (it may have written since this call read it):
 // the higher thread and card counters, and the journal and known cards as they are on disk (this hook never changes them).
 export function keepCounter(state, disk) {

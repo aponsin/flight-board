@@ -19,13 +19,11 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId } from "../scripts/config.mjs";
-import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES } from "./state-schema.mjs";
+import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES, PUBLISHED_FILE } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
-import { PUBLISHED_FILE } from "./export.mjs";
 import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
 import { reviewsFromPaths } from "./review-paths.mjs";
 import { pairsIn, packOf, BOARD_REPO_WORDS } from "./pairs.mjs";
-import { journalCards, readJournal } from "../gate/gate.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { contextTokens, ctxReadings, resetAsks, stuckReadings, usageReading, wakeNeeds, askOnce, ownerAsks, askSince, boardTruth } from "./readings.mjs";
@@ -216,15 +214,13 @@ export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = pr
 // pinned (condition A) and derive.mjs moves with the link (#C278), so the probe can't import it. tests/board-state.test.mjs
 // runs both on the same cases, so the two never drift apart unseen.
 export const closed = (card) => card.status === "done" || card.status === "dropped";
-// #C697, #C701: the cards as the board has them now, not as the hourly export had them. The mirror's cards (<stateDir>/<id>/mirror/
-// initiatives) with the gate's journal (<stateDir>/<id>/gate.json) laid over them by the gate's own rule (gate/gate.mjs journalCards:
-// a card the lead closed since the export is closed here too, so no DISPATCH or nudge is made for it).
+// #C697, #C701: the cards as the board has them now, not as the hourly export had them: the mirror's cards (<stateDir>/<id>/mirror/
+// initiatives), which the store path writes from the store each run (collector/store-cards.mjs). #C864 step 2a: the old gate's journal
+// (gate.json) is no longer laid over them: the store's cards already carry a close, and the probe no longer imports gate/gate.mjs.
 export function liveCards(stateDir, id) {
-  const cards = [], cardAt = {}, mdir = join(stateDir, id, "mirror", "initiatives");
-  try { for (const f of readdirSync(mdir)) { if (!f.endsWith(".json")) continue; const r = readTail(join(mdir, f), 256 * 1024); if (!r?.whole) continue; try { const d = JSON.parse(r.text); if (plain(d)) { cards.push({ ...d, id: f.slice(0, -5) }); cardAt[f.slice(0, -5)] = r.mtimeMs; } } catch { /* skip it */ } } } catch { /* no export yet */ }
-  let stamp = 0;
-  try { const s = JSON.parse(readFileSync(join(stateDir, id, "mirror", "_at.json"), "utf8")); if (Number.isFinite(s?.at) && s.at > 0) stamp = s.at; } catch { /* a mirror from a whole export: its files' times */ }
-  return journalCards({ docs: { initiatives: cards }, at: 0, atBy: {}, atDoc: { initiatives: cardAt }, stamp }, readJournal(join(stateDir, id, "gate.json"))).docs.initiatives;
+  const cards = [], mdir = join(stateDir, id, "mirror", "initiatives");
+  try { for (const f of readdirSync(mdir)) { if (!f.endsWith(".json")) continue; const r = readTail(join(mdir, f), 256 * 1024); if (!r?.whole) continue; try { const d = JSON.parse(r.text); if (plain(d)) cards.push({ ...d, id: f.slice(0, -5) }); } catch { /* skip it */ } } } catch { /* no export yet */ }
+  return cards;
 }
 const boardIdOf = (message) => { const m = /^Board-Id:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*$/im.exec(String(message ?? "")); return m ? m[1].toLowerCase() : null; };
 // #C985: a repo word that names no listed repository is read as no word (a copy of derive.mjs's namedRepo and repoOf).

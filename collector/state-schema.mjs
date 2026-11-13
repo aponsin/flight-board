@@ -13,6 +13,9 @@
 //             session was found by its title because the config holds no session id for it
 
 export const STATE_VERSION = 1;
+// #C864 step 2a: the file the old fence marked a Collector publish in (collector/export.mjs keeps its own copy: it imports nothing;
+// tests/live-probe-imports.test.mjs holds the two equal). The probe reads it for the "Collector has not published" chip.
+export const PUBLISHED_FILE = "derived-published.json";
 // A POST's body at most (the Worker refuses a longer one before reading it).
 export const MAX_BYTES = 65536;
 export const MAX_CARDS = 200, MAX_AGENTS = 40, MAX_SIGNED = 10, MAX_BRANCHES = 6;
