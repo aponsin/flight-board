@@ -76,8 +76,8 @@ export function waitingDoc(a) {
       const other = a.answer_status === "other";
       doc.response = prune({ status: other ? "chose" : a.answer_status, choice: other ? "something else" : idx >= 0 ? KEY(idx) : undefined, note: a.answer_note ?? "", at: a.answered_at, taken });
     } else if (a.type === "Decision" && idx < 0 && typedOther(a.answer)) {
-      // #C912: an imported "something else" (collector/import-mirror.mjs `askRow` kept the old response object whole as the answer
-      // string, with no answer_status): the owner's typed text, as a native "other" answer reads, never the object as JSON.
+      // #C912: an imported "something else" (the one-time import kept the old response object whole as the answer
+      // string, with no answer_status; the importer is gone, the rows it wrote remain): the owner's typed text, as a native "other" answer reads, never the object as JSON.
       const o = typedOther(a.answer);
       doc.response = prune({ status: "chose", choice: "something else", note: o.note, at: a.answered_at, taken, files: Array.isArray(o.files) && o.files.length ? o.files : undefined });
     } else
