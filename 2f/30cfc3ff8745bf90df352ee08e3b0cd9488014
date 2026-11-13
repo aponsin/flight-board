@@ -1,0 +1,1 @@
+FINDINGS #C1048 2f30cfc3 (Security). F1: createCard (card_create, roles agent and owner) accepts waiting_on (CARD_WORDS; the tool schema is not enforced) with no review-hold writer check, so any agent can create a card already holding 'Security: review', which clears by itself. Fix: the same reviewHoldRole check in createCard, plus a test. Option A itself closes the G4 LOW.
