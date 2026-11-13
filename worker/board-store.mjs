@@ -7,7 +7,7 @@ import { noteShip, readShips } from "./compat-ships.mjs";
 import { readUsage } from "./compat-usage.mjs";
 import { mtDayTime } from "./team-time.mjs";
 import { readThreads } from "./compat-threads.mjs";
-import { askWakes, promiseWakes, promptWakes, watchWakes } from "./push-rules.mjs";
+import { askWakes, promiseWakes, promptWakes, watchWakes, WATCH_WAKE_PREFIX } from "./push-rules.mjs";
 import { weekUsageValue, WEEK_USAGE_KEY } from "../collector/week-usage.mjs";
 
 export const PROBE_SILENT_MS = 5 * 60_000; // #C996: was 3 min while the evidence job ran every minute; reverts with its cadence
@@ -474,8 +474,13 @@ async function syncStalls(db, now) {
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.
   const current = new Set(stalls.map((s) => `${s.card_id}|${s.reason}`));
+  // #C1005 (Checker 2's F2): at night the prompt rows are held back, not over: an untaken one stays while the role is still stopped, so the first
+  // run after 7 am finds it and Manager is told once (a row retired at 10 pm would be ignored by the 7 am insert).
+  for (const s of promptWakes({ stuck: stuckNow, now, byNight: true })) current.add(`${s.card_id}|${s.reason}`);
   const pending = (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE taken_at IS NULL").all()).results;
-  for (const p of pending) if (!p.card_id.startsWith(PING_CARD) && !current.has(`${p.card_id}|${p.reason}`)) await db.prepare("UPDATE stall_wakes SET taken_at = ? WHERE card_id = ? AND reason = ?").bind(now, p.card_id, p.reason).run();
+  // #C1005 (Checker 2's F1): a watch line is an event (the app restarted, prompts came in), not a state that can be over, so it stays until Manager
+  // takes it, as a ping does: a later reading (the ledger a minute after a restart) must not retire an earlier one unread.
+  for (const p of pending) if (!p.card_id.startsWith(PING_CARD) && !p.card_id.startsWith(WATCH_WAKE_PREFIX) && !current.has(`${p.card_id}|${p.reason}`)) await db.prepare("UPDATE stall_wakes SET taken_at = ? WHERE card_id = ? AND reason = ?").bind(now, p.card_id, p.reason).run();
 }
 // #C873: the product's daily full test run (evidence e2e). Manager's batch gets ONE line when it turns red, missed or unknown from something else:
 // the row stays (taken or not) while the state holds, so a later probe run never tells it again; it goes when the state changes or turns ok.

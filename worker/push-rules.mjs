@@ -72,13 +72,14 @@ export function stuckDue({ stuck, sent, now }) {
 // is one line to Manager's batch (a stall row "prompt:<role>:<since>", told once) and one phone push (push_sent ship "prompt:<role>:<since>"); both held at
 // night and sent at the first run after 7 am. The words carry a role and a time, never the prompt's text.
 export const PROMPT_MIN = 30;
-const promptRows = (stuck, now) => (stuck && typeof stuck === "object" && !Array.isArray(stuck) && !isNight(now)
+const promptRows = (stuck, now, byNight = false) => (stuck && typeof stuck === "object" && !Array.isArray(stuck) && (byNight || !isNight(now))
   ? Object.entries(stuck).filter(([role, s]) => ROLE_WORD.test(role) && s && s.kind === "user" && Number.isInteger(s.since) && s.since > 0 && now - s.since >= PROMPT_MIN * MIN)
     .map(([role, s]) => ({ role, since: s.since })).sort((a, b) => (a.role < b.role ? -1 : 1)) : []);
 export const promptDue = ({ stuck, sent, now }) => promptRows(stuck, now).filter((p) => !sent.has(`ship:prompt:${p.role}:${p.since}`));
 export const PROMPT_WAKE_PREFIX = "prompt:";
-export function promptWakes({ stuck, now }) {
-  return promptRows(stuck, now).map((p) => ({ card_id: `${PROMPT_WAKE_PREFIX}${p.role}:${p.since}`, reason: `${p.role} has waited on a prompt in its session since ${mtDayTime(p.since)} (${PROMPT_MIN}+ min): open it in the Claude app and answer it` }));
+// byNight: ignore the night hold, to name the rows the hold keeps back (the store keeps an untaken one until 7 am while the role is still stopped; Checker 2's F2).
+export function promptWakes({ stuck, now, byNight = false }) {
+  return promptRows(stuck, now, byNight).map((p) => ({ card_id: `${PROMPT_WAKE_PREFIX}${p.role}:${p.since}`, reason: `${p.role} has waited on a prompt in its session since ${mtDayTime(p.since)} (${PROMPT_MIN}+ min): open it in the Claude app and answer it` }));
 }
 // #C1005 (c): the watchdog task's other lines to Manager's batch, from the probe's `watch` reading (evidence key "watch", written only on a run that has
 // something): the app restarted, the prompt ledger's new prompts, a silent ledger. One stall row each, keyed by the reading's own time, so each is told once.

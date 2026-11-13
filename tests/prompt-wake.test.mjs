@@ -28,6 +28,34 @@ test("promptWakes / promptDue: user kind only, from 30 min, by day, once per sto
   for (const bad of [null, [], { Builder: { kind: "user", since: "x" } }, { "no good!": { kind: "user", since: 1 } }]) assert.deepEqual(promptWakes({ stuck: bad, now: NOON }), []);
 });
 
+// Checker 2's F2 on b39df027: a prompt row inserted at 9:50 pm must survive the 10 pm night hold while the role is still stopped, so the first run after
+// 7 am finds it (the insert is ignored for a retired row) and Manager is told once; a stop that ended in the night is gone by then.
+test("a prompt row pending at 9:50 pm survives the night while the role is still stopped, and is told once after 7 am", async () => {
+  const AT_2150 = Date.UTC(2026, 10, 13, 4, 50), AT_2201 = Date.UTC(2026, 10, 13, 5, 1);
+  const since = AT_2150 - 90 * MIN, lines = (inbox) => inbox.stalls.filter((s) => /waited on a prompt/.test(s.reason ?? ""));
+  const db = makeDb();
+  await put(db, "board", { boardId: "flight-board", at: AT_2150 }, AT_2150);
+  await put(db, "stuck", user(since), AT_2150);
+  await wakeAsk(db, AT_2150);
+  await put(db, "stuck", user(since), AT_2201);
+  await wakeAsk(db, AT_2201);
+  await put(db, "stuck", user(since), AT_0700);
+  await wakeAsk(db, AT_0700);
+  assert.equal(lines(await takeInbox(db, AT_0700 + MIN)).length, 1, "still pending after the night");
+  await wakeAsk(db, AT_0700 + 2 * MIN);
+  assert.equal(lines(await takeInbox(db, AT_0700 + 3 * MIN)).length, 0, "told once");
+  // The role answered in the night (the reading no longer shows the stop): the row is over, nothing is told at 7.
+  const db2 = makeDb();
+  await put(db2, "board", { boardId: "flight-board", at: AT_2150 }, AT_2150);
+  await put(db2, "stuck", user(since), AT_2150);
+  await wakeAsk(db2, AT_2150);
+  await put(db2, "stuck", {}, AT_2201);
+  await wakeAsk(db2, AT_2201);
+  await put(db2, "stuck", {}, AT_0700);
+  await wakeAsk(db2, AT_0700);
+  assert.equal(lines(await takeInbox(db2, AT_0700 + MIN)).length, 0, "a stop that ended is not told");
+});
+
 test("the push words: a role and no text; a night with only a prompt pushes nothing", () => {
   const w = JSON.parse(pushWords([], [], null, null, [], [{ role: "Builder", since: NOON }, { role: "Checker", since: NOON }]));
   assert.match(w.body, /^Builder, Checker are waiting on a prompt in their sessions: open each in the Claude app and answer\.$/);

@@ -84,6 +84,26 @@ test("the stall rows: one per event, keyed by the reading, with roles and counts
   for (const bad of [null, [], { at: "x", restart: true }, { at: T }, { at: T, restart: "yes" }, { at: T, restart: 1 }, { at: T, ledger: { prompts: [{ role: "x y", tool: "Bash", n: 1 }], others: 0 } }]) assert.deepEqual(watchWakes({ watch: bad }), [], JSON.stringify(bad));
 });
 
+// Checker 2's F1 on b39df027: a watch line is an event, kept until Manager takes it. After a restart the ledger's prompts follow within a minute, and
+// the restart line must not be retired unread by that second reading, nor by the 15 minutes it takes the first to go stale.
+test("a watch line stays pending until taken: a restart, then a ledger a minute later, both reach Manager", async () => {
+  const MIN = 60e3, db = makeDb();
+  const put = (key, value, at) => db.prepare("INSERT OR REPLACE INTO evidence (key, value, read_at) VALUES (?, ?, ?)").bind(key, JSON.stringify(value), at).run();
+  await put("board", { boardId: "flight-board", at: T }, T);
+  await put("watch", { at: T, restart: true }, T);
+  await wakeAsk(db, T);
+  await put("watch", { at: T + MIN, ledger: { prompts: [{ role: "Builder", tool: "Bash", n: 2 }], others: 0 } }, T + MIN);
+  await wakeAsk(db, T + MIN);
+  // Twenty minutes on, both readings are stale and the probe wrote nothing new: still pending.
+  await wakeAsk(db, T + 20 * MIN);
+  const mine = (await takeInbox(db, T + 21 * MIN)).stalls.filter((s) => /app restarted|Permission prompts since/.test(s.reason ?? ""));
+  assert.equal(mine.length, 2, JSON.stringify(mine));
+  assert.ok(mine.some((s) => s.reason === RESTART_LINE) && mine.some((s) => /Builder Bash x2/.test(s.reason)));
+  // Taken once, not again.
+  await wakeAsk(db, T + 22 * MIN);
+  assert.equal((await takeInbox(db, T + 23 * MIN)).stalls.filter((s) => /app restarted|Permission prompts since/.test(s.reason ?? "")).length, 0);
+});
+
 test("Manager's batch: each watch line once, from a fresh reading only", async () => {
   const MIN = 60e3, db = makeDb();
   const put = (key, value, at) => db.prepare("INSERT OR REPLACE INTO evidence (key, value, read_at) VALUES (?, ?, ?)").bind(key, JSON.stringify(value), at).run();
