@@ -47,11 +47,13 @@ export function runChild(cmd, args, { timeoutMs, input, cwd, env } = {}) {
 }
 
 // The launchd job for one cadence: started through perl's alarm so the OS ends it even if the event loop is blocked.
-export function launchdPlist({ job, label, nodePath, script, args = [], logPath }) {
+// #C975: the land job runs scripts/board-land.mjs from the signed linked copy (~/.flight-board/current, where #C967 requires it to run), which takes
+// only --config: it gets no "--job" argument (jobArg false).
+export function launchdPlist({ job, label, nodePath, script, args = [], logPath, jobArg = job !== "land" }) {
   const j = JOBS[job];
   if (!j) throw new Error(`unknown job ${job}`);
   const alarm = j.limitSec + OUTER_EXTRA_SEC;
-  const argv = ["/usr/bin/perl", "-e", `alarm ${alarm}; exec @ARGV`, nodePath, script, ...args, "--job", job];
+  const argv = ["/usr/bin/perl", "-e", `alarm ${alarm}; exec @ARGV`, nodePath, script, ...args, ...(jobArg ? ["--job", job] : [])];
   const x = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

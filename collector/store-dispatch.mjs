@@ -83,6 +83,11 @@ export function turnsOf(card, e, ctx = {}) {
     if (e.onMain === true) return typeof card.repo === "string" && BOARD_REPO_WORDS.has(card.repo) ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, ...where, signed: signedBy }] : [];
     // #C854: signed but no longer continuing main: Release cannot take it. The turn is the owner's, to re-cut it on main (a new commit has a new sha, so a reviewer is woken again).
     if (e.behindMain === true) return [{ role: card.owner_role, phase: "ship", step: "recut", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
+    // #C975: a ship lane per repository. A board card's landing is the landing job's (scripts/board-land.mjs, #C967, the owner's A on #T1779): while
+    // its report is fresh, Release is woken only for a tip the job refused. With no fresh report (the job is not running) Release lands it by hand,
+    // as before. A product card is Release's. So a board landing never waits behind a product ship, and Release is not asked to land a board tip twice.
+    const board = typeof card.repo === "string" && BOARD_REPO_WORDS.has(card.repo);
+    if (board && ctx.landing?.fresh === true && fullSha && !ctx.landing.refused?.has(fullSha)) return [];
     return [{ role: PHASE_LANES.ship, phase: "ship", step: "land", sha, ...where, signed: signedBy }];
   }
   if (!Object.hasOwn(PHASE_LANES, phase)) return [owner];
@@ -148,7 +153,17 @@ export const atCeiling = (view, now, ceiling = QUOTA_CEILING_DEFAULT) => {
   const pct = weekPctOf(view, now), c = Number.isInteger(ceiling) && ceiling >= 1 && ceiling <= 100 ? ceiling : QUOTA_CEILING_DEFAULT;
   return pct !== null && pct >= c;
 };
-export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEILING_DEFAULT, pairCovers = null } = {}) {
+// #C975: the landing job's report (<dir>/land-report.json, scripts/board-land.mjs: { at, landed, refused: [{ sha }], waiting }), read as
+// { fresh, refused: Set of 40-hex shas }. Fresh: written at most LAND_REPORT_FRESH_MS ago and not in the future (a minute's leeway). Anything else
+// (no file, no time, a stale or future one) is not fresh: the job is taken as not running, and Release lands board cards by hand.
+export const LAND_REPORT_FILE = "land-report.json", LAND_REPORT_FRESH_MS = 10 * 60e3;
+export function landingFrom(report, now) {
+  const at = report?.at;
+  const fresh = !!report && typeof report === "object" && Number.isFinite(at) && now - at <= LAND_REPORT_FRESH_MS && at - now <= 60e3;
+  const refused = new Set((fresh && Array.isArray(report.refused) ? report.refused : []).map((r) => r?.sha).filter((s) => typeof s === "string" && /^[0-9a-f]{40}$/.test(s)));
+  return { fresh, refused };
+}
+export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEILING_DEFAULT, pairCovers = null, landing = null } = {}) {
   const ev = view?.evidence ?? {};
   const agents = ev.agents?.value;
   const readAt = ev.agents?.readAt;
@@ -211,7 +226,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     // #C914: a card the probe marks stackHold (pushed, no stack-ready signal covers its head) AND that has a declared stack partner waiting to
     // start has no review turn, and is no builder turn either. Any other card dispatches as it always did.
     const held = inBoard && e?.stackHold === true && hasPartner(c);
-    const turns = turnsOf(c, e, { ...(inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {}), ...(pairCovers ? { pairCovers } : {}) });
+    const turns = turnsOf(c, e, { ...(inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {}), ...(pairCovers ? { pairCovers } : {}), ...(landing ? { landing } : {}) });
     // #C1018 / #C1035: a tip a Checker session has claimed (the store's review claim) wakes no Checker for its review again: one checker per tip.
     const mine = held ? turns.filter((t) => t.step !== "review") : turns;
     const shown = mine.filter((t) => !(t.role === "Checker" && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
@@ -399,7 +414,7 @@ export function writeLandHolds(view, { dir, now = Date.now() }) {
 
 // One run over a view. Returns { wrote, why?, items }. `dir` is <stateDir>/<board>.
 export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_DEFAULT, now = Date.now(), log = () => {}, pairCovers = null }) {
-  const input = dispatchInput(view, now, { lead, ceiling, pairCovers });
+  const input = dispatchInput(view, now, { lead, ceiling, pairCovers, landing: landingFrom(readJson(join(dir, LAND_REPORT_FILE)), now) });
   const sw = sessionWeek(view, now);
   if (sw.state === "stale") log(`dispatch: warning: the session's week reading is ${Math.round(sw.ageMs / 60e3)} min old (or from a week that reset): week usage unknown, the quota stop is off until a session writes it again`);
   if (input && atCeiling(view, now, ceiling)) log(`dispatch: week at ${Math.round(weekPctOf(view, now))}% of quota, ceiling ${ceiling}%: no new build work dispatched`);
