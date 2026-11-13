@@ -71,7 +71,7 @@ test("the probe reads from out of the app's session file: only a session id is k
   file(4, undefined);
   const by = Object.fromEntries(appSessions(root).map((s) => [s.title, s.from]));
   assert.deepEqual(by, { S1: LEAD, S2: null, S3: null, S4: null });
-  assert.deepEqual(Object.keys(appSessions(root)[0]).sort(), ["at", "cwd", "from", "id", "title", "transcript"]);
+  assert.deepEqual(Object.keys(appSessions(root)[0]).sort(), ["at", "cwd", "from", "id", "model", "scheduledTaskId", "title", "transcript"]);
 });
 
 test("the state accepts by: spawn and still refuses any other word", () => {

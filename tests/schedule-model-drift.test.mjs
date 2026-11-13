@@ -53,7 +53,7 @@ test("appSessions keeps model and scheduledTaskId as plain words (else null), an
     assert.equal(rows.S1.model, "claude-sonnet-5-5");
     assert.equal(rows.S1.scheduledTaskId, "team-ops-daily");
     for (const t of ["S2", "S3", "S4"]) assert.deepEqual([rows[t].model, rows[t].scheduledTaskId], [null, null], t);
-    assert.deepEqual(Object.keys(rows.S1).sort(), ["at", "cwd", "id", "model", "scheduledTaskId", "title", "transcript"], "effort and the prompt are not kept");
+    assert.deepEqual(Object.keys(rows.S1).sort(), ["at", "cwd", "from", "id", "model", "scheduledTaskId", "title", "transcript"], "effort and the prompt are not kept");
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
