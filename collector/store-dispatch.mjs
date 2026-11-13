@@ -265,13 +265,25 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   const askedCards = new Set();
   for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null) askedCards.add(a.card_id);
   const notStarted = (k) => k.turns.some((t) => t.step === "build" && !t.sha) && !askedCards.has(k.id) && !(typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(k.who));
+  // The same order as the store's (worker/board-rules.mjs queueRank; a held card was skipped above): at one place a card the owner placed comes
+  // before one an agent placed (Checker F1 on ac3d31b), then the card's number.
+  const queueOrder = (x, y) => (x.queuePos ?? 1e6) - (y.queuePos ?? 1e6) || (x.ownerPlaced ? 0 : 1) - (y.ownerPlaced ? 0 : 1) || (x.num ?? 1e9) - (y.num ?? 1e9) || (x.id < y.id ? -1 : 1);
   const byRole = new Map();
   for (const k of cards.filter(notStarted)) byRole.set(k.who, [...(byRole.get(k.who) ?? []), k]);
   for (const list of byRole.values()) {
-    // The same order as the store's (worker/board-rules.mjs queueRank; a held card was skipped above): at one place a card the owner placed comes
-    // before one an agent placed (Checker F1 on ac3d31b), then the card's number.
-    list.sort((x, y) => (x.queuePos ?? 1e6) - (y.queuePos ?? 1e6) || (x.ownerPlaced ? 0 : 1) - (y.ownerPlaced ? 0 : 1) || (x.num ?? 1e9) - (y.num ?? 1e9) || (x.id < y.id ? -1 : 1));
+    list.sort(queueOrder);
     for (const k of list.slice(1)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
+  }
+  // #C991 (the owner's pick A): a reviewer's queue comes from the store, not from the lead's list. Per role, the cards whose review turn is that
+  // role's, in the queue order above; a held card is out (skipped above, or its review turn dropped), and so is one dispatchItems would drop
+  // for the role (an open ask, or waiting on someone else). Card numbers only: the DISPATCH line prints them as "your queue: #C.., #C..".
+  const queues = {};
+  for (const k of [...cards].sort(queueOrder)) {
+    if (askedCards.has(k.id) || !Number.isInteger(k.num)) continue;
+    for (const role of new Set(k.turns.filter((t) => t.step === "review").map((t) => t.role))) {
+      if (typeof role !== "string" || (typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(role))) continue;
+      (queues[role] ??= []).push(k.num);
+    }
   }
   // The cards left out of the lists above (asked, or waiting on someone else) keep their turn, which dispatchItems drops by the same rule.
   for (const k of cards) { delete k.queuePos; delete k.ownerPlaced; }
@@ -287,7 +299,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // board (!done && !response): a withdrawn approval has its answer cleared and waits for the owner's Approve again, so it is still open.
   const asked = new Set();
   for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null) asked.add(a.card_id);
-  return { cards, agents, asked };
+  return { cards, agents, asked, queues };
 }
 
 // #C909 (prevention, 11-11: after v1.209.8 Release thought Ops was archived and asked Manager to wake it by hand; a hand-off resting on a
@@ -378,7 +390,7 @@ export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_D
   const state = readJson(join(dir, DISPATCH_STATE_FILE));
   mkdirSync(dir, { recursive: true, mode: 0o700 }); // the board's state folder may not exist yet when the old state job never ran here
   const ship = afterShip(view, state, input.agents, now);
-  const r = dispatchItems({ cards: ship.card ? [...input.cards, ship.card] : input.cards, agents: input.agents, asked: input.asked, roster, lead, now, before: state });
+  const r = dispatchItems({ cards: ship.card ? [...input.cards, ship.card] : input.cards, agents: input.agents, asked: input.asked, queues: input.queues, roster, lead, now, before: state });
   const live = ship.card && r.items.some((i) => i.card === ship.card.id) && !Number.isFinite(ship.live.wokenAt) ? { ...ship.live, wokenAt: now } : ship.live;
   writeAtomic(join(dir, DISPATCH_FILE), JSON.stringify({ at: now, source: "store", items: r.items }));
   writeAtomic(join(dir, DISPATCH_STATE_FILE), JSON.stringify(live ? { ...r.state, live } : r.state));

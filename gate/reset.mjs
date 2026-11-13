@@ -183,7 +183,10 @@ export const dispatchWokenFile = (role) => `dispatch-woken-${role}.json`, dispat
 const pairKey = (role, card, phase = null) => (phase === null ? `${role} ${card}` : `${role} ${card} ${phase}`);
 const SHA40 = /^[0-9a-f]{40}$/, REPO_FULL = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
 const SHA12 = /^[0-9a-f]{12}$/, TURN_PHASE = /^[a-z]{2,16}$/, PLAIN_ROLE = /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/;
-export function dispatchItems({ cards, agents, asked = new Set(), roster = [], lead = "", now, before = null }) {
+// #C991: a reviewer's queue, card numbers in the store's queue order; the line prints at most DISPATCH_QUEUE_MAX of them.
+export const DISPATCH_QUEUE_MAX = 12;
+const queueNums = (q) => (Array.isArray(q) ? q.filter((n) => Number.isInteger(n) && n >= 1 && n <= 1e6).slice(0, DISPATCH_QUEUE_MAX) : []);
+export function dispatchItems({ cards, agents, asked = new Set(), queues = null, roster = [], lead = "", now, before = null }) {
   const first = before && typeof before.items === "object" && before.items && !Array.isArray(before.items) ? before.items : {};
   const items = [], kept = {};
   for (const card of cards ?? []) {
@@ -219,6 +222,7 @@ export function dispatchItems({ cards, agents, asked = new Set(), roster = [], l
         // #C914: a builder's turn for a card of a stack-mode repository: the line names the stack-ready command as the push.
         ...(phase && t.stackMode === true && ["build", "rework", "outside"].includes(t.step) ? { stackMode: true } : {}),
         ...(phase && Array.isArray(t.signed) ? { signed: t.signed.filter((s) => PLAIN_ROLE.test(String(s))).slice(0, 4) } : {}),
+        ...(phase && t.step === "review" && queues && Object.hasOwn(queues, role) && queueNums(queues[role]).length ? { queue: queueNums(queues[role]) } : {}),
         ...(phase && t.step === "decision" && Number.isInteger(t.ask) && t.ask >= 1 && t.ask <= 1e7 ? { ask: t.ask, answer: plainAnswer(t.answer) } : {}),
       });
     }
@@ -247,7 +251,10 @@ export const dispatchLine = (i) => {
     // #C895: with the full sha the line says where the commit is (repository, branch, all 40 characters), so nobody has to ask or guess; checked again here.
     const at = SHA40.test(String(i.fullSha)) && SHA12.test(String(i.sha)) && String(i.fullSha).startsWith(i.sha)
       ? `${REPO_FULL.test(String(i.repo)) ? `repo ${i.repo}, ` : ""}${stackBranch(i.onBranch) ? `branch ${i.onBranch}, ` : ""}commit ${i.fullSha}` : SHA12.test(String(i.sha)) ? i.sha : "";
-    return `DISPATCH ${card} at ${i.phase}: ${at ? `${at}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
+    // #C991: a review line carries the role's whole review queue from the store, so the reviewer needs no list from the lead.
+    const nums = i.step === "review" ? queueNums(i.queue) : [];
+    const queue = nums.length ? `; your queue: ${nums.map((n) => `#C${n}`).join(", ")}` : "";
+    return `DISPATCH ${card} at ${i.phase}: ${at ? `${at}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on}${queue} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
   }
   return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;
 };
