@@ -50,6 +50,24 @@ test("a write that leaves depends_on alone is never refused for an old unknown i
   assert.equal((await updateCard(db, T + 1, "Manager", { id: "a", next_note: "hello" })).ok, true);
 });
 
+test("the closest card is the one sharing the most words, even when another is nearer by letters (Checker 2's F2a)", async () => {
+  const db = makeDb(); await card(db, "alpha-beta-zzzzzzzzzzzzzzzz"); await card(db, "alphabetagamma"); await card(db, "c");
+  // "alphabetagamma" is 2 edits from the missing id and shares no word; the other shares two words but is 16 edits away: the words win.
+  const r = await updateCard(db, T + 1, "Manager", { id: "c", depends_on: ["alpha-beta-gamma"] });
+  assert.equal(r.refused.rule, "depends-on-unknown");
+  assert.match(r.refused.detail, /\(closest: alpha-beta-zzzzzzzzzzzzzzzz\)/);
+});
+
+test("the card being written is never its own closest hint (Checker 2's F2b)", async () => {
+  const db = makeDb(); await card(db, "release-notes-fetch"); await card(db, "unrelated");
+  const r = await updateCard(db, T + 1, "Manager", { id: "release-notes-fetch", depends_on: ["release-notes-fetchh"] });
+  assert.equal(r.refused.rule, "depends-on-unknown");
+  assert.match(r.refused.detail, /\(closest: unrelated\)/, "another card, not itself");
+  const solo = makeDb(); await card(solo, "only-card");
+  const s = await updateCard(solo, T + 1, "Manager", { id: "only-card", depends_on: ["only-cardd"] });
+  assert.equal(s.refused.detail, "only-cardd is no card on the board", "with no other card there is no hint at all");
+});
+
 test("the owner and an agent are held to it the same way", async () => {
   const db = makeDb(); await card(db, "a");
   assert.equal((await updateCard(db, T + 1, "owner", { id: "a", depends_on: ["ghost"] })).refused.rule, "depends-on-unknown");
