@@ -292,7 +292,7 @@ test("the hook entries: the gate on board writes and hand-offs, the Stop check; 
   assert.deepEqual(e.PreToolUse[1], { matcher: "Bash", hooks: [{ type: "command", command: "'/bin/node' '/r/flight-board/gate/commit.mjs' --config '/cfg/board.config.json'" }] }, "#C649: the commit gate is a hook of its own on Bash, beside the board's");
   assert.equal(e.PreToolUse[0].matcher, "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*|mcp__.*__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)", "#C652: the claude-artifacts server's tools too");
   assert.equal(e.PostToolUse.matcher, "ArtifactData|mcp__.*__(db_write|db_str_replace)", "#C652: its writes are journalled");
-  assert.equal(e.PreToolUse[0].hooks[1].command, "'/bin/node' '/r/flight-board/gate/publish.mjs' --config '/cfg/board.config.json'", "the publish hook (#C409)");
+  assert.equal(e.PreToolUse[0].hooks.length, 1, "#C1054: no publish hook beside the gate");
   assert.equal(e.PreToolUse[0].hooks[0].command, "'/bin/node' '/r/flight-board/gate/gate.mjs' --config '/cfg/board.config.json'");
   assert.equal(e.Stop.hooks[0].command, "'/bin/node' '/r/flight-board/gate/stop.mjs' --config '/cfg/board.config.json'");
   const other = { matcher: "Bash", hooks: [{ type: "command", command: "lint.sh" }] };
@@ -377,7 +377,7 @@ test("hooks --write end to end on a scratch settings file: a pinned copy of the 
     const backup = run.stdout.match(/Backup: (\S*)/)[1];
     assert.match(readFileSync(backup, "utf8"), /board-tests\/write-gate\.mjs/);
     const again = spawnSync(process.execPath, [...args, "--write"], { encoding: "utf8" });
-    assert.match(again.stdout, /replaced 7 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries (the refresh check, the publish hook and the commit gate too): " + again.stdout + again.stderr);
+    assert.match(again.stdout, /replaced 6 older flight-board entries; retired nothing/, "a re-install replaces the pinned entries (the refresh check and the commit gate too; #C1054: no publish hook any more): " + again.stdout + again.stderr);
     assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "nope-not-a-commit", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/);
     assert.match(spawnSync(process.execPath, [script, cfg, "--pin", "--output=/tmp/x", "--settings", settings, "--install-root", root], { encoding: "utf8" }).stderr, /not a commit/, "a pin that looks like an option is still just a name");
   } finally { rmSync(dir, { recursive: true, force: true }); }
