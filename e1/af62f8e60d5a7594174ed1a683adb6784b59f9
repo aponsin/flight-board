@@ -1,0 +1,1 @@
+SECURE #C1053 owner-orders-groups e1af62f8: ordering logic only (agentRank, rework first); no new write path, SQL bound; page redraws the store's answer through the same esc() paths. line from 7bb77f34a6a61618a1271eb7713da3eb0477e7f9 (Security)
