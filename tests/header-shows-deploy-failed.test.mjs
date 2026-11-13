@@ -118,6 +118,11 @@ test("the header shows Deploy failed: <reason> and nothing else for a healthy bo
   const bad = html("deploy exited 1: boom");
   assert.match(bad, /<span class="chip bad" title="Deploy failed: deploy exited 1: boom"><span class="dot"><\/span><span class="lbl">Deploy failed<\/span><span class="detail">deploy exited 1: boom<\/span><\/span>/);
   assert.match(html("<img src=x>"), /&lt;img src=x&gt;/);
+  // Checker 2's F1 LOW on 81d976c4: the reason can carry the deploy tool's error text, and deployLastShape allows < > & ". Both places are escaped.
+  const hostile = html(`x <b>&"y`);
+  assert.match(hostile, /title="Deploy failed: x &lt;b&gt;&amp;&quot;y"/, "the title");
+  assert.match(hostile, /<span class="detail">x &lt;b&gt;&amp;&quot;y<\/span>/, "the detail");
+  assert.doesNotMatch(hostile, /x <b>/, "no raw tag from the reason");
   assert.match(html(""), /<span class="detail">failed<\/span>/, "an empty reason reads failed");
   assert.ok(bad.indexOf("Deploy failed") > bad.indexOf("Manager") && bad.indexOf("Deploy failed") < bad.indexOf('class="chip ver"'), "after Manager, before the version");
   assert.equal((html("x").match(/class="hd"/g) ?? []).length, 1, "still one header row");
