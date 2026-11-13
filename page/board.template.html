@@ -531,6 +531,16 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .crew3-mem .sv{color:var(--bad);text-transform:uppercase}
 .crew3-on{display:flex;flex-direction:column;gap:2px;font-size:.92rem}
 .crew3-on .idle{color:var(--muted)}
+/* #C1006: one chip per scheduled task: its model, red when the last run used another, amber when none was chosen. Words as well as colour. */
+.sm{margin-top:12px}
+.sm-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:3px 0}
+.sm-id{font-family:var(--mono);font-size:.85rem;color:var(--ink)}
+.sm-chip{font-size:.85rem;padding:1px 8px;border-radius:999px;border:1px solid var(--line)}
+.sm-chip.ok{color:var(--ok-ink);background:var(--ok-soft);border-color:var(--ok)}
+.sm-chip.warn{color:var(--warn-ink);background:var(--warn-soft);border-color:var(--warn)}
+.sm-chip.bad{color:var(--bad);background:var(--bad-soft);border-color:var(--bad)}
+.sm-chip.mute{color:var(--muted);background:var(--track)}
+.sm-old{color:var(--warn-ink);font-size:.85rem}
 /* #C871 the queue on a tile, #C859 the stack bar and a card's stack tag */
 .crew3-q,.stkbar{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin-top:8px;font-size:.84rem;color:var(--muted)}
 .stkbar{margin:0 0 10px}
@@ -3048,7 +3058,22 @@ function crewHtml(now=Date.now()){
   const tot=logTotals("phase",now),fmt=ms=>ms?dur(ms):"—";
   const rows=PHASES.filter(([k])=>tot[k]).map(([k,label])=>`<tr><td>${esc(label)}</td><td>${fmt(tot[k].work)}</td><td>${fmt(tot[k].busy)}</td><td>${fmt(tot[k].gate)}</td></tr>`).join("");
   const table=rows?`<div class="chart-wrap"><table class="qt crew3-ph"><caption>Last 7 days, by phase</caption><thead><tr><th>Phase</th><th>Working</th><th>Queued (busy)</th><th>Gated</th></tr></thead><tbody>${rows}</tbody></table></div>`:"";
-  return stackBar()+(tiles?`<div class="crew3">${tiles}</div>`:'<div class="empty">No agents yet.</div>')+table}
+  return stackBar()+(tiles?`<div class="crew3">${tiles}</div>`:'<div class="empty">No agents yet.</div>')+scheduleModelsHtml(now)+table}
+// #C1006: each scheduled task's chosen model (board config) against the model its last run used (the probe's schedule.models). Green: the same. Red: the
+// last run used another. Amber: no model chosen (the task follows the app default, which is how the watchdog drifted), or the run's model was not read.
+// Grey, never red: a task never run, or not run for 7 days (paused or deleted). A reading over 36 h old says so, so a stopped probe is seen.
+const SCHED_OLD=36*36e5,SCHED_QUIET=7*864e5;
+function scheduleVerdict(t,now=Date.now()){
+  if(!t||t.at==null||!isT(t.at))return {c:"mute",txt:"no run yet"};
+  if(now-t.at>SCHED_QUIET)return {c:"mute",txt:"no recent run"};
+  if(!t.chosen)return {c:"warn",txt:`unset · ran ${t.lastRun||"an unknown model"}`};
+  if(!t.lastRun)return {c:"warn",txt:`model not read · chosen ${t.chosen}`};
+  if(t.chosen===t.lastRun)return {c:"ok",txt:t.lastRun};
+  return {c:"bad",txt:`ran ${t.lastRun}, chosen ${t.chosen}`}}
+function scheduleModelsHtml(now=Date.now()){
+  const s=probe&&probe.schedule;if(!s||!Array.isArray(s.tasks)||!s.tasks.length)return "";
+  const old=!isT(s.at)||now-s.at>SCHED_OLD;
+  return `<div class="panel sm" data-sched><h3>Scheduled tasks · model</h3>${old?'<div class="sm-old">model reading old</div>':""}`+s.tasks.map(t=>{const v=scheduleVerdict(t,now);return `<div class="sm-row" data-task="${esc(t.id)}"><span class="sm-id">${esc(t.id)}</span><span class="sm-chip ${v.c}">${esc(v.txt)}</span></div>`}).join("")+`</div>`}
 function renderCrew3(){const el=$("crew3");if(!$("v3").hidden&&!$("v3crew").hidden)el.innerHTML=crewHtml()}
 // The new layout's view (Now, Plan or Crew), this browser's choice only.
 let v3view="now";
