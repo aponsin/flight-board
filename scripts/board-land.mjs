@@ -18,6 +18,8 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFil
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+// Checker 2's F2 LOW on 81d976c4: a static import, so importClosure pins worker/probe-jobs.mjs with this RELEASE_ENTRY (the land numbers are the owner's).
+import { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC } from "../worker/probe-jobs.mjs";
 
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
 export const HOLDS_FRESH_MS = 10 * 60e3, MAX_ROUNDS = 10;
@@ -125,7 +127,6 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     return { code: r.status ?? 1, text: `${r.stderr ?? ""}\n${r.stdout ?? ""}` };
   };
   // #C975: the scheduled run's time budget (worker/probe-jobs.mjs: the land cadence's limit less a margin, and one tip's worst case).
-  const { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC } = await import("../worker/probe-jobs.mjs");
   const report = landRun({ readFacts, readHolds: () => readJson(join(dir, "land-holds.json")), release, dry, log: (s) => console.log(`land: ${s}`), budgetMs: (JOBS.land.limitSec - LAND_MARGIN_SEC) * 1000, tipMs: LAND_TIP_SEC * 1000 });
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(dir, "land-report.json"), part = `${file}.${process.pid}.part`;
