@@ -1,0 +1,1 @@
+SECURE #C970 facts-from-source-v3 a386d516: spawned sessions become agents only under a roster role + digits key; values are the existing agent fields; title, cwd and spawnedFrom never posted. Covers be5ed68b (alone it let a free-text title become a key). line from ac5b7d0bfa6139d97defb528e0fd104e7fc230b4 (Security)
