@@ -89,6 +89,21 @@ test("started through a symlinked path the script still runs: a missing test fil
   assert.match(ran.stdout, /ℹ tests 1\b/, "the fixture really ran");
 });
 
+// Checker 2's F2 on 0ca3ca96: the leftover exit is the script's own line, and the runSuite tests only read `left`, so `left.length ? 0 : 0` survived. This runs the
+// script itself: tests that pass but leave a folder make it exit 1 and say so on stderr; the same run with nothing left exits 0 and says nothing.
+test("the script exits 1 and prints the TEST TEMP LEFTOVERS line when tests pass but leave a folder, and exits 0 and says nothing when they leave none", () => {
+  const dir = make(), parent = make();
+  const go = (file) => { const { NODE_TEST_CONTEXT, ...env } = process.env; return spawnSync(process.execPath, [join(process.cwd(), "scripts", "test-run.mjs"), file], { cwd: process.cwd(), env: { ...env, TMPDIR: parent }, encoding: "utf8" }); };
+  const leaky = go(fixture(dir, "leaks", `mkdirSync(join(tmpdir(), "leaky-abc123"));`));
+  assert.match(leaky.stdout, /ℹ fail 0/, "the tests themselves passed");
+  assert.equal(leaky.status, 1, "a leak alone fails the run");
+  assert.match(leaky.stderr, /TEST TEMP LEFTOVERS: 1 entry, .*leaky-\* x1/);
+  const clean = go(fixture(dir, "clean", `mkdtempSync(join(tmpdir(), "tidy-"));`));
+  assert.equal(clean.status, 0);
+  assert.doesNotMatch(clean.stderr, /LEFTOVERS/);
+  assert.deepEqual(readdirSync(parent), [], "the wrapper removed its own root both times");
+});
+
 test("runSuite: a failing test run keeps its own exit status", () => {
   const dir = make(), parent = make();
   const bad = fixture(dir, "bad", `throw new Error("no");`);
