@@ -1,0 +1,1 @@
+SECURE G5 0adfd5ff (#C1045): gate reads line notes per role from its own pinned file; adds merge and 30-commit limits; base must not be before BUILD_SHA. Gate hash changes: owner updates the dashboard. (Security)
