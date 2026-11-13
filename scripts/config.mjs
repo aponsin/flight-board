@@ -100,11 +100,19 @@ export const DEFAULTS = {
     visualLanes: [],
     offBoard: ["Manager chat", "in chat", "see chat", "in the chat"],
   },
+  // The scheduled tasks and the model each was meant to run on (#C1006): [{ id, model?, paused? }]. The app's session files carry the model a task's
+  // last run used but nothing carries the one it was meant to have, so it is written here. The probe compares the two (collector/schedule-models.mjs)
+  // and the page shows a mismatch red, a task with no model here amber "unset". paused: true leaves a task out. None by default.
+  scheduledTasks: [],
 };
 
 const KEYS = Object.keys(DEFAULTS);
 const KEY = /^[a-z][a-z0-9-]{0,30}$/;
 const NAME = /^[^<>{}\n]{1,60}$/;
+// #C1006: a scheduled task's id and a model's name, plain words only (they go to the store and the page as they are).
+export const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+export const MODEL_WORD = /^[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,63}$/;
+export const TASK_MAX = 30;
 
 export function checkConfig(c) {
   const out = [];
@@ -304,6 +312,23 @@ export function checkConfig(c) {
       for (const f of Object.keys(k)) if (!Object.hasOwn(DEFAULTS.decisions, f)) out.push(`decisions: unknown field "${f}" (known: ${Object.keys(DEFAULTS.decisions).join(", ")})`);
       for (const f of ["lookWords", "offBoard"]) if (k[f] !== undefined && !(Array.isArray(k[f]) && k[f].length <= 100 && k[f].every((w) => typeof w === "string" && w.trim().length >= 2 && w.length <= 40 && !/[<>{}\n]/.test(w)))) out.push(`decisions.${f}: a list of up to 100 short words or phrases`);
       if (k.visualLanes !== undefined && !(Array.isArray(k.visualLanes) && k.visualLanes.every((r) => typeof r === "string" && NAME.test(r)))) out.push("decisions.visualLanes: a list of role names");
+    }
+  }
+  // #C1006: the same checks the probe makes before it reads the list (collector/schedule-models.mjs), so a bad entry is refused here and not skipped there.
+  if (c.scheduledTasks !== undefined) {
+    const k = c.scheduledTasks;
+    if (!Array.isArray(k) || k.length > TASK_MAX) out.push(`scheduledTasks: a list of up to ${TASK_MAX} tasks`);
+    else {
+      const seen = new Set();
+      k.forEach((t, i) => {
+        if (!t || typeof t !== "object" || Array.isArray(t)) return out.push(`scheduledTasks[${i}]: an object { id, model, paused }`);
+        for (const f of Object.keys(t)) if (!["id", "model", "paused"].includes(f)) out.push(`scheduledTasks[${i}]: unknown field "${f}" (known: id, model, paused)`);
+        if (typeof t.id !== "string" || !TASK_ID.test(t.id)) out.push(`scheduledTasks[${i}].id: letters, digits, dot, dash or underscore, 1 to 64 characters`);
+        else if (seen.has(t.id)) out.push(`scheduledTasks[${i}].id: "${t.id}" is listed twice`);
+        else seen.add(t.id);
+        if (t.model !== undefined && t.model !== null && !(typeof t.model === "string" && MODEL_WORD.test(t.model))) out.push(`scheduledTasks[${i}].model: a model name such as claude-haiku-5-5, or left out when none is chosen`);
+        if (t.paused !== undefined && typeof t.paused !== "boolean") out.push(`scheduledTasks[${i}].paused: true or false`);
+      });
     }
   }
   return out;

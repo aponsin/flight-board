@@ -209,6 +209,8 @@ export function probeDoc(view) {
   // so the store keeps the last value: it counts only while the probe keeps rewriting it (a reading older than 3 minutes is gone).
   // #C873: so does e2e (the product's daily full test run), rewritten every evidence run from the probe's own half-hour reading.
   for (const k of ["stuck", "ship", "e2e"]) if (ev[k] && view.now - ev[k].readAt <= STALE_AFTER_MS) out[k] = ev[k].value;
+  // #C1006: the scheduled tasks' models. Passed on at any age: the page reads value.at and says "model reading old" past 36 h, so a stopped probe is seen.
+  if (ev["schedule.models"]?.value) out.schedule = ev["schedule.models"].value;
   // #C730: the store's own wake (row 4) for the Manager chip and the "seen" ticks, in place of the old wake watch's
   // wakeAliveAt / wakeSeenAt. askAge is left out until the probe has asked the store once; seenAt is Manager's last typed read.
   // A `wake` key in the probe's own board reading is never passed on: only the store's.

@@ -10,6 +10,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { runActionsUsage } from "./actions-usage.mjs";
+import { appSessions } from "./state.mjs";
+import { scheduleModelsWrite } from "./schedule-models.mjs";
 import { fillRepoWords } from "./repo-words.mjs";
 import { createHash } from "node:crypto";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
@@ -310,6 +312,9 @@ export function deployLastWrite({ configPath, read }) {
   } catch { return null; }
 }
 
+// #C1006: the app's session files, where each run's model is. A folder that cannot be read gives no sessions (appSessions says so by an empty list).
+const defaultSessions = () => appSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
+
 export async function evidenceJob(o) {
   const t0 = Date.now(), timing = o.timing ?? {};
   try { return await evidenceJobRun({ ...o, timing }); } finally {
@@ -318,7 +323,7 @@ export async function evidenceJob(o) {
   }
 }
 
-async function evidenceJobRun({ timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
+async function evidenceJobRun({ timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, sessionsRead = defaultSessions, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const t0 = Date.now();
   const ghOk = job === "evidence" ? ghCheck(env) : true;
@@ -398,7 +403,11 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   try { e2eW = cfg && e2eWrite(cfg, { stateFile, log, ...e2e }); } catch (e) { log(`e2e failed: ${String(e.message).slice(0, 80)}`); }
   let lookW = null;
   try { lookW = cfg && lookWrite(cfg, { log }); } catch (e) { log(`look failed: ${String(e.message).slice(0, 80)}`); }
-  const late = [lookW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
+  // #C1006: each scheduled task's chosen model (board config) against the model its last run used (the app's session files). A failure is logged and
+  // the store keeps its last reading, which the page shows as old after 36 h.
+  let schedW = null;
+  try { schedW = cfg && scheduleModelsWrite(cfg, { sessions: sessionsRead(), now: Date.now(), log }); } catch (e) { log(`schedule failed: ${String(e.message).slice(0, 80)}`); }
+  const late = [lookW, schedW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
   if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log, deadline: t0 + (JOBS[job].limitSec - LATE_TAIL_SEC) * 1000 }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
   return finish(done);
 }
