@@ -2375,7 +2375,9 @@ function crewBy(){
   const open=state.initiatives.filter(i=>i.status!=="done"&&(i.who||Object.keys(i.nowPhases||{}).length));
   const by=Object.create(null);open.forEach(i=>{const ws=new Set([i.who,...Object.values(i.nowPhases||{}).flat()].filter(Boolean));ws.forEach(w=>{(by[w]=by[w]||[]).push(i)})});
   const ROSTER=CONFIG.roster;
-  return {by,names:[...ROSTER,...Object.keys(by).filter(n=>!ROSTER.includes(n)).sort()],notes:(state.meta.find(d=>d.id==="crew")||{}).notes||{}}}
+  // #C970: anyone the probe reads as a running agent has a tile too (a session the lead started that is not on the roster, "Checker2"), so a new role shows up by itself.
+  const live=probe&&probe.agents?Object.keys(probe.agents).filter(n=>liveAgent(n)):[];
+  return {by,names:[...ROSTER,...[...new Set([...Object.keys(by),...live])].filter(n=>!ROSTER.includes(n)).sort()],notes:(state.meta.find(d=>d.id==="crew")||{}).notes||{}}}
 // What an agent's tile shows: the live state first (board-state-probe's follow-up): working, its card; idle, its last
 // card only while it was active in the last PROBE_FRESH (#C428's rule), else "Idle since hh:mm". Without a fresh
 // reading of it, the db's cards (dbItems) and its idle note.
