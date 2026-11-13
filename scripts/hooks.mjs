@@ -2,9 +2,8 @@
 // hand-off messages, PostToolUse after them, Stop on the lead's replies (the gate's check, then the collector on demand),
 // UserPromptSubmit on the lead's prompts (the digest).
 // Printed by default; written only with --write, which keeps every other entry and replaces an older flight-board one.
-// --store (#C825, the board on the store): two entries: one Stop hook, gate/stop.mjs --store, and gate/publish.mjs on the page tools (it
-// denies a page change on the old board's artifact that is not the signed page, which stays published until the owner unpublishes it:
-// Security's finding on 49b78c9); the gate, commit, after, digest and refresh entries are removed (withHooks drops every flight-board entry it
+// --store (#C825, the board on the store): one entry, the Stop hook gate/stop.mjs --store (#C1054 retired the page-publish entry with the old
+// artifact board); the gate, commit, after, digest, publish and refresh entries are removed (withHooks drops every flight-board entry it
 // knows before adding the new ones). The installer has no other remove mode, so --write without --store would reinstall the old gate.
 // Usage: node scripts/hooks.mjs <board.config.json> --pin <signed commit> [--write] [--store] [--retire <text>]... [--settings <file>]
 // [--install-root <folder>]. Run it from a checkout of that commit: the entries it writes are this file's.
@@ -21,19 +20,17 @@ const MARK = /(?:flight-board|\/[0-9a-f]{40})\/(?:gate\/(?:gate|stop|after|diges
 // space ("Application Support") or a crafted name with $( ) or backticks stays a plain path.
 export const shellQuote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const q = shellQuote;
-// The tools that change a page: the old Artifact tool and the claude-artifacts server's (#C652). publish.mjs answers only the ones on the board's own artifact.
-export const PAGE_MATCHER = "Artifact|mcp__claude-artifacts__.*|mcp__.*__(publish_version|publish_files|edit_version|copy_file)";
 export function hookEntries(repo, configPath, node = process.execPath, { store = false } = {}) {
   const cmd = (file, dir = "gate", more = "") => `${q(node)} ${q(resolve(repo, dir, file))} --config ${q(resolve(configPath))}${more}`;
-  if (store) return { PreToolUse: { matcher: PAGE_MATCHER, hooks: [{ type: "command", command: cmd("publish.mjs") }] }, Stop: { hooks: [{ type: "command", command: cmd("stop.mjs", "gate", " --store") }] } };
+  // #C1054 (b): no page-publish entry any more. The old artifact board is deleted, so there is no page to guard; an older install's
+  // publish.mjs entry is still in MARK, so withHooks removes it on the next install.
+  if (store) return { Stop: { hooks: [{ type: "command", command: cmd("stop.mjs", "gate", " --store") }] } };
   return {
-    // Artifact too: the lead's publish of exactly the signed board page goes without asking (#C409, gate/publish.mjs);
-    // each hook answers only its own tools.
-    // The claude-artifacts server's tools too (#C652): the app replaced ArtifactData and Artifact with them, and a matcher that
-    // names the old two lets every board write and page publish by the new ones pass unchecked.
+    // The claude-artifacts server's tools (#C652): the app replaced ArtifactData and Artifact with them, and a matcher that
+    // names the old two lets every board write by the new ones pass unchecked.
     // A tagged git commit needs its card's plain build start step (#C649, gate/commit.mjs): a hook of its own on Bash that
     // reads nothing for any other command and fails open on any error of its own.
-    PreToolUse: [{ matcher: "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*|mcp__.*__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)", hooks: [{ type: "command", command: cmd("gate.mjs") }, { type: "command", command: cmd("publish.mjs") }] }, { matcher: "Bash", hooks: [{ type: "command", command: cmd("commit.mjs") }] }],
+    PreToolUse: [{ matcher: "ArtifactData|SendMessage|mcp__ccd_session_mgmt__send_message|Artifact|mcp__claude-artifacts__.*|mcp__.*__(db_write|db_str_replace|publish_version|publish_files|edit_version|copy_file)", hooks: [{ type: "command", command: cmd("gate.mjs") }] }, { matcher: "Bash", hooks: [{ type: "command", command: cmd("commit.mjs") }] }],
     // After a board write the board applied: what the gate must remember from it (the thread counter).
     PostToolUse: { matcher: "ArtifactData|mcp__.*__(db_write|db_str_replace)", hooks: [{ type: "command", command: cmd("after.mjs") }] },
     // The lead's turn end: the gate's checks, then "start the collector now" when a card moved since its last run.
