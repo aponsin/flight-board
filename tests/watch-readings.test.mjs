@@ -81,7 +81,7 @@ test("the stall rows: one per event, keyed by the reading, with roles and counts
   assert.equal(w[1].reason, "Permission prompts since the last check: Builder Bash x3 | 2 other notifications");
   assert.match(w[2].reason, /^Prompt ledger silent: no line since .* MT \(2 days\) while 3 agent session\(s\) ran\./);
   assert.match(watchWakes({ watch: { at: T, quiet: { since: null, days: null, running: 1 } } })[0].reason, /no line at all while 1 agent/);
-  for (const bad of [null, [], { at: "x", restart: true }, { at: T }, { at: T, ledger: { prompts: [{ role: "x y", tool: "Bash", n: 1 }], others: 0 } }]) assert.deepEqual(watchWakes({ watch: bad }), [], JSON.stringify(bad));
+  for (const bad of [null, [], { at: "x", restart: true }, { at: T }, { at: T, restart: "yes" }, { at: T, restart: 1 }, { at: T, ledger: { prompts: [{ role: "x y", tool: "Bash", n: 1 }], others: 0 } }]) assert.deepEqual(watchWakes({ watch: bad }), [], JSON.stringify(bad));
 });
 
 test("Manager's batch: each watch line once, from a fresh reading only", async () => {
