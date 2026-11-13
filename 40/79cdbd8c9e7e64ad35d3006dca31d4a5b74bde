@@ -1,0 +1,1 @@
+SECURE G4 g4-review-lanes v3 4079cdbd: #C991 queue on review DISPATCH lines is integers 1..1e6 only, max 12, filtered in both gate/reset.mjs spots; no agent text reaches the line. Worker: no migration, binding or secret. LOW on #C992 sent to Builder. line from ef32291c0d50133bb433680aa5c74d84f738fe18 (Security)
