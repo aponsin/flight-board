@@ -2415,7 +2415,15 @@ function railChips(i){const iss=i.issues||{};return ISSUE_KINDS.map(([k,l])=>{co
 function groupRow(b,cards){const f=groupFacts(cards),track=trackFor(cards[0]);
   // A phase every card skips (and none is at) reads as each card's own strip: Test is left out, any other says "not needed".
   const skipAll=k=>cards.every(i=>Array.isArray(i.skip)&&i.skip.includes(k)&&i.phase!==k),shownT=track.filter(([k])=>!(k==="test"&&skipAll(k)));
-  const tiles=shownT.map(([k,l])=>{const n=phaseIndex(k),sk=skipAll(k)&&n!==f.idx;return `<div class="step${n<0?"":sk?" skip":n<f.idx?" done":n===f.idx?" now":""}" title="${esc(l)}">${esc(l)}<small>${sk?"not needed":"&nbsp;"}</small></div>`}).join("");
+  // #C1050 (the owner, 11-12: "why is every initiative blinking on build?"): the group's step pulses only while a member is worked, an agent on it
+  // now (agentsOn, as a card row reads it; no live reading pulses, as a card row does), not queued, paused, blocked or done. Else the still ring.
+  // Every member landed (on main, at the ship phase): Land is done and the group stands, still, at its first Pack or Install tile not yet lit.
+  const L=cards.map(i=>liveCard(i.id)||{}),landedAll=L.every(x=>x.onMain===true&&x.phase===SHIP_PHASE);
+  const litAll=k=>L.every(x=>(Array.isArray(x.seen)&&x.seen.includes(LIVE_PHASE))||(k==="pack"?x.packed===true:x.installed===true));
+  const worked=cards.some(i=>{if(["paused","stuck","done","queued"].includes(i.status)||notStarted(i))return false;const on=agentsOn(i.id);return on===null||on.length>0});
+  const unlit=k=>UNLIT_PHASES.includes(k)&&phaseIndex(k)<0,standAt=landedAll?(shownT.find(([k])=>unlit(k)&&!litAll(k))||[])[0]:null;
+  const tiles=shownT.map(([k,l])=>{if(unlit(k))return litAll(k)?packTile({packed:litAll("pack"),installed:litAll("install")},k,l):k===standAt?`<div class="step here" title="${esc(l)}: every card has landed; waiting on the owner's ${k==="pack"?"pack":"install"}">${esc(l)}<small>&nbsp;</small></div>`:unlitTile(l);
+    const n=phaseIndex(k),sk=skipAll(k)&&n!==f.idx,done=n<f.idx||(landedAll&&n===f.idx);return `<div class="step${n<0?"":sk?" skip":done?" done":n===f.idx?(worked?" now":" here"):""}" title="${esc(l)}">${esc(l)}<small>${sk?"not needed":"&nbsp;"}</small></div>`}).join("");
   const eta=f.eta!=null?`<div class="lbl">Live in</div><div class="big" data-eta="${f.eta}">${f.eta>Date.now()?dur(f.eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(f.eta)}</div>`:`<div class="lbl">ETA</div><div class="big">—</div>`;
   const rail=cards.map(i=>{const [c,w]=railState(i);
     return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span><strong>${esc(i.name)}</strong><span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
