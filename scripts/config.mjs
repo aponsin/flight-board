@@ -16,6 +16,9 @@ export function reviewPathsErrors(v, phaseKeys, at = "reviewPaths") {
 export const DEFAULTS = {
   title: "Flight Board",
   owner: "Owner",
+  // #C1054: the board's id, the name of its state folder and what the gate matches a write against. Empty: the id in artifactUrl
+  // (the old artifact board's link, optional now that the store is the board). Set it before artifactUrl is ever cleared.
+  boardId: "",
   artifactUrl: "",
   // #C825: the board's address on the store (a plain https address, e.g. https://board.example.com/): the pointer hooks/manager-compact-board.py
   // gives Manager after a compaction. Empty: the hook says the link is not in its reach and asks the owner to paste it once.
@@ -115,6 +118,7 @@ export function checkConfig(c) {
   for (const k of Object.keys(c)) if (!KEYS.includes(k)) out.push(`unknown field "${k}" (known: ${KEYS.join(", ")})`);
   for (const k of ["title", "owner"]) if (c[k] !== undefined && !(typeof c[k] === "string" && NAME.test(c[k]))) out.push(`${k}: 1 to 60 characters, no < > { } or line breaks`);
   if (c.artifactSlug !== undefined && c.artifactSlug !== "" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(String(c.artifactSlug))) out.push("artifactSlug: the artifact's UUID in lower case, or empty");
+  if (c.boardId !== undefined && c.boardId !== "" && !BOARD_ID.test(String(c.boardId))) out.push("boardId: 1 to 80 letters, digits or -, or empty");
   if (c.artifactUrl !== undefined && c.artifactUrl !== "" &&!/^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+$/.test(String(c.artifactUrl))) out.push("artifactUrl: a claude.ai artifact link, or empty");
   // The same shape the compact hook accepts (hooks/manager-compact-board.py): https, a host, an optional port and a trailing slash, no path or query.
   if (c.storeUrl !== undefined && c.storeUrl !== "" && !/^https:\/\/[A-Za-z0-9.-]{1,200}(:[0-9]{1,5})?\/?$/.test(String(c.storeUrl))) out.push("storeUrl: a plain https address (host, optional port, no path), or empty");
@@ -318,7 +322,9 @@ export function fullConfig(c) {
   return { ...DEFAULTS, ...c, gate: { ...DEFAULTS.gate, ...(c?.gate ?? {}) }, collector: { ...DEFAULTS.collector, ...(c?.collector ?? {}), refresh: { ...DEFAULTS.collector.refresh, ...(c?.collector?.refresh ?? {}) }, keeper: { ...DEFAULTS.collector.keeper, ...(c?.collector?.keeper ?? {}) } }, nudges: { ...DEFAULTS.nudges, ...(c?.nudges ?? {}) }, traffic: { ...DEFAULTS.traffic, ...(c?.traffic ?? {}) }, decisions: { ...DEFAULTS.decisions, ...(c?.decisions ?? {}) }, cardFields: { ...DEFAULTS.cardFields, ...(c?.cardFields ?? {}) }, repos: { ...DEFAULTS.repos, ...(c?.repos ?? {}) } };
 }
 
-// The board's id, from its link: what the gate matches a write's url against.
+// The board's id: the boardId key when it is set (#C1054), else the id in its link. What the gate matches a write's url against.
+export const BOARD_ID = /^[A-Za-z0-9-]{1,80}$/;
 export function boardId(c) {
+  if (typeof c?.boardId === "string" && BOARD_ID.test(c.boardId)) return c.boardId;
   return /artifact\/([A-Za-z0-9-]+)$/.exec(String(c?.artifactUrl ?? ""))?.[1] ?? null;
 }
