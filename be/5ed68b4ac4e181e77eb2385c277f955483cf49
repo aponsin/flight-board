@@ -1,0 +1,1 @@
+SECURE #C970 be5ed68b: signed only as part of the line ac5b7d0b..a386d516 (on main); alone it let a free-text title become a key, fixed by a386d516 (SECURE), so it never deploys alone. Added because board-release's lineCovers drops a line note once the line is on main. (Security)
