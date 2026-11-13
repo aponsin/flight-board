@@ -2356,7 +2356,9 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now());
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w,{decide:true})}${closed}</details>`;
-  const detBody=`${next}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
+  // #C866: the card's own line of what it removes, in the Details fold beside the Next line.
+  const removes=i.removes?`<span>Removes: <b>${esc(i.removes)}</b></span>`:"";
+  const detBody=`${next}${removes}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
   const gp=liveOpen?[]:gaps(i),red=gapRed(gp,i);
   const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip,track):"";
   return `<div class="i-row${red?" gap-red":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
