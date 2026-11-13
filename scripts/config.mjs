@@ -1,7 +1,10 @@
 // board.config.json: everything particular to one team. The page, the gate, the collector and the nudges read it; nothing
 // team-specific lives in this repository. checkConfig returns the problems, one line each; an empty list means it is good.
 // #C897: a review path pattern (collector/review-paths.mjs reads it): a path relative to the repository, with * (any characters but /) and
-// ** (any characters, / too). Kept here, with no import, because pinned copies hold this file alone.
+// ** (any characters, / too). Kept here, with no import of a repository file, because pinned copies hold this file alone.
+import { homedir } from "node:os";
+// A config path with a leading ~ made absolute (#C864 step 2a: it lived in gate/gate.mjs, which the live probe should not import).
+export const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
 export const REVIEW_PATTERN = /^[A-Za-z0-9_.*][A-Za-z0-9_.*\/-]{0,199}$/, MAX_REVIEW_PATTERNS = 200;
 export function reviewPathsErrors(v, phaseKeys, at = "reviewPaths") {
   if (v === undefined || v === null) return [];

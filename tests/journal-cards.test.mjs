@@ -79,15 +79,14 @@ const build = ({ cards, stamp = null, journal }) => {
 };
 const statusOf = (list, id) => list.find((k) => k.id === id)?.status;
 
-test("liveCards (the probe): a close after the export applies; a write the export already holds does not (the file's own time is used)", () => {
+test("liveCards (the probe, #C864 step 2a): the mirror's cards as they are; a gate.json journal beside them is not read (the store's cards already carry a close)", () => {
   const { state } = build({
-    cards: { "a-b": { data: { status: "active", who: "Demos" }, at: now - 50 * MIN }, "c-d": { data: { status: "active", who: "Demos" }, at: now - 5 * MIN }, "e-f": { data: { status: "active" }, at: now - 50 * MIN } },
-    journal: [w("a-b", { status: "done" }, now - 10 * MIN), w("c-d", { status: "done" }, now - 10 * MIN), w("e-f", { status: "done" }, now - 20 * MIN), w("e-f", { status: "active" }, now - 10 * MIN)],
+    cards: { "a-b": { data: { status: "active", who: "Demos" }, at: now - 50 * MIN }, "c-d": { data: { status: "done", who: "Demos" }, at: now - 5 * MIN } },
+    journal: [w("a-b", { status: "done" }, now - 10 * MIN), w("c-d", { status: "active" }, now - 1 * MIN)],
   });
   const cards = liveCards(state, "b");
-  assert.equal(statusOf(cards, "a-b"), "done", "closed after the export");
-  assert.equal(statusOf(cards, "c-d"), "active", "the export (5 min old) is newer than the close (10 min old): a card the lead closed and the owner reopened on the page stays open");
-  assert.equal(statusOf(cards, "e-f"), "active", "closed, then reopened, both after the export");
+  assert.equal(statusOf(cards, "a-b"), "active", "a close in the old journal is not laid over the store's card");
+  assert.equal(statusOf(cards, "c-d"), "done", "nor is a reopening");
 });
 
 test("liveCards without a journal or a mirror is the mirror's cards, or none", () => {
@@ -99,15 +98,15 @@ test("liveCards without a journal or a mirror is the mirror's cards, or none", (
 test("Checker's timeline: the run read at 10:01, the lead closed at 10:03, the merge wrote the card's file at 10:05: still closed (the probe and the derive step)", () => {
   const T = (hhmm) => Date.parse(`2026-11-10T${hhmm}:00Z`);
   const { state, board } = build({ cards: { "a-b": { data: { status: "active", who: "Demos" }, at: T("10:05") } }, stamp: T("10:00"), journal: [w("a-b", { status: "done" }, T("10:03"))] });
-  assert.equal(statusOf(liveCards(state, "b"), "a-b"), "done", "the probe");
+  assert.equal(statusOf(liveCards(state, "b"), "a-b"), "active", "the probe no longer reads the journal (#C864 step 2a)");
   const m = liveMirror(join(board, "mirror"), join(board, "gate.json"));
   assert.equal(m.docs.initiatives.find((k) => k.id === "a-b").status, "done", "the derive step");
   // The same file with no stamp (a mirror from a whole export) is held to its own time: the close is older than it.
   const plain = build({ cards: { "a-b": { data: { status: "active" }, at: T("10:05") } }, journal: [w("a-b", { status: "done" }, T("10:03"))] });
-  assert.equal(statusOf(liveCards(plain.state, "b"), "a-b"), "active");
+  assert.equal(statusOf(liveMirror(join(plain.board, "mirror"), join(plain.board, "gate.json")).docs.initiatives, "a-b"), "active");
   // A close before the run began is the run's to have seen: not applied again over a later reopening.
   const seen = build({ cards: { "a-b": { data: { status: "active" }, at: T("10:05") } }, stamp: T("10:04"), journal: [w("a-b", { status: "done" }, T("10:03"))] });
-  assert.equal(statusOf(liveCards(seen.state, "b"), "a-b"), "active");
+  assert.equal(statusOf(liveMirror(join(seen.board, "mirror"), join(seen.board, "gate.json")).docs.initiatives, "a-b"), "active");
 });
 
 test("liveMirror: only the cards change; another collection and a missing mirror are left as they are", () => {
