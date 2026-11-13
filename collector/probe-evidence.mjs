@@ -313,7 +313,9 @@ export function deployLastWrite({ configPath, read }) {
 }
 
 // #C1006: the app's session files, where each run's model is. A folder that cannot be read gives no sessions (appSessions says so by an empty list).
-const defaultSessions = () => appSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
+// Archived runs are read too: the newest run of a task is what the verdict needs, and the app archives a task's runs while it keeps running (Checker 2's F1).
+export const scheduleSessions = (root) => appSessions(root, undefined, { includeArchived: true });
+const defaultSessions = () => scheduleSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
 
 export async function evidenceJob(o) {
   const t0 = Date.now(), timing = o.timing ?? {};
