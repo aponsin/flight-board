@@ -1,0 +1,1 @@
+SECURE G4 #C992 1153d339: waiting_on cleared only on a NEW probe-read sign-off of the role it names; bound SQL, guarded by WHERE waiting_on = read value. LOW (not blocking): any hold whose text starts with a reviewer's role is cleared by that role's note, even one written for another reason. (Security)
