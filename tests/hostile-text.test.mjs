@@ -136,6 +136,8 @@ for (const host of ["store", null]) for (const mode of ["all", "end", "start"]) 
 // under a row is threadHtml's, as every other thread's.
 // #C972 added one: the push steps box (#pushhelp). Its words are pushSteps' own fixed strings and its browser name, each through esc()
 // (pushHelpHtml); nothing from the board or the user agent is written raw (the user agent is only matched, never shown).
-test("the page's innerHTML sinks are the 44 audited (41 for #C723, 1 for #C874, 1 for #C919, 1 for #C972): a new one fails here until it is audited", () => {
-  assert.equal((template.match(/innerHTML/g) ?? []).length, 44);
+// #C1049 added two: renderRestart's "Not now: agents working" button (a fixed word through esc()) and the pop-over's list of who is working (each name
+// through esc()); tests/not-now-badge-short.test.mjs draws a hostile agent name and finds no raw markup.
+test("the page's innerHTML sinks are the 46 audited (41 for #C723, 1 for #C874, 1 for #C919, 1 for #C972, 2 for #C1049): a new one fails here until it is audited", () => {
+  assert.equal((template.match(/innerHTML/g) ?? []).length, 46);
 });

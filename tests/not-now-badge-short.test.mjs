@@ -42,6 +42,19 @@ test("busy: the badge is one short label whatever the number of agents, and the 
   assert.equal(one.pop.innerHTML.match(/<li>/g).length, 1, "one agent: one row (the lead is not a team agent)");
 });
 
+// The two innerHTML sinks #C1049 added (hostile-text.test.mjs audits the count). Two guards: an agent name that is not a known role is never read as
+// working (liveAgent), so a hostile key is never listed; and each sink is written through esc() (the source says so, below).
+test("a hostile agent name is never listed and never reaches the markup raw; both innerHTML sinks go through esc()", () => {
+  const evil = "<img src=x onerror=alert(1)>";
+  const b = board({ [evil]: turn(), Builder: turn() });
+  b.renderRestart();
+  assert.ok(!b.pop.innerHTML.includes("<img") && !b.pop.innerHTML.includes("onerror"), b.pop.innerHTML);
+  assert.ok(!b.badge.innerHTML.includes("<img") && !b.badge.innerHTML.includes("onerror"));
+  assert.match(b.pop.innerHTML, /<li>Builder<\/li>/, "the real role is listed");
+  assert.match(html, /aria-expanded="false">Not now: \$\{esc\(r\.why\)\}<\/button>`/, "the badge's label goes through esc()");
+  assert.match(html, /names\.map\(n=>`<li>\$\{esc\(n\)\}<\/li>`\)\.join\(""\)/, "each name in the list goes through esc()");
+});
+
 test("the badge is a real button with its pop-over wired for keyboard and screen readers", () => {
   const b = board(crowd(3));
   b.renderRestart();
