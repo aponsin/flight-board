@@ -557,14 +557,19 @@ export function reworkTriggered(prev, next) {
 // waiting_on written after the sign-off, or one naming a reviewer still due, is never matched. A first reading (prev null) counts its sign-offs as new.
 const SIGN_ROLE = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security" };
 const signedOf = (v) => new Set((Array.isArray(v?.signed) ? v.signed : []).filter((s) => typeof s === "string" && Object.hasOwn(SIGN_ROLE, s)));
+// #C1048 (Security's LOW on G4 v3, the lead's pick A): only a hold in the fixed review-hold form is a review hold, so only it ends when its
+// reviewer signs: the role (a numbered second session too), then nothing, ": review", ": quick review" or ": full review", any case, nothing
+// after. Any other hold ("Security: wait for the owner's ok") stays until the lead or the owner lifts it. Returns the role it names, or null.
+const REVIEW_HOLD = new RegExp(`^(${Object.values(SIGN_ROLE).join("|")})(?: \\d)?(?:: (?:(?:quick|full) )?review)?$`, "i");
+export function reviewHoldRole(waitingOn) {
+  const m = typeof waitingOn === "string" ? REVIEW_HOLD.exec(waitingOn.trim().replace(/\s+/g, " ")) : null;
+  return m ? Object.values(SIGN_ROLE).find((r) => r.toLowerCase() === m[1].toLowerCase()) : null;
+}
 export function signoffClears(prev, next, waitingOn) {
-  if (typeof waitingOn !== "string" || !waitingOn.trim()) return null;
-  const had = signedOf(prev), w = waitingOn.trim().toLowerCase();
-  for (const s of signedOf(next)) {
-    if (had.has(s)) continue;
-    const role = SIGN_ROLE[s].toLowerCase();
-    if (w === role || (w.startsWith(role) && !/[a-z]/.test(w.charAt(role.length)))) return SIGN_ROLE[s];
-  }
+  const held = reviewHoldRole(waitingOn);
+  if (!held) return null;
+  const had = signedOf(prev);
+  for (const s of signedOf(next)) if (!had.has(s) && SIGN_ROLE[s] === held) return held;
   return null;
 }
 // Phase history (#C723 B3b): who a phase change is put down to when no agent is working on the card at that moment: the phase's lane
