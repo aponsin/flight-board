@@ -1,0 +1,3 @@
+PASS (Quick) #C1024 board-contrast-viewer-targets v2 7bb77f34a6a61618a1271eb7713da3eb0477e7f9, line from cc3b728c50c5c67f3d92c7a014c1cb927bc4adb1 (covers a4969e39 and 7bb77f34)
+Rebase of 015d079a (reviewed and signed there): range-diff a0711522..015d079a vs cc3b728c..7bb77f34 differs only in CHANGELOG.md context (#C1055's line now above; #C1045's line no longer below). Two-dot diff against main is #C1024's own five files.
+Tests on 7bb77f34: touched plus #C1055's board-icon and store-page 34/34; the old-muted mutant still fails a test, worktree restored. Earlier on 015d079a: mutants M1-M7 killed, full suite exit 0.
