@@ -1,0 +1,1 @@
+SECURE G5 g5-deploy-signals-v2 a422a05d: static import puts worker/probe-jobs.mjs in the owner's pinned closure (tighter). line from 212b562f604d66784dfb5bee1fea16b80f778da6 (Security)
