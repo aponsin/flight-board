@@ -1,0 +1,1 @@
+SECURE G3 g3-probe v2 01d91f01: commits 1-4 equal to signed b39df027; a4ff16d7, 25935703 and 01d91f01 (#C996: argv git and gh, 40-hex headSha check, memo of reads only, fetch never memoized) reviewed; no new secret or write path. line from 9fb55ad574ac2c43488765b49c7dfbfd9f6b625e (Security)
