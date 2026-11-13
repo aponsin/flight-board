@@ -1,0 +1,1 @@
+SECURE #C1006 1544d2c7: rebase of signed 3f9d3cbd (range-diff: includeArchived guard plus #C970's from in context); includeArchived only for scheduleSessions. Part of the line a386d516..1130018f. (Security)
