@@ -288,7 +288,10 @@ export function remoteTips(git, remote) {
 export function ciOf(gh, sha, now) {
   let runs = [];
   try { runs = JSON.parse(gh(["run", "list", "--commit", sha, "--limit", "1", "--json", "status,conclusion,createdAt,updatedAt"])); } catch { return { ci: "none", ciMin: null, failed: true }; }
-  const r = Array.isArray(runs) ? runs[0] : null;
+  return ciFromRun(Array.isArray(runs) ? runs[0] : null, now);
+}
+// The { ci, ciMin } of one run object (gh's status, conclusion, createdAt, updatedAt); none for anything that is not a run.
+export function ciFromRun(r, now) {
   if (!plain(r)) return { ci: "none", ciMin: null };
   const status = String(r.status ?? ""), conclusion = String(r.conclusion ?? "");
   const ci = status === "completed" ? (conclusion === "success" ? "passed" : ["cancelled", "skipped", "neutral"].includes(conclusion) ? "cancelled" : "failed") : status === "in_progress" ? "running" : "queued";
@@ -311,12 +314,40 @@ export const ciEntry = (v) => (v && FINISHED.includes(v.ci) && (v.ciMin === null
 export const BACKOFF_MIN_MS = 60e3, BACKOFF_MAX_MS = 30 * 60e3;
 const wholeMs = (v) => (Number.isInteger(v) && v >= 0 && v <= 4102444800000 ? v : 0);
 export const backoffOf = (v) => ({ until: wholeMs(v?.until), wait: Math.min(BACKOFF_MAX_MS, Math.max(BACKOFF_MIN_MS, wholeMs(v?.wait))) });
-export function ciReader(gh, now, cache, backoff = { until: 0, wait: BACKOFF_MIN_MS }) {
-  let calls = 0;
+// #C996 part 3: with `batch`, the first card that needs a run reading asks gh ONCE for the repository's newest CI_BATCH_LIMIT runs (all workflows) and
+// every commit among them is read from that list (its newest run, as `--limit 1` on the commit gives); a commit not in the list is asked alone, as
+// before, and counts against MAX_CI_CALLS. A failed list is a failed call: the back-off starts and no card gets a reading this run. A run whose
+// cards are all cached asks nothing. Off by default: only the probe's own repository read turns it on.
+export const CI_BATCH_LIMIT = 100;
+export function ciReader(gh, now, cache, backoff = { until: 0, wait: BACKOFF_MIN_MS }, { batch = false } = {}) {
+  let calls = 0, listed = null;
+  const fail = () => { backoff.until = now + backoff.wait; backoff.wait = Math.min(BACKOFF_MAX_MS, backoff.wait * 2); };
+  const list = () => {
+    if (listed) return listed;
+    calls++;
+    let runs;
+    try { runs = JSON.parse(gh(["run", "list", "--limit", String(CI_BATCH_LIMIT), "--json", "headSha,status,conclusion,createdAt,updatedAt"])); } catch { fail(); return (listed = { failed: true, by: new Map() }); }
+    const by = new Map();
+    if (Array.isArray(runs)) for (const r of runs) if (plain(r) && /^[0-9a-f]{40}$/.test(String(r.headSha)) && !by.has(r.headSha)) by.set(r.headSha, r);
+    backoff.until = 0; backoff.wait = BACKOFF_MIN_MS;
+    return (listed = { failed: false, by });
+  };
   return (sha) => {
     const kept = ciEntry(cache[sha]);
     if (kept) return kept;
-    if (calls >= MAX_CI_CALLS || now < backoff.until) return { ci: "none", ciMin: null };
+    if (now < backoff.until) return { ci: "none", ciMin: null };
+    if (batch) {
+      if (!listed && calls >= MAX_CI_CALLS) return { ci: "none", ciMin: null };
+      const l = list();
+      if (l.failed) return { ci: "none", ciMin: null };
+      const run = l.by.get(sha);
+      if (run) {
+        const r = ciFromRun(run, now);
+        if (FINISHED.includes(r.ci)) cache[sha] = { ci: r.ci, ciMin: r.ciMin };
+        return { ci: r.ci, ciMin: r.ciMin };
+      }
+    }
+    if (calls >= MAX_CI_CALLS) return { ci: "none", ciMin: null };
     calls++;
     const r = ciOf(gh, sha, now);
     if (r.failed) { backoff.until = now + backoff.wait; backoff.wait = Math.min(BACKOFF_MAX_MS, backoff.wait * 2); }
@@ -679,7 +710,62 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
 }
 // The newest commit on the repository's main line (its last 400) whose Board-Id trailer is exactly the card's id, as a head
 // { branch: main, sha, at, message }, or null. The id goes to git as a fixed string, never a pattern or an option.
+// #C996 part 3: the trailer index. One `git log` of main's commits that carry any Board-Id line (the newest TRAILER_INDEX_MAX), read once per run
+// per repository (a repo marked `indexed`, as the probe's own are), gives every card its newest commit by exact trailer: what trailerHead asks git
+// once per card (two or three times for a card on main), 165 open cards a run. A card the index does not hold is no commit on main when the list is
+// complete; when it was cut at the cap, the card is asked alone as before. A git failure gives no index (null): every card is asked alone.
+export const TRAILER_INDEX_MAX = 5000;
+const TRAILER_INDEXES = new WeakMap();
+export function trailerIndex(repo) {
+  if (!TRAILER_INDEXES.has(repo)) {
+    let index = null;
+    try {
+      const out = String(repo.git(["log", `-${TRAILER_INDEX_MAX}`, "--fixed-strings", "--grep=Board-Id: ", "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${repo.main}`]));
+      const heads = new Map();
+      let n = 0;
+      for (const r of out.split("\x1e")) {
+        const [sha, at, message] = r.replace(/^\n/, "").split("\x1f");
+        if (!/^[0-9a-f]{40}$/.test(sha ?? "")) continue;
+        n++;
+        for (const m of String(message ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)) if (!heads.has(m[1])) heads.set(m[1], { branch: repo.main, sha, at: Number(at) * 1000, message });
+      }
+      index = { heads, complete: n < TRAILER_INDEX_MAX };
+    } catch { index = null; }
+    TRAILER_INDEXES.set(repo, index);
+  }
+  return TRAILER_INDEXES.get(repo);
+}
+// #C996 part 3: the run's read memo. A read git answers the same way for the whole run (the fetch is done before it is made), so each distinct
+// read command runs once: merge-base, rev-list, log, diff, show, cat-file, rev-parse and notes list or show. A failure is kept too (merge-base
+// --is-ancestor answers "no" by failing). Anything else (fetch, a notes write) runs every time, and a result over MEMO_MAX_CHARS is not kept.
+// memo.stats counts { hits, runs } for the run's timing and for tests.
+export const MEMO_MAX_CHARS = 1_000_000;
+const MEMO_READS = new Set(["merge-base", "rev-list", "log", "diff", "show", "cat-file", "rev-parse"]);
+const isRead = (args) => Array.isArray(args) && args.every((a) => typeof a === "string") && (MEMO_READS.has(args[0]) || (args[0] === "notes" && (args.includes("show") || args[args.length - 1] === "list")));
+export function memoGit(git) {
+  const kept = new Map(), stats = { hits: 0, runs: 0 };
+  const read = (args) => {
+    if (!isRead(args)) { stats.runs++; return git(args); }
+    const key = args.join("\u0000");
+    const had = kept.get(key);
+    if (had) { stats.hits++; if (had.error) throw had.error; return had.value; }
+    stats.runs++;
+    try {
+      const value = git(args);
+      if (typeof value !== "string" || value.length <= MEMO_MAX_CHARS) kept.set(key, { value });
+      return value;
+    } catch (error) { kept.set(key, { error }); throw error; }
+  };
+  read.stats = stats;
+  return read;
+}
 export function trailerHead(repo, id, branch = repo.main, depth = 400) {
+  if (repo.indexed === true && branch === repo.main && depth === 400) {
+    const index = trailerIndex(repo);
+    const found = index?.heads.get(id);
+    if (found) return { ...found };
+    if (index?.complete) return null;
+  }
   let out = "";
   try { out = repo.git(["log", `-${depth}`, "--fixed-strings", `--grep=Board-Id: ${id}`, "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${branch}`]); } catch { return null; }
   for (const r of out.split("\x1e")) {
@@ -1208,7 +1294,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const t0 = performance.now();
     try { tips = remoteTips(git, remote); } catch { fresh = false; /* an empty clone */ }
     tipsMs += performance.now() - t0;
-    return { git, gh: run(path)("gh", 15_000), remote, main, notes: local, tips, ids: changeIds, fresh };
+    // #C996 part 3: every read after the fetch goes through the run's memo, and the repository's trailers are indexed once (trailerIndex).
+    return { git: memoGit(git), indexed: true, gh: run(path)("gh", 15_000), remote, main, notes: local, tips, ids: changeIds, fresh };
   };
   // Finished CI runs, kept by commit from run to run (the newest 500).
   const ciPath = join(stateDir, id, "ci-cache.json");
@@ -1232,7 +1319,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const r = repoAt(home(c.repoPath), c.remote, c.mainBranch, c.notes);
     let live = null;
     if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { /* none */ } }
-    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern, reviewPaths: c.reviewPaths ?? null };
+    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff, { batch: true }), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern, reviewPaths: c.reviewPaths ?? null };
     // #C974: the live config follows the copy landed on main (the next run reads it). A failure here never stops the run.
     if (c.configInRepo) { const l = syncLiveConfig({ git: r.git, tip: `${c.remote}/${c.mainBranch}`, file: c.configInRepo, notesRef: r.notes.security, livePath: process.argv[at + 1] }); if (l) console.log(l); }
   }
