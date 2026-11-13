@@ -4,6 +4,7 @@
 //   GET  /                  the board page (the old-look page from the assets, by a per-response nonce; #C829); GET /board redirects to /
 //   GET  /api/view          the one JSON view (ETag; If-None-Match answers 304 with no body)
 //   POST /api/probe/evidence  { key, value, track? }   role probe only
+//   POST /api/probe/file      { name, type, data }     role probe only (#C1056: stores a file, returns its id; scripts/put-file.mjs)
 //   POST /mcp               JSON-RPC: initialize, ping, tools/list, tools/call
 import { ASK_TYPES, ASK_PARTS, ASK_OPTIONAL_PARTS, ROSTER_ROLES } from "./board-rules.mjs";
 import { compatView } from "./compat-view.mjs";
@@ -342,6 +343,17 @@ export default {
       let b;
       try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
       const r = await writeEvidence(env.DB, now, "probe", b?.key, b?.value, b?.track);
+      return json(r.ok ? 200 : 422, r);
+    }
+    // #C1056: a file an agent made on the Mac (a picture, a text file), stored with the probe's own token by scripts/put-file.mjs, so its bytes never pass through
+    // a model. Probe only, and it stores and returns the id and nothing else: the probe still cannot read a file back, open the page, or write a thread. The same putFile
+    // as the owner's upload and the agents' file_put, so the same types, sniffing, size cap and quotas; the probe counts with the agents in the daily cap (putFile's
+    // added_by <> 'owner'), so this route cannot add to it. The agent then names the id in its own post or ask (screenshots).
+    if (url.pathname === "/api/probe/file" && request.method === "POST") {
+      if (auth.role !== "probe") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await putFile({ db: env.DB, bucket: env.FILES, now, who: auth.who, refuse }, { name: b?.name, type: b?.type, data: b?.data });
       return json(r.ok ? 200 : 422, r);
     }
     // #C737: the commit this Worker was deployed from (the pair's deploy sets BUILD_SHA to its signed commit), probe only. A board

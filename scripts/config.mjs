@@ -100,6 +100,9 @@ export const DEFAULTS = {
     visualLanes: [],
     offBoard: ["Manager chat", "in chat", "see chat", "in the chat"],
   },
+  // Extra folders scripts/put-file.mjs may take a file from (#C1056), beside the folder that holds this config: up to 5 absolute paths, "~/" for the home folder.
+  // None by default. Never a repository checkout (it holds source and settings): a stored file is readable by every agent and person past Access.
+  fileRoots: [],
 };
 
 const KEYS = Object.keys(DEFAULTS);
@@ -306,6 +309,7 @@ export function checkConfig(c) {
       if (k.visualLanes !== undefined && !(Array.isArray(k.visualLanes) && k.visualLanes.every((r) => typeof r === "string" && NAME.test(r)))) out.push("decisions.visualLanes: a list of role names");
     }
   }
+  if (c.fileRoots !== undefined && !(Array.isArray(c.fileRoots) && c.fileRoots.length <= 5 && c.fileRoots.every((p) => typeof p === "string" && /^(\/|~\/)[^\0<>{}\n]{1,300}$/.test(p) && !p.split("/").includes("..")))) out.push("fileRoots: a list of up to 5 absolute folders (or ~/ ones), none with ..");
   return out;
 }
 

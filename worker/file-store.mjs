@@ -2,7 +2,8 @@
 // Bytes in R2 (env.FILES, key = id), the list in D1 (migration 0010: files, file_links). A file is written once and never
 // changed; its id is random (24 bytes, base64url), so a URL cannot be guessed and can be cached for good.
 //
-// Who writes: the owner through POST /api/files (the page's assets.upload), an agent through the file_put tool. Who reads:
+// Who writes: the owner through POST /api/files (the page's assets.upload), an agent through the file_put tool, and (#C1056) a local script with the probe's
+// token through POST /api/probe/file (scripts/put-file.mjs: a file on the Mac that no model has to carry as base64). Who reads:
 // anyone past the Worker's Access check, at GET /_blob/<id>, served with the type it was stored as, never sniffed, and in a
 // sandbox (a stored file can never run as a page of this Worker).
 //
