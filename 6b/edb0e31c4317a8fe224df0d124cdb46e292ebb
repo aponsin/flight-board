@@ -1,0 +1,1 @@
+SECURE #C1049 6bedb0e3: Not now badge and pop-over; both innerHTML sinks go through esc(). (Security)
