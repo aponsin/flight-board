@@ -85,7 +85,9 @@ export function readTail(path, max, uid = process.getuid()) {
 
 // The app's sessions: <root>/<account>/<org>/local_<id>.json, each kept to { title, transcript, cwd, at } (an open one
 // with a transcript id; nothing else of the file is kept).
-export function appSessions(root, uid = process.getuid()) {
+// includeArchived (#C1006, Checker 2's F1): the schedule reading needs a task's newest run even after the app archived it (a task's runs get archived
+// while it still runs and drifts); everything else leaves archived sessions out, as before.
+export function appSessions(root, uid = process.getuid(), { includeArchived = false } = {}) {
   const out = [], dirs = (p) => { try { return readdirSync(p).filter((d) => UUID.test(d) && lstatSync(join(p, d)).isDirectory()); } catch { return []; } };
   for (const a of dirs(root)) for (const o of dirs(join(root, a))) {
     let files = [];
@@ -95,7 +97,7 @@ export function appSessions(root, uid = process.getuid()) {
       if (!r?.whole) continue;
       let s;
       try { s = JSON.parse(r.text); } catch { continue; }
-      if (!plain(s) || s.isArchived === true || typeof s.title !== "string" || !UUID.test(String(s.cliSessionId ?? "")) || typeof s.cwd !== "string" || !s.cwd.startsWith("/")) continue;
+      if (!plain(s) || (s.isArchived === true && !includeArchived) || typeof s.title !== "string" || !UUID.test(String(s.cliSessionId ?? "")) || typeof s.cwd !== "string" || !s.cwd.startsWith("/")) continue;
       // #C970: from is the session that started this one (spawnedFrom.sessionId), when it is a session id; nothing else of spawnedFrom is kept.
       const from = typeof s.spawnedFrom?.sessionId === "string" && /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s.spawnedFrom.sessionId) ? s.spawnedFrom.sessionId : null;
       // #C1006: model (the model this session ran on) and scheduledTaskId (set on a scheduled task's run), each only when it is a plain word, else null.

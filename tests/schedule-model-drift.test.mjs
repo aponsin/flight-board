@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { checkConfig, fullConfig } from "../scripts/config.mjs";
 import { appSessions } from "../collector/state.mjs";
 import { scheduleModelsWrite, configuredTasks, newestRuns } from "../collector/schedule-models.mjs";
-import { evidenceJob } from "../collector/probe-evidence.mjs";
+import { evidenceJob, scheduleSessions } from "../collector/probe-evidence.mjs";
 import { scheduleModelsShape, evidenceRefusal } from "../worker/board-rules.mjs";
 import { probeDoc } from "../worker/compat-view.mjs";
 import { loadNames } from "./harness.mjs";
@@ -57,6 +57,21 @@ test("appSessions keeps model and scheduledTaskId as plain words (else null), an
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test("an archived run still counts for the schedule reading (and only for it): a task whose newest run is archived and drifted reads red, not 'no run yet' (Checker 2's F1)", () => {
+  const root = mkdtempSync(join(tmpdir(), "sched-arch-")), org = join(root, "a".repeat(8) + "-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "b".repeat(8) + "-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+  try {
+    mkdirSync(org, { recursive: true });
+    const file = (n, extra) => writeFileSync(join(org, `local_aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa${n}.json`), JSON.stringify({ title: `S${n}`, cliSessionId: `cccccccc-cccc-4ccc-8ccc-ccccccccccc${n}`, cwd: "/Users/x/Code/r", scheduledTaskId: "watchdog", ...extra }));
+    file(1, { model: "claude-haiku-5-5", lastActivityAt: T - 5 * H });
+    file(2, { model: "claude-opus-5-5", lastActivityAt: T - H, isArchived: true });
+    assert.deepEqual(appSessions(root).map((s) => s.title), ["S1"], "everything else still leaves archived sessions out");
+    assert.deepEqual(appSessions(root, undefined, { includeArchived: true }).map((s) => s.title).sort(), ["S1", "S2"]);
+    const v = scheduleModelsWrite(cfgOf([{ id: "watchdog", model: "claude-haiku-5-5" }]), { sessions: scheduleSessions(root), now: T }).value;
+    assert.deepEqual(v.tasks, [{ id: "watchdog", chosen: "claude-haiku-5-5", lastRun: "claude-opus-5-5", at: T - H }]);
+    assert.equal(JSON.parse(JSON.stringify(page(null).scheduleVerdict(v.tasks[0], T))).c, "bad", "the drifted archived run is red");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("the reading takes the newest run of each task, the chosen model from the config, and says when a run is not known", () => {
   const v = write(cfgOf([{ id: "watchdog", model: "claude-haiku-5-5" }, { id: "never", model: "claude-haiku-5-5" }]), [
     run("watchdog", "claude-opus-5-5", T - 5 * H), run("watchdog", "claude-haiku-5-5", T - H), run("watchdog", "claude-sonnet-5-5", T - 9 * H), { id: "p", title: "plain", at: T, model: "claude-opus-5-5", scheduledTaskId: null }]);
@@ -76,8 +91,8 @@ test("no list in the config posts no task, even for tasks seen; at most 30 are p
   assert.deepEqual(write("{}", [run("a", "m", T)]).tasks, [], "a task seen but not configured is not listed");
   assert.equal(write(cfgOf(Array.from({ length: 30 }, (_, i) => ({ id: `t${i}` }))), Array.from({ length: 40 }, (_, i) => run(`t${i}`, "m", T - i))).tasks.length, 30);
   const logs = [];
-  for (const c of ["not json", cfgOf("x"), cfgOf([{ id: "a b" }]), cfgOf([{ id: "a" }, { id: "a" }]), cfgOf([{ id: "a", model: "x y" }])]) assert.equal(scheduleModelsWrite(c, { sessions: [], now: T, log: (l) => logs.push(l) }), null, c);
-  assert.equal(logs.length, 5, "each says why");
+  for (const c of ["not json", cfgOf("x"), cfgOf([{ id: "a b" }]), cfgOf([{ id: "a" }, { id: "a" }]), cfgOf([{ id: "a", model: "x y" }]), cfgOf([{ id: "a", prompt: "an extra field" }])]) assert.equal(scheduleModelsWrite(c, { sessions: [], now: T, log: (l) => logs.push(l) }), null, c);
+  assert.equal(logs.length, 6, "each says why");
   assert.equal(configuredTasks(cfgOf([])).length, 0);
   assert.equal(newestRuns([run("a", "m", T), { scheduledTaskId: "b c", at: T }]).size, 1);
 });
@@ -109,7 +124,10 @@ test("the store accepts the shape and refuses anything else: words, model names 
     { at: T, tasks: [{ id: "a", chosen: "m\nx", lastRun: null, at: null }] },
     { at: T, tasks: [{ id: "a", chosen: undefined, lastRun: null, at: null }] },
     { at: T, tasks: [{ id: "a", chosen: null, lastRun: null, at: "x" }] },
-    { at: T, tasks: [{ id: "a", chosen: null, lastRun: null, at: null, prompt: "secret" }] }];
+    { at: T, tasks: [{ id: "a", chosen: null, lastRun: null, at: null, prompt: "secret" }] },
+    { at: T, tasks: [{ id: "a", chosen: null, lastRun: "m\nx", at: null }] },
+    { at: T, tasks: [{ id: "a", chosen: null, lastRun: { x: 1 }, at: null }] },
+    { at: T, tasks: [{ id: "a", chosen: null, lastRun: undefined, at: null }] }];
   for (const v of bad) assert.equal(scheduleModelsShape(v), false, JSON.stringify(v));
   assert.notEqual(evidenceRefusal("schedule.models", bad[3], "probe"), null, "a bad value is refused");
   assert.notEqual(evidenceRefusal("schedule.models", good, "agent"), null, "only the probe writes evidence");
@@ -152,4 +170,6 @@ test("the page draws one chip per task, says when the reading is over 36 h old, 
   assert.equal(page(null).scheduleModelsHtml(T), "");
   assert.equal(page({ at: T, tasks: [] }).scheduleModelsHtml(T), "");
   assert.match(page({ at: T, tasks: [{ id: "<img>", chosen: "<b>", lastRun: "<i>", at: T }] }).scheduleModelsHtml(T), /&lt;img&gt;/, "words are escaped");
+  assert.match(page({ at: T, tasks: [{ id: "<img>", chosen: "<b>", lastRun: "<i>", at: T }] }).scheduleModelsHtml(T), /class="sm-id">&lt;img&gt;<\/span>/, "the id shown is escaped too, not only the data-task attribute");
+  assert.doesNotMatch(page({ at: T, tasks: [{ id: "<img>", chosen: "<b>", lastRun: "<i>", at: T }] }).scheduleModelsHtml(T), /<img>|<i>|<b>/, "no raw tag from a word reaches the page");
 });
