@@ -1,0 +1,1 @@
+PASS Full G5 v2 #C982 #C1045 #C975 #C1022 (Checker 2): F1 MEDIUM on e03bb4be (land job limit) and F1/F2 LOW on 81d976c4 (escape test, static import in the pinned closure) fixed; full suite 3008/3008 on 81d976c4 plus touched tests 113/113 on a422a05d; mutation check: pass (17 mutations, each caught) (commit ec38e585 of stack tip a422a05d)
