@@ -34,7 +34,7 @@ export const normName = (name) => {
 // query, a fragment or an upper-case UUID is still the board. Fails closed, as the old `.includes(id)` did (Security).
 export function isBoardSlug(value, config) {
   if (typeof value !== "string" || !value) return false;
-  const id = /artifact\/([A-Za-z0-9-]+)$/.exec(String(config?.artifactUrl ?? ""))?.[1];
+  const id = (/^[A-Za-z0-9-]{1,80}$/.test(String(config?.boardId ?? "")) ? config.boardId : null) ?? /artifact\/([A-Za-z0-9-]+)$/.exec(String(config?.artifactUrl ?? ""))?.[1];
   const uuid = String(config?.artifactSlug ?? "").toLowerCase();
   if (id && value.includes(id)) return true;
   if (!uuid || !isUuid(uuid)) {
