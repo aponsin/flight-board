@@ -560,10 +560,10 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .g-pull:disabled{color:var(--muted);cursor:default}
 /* #C1053: the owner's order of the groups: real buttons, keyboard reachable, 44 px on a phone. The place reads "1st", "2nd"... beside the tag. */
 .g-move{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle}
-.g-move button{font:600 .9rem var(--mono);min-width:36px;min-height:36px;padding:0 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer}
+.g-move button{font:600 1.1rem var(--mono);min-width:36px;min-height:36px;padding:0 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer}
 .g-move button:disabled{opacity:.35;cursor:default}
 .g-place{font:600 .72rem var(--mono);color:var(--muted);margin-left:6px}
-@media (max-width:760px){.g-move button{min-width:44px;min-height:44px}}
+@media (max-width:760px){.g-move{margin-left:0}.g-move button{min-width:44px;min-height:44px}}
 .pulled{font:600 .78rem var(--mono);color:var(--warn);border:1px dashed var(--warn);border-radius:4px;padding:1px 6px}
 table.crew3-ph{margin-top:14px}
 .now-group{margin-bottom:16px}
@@ -2470,7 +2470,11 @@ function groupRow(b,cards,at){const f=groupFacts(cards),track=trackFor(cards[0])
 document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e.target.closest("[data-gmove]"):null;if(!b||!STORE||b.disabled)return;
   const was=b.textContent;b.disabled=true;
   try{const r=await fetch("/api/group-move",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({batch:b.dataset.gmove,dir:b.dataset.dir})});
-    if(!r.ok)throw new Error("refused");setTimeout(()=>{b.disabled=false},2500)}
+    if(!r.ok)throw new Error("refused");
+    // Designer F1 on 9eb8d39d: the row moves at once, from the order the store answers with, so a second click is a second, visible move.
+    let j=null;try{j=await r.json()}catch(_){}
+    if(j&&Array.isArray(j.order)){state.meta=(state.meta||[]).filter(d=>!d||d.id!=="groupOrder").concat([{id:"groupOrder",rows:j.order.map((batch,i)=>({batch,pos:i+1,setBy:"owner"}))}]);try{renderBoard()}catch(_){}}
+    setTimeout(()=>{b.disabled=false},600)}
   catch(_){b.textContent="Not saved";setTimeout(()=>{b.textContent=was;b.disabled=false},4000)}});
 // A card the owner pulled out of its group says so (who and when), until it is put in a group again.
 function pulledTag(i){if(!i||typeof i.pulledFrom!=="string"||!i.pulledFrom||i.batch)return "";const by=i.pulledBy==="owner"?OWNER:i.pulledBy;

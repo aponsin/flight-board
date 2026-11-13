@@ -17,7 +17,9 @@ const SHA = "8b3855f0f672";
 const card = (id, num, extra = {}) => ({ id, num, owner_role: "Builder", review_level: "Quick", waiting_on: null, paused: 0, dropped: 0, repo: "", ...extra });
 // `at` is the view's now: NOW for dispatchRun, the real clock for the CLI (main reads Date.now).
 const world = ({ pct, at = NOW, usageAt = at - 10 * MIN, cardEv = {} } = {}) => ({
-  cards: [card("new-work", 900), card("in-review", 901), card("sent-back", 902)],
+  // The sent-back card is Boardsmith's: since #C1053 an agent with a rework it can act on is woken for the fix and for no new card, so the fix and the new
+  // build belong to two builders and the ceiling still shows what it drops (the new build) and what it keeps (the fix).
+  cards: [card("new-work", 900), card("in-review", 901), card("sent-back", 902, { owner_role: "Boardsmith" })],
   asks: [],
   evidence: {
     agents: { readAt: at - 5_000, value: Object.fromEntries(ROSTER.map((r) => [r, { state: "idle", lastActivityAt: at - 2 * MIN, since: at - 2 * MIN }])) },
@@ -45,15 +47,15 @@ test("weekPctOf: a fresh reading's percent; a missing, null, stale or future one
 });
 
 test("at the ceiling no builder is woken for new build work; reviews and the fix of a sent-back card go on", () => {
-  const all = ["Builder:new-work:build", "Builder:sent-back:rework", "Checker:in-review:review"];
+  const all = ["Boardsmith:sent-back:rework", "Builder:new-work:build", "Checker:in-review:review"];
   assert.deepEqual(run(world({ pct: 89 })), all, "below 90: as before");
-  assert.deepEqual(run(world({ pct: 90 })), ["Builder:sent-back:rework", "Checker:in-review:review"], "at 90: no new build");
-  assert.deepEqual(run(world({ pct: 97 })), ["Builder:sent-back:rework", "Checker:in-review:review"]);
+  assert.deepEqual(run(world({ pct: 90 })), ["Boardsmith:sent-back:rework", "Checker:in-review:review"], "at 90: no new build");
+  assert.deepEqual(run(world({ pct: 97 })), ["Boardsmith:sent-back:rework", "Checker:in-review:review"]);
 });
 
 test("the ceiling is the config's: 99 this week lets 97% through and stops at 99", () => {
-  assert.deepEqual(run(world({ pct: 97 }), 99), ["Builder:new-work:build", "Builder:sent-back:rework", "Checker:in-review:review"]);
-  assert.deepEqual(run(world({ pct: 99 }), 99), ["Builder:sent-back:rework", "Checker:in-review:review"]);
+  assert.deepEqual(run(world({ pct: 97 }), 99), ["Boardsmith:sent-back:rework", "Builder:new-work:build", "Checker:in-review:review"]);
+  assert.deepEqual(run(world({ pct: 99 }), 99), ["Boardsmith:sent-back:rework", "Checker:in-review:review"]);
   assert.equal(atCeiling(world({ pct: 95 }), NOW, 0), true, "a ceiling out of range falls back to 90");
 });
 
@@ -84,7 +86,7 @@ test("the CLI takes the ceiling from board.config: at quotaCeilingPct 99, 95% ke
 });
 
 test("an unknown or stale reading never stops build work", () => {
-  const all = ["Builder:new-work:build", "Builder:sent-back:rework", "Checker:in-review:review"];
+  const all = ["Boardsmith:sent-back:rework", "Builder:new-work:build", "Checker:in-review:review"];
   assert.deepEqual(run(world()), all, "no reading");
   assert.deepEqual(run(world({ pct: null })), all, "no percent");
   assert.deepEqual(run(world({ pct: 150, usageAt: NOW - USAGE_FRESH_MS - 1 })), all, "stale");

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { createCard, updateCard, moveGroup, openGroups, readView } from "../worker/board-store.mjs";
-import { groupMoveRefusal, groupRank, groupCompare } from "../worker/board-rules.mjs";
+import { groupMoveRefusal, groupRank, groupCompare, stalledWaits } from "../worker/board-rules.mjs";
 import { compatView } from "../worker/compat-view.mjs";
 import { dispatchRun } from "../collector/store-dispatch.mjs";
 import { loadNames } from "./harness.mjs";
@@ -146,6 +146,105 @@ test("with a group started, the agent takes its cards there in queue order, then
   assert.deepEqual(mine(run(withEvidence(viewOf(finished, order), { "c3-three": PUSHED }))), ["c2-two"], "no card of its own left in the started group: the owner's next group");
 });
 
+// Rework goes first (the owner's A on 11-12, 8:24 pm): an agent's dispatch order is (1) its rework, from any group in review, (2) its queued cards in its
+// started group, (3) the next group in the owner's order, (4) queue_pos.
+const FINDINGS = { lit: ["build", "checker"], phase: "checker", headSha12: "abcdef012345", findings: ["checker"], signed: [], onMain: false };
+const REWORK_SPECS = [["c7-seven", "g5-other", 1], ["c1-one", "g2-next", 5], ["c3-three", "g2-next", 1, "Builder"]];
+const REWORK_ORDER = [{ batch: "g5-other", pos: 2 }, { batch: "g2-next", pos: 1 }];
+const mineAll = (items, ids) => items.filter((i) => ids.includes(i.card)).map((i) => `${i.card}:${i.step ?? ""}`).sort();
+
+test("rework beats a started group's queued card: the agent is woken to fix, and for no new card", () => {
+  const v = withEvidence(viewOf(REWORK_SPECS, REWORK_ORDER), { "c3-three": PUSHED, "c7-seven": FINDINGS });
+  const got = mineAll(run(v), ["c7-seven", "c1-one"]);
+  assert.equal(got.length, 1, JSON.stringify(got));
+  assert.match(got[0], /^c7-seven:/, "its rework, from a group of its own");
+});
+
+test("without rework the started group's queued card is the agent's pick (the control for the rework test)", () => {
+  const specs = [["c1-one", "g2-next", 5], ["c3-three", "g2-next", 1, "Builder"], ["c2-two", "g1-top", 1]];
+  assert.deepEqual(mine(run(withEvidence(viewOf(specs, [{ batch: "g1-top", pos: 1 }, { batch: "g2-next", pos: 2 }]), { "c3-three": PUSHED }))), ["c1-one"]);
+});
+
+test("rework from a group in review beats a started group's queued card whatever group the new card is in; another agent's rework does not stop this one", () => {
+  const specs = [["c7-seven", "g5-other", 1, "Builder"], ["c1-one", "g2-next", 5], ["c3-three", "g2-next", 1, "Builder"]];
+  const v = withEvidence(viewOf(specs, REWORK_ORDER), { "c3-three": PUSHED, "c7-seven": FINDINGS });
+  assert.deepEqual(mine(run(v)), ["c1-one"], "Builder's rework is Builder's: Boardsmith still takes its card");
+});
+
+test("a rework the agent cannot act on (an open ask, or waiting on someone else) does not stop its new card: no agent is woken for nothing", () => {
+  const base = withEvidence(viewOf(REWORK_SPECS, REWORK_ORDER), { "c3-three": PUSHED, "c7-seven": FINDINGS });
+  const asked = { ...base, asks: [{ card_id: "c7-seven", closed_at: null, answered_at: null, num: 1, type: "Decision" }] };
+  assert.deepEqual(mine(run(asked)), ["c1-one"], "an open ask on the rework card");
+  const waits = viewOf(REWORK_SPECS, REWORK_ORDER);
+  waits.cards.find((c) => c.id === "c7-seven").waiting_on = "Manager";
+  assert.deepEqual(mine(run(withEvidence(waits, { "c3-three": PUSHED, "c7-seven": FINDINGS }))), ["c1-one"], "waiting on someone else");
+});
+
+test("a rework with no reason yet (the store's evidence rework) is rework too: the reason turn goes first", () => {
+  const v = withEvidence(viewOf(REWORK_SPECS, REWORK_ORDER), { "c3-three": PUSHED, "c7-seven": { lit: ["checker"], phase: "checker", headSha12: "abcdef012345", rework: true, signed: [] } });
+  const got = mineAll(run(v), ["c7-seven", "c1-one"]);
+  assert.deepEqual(got, ["c7-seven:reason"]);
+});
+
+// One order for the dispatch, the stall line and the owner's queue move: the next card each names is the same.
+const NOW = T + 40 * MIN;
+const stallNext = (specs, ev, groupOrder) => {
+  const cards = specs.map(([id, batch, pos, role = "Boardsmith"]) => ({ id, num: Number(id.replace(/\D/g, "")), owner_role: role, updated_at: NOW - 30 * MIN, queue_pos: pos ?? null, queue_set_by: null, dropped: 0, paused: 0, done_at: null, batch: batch ?? null, rework_reason: null }));
+  const out = stalledWaits({ now: NOW, cards, evidence: Object.fromEntries(Object.entries(ev).map(([id, v]) => [id, v])), agents: { Boardsmith: { state: "idle", since: T }, Builder: { state: "working", card: "none" } }, openAskCards: new Set(), phaseStart: new Map(), postedAt: new Map(), endsPassed: new Map(), groupOrder });
+  const line = out.find((r) => r.role === "Boardsmith" && r.phase === null);
+  return line ? Number(/next #C(\d+)/.exec(line.reason)[1]) : null;
+};
+const dispatchNext = (specs, ev, groupOrder) => {
+  const items = run(withEvidence(viewOf(specs, groupOrder), ev));
+  const mineIds = specs.filter((s) => (s[3] ?? "Boardsmith") === "Boardsmith").map((s) => s[0]);
+  const first = items.find((i) => mineIds.includes(i.card));
+  return first ? Number(first.card.replace(/\D/g, "").replace(/^(\d+).*$/, "$1")) : null;
+};
+
+test("the stall line names the card the dispatch wakes the agent for, in every case of the order", () => {
+  const O = [{ batch: "g5-other", pos: 2 }, { batch: "g2-next", pos: 1 }];
+  const cases = [
+    ["no groups, queue_pos", [["c1-one", null, 3], ["c2-two", null, 1], ["c4-four", null, 2]], {}, undefined],
+    ["the owner's group order", [["c1-one", "g1-a", 1], ["c2-two", "g2-b", 9], ["c4-four", null, 1]], {}, [{ batch: "g2-b", pos: 1 }, { batch: "g1-a", pos: 2 }]],
+    ["a started group", [["c1-one", "g2-next", 5], ["c2-two", "g1-top", 1], ["c3-three", "g2-next", 1, "Builder"]], { "c3-three": PUSHED }, [{ batch: "g1-top", pos: 1 }, { batch: "g2-next", pos: 2 }]],
+    ["rework", [["c7-seven", "g5-other", 1], ["c1-one", "g2-next", 5], ["c3-three", "g2-next", 1, "Builder"]], { "c3-three": PUSHED, "c7-seven": FINDINGS }, O],
+  ];
+  for (const [name, specs, ev, order] of cases) {
+    const d = dispatchNext(specs, ev, order), s = stallNext(specs, ev, order ?? []);
+    assert.ok(d !== null, `${name}: the dispatch wakes it for a card`);
+    assert.equal(s, d, `${name}: stall line #C${s}, dispatch #C${d}`);
+  }
+});
+
+test("the owner's queue move works on the same order, and never moves a card into another group", async () => {
+  const db = makeDb();
+  for (const [n, [id, batch]] of [["c1-one", "g1-a"], ["c2-two", "g1-a"], ["c3-three", "g2-b"]].entries()) assert.ok((await createCard(db, T + n + 1, "Manager", { id, title: id, owner_role: "Boardsmith", batch })).ok);
+  await moveGroup(db, T + 100, "owner", { batch: "g2-b", dir: "up" });
+  const { queueCards, moveInQueue } = await import("../worker/board-store.mjs");
+  assert.deepEqual((await queueCards(db, "Boardsmith")).map((r) => r.id), ["c3-three", "c1-one", "c2-two"], "g2-b is the owner's first group");
+  const across = await moveInQueue(db, T + 200, "owner", { id: "c1-one", dir: "up" });
+  assert.equal(across.moved, false, "c1-one does not cross into g2-b");
+  const within = await moveInQueue(db, T + 201, "owner", { id: "c2-two", dir: "up" });
+  assert.equal(within.moved, true);
+  assert.deepEqual((await queueCards(db, "Boardsmith")).map((r) => r.id), ["c3-three", "c2-two", "c1-one"]);
+});
+
+test("isRework reads a card as turnsOf does: findings at a review phase, or a rework with no reason; not a plain queued, building or landed card", async () => {
+  const { isRework } = await import("../worker/board-rules.mjs");
+  const { turnsOf } = await import("../collector/store-dispatch.mjs");
+  const card = { id: "c", owner_role: "Boardsmith", review_level: "Quick" };
+  const shapes = [
+    undefined, {}, { lit: ["build"] }, PUSHED, FINDINGS, { ...FINDINGS, findings: [] }, { ...FINDINGS, findings: ["nobody"] }, { ...FINDINGS, phase: "build", lit: ["build"] },
+    { ...FINDINGS, phase: "ship", lit: ["ship"] }, { ...FINDINGS, phase: "language", lit: ["language"], findings: ["language"] }, { lit: ["checker"], phase: "checker", rework: true },
+    { lit: ["live"], phase: "live", findings: ["checker"] },
+  ];
+  for (const e of shapes) {
+    const viaTurns = turnsOf(card, e, {}).some((t) => t.step === "rework" || t.step === "reason");
+    assert.equal(isRework(card, e), viaTurns, JSON.stringify(e));
+  }
+  assert.equal(isRework({ ...card, rework_reason: "review findings" }, { lit: ["checker"], phase: "checker", rework: true }), false, "a rework with its reason attached is the findings case only");
+});
+
 test("the page's feed carries the order (meta/groupOrder, in place order) once the owner has set one, and nothing before", async () => {
   const db = await cards(...GROUPS);
   assert.equal(compatView(await readView(db, T + 9000)).collections.meta?.some((m) => m.id === "groupOrder") ?? false, false);
@@ -156,11 +255,11 @@ test("the page's feed carries the order (meta/groupOrder, in place order) once t
 
 // The page: the groups in the owner's order, with real up and down buttons on the store page only; a tap posts {batch, dir}.
 const NAMES = ["groupLabel", "groupShort", "groupOrderRows", "groupRankOf", "groupCmp", "groupMoveButtons", "groupList", "groupFacts", "groupRow", "pulledTag", "railState", "renderBoard", "initRow", "gates", "enrich", "PHASES"];
-function board(initRaw, order, host = "store") {
+function board(initRaw, order, host = "store", answer = null) {
   const els = {}, listeners = {}, calls = [];
   const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });
   const document = { documentElement: { getAttribute: () => host }, getElementById: el, querySelectorAll: () => [], querySelector: () => null, addEventListener(t, f) { (listeners[t] ||= []).push(f); }, activeElement: null, createRange: () => ({}) };
-  const fetch = async (url, opts) => { calls.push([url, JSON.parse(opts.body)]); return { ok: true }; };
+  const fetch = async (url, opts) => { calls.push([url, JSON.parse(opts.body)]); return answer === false ? { ok: false } : answer ? { ok: true, json: async () => answer } : { ok: true }; };
   const b = loadNames(NAMES, { document, fetch, setTimeout: () => 0 });
   Object.assign(b.state, { initRaw, initiatives: initRaw.map((i) => b.gates(b.enrich(i))), steps: [], waiting: [], derived: [], messages: [], threads: [], meta: order ? [{ id: "groupOrder", rows: order.map((batch, i) => ({ batch, pos: i + 1 })) }] : [] });
   return { ...b, els, listeners, calls };
@@ -194,6 +293,37 @@ test("each group row has real up and down buttons with names, the top one cannot
   const off = board(raw, ["g1-a", "g2-b"], "artifact");
   off.renderBoard();
   assert.doesNotMatch(off.els.board.innerHTML, /data-gmove=/, "no button where there is no store to write to");
+});
+
+// Designer F1 on 9eb8d39d: a click showed nothing until the next re-read, so the owner would click twice and move the group twice.
+test("a tap moves the row at once, from the order the store answers with: the board is redrawn in the new order", async () => {
+  const raw = [card("a", 1, { batch: "g1-a" }), card("b", 2, { batch: "g2-b" }), card("c", 3, { batch: "g3-c" })];
+  const b = board(raw, ["g1-a", "g2-b", "g3-c"], "store", { ok: true, batch: "g3-c", moved: true, order: ["g1-a", "g3-c", "g2-b"] });
+  b.renderBoard();
+  const at = (h, g) => h.indexOf(`data-group="${g}"`);
+  assert.ok(at(b.els.board.innerHTML, "g2-b") < at(b.els.board.innerHTML, "g3-c"), "before the tap g2-b is above g3-c");
+  const btn = { dataset: { gmove: "g3-c", dir: "up" }, disabled: false, textContent: "↑", closest: (s) => (s === "[data-gmove]" ? btn : null) };
+  for (const f of b.listeners.click) await f({ target: btn });
+  const h = b.els.board.innerHTML;
+  assert.ok(at(h, "g3-c") < at(h, "g2-b"), "after the 200 the row has moved, with no wait for the next poll");
+  assert.match(h, /data-gmove="g3-c" data-dir="up"[^>]*>↑<\/button>[\s\S]*?2 of 3/, "and its place reads 2 of 3");
+});
+
+test("an answer with no order (or a store that refuses) leaves the board as it was; a refusal says Not saved on the button", async () => {
+  const raw = [card("a", 1, { batch: "g1-a" }), card("b", 2, { batch: "g2-b" })];
+  const b = board(raw, ["g1-a", "g2-b"]);
+  b.renderBoard();
+  const before = b.els.board.innerHTML;
+  const btn = { dataset: { gmove: "g2-b", dir: "up" }, disabled: false, textContent: "↑", closest: (s) => (s === "[data-gmove]" ? btn : null) };
+  for (const f of b.listeners.click) await f({ target: btn });
+  assert.equal(b.els.board.innerHTML, before, "with no order in the answer the board is left as it was");
+  const no = board(raw, ["g1-a", "g2-b"], "store", false);
+  no.renderBoard();
+  const kept = no.els.board.innerHTML;
+  const sad = { dataset: { gmove: "g2-b", dir: "up" }, disabled: false, textContent: "↑", closest: (s) => (s === "[data-gmove]" ? sad : null) };
+  for (const f of no.listeners.click) await f({ target: sad });
+  assert.equal(sad.textContent, "Not saved", "a store that refuses (the answer is not ok) says so on the button");
+  assert.equal(no.els.board.innerHTML, kept, "and the board is left as it was");
 });
 
 test("a tap on a group button posts {batch, dir} to the store's route", async () => {

@@ -75,7 +75,7 @@ test("POST /api/probe/build-start is the probe's alone", async () => {
 const view = (cards, evidence = {}) => ({
   cards: cards.map((c) => ({ owner_role: "Builder", waiting_on: null, paused: 0, dropped: 0, ...c })),
   asks: [],
-  evidence: { agents: { readAt: NOW - 1000, value: { Builder: { state: "idle", lastActivityAt: NOW - 20 * MIN, since: NOW - 20 * MIN, card: null }, Manager: { state: "idle", lastActivityAt: NOW - 20 * MIN, since: NOW - 20 * MIN, card: null } } }, ...evidence },
+  evidence: { agents: { readAt: NOW - 1000, value: { Builder: { state: "idle", lastActivityAt: NOW - 20 * MIN, since: NOW - 20 * MIN, card: null }, Boardsmith: { state: "idle", lastActivityAt: NOW - 20 * MIN, since: NOW - 20 * MIN, card: null }, Manager: { state: "idle", lastActivityAt: NOW - 20 * MIN, since: NOW - 20 * MIN, card: null } } }, ...evidence },
 });
 const jobWith = async (v, { failPost = false } = {}) => {
   const calls = [], log = [];
@@ -86,12 +86,13 @@ const jobWith = async (v, { failPost = false } = {}) => {
     return { ok: true, status: 200 };
   };
   const { mkdtempSync } = await import("node:fs"), { tmpdir } = await import("node:os"), { join } = await import("node:path");
-  const r = await dispatchJob({ base: "https://board.test", headers: {}, fetchImpl, dir: mkdtempSync(join(tmpdir(), "bs-")), roster: ["Manager", "Builder"], lead: "Manager", now: () => NOW, log: (l) => log.push(l) });
+  const r = await dispatchJob({ base: "https://board.test", headers: {}, fetchImpl, dir: mkdtempSync(join(tmpdir(), "bs-")), roster: ["Manager", "Builder", "Boardsmith"], lead: "Manager", now: () => NOW, log: (l) => log.push(l) });
   return { r, calls, log };
 };
 
 test("the dispatch job posts a build start for a card it wakes its builder for with nothing pushed, and for no other turn", async () => {
-  const v = view([{ id: "unpushed", num: 1 }, { id: "at-review", num: 2 }, { id: "sent-back", num: 3 }],
+  // The rework card is Boardsmith's: since #C1053 an agent with a fix to make is woken for it and for no new card, so Builder's new card keeps its turn.
+  const v = view([{ id: "unpushed", num: 1 }, { id: "at-review", num: 2 }, { id: "sent-back", num: 3, owner_role: "Boardsmith" }],
     { "cards.at-review": { readAt: NOW, value: lit("checker") }, "cards.sent-back": { readAt: NOW, value: { ...lit("checker"), findings: ["checker"] } } });
   const { r, calls } = await jobWith(v);
   const posts = calls.filter(([u]) => u.endsWith("/api/probe/build-start"));

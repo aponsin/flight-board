@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
-import { groupCompare } from "../worker/board-rules.mjs"; // #C1053: the owner's order of the card groups, one rule with the store and the page
+import { agentRank, startedGroupSet } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -193,7 +193,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   const activeCard = (k) => !k.paused && !k.dropped && !k.done_at && !k.blocked_reason && phaseOf(k.id) !== "live"; // #C902: a card closed as done is no partner
   // #C1053 (the owner, 11-12 8:18 pm: "we work on groups and don't segment them"): a group is STARTED when one of its cards (not dropped) has been pushed, landed
   // (live) or closed as done. An agent finishes every card it owns in a started group before it takes a card from another group (queueOrder below).
-  const startedGroups = new Set(all.filter((k) => k && typeof k.id === "string" && !k.dropped && batchOf(k) !== "" && (k.done_at || hasHead(k.id) || phaseOf(k.id) === "live")).map((k) => batchOf(k)));
+  const startedGroups = startedGroupSet(all.map((k) => (k && typeof k === "object" ? { ...k, batch: batchOf(k) } : k)), (id) => ev[`cards.${id}`]?.value);
   const hasPartner = (c) => all.some((k) => k && typeof k.id === "string" && k.id !== c.id && activeCard(k) && k.owner_role === c.owner_role && boardCard(k) === boardCard(c)
     && (boardCard(c) || k.repo === c.repo) && !hasHead(k.id) && dependsOf(k).includes(c.id))
     // #C1021: a card of the same batch (any builder, the same repository) that is not built yet is a partner too: the batch is one review and one pack.
@@ -234,7 +234,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     // #C1018 / #C1035: a tip a Checker session has claimed (the store's review claim) wakes no Checker for its review again: one checker per tip.
     const mine = held ? turns.filter((t) => t.step !== "review") : turns;
     const shown = mine.filter((t) => !(t.role === "Checker" && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
-    cards.push({ group: batchOf(c), groupStarted: startedGroups.has(batchOf(c)), queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
+    cards.push({ group: batchOf(c), groupStarted: startedGroups.has(batchOf(c)), rework: shown.some((t) => t.role === c.owner_role && (t.step === "rework" || t.step === "reason")), queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }
   if (switchOn && cards.some((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step)))) {
     for (const k of cards) if (k.inStack) k.turns = k.turns.filter((t) => t.step !== "review");
@@ -289,13 +289,18 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // before one an agent placed (Checker F1 on ac3d31b), then the card's number.
   // #C1053: first the owner's order of the groups (a card in no group after all of them, a group nobody has placed after the placed ones), then as before.
   const groupOrder = (Array.isArray(view?.groupOrder) ? view.groupOrder : []).filter((g) => g && typeof g.batch === "string" && Number.isInteger(g.pos));
-  // Groups are worked whole: a card in a group that has started comes before one in a group that has not, whatever the order says; then the owner's order.
-  const queueOrder = (x, y) => (x.groupStarted ? 0 : 1) - (y.groupStarted ? 0 : 1) || groupCompare(x.group, y.group, groupOrder) || (x.queuePos ?? 1e6) - (y.queuePos ?? 1e6) || (x.ownerPlaced ? 0 : 1) - (y.ownerPlaced ? 0 : 1) || (x.num ?? 1e9) - (y.num ?? 1e9) || (x.id < y.id ? -1 : 1);
+  // The ONE order of an agent's work (worker/board-rules.mjs agentRank, shared with the stall line and the owner's queue move): its rework first, then its
+  // cards in a started group (groups are worked whole), then the owner's next group, then queue_pos as before.
+  const queueOrder = (x, y) => agentRank({ rework: x.rework, groupStarted: x.groupStarted, group: x.group, queue_pos: x.queuePos, owner: x.ownerPlaced, num: x.num, id: x.id }, { rework: y.rework, groupStarted: y.groupStarted, group: y.group, queue_pos: y.queuePos, owner: y.ownerPlaced, num: y.num, id: y.id }, groupOrder);
+  // Rework goes first (the owner's A on 11-12, 8:24 pm): an agent with a card to fix (findings, or a rework reason to attach) that dispatchItems would not drop
+  // (no open ask, not waiting on someone else) is woken for it and for no NEW card, whatever group the new card is in.
+  const waitsElsewhere = (k) => typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(k.who);
+  const reworkWho = new Set(cards.filter((k) => k.rework && !askedCards.has(k.id) && !waitsElsewhere(k)).map((k) => k.who));
   const byRole = new Map();
   for (const k of cards.filter(notStarted)) byRole.set(k.who, [...(byRole.get(k.who) ?? []), k]);
-  for (const list of byRole.values()) {
+  for (const [who, list] of byRole) {
     list.sort(queueOrder);
-    for (const k of list.slice(1)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
+    for (const k of list.slice(reworkWho.has(who) ? 0 : 1)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
   }
   // #C991 (the owner's pick A): a reviewer's queue comes from the store, not from the lead's list. Per role, the cards whose review turn is that
   // role's, in the queue order above; a held card is out (skipped above, or its review turn dropped), and so is one dispatchItems would drop
@@ -309,7 +314,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     }
   }
   // The cards left out of the lists above (asked, or waiting on someone else) keep their turn, which dispatchItems drops by the same rule.
-  for (const k of cards) { delete k.queuePos; delete k.ownerPlaced; delete k.group; delete k.groupStarted; }
+  for (const k of cards) { delete k.queuePos; delete k.ownerPlaced; delete k.group; delete k.groupStarted; delete k.rework; }
   // #C858: the deploy pair is one per repository main, not one per landed card: of the cards a role is woken for to build the pair, the newest
   // (highest number) keeps the turn, and the line names the step; the others are covered by the same pair.
   const pairs = new Map();

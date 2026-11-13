@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
+import { reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -417,7 +417,7 @@ export async function pingThread(db, now, who, id) {
 // (card, reason): a new reason for a card is pending for Manager once, an older untaken reason of the card is replaced by it, and a stall
 // that is over is no longer pending. A reason already sent is never sent again.
 async function syncStalls(db, now) {
-  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, done_at, waiting_on, repo, check_at, hold_end, held_at, hold_until, depends_on, updated_at, queue_pos, queue_set_by, moved_at FROM cards").all()).results;
+  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, done_at, waiting_on, repo, check_at, hold_end, held_at, hold_until, depends_on, updated_at, queue_pos, queue_set_by, moved_at, batch, rework_reason FROM cards").all()).results;
   const evRows = (await db.prepare("SELECT key, value, read_at FROM evidence WHERE key = 'agents' OR key LIKE 'cards.%'").all()).results;
   let agents = {}; const evidence = {}, readAt = {};
   for (const r of evRows) { let v; try { v = JSON.parse(r.value); } catch { continue; } if (r.key === "agents") agents = v; else { evidence[r.key.slice(6)] = v; readAt[r.key.slice(6)] = r.read_at; } }
@@ -447,7 +447,8 @@ async function syncStalls(db, now) {
   // #C915 (d): the usual time of each work phase, from the finished rows of the history (newest 5000), for the "slow with no reason" line.
   const medians = phaseMedians((await db.prepare("SELECT id, card_id, phase, kind, at FROM phase_history WHERE wait IS NULL AND kind IN ('start', 'end') ORDER BY id DESC LIMIT 5000").all()).results);
   // A card already named by a "waits at" line this round is not named twice: that line is its one stall.
-  const waits = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed });
+  const groupOrder = (await db.prepare("SELECT batch, pos FROM group_order").all()).results ?? [];
+  const waits = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder });
   const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed });
   const slow = slowAll.filter((s) => !waits.some((w) => w.card_id === s.card_id));
   // The slow line's words are the same every spell, so its row (card, reason) must not outlive the spell: once a card is no longer slow with no
@@ -610,16 +611,21 @@ export async function releaseReview(db, now, who, b) {
 // An agent's queue, in order (queueRank): its cards not dropped and with nothing pushed (the probe's reading), each { id, num, queue_pos, owner
 // (the owner placed it), held (a depends_on that is not live) }. The same list serves the move, and the floor an agent's write may not pass.
 export async function queueCards(db, role) {
-  const all = (await db.prepare("SELECT id, num, owner_role, queue_pos, queue_set_by, depends_on, dropped, done_at FROM cards").all()).results ?? [];
+  const all = (await db.prepare("SELECT id, num, owner_role, queue_pos, queue_set_by, depends_on, dropped, done_at, batch, rework_reason FROM cards").all()).results ?? [];
+  // #C1053: the order is the dispatch's (agentRank): started group, the owner's group order, then queue_pos; so a move never fights what the agent is woken for.
+  const order = (await db.prepare("SELECT batch, pos FROM group_order").all()).results ?? [];
+  const seen = new Map();
+  for (const c of all) if (groupOf(c)) seen.set(c.id, await evidenceOf(db, `cards.${c.id}`));
+  const started = startedGroupSet(all.map((c) => ({ ...c, batch: groupOf(c) })), (id) => seen.get(id));
   const evidence = {};
   for (const c of all) if (c.depends_on) for (const d of (() => { try { const l = JSON.parse(c.depends_on); return Array.isArray(l) ? l : []; } catch { return []; } })()) if (typeof d === "string" && !(d in evidence)) evidence[d] = await evidenceOf(db, `cards.${d}`);
   const queue = [];
   for (const r of all.filter((c) => c.owner_role === role && !c.dropped && !c.done_at)) {
     const e = await evidenceOf(db, `cards.${r.id}`);
     if (e?.headSha12 || e?.phase === "live") continue;
-    queue.push({ id: r.id, num: r.num, queue_pos: r.queue_pos, owner: r.queue_set_by === "owner", held: dependsNotLive(r, all, evidence) });
+    queue.push({ id: r.id, num: r.num, queue_pos: r.queue_pos, owner: r.queue_set_by === "owner", held: dependsNotLive(r, all, evidence), group: groupOf(r), groupStarted: started.has(groupOf(r)), rework: isRework(r, e) });
   }
-  return queue.sort(queueRank);
+  return queue.sort((a, b) => agentRank(a, b, order));
 }
 // The last place the owner holds in a queue, not counting `exceptId`: an agent may not write a place at or ahead of it (queueWriteRefusal).
 const ownerFloor = async (db, role, exceptId) => Math.max(0, ...(await queueCards(db, role)).filter((r) => r.owner && r.id !== exceptId && Number.isInteger(r.queue_pos)).map((r) => r.queue_pos));
@@ -633,7 +639,8 @@ export async function moveInQueue(db, now, who, b) {
   if (at < 0) return refuse(db, now, { rule: "queue-started", detail: `${b.id} has started: only a card with nothing pushed is in the queue` }, b.id, who);
   const to = b.dir === "up" ? at - 1 : at + 1;
   // A card held by a depends_on stays after those that can start: it does not cross that line, and nothing crosses it going the other way.
-  if (to < 0 || to >= queue.length || queue[to].held !== queue[at].held) return { ok: true, id: b.id, moved: false, order: queue.map((r) => r.id) };
+  // #C1053: nor does a card cross into another group: the groups are worked whole, in the owner's order, so a swap there would change nothing the agent sees.
+  if (to < 0 || to >= queue.length || queue[to].held !== queue[at].held || queue[to].group !== queue[at].group) return { ok: true, id: b.id, moved: false, order: queue.map((r) => r.id) };
   [queue[at], queue[to]] = [queue[to], queue[at]];
   const swapped = new Set([queue[at].id, queue[to].id]);
   for (let n = 0; n < queue.length; n++) {

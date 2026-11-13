@@ -338,6 +338,40 @@ export function groupCompare(a, b, order) {
   return groupRank(a, order) - groupRank(b, order) || groupIdCompare(a, b);
 }
 
+// ONE order of an agent's work, read by the dispatch (collector/store-dispatch.mjs), the stall line (stalledWaits) and the owner's queue move
+// (queueCards), so no part of the board can name a different next card than the dispatch wakes the agent for (#C1053, the owner's A and B on 11-12):
+//   (1) a card the agent can start comes before one held by a depends_on; (2) its REWORK (a card sent back with findings, or in rework with no reason
+//   yet), from any group; (3) its cards in a STARTED group; (4) the next group in the owner's order (a card in no group last); (5) queue_pos, a card
+//   the owner placed before one an agent placed, then the card's number (queueRank).
+// A card here is { held, rework, groupStarted, group, queue_pos, owner, num, id }.
+export function agentRank(a, b, order) {
+  return (a.held ? 1 : 0) - (b.held ? 1 : 0) || (a.rework ? 0 : 1) - (b.rework ? 0 : 1) || (a.groupStarted ? 0 : 1) - (b.groupStarted ? 0 : 1) || groupCompare(a.group, b.group, order) || queueRank(a, b);
+}
+// A card's group as a plain word: its batch id when it is in the plain shape, "" for none or an odd value (as the dispatch's batchOf reads it).
+export const groupOf = (c) => (typeof c?.batch === "string" && GROUP_ID_SHAPE.test(c.batch.trim()) ? c.batch.trim() : "");
+// The phases whose review note can send a card back with findings (a lane's note: language, design, checker, security).
+export const REVIEW_NOTE_PHASES = new Set(["language", "design", "checker", "security"]);
+// Whether a card is in REWORK, as the dispatch reads it in turnsOf: the store read a rework with no reason attached yet, or a review's note on the
+// card's head says FINDINGS while the card sits at that review's phase. `e` is the card's evidence value (cards.<id>), `card` its row.
+export function isRework(card, e) {
+  if (e?.rework === true && !(typeof card?.rework_reason === "string" && card.rework_reason !== "")) return true;
+  const phase = e?.phase ?? e?.lit?.[0];
+  if (typeof phase !== "string" || !REVIEW_NOTE_PHASES.has(phase)) return false;
+  return (Array.isArray(e?.findings) ? e.findings : []).some((s) => typeof s === "string" && REVIEW_NOTE_PHASES.has(s));
+}
+// The groups that have STARTED: a group (batch id) with a card, not dropped, that has been pushed, has landed (live) or is closed as done.
+// `rows` are card rows { id, batch, dropped, done_at }; `evidenceOf(id)` gives the card's evidence value.
+export function startedGroupSet(rows, evidenceOf) {
+  const out = new Set();
+  for (const k of rows) {
+    if (!k || typeof k.id !== "string" || k.dropped || typeof k.batch !== "string" || !GROUP_ID_SHAPE.test(k.batch.trim())) continue;
+    const e = evidenceOf(k.id);
+    const pushed = !!e && typeof e === "object" && (typeof e.headSha12 === "string" || typeof e.headSha === "string");
+    if (k.done_at || pushed || (e?.phase ?? e?.lit?.[0]) === "live") out.add(k.batch.trim());
+  }
+  return out;
+}
+
 // Withdrawing the owner's approval (#C727): the owner's alone, on an open Approval that is approved. It clears the answer, so the
 // pull request needs his Approve again; Release reads only an approval that stands.
 export function withdrawRefusal(ask, role) {
@@ -676,7 +710,7 @@ export function dependsNotLive(c, cards, evidence) {
 // last POSTED_FRESH_MS means it is being worked (no stall); with none, it stalls on a line of its own that says "nothing posted". postedAt:
 // Map card id -> ms of the owner's newest post on the card's thread (the store passes it; missing = none).
 export const READ_ONLY_ROLES = ["Designer", "Checker", "Security", "Linguist"], POSTED_FRESH_MS = 60 * 60_000;
-export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed }) {
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [] }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
@@ -735,12 +769,19 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   // #C910: one line per idle agent, not one per queued card (22 queued cards were 22 lines): "Boardsmith idle since 07:31Z, 22 queued, next #C901".
   // The next card is the first of the agent's queue (queueRank, as the dispatch wakes it); the line is its row, so it changes with the count or the next card.
   // #C947: one line per role with no open session, not one per card; the row is its text, so the same count and next card is the same row (not sent every minute).
+  // #C1053 (Manager: "so the stall line can never name a different next card"): the next card is the dispatch's pick, by the same function (agentRank): the
+  // agent's rework first (a card sent back with findings, which the queued list does not hold: it has a phase), then its started group, then the
+  // owner's group order, then queue_pos.
+  const started = startedGroupSet((cards ?? []).map((c) => ({ ...c, batch: groupOf(c) })), (id) => evidence?.[id]);
+  const rankOf = (c, rework) => ({ id: c.id, num: c.num, queue_pos: c.queue_pos, owner: c.queue_set_by === "owner", group: groupOf(c), groupStarted: started.has(groupOf(c)), rework });
+  const fixable = (c) => !c.dropped && !c.done_at && !c.paused && !c.blocked_reason && !openAskCards?.has(c.id) && !(typeof c.waiting_on === "string" && c.waiting_on.trim() && !c.waiting_on.trim().startsWith(c.owner_role)) && isRework(c, evidence?.[c.id]);
+  const nextOf = (role, list) => [...list.map((c) => ({ c, k: rankOf(c, false) })), ...(cards ?? []).filter((c) => c.owner_role === role && !list.includes(c) && fixable(c)).map((c) => ({ c, k: rankOf(c, true) }))].sort((x, y) => agentRank(x.k, y.k, groupOrder))[0].c;
   for (const [role, list] of noSession) {
-    const next = [...list].sort((x, y) => queueRank({ queue_pos: x.queue_pos, owner: x.queue_set_by === "owner", num: x.num, id: x.id }, { queue_pos: y.queue_pos, owner: y.queue_set_by === "owner", num: y.num, id: y.id }))[0];
+    const next = nextOf(role, list);
     out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} has no open session, ${list.length} queued, next #C${next.num}` });
   }
   for (const [role, list] of queued) {
-    const next = [...list].sort((x, y) => queueRank({ queue_pos: x.queue_pos, owner: x.queue_set_by === "owner", num: x.num, id: x.id }, { queue_pos: y.queue_pos, owner: y.queue_set_by === "owner", num: y.num, id: y.id }))[0];
+    const next = nextOf(role, list);
     out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} idle since ${mtTime(idleOf.get(role))}, ${list.length} queued, next #C${next.num}` });
   }
   return out;
