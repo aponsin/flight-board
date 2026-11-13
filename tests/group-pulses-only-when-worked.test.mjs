@@ -46,6 +46,19 @@ test("every card landed: Land is done and the group stands still at Pack; once t
   assert.equal(cls(packed, "Install"), "step here");
 });
 
+test("#C1051: a member already read live counts as past Land; with a landed member beside it the group stands at Pack, all live at Live", () => {
+  const raw = [card("a", 1, { phase: "ship", branch: "build/a" }), card("b", 2, { phase: "live", branch: "build/b" })];
+  const read = (aPhase) => ({ a: { phase: aPhase, headSha12: "4079cdbd8c9e", onMain: true, seen: aPhase === "live" ? ["ship", "live"] : ["ship"] }, b: { phase: "live", headSha12: "9fb55ad574ac", onMain: true, seen: ["ship", "live"] } });
+  const mixed = board(raw, { cards: read("ship"), agents: { Release: idle } }).row();
+  assert.equal(cls(mixed, "Land"), "step done");
+  assert.equal(cls(mixed, "Pack"), "step here");
+  const allLive = board(raw.map((c) => ({ ...c, phase: "live" })), { cards: read("live"), agents: { Release: idle } }).row();
+  assert.equal(cls(allLive, "Land"), "step done");
+  assert.equal(cls(allLive, "Pack"), "step done seen");
+  assert.equal(cls(allLive, "Install"), "step done seen");
+  assert.equal(cls(allLive, "Live"), "step here");
+});
+
 test("a group with one card still unlanded is not landed: it stays at Land, and Pack is unlit", () => {
   const raw = [card("a", 1, { phase: "ship", branch: "build/a" }), card("b", 2, { phase: "ship", branch: "build/b" })];
   const html = board(raw, { cards: { a: { phase: "ship", headSha12: "4079cdbd8c9e", onMain: true, seen: ["ship"] }, b: { phase: "ship", headSha12: "522a8532aaaa", onMain: false, seen: ["ship"] } }, agents: { Release: idle } }).row();
