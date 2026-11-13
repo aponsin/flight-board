@@ -27,21 +27,49 @@ const first = (t) => String(t ?? "").split("\n")[0].trim();
 // Security F2: main can be pushed to directly, so every commit this deploy would add (current BUILD_SHA..commit) must be signed, not only the tip. range:
 // [{ sha, notes: { checker, security }, covered }], covered: a signed commit of the range carries the same "line from <sha>" base on both notes and this
 // commit is on that line (gatherFacts), as the release tool counts a chain; otherwise a commit needs its own PASS and SECURE.
-// Checker 2 F1 on 5c31dbc: a line sign is read as the release tool reads it (lineSign in scripts/board-release.mjs): both notes are signed (a first line
-// starting PASS / SECURE) and say "line from <40-hex sha>" with the same sha anywhere on that first line, and this holds for EVERY signed commit in the
-// range, not only the tip, so a fixing commit signed "line from <base>" covers the commits under it that were landed with the fix (027616a under 111e326).
+// Checker 2 F1 on 5c31dbc: a line sign is read as the release tool reads it (the functions below, which scripts/board-release.mjs imports): a role's
+// signed note says "line from <40-hex sha>" anywhere on its first line, and this holds for EVERY signed commit in the range, not only the tip, so a
+// fixing commit signed "line from <base>" covers the commits under it that were landed with the fix (027616a under 111e326).
+// #C1045: the line-note rules live here, in the one file the owner's dashboard hash pins, and scripts/board-release.mjs imports them, so the release
+// tool and this gate read a sign-off the same way (one copy, never two). Since #C1032 each role signs on its own: a role's note whose first line starts
+// with its word (PASS for Checker, SECURE for Security) and says "line from <40-hex base>" covers base..that commit for that role only; the two roles
+// need not name the same base. A line covers nothing when it holds a merge commit or more than GROUP_MAX commits.
 export const LINE_FROM = /\bline from ([0-9a-f]{40})\b/;
+export const GROUP_MAX = 30;
+export const ROLE_WORD = { checker: { re: /^PASS\b/, word: "PASS", who: "Checker" }, security: { re: /^SECURE\b/, word: "SECURE", who: "Security" } };
+export const roleLineBase = (role, note) => (ROLE_WORD[role].re.test(first(note)) ? LINE_FROM.exec(first(note))?.[1] ?? null : null);
+// #C934's both-roles form (the pending pack still reads it): both notes signed and the same base.
 export const lineBase = (notes) => {
-  if (!/^SECURE\b/.test(first(notes?.security)) || !/^PASS\b/.test(first(notes?.checker))) return null;
-  const a = LINE_FROM.exec(first(notes?.checker))?.[1], b = LINE_FROM.exec(first(notes?.security))?.[1];
+  const a = roleLineBase("checker", notes?.checker), b = roleLineBase("security", notes?.security);
   return a && a === b ? a : null;
 };
+// The shared per-role check: in `list`, the commits whose own note in this role is not the role's word (FINDINGS, RISKS, STOP, a withdrawal) and are not
+// in `covered` (bad: [[sha, first line]]), and those with no note of their own in this role and not in `covered` (bare). notes(sha) -> { checker, security };
+// covered: a Set of shas this role's valid line notes cover. used: a covered commit had no role word of its own, so a line note did the signing.
+export function roleUnsigned({ role, list, notes, covered }) {
+  const w = ROLE_WORD[role], has = (c) => Boolean(covered && covered.has(c));
+  const bad = [], bare = [];
+  for (const c of list) {
+    const own = first(notes(c)?.[role]);
+    if (own && !w.re.test(own) && !has(c)) bad.push([c, own]);
+    else if (!own && !has(c)) bare.push(c);
+  }
+  return { bad, bare, used: list.some((c) => !w.re.test(first(notes(c)?.[role])) && has(c)) };
+}
 export const skipsInstall = (v) => ["1", "true"].includes(String(v ?? "").trim().toLowerCase());
 export function gateVerdict({ commit, tip, notes, current, descends, skipInstall = false, range = [] }) {
   const r = [];
   if (!FULL.test(String(commit))) return { ok: false, same: false, refusals: ["the build's commit is not a full sha"] };
   if (!skipInstall) r.push("the build installs dependencies before the gate runs: set the build variable SKIP_DEPENDENCY_INSTALL=1");
-  const unsigned = (Array.isArray(range) ? range : []).filter((c) => !c.covered && !(/^SECURE\b/.test(first(c.notes?.security)) && /^PASS\b/.test(first(c.notes?.checker)))).map((c) => String(c.sha).slice(0, 12));
+  // #C1045: per role, as the release tool counts it. covered: true (both roles) or { checker, security } (gatherFacts).
+  const list = Array.isArray(range) ? range : [], bySha = new Map(list.map((c) => [c.sha, c]));
+  const unsignedSet = new Set();
+  for (const role of Object.keys(ROLE_WORD)) {
+    const covered = new Set(list.filter((c) => c.covered === true || c.covered?.[role] === true).map((c) => c.sha));
+    const u = roleUnsigned({ role, list: list.map((c) => c.sha), notes: (s) => bySha.get(s)?.notes, covered });
+    for (const c of [...u.bad.map(([s]) => s), ...u.bare]) unsignedSet.add(c);
+  }
+  const unsigned = list.map((c) => c.sha).filter((s) => unsignedSet.has(s)).map((s) => String(s).slice(0, 12));
   if (unsigned.length) r.push(`${unsigned.length === 1 ? "a commit" : `${unsigned.length} commits`} since the Worker's BUILD_SHA ${unsigned.length === 1 ? "has" : "have"} no SECURE and PASS: ${unsigned.slice(0, 3).join(", ")}${unsigned.length > 3 ? ", ..." : ""}`);
   if (!FULL.test(String(tip))) r.push("origin/main's tip could not be read");
   else if (commit !== tip) r.push(`the build's commit ${commit.slice(0, 12)} is not main's tip ${tip.slice(0, 12)}`);
@@ -80,14 +108,21 @@ export function gatherFacts({ commit, current, descends, quiet }) {
   const list = (a) => (quiet(a) ?? "").split("\n").filter(Boolean);
   const notes = { security: noteAt("security", commit), checker: noteAt("checker", commit) };
   const shas = FULL.test(String(current)) && descends ? list(["rev-list", `${current}..${commit}`]) : [];
-  const covered = new Set();
+  // #C1045: per role (roleLineBase), so a group landed with each role's line note on its tip deploys, as board-release.mjs landed it. A line counts
+  // when its base is an ancestor of the signing commit, not before the Worker's BUILD_SHA, and base..signer has no merge commit and at most GROUP_MAX.
+  const covered = { checker: new Set(), security: new Set() };
   const range = shas.map((sha) => {
     const n = sha === commit ? notes : { security: noteAt("security", sha), checker: noteAt("checker", sha) };
-    const base = lineBase(n);
-    if (base && quiet(["merge-base", "--is-ancestor", base, sha]) !== null && quiet(["merge-base", "--is-ancestor", current, base]) !== null) for (const c of list(["rev-list", `${base}..${sha}`])) covered.add(c);
+    for (const role of Object.keys(ROLE_WORD)) {
+      const base = roleLineBase(role, n[role]);
+      if (!base || quiet(["merge-base", "--is-ancestor", base, sha]) === null || quiet(["merge-base", "--is-ancestor", current, base]) === null) continue;
+      const line = list(["rev-list", `${base}..${sha}`]);
+      if (line.length > GROUP_MAX || list(["rev-list", "--merges", `${base}..${sha}`]).length) continue;
+      for (const c of line) covered[role].add(c);
+    }
     return { sha, notes: n };
   });
-  return { notes, range: range.map((r) => ({ ...r, covered: covered.has(r.sha) })) };
+  return { notes, range: range.map((r) => ({ ...r, covered: { checker: covered.checker.has(r.sha), security: covered.security.has(r.sha) } })) };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {

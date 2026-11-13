@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { OWNER_ENTRIES, TASK_FILE, importClosure, pinnedCommit, linkedCommit } from "./current.mjs";
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { packLabel } from "./pack-label.mjs";
+import { GROUP_MAX, ROLE_WORD, roleLineBase, roleUnsigned, lineBase } from "./self-deploy-gate.mjs";
 
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
 // #C1043 (the owner chose B on #T1903, 2026-11-12): this release tool is NOT the owner's. It runs from ~/.flight-board/current, which a board release moves
@@ -106,12 +107,8 @@ const signed = (notes) => /^PASS\b/.test(String(notes?.checker ?? "").split("\n"
 // first line, "line from <40-hex sha>" with the same sha: they read every commit from that base (not included) up to this one. Returns the base
 // sha, else null. It is only a claim: the release tool still requires the base to be an ancestor of main and this commit, and counts only the
 // commits between (lineCovers); a note that says nothing, or two different bases, covers nothing.
-export function lineSign(notes) {
-  if (!signed(notes)) return null;
-  const base = (t) => /\bline from ([0-9a-f]{40})\b/.exec(String(t ?? "").split("\n")[0])?.[1] ?? null;
-  const c = base(notes.checker), s = base(notes.security);
-  return c && c === s ? c : null;
-}
+// #C1045: the gate's own lineBase (scripts/self-deploy-gate.mjs), so the two read a line sign the same way.
+export const lineSign = lineBase;
 
 // #C1032: one sign for a group, and no tip-only gap. Every commit in origin/main..tip needs, per role (Checker's PASS in refs/notes/checker, Security's SECURE
 // in refs/notes/security, each independent), either its own note or that role's line note on the tip: a first line that starts with the role's word and says
@@ -119,10 +116,9 @@ export function lineSign(notes) {
 // main (never main's own commits), base..tip has no merge commit and at most GROUP_MAX commits; otherwise it covers nothing and says why. A commit with a
 // note of its own whose first line is not its role's word (FINDINGS, RISKS, STOP, a withdrawal) refuses unless that same role's valid line note covers it (never the other role's). Roles do not need the same
 // base. Release reads origin's notes only. Before this, only the tip's own notes were read, so a stack's lower commits went out unsigned.
-export const GROUP_MAX = 30;
-export const ROLE_WORD = { checker: { re: /^PASS\b/, word: "PASS", who: "Checker" }, security: { re: /^SECURE\b/, word: "SECURE", who: "Security" } };
-const firstLine = (n) => String(n ?? "").split("\n")[0].trim();
-export const roleLineBase = (role, note) => (ROLE_WORD[role].re.test(firstLine(note)) ? /\bline from ([0-9a-f]{40})\b/.exec(firstLine(note))?.[1] ?? null : null);
+// #C1045: GROUP_MAX, ROLE_WORD, roleLineBase and the per-role check (roleUnsigned) are the self-deploy gate's, imported, so a group this tool lands is one
+// the gate deploys.
+export { GROUP_MAX, ROLE_WORD, roleLineBase };
 const shortList = (l) => `${l.slice(0, 5).map((s) => s.slice(0, 12)).join(", ")}${l.length > 5 ? `, ... (${l.length})` : ""}`;
 // facts: tip, commits (main..tip, oldest first), notes(sha) -> { checker, security }, line(role, base) -> null (the base does not count: why in .why) | { covers: [shas], merges, why }.
 // Returns { refusals, usedLine: [roles whose line note covered a commit that had no note of its own] }.
@@ -139,14 +135,11 @@ export function groupCoverage({ tip, commits, notes, line }) {
       else range = new Set(r.covers);
     }
     // #C934: a commit's own note in this role's ref that is not this role's word (FINDINGS, RISKS, STOP, a withdrawal) is covered only by this same role's valid line note over it. Another role's line note never covers it.
-    for (const c of list) {
-      const own = firstLine(notes(c)?.[role]);
-      if (own && !w.re.test(own) && !(range && range.has(c))) refusals.push(`${c.slice(0, 12)} has a ${w.who} note that is not ${w.word}: "${own.slice(0, 60)}" (only a valid ${w.who} line note over it covers it)`);
-    }
-    // A commit with a bad note of its own was named above; the rest with no note of their own and no line note over them are named here.
-    const bare = list.filter((c) => !firstLine(notes(c)?.[role]) && !(range && range.has(c)));
-    if (bare.length) refusals.push(`${bare.length === 1 ? "a commit has" : `${bare.length} commits have`} no ${w.word} from ${w.who}, by a note of its own or a line note on the tip: ${shortList(bare)}`);
-    if (range && list.some((c) => !w.re.test(firstLine(notes(c)?.[role])) && range.has(c))) usedLine.push(role);
+    // A commit with a bad note of its own is named first; the rest with no note of their own and no line note over them after. (#C1045: the gate's roleUnsigned.)
+    const u = roleUnsigned({ role, list, notes, covered: range });
+    for (const [c, own] of u.bad) refusals.push(`${c.slice(0, 12)} has a ${w.who} note that is not ${w.word}: "${own.slice(0, 60)}" (only a valid ${w.who} line note over it covers it)`);
+    if (u.bare.length) refusals.push(`${u.bare.length === 1 ? "a commit has" : `${u.bare.length} commits have`} no ${w.word} from ${w.who}, by a note of its own or a line note on the tip: ${shortList(u.bare)}`);
+    if (u.used) usedLine.push(role);
   }
   return { refusals, usedLine };
 }
@@ -485,7 +478,6 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
 
     line(!v.refusals.some((r) => /PASS|SECURE/.test(r)), `sign-offs on ${sha}: Checker "${String(notes.checker ?? "none").split("\n")[0]}", Security "${String(notes.security ?? "none").split("\n")[0]}"`);
     line(!coverage.refusals.length, `${(carried?.from ? [sha] : gf.commits).length || 1} commit(s) of origin/main..tip, each signed by Checker and Security${coverage.usedLine.length ? ` (line note on the tip: ${coverage.usedLine.join(", ")})` : ""}`);
-    if (coverage.usedLine.length) console.log("line sign: self-deploy will refuse until signed per commit (scripts/self-deploy-gate.mjs reads each commit's own notes)");
     if (carried?.from) for (const l of carried.lines) line(true, l);
     else if (carried?.refusals) line(false, `no carried sign-off: ${carried.refusals.slice(0, 6).join("; ")}`);
     line(forward, `continues origin/main ${main.slice(0, 12)}`);

@@ -112,6 +112,8 @@ async function history() {
   return { shas, note, verdict, git, done: () => rmSync(dir, { recursive: true, force: true }) };
 }
 const both = (h, sha, extra = "") => { h.note("checker", sha, `PASS Full${extra}`); h.note("security", sha, `SECURE${extra}`); };
+// #C1045: gatherFacts says per role which line notes cover a commit.
+const BOTH = { checker: true, security: true }, NONE = { checker: false, security: false };
 
 test("history (F1): a fixing tip signed 'line from <base>' covers the unsigned commit landed under it; every commit of the range is read, not only the tip", async () => {
   const h = await history();
@@ -121,7 +123,7 @@ test("history (F1): a fixing tip signed 'line from <base>' covers the unsigned c
     both(h, c2, ` line from ${c0}`); // 111e326: signed on the line from the base
     both(h, c3, ` line from ${c0}`);
     const r = h.verdict(c3, c0);
-    assert.deepEqual(r.range.map((x) => [x.sha, x.covered]), [[c3, true], [c2, true], [c1, true]]);
+    assert.deepEqual(r.range.map((x) => [x.sha, x.covered]), [[c3, BOTH], [c2, BOTH], [c1, BOTH]]);
     assert.equal(r.v.ok, true, r.v.refusals.join());
     // The tip alone signed (no line sign): the FINDINGS commit under it still refuses, as before.
     const bare = await history();
@@ -160,7 +162,7 @@ test("history: a line sign covers nothing it should not: a base before the Worke
     // The base is at the deployed commit: it covers c2.
     both(h, c3, ` line from ${c1}`);
     assert.equal(h.verdict(c3, c1).v.ok, true);
-    // Two different bases.
+    // Two different bases: since #C1045 each role counts on its own, and Security's base c0 is before the Worker, so c2 has no SECURE.
     h.note("checker", c3, `PASS line from ${c1}`); h.note("security", c3, `SECURE line from ${c0}`);
     assert.equal(h.verdict(c3, c1).v.ok, false);
     // A STOP on the signing commit.
@@ -181,7 +183,7 @@ test("history (a): the real shape of #C976: c1 FINDINGS, c2 signed 'line from c0
     both(h, c2, ` line from ${c0}`);
     both(h, c3); // the tip carries no line sign of its own
     const r = h.verdict(c3, c0);
-    assert.deepEqual(r.range.map((x) => [x.sha, x.covered]), [[c3, false], [c2, true], [c1, true]]);
+    assert.deepEqual(r.range.map((x) => [x.sha, x.covered]), [[c3, NONE], [c2, BOTH], [c1, BOTH]]);
     assert.equal(r.v.ok, true, r.v.refusals.join());
   } finally { h.done(); }
 });
@@ -193,7 +195,7 @@ test("history (b): a line sign covers only the commits under its signer, never a
     both(h, c1);
     both(h, c2, ` line from ${c0}`);
     const r = h.verdict(c3, c0);
-    assert.equal(r.range.find((x) => x.sha === c3).covered, false, "c3 sits above c2's sign");
+    assert.deepEqual(r.range.find((x) => x.sha === c3).covered, NONE, "c3 sits above c2's sign");
     assert.equal(r.v.ok, false);
     assert.match(r.v.refusals.join(), new RegExp(`no SECURE and PASS: ${c3.slice(0, 12)}`));
     assert.doesNotMatch(r.v.refusals.join(), new RegExp(`no SECURE and PASS: [^;]*${c2.slice(0, 12)}`), "c2 is signed");
@@ -210,7 +212,7 @@ test("history (c): a real side-branch base (forked at c1, Worker at c1): c3 'lin
     h.git("checkout", "-q", "main");
     both(h, c3, ` line from ${s}`); // s exists and is at or after the Worker, but is not an ancestor of c3
     const r = h.verdict(c3, c1);
-    assert.equal(r.range.find((x) => x.sha === c2).covered, false);
+    assert.deepEqual(r.range.find((x) => x.sha === c2).covered, NONE);
     assert.equal(r.v.ok, false);
     assert.match(r.v.refusals.join(), new RegExp(`no SECURE and PASS: ${c2.slice(0, 12)}`));
   } finally { h.done(); }
