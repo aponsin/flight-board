@@ -5,7 +5,7 @@
 // one); a test that does not remove what it made leaves an entry there; the wrapper names the entries (first 20, with their sizes), removes the
 // folder so the leak does not pile up, and exits 1. A failing test run keeps its own exit code.
 // usage: node scripts/test-run.mjs [test files or globs...]   (default: tests/*.test.mjs, which node expands itself)
-import { mkdtempSync, readdirSync, lstatSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, readdirSync, lstatSync, rmSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -65,7 +65,9 @@ export function runSuite({ args = ["tests/*.test.mjs"], parent = process.env.TMP
   }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+// realpath on both sides (Checker 2's F1 on 85b2a56e): ESM resolves import.meta.url to the real path, so through a symlinked path the plain comparison was
+// false and the script ran nothing and exited 0.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
   const { status, left } = runSuite(args.length ? { args } : {});
   if (left.length) console.error(leftoverLine(left));
