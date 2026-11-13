@@ -1,0 +1,1 @@
+SECURE #C1055 board-own-icon cc3b728c: CSP img-src adds data: only (images run no script and fetch nothing); script, style and connect unchanged; SVG sources static, no script or links; manifest icons are data: PNGs. line from a0711522c6a560b19906d9c80cc07212648f8ba6 (Security)
