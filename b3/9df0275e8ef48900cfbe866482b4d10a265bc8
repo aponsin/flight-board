@@ -1,0 +1,1 @@
+SECURE #C1005 g3-probe b39df027: watchdog into probe (parts a-d) reviewed; Worker reads only probe-written evidence; no migration, binding or secret; push and stall words limited to roles, tool words, counts and times. line from 4079cdbd8c9e7e64ad35d3006dca31d4a5b74bde (Security)
