@@ -3,7 +3,7 @@
 // (probe only, the same putFile rules and quotas) and the script's limits (what it will read, what it will say).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, rmSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, linkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
@@ -113,6 +113,8 @@ test("checkPath: what looks like a secret is refused even inside the folder: dot
   bad("my-key.png", /looks like a secret/);
   bad("probe.env.txt", /looks like a secret/);
   bad("Token_list.md", /looks like a secret/);
+  for (const n of ["passwords.txt", "apikey.txt", "api-key.png", "API_KEY.md", "mytoken.txt", "ssh_id_rsa.txt", "id_ed25519.txt", "id_ecdsa.txt", "client_secret.png", "my-credentials.csv"]) bad(n, /looks like a secret/);
+  assert.equal(checkPath(f("monkey-business.png"), { roots: [root] }).ok, true, "key stays a whole-word refusal");
   bad("owner-only.png", /owner only/, PNG, 0o600);
   bad("data.json", /only \.png/);
   bad("run.sh", /only \.png/);
@@ -122,6 +124,14 @@ test("checkPath: what looks like a secret is refused even inside the folder: dot
   assert.match(why(checkPath(join(root, "mockups"), { roots: [root] })), /not a plain file/);
   assert.match(why(checkPath(join(root, "nope.png"), { roots: [root] })), /no such file/);
   assert.match(why(checkPath("", { roots: [root] })), /path of one file/);
+});
+
+test("checkPath: a hard link inside the folder to a file that may live outside is refused", () => {
+  const { root, outside, f } = tree();
+  const elsewhere = join(outside, "x.png"); writeFileSync(elsewhere, PNG); chmodSync(elsewhere, 0o644);
+  linkSync(elsewhere, join(root, "hard.png"));
+  assert.match(why(checkPath(join(root, "hard.png"), { roots: [root] })), /hard link/);
+  assert.equal(checkPath(f("single.png"), { roots: [root] }).ok, true, "a file with one link is fine");
 });
 
 test("checkPath: a file over the store's cap is refused without being read", () => {
@@ -143,6 +153,24 @@ test("the folders a file may come from are the one that holds the board config, 
   bad(["~/a/../../b"], /fileRoots/);
   bad([5], /fileRoots/);
   bad(Array.from({ length: 6 }, (_, i) => `/r${i}`), /fileRoots/);
+  bad(["/."], /fileRoots/);
+  bad(["~/."], /fileRoots/);
+  bad(["/a/./b"], /fileRoots/);
+  // Judged by where the folder really is: the whole disk, the home folder itself and a checkout are refused; a folder that is not there yet is unused.
+  const badReal = (v, re) => assert.match(why(rootsFor(cfg({ fileRoots: v }), { home })), re, JSON.stringify(v));
+  bad(["/"], /fileRoots/);
+  bad(["~/"], /fileRoots/);
+  badReal(["//"], /whole disk/);
+  badReal([home], /whole disk or the home/);
+  const link = join(dir(), "homelink"); symlinkSync(home, link);
+  badReal([link], /whole disk or the home/);
+  const homeLink = join(dir(), "home-as-link"); symlinkSync(home, homeLink);
+  assert.match(why(rootsFor(cfg({ fileRoots: [home] }), { home: homeLink })), /whole disk or the home/, "a home folder reached through a link is still the home folder");
+  const checkout = join(home, "Code"); mkdirSync(join(checkout, ".git"), { recursive: true });
+  badReal(["~/Code"], /checkout/);
+  badReal([checkout], /checkout/);
+  assert.equal(rootsFor(cfg({ fileRoots: ["~/not-made-yet"] }), { home }).ok, true);
+  assert.match(why(rootsFor(cfg({ fileRoots: [extra] }), { home, exists: () => true })), /checkout/, "the .git test is on the real folder");
   assert.match(why(rootsFor(undefined)), /--config/);
   assert.match(why(rootsFor(join(board, "missing.json"))), /cannot be read/);
   writeFileSync(join(board, "bad.json"), "not json");
@@ -154,7 +182,7 @@ test("the folders a file may come from are the one that holds the board config, 
 test("config: fileRoots defaults to none; up to 5 absolute (or ~/) folders with no .. are accepted, anything else is refused", () => {
   assert.deepEqual(fullConfig({}).fileRoots, []);
   assert.deepEqual(checkConfig({ fileRoots: ["/Users/x/mockups", "~/designs"] }), []);
-  for (const v of ["x", ["rel/dir"], ["/a/../b"], [5], [""], ["/"], Array.from({ length: 6 }, (_, i) => `/r${i}`)]) assert.ok(checkConfig({ fileRoots: v }).some((e) => /fileRoots/.test(e)), JSON.stringify(v));
+  for (const v of ["x", ["rel/dir"], ["/a/../b"], [5], [""], ["/"], ["/."], ["~/."], ["/a/./b"], Array.from({ length: 6 }, (_, i) => `/r${i}`)]) assert.ok(checkConfig({ fileRoots: v }).some((e) => /fileRoots/.test(e)), JSON.stringify(v));
 });
 
 test("a file in the config's folder goes; the same file anywhere else does not, whatever the command line says", async () => {
@@ -182,7 +210,24 @@ test("credentials: the probe's env file, only when it is readable by its owner a
   assert.match(why(credentials(envFile(GOOD_ENV.replace("board.test/", "evil.test@x/")))), /https/);
   assert.match(why(credentials(join(dir(), "missing.env"))), /cannot be read/);
   assert.match(why(credentials(undefined)), /--env/);
-  assert.equal(credentials(envFile(GOOD_ENV.replace(/BOARD_BASE_URL=.*\n/, "")), { baseOverride: "https://other.test" }).base, "https://other.test");
+  assert.match(why(credentials(envFile(GOOD_ENV.replace(/BOARD_BASE_URL=.*\n/, "")), { baseOverride: "https://other.test" })), /BOARD_BASE_URL/, "an option cannot supply the host");
+});
+
+test("no token goes to another host: --base is refused before the env file is read, and the only host ever posted to is the env file's own", async () => {
+  const { root, f } = tree();
+  const path = f("a.png"), env = envFile(GOOD_ENV);
+  const out = [], err = []; let code;
+  const hosts = [];
+  const fetchImpl = async (url) => { hosts.push(new URL(url).host); return { ok: true, status: 200, json: async () => ({ ok: true, id: "abc123def456ghi789jkl", name: "a.png", contentType: "image/png", sizeBytes: PNG.length }) }; };
+  const io = { fetchImpl, out: (l) => out.push(l), err: (l) => err.push(l), exit: (c) => { code = c; }, roots: [root] };
+  for (const flag of [["--base", "https://evil.test"], ["--base=https://evil.test"]]) {
+    await main(["--env", join(dir(), "never-read.env"), ...flag, path], { ...io, fetchImpl: () => assert.fail("nothing is sent") });
+    assert.equal(code, 1);
+    assert.match(err.at(-1), /no --base/);
+  }
+  await putLocalFile({ path, envFile: env, base: "https://evil.test", fetchImpl, roots: [root] });
+  await main(["--env", env, path], io);
+  assert.deepEqual(hosts, ["board.test", "board.test"], "only the env file's host is ever posted to");
 });
 
 test("putLocalFile: one POST to /api/probe/file with the token headers and the file's own bytes, no redirect followed; the id comes back", async () => {

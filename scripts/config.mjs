@@ -309,7 +309,7 @@ export function checkConfig(c) {
       if (k.visualLanes !== undefined && !(Array.isArray(k.visualLanes) && k.visualLanes.every((r) => typeof r === "string" && NAME.test(r)))) out.push("decisions.visualLanes: a list of role names");
     }
   }
-  if (c.fileRoots !== undefined && !(Array.isArray(c.fileRoots) && c.fileRoots.length <= 5 && c.fileRoots.every((p) => typeof p === "string" && /^(\/|~\/)[^\0<>{}\n]{1,300}$/.test(p) && !p.split("/").includes("..")))) out.push("fileRoots: a list of up to 5 absolute folders (or ~/ ones), none with ..");
+  if (c.fileRoots !== undefined && !(Array.isArray(c.fileRoots) && c.fileRoots.length <= 5 && c.fileRoots.every((p) => typeof p === "string" && /^(\/|~\/)[^\0<>{}\n]{1,300}$/.test(p) && !p.split("/").some((s) => s === ".." || s === ".")))) out.push("fileRoots: a list of up to 5 absolute folders (or ~/ ones), none with .. or .");
   return out;
 }
 
