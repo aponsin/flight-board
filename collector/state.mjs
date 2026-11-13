@@ -198,8 +198,8 @@ export function activity(entries, { mtimeMs, now, ids, nums }) {
 // role stopped on a prompt and since when (promptSince), and tools, when given, that prompt's tool class (promptTool):
 // the local waiting-prompt.json, not the state.
 // #C970 (the owner, 11-12: the tiles did not show Checker 2): besides the roster, every open session started by spawnedBy (the lead's session id: sessions
-// the lead started, not archived) is an agent too, under its title with anything but letters and digits dropped ("Checker 2" is "Checker2", a
-// role name the state takes) and marked by: "spawn", so a new role shows up by itself. A roster role keeps its own rule above; two spawned sessions with the
+// the lead started, not archived) is an agent too when its title is a roster role name plus optional digits ("Checker 2" is "Checker2"; any
+// other title is ignored, so no free text becomes a key), marked by: "spawn", so a new role shows up by itself. A roster role keeps its own rule above; two spawned sessions with the
 // same name give the newest.
 export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = process.getuid(), prompts = null, tools = null, tokens = null, sessionIds = {}, spawnedBy = null }) {
   const out = {};
@@ -221,8 +221,11 @@ export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = pr
   }
   if (typeof spawnedBy === "string" && spawnedBy) {
     for (const s of sessions.filter((x) => x.from === spawnedBy).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))) {
-      const role = String(s.title).replace(/[^A-Za-z0-9]/g, "");
-      if (!ROLE.test(role) || named.includes(role) || Object.hasOwn(out, role)) continue;
+      // Checker's finding on 6c7f684c: a free-text title must not become a key (it would leave the Mac). Only a roster role name, then optional
+      // digits, with spaces between them allowed ("Checker 2" is "Checker2"), is taken; any other title is ignored.
+      const m = /^([A-Za-z]+)\s*(\d*)$/.exec(String(s.title));
+      const role = m && named.includes(m[1]) ? m[1] + m[2] : null;
+      if (!role || !ROLE.test(role) || named.includes(role) || Object.hasOwn(out, role)) continue;
       read(role, s, "spawn");
     }
   }

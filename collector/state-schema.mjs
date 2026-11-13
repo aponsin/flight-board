@@ -11,7 +11,7 @@
 //     cards:  { <card id>: { num, phase, headSha12, signed, onMain, ci, ciMin, liveVersion, shipping?, seen?, branches?, at } },
 //     agents: { <role>: { state, lastActivityAt, tool, card, since, by? } } }   by (#C633, optional): "title" when the role's
 //             session was found by its title because the config holds no session id for it; "spawn" (#C970) when it is not on the roster at all
-//             but is an open session the lead started, named by its title with anything but letters and digits dropped
+//             but is an open session the lead started whose title is a roster role name plus optional digits ("Checker 2" is Checker2)
 
 export const STATE_VERSION = 1;
 // A POST's body at most (the Worker refuses a longer one before reading it).
