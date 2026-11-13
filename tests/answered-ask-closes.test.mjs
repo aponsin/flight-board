@@ -156,6 +156,7 @@ test("(2) the view carries autoClosed for the board's close only", async () => {
   const doc = (v) => compatView(v).collections.waiting.find((w) => w.id === a.id);
   assert.equal(doc(await readView(db, T + 50 * MIN)).autoClosed, true);
   const db2 = makeDb(); const b = await answered(db2);
+  await postMessage(db2, T + 9 * MIN, "owner", { thread_id: b.id, body: "Ack." }); // #C1046: an agent closes only after the owner's word
   assert.equal((await closeAsk(db2, T + 10 * MIN, "Manager", b.id, "agent")).ok, true);
   const d2 = doc(await readView(db2, T + 11 * MIN));
   assert.equal(d2.done, true); assert.equal(d2.autoClosed, undefined, "an asker's close is no board close");

@@ -102,6 +102,7 @@ test("the Builder cannot close Manager's ask through the connector; Manager can;
   const { tool, env } = make();
   const id = (await tool("Manager", "ask", { type: "Action", title: "Rotate", steps: ["rotate"], expect: "done" })).result.structuredContent.id;
   assert.equal((await tool("Builder", "ask_close", { id })).result.structuredContent.refused.rule, "close-not-yours");
+  assert.equal((await postMessage(env.DB, NOW, "owner", { thread_id: id, body: "Done." })).ok, true); // #C1046: an agent closes only after the owner's word
   assert.equal((await tool("Manager", "ask_close", { id })).result.structuredContent.ok, true);
   assert.equal((await readView(env.DB, NOW)).asks[0].closed_by, "Manager");
 });
@@ -178,7 +179,8 @@ test("the owner is a role, not a name (Security's nit 1 on v11): an agent whose 
   assert.equal(closeRefusal({ id: "x", asked_by: "owner" }, "owner", "agent").rule, "close-not-yours", "not even as the asker");
   assert.equal(closeRefusal({ id: "x", asked_by: "Manager" }, "owner", undefined).rule, "close-not-yours", "no role is no owner");
   assert.equal(closeRefusal({ id: "x", asked_by: "Manager" }, "owner", "owner"), null);
-  assert.equal(closeRefusal({ id: "x", asked_by: "Manager" }, "Manager", "agent"), null);
+  assert.equal(closeRefusal({ id: "x", asked_by: "Manager" }, "Manager", "agent", { author: "owner" }), null);
+  assert.equal(closeRefusal({ id: "x", asked_by: "Manager" }, "Manager", "agent").rule, "close-not-after-owner", "#C1046: no owner's word on the thread");
   const env = { DB: db };
   const res = await worker.fetch(new Request("https://board.test/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "ask_close", arguments: { id: ask.id } } }) }), env, null, NOW, async () => ({ who: "owner", role: "agent" }));
   assert.equal(res.status, 403);

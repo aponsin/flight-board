@@ -356,7 +356,9 @@ export async function updateListItem(db, now, who, fields) {
 // Closing an ask: it leaves Needs you and Later, and its thread is closed with it. Nothing is deleted; messages stay as they are.
 export async function closeAsk(db, now, who, id, role) {
   const ask = typeof id === "string" ? await db.prepare("SELECT id, type, asked_by, answered_at, closed_at, card_id FROM asks WHERE id = ?").bind(id).first() : null;
-  const bad = closeRefusal(ask ? ask : null, who, role);
+  // #C1046: the newest message on the ask's thread, for the rule that an agent closes only after the owner's word (not read for the owner).
+  const last = ask && role !== "owner" ? await db.prepare("SELECT author FROM messages WHERE thread_id = ? ORDER BY created_at DESC, id DESC LIMIT 1").bind(id).first() : null;
+  const bad = closeRefusal(ask ? ask : null, who, role, last);
   if (bad) return refuse(db, now, bad, ask?.card_id, who);
   await db.prepare("UPDATE asks SET closed_at = ?, closed_by = ? WHERE id = ?").bind(now, who, id).run();
   return { ok: true, id };

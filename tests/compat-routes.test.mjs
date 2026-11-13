@@ -206,9 +206,10 @@ test("every route that does not exist yet is refused by name, and logged", async
 });
 
 test("an ask the asker closed first: the owner's answer-and-done is refused whole, and nothing is stored (Checker)", async () => {
-  const { tool, write, call } = make();
+  const { tool, write, call, env } = make();
   const a = await tool("manager", "ask", { type: "Action", title: "Run it", steps: ["Run."], expect: "done" });
-  await tool("manager", "ask_close", { id: a.id });
+  await postMessage(env.DB, NOW, "owner", { thread_id: a.id, body: "Done." }); // #C1046: an agent closes only after the owner's word
+  assert.equal((await tool("manager", "ask_close", { id: a.id })).ok, true);
   const r = await write({ op: "update", path: `waiting/${a.id}`, data: { response: { status: "done", note: "", at: 1 }, done: true } });
   assert.equal(r.status, 422); assert.equal(r.body.refused.rule, "ask-already-closed");
   const view = await (await call("owner", "/api/view")).json();

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { mint, createCard, updateCard, createAsk, answerAsk, closeAsk, createListItem, updateListItem, writeEvidence, readView } from "../worker/board-store.mjs";
+import { mint, createCard, updateCard, createAsk, answerAsk, closeAsk, createListItem, updateListItem, writeEvidence, readView, postMessage } from "../worker/board-store.mjs";
 
 const NOW = 1_800_000_000_000;
 const refusals = async (db) => (await db.prepare("SELECT rule, card_id, who FROM refusals ORDER BY id").all()).results;
@@ -61,6 +61,8 @@ test("closing an ask: an open Later closes, a Decision only after it is answered
   const db = makeDb();
   const later = await createAsk(db, NOW, { type: "Later", title: "L", asked_by: "Manager", text: "t", eta_at: NOW + 86_400_000 });
   const dec = await createAsk(db, NOW, { ...decision, title: "D" });
+  // #C1046: an agent closes only after the owner's own word on the thread.
+  for (const id of [later.id, dec.id]) assert.equal((await postMessage(db, NOW, "owner", { thread_id: id, body: "Ack." })).ok, true);
   assert.deepEqual(await closeAsk(db, NOW + 1, "Manager", later.id), { ok: true, id: later.id });
   assert.equal((await closeAsk(db, NOW + 2, "Manager", later.id)).refused.rule, "ask-already-closed");
   assert.equal((await closeAsk(db, NOW + 2, "Manager", dec.id)).refused.rule, "close-unanswered");

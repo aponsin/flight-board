@@ -170,10 +170,16 @@ export const ROSTER_ROLES = ["Builder", "Admin", "Demos", "Mainsite", "Linguist"
 // closed ask's thread is closed with it.
 // The owner is a ROLE, never a name: a caller whose role is not "owner" is the owner's under no name (Security's nit 1 on v11), and
 // one that names itself "owner" without the role is refused even as the asker.
-export function closeRefusal(ask, who, role) {
+// #C1046 (the owner, 2026-11-12): an agent closes a thread only when the newest message on it is the owner's (his Ack, Done, Closed, an answer);
+// otherwise the agent posts and leaves the thread for him. `last` is the thread's newest message { author } or null (a thread nobody has written
+// in has no owner's word). The owner closes at any time, from the page or otherwise: his role is not asked. An Approval is the one exception: the
+// Reviewer closes it when its pull request is merged or a newer head replaces it, with no word from the owner, and that is housekeeping, not an
+// agent ending a conversation (closing never approves anything, below); the card's rule is for the threads he talks in.
+export function closeRefusal(ask, who, role, last = null) {
   if (!ask) return refuse("ask-unknown", "no such ask");
   if (ask.closed_at) return refuse("ask-already-closed", String(ask.id));
   if (role !== "owner" && (who === "owner" || who !== ask.asked_by)) return refuse("close-not-yours", `${who ?? "unknown"} did not ask ${ask.id}; only the owner or the asker closes it`);
+  if (role !== "owner" && ask.type !== "Approval" && last?.author !== "owner") return refuse("close-not-after-owner", `${ask.id}: an agent closes a thread only when the owner's message is the newest on it; post your note and leave the thread for the owner to close`);
   // An Approval closes answered or not: closing never approves anything (a merged pull request, or one a newer head replaced).
   if (["Decision", "Answer"].includes(ask.type) && !ask.answered_at) return refuse("close-unanswered", `a ${ask.type} is answered before it is closed`);
   return null;
