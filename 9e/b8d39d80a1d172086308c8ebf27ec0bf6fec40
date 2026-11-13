@@ -1,0 +1,1 @@
+SECURE #C1053 owner-orders-groups 9eb8d39d: group_move writers owner+Manager (refused in the store); /api/group-move owner-only 403; body shape-checked, SQL bound; migration additive; page labels esc(), no new sink. Manager's check rests on the door's declared role, as every role check does. line from 7bb77f34a6a61618a1271eb7713da3eb0477e7f9 (Security)
