@@ -1,0 +1,1 @@
+SECURE #C1005 16ce4107: ledger read only (absolute .jsonl config path, no dot segments, lstat isFile, 8 MB cap); watch schema-checked in the probe and re-checked in the Worker; stall reasons are role, tool word, counts, times. (Security)
