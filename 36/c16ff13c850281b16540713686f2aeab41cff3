@@ -1,0 +1,1 @@
+SECURE #C1046 36c16ff1: an agent closes a thread only after the owner's newest message; author is the authenticated identity (the literal 'owner' write sits behind the owner-only /api/compat/write); the owner's path unchanged. (Security)
