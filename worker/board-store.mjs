@@ -46,7 +46,7 @@ const bool = (v) => (v === true ? 1 : v === false ? 0 : Array.isArray(v) || (v &
 export async function createCard(db, now, who, fields) {
   // #C748 (Checker F5): the check date is the lead's or the owner's on a new card too.
   if (fields && typeof fields === "object" && "check_at" in fields && !CHECK_AT_WRITERS.includes(who)) return refuse(db, now, { rule: "check-at-lead-only", detail: `${who ?? "unknown"} cannot set a card's check date; ${CHECK_AT_WRITERS.join(" or ")} can` }, fields.id, who);
-  const bad = cardWriteRefusal(fields, null);
+  const bad = cardWriteRefusal(fields, null) ?? reviewHoldWriterRefusal(fields, who);
   if (bad) return refuse(db, now, bad, fields?.id, who);
   if ("done" in fields || "done_evidence" in fields) return refuse(db, now, { rule: "card-done", detail: "a new card is not done: create it, then close it with card_update" }, fields.id, who);
   const noEnd = holdEndRefusal(fields, null) ?? (await holdEndUnknown(db, fields));
@@ -76,6 +76,13 @@ const holdEndUnknown = async (db, fields) => {
 
 const CHECK_AT_WRITERS = ["Manager", "owner"];
 const REVIEW_HOLD_WRITERS = ["Manager"];
+// #C1048: a waiting_on in the review-hold form ends by itself when its reviewer signs (signoffClears), so only the lead or that reviewer may write
+// one, on a new card (Security's F1 on 2f30cfc3: card_create passed it) as on an existing one; anyone else holds a card in other words.
+function reviewHoldWriterRefusal(fields, who) {
+  const role = fields && typeof fields === "object" && "waiting_on" in fields ? reviewHoldRole(fields.waiting_on) : null;
+  if (!role || REVIEW_HOLD_WRITERS.includes(who) || who === role) return null;
+  return { rule: "review-hold-writer", detail: `"${String(fields.waiting_on).trim().slice(0, 60)}" is a review hold, which ends by itself when ${role} signs: only ${REVIEW_HOLD_WRITERS.join(" or ")} or ${role} may write it; ${who ?? "unknown"} can hold the card in other words` };
+}
 // Card words changed later: checked against the probe's reading of this card (a typed word cannot contradict it).
 export async function updateCard(db, now, who, fields) {
   const id = fields?.id;
@@ -96,8 +103,8 @@ export async function updateCard(db, now, who, fields) {
   if ("check_at" in fields && !CHECK_AT_WRITERS.includes(who)) return refuse(db, now, { rule: "check-at-lead-only", detail: `${who ?? "unknown"} cannot set or lift a card's check date; ${CHECK_AT_WRITERS.join(" or ")} can` }, id, who);
   // #C1048 (the lead's pick A and its condition): a waiting_on in the review-hold form ends by itself when its reviewer signs (signoffClears), so
   // only the lead or that reviewer may write one; anyone else (an agent, the owner's page) writes its hold in other words, which never auto-clear.
-  const holdRole = "waiting_on" in fields ? reviewHoldRole(fields.waiting_on) : null;
-  if (holdRole && !REVIEW_HOLD_WRITERS.includes(who) && who !== holdRole) return refuse(db, now, { rule: "review-hold-writer", detail: `"${String(fields.waiting_on).trim().slice(0, 60)}" is a review hold, which ends by itself when ${holdRole} signs: only ${REVIEW_HOLD_WRITERS.join(" or ")} or ${holdRole} may write it; ${who ?? "unknown"} can hold the card in other words` }, id, who);
+  const holdBad = reviewHoldWriterRefusal(fields, who);
+  if (holdBad) return refuse(db, now, holdBad, id, who);
   const noEnd = holdEndRefusal(fields, card) ?? (await holdEndUnknown(db, fields));
   if (noEnd) return refuse(db, now, noEnd, id, who);
   const keys = COLUMNS.filter((c) => c in fields);

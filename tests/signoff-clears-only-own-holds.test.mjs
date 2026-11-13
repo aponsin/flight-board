@@ -51,6 +51,20 @@ test("the lead's condition: only the lead or that same reviewer may write a revi
   assert.ok((await write("Boardsmith", null, 7)).ok, "lifting a hold is not writing one");
 });
 
+test("Security's F1 on 2f30cfc3: a new card is held to the same rule; card_create with a review hold from an agent or the owner is refused", async () => {
+  const db = makeDb();
+  const make = (who, id, waiting_on) => createCard(db, NOW, who, { id, title: "Card", owner_role: "Boardsmith", waiting_on });
+  for (const [who, id] of [["Boardsmith", "n1"], ["owner", "n2"], ["Checker", "n3"]]) {
+    const r = await make(who, id, "Security: review");
+    assert.equal(r.ok, false, who);
+    assert.equal(r.refused.rule, "review-hold-writer", who);
+    assert.equal(await cardOf(db, id), undefined, `${who}: no card made`);
+  }
+  assert.ok((await make("Manager", "n4", "Security: review")).ok, "the lead");
+  assert.ok((await make("Security", "n5", "Security: full review")).ok, "the reviewer it names");
+  assert.ok((await make("Boardsmith", "n6", "Security")).ok, "a bare role is an ordinary hold");
+});
+
 test("must still allow: the review hold clears on its reviewer's sign-off", async () => {
   const { r, card } = await signedWith("Security: Full review");
   assert.deepEqual({ ...r.cleared }, { waiting_on: "Security: Full review", signedBy: "Security" });
