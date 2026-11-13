@@ -33,6 +33,23 @@ test("Security's case: a hold that only starts with the role stays through that 
   assert.equal(signoffClears(rd("security", ["checker"]), rd("ship", ["checker", "security"]), "Security: wait for the owner's ok"), null);
 });
 
+test("the lead's condition: only the lead or that same reviewer may write a review hold; anyone else is refused, and may hold in other words", async () => {
+  const db = makeDb();
+  assert.ok((await createCard(db, NOW, "Manager", { id: "c1048", title: "Card", owner_role: "Boardsmith", review_level: "Full" })).ok);
+  const write = (who, waiting_on, at) => updateCard(db, NOW + at * MIN, who, { id: "c1048", waiting_on });
+  assert.ok((await write("Manager", "Checker: Full review", 1)).ok, "the lead");
+  assert.ok((await write("Security", "Security: review", 2)).ok, "the reviewer it names");
+  assert.ok((await write("Checker", "checker 2: full review", 3)).ok, "a reviewer's second session writes as its role");
+  for (const [who, w] of [["Boardsmith", "Checker: Full review"], ["owner", "Security: Full review"], ["Checker", "Security: review"], ["Release", "Security"]]) {
+    const r = await write(who, w, 4);
+    assert.equal(r.ok, false, `${who} writing "${w}"`);
+    assert.equal(r.refused.rule, "review-hold-writer");
+  }
+  assert.equal((await cardOf(db, "c1048")).waiting_on, "checker 2: full review", "a refused write changes nothing");
+  assert.ok((await write("owner", "Security: wait for the owner's ok", 5)).ok, "other words are anyone's");
+  assert.ok((await write("Boardsmith", null, 6)).ok, "lifting a hold is not writing one");
+});
+
 test("must still allow: the review hold clears on its reviewer's sign-off", async () => {
   const { r, card } = await signedWith("Security: Full review");
   assert.deepEqual({ ...r.cleared }, { waiting_on: "Security: Full review", signedBy: "Security" });
