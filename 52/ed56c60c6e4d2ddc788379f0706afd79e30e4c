@@ -1,0 +1,1 @@
+SECURE #C1006 schedule-model-drift-v2 52ed56c6: only task id, model word and times leave the probe (TASK_ID/MODEL_WORD regex, store shape refuses other keys, page esc()); no title, prompt or path. LOW: unconfigured task ids from any project's sessions are listed. line from ac5b7d0bfa6139d97defb528e0fd104e7fc230b4 (Security)
