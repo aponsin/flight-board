@@ -53,7 +53,9 @@ test("the grey is a fill with the page's ink on it, never a dimming; the ratio p
     assert.ok(ratio(v.ink, v.line) >= 4.5, `${mode}: ink on the fill ${ratio(v.ink, v.line).toFixed(2)}`);
     assert.ok(ratio(v.warn, v.line) >= 3 || true);
   }
-  assert.ok(ratio(light.muted, light.line) < 4.5, "the muted text on the fill would have failed: that is why the tile uses the ink");
+  // The muted text was 4.22:1 on the fill until #C1024 darkened it (tests/board-contrast-viewer-targets.test.mjs now holds it at 4.5:1 or more on every surface);
+  // the tile keeps the ink, which is still the stronger text on the fill.
+  assert.ok(ratio(light.ink, light.line) > ratio(light.muted, light.line), "the ink is stronger than the muted text on the fill, so the tile keeps it");
   const oldsrc = html.match(/\.oldsrc\{[^}]*\}\.oldsrc\.stale\{[^}]*\}/)[0];
   assert.match(oldsrc, /display:block/, "the oldest source is on its own line");
   assert.match(oldsrc, /\.oldsrc\.stale\{color:var\(--warn-ink\);font-weight:600\}/, "and old looks like the tiles' age text, in the ink that passes 4.5:1 on the page background (Designer)");

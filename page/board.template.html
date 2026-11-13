@@ -4,7 +4,7 @@
 <style>
 /* Layout: a departures board. Waiting-on-you strip first, then one row per initiative with a phase track and its ETA, then the shipped feed and the usage overview. */
 :root{
-  --bg:#f3f5f7; --panel:#ffffff; --ink:#18202a; --muted:#5d6b7a; --line:#dde3ea;
+  --bg:#f3f5f7; --panel:#ffffff; --ink:#18202a; --muted:#556372; --line:#dde3ea;
   --accent:#1f5fd6; --accent-soft:#e3ecfc;
   --ok:#1b7f4b; --ok-ink:#17703f; --ok-soft:#dff3e8; --warn:#a85f00; --warn-soft:#fdf0d9; --warn-ink:#9a5700; --bad:#b4232c; --bad-soft:#fbe2e3;
   --track:#e7ecf2;
@@ -416,6 +416,8 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .lb-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid var(--line);font-size:.9rem}
 .lb-bar button{font:600 .85rem var(--body);border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:6px;padding:5px 12px;cursor:pointer}
 .lb-btns{display:flex;gap:6px;flex:none}
+/* #C1024: on a phone the viewer's buttons (Prev, Next, −, +, Close) are 44 px tall (they were 31), and the bar wraps so five of them fit 375 px. */
+@media (max-width:760px){.lb-bar{flex-wrap:wrap}.lb-btns{flex-wrap:wrap;flex:1 1 100%;justify-content:flex-end}.lb-bar button{min-height:44px;min-width:44px;padding:5px 14px}}
 .lb-scroll{flex:1 1 auto;min-height:0;overflow:auto;touch-action:pan-x pan-y;-webkit-overflow-scrolling:touch}
 .lb-scroll img{display:block;max-width:100%;height:auto;cursor:zoom-in}
 .lb-scroll img.zoomed{max-width:none;cursor:zoom-out}
