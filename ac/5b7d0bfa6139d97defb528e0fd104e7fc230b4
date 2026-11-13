@@ -1,0 +1,1 @@
+SECURE #C1056 agent-attaches-local-file ac5b7d0b: F1 fixed (no --base; token only to BOARD_BASE_URL of its own env file; --base refused before the env file is read); tighter names, roots and hard links. L1 (scan text bodies) left open, optional. line from 4023e349ad1dd7a359429b6e4bd088cab81cc969 (Security)
