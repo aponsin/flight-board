@@ -10,7 +10,8 @@
 //   schedule (8 am to 8 pm Mountain time) since then, the page's chip going red past 75. Both optional: a probe before it leaves them out.
 //     cards:  { <card id>: { num, phase, headSha12, signed, onMain, ci, ciMin, liveVersion, shipping?, seen?, branches?, at } },
 //     agents: { <role>: { state, lastActivityAt, tool, card, since, by? } } }   by (#C633, optional): "title" when the role's
-//             session was found by its title because the config holds no session id for it
+//             session was found by its title because the config holds no session id for it; "spawn" (#C970) when it is not on the roster at all
+//             but is an open session the lead started, named by its title with anything but letters and digits dropped
 
 export const STATE_VERSION = 1;
 // A POST's body at most (the Worker refuses a longer one before reading it).
@@ -117,7 +118,7 @@ const AGENT = {
   tool: nullOr((v) => TOOLS.includes(v) || v === "mcp" || v === "other"),
   card: nullOr(isId),
   since: nullOr(isTime),
-  by: (v) => v === "title",
+  by: (v) => v === "title" || v === "spawn",
 };
 
 // The probe's own readings, numbers and enums only (#C592, #C593, #C595); a state from a probe before them still fits.
