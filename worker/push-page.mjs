@@ -2,6 +2,7 @@
 //   /sw.js                  the service worker: shows a push, and opens (or focuses) the board when it is tapped;
 //   /manifest.webmanifest   so an iPhone can add the board to the Home Screen, the only place iOS allows Web Push (16.4+).
 // The push's words come from push-rules.mjs (counts, ask numbers, versions); the worker shows them as text, never as HTML.
+import { ICON_192, ICON_512 } from "./board-icons.mjs";
 export const SW_SOURCE = `// Flight board service worker (#C904): shows the board's pushes; a tap opens the board.
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
@@ -21,6 +22,7 @@ self.addEventListener("notificationclick", (e) => {
 });
 `;
 
+// #C1055: the board's icon at 192 and 512 px (generated from page/icon/ by scripts/build-icons.mjs), as data: links, so the manifest needs no second request.
 export const MANIFEST = JSON.stringify({
   name: "Flight board",
   short_name: "Board",
@@ -29,4 +31,5 @@ export const MANIFEST = JSON.stringify({
   display: "standalone",
   background_color: "#0f1419",
   theme_color: "#0f1419",
+  icons: [{ src: ICON_192, sizes: "192x192", type: "image/png" }, { src: ICON_512, sizes: "512x512", type: "image/png" }],
 });

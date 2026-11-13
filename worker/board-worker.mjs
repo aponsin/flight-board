@@ -57,8 +57,9 @@ const byName = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
 // with them, and no script runs from one (Boardsmith's split).
 export const OLD_PAGE_PATH = "/board";
 const FONT_PATH = /^\/fonts\/([a-z0-9-]+\.woff2)$/;
-// #C904: worker-src and manifest-src 'self' for the phone push's /sw.js and /manifest.webmanifest, nothing wider.
-export const oldPageCsp = (nonce) => `default-src 'none'; script-src 'nonce-${nonce}'; style-src-elem 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`;
+// #C904: worker-src and manifest-src 'self' for the phone push's /sw.js and /manifest.webmanifest, nothing wider. #C1055: img-src also takes data:, for the
+// board's icon links (checked in a browser: with 'self' and blob: alone each tab and Home Screen icon was blocked); no script or style comes from a data: URL.
+export const oldPageCsp = (nonce) => `default-src 'none'; script-src 'nonce-${nonce}'; style-src-elem 'nonce-${nonce}'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'`;
 // The page's script and style elements carry the nonce (the built page has one bare <script> and bare <style>s, and no inline
 // handlers), and the window.claude shim (Boardsmith's worker/compat-shim.mjs) runs just before the page's script, so the page's
 // data block finds window.claude reading /api/compat and writing /api/compat/write.

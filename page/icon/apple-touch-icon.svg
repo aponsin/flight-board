@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- The apple-touch-icon source (#C1055): option F with a square, opaque, full-bleed ground, because iOS rounds the corners itself and draws transparency black. -->
+  <defs><clipPath id="dial"><circle cx="256" cy="256" r="176"/></clipPath></defs>
+  <rect width="512" height="512" fill="#1d2733"/>
+  <g clip-path="url(#dial)">
+    <rect x="60" y="60" width="392" height="206" fill="#3d7bf0"/>
+    <rect x="60" y="256" width="392" height="200" fill="#a8652a"/>
+    <rect x="60" y="246" width="392" height="20" fill="#ffffff"/>
+  </g>
+  <circle cx="256" cy="256" r="176" fill="none" stroke="#5d6b7a" stroke-width="24"/>
+  <path d="M136 290 H216 L256 318 L296 290 H376" fill="none" stroke="#f2b45c" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="256" cy="290" r="16" fill="#f2b45c"/>
+</svg>

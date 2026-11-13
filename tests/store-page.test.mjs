@@ -51,7 +51,7 @@ test("the Worker serves the old page at / (and /board redirects there, #C829) be
   const csp = r1.headers.get("content-security-policy"), nonce = /'nonce-([A-Za-z0-9_-]{24})'/.exec(csp)?.[1];
   assert.ok(nonce, csp);
   assert.equal(csp, oldPageCsp(nonce));
-  for (const part of ["default-src 'none'", `script-src 'nonce-${nonce}'`, `style-src-elem 'nonce-${nonce}'`, "style-src-attr 'unsafe-inline'", "font-src 'self'", "img-src 'self' blob:", "connect-src 'self'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "object-src 'none'"]) assert.ok(csp.split("; ").includes(part), part);
+  for (const part of ["default-src 'none'", `script-src 'nonce-${nonce}'`, `style-src-elem 'nonce-${nonce}'`, "style-src-attr 'unsafe-inline'", "font-src 'self'", "img-src 'self' data: blob:", "connect-src 'self'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'", "object-src 'none'"]) assert.ok(csp.split("; ").includes(part), part);
   assert.doesNotMatch(csp, /unsafe-eval|https?:|\*/, "no other site, no eval");
   assert.doesNotMatch(csp.split("; ").find((p) => p.startsWith("script-src")), /unsafe-inline/);
   const html = await r1.text();
