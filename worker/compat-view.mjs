@@ -129,6 +129,8 @@ export function initiativeDoc(c, ev) {
     // #C731 B4b: the done-test hold. A card with a checkAt is not closed by the page on the live reading ("Live, still open").
     checkAt: Number.isInteger(c.check_at) && c.check_at > 0 ? c.check_at : undefined,
     repo: c.repo, batch: c.batch, bump: c.bump,
+    // #C866: what the card removes, one plain line (or none).
+    removes: typeof c.removes === "string" && c.removes ? c.removes : undefined,
     // #C1008: the group the owner pulled it out of, who and when (the page tags the row "pulled out of G3 · 10:05 AM by <owner>").
     pulledFrom: typeof c.pulled_from === "string" && c.pulled_from ? c.pulled_from : undefined, pulledBy: typeof c.pulled_by === "string" && c.pulled_by ? c.pulled_by : undefined, pulledAt: num(c.pulled_at),
     // holds-need-an-end (#C838): the id of the ask or card whose closing ends the hold, and when the hold began (the page draws "held: <reason>, until <end>").
