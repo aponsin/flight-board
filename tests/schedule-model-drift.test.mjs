@@ -64,16 +64,17 @@ test("the reading takes the newest run of each task, the chosen model from the c
   assert.equal(scheduleModelsShape(v), true, "what the probe posts is what the store accepts");
 });
 
-test("a paused task is left out, even with runs; a task seen on a session but not in the config is listed with no chosen model, newest first", () => {
-  const v = write(cfgOf([{ id: "ops-daily", model: "claude-haiku-5-5", paused: true }, { id: "mine", model: "claude-haiku-5-5" }]), [
+test("a paused task is left out, even with runs; a task seen on a session but not in the config is never listed (another project's task name stays off the board)", () => {
+  const v = write(cfgOf([{ id: "ops-daily", model: "claude-haiku-5-5", paused: true }, { id: "mine", model: "claude-haiku-5-5" }, { id: "no-model" }]), [
     run("ops-daily", "claude-opus-5-5", T - H), run("mine", "claude-haiku-5-5", T - 2 * H), run("old-one", "claude-opus-5-5", T - 9 * H), run("new-one", "claude-sonnet-5-5", T - 3 * H)]);
-  assert.deepEqual(v.tasks.map((t) => [t.id, t.chosen]), [["mine", "claude-haiku-5-5"], ["new-one", null], ["old-one", null]]);
+  assert.deepEqual(v.tasks.map((t) => [t.id, t.chosen]), [["mine", "claude-haiku-5-5"], ["no-model", null]], "the config's own tasks only, in its order; one with no model is still listed (amber 'unset')");
+  assert.equal(JSON.stringify(v).includes("old-one") || JSON.stringify(v).includes("new-one"), false);
 });
 
-test("no list in the config still reads the tasks seen; at most 30 are posted; an unusable config posts nothing (the store keeps its last good reading)", () => {
+test("no list in the config posts no task, even for tasks seen; at most 30 are posted; an unusable config posts nothing (the store keeps its last good reading)", () => {
   assert.deepEqual(write("{}", []).tasks, []);
-  assert.deepEqual(write("{}", [run("a", "m", T)]).tasks.map((t) => t.id), ["a"]);
-  assert.equal(write("{}", Array.from({ length: 40 }, (_, i) => run(`t${i}`, "m", T - i))).tasks.length, 30);
+  assert.deepEqual(write("{}", [run("a", "m", T)]).tasks, [], "a task seen but not configured is not listed");
+  assert.equal(write(cfgOf(Array.from({ length: 30 }, (_, i) => ({ id: `t${i}` }))), Array.from({ length: 40 }, (_, i) => run(`t${i}`, "m", T - i))).tasks.length, 30);
   const logs = [];
   for (const c of ["not json", cfgOf("x"), cfgOf([{ id: "a b" }]), cfgOf([{ id: "a" }, { id: "a" }]), cfgOf([{ id: "a", model: "x y" }])]) assert.equal(scheduleModelsWrite(c, { sessions: [], now: T, log: (l) => logs.push(l) }), null, c);
   assert.equal(logs.length, 5, "each says why");

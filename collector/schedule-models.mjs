@@ -3,7 +3,7 @@
 // run, `scheduledTaskId` (appSessions keeps both, as plain words or null). What no file carries is the model a task was MEANT to have, so the board config
 // does: `scheduledTasks: [{ id, model?, paused? }]` (scripts/config.mjs). This reads the two together and posts one evidence key, schedule.models:
 //   { at, tasks: [{ id, chosen, lastRun, at }] }   (words, model names and times only; chosen and lastRun are null when not known; at is the last run's time)
-// One entry for each configured task that is not paused, then each other task id seen on an open session (chosen null), the newest runs first, 30 at most.
+// One entry for each configured task that is not paused, in the config's order, 30 at most. A task id that is not in the config is never listed.
 // The page draws the verdict (page/board.template.html scheduleModelsHtml); nothing is decided here beyond what to post.
 import { TASK_ID, MODEL_WORD, TASK_MAX } from "../scripts/config.mjs";
 
@@ -42,8 +42,7 @@ export function scheduleModelsWrite(configText, { sessions, now, log = () => {} 
   if (!tasks) return null;
   const runs = newestRuns(sessions ?? []);
   const entry = (id, chosen) => { const r = runs.get(id); return { id, chosen, lastRun: r?.model ?? null, at: r?.known ? r.at : null }; };
+  // Only the tasks the config names: a task id seen on a session but not in scheduledTasks (another project's task) is not listed, so no other project's task name reaches the board (Security's LOW).
   const own = tasks.filter((t) => !t.paused).map((t) => entry(t.id, t.model));
-  const configured = new Set(tasks.map((t) => t.id)); // a paused task is configured too, so it is neither listed nor picked up as "seen"
-  const others = [...runs.keys()].filter((id) => !configured.has(id)).map((id) => entry(id, null)).sort((a, b) => (b.at ?? 0) - (a.at ?? 0) || (a.id < b.id ? -1 : 1));
-  return { key: "schedule.models", value: { at: now, tasks: [...own, ...others].slice(0, TASK_MAX) } };
+  return { key: "schedule.models", value: { at: now, tasks: own.slice(0, TASK_MAX) } };
 }
