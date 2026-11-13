@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { sessionWeek } from "./week-usage.mjs";
+import { mtDate, mtHour } from "../worker/team-time.mjs";
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -329,6 +330,27 @@ export function afterShip(view, before, agents, now) {
   return { card: { id, who: AFTER_SHIP_ROLE, status: "active", num: null, waitingOn: null, turns: [{ role: AFTER_SHIP_ROLE, phase: "live", step: "aftership" }] }, live };
 }
 
+// #C1007 (Director 11-11: the Ops daily scheduled task was a model run whose whole job was one fixed line to one session): the dispatch wakes Ops
+// once a day for its daily check, from DAILY_CHECK_HOUR o'clock MT on, with no card queued and no version shipped. The turn is a card of its own,
+// `ops-daily-<yyyy-mm-dd>` (the MT day), so the DISPATCH line names the day. dispatch-state.json keeps `daily`: { date, wokenAt?, done }. As with
+// the after-ship turn, it holds until Ops has worked after it was woken (no longer idle, or idle since after the wake), so it fires once per day, and
+// a busy Ops is woken when it goes idle. It does not fire before the hour, nor twice in a day; the first run ever wakes Ops once for that day. Steward
+// has no turn here: it is woken only by cards queued for it (#C850), so it stays quiet when it has none.
+export const DAILY_CHECK_ROLE = "Ops", DAILY_CHECK_HOUR = 7;
+export const dailyCheckId = (date) => (/^\d{4}-\d{2}-\d{2}$/.test(String(date)) ? `ops-daily-${date}` : null);
+// { card: the turn to add or null, daily: the state to keep }.
+export function dailyCheck(before, agents, now) {
+  const prev = before && typeof before.daily === "object" && before.daily && !Array.isArray(before.daily) ? before.daily : null;
+  const date = mtDate(now), hour = mtHour(now), id = dailyCheckId(date);
+  if (!(hour >= DAILY_CHECK_HOUR)) return { card: null, daily: prev };
+  let daily = prev?.date === date ? { ...prev } : { date, done: false };
+  const ag = agents && Object.hasOwn(agents, DAILY_CHECK_ROLE) ? agents[DAILY_CHECK_ROLE] : null;
+  const idleSince = ag && (Number.isFinite(ag.since) ? ag.since : ag.lastActivityAt);
+  if (Number.isFinite(daily.wokenAt) && ag && (ag.state !== "idle" || (Number.isFinite(idleSince) && idleSince > daily.wokenAt))) daily.done = true;
+  if (daily.done) return { card: null, daily };
+  return { card: { id, who: DAILY_CHECK_ROLE, status: "active", num: null, waitingOn: null, turns: [{ role: DAILY_CHECK_ROLE, phase: "live", step: "dailycheck" }] }, daily };
+}
+
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; } };
 const writeAtomic = (path, text) => { const tmp = `${path}.${process.pid}.part`; writeFileSync(tmp, text, { mode: 0o600 }); renameSync(tmp, path); };
 
@@ -390,10 +412,12 @@ export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_D
   const state = readJson(join(dir, DISPATCH_STATE_FILE));
   mkdirSync(dir, { recursive: true, mode: 0o700 }); // the board's state folder may not exist yet when the old state job never ran here
   const ship = afterShip(view, state, input.agents, now);
-  const r = dispatchItems({ cards: ship.card ? [...input.cards, ship.card] : input.cards, agents: input.agents, asked: input.asked, queues: input.queues, roster, lead, now, before: state });
+  const daily = dailyCheck(state, input.agents, now);
+  const r = dispatchItems({ cards: [...input.cards, ...(ship.card ? [ship.card] : []), ...(daily.card ? [daily.card] : [])], agents: input.agents, asked: input.asked, queues: input.queues, roster, lead, now, before: state });
   const live = ship.card && r.items.some((i) => i.card === ship.card.id) && !Number.isFinite(ship.live.wokenAt) ? { ...ship.live, wokenAt: now } : ship.live;
+  const day = daily.card && r.items.some((i) => i.card === daily.card.id) && !Number.isFinite(daily.daily.wokenAt) ? { ...daily.daily, wokenAt: now } : daily.daily;
   writeAtomic(join(dir, DISPATCH_FILE), JSON.stringify({ at: now, source: "store", items: r.items }));
-  writeAtomic(join(dir, DISPATCH_STATE_FILE), JSON.stringify(live ? { ...r.state, live } : r.state));
+  writeAtomic(join(dir, DISPATCH_STATE_FILE), JSON.stringify({ ...r.state, ...(live ? { live } : {}), ...(day ? { daily: day } : {}) }));
   // #C940: the roles' states in the log, so a minute with nothing dispatched can be told from a blind or missing session (role names and one word each).
   log(`dispatch: agents ${(Array.isArray(roster) ? roster : []).filter((x) => typeof x === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(x)).map((x) => `${x}=${input.agents[x] ? String(input.agents[x].state).replace(/[^a-z]/g, "") || "?" : "none"}`).join(" ")}`);
   log(`dispatch: ${r.items.length} item(s)`);

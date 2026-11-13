@@ -13,5 +13,8 @@ export const mtTime = (ms) => (Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? 
 // The hour of the day (0-23) in the team's zone, for rules that hold at night (#C1005); null for a value no Date can hold.
 const HOUR = new Intl.DateTimeFormat("en-US", { timeZone: TEAM_TZ, hour: "numeric", hourCycle: "h23" });
 export const mtHour = (ms) => (Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? Number(HOUR.format(ms)) % 24 : null);
+// The calendar day in the team's zone as "2026-11-12", for a turn that comes once a day (#C1007); null for a value no Date can hold.
+const YMD = new Intl.DateTimeFormat("en-CA", { timeZone: TEAM_TZ, year: "numeric", month: "2-digit", day: "2-digit" });
+export const mtDate = (ms) => (Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? YMD.format(ms) : null);
 // "Nov 12 8:45 pm MT": the day as well, for an end or a start that may not be today.
 export const mtDayTime = (ms) => (Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? `${DAY.format(ms)} ${clock(ms)} ${TEAM_TZ_LABEL}` : "?");
