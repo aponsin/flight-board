@@ -1,0 +1,3 @@
+PASS (Quick) #C970 facts-from-source v3 a386d51637ca1c6c5ca4028f2f6b91b91bc5dc3c, line from ac5b7d0bfa6139d97defb528e0fd104e7fc230b4 (covers be5ed68b and a386d516)
+Rebase of v2 4d5728dd (reviewed and signed there): range-diff 4023e349..4d5728dd vs ac5b7d0b..a386d516 shows both commits "=". Two-dot diff against main is #C970's own six files.
+On a386d516: touched tests plus #C1056's (now on main) 65/65; the title probe still gives only ["Checker2"] from six free-text titles. Earlier on 4d5728dd: mutants V1-V3 killed.
