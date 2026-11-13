@@ -2,16 +2,18 @@
 // raw JSON. The compat view reads it as the owner's typed text, the way a native answer shows. Store-era rows are untouched.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { askRow } from "../collector/import-mirror.mjs";
 import { waitingDoc, compatView } from "../worker/compat-view.mjs";
 import { drawPage } from "./helpers/draw-page.mjs";
 
 const NOW = Date.now(), MIN = 60e3;
 const TEXT = "Use the green one, but darker";
-// An old waiting doc as the old board had it, answered with "something else" and a typed note; imported through the importer itself.
-const old = { kind: "decision", text: "Which hero colour?", question: "Which hero colour?", options: [{ key: "A", label: "Blue" }, { key: "B", label: "Green", recommended: true }], recommended: "B", since: NOW - 3 * 36e5,
-  response: { status: "chose", choice: "something else", note: TEXT, at: NOW - 2 * 36e5 }, respondedAt: NOW - 2 * 36e5 };
-const imported = () => { const r = askRow("hero-colour", old, { thread: { num: 41, title: "Hero colour" }, askedBy: "Manager" }); assert.equal(r.ok, true, JSON.stringify(r)); return r.row; };
+// An old waiting doc answered with "something else" and a typed note, as the one-time import wrote it into the store (the importer is gone; this is the row it made):
+// the old response object as JSON in the answer column and no answer_status. The row is kept here as data so the view's reading of it stays tested.
+const AT = NOW - 2 * 36e5;
+const old = { response: { status: "chose", choice: "something else", note: TEXT, at: AT } };
+const imported = () => ({ id: "hero-colour", num: 41, type: "Decision", title: "Hero colour", asked_by: "Manager", card_id: null,
+  body: JSON.stringify({ question: "Which hero colour?", options: ["Blue", "Green"], recommended: "Green" }), eta_at: null, eta_precondition: null,
+  created_at: NOW - 3 * 36e5, answered_at: AT, answer: JSON.stringify({ status: "chose", choice: "something else", note: TEXT, at: AT }), answered_by: "owner", answer_taken_at: AT, closed_at: null });
 
 test("the imported row's answer is the old object as a string, and the view reads the typed text from it, the way a native answer reads", () => {
   const row = imported();

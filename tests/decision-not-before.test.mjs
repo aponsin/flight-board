@@ -1,12 +1,10 @@
 // #C823: a Decision may carry eta_at as a "not before": under Later until that time, under Needs you from it. The rule, the store, the old
-// page's doc, the page's two tabs (future and past), and the import that keeps the old ETA (#T166 goes back to Later).
+// page's doc, the page's two tabs (future and past).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { askRefusal } from "../worker/board-rules.mjs";
 import { createAsk } from "../worker/board-store.mjs";
 import { waitingDoc } from "../worker/compat-view.mjs";
-import { askRow } from "../collector/import-mirror.mjs";
-import { askFixSql } from "../collector/import-delta.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { loadNames } from "./harness.mjs";
 
@@ -85,38 +83,4 @@ test("a Decision with a future date is not on Needs you, and is drawn under Late
   b.renderAll();
   assert.equal(b.els.waiting.innerHTML, '<div class="empty">Nothing needs you.</div>');
   assert.match(b.els.later.innerHTML, /Decide future/);
-});
-
-test("the import keeps the old ETA on an item it brings in as a Decision, and #T166 goes back to Later", async () => {
-  const eta = NOW + 14 * DAY;
-  const old = { kind: "later", text: "Reply price detail?", question: "Keep the replies as they are?", options: [{ key: "A", label: "Keep", recommended: true }, { key: "B", label: "Match the first email" }], eta, since: NOW - 3 * DAY };
-  const r = askRow("reply-price-detail", old, { thread: { num: 166 }, askedBy: "Manager" });
-  assert.equal(r.ok, true);
-  assert.equal(r.row.type, "Decision");
-  assert.equal(r.row.eta_at, eta, "the old ETA is the Decision's not-before");
-  const noEta = askRow("x", { ...old, eta: undefined }, { thread: { num: 167 }, askedBy: "Manager" });
-  assert.equal(noEta.row.eta_at, null);
-  // A Decision an earlier run already converted without a date (what the store holds): the fix sets it, once, and only while open and unanswered.
-  const db = makeDb();
-  await db.prepare("INSERT INTO asks (id, num, type, title, asked_by, body, created_at) VALUES ('reply-price-detail', 166, 'Decision', 't', 'Manager', ?, 1)").bind(r.row.body).run();
-  const sql = askFixSql(r.row).split("\n");
-  assert.equal(sql.length, 2, "the conversion for a Later, and the date for an already-converted Decision");
-  let changed = 0;
-  for (const l of sql) changed += (await db.prepare(l).run()).meta.changes;
-  assert.equal(changed, 1);
-  assert.equal((await db.prepare("SELECT eta_at FROM asks WHERE id = 'reply-price-detail'").first()).eta_at, eta);
-  changed = 0;
-  for (const l of sql) changed += (await db.prepare(l).run()).meta.changes;
-  assert.equal(changed, 0, "a second run changes nothing");
-  // answered since: left alone
-  await db.prepare("UPDATE asks SET eta_at = NULL, answered_at = 5, answer = 'Keep' WHERE id = 'reply-price-detail'").run();
-  for (const l of sql) changed += (await db.prepare(l).run()).meta.changes;
-  assert.equal(changed, 0, "an answered Decision is not given a date");
-  assert.equal(waitingDoc((await db.prepare("SELECT * FROM asks WHERE id = 'reply-price-detail'").first())).notBefore, undefined);
-  // a Later still converts in one statement, keeping the date
-  const dbL = makeDb();
-  await dbL.prepare("INSERT INTO asks (id, num, type, title, asked_by, body, eta_at, created_at) VALUES ('reply-price-detail', 166, 'Later', 't', 'Manager', '{\"text\":\"t\"}', 5, 1)").run();
-  for (const l of sql) await dbL.prepare(l).run();
-  const row = await dbL.prepare("SELECT type, eta_at FROM asks WHERE id = 'reply-price-detail'").first();
-  assert.deepEqual(row, { type: "Decision", eta_at: eta });
 });
