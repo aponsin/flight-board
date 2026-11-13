@@ -1,0 +1,1 @@
+SECURE #C1047 5abbe25a: stack-ready refuses a stale tip before pushing; git by argv, no shell; a failed read judges nothing. (Security)
