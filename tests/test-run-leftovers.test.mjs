@@ -3,7 +3,7 @@
 // the run. These tests drive the wrapper with tiny fixture tests, never the suite.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync, readdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -73,6 +73,20 @@ test("runSuite: only folders directly in the run's own root are removed, never o
   const f = fixture(dir, "far", `mkdtempSync(${JSON.stringify(join(elsewhere, "keep-"))});`);
   run([f], parent);
   assert.equal(readdirSync(elsewhere).length, 1, "a mkdtemp folder outside the run's root is not the preload's to remove");
+});
+
+// Checker 2's F1 on 85b2a56e: the script runs itself only when it is the file node was started on. Through a symlinked path import.meta.url is the real path and
+// argv[1] is not, so the plain comparison skipped the run and exited 0 with nothing run; a missing test file looked like a pass.
+test("started through a symlinked path the script still runs: a missing test file fails it, and a passing one runs and passes", () => {
+  const dir = make();
+  symlinkSync(join(process.cwd(), "scripts"), join(dir, "scripts"));
+  const go = (file) => { const { NODE_TEST_CONTEXT, ...env } = process.env; return spawnSync(process.execPath, [join(dir, "scripts", "test-run.mjs"), file], { cwd: process.cwd(), env, encoding: "utf8" }); };
+  const missing = go("tests/does-not-exist.test.mjs");
+  assert.notEqual(missing.status, 0, "nothing run must not read as a pass");
+  const pass = fixture(dir, "ok", `// passes`);
+  const ran = go(pass);
+  assert.equal(ran.status, 0);
+  assert.match(ran.stdout, /ℹ tests 1\b/, "the fixture really ran");
 });
 
 test("runSuite: a failing test run keeps its own exit status", () => {
