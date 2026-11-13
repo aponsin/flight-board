@@ -1,5 +1,5 @@
 // #C970 (the owner, 11-12: the agent tiles did not show Checker 2): the roster is not only the config's list. Every open session the lead started
-// (spawnedFrom.sessionId in the app's session file) is an agent too, under its title with anything but letters and digits dropped, so a new role
+// (spawnedFrom.sessionId in the app's session file) is an agent too when its title is a roster role name plus optional digits ("Checker 2" is Checker2; any other title is ignored), so a new role
 // shows up by itself; the probe reads it, the state carries it (by: "spawn") and the Crew tiles draw it.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -34,8 +34,8 @@ test("a session the lead started, not on the roster, is an agent under its title
 });
 
 test("a session another session started, one nobody started, and the lead's own are not added; with no lead named, none is", () => {
-  const sessions = [row(1, "Checker 2", { from: OTHER }), row(2, "Plain", { from: null }), row(3, "Reviewer", { from: LEAD })];
-  assert.deepEqual(Object.keys(run(sessions)), ["Reviewer"]);
+  const sessions = [row(1, "Checker 2", { from: OTHER }), row(2, "Plain", { from: null }), row(3, "Checker 3", { from: LEAD })];
+  assert.deepEqual(Object.keys(run(sessions)), ["Checker3"]);
   assert.deepEqual(Object.keys(run(sessions, { spawnedBy: null })), []);
 });
 
@@ -50,6 +50,15 @@ test("two spawned sessions with the same name give the newest; a title that is n
   const a = run([row(1, "Checker 2", { from: LEAD, at: T - 9 * MIN }), row(2, "Checker2", { from: LEAD, at: T - MIN }), row(3, "?", { from: LEAD }), row(4, "A", { from: LEAD })]);
   assert.deepEqual(Object.keys(a), ["Checker2"]);
   assert.equal(a.Checker2.lastActivityAt, T - MIN);
+});
+
+// Checker's finding on 6c7f684c (MEDIUM): a title is free text and must not become an agent key, since the key leaves the Mac in the state.
+test("a spawned session's title that is not a roster role plus digits is ignored, however close: nothing free-text becomes a key", () => {
+  const titles = ["Reviewer", "Fix the payroll bug", "Checker secret plan", "Checker 2 for the payroll card", "Checker-2", "Checker 2!", "Manager 2x", "checker 2", "2", "Checker  ", ""];
+  const sessions = titles.map((t, i) => row(i + 1, t, { from: LEAD }));
+  assert.deepEqual(Object.keys(run(sessions)), [], titles.join(" | "));
+  // and the ones that are the shape are kept, spaces between role and digits or none
+  assert.deepEqual(Object.keys(run([row(1, "Checker 12", { from: LEAD }), row(2, "Manager7", { from: LEAD })])).sort(), ["Checker12", "Manager7"]);
 });
 
 test("the probe reads from out of the app's session file: only a session id is kept, and nothing else of spawnedFrom", () => {
