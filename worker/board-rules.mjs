@@ -314,6 +314,30 @@ export function pullOutRefusal(b, who) {
   return null;
 }
 
+// The order of the card groups (#C1053). The owner moves a group up or down from the page; Manager's tool is the fallback. Shaped {batch, dir}.
+export const GROUP_ORDER_WRITERS = ["owner", "Manager"];
+export const GROUP_ID_SHAPE = /^[A-Za-z0-9._\/-]{1,100}$/;
+export function groupMoveRefusal(b, who) {
+  if (!GROUP_ORDER_WRITERS.includes(who)) return refuse("group-move-owner", `${who ?? "unknown"} cannot order the groups; only the owner (or Manager, as the fallback) can`);
+  if (b === null || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => k !== "batch" && k !== "dir")) return refuse("group-move-shape", "a group move is {batch, dir}");
+  if (typeof b.batch !== "string" || !GROUP_ID_SHAPE.test(b.batch)) return refuse("group-move-shape", "batch is a group id");
+  if (b.dir !== "up" && b.dir !== "down") return refuse("group-move-shape", "dir is up or down");
+  return null;
+}
+// One rule for the store, the dispatch and the page: a placed group by its place, a group nobody has placed (a new one) after every placed group, a
+// card in no group after all groups. `order` is a list of { batch, pos } (or a Map batch -> pos). Two groups of one rank compare by their id.
+export const GROUP_NEW = 1e6, GROUP_NONE = 1e9;
+export function groupRank(batch, order) {
+  if (typeof batch !== "string" || !batch) return GROUP_NONE;
+  const pos = order instanceof Map ? order.get(batch) : (Array.isArray(order) ? order.find((o) => o && o.batch === batch)?.pos : undefined);
+  return Number.isInteger(pos) && pos >= 1 ? pos : GROUP_NEW;
+}
+// The id tie-break reads digits as numbers, so g2-... comes before g10-... (a plain string compare would put g10 first).
+export const groupIdCompare = (a, b) => String(a || "").localeCompare(String(b || ""), "en", { numeric: true }) || (String(a || "") < String(b || "") ? -1 : String(a || "") > String(b || "") ? 1 : 0);
+export function groupCompare(a, b, order) {
+  return groupRank(a, order) - groupRank(b, order) || groupIdCompare(a, b);
+}
+
 // Withdrawing the owner's approval (#C727): the owner's alone, on an open Approval that is approved. It clears the answer, so the
 // pull request needs his Approve again; Release reads only an approval that stands.
 export function withdrawRefusal(ask, role) {

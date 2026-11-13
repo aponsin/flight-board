@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
+import { reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -654,6 +654,27 @@ export async function pullOutOfGroup(db, now, who, b) {
   await db.prepare("UPDATE cards SET batch = NULL, pulled_from = ?, pulled_by = ?, pulled_at = ?, updated_at = ? WHERE id = ?").bind(card.batch, who, now, now, b.id).run();
   return { ok: true, id: b.id, from: card.batch };
 }
+// #C1053: the open groups in the owner's order. A group is a batch id of a card not done and not dropped; the order is group_order's places, a group
+// with none after the placed ones (by id): groupCompare, the rule the dispatch and the page read too.
+export async function openGroups(db) {
+  const rows = (await db.prepare("SELECT DISTINCT batch FROM cards WHERE batch IS NOT NULL AND batch <> '' AND COALESCE(dropped, 0) = 0 AND done_at IS NULL").all()).results ?? [];
+  const order = (await db.prepare("SELECT batch, pos FROM group_order").all()).results ?? [];
+  return rows.map((r) => r.batch).sort((a, b) => groupCompare(a, b, order));
+}
+// #C1053: the owner (or Manager, as the fallback) moves a group one place up or down. Every open group is renumbered 1..n and so placed (a new group
+// stays at the bottom until then); a row of a group that is no longer open goes. At the top going up, or the bottom going down, nothing moves.
+export async function moveGroup(db, now, who, b) {
+  const bad = groupMoveRefusal(b, who);
+  if (bad) return refuse(db, now, bad, null, who);
+  const groups = await openGroups(db);
+  const at = groups.indexOf(b.batch);
+  if (at < 0) return refuse(db, now, { rule: "group-unknown", detail: `${b.batch} is not an open group` }, null, who);
+  const to = b.dir === "up" ? at - 1 : at + 1;
+  if (to < 0 || to >= groups.length) return { ok: true, batch: b.batch, moved: false, order: groups };
+  [groups[at], groups[to]] = [groups[to], groups[at]];
+  await db.batch([db.prepare("DELETE FROM group_order"), ...groups.map((g, n) => db.prepare("INSERT INTO group_order (batch, pos, set_by, set_at) VALUES (?, ?, ?, ?)").bind(g, n + 1, who, now))]);
+  return { ok: true, batch: b.batch, moved: true, order: groups };
+}
 export async function guardedInbox(db, now, session) {
   const expected = await db.prepare("SELECT session, set_by, set_at FROM door_session WHERE id = 1").first();
   const claimed = typeof session === "string" ? session.slice(0, 80) : null;
@@ -817,7 +838,9 @@ export async function readView(db, now) {
   const pings = (await db.prepare("SELECT card_id, MAX(created_at) AS at FROM stall_wakes WHERE card_id LIKE ? GROUP BY card_id").bind(`${PING_CARD}%`).all()).results.map((r) => ({ id: r.card_id.slice(PING_CARD.length), at: r.at }));
   // #C1018: the review claims still held (a released one is history): the dispatch reads them so a claimed tip wakes no second checker.
   const reviewClaims = await all("SELECT sha, card_id, checker, claimed_at FROM review_claims WHERE released_at IS NULL ORDER BY claimed_at, sha");
-  const content = { pings, cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reviewClaims, reworkHistory };
+  // #C1053: the owner's order of the groups (pos 1 goes live first), read by the page and the dispatch.
+  const groupOrder = await all("SELECT batch, pos, set_by, set_at FROM group_order ORDER BY pos, batch");
+  const content = { pings, cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reviewClaims, reworkHistory, groupOrder };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
   const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now);
   const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);

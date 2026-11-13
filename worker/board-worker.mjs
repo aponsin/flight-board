@@ -13,7 +13,7 @@ import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.
 import { writeUsageDay } from "./compat-usage.mjs";
 import { subscribePush, unsubscribePush, pushKnown, pushFacts, pushRun } from "./push-store.mjs";
 import { SW_SOURCE, MANIFEST } from "./push-page.mjs";
-import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, claimReview, releaseReview, moveInQueue, pullOutOfGroup } from "./board-store.mjs";
+import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, claimReview, releaseReview, moveInQueue, pullOutOfGroup, moveGroup } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const obj = (properties, required = []) => ({ type: "object", properties, required, additionalProperties: false });
@@ -42,6 +42,7 @@ export const TOOLS = [
   { name: "claim_review", description: "Claim a tip for review before you review it (Checker sessions; Manager claims for a named checker): sha is the tip's full 40-character commit, checker is your own name, \"Checker\" or \"Checker 2\" (Manager must name it), card_id the card it belongs to (the store reads the card from the probe's evidence when it can; a re-cut of that card keeps your claim). The first claim wins: if another checker holds the tip you are refused with \"<checker> has this\" and do no review. A tip that already has a Checker note is refused too. A claim also silences the dispatch's wake for the holder: a checker whose tip Manager claimed for it up front gets no wake for that tip, and a holder that is gone leaves the tip waiting silently until Manager releases it.", inputSchema: obj({ sha: str, checker: str, card_id: str }, ["sha"]), roles: ["agent"] },
   { name: "release_review", description: "Release a tip's review claim: its holder (give checker, your own name) or Manager, when that checker is gone. The tip can then be claimed again. While a claim is held no checker is woken for the tip (the holder included), so release the claim of a checker that is gone or the tip waits silently.", inputSchema: obj({ sha: str, checker: str }, ["sha"]), roles: ["agent"] },
   { name: "queue_move", description: "Move a card that has not started one place up or down in its agent's queue (the owner's alone). The card keeps the owner's mark: an agent's card_update of its queue_pos is refused from then on.", inputSchema: obj({ id: str, dir: { type: "string", enum: ["up", "down"] } }, ["id", "dir"]), roles: ["owner"] },
+  { name: "group_move", description: "Move a card group (a batch id) one place up or down in the owner's order of the groups: the top group goes live first, and the dispatch gives each agent its next card from the highest group that has one for its role. The owner's, from the page; Manager's is the fallback when the page is out of reach. Every other role is refused.", inputSchema: obj({ batch: str, dir: { type: "string", enum: ["up", "down"] } }, ["batch", "dir"]), roles: ["agent", "owner"] },
   { name: "ack", description: "Acknowledge a ship by version, digits only with no v (1.2.0).", inputSchema: obj({ version: str }, ["version"]), roles: ["owner"] },
   // #C988: the week's plan usage as Claude shows it; the dispatch's quota stop and the Plan week tile read it while it is under an hour old.
   { name: "week_usage", description: "Write the week's plan usage as Claude shows it: call get_usage and pass its \"Weekly · all models\" window, percentUsed as percent (a whole number) and resetsAt as resets_at. The board's quota stop and Plan week tile use it for an hour; after that it counts as unknown until written again.", inputSchema: obj({ percent: { type: "integer" }, resets_at: str }, ["percent", "resets_at"]), roles: ["agent"] },
@@ -102,6 +103,7 @@ async function callTool(db, now, who, role, name, args, env = {}) {
     case "claim_review": return text(await claimReview(db, now, who, args));
     case "release_review": return text(await releaseReview(db, now, who, args));
     case "queue_move": return text(await moveInQueue(db, now, who, args));
+    case "group_move": return text(await moveGroup(db, now, who, args));
     case "set_door_session": return text(await setDoorSession(db, now, who, args?.session, args?.current));
     case "card_create": return text(await createCard(db, now, who, args));
     case "card_update": return text(await updateCard(db, now, who, args));
@@ -284,6 +286,14 @@ export default {
       let b;
       try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
       const r = await moveInQueue(env.DB, now, auth.who, b);
+      return json(r.ok ? 200 : 422, r);
+    }
+    // The owner's up or down on a group (#C1053): the same rule as the typed tool (Manager's is the fallback, and only through the tool).
+    if (url.pathname === "/api/group-move" && request.method === "POST") {
+      if (auth.role !== "owner") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await moveGroup(env.DB, now, auth.who, b);
       return json(r.ok ? 200 : 422, r);
     }
     // The owner's Pull out on a card in a group (#C1008): the card leaves its group, tagged with where from, who and when.

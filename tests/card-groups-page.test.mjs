@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadNames } from "./harness.mjs";
 
-const NAMES = ["groupLabel", "groupShort", "groupList", "groupFacts", "groupRow", "pulledTag", "railState", "renderBoard", "initRow", "gates", "enrich", "PHASES"];
+const NAMES = ["groupLabel", "groupShort", "groupOrderRows", "groupRankOf", "groupCmp", "groupMoveButtons", "groupList", "groupFacts", "groupRow", "pulledTag", "railState", "renderBoard", "initRow", "gates", "enrich", "PHASES"];
 function board(initRaw, host = "store") {
   const els = {}, listeners = {}, calls = [];
   const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });
@@ -28,11 +28,12 @@ test("a numbered batch id reads as its group: number and words; two digits too; 
   assert.equal(b.groupShort("g-probe"), "g-probe");
 });
 
-test("the open list keeps its order: a group sits where its first card would, with its cards in order; a card in no group stays a row", () => {
+// #C1053: the groups go in the owner's order (none set yet: by id, digits as numbers), then every card in no group; a group's cards keep the list's order.
+test("the open list in groups: groups by their order, then the cards in no group; a group's cards in the list's order", () => {
   const b = board([]);
   const list = b.groupList([card("a", 1, { batch: "g3-x" }), card("b", 2), card("c", 3, { batch: "g1-y" }), card("d", 4, { batch: "g3-x" })]);
-  assert.deepEqual([...list.map((x) => x.group ?? x.card.id)], ["g3-x", "b", "g1-y"]);
-  assert.deepEqual([...list[0].cards.map((c) => c.id)], ["a", "d"]);
+  assert.deepEqual([...list.map((x) => x.group ?? x.card.id)], ["g1-y", "g3-x", "b"]);
+  assert.deepEqual([...list[1].cards.map((c) => c.id)], ["a", "d"]);
 });
 
 test("the group row's phase is its earliest card's, its ETA the latest, its start the earliest (Manager on #C1008)", () => {

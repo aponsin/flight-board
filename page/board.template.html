@@ -558,6 +558,12 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .g-pull{font:600 .82rem var(--mono);color:var(--accent);background:none;border:1px solid var(--line);border-radius:999px;padding:6px 14px;min-height:2.2rem;cursor:pointer}
 .g-pull.armed{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn)}
 .g-pull:disabled{color:var(--muted);cursor:default}
+/* #C1053: the owner's order of the groups: real buttons, keyboard reachable, 44 px on a phone. The place reads "1st", "2nd"... beside the tag. */
+.g-move{display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle}
+.g-move button{font:600 .9rem var(--mono);min-width:36px;min-height:36px;padding:0 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer}
+.g-move button:disabled{opacity:.35;cursor:default}
+.g-place{font:600 .72rem var(--mono);color:var(--muted);margin-left:6px}
+@media (max-width:760px){.g-move button{min-width:44px;min-height:44px}}
 .pulled{font:600 .78rem var(--mono);color:var(--warn);border:1px dashed var(--warn);border-radius:4px;padding:1px 6px}
 table.crew3-ph{margin-top:14px}
 .now-group{margin-bottom:16px}
@@ -2418,10 +2424,16 @@ const GROUP_ID=/^g(\d{1,3})-([a-z0-9]+(?:-[a-z0-9]+)*)$/;
 function groupShort(b){const m=GROUP_ID.exec(String(b||""));return m?"G"+Number(m[1]):String(b||"")}
 function groupLabel(b){const m=GROUP_ID.exec(String(b||""));if(!m)return String(b||"");const w=m[2].replace(/-/g," ");return `G${Number(m[1])} · ${w[0].toUpperCase()}${w.slice(1)}`}
 // The open list in groups: each group sits where its first card (in the list's order) would, with its cards in that order; a card in no group stays a row.
+// #C1053: the groups go top to bottom in the order they go live (the owner's order, meta/groupOrder: a placed group by its place, a new one after the
+// placed ones by its id), and every card in no group comes after all the groups. The same rule as worker/board-rules.mjs groupCompare.
+function groupOrderRows(){const m=(state.meta||[]).find(d=>d&&d.id==="groupOrder");return m&&Array.isArray(m.rows)?m.rows:[]}
+function groupRankOf(b,rows){const r=rows.find(x=>x&&x.batch===b);return Number.isInteger(r&&r.pos)&&r.pos>=1?r.pos:1e6}
+function groupCmp(a,b,rows){return groupRankOf(a,rows)-groupRankOf(b,rows)||String(a).localeCompare(String(b),"en",{numeric:true})||(a<b?-1:a>b?1:0)}
 function groupList(cards){const out=[],at=new Map();
   for(const i of cards){const b=typeof i.batch==="string"&&i.batch?i.batch:null;if(!b){out.push({card:i});continue}
     if(!at.has(b)){at.set(b,out.length);out.push({group:b,cards:[]})}out[at.get(b)].cards.push(i)}
-  return out}
+  const rows=groupOrderRows();
+  return [...out.filter(x=>x.group).sort((x,y)=>groupCmp(x.group,y.group,rows)),...out.filter(x=>!x.group)]}
 // The group row's facts (Manager on #C1008): its phase is the earliest among its cards (the group lands together, so it moves at its
 // slowest card), its ETA the latest card's, its start the earliest card's.
 function groupFacts(cards){const ix=i=>notStarted(i)?phaseIndex(BUILD_PHASE):phaseIndex(i.phase);
@@ -2430,7 +2442,10 @@ function groupFacts(cards){const ix=i=>notStarted(i)?phaseIndex(BUILD_PHASE):pha
 // A card's own state on the rail: one word, then its issue chips.
 function railState(i){return i.status==="stuck"?["stuck","Blocked"]:i.status==="paused"?["paused","Paused"]:notStarted(i)?["queued","Queued"]:phaseIndex(i.phase)>phaseIndex(BUILD_PHASE)?["done","Built"]:["active","Building"]}
 function railChips(i){const iss=i.issues||{};return ISSUE_KINDS.map(([k,l])=>{const v=num(iss[k])||0;return v?`<span class="chip">${v} ${issueLabel(l,v)}</span>`:""}).join("")}
-function groupRow(b,cards){const f=groupFacts(cards),track=trackFor(cards[0]);
+// The owner's up and down on a group (#C1053): shown on the store page only; `at` is {n: its place, of: how many groups} so the top one cannot go up.
+function groupMoveButtons(b,at){if(!STORE||!at)return "";const l=groupLabel(b);
+  return `<span class="g-move"><button type="button" data-gmove="${esc(b)}" data-dir="up" aria-label="Move group ${esc(l)} up, it goes live earlier"${at.n===1?" disabled":""}>↑</button><button type="button" data-gmove="${esc(b)}" data-dir="down" aria-label="Move group ${esc(l)} down, it goes live later"${at.n===at.of?" disabled":""}>↓</button></span><span class="g-place">${at.n} of ${at.of}</span>`}
+function groupRow(b,cards,at){const f=groupFacts(cards),track=trackFor(cards[0]);
   // A phase every card skips (and none is at) reads as each card's own strip: Test is left out, any other says "not needed".
   const skipAll=k=>cards.every(i=>Array.isArray(i.skip)&&i.skip.includes(k)&&i.phase!==k),shownT=track.filter(([k])=>!(k==="test"&&skipAll(k)));
   // #C1050 (the owner, 11-12: "why is every initiative blinking on build?"): the group's step pulses only while a member is worked, an agent on it
@@ -2446,11 +2461,17 @@ function groupRow(b,cards){const f=groupFacts(cards),track=trackFor(cards[0]);
   const eta=f.eta!=null?`<div class="lbl">Live in</div><div class="big" data-eta="${f.eta}">${f.eta>Date.now()?dur(f.eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(f.eta)}</div>`:`<div class="lbl">ETA</div><div class="big">—</div>`;
   const rail=cards.map(i=>{const [c,w]=railState(i);
     return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span><strong>${esc(i.name)}</strong><span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
-  return `<div class="i-row g-row" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span><strong>${esc(groupLabel(b))}</strong><span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span></div></div>
+  return `<div class="i-row g-row" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span><strong>${esc(groupLabel(b))}</strong><span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
    <div class="eta">${eta}</div>
    <div class="track" style="--per:${evenPer(shownT.length)}">${tiles}</div>
    <div class="i-meta">${f.who.length?`<span>Track <b>${esc(f.who.join(", "))}</b></span>`:""}${f.started!=null?`<span>Started ${dayLabel(f.started)}</span>`:""}</div>
    <div class="g-rail">${rail}</div></div>`}
+// The owner's up or down on a group (#C1053): the store's route, the same rule as its typed tool; the page re-reads on its next poll.
+document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e.target.closest("[data-gmove]"):null;if(!b||!STORE||b.disabled)return;
+  const was=b.textContent;b.disabled=true;
+  try{const r=await fetch("/api/group-move",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({batch:b.dataset.gmove,dir:b.dataset.dir})});
+    if(!r.ok)throw new Error("refused");setTimeout(()=>{b.disabled=false},2500)}
+  catch(_){b.textContent="Not saved";setTimeout(()=>{b.textContent=was;b.disabled=false},4000)}});
 // A card the owner pulled out of its group says so (who and when), until it is put in a group again.
 function pulledTag(i){if(!i||typeof i.pulledFrom!=="string"||!i.pulledFrom||i.batch)return "";const by=i.pulledBy==="owner"?OWNER:i.pulledBy;
   return `<span class="pulled">↰ pulled out of ${esc(groupShort(i.pulledFrom))}${num(i.pulledAt)!=null?" · "+esc(hhmm(i.pulledAt)):""}${by?" by "+esc(by):""}</span>`}
@@ -2472,7 +2493,8 @@ function renderBoard(){
   // finds them.
   const dOn=isOn(dQuery),doneAny=state.initiatives.filter(i=>i.status==="done").sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0));
   const doneDay=doneAny.filter(i=>(num(i.doneAt)??0)>Date.now()-DAY),done=dOn?doneAny.filter(i=>initHit(i,dQuery)):doneDay;
-  keep($("board"),()=>{$("board").innerHTML=open.length?groupList(open).map(x=>x.group?groupRow(x.group,x.cards):initRow(x.card)).join(""):on?NO_MATCH:'<div class="empty">No initiatives in flight.</div>'});
+  const gl=groupList(open),gn=gl.filter(x=>x.group).length;let gi=0;
+  keep($("board"),()=>{$("board").innerHTML=open.length?gl.map(x=>x.group?groupRow(x.group,x.cards,{n:++gi,of:gn}):initRow(x.card)).join(""):on?NO_MATCH:'<div class="empty">No initiatives in flight.</div>'});
   // The heading's count (#C295): the cards the list above draws, none when there are none; "N of M" while searching.
   $("initcount").textContent=on?`${open.length} of ${all.length}`:all.length?String(all.length):""; $("initcount").hidden=!on&&!all.length;
   $("donebox").hidden=!doneAny.length; $("donesum").textContent=dOn?`Done: ${done.length} found, any age`:`Done in the last 24 h (${doneDay.length})`;

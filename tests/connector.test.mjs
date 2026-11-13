@@ -72,7 +72,7 @@ test("the connector offers only the agents' tools, each with a required `as` tha
   const { rpc } = make();
   const { tools } = (await rpc("tools/list")).result;
   const names = tools.map((t) => t.name).sort();
-  assert.deepEqual(names, ["ask", "ask_close", "card_create", "card_update", "claim_review", "file_put", "list_add", "list_update", "post", "read_view", "release_review", "step", "week_usage"], "read_inbox is not on the shared door; week_usage is (#C988); claim_review and release_review are (#C1018)");
+  assert.deepEqual(names, ["ask", "ask_close", "card_create", "card_update", "claim_review", "file_put", "group_move", "list_add", "list_update", "post", "read_view", "release_review", "step", "week_usage"], "read_inbox is not on the shared door; week_usage is (#C988); claim_review and release_review are (#C1018); group_move is Manager's fallback for the owner's order of the groups (#C1053), and the store refuses every other role");
   for (const t of tools) {
     assert.ok(t.inputSchema.required.includes("as"), t.name);
     assert.deepEqual(t.inputSchema.properties.as.enum, ROSTER_ROLES, t.name);
