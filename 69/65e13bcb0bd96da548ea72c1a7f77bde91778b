@@ -1,0 +1,1 @@
+SECURE #C1048 6965e13b: F1 fixed; one reviewHoldWriterRefusal on both createCard and updateCard. (Security)
