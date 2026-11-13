@@ -46,7 +46,7 @@ test("the tile shows only the time (today) or the date (another day); the role a
   assert.equal(mtShort(T, T + 10 * MIN), "9:15 PM", "began today: the time");
   assert.equal(mtShort(T, T + 24 * 60 * MIN), "Nov 10", "began on another day: the date");
   assert.equal(mtShort(T, T + 3 * 24 * 60 * MIN), "Nov 10");
-  assert.match(page, /\.step small\.since\{text-transform:none;opacity:\.75\}/, "a quiet timestamp, not the tile's uppercase mono");
+  assert.match(page, /\.step small\.since\{text-transform:none\}/, "a timestamp, not the tile's uppercase mono (its opacity went in #C1024: dimmed text failed 4.5:1)");
 });
 
 test("a lane phase names the lane's role whatever an old row says, and the page's lane map is the Worker's (Checker F1)", async () => {
