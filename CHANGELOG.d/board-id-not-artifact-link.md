@@ -1,0 +1,1 @@
+- The board's id comes from a `boardId` config key, with the id in `artifactUrl` only as the fallback, so `artifactUrl` can be left empty (board-id-not-artifact-link, #C1054 part a). Nothing changes until the key is set; the gate matches a call on the board by the same id. Tests: `tests/board-id-config.test.mjs` (mutation-checked: the key's shape check fails a test).
