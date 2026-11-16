@@ -1,11 +1,11 @@
-// The evidence job's cards come from the STORE (#C719), not from the old board's mirror. collector/state.mjs (a pinned file, left
-// as it is) reads its card list from <stateDir>/<board id>/mirror/initiatives/<id>.json. So the probe keeps a private state
-// directory of its own, writes the store's open cards there in that shape, and points a copy of the board config at it
-// (gate.stateDir). The Collector's merge, which state.mjs calls first, finds no deltas in that directory and changes nothing,
-// and the old board's mirror is never read or written. Everything here is plain functions and one fetch; no secrets are written.
+// The evidence job's cards come from the STORE (#C719), not from the old board's mirror. collector/state.mjs reads its card list
+// from <stateDir>/<board id>/store-cards.json (#C999). So the probe keeps a private state directory of its own, writes the store's
+// cards there, and points a copy of the board config at it (gate.stateDir). The old board's files are never read or written.
+// Everything here is plain functions and one fetch; no secrets are written.
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, copyFileSync, existsSync, renameSync, chmodSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { FETCH_TIMEOUT_MS } from "./probe-board.mjs";
+import { STORE_CARDS_FILE } from "./state-schema.mjs";
 
 const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const num = (v) => (Number.isFinite(v) ? v : undefined);
@@ -69,22 +69,19 @@ export function writeProductSwitch({ file, at, product }) {
   renameSync(tmp, file);
 }
 
-// Writes <dir>/<id>/mirror/initiatives/<card>.json for every card and removes the ones the store no longer has, then stamps the
-// mirror (_at.json) with the time of this read. Each file is written whole under a temporary name and renamed into place.
-export function syncMirror({ cards, dir, boardId, now }) {
-  const mdir = join(dir, boardId, "mirror", "initiatives");
-  mkdirSync(mdir, { recursive: true });
-  const keep = new Set();
-  for (const c of cards) {
-    const f = join(mdir, `${c.id}.json`), tmp = `${f}.tmp`;
-    writeFileSync(tmp, JSON.stringify(mirrorCard(c)), { mode: 0o600 });
-    renameSync(tmp, f);
-    keep.add(`${c.id}.json`);
-  }
-  let removed = 0;
-  for (const f of readdirSync(mdir)) if (f.endsWith(".json") && !keep.has(f)) { rmSync(join(mdir, f)); removed++; }
-  writeFileSync(join(dir, boardId, "mirror", "_at.json"), JSON.stringify({ at: now }), { mode: 0o600 });
-  return { written: keep.size, removed };
+// #C999: the store's cards, as one file the probe reads (<dir>/<id>/store-cards.json: { at, cards: { <card id>: <card> } }), written whole
+// under a temporary name and renamed into place. `at` is the time of this read. Nothing under an old board's mirror/ is written or read.
+export function writeStoreCards({ cards, dir, boardId, now }) {
+  const file = join(dir, boardId, STORE_CARDS_FILE), tmp = `${file}.tmp`;
+  mkdirSync(join(dir, boardId), { recursive: true });
+  let before = new Set();
+  try { before = new Set(Object.keys(JSON.parse(readFileSync(file, "utf8")).cards ?? {})); } catch { /* the first run */ }
+  const out = {};
+  for (const c of cards) out[c.id] = mirrorCard(c);
+  writeFileSync(tmp, JSON.stringify({ at: now, cards: out }), { mode: 0o600 });
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, file);
+  return { written: Object.keys(out).length, removed: [...before].filter((id) => !(id in out)).length };
 }
 
 // A copy of the board config with its state directory moved to the private one; nothing else in it changes.
@@ -99,7 +96,7 @@ export async function prepareStoreState({ privateDir, stateFile, configPath, bas
   const boardId = basename(dirname(stateFile));
   if (!/^[A-Za-z0-9]{6,64}$/.test(boardId)) throw new Error("the state path has no board id");
   const { cards, stackSwitch } = await storeRead({ base, headers, fetchImpl });
-  const m = syncMirror({ cards, dir: privateDir, boardId, now });
+  const m = writeStoreCards({ cards, dir: privateDir, boardId, now });
   // state.mjs reads it (readStacks); written whole under a temporary name, as the mirror's files are.
   const sf = join(privateDir, boardId, STACKS_FILE);
   writeFileSync(`${sf}.tmp`, JSON.stringify({ at: now, stacks: stacksOn(stackSwitch) }), { mode: 0o600 });

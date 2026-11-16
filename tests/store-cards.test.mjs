@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { mirrorCard, storeCards, syncMirror, privateConfig, seedUsage, prepareStoreState } from "../collector/store-cards.mjs";
+import { mirrorCard, storeCards, writeStoreCards, privateConfig, seedUsage, prepareStoreState } from "../collector/store-cards.mjs";
 import { evidenceJob } from "../collector/probe-evidence.mjs";
 import { phaseOf, repoOf } from "../collector/state.mjs";
 
@@ -33,12 +33,14 @@ test("storeCards: the view's cards with a plain id; a failed or odd answer throw
   await assert.rejects(storeCards({ base: "https://x.test", headers: {}, fetchImpl: async () => ({ ok: true, json: async () => ({}) }) }), /no cards/);
 });
 
-test("syncMirror writes one file per card, drops the files of cards the store no longer has, and stamps the read", () => {
+test("writeStoreCards writes one file of the store's cards, drops the cards the store no longer has, stamps the read, and makes no mirror/ folder (#C999)", () => {
   const dir = tmp();
-  assert.deepEqual(syncMirror({ cards: [card(), card({ id: "card-b", num: 6 })], dir, boardId: "B1", now: 99 }), { written: 2, removed: 0 });
-  assert.deepEqual(syncMirror({ cards: [card()], dir, boardId: "B1", now: 100 }), { written: 1, removed: 1 });
-  assert.deepEqual(readdirSync(join(dir, "B1", "mirror", "initiatives")), ["card-a.json"]);
-  assert.deepEqual(JSON.parse(readFileSync(join(dir, "B1", "mirror", "_at.json"), "utf8")), { at: 100 });
+  assert.deepEqual(writeStoreCards({ cards: [card(), card({ id: "card-b", num: 6 })], dir, boardId: "B1", now: 99 }), { written: 2, removed: 0 });
+  assert.deepEqual(writeStoreCards({ cards: [card()], dir, boardId: "B1", now: 100 }), { written: 1, removed: 1 });
+  const f = JSON.parse(readFileSync(join(dir, "B1", "store-cards.json"), "utf8"));
+  assert.deepEqual(Object.keys(f.cards), ["card-a"]);
+  assert.equal(f.at, 100);
+  assert.deepEqual(readdirSync(join(dir, "B1")), ["store-cards.json"], "no mirror/, no _at.json, no temporary file left");
 });
 
 test("the private config moves only gate.stateDir; the usage history is seeded once and never overwritten", () => {
@@ -59,7 +61,8 @@ test("prepareStoreState: the private mirror, config and state path, from the old
   const r = await prepareStoreState({ privateDir: priv, stateFile: join(real, "state.json"), configPath: cfg, base: "https://x.test", headers: {}, fetchImpl: view([card()]) });
   assert.equal(r.stateFile, join(priv, "AbCdEf123456", "state.json"));
   assert.equal(JSON.parse(readFileSync(r.configPath, "utf8")).gate.stateDir, priv);
-  assert.equal(existsSync(join(priv, "AbCdEf123456", "mirror", "initiatives", "card-a.json")), true);
+  assert.equal(existsSync(join(priv, "AbCdEf123456", "store-cards.json")), true);
+  assert.equal(existsSync(join(priv, "AbCdEf123456", "mirror")), false);
   await assert.rejects(prepareStoreState({ privateDir: priv, stateFile: "/x/y/state.json", configPath: cfg, base: "https://x.test", headers: {}, fetchImpl: view([]) }), /no board id/);
 });
 

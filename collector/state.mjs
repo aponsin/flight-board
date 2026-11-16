@@ -19,7 +19,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId, TASK_ID, MODEL_WORD } from "../scripts/config.mjs";
-import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES, PUBLISHED_FILE } from "./state-schema.mjs";
+import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES, PUBLISHED_FILE, STORE_CARDS_FILE } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
 import { reviewsFromPaths } from "./review-paths.mjs";
@@ -238,13 +238,14 @@ export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = pr
 // pinned (condition A) and derive.mjs moves with the link (#C278), so the probe can't import it. tests/board-state.test.mjs
 // runs both on the same cases, so the two never drift apart unseen.
 export const closed = (card) => card.status === "done" || card.status === "dropped";
-// #C697, #C701: the cards as the board has them now, not as the hourly export had them: the mirror's cards (<stateDir>/<id>/mirror/
-// initiatives), which the store path writes from the store each run (collector/store-cards.mjs). #C864 step 2a: the old gate's journal
-// (gate.json) is no longer laid over them: the store's cards already carry a close, and the probe no longer imports gate/gate.mjs.
+// #C697, #C701: the cards as the board has them now. #C999: the store's cards, which the evidence job writes each run to
+// <stateDir>/<id>/store-cards.json (collector/store-cards.mjs); nothing of the old board's own files is read.
+export function readStoreCards(stateDir, id) {
+  try { const r = readTail(join(stateDir, id, STORE_CARDS_FILE), 4 * 1024 * 1024); if (r?.whole) { const d = JSON.parse(r.text); if (plain(d) && plain(d.cards)) return { at: Number.isFinite(d.at) ? d.at : 0, cards: d.cards }; } } catch { /* none yet */ }
+  return { at: 0, cards: {} };
+}
 export function liveCards(stateDir, id) {
-  const cards = [], mdir = join(stateDir, id, "mirror", "initiatives");
-  try { for (const f of readdirSync(mdir)) { if (!f.endsWith(".json")) continue; const r = readTail(join(mdir, f), 256 * 1024); if (!r?.whole) continue; try { const d = JSON.parse(r.text); if (plain(d)) cards.push({ ...d, id: f.slice(0, -5) }); } catch { /* skip it */ } } } catch { /* no export yet */ }
-  return cards;
+  return Object.entries(readStoreCards(stateDir, id).cards).filter(([, d]) => plain(d)).map(([cid, d]) => ({ ...d, id: cid }));
 }
 const boardIdOf = (message) => { const m = /^Board-Id:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*$/im.exec(String(message ?? "")); return m ? m[1].toLowerCase() : null; };
 // #C985: a repo word that names no listed repository is read as no word (a copy of derive.mjs's namedRepo and repoOf).
@@ -1034,19 +1035,6 @@ export function closedPacks({ cards, repos, now, pairs = [] }) {
   return out;
 }
 
-// The board db's last write (#C452, the owner at 23:44Z: "Needs you 0" and no cards in flight while the db held both,
-// the page's stream quiet with no error): the newest `at` in the gate's journal (gate/after.mjs, every write the board
-// applied), as a time only; nothing else of gate.json leaves. null when there is none, or the file isn't this user's.
-export function lastWriteAt(path, now) {
-  const r = readTail(path, 8 * 1024 * 1024);
-  if (!r?.whole) return null;
-  let j;
-  try { j = JSON.parse(r.text)?.journal; } catch { return null; }
-  if (!Array.isArray(j)) return null;
-  const t = j.reduce((m, w) => (plain(w) && Number.isInteger(w.at) && w.at > m && w.at <= now + 60e3 ? w.at : m), 0);
-  return t >= 1577836800000 && t <= 4102444800000 ? t : null;
-}
-
 // The lead's wake watch as two times (#C590): its heartbeat (wake-watch.alive.json) and the last wake it handled
 // (wake-seen.json, the wake's own time). Times only; a missing, odd or future time is none.
 export function wakeTimes(dir, now) {
@@ -1344,9 +1332,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     repos[x.name] = { ...at, gh: null, live, versionPattern: null, reviewPaths: x.reviewPaths ?? null };
   }
   lap("repos");
-  // The mirror's own stamp (_at.json, written by collector/store-cards.mjs from the store's cards): when it was made.
-  const stampAt = () => { try { const s = JSON.parse(readFileSync(join(stateDir, id, "mirror", "_at.json"), "utf8")); return Number.isFinite(s?.at) ? s.at : 0; } catch { return 0; } };
-  // The cards on the last export; the agents from the app's files.
+  // The store's cards as the evidence job left them (store-cards.json); the agents from the app's files.
   const cards = liveCards(stateDir, id);
   const ids = new Set(cards.filter((k) => !closed(k)).map((k) => k.id));
   const nums = new Map(cards.filter((k) => Number.isInteger(k.num) && ids.has(k.id)).map((k) => [k.num, k.id]));
@@ -1375,12 +1361,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const needs = wakeNeeds({ roster: config.roster, agents, cards: cards.filter((k) => !closed(k)), lead: config.gate.managerRole });
   const wakeAsk = askOnce(needs.wake, wakeBefore, now), missingAsk = askOnce(needs.missing, { roles: wakeBefore?.missing }, now);
   // Questions for the owner that never became a Needs-you item (#C584), for the lead to write from the wake watch's line.
-  const waitingDocs = [], wdir = join(stateDir, id, "mirror", "waiting");
-  let waitingKnown = false, exportedAt = 0;
-  try { waitingKnown = true; exportedAt = Math.max(lstatSync(wdir).mtimeMs, stampAt()); for (const f of readdirSync(wdir)) { if (!f.endsWith(".json")) continue; const r = readTail(join(wdir, f), 64 * 1024); if (!r?.whole) continue; exportedAt = Math.max(exportedAt, r.mtimeMs); try { const d = JSON.parse(r.text); if (plain(d)) waitingDocs.push(d); } catch { /* skip it */ } } } catch { waitingKnown = false; /* no export of the waiting items yet: no ask is listed on a guess */ }
-  // The export is the Collector's, on demand (#C594): an item the lead wrote after it isn't in it. No ask is listed from an
-  // export older than MIRROR_STALE_MS, or the lead would be told to write an item that already exists (Checker on 46d97a0).
-  if (waitingKnown && !mirrorFresh(exportedAt, now, config.gate.mirrorMaxAgeMin * 60e3)) waitingKnown = false;
+  // #C999: the store keeps no waiting-item files (the old board's mirror/waiting is gone), so the waiting items are never known and no
+  // ask is listed on a guess: the same reading the probe always had in its private folder.
+  const waitingDocs = [], waitingKnown = false;
   const asksPath = join(dir, "owner-asks.json");
   let asksBefore = null;
   try { const r = readTail(asksPath, 64 * 1024); if (r?.whole) asksBefore = JSON.parse(r.text); } catch { /* none */ }
@@ -1438,7 +1421,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let releases = null;
     if (team && c.releaseTimes) { try { releases = releaseTimesOf(team.git, `${team.remote}/${team.main}`, c.releaseTimes); } catch { /* no reading */ } }
     lap("ship");
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: lastWriteAt(join(stateDir, id, "gate.json"), now), cardsChecked, evidence, ctx, stuck, watch, usage: spend.tile, ship, releases, packs, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: null, cardsChecked, evidence, ctx, stuck, watch, usage: spend.tile, ship, releases, packs, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
     writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
     writeAtomic(watchPath, JSON.stringify({ at: now, ids: restartNow.ids, ...(ledgerNow ? { ledger: { seen: ledgerNow.seen, quiet: ledgerNow.quiet } } : {}) }));

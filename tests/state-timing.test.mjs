@@ -57,7 +57,7 @@ test("the real state child ends with a timing line of the allowed shape, a phase
   const dir = mkdtempSync(join(tmpdir(), "fb-timing-"));
   try {
     const stateDir = join(dir, "state");
-    mkdirSync(join(stateDir, "abc123", "mirror", "initiatives"), { recursive: true });
+    mkdirSync(join(stateDir, "abc123"), { recursive: true });
     const cfg = join(dir, "board.config.json");
     writeFileSync(cfg, JSON.stringify({ owner: "Sam", artifactUrl: ["https://claude.ai", "artifact", "abc123"].join("/"), gate: { stateDir }, roster: [] }));
     const r = spawnSync(process.execPath, [join(import.meta.dirname, "..", "collector", "state.mjs"), "--config", cfg, "--no-post", "--no-fetch"], { encoding: "utf8", timeout: 60_000 });

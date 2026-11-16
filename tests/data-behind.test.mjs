@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadNames } from "./harness.mjs";
-import { lastWriteAt, buildState } from "../collector/state.mjs";
+import { buildState } from "../collector/state.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
 
 const NOW = Date.now(), MIN = 60e3;
@@ -78,18 +78,13 @@ test("a db that stays behind reloads the page once per 10 min, never in a loop; 
   assert.equal(w.reloads, 0, "no guard to hold: no reload");
 });
 
-test("the Collector: lastWriteAt is the gate journal's newest time, nothing else of it; the state carries it and fits", () => {
-  const dir = mkdtempSync(join(tmpdir(), "data-behind-")), p = join(dir, "gate.json");
-  writeFileSync(p, JSON.stringify({ journal: [{ op: "set", collection: "steps", doc_id: "a", data: { text: "x" }, at: NOW - 9 * MIN }, { op: "set", collection: "messages", doc_id: "b", data: {}, at: NOW - 2 * MIN }, { at: NOW + 9 * MIN }] }));
-  assert.equal(lastWriteAt(p, NOW), NOW - 2 * MIN, "the newest, a time ahead of the clock aside");
-  assert.equal(lastWriteAt(join(dir, "none.json"), NOW), null);
-  writeFileSync(p, "{not json");
-  assert.equal(lastWriteAt(p, NOW), null);
+test("the Collector: the state carries a given lastWriteAt and fits; the run no longer reads the old gate's file (#C999)", () => {
   const s = buildState({ id: "TestBoard42xyz", now: NOW, probe: null, pageVersion: null, cards: {}, agents: {}, lastWrite: NOW - 2 * MIN });
   assert.equal(s.board.lastWriteAt, NOW - 2 * MIN);
   const before = { v: 1, board: { boardId: "TestBoard42xyz", at: NOW, probe: null, pageVersion: null }, cards: {}, agents: {} };
   assert.equal(stateErrors(before).length, 0, "a reading from a probe before it still fits");
   assert.equal(Object.hasOwn(pickState(before).board, "lastWriteAt"), false);
   assert.ok(stateErrors({ ...before, board: { ...before.board, lastWriteAt: "soon" } }).length, "not a time: refused");
-  assert.match(readFileSync(new URL("../collector/state.mjs", import.meta.url), "utf8"), /lastWrite: lastWriteAt\(join\(stateDir, id, "gate\.json"\), now\)/, "the run reads the gate's own file");
+  const src = readFileSync(new URL("../collector/state.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(src, /gate\.json|"mirror"|_at\.json/, "state.mjs names none of the old board's files");
 });
