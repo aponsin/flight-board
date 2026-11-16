@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
-import { agentRank, startedGroupSet, openGroupWithheld, ownerTurn, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
+import { agentRank, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -117,6 +117,8 @@ const hasHeadEvidence = (v) => !!v && typeof v === "object" && (typeof v.headSha
 export const STACK_QUEUE_FILE = "stack-queue.json", STACK_QUEUE_MAX = 500;
 export function stackQueueFile(view, now) {
   const ev = view?.evidence ?? {};
+  const evidenceById = Object.fromEntries(Object.entries(ev).filter(([k]) => k.startsWith("cards.")).map(([k, v]) => [k.slice(6), v?.value]));
+  const startedGroups = startedGroupMembers((Array.isArray(view?.cards) ? view.cards : []).filter(Boolean), (id) => evidenceById[id]); // #C1103 (M1): the groups already started, and by which cards
   const cards = [];
   for (const c of Array.isArray(view?.cards) ? view.cards : []) {
     if (!c || typeof c.id !== "string" || !CARD_ID.test(c.id) || c.dropped || c.done_at) continue; // a card closed as done is no queued partner (#C902)
@@ -129,8 +131,13 @@ export function stackQueueFile(view, now) {
       dependsOn: [...new Set(dependsOf(c).filter((d) => CARD_ID.test(d) && d !== c.id))].slice(0, 50),
       batch: batchOf(c), // #C1021: the group the lead put the card in ("" for none); stack-ready waits for every open card of it
       held: !!(c.paused || c.blocked_reason), // #C1021 (Checker 2 F1): a paused or blocked card is no partner to wait for, as the dispatch's activeCard has it
+      // #C1103 (Checker 2's M2): the store's own reading of "held" for the group order (orderCards: paused, isHeld = waiting_on or a blocked_reason, or a dependency not live), so the
+      // pre-push check and the store's stall line agree; `held` above stays what stack-ready waits on.
+      orderHeld: !!(c.paused || isHeld(c) || dependsNotLive(c, view.cards, evidenceById)),
       started: hasHeadEvidence(e),
       num: Number.isInteger(c.num) ? c.num : null, // #C1103: for the line that names the higher card
+      rework: isRework(c, e), // #C1103 (M1, the owner's pick A): a card sent back with findings is never held back by the group order
+      groupStarted: groupStartedByOther(startedGroups, batchOf(c), c.id), // ... nor is the next card of a group that has started
       turn: ownerTurn(c, e), // #C1103: the card needs its owner now (not pushed, in build, or in rework): the pre-push group-order check reads it
     });
     if (cards.length >= STACK_QUEUE_MAX) break;

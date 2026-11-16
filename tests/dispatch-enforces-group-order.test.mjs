@@ -73,6 +73,48 @@ test("the queue file carries the number, whose turn it is and the owner's order,
   assert.deepEqual(outOfOrderPushes(`refs/heads/build/high abc refs/heads/build/high ${"0".repeat(40)}`, git("high"), q, T + MIN), [], "the higher card starts freely");
 });
 
+// Checker 2's M2: the pre-push check and the store's stall line read "held" the same way (orderCards: paused, waiting_on or a blocked_reason, a dependency not live).
+test("a higher card held by waiting_on, a dependency not live, a pause or a block does not block the push, as in the store; an unheld one does", () => {
+  const first = `refs/heads/build/low abc refs/heads/build/low ${"0".repeat(40)}`;
+  const groups = [{ batch: "g6", pos: 1, set_by: "owner", set_at: 1 }, { batch: "g13", pos: 2, set_by: "owner", set_at: 1 }];
+  const blocked = (high, extraCards = []) => {
+    const view = { cards: [{ id: "high", num: 1106, owner_role: "Boardsmith", batch: "g6", repo: "flight-board", ...high }, { id: "low", num: 1063, owner_role: "Boardsmith", batch: "g13", repo: "flight-board" }, ...extraCards], evidence: {}, groupOrder: groups };
+    return outOfOrderPushes(first, () => "low\n", stackQueueFile(view, T), T + MIN).length;
+  };
+  assert.equal(blocked({}), 1, "an unheld higher card blocks");
+  assert.equal(blocked({ waiting_on: "the owner's answer", check_at: T + 60 * MIN }), 0, "waiting_on with a check date holds it");
+  assert.equal(blocked({ paused: 1 }), 0, "paused");
+  assert.equal(blocked({ blocked_reason: "waits on a deploy", hold_end: "dep" }), 0, "blocked");
+  assert.equal(blocked({ depends_on: JSON.stringify(["dep"]) }, [{ id: "dep", num: 1000, owner_role: "Builder", repo: "flight-board" }]), 0, "a dependency that is not live holds it");
+});
+
+// The owner's pick A (11-16, Checker 2's M1): the group order decides only which NEW work starts. Rework (a card sent back with findings) and the next card of a group that
+// already started come first, as the dispatch's agentRank has them; a fresh start below a higher ready group is still refused. Same rule in both doors.
+test("A: rework on a lower group and the next card of a started group are allowed; a fresh start below a higher ready group is refused", () => {
+  const Z = "0".repeat(40), first = (id) => `refs/heads/build/${id} abc refs/heads/build/${id} ${Z}`;
+  const rows = (extra = []) => [{ id: "high", num: 1106, owner_role: "Boardsmith", batch: "g6", repo: "flight-board" }, { id: "low", num: 1063, owner_role: "Boardsmith", batch: "g13", repo: "flight-board" }, ...extra];
+  const gate = (cards, evidence, id) => outOfOrderPushes(first(id), () => `${id}\n`, stackQueueFile({ cards, evidence, groupOrder: [{ batch: "g6", pos: 1 }, { batch: "g13", pos: 2 }] }, T), T + MIN).length;
+  assert.equal(gate(rows(), {}, "low"), 1, "a fresh start below a higher ready group: refused");
+  // (b) g13 already started by another card: its next card is allowed.
+  const started = { "cards.g13-first": { value: { lit: ["checker"], phase: "checker", headSha12: "a".repeat(12) } } };
+  assert.equal(gate(rows([{ id: "g13-first", num: 1062, owner_role: "Boardsmith", batch: "g13", repo: "flight-board" }]), started, "low"), 0, "the next card of a started group");
+  // the started group's own first card does not count for itself: with only "low" pushed, a second unpushed g13 card is the next card, but "low" itself was a fresh start
+  assert.equal(gate(rows(), { "cards.low": { value: { lit: ["build"], phase: "build", headSha12: "b".repeat(12) } } }, "low"), 1, "a card's own push does not start its group for itself");
+  // (a) a card sent back with checker findings is rework, whatever its group.
+  const sentBack = { "cards.low": { value: { lit: ["checker"], phase: "checker", headSha12: "b".repeat(12), findings: ["checker"] } } };
+  const rowsBack = rows();
+  const view = { cards: rowsBack, evidence: sentBack, groupOrder: [{ batch: "g6", pos: 1 }, { batch: "g13", pos: 2 }] };
+  const q = stackQueueFile(view, T);
+  assert.deepEqual(q.cards.map((c) => [c.id, c.rework, c.groupStarted]), [["high", false, false], ["low", true, false]]);
+  // the store's line: the same two cases are not named
+  const evidence = (extra = {}) => ({ high: { lit: ["build"], phase: "build", headSha12: "a".repeat(12) }, ...extra });
+  const go = (cards, ev) => outOfOrderWork({ cards, evidence: ev, agents: { Boardsmith: { state: "working", card: "low" } }, groupOrder: order }).map((s) => s.num);
+  assert.deepEqual(go(rows(), evidence({ low: { lit: ["build"], phase: "build", headSha12: "b".repeat(12) } })), [1063], "a fresh start worked out of order is named");
+  assert.deepEqual(go(rows(), evidence({ low: { lit: ["build"], phase: "build", headSha12: "b".repeat(12), rework: true } })), [], "rework (a rework with no reason attached): not named");
+  assert.deepEqual(go(rows(), evidence({ low: { lit: ["checker"], phase: "checker", headSha12: "b".repeat(12), findings: ["checker"] } })), [], "sent back with checker findings: not named");
+  assert.deepEqual(go(rows([{ id: "g13-first", num: 1062, owner_role: "Boardsmith", batch: "g13" }]), evidence({ low: { lit: ["build"], phase: "build", headSha12: "b".repeat(12) }, "g13-first": { lit: ["checker"], phase: "checker", headSha12: "a".repeat(12) } })), [], "the next card of a started group: not named");
+});
+
 test("the first-push check judges only a new build/ branch, and fails open on anything it cannot read", () => {
   const view = { cards: [{ id: "high", num: 1, owner_role: "Boardsmith", batch: "g6" }, { id: "low", num: 2, owner_role: "Boardsmith", batch: "g13" }], evidence: {}, groupOrder: [{ batch: "g6", pos: 1 }, { batch: "g13", pos: 2 }] };
   const q = stackQueueFile(view, T), git = () => "low\n", Z = "0".repeat(40);
