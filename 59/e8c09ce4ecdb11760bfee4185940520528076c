@@ -1,0 +1,1 @@
+PASS Quick #C1084 by Checker 2: F1 LOW fixed by test-only 3d6b4d3e (R4 phase-guard mutant killed); claim ignored, name guard, released claims, claims passed all killed; 3 equivalent survivors (name regex anchoring, behind, claim order); full suite 2425 pass 0 fail 1 skipped (commit 59e8c09c of stack tip 3d6b4d3e)
