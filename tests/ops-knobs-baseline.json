@@ -58,8 +58,6 @@
  "scripts/state-install.mjs:BOOT_POLL_MS",
  "scripts/state-install.mjs:BOOT_RETRY_MS",
  "scripts/state-install.mjs:BOOT_WAIT_MS",
- "worker/board-rules.mjs:AUTO_CLOSE_AFTER_MS",
- "worker/board-rules.mjs:HOLD_NO_END_AFTER_MS",
  "worker/board-rules.mjs:INLINE_LIST_MIN",
  "worker/board-rules.mjs:STALL_WAKE_AFTER_MS",
  "worker/board-store.mjs:THREAD_WINDOW_MS",

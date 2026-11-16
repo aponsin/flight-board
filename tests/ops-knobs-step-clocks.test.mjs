@@ -3,10 +3,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, writeEvidence, wakeAsk, takeInbox, postMessage } from "../worker/board-store.mjs";
+import { createCard, updateCard, createAsk, answerAsk, writeEvidence, wakeAsk, takeInbox, postMessage } from "../worker/board-store.mjs";
 import { beat } from "./helpers/beating-store.mjs";
 import { resolveKnobs, KNOBS } from "../worker/knobs.mjs";
-import { minWords, stallMsOf, shipSlowMsOf, STALL_AFTER_MS, SHIP_SLOW_MS } from "../worker/board-rules.mjs";
+import { minWords, stallMsOf, shipSlowMsOf, STALL_AFTER_MS, SHIP_SLOW_MS, heldWakes, HOLD_NO_END_AFTER_MS } from "../worker/board-rules.mjs";
 
 const M = 60_000, T = 1_800_000_000_000;
 
@@ -113,4 +113,68 @@ test("through the store: a posted postedFreshSec widens the window an owner's po
   const narrow = await stallsAt(await mk(600), T + 20 * M);
   assert.equal(narrow.length, 1, "posted 10 min: a 15-minute-old post does not");
   assert.match(narrow[0].reason, /nothing posted on its thread in the last 10 min,/);
+});
+
+// Slice three: how long a hold may have no end (the store gives a waiting_on this end when it is written, and a hold with none wakes Manager after it),
+// and how long after its card moved on an answered Decision is closed by the board.
+const holdRow = (db, id) => db.prepare("SELECT hold_until FROM cards WHERE id = ?").bind(id).first();
+
+test("a posted holdNoEndSec is the end the store gives a waiting_on with none, on create and on update; the default is 2 h", async () => {
+  const db = makeDb();
+  await postKnobs(db, { holdNoEndSec: 3600 });
+  assert.equal((await createCard(db, T, "Manager", { id: "h1", title: "H", waiting_on: "Checker" })).ok, true);
+  assert.equal((await holdRow(db, "h1")).hold_until, T + 60 * M, "create: now + the posted 1 h");
+  assert.equal((await createCard(db, T, "Manager", { id: "h2", title: "H2" })).ok, true);
+  await updateCard(db, T + M, "Manager", { id: "h2", waiting_on: "Security" });
+  assert.equal((await holdRow(db, "h2")).hold_until, T + M + 60 * M, "update: now + the posted 1 h");
+  const plain = makeDb();
+  await createCard(plain, T, "Manager", { id: "h1", title: "H", waiting_on: "Checker" });
+  assert.equal((await holdRow(plain, "h1")).hold_until, T + 120 * M, "no setting: 2 h");
+  const bad = makeDb();
+  await postKnobs(bad, { holdNoEndSec: 5 });
+  await createCard(bad, T, "Manager", { id: "h1", title: "H", waiting_on: "Checker" });
+  assert.equal((await holdRow(bad, "h1")).hold_until, T + 120 * M, "out of bounds: the default");
+});
+
+test("the hold-with-no-end line says the time it waited: 2 h at the default, 3 h at 10800 s, 90 min at 5400 s", () => {
+  const card = { id: "c1", num: 1, owner_role: "Boardsmith", waiting_on: "Checker", held_at: T };
+  const at = (holdMs, now) => heldWakes({ now, cards: [card], endsPassed: new Set(), holdMs }).map((r) => r.reason);
+  assert.equal(at(HOLD_NO_END_AFTER_MS, T + 119 * M).length, 0);
+  assert.match(at(HOLD_NO_END_AFTER_MS, T + 120 * M)[0], /no end set after 2 h:/);
+  assert.equal(at(180 * M, T + 150 * M).length, 0, "posted 3 h: not at 2 h 30");
+  assert.match(at(180 * M, T + 180 * M)[0], /no end set after 3 h:/);
+  assert.match(at(90 * M, T + 90 * M)[0], /no end set after 90 min:/);
+});
+
+test("through the store: a legacy hold with no end wakes Manager after the posted holdNoEndSec, in its words", async () => {
+  const mk = async (holdNoEndSec) => {
+    const db = makeDb();
+    if (holdNoEndSec !== undefined) await postKnobs(db, { holdNoEndSec });
+    await createCard(db, T, "Manager", { id: "c1", title: "C", waiting_on: "Checker" });
+    await db.prepare("UPDATE cards SET hold_until = NULL, held_at = ? WHERE id = 'c1'").bind(T).run(); // a hold from before the store gave every waiting_on an end
+    return db;
+  };
+  const lines = async (db, at) => (await stallsAt(db, at)).map((s) => s.reason).filter((r) => /no end set after/.test(r));
+  assert.equal((await lines(await mk(), T + 130 * M)).length, 1, "default 2 h: raised at 2 h 10");
+  assert.equal((await lines(await mk(10800), T + 130 * M)).length, 0, "posted 3 h: not yet");
+  const l = await lines(await mk(10800), T + 190 * M);
+  assert.equal(l.length, 1);
+  assert.match(l[0], /no end set after 3 h:/);
+});
+
+test("through the store: a posted autoCloseSec moves the board's close of an answered Decision", async () => {
+  const mk = async (autoCloseSec) => {
+    const db = makeDb();
+    if (autoCloseSec !== undefined) await postKnobs(db, { autoCloseSec });
+    assert.equal((await createCard(db, T, "Manager", { id: "c", title: "C", next_note: "build it" })).ok, true);
+    const a = await createAsk(db, T + M, { type: "Decision", title: "Pick", asked_by: "Manager", question: "A or B?", options: ["A", "B"], recommended: "A", card_id: "c" });
+    assert.equal((await answerAsk(db, T + 2 * M, "owner", { id: a.id, answer: "B" })).ok, true);
+    await takeInbox(db, T + 3 * M);
+    await updateCard(db, T + 10 * M, "Manager", { id: "c", next_note: "the owner chose B: building it" });
+    return { db, id: a.id };
+  };
+  const closedAt = async ({ db, id }, at) => { await beat(db, at); await wakeAsk(db, at); return (await db.prepare("SELECT closed_at FROM asks WHERE id = ?").bind(id).first()).closed_at; };
+  assert.equal(await closedAt(await mk(), T + 40 * M), T + 40 * M, "default 30 min after the move: closed at 40");
+  assert.equal(await closedAt(await mk(3600), T + 40 * M), null, "posted 60 min: still open at 40");
+  assert.equal(await closedAt(await mk(3600), T + 70 * M), T + 70 * M, "posted 60 min: closed at 70");
 });

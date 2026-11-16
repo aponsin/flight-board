@@ -510,7 +510,10 @@ export function cardWriteRefusal(fields, evidence) {
 // A hold is waiting_on or blocked_reason with words in it. Its end is the card's check_at (a time) or hold_end (the id of an ask or a card
 // whose closing ends it). A write that SETS a hold must leave the card with an end (this write's or one already there), else it is refused
 // in the same call. holdEndRefusal is pure: `fields` is the write, `existing` the card's row (null for a new card).
-export const HOLD_NO_END_AFTER_MS = 2 * 3_600_000;
+// #C1106: the setting holdNoEndSec (worker/knobs.mjs); this is its default. holdWordsOf: "2 h" at the default, whole hours, else minutes.
+export const HOLD_NO_END_AFTER_MS = KNOBS.holdNoEndSec.default * 1000;
+export const holdNoEndMsOf = (stored) => knobFrom(stored, "holdNoEndSec") * 1000;
+export const durWords = (ms) => (ms % 3_600_000 === 0 ? `${ms / 3_600_000} h` : `${Math.ceil(ms / 60_000)} min`);
 const heldWord = (v) => typeof v === "string" && v.trim() !== "";
 export const isHeld = (c) => !!c && (heldWord(c.waiting_on) || heldWord(c.blocked_reason));
 export function holdEndRefusal(fields, existing) {
@@ -529,8 +532,8 @@ export function hasExplicitEnd(fields, existing) {
 }
 // A waiting_on written with no end (the lead's routine "next is") is given one by the store: now + 2 h, kept in hold_until. null when the write sets no
 // waiting_on, sets a blocked_reason (which brings its own end) or the card already has an explicit end.
-export function autoHoldEnd(fields, existing, now) {
-  return heldWord(fields.waiting_on) && !heldWord(fields.blocked_reason) && !hasExplicitEnd(fields, existing) ? now + HOLD_NO_END_AFTER_MS : null;
+export function autoHoldEnd(fields, existing, now, holdMs = HOLD_NO_END_AFTER_MS) {
+  return heldWord(fields.waiting_on) && !heldWord(fields.blocked_reason) && !hasExplicitEnd(fields, existing) ? now + holdMs : null;
 }
 // #C915 (b): a hold is OPEN while its end has not come: a hold_end naming an ask that is not closed (or a card not dropped or live; one the
 // store cannot find stays open), or a check_at still in the future. `endsPassed` is the Set of hold_end ids whose closing has happened.
@@ -542,7 +545,7 @@ export function holdOpen(c, now, endsPassed) {
 // (b) a hold whose end has passed: "#Cn held on <reason>, its end has passed: lift or renew"; (c) a hold with no end for 2 h (counted from
 // held_at, else the card's updated_at): "#Cn held on <reason>, no end set after 2 h: lift it or give it an end". One row per (card, reason).
 // #C983: the times in these reasons are Mountain Time ("Nov 12 8:45 pm MT"), as Manager and the owner read them.
-export function heldWakes({ now, cards, endsPassed }) {
+export function heldWakes({ now, cards, endsPassed, holdMs = HOLD_NO_END_AFTER_MS }) {
   const out = [];
   for (const c of cards ?? []) {
     if (!Number.isInteger(c.num) || c.dropped || c.done_at) continue;
@@ -551,7 +554,7 @@ export function heldWakes({ now, cards, endsPassed }) {
       // not come; an end that stays open for 2 h (an answer nobody closed, say) is a line to Manager, so the card cannot disappear for ever. One row per (card, end, since).
       if (heldWord(c.hold_end) && !endsPassed?.has(c.hold_end)) {
         const since = Number.isFinite(c.held_at) ? c.held_at : c.updated_at;
-        if (Number.isFinite(since) && now - since >= HOLD_NO_END_AFTER_MS) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} waits on ${String(c.hold_end).trim().slice(0, 80)}, whose end has not come after 2 h: close it or lift the hold (since ${mtDayTime(since)})` });
+        if (Number.isFinite(since) && now - since >= holdMs) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} waits on ${String(c.hold_end).trim().slice(0, 80)}, whose end has not come after ${durWords(holdMs)}: close it or lift the hold (since ${mtDayTime(since)})` });
       }
       continue;
     }
@@ -565,7 +568,7 @@ export function heldWakes({ now, cards, endsPassed }) {
       continue;
     }
     const since = Number.isFinite(c.held_at) ? c.held_at : c.updated_at;
-    if (Number.isFinite(since) && now - since >= HOLD_NO_END_AFTER_MS) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} held on ${why}, no end set after 2 h: lift it or give it an end (held since ${mtDayTime(since)})` });
+    if (Number.isFinite(since) && now - since >= holdMs) out.push({ card_id: c.id, num: c.num, reason: `#C${c.num} held on ${why}, no end set after ${durWords(holdMs)}: lift it or give it an end (held since ${mtDayTime(since)})` });
   }
   return out;
 }
@@ -575,11 +578,12 @@ export function heldWakes({ now, cards, endsPassed }) {
 // closed by the store 30 minutes after it moved on, with a line to Manager first. Left open, each a test: an answer Manager has not
 // taken; a "help" answer (it waits for Manager's reply); any other type; a card that has not moved since the answer; an ask closed by
 // the store once and then reopened (auto_closed_at). Returns [{ ask_id, card_id, num, reason, closeAt, due }].
-export const AUTO_CLOSE_AFTER_MS = 30 * 60000;
+export const AUTO_CLOSE_AFTER_MS = KNOBS.autoCloseSec.default * 1000; // #C1106: the setting autoCloseSec; this is its default
+export const autoCloseMsOf = (stored) => knobFrom(stored, "autoCloseSec") * 1000;
 export const AUTO_CLOSED_BY = "board";
 // lastWord: Map of ask id → its thread's newest message { author, at } (Checker 2 F1 on 1ab7673: the owner's follow-up after his answer,
 // the newest word in the thread, keeps the ask open: it waits on the team, so the board never closes over it).
-export function movedOnAsks({ now, asks, cards, lastWord }) {
+export function movedOnAsks({ now, asks, cards, lastWord, closeMs = AUTO_CLOSE_AFTER_MS }) {
   const byId = new Map((cards ?? []).map((c) => [c.id, c]));
   const out = [];
   for (const a of asks ?? []) {
@@ -589,7 +593,7 @@ export function movedOnAsks({ now, asks, cards, lastWord }) {
     if (w && w.author === "owner" && w.at > a.answered_at) continue;
     const c = byId.get(a.card_id);
     if (!c || !Number.isFinite(c.moved_at) || c.moved_at <= a.answered_at) continue;
-    const closeAt = Math.max(c.moved_at, a.answer_taken_at) + AUTO_CLOSE_AFTER_MS;
+    const closeAt = Math.max(c.moved_at, a.answer_taken_at) + closeMs;
     const card = Number.isInteger(c.num) ? `#C${c.num}` : "its card";
     out.push({ ask_id: a.id, card_id: c.id, num: c.num, closeAt, due: now >= closeAt, reason: `#T${a.num} is answered and ${card} has moved on: the board closes it at ${mtTime(closeAt)}` });
   }

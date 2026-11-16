@@ -18,6 +18,8 @@ export const KNOBS = {
   postedFreshSec: { default: 3600, min: 600, max: 86400, label: "a read-only role's card counts as worked while its thread had a post this recent (s)" },
   landedUnbuiltSec: { default: 1800, min: 300, max: 14400, label: "a landed card with no deploy pair holding it wakes its owner after this long (s)" },
   copyStaleSec: { default: 3600, min: 600, max: 172800, label: "the probe's copy of a repository is stale when its oldest card reading is older than this (s)" },
+  holdNoEndSec: { default: 7200, min: 600, max: 86400, label: "a hold with no end wakes Manager after this long, and the store gives a waiting_on this end (s)" },
+  autoCloseSec: { default: 1800, min: 300, max: 86400, label: "the board closes an answered Decision this long after its card moved on (s)" },
   // Not settings yet (they stay on the lint baseline): gate/reset.mjs EVIDENCE_STALE_MS (no card shows a commit for 10 min; the file is pinned by the owner's
   // install, so changing it needs an owner pack, and it is NOT the page's probe edge staleAfterSec) and collector/store-dispatch.mjs AGENTS_FRESH_MS.
 };
