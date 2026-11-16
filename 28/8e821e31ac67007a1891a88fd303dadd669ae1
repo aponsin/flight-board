@@ -1,0 +1,1 @@
+SECURE #C1106 part B 288e821e (tip, slice 5): quotaOutPct (50..100) into quotaHold via knobFrom; only holds idle-agent stall lines, the line names the number. Slices 4-5 mutation check (wakeAsk status without the posted limits): the wakeTakenSec store test fails; restored. Full suite 2596 pass, 0 fail. (Security)
