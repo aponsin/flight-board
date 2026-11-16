@@ -1,0 +1,1 @@
+SECURE G9 old-board-code-cleanup-v4 63ecd07f: per-commit note for the pinned-file gate; reviewed as part of the line da209babeffd6b26de0f00d9078d3e8015aaf0bc..7a9045f07fe7ec6ae728eee638c96869fa0cfc06 (SECURE on 6d653728 and 7a9045f0). Deletes old gate/Collector code or moves imports; no new secret, route, network call or path. Never deploys alone. (Security)
