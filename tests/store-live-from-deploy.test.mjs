@@ -151,7 +151,8 @@ test("a deploy made without the template resets BUILD_SHA to its plain default (
 // #C737 (Manager): a card of another repository that is on main and read at ship waits for the owner's deploy, not for Release: the
 // stall wake of #C732 does not fire for it. Control: the same card without a repo word, or not yet on main, still wakes.
 test("the stall wake does not fire for a board-repository card on main at ship; it still does for one not on main or one with no repo word", async () => {
-  const { createCard, writeEvidence, wakeAsk } = await import("../worker/board-store.mjs");
+  const { createCard, writeEvidence } = await import("../worker/board-store.mjs");
+  const { wakeAsk } = await import("./helpers/beating-store.mjs");
   const T = 1_800_000_000_000, MIN = 60_000;
   const wakes = async (card, evidence) => {
     const db = makeDb();
