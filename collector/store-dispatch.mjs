@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
-import { agentRank, startedGroupSet } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
+import { agentRank, startedGroupSet, openGroupWithheld } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -304,25 +304,11 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // Checker 2's F1 on 0c079bf8 (a deadlock): a group card that waits on a dependency is skipped above (waitsOn), so a dependency of the SAME role that sits
   // outside the group, with nothing pushed, must keep its build turn or the group never finishes. So: (a) a group card blocked by another role's card is not
   // the role's to build and keeps no group open; (b) the blockers of a group card that keeps its group open, and theirs in turn, are let through.
-  const openGroups = new Map(), blockedGroups = new Map(), needed = new Set();
-  for (const k of all) {
-    if (!k || typeof k.id !== "string" || typeof k.owner_role !== "string") continue;
-    const g = batchOf(k);
-    if (g === "" || !startedGroups.has(g) || !activeCard(k) || askedCards.has(k.id) || holdOpen(k, now, endPassed)) continue;
-    if (typeof k.waiting_on === "string" && k.waiting_on.trim() && !k.waiting_on.trim().startsWith(k.owner_role)) continue;
-    const blockers = waitsOn(k);
-    if (blockers.some((d) => open.get(d)?.owner_role !== k.owner_role)) {
-      // Manager's rule (b): a started group whose unfinished cards all wait on ANOTHER role's cards lets the role take a loose card (in no group), never a card of another group.
-      if (!hasHead(k.id) || ev[`cards.${k.id}`]?.value?.stackHold === true) blockedGroups.set(k.owner_role, new Set([...(blockedGroups.get(k.owner_role) ?? []), g]));
-      continue;
-    }
-    if (!hasHead(k.id) || ev[`cards.${k.id}`]?.value?.stackHold === true) { openGroups.set(k.owner_role, new Set([...(openGroups.get(k.owner_role) ?? []), g])); for (const d of blockers) needed.add(d); }
-  }
-  for (let grew = true; grew;) { grew = false; for (const id of [...needed]) for (const d of open.has(id) ? waitsOn(open.get(id)) : []) if (!needed.has(d)) { needed.add(d); grew = true; } }
+  // #C1082: the rule is ONE function (worker/board-rules.mjs openGroupWithheld), called here and by the stall line, so the two cannot name different cards.
+  // (Manager's rule (b) is in it: a started group whose unfinished cards all wait on ANOTHER role's cards lets the role take a loose card, never a card of another group.)
+  const withheldBy = openGroupWithheld({ now, cards: all, evidenceOf: (id) => ev[`cards.${id}`]?.value, askedCards, endPassed, stackOn: switchOn });
   for (const k of cards) {
-    const og = openGroups.get(k.who), bg = blockedGroups.get(k.who);
-    const withheld = og?.size ? !og.has(k.group) && !needed.has(k.id) : bg?.size ? k.group !== "" && !bg.has(k.group) : false;
-    if (withheld) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
+    if (withheldBy({ role: k.who, id: k.id, group: k.group })) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
   }
   const byRole = new Map();
   for (const k of cards.filter(notStarted)) byRole.set(k.who, [...(byRole.get(k.who) ?? []), k]);
