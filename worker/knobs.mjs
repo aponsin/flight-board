@@ -10,8 +10,8 @@ export const KNOBS = {
   // The plist's own alarm is the installed limit + 15 s, so the limit can be lowered here but not raised past what is installed (170 s).
   evidenceLimitSec: { default: 170, min: 60, max: 170, label: "the evidence job's time limit (s)" },
   slowRunSec: { default: 150, min: 30, max: 280, under: "evidenceLimitSec", label: "a run longer than this is shown as slow (s)" },
-  staleAfterSec: { default: 300, min: 120, max: 1800, label: "an evidence reading older than this is stale on the page (s)" },
-  probeSilentSec: { default: 300, min: 120, max: 1800, label: "no probe post for this long makes the Probe chip silent (s)" },
+  staleAfterSec: { default: 300, min: 120, max: 1800, over: ["evidenceIntervalSec", "evidenceLimitSec"], label: "an evidence reading older than this is stale on the page (s)" },
+  probeSilentSec: { default: 300, min: 120, max: 1800, over: ["evidenceIntervalSec", "evidenceLimitSec"], label: "no probe post for this long makes the Probe chip silent (s)" },
   // Not settings yet (they stay on the lint baseline): gate/reset.mjs EVIDENCE_STALE_MS (no card shows a commit for 10 min; the file is pinned by the owner's
   // install, so changing it needs an owner pack, and it is NOT the page's probe edge staleAfterSec) and collector/store-dispatch.mjs AGENTS_FRESH_MS.
 };
@@ -32,8 +32,20 @@ export function resolveKnobs(raw) {
     else values[key] = v;
   }
   // A setting that must stay under another is checked after both are resolved.
+  // The owner is told only about a setting they wrote; a default that has to move because they changed another one moves quietly.
   for (const [key, k] of Object.entries(KNOBS)) {
-    if (k.under && values[key] >= values[k.under] && !ignored.some((i) => i.key === key)) { ignored.push({ key, why: `not under ${k.under}` }); values[key] = Math.min(k.default, values[k.under] - 1); }
+    if (k.under && values[key] >= values[k.under] && !ignored.some((i) => i.key === key)) {
+      if (Object.hasOwn(bag, key)) ignored.push({ key, why: `not under ${k.under}` });
+      values[key] = Math.min(k.default, values[k.under] - 1);
+    }
+  }
+  // A reading must outlive one whole evidence cycle (interval + limit), or the page goes stale between two healthy runs (Checker 2's M2).
+  for (const [key, k] of Object.entries(KNOBS)) {
+    if (!k.over) continue;
+    const floor = k.over.reduce((s, o) => s + values[o], 0);
+    if (values[key] > floor) continue;
+    if (Object.hasOwn(bag, key) && !ignored.some((i) => i.key === key)) ignored.push({ key, why: "not over interval plus limit" });
+    values[key] = Math.min(k.max, Math.max(k.default, floor + 1));
   }
   for (const key of Object.keys(bag)) if (!Object.hasOwn(KNOBS, key)) ignored.push({ key, why: "unknown setting" });
   return { values, ignored };

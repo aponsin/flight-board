@@ -9,8 +9,8 @@ test("no ops section: every default, nothing ignored", () => {
 });
 
 test("a value in bounds is used", () => {
-  const r = resolveKnobs({ staleAfterSec: 180 });
-  assert.equal(r.values.staleAfterSec, 180);
+  const r = resolveKnobs({ staleAfterSec: 400 });
+  assert.equal(r.values.staleAfterSec, 400);
   assert.deepEqual(r.ignored, []);
 });
 
@@ -50,6 +50,36 @@ test("slowRunSec must stay under the limit", () => {
   assert.equal(r.values.evidenceLimitSec, 100);
   assert.ok(r.values.slowRunSec < 100);
   assert.deepEqual(r.ignored, [{ key: "slowRunSec", why: "not under evidenceLimitSec" }]);
+});
+
+test("a lowered limit moves an unset slowRunSec quietly (Checker 2's L1)", () => {
+  const r = resolveKnobs({ evidenceLimitSec: 100 });
+  assert.equal(r.values.evidenceLimitSec, 100);
+  assert.ok(r.values.slowRunSec < 100);
+  assert.deepEqual(r.ignored, []);
+});
+
+test("a long interval lifts the stale edge and the silent edge above one whole cycle (Checker 2's M2)", () => {
+  const r = resolveKnobs({ evidenceIntervalSec: 600 });
+  assert.equal(r.values.evidenceIntervalSec, 600);
+  assert.ok(r.values.staleAfterSec > 600 + 170, "stale edge over interval + limit");
+  assert.ok(r.values.probeSilentSec > 600 + 170, "silent edge over interval + limit");
+  assert.deepEqual(r.ignored, [], "the owner set neither edge: no chip");
+});
+
+test("an edge the owner wrote that is under one cycle is named and raised", () => {
+  const r = resolveKnobs({ evidenceIntervalSec: 600, staleAfterSec: 300, probeSilentSec: 900 });
+  assert.ok(r.values.staleAfterSec > 770);
+  assert.equal(r.values.probeSilentSec, 900, "900 is over 770: kept");
+  assert.deepEqual(r.ignored, [{ key: "staleAfterSec", why: "not over interval plus limit" }]);
+  assert.equal(knobsShape(r), true);
+});
+
+test("the defaults already clear one cycle", () => {
+  const r = resolveKnobs({ evidenceIntervalSec: 60, evidenceLimitSec: 170 });
+  assert.equal(r.values.staleAfterSec, 300);
+  assert.equal(r.values.probeSilentSec, 300);
+  assert.deepEqual(r.ignored, []);
 });
 
 test("the shape accepts a resolved answer and refuses strangers", () => {

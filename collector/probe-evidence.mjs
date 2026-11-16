@@ -455,7 +455,7 @@ export async function reportRunFailure(e, { base, headers, fetchImpl = fetch, wa
 }
 
 // node probe-evidence.mjs --job evidence|usage --env <file> --config <board config> --state <state.json> [--base <url>] [--private-dir <dir>]
-export async function main(argv, { exit = (c) => process.exit(c) } = {}) {
+export async function main(argv, { exit = (c) => process.exit(c), start = startRun, jobRun = evidenceJob } = {}) {
   const get = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   const job = get("--job");
   if (!["evidence", "usage"].includes(job)) { console.error(`unknown job ${job}`); return exit(64); }
@@ -466,9 +466,9 @@ export async function main(argv, { exit = (c) => process.exit(c) } = {}) {
   // #C997: the settings are read at every run. launchd starts the evidence job every minute; it runs only when its interval setting has passed.
   const knobs = knobsOf(get("--config"));
   if (job === "evidence" && !evidenceDue({ stateFile: get("--state"), intervalSec: knobs.values.evidenceIntervalSec })) return exit(0);
-  const run = startRun(job, job === "evidence" ? { limitSec: knobs.values.evidenceLimitSec } : {});
+  const run = start(job, job === "evidence" ? { limitSec: knobs.values.evidenceLimitSec } : {});
   try {
-    await run.step(`${job} readings`, () => evidenceJob({ job, base, headers: accessHeaders(cfg), configPath: get("--config"), stateFile: get("--state"), privateDir: get("--private-dir"), log: run.log, knobs }));
+    await run.step(`${job} readings`, () => jobRun({ job, base, headers: accessHeaders(cfg), configPath: get("--config"), stateFile: get("--state"), privateDir: get("--private-dir"), log: run.log, knobs }));
     return exit(run.finish(0));
   } catch (e) {
     run.log(`failed: ${String(e.message).slice(0, 200)}`);

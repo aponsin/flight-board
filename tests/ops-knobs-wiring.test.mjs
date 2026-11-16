@@ -9,8 +9,8 @@ import { checkConfig } from "../scripts/config.mjs";
 const cfg = (ops) => JSON.stringify({ ops });
 
 test("the probe reads the ops section at every run, nothing reinstalled: a changed file is a changed value", () => {
-  let text = cfg({ staleAfterSec: 200 });
-  assert.equal(knobsOf("/c", () => text).values.staleAfterSec, 200);
+  let text = cfg({ staleAfterSec: 250 });
+  assert.equal(knobsOf("/c", () => text).values.staleAfterSec, 250);
   text = cfg({ staleAfterSec: 400 });
   assert.equal(knobsOf("/c", () => text).values.staleAfterSec, 400);
 });
