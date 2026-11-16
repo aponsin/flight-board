@@ -8,8 +8,8 @@ test("five cadences (#C821 added dispatch, #C975 land), each with an inside limi
   assert.deepEqual(Object.values(JOBS).map((j) => j.intervalSec), [20, 60, 300, 60, 600]);
   assert.deepEqual(Object.values(JOBS).map((j) => j.limitSec), [30, 170, 120, 45, 590]);
   for (const [name, j] of Object.entries(JOBS)) if (name !== "evidence" && name !== "land") assert.ok(j.limitSec + OUTER_EXTRA_SEC < 180);
-  // #C996's stopgap (every number reverts to 60 / 90 when part 2 makes runs fast): evidence may run to 170 s, starts every 2 minutes
-  // (launchd never overlaps two runs of a job), and its alarm is 185 s, past the page's old 3-minute edge (now 5).
+  // #C996's stopgap (the limit and the page's edge revert to 90 s / 3 minutes once a week of runs stays under 90 s): evidence may run to 170 s,
+  // starts every minute again (launchd never overlaps two runs of a job), and its alarm is 185 s, past the page's old 3-minute edge (now 5).
   assert.equal(JOBS.evidence.limitSec + OUTER_EXTRA_SEC, 185);
   assert.ok(JOBS.evidence.limitSec + OUTER_EXTRA_SEC < 5 * 60);
 });
