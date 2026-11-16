@@ -1,0 +1,1 @@
+SECURE g13 90337907 (#C1100): reviewers evidence is probe-only, reviewersShape bounds keys and role names to plain words (20 max); probe side validates the same before posting. (Security)
