@@ -477,7 +477,7 @@ export async function outagesOf(db, now) {
   return out;
 }
 async function syncStalls(db, now) {
-  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, done_at, waiting_on, repo, check_at, hold_end, held_at, hold_until, depends_on, updated_at, queue_pos, queue_set_by, moved_at, batch, rework_reason FROM cards").all()).results;
+  const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, done_at, waiting_on, repo, check_at, hold_end, held_at, hold_until, depends_on, updated_at, queue_pos, queue_set_by, moved_at, batch, rework_reason, next_note FROM cards").all()).results;
   const evRows = (await db.prepare("SELECT key, value, read_at FROM evidence WHERE key = 'agents' OR key LIKE 'cards.%'").all()).results;
   let agents = {}; const evidence = {}, readAt = {};
   for (const r of evRows) { let v; try { v = JSON.parse(r.value); } catch { continue; } if (r.key === "agents") agents = v; else { evidence[r.key.slice(6)] = v; readAt[r.key.slice(6)] = r.read_at; } }
@@ -524,7 +524,7 @@ async function syncStalls(db, now) {
   let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
   const quota = quotaHold({ now, week: sessionWeek({ evidence: { [WEEK_USAGE_KEY]: { value: weekValue, readAt: weekRow?.read_at } } }, now), stalls: waitsAll, outPct: quotaOutPctOf(knobsNow) });
   const waits = quota.stalls;
-  const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages, shipSlowMs: shipSlowMsOf(knobsNow) });
+  const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages, shipSlowMs: shipSlowMsOf(knobsNow), agents });
   // A card the held stall line would have named is not named by the slow line in its place.
   const slow = slowAll.filter((s) => !waitsAll.some((w) => w.card_id === s.card_id));
   // The slow line's words are the same every spell, so its row (card, reason) must not outlive the spell: once a card is no longer slow with no
