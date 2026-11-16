@@ -1,6 +1,8 @@
 {
   "title": "Flight Board",
   "owner": "Sam",
+  "boardId": "",
+  "storeUrl": "",
   "artifactUrl": "",
   "phases": [["plan", "Plan"], ["build", "Build"], ["test", "Test"], ["language", "Language"], ["checker", "Checker"], ["security", "Security"], ["ship", "Ship"], ["live", "Live"]],
   "roster": ["Manager", "Builder", "Checker", "Security", "Release"],
