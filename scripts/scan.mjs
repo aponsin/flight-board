@@ -29,13 +29,23 @@ const PATTERNS = [
 export const NEVER_COMMIT = ["board.private.json"];
 export const neverCommit = (path) => NEVER_COMMIT.includes(String(path).split("/").pop());
 
+// #C1096: a git commit id is hex, and about one id in a hundred holds ten digits in a row (a 12-character id that starts d and runs digits to its last letter): the phone rule read that as a
+// phone number, so no note or message could name the commit and Release's dry runs stopped on three signed branches. The phone rules skip a whole hex token of 12 to
+// 40 characters (an abbreviated id as `git log` prints 12, up to the full 40) that holds at least one letter a-f and stands alone (no letter or digit touches it; a
+// full stop after it, as at the end of a sentence, is fine). Every other rule reads the line as it was. Not skipped: a bare digit run (it holds no letter a-f), a phone in any written shape, and a token shorter than 12
+// or longer than 40 (a longer one is not a commit id).
+const HEX_ID = /(?<![A-Za-z0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{12,40}(?![A-Za-z0-9])/g;
+export const withoutCommitIds = (line) => String(line).replace(HEX_ID, " ");
+const PHONE = new Set(["a phone number"]);
+
 // Hits in one file's text: [{ line, what }]. words: the private list, already lower case.
 export function scanText(text, words) {
   const hits = [];
   text.split("\n").forEach((line, n) => {
     const low = line.toLowerCase();
     for (const w of words) if (w && low.includes(w)) hits.push({ line: n + 1, what: `a listed word ("${w}")` });
-    for (const [what, re] of PATTERNS) if (line.match(re)) hits.push({ line: n + 1, what });
+    const bare = withoutCommitIds(line);
+    for (const [what, re] of PATTERNS) if ((PHONE.has(what) ? bare : line).match(re)) hits.push({ line: n + 1, what });
   });
   return hits;
 }
