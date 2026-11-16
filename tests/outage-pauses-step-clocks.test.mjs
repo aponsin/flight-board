@@ -45,6 +45,24 @@ test("a step already late before the outage stays late during and after it", () 
   assert.equal(stallAt(start, [{ start: NOW - 10 * M, end: NOW - 4 * M }]).length, 1, "after it");
 });
 
+test("a wait for a role with no session, and a queued card's owner idle time, follow the same rule", () => {
+  const outage = { start: NOW - 14 * M, end: NOW - 2 * M };
+  // A card at Checker; the roster lists others but not Checker (no session): counted from the phase's start, 20 min ago.
+  const noSession = (outages) => stalledWaits({ now: NOW, cards: cardsOf(), evidence: { c1: { lit: ["checker"] } }, agents: { Boardsmith: { state: "working", card: "other" } },
+    openAskCards: new Set(), phaseStart: new Map([["c1|checker", NOW - 20 * M]]), outages });
+  assert.equal(noSession([]).length, 1, "plain: 20 min with nobody there");
+  assert.equal(noSession([outage]).length, 0, "12 of them were an outage");
+  // A card nobody pushed, its owner idle since 20 min ago (a queued card), and one whose owner has no session (counted from the card's last update).
+  const queued = (agents, outages, updated = NOW - 20 * M) => stalledWaits({ now: NOW, cards: [{ id: "c1", num: 1, owner_role: "Builder", updated_at: updated }], evidence: {}, agents,
+    openAskCards: new Set(), phaseStart: new Map(), outages });
+  const idle = { Builder: { state: "idle", since: NOW - 20 * M } };
+  assert.equal(queued(idle, []).length, 1, "plain: the owner idle 20 min with a card waiting");
+  assert.equal(queued(idle, [outage]).length, 0, "12 of those minutes were an outage");
+  const gone = { Other: { state: "working", card: "x" } };
+  assert.equal(queued(gone, []).length, 1, "plain: no session for the owner");
+  assert.equal(queued(gone, [outage]).length, 0, "12 of those minutes were an outage");
+});
+
 test("the slow line follows the same rule", () => {
   const cards = [{ id: "c1", num: 1, owner_role: "Builder" }];
   const slow = (start, outages) => slowWakes({ now: NOW, cards, evidence: { c1: { lit: ["ship"] } }, openAskCards: new Set(), phaseStart: new Map([["c1|ship", start]]), medians: {}, outages });
