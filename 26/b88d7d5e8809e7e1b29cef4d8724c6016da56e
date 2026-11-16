@@ -1,0 +1,1 @@
+PASS Full at 26b88d7d (Checker 2, #C1096 v2): pure rebase of fd8a07a2 onto main 1fade8a2, range-diff all =. Suite on the tip 2502 pass, 0 fail. v1 review stands (mutations 9/10; S8 upper-case hex untested, INFO) (commit 26b88d7d of stack tip 26b88d7d)
