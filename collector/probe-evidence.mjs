@@ -236,6 +236,18 @@ export function lookWrite(configText, { log = () => {} } = {}) {
   return { key: "look", value: { visualLanes: [...lanes] } };
 }
 
+// #C1100 (after #C1098 the dispatch sends the board's own code reviews to Checker 2, but the stall line, built in the Worker, still named the phase's lane): the config's
+// collector.reviewers ({ repository word: role }) posted under the key reviewers, as `look` is, so the stall line names the same reviewer the dispatch wakes. Posted
+// every run (an empty map too, so an entry taken out stops counting); a config that cannot be read, or whose map is not plain words, writes nothing.
+export function reviewersWrite(configText, { log = () => {} } = {}) {
+  let map;
+  try { map = JSON.parse(configText)?.collector?.reviewers; } catch { log("reviewers: the board config could not be read"); return null; }
+  if (map === undefined) map = {};
+  const ok = map && typeof map === "object" && !Array.isArray(map) && Object.keys(map).length <= 20 && Object.entries(map).every(([k, v]) => /^[A-Za-z0-9._-]{1,40}$/.test(k) && typeof v === "string" && /^[A-Za-z0-9 _-]{1,24}$/.test(v));
+  if (!ok) { log("reviewers: collector.reviewers is not a map of up to 20 repository words to role names; not posted"); return null; }
+  return { key: "reviewers", value: { reviewers: { ...map } } };
+}
+
 // #C736: the usage job also posts the day's runner and Actions usage (collector/actions-usage.mjs) to POST /api/probe/usage, which the
 // store's Time spent chart and tiles read. It reads the team repository's workflow runs through gh in the repository folder of the board
 // config (collector.repoPath), at most every 30 minutes for today and until read after the day ended for yesterday (the days read last are
@@ -435,6 +447,8 @@ async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPa
   try { e2eW = cfg && e2eWrite(cfg, { stateFile, log, ...e2e }); } catch (e) { log(`e2e failed: ${String(e.message).slice(0, 80)}`); }
   let lookW = null;
   try { lookW = cfg && lookWrite(cfg, { log }); } catch (e) { log(`look failed: ${String(e.message).slice(0, 80)}`); }
+  let reviewersW = null;
+  try { reviewersW = cfg && reviewersWrite(cfg, { log }); } catch (e) { log(`reviewers failed: ${String(e.message).slice(0, 80)}`); }
   // #C1006: each scheduled task's chosen model (board config) against the model its last run used (the app's session files). A failure is logged and
   // the store keeps its last reading, which the page shows as old after 36 h.
   let schedW = null;
@@ -442,7 +456,7 @@ async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPa
   // #C997: the settings this run used and the ones it ignored, for the Worker and the page header.
   let knobsW = null;
   try { knobsW = cfg && knobsWrite(cfg, { log }); } catch (e) { log(`knobs failed: ${String(e.message).slice(0, 80)}`); }
-  const late = [lookW, knobsW, schedW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
+  const late = [lookW, knobsW, reviewersW, schedW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
   if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log, deadline: t0 + (limitSec - LATE_TAIL_SEC) * 1000 }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
   return finish(done);
 }

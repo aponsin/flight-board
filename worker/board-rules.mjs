@@ -630,6 +630,15 @@ export function e2eWake({ now, value, readAt, staleMs = STALE_AFTER_MS }) {
 }
 
 // Evidence: one lit phase per card, and only the probe writes it.
+// #C1100: the shape of the `reviewers` evidence; reviewerOf reads it as collector/store-dispatch.mjs's reviewerFor does (this file imports nothing of the collector: a test holds the two equal).
+export const reviewersShape = (v) => !!v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 1 && !!v.reviewers && typeof v.reviewers === "object" && !Array.isArray(v.reviewers)
+  && Object.keys(v.reviewers).length <= 20 && Object.entries(v.reviewers).every(([k, r]) => /^[A-Za-z0-9._-]{1,40}$/.test(k) && typeof r === "string" && /^[A-Za-z0-9 _-]{1,24}$/.test(r));
+export function reviewerOf(card, reviewers) {
+  if (!reviewers || typeof reviewers !== "object" || Array.isArray(reviewers)) return undefined;
+  const key = !card?.repo || card.repo === "flight-board" || card.repo === "board" ? "flight-board" : card.repo;
+  const role = Object.hasOwn(reviewers, key) ? reviewers[key] : undefined;
+  return typeof role === "string" && /^[A-Za-z0-9 _-]{1,24}$/.test(role) ? role : undefined;
+}
 export function evidenceRefusal(key, value, who, track) {
   if (who !== "probe") return refuse("only-probe-writes-status", `${who ?? "unknown"} cannot write evidence`);
   if (typeof key !== "string" || !/^[a-z][a-z0-9]*(\.[A-Za-z0-9._-]+)?$/.test(key)) return refuse("evidence-key", String(key));
@@ -643,6 +652,8 @@ export function evidenceRefusal(key, value, who, track) {
   if (key === "knobs" && !knobsShape(value)) return refuse("knobs-shape", "knobs is { values: { setting: number }, ignored: [up to 40 of { key, why }] }");
   // #C956: the team's visual lanes, from the board config: { visualLanes: [role names], up to 20 }.
   if (key === "look" && !(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((k) => k === "visualLanes") && Array.isArray(value.visualLanes) && value.visualLanes.length <= 20 && value.visualLanes.every((r) => typeof r === "string" && LANE_NAME.test(r)))) return refuse("look-shape", "look is { visualLanes: [up to 20 role names] }");
+  // #C1100: the config's collector.reviewers, { reviewers: { repository word: role name }, up to 20 }, for the stall line's reviewer.
+  if (key === "reviewers" && !reviewersShape(value)) return refuse("reviewers-shape", "reviewers is { reviewers: { repository word: role name, up to 20 } }");
   if (key.startsWith("cards.")) {
     const lit = value?.lit;
     if (!Array.isArray(lit) || lit.length !== 1) return refuse("one-lit-phase", `${key} has ${Array.isArray(lit) ? lit.length : 0} lit phases`);
@@ -821,7 +832,7 @@ export function landedUnbuilt({ now, cards, evidence, installStart }) {
 // during and after it, and one that was not does not turn late because of it. No outages: plain elapsed time, as before.
 export const outageOverlap = (from, to, outages) => (Array.isArray(outages) ? outages : []).reduce((sum, o) => (Number.isFinite(o?.start) && Number.isFinite(o?.end) ? sum + Math.max(0, Math.min(o.end, to) - Math.max(o.start, from)) : sum), 0);
 export const waited = (from, now, outages) => now - from - outageOverlap(from, now, outages);
-export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [] }) {
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [], reviewers }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
@@ -873,7 +884,9 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     // a review a numbered checker holds a claim on (claims: Map card id -> the claim's checker, from the store's review_claims) is that session's wait,
     // so the idle test and the line name it, not the bare role. A claim whose name is not a Checker role is ignored.
     const claimed = phase === "checker" && !behind && claims instanceof Map ? claims.get(c.id) : undefined;
-    const role = behind ? c.owner_role : typeof claimed === "string" && /^Checker( [0-9]{1,3})?$/.test(claimed) ? claimed : PHASE_LANES[phase] ?? c.owner_role;
+    // #C1100: the checker phase's reviewer is the config's collector.reviewers entry for the card's repository, as the dispatch wakes it (#C1098); a claim still names its own checker first.
+    const reviewer = phase === "checker" && !behind ? reviewerOf(c, reviewers) : undefined;
+    const role = behind ? c.owner_role : typeof claimed === "string" && /^Checker( [0-9]{1,3})?$/.test(claimed) ? claimed : reviewer ?? PHASE_LANES[phase] ?? c.owner_role;
     if (typeof role !== "string" || !/^[A-Za-z0-9 _-]{1,24}$/.test(role)) continue;
     const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`);
     const at = behind ? `#C${c.num} signed but behind main${/^[0-9a-f]{12}$/.test(String(v.headSha12)) ? " " + v.headSha12 : ""}, waits at ${role} 15 min` : `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} 15 min`;
