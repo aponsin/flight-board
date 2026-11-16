@@ -8,7 +8,9 @@
 // Only the tool's answer is cut here. readView itself, which the page, the probe and the dispatch read, is not touched. Pure.
 
 const open = (c) => !c.done_at && !c.dropped;
-const openAsk = (a) => !a.closed_at && !a.withdrawn_at;
+// #C1101: a withdrawn approval has its answer cleared and waits for the owner's Approve again, so it is still open: the pickup digest has counted it as open since
+// #C826 W1 (and so does the dispatch, collector/store-dispatch.mjs), and a role's answer here must list it too.
+const openAsk = (a) => !a.closed_at;
 
 const head = (view) => ({ tag: view.tag, now: view.now, live: view.live, probe: view.probe, wakeState: view.wakeState });
 
