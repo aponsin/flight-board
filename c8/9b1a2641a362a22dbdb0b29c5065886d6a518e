@@ -1,0 +1,1 @@
+PASS Quick at c15d21cb (Checker 2, #C1089 v4): pure rebase of v3 a76e0dfe onto main cf95c586, range-diff all =. Suite on the tip 2492 pass, 0 fail. v3 review stands (mutations 12/13) (commit c89b1a26 of stack tip c15d21cb)
