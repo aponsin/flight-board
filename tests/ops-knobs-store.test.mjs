@@ -28,10 +28,22 @@ test("a posted setting moves both edges: past 120 s the probe is silent and Live
   assert.equal(v.live.state, "stale");
 });
 
-test("a posted value out of its bounds is never used: the default edges apply", async () => {
+test("a posted value out of its bounds is refused: the store never holds one (Security's LOW on #C997), and the default edges stay", async () => {
   const db = await store();
-  assert.equal((await writeEvidence(db, NOW - 4 * M, "probe", "knobs", { values: { probeSilentSec: 1, staleAfterSec: 1 }, ignored: [] })).ok, true);
+  for (const values of [{ probeSilentSec: 1 }, { staleAfterSec: 1e9 }, { probeSilentSec: 119 }, { staleAfterSec: 1801 }]) {
+    const r = await writeEvidence(db, NOW - 4 * M, "probe", "knobs", { values, ignored: [] });
+    assert.equal(r.ok, false, JSON.stringify(values));
+    assert.equal(r.refused?.rule, "knobs-shape");
+  }
   const v = await readView(db, NOW);
   assert.equal(v.probe.state, "ok");
   assert.equal(v.live.state, "live");
+  assert.equal((await writeEvidence(db, NOW - 4 * M, "probe", "knobs", { values: { probeSilentSec: 120, staleAfterSec: 1800 }, ignored: [] })).ok, true, "the bounds themselves are allowed");
+});
+
+test("the page reads a posted setting through the same bounds as the Worker", async () => {
+  const { pageHtml } = await import("../worker/page.mjs");
+  const src = pageHtml({ version: "v" });
+  assert.match(src, /const KNOB_BOUNDS = \{.*"staleAfterSec":\{"min":120,"max":1800,"default":300\}/);
+  assert.match(src, /n >= b\.min && n <= b\.max \? n \* 1000 : b\.default \* 1000/);
 });
