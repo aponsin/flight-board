@@ -1,7 +1,7 @@
 // The phone push's store side (#C904): the owner's subscriptions, and the cron run that sends what is due (push-rules.mjs).
 // Only the owner adds or removes a subscription (the Worker's routes check the role); the cron runs with no identity at all.
 import { endpointAllowed, b64u, sendPush, vapidJwk, publicPoint } from "./web-push.mjs";
-import { pushesDue } from "./push-rules.mjs";
+import { pushesDue, pushLimits } from "./push-rules.mjs";
 
 export const MAX_SUBSCRIPTIONS = 5;
 // #C922 (Checker's LOW1 on #C904): a device that fails this many sends in a row without a 404 or 410 (a 403 after the key
@@ -64,12 +64,16 @@ export async function pushRun(db, now, env, fetchFn = fetch) {
   const ships = (await db.prepare("SELECT version, shipped_at, acked_at FROM ships WHERE acked_at IS NULL").all()).results;
   const sent = new Set((await db.prepare("SELECT kind, ref FROM push_sent").all()).results.map((r) => `${r.kind}:${r.ref}`));
   // #C1016: the newest evidence write that is not a run report (key run.*) is the probe's heartbeat, as the page's silent chip reads it.
-  const lastEvidenceAt = (await db.prepare("SELECT MAX(read_at) AS t FROM evidence WHERE key NOT LIKE 'run.%'").first())?.t ?? null;
+  // A session's weekly-usage post (key usage.week, the week_usage door tool) is no heartbeat either (#C990, Checker 2's F1): it would hide a silent probe from the phone.
+  const lastEvidenceAt = (await db.prepare("SELECT MAX(read_at) AS t FROM evidence WHERE key NOT LIKE 'run.%' AND key <> 'usage.week'").first())?.t ?? null;
+  // #C1106: the posted settings of the push rules (a missing or out-of-bounds one is its default).
+  let knobsRow = null; try { const r = await db.prepare("SELECT value FROM evidence WHERE key = 'knobs'").first(); knobsRow = r ? JSON.parse(r.value) : null; } catch { knobsRow = null; }
+  const lim = pushLimits(knobsRow);
   // #C1005: the probe's stuck reading (evidence key "stuck"), only while it is fresh: an old one is a silent probe, which has its own push.
   const stuckRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = 'stuck'").first();
   let stuck = null;
   if (stuckRow && now - stuckRow.read_at <= STUCK_FRESH_MS) { try { stuck = JSON.parse(stuckRow.value); } catch { stuck = null; } }
-  const due = pushesDue({ asks, ships, sent, now, deploy: env.BUILD_SHA, lastEvidenceAt, stuck }); // #C968: "board deployed <short sha>", once per deployed commit
+  const due = pushesDue({ asks, ships, sent, now, deploy: env.BUILD_SHA, lastEvidenceAt, stuck, lim }); // #C968: "board deployed <short sha>", once per deployed commit
   if (!due.payload) { await record(db, now, "nothing due", false); return { ok: true, sent: 0 }; }
   const subs = (await db.prepare("SELECT endpoint, p256dh, auth FROM push_subscriptions").all()).results;
   let delivered = 0, gone = 0, failed = 0;

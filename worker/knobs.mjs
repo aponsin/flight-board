@@ -28,6 +28,16 @@ export const KNOBS = {
   askStaleSec: { default: 180, min: 60, max: 1800, label: "the Manager chip is red when the probe has not asked the store for this long (s)" },
   // The share of the week at which the idle-agent stall lines are held and Manager gets one line (the Worker's #C1078 hold); the dispatch's own ceiling for new build work is collector.quotaCeilingPct.
   quotaOutPct: { default: 98, min: 50, max: 100, label: "at this share of the week's quota the idle-agent stall lines are held until the reset (%)" },
+  // What the board says to Manager and pushes to the owner's phone, and when (worker/push-rules.mjs). The nudge to Manager stays under the owner's push.
+  managerNudgeSec: { default: 600, min: 120, max: 3600, under: "ownerPushSec", label: "an ask the owner has not answered wakes Manager after this long (s)" },
+  ownerPushSec: { default: 1800, min: 300, max: 14400, label: "an ask the owner has not answered goes to the owner's phone after this long (s)" },
+  ownerWordSec: { default: 600, min: 120, max: 3600, label: "a thread ending on the owner's word wakes Manager after this long (s)" },
+  ownerWordRepeatSec: { default: 1800, min: 300, max: 14400, label: "...and again this often at first (s)" },
+  ownerWordSlowRepeatSec: { default: 10800, min: 1800, max: 86400, label: "...then this often after four reminders (s)" },
+  ownerWordWindowSec: { default: 604800, min: 86400, max: 2592000, label: "only owner words newer than this are read (s)" },
+  promptSec: { default: 1800, min: 300, max: 14400, label: "a role stopped on a prompt for the owner wakes Manager and the phone after this long (s)" },
+  silentPushSec: { default: 900, min: 300, max: 7200, label: "the phone is told the Mac may be down after this long without a post (s)" },
+  shipWindowSec: { default: 604800, min: 86400, max: 2592000, label: "a ship is pushed only while it is newer than this and unacknowledged (s)" },
   // Not settings yet (they stay on the lint baseline): gate/reset.mjs EVIDENCE_STALE_MS (no card shows a commit for 10 min; the file is pinned by the owner's
   // install, so changing it needs an owner pack, and it is NOT the page's probe edge staleAfterSec) and collector/store-dispatch.mjs AGENTS_FRESH_MS.
 };

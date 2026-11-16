@@ -7,6 +7,8 @@ import { createCard, updateCard, createAsk, answerAsk, writeEvidence, writeWeekU
 import { beat } from "./helpers/beating-store.mjs";
 import { resolveKnobs, KNOBS } from "../worker/knobs.mjs";
 import { shouldSend, wakeLimits } from "../worker/wake-rules.mjs";
+import { pushLimits } from "../worker/push-rules.mjs";
+import { pushRun } from "../worker/push-store.mjs";
 import { minWords, stallMsOf, shipSlowMsOf, STALL_AFTER_MS, SHIP_SLOW_MS, heldWakes, HOLD_NO_END_AFTER_MS } from "../worker/board-rules.mjs";
 
 const M = 60_000, T = 1_800_000_000_000;
@@ -239,6 +241,67 @@ test("through the store: a posted quotaOutPct moves the share at which the idle-
   assert.match(held[0].reason, /^The week's quota is used up \(90% or more\): idle-agent stall lines are held until it resets at /);
   const still = await run({ quotaOutPct: 95 }, 92);
   assert.match(still[0].reason, /^Boardsmith idle since/, "posted 95: 92 is under it");
+});
+
+// Slice six: what the board says to Manager and pushes to the owner's phone (worker/push-rules.mjs).
+const decisionAsk = { type: "Decision", title: "Pick", asked_by: "Manager", question: "A or B?", options: ["A", "B"], recommended: "A" };
+
+test("the push limits are the old numbers by default; a nudge to Manager must stay under the owner's push", () => {
+  assert.deepEqual(pushLimits(null), { nudgeMin: 10, pushMin: 30, wordMin: 10, wordRepeatMin: 30, wordSlowRepeatMin: 180, wordDays: 7, promptMin: 30, silentMin: 15, shipDays: 7 });
+  assert.equal(pushLimits({ values: { ownerPushSec: 900 } }).pushMin, 15);
+  assert.equal(pushLimits({ values: { ownerPushSec: 1 } }).pushMin, 30, "out of bounds: the default");
+  const r = resolveKnobs({ managerNudgeSec: 2000, ownerPushSec: 1800 });
+  assert.deepEqual(r.ignored, [{ key: "managerNudgeSec", why: "not under ownerPushSec" }]);
+  assert.ok(r.values.managerNudgeSec < r.values.ownerPushSec);
+  assert.deepEqual(resolveKnobs({ ownerPushSec: 300 }).ignored, [], "a lowered push moves an unwritten nudge quietly");
+  assert.ok(resolveKnobs({ ownerPushSec: 300 }).values.managerNudgeSec < 300);
+});
+
+test("through the store: a posted managerNudgeSec moves how soon an unanswered ask wakes Manager, and the line says it", async () => {
+  const run = async (values) => {
+    const db = makeDb();
+    if (values) await postKnobs(db, values);
+    const a = await createAsk(db, T, { ...decisionAsk });
+    assert.equal(a.ok, true);
+    await beat(db, T + 6 * M);
+    await wakeAsk(db, T + 6 * M);
+    return (await takeInbox(db, T + 6 * M + 1000)).stalls.map((s) => s.reason).filter((r) => /has waited/.test(r));
+  };
+  assert.equal((await run()).length, 0, "default 10 min: not at 6");
+  const posted = await run({ managerNudgeSec: 300 });
+  assert.equal(posted.length, 1, "posted 5 min: at 6");
+  assert.match(posted[0], /has waited 5 min for the owner: .* at 30 min it goes to the owner's phone/);
+});
+
+test("through the store: a posted ownerWordSec moves how soon a thread ending on the owner's word wakes Manager, in its words", async () => {
+  const run = async (values) => {
+    const db = makeDb();
+    if (values) await postKnobs(db, values);
+    await createCard(db, T, "Manager", { id: "c1", title: "C", owner_role: "Boardsmith" });
+    await postMessage(db, T + M, "owner", { thread_id: "c1", body: "please change the heading to something clearer" });
+    await beat(db, T + 6 * M);
+    await wakeAsk(db, T + 6 * M);
+    return (await takeInbox(db, T + 6 * M + 1000)).stalls.map((s) => s.reason).filter((r) => /ends on the owner's word/.test(r));
+  };
+  assert.equal((await run()).length, 0, "default 10 min: not at 5 min old");
+  const posted = await run({ ownerWordSec: 240 });
+  assert.equal(posted.length, 1, "posted 4 min: at 5 min old");
+  assert.match(posted[0], /unanswered for 4\+ min/);
+});
+
+test("through the store: the phone push follows ownerPushSec, and a session's usage post does not hide a silent probe from it", async () => {
+  const env = { PUSH_VAPID_JWK: JSON.stringify({ ...(await crypto.subtle.exportKey("jwk", (await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign"])).privateKey)), sub: "https://board.example.invalid" }) };
+  const pushed = async (db, now) => (await pushRun(db, now, env)) && (await db.prepare("SELECT kind, ref FROM push_sent").all()).results.map((r) => `${r.kind}:${r.ref}`);
+  const mk = async (values) => { const db = makeDb(); if (values) await postKnobs(db, values); const a = await createAsk(db, T, { ...decisionAsk }); return { db, id: a.id }; };
+  const d = await mk();
+  assert.deepEqual((await pushed(d.db, T + 20 * M)).filter((r) => r.startsWith("ask:")), [], "default 30 min: nothing at 20");
+  const p = await mk({ ownerPushSec: 900 });
+  assert.deepEqual((await pushed(p.db, T + 20 * M)).filter((r) => r.startsWith("ask:")), [`ask:${p.id}`], "posted 15 min: pushed at 20");
+  // F1 on the push: the probe's last post was at T; a session's weekly-usage post at T + 20 min is not the probe.
+  const s = makeDb();
+  await postKnobs(s, { shipWindowSec: 604800 });
+  await writeWeekUsage(s, T + 20 * M, "Manager", { percent: 40, resets_at: new Date(T + 5 * 24 * 60 * M).toISOString() });
+  assert.ok((await pushed(s, T + 21 * M)).some((r) => r === `ship:silent:${T}`), "silent since the probe's last post");
 });
 
 test("through the store: a posted autoCloseSec moves the board's close of an answered Decision", async () => {

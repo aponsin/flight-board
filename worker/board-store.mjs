@@ -8,7 +8,7 @@ import { readUsage } from "./compat-usage.mjs";
 import { mtDayTime } from "./team-time.mjs";
 import { readThreads } from "./compat-threads.mjs";
 import { KNOBS, knobFrom } from "./knobs.mjs";
-import { askWakes, promiseWakes, promptWakes, watchWakes, WATCH_WAKE_PREFIX, ownerWordWakes, OWNER_WORD_DAYS } from "./push-rules.mjs";
+import { askWakes, promiseWakes, promptWakes, watchWakes, WATCH_WAKE_PREFIX, ownerWordWakes, pushLimits } from "./push-rules.mjs";
 import { weekUsageValue, sessionWeek, WEEK_USAGE_KEY } from "../collector/week-usage.mjs";
 
 // #C997: the setting probeSilentSec (worker/knobs.mjs); this is its default.
@@ -499,6 +499,7 @@ async function syncStalls(db, now) {
   // kept (taken or not) while the spell lasts, so a later sync never tells it again; it goes when the repository's readings are fresh again.
   const knobsNow = await knobsStored(db); // #C1106: the posted settings of the step clocks (a setting that is missing or out of bounds is its default)
   const postedFreshMs = postedFreshMsOf(knobsNow);
+  const pushLim = pushLimits(knobsNow); // #C1106: the push rules settings (the nudge to Manager, the owner-word reminders, the prompt wait)
   const copies = staleCopies({ now, cards, evidence, readAt, staleMs: copyStaleMsOf(knobsNow) });
   const had = new Map((await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE card_id LIKE ?").bind(`${COPY_CARD}%`).all()).results.map((r) => [r.card_id, r.reason]));
   for (const id of had.keys()) if (!copies.some((s) => s.card_id === id)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ?").bind(id).run();
@@ -551,8 +552,8 @@ async function syncStalls(db, now) {
   const installStart = new Map((await db.prepare("SELECT card_id, MAX(at) AS at FROM phase_history WHERE kind = 'start' AND wait = ? GROUP BY card_id").bind(INSTALL_WAIT).all()).results.map((r) => [r.card_id, r.at]));
   const landed = landedUnbuilt({ now, cards, evidence, installStart, unbuiltMs: landedUnbuiltMsOf(knobsNow) });
   // #C1081: threads whose newest message is the owner's (the last OWNER_WORD_DAYS days only), joined to what says whether the thread is still open.
-  const ownerLast = (await db.prepare("SELECT m.thread_id AS thread_id, m.created_at AS at, m.resolved AS resolved, m.body AS body, (SELECT p.body FROM messages p WHERE p.thread_id = m.thread_id AND p.author <> 'owner' AND p.created_at < m.created_at ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS prev_team_body, (m.screenshots IS NOT NULL OR EXISTS (SELECT 1 FROM file_links l WHERE l.ref_kind = 'message' AND l.ref_id = m.id)) AS has_files,a.num AS ask_num, a.closed_at AS ask_closed_at, a.withdrawn_at AS ask_withdrawn_at, c.num AS card_num, c.dropped AS card_dropped, c.done_at AS card_done_at, t.num AS thread_num FROM messages m LEFT JOIN asks a ON a.id = m.thread_id LEFT JOIN cards c ON c.id = m.thread_id LEFT JOIN threads t ON t.id = m.thread_id WHERE m.author = 'owner' AND m.created_at >= ? AND NOT EXISTS (SELECT 1 FROM messages n WHERE n.thread_id = m.thread_id AND (n.created_at > m.created_at OR (n.created_at = m.created_at AND n.id > m.id)))").bind(now - OWNER_WORD_DAYS * 864e5).all()).results;
-  const stalls = [...waits, ...quota.line, ...landed, ...ownerWordWakes({ rows: ownerLast, now }),...heldWakes({ now, cards, endsPassed, holdMs: holdNoEndMsOf(knobsNow) }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...promiseWakes({ asks: openAsks, now }), ...promptWakes({ stuck: stuckNow, now }), ...watchWakes({ watch: watchNow }), ...copyStalls, ...closing];
+  const ownerLast = (await db.prepare("SELECT m.thread_id AS thread_id, m.created_at AS at, m.resolved AS resolved, m.body AS body, (SELECT p.body FROM messages p WHERE p.thread_id = m.thread_id AND p.author <> 'owner' AND p.created_at < m.created_at ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS prev_team_body, (m.screenshots IS NOT NULL OR EXISTS (SELECT 1 FROM file_links l WHERE l.ref_kind = 'message' AND l.ref_id = m.id)) AS has_files,a.num AS ask_num, a.closed_at AS ask_closed_at, a.withdrawn_at AS ask_withdrawn_at, c.num AS card_num, c.dropped AS card_dropped, c.done_at AS card_done_at, t.num AS thread_num FROM messages m LEFT JOIN asks a ON a.id = m.thread_id LEFT JOIN cards c ON c.id = m.thread_id LEFT JOIN threads t ON t.id = m.thread_id WHERE m.author = 'owner' AND m.created_at >= ? AND NOT EXISTS (SELECT 1 FROM messages n WHERE n.thread_id = m.thread_id AND (n.created_at > m.created_at OR (n.created_at = m.created_at AND n.id > m.id)))").bind(now - pushLim.wordDays * 864e5).all()).results;
+  const stalls = [...waits, ...quota.line, ...landed, ...ownerWordWakes({ rows: ownerLast, now, lim: pushLim }),...heldWakes({ now, cards, endsPassed, holdMs: holdNoEndMsOf(knobsNow) }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now, lim: pushLim }), ...promiseWakes({ asks: openAsks, now }), ...promptWakes({ stuck: stuckNow, now, lim: pushLim }), ...watchWakes({ watch: watchNow }), ...copyStalls, ...closing];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // #C1097: the idle-agent stalls that are current (after the quota hold) are kept as taken rows the dispatch reads through the view (agentStallRow, board-rules.mjs);
   // a row whose stall is over goes, so a later spell starts its 30 minutes again.
@@ -567,7 +568,7 @@ async function syncStalls(db, now) {
   const current = new Set(stalls.map((s) => `${s.card_id}|${s.reason}`));
   // #C1005 (Checker 2's F2): at night the prompt rows are held back, not over: an untaken one stays while the role is still stopped, so the first
   // run after 7 am finds it and Manager is told once (a row retired at 10 pm would be ignored by the 7 am insert).
-  for (const s of promptWakes({ stuck: stuckNow, now, byNight: true })) current.add(`${s.card_id}|${s.reason}`);
+  for (const s of promptWakes({ stuck: stuckNow, now, byNight: true, lim: pushLim })) current.add(`${s.card_id}|${s.reason}`);
   const pending = (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE taken_at IS NULL").all()).results;
   // #C1005 (Checker 2's F1): a watch line is an event (the app restarted, prompts came in), not a state that can be over, so it stays until Manager
   // takes it, as a ping does: a later reading (the ledger a minute after a restart) must not retire an earlier one unread.
