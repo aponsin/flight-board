@@ -34,14 +34,36 @@ test("a card in rework with no reason keeps its own line even with a fresh note"
   assert.deepEqual(slow({ next_note: "fixing", moved_at: T - MIN, rework_reason: "review findings" }, undefined, rd("ship", { rework: true })), [], "the reason given and a note just written (#C1087): no stall");
 });
 
-test("a card whose owner is working a different card is queued behind it, not slow; on this card, idle or unread, it is slow", () => {
-  assert.deepEqual(slow({}, { Boardsmith: { state: "working", card: "other-card" } }), []);
-  assert.deepEqual(slow({}, { Boardsmith: { state: "working", card: "c" } }), [slowLine(1090)], "working this very card");
-  assert.deepEqual(slow({}, { Boardsmith: { state: "idle", card: "other-card" } }), [slowLine(1090)], "idle: nobody is on another card");
-  assert.deepEqual(slow({}, { Boardsmith: { state: "working" } }), [slowLine(1090)], "working, no card named");
-  assert.deepEqual(slow({}, { Builder: { state: "working", card: "other-card" } }), [slowLine(1090)], "another role's work does not queue it");
-  assert.deepEqual(slow({}, {}), [slowLine(1090)]);
-  assert.deepEqual(slow({}, null), [slowLine(1090)]);
+// The same card at another phase: 40 min in it, the phase's usual time 10 min (so the limit is 20 min; ship's is its own).
+const slowIn = (phase, fields = {}, agents, ev = rd(phase)) => slowWakes({ now: T, cards: [{ ...base, ...fields }], evidence: { c: ev }, openAskCards: new Set(), phaseStart: new Map([[`c|${phase}`, T - 40 * MIN]]), medians: { [phase]: 10 * MIN }, endsPassed: new Set(), agents }).map((s) => s.reason);
+
+test("a card in build whose owner is working a different card is queued behind it, not slow; on this card, idle or unread, it is slow", () => {
+  const b = (agents, fields) => slowIn("build", fields, agents);
+  assert.deepEqual(b({ Boardsmith: { state: "working", card: "other-card" } }), []);
+  assert.deepEqual(b({ Boardsmith: { state: "working", card: "c" } }), [slowLine(1090)], "working this very card");
+  assert.deepEqual(b({ Boardsmith: { state: "idle", card: "other-card" } }), [slowLine(1090)], "idle: nobody is on another card");
+  assert.deepEqual(b({ Boardsmith: { state: "working" } }), [slowLine(1090)], "working, no card named");
+  assert.deepEqual(b({ Builder: { state: "working", card: "other-card" } }), [slowLine(1090)], "another role's work does not queue it");
+  assert.deepEqual(b({}), [slowLine(1090)]);
+  assert.deepEqual(b(null), [slowLine(1090)]);
+});
+
+// Checker 2's M1 on e78bf708: at ship and at a review the card waits on Release or the reviewer, whatever the owner is doing, so the owner's other card hides nothing there.
+test("where the owner does not do the work (ship, checker, security, language, design) the slow line fires whatever the owner is working", () => {
+  const busy = { Boardsmith: { state: "working", card: "other-card" } }, idle = { Boardsmith: { state: "idle", card: "other-card" } };
+  for (const phase of ["checker", "security", "language", "design"]) {
+    assert.deepEqual(slowIn(phase, {}, busy), [slowLine(1090)], `${phase}: owner busy elsewhere`);
+    assert.deepEqual(slowIn(phase, {}, idle), [slowLine(1090)], `${phase}: owner idle`);
+  }
+  assert.deepEqual(slow({}, busy), [slowLine(1090)], "ship: owner busy elsewhere");
+  assert.deepEqual(slow({}, idle), [slowLine(1090)], "ship: owner idle");
+});
+
+test("a card sent back to its owner with findings is the owner's work again: queued behind the owner's other card, not slow", () => {
+  const busy = { Boardsmith: { state: "working", card: "other-card" } };
+  assert.deepEqual(slowIn("checker", {}, busy, rd("checker", { findings: ["checker"] })), [], "findings at checker, the owner busy elsewhere");
+  assert.deepEqual(slowIn("checker", {}, { Boardsmith: { state: "idle" } }, rd("checker", { findings: ["checker"] })), [slowLine(1090)], "findings, the owner idle");
+  assert.deepEqual(slowIn("checker", {}, busy, rd("checker", { signed: ["checker"] })), [slowLine(1090)], "a signed card is not sent back");
 });
 
 // The store's own wiring: syncStalls hands slowWakes the card's next_note and moved_at and the roster reading.
@@ -61,9 +83,10 @@ test("the store: a slow card names Manager; a note written a minute ago ends it;
   assert.equal((await slowRows(async (db) => { assert.ok((await updateCard(db, T + MIN, "Boardsmith", { id: "c", next_note: "pack in flight" })).ok); }, T + MIN + NOTE_FRESH_MS + SHIP_SLOW_MS)).length, 1, "the note is over an hour old");
 });
 
-test("the store: the owner working another card (the roster reading) ends the stall; the roster naming this card does not", async () => {
+// The store's card is at ship (Release's step, not the owner's work), so the owner's other card ends nothing there, whichever card the roster names (Checker 2's M1 on e78bf708).
+test("the store: a card at ship is slow whatever card its owner is working (the roster reading)", async () => {
   // The roster is a probe post at LATE - 1 s: a heartbeat just before it, else the gap since the card's reading is recorded as an outage that pauses the clock (#C990).
   const roster = (card) => async (db) => { await beat(db, LATE - 2000); await writeEvidence(db, LATE - 1000, "probe", "agents", { Boardsmith: { state: "working", card, lastActivityAt: LATE - 1000, since: LATE - 5 * MIN } }); };
-  assert.deepEqual(await slowRows(roster("other-card"), LATE), []);
+  assert.equal((await slowRows(roster("other-card"), LATE)).length, 1, "the owner on another card: still slow at ship");
   assert.equal((await slowRows(roster("c"), LATE)).length, 1);
 });
