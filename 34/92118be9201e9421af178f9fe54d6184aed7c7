@@ -1,0 +1,1 @@
+SECURE #C1083 one-ack-word-list 3492118b: constant word lists only (page ACK_WORDS gains closed and done; Worker's OWNER_ACK_EXTRA merged into OWNER_ACK_WORDS). No sink, query, input, route or secret. line from 4e16341ccd1b7992aa996c899b2ee19d91464e15 (Security)
