@@ -159,6 +159,8 @@ export const DISPATCH_STEPS = {
   rework: "came back with findings; fix them and push the new commit (the push hands it back to review)",
   // #C981: the store refuses the card's other writes until a rework reason is attached; nobody had been asked for it.
   reason: "is in rework with no reason, so the store refuses its other writes; attach a rework_reason with card_update (bug found in test, review findings, design change, security finding or owner change)",
+  // #C1114: the card stepped back from your review with no FINDINGS note and no reason; the store holds it where it was until one of the two is on the board.
+  unexplained: "stepped back from review with no FINDINGS note on it and no reason: if you found something, write the FINDINGS note on that commit now (it fills the counters); if not, say so on the card's thread",
   review: "is pushed; review it (your verdict is the git note on that commit)",
   land: "is signed; land it (the notes on that exact commit, a clean dry run, the owner's standing go)",
   pair: "is landed and not deployed: build the deploy pair (node scripts/make-pair.mjs <sha> <n>) and, if hooks changed, the pack",

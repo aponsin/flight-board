@@ -72,6 +72,11 @@ export function turnsOf(card, e, ctx = {}) {
   // #C981: a rework the store read with no reason attached (evidence `rework`; the store clears it once a reason is set) is the owner's turn
   // first: until then every other write to the card is refused, so nothing else on it can move.
   if (e?.rework === true && !(typeof card.rework_reason === "string" && card.rework_reason !== "")) return [{ role: card.owner_role, phase: typeof phase === "string" && /^[a-z]{2,16}$/.test(phase) ? phase : "build", step: "reason" }];
+  // #C1114: the Worker holds a step back from a review phase that has no FINDINGS note and no reason as rework "unexplained" (the card stays where it was shown):
+  // the reviewer of that phase is asked to file the finding on this commit, which is what fills the counters. The owner is not woken: there is nothing to fix yet.
+  if (e?.rework === "unexplained" && typeof phase === "string" && phase !== "plan" && phase !== "build" && phase !== "ship" && Object.hasOwn(PHASE_LANES, phase)) {
+    return [{ role: phase === "checker" && typeof ctx.reviewer === "string" ? ctx.reviewer : PHASE_LANES[phase], phase, step: "unexplained", sha, ...where, signed: signedBy }];
+  }
   if (typeof phase !== "string" || phase === "plan" || phase === "build") return [owner];
   // #C852: a review whose note on this commit starts FINDINGS has sent it back: the fix is the owner's turn, and no reviewer is woken to
   // look at a commit already rejected. It is a fact of this sha (evidence.findings), so a new commit clears it without anyone's step.
