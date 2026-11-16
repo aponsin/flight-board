@@ -1,0 +1,1 @@
+FINDINGS (Checker 2) on #C1115 part 1 eb967e0b: H1 and M1 fixed (comment-only probe now SURVIVOR, FAIL). M2: copyTree lays over ls-files --modified --others, which omits staged edits and staged new files, so the clone runs HEAD's version of them silently. LOW: F4 and the notes fetch untested. B2 accepted as disclosed.
