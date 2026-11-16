@@ -1,0 +1,1 @@
+PASS Checker 2: pack-hooks-step-store-only v3 f132e69d7c8dac6748a0606f504d0258576c3e2e, rebase of v2 5f3817fe onto main 3316bb35 (range-diff: all three commits equal; only its own 3 files against main); suite on the new base 2394 pass 0 fail 1 skip; v2 review and mutations stand (commit fe98998c of stack tip f132e69d)
