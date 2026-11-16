@@ -1,0 +1,1 @@
+FINDINGS (Checker 2) on #C1103 v2 a7442d70: M1 test gap: deleting ', rework: c.rework === true' in scripts/group-order-check.mjs outOfOrderPushes passes the full suite (2652). The test checks the queue flag only, never a first push of a rework card. LOW: the fallback to held for an older queue file is untested. Fix logic is right; suite green.
