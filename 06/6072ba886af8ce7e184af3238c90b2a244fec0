@@ -1,0 +1,1 @@
+PASS Full (Checker 2) g13 (#C1093, #C1100, #C1101, #C1094, #C1063): M1 on e78bf708 fixed (the queued-behind rule only at build or rework; repro now fires at ship and checker); suite on tip 2611 pass 0 fail; 25 of 25 targeted mutants killed. LOW L1 (updated_at as the reason's time) and L2 (endClaims on every card write) carried by #C1113 (commit 066072ba of stack tip 066072ba)
