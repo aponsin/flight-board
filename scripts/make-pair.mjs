@@ -11,10 +11,10 @@
 // new secret: it says to check the Worker config and code diff for one.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, posix } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { makePair } from "./pair/make-pair.mjs";
 
 const FULL = /^[0-9a-f]{40}$/;
@@ -120,7 +120,53 @@ export function hooksText(prev, { name, sha, cueSha }) {
   lines[0] = "@@FIRST@@";
   // The pair number only as a whole number: pc2 is not the start of pc26.
   const body = lines.join("\n").replace(/const CUE_SHA = "[0-9a-f]{64}"/, `const CUE_SHA = "${cueSha}"`).split(old).join(sha).split(old.slice(0, 8)).join(sha.slice(0, 8)).split(old.slice(0, 7)).join(sha.slice(0, 7)).replace(new RegExp(`pc${prev.n}(?!\\d)`, "g"), name);
-  return body.replace("@@FIRST@@", `// The hooks step of pair ${name} (pins the Stop hook and the page-publish hook to this main), for flight-board main ${sha}. Made by scripts/make-pair.mjs from board-store-hooks-pc${prev.n}.mjs: only the pin and the pair number changed. Run by the owner in Terminal AFTER the pair's two lines`);
+  return storeOnly(body.replace("@@FIRST@@", `// The hooks step of pair ${name} (pins the Stop hook to this main), for flight-board main ${sha}. Made by scripts/make-pair.mjs from board-store-hooks-pc${prev.n}.mjs: the pin and the pair number changed${/two board entries|publish\.length !== 1/.test(prev.text) ? ", and its read-back now expects the one Stop entry the installer writes (the page-publish entry is retired, #C1054)" : ""}. Run by the owner in Terminal AFTER the pair's two lines`));
+}
+
+// Security's RISKS on pc67 line 3 (11-16): the hooks file is made from the previous pair's, so when scripts/hooks.mjs stopped writing the page-publish entry
+// (#C1054 b1) the copied read-back still required two board entries, and the step would have failed on the owner's Mac and sent them to undo. The old
+// wording is rewritten here, string for string; a text that is already store-only is left as it is (no match, no change).
+export const STORE_ONLY_FIXES = [
+  ["That leaves exactly two board entries,\n//     Stop gate/stop.mjs --store and PreToolUse gate/publish.mjs on the page tools, both from the pinned copy of ", "That leaves exactly one board entry,\n//     Stop gate/stop.mjs --store, from the pinned copy of "],
+  ["exactly two board entries, both from ", "exactly one board entry, from "],
+  ["// Read it back: two board entries from the signed commit,", "// Read it back: one board entry (the Stop hook) from the signed commit,"],
+  ["board.length !== 2 || stop.length !== 1 || publish.length !== 1 ||", "board.length !== 1 || stop.length !== 1 || publish.length !== 0 ||"],
+  ["exactly two board entries (Stop stop.mjs --store, PreToolUse publish.mjs), both from ${SIGNED.slice(0, 8)};", "exactly one board entry (Stop stop.mjs --store; no page-publish entry) from ${SIGNED.slice(0, 8)};"],
+];
+export function storeOnly(text) {
+  let out = text;
+  for (const [from, to] of STORE_ONLY_FIXES) out = out.split(from).join(to);
+  if (/two board entries|publish\.length !== 1/.test(out)) throw new Error("the hooks file still expects two board entries (the page-publish entry): the template's read-back wording is not one this tool knows how to move; fix it by hand and add the wording to STORE_ONLY_FIXES");
+  return out;
+}
+
+// What the hooks step expects of settings.json after the installer ran (its read-back line), and what scripts/hooks.mjs at the pin writes: the two must
+// agree, or the step fails on the owner's Mac after the installer has already written (the pc67 case). The counts are { board, stop, publish }.
+export function hooksExpectation(text) {
+  const m = /board\.length !== (\d+) \|\| stop\.length !== (\d+) \|\| publish\.length !== (\d+)/.exec(String(text));
+  return m ? { board: Number(m[1]), stop: Number(m[2]), publish: Number(m[3]) } : null;
+}
+export function hooksWritten(entries) {
+  const commands = Object.values(entries ?? {}).flatMap((e) => [].concat(e)).flatMap((e) => (e?.hooks ?? []).map((h) => String(h?.command ?? "")));
+  return { board: commands.length, stop: commands.filter((c) => c.includes("/gate/stop.mjs") && c.endsWith("--store")).length, publish: commands.filter((c) => c.includes("/gate/publish.mjs")).length };
+}
+export function checkHooksExpectation(text, entries) {
+  const want = hooksExpectation(text);
+  if (!want) return { ok: true, skipped: true }; // a text with no read-back line (a fixture) has nothing to compare
+  const got = hooksWritten(entries);
+  const same = want.board === got.board && want.stop === got.stop && want.publish === got.publish;
+  return same ? { ok: true } : { ok: false, why: `the hooks step expects ${want.board} board entr${want.board === 1 ? "y" : "ies"} (${want.stop} Stop --store, ${want.publish} publish) after the install, but scripts/hooks.mjs at the pin writes ${got.board} (${got.stop} Stop --store, ${got.publish} publish)` };
+}
+// The entries scripts/hooks.mjs at `sha` writes: that file read from git, run in a child with fixed arguments (it imports only node's own modules).
+export function hookEntriesAt(git, sha) {
+  const r = git("show", `${sha}:scripts/hooks.mjs`);
+  if (r.status !== 0) return null;
+  const dir = mkdtempSync(join(tmpdir(), "make-pair-hooks-"));
+  try {
+    writeFileSync(join(dir, "hooks.mjs"), String(r.stdout));
+    const run = spawnSync(process.execPath, ["--input-type=module", "-e", `import { hookEntries } from ${JSON.stringify(pathToFileURL(join(dir, "hooks.mjs")).href)}; process.stdout.write(JSON.stringify(hookEntries("/pin", "/board.config.json", "/bin/node")));`], { encoding: "utf8", timeout: 20_000 });
+    return run.status === 0 ? JSON.parse(run.stdout) : null;
+  } catch { return null; } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
 // The checks over a git runner git(...args) -> { status, stdout }: the sha is a commit on the fetched origin main. { ok, why }.
@@ -189,7 +235,7 @@ if [ "$(shasum -a 256 ${folder}/board-store-tree-${name}.mjs | cut -c1-64)" = ${
 
 Should print \`TREE OK: board-store-v4 is at ${s7}\`. Undo: \`node ${folder}/board-store-tree-${name}.mjs back\`. It refuses if line 1 has not run.
 ${hooksSha ? `
-## Line 3: hooks (the Stop hook and the page-publish hook, pinned to this main)
+## Line 3: hooks (the Stop hook, pinned to this main)
 
 \`\`\`bash
 if [ "$(shasum -a 256 ${folder}/board-store-hooks-${name}.mjs | cut -c1-64)" = ${hooksSha} ]; then node ${folder}/board-store-hooks-${name}.mjs; else echo 'CHECK FAILED: board-store-hooks-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
@@ -232,6 +278,13 @@ export function makeAll({ repo, sha, n, out, git = (...a) => spawnSync("git", ["
     const cue = git("show", `${sha}:hooks/send-refused-cue.py`);
     if (cue.status !== 0) return { ok: false, why: `hooks/send-refused-cue.py is not in ${sha.slice(0, 8)}: its sha256 is pinned in the hooks step` };
     try { hooks = hooksText(from, { name, sha, cueSha: sha256(cue.stdout) }); } catch (e) { return { ok: false, why: e.message }; }
+    // The step's read-back against what the installer at the pin writes (Security's RISKS on pc67): a disagreement writes nothing.
+    if (hooksExpectation(hooks)) {
+      const entries = hookEntriesAt(git, sha);
+      if (!entries) return { ok: false, why: `scripts/hooks.mjs at ${sha.slice(0, 8)} cannot be read or run, so the hooks step's read-back cannot be checked against it` };
+      const c = checkHooksExpectation(hooks, entries);
+      if (!c.ok) return { ok: false, why: c.why };
+    }
   }
   const hashes = Object.fromEntries(Object.entries(files).map(([f, t]) => [f, sha256(t)]));
   const hooksName = `board-store-hooks-${name}.mjs`;
