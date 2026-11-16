@@ -93,6 +93,7 @@ test("makeAll: an old two-entry template and the repository's one-entry hooks.mj
     const steps = readFileSync(join(w.out, "board-store-pc8-steps.md"), "utf8");
     assert.match(steps, /## Line 3: hooks \(the Stop hook, pinned to this main\)/);
     assert.doesNotMatch(steps, /page-publish hook/);
+    assert.doesNotMatch(steps, /only the pin and the pair number changed/);
   } finally { rmSync(w.dir, { recursive: true, force: true }); }
 });
 
