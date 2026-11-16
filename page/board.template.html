@@ -2016,8 +2016,12 @@ function derivedEta(i,med=state.phaseMed||{},now=Date.now()){
   // starts again when work does (a push gives the card a head, and enrich then drops noWork).
   if(STORE&&i.noWork&&i.phase===BUILD_PHASE)spent[BUILD_PHASE]=0;
   for(let n=idx;n<PHASES.length-1;n++){const k=PHASES[n][0];if(n>idx&&skip.has(k))continue;
-    const m=mz[k];if(m==null)return null;left+=n===idx?Math.max(m-(spent[k]||0),MIN_LEFT):m}
+    const m=mz[k];if(m==null)return null;
+    // #C1115: the reviewer holding this tip said how many mutants it will run: the review takes its median plus count x the seconds one takes (150 s when it gave none).
+    const mx=n===idx&&k==="checker"&&Number.isInteger(i.reviewMutants)&&i.reviewMutants>0?i.reviewMutants*(Number.isInteger(i.mutantSec)&&i.mutantSec>0?i.mutantSec:MUTANT_SEC)*1000:0;
+    left+=n===idx?Math.max(m+mx-(spent[k]||0),MIN_LEFT):m}
   return now+left}
+const MUTANT_SEC=150; // #C1115: the seconds one mutant takes when the claim gives none (75 minutes over 30 mutants, 11-16)
 function cardEta(i){return queueEta(i)??derivedEta(i)??num(i&&i.etaLive)}
 // #C877: what the page shows. On the store a paused or blocked card has no ETA (it read as due, #C728); everywhere else it is cardEta.
 function shownEta(i){return STORE&&i&&(i.status==="paused"||i.status==="blocked")?null:cardEta(i)}

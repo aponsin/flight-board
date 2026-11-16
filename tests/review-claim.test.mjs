@@ -119,7 +119,7 @@ test("the view lists the claims still held and nothing else", async () => {
   assert.deepEqual((await readView(db, T)).reviewClaims, []);
   await claimReview(db, T, "Checker", { sha: S1 }); await claimReview(db, T + 1, "Checker", { sha: S2, checker: "Checker 2", card_id: "a-card" });
   await releaseReview(db, T + 2, "Manager", { sha: S1 });
-  assert.deepEqual((await readView(db, T + 3)).reviewClaims, [{ sha: S2, card_id: "a-card", checker: "Checker 2", claimed_at: T + 1 }]);
+  assert.deepEqual((await readView(db, T + 3)).reviewClaims, [{ sha: S2, card_id: "a-card", checker: "Checker 2", claimed_at: T + 1, mutants: null, mutant_sec: null, progress: null, progress_at: null }]); // #C1115: the optional mutant fields, none given
 });
 
 test("the typed tools: Checker claims and releases through the connector; a non-agent role cannot call them", async () => {

@@ -269,10 +269,41 @@ export function stackSwitchRefusal(b, who) {
 // card the tip belongs to: a re-cut of it keeps the claim of the checker who held the old tip.
 export const CHECKER_NAME = /^Checker(?: [0-9]{1,2})?$/;
 export const REVIEW_SHA = /^[0-9a-f]{40}$/;
+// #C1115 (11-16: G6 was due about 1:20 pm and missed it by more than an hour; Checker 2 ran 30 mutants, each against the whole suite, about 75 minutes the ETA never counted):
+// a review's ETA adds the reviewer's mutants at their measured time (the claim's mutant_sec, the runner's median; 150 s when none is given: 75 min over 30), and a review
+// REVIEW_LATE_MS past that ETA wakes Manager with the reviewer's own progress line. The base is the checker phase's median (30 min when there is none yet).
+export const MUTANTS_MAX = 200, MUTANT_SEC_DEFAULT = 150, REVIEW_LATE_MS = 30 * 60e3, REVIEW_BASE_DEFAULT_MS = 30 * 60e3;
+export const reviewExtraMs = (claim) => (Number.isInteger(claim?.mutants) && claim.mutants > 0 ? claim.mutants * (Number.isInteger(claim.mutant_sec) && claim.mutant_sec > 0 ? claim.mutant_sec : MUTANT_SEC_DEFAULT) * 1000 : 0);
+export const reviewEtaAt = (claim, baseMs) => claim.claimed_at + (Number.isFinite(baseMs) && baseMs > 0 ? baseMs : REVIEW_BASE_DEFAULT_MS) + reviewExtraMs(claim);
+export const REVIEW_LATE_MARK = " min past its ETA";
+// The late-review lines for Manager: every open claim whose card is still waiting at that review (the probe's reading says the checker phase is lit and the tip
+// has no Checker note), whose ETA plus REVIEW_LATE_MS has passed. `claims` are review_claims rows, `evidence` the cards' readings by card id, `medians` the phases' medians.
+export function reviewLateWakes({ now, claims, cards, evidence, medians, outages = [] }) {
+  const out = [], byId = new Map((Array.isArray(cards) ? cards : []).map((c) => [c.id, c]));
+  for (const c of Array.isArray(claims) ? claims : []) {
+    if (!c || c.released_at != null || typeof c.card_id !== "string" || !Number.isFinite(c.claimed_at)) continue;
+    const card = byId.get(c.card_id), e = evidence?.[c.card_id];
+    if (!card || card.dropped || card.done_at || (e?.phase ?? e?.lit?.[0]) !== "checker") continue;
+    const eta = reviewEtaAt(c, medians?.checker), over = waited(eta, now, outages);
+    if (!(now > eta && over >= REVIEW_LATE_MS)) continue;
+    const who = typeof c.checker === "string" && /^Checker( \d{1,3})?$/.test(c.checker) ? c.checker : "the checker";
+    // The words stay the same until the reviewer's progress line changes, so the row (card, reason) is one wake per spell, and a new progress line is a new one.
+    const prog = typeof c.progress === "string" && c.progress.trim() ? c.progress.trim().slice(0, 160) : "no progress line";
+    const n = Number.isInteger(c.mutants) && c.mutants > 0 ? `, ${c.mutants} mutants` : "";
+    out.push({ card_id: c.card_id, num: card.num, reason: `#C${card.num} review by ${who} is over ${REVIEW_LATE_MS / 60e3}${REVIEW_LATE_MARK}${n}: ${prog}` });
+  }
+  return out;
+}
 export function reviewClaimRefusal(b, who, op = "claim") {
   if (who !== "Checker" && who !== "Manager") return refuse("review-claim-role", `${who ?? "unknown"} cannot ${op} a review; only Checker and Manager can`);
-  const allowed = op === "claim" ? ["sha", "checker", "card_id"] : ["sha", "checker"];
+  const allowed = op === "claim" ? ["sha", "checker", "card_id", "mutants", "mutant_sec", "progress"] : ["sha", "checker"];
   if (b === null || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => !allowed.includes(k))) return refuse("review-claim-shape", `a review ${op} is {${allowed.join(", ")}}`);
+  // #C1115: how many mutants the reviewer will run, the seconds each takes (the runner's measured median), and a progress line, all optional.
+  if (op === "claim") {
+    if (b.mutants !== undefined && !(Number.isInteger(b.mutants) && b.mutants >= 0 && b.mutants <= MUTANTS_MAX)) return refuse("review-claim-shape", `mutants is a whole number from 0 to ${MUTANTS_MAX}`);
+    if (b.mutant_sec !== undefined && !(Number.isInteger(b.mutant_sec) && b.mutant_sec >= 1 && b.mutant_sec <= 3600)) return refuse("review-claim-shape", "mutant_sec is the seconds one mutant takes, 1 to 3600");
+    if (b.progress !== undefined && !(typeof b.progress === "string" && b.progress.length <= 160 && !/[\r\n]/.test(b.progress))) return refuse("review-claim-shape", "progress is one line of up to 160 characters");
+  }
   if (typeof b.sha !== "string" || !REVIEW_SHA.test(b.sha)) return refuse("review-claim-shape", "sha is the tip's full 40-character lower-case hex commit");
   if (b.checker !== undefined && (typeof b.checker !== "string" || !CHECKER_NAME.test(b.checker))) return refuse("review-claim-shape", "checker is \"Checker\" or \"Checker <n>\"");
   if (op === "claim") {

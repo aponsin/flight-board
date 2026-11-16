@@ -27,6 +27,8 @@ export const FIXED = {
   LAND_REPORT_FRESH_MS: "how long the land report counts as fresh: lives in the owner-pinned dispatch and must stay over the land job's interval plus limit (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",
   OUTAGE_KEEP_MS: "how long a recorded outage is kept (7 days): a retention bound on the table, not a cadence",
   NOTE_FRESH_MS: "how long a written next_note counts as a card's reason (1 h, #C1093): a reading window on the note, not a cadence; Manager may move it to a setting with #C1113",
+  REVIEW_LATE_MS: "how long a review may run past its ETA before Manager is woken (30 min, #C1115): the owner's own number for a late review, not a cadence; Manager may move it to a setting with #C1113",
+  REVIEW_BASE_DEFAULT_MS: "the checker review's length when no checker has been measured yet (30 min, #C1115): a fallback for the review ETA, replaced by the measured median as soon as there is one",
   MAX_MIN: "a sanity bound",
   STEP_PAST_MS: "write validity of a step's time",
   STEP_FUTURE_MS: "write validity of a step's time",
