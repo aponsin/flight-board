@@ -84,7 +84,10 @@ test("the store: an ANSWERED ask left open on the group's card does not hold it,
     await writeEvidence(db, T, "probe", "cards.c1-one", pushed());
     await ask(db, answered);
   };
-  assert.deepEqual(await storeLines(setup(true)), [], "answered: c2 is still the group's card to build, c3 is withheld");
+  // #C1092: the answered ask holds nothing, so c2 is the group's card the dispatch builds: it is queued and named, and the loose card c3 stays withheld.
+  const answered = await storeLines(setup(true));
+  assert.equal(answered.length, 1, "answered: c2 is queued (the dispatch builds it), c3 is withheld");
+  assert.match(answered[0], /, 1 queued, next #C2$/, "answered: the line names the group's card c2, not the loose card");
   const open = await storeLines(setup(false));
   assert.equal(open.length, 1); assert.match(open[0], /, 1 queued, next #C\d+$/, "unanswered: the ask holds c2, the loose card is the one named");
   assert.match(open[0], /next #C3$/);
