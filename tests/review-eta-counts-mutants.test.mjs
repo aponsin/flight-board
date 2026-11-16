@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { drawPage } from "./helpers/draw-page.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { reviewExtraMs, reviewEtaAt, reviewLateWakes, reviewClaimRefusal, SLOW_ROW_END, REVIEW_LATE_MARK, MUTANT_SEC_DEFAULT, REVIEW_LATE_MS, REVIEW_BASE_DEFAULT_MS } from "../worker/board-rules.mjs";
-import { initiativeDoc } from "../worker/compat-view.mjs";
+import { initiativeDoc, compatView } from "../worker/compat-view.mjs";
 import { createCard, writeEvidence, claimReview, releaseReview, readView } from "../worker/board-store.mjs";
 import { beat, wakeAsk, takeInbox } from "./helpers/beating-store.mjs";
 
@@ -114,6 +114,11 @@ test("the store: a claim keeps its mutants and progress, a repeated claim update
   assert.equal(doc.reviewMutants, 30);
   assert.equal(doc.mutantSec, 120);
   assert.equal(initiativeDoc(c, view.evidence["cards.c"], undefined).reviewMutants, undefined);
+  // Checker 2's M3: the page gets the count through compatView, which looks the claim up by card id (dropping that argument left every test green)
+  const compat = compatView(view).collections.initiatives.find((i) => i.reviewMutants === 30);
+  assert.ok(compat, "compatView carries the claim's mutant count to the card");
+  assert.equal(compat.mutantSec, 120);
+  assert.equal(compatView({ ...view, reviewClaims: [] }).collections.initiatives.filter((i) => i.reviewMutants !== undefined).length, 0, "no claim, no count");
   // a repeat with only the count keeps the progress line and its time
   assert.equal((await claimReview(db, T + 21 * MIN + 30e3, "Checker", { sha: SHA, checker: "Checker 2", mutants: 12 })).ok, true);
   r = await claimRow(db);
