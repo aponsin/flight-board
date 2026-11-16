@@ -42,7 +42,7 @@ export function resolveKnobs(raw) {
 // The shape the Worker accepts under the evidence key `knobs`: { values: {known key: finite number}, ignored: [{ key, why }] up to 40 }.
 const WHY = /^[a-z][a-z0-9 _-]{0,40}$/i, KEY = /^[A-Za-z][A-Za-z0-9]{0,40}$/;
 export const knobsShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => k === "values" || k === "ignored")
-  && v.values !== null && typeof v.values === "object" && !Array.isArray(v.values) && Object.entries(v.values).every(([k, n]) => Object.hasOwn(KNOBS, k) && Number.isFinite(n))
+  && v.values !== null && typeof v.values === "object" && !Array.isArray(v.values) && Object.entries(v.values).every(([k, n]) => Object.hasOwn(KNOBS, k) && Number.isFinite(n) && n >= KNOBS[k].min && n <= KNOBS[k].max)
   && Array.isArray(v.ignored) && v.ignored.length <= 40 && v.ignored.every((i) => i !== null && typeof i === "object" && typeof i.key === "string" && KEY.test(i.key) && typeof i.why === "string" && WHY.test(i.why));
 
 // The value of a setting from a stored reading (the Worker side): the reading's number when it is known and valid, else the default.

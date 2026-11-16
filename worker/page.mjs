@@ -4,6 +4,10 @@
 // the readings' own times. Every tile shows its source and age. Board text comes from agents: the client writes it with
 // textContent / createTextNode only, never innerHTML (the header's markup is built from our own functions with escaping).
 import { headerHtml, liveChip, ageText, HEADER_CSS } from "./page-header.mjs";
+import { KNOBS } from "./knobs.mjs";
+
+// #C1106 (Security's LOW on #C997): the page reads a posted setting through the same bounds as the Worker (worker/knobs.mjs), so a value out of range never reaches it.
+const KNOB_BOUNDS = JSON.stringify(Object.fromEntries(Object.entries(KNOBS).map(([k, v]) => [k, { min: v.min, max: v.max, default: v.default }])));
 
 const POLL_MS = 2500;
 
@@ -40,6 +44,7 @@ ${HEADER_CSS}`;
 
 // The client script. The header functions are embedded from the module so the page and the tests run the same code.
 const CLIENT = `
+const KNOB_BOUNDS = ${KNOB_BOUNDS};
 ${headerHtml.toString()}
 ${liveChip.toString()}
 ${openAsks.toString()}
@@ -83,7 +88,7 @@ function draw() {
   const sinceRead = Date.now() - fetchedAt;
   // Live now: re-aged on the client from the probe's own reading time, so it goes stale on screen without a new fetch.
   // #C997: the settings the probe resolved from the board config (evidence key knobs); a missing or odd value keeps the default of 5 minutes.
-  const kv = view.evidence.knobs && view.evidence.knobs.value, kms = (k) => { const n = kv && kv.values && kv.values[k]; return typeof n === "number" && n >= 60 ? n * 1000 : 300000; };
+  const kv = view.evidence.knobs && view.evidence.knobs.value, kms = (k) => { const n = kv && kv.values && kv.values[k], b = KNOB_BOUNDS[k]; return typeof n === "number" && n >= b.min && n <= b.max ? n * 1000 : b.default * 1000; };
   const staleMs = kms("staleAfterSec"), silentMs = kms("probeSilentSec"), ignored = kv && Array.isArray(kv.ignored) ? kv.ignored : [];
   const lr = view.evidence.live ? { version: view.evidence.live.value.version, readAt: view.evidence.live.readAt } : null;
   const live = lr ? { state: Date.now() - lr.readAt > staleMs ? "stale" : "live", version: lr.version, age: Date.now() - lr.readAt } : { state: "unknown" };
