@@ -1,0 +1,1 @@
+SECURE #C1087 card-needs-summary-v3 d2291318: rebase of signed 7695e5c9 onto 7c7d99cb (Worker diff identical, blobs b35c8afc and 90a0a9b9) plus a test-only commit (tests/card-needs-summary.test.mjs). line from 7c7d99cb0906295197725098d14a7603920de035 (Security)
