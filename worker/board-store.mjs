@@ -478,7 +478,9 @@ async function syncStalls(db, now) {
   const medians = phaseMedians((await db.prepare("SELECT id, card_id, phase, kind, at FROM phase_history WHERE wait IS NULL AND kind IN ('start', 'end') ORDER BY id DESC LIMIT 5000").all()).results);
   // A card already named by a "waits at" line this round is not named twice: that line is its one stall.
   const groupOrder = (await db.prepare("SELECT batch, pos FROM group_order").all()).results ?? [];
-  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder });
+  // #C1082: the board repository's stack switch, as the dispatch reads it, for the open-group rule behind the "next #C.." of the idle-agent line.
+  const stackOn = (await db.prepare("SELECT stack FROM stack_switch WHERE repo = 'board'").first())?.stack === 1;
+  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, stackOn });
   // #C1078: with the week's quota used up (the session's fresh reading), the idle-agent stall lines are held until the reset and one line goes to Manager.
   const weekRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = ?").bind(WEEK_USAGE_KEY).first();
   let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
