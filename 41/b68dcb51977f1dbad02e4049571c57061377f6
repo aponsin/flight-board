@@ -1,0 +1,1 @@
+SECURE #C1080 dispatch-respects-open-group-v2 41b68dcb: per-commit note for the pinned-file gate; reviewed as part of the line 9fba7b48c819744331d5b0b4e291dbfa4dea585f..3316bb35c734b221080908795e07c1043a5c2c7a (SECURE on the tip). Pinned store-dispatch.mjs filter that removes new-build turns only; no write, route, secret, path or network call. Never deploys alone. (Security)
