@@ -59,6 +59,14 @@ export function ownerAck(body, prevTeamBody) {
   if (OWNER_ACK_WORDS.includes(k) || OWNER_ACK_EXTRA.includes(k)) return true;
   return OWNER_ACK_IF_NO_QUESTION.includes(k) && !(typeof prevTeamBody === "string" && prevTeamBody.includes("?"));
 }
+// Manager's cap, to save quota: reminders 1 to OWNER_WORD_FAST_REMINDERS come every OWNER_WORD_REPEAT_MIN, after that every OWNER_WORD_SLOW_REPEAT_MIN. The
+// reminder number for a word `ageMs` old: 0 until OWNER_WORD_MIN + 30 min, 1 from then, ... 4 from 130 min, 5 from 310 min, 6 from 490 min, and so on.
+export const OWNER_WORD_FAST_REMINDERS = 4, OWNER_WORD_SLOW_REPEAT_MIN = 180;
+export function ownerWordReminder(ageMs) {
+  const since = ageMs - OWNER_WORD_MIN * MIN, fastEnd = OWNER_WORD_FAST_REMINDERS * OWNER_WORD_REPEAT_MIN * MIN;
+  if (since < fastEnd) return Math.max(0, Math.floor(since / (OWNER_WORD_REPEAT_MIN * MIN)));
+  return OWNER_WORD_FAST_REMINDERS + Math.floor((since - fastEnd) / (OWNER_WORD_SLOW_REPEAT_MIN * MIN));
+}
 export function ownerWordWakes({ rows, now }) {
   const out = [];
   for (const r of Array.isArray(rows) ? rows : []) {
@@ -70,7 +78,7 @@ export function ownerWordWakes({ rows, now }) {
     if (r.resolved || r.ask_closed_at != null || r.ask_withdrawn_at != null || r.card_dropped || r.card_done_at != null) continue;
     const label = Number.isInteger(r.ask_num) ? `#T${r.ask_num}` : Number.isInteger(r.card_num) ? `#C${r.card_num}` : Number.isInteger(r.thread_num) ? `#T${r.thread_num}` : null;
     if (label === null) continue;
-    const k = Math.floor((age - OWNER_WORD_MIN * MIN) / (OWNER_WORD_REPEAT_MIN * MIN));
+    const k = ownerWordReminder(age);
     out.push({ card_id: `${OWNER_WORD_PREFIX}${r.thread_id}`, reason: `${label} ends on the owner's word of ${mtDayTime(r.at)}, unanswered for ${OWNER_WORD_MIN}+ min${k ? ` (reminder ${k})` : ""}: post in the thread, even one line saying it is done` });
   }
   return out;

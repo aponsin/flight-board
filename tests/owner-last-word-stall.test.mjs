@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { wakeAsk, takeInbox } from "../worker/board-store.mjs";
 import { readFileSync } from "node:fs";
-import { ownerWordWakes, OWNER_WORD_PREFIX, OWNER_WORD_MIN, OWNER_WORD_REPEAT_MIN, OWNER_WORD_DAYS, OWNER_ACK_WORDS, OWNER_ACK_EXTRA, OWNER_ACK_IF_NO_QUESTION } from "../worker/push-rules.mjs";
+import { ownerWordWakes, OWNER_WORD_PREFIX, OWNER_WORD_MIN, OWNER_WORD_REPEAT_MIN, OWNER_WORD_DAYS, ownerWordReminder, OWNER_WORD_FAST_REMINDERS, OWNER_WORD_SLOW_REPEAT_MIN, OWNER_ACK_WORDS, OWNER_ACK_EXTRA, OWNER_ACK_IF_NO_QUESTION } from "../worker/push-rules.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 
 const NOW = 1_794_336_590_090, MIN = 60e3, DAY = 86_400_000;
@@ -41,6 +41,21 @@ test("the same word is told again every 30 min with a new reminder number, and t
   assert.equal(reasonAt(at + 40 * MIN), reasonAt(at + 69 * MIN));
   assert.match(reasonAt(at + 70 * MIN), /\(reminder 2\)/);
   assert.equal(OWNER_WORD_REPEAT_MIN, 30);
+});
+
+test("the cap (Manager): 30 min apart for the first 4 reminders, then every 3 hours; the boundary and the switch", () => {
+  const k = (min) => ownerWordReminder(min * MIN);
+  assert.deepEqual([10, 39, 40, 69, 70, 99, 100, 129].map(k), [0, 0, 1, 1, 2, 2, 3, 3]);
+  assert.deepEqual([130, 159, 309].map(k), [4, 4, 4], "the 4th reminder, at 130 min, now lasts 3 hours");
+  assert.deepEqual([310, 489, 490, 669, 670].map(k), [5, 5, 6, 6, 7], "then one every 180 min");
+  assert.equal(OWNER_WORD_FAST_REMINDERS, 4); assert.equal(OWNER_WORD_SLOW_REPEAT_MIN, 180);
+  // Through the rule: the reason is the same inside a slot and changes only at the boundary.
+  const word = NOW - 11 * MIN;
+  const reasonAt = (min) => ownerWordWakes({ rows: [row({ at: word })], now: word + min * MIN })[0].reason;
+  assert.equal(reasonAt(130), reasonAt(309));
+  assert.notEqual(reasonAt(309), reasonAt(310));
+  assert.match(reasonAt(130), /\(reminder 4\)/); assert.match(reasonAt(310), /\(reminder 5\)/);
+  assert.notEqual(reasonAt(129), reasonAt(130));
 });
 
 test("only the last 7 days: an older word is left alone", () => {
