@@ -307,7 +307,7 @@ export function reviewClaimRefusal(b, who, op = "claim") {
     if (b.mutant_sec !== undefined && !(Number.isInteger(b.mutant_sec) && b.mutant_sec >= 1 && b.mutant_sec <= 3600)) return refuse("review-claim-shape", "mutant_sec is the seconds one mutant takes, 1 to 3600");
     if (b.progress !== undefined && !(typeof b.progress === "string" && b.progress.length <= 160 && !/[\r\n]/.test(b.progress))) return refuse("review-claim-shape", "progress is one line of up to 160 characters");
     // The line goes into a stall row's reason, and the cleanups find rows by LIKE on the reason: a line that carries another cleanup's mark would be deleted and put back on every sync (Security's LOW 1).
-    if (typeof b.progress === "string" && (b.progress.includes(SLOW_ROW_END) || b.progress.includes(REVIEW_LATE_MARK))) return refuse("review-claim-shape", "progress must not contain the stall lines' own wording");
+    if (typeof b.progress === "string" && STALL_LIKE_MARKS.some((m) => b.progress.toLowerCase().includes(m.toLowerCase()))) return refuse("review-claim-shape", "progress must not contain the stall lines' own wording");
   }
   if (typeof b.sha !== "string" || !REVIEW_SHA.test(b.sha)) return refuse("review-claim-shape", "sha is the tip's full 40-character lower-case hex commit");
   if (b.checker !== undefined && (typeof b.checker !== "string" || !CHECKER_NAME.test(b.checker))) return refuse("review-claim-shape", "checker is \"Checker\" or \"Checker <n>\"");
@@ -1088,6 +1088,9 @@ export const slowLine = (num) => `#C${num}${SLOW_LINE_TAIL}`;
 // not "slow with no reason": its line says what is missing and who attaches it, and the dispatch wakes that owner too (store-dispatch.mjs).
 // The row ends with the same words as the slow line's, so the store keeps and clears it the same way.
 export const SLOW_ROW_END = ": add one or unstick it";
+// Every wording a syncStalls cleanup finds its rows by with LIKE (SQLite's LIKE ignores ASCII case): writer text that carries one would have its row deleted and put back on every
+// sync, a fresh wake each time. claim_review's progress line is refused if it contains any of them, in any case. A new cleanup's mark goes in this list (Security's LOW 1 on #C1115).
+export const STALL_LIKE_MARKS = [SLOW_ROW_END, ORDER_ROW_END, REVIEW_LATE_MARK];
 export const reworkReasonLine = (num, owner) => `#C${num} is slow, rework reason missing (${owner} attaches it)${SLOW_ROW_END}`;
 // The usual time of each work phase: the median of the finished (start then end) work rows of the history, a phase with 3 or more of them.
 // rows: [{ id, card_id, phase, kind, at }] with no wait rows, any order. A row of 0 ms or less says nothing (a card first read at a later phase).

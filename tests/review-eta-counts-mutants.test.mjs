@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { drawPage } from "./helpers/draw-page.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { reviewExtraMs, reviewEtaAt, reviewLateWakes, reviewClaimRefusal, SLOW_ROW_END, REVIEW_LATE_MARK, MUTANT_SEC_DEFAULT, REVIEW_LATE_MS, REVIEW_BASE_DEFAULT_MS } from "../worker/board-rules.mjs";
+import { reviewExtraMs, reviewEtaAt, reviewLateWakes, reviewClaimRefusal, SLOW_ROW_END, ORDER_ROW_END, STALL_LIKE_MARKS, REVIEW_LATE_MARK, MUTANT_SEC_DEFAULT, REVIEW_LATE_MS, REVIEW_BASE_DEFAULT_MS } from "../worker/board-rules.mjs";
 import { initiativeDoc, compatView } from "../worker/compat-view.mjs";
 import { createCard, writeEvidence, claimReview, releaseReview, readView } from "../worker/board-store.mjs";
 import { beat, wakeAsk, takeInbox } from "./helpers/beating-store.mjs";
@@ -88,6 +88,12 @@ test("the claim's shape: mutants 0 to 200, mutant_sec 1 to 3600, progress one li
   assert.equal(ok({ progress: 5 })?.rule, "review-claim-shape");
   assert.equal(ok({ progress: `stuck${SLOW_ROW_END}` })?.rule, "review-claim-shape", "a line ending as a slow row does would be deleted and re-added on every sync");
   assert.equal(ok({ progress: `x${REVIEW_LATE_MARK}` })?.rule, "review-claim-shape");
+  // Security's LOW 1 reopened: SQLite's LIKE ignores ASCII case, so the match does too; and every cleanup's mark is in the one list, #C1103's ORDER_ROW_END included.
+  assert.equal(ok({ progress: `x${SLOW_ROW_END.toUpperCase()}` })?.rule, "review-claim-shape", "upper case still matches the cleanup's LIKE");
+  assert.equal(ok({ progress: `x${ORDER_ROW_END}` })?.rule, "review-claim-shape", "the group-order row's ending");
+  assert.equal(ok({ progress: `x${ORDER_ROW_END.toUpperCase()}` })?.rule, "review-claim-shape");
+  assert.equal(ok({ progress: `x${REVIEW_LATE_MARK.toUpperCase()}` })?.rule, "review-claim-shape");
+  assert.deepEqual([...STALL_LIKE_MARKS].sort(), [ORDER_ROW_END, REVIEW_LATE_MARK, SLOW_ROW_END].sort(), "the list holds every LIKE mark");
   assert.equal(reviewClaimRefusal({ sha: SHA, mutants: 3 }, "Checker", "release")?.rule, "review-claim-shape");
 });
 
