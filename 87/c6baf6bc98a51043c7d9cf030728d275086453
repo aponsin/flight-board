@@ -1,0 +1,1 @@
+SECURE g13 87c6baf6 (#C1094): endClaims releases review claims (signed, landed, done or dropped, or the claimer's own superseded tip). Claims only route reviews; sign-off and landing still need the notes. Another checker's claim is never released as superseded. INFO: while any claim is open, each card reading scans all card evidence. (Security)
