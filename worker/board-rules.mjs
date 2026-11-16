@@ -360,6 +360,53 @@ export function isRework(card, e) {
   if (typeof phase !== "string" || !REVIEW_NOTE_PHASES.has(phase)) return false;
   return (Array.isArray(e?.findings) ? e.findings : []).some((s) => typeof s === "string" && REVIEW_NOTE_PHASES.has(s));
 }
+// #C1103 (the owner, 11-16: Boardsmith worked g13 while g3, g10 and g6 waited, because Manager sent the work by hand): a role does not start a card of a lower group
+// while a higher group (the owner's order, groupCompare) has an open card of the same role that is the ROLE's turn. ONE rule, read by the pre-push check on a card
+// branch's first push (scripts/group-order-check.mjs, from stack-queue.json) and by the store's "being worked out of order" line (outOfOrderWork).
+// A card here is the plain shape { id, num, owner_role, group, held, turn }: `turn` = the card needs its owner now (ownerTurn), `held` = paused, blocked, waiting on
+// someone else or on a card not live. A card in no group is never a blocker (it ranks after every group). Returns the first blocker { id, num, group }
+// (the highest group, then the queue order), or null: allowed in order, and allowed when no higher group has anything for that role.
+export function ownerTurn(c, e) {
+  const phase = e?.phase ?? e?.lit?.[0];
+  if (phase === "live") return false;
+  const pushed = !!e && typeof e === "object" && (typeof e.headSha12 === "string" || typeof e.headSha === "string");
+  return !pushed || phase === "build" || isRework(c, e);
+}
+export function groupOrderBlock(card, cards, order) {
+  const role = card?.owner_role, mine = typeof card?.group === "string" ? card.group : "";
+  if (typeof role !== "string" || !role) return null;
+  let best = null;
+  for (const c of Array.isArray(cards) ? cards : []) {
+    if (!c || c.id === card.id || c.owner_role !== role || !c.turn || c.held || typeof c.group !== "string" || !c.group || c.group === mine) continue;
+    if (groupCompare(c.group, mine, order) >= 0) continue;
+    if (!best || groupCompare(c.group, best.group, order) < 0 || (c.group === best.group && queueRank(c, best) < 0)) best = c;
+  }
+  return best ? { id: best.id, num: best.num, group: best.group } : null;
+}
+// The rows of the store (cards, the evidence by card id) as the rule's plain cards. A dropped, done or live card is no card of the rule.
+export function orderCards(rows, evidence) {
+  const out = [];
+  for (const c of Array.isArray(rows) ? rows : []) {
+    if (!c || typeof c.id !== "string" || c.dropped || c.done_at) continue;
+    const e = evidence?.[c.id];
+    if ((e?.phase ?? e?.lit?.[0]) === "live") continue;
+    out.push({ id: c.id, num: c.num, owner_role: c.owner_role, group: groupOf(c), queue_pos: c.queue_pos, owner: c.queue_set_by === "owner", held: !!(c.paused || isHeld(c) || dependsNotLive(c, rows, evidence)), turn: ownerTurn(c, e) });
+  }
+  return out;
+}
+// The card's role is working it now (the roster reading { role: { state, card } }) while a higher group waits for that role: a line for Manager.
+export const ORDER_ROW_END = ": stop it, or have the owner move its group up";
+export const orderLine = (c, b) => `#C${c.num} (${c.group || "no group"}) is being worked while #C${b.num} (${b.group}), a higher group's card for the same role, waits${ORDER_ROW_END}`;
+export function outOfOrderWork({ cards, evidence, agents, groupOrder }) {
+  const all = orderCards(cards, evidence), roster = agents && typeof agents === "object" ? agents : {}, out = [];
+  for (const c of all) {
+    const on = roster[c.owner_role];
+    if (!(on && on.state === "working" && on.card === c.id) || !c.turn) continue;
+    const b = groupOrderBlock(c, all, groupOrder);
+    if (b) out.push({ card_id: c.id, num: c.num, reason: orderLine(c, b) });
+  }
+  return out;
+}
 // The groups that have STARTED: a group (batch id) with a card, not dropped, that has been pushed, has landed (live) or is closed as done.
 // `rows` are card rows { id, batch, dropped, done_at }; `evidenceOf(id)` gives the card's evidence value.
 export function startedGroupSet(rows, evidenceOf) {
