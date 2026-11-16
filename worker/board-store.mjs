@@ -461,6 +461,15 @@ export async function pingThread(db, now, who, id) {
 // #C732: the cards that wait 15 min at a phase while its agent is idle (stalledWaits, board-rules.mjs), kept as one row per
 // (card, reason): a new reason for a card is pending for Manager once, an older untaken reason of the card is replaced by it, and a stall
 // that is over is no longer pending. A reason already sent is never sent again.
+// #C990: the outages the step clocks skip: the recorded ones (the probe came back) and the one still open (the probe is silent now: from its last post to now).
+export const OUTAGE_KEEP_MS = 7 * 24 * 3600e3;
+export async function outagesOf(db, now) {
+  const rows = (await db.prepare("SELECT start_at, end_at FROM team_outages WHERE end_at >= ? ORDER BY start_at").bind(now - OUTAGE_KEEP_MS).all()).results ?? [];
+  const out = rows.map((r) => ({ start: r.start_at, end: r.end_at }));
+  const last = (await db.prepare("SELECT MAX(read_at) AS at FROM evidence WHERE key NOT LIKE 'run.%'").first())?.at;
+  if (Number.isFinite(last) && now - last > PROBE_SILENT_MS) out.push({ start: last, end: now });
+  return out;
+}
 async function syncStalls(db, now) {
   const cards = (await db.prepare("SELECT id, num, owner_role, blocked_reason, paused, dropped, done_at, waiting_on, repo, check_at, hold_end, held_at, hold_until, depends_on, updated_at, queue_pos, queue_set_by, moved_at, batch, rework_reason FROM cards").all()).results;
   const evRows = (await db.prepare("SELECT key, value, read_at FROM evidence WHERE key = 'agents' OR key LIKE 'cards.%'").all()).results;
@@ -499,13 +508,14 @@ async function syncStalls(db, now) {
   const stackOn = (await db.prepare("SELECT stack FROM stack_switch WHERE repo = 'board'").first())?.stack === 1;
   // The dispatch holds a card only for an UNANSWERED open ask (an answered one left open does not), so the open-group rule is given that set (#C1082, Checker 2's F1).
   const unansweredAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
-  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards });
+  const outages = await outagesOf(db, now);
+  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards, outages });
   // #C1078: with the week's quota used up (the session's fresh reading), the idle-agent stall lines are held until the reset and one line goes to Manager.
   const weekRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = ?").bind(WEEK_USAGE_KEY).first();
   let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
   const quota = quotaHold({ now, week: sessionWeek({ evidence: { [WEEK_USAGE_KEY]: { value: weekValue, readAt: weekRow?.read_at } } }, now), stalls: waitsAll });
   const waits = quota.stalls;
-  const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed });
+  const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages });
   // A card the held stall line would have named is not named by the slow line in its place.
   const slow = slowAll.filter((s) => !waitsAll.some((w) => w.card_id === s.card_id));
   // The slow line's words are the same every spell, so its row (card, reason) must not outlive the spell: once a card is no longer slow with no
@@ -822,6 +832,15 @@ export function liveDoneEvidence(reading) {
 export async function writeEvidence(db, now, who, key, value, track) {
   const bad = evidenceRefusal(key, value, who, track);
   if (bad) return refuse(db, now, bad, key.startsWith?.("cards.") ? key.slice(6) : null, who);
+  // #C990: the first post after a silence of PROBE_SILENT_MS or more closes an outage: from the last post before it to this one. A run's own report (run.*)
+  // is no heartbeat (readView counts the same way). INSERT OR IGNORE: two posts of one batch cannot record it twice.
+  if (!key.startsWith("run.")) {
+    const last = (await db.prepare("SELECT MAX(read_at) AS at FROM evidence WHERE key NOT LIKE 'run.%'").first())?.at;
+    if (Number.isFinite(last) && now - last > PROBE_SILENT_MS) {
+      await db.prepare("INSERT OR IGNORE INTO team_outages (start_at, end_at) VALUES (?, ?)").bind(last, now).run();
+      await db.prepare("DELETE FROM team_outages WHERE end_at < ?").bind(now - OUTAGE_KEEP_MS).run();
+    }
+  }
   const upsertOf = (v) => db.prepare("INSERT INTO evidence (key, value, read_at) VALUES (?, ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, read_at = excluded.read_at").bind(key, JSON.stringify(v), now);
   if (!key.startsWith("cards.")) { await upsertOf(value).run(); return { ok: true }; }
   // A card's lit phase changed (or is read for the first time): the phase history gets its rows in the same write (#C723 B3b).

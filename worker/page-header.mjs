@@ -34,7 +34,7 @@ export function headerHtml(view, { deploying = null, boardVersion = "", wake = {
   // #C962: why the probe is failing (the evidence job's last error line) or that its run is slow (past 150 s of its 170 s limit, worker/probe-jobs.mjs), beside "silent since".
   const why = typeof view.probe?.why === "string" && view.probe.why ? view.probe.why : "", slow = Number.isFinite(view.probe?.slow) ? view.probe.slow : null;
   const probeDetail = silent || why
-    ? `${silent ? `silent${view.probe?.since ? ` since ${mtTime(view.probe.since)}` : ""}` : "failing"}${why ? `: ${why}` : ""}`
+    ? `${silent ? `silent${view.probe?.since ? ` since ${mtTime(view.probe.since)}` : ""}, step clocks paused` : "failing"}${why ? `: ${why}` : ""}`
     : `slow: ${slow} s of ${JOBS.evidence.limitSec}`;
   const probeShown = silent || why || slow !== null;
   const probeCls = silent || why ? "bad" : "warn";

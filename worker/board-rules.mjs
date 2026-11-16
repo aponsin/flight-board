@@ -814,7 +814,14 @@ export function landedUnbuilt({ now, cards, evidence, installStart }) {
     return { card_id: newest.id, num: newest.num, reason: `${nums} landed at ${mtTime(first)} and no deploy pair holds ${list.length > 1 ? "them" : "it"}: ${who} builds it${key !== newest.id ? ` (pack ${/^[A-Za-z0-9._\/-]{1,100}$/.test(key) ? key : "of its group"})` : ""}` };
   });
 }
-export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards }) {
+// #C990 (11-11 about 11:40 pm MT, the disk-full outage: the probe could not run, every step kept its clock, and #C964's Checker step turned red as if
+// Checker were stalled): while the probe is silent the team is in an outage, and a step's clock does not run. An outage is { start, end }, the time of the
+// last probe post before the silence and of the first one after it (the open one ends at `now`); worker/board-store.mjs records them (team_outages, 0035).
+// A step's waited time is its elapsed time less the outage time inside it: a step that was already past its limit before the outage is still late
+// during and after it, and one that was not does not turn late because of it. No outages: plain elapsed time, as before.
+export const outageOverlap = (from, to, outages) => (Array.isArray(outages) ? outages : []).reduce((sum, o) => (Number.isFinite(o?.start) && Number.isFinite(o?.end) ? sum + Math.max(0, Math.min(o.end, to) - Math.max(o.start, from)) : sum), 0);
+export const waited = (from, now, outages) => now - from - outageOverlap(from, now, outages);
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [] }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
@@ -839,10 +846,10 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
       // others (an empty reading is a blind probe, never a stall), has nobody to start it. One line per role, below. A card younger than the stall time
       // is not news. An idle, working or unknown session, a held card, a dependency not live and a closed card raise nothing here.
       if (!o) {
-        if (Object.keys(roster).length && now - c.updated_at >= STALL_AFTER_MS) noSession.set(c.owner_role, [...(noSession.get(c.owner_role) ?? []), c]);
+        if (Object.keys(roster).length && waited(c.updated_at, now, outages) >= STALL_AFTER_MS) noSession.set(c.owner_role, [...(noSession.get(c.owner_role) ?? []), c]);
         continue;
       }
-      if (!Number.isFinite(idleFrom) || now - idleFrom < STALL_AFTER_MS) continue;
+      if (!Number.isFinite(idleFrom) || waited(idleFrom, now, outages) < STALL_AFTER_MS) continue;
       if (READ_ONLY_ROLES.includes(c.owner_role)) {
         const posted = postedAt instanceof Map ? postedAt.get(c.id) : undefined;
         if (Number.isFinite(posted) && now - posted <= POSTED_FRESH_MS) continue;
@@ -871,11 +878,11 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`);
     const at = behind ? `#C${c.num} signed but behind main${/^[0-9a-f]{12}$/.test(String(v.headSha12)) ? " " + v.headSha12 : ""}, waits at ${role} 15 min` : `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} 15 min`;
     if (!a && Object.keys(roster).length && Number.isFinite(start)) {
-      if (now - start >= STALL_AFTER_MS) out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, no session for ${role}` });
+      if (waited(start, now, outages) >= STALL_AFTER_MS) out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, no session for ${role}` });
       continue;
     }
     if (!a || a.state !== "idle" || !Number.isFinite(a.since) || !Number.isFinite(start)) continue;
-    if (now - Math.max(start, a.since) < STALL_AFTER_MS) continue;
+    if (waited(Math.max(start, a.since), now, outages) < STALL_AFTER_MS) continue;
     out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, ${role} idle since ${mtTime(a.since)}` });
   }
   // #C910: one line per idle agent, not one per queued card (22 queued cards were 22 lines): "Boardsmith idle since 07:31Z, 22 queued, next #C901".
@@ -946,7 +953,7 @@ export function phaseMedians(rows) {
   for (const [p, l] of Object.entries(by)) if (l.length >= 3) { l.sort((a, b) => a - b); out[p] = l[Math.floor(l.length / 2)]; }
   return out;
 }
-export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed }) {
+export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages = [] }) {
   const out = [];
   for (const c of cards ?? []) {
     if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || isHeld(c) || holdOpen(c, now, endsPassed) || openAskCards?.has(c.id) || dependsNotLive(c, cards, evidence)) continue;
@@ -958,7 +965,7 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
     const limit = phase === "ship" ? SHIP_SLOW_MS : Number.isFinite(medians?.[phase]) && medians[phase] > 0 ? 2 * medians[phase] : null;
     const missing = v.rework === true && !(typeof c.rework_reason === "string" && c.rework_reason !== "");
     const owner = typeof c.owner_role === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(c.owner_role) ? c.owner_role : "the owner";
-    if (limit !== null && now - start > limit) out.push({ card_id: c.id, num: c.num, reason: missing ? reworkReasonLine(c.num, owner) : slowLine(c.num) });
+    if (limit !== null && waited(start, now, outages) > limit) out.push({ card_id: c.id, num: c.num, reason: missing ? reworkReasonLine(c.num, owner) : slowLine(c.num) });
   }
   return out;
 }
