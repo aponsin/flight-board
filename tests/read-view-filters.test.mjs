@@ -91,7 +91,7 @@ test("viewForTool: a done or dropped card and a closed ask are not open", () => 
   const view = { tag: "t", now: 1, cards: [{ id: "a", owner_role: "Ops", done_at: null, dropped: 0 }, { id: "b", owner_role: "Ops", done_at: 5, dropped: 0 }, { id: "c", owner_role: "Ops", done_at: null, dropped: 1 }], asks: [{ id: "k1", asked_by: "Ops", closed_at: null }, { id: "k2", asked_by: "Ops", closed_at: 9 }, { id: "k3", asked_by: "Manager", card_id: "a", closed_at: null }, { id: "k4", asked_by: "Manager", card_id: "b", closed_at: null }, { id: "k5", asked_by: "Ops", closed_at: null, withdrawn_at: 7 }], threads: { threads: [], messages: [] }, evidence: { "cards.a": { value: { phase: "build" } }, "cards.b": { value: { phase: "live" } }, "cards.z": { value: {} } } };
   const r = viewForTool(view, { owner_role: "Ops" });
   assert.deepEqual(r.cards.map((c) => c.id), ["a"]);
-  assert.deepEqual(r.asks.map((k) => k.id), ["k1", "k3"], "k2 is closed, k4 sits on a done card, k5 is withdrawn (Checker 2's F3)");
+  assert.deepEqual(r.asks.map((k) => k.id), ["k1", "k3", "k5"], "k2 is closed, k4 sits on a done card; k5 is withdrawn, which is still open (its answer is cleared and it waits for the owner's Approve again), as the digest and the dispatch count it (#C1101)");
   assert.deepEqual(Object.keys(r.evidence), ["cards.a"], "the evidence of the cards returned and no other (Checker 2's F2)");
   assert.deepEqual(r.evidence["cards.a"], { value: { phase: "build" } });
 });
