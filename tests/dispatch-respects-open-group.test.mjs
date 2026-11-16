@@ -66,6 +66,16 @@ test("a group card blocked by ANOTHER role's card is not Boardsmith's to build: 
   assert.deepEqual(forBoardsmith(run(v)), ["c3-three"], "the role is not left idle behind a card another role has to build");
 });
 
+// Manager's rule (b) for the re-cut: when every unfinished card of the role's started group waits on another role's card, the role may take a loose card
+// (in no group), never a card from another group.
+test("a started group blocked on another role: a loose card may be taken, a card of another group may not", () => {
+  const specs = [["c1-one", "g1-open", 1], ["c2-two", "g1-open", 2, "Boardsmith", { depends_on: '["c9-nine"]' }], ["c9-nine", null, 1, "Builder"], ["c6-six", "g2-next", 1], ["c3-three", null, 2]];
+  const v = withEvidence(viewOf(specs), { "c1-one": PUSHED });
+  assert.deepEqual(forBoardsmith(run(v)), ["c3-three"], "the loose card, though g2's c6 is better placed");
+  const noLoose = withEvidence(viewOf(specs.filter((s) => s[0] !== "c3-three")), { "c1-one": PUSHED });
+  assert.deepEqual(forBoardsmith(run(noLoose)), [], "with no loose card the role waits: it does not start g2");
+});
+
 test("another role's open group gates only that role: Boardsmith's loose card is still woken", () => {
   const specs = [["c1-one", "g1-open", 1, "Builder"], ["c2-two", "g1-open", 2, "Builder", { depends_on: '["c1-one"]' }], ["c3-three", null, 1]];
   const v = withEvidence(viewOf(specs), { "c1-one": PUSHED });

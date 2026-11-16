@@ -304,18 +304,26 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // Checker 2's F1 on 0c079bf8 (a deadlock): a group card that waits on a dependency is skipped above (waitsOn), so a dependency of the SAME role that sits
   // outside the group, with nothing pushed, must keep its build turn or the group never finishes. So: (a) a group card blocked by another role's card is not
   // the role's to build and keeps no group open; (b) the blockers of a group card that keeps its group open, and theirs in turn, are let through.
-  const openGroups = new Map(), needed = new Set();
+  const openGroups = new Map(), blockedGroups = new Map(), needed = new Set();
   for (const k of all) {
     if (!k || typeof k.id !== "string" || typeof k.owner_role !== "string") continue;
     const g = batchOf(k);
     if (g === "" || !startedGroups.has(g) || !activeCard(k) || askedCards.has(k.id) || holdOpen(k, now, endPassed)) continue;
     if (typeof k.waiting_on === "string" && k.waiting_on.trim() && !k.waiting_on.trim().startsWith(k.owner_role)) continue;
     const blockers = waitsOn(k);
-    if (blockers.some((d) => open.get(d)?.owner_role !== k.owner_role)) continue;
+    if (blockers.some((d) => open.get(d)?.owner_role !== k.owner_role)) {
+      // Manager's rule (b): a started group whose unfinished cards all wait on ANOTHER role's cards lets the role take a loose card (in no group), never a card of another group.
+      if (!hasHead(k.id) || ev[`cards.${k.id}`]?.value?.stackHold === true) blockedGroups.set(k.owner_role, new Set([...(blockedGroups.get(k.owner_role) ?? []), g]));
+      continue;
+    }
     if (!hasHead(k.id) || ev[`cards.${k.id}`]?.value?.stackHold === true) { openGroups.set(k.owner_role, new Set([...(openGroups.get(k.owner_role) ?? []), g])); for (const d of blockers) needed.add(d); }
   }
   for (let grew = true; grew;) { grew = false; for (const id of [...needed]) for (const d of open.has(id) ? waitsOn(open.get(id)) : []) if (!needed.has(d)) { needed.add(d); grew = true; } }
-  for (const k of cards) if (openGroups.get(k.who)?.size && !openGroups.get(k.who).has(k.group) && !needed.has(k.id)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
+  for (const k of cards) {
+    const og = openGroups.get(k.who), bg = blockedGroups.get(k.who);
+    const withheld = og?.size ? !og.has(k.group) && !needed.has(k.id) : bg?.size ? k.group !== "" && !bg.has(k.group) : false;
+    if (withheld) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
+  }
   const byRole = new Map();
   for (const k of cards.filter(notStarted)) byRole.set(k.who, [...(byRole.get(k.who) ?? []), k]);
   for (const [who, list] of byRole) {
