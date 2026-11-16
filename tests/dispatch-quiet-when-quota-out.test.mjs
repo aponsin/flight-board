@@ -4,8 +4,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, writeEvidence, writeWeekUsage, wakeAsk, takeInbox } from "../worker/board-store.mjs";
-import { quotaHold, QUOTA_OUT_PCT } from "../worker/board-rules.mjs";
+import { createCard, createAsk, writeEvidence, writeWeekUsage, wakeAsk, takeInbox } from "../worker/board-store.mjs";
+import { quotaHold, QUOTA_OUT_PCT, SHIP_SLOW_MS } from "../worker/board-rules.mjs";
 import { mtDayTime } from "../worker/team-time.mjs";
 
 const T = 1_800_000_000_000, MIN = 60_000, HOUR = 60 * MIN;
@@ -49,6 +49,39 @@ test("the same spell sends nothing more: a later reading of 99 then 100, and mor
   await createCard(db, T + 45 * MIN, "Manager", { id: "card-9", title: "Card 9", owner_role: "Boardsmith" });
   await week(db, T + 50 * MIN, 100);
   assert.deepEqual(await taken(db, T + 51 * MIN), [], "a new queued card is no new wake while the quota is out");
+});
+
+// Checker 2's F1 on fd798cad: only the idle-agent lines are held; every other stall still reaches Manager beside the one quota line.
+test("at the ceiling the other stalls go on: an ask the owner left 10+ minutes still wakes Manager, beside the quota line", async () => {
+  const db = await world();
+  const r = await createAsk(db, T, { type: "Action", title: "run the pair", asked_by: "Manager", steps: ["one"], expect: "ok" });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  await week(db, T + 19 * MIN, 100);
+  const reasons = await taken(db, T + 20 * MIN);
+  assert.equal(reasons.length, 2, reasons.join(" | "));
+  assert.ok(reasons.some((x) => /^The week's quota is used up/.test(x)), "the quota line");
+  assert.ok(reasons.some((x) => /^ask #T\d+ has waited/.test(x)), "the ask's own line is not held");
+  assert.ok(!reasons.some((x) => /idle since/.test(x)), "the idle-agent line is");
+});
+
+// Checker 2's F2 on fd798cad: a card the held stall line would have named gets no slow line in its place.
+test("a card slow at ship that the held line would have named gets no slow line either, while the quota is out", async () => {
+  const db = makeDb();
+  await createCard(db, T, "Manager", { id: "card-s", title: "Slow", owner_role: "Boardsmith" });
+  await writeEvidence(db, T, "probe", "cards.card-s", { lit: ["ship"], phase: "ship", ci: "none", onMain: false });
+  await writeEvidence(db, T, "probe", "agents", { Release: { state: "idle", tool: null, card: null, since: T } });
+  const at = T + SHIP_SLOW_MS + 5 * MIN;
+  const control = await taken(db, at);
+  assert.equal(control.length, 1, `control: the waits line names the card, the slow line stands down: ${control.join(" | ")}`);
+  assert.match(control[0], /waits at Ship/);
+  const db2 = makeDb();
+  await createCard(db2, T, "Manager", { id: "card-s", title: "Slow", owner_role: "Boardsmith" });
+  await writeEvidence(db2, T, "probe", "cards.card-s", { lit: ["ship"], phase: "ship", ci: "none", onMain: false });
+  await writeEvidence(db2, T, "probe", "agents", { Release: { state: "idle", tool: null, card: null, since: T } });
+  await week(db2, at - MIN, 100);
+  const out = await taken(db2, at);
+  assert.equal(out.length, 1, out.join(" | "));
+  assert.match(out[0], /^The week's quota is used up/, "only the quota line: no waits line, and no slow line in its place");
 });
 
 test("97% holds nothing", async () => {
