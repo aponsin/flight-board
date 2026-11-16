@@ -1,0 +1,1 @@
+- The "is slow with no reason" line is no longer sent when a next_note was written in the last hour (that is the reason) or when the card's owner is working a different card now (the card is queued behind it, not slow) (slow-stall-reads-notes, #C1093). The "rework reason missing" line is not hidden by a note. Ships: a Worker deploy. Tests: `tests/slow-stall-reads-notes.test.mjs`.
