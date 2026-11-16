@@ -84,6 +84,28 @@ test("the store: a slow card names Manager; a note written a minute ago ends it;
 });
 
 // The store's card is at ship (Release's step, not the owner's work), so the owner's other card ends nothing there, whichever card the roster names (Checker 2's M1 on e78bf708).
+// Checker 2's M1 on g13 v2 (mutant A9: `agents` dropped from the store's slowWakes call passed the whole suite): at BUILD the owner does the work, so the roster
+// reading decides. Three older cards each spent 10 minutes in build (the median, so the limit is 20), and card c has sat in build for 40.
+async function buildSlowRows(rosterCard) {
+  const db = makeDb(), at = T + 40 * MIN;
+  for (const id of ["x1", "x2", "x3"]) {
+    await createCard(db, T - 3 * 60 * MIN, "Manager", { id, title: `Old ${id}`, owner_role: "Boardsmith" });
+    await writeEvidence(db, T - 2 * 60 * MIN, "probe", `cards.${id}`, rd("build"));
+    await writeEvidence(db, T - 2 * 60 * MIN + 10 * MIN, "probe", `cards.${id}`, rd("checker"));
+  }
+  await createCard(db, T, "Manager", { id: "c", title: "A card", owner_role: "Boardsmith" });
+  await writeEvidence(db, T, "probe", "cards.c", rd("build"));
+  if (rosterCard !== undefined) { await beat(db, at - 2000); await writeEvidence(db, at - 1000, "probe", "agents", { Boardsmith: rosterCard === null ? { state: "idle", lastActivityAt: at - 1000, since: at - 20 * MIN } : { state: "working", card: rosterCard, lastActivityAt: at - 1000, since: at - 5 * MIN } }); }
+  await wakeAsk(db, at);
+  return (await takeInbox(db, at + 1000)).stalls.map((s) => s.reason).filter((r) => /is slow with no reason/.test(r));
+}
+test("the store: at build the roster decides: no row while the owner works another card, a row when it is on this card or unread (an idle owner has the idle-agent line instead)", async () => {
+  assert.deepEqual(await buildSlowRows("other-card"), [], "the owner is on another card: this one is queued behind it");
+  assert.deepEqual(await buildSlowRows(null), [], "an idle owner is named by the idle-agent line, which takes this card's slow line's place");
+  assert.equal((await buildSlowRows("c")).length, 1, "the owner is on this card");
+  assert.equal((await buildSlowRows(undefined)).length, 1, "no roster reading: the old rule");
+});
+
 test("the store: a card at ship is slow whatever card its owner is working (the roster reading)", async () => {
   // The roster is a probe post at LATE - 1 s: a heartbeat just before it, else the gap since the card's reading is recorded as an outage that pauses the clock (#C990).
   const roster = (card) => async (db) => { await beat(db, LATE - 2000); await writeEvidence(db, LATE - 1000, "probe", "agents", { Boardsmith: { state: "working", card, lastActivityAt: LATE - 1000, since: LATE - 5 * MIN } }); };
