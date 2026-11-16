@@ -1,0 +1,104 @@
+// #C1115: the mutant runner (scripts/mutant-run.mjs). It refuses an edit that matches nothing, runs only the named tests in temp copies, requires a failure, and
+// reports a survivor only after the full suite has had its chance at it. Real node --test runs in a small fixture repository; fictional names.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { specErrors, applyMutant, runMutants, summary } from "../scripts/mutant-run.mjs";
+
+const GUARD = `export const big = (n) => {
+  if (n > 10) return "big";
+  return "small";
+};
+export const neg = (n) => (n < 0 ? "neg" : "pos");
+`;
+const T = (body) => `import test from "node:test";\nimport assert from "node:assert/strict";\nimport { big, neg } from "../src/guard.mjs";\ntest("t", () => {\n${body}\n});\n`;
+
+function fixture() {
+  const dir = mkdtempSync(join(tmpdir(), "fb-mutant-"));
+  mkdirSync(join(dir, "src")); mkdirSync(join(dir, "tests"));
+  writeFileSync(join(dir, "src/guard.mjs"), GUARD);
+  writeFileSync(join(dir, "tests/guard.test.mjs"), T(`assert.equal(big(11), "big"); assert.equal(big(1), "small");`));
+  writeFileSync(join(dir, "tests/neg.test.mjs"), T(`assert.equal(neg(-1), "neg"); assert.equal(neg(1), "pos");`));
+  writeFileSync(join(dir, "tests/other.test.mjs"), T(`assert.equal(big(1), "small");`));
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "fixture", type: "module" }));
+  execFileSync("git", ["init", "-q"], { cwd: dir });
+  return dir;
+}
+const m = (id, extra) => ({ id, file: "src/guard.mjs", line: 2, find: "n > 10", replace: "false", tests: ["tests/guard.test.mjs"], ...extra });
+const FULL = ["node", "--test"];
+
+test("the spec: ids, a path inside the checkout, a line, the text to find, and test files; anything else is named", () => {
+  assert.deepEqual(specErrors({ mutants: [m("M1")] }), []);
+  assert.ok(specErrors(null).length);
+  assert.ok(specErrors({ mutants: [] }).length);
+  assert.match(specErrors({ mutants: [m("M1", { file: "../x.mjs" })] }).join(), /file is a path inside the checkout/);
+  assert.match(specErrors({ mutants: [m("M1", { file: "/etc/passwd" })] }).join(), /file is a path/);
+  assert.match(specErrors({ mutants: [m("M1", { line: 0 })] }).join(), /line/);
+  assert.match(specErrors({ mutants: [m("M1", { find: "" })] }).join(), /find/);
+  assert.match(specErrors({ mutants: [m("M1", { tests: [] })] }).join(), /tests/);
+  assert.match(specErrors({ mutants: [m("M1", { tests: ["scripts/x.mjs"] })] }).join(), /tests/);
+  assert.match(specErrors({ mutants: [m("M1"), m("M1")] }).join(), /used twice/);
+});
+
+test("applyMutant: replaces the text on that line, disables the line when there is no replacement, and refuses an edit that matches nothing", () => {
+  assert.equal(applyMutant(GUARD, m("M1")).text.split("\n")[1], '  if (false) return "big";');
+  assert.equal(applyMutant(GUARD, m("M1", { replace: undefined })).text.split("\n")[1], '  // MUTANT M1: if (n > 10) return "big";');
+  assert.match(applyMutant(GUARD, m("M1", { line: 99 })).refused, /past the end/);
+  assert.match(applyMutant(GUARD, m("M1", { find: "zzz" })).refused, /does not contain/);
+  assert.match(applyMutant(GUARD, m("M1", { replace: "n > 10" })).refused, /leaves the line as it was/);
+});
+
+test("a no-op or unmatched edit is refused before anything runs, and the other mutants do not run either", async () => {
+  const repo = fixture();
+  try {
+    const r = await runMutants({ repo, spec: { mutants: [m("M1"), m("M2", { replace: "n > 10" }), m("M3", { find: "zzz" })] }, fullCmd: FULL });
+    assert.equal(r.pass, false);
+    assert.deepEqual(r.results.map((x) => x.status), ["not run", "refused", "refused"]);
+    assert.match(r.results[1].detail, /leaves the line as it was/);
+    assert.ok(summary(r.results, r.pass).at(-1).endsWith("FAIL"));
+  } finally { rmSync(repo, { recursive: true, force: true }); }
+});
+
+test("a mutant the named tests fail on is killed; the checkout itself is never edited", async () => {
+  const repo = fixture();
+  try {
+    const r = await runMutants({ repo, spec: { mutants: [m("M1")] }, fullCmd: FULL });
+    assert.equal(r.pass, true);
+    assert.equal(r.results[0].status, "killed");
+    assert.match(r.results[0].detail, /tests\/guard\.test\.mjs/);
+    assert.equal(readFileSync(join(repo, "src/guard.mjs"), "utf8"), GUARD, "the checkout is as it was");
+    assert.ok(summary(r.results, r.pass).at(-1).startsWith("mutation check: pass"));
+  } finally { rmSync(repo, { recursive: true, force: true }); }
+});
+
+test("a survivor of the named tests meets the full suite: killed there it is named with its failing files, and only a pass there makes it a survivor", async () => {
+  const repo = fixture();
+  try {
+    // M2: the named test never looks at neg(): the full suite does. M3: the same behaviour in other words: nothing can tell it from the original.
+    const spec = { mutants: [m("M2", { line: 5, find: "n < 0", replace: "false", tests: ["tests/other.test.mjs"] }), m("M3", { line: 3, find: '"small"', replace: '"small" /* same */' })] };
+    const r = await runMutants({ repo, spec, fullCmd: FULL });
+    assert.equal(r.results[0].status, "killed-by-full-suite-only");
+    assert.match(r.results[0].detail, /tests\/neg\.test\.mjs/);
+    assert.equal(r.results[1].status, "survivor");
+    assert.equal(r.pass, false, "a real survivor fails the check");
+    const lines = summary(r.results, r.pass);
+    assert.ok(lines.at(-1).endsWith("FAIL"));
+    assert.ok(lines.some((l) => /^SURVIVOR\s+M3/.test(l)));
+  } finally { rmSync(repo, { recursive: true, force: true }); }
+});
+
+test("named tests that do not exist are an error, not a kill; concurrency 1 and 8 give the same answer", async () => {
+  const repo = fixture();
+  try {
+    const bad = await runMutants({ repo, spec: { mutants: [m("M1", { tests: ["tests/missing.test.mjs"] })] }, fullCmd: FULL });
+    assert.equal(bad.results[0].status, "error");
+    assert.equal(bad.pass, false);
+    const spec = { mutants: [m("M1"), m("M4", { line: 5, find: "n < 0", replace: "true", tests: ["tests/neg.test.mjs"] }), m("M5", { line: 5, find: '"pos"', replace: '"neg"', tests: ["tests/neg.test.mjs"] })] };
+    const one = await runMutants({ repo, spec, concurrency: 1, fullCmd: FULL }), eight = await runMutants({ repo, spec, concurrency: 8, fullCmd: FULL });
+    assert.deepEqual(one.results.map((x) => x.status), ["killed", "killed", "killed"]);
+    assert.deepEqual(eight.results.map((x) => x.status), one.results.map((x) => x.status));
+  } finally { rmSync(repo, { recursive: true, force: true }); }
+});
