@@ -5,7 +5,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { slowWakes, slowLine, reworkReasonLine, SHIP_SLOW_MS, NOTE_FRESH_MS } from "../worker/board-rules.mjs";
-import { createCard, updateCard, writeEvidence, wakeAsk, takeInbox } from "../worker/board-store.mjs";
+import { createCard, updateCard, writeEvidence } from "../worker/board-store.mjs";
+import { beat, wakeAsk, takeInbox } from "./helpers/beating-store.mjs"; // a probe heartbeat at the asked time: a later ask is not read as a probe outage (#C990)
 
 const T = 1_800_000_000_000, MIN = 60e3;
 const rd = (phase, extra = {}) => ({ lit: [phase], phase, headSha12: "aaaaaaaaaaaa", signed: [], onMain: false, ...extra });
@@ -61,7 +62,8 @@ test("the store: a slow card names Manager; a note written a minute ago ends it;
 });
 
 test("the store: the owner working another card (the roster reading) ends the stall; the roster naming this card does not", async () => {
-  const roster = (card) => async (db) => { await writeEvidence(db, LATE - 1000, "probe", "agents", { Boardsmith: { state: "working", card, lastActivityAt: LATE - 1000, since: LATE - 5 * MIN } }); };
+  // The roster is a probe post at LATE - 1 s: a heartbeat just before it, else the gap since the card's reading is recorded as an outage that pauses the clock (#C990).
+  const roster = (card) => async (db) => { await beat(db, LATE - 2000); await writeEvidence(db, LATE - 1000, "probe", "agents", { Boardsmith: { state: "working", card, lastActivityAt: LATE - 1000, since: LATE - 5 * MIN } }); };
   assert.deepEqual(await slowRows(roster("other-card"), LATE), []);
   assert.equal((await slowRows(roster("c"), LATE)).length, 1);
 });
