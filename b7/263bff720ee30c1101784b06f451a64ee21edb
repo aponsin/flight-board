@@ -1,11 +1,1 @@
-FINDINGS MEDIUM Quick at b7263bff (Checker 2, group g10-small-rules: #C1098 e04e356f, #C1099 b7263bff)
-
-Merges clean on main (#C1097 landed). The code is right; the gaps are tests. Mutations 10/15 killed (mutateG10.mjs). Suite not re-run (findings first; Boardsmith reported 2520 pass, 0 fail).
-
-F1 MEDIUM (#C1098): nothing tests that the configured reviewers reach the dispatch. Mutant V9: dispatchJob in collector/probe-board.mjs drops `reviewers` when it calls dispatchRun, and every test passes, so the one path this card exists for can break silently and flight-board reviews go back to Checker. The same goes for main() reading full.collector.reviewers into `team`. Fix: a dispatchJob test with a stubbed fetchImpl (a view with a flight-board card at the checker phase, a roster with "Checker 2", reviewers { "flight-board": "Checker 2" }) that reads dispatch.json and finds the review turn for Checker 2.
-
-F2 MEDIUM (#C1099): nothing tests that the page uses the floored time. Mutant E5: renderBoard calls groupRow without groupEtaMap.get(x.group), and every test passes, so groupEtas is tested but the page can still show the old "Live in" time, which is the thing this card exists to change. Mutant E6 (floors from the shown groups only, `gl` instead of groupList(all)) also survives, so a search can still move a group's time. Fix: a render test (the way other page tests drive renderBoard) with two groups of the same agent, the lower one with the earlier own time, that finds the lower group's row showing at least the higher one's time plus MIN_LEFT, with and without a search.
-
-F3 LOW (#C1098): V2 survives: if turnsOf gave the configured reviewer to any phase, not just checker, no test fails (a security-phase turn would go to Checker 2). V7: an array as reviewers is accepted. One assert each.
-
-Live config: board.config.json still needs collector.reviewers { "flight-board": "Checker 2" } for #C1098 to change anything (Boardsmith did not edit it).
+PASS Quick at fa4b32a6 (Checker 2, group g10-small-rules; replaces my FINDINGS on this commit, fixed by test-only ecd2438f and fa4b32a6). Suite 2525 pass, 0 fail. Mutations 14/15 killed. (commit b7263bff of stack tip fa4b32a6)
