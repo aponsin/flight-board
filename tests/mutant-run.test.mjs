@@ -114,6 +114,21 @@ test("the working tree's own changes are what is mutated: an uncommitted guard, 
   } finally { rmSync(repo, { recursive: true, force: true }); }
 });
 
+// Checker 2's M2 on eb967e0b: `ls-files --modified` compares with the INDEX, so a STAGED edit and a STAGED new file were missing from the copy, which ran HEAD's version.
+test("a staged edit to a test file and a staged new test file are in the copy: they, not HEAD's versions, kill the mutants", async () => {
+  const repo = fixture();
+  try {
+    // The mutated file (src/guard.mjs) is untouched; the tests that can tell the mutant apart exist only in the index.
+    writeFileSync(join(repo, "tests/guard.test.mjs"), T(`assert.equal(big(11), "big"); assert.equal(big(1), "small"); assert.equal(big(7), "small");`));
+    writeFileSync(join(repo, "tests/staged-new.test.mjs"), T(`assert.equal(neg(-1), "neg"); assert.equal(neg(0), "pos");`));
+    execFileSync("git", ["add", "tests/guard.test.mjs", "tests/staged-new.test.mjs"], { cwd: repo });
+    const spec = { mutants: [m("S1", { find: "n > 10", replace: "n > 5" }), m("S2", { line: 5, find: "n < 0", replace: "n <= 0", tests: ["tests/staged-new.test.mjs"] })] };
+    const r = await runMutants({ repo, spec, fullCmd: FULL });
+    assert.deepEqual(r.results.map((x) => x.status), ["killed", "killed"], JSON.stringify(r.results));
+    assert.equal(r.pass, true);
+  } finally { rmSync(repo, { recursive: true, force: true }); }
+});
+
 test("a file deleted in the working tree is gone from the copy too, so a test that is no longer there cannot kill a mutant", async () => {
   const repo = fixture();
   try {

@@ -67,8 +67,9 @@ function copyTree(repo, to) {
     try { git(["fetch", "-q", repo, "+refs/notes/*:refs/notes/*"], to); } catch { /* no notes refs */ }
     cloned = true;
   } catch { /* no HEAD, or not cloneable: the plain copy below */ }
-  const lay = cloned ? git(["ls-files", "-z", "--modified", "--others", "--exclude-standard"]) : git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"]);
-  for (const f of lay.split("\0").filter(Boolean)) {
+  // `diff HEAD` (not `ls-files --modified`, which compares with the INDEX and misses a staged edit or a staged new file) lists every change against HEAD, deletions too.
+  const lay = cloned ? git(["diff", "--name-only", "-z", "HEAD"]) + "\0" + git(["ls-files", "-z", "--others", "--exclude-standard"]) : git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"]);
+  for (const f of new Set(lay.split("\0").filter(Boolean))) {
     if (!SAFE_PATH.test(f) && /(^|\/)\.\.(\/|$)/.test(f)) continue;
     const src = join(repo, f), dst = join(to, f);
     if (!existsSync(src)) { if (cloned) rmSync(dst, { force: true }); continue; } // deleted in the working tree
@@ -146,7 +147,7 @@ export async function runMutants({ repo, spec, concurrency = DEFAULT_CONCURRENCY
       }
     }));
     // (3) every mutant the named tests missed meets the full suite before it is reported
-    // The copy has no .git and no history, so a test that needs them fails there with or without a mutant: the unmutated copy runs the full suite first (once, and only
+    // The copy is a clone, but a test that depends on the builder's own git state (branch, remotes, hooks) can still fail there with or without a mutant: the unmutated copy runs the full suite first (once, and only
     // when there is a survivor), and a mutant counts as killed only by a test file that passes in that baseline and fails with it.
     let baseline = null;
     const fresh = (name) => { const dir = join(base, name), tmp = join(base, `tmp-${name}`); rmSync(dir, { recursive: true, force: true }); mkdirSync(dir); mkdirSync(tmp, { recursive: true }); copyTree(root, dir); return { dir, tmp }; };
