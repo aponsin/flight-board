@@ -371,6 +371,42 @@ export function startedGroupSet(rows, evidenceOf) {
   }
   return out;
 }
+// #C1082 (the stall line's "next #C.." named a card the dispatch holds): the open-group rule of the dispatch (collector/store-dispatch.mjs, #C1080),
+// as a pure function of the store's rows, so the stall line names only a card the dispatch would send. While a role has a STARTED group that is not
+// yet READY (a card of the role's in it, active, not asked, not held, not waiting on someone else, with nothing pushed or pushed with the probe's
+// stackHold), a NEW build turn is withheld for a card outside that group, except a blocker (of the same role, and theirs in turn) of the group's
+// cards; a started group whose unfinished cards all wait on ANOTHER role's cards lets the role take a loose card (in no group), never a card of
+// another group. Returns withheld(card) -> boolean for a card nothing is pushed for. `stackOn` is the board repository's stack switch (a dependency the
+// same builder has pushed is then satisfied for a board card, as the dispatch's waitsOn reads it). The dispatch's own copy stays (it is pinned);
+// tests/stall-line-knows-open-group.test.mjs holds the cases of #C1080's own test (open group, blocker let through, blocked group) against this copy.
+export function openGroupWithheld({ now, cards, evidence, openAskCards, endsPassed, stackOn = false }) {
+  const rows = (cards ?? []).filter((k) => k && typeof k.id === "string");
+  const phaseOf = (id) => { const e = evidence?.[id]; return e?.phase ?? e?.lit?.[0]; };
+  const hasHead = (id) => { const e = evidence?.[id]; return !!e && typeof e === "object" && (typeof e.headSha12 === "string" || typeof e.headSha === "string"); };
+  const open = new Map(rows.filter((k) => !k.dropped && !k.done_at).map((k) => [k.id, k]));
+  const boardCard = (c) => !c.repo || c.repo === "flight-board";
+  const dependsOf = (c) => { let l = c.depends_on; if (typeof l === "string") { try { l = JSON.parse(l); } catch { return []; } } return Array.isArray(l) ? l.filter((d) => typeof d === "string") : []; };
+  const pushed = (id) => hasHead(id) && evidence[id].stack?.outside !== true;
+  const waitsOn = (c) => dependsOf(c).filter((d) => d !== c.id && open.has(d) && phaseOf(d) !== "live" && !(stackOn && boardCard(c) && boardCard(open.get(d)) && open.get(d).owner_role === c.owner_role && pushed(d)));
+  const active = (k) => !k.paused && !k.dropped && !k.done_at && !k.blocked_reason && phaseOf(k.id) !== "live";
+  const started = startedGroupSet(rows.map((k) => ({ ...k, batch: groupOf(k) })), (id) => evidence?.[id]);
+  const openG = new Map(), blockedG = new Map(), needed = new Set();
+  for (const k of rows) {
+    if (typeof k.owner_role !== "string") continue;
+    const g = groupOf(k);
+    if (g === "" || !started.has(g) || !active(k) || openAskCards?.has(k.id) || holdOpen(k, now, endsPassed)) continue;
+    if (typeof k.waiting_on === "string" && k.waiting_on.trim() && !k.waiting_on.trim().startsWith(k.owner_role)) continue;
+    const blockers = waitsOn(k);
+    const unready = !hasHead(k.id) || evidence?.[k.id]?.stackHold === true;
+    if (blockers.some((d) => open.get(d)?.owner_role !== k.owner_role)) { if (unready) blockedG.set(k.owner_role, new Set([...(blockedG.get(k.owner_role) ?? []), g])); continue; }
+    if (unready) { openG.set(k.owner_role, new Set([...(openG.get(k.owner_role) ?? []), g])); for (const d of blockers) needed.add(d); }
+  }
+  for (let grew = true; grew;) { grew = false; for (const id of [...needed]) for (const d of open.has(id) ? waitsOn(open.get(id)) : []) if (!needed.has(d)) { needed.add(d); grew = true; } }
+  return (c) => {
+    const og = openG.get(c.owner_role), bg = blockedG.get(c.owner_role), g = groupOf(c);
+    return og?.size ? !og.has(g) && !needed.has(c.id) : bg?.size ? g !== "" && !bg.has(g) : false;
+  };
+}
 
 // Withdrawing the owner's approval (#C727): the owner's alone, on an open Approval that is approved. It clears the answer, so the
 // pull request needs his Approve again; Release reads only an approval that stands.
@@ -748,7 +784,7 @@ export function landedUnbuilt({ now, cards, evidence, installStart }) {
     return { card_id: newest.id, num: newest.num, reason: `${nums} landed at ${mtTime(first)} and no deploy pair holds ${list.length > 1 ? "them" : "it"}: ${who} builds it${key !== newest.id ? ` (pack ${/^[A-Za-z0-9._\/-]{1,100}$/.test(key) ? key : "of its group"})` : ""}` };
   });
 }
-export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims }) {
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
@@ -817,13 +853,18 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   const started = startedGroupSet((cards ?? []).map((c) => ({ ...c, batch: groupOf(c) })), (id) => evidence?.[id]);
   const rankOf = (c, rework) => ({ id: c.id, num: c.num, queue_pos: c.queue_pos, owner: c.queue_set_by === "owner", group: groupOf(c), groupStarted: started.has(groupOf(c)), rework });
   const fixable = (c) => !c.dropped && !c.done_at && !c.paused && !c.blocked_reason && !openAskCards?.has(c.id) && !(typeof c.waiting_on === "string" && c.waiting_on.trim() && !c.waiting_on.trim().startsWith(c.owner_role)) && isRework(c, evidence?.[c.id]);
-  const nextOf = (role, list) => [...list.map((c) => ({ c, k: rankOf(c, false) })), ...(cards ?? []).filter((c) => c.owner_role === role && !list.includes(c) && fixable(c)).map((c) => ({ c, k: rankOf(c, true) }))].sort((x, y) => agentRank(x.k, y.k, groupOrder))[0].c;
-  for (const [role, list] of noSession) {
-    const next = nextOf(role, list);
+  const nextOf = (role, list) => [...list.map((c) => ({ c, k: rankOf(c, false) })), ...(cards ?? []).filter((c) => c.owner_role === role && !list.includes(c) && fixable(c)).map((c) => ({ c, k: rankOf(c, true) }))].sort((x, y) => agentRank(x.k, y.k, groupOrder))[0]?.c;
+  // #C1082: a card the dispatch's open-group rule withholds (a started group of the role is not READY yet; #C1080) is not queued for the line: it is
+  // neither counted nor named as next, and a role whose whole queue is withheld has no line (the dispatch would wake it for nothing either).
+  const withheld = openGroupWithheld({ now, cards, evidence, openAskCards, endsPassed, stackOn });
+  for (const [role, all] of noSession) {
+    const list = all.filter((c) => !withheld(c)), next = nextOf(role, list);
+    if (!next) continue;
     out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} has no open session, ${list.length} queued, next #C${next.num}` });
   }
-  for (const [role, list] of queued) {
-    const next = nextOf(role, list);
+  for (const [role, all] of queued) {
+    const list = all.filter((c) => !withheld(c)), next = nextOf(role, list);
+    if (!next) continue;
     out.push({ card_id: next.id, num: next.num, phase: null, role, reason: `${role} idle since ${mtTime(idleOf.get(role))}, ${list.length} queued, next #C${next.num}` });
   }
   return out;

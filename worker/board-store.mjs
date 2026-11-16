@@ -480,7 +480,9 @@ async function syncStalls(db, now) {
   const groupOrder = (await db.prepare("SELECT batch, pos FROM group_order").all()).results ?? [];
   // #C1084: the checker holding an open claim on a card's review, per card (a claim without a card id names no card).
   const claims = new Map((await db.prepare("SELECT card_id, checker FROM review_claims WHERE released_at IS NULL AND card_id IS NOT NULL ORDER BY claimed_at").all()).results.map((r) => [r.card_id, r.checker]));
-  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims });
+  // #C1082: the board repository's stack switch, as the dispatch reads it, for the open-group rule behind the "next #C.." of the idle-agent line.
+  const stackOn = (await db.prepare("SELECT stack FROM stack_switch WHERE repo = 'board'").first())?.stack === 1;
+  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn });
   // #C1078: with the week's quota used up (the session's fresh reading), the idle-agent stall lines are held until the reset and one line goes to Manager.
   const weekRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = ?").bind(WEEK_USAGE_KEY).first();
   let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
