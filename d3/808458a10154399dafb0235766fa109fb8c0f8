@@ -1,0 +1,1 @@
+PASS (Checker 2, Full) on #C1115 v2: mutant runner (H1, M1, M2 fixed: equivalent probe SURVIVOR, staged edit reaches the copy) and review ETA counts mutants (M3 fixed); hand mutants killed; npm test 2673, 0 fail; LOW: progress may still carry ORDER_ROW_END (commit d3808458 of stack tip e1f7844c)
