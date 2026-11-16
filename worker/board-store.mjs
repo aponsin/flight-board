@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { landedUnbuilt, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, quotaHold, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf } from "./board-rules.mjs";
+import { landedUnbuilt, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -460,7 +460,7 @@ export async function pingThread(db, now, who, id) {
   await db.prepare("INSERT INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?) ON CONFLICT (card_id, reason) DO UPDATE SET created_at = excluded.created_at, taken_at = NULL").bind(`${PING_CARD}${id}`, reason, now).run();
   return { ok: true, id };
 }
-// #C732: the cards that wait 15 min at a phase while its agent is idle (stalledWaits, board-rules.mjs), kept as one row per
+// #C732: the cards that wait 15 min at a phase while its agent is idle (stalledWaits, stallMsOf, shipSlowMsOf, board-rules.mjs), kept as one row per
 // (card, reason): a new reason for a card is pending for Manager once, an older untaken reason of the card is replaced by it, and a stall
 // that is over is no longer pending. A reason already sent is never sent again.
 // #C990: the outages the step clocks skip: the recorded ones (the probe came back) and the one still open (the probe is silent now: from its last post to now).
@@ -515,13 +515,14 @@ async function syncStalls(db, now) {
   // The dispatch holds a card only for an UNANSWERED open ask (an answered one left open does not), so the open-group rule is given that set (#C1082, Checker 2's F1).
   const unansweredAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
   const outages = await outagesOf(db, now);
-  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards, outages });
+  const knobsNow = await knobsStored(db); // #C1106: the posted settings of the step clocks (default when none, or one out of bounds)
+  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards, outages, stallMs: stallMsOf(knobsNow) });
   // #C1078: with the week's quota used up (the session's fresh reading), the idle-agent stall lines are held until the reset and one line goes to Manager.
   const weekRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = ?").bind(WEEK_USAGE_KEY).first();
   let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
   const quota = quotaHold({ now, week: sessionWeek({ evidence: { [WEEK_USAGE_KEY]: { value: weekValue, readAt: weekRow?.read_at } } }, now), stalls: waitsAll });
   const waits = quota.stalls;
-  const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages });
+  const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages, shipSlowMs: shipSlowMsOf(knobsNow) });
   // A card the held stall line would have named is not named by the slow line in its place.
   const slow = slowAll.filter((s) => !waitsAll.some((w) => w.card_id === s.card_id));
   // The slow line's words are the same every spell, so its row (card, reason) must not outlive the spell: once a card is no longer slow with no

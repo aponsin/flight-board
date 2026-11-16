@@ -12,6 +12,9 @@ export const KNOBS = {
   slowRunSec: { default: 150, min: 30, max: 280, under: "evidenceLimitSec", label: "a run longer than this is shown as slow (s)" },
   staleAfterSec: { default: 300, min: 120, max: 1800, over: ["evidenceIntervalSec", "evidenceLimitSec"], label: "an evidence reading older than this is stale on the page (s)" },
   probeSilentSec: { default: 300, min: 120, max: 1800, over: ["evidenceIntervalSec", "evidenceLimitSec"], label: "no probe post for this long makes the Probe chip silent (s)" },
+  // #C1106 part B, the Worker-side step clocks (posted by the probe in the `knobs` key, read by the store at each run).
+  stallAfterSec: { default: 900, min: 120, max: 7200, label: "a card waits this long at a phase with its agent idle before Manager is woken (s)" },
+  shipSlowSec: { default: 660, min: 120, max: 3600, label: "Release's ship step is slow after this long (s)" },
   // Not settings yet (they stay on the lint baseline): gate/reset.mjs EVIDENCE_STALE_MS (no card shows a commit for 10 min; the file is pinned by the owner's
   // install, so changing it needs an owner pack, and it is NOT the page's probe edge staleAfterSec) and collector/store-dispatch.mjs AGENTS_FRESH_MS.
 };

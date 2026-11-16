@@ -751,7 +751,11 @@ export function whoForPhase(cardId, phase, agents, ownerRole) {
 // missing reading is a blind probe, never a stall: only a reading that lists someone says who is absent.
 // Pure: cards = rows {id, num, owner_role, blocked_reason, paused, dropped, waiting_on}; evidence = {cardId: reading}; agents = the
 // `agents` evidence; openAskCards = Set of card ids with an open ask; phaseStart = Map "<card>|<phase>" -> ms. Times in the reasons are Mountain Time (#C983).
-export const STALL_AFTER_MS = 15 * 60_000;
+// #C1106: the setting stallAfterSec (worker/knobs.mjs); this is its default. The store passes the posted one (stallMsOf) to stalledWaits.
+export const STALL_AFTER_MS = KNOBS.stallAfterSec.default * 1000;
+export const stallMsOf = (stored) => knobFrom(stored, "stallAfterSec") * 1000;
+// The words of a threshold in a stall line: "15 min" at the default, "20 min" at 1200 s; a part of a minute is rounded up, so the row never says less than it waited.
+export const minWords = (ms) => `${Math.ceil(ms / 60_000)} min`;
 // #C1097 (11-16, about 5 am to 10 am MT: three signed cards sat with Boardsmith and #C1095 with Release; the stalls were in Manager's inbox only, and nothing
 // woke the agents): a stall of stalledWaits (an idle or sessionless agent, a card waiting for it) that has lasted STALL_WAKE_AFTER_MS since the store first
 // raised it also gets a DISPATCH line for the stalled role, by the dispatch's own path (collector/store-dispatch.mjs agentStallCards); the stall still goes to
@@ -821,7 +825,7 @@ export function landedUnbuilt({ now, cards, evidence, installStart }) {
 // during and after it, and one that was not does not turn late because of it. No outages: plain elapsed time, as before.
 export const outageOverlap = (from, to, outages) => (Array.isArray(outages) ? outages : []).reduce((sum, o) => (Number.isFinite(o?.start) && Number.isFinite(o?.end) ? sum + Math.max(0, Math.min(o.end, to) - Math.max(o.start, from)) : sum), 0);
 export const waited = (from, now, outages) => now - from - outageOverlap(from, now, outages);
-export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [] }) {
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [], stallMs = STALL_AFTER_MS }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
@@ -846,10 +850,10 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
       // others (an empty reading is a blind probe, never a stall), has nobody to start it. One line per role, below. A card younger than the stall time
       // is not news. An idle, working or unknown session, a held card, a dependency not live and a closed card raise nothing here.
       if (!o) {
-        if (Object.keys(roster).length && waited(c.updated_at, now, outages) >= STALL_AFTER_MS) noSession.set(c.owner_role, [...(noSession.get(c.owner_role) ?? []), c]);
+        if (Object.keys(roster).length && waited(c.updated_at, now, outages) >= stallMs) noSession.set(c.owner_role, [...(noSession.get(c.owner_role) ?? []), c]);
         continue;
       }
-      if (!Number.isFinite(idleFrom) || waited(idleFrom, now, outages) < STALL_AFTER_MS) continue;
+      if (!Number.isFinite(idleFrom) || waited(idleFrom, now, outages) < stallMs) continue;
       if (READ_ONLY_ROLES.includes(c.owner_role)) {
         const posted = postedAt instanceof Map ? postedAt.get(c.id) : undefined;
         if (Number.isFinite(posted) && now - posted <= POSTED_FRESH_MS) continue;
@@ -876,13 +880,13 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     const role = behind ? c.owner_role : typeof claimed === "string" && /^Checker( [0-9]{1,3})?$/.test(claimed) ? claimed : PHASE_LANES[phase] ?? c.owner_role;
     if (typeof role !== "string" || !/^[A-Za-z0-9 _-]{1,24}$/.test(role)) continue;
     const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`);
-    const at = behind ? `#C${c.num} signed but behind main${/^[0-9a-f]{12}$/.test(String(v.headSha12)) ? " " + v.headSha12 : ""}, waits at ${role} 15 min` : `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} 15 min`;
+    const at = behind ? `#C${c.num} signed but behind main${/^[0-9a-f]{12}$/.test(String(v.headSha12)) ? " " + v.headSha12 : ""}, waits at ${role} ${minWords(stallMs)}` : `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} ${minWords(stallMs)}`;
     if (!a && Object.keys(roster).length && Number.isFinite(start)) {
-      if (waited(start, now, outages) >= STALL_AFTER_MS) out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, no session for ${role}` });
+      if (waited(start, now, outages) >= stallMs) out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, no session for ${role}` });
       continue;
     }
     if (!a || a.state !== "idle" || !Number.isFinite(a.since) || !Number.isFinite(start)) continue;
-    if (waited(Math.max(start, a.since), now, outages) < STALL_AFTER_MS) continue;
+    if (waited(Math.max(start, a.since), now, outages) < stallMs) continue;
     out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, ${role} idle since ${mtTime(a.since)}` });
   }
   // #C910: one line per idle agent, not one per queued card (22 queued cards were 22 lines): "Boardsmith idle since 07:31Z, 22 queued, next #C901".
@@ -932,7 +936,8 @@ export function quotaHold({ now, week, stalls }) {
 // "No reason" = no waiting_on, no blocked_reason, no pause, no open hold end, no open ask, no unfinished dependency. A card landed on main and not
 // deployed is waiting for the install, not slow. One row per card ("#Cn is slow with no reason: add one or unstick it"): giving a reason (or the
 // card moving on) ends it, and a row Manager has read is not sent again.
-export const SHIP_SLOW_MS = 11 * 60_000;
+export const SHIP_SLOW_MS = KNOBS.shipSlowSec.default * 1000; // #C1106: the setting shipSlowSec (worker/knobs.mjs); this is its default
+export const shipSlowMsOf = (stored) => knobFrom(stored, "shipSlowSec") * 1000;
 export const SLOW_LINE_TAIL = " is slow with no reason: add one or unstick it";
 export const slowLine = (num) => `#C${num}${SLOW_LINE_TAIL}`;
 // #C981: a card in rework whose reason is missing (the evidence's `rework` flag: the store refuses its other writes until one is attached) is
@@ -953,7 +958,7 @@ export function phaseMedians(rows) {
   for (const [p, l] of Object.entries(by)) if (l.length >= 3) { l.sort((a, b) => a - b); out[p] = l[Math.floor(l.length / 2)]; }
   return out;
 }
-export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages = [] }) {
+export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages = [], shipSlowMs = SHIP_SLOW_MS }) {
   const out = [];
   for (const c of cards ?? []) {
     if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || isHeld(c) || holdOpen(c, now, endsPassed) || openAskCards?.has(c.id) || dependsNotLive(c, cards, evidence)) continue;
@@ -962,7 +967,7 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
     if (phase === "ship" && v.onMain === true) continue;
     const start = phaseStart?.get(`${c.id}|${phase}`);
     if (!Number.isFinite(start) || start > now) continue;
-    const limit = phase === "ship" ? SHIP_SLOW_MS : Number.isFinite(medians?.[phase]) && medians[phase] > 0 ? 2 * medians[phase] : null;
+    const limit = phase === "ship" ? shipSlowMs : Number.isFinite(medians?.[phase]) && medians[phase] > 0 ? 2 * medians[phase] : null;
     const missing = v.rework === true && !(typeof c.rework_reason === "string" && c.rework_reason !== "");
     const owner = typeof c.owner_role === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(c.owner_role) ? c.owner_role : "the owner";
     if (limit !== null && waited(start, now, outages) > limit) out.push({ card_id: c.id, num: c.num, reason: missing ? reworkReasonLine(c.num, owner) : slowLine(c.num) });
