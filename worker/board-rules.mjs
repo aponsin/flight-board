@@ -372,9 +372,12 @@ export function ownerTurn(c, e) {
   const pushed = !!e && typeof e === "object" && (typeof e.headSha12 === "string" || typeof e.headSha === "string");
   return !pushed || phase === "build" || isRework(c, e);
 }
+// The owner's ruling (the owner chose A on 11-16, #C1103; Checker 2's M1): the group order decides only which NEW work starts. A card sent back with findings (`rework`) and
+// the next card of a group already started (`groupStarted`) come first, as the dispatch's agentRank puts them, so neither is ever blocked or named.
 export function groupOrderBlock(card, cards, order) {
   const role = card?.owner_role, mine = typeof card?.group === "string" ? card.group : "";
   if (typeof role !== "string" || !role) return null;
+  if (card.rework === true || card.groupStarted === true) return null;
   let best = null;
   for (const c of Array.isArray(cards) ? cards : []) {
     if (!c || c.id === card.id || c.owner_role !== role || !c.turn || c.held || typeof c.group !== "string" || !c.group || c.group === mine) continue;
@@ -385,12 +388,12 @@ export function groupOrderBlock(card, cards, order) {
 }
 // The rows of the store (cards, the evidence by card id) as the rule's plain cards. A dropped, done or live card is no card of the rule.
 export function orderCards(rows, evidence) {
-  const out = [];
+  const out = [], members = startedGroupMembers(Array.isArray(rows) ? rows.filter(Boolean) : [], (id) => evidence?.[id]);
   for (const c of Array.isArray(rows) ? rows : []) {
     if (!c || typeof c.id !== "string" || c.dropped || c.done_at) continue;
     const e = evidence?.[c.id];
     if ((e?.phase ?? e?.lit?.[0]) === "live") continue;
-    out.push({ id: c.id, num: c.num, owner_role: c.owner_role, group: groupOf(c), queue_pos: c.queue_pos, owner: c.queue_set_by === "owner", held: !!(c.paused || isHeld(c) || dependsNotLive(c, rows, evidence)), turn: ownerTurn(c, e) });
+    out.push({ id: c.id, num: c.num, owner_role: c.owner_role, group: groupOf(c), queue_pos: c.queue_pos, owner: c.queue_set_by === "owner", held: !!(c.paused || isHeld(c) || dependsNotLive(c, rows, evidence)), turn: ownerTurn(c, e), rework: isRework(c, e), groupStarted: groupStartedByOther(members, groupOf(c), c.id) });
   }
   return out;
 }
@@ -410,15 +413,22 @@ export function outOfOrderWork({ cards, evidence, agents, groupOrder }) {
 // The groups that have STARTED: a group (batch id) with a card, not dropped, that has been pushed, has landed (live) or is closed as done.
 // `rows` are card rows { id, batch, dropped, done_at }; `evidenceOf(id)` gives the card's evidence value.
 export function startedGroupSet(rows, evidenceOf) {
-  const out = new Set();
+  return new Set(startedGroupMembers(rows, evidenceOf).keys());
+}
+// The same reading, with the cards that started each group: Map group -> Set of card ids. #C1103: the NEXT card of a started group is one another card started,
+// so a card's own first push does not make its group "started" for it.
+export function startedGroupMembers(rows, evidenceOf) {
+  const out = new Map();
   for (const k of rows) {
     if (!k || typeof k.id !== "string" || k.dropped || typeof k.batch !== "string" || !GROUP_ID_SHAPE.test(k.batch.trim())) continue;
     const e = evidenceOf(k.id);
     const pushed = !!e && typeof e === "object" && (typeof e.headSha12 === "string" || typeof e.headSha === "string");
-    if (k.done_at || pushed || (e?.phase ?? e?.lit?.[0]) === "live") out.add(k.batch.trim());
+    if (k.done_at || pushed || (e?.phase ?? e?.lit?.[0]) === "live") { const g = k.batch.trim(); if (!out.has(g)) out.set(g, new Set()); out.get(g).add(k.id); }
   }
   return out;
 }
+// Whether a group was started by a card other than `id` (the card's own push does not count).
+export const groupStartedByOther = (members, group, id) => { const s = members.get(group); return !!s && (s.size > 1 || !s.has(id)); };
 // #C1082 (the stall line's "next #C.." named a card the dispatch holds): the open-group rule of the dispatch (collector/store-dispatch.mjs, #C1080),
 // as a pure function of the store's rows, so the stall line names only a card the dispatch would send. While a role has a STARTED group that is not
 // yet READY (a card of the role's in it, active, not asked, not held, not waiting on someone else, with nothing pushed or pushed with the probe's

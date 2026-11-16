@@ -15,7 +15,7 @@ const ZERO = /^0+$/;
 // The refused first pushes: [{ ref, id, num, group, role, block: { id, num, group } }]. git(args) -> stdout. queue: the parsed stack-queue.json or null.
 export function outOfOrderPushes(stdin, git, queue, now = Date.now()) {
   if (!queue || !Array.isArray(queue.cards) || !Number.isFinite(queue.at) || queue.at > now + 60e3 || now - queue.at > QUEUE_FRESH_MS) return [];
-  const cards = queue.cards.filter((c) => c && typeof c.id === "string").map((c) => ({ id: c.id, num: c.num, owner_role: c.owner_role, group: c.batch, held: !!c.held, turn: c.turn === true }));
+  const cards = queue.cards.filter((c) => c && typeof c.id === "string").map((c) => ({ id: c.id, num: c.num, owner_role: c.owner_role, group: c.batch, held: typeof c.orderHeld === "boolean" ? c.orderHeld : !!c.held, turn: c.turn === true, rework: c.rework === true, groupStarted: c.groupStarted === true }));
   const out = [];
   for (const line of String(stdin).split("\n")) {
     const [, local, remoteRef, remoteSha] = line.trim().split(/\s+/);
