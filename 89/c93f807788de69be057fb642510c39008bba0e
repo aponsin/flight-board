@@ -1,0 +1,1 @@
+SECURE #C1114 v2 89c93f80: the probe counts FINDINGS/RISKS items from notes (read only, capped at 99, shape-checked in state-schema), and the Worker only raises counters (raisedIssues). Covered by the tip review at a7bd1ff5. (Security)
