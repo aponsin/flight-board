@@ -64,7 +64,7 @@ test("the real state child ends with a timing line of the allowed shape, a phase
     assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
     const line = timingOf(r.stdout);
     assert.notEqual(line, "", r.stdout);
-    for (const phase of ["caches", "repos", "merge", "cards", "sessions", "agents", "usage", "asks", "cardStates", "ship", "write", "fetch", "tips"]) assert.match(line, new RegExp(` ${phase}=\\d+`), phase);
+    for (const phase of ["caches", "repos", "cards", "sessions", "agents", "usage", "asks", "cardStates", "ship", "write", "fetch", "tips"]) assert.match(line, new RegExp(` ${phase}=\\d+`), phase);
     for (const count of ["cards", "all", "tips", "sessions", "ids", "ci", "waiting"]) assert.match(line, new RegExp(` ${count}#\\d+`), count);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

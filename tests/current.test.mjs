@@ -8,8 +8,6 @@ import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { judge, linkedCommit, swapLink, importClosure, pinnedCommit, sameTree, OWNER_ENTRIES } from "../scripts/current.mjs";
 import { currentLink, fenceSpec, decide } from "../collector/fence.mjs";
-import { sameCode, EXPORT_NAME as NAME_C, EXPORT_COLLECTIONS as COLLECTIONS_C } from "../collector/collect.mjs";
-import { EXPORT_NAME, EXPORT_COLLECTIONS } from "../collector/export.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 
 const A = "a".repeat(40), B = "b".repeat(40);
@@ -28,9 +26,8 @@ test("importClosure: the owner's install is everything its entry points load; at
   const read = (f) => { try { return readFileSync(new URL(`../${f}`, import.meta.url), "utf8"); } catch { return null; } };
   const owned = importClosure(OWNER_ENTRIES, read);
   for (const f of ["collector/context.mjs", "collector/export.mjs", "collector/fence.mjs", "collector/refresh.mjs", "collector/text.mjs", "gate/after.mjs", "gate/gate.mjs", "gate/plan.mjs", "gate/rules.mjs", "gate/session.mjs", "gate/stop.mjs", "scripts/config.mjs"]) assert.ok(owned.includes(f), f);
-  // The probe runs the install's own collect.mjs as a child (#C642), so it and everything it loads are pinned with the owner's install.
-  for (const f of ["collector/collect.mjs", "collector/delta.mjs", "collector/derive.mjs", "collector/facts.mjs", "collector/nudges.mjs", "collector/plan-state.mjs", "collector/timings.mjs"]) assert.ok(owned.includes(f), f);
-  assert.ok(NAME_C === EXPORT_NAME && COLLECTIONS_C === EXPORT_COLLECTIONS, "collect.mjs re-exports the fence's own values: they can't drift apart");
+  // The probe runs no collect.mjs child any more (#C864 step 2b): the old Collector's files are gone and no longer pinned.
+  for (const f of ["collector/collect.mjs", "collector/delta.mjs", "collector/facts.mjs", "collector/nudges.mjs", "collector/plan-state.mjs", "collector/timings.mjs"]) assert.ok(!owned.includes(f), f);
   assert.ok(!owned.includes("collector/TASK.md") && !owned.includes("page/board.template.html"));
   const files = { "a.mjs": 'import { x } from "./b/c.mjs";\nexport { y } from "../z.mjs";\nimport fs from "node:fs";', "b/c.mjs": 'import "./d.mjs";\nimport { a } from "../a.mjs";', "z.mjs": "", "b/d.mjs": null };
   assert.deepEqual(importClosure(["a.mjs"], (f) => files[f] ?? null), ["a.mjs", "b/c.mjs"].sort(), "a bare import and a missing file add nothing; ../z.mjs is outside");
@@ -124,11 +121,4 @@ test("the fence lets the two steps run from the pinned copy or the current link,
   }
   assert.match(run(`node ${current}/collector/collect.mjs --config /c.json`, without), /only the two collect\.mjs commands/, "no valid link: pinned only");
   assert.match(run(`node /srv/fb/install/${B}/collector/collect.mjs --config /c.json`, withLink), /only the two/, "another pinned copy");
-});
-
-test("sameCode: step 2 runs only the code step 1 ran; an older mark without code passes", () => {
-  assert.equal(sameCode({ code: "/i/a" }, "/i/a"), true);
-  assert.equal(sameCode({ code: "/i/a" }, "/i/b"), false);
-  assert.equal(sameCode({ at: 1 }, "/i/b"), true);
-  assert.equal(sameCode({}, "/i/b"), true);
 });
