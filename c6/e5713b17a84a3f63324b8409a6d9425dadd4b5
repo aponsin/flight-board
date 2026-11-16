@@ -1,0 +1,1 @@
+SECURE #C1092 stall-queue-answered-asks-v2 c6e5713b: worker/board-rules.mjs stalledWaits only: the queued and rework tests read unansweredAskCards (the store's existing parameterised query) before openAskCards, as the dispatch does. Pure logic; no new input, table, column, secret or network call; it changes which card a stall line names, not who can write. (Security)
