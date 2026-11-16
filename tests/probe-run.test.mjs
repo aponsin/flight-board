@@ -5,7 +5,7 @@ import { JOBS, OUTER_EXTRA_SEC, makeLogger, startRun, runChild, launchdPlist } f
 
 test("five cadences (#C821 added dispatch, #C975 land), each with an inside limit well under row 4's 3 minutes", () => {
   assert.deepEqual(Object.keys(JOBS), ["ask", "evidence", "usage", "dispatch", "land"]);
-  assert.deepEqual(Object.values(JOBS).map((j) => j.intervalSec), [20, 120, 300, 60, 600]);
+  assert.deepEqual(Object.values(JOBS).map((j) => j.intervalSec), [20, 60, 300, 60, 600]);
   assert.deepEqual(Object.values(JOBS).map((j) => j.limitSec), [30, 170, 120, 45, 590]);
   for (const [name, j] of Object.entries(JOBS)) if (name !== "evidence" && name !== "land") assert.ok(j.limitSec + OUTER_EXTRA_SEC < 180);
   // #C996's stopgap (every number reverts to 60 / 90 when part 2 makes runs fast): evidence may run to 170 s, starts every 2 minutes
@@ -51,7 +51,7 @@ test("a child process is killed at its own timeout", async () => {
 test("each cadence is its own launchd job with the OS alarm in front of the program", () => {
   const plists = Object.keys(JOBS).map((job) => launchdPlist({ job, label: `com.flight-board.probe.${job}`, nodePath: "/usr/bin/node", script: "/x/probe.mjs", logPath: `/x/${job}.log` }));
   assert.equal(new Set(plists.map((p) => /<key>Label<\/key><string>([^<]+)/.exec(p)[1])).size, 5);
-  assert.deepEqual(plists.map((p) => Number(/<key>StartInterval<\/key><integer>(\d+)/.exec(p)[1])), [20, 120, 300, 60, 600]);
+  assert.deepEqual(plists.map((p) => Number(/<key>StartInterval<\/key><integer>(\d+)/.exec(p)[1])), [20, 60, 300, 60, 600]);
   assert.deepEqual(plists.map((p) => /alarm (\d+); exec @ARGV/.exec(p)[1]), ["45", "185", "135", "60", "605"]);
   for (const p of plists) assert.match(p, /<string>\/usr\/bin\/perl<\/string><string>-e<\/string>/);
 });
