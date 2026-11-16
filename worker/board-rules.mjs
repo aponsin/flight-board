@@ -822,6 +822,21 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   }
   return out;
 }
+// #C1078 (11-13: the quota hit 100% and the dispatch woke Manager once per queued Boardsmith card, "idle, N queued, next #C...", each wake a turn
+// that could change nothing): while the session's reading of the week (the week_usage tool, fresh, for the week still running) is QUOTA_OUT_PCT or
+// more, every stall stalledWaits raises is about an idle or sessionless agent, and none of them is held back to be sent after the reset: they are
+// dropped from this round, so the store retires their rows as any stall that is over, and ONE line goes to Manager instead. The line holds the
+// reset time and no percent, so it is one row for the whole spell (a reading of 98, then 99, then 100 is not three wakes). A stale or missing
+// reading is no hold (the quota stop of the dispatch treats it the same way). `week` is sessionWeek()'s answer (collector/week-usage.mjs: this file
+// imports nothing of the collector). Only stalledWaits' output is passed in: held cards, asks, prompts, landed packs and stale copies are not an
+// idle agent's stall and go on as before.
+export const QUOTA_OUT_PCT = 98, QUOTA_OUT_CARD = "quota-out:";
+export function quotaHold({ now, week, stalls }) {
+  const list = Array.isArray(stalls) ? stalls : [];
+  const out = week?.state === "fresh" && Number.isInteger(week.pct) && week.pct >= QUOTA_OUT_PCT && Number.isFinite(week.resetsAt) && week.resetsAt > now;
+  if (!out) return { stalls: list, line: [] };
+  return { stalls: [], line: [{ card_id: `${QUOTA_OUT_CARD}${week.resetsAt}`, num: null, reason: `The week's quota is used up (${QUOTA_OUT_PCT}% or more): idle-agent stall lines are held until it resets at ${mtDayTime(week.resetsAt)}` }] };
+}
 
 // #C915 (d): a card that runs past its estimate with nobody having said why. The estimate is the page's: Release's ship is about 10 min (slow from
 // the 11th), any other phase is slow past twice the usual time of that phase (`medians`: { phase: ms }, taken by the store from the phase history).
