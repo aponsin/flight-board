@@ -296,6 +296,20 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // (no open ask, not waiting on someone else) is woken for it and for no NEW card, whatever group the new card is in.
   const waitsElsewhere = (k) => typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(k.who);
   const reworkWho = new Set(cards.filter((k) => k.rework && !askedCards.has(k.id) && !waitsElsewhere(k)).map((k) => k.who));
+  // #C1080 (11-15/16: the dispatch woke Boardsmith three times in the middle of G9, for #C997, #C990 and #C1078, and Manager held each by hand): while a role
+  // has a STARTED group that is not yet READY, it is woken to build only that group's cards. A group is not ready for a role while one of the role's cards
+  // in it (active: not paused, dropped, done, blocked or live; not waiting on an open ask, on someone else or on an open hold) has nothing pushed, or is
+  // pushed with no stack-ready signal covering its head (the probe's stackHold). Only NEW build turns are dropped for a card outside the open group(s):
+  // reviews, rework, landing and every other turn are untouched, and with no group open the queue is dispatched as before.
+  const openGroups = new Map();
+  for (const k of all) {
+    if (!k || typeof k.id !== "string" || typeof k.owner_role !== "string") continue;
+    const g = batchOf(k);
+    if (g === "" || !startedGroups.has(g) || !activeCard(k) || askedCards.has(k.id) || holdOpen(k, now, endPassed)) continue;
+    if (typeof k.waiting_on === "string" && k.waiting_on.trim() && !k.waiting_on.trim().startsWith(k.owner_role)) continue;
+    if (!hasHead(k.id) || ev[`cards.${k.id}`]?.value?.stackHold === true) openGroups.set(k.owner_role, new Set([...(openGroups.get(k.owner_role) ?? []), g]));
+  }
+  for (const k of cards) if (openGroups.get(k.who)?.size && !openGroups.get(k.who).has(k.group)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
   const byRole = new Map();
   for (const k of cards.filter(notStarted)) byRole.set(k.who, [...(byRole.get(k.who) ?? []), k]);
   for (const [who, list] of byRole) {
