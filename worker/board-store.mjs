@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { landedUnbuilt, raisedIssues, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf } from "./board-rules.mjs";
+import { landedUnbuilt, raisedIssues, unexplainedStepBack, REASON_COUNTER, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner, wakeLimits } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -181,7 +181,24 @@ export async function updateCard(db, now, who, fields) {
   // #C875: a reason attached ends the rework's wait for one (the flag in the card's evidence goes) and is kept in the card's reason history.
   if (keys.includes("rework_reason") && typeof fields.rework_reason === "string") {
     await db.prepare("INSERT INTO rework_history (card_id, reason, at, who) VALUES (?, ?, ?, ?)").bind(id, fields.rework_reason, now, who ?? null).run();
-    await db.prepare("UPDATE evidence SET value = json_remove(value, '$.rework') WHERE key = ? AND json_extract(value, '$.rework') IS NOT NULL").bind(`cards.${id}`).run();
+    // #C1114 part 2: a reason attached to a rework that waits for one (the flag is true, or "unexplained" for a step back the Worker is holding) adds 1 to its counter,
+    // once: the flag goes with this write, so the same reason written again adds nothing. "review findings" has no counter (the notes count those). A held step back
+    // keeps the head the reason was given for in `reasoned`, so the reading at that head moves the card back without asking again.
+    let ev = null; try { ev = JSON.parse((await db.prepare("SELECT value FROM evidence WHERE key = ?").bind(`cards.${id}`).first())?.value ?? "null"); } catch { /* none */ }
+    const pending = ev && (ev.rework === true || ev.rework === "unexplained");
+    const kind = REASON_COUNTER[fields.rework_reason];
+    if (pending && kind) {
+      const row = await db.prepare("SELECT issues FROM cards WHERE id = ?").bind(id).first();
+      let have = {}; try { have = row?.issues ? JSON.parse(row.issues) : {}; } catch { /* none */ }
+      if (!have || typeof have !== "object" || Array.isArray(have)) have = {};
+      const next = { ...have, [kind]: Math.min(99, (Number.isInteger(have[kind]) ? have[kind] : 0) + 1) };
+      await db.prepare("UPDATE cards SET issues = ?, issues_at = ? WHERE id = ?").bind(JSON.stringify(next), now, id).run();
+    }
+    if (ev && ev.rework !== undefined) {
+      const { rework, reworkAt: _at, actual, ...rest } = ev;
+      const cleared = rework === "unexplained" && typeof actual?.headSha12 === "string" ? { ...rest, reasoned: actual.headSha12 } : rest;
+      await db.prepare("UPDATE evidence SET value = ? WHERE key = ?").bind(JSON.stringify(cleared), `cards.${id}`).run();
+    }
   }
   return { ok: true, id, changed: keys.length + (fields.done === true ? 1 : 0) };
 }
@@ -855,13 +872,21 @@ export async function writeEvidence(db, now, who, key, value, track) {
   if (!key.startsWith("cards.")) { await upsertOf(value).run(); return { ok: true }; }
   // A card's lit phase changed (or is read for the first time): the phase history gets its rows in the same write (#C723 B3b).
   // The phase it was in: the last evidence reading, else (the first reading after the one-time import) the phase the history left open.
-  const cardId = key.slice(6), next = value.lit[0];
+  const cardId = key.slice(6);
   const before = await evidenceOf(db, key);
   // #C875: the Rework flag is the Worker's, never the probe's: a `rework` the probe sends is dropped. It is set on a transition between two readings
   // (reworkTriggered), kept across the readings that follow, and cleared when a reason is attached (updateCard) or the card is on main or live.
-  const { rework: _sent, ...reading } = value;
-  const rework = before?.rework === true && reading.onMain !== true && next !== "live" ? true : reworkTriggered(before, reading);
-  const upsert = upsertOf(rework ? { ...reading, rework: true } : reading);
+  const { rework: _sent, ...sent } = value;
+  // #C1114 part 2: a step back from a review phase with no FINDINGS and no reason does not move the card: the stored review reading stays, flagged rework:
+  // "unexplained" (`reworkAt` when it began, `actual` the reading the probe really saw); the first reading that is no step back, or the one at the head a
+  // reason was attached for, moves it on. A reading that stays held keeps its `reworkAt`.
+  const holding = unexplainedStepBack(before, sent);
+  const { rework: _r, reworkAt: _at, actual: _a, reasoned: _rs, ...kept } = before ?? {};
+  const reading = holding ? { ...kept, actual: { headSha12: sent.headSha12, phase: sent.lit[0] } } : sent;
+  const next = reading.lit[0];
+  const reasonedHere = typeof before?.reasoned === "string" && before.reasoned !== "" && before.reasoned === sent.headSha12;
+  const rework = holding ? false : before?.rework === true && reading.onMain !== true && next !== "live" ? true : !reasonedHere && reworkTriggered(before, reading);
+  const upsert = upsertOf(holding ? { ...reading, rework: "unexplained", reworkAt: before.rework === "unexplained" && Number.isFinite(before.reworkAt) ? before.reworkAt : now } : rework ? { ...reading, rework: true } : reading);
   let prev = before?.lit?.[0] ?? null;
   // A wait step (the step tool, #C739) is not the lit phase: the three reads of the history below take the probe's own rows only (wait IS NULL).
   if (!prev) { const last = await db.prepare("SELECT phase, kind FROM phase_history WHERE card_id = ? AND wait IS NULL ORDER BY at DESC, id DESC LIMIT 1").bind(cardId).first(); if (last?.kind === "start") prev = last.phase; }
@@ -869,10 +894,10 @@ export async function writeEvidence(db, now, who, key, value, track) {
   const cardRow = await db.prepare("SELECT owner_role, repo, waiting_on, blocked_reason FROM cards WHERE id = ?").bind(cardId).first();
   const agents = (await evidenceOf(db, "agents")) ?? {}, ownerRole = cardRow?.owner_role;
   // #C1114: the counters the probe counted from the review notes raise the card's issues (raisedIssues: never lower, never double).
-  if (cardRow && reading.issueCounts) {
+  if (cardRow && sent.issueCounts) {
     const stored = await db.prepare("SELECT issues FROM cards WHERE id = ?").bind(cardId).first();
     let have = null; try { have = stored?.issues ? JSON.parse(stored.issues) : null; } catch { /* none */ }
-    const up = raisedIssues(have, reading.issueCounts);
+    const up = raisedIssues(have, sent.issueCounts);
     if (up) await db.prepare("UPDATE cards SET issues = ?, issues_at = ?, updated_at = ? WHERE id = ?").bind(JSON.stringify(up), now, now, cardId).run();
   }
   const rows = prev === next ? [] : historyRows(cardId, prev, next, now, whoForPhase(cardId, next, agents, ownerRole), prevWho);
