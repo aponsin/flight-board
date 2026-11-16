@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { landedUnbuilt, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
+import { landedUnbuilt, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, quotaHold, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -8,7 +8,7 @@ import { readUsage } from "./compat-usage.mjs";
 import { mtDayTime } from "./team-time.mjs";
 import { readThreads } from "./compat-threads.mjs";
 import { askWakes, promiseWakes, promptWakes, watchWakes, WATCH_WAKE_PREFIX } from "./push-rules.mjs";
-import { weekUsageValue, WEEK_USAGE_KEY } from "../collector/week-usage.mjs";
+import { weekUsageValue, sessionWeek, WEEK_USAGE_KEY } from "../collector/week-usage.mjs";
 
 export const PROBE_SILENT_MS = 5 * 60_000; // #C996: was 3 min while the evidence job ran every minute; reverts with its cadence
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -478,9 +478,15 @@ async function syncStalls(db, now) {
   const medians = phaseMedians((await db.prepare("SELECT id, card_id, phase, kind, at FROM phase_history WHERE wait IS NULL AND kind IN ('start', 'end') ORDER BY id DESC LIMIT 5000").all()).results);
   // A card already named by a "waits at" line this round is not named twice: that line is its one stall.
   const groupOrder = (await db.prepare("SELECT batch, pos FROM group_order").all()).results ?? [];
-  const waits = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder });
+  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder });
+  // #C1078: with the week's quota used up (the session's fresh reading), the idle-agent stall lines are held until the reset and one line goes to Manager.
+  const weekRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = ?").bind(WEEK_USAGE_KEY).first();
+  let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
+  const quota = quotaHold({ now, week: sessionWeek({ evidence: { [WEEK_USAGE_KEY]: { value: weekValue, readAt: weekRow?.read_at } } }, now), stalls: waitsAll });
+  const waits = quota.stalls;
   const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed });
-  const slow = slowAll.filter((s) => !waits.some((w) => w.card_id === s.card_id));
+  // A card the held stall line would have named is not named by the slow line in its place.
+  const slow = slowAll.filter((s) => !waitsAll.some((w) => w.card_id === s.card_id));
   // The slow line's words are the same every spell, so its row (card, reason) must not outlive the spell: once a card is no longer slow with no
   // reason (a reason given, a hold, the card moved on), its row goes, taken or not, and a later spell wakes Manager again (Checker F1; as copyStalls).
   const slowRows = (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE reason LIKE ?").bind(`%${SLOW_ROW_END}`).all()).results;
@@ -505,7 +511,7 @@ async function syncStalls(db, now) {
   // #C1076: a board card landed 30+ min ago that no deploy pair holds: a line to Manager, whatever its owner is doing (landedUnbuilt, board-rules.mjs).
   const installStart = new Map((await db.prepare("SELECT card_id, MAX(at) AS at FROM phase_history WHERE kind = 'start' AND wait = ? GROUP BY card_id").bind(INSTALL_WAIT).all()).results.map((r) => [r.card_id, r.at]));
   const landed = landedUnbuilt({ now, cards, evidence, installStart });
-  const stalls = [...waits, ...landed, ...heldWakes({ now, cards, endsPassed }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...promiseWakes({ asks: openAsks, now }), ...promptWakes({ stuck: stuckNow, now }), ...watchWakes({ watch: watchNow }), ...copyStalls, ...closing];
+  const stalls = [...waits, ...quota.line, ...landed, ...heldWakes({ now, cards, endsPassed }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...promiseWakes({ asks: openAsks, now }), ...promptWakes({ stuck: stuckNow, now }), ...watchWakes({ watch: watchNow }), ...copyStalls, ...closing];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.
