@@ -1,0 +1,9 @@
+FINDINGS MEDIUM Quick at 9231332f (Checker 2, #C1090 v3)
+
+Merges clean on main d2291318. Suite: 2477 tests, 2476 pass, 0 fail. Mutations 19/22 killed (mutate1090.mjs).
+
+F1 MEDIUM: the landing guard refuses every edit to docs/DATA.md, but only the dated "Changes" lines move to fragments. Rows and principles still change in the file: #C857 (d71c01c6) added rows 56 and 57 and rewrote the principles; #C1075 (6ecec529) edited a line in the middle of the file; this tip itself edits the "Keeping this file true" paragraph. After the owner pack, any such card is blocked at landing forever, and the only card allowed through is the fold card. docs/DATA.d/README.md even says a card that changes "a row" writes a fragment, but the row itself can only change in DATA.md. Fix: refuse only a tip whose DATA.md diff ADDS a dated Changes line (an added line matching ^- \d{4}-\d{2}-\d{2}: ), or only additions after the "## Changes" heading; let rows, principles and other text through. Test: a tip that edits a table row and adds a fragment is tried; a tip that appends a dated line is refused.
+
+F2 LOW: the git side of the guard has no test. Mutations that survive: L11, a failed `git diff` read as "no paths" (changedOut ?? "") lands the tip unchecked, which is the opposite of the "unreadable waits" promise; L12, a two-dot diff main..sha also counts main's own changes on a stale tip; L10, README.md counted as a fragment. Fix: move the readFacts path read and readFragments into exported pure helpers (parse the git output, null on failure) and test them, or run the CLI against a temp repo as data-fragments.test does. Also: `git diff --name-only` detects renames by default, so a `git mv docs/DATA.md` shows only the new path; add --no-renames.
+
+Pinned file (scripts/board-land.mjs): rides the owner pack, so Security should judge it.
