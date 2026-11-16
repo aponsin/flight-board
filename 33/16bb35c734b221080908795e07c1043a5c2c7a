@@ -1,1 +1,5 @@
-PASS Checker 2: #C1080 3316bb35c734b221080908795e07c1043a5c2c7a; suite 2387 pass 0 fail; mutations 13/13; see the note on the tip (commit 3316bb35 of stack tip 3316bb35)
+PASS #C1080 dispatch-respects-open-group (Checker 2) on 3316bb35c734b221080908795e07c1043a5c2c7a (5 commits on main 9fba7b48: 41b68dcb + one test and changelog commit). Tip continues main.
+The review on 41b68dcb stands (see its note, now replaced): F1 MEDIUM deadlock on 0c079bf8 fixed; Manager's rule (b) holds; probe checker2-scripts/probe1080.mjs, four cases as expected.
+Delta read whole: tests/dispatch-respects-open-group.test.mjs gains "reviews are not held for a card outside the open group" (F1 LOW fixed); the changelog fragment names rule (b). Source unchanged.
+Full suite through the wrapper: 2388 tests, 2387 pass, 0 fail, 1 skipped. Mutations (touched tests, 46): all 13 KILLED, P13 (the withheld filter dropping review turns) now among them.
+Follow-up outside this card: the stall line does not know the open-group rule (#C1082, with Manager).
