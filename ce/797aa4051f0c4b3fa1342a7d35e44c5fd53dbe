@@ -1,0 +1,1 @@
+PASS Quick at 43644556 (Checker 2, #C1091). Merges clean on main d2291318. Suite 2468 pass, 0 fail. Mutations 14/16 killed (mutate1091.mjs); W3 equivalent (reporter writes only FAILED lines); W10 untested: failures print after leftovers, order only. INFO: tests inherit SUITE_FAILURES_FILE if set; docs/DATA.d fragment waits on #C1090 (commit ce797aa4 of stack tip 43644556)
