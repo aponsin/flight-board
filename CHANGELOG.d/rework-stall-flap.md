@@ -1,0 +1,1 @@
+- A card in rework no longer flips between "rework reason missing" and "slow with no reason": a reason attached in the last hour is the reason (neither line is sent), and a missing one is not named while its owner's session is working that very card (rework-stall-flap, #C1063). Ships: a Worker deploy. Tests: `tests/rework-stall-flap.test.mjs`.
