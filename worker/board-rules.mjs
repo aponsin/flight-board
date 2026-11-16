@@ -7,7 +7,10 @@ import { KNOBS, knobsShape, knobFrom } from "./knobs.mjs";
 export const ASK_TYPES = ["Decision", "Action", "Terminal", "SessionStart", "Later", "Approval", "Answer", "Thread"];
 // The language review's key is "language" (its label is Linguist): the board config's phase key, which the probe reads and writes.
 export const PHASES = ["plan", "build", "test", "language", "design", "checker", "security", "ship", "live", "pack", "install", "review", "approve", "merge"];
-export const REWORK_REASONS = ["bug found in test", "review findings", "design change", "security finding", "owner change"];
+export const REWORK_REASONS = ["bug found in test", "review findings", "design change", "security finding", "owner change", "wording"];
+// #C1114 part 2: each accepted reason adds 1 to the matching counter, once, on the write that attaches it to a rework waiting for one. "review findings" adds none: the
+// FINDINGS notes already fill the counters (collector/findings-count.mjs), so counting the reason too would count the same finding twice.
+export const REASON_COUNTER = { "bug found in test": "bugs", "security finding": "security", "design change": "design", wording: "language", "owner change": "owner" };
 
 // What each ask type must carry (parts of the ask body), per DATA.md "Ask types".
 export const ASK_PARTS = {
@@ -793,6 +796,19 @@ export function reworkTriggered(prev, next) {
   const newTip = typeof prev.headSha12 === "string" && typeof next.headSha12 === "string" && prev.headSha12 !== next.headSha12;
   if (newTip && had(prev.findings)) return true;
   if (!had(prev.findings) && had(next.findings)) return true;
+  return REVIEWED.includes(prev.lit?.[0]) && BEFORE_REVIEW.includes(next.lit?.[0]);
+}
+// #C1114 part 2: a step back the probe derives from git (a card at a review phase read at plan, build or test) with no FINDINGS note on the tip it was
+// reviewed at and no reason on file. The card does NOT move back: writeEvidence keeps the stored review reading, marks it rework: "unexplained" (the page
+// draws it red, the dispatch wakes the reviewer to file the finding) and keeps the real reading in `actual`. A reason attached to it (updateCard) records the
+// head it was given for in `reasoned`, and the reading at that head then moves the card back as before. A WIP push before READY is never one: the card
+// was not at a review phase (#C1066). Same guards as reworkTriggered: the first push, a card on main or live, nothing before it.
+export function unexplainedStepBack(prev, next) {
+  if (!prev || typeof prev !== "object" || !next || typeof next !== "object") return false;
+  if (prev.onMain === true || next.onMain === true || next.lit?.[0] === "live") return false;
+  if (typeof prev.headSha12 !== "string" || prev.headSha12 === "") return false;
+  if (Array.isArray(prev.findings) && prev.findings.length > 0) return false;
+  if (typeof prev.reasoned === "string" && prev.reasoned !== "" && prev.reasoned === next.headSha12) return false;
   return REVIEWED.includes(prev.lit?.[0]) && BEFORE_REVIEW.includes(next.lit?.[0]);
 }
 // #C992 (11-11: #C913 read "Held: Checker: Full review" for hours after Checker's PASS at 3:41 pm, and the dispatch, which drops a turn whose card's

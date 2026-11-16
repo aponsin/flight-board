@@ -87,11 +87,12 @@ test("findings appearing set Rework; going back to build sets it; landing or liv
   // Landed: no more waiting for a reason.
   await read(db, NOW + 2 * MIN, rd("ship", { headSha12: B, onMain: true }));
   assert.equal((await ev(db)).rework, undefined, "on main clears it");
-  // Back to build from a review phase.
+  // Back to build from a review phase with no FINDINGS: since #C1114 part 2 the card is held at its review phase and flagged "unexplained" until a reason is
+  // attached (tests/unexplained-step-back.test.mjs); the flag is no `true`, so no other write is refused for it.
   const db2 = await fresh();
   await read(db2, NOW, rd("security", { signed: ["checker"] }));
   await read(db2, NOW + MIN, rd("build"));
-  assert.equal((await ev(db2)).rework, true, "the card went back to build");
+  assert.equal((await ev(db2)).rework, "unexplained", "the card went back to build with no reason");
   await read(db2, NOW + 2 * MIN, rd("live", { onMain: true, headSha12: B }));
   assert.equal((await ev(db2)).rework, undefined, "live clears it");
   // The probe cannot send the flag.
