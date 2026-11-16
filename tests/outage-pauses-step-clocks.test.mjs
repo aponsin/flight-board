@@ -117,6 +117,18 @@ test("a session's usage report is no heartbeat: the silence stays open and the o
   assert.deepEqual(await outagesOf(db, NOW + 31 * M), [{ start: NOW, end: NOW + 30 * M }], "the recorded outage starts at the probe's last post, not at the usage report");
 });
 
+// On #C997's stack: the silence that makes an outage is the posted setting probeSilentSec, the edge the Probe chip uses.
+test("the outage edge is the posted probeSilentSec: a 3-minute gap is an outage under 120 s and none under the 300 s default", async () => {
+  const { db, board } = await store();
+  assert.equal((await writeEvidence(db, NOW, "probe", "knobs", { values: { probeSilentSec: 120 }, ignored: [] })).ok, true);
+  assert.deepEqual(await outagesOf(db, NOW + 3 * M), [{ start: NOW, end: NOW + 3 * M }], "open: past the posted 120 s");
+  assert.equal((await writeEvidence(db, NOW + 3 * M, "probe", "board", board)).ok, true);
+  assert.deepEqual(await outagesOf(db, NOW + 3 * M), [{ start: NOW, end: NOW + 3 * M }], "recorded when the probe is back");
+  const d = await store();
+  assert.equal((await writeEvidence(d.db, NOW + 3 * M, "probe", "board", d.board)).ok, true);
+  assert.deepEqual(await outagesOf(d.db, NOW + 3 * M), [], "default edge: 3 minutes is no outage");
+});
+
 // Checker 2's F2: nothing checked that the store feeds the outages to the step clocks (syncStalls to stalledWaits, slowWakes).
 async function stallWorld() {
   const db = makeDb();

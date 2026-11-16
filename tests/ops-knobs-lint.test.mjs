@@ -22,6 +22,7 @@ const BARE = /^\d[\d_.e*+\-/() ]*$/;
 // protocol, or are write-validity windows and sanity bounds). Adding a name here is a reviewed decision, like adding a setting.
 export const FIXED = {
   FRESH_MS: "a sanity bound on a posted time (30 days)",
+  OUTAGE_KEEP_MS: "how long a recorded outage is kept (7 days): a retention bound on the table, not a cadence",
   MAX_MIN: "a sanity bound",
   STEP_PAST_MS: "write validity of a step's time",
   STEP_FUTURE_MS: "write validity of a step's time",

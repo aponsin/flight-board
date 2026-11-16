@@ -18,6 +18,8 @@ async function knobsStored(db) {
   const row = await db.prepare("SELECT value FROM evidence WHERE key = 'knobs'").first();
   try { return row ? JSON.parse(row.value) : null; } catch { return null; }
 }
+// #C990 on #C997: the silence that makes an outage is the posted setting probeSilentSec, the same edge the Probe chip uses.
+const silentMsOf = async (db) => knobFrom(await knobsStored(db), "probeSilentSec") * 1000;
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 // The store mints #C and #T numbers: one atomic statement, never a read-then-write.
@@ -471,7 +473,7 @@ export async function outagesOf(db, now) {
   const rows = (await db.prepare("SELECT start_at, end_at FROM team_outages WHERE end_at >= ? ORDER BY start_at").bind(now - OUTAGE_KEEP_MS).all()).results ?? [];
   const out = rows.map((r) => ({ start: r.start_at, end: r.end_at }));
   const last = (await db.prepare(`SELECT MAX(read_at) AS at FROM evidence WHERE ${PROBE_KEYS_SQL}`).first())?.at;
-  if (Number.isFinite(last) && now - last > PROBE_SILENT_MS) out.push({ start: last, end: now });
+  if (Number.isFinite(last) && now - last > await silentMsOf(db)) out.push({ start: last, end: now });
   return out;
 }
 async function syncStalls(db, now) {
@@ -836,11 +838,11 @@ export function liveDoneEvidence(reading) {
 export async function writeEvidence(db, now, who, key, value, track) {
   const bad = evidenceRefusal(key, value, who, track);
   if (bad) return refuse(db, now, bad, key.startsWith?.("cards.") ? key.slice(6) : null, who);
-  // #C990: the first post after a silence of PROBE_SILENT_MS or more closes an outage: from the last post before it to this one. A run's own report (run.*)
+  // #C990: the first post after a silence of probeSilentSec (default PROBE_SILENT_MS) or more closes an outage: from the last post before it to this one. A run's own report (run.*)
   // is no heartbeat (readView counts the same way). INSERT OR IGNORE: two posts of one batch cannot record it twice.
   if (isProbeKey(key)) {
     const last = (await db.prepare(`SELECT MAX(read_at) AS at FROM evidence WHERE ${PROBE_KEYS_SQL}`).first())?.at;
-    if (Number.isFinite(last) && now - last > PROBE_SILENT_MS) {
+    if (Number.isFinite(last) && now - last > await silentMsOf(db)) {
       await db.prepare("INSERT OR IGNORE INTO team_outages (start_at, end_at) VALUES (?, ?)").bind(last, now).run();
       await db.prepare("DELETE FROM team_outages WHERE end_at < ?").bind(now - OUTAGE_KEEP_MS).run();
     }
