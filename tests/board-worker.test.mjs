@@ -87,7 +87,7 @@ test("a bad ask is refused in the same call and shows in the view's refusal log"
   const r = await tool("manager", "ask", { type: "Later", title: "t", text: "x" });
   assert.equal(r.isError, true);
   assert.equal(r.structuredContent.refused.rule, "later-without-eta");
-  const view = (await tool("manager", "read_view", {})).structuredContent;
+  const view = (await tool("manager", "read_view", { full: true })).structuredContent;
   assert.equal(view.refusals[0].rule, "later-without-eta");
   assert.equal(view.refusals[0].who, "Manager");
 });
