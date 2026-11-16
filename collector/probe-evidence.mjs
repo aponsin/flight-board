@@ -17,6 +17,7 @@ import { createHash } from "node:crypto";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
 import { loadEnv, accessHeaders, FETCH_TIMEOUT_MS } from "./probe-board.mjs";
 import { prepareStoreState } from "./store-cards.mjs";
+import { resolveKnobs, KNOBS } from "../worker/knobs.mjs";
 
 const plain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const CARD_KEY = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -296,7 +297,33 @@ export const TIMING_LINE = /^timing:(?: [a-z][A-Za-z0-9+]{0,11}[=#]\d{1,9}){1,40
 export const timingOf = (stdout) => String(stdout ?? "").split(/\r?\n/).map((l) => l.trim()).findLast((l) => TIMING_LINE.test(l)) ?? "";
 // A run over this is logged and shown as slow: the job's limit is 170 s (worker/probe-jobs.mjs, #C996's stopgap; it was 90 s with 75 s
 // here, when good runs took 60 to 88 s and one was killed), so this is as near its limit as 75 s was to 90 s. It reverts with the limit.
-export const SLOW_RUN_MS = 150_000;
+// #C997: now the setting slowRunSec (worker/knobs.mjs); this is its default.
+export const SLOW_RUN_MS = KNOBS.slowRunSec.default * 1000;
+
+// #C997: the settings of this run, read from the board config's ops section at EVERY run (nothing is reinstalled). A config that cannot be read
+// gives the defaults. Returns resolveKnobs()'s { values, ignored }.
+export function knobsOf(configPath, read = (p) => readFileSync(p, "utf8")) {
+  try { return resolveKnobs(JSON.parse(read(configPath))?.ops); } catch { return resolveKnobs(undefined); }
+}
+// The evidence key knobs: the resolved settings and the ones ignored (and why), so the Worker and the page use the same numbers the probe does.
+// A config that cannot be read posts nothing (the store keeps the last good reading).
+export function knobsWrite(configText, { log = () => {} } = {}) {
+  let ops;
+  try { ops = JSON.parse(configText)?.ops; } catch { log("knobs: the board config could not be read"); return null; }
+  const value = resolveKnobs(ops);
+  if (value.ignored.length) log(`knobs: ignored ${value.ignored.map((i) => `${i.key} (${i.why})`).join(", ")}`);
+  return { key: "knobs", value };
+}
+// The evidence job fires every minute (launchd) and runs only when its interval has passed since the last start, kept beside the state.
+export function evidenceDue({ stateFile, intervalSec, now = Date.now(), read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }) }) {
+  const file = join(dirname(stateFile), "evidence-started.json");
+  let last = 0;
+  try { const v = JSON.parse(read(file)); if (Number.isFinite(v?.at)) last = v.at; } catch { /* first run */ }
+  // 5 s of slack: launchd's minute is never exact.
+  if (now - last < intervalSec * 1000 - 5000 && now >= last) return false;
+  try { write(file, JSON.stringify({ at: now })); } catch { /* best effort: a run that cannot record its start just runs again next minute */ }
+  return true;
+}
 
 // #C982: the board Worker deploy's last result. The owner's deploy file leaves board-deploy-last.json { ok, at, line } beside the board config after every
 // run (scripts/pair/deploy.template.mjs, recordLast); the probe posts it as evidence deploy.last so the page header can say "Deploy failed: <reason>" until a
@@ -319,15 +346,18 @@ const defaultSessions = () => scheduleSessions(join(homedir(), "Library", "Appli
 
 export async function evidenceJob(o) {
   const t0 = Date.now(), timing = o.timing ?? {};
-  try { return await evidenceJobRun({ ...o, timing }); } finally {
+  const knobs = o.knobs ?? knobsOf(o.configPath, o.read);
+  const slowMs = knobs.values.slowRunSec * 1000;
+  try { return await evidenceJobRun({ ...o, timing, knobs }); } finally {
     const ms = Date.now() - t0;
-    if (o.job === "evidence" && ms > SLOW_RUN_MS) o.log?.(`slow run: ${Math.round(ms / 1000)} s of ${JOBS.evidence.limitSec} s (state child ${timing.stateMs ?? "?"} ms, posts ${timing.postMs ?? "?"} ms)`);
+    if (o.job === "evidence" && ms > slowMs) o.log?.(`slow run: ${Math.round(ms / 1000)} s of ${knobs.values.evidenceLimitSec} s (state child ${timing.stateMs ?? "?"} ms, posts ${timing.postMs ?? "?"} ms)`);
   }
 }
 
-async function evidenceJobRun({ timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, sessionsRead = defaultSessions, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
+async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, sessionsRead = defaultSessions, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const t0 = Date.now();
+  const limitSec = job === "evidence" ? knobs.values.evidenceLimitSec : JOBS[job].limitSec; // #C997: a setting for the evidence job
   const ghOk = job === "evidence" ? ghCheck(env) : true;
   if (!ghOk) log(GH_MISSING);
   const finish = (r) => { if (!ghOk) throw new Error(GH_MISSING); return r; };
@@ -344,7 +374,7 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   const extra = job === "evidence" ? deployEnv(await deployRead({ base, headers, fetchImpl, log })) : {};
   const tState = Date.now();
   try {
-    const built = await build(stateArgs(configPath), (JOBS[job].limitSec - 15) * 1000, extra);
+    const built = await build(stateArgs(configPath), (limitSec - 15) * 1000, extra);
     // #C996: where the child's time went, when it says (collector/state.mjs timingText).
     const t = timingOf(built?.stdout);
     if (t) log(`state child ${t}`);
@@ -360,7 +390,7 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   const state = JSON.parse(read(stateFile));
   const writes = evidenceWrites(state, job);
   // #C962: this run's own reading, so the page can show a slow run and clear an old failure. Not a heartbeat (the store ignores run.* for that).
-  if (job === "evidence") writes.push({ key: "run.evidence", value: { ok: true, at: Date.now(), ms: Date.now() - t0, stateMs: timing.stateMs, ...(Date.now() - t0 > SLOW_RUN_MS ? { slow: true } : {}) } });
+  if (job === "evidence") writes.push({ key: "run.evidence", value: { ok: true, at: Date.now(), ms: Date.now() - t0, stateMs: timing.stateMs, ...(Date.now() - t0 > knobs.values.slowRunSec * 1000 ? { slow: true } : {}) } });
   // #C982: the board Worker deploy's last result, when there is one (the owner's deploy file wrote it beside the board config).
   if (job === "evidence") { const d = deployLastWrite({ configPath: origConfig, read }); if (d) writes.push(d); }
   log(`${writes.length} key(s) to write`);
@@ -377,13 +407,13 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   if (job === "evidence") log(`${plan.due.length} of ${writes.length} key(s) due (${writes.length - plan.due.length} unchanged)`);
   const saveKept = (keys) => { if (job !== "evidence") return; try { write(keptFile, JSON.stringify({ v: 1, keys: keptAfter(plan, keys, Date.now()) })); } catch { /* best effort: the next run posts them all */ } };
   let done;
-  try { done = await postWrites(plan.due, { base, headers, fetchImpl, log, deadline: job === "evidence" ? t0 + (JOBS[job].limitSec - POST_TAIL_SEC) * 1000 : Infinity }); } catch (e) { saveKept(e.posted ?? []); throw e; }
+  try { done = await postWrites(plan.due, { base, headers, fetchImpl, log, deadline: job === "evidence" ? t0 + (limitSec - POST_TAIL_SEC) * 1000 : Infinity }); } catch (e) { saveKept(e.posted ?? []); throw e; }
   // A child that ended past the deadline still posts the heartbeat and the run's own reading (two posts, one round, up to LATE_TAIL_SEC short of the
   // limit): a slow run must never freeze the view, and its slow mark is the thing the page needs. The cards wait for the next run.
   if (job === "evidence" && done.stopped) {
     const wanted = plan.due.filter((w) => ESSENTIAL_KEYS.includes(w.key) && !done.ok.includes(w.key));
     if (wanted.length) {
-      try { const e = await postWrites(wanted, { base, headers, fetchImpl, log, deadline: t0 + (JOBS[job].limitSec - LATE_TAIL_SEC) * 1000 }); done = { ...done, written: done.written + e.written, refused: done.refused + e.refused, ok: [...done.ok, ...e.ok] }; } catch (e) { saveKept([...done.ok, ...(e.posted ?? [])]); throw e; }
+      try { const e = await postWrites(wanted, { base, headers, fetchImpl, log, deadline: t0 + (limitSec - LATE_TAIL_SEC) * 1000 }); done = { ...done, written: done.written + e.written, refused: done.refused + e.refused, ok: [...done.ok, ...e.ok] }; } catch (e) { saveKept([...done.ok, ...(e.posted ?? [])]); throw e; }
     }
   }
   saveKept(done.ok);
@@ -397,7 +427,7 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   let cfg = null;
   try { cfg = read(origConfig); } catch { log("live: the board config could not be read"); }
   // Past LIVE_SKIP_SEC short of the limit the live read (up to 8 s) and the post after it cannot both fit: skipped this run, and logged.
-  const tooLate = Date.now() > t0 + (JOBS[job].limitSec - LIVE_SKIP_SEC) * 1000;
+  const tooLate = Date.now() > t0 + (limitSec - LIVE_SKIP_SEC) * 1000;
   if (cfg && tooLate) log("live: skipped, the run is out of time");
   const live = cfg && !tooLate && await liveWrite(cfg, { fetchImpl: liveFetch, log });
   // #C873: the product's daily full test run (the usage job's kept answer), posted with live; a failure reading it is logged and the evidence above stands.
@@ -409,8 +439,11 @@ async function evidenceJobRun({ timing = {}, job, base, headers, configPath, sta
   // the store keeps its last reading, which the page shows as old after 36 h.
   let schedW = null;
   try { schedW = cfg && scheduleModelsWrite(cfg, { sessions: sessionsRead(), now: Date.now(), log }); } catch (e) { log(`schedule failed: ${String(e.message).slice(0, 80)}`); }
-  const late = [lookW, schedW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
-  if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log, deadline: t0 + (JOBS[job].limitSec - LATE_TAIL_SEC) * 1000 }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
+  // #C997: the settings this run used and the ones it ignored, for the Worker and the page header.
+  let knobsW = null;
+  try { knobsW = cfg && knobsWrite(cfg, { log }); } catch (e) { log(`knobs failed: ${String(e.message).slice(0, 80)}`); }
+  const late = [lookW, knobsW, schedW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
+  if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log, deadline: t0 + (limitSec - LATE_TAIL_SEC) * 1000 }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
   return finish(done);
 }
 
@@ -430,9 +463,12 @@ export async function main(argv, { exit = (c) => process.exit(c) } = {}) {
   const base = get("--base") ?? cfg.BOARD_BASE_URL;
   if (!/^https:\/\/[A-Za-z0-9.-]+$/.test(base ?? "")) { console.error("no board address: pass --base or set BOARD_BASE_URL"); return exit(64); }
   if (!get("--config") || !get("--state")) { console.error("pass --config and --state"); return exit(64); }
-  const run = startRun(job);
+  // #C997: the settings are read at every run. launchd starts the evidence job every minute; it runs only when its interval setting has passed.
+  const knobs = knobsOf(get("--config"));
+  if (job === "evidence" && !evidenceDue({ stateFile: get("--state"), intervalSec: knobs.values.evidenceIntervalSec })) return exit(0);
+  const run = startRun(job, job === "evidence" ? { limitSec: knobs.values.evidenceLimitSec } : {});
   try {
-    await run.step(`${job} readings`, () => evidenceJob({ job, base, headers: accessHeaders(cfg), configPath: get("--config"), stateFile: get("--state"), privateDir: get("--private-dir"), log: run.log }));
+    await run.step(`${job} readings`, () => evidenceJob({ job, base, headers: accessHeaders(cfg), configPath: get("--config"), stateFile: get("--state"), privateDir: get("--private-dir"), log: run.log, knobs }));
     return exit(run.finish(0));
   } catch (e) {
     run.log(`failed: ${String(e.message).slice(0, 200)}`);

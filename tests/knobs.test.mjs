@@ -60,6 +60,17 @@ test("the shape accepts a resolved answer and refuses strangers", () => {
   assert.equal(knobsShape({ values: {}, ignored: [], extra: 1 }), false);
 });
 
+test("inherited names are never settings (Security's LOW on d24fd7c2)", () => {
+  for (const name of ["toString", "constructor", "hasOwnProperty", "__proto__"]) {
+    assert.equal(knobsShape({ values: JSON.parse(`{"${name}":5}`), ignored: [] }), false, name);
+    const r = resolveKnobs(JSON.parse(`{"${name}":5}`));
+    assert.deepEqual(r.ignored, [{ key: name, why: "unknown setting" }], name);
+    assert.equal(Object.keys(r.values).length, Object.keys(KNOBS).length, name);
+  }
+  assert.equal(knobsShape({ values: { toString: 5 }, ignored: [] }), false);
+  assert.equal(knobsShape({ values: { constructor: 5 }, ignored: [] }), false);
+});
+
 test("the Worker side reads a stored value only when valid", () => {
   assert.equal(knobFrom({ values: { staleAfterSec: 200 } }, "staleAfterSec"), 200);
   assert.equal(knobFrom({ values: { staleAfterSec: 1 } }, "staleAfterSec"), 300);

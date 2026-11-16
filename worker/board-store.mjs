@@ -1,16 +1,23 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { landedUnbuilt, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, STALE_AFTER_MS, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, quotaHold, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf } from "./board-rules.mjs";
+import { landedUnbuilt, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, quotaHold, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
 import { readUsage } from "./compat-usage.mjs";
 import { mtDayTime } from "./team-time.mjs";
 import { readThreads } from "./compat-threads.mjs";
+import { KNOBS, knobFrom } from "./knobs.mjs";
 import { askWakes, promiseWakes, promptWakes, watchWakes, WATCH_WAKE_PREFIX, ownerWordWakes, OWNER_WORD_DAYS } from "./push-rules.mjs";
 import { weekUsageValue, sessionWeek, WEEK_USAGE_KEY } from "../collector/week-usage.mjs";
 
-export const PROBE_SILENT_MS = 5 * 60_000; // #C996: was 3 min while the evidence job ran every minute; reverts with its cadence
+// #C997: the setting probeSilentSec (worker/knobs.mjs); this is its default.
+export const PROBE_SILENT_MS = KNOBS.probeSilentSec.default * 1000;
+// The posted settings, or null: the store keeps the probe's last good reading of them.
+async function knobsStored(db) {
+  const row = await db.prepare("SELECT value FROM evidence WHERE key = 'knobs'").first();
+  try { return row ? JSON.parse(row.value) : null; } catch { return null; }
+}
 const sha256hex = async (s) => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s)))].map((b) => b.toString(16).padStart(2, "0")).join("");
 
 // The store mints #C and #T numbers: one atomic statement, never a read-then-write.
@@ -554,9 +561,10 @@ async function syncStalls(db, now) {
 async function syncE2e(db, now) {
   const row = await db.prepare("SELECT value, read_at FROM evidence WHERE key = 'e2e'").first();
   let value = null; try { value = row ? JSON.parse(row.value) : null; } catch { /* none */ }
-  const fresh = row && now - row.read_at <= STALE_AFTER_MS;
+  const staleMs = staleMsOf(await knobsStored(db));
+  const fresh = row && now - row.read_at <= staleMs;
   if (fresh && value?.state === "ok") { await db.prepare("DELETE FROM stall_wakes WHERE card_id = ?").bind(E2E_CARD).run(); return []; }
-  const wake = e2eWake({ now, value, readAt: row?.read_at ?? 0 });
+  const wake = e2eWake({ now, value, readAt: row?.read_at ?? 0, staleMs });
   if (!wake) return [];
   await db.prepare("DELETE FROM stall_wakes WHERE card_id = ? AND reason NOT LIKE ?").bind(E2E_CARD, `${e2eWakeLine(wake.state)}%`).run();
   const had = await db.prepare("SELECT reason FROM stall_wakes WHERE card_id = ?").bind(E2E_CARD).first();
@@ -898,8 +906,10 @@ export async function readView(db, now) {
   // shows the probe's own chip red ("probe silent since"), and never makes the cards look stalled.
   // A timed-out run's own report (key run.*) is not a healthy reading and does not count as a heartbeat.
   const last = Math.max(0, ...Object.entries(evidence).filter(([k]) => !k.startsWith("run.")).map(([, e]) => e.readAt));
-  const probe = last && now - last <= PROBE_SILENT_MS ? { state: "ok", lastAt: last } : { state: "silent", since: last || null };
-  const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now);
+  // #C997: the probe's own settings (evidence key knobs) feed both edges; no reading, or a value out of bounds, keeps the default.
+  const knobsRead = evidence.knobs?.value;
+  const probe = last && now - last <= knobFrom(knobsRead, "probeSilentSec") * 1000 ? { state: "ok", lastAt: last } : { state: "silent", since: last || null };
+  const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now, staleMsOf(knobsRead));
   const history = await all("SELECT id, card_id, phase, kind, at, who, wait FROM phase_history ORDER BY at, id");
   const historyCards = await all("SELECT id, num, title, size, review_level, created_at, done_at FROM history_cards ORDER BY done_at");
   const stackSwitch = (await all("SELECT repo, stack, set_by, set_at FROM stack_switch ORDER BY repo")).map((r) => ({ ...r, stack: r.stack === 1 }));

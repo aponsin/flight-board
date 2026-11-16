@@ -98,11 +98,11 @@ test("the store takes deploy.last only from the probe and only in its shape", as
 test("the page turns a failed deploy.last the probe read under 5 minutes ago into the header's deployFailed; a success, an old reading or none gives null", () => {
   const src = readFileSync(new URL("../worker/page.mjs", import.meta.url), "utf8");
   assert.match(src, /view\.evidence\["deploy\.last"\]/);
-  assert.match(src, /dl\.value\.ok === false && Date\.now\(\) - dl\.readAt <= 300000 \? \(dl\.value\.line \|\| "failed"\) : null/, "failed, fresh by the probe's reading time");
-  assert.match(src, /headerHtml\(\{ live, probe, deployFailed \}/);
+  assert.match(src, /dl\.value\.ok === false && Date\.now\(\) - dl\.readAt <= staleMs \? \(dl\.value\.line \|\| "failed"\) : null/, "failed, fresh by the probe's reading time");
+  assert.match(src, /headerHtml\(\{ live, probe, deployFailed(, knobsIgnored: ignored)? \}/);
   // The same expression, run: the cases the card names.
   const expr = /const dl = view\.evidence\["deploy\.last"\], deployFailed = (.*);\n/.exec(src)[1];
-  const run = (view, now) => new Function("view", "Date", `const dl = view.evidence["deploy.last"]; return ${expr};`)(view, { now: () => now });
+  const run = (view, now) => new Function("view", "Date", `const dl = view.evidence["deploy.last"], staleMs = 300000; return ${expr};`)(view, { now: () => now });
   assert.equal(run({ evidence: { "deploy.last": { value: { ok: false, at: T - 864e5, line: "deploy exited 1" }, readAt: T - 30_000 } } }, T), "deploy exited 1", "an old failure still read a minute ago is shown");
   assert.equal(run({ evidence: { "deploy.last": { value: { ok: false, at: T }, readAt: T } } }, T), "failed", "no line: failed");
   assert.equal(run({ evidence: { "deploy.last": { value: { ok: true, at: T, line: "DEPLOY OK" }, readAt: T } } }, T), null, "a successful deploy: nothing");

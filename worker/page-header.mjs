@@ -42,12 +42,16 @@ export function headerHtml(view, { deploying = null, boardVersion = "", wake = {
   // probe's reading is fresh). The label stays on a phone, the reason is the detail.
   const dfail = typeof view.deployFailed === "string" ? (view.deployFailed.trim() || "failed") : null;
   const deployChip = dfail === null ? "" : `<span class="chip bad" title="Deploy failed: ${esc(dfail)}"><span class="dot"></span><span class="lbl">Deploy failed</span><span class="detail">${esc(dfail)}</span></span>\n`;
+  // #C997: a setting in the board config's ops section that the probe ignored (not a number, too low, too high): its name and why, so a typo is seen.
+  const ign = Array.isArray(view.knobsIgnored) ? view.knobsIgnored.filter((i) => i && typeof i.key === "string" && typeof i.why === "string").slice(0, 8) : [];
+  const ignText = ign.map((i) => `${i.key} ignored: ${i.why}`).join("; ");
+  const knobsChip = ign.length ? `<span class="chip warn" title="Settings: ${esc(ignText)}"><span class="dot"></span><span class="lbl">Settings</span><span class="detail">${esc(ignText)}</span></span>\n` : "";
   // A one-word label stays on a phone (the detail drops), so two red dots are never indistinguishable.
   const ver = String(boardVersion), bare = ver.replace(/^board\s+/i, ""), prefix = ver.length > bare.length ? `<span class="detail">board </span>` : "";
   return `<header class="hd" role="banner">
 <span class="chip live ${live.cls}" title="${esc(live.long)}"><b>${esc(live.short)}</b><span class="detail">${esc(live.detail)}</span></span>
 <span class="chip ${wakeCls}" title="${esc(wakeText)}"><span class="dot"></span><span class="lbl">Manager</span><span class="detail">${esc(wakeDetail)}</span></span>
-${probeShown ? `<span class="chip ${probeCls}" title="probe ${esc(probeDetail)}"><span class="dot"></span><span class="lbl">Probe</span><span class="detail">${esc(probeDetail)}</span></span>\n` : ""}${deployChip}<span class="chip ver" title="Board ${esc(ver)}">${prefix}${esc(bare)}</span>
+${probeShown ? `<span class="chip ${probeCls}" title="probe ${esc(probeDetail)}"><span class="dot"></span><span class="lbl">Probe</span><span class="detail">${esc(probeDetail)}</span></span>\n` : ""}${deployChip}${knobsChip}<span class="chip ver" title="Board ${esc(ver)}">${prefix}${esc(bare)}</span>
 </header>`;
 }
 

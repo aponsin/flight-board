@@ -6,7 +6,7 @@
 // readings and the live version), meta/live, and the probe document. Left out until their stage: messages, threads, steps,
 // events, usage, plan, timings, ctx*, checkRequests, threadPings, pingThreads, agentPrs, approvals.
 
-import { STALE_AFTER_MS, PHASES, typedOther, INSTALL_WAIT } from "./board-rules.mjs";
+import { staleMsOf, PHASES, typedOther, INSTALL_WAIT } from "./board-rules.mjs";
 import { expectedVersions } from "../collector/expected.mjs";
 import { applyFiles } from "./file-store.mjs";
 import { applyShips } from "./compat-ships.mjs";
@@ -210,7 +210,10 @@ export function probeDoc(view) {
   // stuck and ship are written only while they hold (the probe leaves the key out when nothing is stuck or no candidate is pushed),
   // so the store keeps the last value: it counts only while the probe keeps rewriting it (a reading older than 3 minutes is gone).
   // #C873: so does e2e (the product's daily full test run), rewritten every evidence run from the probe's own half-hour reading.
-  for (const k of ["stuck", "ship", "e2e"]) if (ev[k] && view.now - ev[k].readAt <= STALE_AFTER_MS) out[k] = ev[k].value;
+  const staleMs = staleMsOf(ev.knobs?.value); // #C997: the setting staleAfterSec as the probe posted it
+  for (const k of ["stuck", "ship", "e2e"]) if (ev[k] && view.now - ev[k].readAt <= staleMs) out[k] = ev[k].value;
+  // #C997: the settings the probe ignored (a value out of bounds or not a number), named in the page header; none, nothing.
+  if (ev.knobs?.value?.ignored?.length) out.knobs = { ignored: ev.knobs.value.ignored.map(({ key, why }) => ({ key, why })) };
   // #C1006: the scheduled tasks' models. Passed on at any age: the page reads value.at and says "model reading old" past 36 h, so a stopped probe is seen.
   if (ev["schedule.models"]?.value) out.schedule = ev["schedule.models"].value;
   // #C730: the store's own wake (row 4) for the Manager chip and the "seen" ticks, in place of the old wake watch's

@@ -5,13 +5,15 @@
 // setting it must stay under is IGNORED: the default stands and the page's header names the setting and why (never a refused config file).
 // Stays in code, never a setting: anything that decides who may sign, land or deploy, and the write-validity windows (see FIXED below).
 export const KNOBS = {
-  evidenceIntervalSec: { default: 60, min: 30, max: 600, label: "how often the evidence job starts (s)" },
-  evidenceLimitSec: { default: 170, min: 60, max: 290, label: "the evidence job's time limit (s)" },
+  // launchd fires the job every minute (its plist is written at install); a longer interval makes a run skip until due, so the floor is 60 s.
+  evidenceIntervalSec: { default: 60, min: 60, max: 600, label: "how often the evidence job starts (s)" },
+  // The plist's own alarm is the installed limit + 15 s, so the limit can be lowered here but not raised past what is installed (170 s).
+  evidenceLimitSec: { default: 170, min: 60, max: 170, label: "the evidence job's time limit (s)" },
   slowRunSec: { default: 150, min: 30, max: 280, under: "evidenceLimitSec", label: "a run longer than this is shown as slow (s)" },
   staleAfterSec: { default: 300, min: 120, max: 1800, label: "an evidence reading older than this is stale on the page (s)" },
   probeSilentSec: { default: 300, min: 120, max: 1800, label: "no probe post for this long makes the Probe chip silent (s)" },
-  agentsFreshSec: { default: 300, min: 60, max: 1800, label: "the agents reading is used by the dispatch for this long (s)" },
-  evidenceStaleSec: { default: 300, min: 120, max: 1800, label: "the lead's no-evidence line starts after this long (s)" },
+  // Not settings yet (they stay on the lint baseline): gate/reset.mjs EVIDENCE_STALE_MS (no card shows a commit for 10 min; the file is pinned by the owner's
+  // install, so changing it needs an owner pack, and it is NOT the page's probe edge staleAfterSec) and collector/store-dispatch.mjs AGENTS_FRESH_MS.
 };
 export const KNOB_KEYS = Object.keys(KNOBS);
 
@@ -22,7 +24,7 @@ export function resolveKnobs(raw) {
   if (raw !== undefined && raw !== null && bag !== raw) ignored.push({ key: "ops", why: "unreadable" });
   for (const [key, k] of Object.entries(KNOBS)) {
     values[key] = k.default;
-    if (!(key in bag)) continue;
+    if (!Object.hasOwn(bag, key)) continue;
     const v = bag[key];
     if (typeof v !== "number" || !Number.isFinite(v)) ignored.push({ key, why: "not a number" });
     else if (v < k.min) ignored.push({ key, why: "too low" });
@@ -33,18 +35,19 @@ export function resolveKnobs(raw) {
   for (const [key, k] of Object.entries(KNOBS)) {
     if (k.under && values[key] >= values[k.under] && !ignored.some((i) => i.key === key)) { ignored.push({ key, why: `not under ${k.under}` }); values[key] = Math.min(k.default, values[k.under] - 1); }
   }
-  for (const key of Object.keys(bag)) if (!(key in KNOBS)) ignored.push({ key, why: "unknown setting" });
+  for (const key of Object.keys(bag)) if (!Object.hasOwn(KNOBS, key)) ignored.push({ key, why: "unknown setting" });
   return { values, ignored };
 }
 
 // The shape the Worker accepts under the evidence key `knobs`: { values: {known key: finite number}, ignored: [{ key, why }] up to 40 }.
 const WHY = /^[a-z][a-z0-9 _-]{0,40}$/i, KEY = /^[A-Za-z][A-Za-z0-9]{0,40}$/;
 export const knobsShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => k === "values" || k === "ignored")
-  && v.values !== null && typeof v.values === "object" && !Array.isArray(v.values) && Object.entries(v.values).every(([k, n]) => k in KNOBS && Number.isFinite(n))
+  && v.values !== null && typeof v.values === "object" && !Array.isArray(v.values) && Object.entries(v.values).every(([k, n]) => Object.hasOwn(KNOBS, k) && Number.isFinite(n))
   && Array.isArray(v.ignored) && v.ignored.length <= 40 && v.ignored.every((i) => i !== null && typeof i === "object" && typeof i.key === "string" && KEY.test(i.key) && typeof i.why === "string" && WHY.test(i.why));
 
 // The value of a setting from a stored reading (the Worker side): the reading's number when it is known and valid, else the default.
 export const knobFrom = (stored, key) => {
-  const n = stored?.values?.[key], k = KNOBS[key];
+  const k = KNOBS[key], vals = stored?.values;
+  const n = vals !== null && typeof vals === "object" && Object.hasOwn(vals, key) ? vals[key] : undefined;
   return Number.isFinite(n) && n >= k.min && n <= k.max ? n : k.default;
 };

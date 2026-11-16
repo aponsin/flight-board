@@ -82,16 +82,19 @@ function draw() {
   if (!view) { $("hd").textContent = failed || "loading"; return; }
   const sinceRead = Date.now() - fetchedAt;
   // Live now: re-aged on the client from the probe's own reading time, so it goes stale on screen without a new fetch.
+  // #C997: the settings the probe resolved from the board config (evidence key knobs); a missing or odd value keeps the default of 5 minutes.
+  const kv = view.evidence.knobs && view.evidence.knobs.value, kms = (k) => { const n = kv && kv.values && kv.values[k]; return typeof n === "number" && n >= 60 ? n * 1000 : 300000; };
+  const staleMs = kms("staleAfterSec"), silentMs = kms("probeSilentSec"), ignored = kv && Array.isArray(kv.ignored) ? kv.ignored : [];
   const lr = view.evidence.live ? { version: view.evidence.live.value.version, readAt: view.evidence.live.readAt } : null;
-  const live = lr ? { state: Date.now() - lr.readAt > 300000 ? "stale" : "live", version: lr.version, age: Date.now() - lr.readAt } : { state: "unknown" };
-  const probe0 = view.probe.state === "silent" || Date.now() - (view.probe.lastAt || 0) > 300000 ? { state: "silent", since: view.probe.since || view.probe.lastAt } : view.probe;
+  const live = lr ? { state: Date.now() - lr.readAt > staleMs ? "stale" : "live", version: lr.version, age: Date.now() - lr.readAt } : { state: "unknown" };
+  const probe0 = view.probe.state === "silent" || Date.now() - (view.probe.lastAt || 0) > silentMs ? { state: "silent", since: view.probe.since || view.probe.lastAt } : view.probe;
   // #C962: the evidence job's own last run (key run.evidence) says why it is failing, or that it runs slow; only a reading under 5 minutes old counts.
-  const rr = view.evidence["run.evidence"], rv = rr && rr.value && Date.now() - rr.value.at <= 300000 ? rr.value : null;
+  const rr = view.evidence["run.evidence"], rv = rr && rr.value && Date.now() - rr.value.at <= staleMs ? rr.value : null;
   const probe = rv && rv.ok === false ? { ...probe0, why: rv.line || "failed" } : rv && rv.slow ? { ...probe0, slow: Math.round((rv.ms || 0) / 1000) } : probe0;
   // #C982: the board Worker deploy's last result (key deploy.last, the probe's reading of the owner's deploy file): a failure the probe read under 5 minutes ago
   // is "Deploy failed: <reason>" in the header; the next successful deploy writes ok: true and it goes. The age is the probe's reading, not the deploy's own time.
-  const dl = view.evidence["deploy.last"], deployFailed = dl && dl.value && dl.value.ok === false && Date.now() - dl.readAt <= 300000 ? (dl.value.line || "failed") : null;
-  $("hd").innerHTML = headerHtml({ live, probe, deployFailed }, { boardVersion: document.body.dataset.version || "", wake: failed ? { state: "red", reason: failed } : view.wakeState });
+  const dl = view.evidence["deploy.last"], deployFailed = dl && dl.value && dl.value.ok === false && Date.now() - dl.readAt <= staleMs ? (dl.value.line || "failed") : null;
+  $("hd").innerHTML = headerHtml({ live, probe, deployFailed, knobsIgnored: ignored }, { boardVersion: document.body.dataset.version || "", wake: failed ? { state: "red", reason: failed } : view.wakeState });
   $("fetched").textContent = "fetched " + ageText(sinceRead) + " ago";
 
   const open = openAsks(view.asks);

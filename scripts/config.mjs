@@ -113,6 +113,9 @@ export const DEFAULTS = {
   // last run used but nothing carries the one it was meant to have, so it is written here. The probe compares the two (collector/schedule-models.mjs)
   // and the page shows a mismatch red, a task with no model here amber "unset". paused: true leaves a task out. None by default.
   scheduledTasks: [],
+  // #C997: the operational numbers that are settings (worker/knobs.mjs lists them with their bounds): { key: seconds }. Read at every run; a bad
+  // value never refuses this file: the default stands and the page's header names the setting that was ignored (resolveKnobs).
+  ops: {},
 };
 
 const KEYS = Object.keys(DEFAULTS);

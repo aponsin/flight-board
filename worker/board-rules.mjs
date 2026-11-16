@@ -2,6 +2,7 @@
 // { rule, detail }; the Worker logs each refusal (rule, card, time) to the refusals table. Pure functions, no I/O.
 // A check returns null when the write is allowed.
 import { mtTime, mtDayTime } from "./team-time.mjs";
+import { KNOBS, knobsShape, knobFrom } from "./knobs.mjs";
 
 export const ASK_TYPES = ["Decision", "Action", "Terminal", "SessionStart", "Later", "Approval", "Answer", "Thread"];
 // The language review's key is "language" (its label is Linguist): the board config's phase key, which the probe reads and writes.
@@ -622,8 +623,8 @@ const e2eShape =(v) => v !== null && typeof v === "object" && !Array.isArray(v) 
 // The one line for Manager's batch when the reading is red, missed or unknown and fresh; null otherwise. Keyed by the state in its first
 // words, so the store tells it once per state change (syncE2e), however the reason's hours or the run's link move on.
 export const e2eWakeLine = (state) => `daily full test run is ${state}`;
-export function e2eWake({ now, value, readAt }) {
-  if (!e2eShape(value) || value.state === "ok" || !(now - readAt <= STALE_AFTER_MS)) return null;
+export function e2eWake({ now, value, readAt, staleMs = STALE_AFTER_MS }) {
+  if (!e2eShape(value) || value.state === "ok" || !(now - readAt <= staleMs)) return null;
   const why = value.reason.replace(/[\u0000-\u001f\u007f\s]+/g, " ").trim().slice(0, 150), run = e2eRun(value.run);
   return { state: value.state, reason: `${e2eWakeLine(value.state)}: ${why}${run ? ` (${run})` : ""}. Look at the product's daily run and tell the owner.` };
 }
@@ -638,6 +639,8 @@ export function evidenceRefusal(key, value, who, track) {
   if (key === "deploy.last" && !deployLastShape(value)) return refuse("deploy-last-shape", "deploy.last is { ok: true|false, at, line up to 160 characters }");
   if (key === "schedule.models" && !scheduleModelsShape(value)) return refuse("schedule-models-shape", "schedule.models is { at, tasks: [up to 30 of { id, chosen, lastRun, at }] }, ids and model names plain words");
   if (key === "e2e" && !e2eShape(value)) return refuse("e2e-shape", "e2e is { state: ok|red|missed|unknown, reason, run, lastGreenAt }");
+  // #C997: the operational settings the probe resolved from the board config's ops section, and the ones it ignored (worker/knobs.mjs).
+  if (key === "knobs" && !knobsShape(value)) return refuse("knobs-shape", "knobs is { values: { setting: number }, ignored: [up to 40 of { key, why }] }");
   // #C956: the team's visual lanes, from the board config: { visualLanes: [role names], up to 20 }.
   if (key === "look" && !(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((k) => k === "visualLanes") && Array.isArray(value.visualLanes) && value.visualLanes.length <= 20 && value.visualLanes.every((r) => typeof r === "string" && LANE_NAME.test(r)))) return refuse("look-shape", "look is { visualLanes: [up to 20 role names] }");
   if (key.startsWith("cards.")) {
@@ -961,11 +964,13 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
 }
 
 // "Live now": only the probe's reading of /version.json counts, and a reading older than 3 min is stale, never live.
-export const STALE_AFTER_MS = 5 * 60_000; // #C996: was 3 min while the evidence job ran every minute (it runs every minute again since 11-16, but a run may take up to 170 s, for now: this edge goes back to 3 min with the 90 s limit)
-export function liveNow(reading, now) {
+// #C997: the setting staleAfterSec (worker/knobs.mjs); this is its default. Readers take the posted setting when the store has one (staleMsOf).
+export const STALE_AFTER_MS = KNOBS.staleAfterSec.default * 1000;
+export const staleMsOf = (stored) => knobFrom(stored, "staleAfterSec") * 1000;
+export function liveNow(reading, now, staleMs = STALE_AFTER_MS) {
   if (!reading || typeof reading.version !== "string" || !Number.isFinite(reading.readAt)) return { state: "unknown", age: null };
   const age = Math.max(0, now - reading.readAt);
-  return { state: age > STALE_AFTER_MS ? "stale" : "live", version: reading.version, age };
+  return { state: age > staleMs ? "stale" : "live", version: reading.version, age };
 }
 
 // #C927 (the owner, 11-11: a card's tile read "repository copy 47 h 56 min old" and nothing told Manager): the probe's copy of a repository
