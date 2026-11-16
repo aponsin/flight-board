@@ -1,0 +1,1 @@
+SECURE #C1096 scan-skips-hex-commit-ids fa69b8d6: an empty WIP commit (no file changed), noted only so the release tool counts it; the line's code is reviewed in the SECURE on tip fd8a07a2. (Security)
