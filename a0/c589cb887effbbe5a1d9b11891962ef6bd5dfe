@@ -1,0 +1,1 @@
+SECURE #C1103 v3 a0c589cb (tip): one test-only commit on signed e14bf9e4 (tests/dispatch-enforces-group-order.test.mjs, +11 lines: first push of a rework card and a started-group card, held fallback for an older queue file). No code change. File run: 11 pass, 0 fail. (Security)
