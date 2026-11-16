@@ -1,0 +1,1 @@
+SECURE #C1080 dispatch-respects-open-group 0c079bf8: pinned collector/store-dispatch.mjs only; a filter over the view the dispatch already reads that removes new-build turns outside a role's open started group; adds no wake, write, route, secret, path or network call. Pinned file: rides the owner install. line from da209babeffd6b26de0f00d9078d3e8015aaf0bc (Security)
