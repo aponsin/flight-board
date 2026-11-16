@@ -40,6 +40,11 @@ test("the spec: ids, a path inside the checkout, a line, the text to find, and t
   assert.ok(specErrors({ mutants: [] }).length);
   assert.match(specErrors({ mutants: [m("M1", { file: "../x.mjs" })] }).join(), /file is a path inside the checkout/);
   assert.match(specErrors({ mutants: [m("M1", { file: "/etc/passwd" })] }).join(), /file is a path/);
+  assert.match(specErrors({ mutants: [m("M1", { file: "node_modules/x/index.mjs" })] }).join(), /file is a path/);
+  assert.match(specErrors({ mutants: [m("M1", { file: "src/node_modules/x.mjs" })] }).join(), /file is a path/);
+  assert.match(specErrors({ mutants: [m("M1", { file: ".git/hooks/pre-commit" })] }).join(), /file is a path/);
+  assert.match(specErrors({ mutants: [m("M1", { tests: ["tests/../../x.test.mjs"] })] }).join(), /tests/);
+  assert.deepEqual(specErrors({ mutants: [m("M1", { file: "src/node_modules_like.mjs" })] }), []);
   assert.match(specErrors({ mutants: [m("M1", { line: 0 })] }).join(), /line/);
   assert.match(specErrors({ mutants: [m("M1", { find: "" })] }).join(), /find/);
   assert.match(specErrors({ mutants: [m("M1", { tests: [] })] }).join(), /tests/);

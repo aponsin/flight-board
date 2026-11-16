@@ -303,6 +303,8 @@ export function reviewClaimRefusal(b, who, op = "claim") {
     if (b.mutants !== undefined && !(Number.isInteger(b.mutants) && b.mutants >= 0 && b.mutants <= MUTANTS_MAX)) return refuse("review-claim-shape", `mutants is a whole number from 0 to ${MUTANTS_MAX}`);
     if (b.mutant_sec !== undefined && !(Number.isInteger(b.mutant_sec) && b.mutant_sec >= 1 && b.mutant_sec <= 3600)) return refuse("review-claim-shape", "mutant_sec is the seconds one mutant takes, 1 to 3600");
     if (b.progress !== undefined && !(typeof b.progress === "string" && b.progress.length <= 160 && !/[\r\n]/.test(b.progress))) return refuse("review-claim-shape", "progress is one line of up to 160 characters");
+    // The line goes into a stall row's reason, and the cleanups find rows by LIKE on the reason: a line that carries another cleanup's mark would be deleted and put back on every sync (Security's LOW 1).
+    if (typeof b.progress === "string" && (b.progress.includes(SLOW_ROW_END) || b.progress.includes(REVIEW_LATE_MARK))) return refuse("review-claim-shape", "progress must not contain the stall lines' own wording");
   }
   if (typeof b.sha !== "string" || !REVIEW_SHA.test(b.sha)) return refuse("review-claim-shape", "sha is the tip's full 40-character lower-case hex commit");
   if (b.checker !== undefined && (typeof b.checker !== "string" || !CHECKER_NAME.test(b.checker))) return refuse("review-claim-shape", "checker is \"Checker\" or \"Checker <n>\"");

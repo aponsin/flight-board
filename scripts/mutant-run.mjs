@@ -18,8 +18,9 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const DEFAULT_CONCURRENCY = 8;
-const SAFE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]{1,200}$/;
-const TEST_FILE = /^tests\/[A-Za-z0-9._\/-]{1,150}\.test\.mjs$/;
+// No ".." segment, and nothing under node_modules/ or .git/: each copy's node_modules is a symlink to the real checkout's, so an edit there would land in the real one (Security's LOW 2).
+const SAFE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))(?!(?:.*\/)?(?:node_modules|\.git)(?:\/|$))[A-Za-z0-9._\/-]{1,200}$/;
+const TEST_FILE = /^tests\/(?!.*(?:^|\/)\.\.(?:\/|$))[A-Za-z0-9._\/-]{1,150}\.test\.mjs$/;
 
 // The spec's shape; returns the list of problems (empty: usable). Paths stay inside the checkout and tests are test files.
 export function specErrors(spec) {
