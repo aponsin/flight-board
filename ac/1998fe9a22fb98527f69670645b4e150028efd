@@ -1,0 +1,1 @@
+PASS Quick #C1081 v2 by Checker 2: F1 and F2 LOW fixed by test-only commit 4e16341c; mutants A9 A10 A11 and 20 more killed, W11 equivalent; full suite 2411 pass 0 fail 1 skipped (commit ac1998fe of stack tip 4e16341c)
