@@ -931,12 +931,14 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
 // reading is no hold (the quota stop of the dispatch treats it the same way). `week` is sessionWeek()'s answer (collector/week-usage.mjs: this file
 // imports nothing of the collector). Only stalledWaits' output is passed in: held cards, asks, prompts, landed packs and stale copies are not an
 // idle agent's stall and go on as before.
-export const QUOTA_OUT_PCT = 98, QUOTA_OUT_CARD = "quota-out:";
-export function quotaHold({ now, week, stalls }) {
+// #C1106: the setting quotaOutPct (worker/knobs.mjs); this is its default. The store passes the posted one (quotaOutPctOf) as outPct.
+export const QUOTA_OUT_PCT = KNOBS.quotaOutPct.default, QUOTA_OUT_CARD = "quota-out:";
+export const quotaOutPctOf = (stored) => knobFrom(stored, "quotaOutPct");
+export function quotaHold({ now, week, stalls, outPct = QUOTA_OUT_PCT }) {
   const list = Array.isArray(stalls) ? stalls : [];
-  const out = week?.state === "fresh" && Number.isInteger(week.pct) && week.pct >= QUOTA_OUT_PCT && Number.isFinite(week.resetsAt) && week.resetsAt > now;
+  const out = week?.state === "fresh" && Number.isInteger(week.pct) && week.pct >= outPct && Number.isFinite(week.resetsAt) && week.resetsAt > now;
   if (!out) return { stalls: list, line: [] };
-  return { stalls: [], line: [{ card_id: `${QUOTA_OUT_CARD}${week.resetsAt}`, num: null, reason: `The week's quota is used up (${QUOTA_OUT_PCT}% or more): idle-agent stall lines are held until it resets at ${mtDayTime(week.resetsAt)}` }] };
+  return { stalls: [], line: [{ card_id: `${QUOTA_OUT_CARD}${week.resetsAt}`, num: null, reason: `The week's quota is used up (${outPct}% or more): idle-agent stall lines are held until it resets at ${mtDayTime(week.resetsAt)}` }] };
 }
 
 // #C915 (d): a card that runs past its estimate with nobody having said why. The estimate is the page's: Release's ship is about 10 min (slow from

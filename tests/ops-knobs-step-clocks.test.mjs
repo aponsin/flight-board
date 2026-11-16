@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, updateCard, createAsk, answerAsk, writeEvidence, wakeAsk, wakeResult, readView, takeInbox, postMessage } from "../worker/board-store.mjs";
+import { createCard, updateCard, createAsk, answerAsk, writeEvidence, writeWeekUsage, wakeAsk, wakeResult, readView, takeInbox, postMessage } from "../worker/board-store.mjs";
 import { beat } from "./helpers/beating-store.mjs";
 import { resolveKnobs, KNOBS } from "../worker/knobs.mjs";
 import { shouldSend, wakeLimits } from "../worker/wake-rules.mjs";
@@ -218,6 +218,27 @@ test("the retry after a failed send to the owner's words follows the setting; th
   assert.equal(shouldSend(wake, T + 60_000, wakeLimits({ values: { wakeRetryFailedSec: 120 } })), false, "posted 120 s: not at 60");
   assert.equal(shouldSend(wake, T + 120_000, wakeLimits({ values: { wakeRetryFailedSec: 120 } })), true);
   assert.deepEqual(wakeLimits(null), { takenMs: 180_000, resendMs: 300_000, retryMs: 60_000, askStaleMs: 180_000 });
+});
+
+// Slice five: the share of the week at which the idle-agent stall lines are held (the #C1078 hold).
+test("through the store: a posted quotaOutPct moves the share at which the idle-agent lines are held, and the line says it", async () => {
+  const RESET = T + 40 * 60 * M;
+  const run = async (values, percent) => {
+    const db = makeDb();
+    if (values) await postKnobs(db, values);
+    for (let k = 1; k <= 3; k++) await createCard(db, T, "Manager", { id: `card-${k}`, title: `Card ${k}`, owner_role: "Boardsmith" });
+    await writeEvidence(db, T, "probe", "agents", { Boardsmith: { state: "idle", tool: null, card: null, since: T } });
+    await writeWeekUsage(db, T + 19 * M, "Manager", { percent, resets_at: new Date(RESET).toISOString() });
+    await db.prepare("UPDATE evidence SET read_at = ? WHERE key = 'agents' OR key LIKE 'cards.%'").bind(T + 20 * M).run();
+    return stallsAt(db, T + 20 * M);
+  };
+  const plain = await run(undefined, 92);
+  assert.match(plain[0].reason, /^Boardsmith idle since .*, 3 queued, next #C1$/, "92% under the default 98: the idle line stands");
+  const held = await run({ quotaOutPct: 90 }, 92);
+  assert.equal(held.length, 1);
+  assert.match(held[0].reason, /^The week's quota is used up \(90% or more\): idle-agent stall lines are held until it resets at /);
+  const still = await run({ quotaOutPct: 95 }, 92);
+  assert.match(still[0].reason, /^Boardsmith idle since/, "posted 95: 92 is under it");
 });
 
 test("through the store: a posted autoCloseSec moves the board's close of an answered Decision", async () => {

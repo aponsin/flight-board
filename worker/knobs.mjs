@@ -26,6 +26,8 @@ export const KNOBS = {
   wakeResendSec: { default: 300, min: 60, max: 3600, label: "an untaken batch is sent again at most this often (s)" },
   wakeRetryFailedSec: { default: 60, min: 20, max: 600, label: "a failed send is retried this soon while the owner's own words wait (s)" },
   askStaleSec: { default: 180, min: 60, max: 1800, label: "the Manager chip is red when the probe has not asked the store for this long (s)" },
+  // The share of the week at which the idle-agent stall lines are held and Manager gets one line (the Worker's #C1078 hold); the dispatch's own ceiling for new build work is collector.quotaCeilingPct.
+  quotaOutPct: { default: 98, min: 50, max: 100, label: "at this share of the week's quota the idle-agent stall lines are held until the reset (%)" },
   // Not settings yet (they stay on the lint baseline): gate/reset.mjs EVIDENCE_STALE_MS (no card shows a commit for 10 min; the file is pinned by the owner's
   // install, so changing it needs an owner pack, and it is NOT the page's probe edge staleAfterSec) and collector/store-dispatch.mjs AGENTS_FRESH_MS.
 };
