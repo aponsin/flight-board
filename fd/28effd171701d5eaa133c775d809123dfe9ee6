@@ -1,0 +1,1 @@
+SECURE #C1115 v2 fd28effd: LOW 2 fixed (SAFE_PATH refuses node_modules/ and .git/, both regexes refuse '..'; mutation: guard dropped, the spec test fails). LOW 1 only partly fixed, see the tip note. (Security)
