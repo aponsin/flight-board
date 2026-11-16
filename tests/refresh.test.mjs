@@ -187,27 +187,3 @@ test("the ship baseline is taken when the run starts: a ship during a long lead 
     assert.match(hookMain({ transcript_path: t }, opts), /webapp shipped/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
-
-test("collect.mjs --prepare notes the run's start with each refresh repo's origin/main", async () => {
-  const { mkdtempSync, writeFileSync, readFileSync, rmSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const { execFileSync, spawnSync } = await import("node:child_process");
-  const dir = mkdtempSync(join(tmpdir(), "refresh-prep-"));
-  try {
-    const repo = join(dir, "webapp");
-    const g = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8" }).trim();
-    execFileSync("git", ["init", "-q", repo]);
-    g("-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x");
-    const sha = g("rev-parse", "HEAD");
-    g("update-ref", "refs/remotes/origin/main", sha);
-    const cfg = join(dir, "board.config.json");
-    writeFileSync(cfg, JSON.stringify({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", gate: { stateDir: dir }, collector: { repoPath: repo, outDir: join(dir, "out"), refresh: { repos: [repo, join(dir, "missing")] } } }));
-    const before = Date.now();
-    const r = spawnSync(process.execPath, [new URL("../collector/collect.mjs", import.meta.url).pathname, "--config", cfg, "--prepare"], { encoding: "utf8" });
-    assert.equal(r.status, 0, r.stderr);
-    const mark = JSON.parse(readFileSync(join(dir, "TestBoard01", "export-since.json"), "utf8"));
-    assert.ok(mark.at >= before);
-    assert.deepEqual(mark.refs, { webapp: sha }, "a folder without the ref is left out");
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-});

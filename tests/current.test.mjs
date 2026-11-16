@@ -60,7 +60,7 @@ test("sameTree: the same files byte for byte and nothing else; a planted or edit
     assert.equal(sameTree(make("c", { ...good, "collector/collect.mjs": "evil()" }), make("d", good)), false, "an edited file");
     assert.equal(sameTree(make("e", { ...good, "extra.mjs": "x" }), make("f", good)), false, "a planted file");
     assert.equal(sameTree(make("g", { "gate/gate.mjs": "gate()" }), make("h", good)), false, "a missing file");
-    const linked = make("i", { "gate/gate.mjs": "gate()" }); mkdirSync(join(linked, "collector")); symlinkSync(join(base, "a", "collector", "collect.mjs"), join(linked, "collector", "collect.mjs"));
+    const linked = make("i", { "gate/gate.mjs": "gate()" }); mkdirSync(join(linked, "collector")); symlinkSync(join(base, "a", "collector", "state.mjs"), join(linked, "collector", "state.mjs"));
     assert.equal(sameTree(linked, join(base, "a")), false, "a link to the same bytes in place of the file");
     const extra = make("j", good); symlinkSync(join(base, "a", "gate", "gate.mjs"), join(extra, "planted.mjs"));
     assert.equal(sameTree(extra, join(base, "a")), false, "a planted link");
@@ -70,7 +70,7 @@ test("sameTree: the same files byte for byte and nothing else; a planted or edit
 function layout() {
   const base = mkdtempSync(join(tmpdir(), "fb-current-"));
   const root = join(base, "install");
-  for (const sha of [A, B]) { mkdirSync(join(root, sha, "collector"), { recursive: true }); writeFileSync(join(root, sha, "collector", "collect.mjs"), ""); }
+  for (const sha of [A, B]) { mkdirSync(join(root, sha, "collector"), { recursive: true }); writeFileSync(join(root, sha, "collector", "state.mjs"), ""); }
   return { base, root, link: join(base, "current") };
 }
 
@@ -97,10 +97,10 @@ test("currentLink: only a link to <install root>/<full commit> holding the colle
     assert.equal(currentLink(install), null, "no link");
     symlinkSync(join(root, B), link);
     assert.equal(currentLink(install), link);
-    mkdirSync(join(base, A, "collector"), { recursive: true }); writeFileSync(join(base, A, "collector", "collect.mjs"), "");
+    mkdirSync(join(base, A, "collector"), { recursive: true }); writeFileSync(join(base, A, "collector", "state.mjs"), "");
     rmSync(link); symlinkSync(join(base, A), link);
     assert.equal(currentLink(install), null, "a link elsewhere, collector and all");
-    rmSync(link); mkdirSync(join(root, "short", "collector"), { recursive: true }); writeFileSync(join(root, "short", "collector", "collect.mjs"), ""); symlinkSync(join(root, "short"), link);
+    rmSync(link); mkdirSync(join(root, "short", "collector"), { recursive: true }); writeFileSync(join(root, "short", "collector", "state.mjs"), ""); symlinkSync(join(root, "short"), link);
     assert.equal(currentLink(install), null, "not a full commit");
     rmSync(link); mkdirSync(join(root, "c".repeat(40))); symlinkSync(join(root, "c".repeat(40)), link);
     assert.equal(currentLink(install), null, "no collector in it");

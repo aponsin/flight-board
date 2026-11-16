@@ -91,7 +91,6 @@ test("the amber banner's words use --warn-ink; its border stays --warn", async (
 
 test("the live state: a tip whose change landed with other context lines is on main, read as the main commit", async () => {
   const { landedOn, changeId: stateId, cardState } = await import("../collector/state.mjs");
-  const { changeId: collectorId } = await import("../collector/collect.mjs");
   const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -110,7 +109,7 @@ test("the live state: a tip whose change landed with other context lines is on m
     const ids = {};
     assert.equal(landedOn(g, "origin/main", ready, ids), shipped);
     assert.ok(Object.keys(ids).length >= 3, "the ids are kept for the next run");
-    for (const s of [ready, shipped]) assert.equal(stateId(g, s, {}), collectorId(g, s), "the pinned copy and the collector's agree");
+    assert.equal(stateId(g, ready, {}), stateId(g, shipped, {}), "the restacked change has the same change id as the READY");
     const config = { phases: [["build"], ["checker"], ["ship"], ["live"]], skips: [], collector: { notes: {}, buildPhase: "build", shipPhase: "ship", livePhase: "live", mainBranch: "main", repos: [] } };
     const repo = { git: g, ci: () => ({ ci: "passed", ciMin: 1 }), remote: "origin", main: "main", notes: {}, tips: [{ branch: "ctx-card", sha: ready, at: 1, message: "the change\n\nBoard-Id: ctx-card" }], live: shipped, versionPattern: null, ids: {} };
     const s = cardState({ id: "ctx-card", num: 1 }, repo, config, 5);

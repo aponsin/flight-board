@@ -89,7 +89,7 @@ test("the rework signal says Mountain Time, not UTC", () => {
 });
 
 test("no board source prints a time with toISOString(...)Z or a UTC label any more", () => {
-  const files = ["worker/board-rules.mjs", "worker/page-header.mjs", "worker/board-store.mjs", "collector/nudges.mjs", "collector/prompt-alarm.mjs", "collector/rework.mjs", "page/board.template.html"];
+  const files = ["worker/board-rules.mjs", "worker/page-header.mjs", "worker/board-store.mjs", "collector/prompt-alarm.mjs", "collector/rework.mjs", "page/board.template.html"];
   for (const f of files) {
     const src = readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
     assert.doesNotMatch(src, /toISOString\(\)\.slice\(\s*(0|11)\s*,\s*16\s*\)[^;\n]{0,40}Z/, f);

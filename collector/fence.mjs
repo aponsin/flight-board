@@ -35,7 +35,7 @@ export function currentLink(install) {
   try { // readlinkSync throws on anything but a symlink
     const target = resolve(dirname(link), readlinkSync(link));
     if (dirname(target) !== root || !/^[0-9a-f]{40}$/.test(basename(target))) return null;
-    return existsSync(join(target, "collector", "collect.mjs")) ? link : null;
+    return existsSync(join(target, "collector", "state.mjs")) ? link : null; // state.mjs, the probe: collect.mjs is gone (#C864 step 2b)
   } catch { return null; }
 }
 
