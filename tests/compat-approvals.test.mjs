@@ -230,7 +230,7 @@ test("Release's script reads the store through the connector as Release, prints 
   const fetchImpl = async (url, init) => { sent.push({ url, body: JSON.parse(init.body) }); return { ok: true, status: 200, json: async () => ({ jsonrpc: "2.0", id: 1, result: { structuredContent: view } }) }; };
   const ok = await checkApproval({ pr: 12, head: H1, url: URL, fetchImpl });
   assert.equal(ok.code, 0); assert.match(ok.line, /^approved: pull request 12 at aaaaaaaaaaaa/);
-  assert.deepEqual(sent[0].body.params, { name: "read_view", arguments: { as: "Release" } });
+  assert.deepEqual(sent[0].body.params, { name: "read_view", arguments: { as: "Release", full: true } });
   const no = await checkApproval({ pr: 12, head: H2, url: URL, fetchImpl });
   assert.equal(no.code, 1); assert.match(no.line, /^not approved: /);
   for (const r of [ok, no]) assert.doesNotMatch(r.line, /s3cr3t/);

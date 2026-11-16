@@ -17,7 +17,7 @@ export async function checkApproval({ pr, head, url, as = "Release", fetchImpl =
   if (!/^https:\/\/[^\s]+\/mcp\/[^\s/]+$/.test(url ?? "")) return { code: 2, line: "no connector address: pass --connector-file <file> or set BOARD_CONNECTOR_URL" };
   let res;
   try {
-    const r = await fetchImpl(url, { method: "POST", headers: { "content-type": "application/json" }, redirect: "error", signal: AbortSignal.timeout(20_000), body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_view", arguments: { as } } }) });
+    const r = await fetchImpl(url, { method: "POST", headers: { "content-type": "application/json" }, redirect: "error", signal: AbortSignal.timeout(20_000), body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_view", arguments: { as, full: true } } }) });
     if (!r.ok) return { code: 2, line: `the board answered ${r.status}` };
     res = await r.json();
   } catch (e) {
