@@ -943,8 +943,15 @@ export function phaseMedians(rows) {
   for (const [p, l] of Object.entries(by)) if (l.length >= 3) { l.sort((a, b) => a - b); out[p] = l[Math.floor(l.length / 2)]; }
   return out;
 }
-export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed }) {
+// #C1093 (11-16: Manager got about 10 of these in a day, each costing a turn: some minutes after a card started, #C1087 a minute after Manager set its reason and note,
+// #C1090 while it was only queued behind the owner's current card): (1) a next_note written in the last NOTE_FRESH_MS is the reason (the card's moved_at is when its
+// next_note or waiting_on last changed; the "rework reason missing" line is not hidden by it, since the note is refused until the reason is attached); (2) a card the
+// owner has not started is not slow: its owner's session is working a DIFFERENT card now (`agents`: the roster reading { role: { state, card } }). No reading, or the owner
+// idle or on this card, and the old rule stands.
+export const NOTE_FRESH_MS = 60 * 60_000;
+export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, agents }) {
   const out = [];
+  const roster = agents && typeof agents === "object" ? agents : {};
   for (const c of cards ?? []) {
     if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || isHeld(c) || holdOpen(c, now, endsPassed) || openAskCards?.has(c.id) || dependsNotLive(c, cards, evidence)) continue;
     const v = evidence?.[c.id], phase = v?.lit?.[0];
@@ -955,6 +962,10 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
     const limit = phase === "ship" ? SHIP_SLOW_MS : Number.isFinite(medians?.[phase]) && medians[phase] > 0 ? 2 * medians[phase] : null;
     const missing = v.rework === true && !(typeof c.rework_reason === "string" && c.rework_reason !== "");
     const owner = typeof c.owner_role === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(c.owner_role) ? c.owner_role : "the owner";
+    // #C1093 (1): a note written in the last hour is the reason. (2): the owner's session is on another card, so this one is queued behind it, not slow.
+    if (!missing && typeof c.next_note === "string" && c.next_note.trim() !== "" && Number.isFinite(c.moved_at) && c.moved_at <= now && now - c.moved_at < NOTE_FRESH_MS) continue;
+    const on = roster[c.owner_role];
+    if (on && on.state === "working" && typeof on.card === "string" && on.card !== "" && on.card !== c.id) continue;
     if (limit !== null && now - start > limit) out.push({ card_id: c.id, num: c.num, reason: missing ? reworkReasonLine(c.num, owner) : slowLine(c.num) });
   }
   return out;

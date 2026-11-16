@@ -1,0 +1,67 @@
+// #C1093 (11-16: Manager got about 10 "is slow with no reason" stalls, each costing a turn: some minutes after a card started, #C1087 a minute after Manager set its
+// rework_reason and next_note, #C1090 while it was only queued behind the owner's current card): a next_note written in the last hour is the reason, and a card whose
+// owner is working a different card now is queued behind it, not slow.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { makeDb } from "./helpers/d1-sqlite.mjs";
+import { slowWakes, slowLine, reworkReasonLine, SHIP_SLOW_MS, NOTE_FRESH_MS } from "../worker/board-rules.mjs";
+import { createCard, updateCard, writeEvidence, wakeAsk, takeInbox } from "../worker/board-store.mjs";
+
+const T = 1_800_000_000_000, MIN = 60e3;
+const rd = (phase, extra = {}) => ({ lit: [phase], phase, headSha12: "aaaaaaaaaaaa", signed: [], onMain: false, ...extra });
+const base = { id: "c", num: 1090, owner_role: "Boardsmith", paused: 0, dropped: 0 };
+// A card in ship for SHIP_SLOW_MS + 1 min, so the plain rule calls it slow.
+const slow = (fields = {}, agents, ev = rd("ship")) => slowWakes({ now: T, cards: [{ ...base, ...fields }], evidence: { c: ev }, openAskCards: new Set(), phaseStart: new Map([["c|ship", T - SHIP_SLOW_MS - MIN]]), medians: {}, endsPassed: new Set(), agents }).map((s) => s.reason);
+
+test("no note, no roster: the card is slow, as before", () => {
+  assert.deepEqual(slow(), [slowLine(1090)]);
+  assert.deepEqual(slow({ next_note: "waiting on the Worker deploy" }), [slowLine(1090)], "a note with no time says nothing about when it was written");
+});
+
+test("a next_note written in the last hour is the reason: no stall; an hour old or more, the stall comes back", () => {
+  assert.deepEqual(slow({ next_note: "pack in flight", moved_at: T - 5 * MIN }), [], "5 min ago");
+  assert.deepEqual(slow({ next_note: "pack in flight", moved_at: T - NOTE_FRESH_MS + 1 }), [], "just under the hour");
+  assert.deepEqual(slow({ next_note: "pack in flight", moved_at: T - NOTE_FRESH_MS }), [slowLine(1090)], "exactly an hour: stale");
+  assert.deepEqual(slow({ next_note: "pack in flight", moved_at: T - 3 * 60 * MIN }), [slowLine(1090)], "3 h ago");
+  assert.deepEqual(slow({ next_note: "  ", moved_at: T - MIN }), [slowLine(1090)], "a cleared note is no reason");
+  assert.deepEqual(slow({ next_note: null, moved_at: T - MIN }), [slowLine(1090)], "no note, only a move");
+  assert.deepEqual(slow({ next_note: "pack in flight", moved_at: T + 5 * MIN }), [slowLine(1090)], "a time in the future is not believed");
+});
+
+test("a card in rework with no reason keeps its own line even with a fresh note", () => {
+  assert.deepEqual(slow({ next_note: "fixing", moved_at: T - MIN }, undefined, rd("ship", { rework: true })), [reworkReasonLine(1090, "Boardsmith")]);
+  assert.deepEqual(slow({ next_note: "fixing", moved_at: T - MIN, rework_reason: "review findings" }, undefined, rd("ship", { rework: true })), [], "the reason given and a note just written (#C1087): no stall");
+});
+
+test("a card whose owner is working a different card is queued behind it, not slow; on this card, idle or unread, it is slow", () => {
+  assert.deepEqual(slow({}, { Boardsmith: { state: "working", card: "other-card" } }), []);
+  assert.deepEqual(slow({}, { Boardsmith: { state: "working", card: "c" } }), [slowLine(1090)], "working this very card");
+  assert.deepEqual(slow({}, { Boardsmith: { state: "idle", card: "other-card" } }), [slowLine(1090)], "idle: nobody is on another card");
+  assert.deepEqual(slow({}, { Boardsmith: { state: "working" } }), [slowLine(1090)], "working, no card named");
+  assert.deepEqual(slow({}, { Builder: { state: "working", card: "other-card" } }), [slowLine(1090)], "another role's work does not queue it");
+  assert.deepEqual(slow({}, {}), [slowLine(1090)]);
+  assert.deepEqual(slow({}, null), [slowLine(1090)]);
+});
+
+// The store's own wiring: syncStalls hands slowWakes the card's next_note and moved_at and the roster reading.
+async function slowRows(setup, at) {
+  const db = makeDb();
+  await createCard(db, T, "Manager", { id: "c", title: "A card", owner_role: "Boardsmith" });
+  await writeEvidence(db, T, "probe", "cards.c", rd("ship"));
+  await setup(db);
+  await wakeAsk(db, at);
+  return (await takeInbox(db, at + 1000)).stalls.map((s) => s.reason).filter((r) => /is slow with no reason/.test(r));
+}
+const LATE = T + SHIP_SLOW_MS + 2 * MIN;
+
+test("the store: a slow card names Manager; a note written a minute ago ends it; an hour later it is back", async () => {
+  assert.equal((await slowRows(async () => {}, LATE)).length, 1, "no note: the stall");
+  assert.deepEqual(await slowRows(async (db) => { assert.ok((await updateCard(db, LATE - MIN, "Boardsmith", { id: "c", next_note: "pack in flight" })).ok); }, LATE), [], "note a minute ago");
+  assert.equal((await slowRows(async (db) => { assert.ok((await updateCard(db, T + MIN, "Boardsmith", { id: "c", next_note: "pack in flight" })).ok); }, T + MIN + NOTE_FRESH_MS + SHIP_SLOW_MS)).length, 1, "the note is over an hour old");
+});
+
+test("the store: the owner working another card (the roster reading) ends the stall; the roster naming this card does not", async () => {
+  const roster = (card) => async (db) => { await writeEvidence(db, LATE - 1000, "probe", "agents", { Boardsmith: { state: "working", card, lastActivityAt: LATE - 1000, since: LATE - 5 * MIN } }); };
+  assert.deepEqual(await slowRows(roster("other-card"), LATE), []);
+  assert.equal((await slowRows(roster("c"), LATE)).length, 1);
+});
