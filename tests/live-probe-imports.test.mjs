@@ -18,6 +18,12 @@ test("the live probe's files import neither gate/gate.mjs nor collector/export.m
   }
 });
 
+test("the probe runs no collect.mjs child: no merge step, no derive step, no collectorEntry (#C864 step 2b)", () => {
+  const s = src("collector/state.mjs");
+  assert.doesNotMatch(s, /collectorEntry|--probe-step|--merge-only|deriveStep|probeStep/);
+  assert.doesNotMatch(src("collector/probe-evidence.mjs"), /--no-derive/);
+});
+
 test("home is one function: config.mjs's, which gate.mjs re-exports; a leading ~ only", () => {
   assert.equal(gateHome, home);
   assert.match(home("~/x"), /^\/.+\/x$/);

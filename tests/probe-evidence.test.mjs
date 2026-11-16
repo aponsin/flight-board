@@ -99,7 +99,7 @@ test("the job builds the state without posting it, reads it, and posts the job's
     build: async (a) => { args = a; }, read: () => JSON.stringify(state), sessionsRead: () => [],
     fetchImpl: async (_u, o) => { posted.push(JSON.parse(o.body).key); return { ok: true, status: 200 }; },
   });
-  assert.ok(args.includes("--no-post") && args.includes("--no-derive"));
+  assert.ok(args.includes("--no-post") && !args.includes("--no-derive"));
   assert.deepEqual(stateArgs("/c.json").slice(1, 3), ["--config", "/c.json"]);
   assert.equal(r.written, 7);
   assert.deepEqual(posted, ["agents", "ctx", "board", "run.evidence", "cards.card-a", "look", "schedule.models"], "the state's keys (the other keys before the cards, #C996) and this run's reading, then the lanes from the config (#C956) and the scheduled tasks' models (#C1006)");

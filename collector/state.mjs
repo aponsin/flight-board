@@ -547,13 +547,6 @@ export function installedSha(link, code = CODE, readlink = readlinkSync) {
   if (target === null || !sha(target)) return null;
   return sha(code) && dirname(code) === dirname(target) ? sha(code) : sha(target);
 }
-// The collector's code the probe's merge and derive run (#C642): always this install's own copy, never the current link's
-// (Security, BLOCKING: the child runs unsandboxed with the probe's environment, secrets and network, so it must be code the
-// owner's install pinned and Security compared with its commit, #C420 condition A; collector/collect.mjs and what it imports
-// are in OWNER_ENTRIES now). A child process, never an import.
-export function collectorEntry(code = CODE) {
-  return join(code, "collector", "collect.mjs");
-}
 // One card: its phase by the evidence (the declared one when the repository shows nothing), and the facts beside it.
 // A tip whose change landed on main as other commits (landedOn) is read as the main commit that carries it.
 // #C621: a card with two or more branch tips also carries `branches`, each tip read on its own (tipState), so the page can
@@ -1350,20 +1343,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const live = process.env.FB_DEPLOY_RULE === "1" ? deployedSha(at.git, process.env.FB_DEPLOY_WORKER, process.env.FB_DEPLOY_TREE) : installed;
     repos[x.name] = { ...at, gh: null, live, versionPattern: null, reviewPaths: x.reviewPaths ?? null };
   }
-  // #C642: what the Collector's last run saved is merged into the mirror first, so this minute reads the board as of that run. The merge
-  // and the derive after it are collect.mjs --probe-step, a child process (the collector's code is the release's, not this pinned file's).
-  const probeStep = (extra) => {
-    try { return execFileSync(process.execPath, [collectorEntry(), "--config", process.argv[at + 1], "--probe-step", ...extra, ...(fetchIt ? ["--no-fetch"] : [])], { cwd: join(stateDir, id), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 150_000, maxBuffer: 16 * 1024 * 1024 }).trim(); }
-    catch (e) { return `probe step failed: ${String(e.message).split("\n")[0].slice(0, 160)}`; }
-  };
   lap("repos");
-  const merged = probeStep(["--merge-only"]);
-  if (merged) console.log(`state: ${merged.split("\n").join(" / ")}`);
-  lap("merge");
-  // The mirror's own stamp (collector/delta.mjs _at.json): when the last merged run began.
+  // The mirror's own stamp (_at.json, written by collector/store-cards.mjs from the store's cards): when it was made.
   const stampAt = () => { try { const s = JSON.parse(readFileSync(join(stateDir, id, "mirror", "_at.json"), "utf8")); return Number.isFinite(s?.at) ? s.at : 0; } catch { return 0; } };
-  // The derive step, after the state is posted (it asks GitHub, which can take a while): when a merge changed the mirror or the last one is 10 minutes old.
-  const deriveStep = () => { const out = probeStep([]); if (out) console.log(`state: ${out.split("\n").join(" / ")}`); };
   // The cards on the last export; the agents from the app's files.
   const cards = liveCards(stateDir, id);
   const ids = new Set(cards.filter((k) => !closed(k)).map((k) => k.id));
@@ -1480,7 +1462,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   lap("write");
   // What each phase read, as numbers: the open cards, the repositories' tips, the sessions' files, the kept change ids and CI runs.
   const counts = { cards: cards.filter((k) => !closed(k)).length, all: cards.length, tips: Object.values(repos).reduce((n, r) => n + (r.tips?.length ?? 0), 0), sessions: sessions.length, ids: Object.keys(changeIds).length, ci: Object.keys(ciCache).length, waiting: waitingDocs.length };
-  if (process.argv.includes("--no-post")) { console.log(`state: written, ${Object.keys(state.cards).length} card(s), ${Object.keys(state.agents).length} agent(s), not posted`); console.log(timingLine(counts)); if (!process.argv.includes("--no-derive")) deriveStep(); process.exit(0); }
+  if (process.argv.includes("--no-post")) { console.log(`state: written, ${Object.keys(state.cards).length} card(s), ${Object.keys(state.agents).length} agent(s), not posted`); console.log(timingLine(counts)); process.exit(0); }
   const secrets = readSecrets(secretsDir(stateDir, id));
   console.log(secrets ? await postState(fetch, secrets, id, state) : "state: written, not posted (no secrets from the owner's install, or they are open to others)");
   lap("post");
@@ -1494,5 +1476,4 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     lap("wake");
   }
   console.log(timingLine(counts));
-  deriveStep();
 }

@@ -1,5 +1,5 @@
 // The new probe's evidence and usage jobs against the board store (#C719). The readings themselves (git, GitHub, sessions,
-// the usage script) are collector/state.mjs's pure functions, run by its own CLI with --no-post --no-derive, which leaves the
+// the usage script) are collector/state.mjs's pure functions, run by its own CLI with --no-post, which leaves the
 // state it built in <stateDir>/<board id>/state.json. This module only maps that state to the store's evidence keys and posts
 // them as the probe, so the readings are computed in one place and the store gets nothing typed or copied.
 //   evidence job (60 s): cards.<id> {lit:[phase], ...the card's reading}, agents, ctx, board
@@ -134,7 +134,7 @@ export async function readDeploy({ base, headers, fetchImpl = fetch, treeSha = d
 }
 export const deployEnv = (d) => ({ FB_DEPLOY_RULE: "1", FB_DEPLOY_WORKER: d.worker, FB_DEPLOY_TREE: d.tree });
 
-export const stateArgs = (configPath) => [join(import.meta.dirname, "state.mjs"), "--config", configPath, "--no-post", "--no-derive"];
+export const stateArgs = (configPath) => [join(import.meta.dirname, "state.mjs"), "--config", configPath, "--no-post"];
 
 // "Live now": the product's own /version.json, on the host of the board config's liveUrl, read by the probe each evidence run.
 // The store stamps the read time itself, so a reading that stops coming turns stale in 3 minutes and is never shown as live.

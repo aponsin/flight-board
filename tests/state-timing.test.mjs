@@ -60,7 +60,7 @@ test("the real state child ends with a timing line of the allowed shape, a phase
     mkdirSync(join(stateDir, "abc123", "mirror", "initiatives"), { recursive: true });
     const cfg = join(dir, "board.config.json");
     writeFileSync(cfg, JSON.stringify({ owner: "Sam", artifactUrl: ["https://claude.ai", "artifact", "abc123"].join("/"), gate: { stateDir }, roster: [] }));
-    const r = spawnSync(process.execPath, [join(import.meta.dirname, "..", "collector", "state.mjs"), "--config", cfg, "--no-post", "--no-derive", "--no-fetch"], { encoding: "utf8", timeout: 60_000 });
+    const r = spawnSync(process.execPath, [join(import.meta.dirname, "..", "collector", "state.mjs"), "--config", cfg, "--no-post", "--no-fetch"], { encoding: "utf8", timeout: 60_000 });
     assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
     const line = timingOf(r.stdout);
     assert.notEqual(line, "", r.stdout);
