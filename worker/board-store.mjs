@@ -7,7 +7,7 @@ import { noteShip, readShips } from "./compat-ships.mjs";
 import { readUsage } from "./compat-usage.mjs";
 import { mtDayTime } from "./team-time.mjs";
 import { readThreads } from "./compat-threads.mjs";
-import { askWakes, promiseWakes, promptWakes, watchWakes, WATCH_WAKE_PREFIX } from "./push-rules.mjs";
+import { askWakes, promiseWakes, promptWakes, watchWakes, WATCH_WAKE_PREFIX, ownerWordWakes, OWNER_WORD_DAYS } from "./push-rules.mjs";
 import { weekUsageValue, sessionWeek, WEEK_USAGE_KEY } from "../collector/week-usage.mjs";
 
 export const PROBE_SILENT_MS = 5 * 60_000; // #C996: was 3 min while the evidence job ran every minute; reverts with its cadence
@@ -511,7 +511,9 @@ async function syncStalls(db, now) {
   // #C1076: a board card landed 30+ min ago that no deploy pair holds: a line to Manager, whatever its owner is doing (landedUnbuilt, board-rules.mjs).
   const installStart = new Map((await db.prepare("SELECT card_id, MAX(at) AS at FROM phase_history WHERE kind = 'start' AND wait = ? GROUP BY card_id").bind(INSTALL_WAIT).all()).results.map((r) => [r.card_id, r.at]));
   const landed = landedUnbuilt({ now, cards, evidence, installStart });
-  const stalls = [...waits, ...quota.line, ...landed, ...heldWakes({ now, cards, endsPassed }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...promiseWakes({ asks: openAsks, now }), ...promptWakes({ stuck: stuckNow, now }), ...watchWakes({ watch: watchNow }), ...copyStalls, ...closing];
+  // #C1081: threads whose newest message is the owner's (the last OWNER_WORD_DAYS days only), joined to what says whether the thread is still open.
+  const ownerLast = (await db.prepare("SELECT m.thread_id AS thread_id, m.created_at AS at, m.resolved AS resolved, a.num AS ask_num, a.closed_at AS ask_closed_at, a.withdrawn_at AS ask_withdrawn_at, c.num AS card_num, c.dropped AS card_dropped, c.done_at AS card_done_at, t.num AS thread_num FROM messages m LEFT JOIN asks a ON a.id = m.thread_id LEFT JOIN cards c ON c.id = m.thread_id LEFT JOIN threads t ON t.id = m.thread_id WHERE m.author = 'owner' AND m.created_at >= ? AND NOT EXISTS (SELECT 1 FROM messages n WHERE n.thread_id = m.thread_id AND (n.created_at > m.created_at OR (n.created_at = m.created_at AND n.id > m.id)))").bind(now - OWNER_WORD_DAYS * 864e5).all()).results;
+  const stalls = [...waits, ...quota.line, ...landed, ...ownerWordWakes({ rows: ownerLast, now }),...heldWakes({ now, cards, endsPassed }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...promiseWakes({ asks: openAsks, now }), ...promptWakes({ stuck: stuckNow, now }), ...watchWakes({ watch: watchNow }), ...copyStalls, ...closing];
   for (const s of stalls) await db.prepare("INSERT OR IGNORE INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind(s.card_id, s.reason, now).run();
   // Whatever is untaken and no longer current (the stall is over, or its reason changed) is no longer pending: a card's older reason is
   // replaced by its new one here, so Manager never reads both.
