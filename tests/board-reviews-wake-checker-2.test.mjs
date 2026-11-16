@@ -3,7 +3,8 @@
 // repository ("flight-board" is the board's own: no repo word, or a BOARD_REPO_WORDS word); a repository with no entry keeps the phase's lane.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { dispatchJob } from "../collector/probe-board.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dispatchInput, dispatchRun, reviewerFor } from "../collector/store-dispatch.mjs";
@@ -76,4 +77,32 @@ test("collector.reviewers in the config: a map of repository words to role names
   assert.deepEqual(bad({ "flight-board": "Checker 2" }), []);
   assert.deepEqual(bad({}), []);
   for (const v of [["Checker 2"], "Checker 2", { "flight-board": 2 }, { "flight board": "Checker 2" }, { "flight-board": "x\ny" }]) assert.equal(bad(v).length, 1, JSON.stringify(v));
+});
+
+// Checker 2's F1 MEDIUM on e04e356f: dispatchJob (the CLI's path) must hand the config's reviewers to dispatchRun, or the map never reaches dispatch.json.
+test("dispatchJob passes collector.reviewers through: the written dispatch.json has the review turn for Checker 2", async () => {
+  const v = world({ 1: "flight-board", 2: "product-app" });
+  const fetchImpl = async (url) => ({ ok: true, status: 200, json: async () => (String(url).endsWith("/api/view") ? v : {}) });
+  const dir = mkdtempSync(join(tmpdir(), "c1098-job-"));
+  const job = (reviewers) => dispatchJob({ base: "https://board.test", headers: {}, fetchImpl, dir, roster: ROSTER, lead: LEAD, reviewers, pairCovers: [], now: () => NOW });
+  await job(REVIEWERS);
+  const written = JSON.parse(readFileSync(join(dir, "dispatch.json"), "utf8")).items;
+  assert.deepEqual(who(written), { 1: "Checker 2", 2: "Checker" });
+  await job(null);
+  assert.deepEqual(who(JSON.parse(readFileSync(join(dir, "dispatch.json"), "utf8")).items), { 1: "Checker", 2: "Checker" }, "with no map it is Checker's, as before");
+});
+
+// Checker 2's F3 LOW on e04e356f: the reviewer applies to the checker phase only, and a map that is an array is no map.
+test("the reviewer is given to the checker phase only: a flight-board card at another phase keeps its own role", () => {
+  const v = world({ 1: "flight-board" });
+  v.evidence["cards.c1-thing"].value = { lit: ["checker", "security"], phase: "security", headSha12: sha(1), signed: ["checker"] };
+  const without = who(run(v, null)), withMap = who(run(v, REVIEWERS));
+  assert.deepEqual(withMap, without, "the map changes nothing outside the checker phase");
+  assert.deepEqual(withMap, { 1: "Security" }, "the security review stays Security's, not the checker phase's reviewer");
+});
+
+test("an array for collector.reviewers is no map: every review stays Checker's and the run does not stop", () => {
+  const v = world({ 1: "flight-board" });
+  assert.deepEqual(who(run(v, ["Checker 2"])), { 1: "Checker" });
+  assert.deepEqual(who(run(v, [{ "flight-board": "Checker 2" }])), { 1: "Checker" });
 });
