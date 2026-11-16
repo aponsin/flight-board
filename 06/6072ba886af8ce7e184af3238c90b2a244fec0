@@ -1,0 +1,1 @@
+SECURE g13 066072ba (tip): one commit on signed e78bf708. slowWakes' 'owner is on another card' skip now applies only at build or rework (isRework); pure rule, narrows a skip, no new input, route or text. Mutation check (skip at every phase again): three slow-stall tests fail; restored. Full suite 2611 pass, 0 fail. (Security)
