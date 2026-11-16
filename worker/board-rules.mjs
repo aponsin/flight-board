@@ -989,6 +989,11 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
     if (!missing && typeof c.next_note === "string" && c.next_note.trim() !== "" && Number.isFinite(c.moved_at) && c.moved_at <= now && now - c.moved_at < NOTE_FRESH_MS) continue;
     const on = roster[c.owner_role];
     if (on && on.state === "working" && typeof on.card === "string" && on.card !== "" && on.card !== c.id) continue;
+    // #C1063 (11-12, #C1053: the line flipped every few minutes between "rework reason missing" and "slow with no reason", and neither Manager's rework_reason nor a note silenced it):
+    // a rework card whose reason was attached within the hour has its reason (the card was written to then), and a rework card whose reason is still missing while its owner's
+    // session is working this very card is being worked on: that owner attaches it. Neither says anything.
+    if (v.rework === true && !missing && Number.isFinite(c.updated_at) && c.updated_at <= now && now - c.updated_at < NOTE_FRESH_MS) continue;
+    if (missing && on && on.state === "working" && on.card === c.id) continue;
     if (limit !== null && waited(start, now, outages) > limit) out.push({ card_id: c.id, num: c.num, reason: missing ? reworkReasonLine(c.num, owner) : slowLine(c.num) });
   }
   return out;
