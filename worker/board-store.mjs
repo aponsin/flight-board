@@ -456,10 +456,14 @@ export async function pingThread(db, now, who, id) {
 // that is over is no longer pending. A reason already sent is never sent again.
 // #C990: the outages the step clocks skip: the recorded ones (the probe came back) and the one still open (the probe is silent now: from its last post to now).
 export const OUTAGE_KEEP_MS = 7 * 24 * 3600e3;
+// What counts as the probe being alive: its own evidence keys. A run's report (run.*) is not a heartbeat, and neither is a session's weekly-usage post
+// (usage.week, written by the door tool while the probe may be silent: Checker 2's F1 on 896adf64).
+const PROBE_KEYS_SQL = `key NOT LIKE 'run.%' AND key <> '${WEEK_USAGE_KEY}'`;
+const isProbeKey = (key) => !key.startsWith("run.") && key !== WEEK_USAGE_KEY;
 export async function outagesOf(db, now) {
   const rows = (await db.prepare("SELECT start_at, end_at FROM team_outages WHERE end_at >= ? ORDER BY start_at").bind(now - OUTAGE_KEEP_MS).all()).results ?? [];
   const out = rows.map((r) => ({ start: r.start_at, end: r.end_at }));
-  const last = (await db.prepare("SELECT MAX(read_at) AS at FROM evidence WHERE key NOT LIKE 'run.%'").first())?.at;
+  const last = (await db.prepare(`SELECT MAX(read_at) AS at FROM evidence WHERE ${PROBE_KEYS_SQL}`).first())?.at;
   if (Number.isFinite(last) && now - last > PROBE_SILENT_MS) out.push({ start: last, end: now });
   return out;
 }
@@ -826,8 +830,8 @@ export async function writeEvidence(db, now, who, key, value, track) {
   if (bad) return refuse(db, now, bad, key.startsWith?.("cards.") ? key.slice(6) : null, who);
   // #C990: the first post after a silence of PROBE_SILENT_MS or more closes an outage: from the last post before it to this one. A run's own report (run.*)
   // is no heartbeat (readView counts the same way). INSERT OR IGNORE: two posts of one batch cannot record it twice.
-  if (!key.startsWith("run.")) {
-    const last = (await db.prepare("SELECT MAX(read_at) AS at FROM evidence WHERE key NOT LIKE 'run.%'").first())?.at;
+  if (isProbeKey(key)) {
+    const last = (await db.prepare(`SELECT MAX(read_at) AS at FROM evidence WHERE ${PROBE_KEYS_SQL}`).first())?.at;
     if (Number.isFinite(last) && now - last > PROBE_SILENT_MS) {
       await db.prepare("INSERT OR IGNORE INTO team_outages (start_at, end_at) VALUES (?, ?)").bind(last, now).run();
       await db.prepare("DELETE FROM team_outages WHERE end_at < ?").bind(now - OUTAGE_KEEP_MS).run();
@@ -916,7 +920,7 @@ export async function readView(db, now) {
   // The store notices silence, not the probe: the newest evidence write is the probe's heartbeat. No evidence for 3 minutes
   // shows the probe's own chip red ("probe silent since"), and never makes the cards look stalled.
   // A timed-out run's own report (key run.*) is not a healthy reading and does not count as a heartbeat.
-  const last = Math.max(0, ...Object.entries(evidence).filter(([k]) => !k.startsWith("run.")).map(([, e]) => e.readAt));
+  const last = Math.max(0, ...Object.entries(evidence).filter(([k]) => isProbeKey(k)).map(([, e]) => e.readAt));
   const probe = last && now - last <= PROBE_SILENT_MS ? { state: "ok", lastAt: last } : { state: "silent", since: last || null };
   const live = liveNow(evidence.live ? { version: evidence.live.value.version, readAt: evidence.live.readAt } : null, now);
   const history = await all("SELECT id, card_id, phase, kind, at, who, wait FROM phase_history ORDER BY at, id");

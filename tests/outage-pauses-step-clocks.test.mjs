@@ -4,7 +4,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { outageOverlap, waited, slowWakes, stalledWaits, STALL_AFTER_MS, SHIP_SLOW_MS } from "../worker/board-rules.mjs";
-import { writeEvidence, readView, outagesOf, PROBE_SILENT_MS } from "../worker/board-store.mjs";
+import { writeEvidence, readView, outagesOf, PROBE_SILENT_MS, createCard, writeWeekUsage, wakeAsk as realWakeAsk, takeInbox as realTakeInbox } from "../worker/board-store.mjs";
+import { beat } from "./helpers/beating-store.mjs";
 import { headerHtml } from "../worker/page-header.mjs";
 
 const M = 60_000, NOW = 100 * 60 * M;
@@ -102,4 +103,54 @@ test("the header says the step clocks are paused while the probe is silent", () 
   const view = { live: { state: "live", version: "v1", age: 1000 }, probe: { state: "silent", since: NOW } };
   assert.match(headerHtml(view), /silent since .*step clocks paused/);
   assert.doesNotMatch(headerHtml({ ...view, probe: { state: "ok", lastAt: NOW } }), /paused/);
+});
+
+// Checker 2's F1 on 896adf64: a session's weekly-usage post (the week_usage door tool) is not the probe, so it neither hides the silence nor loses the
+// start of the outage when the probe comes back.
+test("a session's usage report is no heartbeat: the silence stays open and the outage keeps its true start", async () => {
+  const { db, board } = await store();
+  const RESET = new Date(NOW + 5 * 24 * 60 * M).toISOString();
+  assert.deepEqual(await writeWeekUsage(db, NOW + 20 * M, "Manager", { percent: 50, resets_at: RESET }), { ok: true });
+  assert.deepEqual(await outagesOf(db, NOW + 22 * M), [{ start: NOW, end: NOW + 22 * M }], "still silent from the probe's last post");
+  assert.equal((await readView(db, NOW + 22 * M)).probe.state, "silent", "the Probe chip reads the same");
+  assert.equal((await writeEvidence(db, NOW + 30 * M, "probe", "board", board)).ok, true);
+  assert.deepEqual(await outagesOf(db, NOW + 31 * M), [{ start: NOW, end: NOW + 30 * M }], "the recorded outage starts at the probe's last post, not at the usage report");
+});
+
+// Checker 2's F2: nothing checked that the store feeds the outages to the step clocks (syncStalls to stalledWaits, slowWakes).
+async function stallWorld() {
+  const db = makeDb();
+  await createCard(db, NOW, "Manager", { id: "card-a", title: "A card", owner_role: "Boardsmith" });
+  await writeEvidence(db, NOW, "probe", "cards.card-a", { lit: ["checker"], phase: "checker", ci: "none" });
+  await writeEvidence(db, NOW, "probe", "agents", { Checker: { state: "idle", tool: null, card: null, since: NOW } });
+  return db;
+}
+const stallsAt = async (db, at) => { await realWakeAsk(db, at); return (await realTakeInbox(db, at + 1000)).stalls; };
+
+test("through the store: a card past the stall time while the probe was silent is not a stall; the same wait with the probe posting is", async () => {
+  // Control: the probe posts throughout (a heartbeat 1 minute before), the card has waited 20 minutes: the stall row is there.
+  const control = await stallWorld();
+  await beat(control, NOW + 19 * M);
+  const rows = await stallsAt(control, NOW + 20 * M);
+  assert.equal(rows.length, 1, "control: a real stall");
+  assert.match(rows[0].reason, /waits at Checker/);
+  // The probe's last post was at NOW; nobody posted until the question 20 minutes later: all of it is an outage, the card has waited no time.
+  const silent = await stallWorld();
+  assert.deepEqual(await stallsAt(silent, NOW + 20 * M), [], "silent probe: the step clock did not run");
+});
+
+test("through the store: the slow line (a ship step past its median) follows the outage too", async () => {
+  const mk = async () => {
+    const db = makeDb();
+    await createCard(db, NOW, "Manager", { id: "card-b", title: "B card", owner_role: "Boardsmith" });
+    await writeEvidence(db, NOW, "probe", "cards.card-b", { lit: ["ship"], phase: "ship", ci: "none" });
+    // The owner is working on it, so the stall line (stalledWaits) has nothing to say and only the slow line can.
+    await writeEvidence(db, NOW, "probe", "agents", { Boardsmith: { state: "working", tool: "Bash", card: "card-b", since: NOW } });
+    return db;
+  };
+  const control = await mk();
+  await beat(control, NOW + SHIP_SLOW_MS);
+  assert.ok((await stallsAt(control, NOW + SHIP_SLOW_MS + M)).some((s) => /is slow with no reason/.test(s.reason)), "control: slow row");
+  const silent = await mk();
+  assert.deepEqual(await stallsAt(silent, NOW + SHIP_SLOW_MS + M), [], "silent probe: no slow row");
 });
