@@ -1,0 +1,1 @@
+PASS Full (Checker 2) #C1106 part B: findings on f852543d fixed (M1 seven settings now tested, L1 CHANGELOG and DATA lines; L2 on #C1113); b02bcaa2 tests and docs only; suite on tip 2607 pass 0 fail; mutation check: the 7 survivors killed by targeted tests (23 others killed on f852543d) (commit b02bcaa2 of stack tip b02bcaa2)
