@@ -1,0 +1,1 @@
+PASS Quick #C1074 v3 by Checker 2: rebase of 3f91d675 onto 8ba9b518, code range-diff identical; landed filter, marking, tip-vs-main, always-landed, truthy mutants all killed; full suite 2456 pass 0 fail 1 skipped. Relaxes the pinned release tool's sign check (landed commits not asked): Security to judge (commit 6cb08f63 of stack tip 7c7d99cb)
