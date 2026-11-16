@@ -7,8 +7,7 @@
   "scripts": {
     "test": "node scripts/test-run.mjs",
     "build": "node scripts/build-page.mjs",
-    "scan": "node scripts/scan.mjs",
-    "ship-batch": "node scripts/ship-batch.mjs"
+    "scan": "node scripts/scan.mjs"
   },
   "engines": { "node": ">=22" }
 }

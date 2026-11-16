@@ -7,7 +7,6 @@ import { join } from "node:path";
 import { boardTruth } from "../collector/readings.mjs";
 import { truthPending, truthSeen, truthLine, TRUTH_FILE, TRUTH_SEEN_FILE, GAP_AGAIN_MS } from "../gate/reset.mjs";
 import { tick } from "../scripts/wake-watch.mjs";
-import { checkWrites } from "../gate/rules.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 import { loadBoard, loadNames, step } from "./harness.mjs";
 
@@ -162,10 +161,3 @@ test("no 'no owner' for a card waiting in a known wait, one up next between phas
   assert.ok(![...b.gaps({ ...base, status: "queued", phase: "build" })].includes("no owner"), "queued behind a busy agent");
 });
 
-// ---- the gate keeps letting a card be written before it is handed to anyone
-test("the gate does not refuse a new card for 'no owner': the page flags it, the probe lists it", () => {
-  const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01" }), now = Date.now() - 1234;
-  const card = { name: "X", size: "S", status: "active", level: "Quick", etaLive: Date.now() + 6e5, nextNote: "n", nextNoteAt: now, plan: "keep-lights-on" };
-  const { errors } = checkWrites([{ op: "set", collection: "initiatives", doc_id: "x", data: card }], { config, who: { role: config.gate.managerRole, manager: true }, now, state: {} });
-  assert.deepEqual(errors, [], "a card with no who passes the gate");
-});

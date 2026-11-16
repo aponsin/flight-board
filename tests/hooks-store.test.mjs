@@ -20,17 +20,26 @@ test("--store: one Stop entry (stop.mjs --store) and nothing else; no page-publi
   assert.deepEqual(Object.keys(e), ["Stop"]);
   assert.equal(e.Stop.hooks.length, 1);
   assert.equal(e.Stop.hooks[0].command, `'/bin/node' '${NEW}/gate/stop.mjs' --config '${cfg}' --store`);
-  const plain = hookEntries(NEW, cfg, "/bin/node");
-  assert.deepEqual(Object.keys(plain).sort(), ["PostToolUse", "PreToolUse", "Stop", "UserPromptSubmit"], "without --store the old gate is what is written");
-  assert.equal(plain.Stop.hooks.length, 2);
-  for (const entries of [e, plain]) assert.doesNotMatch(JSON.stringify(entries), /publish\.mjs/, "no entry names the publish hook");
+  assert.deepEqual(hookEntries(NEW, cfg, "/bin/node"), e, "the store form is the only form (#C864 step 3): the old gate hooks are deleted");
+  assert.doesNotMatch(JSON.stringify(e), /publish\.mjs/, "no entry names the publish hook");
 });
+
+// What an older install wrote: the old gate set, as literal commands (the files are gone, so hookEntries can no longer make them).
+const oldGateSet = (dir) => {
+  const c = (dirName, file) => ({ type: "command", command: `'/bin/node' '${dir}/${dirName}/${file}' --config '${cfg}'` });
+  return {
+    PreToolUse: [{ matcher: "ArtifactData|SendMessage", hooks: [c("gate", "gate.mjs")] }, { matcher: "Bash", hooks: [c("gate", "commit.mjs")] }],
+    PostToolUse: [{ matcher: "ArtifactData", hooks: [c("gate", "after.mjs")] }],
+    Stop: [{ hooks: [c("gate", "stop.mjs"), c("collector", "refresh.mjs")] }],
+    UserPromptSubmit: [{ hooks: [c("gate", "digest.mjs")] }],
+  };
+};
 
 test("--store over a settings file with the old gate and an older publish entry: gate, commit, after, digest, publish and refresh go; the user's own hooks stay; no old pin is left", () => {
   const own = { hooks: [{ type: "command", command: "python3 /Users/x/.claude/hooks/red-ask-board.py" }] };
   const mine = { matcher: "Bash", hooks: [{ type: "command", command: "/usr/local/bin/my-own-hook" }] };
   const olderPublish = { matcher: "Artifact|mcp__claude-artifacts__.*", hooks: [{ type: "command", command: `'/bin/node' '${OLD}/gate/publish.mjs' --config '${cfg}'` }] };
-  const before = withHooks({ model: "x", hooks: { Stop: [own], PreToolUse: [mine] } }, hookEntries(OLD, cfg, "/bin/node")).settings;
+  const before = withHooks({ model: "x", hooks: { Stop: [own], PreToolUse: [mine] } }, oldGateSet(OLD)).settings;
   before.hooks.PreToolUse.push(olderPublish);
   const old = cmds(before).join("\n");
   for (const f of ["gate/gate.mjs", "gate/publish.mjs", "gate/commit.mjs", "gate/after.mjs", "gate/digest.mjs", "gate/stop.mjs", "collector/refresh.mjs"]) assert.ok(old.includes(`${OLD}/${f}`), f);
@@ -62,11 +71,11 @@ test("the installer as run: --store prints one Stop entry with --store; without 
     const store = run(["--store"]);
     assert.deepEqual(Object.keys(store), ["Stop"]);
     assert.match(store.Stop[0].hooks[0].command, / --store$/);
-    assert.deepEqual(Object.keys(run([])).sort(), ["PostToolUse", "PreToolUse", "Stop", "UserPromptSubmit"]);
+    assert.deepEqual(Object.keys(run([])), ["Stop"], "without --store it is the same: the store form is the only form");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("the lead's Stop branch does nothing with --store; without it the gate still refuses; an owner's dispatch ask is unchanged", () => {
+test("the lead's Stop branch does nothing (the old board's checks are gone, #C864 step 3); an owner's dispatch ask is unchanged", () => {
   const roster = ["Manager", "Builder"];
   const config = fullConfig({ roster, owner: "Owner", gate: { managerRole: "Manager", verdictWords: ["shipped"] } });
   const lines = [
@@ -74,16 +83,11 @@ test("the lead's Stop branch does nothing with --store; without it the gate stil
     { type: "assistant", message: { content: [{ type: "text", text: "It shipped." }] } },
   ];
   const env = { FLIGHT_BOARD_ROLE: "Manager" };
-  const plain = stopRun(lines, { config, env, now: 1_000_000 });
-  assert.ok(plain.errs.length > 0, "the old gate refuses a verdict with no board write");
-  const store = stopRun(lines, { config, env, now: 1_000_000, store: true });
-  assert.deepEqual(store, { errs: [], record: null, note: null, liveNext: null, dispatchAsked: false });
+  assert.deepEqual(stopRun(lines, { config, env, now: 1_000_000 }), { errs: [], record: null, note: null, liveNext: null, dispatchAsked: false });
   const dispatch = { on: true, alive: false, askedAt: null, command: "node /x/wake-watch.mjs --config /c.json --role 'Builder' --once" };
-  for (const s of [false, true]) {
-    const r = stopRun([], { config, env: { FLIGHT_BOARD_ROLE: "Builder" }, now: 1_000_000, dispatch, store: s });
-    assert.match(r.errs[0], /^Dispatch watch: .*--role 'Builder' --once/, `store ${s}`);
-    assert.equal(r.dispatchAsked, true);
-  }
+  const r = stopRun([], { config, env: { FLIGHT_BOARD_ROLE: "Builder" }, now: 1_000_000, dispatch });
+  assert.match(r.errs[0], /^Dispatch watch: .*--role 'Builder' --once/);
+  assert.equal(r.dispatchAsked, true);
 });
 
 test("the stop script as the app runs it, with --store: a Manager turn that says 'shipped' and asks the owner ends with no gate text", async () => {
@@ -98,7 +102,7 @@ test("the stop script as the app runs it, with --store: a Manager turn that says
     writeFileSync(tr, [{ type: "custom-title", customTitle: "Manager" }, { type: "user", message: { content: [{ type: "text", text: "go" }] } }, { type: "assistant", message: { content: [{ type: "text", text: "It shipped. Owner to approve the pack please." }] } }].map((l) => JSON.stringify(l)).join("\n") + "\n");
     const script = fileURLToPath(new URL("../gate/stop.mjs", import.meta.url));
     const run = (extra) => spawnSync(process.execPath, [script, "--config", conf, ...extra], { input: JSON.stringify({ transcript_path: tr }), encoding: "utf8", env: { ...process.env, FLIGHT_BOARD_ROLE: "Manager", HOME: dir } });
-    assert.match(run([]).stdout, /Before you finish/, "the old gate refuses");
+    assert.equal(run([]).stdout, "", "with or without --store, the lead is never refused");
     const s = run(["--store"]);
     assert.equal(s.status, 0);
     assert.equal(s.stdout, "", "no gate text");

@@ -103,8 +103,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const repo = process.env.FLIGHT_BOARD_REPO || join(homedir(), "Documents/Code/flight-board");
   const git = (a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 }).trim();
   const quiet = (a) => { try { return git(a); } catch { return null; } };
-  const { checkConfig, fullConfig, boardId } = await import("./config.mjs");
-  const { home } = await import("../gate/gate.mjs");
+  const { checkConfig, fullConfig, boardId, home } = await import("./config.mjs");
   const raw = readJson(configPath);
   if (!raw || checkConfig(raw).length) { console.log("NOT RUN: the board config is missing or invalid"); process.exit(1); }
   const config = fullConfig(raw), id = boardId(config);

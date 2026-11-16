@@ -8,7 +8,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkConfig, fullConfig } from "../scripts/config.mjs";
 import { ctxReadings, windowOf, WINDOW_TOKENS } from "../collector/readings.mjs";
-import { writeContext } from "../collector/context.mjs";
 
 const NOW = 1_793_050_000_123;
 
@@ -43,23 +42,4 @@ test("the probe: a listed role is worked against its own window, the others agai
   assert.equal(windowOf({ Manager: 350000 }, "Manager"), 350000);
   assert.equal(windowOf({ Manager: 350000 }, "Builder"), WINDOW_TOKENS);
   assert.equal(windowOf({ constructor: 5 }, "constructor"), WINDOW_TOKENS, "an inherited or odd value is not a window");
-});
-
-test("the Collector: a listed role's tile percentage is worked from its tokens against the config's window; the others keep the app's", () => {
-  const base = mkdtempSync(join(tmpdir(), "fb-win-"));
-  try {
-    const dir = join(base, "state"), out = join(base, "out");
-    mkdirSync(dir); mkdirSync(join(dir, "usage")); mkdirSync(out);
-    writeFileSync(join(dir, "usage-plan.json"), JSON.stringify({ at: NOW, roles: { Manager: "local_m", Builder: "local_b" } }));
-    writeFileSync(join(dir, "usage", "local_m.json"), JSON.stringify({ status: "ok", pct: 18, tokens: 175000, at: NOW + 5 }));
-    writeFileSync(join(dir, "usage", "local_b.json"), JSON.stringify({ status: "ok", pct: 18, tokens: 175000, at: NOW + 5 }));
-    const config = fullConfig({ collector: { contextRoles: ["Manager", "Builder"] }, contextWindows: { Manager: 350000 } });
-    writeContext(dir, out, config, NOW + 10);
-    assert.deepEqual(JSON.parse(readFileSync(join(out, "ctx-Manager.json"), "utf8")), { pct: 50, tokens: 175000, at: NOW + 5 });
-    assert.deepEqual(JSON.parse(readFileSync(join(out, "ctx-Builder.json"), "utf8")), { pct: 18, tokens: 175000, at: NOW + 5 }, "not listed: the app's number");
-    // A reading with no tokens has nothing to divide: the app's percentage stays.
-    writeFileSync(join(dir, "usage", "local_m.json"), JSON.stringify({ status: "ok", pct: 18, tokens: null, at: NOW + 5 }));
-    writeContext(dir, out, config, NOW + 10);
-    assert.deepEqual(JSON.parse(readFileSync(join(out, "ctx-Manager.json"), "utf8")), { pct: 18, at: NOW + 5 });
-  } finally { rmSync(base, { recursive: true, force: true }); }
 });

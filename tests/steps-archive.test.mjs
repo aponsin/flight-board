@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import { loadBoard, step } from "./harness.mjs";
 import { plan } from "../scripts/steps-archive.mjs";
 import { fullConfig } from "../scripts/config.mjs";
-import { writeErrors } from "../gate/rules.mjs";
 
 const DAY = 864e5;
 const NOW = 1_800_000_000_000;
@@ -107,18 +106,4 @@ test("plan: each card's timings come before its first delete, batches of at most
     assert.ok(t >= 0 && t < first, id);
   }
   assert.equal(flat.find((w) => w.doc_id === "big").data.steps.length, 70);
-});
-
-test("the gate: only the lead writes timings or deletes steps (Security, Checker)", () => {
-  const config = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01" });
-  const now = 1_792_998_566_220;
-  const agent = { role: "Builder", manager: false }, lead = { role: "Manager", manager: true };
-  const forge = { op: "set", collection: "timings", doc_id: "card-a", data: { steps: [], at: now } };
-  const erase = { op: "delete", collection: "steps", doc_id: "x-checker-start-1" };
-  assert.match(writeErrors(forge, { config, who: agent, now: now })[0] ?? "", /^only Manager archives steps/);
-  assert.match(writeErrors({ ...forge, op: "delete", data: undefined }, { config, who: agent, now: now })[0] ?? "", /only Manager archives steps/);
-  assert.match(writeErrors(erase, { config, who: agent, now: now })[0] ?? "", /^only Manager deletes steps/);
-  assert.deepEqual(writeErrors(forge, { config, who: lead, now: now }), []);
-  assert.deepEqual(writeErrors(erase, { config, who: lead, now: now }), []);
-  assert.deepEqual(writeErrors({ op: "set", collection: "steps", doc_id: "x-build-start-1", data: step("x", "build", "Builder", "start", now - 1) }, { config, who: agent, now: now }), [], "agents still log steps");
 });

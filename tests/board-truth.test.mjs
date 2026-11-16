@@ -7,7 +7,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
-import { checkWrites } from "../gate/rules.mjs";
 import { shipRuns, shipsCard, shipTitlePairs, cardState, SHIP_TITLE } from "../collector/state.mjs";
 import { boardTruth } from "../collector/readings.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
@@ -19,36 +18,6 @@ const URL_ = "https://claude.ai/" + "artifact/TestBoard01";
 const config = fullConfig({ artifactUrl: URL_ });
 const now = Date.now() - 1234;
 const release = { role: "Release" }, lead = { role: "Manager", manager: true };
-const liveStep = (init, extra = {}) => ({ op: "set", collection: "steps", doc_id: `s${now}-live-${init}`, data: { init, phase: "live", kind: "end", who: "Release", at: now, note: "Live: v1.2.3", ...extra } });
-const close = (init, data = { status: "done", doneAt: now }) => ({ op: "update", collection: "initiatives", doc_id: init, data });
-const mirrorOf = (cards) => ({ docs: { initiatives: cards, waiting: [], messages: [], steps: [] }, at: now - 100, atBy: {} });
-const errs = (writes, mirror = null, who = release) => checkWrites(writes, { config, who, now, state: {}, mirror }).errors;
-const liveErr = (e) => e.filter((m) => /step closes its card/.test(m));
-
-test("a live step is refused unless the same batch sets its card's status to done", () => {
-  const e = liveErr(errs([liveStep("board-x")]));
-  assert.equal(e.length, 1);
-  assert.match(e[0], /a live step closes its card: set initiatives\/board-x \{status: "done"\} in the same batch/);
-  assert.deepEqual(liveErr(errs([liveStep("board-x"), close("board-x")])), [], "with the card closed in the same batch");
-  assert.deepEqual(liveErr(errs([close("board-x"), liveStep("board-x")])), [], "in either order");
-});
-
-test("another card's close, or a close that is not done, does not count", () => {
-  assert.equal(liveErr(errs([liveStep("board-x"), close("board-y")])).length, 1);
-  assert.equal(liveErr(errs([liveStep("board-x"), close("board-x", { status: "active" })])).length, 1);
-  assert.equal(liveErr(errs([liveStep("board-x"), { op: "delete", collection: "initiatives", doc_id: "board-x" }])).length, 1);
-});
-
-test("a card the board already holds as done needs no second close; an open one in the mirror does", () => {
-  assert.deepEqual(liveErr(errs([liveStep("board-x")], mirrorOf([{ id: "board-x", status: "done" }]))), []);
-  assert.equal(liveErr(errs([liveStep("board-x")], mirrorOf([{ id: "board-x", status: "active" }]))).length, 1);
-});
-
-test("only a live step: start and end steps of other phases pass; a live start step is a live step too", () => {
-  assert.deepEqual(liveErr(errs([{ op: "set", collection: "steps", doc_id: "s1", data: { init: "board-x", phase: "ship", kind: "end", who: "Release", at: now } }])), []);
-  assert.equal(liveErr(errs([liveStep("board-x", { kind: "start" })])).length, 1);
-  assert.equal(liveErr(errs([liveStep("board-x")], null, lead)).length, 1, "whoever writes it");
-});
 
 // ---- (1) shipping: a GitHub run titled "vX: <branch>@<sha>" marks that card while it runs
 const T = 1_800_000_000_000;

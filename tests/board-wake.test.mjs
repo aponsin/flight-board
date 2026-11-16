@@ -14,7 +14,6 @@ import { getWake } from "../collector/state.mjs";
 import { parseWake, nextWakeFile, wakePending, wakeLine, watchAsk, wakePaths, shQuote, ALIVE_MAX_MS } from "../gate/wake.mjs";
 import { tick, otherWatchAlive, endWatch } from "../scripts/wake-watch.mjs";
 import { fullConfig } from "../scripts/config.mjs";
-import { stopRun, wakeState } from "../gate/stop.mjs";
 
 const T = 1_800_000_000_000, MIN = 60e3;
 const TOKEN = "a".repeat(64), PATH = "b".repeat(32), BOARD = "TestBoard01";
@@ -200,6 +199,8 @@ test("the watch run as the Monitor runs it: prints a wake line, nothing else, an
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
+const cmd = "node /x/scripts/wake-watch.mjs --config /x/board.config.json";
+
 // Checker on 47d99b8d: the watch's planned exit ends the Monitor, which starts a lead turn; that turn's Stop check must
 // find the watch gone and ask to arm it again, or the lead sits unwatched.
 test("the watch's end takes its own heartbeat with it, so the turn its exit starts is asked to re-arm", () => {
@@ -241,50 +242,6 @@ test("shQuote: a path is one shell word, whatever it holds", () => {
   assert.equal(shQuote("/a b/c"), "'/a b/c'");
   assert.equal(shQuote("it's"), `'it'\\''s'`);
   assert.equal(shQuote("$(x) `y` ;"), "'$(x) `y` ;'");
-});
-
-// --- the lead's Stop hook ---
-
-const URL_ = "https://claude.ai/" + "artifact/TestBoard01";
-const config = fullConfig({ artifactUrl: URL_ });
-const stopTurn = (title) => [
-  { type: "custom-title", customTitle: title },
-  { type: "user", timestamp: new Date(T - MIN).toISOString(), message: { content: [{ type: "text", text: "status?" }] } },
-  { type: "assistant", message: { content: [{ type: "text", text: "Done." }] } },
-];
-const cmd = "node /x/scripts/wake-watch.mjs --config /x/board.config.json";
-const stop = (title, wake) => stopRun(stopTurn(title), { config, now: T, since: T - 864e5, view: { docs: { messages: [], waiting: [] }, at: T - 30 * MIN, atBy: {} }, wake }).errs;
-
-test("the lead's Stop hook asks for the watch only while wake.json exists and the heartbeat is missing or old", () => {
-  const ask = stop("Manager", { hasWake: true, aliveAt: null, command: cmd });
-  assert.equal(ask.length, 1);
-  assert.match(ask[0], /^Wake watch: .*Monitor, timeout_ms 1800000.*node \/x\/scripts\/wake-watch\.mjs --config \/x\/board\.config\.json/);
-  assert.equal(stop("Manager", { hasWake: true, aliveAt: T - ALIVE_MAX_MS - 1, command: cmd }).length, 1, "a heartbeat gone stale");
-  assert.equal(stop("Manager", { hasWake: true, aliveAt: T - 20e3, command: cmd }).length, 0, "running");
-  assert.equal(stop("Manager", { hasWake: true, aliveAt: T + 60e3, command: cmd }).length, 1, "a heartbeat from the future is none");
-  assert.equal(stop("Manager", { hasWake: false, aliveAt: null, command: cmd }).length, 0, "no wake.json: the probe doesn't poll, so no watch to ask for");
-  assert.equal(stop("Manager", null).length, 0, "a caller that passes nothing checks as before");
-  assert.equal(stop("Builder", { hasWake: true, aliveAt: null, command: cmd }).length, 0, "the lead's alone");
-  assert.equal(watchAsk({ hasWake: false, aliveAt: null, now: T, command: cmd }), null);
-});
-
-test("wakeState reads the state folder: wake.json there, the heartbeat's time, and the command from this copy", () => {
-  const home = dirOf();
-  try {
-    const cfg = fullConfig({ artifactUrl: URL_, gate: { stateDir: join(home, "state") } });
-    const dir = join(home, "state", "TestBoard01");
-    mkdirSync(dir, { recursive: true });
-    const s0 = wakeState(cfg, "/c/board.config.json");
-    assert.equal(s0.hasWake, false);
-    assert.equal(s0.aliveAt, null);
-    assert.match(s0.command, /^node '\/.*\/scripts\/wake-watch\.mjs' --config '\/c\/board\.config\.json'$/);
-    assert.equal(wakeState(cfg, "/c d/it's.json").command.endsWith(` --config '/c d/it'\\''s.json'`), true, "a space and a quote in the path stay one word");
-    writeFileSync(join(dir, "wake.json"), '{"seq":0,"at":0}');
-    writeFileSync(join(dir, "wake-watch.alive.json"), JSON.stringify({ at: T, pid: 1 }));
-    const s1 = wakeState(cfg, "/c/board.config.json");
-    assert.equal(s1.hasWake, true);
-    assert.equal(s1.aliveAt, T);
-  } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
 // --- the page ---

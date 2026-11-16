@@ -105,8 +105,7 @@ export function findConfigPath({ args = [], env = {} }) {
 export async function readQueue({ configPath }) {
   try {
     if (!configPath) return null;
-    const { checkConfig, fullConfig, boardId } = await import("./config.mjs");
-    const { home } = await import("../gate/gate.mjs");
+    const { checkConfig, fullConfig, boardId, home } = await import("./config.mjs");
     const raw = JSON.parse(readFileSync(configPath, "utf8"));
     if (checkConfig(raw).length) return null;
     const config = fullConfig(raw), id = boardId(config);

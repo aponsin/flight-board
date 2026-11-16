@@ -5,7 +5,6 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { home } from "../scripts/config.mjs";
-import { home as gateHome } from "../gate/gate.mjs";
 import { PUBLISHED_FILE } from "../collector/state-schema.mjs";
 import { PUBLISHED_FILE as EXPORT_PUBLISHED_FILE } from "../collector/export.mjs";
 
@@ -24,8 +23,7 @@ test("the probe runs no collect.mjs child: no merge step, no derive step, no col
   assert.doesNotMatch(src("collector/probe-evidence.mjs"), /--no-derive/);
 });
 
-test("home is one function: config.mjs's, which gate.mjs re-exports; a leading ~ only", () => {
-  assert.equal(gateHome, home);
+test("home is one function, config.mjs's (the gate that re-exported it is gone); a leading ~ only", () => {
   assert.match(home("~/x"), /^\/.+\/x$/);
   assert.equal(home("/a/~/b"), "/a/~/b");
   assert.equal(home("~other/x"), "~other/x");
