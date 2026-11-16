@@ -87,6 +87,14 @@ test("reviews are not held: the pushed card of the open group still wakes its re
   assert.ok(run(v).some((i) => i.card === "c1-one" && i.role === "Checker"), JSON.stringify(run(v)));
 });
 
+// Checker 2's F1 on 41b68dcb: the withheld filter must drop only BUILD turns. A loose card (outside the open group) that is pushed still wakes its reviewer.
+test("reviews are not held for a card outside the open group: the loose pushed card's Checker review is dispatched", () => {
+  const v = withEvidence(viewOf(group()), { "c1-one": PUSHED, "c3-three": { ...PUSHED, headSha12: "123456abcdef" } });
+  const items = run(v);
+  assert.ok(items.some((i) => i.card === "c3-three" && i.role === "Checker"), JSON.stringify(items));
+  assert.deepEqual(forBoardsmith(items), [], "and no build turn for it: the open group still holds Boardsmith");
+});
+
 test("a pushed card with no stack-ready signal keeps its group open (stackHold), a covered one does not", () => {
   const specs = [["c1-one", "g1-open", 1, "Boardsmith", { repo: "board" }], ["c3-three", null, 1]];
   const v = (hold) => {
