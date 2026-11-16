@@ -790,7 +790,10 @@ export function dependsNotLive(c, cards, evidence, stackOn = false) {
 // card; its work is a post or a note on the card's thread. For such a card with nothing pushed, a post by its owner on the card's thread in the
 // last POSTED_FRESH_MS means it is being worked (no stall); with none, it stalls on a line of its own that says "nothing posted". postedAt:
 // Map card id -> ms of the owner's newest post on the card's thread (the store passes it; missing = none).
-export const READ_ONLY_ROLES = ["Designer", "Checker", "Security", "Linguist"], POSTED_FRESH_MS = 60 * 60_000;
+export const READ_ONLY_ROLES = ["Designer", "Checker", "Security", "Linguist"], POSTED_FRESH_MS = KNOBS.postedFreshSec.default * 1000; // #C1106: the setting postedFreshSec; this is its default
+export const postedFreshMsOf = (stored) => knobFrom(stored, "postedFreshSec") * 1000;
+// A span in a line's words: "hour" at the default, then whole hours, else minutes.
+export const spanWords = (ms) => (ms === 3_600_000 ? "hour" : ms % 3_600_000 === 0 ? `${ms / 3_600_000} h` : `${Math.ceil(ms / 60_000)} min`);
 // #C1076 (11-13: #C1006 landed overnight and nobody built its deploy pair for about 7 hours. The dispatch wakes only the card's owner, and
 // #C915 (a) keeps a landed board card out of every stall line, so a stopped or out-of-quota owner told nobody): a card of the board's own
 // repository, read at ship and on main, that no deploy pair holds (evidence `packed` is not true) 30 minutes after it landed is a line to Manager,
@@ -798,15 +801,16 @@ export const READ_ONLY_ROLES = ["Designer", "Checker", "Security", "Linguist"], 
 // group (batch), on the group's newest card, or one per card with no group; the words hold times and ids, not a running count, so the line is
 // one row until a pair holds the landing (then nothing is current and the store retires the row). The repo words are collector/pairs.mjs's
 // BOARD_REPO_WORDS (this file imports nothing of the collector: tests/landed-wakes-pack-build.test.mjs holds the two equal).
-export const LANDED_REPO_WORDS = new Set(["flight-board", "board"]), LANDED_UNBUILT_MS = 30 * 60_000;
-export function landedUnbuilt({ now, cards, evidence, installStart }) {
+export const LANDED_REPO_WORDS = new Set(["flight-board", "board"]), LANDED_UNBUILT_MS = KNOBS.landedUnbuiltSec.default * 1000; // #C1106: the setting landedUnbuiltSec; this is its default
+export const landedUnbuiltMsOf = (stored) => knobFrom(stored, "landedUnbuiltSec") * 1000;
+export function landedUnbuilt({ now, cards, evidence, installStart, unbuiltMs = LANDED_UNBUILT_MS }) {
   const groups = new Map();
   for (const c of cards ?? []) {
     if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || !LANDED_REPO_WORDS.has(String(c.repo ?? ""))) continue;
     const v = evidence?.[c.id];
     if (v?.lit?.[0] !== "ship" || v.onMain !== true || v.packed === true) continue;
     const at = installStart instanceof Map ? installStart.get(c.id) : undefined;
-    if (!Number.isFinite(at) || now - at < LANDED_UNBUILT_MS) continue;
+    if (!Number.isFinite(at) || now - at < unbuiltMs) continue;
     const key = typeof c.batch === "string" && c.batch.trim() ? c.batch.trim() : c.id;
     groups.set(key, [...(groups.get(key) ?? []), { c, at }]);
   }
@@ -825,7 +829,7 @@ export function landedUnbuilt({ now, cards, evidence, installStart }) {
 // during and after it, and one that was not does not turn late because of it. No outages: plain elapsed time, as before.
 export const outageOverlap = (from, to, outages) => (Array.isArray(outages) ? outages : []).reduce((sum, o) => (Number.isFinite(o?.start) && Number.isFinite(o?.end) ? sum + Math.max(0, Math.min(o.end, to) - Math.max(o.start, from)) : sum), 0);
 export const waited = (from, now, outages) => now - from - outageOverlap(from, now, outages);
-export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [], stallMs = STALL_AFTER_MS }) {
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [], stallMs = STALL_AFTER_MS, postedFreshMs = POSTED_FRESH_MS }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
@@ -856,8 +860,8 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
       if (!Number.isFinite(idleFrom) || waited(idleFrom, now, outages) < stallMs) continue;
       if (READ_ONLY_ROLES.includes(c.owner_role)) {
         const posted = postedAt instanceof Map ? postedAt.get(c.id) : undefined;
-        if (Number.isFinite(posted) && now - posted <= POSTED_FRESH_MS) continue;
-        out.push({ card_id: c.id, num: c.num, phase: null, role: c.owner_role, reason: `#C${c.num} nothing posted on its thread in the last hour, ${c.owner_role} idle since ${mtTime(idleFrom)}` });
+        if (Number.isFinite(posted) && now - posted <= postedFreshMs) continue;
+        out.push({ card_id: c.id, num: c.num, phase: null, role: c.owner_role, reason: `#C${c.num} nothing posted on its thread in the last ${spanWords(postedFreshMs)}, ${c.owner_role} idle since ${mtTime(idleFrom)}` });
         continue;
       }
       queued.set(c.owner_role, [...(queued.get(c.owner_role) ?? []), c]);
@@ -990,9 +994,10 @@ export function liveNow(reading, now, staleMs = STALE_AFTER_MS) {
 // word (the card's `repo`, "board" for a card with none) whose OLDEST open reading is over COPY_STALE_MS old is stale. ONE stall per repository
 // word and spell (the row's card_id is COPY_CARD + word; the store keeps its reason while the spell lasts, as the daily run's). A card that is
 // dropped, closed as done (#C902), live or has no reading is not counted: a reading never written is not an old one.
-export const COPY_STALE_MS = 60 * 60_000, COPY_CARD = "repo-copy:";
+export const COPY_STALE_MS = KNOBS.copyStaleSec.default * 1000, COPY_CARD = "repo-copy:";
+export const copyStaleMsOf = (stored) => knobFrom(stored, "copyStaleSec") * 1000;
 export const copyWord = (c) => (typeof c?.repo === "string" && /^[A-Za-z0-9._-]{1,40}$/.test(c.repo) ? c.repo : "board");
-export function staleCopies({ now, cards, evidence, readAt }) {
+export function staleCopies({ now, cards, evidence, readAt, staleMs = COPY_STALE_MS }) {
   const oldest = new Map();
   for (const c of cards ?? []) {
     // #C902: a card closed as done (done_at) is closed like a dropped one: its reading is no longer rewritten.
@@ -1003,6 +1008,6 @@ export function staleCopies({ now, cards, evidence, readAt }) {
     if (age > (oldest.get(w) ?? -1)) oldest.set(w, age);
   }
   const hours = (ms) => Math.floor(ms / 3_600_000);
-  return [...oldest].filter(([, age]) => age > COPY_STALE_MS).sort(([a], [b]) => (a < b ? -1 : 1))
+  return [...oldest].filter(([, age]) => age > staleMs).sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([w, age]) => ({ card_id: COPY_CARD + w, num: null, word: w, reason: `the probe's copy of ${w} is ${hours(age)} h old: a fetch may be failing, or a card's reading has stopped being rewritten` }));
 }

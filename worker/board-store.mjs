@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { landedUnbuilt, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, POSTED_FRESH_MS, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf } from "./board-rules.mjs";
+import { landedUnbuilt, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -497,13 +497,15 @@ async function syncStalls(db, now) {
   const openAsks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at, owed_by FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL").all()).results;
   // #C927: a repository whose oldest open card reading is over an hour old wakes Manager once per spell (staleCopies, board-rules.mjs). The row is
   // kept (taken or not) while the spell lasts, so a later sync never tells it again; it goes when the repository's readings are fresh again.
-  const copies = staleCopies({ now, cards, evidence, readAt });
+  const knobsNow = await knobsStored(db); // #C1106: the posted settings of the step clocks (a setting that is missing or out of bounds is its default)
+  const postedFreshMs = postedFreshMsOf(knobsNow);
+  const copies = staleCopies({ now, cards, evidence, readAt, staleMs: copyStaleMsOf(knobsNow) });
   const had = new Map((await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE card_id LIKE ?").bind(`${COPY_CARD}%`).all()).results.map((r) => [r.card_id, r.reason]));
   for (const id of had.keys()) if (!copies.some((s) => s.card_id === id)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ?").bind(id).run();
   const copyStalls = copies.map((s) => ({ ...s, reason: had.get(s.card_id) ?? s.reason }));
   // #C885: a read-only role's own card is worked by posts on its thread; the newest post by the card's owner, per card.
   // #C931 (6), Security's note on #C885: only the last POSTED_FRESH_MS of messages is read, the only window the rule looks at, so the scan stays small; >= keeps the boundary the rule counts as fresh (#C943).
-  const postedAt = new Map((await db.prepare("SELECT m.thread_id AS card_id, MAX(m.created_at) AS at FROM messages m JOIN cards c ON c.id = m.thread_id AND m.author = c.owner_role WHERE m.created_at >= ? GROUP BY m.thread_id").bind(now - POSTED_FRESH_MS).all()).results.map((r) => [r.card_id, r.at]));
+  const postedAt = new Map((await db.prepare("SELECT m.thread_id AS card_id, MAX(m.created_at) AS at FROM messages m JOIN cards c ON c.id = m.thread_id AND m.author = c.owner_role WHERE m.created_at >= ? GROUP BY m.thread_id").bind(now - postedFreshMs).all()).results.map((r) => [r.card_id, r.at]));
   // #C915 (d): the usual time of each work phase, from the finished rows of the history (newest 5000), for the "slow with no reason" line.
   const medians = phaseMedians((await db.prepare("SELECT id, card_id, phase, kind, at FROM phase_history WHERE wait IS NULL AND kind IN ('start', 'end') ORDER BY id DESC LIMIT 5000").all()).results);
   // A card already named by a "waits at" line this round is not named twice: that line is its one stall.
@@ -515,8 +517,7 @@ async function syncStalls(db, now) {
   // The dispatch holds a card only for an UNANSWERED open ask (an answered one left open does not), so the open-group rule is given that set (#C1082, Checker 2's F1).
   const unansweredAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
   const outages = await outagesOf(db, now);
-  const knobsNow = await knobsStored(db); // #C1106: the posted settings of the step clocks (default when none, or one out of bounds)
-  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards, outages, stallMs: stallMsOf(knobsNow) });
+  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards, outages, stallMs: stallMsOf(knobsNow), postedFreshMs });
   // #C1078: with the week's quota used up (the session's fresh reading), the idle-agent stall lines are held until the reset and one line goes to Manager.
   const weekRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = ?").bind(WEEK_USAGE_KEY).first();
   let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
@@ -548,7 +549,7 @@ async function syncStalls(db, now) {
   let watchNow = null; try { watchNow = watchRow && now - watchRow.read_at <= 15 * 60e3 ? JSON.parse(watchRow.value) : null; } catch { /* none */ }
   // #C1076: a board card landed 30+ min ago that no deploy pair holds: a line to Manager, whatever its owner is doing (landedUnbuilt, board-rules.mjs).
   const installStart = new Map((await db.prepare("SELECT card_id, MAX(at) AS at FROM phase_history WHERE kind = 'start' AND wait = ? GROUP BY card_id").bind(INSTALL_WAIT).all()).results.map((r) => [r.card_id, r.at]));
-  const landed = landedUnbuilt({ now, cards, evidence, installStart });
+  const landed = landedUnbuilt({ now, cards, evidence, installStart, unbuiltMs: landedUnbuiltMsOf(knobsNow) });
   // #C1081: threads whose newest message is the owner's (the last OWNER_WORD_DAYS days only), joined to what says whether the thread is still open.
   const ownerLast = (await db.prepare("SELECT m.thread_id AS thread_id, m.created_at AS at, m.resolved AS resolved, m.body AS body, (SELECT p.body FROM messages p WHERE p.thread_id = m.thread_id AND p.author <> 'owner' AND p.created_at < m.created_at ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS prev_team_body, (m.screenshots IS NOT NULL OR EXISTS (SELECT 1 FROM file_links l WHERE l.ref_kind = 'message' AND l.ref_id = m.id)) AS has_files,a.num AS ask_num, a.closed_at AS ask_closed_at, a.withdrawn_at AS ask_withdrawn_at, c.num AS card_num, c.dropped AS card_dropped, c.done_at AS card_done_at, t.num AS thread_num FROM messages m LEFT JOIN asks a ON a.id = m.thread_id LEFT JOIN cards c ON c.id = m.thread_id LEFT JOIN threads t ON t.id = m.thread_id WHERE m.author = 'owner' AND m.created_at >= ? AND NOT EXISTS (SELECT 1 FROM messages n WHERE n.thread_id = m.thread_id AND (n.created_at > m.created_at OR (n.created_at = m.created_at AND n.id > m.id)))").bind(now - OWNER_WORD_DAYS * 864e5).all()).results;
   const stalls = [...waits, ...quota.line, ...landed, ...ownerWordWakes({ rows: ownerLast, now }),...heldWakes({ now, cards, endsPassed }), ...slow, ...await syncE2e(db, now), ...askWakes({ asks: openAsks, now }), ...promiseWakes({ asks: openAsks, now }), ...promptWakes({ stuck: stuckNow, now }), ...watchWakes({ watch: watchNow }), ...copyStalls, ...closing];

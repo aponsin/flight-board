@@ -15,6 +15,9 @@ export const KNOBS = {
   // #C1106 part B, the Worker-side step clocks (posted by the probe in the `knobs` key, read by the store at each run).
   stallAfterSec: { default: 900, min: 120, max: 7200, label: "a card waits this long at a phase with its agent idle before Manager is woken (s)" },
   shipSlowSec: { default: 660, min: 120, max: 3600, label: "Release's ship step is slow after this long (s)" },
+  postedFreshSec: { default: 3600, min: 600, max: 86400, label: "a read-only role's card counts as worked while its thread had a post this recent (s)" },
+  landedUnbuiltSec: { default: 1800, min: 300, max: 14400, label: "a landed card with no deploy pair holding it wakes its owner after this long (s)" },
+  copyStaleSec: { default: 3600, min: 600, max: 172800, label: "the probe's copy of a repository is stale when its oldest card reading is older than this (s)" },
   // Not settings yet (they stay on the lint baseline): gate/reset.mjs EVIDENCE_STALE_MS (no card shows a commit for 10 min; the file is pinned by the owner's
   // install, so changing it needs an owner pack, and it is NOT the page's probe edge staleAfterSec) and collector/store-dispatch.mjs AGENTS_FRESH_MS.
 };
