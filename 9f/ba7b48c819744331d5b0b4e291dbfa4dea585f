@@ -1,0 +1,1 @@
+PASS Checker 2: #C1078 v3 9fba7b48c819744331d5b0b4e291dbfa4dea585f, rebase of v2 60771f3a onto main 7a9045f0 (range-diff: commits 1 and 3 equal, commit 2 differs only in docs/DATA.md context); suite on the new base 2376 pass 0 fail 1 skip; v2 review and mutations stand (commit 9fba7b48 of stack tip 9fba7b48)
