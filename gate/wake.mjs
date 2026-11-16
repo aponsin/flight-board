@@ -45,11 +45,3 @@ export const wakePending = (wake, seen) => !!wake && wake.seq > 0 && (!seen || w
 export const shQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 export const wakeLine =(wake) => `WAKE #${wake.seq}: the owner wrote on the board; read it now (messages and answered asks)`;
-
-// The Stop hook's ask. hasWake: wake.json exists (the probe polls the Worker, so the wake path is on). aliveAt: the
-// heartbeat's time, or null.
-export function watchAsk({ hasWake, aliveAt, now, command }) {
-  if (!hasWake) return null;
-  if (Number.isFinite(aliveAt) && aliveAt <= now + 5_000 && now - aliveAt <= ALIVE_MAX_MS) return null;
-  return `Wake watch: the owner's board messages reach you through it and it isn't running. Arm it now (Monitor, timeout_ms 1800000, description "board wake"): ${command}. Re-arm it whenever it ends.`;
-}

@@ -11,7 +11,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import worker, { sha256hex, secretName, WAKE_TOOL, WAKE_RATE_MS, WAKE_WRITES_DEFAULT, TOOL } from "../worker/state-worker.mjs";
 import { getWake } from "../collector/state.mjs";
-import { parseWake, nextWakeFile, wakePending, wakeLine, watchAsk, wakePaths, shQuote, ALIVE_MAX_MS } from "../gate/wake.mjs";
+import { parseWake, nextWakeFile, wakePending, wakeLine, wakePaths, shQuote, ALIVE_MAX_MS } from "../gate/wake.mjs";
 import { tick, otherWatchAlive, endWatch } from "../scripts/wake-watch.mjs";
 import { fullConfig } from "../scripts/config.mjs";
 
@@ -199,23 +199,19 @@ test("the watch run as the Monitor runs it: prints a wake line, nothing else, an
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 
-const cmd = "node /x/scripts/wake-watch.mjs --config /x/board.config.json";
-
-// Checker on 47d99b8d: the watch's planned exit ends the Monitor, which starts a lead turn; that turn's Stop check must
-// find the watch gone and ask to arm it again, or the lead sits unwatched.
-test("the watch's end takes its own heartbeat with it, so the turn its exit starts is asked to re-arm", () => {
+// Checker on 47d99b8d: the watch's planned exit ends the Monitor, which starts a lead turn; that turn's Stop check (gate/stop.mjs, the
+// store form) must find the watch gone, so the watch's end takes its own heartbeat with it. (#C864: the old watchAsk went with the old gate.)
+test("the watch's end takes its own heartbeat with it", () => {
   const dir = dirOf();
   try {
     const p = wakePaths(dir);
     writeFileSync(p.wake, '{"seq":0,"at":0}');
     tick(dir, T, 111);
-    assert.equal(watchAsk({ hasWake: true, aliveAt: JSON.parse(readFileSync(p.alive, "utf8")).at, now: T + 3e3, command: cmd }), null, "running: no ask");
+    assert.ok(existsSync(p.alive), "running: a heartbeat");
     endWatch(dir, 222);
     assert.ok(existsSync(p.alive), "another process's end never removes this heartbeat");
     endWatch(dir, 111);
     assert.equal(existsSync(p.alive), false, "its own end removes it");
-    const aliveAt = (() => { try { return JSON.parse(readFileSync(p.alive, "utf8")).at; } catch { return null; } })();
-    assert.match(watchAsk({ hasWake: true, aliveAt, now: T + 3e3, command: cmd }), /^Wake watch: /, "3 s later the Stop check asks");
     endWatch(dir, 111);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
