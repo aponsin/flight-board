@@ -162,7 +162,9 @@ export function landingFrom(report, now) {
   const at = report?.at;
   const fresh = !!report && typeof report === "object" && Number.isFinite(at) && now - at <= LAND_REPORT_FRESH_MS && at - now <= 60e3;
   const refused = new Set((fresh && Array.isArray(report.refused) ? report.refused : []).map((r) => r?.sha).filter((s) => typeof s === "string" && /^[0-9a-f]{40}$/.test(s)));
-  return { fresh, refused };
+  // #C1090: the report says five or more docs/DATA.d fragments wait on main (scripts/board-land.mjs: foldDue true and the count dataFragments); only a fresh report counts.
+  const foldDue = fresh && report.foldDue === true && Number.isInteger(report.dataFragments) && report.dataFragments >= 1;
+  return { fresh, refused, foldDue };
 }
 export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEILING_DEFAULT, pairCovers = null, landing = null } = {}) {
   const ev = view?.evidence ?? {};
@@ -392,6 +394,26 @@ export function dailyCheck(before, agents, now) {
   return { card: { id, who: DAILY_CHECK_ROLE, status: "active", num: null, waitingOn: null, turns: [{ role: DAILY_CHECK_ROLE, phase: "live", step: "dailycheck" }] }, daily };
 }
 
+// #C1090 (Manager, 11-16: "so it wakes you rather than sitting in a log nobody reads"): while the landing job's fresh report says 5 or more DATA fragments wait
+// on main (foldDue), Boardsmith is woken once a day (the MT day) to cut the fold card. As the daily check: the turn is a card of its own, `fold-due-<yyyy-mm-dd>`,
+// dispatch-state.json keeps `fold`: { date, wokenAt?, done }, and it holds until Boardsmith has worked after it was woken (no longer idle, or idle since after the
+// wake). When the report no longer says foldDue (the fold landed, or the report is stale) the state is dropped, so the next time it falls due it wakes again.
+export const FOLD_DUE_ROLE = "Boardsmith";
+export const foldDueId = (date) => (/^\d{4}-\d{2}-\d{2}$/.test(String(date)) ? `fold-due-${date}` : null);
+// { card: the turn to add or null, fold: the state to keep or null }.
+export function foldDueCheck(landing, before, agents, now) {
+  if (!landing || landing.foldDue !== true) return { card: null, fold: null };
+  const prev = before && typeof before.fold === "object" && before.fold && !Array.isArray(before.fold) ? before.fold : null;
+  const date = mtDate(now), id = foldDueId(date);
+  if (!id) return { card: null, fold: null };
+  const fold = prev?.date === date ? { ...prev } : { date, done: false };
+  const ag = agents && Object.hasOwn(agents, FOLD_DUE_ROLE) ? agents[FOLD_DUE_ROLE] : null;
+  const idleSince = ag && (Number.isFinite(ag.since) ? ag.since : ag.lastActivityAt);
+  if (Number.isFinite(fold.wokenAt) && ag && (ag.state !== "idle" || (Number.isFinite(idleSince) && idleSince > fold.wokenAt))) fold.done = true;
+  if (fold.done) return { card: null, fold };
+  return { card: { id, who: FOLD_DUE_ROLE, status: "active", num: null, waitingOn: null, turns: [{ role: FOLD_DUE_ROLE, phase: "live", step: "folddue" }] }, fold };
+}
+
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; } };
 const writeAtomic = (path, text) => { const tmp = `${path}.${process.pid}.part`; writeFileSync(tmp, text, { mode: 0o600 }); renameSync(tmp, path); };
 
@@ -440,7 +462,8 @@ export function writeLandHolds(view, { dir, now = Date.now() }) {
 
 // One run over a view. Returns { wrote, why?, items }. `dir` is <stateDir>/<board>.
 export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_DEFAULT, now = Date.now(), log = () => {}, pairCovers = null }) {
-  const input = dispatchInput(view, now, { lead, ceiling, pairCovers, landing: landingFrom(readJson(join(dir, LAND_REPORT_FILE)), now) });
+  const landing = landingFrom(readJson(join(dir, LAND_REPORT_FILE)), now);
+  const input = dispatchInput(view, now, { lead, ceiling, pairCovers, landing });
   const sw = sessionWeek(view, now);
   if (sw.state === "stale") log(`dispatch: warning: the session's week reading is ${Math.round(sw.ageMs / 60e3)} min old (or from a week that reset): week usage unknown, the quota stop is off until a session writes it again`);
   if (input && atCeiling(view, now, ceiling)) log(`dispatch: week at ${Math.round(weekPctOf(view, now))}% of quota, ceiling ${ceiling}%: no new build work dispatched`);
@@ -454,11 +477,13 @@ export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_D
   mkdirSync(dir, { recursive: true, mode: 0o700 }); // the board's state folder may not exist yet when the old state job never ran here
   const ship = afterShip(view, state, input.agents, now);
   const daily = dailyCheck(state, input.agents, now);
-  const r = dispatchItems({ cards: [...input.cards, ...(ship.card ? [ship.card] : []), ...(daily.card ? [daily.card] : [])], agents: input.agents, asked: input.asked, queues: input.queues, roster, lead, now, before: state });
+  const fold = foldDueCheck(landing, state, input.agents, now);
+  const r = dispatchItems({ cards: [...input.cards, ...(ship.card ? [ship.card] : []), ...(daily.card ? [daily.card] : []), ...(fold.card ? [fold.card] : [])], agents: input.agents, asked: input.asked, queues: input.queues, roster, lead, now, before: state });
   const live = ship.card && r.items.some((i) => i.card === ship.card.id) && !Number.isFinite(ship.live.wokenAt) ? { ...ship.live, wokenAt: now } : ship.live;
   const day = daily.card && r.items.some((i) => i.card === daily.card.id) && !Number.isFinite(daily.daily.wokenAt) ? { ...daily.daily, wokenAt: now } : daily.daily;
+  const folded = fold.card && r.items.some((i) => i.card === fold.card.id) && !Number.isFinite(fold.fold.wokenAt) ? { ...fold.fold, wokenAt: now } : fold.fold;
   writeAtomic(join(dir, DISPATCH_FILE), JSON.stringify({ at: now, source: "store", items: r.items }));
-  writeAtomic(join(dir, DISPATCH_STATE_FILE), JSON.stringify({ ...r.state, ...(live ? { live } : {}), ...(day ? { daily: day } : {}) }));
+  writeAtomic(join(dir, DISPATCH_STATE_FILE), JSON.stringify({ ...r.state, ...(live ? { live } : {}), ...(day ? { daily: day } : {}), ...(folded ? { fold: folded } : {}) }));
   // #C940: the roles' states in the log, so a minute with nothing dispatched can be told from a blind or missing session (role names and one word each).
   log(`dispatch: agents ${(Array.isArray(roster) ? roster : []).filter((x) => typeof x === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(x)).map((x) => `${x}=${input.agents[x] ? String(input.agents[x].state).replace(/[^a-z]/g, "") || "?" : "none"}`).join(" ")}`);
   log(`dispatch: ${r.items.length} item(s)`);

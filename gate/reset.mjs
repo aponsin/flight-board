@@ -167,6 +167,8 @@ export const DISPATCH_STEPS = {
   decision: "had its decision answered; act on the answer",
   // #C916: the lead posted on the card's thread after its owner went idle.
   post: "has a new post from the lead on its thread; read the thread on the board and act on it",
+  // #C1090: five or more docs/DATA.d fragments wait on main (the landing job's report says so): the fold is a card of its own, signed like any other.
+  folddue: "FOLD DUE: 5 or more DATA fragments wait in docs/DATA.d on main; cut the fold card (a Board-Id starting fold-data-fragments, a branch that only runs node scripts/data-fragments.mjs --write), push it and send READY",
 };
 // #C872: an answered Decision on a card wakes the card's owner with the answer quoted. The answer is the owner's choice (an option Manager
 // wrote, or the owner's own words), so it is cut to plain words before it goes in a line an agent reads: letters, digits, spaces and
