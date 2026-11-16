@@ -23,6 +23,7 @@ import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX,
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
 import { reviewsFromPaths } from "./review-paths.mjs";
+import { countFindings } from "./findings-count.mjs";
 import { pairsIn, packOf, BOARD_REPO_WORDS } from "./pairs.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
@@ -705,9 +706,16 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   // is: it goes back to its builder to re-cut. Read only for a tip waiting at ship, so a card in review costs no extra git call.
   const behindMain = !onMain && !bare && phase === config.collector.shipPhase && typeof repo.git === "function" && !ok(() => repo.git(["merge-base", "--is-ancestor", mainRef, tip.sha]));
   const findings = bare || onMain ? [] : [...new Set([...findingsOn(after ? after.sha : tip.sha), ...(coverSha ? findingsOn(coverSha) : [])])].sort();
+  // #C1114: the findings every review has put on the branch's commits (not only the tip's), counted by kind; the Worker raises the card's counters to these.
+  const issueCounts = (() => {
+    if (bare || onMain || !repo.notes || typeof repo.git !== "function" || !/^[0-9a-f]{40}$/.test(String(tip.sha))) return {};
+    let shas = []; try { shas = String(repo.git(["rev-list", "--max-count=60", `${mainRef}..${tip.sha}`])).split("\n").map((l) => l.trim()).filter((s) => /^[0-9a-f]{40}$/.test(s)); } catch { /* none */ }
+    return countFindings(shas.flatMap((s) => notesOn(s)));
+  })();
   const extra = {
     ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(findings.length ? { findings } : {}),
+    ...(Object.keys(issueCounts).length ? { issueCounts } : {}),
     ...(behindMain ? { behindMain: true } : {}),
     ...(noInstall ? { noInstall: true } : {}),
     ...(phase && build ? { firm: false } : {}),
