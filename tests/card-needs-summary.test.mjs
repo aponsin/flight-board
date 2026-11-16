@@ -3,6 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
+import worker from "../worker/board-worker.mjs";
 import { createCard, createAsk } from "../worker/board-store.mjs";
 
 const T = 1_800_000_000_000;
@@ -33,6 +34,17 @@ test("from_thread alone is ok when it names a thread that exists; an unknown, ze
 test("the store function without the tool's option is as before (no summary needed): importers and older callers are untouched", async () => {
   const db = makeDb();
   assert.equal((await createCard(db, T, "Manager", { id: "c-plain", title: "Plain" })).ok, true);
+});
+
+// Checker 2's F1 LOW: the tool wiring itself. board-worker.mjs's card_create case passes { needSummary: true }; dropping it left every test green.
+test("through the card_create TOOL (the worker's own wiring): no summary and no from_thread is refused with card-summary; a summary is ok", async () => {
+  const env = { DB: makeDb() };
+  const call = (body) => worker.fetch(new Request("https://board.test/mcp", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "x-as": "manager" } }), env, null, T, async () => ({ who: "Manager", role: "agent" }));
+  const tool = async (args) => (await (await call({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "card_create", arguments: args } })).json()).result.structuredContent;
+  const bare = await tool({ id: "c-tool-bare", title: "No words" });
+  assert.equal(bare.ok, false, JSON.stringify(bare));
+  assert.equal(bare.refused?.rule ?? bare.rule, "card-summary", JSON.stringify(bare));
+  assert.equal((await tool({ id: "c-tool-ok", title: "With words", summary: "Build the thing, because it is needed." })).ok, true);
 });
 
 test("the refusal is logged and says what to do", async () => {
