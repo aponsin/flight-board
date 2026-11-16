@@ -301,15 +301,21 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // in it (active: not paused, dropped, done, blocked or live; not waiting on an open ask, on someone else or on an open hold) has nothing pushed, or is
   // pushed with no stack-ready signal covering its head (the probe's stackHold). Only NEW build turns are dropped for a card outside the open group(s):
   // reviews, rework, landing and every other turn are untouched, and with no group open the queue is dispatched as before.
-  const openGroups = new Map();
+  // Checker 2's F1 on 0c079bf8 (a deadlock): a group card that waits on a dependency is skipped above (waitsOn), so a dependency of the SAME role that sits
+  // outside the group, with nothing pushed, must keep its build turn or the group never finishes. So: (a) a group card blocked by another role's card is not
+  // the role's to build and keeps no group open; (b) the blockers of a group card that keeps its group open, and theirs in turn, are let through.
+  const openGroups = new Map(), needed = new Set();
   for (const k of all) {
     if (!k || typeof k.id !== "string" || typeof k.owner_role !== "string") continue;
     const g = batchOf(k);
     if (g === "" || !startedGroups.has(g) || !activeCard(k) || askedCards.has(k.id) || holdOpen(k, now, endPassed)) continue;
     if (typeof k.waiting_on === "string" && k.waiting_on.trim() && !k.waiting_on.trim().startsWith(k.owner_role)) continue;
-    if (!hasHead(k.id) || ev[`cards.${k.id}`]?.value?.stackHold === true) openGroups.set(k.owner_role, new Set([...(openGroups.get(k.owner_role) ?? []), g]));
+    const blockers = waitsOn(k);
+    if (blockers.some((d) => open.get(d)?.owner_role !== k.owner_role)) continue;
+    if (!hasHead(k.id) || ev[`cards.${k.id}`]?.value?.stackHold === true) { openGroups.set(k.owner_role, new Set([...(openGroups.get(k.owner_role) ?? []), g])); for (const d of blockers) needed.add(d); }
   }
-  for (const k of cards) if (openGroups.get(k.who)?.size && !openGroups.get(k.who).has(k.group)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
+  for (let grew = true; grew;) { grew = false; for (const id of [...needed]) for (const d of open.has(id) ? waitsOn(open.get(id)) : []) if (!needed.has(d)) { needed.add(d); grew = true; } }
+  for (const k of cards) if (openGroups.get(k.who)?.size && !openGroups.get(k.who).has(k.group) && !needed.has(k.id)) k.turns = k.turns.filter((t) => !(t.step === "build" && !t.sha));
   const byRole = new Map();
   for (const k of cards.filter(notStarted)) byRole.set(k.who, [...(byRole.get(k.who) ?? []), k]);
   for (const [who, list] of byRole) {

@@ -46,6 +46,26 @@ test("a card of the group with an open ask, or waiting on someone else, or pause
   assert.deepEqual(forBoardsmith(run(withEvidence(viewOf(group({ dropped: 1 })), ev))), ["c3-three"], "dropped");
 });
 
+// Checker 2's F1 on 0c079bf8: an open group must never deadlock its role. c2 (in the started group g1) depends on a card OUTSIDE the group; the dispatch skips c2
+// until that card is live, so the card it waits on must still be built.
+test("a group card waiting on the same role's card outside the group: that card's build is dispatched, not withheld for ever", () => {
+  const specs = [["c1-one", "g1-open", 1], ["c2-two", "g1-open", 2, "Boardsmith", { depends_on: '["c4-four"]' }], ["c4-four", null, 1], ["c3-three", null, 2]];
+  const v = withEvidence(viewOf(specs), { "c1-one": PUSHED });
+  assert.deepEqual(forBoardsmith(run(v)), ["c4-four"], "the dependency, not the unrelated loose card");
+});
+
+test("the dependency of a dependency is let through too, one card at a time", () => {
+  const specs = [["c1-one", "g1-open", 1], ["c2-two", "g1-open", 2, "Boardsmith", { depends_on: '["c4-four"]' }], ["c4-four", null, 1, "Boardsmith", { depends_on: '["c5-five"]' }], ["c5-five", null, 2], ["c3-three", null, 3]];
+  const v = withEvidence(viewOf(specs), { "c1-one": PUSHED });
+  assert.deepEqual(forBoardsmith(run(v)), ["c5-five"], "c4 waits on c5, c2 on c4: c5 is built, the unrelated c3 is not");
+});
+
+test("a group card blocked by ANOTHER role's card is not Boardsmith's to build: it keeps no group open", () => {
+  const specs = [["c1-one", "g1-open", 1], ["c2-two", "g1-open", 2, "Boardsmith", { depends_on: '["c9-nine"]' }], ["c9-nine", null, 1, "Builder"], ["c3-three", null, 1]];
+  const v = withEvidence(viewOf(specs), { "c1-one": PUSHED });
+  assert.deepEqual(forBoardsmith(run(v)), ["c3-three"], "the role is not left idle behind a card another role has to build");
+});
+
 test("another role's open group gates only that role: Boardsmith's loose card is still woken", () => {
   const specs = [["c1-one", "g1-open", 1, "Builder"], ["c2-two", "g1-open", 2, "Builder", { depends_on: '["c1-one"]' }], ["c3-three", null, 1]];
   const v = withEvidence(viewOf(specs), { "c1-one": PUSHED });
