@@ -57,6 +57,16 @@ test("the release tool's prompt renders with artifactUrl empty: the link, else t
   assert.throws(() => renderPrompt(template, { ...values, BOARD: promptBoard(fullConfig({})) }), /no value for \{\{BOARD\}\}/);
 });
 
+// Checker 2's F1 on 0abd8096: promptBoard is only worth anything if the release tool's main path uses it.
+test("the release tool fills {{BOARD}} through promptBoard and nowhere else: no BOARD value reads artifactUrl directly", () => {
+  const src = readFileSync(join(ROOT, "scripts/board-release.mjs"), "utf8");
+  const boardValues = [...src.matchAll(/\bBOARD:\s*([^,}]+)/g)].map((m) => m[1].trim());
+  assert.deepEqual(boardValues, ["promptBoard(config)"], "every BOARD: value in the tool is promptBoard(config)");
+  const calls = src.split("\n").filter((l) => /=\s*renderPrompt\(/.test(l));
+  assert.equal(calls.length, 1, "one call site of renderPrompt: a second one needs its own check");
+  assert.ok(calls[0].includes("BOARD: promptBoard(config)"), "the call that renders the prompt carries it");
+});
+
 test("with boardId set and artifactUrl empty the config is valid, the id is the key, and the gate matches the board's own calls", () => {
   const raw = { boardId: ID, artifactUrl: "" };
   assert.deepEqual(checkConfig(raw), []);
