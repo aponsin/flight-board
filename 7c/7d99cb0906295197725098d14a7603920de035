@@ -1,0 +1,1 @@
+SECURE #C1074 line-note-covers-after-landing-v3 7c7d99cb: rebase of signed v2 3f91d675 onto 8ba9b518; scripts/board-release.mjs and its test byte-equal; range-diff '!' only for DATA.md context. LOW L1 from 3f91d675 stands, accepted by Manager. line from 8ba9b518a762c87c18e56e05d8cc24a889d80f78 (Security)
