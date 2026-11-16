@@ -140,7 +140,7 @@ The board's data contract: every data point the board shows, where it lives, who
 
 ## Keeping this file true
 
-A test in CI fails the build when the page reads a store field that no row here names, or when a row names a field the store does not have. A row changes only with a line under "Changes" naming the date and the decision.
+A test in CI fails the build when the page reads a store field that no row here names, or when a row names a field the store does not have. A row changes only with a line under "Changes" naming the date and the decision. Since #C1090 a card does not append that line to this file (every landing conflicted every waiting branch there): it writes it as one line, `- YYYY-MM-DD: ...`, to `docs/DATA.d/<card id>.md`, and `node scripts/data-fragments.mjs --write` folds the fragments in at the end of this file, oldest first (a release or a pack runs it, as `scripts/changelog.mjs` does for `CHANGELOG.d/`; `--check` tests the fragments).
 
 ## Changes
 
