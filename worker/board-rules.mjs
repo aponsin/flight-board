@@ -817,8 +817,12 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
   for (const c of cards ?? []) {
     // #C915 (b): a card with an open hold end (hold_end on an open ask or card, or a check_at to come) raises no stall: the hold says why it waits.
-    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || c.blocked_reason || c.waiting_on || holdOpen(c, now, endsPassed) || openAskCards?.has(c.id) || working.has(c.id)) continue;
+    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || c.blocked_reason || c.waiting_on || holdOpen(c, now, endsPassed) || working.has(c.id)) continue;
     const v = evidence?.[c.id], phase = v?.lit?.[0];
+    // #C1092 (Checker 2's follow-up on #C1082): the dispatch builds a card whose ask is ANSWERED (an answered Decision left open holds nothing), so the QUEUED test (a
+    // card with nothing pushed) asks the same set the dispatch asks, the unanswered open asks; before, c3 with an answered Decision was skipped here ("next #C4")
+    // while the dispatch built c3. A card at a phase keeps the plain open-ask test.
+    if ((phase === undefined || phase === null ? (unansweredAskCards ?? openAskCards) : openAskCards)?.has(c.id)) continue;
     // #C846: a card with no lit phase (nothing pushed to origin) whose owner has been idle 15 min is a stall of its own: nobody has
     // started it. It is not held, not behind a depends_on that is not live, not the lead's, and touched in the last 3 days (an old
     // card nobody has pushed for is not news). The owner's other cards do not matter: one at review and the rest queued still wake.
@@ -879,7 +883,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   // owner's group order, then queue_pos.
   const started = startedGroupSet((cards ?? []).map((c) => ({ ...c, batch: groupOf(c) })), (id) => evidence?.[id]);
   const rankOf = (c, rework) => ({ id: c.id, num: c.num, queue_pos: c.queue_pos, owner: c.queue_set_by === "owner", group: groupOf(c), groupStarted: started.has(groupOf(c)), rework });
-  const fixable = (c) => !c.dropped && !c.done_at && !c.paused && !c.blocked_reason && !openAskCards?.has(c.id) && !(typeof c.waiting_on === "string" && c.waiting_on.trim() && !c.waiting_on.trim().startsWith(c.owner_role)) && isRework(c, evidence?.[c.id]);
+  const fixable = (c) => !c.dropped && !c.done_at && !c.paused && !c.blocked_reason && !(unansweredAskCards ?? openAskCards)?.has(c.id) && !(typeof c.waiting_on === "string" && c.waiting_on.trim() && !c.waiting_on.trim().startsWith(c.owner_role)) && isRework(c, evidence?.[c.id]);
   const nextOf = (role, list) => [...list.map((c) => ({ c, k: rankOf(c, false) })), ...(cards ?? []).filter((c) => c.owner_role === role && !list.includes(c) && fixable(c)).map((c) => ({ c, k: rankOf(c, true) }))].sort((x, y) => agentRank(x.k, y.k, groupOrder))[0]?.c;
   // #C1082: a card the dispatch's open-group rule withholds (a started group of the role is not READY yet; #C1080) is not queued for the line: it is
   // neither counted nor named as next, and a role whose whole queue is withheld has no line (the dispatch would wake it for nothing either).
