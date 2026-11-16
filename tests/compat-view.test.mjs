@@ -72,7 +72,7 @@ test("stuck and ship count only while fresh: a reading the probe stopped rewriti
   const ship = { version: null, ci: "running", at: NOW }, stuck = { Builder: { kind: "step", card: "c1", since: NOW } };
   const at = (age) => compatView(view({ evidence: { ship: { value: ship, readAt: NOW - age }, stuck: { value: stuck, readAt: NOW - age } } })).probe;
   assert.deepEqual(at(60e3).ship, ship); assert.deepEqual(at(60e3).stuck, stuck);
-  assert.deepEqual(at(4 * 60e3).ship, ship, "4 minutes still counts: the job now runs every 2 minutes and up to 170 s");
+  assert.deepEqual(at(4 * 60e3).ship, ship, "4 minutes still counts: the job now runs every minute and up to 170 s");
   assert.equal("ship" in at(6 * 60e3), false); assert.equal("stuck" in at(6 * 60e3), false);
 });
 
