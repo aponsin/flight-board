@@ -3,9 +3,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, updateCard, createAsk, answerAsk, writeEvidence, wakeAsk, takeInbox, postMessage } from "../worker/board-store.mjs";
+import { createCard, updateCard, createAsk, answerAsk, writeEvidence, wakeAsk, wakeResult, readView, takeInbox, postMessage } from "../worker/board-store.mjs";
 import { beat } from "./helpers/beating-store.mjs";
 import { resolveKnobs, KNOBS } from "../worker/knobs.mjs";
+import { shouldSend, wakeLimits } from "../worker/wake-rules.mjs";
 import { minWords, stallMsOf, shipSlowMsOf, STALL_AFTER_MS, SHIP_SLOW_MS, heldWakes, HOLD_NO_END_AFTER_MS } from "../worker/board-rules.mjs";
 
 const M = 60_000, T = 1_800_000_000_000;
@@ -160,6 +161,63 @@ test("through the store: a legacy hold with no end wakes Manager after the poste
   const l = await lines(await mk(10800), T + 190 * M);
   assert.equal(l.length, 1);
   assert.match(l[0], /no end set after 3 h:/);
+});
+
+// Slice four: Manager's wake (row 4). wakeTakenSec, wakeResendSec, wakeRetryFailedSec and askStaleSec move the rules the store applies at each ask.
+const RED = { state: "red", reason: "the daily full browser run on dev is red", run: "https://github.com/acme/product/actions/runs/1", lastGreenAt: null };
+async function wakeWorld(values) {
+  const db = makeDb();
+  if (values) await postKnobs(db, values);
+  await writeEvidence(db, T, "probe", "e2e", RED);
+  return db;
+}
+const askAt = async (db, at) => { await writeEvidence(db, at, "probe", "e2e", RED); return wakeAsk(db, at); };
+
+test("through the store: a posted wakeResendSec moves how soon an untaken batch is sent again", async () => {
+  const run = async (values) => {
+    const db = await wakeWorld(values);
+    const first = await askAt(db, T);
+    assert.equal(first.send, true, "the first send of a batch");
+    await wakeResult(db, T + 1000, first.batchId, 0, "");
+    return (await askAt(db, T + 4 * M)).send;
+  };
+  assert.equal(await run(), false, "default 5 min: not at 4");
+  assert.equal(await run({ wakeResendSec: 120 }), true, "posted 2 min: sent again at 4");
+});
+
+test("through the store: a posted wakeTakenSec moves when a sent batch counts as not read", async () => {
+  const run = async (values) => {
+    const db = await wakeWorld(values);
+    const first = await askAt(db, T);
+    await wakeResult(db, T + 1000, first.batchId, 0, "");
+    return (await askAt(db, T + 4 * M)).status;
+  };
+  const dflt = await run();
+  assert.equal(dflt.state, "red"); assert.equal(dflt.reason, "batch-not-taken");
+  assert.equal((await run({ wakeTakenSec: 600 })).state, "ok", "posted 10 min: not yet a failure");
+});
+
+test("through the store: a posted askStaleSec moves when the Manager chip reads the probe as not asking, in its words", async () => {
+  const run = async (values) => {
+    const db = await wakeWorld(values);
+    await askAt(db, T);
+    return (await readView(db, T + 4 * M)).wakeState;
+  };
+  const dflt = await run();
+  assert.equal(dflt.state, "red"); assert.equal(dflt.reason, "probe-not-asking");
+  assert.equal(dflt.fix, "the probe has not asked the store for 3 min");
+  assert.notEqual((await run({ askStaleSec: 600 })).reason, "probe-not-asking", "posted 10 min: 4 min of silence is fine");
+  const short = await run({ askStaleSec: 60 });
+  assert.equal(short.fix, "the probe has not asked the store for 1 min");
+});
+
+test("the retry after a failed send to the owner's words follows the setting; the limits are the old numbers by default", () => {
+  const wake = { batchId: "b1", count: 1, batchAt: T, lastSendAt: T, lastSendBatch: "b1", lastSendOk: false, ownerWaiting: true };
+  assert.equal(shouldSend(wake, T + 30_000), false);
+  assert.equal(shouldSend(wake, T + 60_000), true, "default 60 s");
+  assert.equal(shouldSend(wake, T + 60_000, wakeLimits({ values: { wakeRetryFailedSec: 120 } })), false, "posted 120 s: not at 60");
+  assert.equal(shouldSend(wake, T + 120_000, wakeLimits({ values: { wakeRetryFailedSec: 120 } })), true);
+  assert.deepEqual(wakeLimits(null), { takenMs: 180_000, resendMs: 300_000, retryMs: 60_000, askStaleMs: 180_000 });
 });
 
 test("through the store: a posted autoCloseSec moves the board's close of an answered Decision", async () => {

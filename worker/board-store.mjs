@@ -1,7 +1,7 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
 import { landedUnbuilt, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf } from "./board-rules.mjs";
-import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner } from "./wake-rules.mjs";
+import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner, wakeLimits } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
 import { readUsage } from "./compat-usage.mjs";
@@ -603,10 +603,11 @@ export async function wakeAsk(db, now) {
   } else if (n > 0) await db.prepare("UPDATE wake SET batch_count = ? WHERE id = 1").bind(n).run();
   w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
   const facts = { ...wakeFacts(w, now), ownerWaiting: n > 0 && await ownerWaiting(db) };
-  const status = wakeStatus(facts, now);
+  const lim = wakeLimits(await knobsStored(db)); // #C1106: the posted wake settings (a missing or out-of-bounds one is its default)
+  const status = wakeStatus(facts, now, lim);
   const tellOwner = shouldTellOwner(status, w.told_reason);
   if (tellOwner) await db.prepare("UPDATE wake SET told_reason = ? WHERE id = 1").bind(status.reason).run();
-  return { send: n > 0 && shouldSend(facts, now), line: n > 0 ? nudgeLine(w.batch_count, w.batch_id) : null, batchId: n > 0 ? w.batch_id : null, count: n, status, tellOwner };
+  return { send: n > 0 && shouldSend(facts, now, lim), line: n > 0 ? nudgeLine(w.batch_count, w.batch_id) : null, batchId: n > 0 ? w.batch_id : null, count: n, status, tellOwner };
 }
 
 // The probe reports a finished send (its exit code and the CLI's text, classified). A good send clears the owner-told memory.
@@ -951,7 +952,7 @@ export async function readView(db, now) {
   const agentStalls = (await db.prepare("SELECT card_id, reason, created_at FROM stall_wakes WHERE card_id LIKE ? ORDER BY created_at, card_id").bind(`${AGENT_STALL}%`).all()).results.map(agentStallOf).filter(Boolean);
   const content = { pings, agentStalls, cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reviewClaims, reworkHistory, groupOrder };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
-  const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now);
+  const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now, wakeLimits(knobsRead));
   const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);
   return { tag, now, live, probe, wakeState, ...content };
 }

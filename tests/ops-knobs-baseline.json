@@ -77,9 +77,5 @@
  "worker/push-rules.mjs:SILENT_PUSH_MIN",
  "worker/push-store.mjs:STUCK_FRESH_MS",
  "worker/state-worker.mjs:HEARTBEAT_MS",
- "worker/wake-rules.mjs:ASK_STALE_MS",
- "worker/wake-rules.mjs:RESEND_MS",
- "worker/wake-rules.mjs:RETRY_FAILED_OWNER_MS",
- "worker/wake-rules.mjs:TAKEN_WITHIN_MS",
  "worker/web-push.mjs:VAPID_HOURS"
 ]

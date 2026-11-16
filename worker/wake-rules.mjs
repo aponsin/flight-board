@@ -3,10 +3,15 @@
 // store. The page shows "cannot reach Manager" in red with the reason and the fix when a send failed or a batch was not
 // taken in time. The nudge is not a fact: Manager believes only the store.
 
-export const TAKEN_WITHIN_MS = 3 * 60_000; // a batch not taken this long after a good send is a failure
-export const RESEND_MS = 5 * 60_000;       // an untaken batch is re-sent at most this often
-export const RETRY_FAILED_OWNER_MS = 60_000; // #C963: a failed send is retried this soon while the owner's own message or answer is untaken
-export const ASK_STALE_MS =3 * 60_000;    // row 4 chip: the last ask is the heartbeat, red after this
+import { KNOBS, knobFrom } from "./knobs.mjs";
+
+// #C1106: each is the default of a setting the probe posts (worker/knobs.mjs); the store passes the posted ones as `lim` (wakeLimits).
+export const TAKEN_WITHIN_MS = KNOBS.wakeTakenSec.default * 1000; // a batch not taken this long after a good send is a failure
+export const RESEND_MS = KNOBS.wakeResendSec.default * 1000;       // an untaken batch is re-sent at most this often
+export const RETRY_FAILED_OWNER_MS = KNOBS.wakeRetryFailedSec.default * 1000; // #C963: a failed send is retried this soon while the owner's own message or answer is untaken
+export const ASK_STALE_MS = KNOBS.askStaleSec.default * 1000;    // row 4 chip: the last ask is the heartbeat, red after this
+export const wakeLimits = (stored) => ({ takenMs: knobFrom(stored, "wakeTakenSec") * 1000, resendMs: knobFrom(stored, "wakeResendSec") * 1000, retryMs: knobFrom(stored, "wakeRetryFailedSec") * 1000, askStaleMs: knobFrom(stored, "askStaleSec") * 1000 });
+const minWord = (ms) => `${Math.ceil(ms / 60_000)} min`;
 
 // What a finished send was: from its exit code and the CLI's output text (stdout and stderr together).
 export function classifySend(exit, text) {
@@ -28,7 +33,7 @@ export function classifySend(exit, text) {
 export const nudgeLine = (count, batchId) => `${Number(count)} for Manager, batch ${String(batchId).replace(/[^A-Za-z0-9-]/g, "").slice(0, 32)}`;
 
 // Whether the probe should send now. wake = the store's row: { batchId, count, takenAt, lastSendAt, lastSendOk }.
-export function shouldSend(wake, now) {
+export function shouldSend(wake, now, lim = {}) {
   if (!wake?.batchId || !(wake.count > 0)) return false;       // nothing for Manager: nothing runs
   if (Number.isFinite(wake.takenAt) && wake.takenAt >= (wake.batchAt ?? 0)) return false; // already taken
   if (!Number.isFinite(wake.lastSendAt) || wake.lastSendBatch !== wake.batchId) return true; // first send of this batch
@@ -37,16 +42,16 @@ export function shouldSend(wake, now) {
   // behind a failed send and Manager read it as "nothing retried". A send that went out (and is not taken) and any batch without the owner's words
   // keep the 5-minute rule, so a long outage costs one send a minute at most, and only while something of his waits.
   const failedOwner = wake.lastSendOk === false && wake.ownerWaiting === true;
-  return now - wake.lastSendAt >= (failedOwner ? RETRY_FAILED_OWNER_MS : RESEND_MS);
+  return now - wake.lastSendAt >= (failedOwner ? (lim.retryMs ?? RETRY_FAILED_OWNER_MS) : (lim.resendMs ?? RESEND_MS));
 }
 
 // Row 4: { state: "ok" | "red" | "idle", reason?, fix?, askAge }.
-export function wakeStatus(wake, now) {
+export function wakeStatus(wake, now, lim = {}) {
   const askAge = Number.isFinite(wake?.askedAt) ? Math.max(0, now - wake.askedAt) : null;
-  if (askAge === null || askAge > ASK_STALE_MS) return { state: "red", reason: "probe-not-asking", fix: "the probe has not asked the store for 3 min", askAge };
+  if (askAge === null || askAge > (lim.askStaleMs ?? ASK_STALE_MS)) return { state: "red", reason: "probe-not-asking", fix: `the probe has not asked the store for ${minWord(lim.askStaleMs ?? ASK_STALE_MS)}`, askAge };
   if (wake.lastSendOk === false) return { state: "red", reason: wake.lastSendReason ?? "send-failed", fix: wake.lastSendFix ?? "see the probe log", askAge };
   const untaken = wake.batchId && !(Number.isFinite(wake.takenAt) && wake.takenAt >= (wake.batchAt ?? 0));
-  if (untaken && wake.lastSendOk === true && Number.isFinite(wake.lastSendAt) && now - wake.lastSendAt > TAKEN_WITHIN_MS) {
+  if (untaken && wake.lastSendOk === true && Number.isFinite(wake.lastSendAt) && now - wake.lastSendAt > (lim.takenMs ?? TAKEN_WITHIN_MS)) {
     return { state: "red", reason: "batch-not-taken", fix: "the send went out but Manager has not read the batch", askAge };
   }
   return { state: untaken ? "ok" : "idle", askAge };

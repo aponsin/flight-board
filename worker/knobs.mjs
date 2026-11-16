@@ -20,6 +20,12 @@ export const KNOBS = {
   copyStaleSec: { default: 3600, min: 600, max: 172800, label: "the probe's copy of a repository is stale when its oldest card reading is older than this (s)" },
   holdNoEndSec: { default: 7200, min: 600, max: 86400, label: "a hold with no end wakes Manager after this long, and the store gives a waiting_on this end (s)" },
   autoCloseSec: { default: 1800, min: 300, max: 86400, label: "the board closes an answered Decision this long after its card moved on (s)" },
+  // Manager's wake (row 4): when a sent batch counts as not taken, how often an untaken one is sent again, how soon a failed send to the owner's words is retried,
+  // and how long without an ask makes the chip red.
+  wakeTakenSec: { default: 180, min: 60, max: 1800, label: "a batch not read this long after a good send is a failure (s)" },
+  wakeResendSec: { default: 300, min: 60, max: 3600, label: "an untaken batch is sent again at most this often (s)" },
+  wakeRetryFailedSec: { default: 60, min: 20, max: 600, label: "a failed send is retried this soon while the owner's own words wait (s)" },
+  askStaleSec: { default: 180, min: 60, max: 1800, label: "the Manager chip is red when the probe has not asked the store for this long (s)" },
   // Not settings yet (they stay on the lint baseline): gate/reset.mjs EVIDENCE_STALE_MS (no card shows a commit for 10 min; the file is pinned by the owner's
   // install, so changing it needs an owner pack, and it is NOT the page's probe edge staleAfterSec) and collector/store-dispatch.mjs AGENTS_FRESH_MS.
 };
