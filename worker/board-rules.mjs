@@ -748,7 +748,7 @@ export function landedUnbuilt({ now, cards, evidence, installStart }) {
     return { card_id: newest.id, num: newest.num, reason: `${nums} landed at ${mtTime(first)} and no deploy pair holds ${list.length > 1 ? "them" : "it"}: ${who} builds it${key !== newest.id ? ` (pack ${/^[A-Za-z0-9._\/-]{1,100}$/.test(key) ? key : "of its group"})` : ""}` };
   });
 }
-export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [] }) {
+export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
@@ -792,7 +792,11 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     if (phase === "ship" && v.onMain === true && typeof c.repo === "string" && c.repo !== "") continue;
     // #C854: a signed tip that no longer continues main cannot be landed as it is: Release cannot take it, so the wait is its builder's (re-cut).
     const behind = phase === "ship" && v.onMain !== true && v.behindMain === true;
-    const role = behind ? c.owner_role : PHASE_LANES[phase] ?? c.owner_role;
+    // #C1084 (11-16: "#C1081 waits at Checker 15 min, Checker idle since 12:47 pm MT" fired while Checker 2 was reviewing it, for #C1078 and #C1080 too):
+    // a review a numbered checker holds a claim on (claims: Map card id -> the claim's checker, from the store's review_claims) is that session's wait,
+    // so the idle test and the line name it, not the bare role. A claim whose name is not a Checker role is ignored.
+    const claimed = phase === "checker" && !behind && claims instanceof Map ? claims.get(c.id) : undefined;
+    const role = behind ? c.owner_role : typeof claimed === "string" && /^Checker( [0-9]{1,3})?$/.test(claimed) ? claimed : PHASE_LANES[phase] ?? c.owner_role;
     if (typeof role !== "string" || !/^[A-Za-z0-9 _-]{1,24}$/.test(role)) continue;
     const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`);
     const at = behind ? `#C${c.num} signed but behind main${/^[0-9a-f]{12}$/.test(String(v.headSha12)) ? " " + v.headSha12 : ""}, waits at ${role} 15 min` : `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} 15 min`;
