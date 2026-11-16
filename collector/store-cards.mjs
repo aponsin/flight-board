@@ -6,6 +6,7 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, copyFileSy
 import { join, dirname, basename } from "node:path";
 import { FETCH_TIMEOUT_MS } from "./probe-board.mjs";
 import { STORE_CARDS_FILE } from "./state-schema.mjs";
+import { BOARD_ID } from "../scripts/config.mjs";
 
 const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const num = (v) => (Number.isFinite(v) ? v : undefined);
@@ -94,7 +95,7 @@ export function privateConfig(raw, dir) {
 // `stateFile` is the old location (<dir>/<board id>/state.json); only its board id and its usage history are used.
 export async function prepareStoreState({ privateDir, stateFile, configPath, base, headers, fetchImpl = fetch, now = Date.now(), readText = (p) => readFileSync(p, "utf8"), log = () => {}, switchFile = null }) {
   const boardId = basename(dirname(stateFile));
-  if (!/^[A-Za-z0-9]{6,64}$/.test(boardId)) throw new Error("the state path has no board id");
+  if (!BOARD_ID.test(boardId)) throw new Error("the state path has no board id");
   const { cards, stackSwitch } = await storeRead({ base, headers, fetchImpl });
   const m = writeStoreCards({ cards, dir: privateDir, boardId, now });
   // state.mjs reads it (readStacks); written whole under a temporary name, as the mirror's files are.

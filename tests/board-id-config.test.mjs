@@ -18,7 +18,7 @@ test("boardId reads the key first, then the id in artifactUrl, else null", () =>
 test("a boardId that is not a plain id is ignored, and the config check names it", () => {
   assert.equal(boardId({ boardId: "../x", artifactUrl: LINK }), "abc-123");
   assert.equal(boardId({ boardId: "a b" }), null);
-  assert.equal(boardId({ boardId: "x".repeat(81) }), null);
+  assert.equal(boardId({ boardId: "x".repeat(65) }), null);
   assert.ok(checkConfig({ boardId: "../x" }).some((m) => m.startsWith("boardId:")));
   assert.deepEqual(checkConfig({ boardId: "my-board" }), []);
   assert.deepEqual(checkConfig({ boardId: "" }), []);

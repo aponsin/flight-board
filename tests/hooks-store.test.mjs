@@ -3,10 +3,12 @@
 // dispatch ask is unchanged; no hook or cue tells a role other than the lead to call read_inbox (Director's connector rule).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
-import { hookEntries, withHooks, summary } from "../scripts/hooks.mjs";
+import { hookEntries, withHooks, summary, pinCopy } from "../scripts/hooks.mjs";
 import { stopRun } from "../gate/stop.mjs";
 import { fullConfig, checkConfig, DEFAULTS } from "../scripts/config.mjs";
 
@@ -127,5 +129,26 @@ test("storeUrl is a known config field: a plain https address or empty passes, a
     assert.match(e[0], /^storeUrl: a plain https address/);
   }
   assert.ok(checkConfig({ storeUrl: "https://board.example.test/", nonsense: 1 }).some((l) => /unknown field "nonsense"/.test(l)), "other unknown fields are still refused");
+});
+
+// Checker 2's F1 on 6d653728: pinCopy's "already pinned" check looks for gate/stop.mjs (gate/gate.mjs went with the old gate). With the old name it never
+// finds the pinned folder, so a second hooks install at the same signed commit tries to rename a folder onto the pinned one and throws ENOTEMPTY.
+test("pinCopy at the same commit twice gives the same folder and leaves it as it was", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pin-twice-")), repo = join(dir, "repo"), root = join(dir, "install");
+  const git = (...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.com" } });
+  try {
+    mkdirSync(join(repo, "gate"), { recursive: true });
+    execFileSync("git", ["init", "-q", "-b", "main", repo]);
+    writeFileSync(join(repo, "gate", "stop.mjs"), "export const x = 1;\n");
+    git("add", "-A"); git("commit", "-qm", "pin me");
+    const sha = git("rev-parse", "HEAD").trim();
+    const first = pinCopy(repo, sha, root);
+    assert.equal(first, join(root, sha));
+    assert.equal(readFileSync(join(first, "gate", "stop.mjs"), "utf8"), "export const x = 1;\n");
+    writeFileSync(join(first, "marker"), "kept");
+    const second = pinCopy(repo, sha, root);
+    assert.equal(second, first, "the same folder");
+    assert.equal(readFileSync(join(second, "marker"), "utf8"), "kept", "the pinned folder is not copied over again");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

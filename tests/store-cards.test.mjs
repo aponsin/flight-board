@@ -63,7 +63,24 @@ test("prepareStoreState: the private mirror, config and state path, from the old
   assert.equal(JSON.parse(readFileSync(r.configPath, "utf8")).gate.stateDir, priv);
   assert.equal(existsSync(join(priv, "AbCdEf123456", "store-cards.json")), true);
   assert.equal(existsSync(join(priv, "AbCdEf123456", "mirror")), false);
-  await assert.rejects(prepareStoreState({ privateDir: priv, stateFile: "/x/y/state.json", configPath: cfg, base: "https://x.test", headers: {}, fetchImpl: view([]) }), /no board id/);
+  await assert.rejects(prepareStoreState({ privateDir: priv, stateFile: "/x/a b/state.json", configPath: cfg, base: "https://x.test", headers: {}, fetchImpl: view([]) }), /no board id/);
+  await assert.rejects(prepareStoreState({ privateDir: priv, stateFile: `/x/${"a".repeat(65)}/state.json`, configPath: cfg, base: "https://x.test", headers: {}, fetchImpl: view([]) }), /no board id/);
+});
+
+test("prepareStoreState takes any id boardId() takes, a dash too: the probe is not stopped by the key (Security's note on 6d653728)", async () => {
+  const { boardId, BOARD_ID } = await import("../scripts/config.mjs");
+  for (const id of ["my-board-1", "a", "x".repeat(64), "AbCdEf123456"]) {
+    assert.equal(boardId({ boardId: id }), id, id);
+    const priv = tmp(), real = join(tmp(), id);
+    mkdirSync(real);
+    const cfg = join(real, "board.config.json");
+    writeFileSync(cfg, JSON.stringify({ gate: { stateDir: "~/.flight-board" }, collector: { liveUrl: "https://live.test/" } }));
+    const r = await prepareStoreState({ privateDir: priv, stateFile: join(real, "state.json"), configPath: cfg, base: "https://x.test", headers: {}, fetchImpl: view([card()]) });
+    assert.equal(r.stateFile, join(priv, id, "state.json"), id);
+    assert.equal(existsSync(join(priv, id, "store-cards.json")), true, id);
+  }
+  assert.equal(boardId({ boardId: "x".repeat(65) }), null);
+  assert.equal(BOARD_ID.test("a b"), false);
 });
 
 test("the evidence job with a private dir builds the state from the store's cards, not from the given paths", async () => {
