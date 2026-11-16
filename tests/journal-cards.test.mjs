@@ -46,5 +46,9 @@ test("liveCards without the file, or with a torn or odd one, is none; readStoreC
     writeFileSync(join(odd.board, "store-cards.json"), "{not json");
     assert.deepEqual(liveCards(odd.state, "b"), []);
     assert.deepEqual(readStoreCards(odd.state, "b"), { at: 0, cards: {} });
+    writeFileSync(join(odd.board, "store-cards.json"), JSON.stringify({ at: 5 }));
+    assert.deepEqual(liveCards(odd.state, "b"), [], "whole JSON with no cards key: none, no throw");
+    writeFileSync(join(odd.board, "store-cards.json"), JSON.stringify({ at: 5, cards: [{ id: "x" }] }));
+    assert.deepEqual(liveCards(odd.state, "b"), [], "cards as a list: none");
   } finally { for (const d of [state, none.state, odd.state]) rmSync(d, { recursive: true, force: true }); }
 });
