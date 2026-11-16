@@ -306,7 +306,10 @@ export function pendingPack({ descends, range, sameAs }) {
   // #C934: a commit is also signed when a later commit's line sign covers it (c.covers: the shas in base..c that the caller verified, base an
   // ancestor of main and of c). A lower commit with its own FINDINGS is covered here by a later line sign (its reviewers read the line as it ended), but since #C1032 the verdict's groupCoverage refuses any commit of main..tip with a note of its own that is not PASS/SECURE, so the release still refuses it.
   const covered = new Set((range ?? []).filter((c) => signed(c.notes) && Array.isArray(c.covers)).flatMap((c) => c.covers));
-  const unsigned = touching.filter((c) => !signed(c.notes) && !covered.has(c.sha)).map((c) => c.sha.slice(0, 12));
+  // #C1074 (11-13/14: it named 6729aae6 of #C1056 and be5ed68b of #C970, both landed, for every later tip, and each flag held G10 and #C1006 for hours): a commit
+  // already on origin/main (c.landed) was signed before Release landed it, and the sign belongs to its own release, so only the commits of main..tip are
+  // asked for a sign here. The waiting pack S (above) and the side-branch and descent checks still read the whole line.
+  const unsigned = touching.filter((c) => c.landed !== true && !signed(c.notes) && !covered.has(c.sha)).map((c) => c.sha.slice(0, 12));
   if (unsigned.length) r.push(`a change to what the owner's install pins, on its line, isn't signed by both Checker and Security: ${unsigned.join(", ")}`);
   if (!sameAs(S)) r.push(`it changes what the owner's install pins after the waiting pack ${S.slice(0, 12)}: a pinned change goes out with an install pack`);
   return { sha: r.length ? null : S, refusals: r };
@@ -462,7 +465,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
         if (!fork || quiet(["merge-base", "--is-ancestor", fork, b]) === null) return undefined;
         return list(["rev-list", `${b}..${c}`]);
       };
-      const range = list(["rev-list", "--reverse", `${pinned}..${sha}`]).map((c) => { const notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", c])])); return { sha: c, fromPin: path.has(c), touches: touches(c), notes, covers: lineCovers(c, notes) }; });
+      const range = list(["rev-list", "--reverse", `${pinned}..${sha}`]).map((c) => { const notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", c])])); return { sha: c, fromPin: path.has(c), landed: quiet(["merge-base", "--is-ancestor", c, main]) !== null, touches: touches(c), notes, covers: lineCovers(c, notes) }; });
       const sameAs = (s) => [...new Set([...importClosure(entries, at(sha)), ...importClosure(entries, at(s))])].every((f) => at(s)(f) === at(sha)(f)) && settingsBlock(at(s)(TASK_FILE)) === settingsBlock(at(sha)(TASK_FILE));
       pending = pendingPack({ descends: quiet(["merge-base", "--is-ancestor", pinned, sha]) !== null, range, sameAs });
     }
