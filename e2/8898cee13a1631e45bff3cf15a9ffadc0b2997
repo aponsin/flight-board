@@ -1,0 +1,1 @@
+SECURE #C1106 ops-knobs-part-b-v2 e28898ce (tip): re-cut onto #C997 part A 1de5ee78; git range-diff shows both commits = (cf14f9f4, 818544db, signed). The base's interval-plus-limit rule yields at most 771 s, inside the bounds knobsShape now enforces, so resolveKnobs output is never refused. Line from 1de5ee78 (signed). (Security)
