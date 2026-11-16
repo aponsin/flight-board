@@ -1,0 +1,1 @@
+SECURE g13 fe9905ab (#C1101): read_view lists a withdrawn ask as open; the same ask data the whole view already returns, no new field. (Security)
