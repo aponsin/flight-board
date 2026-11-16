@@ -508,6 +508,7 @@ async function syncStalls(db, now) {
   const medians = phaseMedians((await db.prepare("SELECT id, card_id, phase, kind, at FROM phase_history WHERE wait IS NULL AND kind IN ('start', 'end') ORDER BY id DESC LIMIT 5000").all()).results);
   // A card already named by a "waits at" line this round is not named twice: that line is its one stall.
   const groupOrder = (await db.prepare("SELECT batch, pos FROM group_order").all()).results ?? [];
+  await endClaims(db, now); // #C1094: a claim on a signed or landed tip is over before the dispatch reads who holds what
   // #C1084: the checker holding an open claim on a card's review, per card (a claim without a card id names no card).
   const claims = new Map((await db.prepare("SELECT card_id, checker FROM review_claims WHERE released_at IS NULL AND card_id IS NOT NULL ORDER BY claimed_at").all()).results.map((r) => [r.card_id, r.checker]));
   // #C1082: the board repository's stack switch, as the dispatch reads it, for the open-group rule behind the "next #C.." of the idle-agent line.
@@ -652,6 +653,35 @@ export async function setStackSwitch(db, now, who, b) {
 // another tip of the card holds the new one, and anyone else is refused. Manager claims a tip for a named checker up front.
 const MAX_OPEN_CLAIMS = 6;
 const hasCheckerNote = (v) => [...(Array.isArray(v?.signed) ? v.signed : []), ...(Array.isArray(v?.findings) ? v.findings : [])].some((x) => /checker/i.test(String(x)));
+// #C1094 (11-16: Checker 2 hit the cap of 6 and Manager released 5 by hand, each on a tip already signed, re-cut or landed): a claim ends by itself when (1) the probe's reading
+// of the card's head is this tip and it carries a Checker note (signed or findings), (2) that reading has the tip on main, or its card is done or dropped, or (3) the claimer's
+// own card has a newer head than the claim's tip, read after the claim was made (the old tip was handed on or is dead). (1) and (2) are free for anyone; (3) is only for the
+// claims of `checker` (the one claiming now), so another checker's hold on a re-cut tip stays what the re-cut rule in claimReview says. Called after each card reading, at each
+// stall sync and at each claim.
+export async function endClaims(db, now, { checker = null } = {}) {
+  const open = (await db.prepare("SELECT rc.sha AS sha, rc.card_id AS card_id, rc.checker AS checker, rc.claimed_at AS claimed_at, c.done_at AS done_at, c.dropped AS dropped FROM review_claims rc LEFT JOIN cards c ON c.id = rc.card_id WHERE rc.released_at IS NULL").all()).results ?? [];
+  if (open.length === 0) return 0;
+  const byHead = new Map(), byCard = new Map();
+  for (const e of (await db.prepare("SELECT key, value, read_at FROM evidence WHERE key LIKE 'cards.%'").all()).results ?? []) {
+    let v; try { v = JSON.parse(e.value); } catch { continue; }
+    if (!v || typeof v !== "object") continue;
+    byCard.set(String(e.key).slice(6), { v, readAt: e.read_at });
+    if (typeof v.headSha12 === "string") byHead.set(v.headSha12, v);
+  }
+  let ended = 0;
+  for (const r of open) {
+    const tip = r.sha.slice(0, 12), v = byHead.get(tip), cur = r.card_id ? byCard.get(r.card_id) : null;
+    let why = null;
+    if (r.done_at != null || r.dropped === 1) why = "landed";
+    else if (v && hasCheckerNote(v)) why = "signed";
+    else if (v && v.onMain === true) why = "landed";
+    else if (!v && checker !== null && r.checker === checker && cur && typeof cur.v.headSha12 === "string" && cur.v.headSha12 !== tip && cur.readAt > r.claimed_at) why = `superseded by ${cur.v.headSha12}`;
+    if (!why) continue;
+    await db.prepare("UPDATE review_claims SET released_at = ?, released_by = ? WHERE sha = ? AND released_at IS NULL").bind(now, why, r.sha).run();
+    ended++;
+  }
+  return ended;
+}
 export async function claimReview(db, now, who, b) {
   const bad = reviewClaimRefusal(b, who, "claim");
   if (bad) return refuse(db, now, bad, null, who);
@@ -672,8 +702,9 @@ export async function claimReview(db, now, who, b) {
     const other = await db.prepare("SELECT sha, checker FROM review_claims WHERE card_id = ? AND released_at IS NULL AND sha <> ? AND checker <> ?").bind(card, b.sha, checker).first();
     if (other) return refuse(db, now, { rule: "review-claim-held", detail: `${other.checker} has this` }, card, who);
   }
-  // #C1040: a claim on a card that is done (its tip landed) or dropped is stale: free it, then cap what one checker holds at once.
-  await db.prepare("UPDATE review_claims SET released_at = ?, released_by = 'landed' WHERE released_at IS NULL AND card_id IN (SELECT id FROM cards WHERE done_at IS NOT NULL OR dropped = 1)").bind(now).run();
+  // #C1040: a claim on a card that is done (its tip landed) or dropped is stale: free it; #C1094: so is one on a tip that is signed, landed or handed on to a newer tip of
+  // the claimer's own card (endClaims). Then cap what one checker holds at once.
+  await endClaims(db, now, { checker });
   const held = await db.prepare("SELECT COUNT(*) AS n FROM review_claims WHERE checker = ? AND released_at IS NULL AND sha <> ?").bind(checker, b.sha).first();
   if (held.n >= MAX_OPEN_CLAIMS) return refuse(db, now, { rule: "review-claim-cap", detail: `${checker} already holds ${held.n} open claims (the most is ${MAX_OPEN_CLAIMS}): release one first` }, card, who);
   await db.prepare("INSERT INTO review_claims (sha, card_id, checker, claimed_by, claimed_at, released_at, released_by) VALUES (?, ?, ?, ?, ?, NULL, NULL) ON CONFLICT(sha) DO UPDATE SET card_id = excluded.card_id, checker = excluded.checker, claimed_by = excluded.claimed_by, claimed_at = excluded.claimed_at, released_at = NULL, released_by = NULL WHERE review_claims.released_at IS NOT NULL").bind(b.sha, card, checker, who, now).run();
@@ -906,6 +937,7 @@ export async function writeEvidence(db, now, who, key, value, track) {
   // Both in one batch: a sign-off and a landing in the same reading clear the waiting_on once; #C1036's history keeps the words it read above.
   await db.batch([upsert, ...ins, ...closes, ...unwait, ...clears]);
   await noteShip(db, now, cardId, value);
+  await endClaims(db, now); // #C1094: a claim on the tip this reading signed or landed ends here
   return signedRole ? { ok: true, cleared: { waiting_on: cardRow.waiting_on, signedBy: signedRole } } : { ok: true };
 }
 
