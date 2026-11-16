@@ -1,0 +1,1 @@
+PASS Quick at 1fade8a2 (Checker 2, #C1091 v3): pure rebase of v2 0031216a onto main c15d21cb, range-diff all =. Suite on the tip 2498 pass, 0 fail. v1 review stands (mutations 14/16) (commit 1fade8a2 of stack tip 1fade8a2)
