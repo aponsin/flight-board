@@ -448,6 +448,21 @@ const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "f
 // #C902: what shows a card with no branch is done: a file path (~/ or /), an https link, or a thread message's id (m-<time>-<8 hex>).
 export const DONE_EVIDENCE = /^(?:(?:~\/|\/)[^\s]|https:\/\/[^\s]|m-\d{10,16}-[0-9a-f]{8}$)/;
 export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
+// #C1114: the counters the probe read from the review notes (reading.issueCounts: bugs, security, language, design) raise the card's stored `issues`: each kind
+// becomes the larger of the stored number and the read one, so a later PASS, the same note read again, or a hand-typed number above the read one never lowers
+// or doubles anything. `owner` is only ever typed. Returns the new counts, or null when nothing rises (or the reading is no counts).
+export function raisedIssues(stored, read) {
+  if (!read || typeof read !== "object" || Array.isArray(read)) return null;
+  const have = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
+  const out = { ...have };
+  let rose = false;
+  for (const k of ["bugs", "security", "language", "design"]) {
+    const n = read[k];
+    if (!Number.isInteger(n) || n < 1 || n > 99) continue;
+    if (!(Number.isInteger(have[k]) && have[k] >= n)) { out[k] = n; rose = true; }
+  }
+  return rose ? out : null;
+}
 export const CARD_SIZES = ["XS", "S", "M", "L", "XL"];
 const CARD_FORBIDDEN = new Set(["status", "phase", "num", "live_version", "signed", "on_main", "ci", "evidence"]);
 
