@@ -69,6 +69,7 @@ h1{font:700 2rem/1 var(--display);letter-spacing:.02em;text-transform:uppercase;
 .rbpop ul{margin:4px 0 0;padding-left:1.1rem}
 .boardver{font:600 .75rem var(--mono);color:var(--muted)}
 .boardver[hidden]{display:none}
+.unexplained-chip{display:inline-block;font:600 .72rem var(--mono);padding:2px 8px;border-radius:999px;background:var(--bad-soft);color:var(--bad)}
 .mgr-chip.ok{background:var(--ok-soft);color:var(--ok)}.mgr-chip.warn{background:var(--warn-soft);color:var(--warn-ink)}.mgr-chip.bad{background:var(--bad-soft);color:var(--bad)}
 .t-seen{font:.7rem var(--mono);color:var(--muted);text-align:right}
 h2{font:700 1.15rem/1.2 var(--display);letter-spacing:.06em;text-transform:uppercase;margin:0 0 10px;color:var(--muted)}
@@ -2383,8 +2384,12 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track" style="--per:${per}">${steps}</div>`}
-   <div class="i-meta">${queueLine(i)}${stackTag(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div><div class="i-acts">${det}${thread}</div></div>`;
+   <div class="i-meta">${queueLine(i)}${stackTag(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${unexplainedChip(i)}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div><div class="i-acts">${det}${thread}</div></div>`;
 }
+// #C1114: a step back from a review phase with no FINDINGS note and no reason is held by the store as rework "unexplained": a red chip says so until the
+// reviewer's finding or a reason is on the board (the card stays where it was shown; the store's `unexplainedRework` is true, `unexplainedAt` when it began).
+function unexplainedChip(i){if(!i||i.unexplainedRework!==true||i.status==="done"||i.status==="dropped")return "";
+  const at=num(i.unexplainedAt);return `<span class="unexplained-chip" title="The card stepped back from a review with no findings noted and no reason given; the reviewer has been asked to file the finding">Unexplained rework${at!=null?` · ${esc(dur(Math.max(0,Date.now()-at)))}`:""}</span>`}
 // The card rules' red lines (#C662, gate/card-rules.mjs): the probe writes them into derived/all for an open card that breaks one
 // (queued with a step of its own, past build with no build end step, on ship with nothing on main, a field outside its list),
 // and the card shows them as they are instead of quietly picking one source. Nothing for a card that keeps the rules.

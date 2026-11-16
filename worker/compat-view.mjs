@@ -120,6 +120,8 @@ export function initiativeDoc(c, ev, claim) {
     nextNote: c.next_note, nextNoteAt: c.next_note_at, waitingOn: c.waiting_on, blocked: c.blocked_reason, fromThread: c.from_thread,
     customerText: c.customer_text === null || c.customer_text === undefined ? undefined : !!c.customer_text, lookChange: c.look_change === null || c.look_change === undefined ? undefined : !!c.look_change,
     skip: Array.isArray(skip) ? skip : undefined, reworkReason: c.rework_reason, plan: c.track,
+    // #C1114: a step back from a review phase with no FINDINGS note and no reason (the store's evidence flag rework "unexplained") and when it began: the page's red chip.
+    unexplainedRework: ev?.value?.rework === "unexplained" ? true : undefined, unexplainedAt: ev?.value?.rework === "unexplained" ? num(ev.value.reworkAt) : undefined,
     // #C729 B4a: what it waits on, its issue counts (and when set) and its place in its owner's queue.
     dependsOn: Array.isArray(deps) ? deps : undefined, issues: issues && typeof issues === "object" && !Array.isArray(issues) ? issues : undefined, issuesAt: num(c.issues_at),
     queuePos: Number.isInteger(c.queue_pos) && c.queue_pos > 0 ? c.queue_pos : undefined,

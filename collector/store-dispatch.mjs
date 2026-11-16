@@ -74,7 +74,7 @@ export function turnsOf(card, e, ctx = {}) {
   if (e?.rework === true && !(typeof card.rework_reason === "string" && card.rework_reason !== "")) return [{ role: card.owner_role, phase: typeof phase === "string" && /^[a-z]{2,16}$/.test(phase) ? phase : "build", step: "reason" }];
   // #C1114: the Worker holds a step back from a review phase that has no FINDINGS note and no reason as rework "unexplained" (the card stays where it was shown):
   // the reviewer of that phase is asked to file the finding on this commit, which is what fills the counters. The owner is not woken: there is nothing to fix yet.
-  if (e?.rework === "unexplained" && typeof phase === "string" && phase !== "plan" && phase !== "build" && phase !== "ship" && Object.hasOwn(PHASE_LANES, phase)) {
+  if (e?.rework === "unexplained" && typeof phase === "string" && phase !== "ship" && Object.hasOwn(PHASE_LANES, phase)) { // PHASE_LANES has no plan or build: the review lanes, and ship (the lander's, not a review)
     return [{ role: phase === "checker" && typeof ctx.reviewer === "string" ? ctx.reviewer : PHASE_LANES[phase], phase, step: "unexplained", sha, ...where, signed: signedBy }];
   }
   if (typeof phase !== "string" || phase === "plan" || phase === "build") return [owner];
