@@ -108,7 +108,7 @@ const stackOf = (s) => {
 const closedCard = (c) => !!c && (!!c.dropped || !!c.done_at);
 const lanePhase = (c, phase) => (closedCard(c) && phase !== "live" ? undefined : phase);
 // One card as an old `initiatives` doc; the phase and status are the probe's reading, never typed.
-export function initiativeDoc(c, ev) {
+export function initiativeDoc(c, ev, claim) {
   const lit = lanePhase(c, ev?.value?.lit?.[0]);
   const skip = c.skip ? json(`{"s":${c.skip}}`).s : undefined;
   const deps = c.depends_on ? json(`{"s":${c.depends_on}}`).s : undefined, issues = c.issues ? json(c.issues) : undefined;
@@ -129,6 +129,8 @@ export function initiativeDoc(c, ev) {
     // #C731 B4b: the done-test hold. A card with a checkAt is not closed by the page on the live reading ("Live, still open").
     checkAt: Number.isInteger(c.check_at) && c.check_at > 0 ? c.check_at : undefined,
     repo: c.repo, batch: c.batch, bump: c.bump,
+    // #C1115: the mutants the reviewer holding the card's tip will run, and the seconds each takes: the page's review ETA adds them.
+    reviewMutants: Number.isInteger(claim?.mutants) && claim.mutants > 0 ? claim.mutants : undefined, mutantSec: Number.isInteger(claim?.mutant_sec) && claim.mutant_sec > 0 ? claim.mutant_sec : undefined,
     // #C866: what the card removes, one plain line (or none).
     removes: typeof c.removes === "string" && c.removes ? c.removes : undefined,
     // #C1008: the group the owner pulled it out of, who and when (the page tags the row "pulled out of G3 · 10:05 AM by <owner>").
@@ -228,8 +230,9 @@ export function probeDoc(view) {
 // The whole answer of GET /api/compat. `tag` is the store view's tag (it changes when anything the view shows changes).
 export function compatView(view) {
   const evCard = (id) => view.evidence?.[`cards.${id}`];
+  const claimOf = new Map((Array.isArray(view.reviewClaims) ? view.reviewClaims : []).filter((r) => r && typeof r.card_id === "string").map((r) => [r.card_id, r])); // #C1115
   const collections = {
-    initiatives: (view.cards ?? []).map((c) => initiativeDoc(c, evCard(c.id))),
+    initiatives: (view.cards ?? []).map((c) => initiativeDoc(c, evCard(c.id), claimOf.get(c.id))),
     waiting: (view.asks ?? []).map(waitingDoc),
     todo: (view.lists ?? []).filter((l) => l.kind === "todo").map(listDoc),
     ideas: (view.lists ?? []).filter((l) => l.kind === "idea").map(listDoc),
