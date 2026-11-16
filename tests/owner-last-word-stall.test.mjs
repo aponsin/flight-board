@@ -153,6 +153,26 @@ test("through the store: yes after a team question is an answer to read; yes aft
   assert.deepEqual((await line(db, NOW)).map((s) => s.card_id), ["ownerword:thr1"]);
 });
 
+// Checker 2's F1 and F2 on 90fab4ac: the two halves of the SQL the pure tests cannot reach.
+test("through the store: the 'previous team post' is the TEAM's, never the owner's: team 'ready?', owner 'hmm', owner 'yes' is an answer to read", async () => {
+  const db = makeDb();
+  await thread(db, "thr1", 166);
+  await say(db, "m1", "thr1", "Manager", NOW - 60 * MIN, 0, "ready?");
+  await say(db, "m2", "thr1", "owner", NOW - 40 * MIN, 0, "hmm");
+  await say(db, "m3", "thr1", "owner", NOW - 20 * MIN, 0, "yes");
+  assert.deepEqual((await line(db, NOW)).map((s) => s.card_id), ["ownerword:thr1"], "the team's question still stands before the owner's yes");
+});
+
+test("through the store: an owner 'ok' with a file attached through file_links is not an ack", async () => {
+  const db = makeDb();
+  await thread(db, "thr1", 166); await thread(db, "thr2", 167);
+  await say(db, "m1", "thr1", "owner", NOW - 20 * MIN, 0, "ok");
+  await say(db, "m2", "thr2", "owner", NOW - 20 * MIN, 0, "ok");
+  await db.prepare("INSERT INTO files (id, name, type, size, sha256, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind("f".repeat(16), "shot.png", "image/png", 10, "0".repeat(64), "owner", NOW - 21 * MIN).run();
+  await db.prepare("INSERT INTO file_links (file_id, ref_kind, ref_id, pos, at) VALUES (?, 'message', ?, 0, ?)").bind("f".repeat(16), "m2", NOW - 20 * MIN).run();
+  assert.deepEqual((await line(db, NOW)).map((s) => s.card_id), ["ownerword:thr2"], "thr1's bare ok is an ack; thr2's ok carries a file");
+});
+
 test("through the store: a thread whose owner message resolved it raises nothing", async () => {
   const db = makeDb();
   await thread(db, "thr1", 166);
