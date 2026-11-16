@@ -31,28 +31,28 @@ async function seed(tool) {
   return a.structuredContent;
 }
 
-test("the read_view schema takes owner_role, thread_id and full, and nothing else", () => {
+test("the read_view schema takes owner_role, thread_id and summary, and nothing else", () => {
   const t = TOOLS.find((x) => x.name === "read_view");
-  assert.deepEqual(Object.keys(t.inputSchema.properties).sort(), ["full", "owner_role", "thread_id"]);
+  assert.deepEqual(Object.keys(t.inputSchema.properties).sort(), ["owner_role", "summary", "thread_id"]);
   assert.equal(t.inputSchema.additionalProperties, false);
 });
 
 test("owner_role=Ops returns only Ops's open cards and stays under 50 KB on a board with 60 big Builder cards", async () => {
   const { tool } = make();
   await seed(tool);
-  const whole = await tool("manager", "read_view", { full: true });
+  const whole = await tool("manager", "read_view", {});
   assert.ok(size(whole) > 100_000, "the whole view is big in this board");
   const r = await tool("ops", "read_view", { owner_role: "Ops" });
   assert.equal(r.isError, false);
   assert.deepEqual(r.structuredContent.cards.map((c) => c.id).sort(), ["o-one", "o-two", "o-three"].sort());
   assert.ok(size(r) < 50_000, `${size(r)} bytes`);
-  assert.equal(r.structuredContent.evidence, undefined);
+  assert.equal(typeof r.structuredContent.evidence, "object", "the answer carries an evidence object, as the digest reads it");
 });
 
-test("no filter returns the summary, not the whole view", async () => {
+test("summary: true returns the summary, not the whole view", async () => {
   const { tool } = make();
   await seed(tool);
-  const r = await tool("ops", "read_view", {});
+  const r = await tool("ops", "read_view", { summary: true });
   const v = r.structuredContent;
   assert.equal(v.summary, true);
   assert.equal(v.openCardsByRole.Builder, 60);
@@ -61,11 +61,13 @@ test("no filter returns the summary, not the whole view", async () => {
   assert.ok(size(r) < 5_000, `${size(r)} bytes`);
 });
 
-test("full: true still returns the whole view (the approvals check reads every ask)", async () => {
+test("no argument still returns the whole view, as before (Checker 2's F1: the pickup digest and the approvals check read cards, asks and evidence from it)", async () => {
   const { tool, env } = make();
   await seed(tool);
   await threads(env.DB);
-  const v = (await tool("ops", "read_view", { full: true })).structuredContent;
+  const v = (await tool("ops", "read_view", {})).structuredContent;
+  assert.equal(v.summary, undefined);
+  assert.ok(v.evidence && v.refusals && v.groupOrder, "the whole view's other parts are there");
   assert.equal(v.cards.length, 63);
   assert.ok(Array.isArray(v.asks) && v.asks.length === 1);
   assert.equal(v.threads.messages.length, 4);
@@ -86,8 +88,18 @@ test("thread_id returns that thread and its messages only", async () => {
 });
 
 test("viewForTool: a done or dropped card and a closed ask are not open", () => {
-  const view = { tag: "t", now: 1, cards: [{ id: "a", owner_role: "Ops", done_at: null, dropped: 0 }, { id: "b", owner_role: "Ops", done_at: 5, dropped: 0 }, { id: "c", owner_role: "Ops", done_at: null, dropped: 1 }], asks: [{ id: "k1", asked_by: "Ops", closed_at: null }, { id: "k2", asked_by: "Ops", closed_at: 9 }, { id: "k3", asked_by: "Manager", card_id: "a", closed_at: null }, { id: "k4", asked_by: "Manager", card_id: "b", closed_at: null }], threads: { threads: [], messages: [] } };
+  const view = { tag: "t", now: 1, cards: [{ id: "a", owner_role: "Ops", done_at: null, dropped: 0 }, { id: "b", owner_role: "Ops", done_at: 5, dropped: 0 }, { id: "c", owner_role: "Ops", done_at: null, dropped: 1 }], asks: [{ id: "k1", asked_by: "Ops", closed_at: null }, { id: "k2", asked_by: "Ops", closed_at: 9 }, { id: "k3", asked_by: "Manager", card_id: "a", closed_at: null }, { id: "k4", asked_by: "Manager", card_id: "b", closed_at: null }, { id: "k5", asked_by: "Ops", closed_at: null, withdrawn_at: 7 }], threads: { threads: [], messages: [] }, evidence: { "cards.a": { value: { phase: "build" } }, "cards.b": { value: { phase: "live" } }, "cards.z": { value: {} } } };
   const r = viewForTool(view, { owner_role: "Ops" });
   assert.deepEqual(r.cards.map((c) => c.id), ["a"]);
-  assert.deepEqual(r.asks.map((k) => k.id), ["k1", "k3"]);
+  assert.deepEqual(r.asks.map((k) => k.id), ["k1", "k3"], "k2 is closed, k4 sits on a done card, k5 is withdrawn (Checker 2's F3)");
+  assert.deepEqual(Object.keys(r.evidence), ["cards.a"], "the evidence of the cards returned and no other (Checker 2's F2)");
+  assert.deepEqual(r.evidence["cards.a"], { value: { phase: "build" } });
+});
+
+test("viewForTool: no argument is the very same whole view; summary: true is not", () => {
+  const view = { tag: "t", now: 1, cards: [], asks: [], evidence: {}, threads: { threads: [], messages: [] } };
+  assert.equal(viewForTool(view, {}), view);
+  assert.equal(viewForTool(view), view);
+  assert.equal(viewForTool(view, { summary: false }), view);
+  assert.equal(viewForTool(view, { summary: true }).summary, true);
 });
