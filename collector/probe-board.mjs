@@ -79,14 +79,14 @@ export async function liveJob({ base, headers, productUrl, fetchImpl = fetch, lo
 
 // The owners' dispatch (#C821): read the store's view, write dispatch.json and dispatch-state.json for the role watches. `dir` is
 // <stateDir>/<board>; roster and lead come from the team's board.config.json.
-export async function dispatchJob({ base, headers, fetchImpl = fetch, dir, roster, lead, ceiling, pairFolder = "", repoPath = "", pairCovers = undefined, now = Date.now, log = () => {} }) {
+export async function dispatchJob({ base, headers, fetchImpl = fetch, dir, roster, lead, ceiling, reviewers = null, pairFolder = "", repoPath = "", pairCovers = undefined, now = Date.now, log = () => {} }) {
   const r = await fetchImpl(`${base}/api/view`, { method: "GET", headers, redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   if (!r.ok) throw new Error(`view answered ${r.status}`);
   const view = await r.json();
   // #C1013: a pair built and waiting for the install covers the cards it descends from: no build turn for them. No pairFolder: nothing skipped.
   let covers = pairCovers ?? null;
   if (covers === null) { try { covers = pairCoversFor({ folder: pairFolder, repoPath }); } catch (e) { log(`dispatch: waiting pair not read: ${e?.message ?? e}`); } }
-  const run = dispatchRun(view, { dir, roster, lead, ceiling, now: now(), log, pairCovers: covers }); // #C973: the quota ceiling from the team config
+  const run = dispatchRun(view, { dir, roster, lead, ceiling, now: now(), log, pairCovers: covers, reviewers }); // #C1098: the checker phase's reviewer per repository; #C973: the quota ceiling from the team config
   // #C914: the queue file the builder's stack-ready command reads (ids only). A failed write never stops the dispatch.
   try { writeStackQueue(view, { dir, now: now() }); } catch (e) { log(`dispatch: stack-queue.json not written: ${e?.message ?? e}`); }
   // #C957: the open asks' numbers, for the Stop hook's red-ask check. A failed write never stops the dispatch.
@@ -126,7 +126,7 @@ export async function main(argv, { env = process.env, exit = (c) => process.exit
       if (checkConfig(raw).length) throw new Error("bad config");
       const full = fullConfig(raw), id = boardId(full);
       if (!id) throw new Error("no board link");
-      team = { dir: `${home(full.gate.stateDir)}/${id}`, roster: full.roster, lead: full.gate.managerRole, ceiling: full.collector.quotaCeilingPct, pairFolder: home(full.collector.pairFolder), repoPath: home(boardRepoPath(full.collector)) };
+      team = { dir: `${home(full.gate.stateDir)}/${id}`, roster: full.roster, lead: full.gate.managerRole, ceiling: full.collector.quotaCeilingPct, reviewers: full.collector.reviewers, pairFolder: home(full.collector.pairFolder), repoPath: home(boardRepoPath(full.collector)) };
     } catch { console.error("dispatch: pass --config <board.config.json> (a usable team config)"); return exit(64); }
   }
   const run = startRun(job);

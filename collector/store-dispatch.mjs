@@ -93,7 +93,8 @@ export function turnsOf(card, e, ctx = {}) {
   }
   if (!Object.hasOwn(PHASE_LANES, phase)) return [owner];
   const out = [];
-  if (!signed.includes(phase)) out.push({ role: PHASE_LANES[phase], phase, step: "review", sha, ...where, signed: signedBy });
+  // #C1098: the checker phase's reviewer is the one the board's config names for the card's repository (ctx.reviewer, a roster role); none names the phase's lane.
+  if (!signed.includes(phase)) out.push({ role: phase === "checker" && typeof ctx.reviewer === "string" ? ctx.reviewer : PHASE_LANES[phase], phase, step: "review", sha, ...where, signed: signedBy });
   // #C897: Security beside Checker for a Full card, or when the probe read a security review as needed from the branch's paths.
   const wantsSecurity = card.review_level === "Full" || (Array.isArray(e?.waitingFor) && e.waitingFor.includes("security"));
   if (phase === "checker" && wantsSecurity && !signed.includes("security")) out.push({ role: "Security", phase, step: "review", sha, ...where, signed: signedBy });
@@ -166,7 +167,16 @@ export function landingFrom(report, now) {
   const foldDue = fresh && report.foldDue === true && Number.isInteger(report.dataFragments) && report.dataFragments >= 1;
   return { fresh, refused, foldDue };
 }
-export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEILING_DEFAULT, pairCovers = null, landing = null } = {}) {
+// #C1098 (11-16: the dispatch sent #C1091 v2 and #C1096 v2, flight-board code, to Checker, who woke for nothing and passed them on each time): the checker phase's
+// reviewer for a card is the role the config's collector.reviewers names for the card's repository ("flight-board" is the board's own: a card with no repo word or
+// one of BOARD_REPO_WORDS), when that role is on the roster; otherwise the phase's own lane (Checker). `reviewers` is { repository word: role }.
+export function reviewerFor(card, reviewers, roster = []) {
+  if (!reviewers || typeof reviewers !== "object" || Array.isArray(reviewers)) return undefined;
+  const key = !card?.repo || BOARD_REPO_WORDS.has(card.repo) ? "flight-board" : card.repo;
+  const role = Object.hasOwn(reviewers, key) ? reviewers[key] : undefined;
+  return typeof role === "string" && Array.isArray(roster) && roster.includes(role) ? role : undefined;
+}
+export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEILING_DEFAULT, pairCovers = null, landing = null, reviewers = null, roster = [] } = {}) {
   const ev = view?.evidence ?? {};
   const agents = ev.agents?.value;
   const readAt = ev.agents?.readAt;
@@ -232,10 +242,10 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     // #C914: a card the probe marks stackHold (pushed, no stack-ready signal covers its head) AND that has a declared stack partner waiting to
     // start has no review turn, and is no builder turn either. Any other card dispatches as it always did.
     const held = inBoard && e?.stackHold === true && hasPartner(c);
-    const turns = turnsOf(c, e, { ...(inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {}), ...(pairCovers ? { pairCovers } : {}), ...(landing ? { landing } : {}) });
+    const turns = turnsOf(c, e, { ...(inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {}), ...(pairCovers ? { pairCovers } : {}), ...(landing ? { landing } : {}), ...(reviewerFor(c, reviewers, roster) ? { reviewer: reviewerFor(c, reviewers, roster) } : {}) });
     // #C1018 / #C1035: a tip a Checker session has claimed (the store's review claim) wakes no Checker for its review again: one checker per tip.
     const mine = held ? turns.filter((t) => t.step !== "review") : turns;
-    const shown = mine.filter((t) => !(t.role === "Checker" && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
+    const shown = mine.filter((t) => !(/^Checker(?: [0-9]{1,3})?$/.test(String(t.role)) && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
     cards.push({ group: batchOf(c), groupStarted: startedGroups.has(batchOf(c)), rework: shown.some((t) => t.role === c.owner_role && (t.step === "rework" || t.step === "reason")), queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }
   if (switchOn && cards.some((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step)))) {
@@ -477,9 +487,11 @@ export function writeLandHolds(view, { dir, now = Date.now() }) {
 }
 
 // One run over a view. Returns { wrote, why?, items }. `dir` is <stateDir>/<board>.
-export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_DEFAULT, now = Date.now(), log = () => {}, pairCovers = null }) {
+export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_DEFAULT, now = Date.now(), log = () => {}, pairCovers = null, reviewers = null }) {
   const landing = landingFrom(readJson(join(dir, LAND_REPORT_FILE)), now);
-  const input = dispatchInput(view, now, { lead, ceiling, pairCovers, landing });
+  // #C1098: an entry whose role is not on the roster is ignored (the reviewer would never be woken), and the log says so.
+  for (const [repo, role] of Object.entries(reviewers && typeof reviewers === "object" && !Array.isArray(reviewers) ? reviewers : {})) if (!Array.isArray(roster) || !roster.includes(role)) log(`dispatch: warning: collector.reviewers names ${String(role).replace(/[^A-Za-z0-9 _-]/g, "")} for ${String(repo).replace(/[^A-Za-z0-9._-]/g, "")}, which is not on the roster: that repository's checker reviews go to the phase's own lane`);
+  const input = dispatchInput(view, now, { lead, ceiling, pairCovers, landing, reviewers, roster });
   const sw = sessionWeek(view, now);
   if (sw.state === "stale") log(`dispatch: warning: the session's week reading is ${Math.round(sw.ageMs / 60e3)} min old (or from a week that reset): week usage unknown, the quota stop is off until a session writes it again`);
   if (input && atCeiling(view, now, ceiling)) log(`dispatch: week at ${Math.round(weekPctOf(view, now))}% of quota, ceiling ${ceiling}%: no new build work dispatched`);
