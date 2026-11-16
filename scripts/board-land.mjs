@@ -24,17 +24,25 @@ import { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC } from "../worker/probe-jobs.mjs";
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
 export const HOLDS_FRESH_MS = 10 * 60e3, MAX_ROUNDS = 10;
 const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
-// #C1090: a card writes its DATA line to docs/DATA.d/<card id>.md, never to the end of docs/DATA.md (every landing conflicted every waiting branch
-// there). A tip that edits docs/DATA.md is refused, unless every card it carries is the fold card (a Board-Id starting "fold-data-fragments"),
-// which runs `node scripts/data-fragments.mjs --write` and is signed like any card. The fold is a card, not a commit this job makes: the Worker's
-// self-deploy gate wants a Checker PASS and a Security SECURE on every commit it would deploy, and this job cannot sign.
+// #C1090: a card writes its dated "Changes" line to docs/DATA.d/<card id>.md, never to the end of docs/DATA.md (every landing conflicted every waiting branch
+// there). A tip that ADDS a dated line ("- YYYY-MM-DD: ...") to docs/DATA.md is refused, unless every card it carries is the fold card (a Board-Id starting
+// "fold-data-fragments"), which runs `node scripts/data-fragments.mjs --write` and is signed like any card. Any other edit of the file (a row, a principle, a
+// reworded line) still lands: Checker 2's F1 on v3, which refused every edit. The fold is a card, not a commit this job makes: the Worker's self-deploy gate
+// wants a Checker PASS and a Security SECURE on every commit it would deploy, and this job cannot sign.
 export const DATA_FILE = "docs/DATA.md", FOLD_CARD = /^fold-data-fragments(-[a-z0-9-]{1,40})?$/, FOLD_DUE = 5;
-export const editsData = (h) => Array.isArray(h?.changed) && h.changed.includes(DATA_FILE);
+export const DATA_FRAGMENT_DIR = "docs/DATA.d/", DATED_LINE = /^\+- \d{4}-\d{2}-\d{2}: /;
+// The git reads, as arguments (tested as data): three dots, the line's own changes against the merge base with main; --no-renames so a moved file is an add and a delete.
+export const dataDiffArgs = (main, sha) => ["diff", "-U0", "--no-renames", `${main}...${sha}`, "--", DATA_FILE];
+export const fragmentListArgs = (main) => ["ls-tree", "--name-only", main, DATA_FRAGMENT_DIR];
+// How many dated lines the diff adds to docs/DATA.md: null when the diff could not be read (git failed), never 0 for that.
+export const addedDatedLines = (diff) => (typeof diff === "string" ? diff.split("\n").filter((l) => DATED_LINE.test(l)).length : null);
+// How many fragments the tree listing holds: docs/DATA.d/<card id>.md, the README and anything else not a card file not counted.
+export const fragmentCount = (listing) => (typeof listing === "string" ? listing.split("\n").filter((p) => /^docs\/DATA\.d\/[a-z0-9][a-z0-9-]*\.md$/.test(p)).length : 0); // lower case only: README.md is not a card file
 export const signed = (notes) => /^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim()) && /^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim());
 
 // The tips to try, from the facts only. heads: [{ branch, sha, notes: { checker, security }, cards: [ids], onMain, forward, ahead }]
-// (onMain: already an ancestor of main; forward: main is an ancestor of it; ahead: commits it adds to main; changed: the paths the line changes against
-// main, #C1090). holds: the parsed land-holds.json or
+// (onMain: already an ancestor of main; forward: main is an ancestor of it; ahead: commits it adds to main; dataLines: how many dated lines the line adds
+// to docs/DATA.md, null when that could not be read, #C1090). holds: the parsed land-holds.json or
 // null. Returns { try: [head, ...] (the biggest line first), waiting: [{ branch, sha, why }], blocked: [{ branch, sha, cards, reasons }] }.
 // waiting is quiet (not signed, held, no fresh holds); blocked is a refusal Release must see (signed and free, but not a fast-forward of main).
 export function landPlan({ heads, holds, now }) {
@@ -51,8 +59,8 @@ export function landPlan({ heads, holds, now }) {
     if (!cards.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: "no Board-Id trailer names a card, so no hold can be read" }); continue; }
     if (unknown.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `the holds file does not list ${unknown.join(", ")}` }); continue; }
     if (held.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `held: ${held.map((c) => `${c} (${holds.cards[c]})`).join(", ")}` }); continue; }
-    if (h.changed === null) { out.waiting.push({ branch: h.branch, sha: h.sha, why: "the paths it changes could not be read" }); continue; }
-    if (editsData(h) && !cards.every((c) => FOLD_CARD.test(c))) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: [`it edits ${DATA_FILE}: write the card's line to docs/DATA.d/<card id>.md instead (only the fold card, a Board-Id starting fold-data-fragments, edits ${DATA_FILE})`] }); continue; }
+    if (h.dataLines === null) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `its change to ${DATA_FILE} could not be read` }); continue; }
+    if (Number.isInteger(h.dataLines) && h.dataLines > 0 && !cards.every((c) => FOLD_CARD.test(c))) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: [`it adds a dated line to ${DATA_FILE}: write the card's line to docs/DATA.d/<card id>.md instead (only the fold card, a Board-Id starting fold-data-fragments, adds dated lines there; a row or a principle may still be edited in the file)`] }); continue; }
     if (!h.forward) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: ["it doesn't continue origin/main: rebase it on main and sign it again"] }); continue; }
     out.try.push(h);
   }
@@ -132,9 +140,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       const [branch, sha] = l.split(" ");
       const notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", sha])]));
       const cards = [...new Set((quiet(["log", "--format=%(trailers:key=Board-Id,valueonly,separator=%x2c)", `${main}..${sha}`]) ?? "").split(/[\n,]/).map((x) => x.trim()).filter(Boolean))];
-      const changedOut = quiet(["diff", "--name-only", `${main}...${sha}`]);
-      const changed = changedOut === null ? null : changedOut.split("\n").filter(Boolean);
-      return { branch, sha, notes, cards, changed, onMain: quiet(["merge-base", "--is-ancestor", sha, main]) !== null, forward: quiet(["merge-base", "--is-ancestor", main, sha]) !== null, ahead: Number(quiet(["rev-list", "--count", `${main}..${sha}`]) ?? 0) };
+      const dataLines = addedDatedLines(quiet(dataDiffArgs(main, sha)));
+      return { branch, sha, notes, cards, dataLines, onMain: quiet(["merge-base", "--is-ancestor", sha, main]) !== null, forward: quiet(["merge-base", "--is-ancestor", main, sha]) !== null, ahead: Number(quiet(["rev-list", "--count", `${main}..${sha}`]) ?? 0) };
     });
     return { main, heads };
   };
@@ -143,7 +150,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     return { code: r.status ?? 1, text: `${r.stderr ?? ""}\n${r.stdout ?? ""}` };
   };
   // #C975: the scheduled run's time budget (worker/probe-jobs.mjs: the land cadence's limit less a margin, and one tip's worst case).
-  const readFragments = () => (quiet(["ls-tree", "--name-only", "origin/main", "docs/DATA.d/"]) ?? "").split("\n").filter((p) => /^docs\/DATA\.d\/[a-z0-9][a-z0-9-]*\.md$/.test(p) && p !== "docs/DATA.d/README.md").length;
+  const readFragments = () => fragmentCount(quiet(fragmentListArgs("origin/main")));
   const report = landRun({ readFragments, readFacts, readHolds: () => readJson(join(dir, "land-holds.json")), release, dry, log: (s) => console.log(`land: ${s}`), budgetMs: (JOBS.land.limitSec - LAND_MARGIN_SEC) * 1000, tipMs: LAND_TIP_SEC * 1000 });
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(dir, "land-report.json"), part = `${file}.${process.pid}.part`;
