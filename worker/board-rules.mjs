@@ -1003,7 +1003,10 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
     // #C1093 (1): a note written in the last hour is the reason. (2): the owner's session is on another card, so this one is queued behind it, not slow.
     if (!missing && typeof c.next_note === "string" && c.next_note.trim() !== "" && Number.isFinite(c.moved_at) && c.moved_at <= now && now - c.moved_at < NOTE_FRESH_MS) continue;
     const on = roster[c.owner_role];
-    if (on && on.state === "working" && typeof on.card === "string" && on.card !== "" && on.card !== c.id) continue;
+    // Checker 2's M1 on e78bf708: (2) is only where the OWNER does the card's work: build (before it is started or while it is built), or a card sent back to it with findings.
+    // At language, design, checker, security and ship the card waits on a reviewer or on Release, and the owner has normally moved on: that wait is exactly what this line is for.
+    const ownerWorks = phase === "build" || isRework(c, v);
+    if (ownerWorks && on && on.state === "working" && typeof on.card === "string" && on.card !== "" && on.card !== c.id) continue;
     // #C1063 (11-12, #C1053: the line flipped every few minutes between "rework reason missing" and "slow with no reason", and neither Manager's rework_reason nor a note silenced it):
     // a rework card whose reason was attached within the hour has its reason (the card was written to then), and a rework card whose reason is still missing while its owner's
     // session is working this very card is being worked on: that owner attaches it. Neither says anything.
