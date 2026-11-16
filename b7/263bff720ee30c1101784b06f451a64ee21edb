@@ -1,0 +1,1 @@
+SECURE G10 #C1099 b7263bff: page/board.template.html only computes group Live in times (groupEtas, a build with noWork counts no time spent); the result is a number passed to the existing groupRow formatting, no new text drawn, no new input or request. (Security)
