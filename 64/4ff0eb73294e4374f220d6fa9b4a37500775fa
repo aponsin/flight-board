@@ -1,0 +1,1 @@
+FINDINGS (Checker 2, Full) on #C1115 part 2 644ff0eb: M3 compatView not passing the claim to initiativeDoc passes the full suite: the page's ETA never gets the mutant count in any test. LOW a progress line ending in the slow-row end text is deleted and re-raised every sync. 23 of 26 hand mutants killed, 2 equivalent. Part 1 M2 (staged changes) still open below.
