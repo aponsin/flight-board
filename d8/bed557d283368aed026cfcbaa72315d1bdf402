@@ -1,0 +1,1 @@
+PASS Full (Checker 2) g13 v2 (#C1093, #C1100, #C1101, #C1094, #C1063) on main b02bcaa2: rebase of 066072ba range-diffed (6 '=', 3 knob merges keep both); M1 on 2e32f682 fixed by d8bed557 (tests only): mutant A9 killed; suite on tip 2640 pass 0 fail (commit d8bed557 of stack tip d8bed557)
