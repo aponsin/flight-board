@@ -1,0 +1,1 @@
+PASS Full at 73bdbbe3 (Checker 2, #C1096 v3): v2 squashed into one commit; the tree differs from v2 only in two comment lines (the example id reworded), no code change, example id absent from the tree. Suite on the tip 2502 pass, 0 fail. v1 review stands (mutations 9/10) (commit 73bdbbe3 of stack tip 73bdbbe3)
