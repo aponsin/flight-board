@@ -140,7 +140,7 @@ test("card fields the old page draws (B4a): depends-on, issue counts with their 
   const ask = await tool("manager", "ask", { type: "Answer", title: "Start?", question: "Start?" });
   const a = await tool("manager", "card_create", { id: "card-a", title: "A", from_thread: ask.num });
   assert.equal(a.ok, true, JSON.stringify(a));
-  const b = await tool("manager", "card_create", { id: "card-b", title: "B", depends_on: ["card-a"], issues: { bugs: 2, security: 1 }, queue_pos: 3, owner_role: "Builder" });
+  const b = await tool("manager", "card_create", { id: "card-b", title: "B", summary: "B, a card with a dependency", depends_on: ["card-a"], issues: { bugs: 2, security: 1 }, queue_pos: 3, owner_role: "Builder" });
   assert.equal(b.ok, true, JSON.stringify(b));
   const docs = (await compat()).collections.initiatives, da = docs.find((x) => x.id === "card-a"), db = docs.find((x) => x.id === "card-b");
   assert.deepEqual(db.dependsOn, ["card-a"]); assert.deepEqual(db.issues, { bugs: 2, security: 1 }); assert.equal(db.queuePos, 3); assert.ok(db.issuesAt > 0);
@@ -163,7 +163,7 @@ test("card fields the old page draws (B4a): depends-on, issue counts with their 
 
 test("the done-test hold (B4b, Designer's gap 1): check_at is written, drawn as checkAt, lifted by null, and a bad time is refused", async () => {
   const { tool, compat } = make();
-  assert.equal((await tool("manager", "card_create", { id: "card-h", title: "H", check_at: 1_790_000_000_000 })).ok, true);
+  assert.equal((await tool("manager", "card_create", { id: "card-h", title: "H", summary: "H, a card with a check date", check_at: 1_790_000_000_000 })).ok, true);
   const get = async () => (await compat()).collections.initiatives.find((x) => x.id === "card-h");
   assert.equal((await get()).checkAt, 1_790_000_000_000);
   assert.equal((await tool("manager", "card_update", { id: "card-h", check_at: 1_791_000_000_000 })).ok, true);
@@ -175,7 +175,7 @@ test("the done-test hold (B4b, Designer's gap 1): check_at is written, drawn as 
 
 test("what a card's expected version is worked out from (B4b): repo, batch and bump are card words, drawn on the initiative, and bad ones are refused", async () => {
   const { tool, compat } = make();
-  assert.equal((await tool("manager", "card_create", { id: "card-v", title: "V", repo: "elsewhere", batch: "pair", bump: "minor" })).ok, true);
+  assert.equal((await tool("manager", "card_create", { id: "card-v", title: "V", summary: "V, a card with a version", repo: "elsewhere", batch: "pair", bump: "minor" })).ok, true);
   const get = async () => (await compat()).collections.initiatives.find((x) => x.id === "card-v");
   const d = await get(); assert.equal(d.repo, "elsewhere"); assert.equal(d.batch, "pair"); assert.equal(d.bump, "minor");
   assert.equal((await tool("manager", "card_update", { id: "card-v", repo: null, batch: null, bump: "patch" })).ok, true);

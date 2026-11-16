@@ -43,7 +43,10 @@ const COLUMNS = ["title", "summary", "size", "review_level", "from_thread", "tra
 const bool = (v) => (v === true ? 1 : v === false ? 0 : Array.isArray(v) || (v && typeof v === "object") ? JSON.stringify(v) : v);
 
 // A new card: words only. The id is the caller's, the number the store's.
-export async function createCard(db, now, who, fields) {
+// #C1087 (11-16: a card was created with no summary and the builder had nothing to build from): through the card_create TOOL (opts.needSummary, set by
+// board-worker.mjs) a card with no summary, or one that is only blanks, is refused unless from_thread names a thread that exists (an ask's number or a
+// thread of messages), which then explains the card. Store callers that pass no opts (the tests, the importers) are as before.
+export async function createCard(db, now, who, fields, opts = {}) {
   // #C748 (Checker F5): the check date is the lead's or the owner's on a new card too.
   if (fields && typeof fields === "object" && "check_at" in fields && !CHECK_AT_WRITERS.includes(who)) return refuse(db, now, { rule: "check-at-lead-only", detail: `${who ?? "unknown"} cannot set a card's check date; ${CHECK_AT_WRITERS.join(" or ")} can` }, fields.id, who);
   const bad = cardWriteRefusal(fields, null) ?? reviewHoldWriterRefusal(fields, who);
@@ -55,6 +58,11 @@ export async function createCard(db, now, who, fields) {
   if (typeof fields.id !== "string" || !PROBE_CARD_ID.test(fields.id) || fields.id.length > PROBE_CARD_ID_MAX) return refuse(db, now, { rule: "card-id", detail: `lowercase letters and digits in up to 5 words joined by hyphens, each word up to 16 characters, up to ${PROBE_CARD_ID_MAX} characters in all, so the probe can read the card` }, fields.id, who);
   if (typeof fields.title !== "string" || !fields.title.trim()) return refuse(db, now, { rule: "card-shape", detail: "title is required" }, fields.id, who);
   if (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(fields.id).first()) return refuse(db, now, { rule: "card-exists", detail: fields.id }, fields.id, who);
+  if (opts.needSummary && !(typeof fields.summary === "string" && fields.summary.trim())) {
+    const t = fields.from_thread;
+    const known = Number.isInteger(t) && t > 0 && (await db.prepare("SELECT 1 AS x FROM asks WHERE num = ? UNION ALL SELECT 1 AS x FROM messages WHERE thread_id = ?").bind(t, `t${t}`).first());
+    if (!known) return refuse(db, now, { rule: "card-summary", detail: "a new card needs a summary (what to build and why): write it, or give from_thread, the number of a thread that already explains the card" }, fields.id, who);
+  }
   // #C871: a new card may not take a place at or ahead of one the owner holds in its agent's queue (queueWriteRefusal).
   const floorBad = who !== "owner" && Number.isInteger(fields.queue_pos) && typeof fields.owner_role === "string" ? queueWriteRefusal(fields, null, who, await ownerFloor(db, fields.owner_role, fields.id)) : null;
   if (floorBad) return refuse(db, now, floorBad, fields.id, who);
