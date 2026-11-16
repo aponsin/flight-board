@@ -1,0 +1,1 @@
+SECURE #C1096 scan-skips-hex-commit-ids-v3 73bdbbe3 (tip, one commit): the signed v2 line (26b88d7d) squashed onto main 1fade8a2; the tree differs from 26b88d7d only in two comments (scripts/scan.mjs and its test) that no longer quote a commit id. Code unchanged. line from 1fade8a21db1d0d9925f30a1fad17effbef52bc8 (Security)
