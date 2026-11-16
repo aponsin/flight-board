@@ -37,7 +37,7 @@ Four steps, in order. Every path below is a placeholder: use your own.
 
 1. **Config, word list, install.** Write your `board.config.json` somewhere outside this repository, starting from
    `board.config.example.json`. The fields: `title`, `owner` (the person the board works for, as they sign),
-   `artifactUrl` (empty until step 2), `phases` (`[key, label]` in order), `roster` and `order` (the roles shown), `skips`
+   `boardId` (the board's id: the name of its state folder; 1 to 64 letters, digits or -), `storeUrl` (the board's address on the store), `artifactUrl` (only for the old artifact board of step 2: optional, and empty on a store board, where `boardId` stands in for the id in it; #C1075), `phases` (`[key, label]` in order), `roster` and `order` (the roles shown), `skips`
    (a phase only at a level, `unlessLevel`; skipped when an item field is false, `whenFalse`; or only when one is true,
    `unlessTrue`, for a review few items need, like a designer's on `lookChange: true`; with a `collector.reviewPaths` table, `{ phase: [path patterns] }`, a phase it names is read from the files the branch changed instead, and a typed field can only add it), `boardStart`, the usage labels, and the `gate`,
    `collector`, `nudges` and `decisions` blocks (below; `scripts/config.mjs` lists every field and its default). Write a private word

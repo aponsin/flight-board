@@ -102,8 +102,11 @@ def open_asks():
             cfg = json.load(f)
         gate = cfg.get("gate") if isinstance(cfg.get("gate"), dict) else {}
         sd = gate.get("stateDir") if isinstance(gate.get("stateDir"), str) and gate.get("stateDir") else "~/.flight-board"
+        # The board's id as scripts/config.mjs boardId() reads it (#C1054, #C1075): the boardId key when it is a plain id, else the id in artifactUrl.
+        key = cfg.get("boardId")
         bid = re.search(r"artifact/([A-Za-z0-9-]+)$", str(cfg.get("artifactUrl") or ""))
-        with open(os.path.join(os.path.expanduser(sd), bid.group(1) if bid else "no-board", "open-asks.json"), encoding="utf-8") as f:
+        board = key if isinstance(key, str) and re.fullmatch(r"[A-Za-z0-9-]{1,64}", key) else (bid.group(1) if bid else "no-board")
+        with open(os.path.join(os.path.expanduser(sd), board, "open-asks.json"), encoding="utf-8") as f:
             j = json.load(f)
         at, asks = j.get("at"), j.get("asks")
         now_ms = datetime.now().timestamp() * 1000

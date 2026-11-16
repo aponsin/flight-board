@@ -90,6 +90,9 @@ export function renderPrompt(template, values) {
   if (left) throw new Error(`${PROMPT_FILE}: no value for {{${left[1]}}}`);
   return text;
 }
+// #C1075: the {{BOARD}} value of the prompt. The old artifact board's link is optional now (the store is the board), and renderPrompt refuses an empty value, so
+// the board's link is its old link when it has one, else its address on the store, else its id.
+export const promptBoard = (config) => config.artifactUrl || config.storeUrl || boardId(config) || "";
 // The config the owner installed: the gate's pinned hook names it. The lead: the collector's fence sends only to it.
 // On the store (hooks.mjs --store) gate.mjs is gone: the hooks that remain, stop.mjs and publish.mjs, name the same config.
 // The gate's hooks must agree: two different configs name none, so a release refuses rather than read whichever comes first.
@@ -474,7 +477,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
 
     // The prompt and the page, both from the commit's snapshot, before anything leaves.
     const out = dirname(configPath);
-    const prompt = renderPrompt(at(sha)(PROMPT_FILE) ?? "", { CONFIG: configPath, BOARD: config.artifactUrl, LEAD_ROLE: config.gate.managerRole, LEAD: lead, CURRENT: link, OUT: home(config.collector.outDir) });
+    const prompt = renderPrompt(at(sha)(PROMPT_FILE) ?? "", { CONFIG: configPath, BOARD: promptBoard(config), LEAD_ROLE: config.gate.managerRole, LEAD: lead, CURRENT: link, OUT: home(config.collector.outDir) });
     // #C917: the page is built only to check it (its scenarios), in the tool's own temporary folder, never beside the config:
     // the old artifact board is frozen and the store page ships with the owner's deploy pair, so nothing is left to republish.
     const page = join(tmp, `board-${sha.slice(0, 7)}.html`), promptPath = join(out, `collector-prompt-${sha.slice(0, 7)}.txt`);
