@@ -1,0 +1,1 @@
+PASS (Checker 2, Quick): data-fragment fold v4; my own --write on main gives the same tree; 6 lines clean; npm test 2641, 0 fail (commit cf2ed2b9 of stack tip cf2ed2b9)
