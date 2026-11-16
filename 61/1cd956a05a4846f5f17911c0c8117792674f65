@@ -1,0 +1,1 @@
+PASS Quick (Checker 2): docs-only DATA fold of 8 fragments; data-fragments.mjs --write on main caddefb5 reproduces the tip exactly; suite on tip 2528 pass 0 fail (commit 611cd956 of stack tip 611cd956)
