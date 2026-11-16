@@ -158,12 +158,12 @@ test("the header says why the probe is failing, or that it is slow; nothing for 
   const fail = html({ state: "ok", lastAt: T, why: "state: bad (first: agents.Security.card: not allowed)" });
   assert.match(fail, /<span class="chip bad" title="probe failing: state: bad \(first: agents\.Security\.card: not allowed\)">/);
   const both = html({ state: "silent", since: T, why: "node exited 1" });
-  assert.match(both, /silent since \d{1,2}:\d\d [ap]m MT: node exited 1/);
+  assert.match(both, /silent since \d{1,2}:\d\d [ap]m MT, step clocks paused: node exited 1/);
   const slow = html({ state: "ok", lastAt: T, slow: 155 });
   assert.match(slow, /<span class="chip warn" title="probe slow: 155 s of 170">/);
   // The limit in the text is the job table's, not a number typed in the header (#C996: it said "of 90" after the limit moved).
   const was = JOBS.evidence.limitSec;
   try { JOBS.evidence.limitSec = 99; assert.match(html({ state: "ok", lastAt: T, slow: 80 }), /probe slow: 80 s of 99">/); } finally { JOBS.evidence.limitSec = was; }
-  assert.match(html({ state: "silent", since: T }), /<span class="chip bad" title="probe silent since \d{1,2}:\d\d [ap]m MT">/, "silent alone reads as before");
+  assert.match(html({ state: "silent", since: T }), /<span class="chip bad" title="probe silent since \d{1,2}:\d\d [ap]m MT, step clocks paused">/, "silent alone says the step clocks are paused (#C990)");
   assert.match(html({ state: "ok", why: "<img src=x>" }), /&lt;img src=x&gt;/, "the line is escaped");
 });

@@ -7,7 +7,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, writeEvidence, wakeAsk, takeInbox, readView } from "../worker/board-store.mjs";
+import { createCard, writeEvidence, readView } from "../worker/board-store.mjs";
+import { wakeAsk, takeInbox, beat } from "./helpers/beating-store.mjs";
 import { AGENT_STALL, agentStallRow, agentStallOf, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs";
 import { agentStallCards, dispatchRun } from "../collector/store-dispatch.mjs";
 import { dispatchLine, dispatchPending, dispatchSeen } from "../gate/reset.mjs";
@@ -26,6 +27,7 @@ async function world() {
   return db;
 }
 async function step(db, now, { checker = { state: "idle", tool: null, card: null, since: T } } = {}) {
+  await beat(db, now - 1000); // the probe posts every minute: the gap since the last step is no outage (#C990)
   await writeEvidence(db, now, "probe", "cards.card-a", { lit: ["checker"], phase: "checker", ci: "none" });
   await writeEvidence(db, now, "probe", "agents", { Checker: checker, Boardsmith: { state: "idle", tool: null, card: null, since: now - 1000 }, Manager: { state: "idle", tool: null, card: null, since: now - 1000 } });
   await wakeAsk(db, now);

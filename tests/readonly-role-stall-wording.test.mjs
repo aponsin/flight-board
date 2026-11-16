@@ -4,7 +4,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { stalledWaits, STALL_AFTER_MS, READ_ONLY_ROLES, POSTED_FRESH_MS } from "../worker/board-rules.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, writeEvidence, wakeAsk, takeInbox, postMessage } from "../worker/board-store.mjs";
+import { createCard, writeEvidence, postMessage } from "../worker/board-store.mjs";
+import { wakeAsk, takeInbox } from "./helpers/beating-store.mjs";
 
 const T = 1_800_000_000_000, MIN = 60e3, NOW = T + STALL_AFTER_MS;
 import { mtTime as hhmm } from "../worker/team-time.mjs"; // #C983

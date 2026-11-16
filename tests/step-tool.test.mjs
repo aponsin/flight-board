@@ -3,7 +3,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, writeEvidence, writeStep, readView, wakeAsk } from "../worker/board-store.mjs";
+import { createCard, writeEvidence, writeStep, readView } from "../worker/board-store.mjs";
+import { wakeAsk } from "./helpers/beating-store.mjs";
 import { stepRefusal } from "../worker/board-rules.mjs";
 import { compatView, derivedDoc } from "../worker/compat-view.mjs";
 import { TOOLS } from "../worker/board-worker.mjs";

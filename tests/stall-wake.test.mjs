@@ -6,7 +6,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, writeEvidence, wakeAsk, takeInbox } from "../worker/board-store.mjs";
+import { createCard, writeEvidence } from "../worker/board-store.mjs";
+import { wakeAsk, takeInbox } from "./helpers/beating-store.mjs";
 import { stalledWaits, STALL_AFTER_MS } from "../worker/board-rules.mjs";
 
 const T = 1_800_000_000_000, MIN = 60_000;

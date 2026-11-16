@@ -8,7 +8,8 @@ import { join } from "node:path";
 import { dispatchRun } from "../collector/store-dispatch.mjs";
 import { stalledWaits, STALL_AFTER_MS } from "../worker/board-rules.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard, updateCard, writeEvidence, wakeAsk, takeInbox } from "../worker/board-store.mjs";
+import { createCard, updateCard, writeEvidence } from "../worker/board-store.mjs";
+import { wakeAsk, takeInbox } from "./helpers/beating-store.mjs";
 
 const NOW = 1_800_000_000_000, MIN = 60e3, T = NOW;
 const ROSTER = ["Manager", "Builder", "Checker"], LEAD = "Manager";
