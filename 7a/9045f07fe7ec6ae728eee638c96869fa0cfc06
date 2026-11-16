@@ -1,0 +1,1 @@
+SECURE G9 old-board-code-cleanup-v4 7a9045f0: by diff on signed 6d653728. One BOARD_ID [A-Za-z0-9-]{1,64} in config, isBoardSlug and prepareStoreState (no dot or slash: the state folder stays in the probe's dir); plus a test for pinCopy twice. No new route, secret, path or network call. line from da209babeffd6b26de0f00d9078d3e8015aaf0bc (Security)
