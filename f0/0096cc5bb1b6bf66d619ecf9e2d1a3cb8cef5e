@@ -1,0 +1,1 @@
+PASS Checker 2: pack-hooks-step-store-only v2 5f3817fe9bbce184908c6ce46cf1c5c588f67c19 (stale base: rebase onto 3316bb35 before landing); suite 2383 pass 0 fail; see the note on the tip (commit f00096cc of stack tip 5f3817fe)
