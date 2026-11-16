@@ -1,0 +1,1 @@
+SECURE #C1106 part B b02bcaa2 (tip): one commit on signed f852543d, tests and docs only (tests/ops-knobs-push-wiring.test.mjs, a CHANGELOG.d and a DATA.d line). No code change; the doc lines name settings and defaults, no secret or private value. New test file 7 pass, 0 fail. (Security)
