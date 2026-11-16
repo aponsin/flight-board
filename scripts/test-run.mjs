@@ -5,7 +5,7 @@
 // one); a test that does not remove what it made leaves an entry there; the wrapper names the entries (first 20, with their sizes), removes the
 // folder so the leak does not pile up, and exits 1. A failing test run keeps its own exit code.
 // usage: node scripts/test-run.mjs [test files or globs...]   (default: tests/*.test.mjs, which node expands itself)
-import { mkdtempSync, readdirSync, lstatSync, rmSync, existsSync, realpathSync } from "node:fs";
+import { mkdtempSync, readdirSync, lstatSync, rmSync, existsSync, realpathSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -48,18 +48,36 @@ export function leftoverLine(list, max = 20) {
   return `TEST TEMP LEFTOVERS: ${list.length} ${list.length === 1 ? "entry" : "entries"}, ${mb(total)} MB, left by tests that did not remove their own temp folder: ${shown}${groups.length > max ? `, and ${groups.length - max} more prefixes` : ""}. Remove it in the test (afterEach / finally with rmSync(dir, { recursive: true, force: true })).`;
 }
 
-// Runs the suite; returns { status, left }. `run` and the temp parent are parameters so a test can drive it without the whole suite.
-export function runSuite({ args = ["tests/*.test.mjs"], parent = process.env.TMPDIR || tmpdir(), run = spawnSync, cwd = process.cwd() } = {}) {
+// #C1091: the failing tests, one "FAILED <file>: <name> -- <why>" line each, written by scripts/test-failures-reporter.mjs beside the spec reporter into
+// FAILURES_NAME in the run's root, copied to <parent>/last-suite-failures.txt (or SUITE_FAILURES_FILE) when the run ends (a clean run removes the old
+// copy), and printed as the LAST lines of the run: a cut-off run still shows what failed (11-16: a red first run on #C1075 whose output was cut).
+export const FAILURES_NAME = "failures.txt", FAILURES_COPY = "last-suite-failures.txt", FAILURES_SHOWN = 40;
+const REPORTER = pathToFileURL(fileURLToPath(new URL("./test-failures-reporter.mjs", import.meta.url))).href;
+export const failuresOf = (text) => String(text ?? "").split("\n").filter((l) => l.startsWith("FAILED "));
+// The closing lines: how many failed, the first FAILURES_SHOWN, "and N more", and where the whole list is. "" when nothing failed.
+export function failuresLine(list, file, max = FAILURES_SHOWN) {
+  if (!list.length) return "";
+  return [`FAILED TESTS (${list.length}):`, ...list.slice(0, max), ...(list.length > max ? [`... and ${list.length - max} more`] : []), `(the whole list: ${file})`].join("\n");
+}
+
+// Runs the suite; returns { status, left, failed, failuresFile }. `run` and the temp parent are parameters so a test can drive it without the whole suite.
+export function runSuite({ args = ["tests/*.test.mjs"], parent = process.env.TMPDIR || tmpdir(), run = spawnSync, cwd = process.cwd(), failuresFile = process.env.SUITE_FAILURES_FILE || join(parent, FAILURES_COPY) } = {}) {
   const root = mkdtempSync(join(parent, "suite-"));
   let status = 1;
   try {
     // NODE_OPTIONS, not a flag, so the preload also reaches the node processes a test starts (scripts/board-release.mjs leaves its snapshot folder
     // when it ends with process.exit inside its try, and it is owner-pinned, so it is cleaned from outside).
     const NODE_OPTIONS = [process.env.NODE_OPTIONS, `--import=${PRELOAD}`].filter(Boolean).join(" ");
-    const r = run(process.execPath, ["--test", ...args], { cwd, env: { ...process.env, TMPDIR: root, NODE_OPTIONS }, stdio: "inherit" });
+    const list = join(root, FAILURES_NAME);
+    const r = run(process.execPath, ["--test", "--test-reporter=spec", "--test-reporter-destination=stdout", `--test-reporter=${REPORTER}`, `--test-reporter-destination=${list}`, ...args], { cwd, env: { ...process.env, TMPDIR: root, NODE_OPTIONS }, stdio: "inherit" });
     status = typeof r.status === "number" ? r.status : 1;
+    let text = "";
+    try { text = readFileSync(list, "utf8"); } catch { /* no failure was reported */ }
+    const failed = failuresOf(text);
+    try { rmSync(list, { force: true }); } catch { /* the leftovers check will name it */ }
+    try { if (failed.length) writeFileSync(failuresFile, `${failed.join("\n")}\n`); else rmSync(failuresFile, { force: true }); } catch { /* the lines are printed anyway */ }
     const left = leftovers(root);
-    return { status, left, root };
+    return { status, left, root, failed, failuresFile };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -69,7 +87,9 @@ export function runSuite({ args = ["tests/*.test.mjs"], parent = process.env.TMP
 // false and the script ran nothing and exited 0.
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2);
-  const { status, left } = runSuite(args.length ? { args } : {});
+  const { status, left, failed, failuresFile } = runSuite(args.length ? { args } : {});
   if (left.length) console.error(leftoverLine(left));
+  // Last: whatever scrolled or was cut above, these lines name every failing test.
+  if (failed.length) console.error(failuresLine(failed, failuresFile));
   process.exit(status !== 0 ? status : left.length ? 1 : 0);
 }
