@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
-import { agentRank, startedGroupSet, openGroupWithheld } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
+import { agentRank, startedGroupSet, openGroupWithheld, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -414,6 +414,22 @@ export function foldDueCheck(landing, before, agents, now) {
   return { card: { id, who: FOLD_DUE_ROLE, status: "active", num: null, waitingOn: null, turns: [{ role: FOLD_DUE_ROLE, phase: "live", step: "folddue" }] }, fold };
 }
 
+// #C1097 (11-16: three signed cards sat with Boardsmith and #C1095 with Release for hours; the stalls were in Manager's inbox and nothing woke the agents): an
+// idle-agent stall (the store's view.agentStalls, each with the time the store first raised it) that is STALL_WAKE_AFTER_MS old is a turn for the stalled role,
+// as a pair or a post turn is: the card is a pseudo-card `stall-<num>-<hash of the reason>`, so the watch's seen file prints its line once, and a stall whose reason
+// changes is a new card and fires again. The stall still goes to Manager's inbox as before (the store). The lead gets no such line (its own wake is the inbox).
+const fnv = (s) => { let h = 0x811c9dc5; for (const ch of String(s)) { h ^= ch.codePointAt(0); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(16).padStart(8, "0"); };
+export function agentStallCards(view, now, lead = "Manager") {
+  const out = [];
+  for (const s of Array.isArray(view?.agentStalls) ? view.agentStalls : []) {
+    if (!s || typeof s.role !== "string" || s.role === lead || typeof s.reason !== "string" || !Number.isFinite(s.at) || s.at > now + 5_000 || now - s.at < STALL_WAKE_AFTER_MS) continue;
+    const num = (Array.isArray(view?.cards) ? view.cards : []).find((c) => c && c.id === s.card_id)?.num;
+    if (!Number.isInteger(num)) continue;
+    out.push({ id: `stall-${num}-${fnv(`${s.role}|${s.reason}`)}`, who: s.role, status: "active", num, waitingOn: null, turns: [{ role: s.role, phase: "stall", step: "stall" }] });
+  }
+  return out;
+}
+
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, "utf8")); } catch { return null; } };
 const writeAtomic = (path, text) => { const tmp = `${path}.${process.pid}.part`; writeFileSync(tmp, text, { mode: 0o600 }); renameSync(tmp, path); };
 
@@ -478,7 +494,7 @@ export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_D
   const ship = afterShip(view, state, input.agents, now);
   const daily = dailyCheck(state, input.agents, now);
   const fold = foldDueCheck(landing, state, input.agents, now);
-  const r = dispatchItems({ cards: [...input.cards, ...(ship.card ? [ship.card] : []), ...(daily.card ? [daily.card] : []), ...(fold.card ? [fold.card] : [])], agents: input.agents, asked: input.asked, queues: input.queues, roster, lead, now, before: state });
+  const r = dispatchItems({ cards: [...input.cards, ...(ship.card ? [ship.card] : []), ...(daily.card ? [daily.card] : []), ...(fold.card ? [fold.card] : []), ...agentStallCards(view, now, lead)], agents: input.agents, asked: input.asked, queues: input.queues, roster, lead, now, before: state });
   const live = ship.card && r.items.some((i) => i.card === ship.card.id) && !Number.isFinite(ship.live.wokenAt) ? { ...ship.live, wokenAt: now } : ship.live;
   const day = daily.card && r.items.some((i) => i.card === daily.card.id) && !Number.isFinite(daily.daily.wokenAt) ? { ...daily.daily, wokenAt: now } : daily.daily;
   const folded = fold.card && r.items.some((i) => i.card === fold.card.id) && !Number.isFinite(fold.fold.wokenAt) ? { ...fold.fold, wokenAt: now } : fold.fold;

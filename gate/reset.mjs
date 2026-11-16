@@ -168,6 +168,8 @@ export const DISPATCH_STEPS = {
   // #C916: the lead posted on the card's thread after its owner went idle.
   post: "has a new post from the lead on its thread; read the thread on the board and act on it",
   // #C1090: five or more docs/DATA.d fragments wait on main (the landing job's report says so): the fold is a card of its own, signed like any other.
+  // #C1097: a card has waited for this role 30 minutes while the role sat idle (the stall the board also gave Manager).
+  stall: "has waited for you 30 minutes while you were idle; read it on the board and pick it up now",
   folddue: "FOLD DUE: 5 or more DATA fragments wait in docs/DATA.d on main; cut the fold card (a Board-Id starting fold-data-fragments, a branch that only runs node scripts/data-fragments.mjs --write), push it and send READY",
 };
 // #C872: an answered Decision on a card wakes the card's owner with the answer quoted. The answer is the owner's choice (an option Manager

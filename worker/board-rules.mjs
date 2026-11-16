@@ -749,6 +749,19 @@ export function whoForPhase(cardId, phase, agents, ownerRole) {
 // Pure: cards = rows {id, num, owner_role, blocked_reason, paused, dropped, waiting_on}; evidence = {cardId: reading}; agents = the
 // `agents` evidence; openAskCards = Set of card ids with an open ask; phaseStart = Map "<card>|<phase>" -> ms. Times in the reasons are Mountain Time (#C983).
 export const STALL_AFTER_MS = 15 * 60_000;
+// #C1097 (11-16, about 5 am to 10 am MT: three signed cards sat with Boardsmith and #C1095 with Release; the stalls were in Manager's inbox only, and nothing
+// woke the agents): a stall of stalledWaits (an idle or sessionless agent, a card waiting for it) that has lasted STALL_WAKE_AFTER_MS since the store first
+// raised it also gets a DISPATCH line for the stalled role, by the dispatch's own path (collector/store-dispatch.mjs agentStallCards); the stall still goes to
+// Manager's inbox as before. The store keeps each CURRENT such stall as a row of stall_wakes under card_id "agent-stall:<card id>" and reason "<role>|<reason>",
+// already taken (Manager's inbox never holds it), created_at the time it was first raised; the row goes when the stall is over, and a stall with a new reason is a
+// new row, so the line fires again only when the reason changes. Role names are plain (no "|").
+export const AGENT_STALL = "agent-stall:", STALL_WAKE_AFTER_MS = 30 * 60_000;
+export const agentStallRow = (s) => (typeof s?.card_id === "string" && typeof s.role === "string" && /^[A-Za-z0-9 _-]{1,24}$/.test(s.role) && typeof s.reason === "string" ? { card_id: `${AGENT_STALL}${s.card_id}`, reason: `${s.role}|${s.reason}` } : null);
+// The view's rows read back: { card_id, role, reason, at }.
+export const agentStallOf = (r) => {
+  const bar = typeof r?.reason === "string" ? r.reason.indexOf("|") : -1;
+  return typeof r?.card_id === "string" && r.card_id.startsWith(AGENT_STALL) && bar > 0 ? { card_id: r.card_id.slice(AGENT_STALL.length), role: r.reason.slice(0, bar), reason: r.reason.slice(bar + 1), at: r.created_at } : null;
+};
 // #C846: whether a card waits for a card it depends on (depends_on, a JSON list of ids): one that is on the board, not dropped and not
 // live. One the board does not have, or a dropped one, holds nothing (as the dispatch reads it, #C845).
 // #C1082: with the board repository's stack switch on (stackOn), a dependency the SAME role has pushed is satisfied for a board card, as the dispatch's
