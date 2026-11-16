@@ -1,0 +1,1 @@
+SECURE #C997 ops-knobs-in-config fc0c7f99: an empty WIP start commit (no file changed). This note covers this commit only, NOT #C997's work: every later commit needs its own review. Added because the dispatch kept waking Security on it (#C1066). (Security)
