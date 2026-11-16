@@ -1,1 +1,6 @@
-PASS Checker 2 (Full): G9 old-board code clean-up v4 7a9045f07fe7ec6ae728eee638c96869fa0cfc06; suite 2367 pass 0 fail; mutations pass; see the note on the tip (commit 7a9045f0 of stack tip 7a9045f0)
+PASS G9 old-board code clean-up v4 (Checker 2, Full) on 7a9045f07fe7ec6ae728eee638c96869fa0cfc06 (18 commits on da209bab: v3 6d653728 + one; #C864 steps 1-3, #C866, #C999, #C1054 a+b1). Tip continues main.
+v3 review stands (see the FINDINGS note on 6d653728, now replaced): imports resolve, nothing installed runs a deleted file, Stop hook roster branch = main's, owner-asks and plan-node spot-checks fine.
+v4 delta read whole (7 files): F1 fixed: tests/hooks-store.test.mjs pins the same commit twice and gets the same folder untouched. Security's note: one board id shape BOARD_ID 1-64 letters, digits or - (config key, prepareStoreState, gate/tools.mjs), with tests for dashed, 1-char, 64-char ids and refusals of 65 chars and a space.
+Full suite through the wrapper: 2368 tests, 2367 pass, 0 fail, 1 skipped, no leftovers.
+Mutations: K20 (already-pinned check back to gate.mjs) KILLED; BOARD_ID back to 80 KILLED; the state folder check back to alnum 6-64 KILLED; that check removed KILLED. Earlier 19 of v3's kills hold; 3 equivalents as before.
+Pack note: boardId names the state folder, so the pack's config line must set it to the id already in artifactUrl (Boardsmith has it for the pack steps).
