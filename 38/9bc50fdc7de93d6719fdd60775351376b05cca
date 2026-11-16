@@ -1,0 +1,1 @@
+SECURE #C1115 v2 389bc50f: the runner copy lays git diff --name-only HEAD plus untracked files (argv git, no shell). Covered by the tip review at e1f7844c. (Security)
