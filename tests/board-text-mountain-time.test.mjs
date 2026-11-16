@@ -6,7 +6,6 @@ import { readFileSync } from "node:fs";
 import { mtTime, mtDayTime, TEAM_TZ } from "../worker/team-time.mjs";
 import { heldWakes, stalledWaits, STALL_AFTER_MS, zTimeIn } from "../worker/board-rules.mjs";
 import { headerHtml } from "../worker/page-header.mjs";
-import { signalText } from "../collector/rework.mjs";
 import { setDoorSession, guardedInbox } from "../worker/board-store.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 
@@ -80,12 +79,6 @@ test("the Probe chip says 'silent since' in Mountain Time", () => {
   const html = headerHtml({ live: null, probe: { state: "silent", since: Date.UTC(2026, 10, 12, 3, 45) } });
   assert.match(html, /silent since 8:45 pm MT/);
   assert.doesNotMatch(html, Z_TIME);
-});
-
-test("the rework signal says Mountain Time, not UTC", () => {
-  const s = signalText({ kind: "findings", who: "Designer", at: Date.UTC(2026, 10, 12, 20, 52) }, (x) => x);
-  assert.equal(s, "FINDINGS by Designer at 1:52 pm MT");
-  assert.equal(zTimeIn(s), null, "#C979's own check finds no Z time in it");
 });
 
 test("no board source prints a time with toISOString(...)Z or a UTC label any more", () => {

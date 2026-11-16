@@ -40,7 +40,7 @@ test("refused: S unsigned, a pinned change after S, a side branch, or not from t
 });
 
 test("verdict: a waiting pack it accepts covers the pinned files and the settings block; refusals replace the file list", () => {
-  const base = { forward: true, notes: SIGNED, pinned: "1".repeat(40), changed: ["gate/rules.mjs", "page/board.template.html"], owned: ["gate/rules.mjs"], settingsChanged: true, capabilities: ["db"] };
+  const base = { forward: true, notes: SIGNED, pinned: "1".repeat(40), changed: ["gate/tools.mjs", "page/board.template.html"], owned: ["gate/tools.mjs"], settingsChanged: true, capabilities: ["db"] };
   assert.equal(verdict(base).ok, false, "as before, with no pack");
   assert.deepEqual(verdict({ ...base, pending: { sha: S, refusals: [] } }).refusals, []);
   const r = verdict({ ...base, pending: { sha: null, refusals: ["a pinned change on its line isn't signed"] } }).refusals;
@@ -70,7 +70,7 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
     execFileSync("git", ["clone", "-q", join(D, "origin.git"), W]);
     const commit = (file, msg) => { appendFileSync(join(W, file), file.endsWith(".html") ? "\n<!-- x -->\n" : "\n// x\n"); git(W, "commit", "-qam", `${msg}\n\nBoard-Id: pack-card`); return git(W, "rev-parse", "HEAD"); };
     const sign = (sha, checker = "PASS Quick") => { git(W, "notes", "--ref=checker", "add", "-f", "-m", checker, sha); git(W, "notes", "--ref=security", "add", "-f", "-m", "SECURE", sha); };
-    const Sx = commit("gate/rules.mjs", "the pack"); sign(Sx);
+    const Sx = commit("gate/tools.mjs", "the pack"); sign(Sx);
     const P = commit("page/board.template.html", "a page"); sign(P);
     git(W, "push", "-q", "origin", "refs/notes/checker", "refs/notes/security");
     const H = join(D, "home"), cfg = join(H, "board.config.json");
@@ -79,7 +79,7 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
     writeFileSync(cfg, JSON.stringify({ ...conf, artifactUrl: "https://claude.ai/" + "artifact/AbCdEfGh123", collector: { ...conf.collector, outDir: join(H, "out") } }));
     mkdirSync(join(H, ".flight-board/AbCdEfGh123/.claude"), { recursive: true });
     writeFileSync(join(H, ".flight-board/AbCdEfGh123/.claude/settings.local.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '${H}/x/collector/fence.mjs' --send-to Manager` }] }] } }));
-    writeFileSync(join(H, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: `node '${H}/.flight-board/install/${B}/gate/gate.mjs' --config '${cfg}'` }] }] } }));
+    writeFileSync(join(H, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: `node '${H}/.flight-board/install/${B}/gate/stop.mjs' --config '${cfg}'` }] }] } }));
     const run = (sha, pack = "v3.51") => { try { return { ok: true, out: execFileSync(process.execPath, [join(REPO, "scripts/board-release.mjs"), sha, "--dry-run"], { env: { ...process.env, HOME: H, FLIGHT_BOARD_REPO: W, BOARD_PACK: pack }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; } catch (e) { return { ok: false, out: `${e.stdout}${e.stderr}` }; } };
     const good = run(P);
     assert.ok(good.ok, good.out);
@@ -89,7 +89,7 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
     assert.ok(!unlabelled.ok && /the page has no pack label: set BOARD_PACK=vN\.NN/.test(unlabelled.out), unlabelled.out);
     // A signed pinned change on top is the newest waiting pack itself (Security: "the newest one if all its pinned
     // ancestors are also signed"); it goes to main, and its pinned code still waits for the owner's install.
-    const P2 = commit("gate/gate.mjs", "a newer pack"); sign(P2);
+    const P2 = commit("gate/stop.mjs", "a newer pack"); sign(P2);
     git(W, "push", "-q", "-f", "origin", "refs/notes/checker", "refs/notes/security");
     const newer = run(P2);
     assert.ok(newer.ok && newer.out.includes(`the waiting pack's only: ${P2.slice(0, 12)}`), newer.out);
@@ -102,8 +102,8 @@ test("board-release --dry-run on a scratch repository: P on a waiting signed pac
     // #C847: the CLI refuses a tip when a lower commit on main..tip has no Board-Id trailer, even though the tip itself has one (the log is
     // main..sha, not the tip alone, and the verdict gets it). Both are signed and the unsigned pack is signed again, so only this refuses.
     sign(Sx); git(W, "push", "-q", "-f", "origin", "refs/notes/checker", "refs/notes/security");
-    appendFileSync(join(W, "gate/gate.mjs"), "\n// y\n"); git(W, "commit", "-qam", "no trailer here"); const Nt = git(W, "rev-parse", "HEAD"); sign(Nt);
-    const T = commit("gate/gate.mjs", "a trailered tip on it"); sign(T);
+    appendFileSync(join(W, "gate/stop.mjs"), "\n// y\n"); git(W, "commit", "-qam", "no trailer here"); const Nt = git(W, "rev-parse", "HEAD"); sign(Nt);
+    const T = commit("gate/stop.mjs", "a trailered tip on it"); sign(T);
     git(W, "push", "-q", "-f", "origin", "refs/notes/checker", "refs/notes/security");
     const bare = run(T);
     assert.ok(!bare.ok && new RegExp(`no Board-Id trailer naming a card: ${Nt.slice(0, 12)} `).test(bare.out), bare.out);

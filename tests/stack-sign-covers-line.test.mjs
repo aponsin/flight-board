@@ -62,15 +62,15 @@ test("board-release --dry-run: a line sign on the tip covers an unsigned pack be
     const commit = (file, msg) => { appendFileSync(join(W, file), file.endsWith(".html") ? "\n<!-- x -->\n" : "\n// x\n"); git(W, "commit", "-qam", `${msg}\n\nBoard-Id: line-card`); return git(W, "rev-parse", "HEAD"); };
     const note = (sha, checker, security) => { git(W, "notes", "--ref=checker", "add", "-f", "-m", checker, sha); git(W, "notes", "--ref=security", "add", "-f", "-m", security, sha); };
     const push = () => git(W, "push", "-q", "-f", "origin", "refs/notes/checker", "refs/notes/security");
-    const Sx = commit("gate/rules.mjs", "the pack");
-    const P2 = commit("gate/gate.mjs", "a newer pack");
+    const Sx = commit("gate/tools.mjs", "the pack");
+    const P2 = commit("gate/stop.mjs", "a newer pack");
     const H = join(D, "home"), cfg = join(H, "board.config.json");
     mkdirSync(join(H, ".claude"), { recursive: true });
     const conf = JSON.parse(readFileSync(join(REPO, "board.config.example.json"), "utf8"));
     writeFileSync(cfg, JSON.stringify({ ...conf, artifactUrl: "https://claude.ai/" + "artifact/AbCdEfGh123", collector: { ...conf.collector, outDir: join(H, "out") } }));
     mkdirSync(join(H, ".flight-board/AbCdEfGh123/.claude"), { recursive: true });
     writeFileSync(join(H, ".flight-board/AbCdEfGh123/.claude/settings.local.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '${H}/x/collector/fence.mjs' --send-to Manager` }] }] } }));
-    writeFileSync(join(H, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: `node '${H}/.flight-board/install/${BASE}/gate/gate.mjs' --config '${cfg}'` }] }] } }));
+    writeFileSync(join(H, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: `node '${H}/.flight-board/install/${BASE}/gate/stop.mjs' --config '${cfg}'` }] }] } }));
     const run = (sha) => { try { return { ok: true, out: execFileSync(process.execPath, [join(REPO, "scripts/board-release.mjs"), sha, "--dry-run"], { env: { ...process.env, HOME: H, FLIGHT_BOARD_REPO: W, BOARD_PACK: "v3.51" }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; } catch (e) { return { ok: false, out: `${e.stdout}${e.stderr}` }; } };
     const unsigned = new RegExp(`isn't signed by both Checker and Security: ${Sx.slice(0, 12)}`);
     // The pack below has FINDINGS; the tip is signed on its own: refused (as today).
@@ -124,14 +124,14 @@ test("board-release --dry-run: the base must be where the line left main; an old
     const push = () => git(W, "push", "-q", "-f", "origin", "refs/notes/checker", "refs/notes/security");
     // main moves on by one commit M1 (not pinned); the line (a pack Sx and a tip P2) is cut from M1.
     const M1 = commit("CHANGELOG.md", "main moves on"); git(W, "push", "-q", "origin", `${M1}:refs/heads/main`);
-    const Sx = commit("gate/rules.mjs", "the pack"), P2 = commit("gate/gate.mjs", "a newer pack");
+    const Sx = commit("gate/tools.mjs", "the pack"), P2 = commit("gate/stop.mjs", "a newer pack");
     const H = join(D, "home"), cfg = join(H, "board.config.json");
     mkdirSync(join(H, ".claude"), { recursive: true });
     const conf = JSON.parse(readFileSync(join(REPO, "board.config.example.json"), "utf8"));
     writeFileSync(cfg, JSON.stringify({ ...conf, artifactUrl: "https://claude.ai/" + "artifact/AbCdEfGh123", collector: { ...conf.collector, outDir: join(H, "out") } }));
     mkdirSync(join(H, ".flight-board/AbCdEfGh123/.claude"), { recursive: true });
     writeFileSync(join(H, ".flight-board/AbCdEfGh123/.claude/settings.local.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '${H}/x/collector/fence.mjs' --send-to Manager` }] }] } }));
-    writeFileSync(join(H, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: `node '${H}/.flight-board/install/${BASE}/gate/gate.mjs' --config '${cfg}'` }] }] } }));
+    writeFileSync(join(H, ".claude/settings.json"), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: "command", command: `node '${H}/.flight-board/install/${BASE}/gate/stop.mjs' --config '${cfg}'` }] }] } }));
     const run = (sha) => { try { return { ok: true, out: execFileSync(process.execPath, [join(REPO, "scripts/board-release.mjs"), sha, "--dry-run"], { env: { ...process.env, HOME: H, FLIGHT_BOARD_REPO: W, BOARD_PACK: "v3.51" }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }) }; } catch (e) { return { ok: false, out: `${e.stdout}${e.stderr}` }; } };
     const unsigned = new RegExp(`isn't signed by both Checker and Security: ${Sx.slice(0, 12)}`);
     // The pack has Security's own SECURE and no Checker note (a FINDINGS note would refuse under any line note since #C1032).
