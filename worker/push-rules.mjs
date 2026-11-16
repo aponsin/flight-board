@@ -38,6 +38,29 @@ export function askWakes({ asks, now }) {
   }));
 }
 
+// #C1081 (11-16: three threads ended on the owner's words with no reply, #T166 "ok close then" and t1949 "here"; read_inbox shows a message once, so a
+// thread answered somewhere else stayed unanswered): a thread whose NEWEST message is the owner's, is MORE than OWNER_WORD_MIN old and is still open gets a
+// stall line for Manager, and again every OWNER_WORD_REPEAT_MIN until someone posts in it (the newest message is then not the owner's, so the line ends).
+// One row per thread ("ownerword:<thread>"); the reason carries the owner's time and the reminder number (never the minutes, which would change every
+// sync), so a later reminder is a new reason and is told again, and an older untaken one is replaced by it. Open: a closed or withdrawn ask, a dropped or
+// done card and a message that resolved its thread are over. Only the last OWNER_WORD_DAYS days are read, so an old thread does not flood Manager. Never
+// the message's text: the line says the number and the time.
+export const OWNER_WORD_PREFIX = "ownerword:", OWNER_WORD_MIN = 10, OWNER_WORD_REPEAT_MIN = 30, OWNER_WORD_DAYS = 7;
+export function ownerWordWakes({ rows, now }) {
+  const out = [];
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (!r || typeof r.thread_id !== "string" || !Number.isFinite(r.at)) continue;
+    const age = now - r.at;
+    if (age < OWNER_WORD_MIN * MIN || age > OWNER_WORD_DAYS * DAY) continue;
+    if (r.resolved || r.ask_closed_at != null || r.ask_withdrawn_at != null || r.card_dropped || r.card_done_at != null) continue;
+    const label = Number.isInteger(r.ask_num) ? `#T${r.ask_num}` : Number.isInteger(r.card_num) ? `#C${r.card_num}` : Number.isInteger(r.thread_num) ? `#T${r.thread_num}` : null;
+    if (label === null) continue;
+    const k = Math.floor((age - OWNER_WORD_MIN * MIN) / (OWNER_WORD_REPEAT_MIN * MIN));
+    out.push({ card_id: `${OWNER_WORD_PREFIX}${r.thread_id}`, reason: `${label} ends on the owner's word of ${mtDayTime(r.at)}, unanswered for ${OWNER_WORD_MIN}+ min${k ? ` (reminder ${k})` : ""}: post in the thread, even one line saying it is done` });
+  }
+  return out;
+}
+
 // #C925: at a promise's date the store wakes its promiser (the lead) once, through the same stall rows: one row per ask
 // ("promise:<id>"), a reason that never changes for that ask, so it is told once. Open only: a closed or answered promise is kept.
 export const PROMISE_WAKE_PREFIX = "promise:";
