@@ -719,6 +719,33 @@ export function dependsNotLive(c, cards, evidence) {
 // last POSTED_FRESH_MS means it is being worked (no stall); with none, it stalls on a line of its own that says "nothing posted". postedAt:
 // Map card id -> ms of the owner's newest post on the card's thread (the store passes it; missing = none).
 export const READ_ONLY_ROLES = ["Designer", "Checker", "Security", "Linguist"], POSTED_FRESH_MS = 60 * 60_000;
+// #C1076 (11-13: #C1006 landed overnight and nobody built its deploy pair for about 7 hours. The dispatch wakes only the card's owner, and
+// #C915 (a) keeps a landed board card out of every stall line, so a stopped or out-of-quota owner told nobody): a card of the board's own
+// repository, read at ship and on main, that no deploy pair holds (evidence `packed` is not true) 30 minutes after it landed is a line to Manager,
+// by day or night and whatever its owner is doing. The landing time is the start of the card's install wait (installWaitStep, #C976). One line per
+// group (batch), on the group's newest card, or one per card with no group; the words hold times and ids, not a running count, so the line is
+// one row until a pair holds the landing (then nothing is current and the store retires the row). The repo words are collector/pairs.mjs's
+// BOARD_REPO_WORDS (this file imports nothing of the collector: tests/landed-wakes-pack-build.test.mjs holds the two equal).
+export const LANDED_REPO_WORDS = new Set(["flight-board", "board"]), LANDED_UNBUILT_MS = 30 * 60_000;
+export function landedUnbuilt({ now, cards, evidence, installStart }) {
+  const groups = new Map();
+  for (const c of cards ?? []) {
+    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || !LANDED_REPO_WORDS.has(String(c.repo ?? ""))) continue;
+    const v = evidence?.[c.id];
+    if (v?.lit?.[0] !== "ship" || v.onMain !== true || v.packed === true) continue;
+    const at = installStart instanceof Map ? installStart.get(c.id) : undefined;
+    if (!Number.isFinite(at) || now - at < LANDED_UNBUILT_MS) continue;
+    const key = typeof c.batch === "string" && c.batch.trim() ? c.batch.trim() : c.id;
+    groups.set(key, [...(groups.get(key) ?? []), { c, at }]);
+  }
+  return [...groups].map(([key, list]) => {
+    list.sort((x, y) => x.c.num - y.c.num);
+    const newest = list[list.length - 1].c, first = Math.min(...list.map((x) => x.at));
+    const nums = list.map((x) => `#C${x.c.num}`).join(", ");
+    const who = typeof newest.owner_role === "string" && /^[A-Za-z0-9 _-]{1,24}$/.test(newest.owner_role) ? newest.owner_role : "its owner";
+    return { card_id: newest.id, num: newest.num, reason: `${nums} landed at ${mtTime(first)} and no deploy pair holds ${list.length > 1 ? "them" : "it"}: ${who} builds it${key !== newest.id ? ` (pack ${/^[A-Za-z0-9._\/-]{1,100}$/.test(key) ? key : "of its group"})` : ""}` };
+  });
+}
 export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [] }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};

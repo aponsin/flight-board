@@ -182,6 +182,7 @@ export const dispatchSeenFile = (role) => `dispatch-seen-${role}.json`, dispatch
 export const dispatchWokenFile = (role) => `dispatch-woken-${role}.json`, dispatchWaitCheckedFile = (role) => `dispatch-wait-checked-${role}.json`;
 const pairKey = (role, card, phase = null) => (phase === null ? `${role} ${card}` : `${role} ${card} ${phase}`);
 const SHA40 = /^[0-9a-f]{40}$/, REPO_FULL = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/;
+const PACK_WORD = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/; // #C1076: a group's id as a dispatch line may name it (a plain word; nothing else reaches the line)
 const SHA12 = /^[0-9a-f]{12}$/, TURN_PHASE = /^[a-z]{2,16}$/, PLAIN_ROLE = /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/;
 // #C991: a reviewer's queue, card numbers in the store's queue order; the line prints at most DISPATCH_QUEUE_MAX of them.
 export const DISPATCH_QUEUE_MAX = 12;
@@ -224,6 +225,8 @@ export function dispatchItems({ cards, agents, asked = new Set(), queues = null,
         ...(phase && Array.isArray(t.signed) ? { signed: t.signed.filter((s) => PLAIN_ROLE.test(String(s))).slice(0, 4) } : {}),
         ...(phase && t.step === "review" && queues && Object.hasOwn(queues, role) && queueNums(queues[role]).length ? { queue: queueNums(queues[role]) } : {}),
         ...(phase && t.step === "decision" && Number.isInteger(t.ask) && t.ask >= 1 && t.ask <= 1e7 ? { ask: t.ask, answer: plainAnswer(t.answer) } : {}),
+        // #C1076: the pair turn of a card in a group names the group, so the line says which pack it is for (a plain word, checked again in dispatchLine).
+        ...(phase && t.step === "pair" && typeof t.batch === "string" && PACK_WORD.test(t.batch) ? { pack: t.batch } : {}),
       });
     }
   }
@@ -254,7 +257,9 @@ export const dispatchLine = (i) => {
     // #C991: a review line carries the role's whole review queue from the store, so the reviewer needs no list from the lead.
     const nums = i.step === "review" ? queueNums(i.queue) : [];
     const queue = nums.length ? `; your queue: ${nums.map((n) => `#C${n}`).join(", ")}` : "";
-    return `DISPATCH ${card} at ${i.phase}: ${at ? `${at}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on}${queue} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
+    // #C1076: a pair line of a group card says the group: `build pack <group>`.
+    const group = i.step === "pair" && typeof i.pack === "string" && PACK_WORD.test(i.pack) ? `; build pack ${i.pack}` : "";
+    return `DISPATCH ${card} at ${i.phase}: ${at ? `${at}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on}${queue}${group} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
   }
   return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;
 };

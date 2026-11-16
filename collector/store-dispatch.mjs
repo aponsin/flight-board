@@ -81,7 +81,7 @@ export function turnsOf(card, e, ctx = {}) {
     // #C1013: a pair is for the board's own repository only. A product card (any other repo word) is deployed by Release's ship, so it gets no pair turn.
     // A built pair that waits only for the owner's install and whose pinned commit descends from this card's landing already covers it: no build turn.
     if (e.onMain === true && fullSha && typeof ctx.pairCovers === "function" && ctx.pairCovers(fullSha) === true) return [];
-    if (e.onMain === true) return typeof card.repo === "string" && BOARD_REPO_WORDS.has(card.repo) ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, ...where, signed: signedBy }] : [];
+    if (e.onMain === true) return typeof card.repo === "string" && BOARD_REPO_WORDS.has(card.repo) ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, ...where, signed: signedBy, ...(batchOf(card) ? { batch: batchOf(card) } : {}) }] : [];
     // #C854: signed but no longer continuing main: Release cannot take it. The turn is the owner's, to re-cut it on main (a new commit has a new sha, so a reviewer is woken again).
     if (e.behindMain === true) return [{ role: card.owner_role, phase: "ship", step: "recut", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
     // #C975: a ship lane per repository. A board card's landing is the landing job's (scripts/board-land.mjs, #C967, the owner's A on #T1779): while
