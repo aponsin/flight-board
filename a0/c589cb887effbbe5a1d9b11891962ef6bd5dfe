@@ -1,0 +1,1 @@
+PASS (Checker 2, Full) on #C1103 v3: group order follows the owner's pick A; M1/M2 on 3d55a1d8 and the test gap on a7442d70 fixed; 24+ mutants killed; npm test 2652, 0 fail (commit a0c589cb of stack tip a0c589cb)
