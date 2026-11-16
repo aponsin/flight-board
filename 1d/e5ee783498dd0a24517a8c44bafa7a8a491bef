@@ -1,0 +1,1 @@
+PASS Full (Checker 2) #C997 part A: findings on 0d759b49 fixed (M1 wiring tested, M2 cross rule, L1 quiet, L3 escape test; L2 carried by #C1106); suite on tip 2565 pass 0 fail; mutation check: 28 of 28 killed on the full suite, incl. cross rule off (commit 1de5ee78 of stack tip 1de5ee78)
