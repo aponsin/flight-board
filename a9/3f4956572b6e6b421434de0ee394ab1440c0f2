@@ -1,0 +1,1 @@
+SECURE #C1075 retire-old-board-artifact-refs-v2 a93f4956: rebase of signed 0abd8096 onto 4e16341c; hooks/, scripts/, README and example config byte-equal to the signed tip; the new commit adds a test and a DATA.md line. line from 4e16341ccd1b7992aa996c899b2ee19d91464e15 (Security)
