@@ -23,6 +23,7 @@ const BARE = /^\d[\d_.e*+\-/() ]*$/;
 export const FIXED = {
   FRESH_MS: "a sanity bound on a posted time (30 days)",
   OUTAGE_KEEP_MS: "how long a recorded outage is kept (7 days): a retention bound on the table, not a cadence",
+  NOTE_FRESH_MS: "how long a written next_note counts as a card's reason (1 h, #C1093): a reading window on the note, not a cadence; Manager may move it to a setting with #C1113",
   MAX_MIN: "a sanity bound",
   STEP_PAST_MS: "write validity of a step's time",
   STEP_FUTURE_MS: "write validity of a step's time",
