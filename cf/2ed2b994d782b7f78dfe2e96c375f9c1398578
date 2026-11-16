@@ -1,0 +1,1 @@
+SECURE fold v4 cf2ed2b9 (tip): docs only on d8bed557, six DATA fragments folded into docs/DATA.md, files removed. Re-ran scripts/data-fragments.mjs --write on d8bed557: tree identical to cf2ed2b9. No code, hooks, config or secrets; text names only reviewed, signed work. (Security)
