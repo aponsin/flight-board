@@ -1,0 +1,1 @@
+SECURE #C1106 part B d2165b8e (slice 4): wakeTakenSec, wakeResendSec, wakeRetryFailedSec (min 20 s), askStaleSec read through knobFrom into wakeLimits; bounded, defaults are the old numbers. They only time Manager's wake sends and the chip; the retry floor caps sends at one per 20 s. Chip words are numbers only. (Security)
