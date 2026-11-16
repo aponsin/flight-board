@@ -5,7 +5,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { reworkTriggered, slowWakes, slowLine, reworkReasonLine, SHIP_SLOW_MS } from "../worker/board-rules.mjs";
-import { createCard, updateCard, writeEvidence, wakeAsk, takeInbox } from "../worker/board-store.mjs";
+import { createCard, updateCard, writeEvidence } from "../worker/board-store.mjs";
+import { wakeAsk, takeInbox } from "./helpers/beating-store.mjs";
 import { turnsOf } from "../collector/store-dispatch.mjs";
 import { dispatchLine, DISPATCH_STEPS } from "../gate/reset.mjs";
 
