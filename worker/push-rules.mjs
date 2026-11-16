@@ -46,10 +46,25 @@ export function askWakes({ asks, now }) {
 // done card and a message that resolved its thread are over. Only the last OWNER_WORD_DAYS days are read, so an old thread does not flood Manager. Never
 // the message's text: the line says the number and the time.
 export const OWNER_WORD_PREFIX = "ownerword:", OWNER_WORD_MIN = 10, OWNER_WORD_REPEAT_MIN = 30, OWNER_WORD_DAYS = 7;
+// An owner's word that only acknowledges needs no answer (#C887, #C933): the page's rule (ACK_WORDS and ACK_IF_NO_QUESTION in page/board.template.html),
+// copied here because the Worker cannot read the page; tests/owner-last-word-stall.test.mjs fails if the two lists drift. The first list is the page's
+// own; "closed" and "done" are this card's additions (Manager: the owner ends threads with "Closed." and "Done"). yes, yep, yup, great and perfect are acks
+// only when the team's last post before it asked nothing (no "?").
+export const OWNER_ACK_WORDS = ["ack", "acked", "ok", "okay", "k", "kk", "thanks", "thank you", "thx", "ty", "got it", "noted", "sounds good", "will do", "cool", "nice", "👍"];
+export const OWNER_ACK_EXTRA = ["closed", "done"];
+export const OWNER_ACK_IF_NO_QUESTION = ["yes", "yep", "yup", "great", "perfect"];
+const ackKey = (t) => typeof t === "string" ? t.trim().toLowerCase().replace(/[\s.!,]+$/g, "").replace(/^[\s]+/, "") : "";
+export function ownerAck(body, prevTeamBody) {
+  const k = ackKey(body);
+  if (OWNER_ACK_WORDS.includes(k) || OWNER_ACK_EXTRA.includes(k)) return true;
+  return OWNER_ACK_IF_NO_QUESTION.includes(k) && !(typeof prevTeamBody === "string" && prevTeamBody.includes("?"));
+}
 export function ownerWordWakes({ rows, now }) {
   const out = [];
   for (const r of Array.isArray(rows) ? rows : []) {
     if (!r || typeof r.thread_id !== "string" || !Number.isFinite(r.at)) continue;
+    // A message that only acknowledges, with nothing attached, is no word to answer (the newest message decides: an ack after an earlier question ends it).
+    if (!r.has_files && ownerAck(r.body, r.prev_team_body)) continue;
     const age = now - r.at;
     if (age < OWNER_WORD_MIN * MIN || age > OWNER_WORD_DAYS * DAY) continue;
     if (r.resolved || r.ask_closed_at != null || r.ask_withdrawn_at != null || r.card_dropped || r.card_done_at != null) continue;

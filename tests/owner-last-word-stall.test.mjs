@@ -3,7 +3,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { wakeAsk, takeInbox } from "../worker/board-store.mjs";
-import { ownerWordWakes, OWNER_WORD_PREFIX, OWNER_WORD_MIN, OWNER_WORD_REPEAT_MIN, OWNER_WORD_DAYS } from "../worker/push-rules.mjs";
+import { readFileSync } from "node:fs";
+import { ownerWordWakes, OWNER_WORD_PREFIX, OWNER_WORD_MIN, OWNER_WORD_REPEAT_MIN, OWNER_WORD_DAYS, OWNER_ACK_WORDS, OWNER_ACK_EXTRA, OWNER_ACK_IF_NO_QUESTION } from "../worker/push-rules.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 
 const NOW = 1_794_336_590_090, MIN = 60e3, DAY = 86_400_000;
@@ -48,9 +49,34 @@ test("only the last 7 days: an older word is left alone", () => {
   assert.equal(OWNER_WORD_DAYS, 7);
 });
 
+// Manager's gap: an owner word that only acknowledges needs no answer, by the page's own rule (ack-needs-no-answer, ack-words-not-answers).
+test("an owner word that is only an ack raises nothing: Ack., Closed., Done, ok, thanks", () => {
+  for (const body of ["Ack.", "Closed.", "Done", "ok", "  OK! ", "thanks", "Got it.", "👍"]) {
+    assert.deepEqual(ownerWordWakes({ rows: [row({ body })], now: NOW }), [], body);
+  }
+  for (const body of ["ok close then", "here", "Ack. but why did it fail?", "Closed. Please reopen it", ""]) {
+    assert.equal(ownerWordWakes({ rows: [row({ body })], now: NOW }).length, 1, `${body} is a word to answer`);
+  }
+});
+
+test("yes, yep, great are acks only when the team's last post before them asked nothing; an ack with a file attached is not an ack", () => {
+  assert.deepEqual(ownerWordWakes({ rows: [row({ body: "yes", prev_team_body: "Shipped it." })], now: NOW }), []);
+  assert.deepEqual(ownerWordWakes({ rows: [row({ body: "yes" })], now: NOW }), [], "nothing before it asked nothing");
+  assert.equal(ownerWordWakes({ rows: [row({ body: "yes", prev_team_body: "Shall I ship it?" })], now: NOW }).length, 1, "an answer to a question");
+  assert.equal(ownerWordWakes({ rows: [row({ body: "Ack.", has_files: 1 })], now: NOW }).length, 1);
+});
+
+test("drift: the Worker's ack lists are the page's lists, plus only the two words this rule adds", () => {
+  const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  const list = (name) => JSON.parse(page.match(new RegExp(`const ${name}=(\\[[^\\]]*\\]);`))[1]);
+  assert.deepEqual(OWNER_ACK_WORDS, list("ACK_WORDS"));
+  assert.deepEqual(OWNER_ACK_IF_NO_QUESTION, list("ACK_IF_NO_QUESTION"));
+  assert.deepEqual(OWNER_ACK_EXTRA, ["closed", "done"]);
+});
+
 // Through the store.
 const thread = (db, id, num) => db.prepare("INSERT INTO threads (id, num, title, created_at) VALUES (?, ?, ?, ?)").bind(id, num, "t", NOW - DAY).run();
-const say = (db, id, thread_id, author, at, resolved = 0) => db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, resolved) VALUES (?, ?, ?, ?, ?, ?)").bind(id, thread_id, author, "ok close then", at, resolved).run();
+const say = (db, id, thread_id, author, at, resolved = 0, body = "ok close then", shots = null) => db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, resolved, screenshots) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(id, thread_id, author, body, at, resolved, shots).run();
 const line = async (db, t) => { await wakeAsk(db, t); return (await takeInbox(db, t)).stalls.filter((s) => s.card_id.startsWith(OWNER_WORD_PREFIX)); };
 
 test("through the store: the owner's word 11 min old wakes Manager; once read it comes again at the reminder, not before", async () => {
@@ -87,6 +113,29 @@ test("through the store: a reminder not yet read is replaced by the next, and on
   assert.match(got[0].reason, /\(reminder 1\)/);
   await say(db, "m2", "thr1", "Manager", NOW + 32 * MIN);
   assert.equal((await line(db, NOW + 61 * MIN)).length, 0);
+});
+
+test("through the store: the newest message decides. Ack. and Closed. raise nothing, even after an unanswered question of the owner's in the same thread; a question after an ack does", async () => {
+  const db = makeDb();
+  await thread(db, "thr1", 166); await thread(db, "thr2", 167); await thread(db, "thr3", 168); await thread(db, "thr4", 169);
+  await say(db, "m1", "thr1", "owner", NOW - 60 * MIN, 0, "Why did the push fail?");
+  await say(db, "m2", "thr1", "owner", NOW - 20 * MIN, 0, "Ack.");
+  await say(db, "m3", "thr2", "owner", NOW - 20 * MIN, 0, "Closed.");
+  await say(db, "m4", "thr3", "owner", NOW - 60 * MIN, 0, "Ack.");
+  await say(db, "m5", "thr3", "owner", NOW - 20 * MIN, 0, "Why did the push fail?");
+  await say(db, "m6", "thr4", "owner", NOW - 20 * MIN, 0, "Ack.", JSON.stringify(["shot-1"]));
+  const got = await line(db, NOW);
+  assert.deepEqual(got.map((s) => s.card_id).sort(), ["ownerword:thr3", "ownerword:thr4"], "thr1 and thr2 end on an ack; thr3 ends on a question; thr4's ack carries a picture");
+});
+
+test("through the store: yes after a team question is an answer to read; yes after a plain post is an ack", async () => {
+  const db = makeDb();
+  await thread(db, "thr1", 166); await thread(db, "thr2", 167);
+  await say(db, "m1", "thr1", "Manager", NOW - 40 * MIN, 0, "Shall I ship it?");
+  await say(db, "m2", "thr1", "owner", NOW - 20 * MIN, 0, "yes");
+  await say(db, "m3", "thr2", "Manager", NOW - 40 * MIN, 0, "Shipped.");
+  await say(db, "m4", "thr2", "owner", NOW - 20 * MIN, 0, "yes");
+  assert.deepEqual((await line(db, NOW)).map((s) => s.card_id), ["ownerword:thr1"]);
 });
 
 test("through the store: a thread whose owner message resolved it raises nothing", async () => {
