@@ -1,0 +1,1 @@
+SECURE #C990 v2 f33fa202 (tip): new commit. The outage edge is knobFrom(stored knobs, probeSilentSec), bounded 120..1800 s, default 300 s; only the probe posts knobs. Mutation check (edge back to fixed PROBE_SILENT_MS): new test fails; restored. Suite at the g6 stack top 2580 pass, 0 fail. (Security)
