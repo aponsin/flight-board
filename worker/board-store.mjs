@@ -518,7 +518,9 @@ async function syncStalls(db, now) {
   // The dispatch holds a card only for an UNANSWERED open ask (an answered one left open does not), so the open-group rule is given that set (#C1082, Checker 2's F1).
   const unansweredAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
   const outages = await outagesOf(db, now);
-  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards, outages, stallMs: stallMsOf(knobsNow), postedFreshMs });
+  // #C1100: the config's collector.reviewers, which the probe posts (as `look`), so the line names the reviewer the dispatch wakes.
+  const reviewers = (await evidenceOf(db, "reviewers"))?.reviewers;
+  const waitsAll = stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder, claims, stackOn, unansweredAskCards, outages, stallMs: stallMsOf(knobsNow), postedFreshMs, reviewers });
   // #C1078: with the week's quota used up (the session's fresh reading), the idle-agent stall lines are held until the reset and one line goes to Manager.
   const weekRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = ?").bind(WEEK_USAGE_KEY).first();
   let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
