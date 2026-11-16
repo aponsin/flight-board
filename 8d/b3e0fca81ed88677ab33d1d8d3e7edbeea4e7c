@@ -1,0 +1,1 @@
+SECURE g13 8db3e0fc (#C1093): slowWakes reads next_note only for emptiness and the roster's card id; no note text reaches a line. (Security)
