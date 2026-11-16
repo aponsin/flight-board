@@ -1,0 +1,1 @@
+PASS Quick #C1075 step 1 v3 by Checker 2: rebase of a93f4956 onto 3492118b, range-diff DATA.md context only; F1 fixed (P5 killed), F2 INFO noted in DATA.md; mutants H1-H4 and P1-P5 killed; full suite 2418 pass 0 fail 1 skipped (one earlier run red with output cut off, rerun green) (commit 6ecec529 of stack tip 6ecec529)
