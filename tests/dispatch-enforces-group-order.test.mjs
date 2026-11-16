@@ -106,6 +106,17 @@ test("A: rework on a lower group and the next card of a started group are allowe
   const view = { cards: rowsBack, evidence: sentBack, groupOrder: [{ batch: "g6", pos: 1 }, { batch: "g13", pos: 2 }] };
   const q = stackQueueFile(view, T);
   assert.deepEqual(q.cards.map((c) => [c.id, c.rework, c.groupStarted]), [["high", false, false], ["low", true, false]]);
+  // the real path (Checker 2's M1 on a7442d70): a rework card first-pushed on a re-cut build/ branch gets through; the same card read as no rework is refused
+  assert.equal(outOfOrderPushes(first("low"), () => "low\n", q, T + MIN).length, 0, "a rework card's first push on a re-cut branch");
+  assert.equal(outOfOrderPushes(first("low"), () => "low\n", { ...q, cards: q.cards.map((c) => ({ ...c, rework: false })) }, T + MIN).length, 1, "without the rework flag it is refused");
+  // the same for a card of a started group, through the queue file's groupStarted
+  const startedView = { cards: rows([{ id: "g13-first", num: 1062, owner_role: "Boardsmith", batch: "g13", repo: "flight-board" }]), evidence: started, groupOrder: view.groupOrder };
+  assert.equal(outOfOrderPushes(first("low"), () => "low\n", stackQueueFile(startedView, T), T + MIN).length, 0);
+  assert.equal(outOfOrderPushes(first("low"), () => "low\n", { ...stackQueueFile(startedView, T), cards: stackQueueFile(startedView, T).cards.map((c) => ({ ...c, groupStarted: false })) }, T + MIN).length, 1, "without groupStarted it is refused");
+  // a queue file from before orderHeld (LOW): `held` is what says the higher card is held
+  const oldQ = (heldHigh) => { const f = stackQueueFile({ cards: rows(), evidence: {}, groupOrder: view.groupOrder }, T); return { ...f, cards: f.cards.map((c) => { const { orderHeld: _o, ...rest } = c; return { ...rest, held: c.id === "high" && heldHigh }; }) }; };
+  assert.equal(outOfOrderPushes(first("low"), () => "low\n", oldQ(true), T + MIN).length, 0, "an older queue file's held higher card does not block");
+  assert.equal(outOfOrderPushes(first("low"), () => "low\n", oldQ(false), T + MIN).length, 1, "and an unheld one still does");
   // the store's line: the same two cases are not named
   const evidence = (extra = {}) => ({ high: { lit: ["build"], phase: "build", headSha12: "a".repeat(12) }, ...extra });
   const go = (cards, ev) => outOfOrderWork({ cards, evidence: ev, agents: { Boardsmith: { state: "working", card: "low" } }, groupOrder: order }).map((s) => s.num);
