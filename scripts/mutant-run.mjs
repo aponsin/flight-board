@@ -55,13 +55,24 @@ export function applyMutant(source, m) {
   return { text: lines.join("\n") };
 }
 
-// The checkout's files (tracked and new, not ignored) copied to a fresh temp folder; node_modules is linked, not copied.
+// The checkout as a REAL working tree in a fresh temp folder: a local clone at its HEAD (so a test that reads git history, notes or the branch finds them), then the
+// working tree's own changes laid over it (modified and new files copied, deleted ones removed), so the copy is exactly what the builder has on disk. A checkout with
+// no commit yet falls back to its files copied without history. node_modules is linked, not copied.
 function copyTree(repo, to) {
-  const list = execFileSync("git", ["-C", repo, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\0").filter(Boolean);
-  for (const f of list) {
+  const git = (args, cwd = repo) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
+  let cloned = false;
+  try {
+    git(["rev-parse", "--verify", "-q", "HEAD"]);
+    execFileSync("git", ["clone", "-q", "--local", "--no-hardlinks", repo, to], { stdio: ["ignore", "pipe", "pipe"] });
+    try { git(["fetch", "-q", repo, "+refs/notes/*:refs/notes/*"], to); } catch { /* no notes refs */ }
+    cloned = true;
+  } catch { /* no HEAD, or not cloneable: the plain copy below */ }
+  const lay = cloned ? git(["ls-files", "-z", "--modified", "--others", "--exclude-standard"]) : git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"]);
+  for (const f of lay.split("\0").filter(Boolean)) {
     if (!SAFE_PATH.test(f) && /(^|\/)\.\.(\/|$)/.test(f)) continue;
     const src = join(repo, f), dst = join(to, f);
-    try { mkdirSync(dirname(dst), { recursive: true }); copyFileSync(src, dst); } catch { /* a file deleted in the working tree */ }
+    if (!existsSync(src)) { if (cloned) rmSync(dst, { force: true }); continue; } // deleted in the working tree
+    try { mkdirSync(dirname(dst), { recursive: true }); copyFileSync(src, dst); } catch { /* unreadable: skip */ }
   }
   if (existsSync(join(repo, "node_modules"))) try { symlinkSync(join(repo, "node_modules"), join(to, "node_modules")); } catch { /* none */ }
 }
@@ -104,6 +115,18 @@ export async function runMutants({ repo, spec, concurrency = DEFAULT_CONCURRENCY
   const base = mkdtempSync(join(tmpdir(), "mutant-run-"));
   const survivors = [];
   try {
+    // The baseline: every named test file, once, in an unmutated copy. If they do not all pass there (or none runs), a "kill" would only be that failure showing again,
+    // so nothing is judged: every mutant is an error naming what failed.
+    const named = [...new Set(work.flatMap(({ m }) => m.tests))];
+    const b0 = join(base, "baseline"), t0 = join(base, "tmp-baseline");
+    mkdirSync(b0); mkdirSync(t0); copyTree(root, b0);
+    const r0 = await run(process.execPath, ["--test", ...named], b0, t0, timeoutMs);
+    if (testsRun(r0.out) === 0 || r0.code !== 0) {
+      const why = testsRun(r0.out) === 0 ? `no test ran (${named.join(", ")})` : `they fail in the unmutated copy: ${failedFiles(r0.out).join(", ") || "(see the suite's output)"}`;
+      const list = spec.mutants.map((m) => ({ id: m.id, status: "error", detail: `the named tests do not pass before any mutation, so nothing can be judged: ${why}`, ms: 0 }));
+      for (const r of list) log(r);
+      return { results: list, pass: false };
+    }
     const n = Math.max(1, Math.min(concurrency, work.length));
     const slots = Array.from({ length: n }, (_, i) => { const dir = join(base, `copy-${i}`); mkdirSync(dir); copyTree(root, dir); mkdirSync(join(base, `tmp-${i}`)); return { dir, tmp: join(base, `tmp-${i}`) }; });
     let next = 0;
@@ -115,24 +138,31 @@ export async function runMutants({ repo, spec, concurrency = DEFAULT_CONCURRENCY
         const r = await run(process.execPath, ["--test", ...m.tests], slot.dir, slot.tmp, timeoutMs);
         writeFileSync(target, original);
         let res;
-        if (testsRun(r.out) === 0) res = { id: m.id, status: "error", detail: `no test ran (${m.tests.join(", ")}): the named tests are not there or do not load`, ms: r.ms };
-        else if (r.code !== 0) res = { id: m.id, status: "killed", detail: `failed: ${failedFiles(r.out).join(", ") || m.tests.join(", ")}`, ms: r.ms };
+        // (the baseline above has shown the named tests run and pass, so a failure here is the mutant's, a crash on load included)
+        if (r.code !== 0) res = { id: m.id, status: "killed", detail: `failed: ${failedFiles(r.out).join(", ") || m.tests.join(", ")}`, ms: r.ms };
         else { res = { id: m.id, status: "survivor?", detail: "the named tests passed with it", ms: r.ms }; survivors.push({ m, text }); }
         results.set(m.id, res);
         if (res.status !== "survivor?") log(res);
       }
     }));
     // (3) every mutant the named tests missed meets the full suite before it is reported
+    // The copy has no .git and no history, so a test that needs them fails there with or without a mutant: the unmutated copy runs the full suite first (once, and only
+    // when there is a survivor), and a mutant counts as killed only by a test file that passes in that baseline and fails with it.
+    let baseline = null;
+    const fresh = (name) => { const dir = join(base, name), tmp = join(base, `tmp-${name}`); rmSync(dir, { recursive: true, force: true }); mkdirSync(dir); mkdirSync(tmp, { recursive: true }); copyTree(root, dir); return { dir, tmp }; };
     for (const { m, text } of survivors) {
-      const dir = join(base, "full"), tmp = join(base, "tmp-full");
-      rmSync(dir, { recursive: true, force: true }); mkdirSync(dir); mkdirSync(tmp, { recursive: true }); copyTree(root, dir);
+      if (baseline === null) { const b = fresh("full-base"); const r0 = await run(fullCmd[0], fullCmd.slice(1), b.dir, b.tmp, timeoutMs); baseline = { code: r0.code, files: new Set(failedFiles(r0.out)) }; }
+      const { dir, tmp } = fresh("full");
       writeFileSync(join(dir, m.file), text);
       const r = await run(fullCmd[0], fullCmd.slice(1), dir, tmp, timeoutMs);
       const t = results.get(m.id);
       const ms = t.ms + r.ms;
-      const res = r.code !== 0 && testsRun(r.out) > 0
-        ? { id: m.id, status: "killed-by-full-suite-only", detail: `the named tests missed it; the full suite failed in: ${failedFiles(r.out).join(", ") || "(see the suite's output)"}: add one of these to its tests`, ms }
-        : { id: m.id, status: "survivor", detail: "the named tests and the full suite both pass with it", ms };
+      const now = failedFiles(r.out), fresh1 = now.filter((f) => !baseline.files.has(f));
+      // killed there: a test file that passed in the baseline fails now; with a clean baseline any failure counts, parsed or not
+      const killed = r.code !== 0 && testsRun(r.out) > 0 && (baseline.code === 0 || fresh1.length > 0);
+      const res = killed
+        ? { id: m.id, status: "killed-by-full-suite-only", detail: `the named tests missed it; the full suite failed in: ${fresh1.join(", ") || "(see the suite's output)"}: add one of these to its tests`, ms }
+        : { id: m.id, status: "survivor", detail: baseline.code === 0 ? "the named tests and the full suite both pass with it" : `the named tests pass with it, and the full suite fails in nothing it did not already fail in without it (${baseline.files.size} files fail in the unmutated copy)`, ms };
       results.set(m.id, res); log(res);
     }
   } finally { rmSync(base, { recursive: true, force: true }); }
