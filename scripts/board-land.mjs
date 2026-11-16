@@ -24,10 +24,17 @@ import { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC } from "../worker/probe-jobs.mjs";
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
 export const HOLDS_FRESH_MS = 10 * 60e3, MAX_ROUNDS = 10;
 const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+// #C1090: a card writes its DATA line to docs/DATA.d/<card id>.md, never to the end of docs/DATA.md (every landing conflicted every waiting branch
+// there). A tip that edits docs/DATA.md is refused, unless every card it carries is the fold card (a Board-Id starting "fold-data-fragments"),
+// which runs `node scripts/data-fragments.mjs --write` and is signed like any card. The fold is a card, not a commit this job makes: the Worker's
+// self-deploy gate wants a Checker PASS and a Security SECURE on every commit it would deploy, and this job cannot sign.
+export const DATA_FILE = "docs/DATA.md", FOLD_CARD = /^fold-data-fragments(-[a-z0-9-]{1,40})?$/, FOLD_DUE = 5;
+export const editsData = (h) => Array.isArray(h?.changed) && h.changed.includes(DATA_FILE);
 export const signed = (notes) => /^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim()) && /^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim());
 
 // The tips to try, from the facts only. heads: [{ branch, sha, notes: { checker, security }, cards: [ids], onMain, forward, ahead }]
-// (onMain: already an ancestor of main; forward: main is an ancestor of it; ahead: commits it adds to main). holds: the parsed land-holds.json or
+// (onMain: already an ancestor of main; forward: main is an ancestor of it; ahead: commits it adds to main; changed: the paths the line changes against
+// main, #C1090). holds: the parsed land-holds.json or
 // null. Returns { try: [head, ...] (the biggest line first), waiting: [{ branch, sha, why }], blocked: [{ branch, sha, cards, reasons }] }.
 // waiting is quiet (not signed, held, no fresh holds); blocked is a refusal Release must see (signed and free, but not a fast-forward of main).
 export function landPlan({ heads, holds, now }) {
@@ -44,6 +51,8 @@ export function landPlan({ heads, holds, now }) {
     if (!cards.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: "no Board-Id trailer names a card, so no hold can be read" }); continue; }
     if (unknown.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `the holds file does not list ${unknown.join(", ")}` }); continue; }
     if (held.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `held: ${held.map((c) => `${c} (${holds.cards[c]})`).join(", ")}` }); continue; }
+    if (h.changed === null) { out.waiting.push({ branch: h.branch, sha: h.sha, why: "the paths it changes could not be read" }); continue; }
+    if (editsData(h) && !cards.every((c) => FOLD_CARD.test(c))) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: [`it edits ${DATA_FILE}: write the card's line to docs/DATA.d/<card id>.md instead (only the fold card, a Board-Id starting fold-data-fragments, edits ${DATA_FILE})`] }); continue; }
     if (!h.forward) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: ["it doesn't continue origin/main: rebase it on main and sign it again"] }); continue; }
     out.try.push(h);
   }
@@ -65,7 +74,9 @@ export function refusalReasons(text) {
 // release tool it spawned, which would push on as an orphan while the next run starts). So a tip is started only while a whole landing still fits:
 // clock() - start + tipMs <= budgetMs. tipMs is one tip's worst case (a carried sign-off runs the suite in the dry run AND the real run); the rest
 // wait for the next run, in the report's `waiting`. With no budget (a hand run) every tip is tried, as before.
-export function landRun({ readFacts, readHolds, release, now = Date.now(), dry = false, log = () => {}, clock = Date.now, budgetMs = Infinity, tipMs = 0 }) {
+// #C1090: readFragments() -> how many docs/DATA.d fragments wait on origin/main; FOLD_DUE or more is reported (foldDue) and logged as FOLD DUE, which
+// Release and Manager read with the run's other lines: cut the fold card.
+export function landRun({ readFacts, readHolds, release, now = Date.now(), dry = false, log = () => {}, clock = Date.now, budgetMs = Infinity, tipMs = 0, readFragments = () => 0 }) {
   const landed = [], refused = [], seen = new Set(), start = clock();
   let waiting = [];
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -88,7 +99,11 @@ export function landRun({ readFacts, readHolds, release, now = Date.now(), dry =
     landed.push({ branch: next.branch, sha: next.sha });
     log(`landed ${next.branch} ${next.sha.slice(0, 12)}`);
   }
-  return { at: now, landed, refused, waiting };
+  let dataFragments = 0;
+  try { dataFragments = Number(readFragments()) || 0; } catch { dataFragments = 0; }
+  const foldDue = dataFragments >= FOLD_DUE;
+  if (foldDue) log(`FOLD DUE: ${dataFragments} DATA fragments wait in docs/DATA.d on origin/main: cut the fold card (a Board-Id starting fold-data-fragments; node scripts/data-fragments.mjs --write)`);
+  return { at: now, landed, refused, waiting, dataFragments, foldDue };
 }
 
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
@@ -117,7 +132,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       const [branch, sha] = l.split(" ");
       const notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", sha])]));
       const cards = [...new Set((quiet(["log", "--format=%(trailers:key=Board-Id,valueonly,separator=%x2c)", `${main}..${sha}`]) ?? "").split(/[\n,]/).map((x) => x.trim()).filter(Boolean))];
-      return { branch, sha, notes, cards, onMain: quiet(["merge-base", "--is-ancestor", sha, main]) !== null, forward: quiet(["merge-base", "--is-ancestor", main, sha]) !== null, ahead: Number(quiet(["rev-list", "--count", `${main}..${sha}`]) ?? 0) };
+      const changedOut = quiet(["diff", "--name-only", `${main}...${sha}`]);
+      const changed = changedOut === null ? null : changedOut.split("\n").filter(Boolean);
+      return { branch, sha, notes, cards, changed, onMain: quiet(["merge-base", "--is-ancestor", sha, main]) !== null, forward: quiet(["merge-base", "--is-ancestor", main, sha]) !== null, ahead: Number(quiet(["rev-list", "--count", `${main}..${sha}`]) ?? 0) };
     });
     return { main, heads };
   };
@@ -126,7 +143,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     return { code: r.status ?? 1, text: `${r.stderr ?? ""}\n${r.stdout ?? ""}` };
   };
   // #C975: the scheduled run's time budget (worker/probe-jobs.mjs: the land cadence's limit less a margin, and one tip's worst case).
-  const report = landRun({ readFacts, readHolds: () => readJson(join(dir, "land-holds.json")), release, dry, log: (s) => console.log(`land: ${s}`), budgetMs: (JOBS.land.limitSec - LAND_MARGIN_SEC) * 1000, tipMs: LAND_TIP_SEC * 1000 });
+  const readFragments = () => (quiet(["ls-tree", "--name-only", "origin/main", "docs/DATA.d/"]) ?? "").split("\n").filter((p) => /^docs\/DATA\.d\/[a-z0-9][a-z0-9-]*\.md$/.test(p) && p !== "docs/DATA.d/README.md").length;
+  const report = landRun({ readFragments, readFacts, readHolds: () => readJson(join(dir, "land-holds.json")), release, dry, log: (s) => console.log(`land: ${s}`), budgetMs: (JOBS.land.limitSec - LAND_MARGIN_SEC) * 1000, tipMs: LAND_TIP_SEC * 1000 });
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(dir, "land-report.json"), part = `${file}.${process.pid}.part`;
   writeFileSync(part, JSON.stringify(report), { mode: 0o600 }); renameSync(part, file);

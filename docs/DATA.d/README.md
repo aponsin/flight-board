@@ -7,5 +7,6 @@ Never append to the end of `docs/DATA.md`: every branch did, every landing confl
 re-sign (11-16: #C1075 twice, then three more rebases the same day). Two branches that each add a file here never conflict.
 
 `node scripts/data-fragments.mjs --check` tests the files; `node scripts/data-fragments.mjs --write` folds them into the end of `docs/DATA.md`, oldest date
-first (then by card number), and deletes them. A release or a pack runs `--write` once, as `scripts/changelog.mjs` does for `CHANGELOG.d/`. This README is
-not a fragment and is never folded.
+first (then by card number), and deletes them. Only the fold card does that: a card whose Board-Id starts `fold-data-fragments`, signed like any other. The
+landing job refuses every other tip that edits `docs/DATA.md`, and logs `FOLD DUE` when 5 or more fragments wait on main (Boardsmith then cuts the fold
+card). This README is not a fragment and is never folded.
