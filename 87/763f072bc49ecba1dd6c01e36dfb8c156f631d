@@ -1,0 +1,1 @@
+PASS Quick at 87763f07 (Checker 2, fold card fold-data-fragments-2026-11-16). Docs only: DATA.md plus the 7 DATA.d fragments removed. I ran data-fragments.mjs --write on main myself and the result equals this commit byte for byte. Board-Id matches the fold-card pattern. Suite on the tip 2525 pass, 0 fail (commit 87763f07 of stack tip 87763f07)
