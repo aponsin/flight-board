@@ -34,6 +34,14 @@ test("a claim by a name that is not a Checker role is ignored", () => {
   assert.equal(got.length, 1); assert.equal(got[0].role, "Checker");
 });
 
+test("the claim names the reviewer only at the checker phase: a card at security or ship with the claim still open names that phase's lane (Checker 2's F1)", () => {
+  const at = (phase, agents) => stalledWaits({ now: NOW, cards, evidence: { "card-a": { lit: [phase], phase, ci: "none" } }, agents, openAskCards: new Set(), phaseStart: new Map([[`card-a|${phase}`, T]]), claims: new Map([["card-a", "Checker 2"]]) });
+  const sec = at("security", { Security: idle, "Checker 2": busy });
+  assert.equal(sec.length, 1); assert.equal(sec[0].role, "Security"); assert.match(sec[0].reason, /^#C1 waits at Security 15 min, Security idle since /);
+  const ship = at("ship", { Release: idle, "Checker 2": idle });
+  assert.equal(ship.length, 1); assert.equal(ship[0].role, "Release"); assert.match(ship[0].reason, /, Release idle since /);
+});
+
 test("the claimant has no session: the line says so, naming the claimant", () => {
   const got = run({ Checker: idle, Security: busy }, new Map([["card-a", "Checker 2"]]));
   assert.equal(got.length, 1); assert.match(got[0].reason, /no session for Checker 2$/);
