@@ -3211,7 +3211,7 @@ const rolePhase=n=>(PHASES.find(p=>p[1]===n&&p[0]!==BUILD_PHASE&&p[0]!==LIVE_PHA
 const WAKE_ALIVE_MAX=3*60e3,CARDS_STALE=5*60e3,EVIDENCE_STALE=10*60e3,QUIET_MAX_MIN=75;
 // #C887: a message that only acknowledges (a fixed list, whole message, case and end marks aside) needs no answer.
 // #C933: yes, yep, yup, great and perfect can be real answers, so they are acks only when the team's last post in the thread asked nothing.
-const ACK_WORDS=["ack","acked","ok","okay","k","kk","thanks","thank you","thx","ty","got it","noted","sounds good","will do","cool","nice","👍"];
+const ACK_WORDS=["ack","acked","ok","okay","k","kk","thanks","thank you","thx","ty","got it","noted","sounds good","will do","cool","nice","closed","done","👍"];
 const ACK_IF_NO_QUESTION=["yes","yep","yup","great","perfect"];
 const ackKey=t=>typeof t==="string"?t.trim().toLowerCase().replace(/[\s.!,]+$/g,"").replace(/^[\s]+/,""):"";
 const teamAsked=own=>{const last=state.messages.filter(m=>m&&m.thread===own.thread&&m.from!==OWNER&&isT(m.at)&&m.at<own.at).sort((a,b)=>b.at-a.at)[0];return !!last&&typeof last.text==="string"&&last.text.includes("?")};

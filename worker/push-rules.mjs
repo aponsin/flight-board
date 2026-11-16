@@ -47,16 +47,15 @@ export function askWakes({ asks, now }) {
 // the message's text: the line says the number and the time.
 export const OWNER_WORD_PREFIX = "ownerword:", OWNER_WORD_MIN = 10, OWNER_WORD_REPEAT_MIN = 30, OWNER_WORD_DAYS = 7;
 // An owner's word that only acknowledges needs no answer (#C887, #C933): the page's rule (ACK_WORDS and ACK_IF_NO_QUESTION in page/board.template.html),
-// copied here because the Worker cannot read the page; tests/owner-last-word-stall.test.mjs fails if the two lists drift. The first list is the page's
-// own; "closed" and "done" are this card's additions (Manager: the owner ends threads with "Closed." and "Done"). yes, yep, yup, great and perfect are acks
-// only when the team's last post before it asked nothing (no "?").
-export const OWNER_ACK_WORDS = ["ack", "acked", "ok", "okay", "k", "kk", "thanks", "thank you", "thx", "ty", "got it", "noted", "sounds good", "will do", "cool", "nice", "👍"];
-export const OWNER_ACK_EXTRA = ["closed", "done"];
+// copied here because the Worker cannot read the page; tests/owner-last-word-stall.test.mjs fails on ANY difference between the two lists
+// (#C1083; "closed" and "done" were this Worker's alone for a while, and the page still showed "answer coming" for a lone "Closed."). yes, yep, yup, great and
+// perfect are acks only when the team's last post before it asked nothing (no "?").
+export const OWNER_ACK_WORDS = ["ack", "acked", "ok", "okay", "k", "kk", "thanks", "thank you", "thx", "ty", "got it", "noted", "sounds good", "will do", "cool", "nice", "closed", "done", "👍"];
 export const OWNER_ACK_IF_NO_QUESTION = ["yes", "yep", "yup", "great", "perfect"];
 const ackKey = (t) => typeof t === "string" ? t.trim().toLowerCase().replace(/[\s.!,]+$/g, "").replace(/^[\s]+/, "") : "";
 export function ownerAck(body, prevTeamBody) {
   const k = ackKey(body);
-  if (OWNER_ACK_WORDS.includes(k) || OWNER_ACK_EXTRA.includes(k)) return true;
+  if (OWNER_ACK_WORDS.includes(k)) return true;
   return OWNER_ACK_IF_NO_QUESTION.includes(k) && !(typeof prevTeamBody === "string" && prevTeamBody.includes("?"));
 }
 // Manager's cap, to save quota: reminders 1 to OWNER_WORD_FAST_REMINDERS come every OWNER_WORD_REPEAT_MIN, after that every OWNER_WORD_SLOW_REPEAT_MIN. The

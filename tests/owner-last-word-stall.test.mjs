@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { wakeAsk, takeInbox } from "../worker/board-store.mjs";
 import { readFileSync } from "node:fs";
-import { ownerWordWakes, OWNER_WORD_PREFIX, OWNER_WORD_MIN, OWNER_WORD_REPEAT_MIN, OWNER_WORD_DAYS, ownerWordReminder, OWNER_WORD_FAST_REMINDERS, OWNER_WORD_SLOW_REPEAT_MIN, OWNER_ACK_WORDS, OWNER_ACK_EXTRA, OWNER_ACK_IF_NO_QUESTION } from "../worker/push-rules.mjs";
+import { ownerWordWakes, OWNER_WORD_PREFIX, OWNER_WORD_MIN, OWNER_WORD_REPEAT_MIN, OWNER_WORD_DAYS, ownerWordReminder, OWNER_WORD_FAST_REMINDERS, OWNER_WORD_SLOW_REPEAT_MIN, OWNER_ACK_WORDS, OWNER_ACK_IF_NO_QUESTION } from "../worker/push-rules.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 
 const NOW = 1_794_336_590_090, MIN = 60e3, DAY = 86_400_000;
@@ -81,12 +81,14 @@ test("yes, yep, great are acks only when the team's last post before them asked 
   assert.equal(ownerWordWakes({ rows: [row({ body: "Ack.", has_files: 1 })], now: NOW }).length, 1);
 });
 
-test("drift: the Worker's ack lists are the page's lists, plus only the two words this rule adds", () => {
+test("drift (#C1083): the Worker's ack lists ARE the page's lists, word for word and in the same order; every word on one is on the other", () => {
   const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   const list = (name) => JSON.parse(page.match(new RegExp(`const ${name}=(\\[[^\\]]*\\]);`))[1]);
   assert.deepEqual(OWNER_ACK_WORDS, list("ACK_WORDS"));
   assert.deepEqual(OWNER_ACK_IF_NO_QUESTION, list("ACK_IF_NO_QUESTION"));
-  assert.deepEqual(OWNER_ACK_EXTRA, ["closed", "done"]);
+  for (const w of list("ACK_WORDS")) assert.ok(OWNER_ACK_WORDS.includes(w), `the Worker lacks ${w}`);
+  for (const w of OWNER_ACK_WORDS) assert.ok(list("ACK_WORDS").includes(w), `the page lacks ${w}`);
+  assert.ok(OWNER_ACK_WORDS.includes("closed") && OWNER_ACK_WORDS.includes("done"));
 });
 
 // Through the store.
