@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
-import { agentRank, startedGroupSet, openGroupWithheld, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
+import { agentRank, startedGroupSet, openGroupWithheld, ownerTurn, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -130,10 +130,14 @@ export function stackQueueFile(view, now) {
       batch: batchOf(c), // #C1021: the group the lead put the card in ("" for none); stack-ready waits for every open card of it
       held: !!(c.paused || c.blocked_reason), // #C1021 (Checker 2 F1): a paused or blocked card is no partner to wait for, as the dispatch's activeCard has it
       started: hasHeadEvidence(e),
+      num: Number.isInteger(c.num) ? c.num : null, // #C1103: for the line that names the higher card
+      turn: ownerTurn(c, e), // #C1103: the card needs its owner now (not pushed, in build, or in rework): the pre-push group-order check reads it
     });
     if (cards.length >= STACK_QUEUE_MAX) break;
   }
-  return { at: now, cards };
+  // #C1103: the owner's order of the groups, { batch, pos }, as the store holds it (a group nobody placed is not in the list).
+  const groups = (Array.isArray(view?.groupOrder) ? view.groupOrder : []).filter((g) => g && typeof g.batch === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(g.batch) && Number.isInteger(g.pos)).map((g) => ({ batch: g.batch, pos: g.pos })).slice(0, 100);
+  return { at: now, cards, groups };
 }
 
 // The store's view -> { cards, agents, asked } in the shapes dispatchItems reads, or null when the view cannot say who is idle.
