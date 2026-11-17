@@ -1,0 +1,2 @@
+PASS (Full) #C1113 slice 3: stuckFreshSec, stuckWindowSec, threadWindowSec read through knobFrom, each wiring mutant killed; lands only inside group head 870d4b5a
+signed-by: Checker 2
