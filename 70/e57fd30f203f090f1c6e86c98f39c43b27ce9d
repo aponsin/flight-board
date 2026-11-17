@@ -1,3 +1,3 @@
-RISKS (Full) #C1132 70e57fd3: the guard commit; see the note on its tip 112256ee (M1 narrowed, still open: any .json under ~/.flight-board, live board state and the current install tree).
+SECURE (Full) #C1132 70e57fd3: covered by the card's signed tip 91744942, above it on this branch; ships only with that tip. Earlier note: RISKS (guard commit, M1 narrowed).
 
 signed-by: Security
