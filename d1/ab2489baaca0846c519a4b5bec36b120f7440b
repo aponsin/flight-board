@@ -1,0 +1,3 @@
+SECURE (Quick) #C1127 done-state-contrast-light d1ab2489: one CSS token in page/board.template.html (.state.done color --ok to --ok-ink) plus a contrast test pair and a CHANGELOG.d fragment; no script, no new source, no data path. Parent 32438ae1 (#C1126) is SECURE.
+
+signed-by: Security
