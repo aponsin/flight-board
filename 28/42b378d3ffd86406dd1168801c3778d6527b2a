@@ -1,0 +1,1 @@
+PASS #C1111 sessions-checked-each-run 2842b378d3ffd86406dd1168801c3778d6527b2a (Checker 2): M1 fixed by a Crew view test, mutants 13/13 killed, full suite green apart from the known #C1041 flake (3/3 alone), Remote Control is #C1122 (commit 2842b378 of stack tip 2842b378)
