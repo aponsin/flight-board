@@ -6,6 +6,7 @@
 // role is printed again only when its asked time changes (the probe forgets a role once it is back). Roles and times only.
 import { readFileSync } from "node:fs";
 import { ROLE } from "../collector/state-schema.mjs";
+import { heldFor } from "../worker/held-by.mjs"; // #C1164: the one reading of waiting_on
 
 export const RESET_FILE = "context-reset.json", RESET_SEEN_FILE = "reset-seen.json";
 export const WAKE_ROLES_FILE = "wake-roles.json", WAKE_ROLES_SEEN_FILE = "wake-roles-seen.json";
@@ -217,7 +218,7 @@ export function dispatchItems({ cards, agents, asked = new Set(), queues = null,
       // mid-turn, so an unreadable reading waits the full idle time (15 min), not the 60 s a phase turn waits for a reading that says idle.
       const need = unread ? DISPATCH_IDLE_MS : Array.isArray(card.turns) ? DISPATCH_TURN_IDLE_MS : DISPATCH_IDLE_MS;
       if (!Number.isFinite(idleSince) || now - idleSince < need) continue;
-      if (typeof card.waitingOn === "string" && card.waitingOn.trim() && !card.waitingOn.trim().startsWith(role)) continue;
+      if (heldFor(card, role)) continue; // #C1164: the one reading of waiting_on
       const phase = Array.isArray(card.turns) && TURN_PHASE.test(String(t.phase)) ? t.phase : null;
       const k = pairKey(role, card.id, phase), since = Number.isInteger(first[k]) && first[k] <= now ? first[k] : now;
       kept[k] = since;

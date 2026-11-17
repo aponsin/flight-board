@@ -2195,13 +2195,14 @@ function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
 // paused or parked, or waiting on the owner) has no ETA anyone can give, so its row stays plain (Checker). waitingOn is the
 // lead's routine "next is" field ("Boardsmith", "Checker, Security; then …"): only the owner's name there is a hold.
 const parkedStatus=i=>!!i&&(i.status==="paused"||i.status==="parked"||((CONFIG.nudges||{}).parked||[]).includes(i.status));
-function heldOnPurpose(i){if(!i)return false;const w=typeof i.waitingOn==="string"?i.waitingOn.trim().toLowerCase():"",o=String(OWNER||"").trim().toLowerCase();
-  return i.status==="parked"||((CONFIG.nudges||{}).parked||[]).includes(i.status)||(!!o&&(w===o||w.startsWith(o+":")))||!!ownerWait(i)}
+// #C1164: whether waiting_on holds the card is the Worker's reading (the view's heldBy, worker/held-by.mjs), not a rule of the page's own.
+function heldOnPurpose(i){if(!i)return false;
+  return i.status==="parked"||((CONFIG.nudges||{}).parked||[]).includes(i.status)||!!i.heldBy||!!ownerWait(i)}
 function gapRed(g,i){return (g.includes("no owner")||g.includes("no ETA"))&&!heldOnPurpose(i)}
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
 // repository explains, or done. Returns minutes.
-function stalled(i){if(!i||i.status!=="active"||i.noWork||i.stepLogBehind||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE)||knownWait(i)||ownerWait(i)||liveWorkers(i.id).length)return 0;
+function stalled(i){if(!i||i.status!=="active"||i.noWork||i.stepLogBehind||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE)||knownWait(i)||ownerWait(i)||i.heldBy||liveWorkers(i.id).length)return 0;
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];if(log.some(e=>e&&e.wait&&e.end==null))return 0;
   const last=num(i.lastStepAt)??log.reduce((m,e)=>Math.max(m,num(e&&e.end)??num(e&&e.start)??0),0);
   if(!last)return 0;const m=Math.floor((Date.now()-last)/60000);return m>=30?m:0}

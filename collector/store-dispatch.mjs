@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
 import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
+import { heldFor } from "../worker/held-by.mjs"; // #C1164: the one reading of waiting_on
 import { agentRank, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
@@ -333,7 +334,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null) askedCards.add(a.card_id);
   const decided = openDecisionCards(view, idByNum, lead); // #C1073: a decision open on a thread holds its card as an open ask does
   for (const id of decided) askedCards.add(id);
-  const notStarted = (k) => k.turns.some((t) => t.step === "build" && !t.sha) && !askedCards.has(k.id) && !(typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(k.who));
+  const notStarted = (k) => k.turns.some((t) => t.step === "build" && !t.sha) && !askedCards.has(k.id) && !heldFor(k, k.who);
   // The same order as the store's (worker/board-rules.mjs queueRank; a held card was skipped above): at one place a card the owner placed comes
   // before one an agent placed (Checker F1 on ac3d31b), then the card's number.
   // #C1053: first the owner's order of the groups (a card in no group after all of them, a group nobody has placed after the placed ones), then as before.
@@ -343,7 +344,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   const queueOrder = (x, y) => agentRank({ rework: x.rework, groupStarted: x.groupStarted, group: x.group, queue_pos: x.queuePos, owner: x.ownerPlaced, num: x.num, id: x.id }, { rework: y.rework, groupStarted: y.groupStarted, group: y.group, queue_pos: y.queuePos, owner: y.ownerPlaced, num: y.num, id: y.id }, groupOrder);
   // Rework goes first (the owner's A on 11-12, 8:24 pm): an agent with a card to fix (findings, or a rework reason to attach) that dispatchItems would not drop
   // (no open ask, not waiting on someone else) is woken for it and for no NEW card, whatever group the new card is in.
-  const waitsElsewhere = (k) => typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(k.who);
+  const waitsElsewhere = (k) => !!heldFor(k, k.who);
   const reworkWho = new Set(cards.filter((k) => k.rework && !askedCards.has(k.id) && !waitsElsewhere(k)).map((k) => k.who));
   // #C1080 (11-15/16: the dispatch woke Boardsmith three times in the middle of G9, for #C997, #C990 and #C1078, and Manager held each by hand): while a role
   // has a STARTED group that is not yet READY, it is woken to build only that group's cards. A group is not ready for a role while one of the role's cards
@@ -372,7 +373,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   for (const k of [...cards].sort(queueOrder)) {
     if (askedCards.has(k.id) || !Number.isInteger(k.num)) continue;
     for (const role of new Set(k.turns.filter((t) => t.step === "review").map((t) => t.role))) {
-      if (typeof role !== "string" || (typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(role))) continue;
+      if (typeof role !== "string" || heldFor(k, role)) continue;
       (queues[role] ??= []).push(k.num);
     }
   }
@@ -384,7 +385,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   for (const k of [...cards].sort(queueOrder)) {
     if (askedCards.has(k.id) || !Number.isInteger(k.num) || !k.group) continue;
     for (const t of k.turns) {
-      if (t.step !== "review" || typeof t.role !== "string" || !/^[0-9a-f]{12}$/.test(String(t.sha)) || (typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(t.role))) continue;
+      if (t.step !== "review" || typeof t.role !== "string" || !/^[0-9a-f]{12}$/.test(String(t.sha)) || heldFor(k, t.role)) continue;
       const key = `${t.role}\n${k.group}`;
       togetherOf.set(key, [...(togetherOf.get(key) ?? []), { k, t }]);
     }
