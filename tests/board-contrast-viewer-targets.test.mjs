@@ -47,9 +47,9 @@ test("no opacity dims the small lines under a step or a wait", () => {
   for (const sel of [".wait small", ".step small.since"]) assert.doesNotMatch(rule(sel), /opacity/, sel);
   assert.doesNotMatch(page.match(/^\.step small\{[^}]*\}/m)[0], /opacity/, ".step small");
 });
-const PAIRS = [[".step.done", "color", "background"], [".step.now.queued", "color", "background"], [".wait", "color", "background"]];
+const PAIRS = [[".step.done", "color", "background"], [".step.now.queued", "color", "background"], [".wait", "color", "background"], [".state.done", "color", "background"]]; // #C1127: .state.done was 4.33:1 in light mode (Designer, on #C1102)
 for (const [name, m] of rules) {
-  test(`${name}: a done step, a queued step and a wait have text at 4.5:1 or more on their ground`, () => {
+  test(`${name}: a done step, a queued step and a wait have text at 4.5:1 or more on their ground (a done state chip too)`, () => {
     const t = tokens(m[1]);
     for (const [sel, fg, bg] of PAIRS) {
       const body = rule(sel), a = tok(body, fg), b = tok(body, bg);
