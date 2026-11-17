@@ -220,6 +220,8 @@ export function probeDoc(view) {
   if (ev.knobs?.value?.ignored?.length) out.knobs = { ignored: ev.knobs.value.ignored.map(({ key, why }) => ({ key, why })) };
   // #C1006: the scheduled tasks' models. Passed on at any age: the page reads value.at and says "model reading old" past 36 h, so a stopped probe is seen.
   if (ev["schedule.models"]?.value) out.schedule = ev["schedule.models"].value;
+  // #C1111: each role's model and effort against what its session runs on, passed on at any age like the schedule (the page says "reading old" past 36 h).
+  if (ev["session.checks"]?.value) out.sessionChecks = ev["session.checks"].value;
   // #C730: the store's own wake (row 4) for the Manager chip and the "seen" ticks, in place of the old wake watch's
   // wakeAliveAt / wakeSeenAt. askAge is left out until the probe has asked the store once; seenAt is Manager's last typed read.
   // A `wake` key in the probe's own board reading is never passed on: only the store's.

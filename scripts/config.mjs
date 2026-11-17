@@ -113,6 +113,10 @@ export const DEFAULTS = {
   // last run used but nothing carries the one it was meant to have, so it is written here. The probe compares the two (collector/schedule-models.mjs)
   // and the page shows a mismatch red, a task with no model here amber "unset". paused: true leaves a task out. None by default.
   scheduledTasks: [],
+  // The model and effort each role's session was meant to run on (#C1111): [{ role, model?, effort? }]. The app's session file of a role's newest open
+  // session carries what it runs on; the probe compares the two (collector/role-sessions.mjs) and the page shows a drift red with the fix. A role not
+  // listed, or a field left out, is not checked. None by default.
+  roleSessions: [],
   // #C997: the operational numbers that are settings (worker/knobs.mjs lists them with their bounds): { key: seconds }. Read at every run; a bad
   // value never refuses this file: the default stands and the page's header names the setting that was ignored (resolveKnobs).
   ops: {},
@@ -125,6 +129,10 @@ const NAME = /^[^<>{}\n]{1,60}$/;
 export const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 export const MODEL_WORD = /^[A-Za-z0-9][A-Za-z0-9._\[\]-]{0,63}$/;
 export const TASK_MAX = 30;
+// #C1111: a session's effort level, as the app's session file words it, and how many roles are checked.
+export const EFFORT_WORD = /^(low|medium|high|xhigh|max)$/;
+export const ROLE_MAX = 20;
+export const ROLE_NAME = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/;
 
 export function checkConfig(c) {
   const out = [];
@@ -344,6 +352,23 @@ export function checkConfig(c) {
         else seen.add(t.id);
         if (t.model !== undefined && t.model !== null && !(typeof t.model === "string" && MODEL_WORD.test(t.model))) out.push(`scheduledTasks[${i}].model: a model name such as claude-haiku-5-5, or left out when none is chosen`);
         if (t.paused !== undefined && typeof t.paused !== "boolean") out.push(`scheduledTasks[${i}].paused: true or false`);
+      });
+    }
+  }
+  // #C1111: the same checks the probe makes before it reads the list (collector/role-sessions.mjs).
+  if (c.roleSessions !== undefined) {
+    const k = c.roleSessions;
+    if (!Array.isArray(k) || k.length > ROLE_MAX) out.push(`roleSessions: a list of up to ${ROLE_MAX} roles`);
+    else {
+      const seen = new Set();
+      k.forEach((t, i) => {
+        if (!t || typeof t !== "object" || Array.isArray(t)) return out.push(`roleSessions[${i}]: an object { role, model, effort }`);
+        for (const f of Object.keys(t)) if (!["role", "model", "effort"].includes(f)) out.push(`roleSessions[${i}]: unknown field "${f}" (known: role, model, effort)`);
+        if (typeof t.role !== "string" || !ROLE_NAME.test(t.role)) out.push(`roleSessions[${i}].role: a role name, letters, digits, space, dot, dash or underscore, 1 to 40 characters`);
+        else if (seen.has(t.role)) out.push(`roleSessions[${i}].role: "${t.role}" is listed twice`);
+        else seen.add(t.role);
+        if (t.model !== undefined && t.model !== null && !(typeof t.model === "string" && MODEL_WORD.test(t.model))) out.push(`roleSessions[${i}].model: a model name such as claude-opus-5-5, or left out when none is chosen`);
+        if (t.effort !== undefined && t.effort !== null && !(typeof t.effort === "string" && EFFORT_WORD.test(t.effort))) out.push(`roleSessions[${i}].effort: low, medium, high, xhigh or max, or left out when none is chosen`);
       });
     }
   }

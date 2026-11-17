@@ -18,7 +18,7 @@ import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { checkConfig, fullConfig, boardId, TASK_ID, MODEL_WORD } from "../scripts/config.mjs";
+import { checkConfig, fullConfig, boardId, TASK_ID, MODEL_WORD, EFFORT_WORD } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES, PUBLISHED_FILE, STORE_CARDS_FILE } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
@@ -101,7 +101,7 @@ export function appSessions(root, uid = process.getuid(), { includeArchived = fa
       const from = typeof s.spawnedFrom?.sessionId === "string" && /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s.spawnedFrom.sessionId) ? s.spawnedFrom.sessionId : null;
       // #C1006: model (the model this session ran on) and scheduledTaskId (set on a scheduled task's run), each only when it is a plain word, else null.
       const word = (v, re) => (typeof v === "string" && re.test(v) ? v : null);
-      out.push({ id: f.slice(0, -5), title: s.title, transcript: s.cliSessionId, cwd: s.cwd, at: Number.isFinite(s.lastActivityAt) ? Math.round(s.lastActivityAt) : null, from, model: word(s.model, MODEL_WORD), scheduledTaskId: word(s.scheduledTaskId, TASK_ID) });
+      out.push({ id: f.slice(0, -5), title: s.title, transcript: s.cliSessionId, cwd: s.cwd, at: Number.isFinite(s.lastActivityAt) ? Math.round(s.lastActivityAt) : null, from, model: word(s.model, MODEL_WORD), effort: word(s.effort, EFFORT_WORD), scheduledTaskId: word(s.scheduledTaskId, TASK_ID) });
     }
   }
   return out;
