@@ -58,6 +58,8 @@ const bool = (v) => (v === true ? 1 : v === false ? 0 : Array.isArray(v) || (v &
 export async function createCard(db, now, who, fields, opts = {}) {
   // #C748 (Checker F5): the check date is the lead's or the owner's on a new card too.
   if (fields && typeof fields === "object" && "check_at" in fields && !CHECK_AT_WRITERS.includes(who)) return refuse(db, now, { rule: "check-at-lead-only", detail: `${who ?? "unknown"} cannot set a card's check date; ${CHECK_AT_WRITERS.join(" or ")} can` }, fields.id, who);
+  // #C1150: a blank repo (empty or only spaces) is "no repo" through the tool, said before the shape rule, so the refusal lists the known repos.
+  if (opts.needRepo && typeof fields.repo === "string" && !fields.repo.trim()) return refuse(db, now, await repoRefusal(db), fields.id, who);
   const bad = cardWriteRefusal(fields, null) ?? reviewHoldWriterRefusal(fields, who);
   if (bad) return refuse(db, now, bad, fields?.id, who);
   if ("done" in fields || "done_evidence" in fields) return refuse(db, now, { rule: "card-done", detail: "a new card is not done: create it, then close it with card_update" }, fields.id, who);
@@ -158,7 +160,7 @@ function reviewHoldWriterRefusal(fields, who) {
 export async function updateCard(db, now, who, fields, opts = {}) {
   const id = fields?.id;
   if (opts.needGroup && fields && typeof fields === "object" && "batch" in fields && (fields.batch === null || (typeof fields.batch === "string" && !fields.batch.trim()))) return refuse(db, now, await groupRefusal(db, "a write cannot take a card out of its group (batch)"), id, who);
-  const card = typeof id === "string" ? await db.prepare("SELECT id, next_note, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, queue_pos, owner_role, dropped, done_at, batch FROM cards WHERE id = ?").bind(id).first() : null;
+  const card = typeof id === "string" ? await db.prepare("SELECT id, next_note, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, queue_pos, owner_role, dropped, done_at, batch, repo FROM cards WHERE id = ?").bind(id).first() : null;
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
   // The lead's ruling (B, on the card's note): a card with no group is written only by a write that gives it one; closing it (done with its evidence, or dropped) needs none,
   // and a card already done or dropped is not asked for one.
@@ -178,6 +180,8 @@ export async function updateCard(db, now, who, fields, opts = {}) {
   if (owned) return refuse(db, now, owned, id, who);
   const bad = cardWriteRefusal(fields, await evidenceOf(db, `cards.${id}`));
   if (bad) return refuse(db, now, bad, id, who);
+  // #C1150: a card never loses its repo after it is created: null on a card that has one is refused (a blank is refused above by the shape rule); another word is fine.
+  if ("repo" in fields && fields.repo === null && typeof card.repo === "string" && card.repo !== "") return refuse(db, now, { rule: "card-repo-kept", detail: `${id} is in ${card.repo}: a card keeps its repo; write another repository word to move it` }, id, who);
   // #C748: the check date holds a card open past its live reading, so only the lead (or the owner) sets it or lifts it (null), as on the old board.
   if ("check_at" in fields && !CHECK_AT_WRITERS.includes(who)) return refuse(db, now, { rule: "check-at-lead-only", detail: `${who ?? "unknown"} cannot set or lift a card's check date; ${CHECK_AT_WRITERS.join(" or ")} can` }, id, who);
   // #C1048 (the lead's pick A and its condition): a waiting_on in the review-hold form ends by itself when its reviewer signs (signoffClears), so

@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { createCard } from "../worker/board-store.mjs";
+import { createCard, updateCard } from "../worker/board-store.mjs";
 import worker from "../worker/board-worker.mjs";
 import { reviewerOf } from "../worker/board-rules.mjs";
 import { reviewerFor } from "../collector/store-dispatch.mjs";
@@ -21,11 +21,37 @@ test("a card with no repo is refused with card-repo-missing and is not written; 
   assert.equal((await make(db, { id: "c-prod", title: "Product", repo: "product-app" })).ok, true);
 });
 
-test("a null repo is no repo; an empty or blank one never passed the repo shape rule (card-repo), first; none of them is made", async () => {
+test("a null repo, an empty one and a whitespace-only one are all no repo (card-repo-missing, listing the known repos); none of them is made (#C1150)", async () => {
   const db = makeDb();
   refusedAs(await make(db, { id: "c-bad-null", title: "x", repo: null }), "card-repo-missing");
-  for (const [i, repo] of ["", "   "].entries()) refusedAs(await make(db, { id: `c-bad-${i}`, title: "x", repo }), "card-repo");
+  for (const [i, repo] of ["", " ", "   ", "\t \n"].entries()) assert.match(refusedAs(await make(db, { id: `c-bad-${i}`, title: "x", repo }), "card-repo-missing"), /known: flight-board\)/);
   assert.equal(await count(db), 0);
+});
+
+test("a repo with text that breaks the shape rule is still refused as card-repo, not as missing (#C1150)", async () => {
+  const db = makeDb();
+  refusedAs(await make(db, { id: "c-shape", title: "x", repo: "Product App" }), "card-repo");
+  assert.equal(await count(db), 0);
+});
+
+test("card_update cannot blank a card's repo: null is refused on a card that has one, another word moves it, a card with none may still write null (#C1150)", async () => {
+  const db = makeDb();
+  await make(db, { id: "c-has", title: "has", repo: "product-app" });
+  await createCard(db, T, "Manager", { id: "c-old", title: "old" });
+  const detail = (r) => { assert.equal(r.ok, false, JSON.stringify(r)); assert.equal(r.refused?.rule ?? r.rule, "card-repo-kept", JSON.stringify(r)); return r.refused?.detail ?? r.detail ?? ""; };
+  assert.match(detail(await updateCard(db, T, "Manager", { id: "c-has", repo: null }, { needGroup: true })), /product-app/);
+  assert.equal((await db.prepare("SELECT repo FROM cards WHERE id = 'c-has'").first()).repo, "product-app");
+  assert.equal((await updateCard(db, T, "Manager", { id: "c-has", repo: "flight-board" }, { needGroup: true })).ok, true);
+  assert.equal((await db.prepare("SELECT repo FROM cards WHERE id = 'c-has'").first()).repo, "flight-board");
+  assert.notEqual((await updateCard(db, T, "Manager", { id: "c-old", repo: null }, { needGroup: true })).rule, "card-repo-kept");
+});
+
+test("the card_create tool says up front that repo is needed: in its description and in the repo property (#C1150)", async () => {
+  const env = { DB: makeDb() };
+  const res = await worker.fetch(new Request("https://board.test/mcp", { method: "POST", headers: { "content-type": "application/json", "x-as": "m" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }) }), env, null, T, async () => ({ who: "Manager", role: "agent" }));
+  const tool = (await res.json()).result.tools.find((t) => t.name === "card_create");
+  assert.match(tool.description, /needs a repo/);
+  assert.match(tool.inputSchema.properties.repo.description, /Required/);
 });
 
 test("the refusal lists the known repos: flight-board always, then every repo word a card carries ('board' reads as flight-board)", async () => {

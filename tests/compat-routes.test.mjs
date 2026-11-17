@@ -180,8 +180,10 @@ test("what a card's expected version is worked out from (B4b): repo, batch and b
   const d = await get(); assert.equal(d.repo, "elsewhere"); assert.equal(d.batch, "pair"); assert.equal(d.bump, "minor");
   // #C1107: a write cannot clear batch (card-group); it moves the card to another group.
   assert.equal((await tool("manager", "card_update", { id: "card-v", repo: null, batch: null, bump: "patch" })).refused?.rule, "card-group");
-  assert.equal((await tool("manager", "card_update", { id: "card-v", repo: null, batch: "other", bump: "patch" })).ok, true);
-  const after = await get(); assert.equal(after.repo, undefined); assert.equal(after.batch, "other"); assert.equal(after.bump, "patch");
+  // #C1150: a card keeps its repo after it is created: null is refused (nothing in the write is applied); another repository word moves it.
+  assert.equal((await tool("manager", "card_update", { id: "card-v", repo: null, batch: "other", bump: "patch" })).refused?.rule, "card-repo-kept");
+  assert.equal((await tool("manager", "card_update", { id: "card-v", repo: "moved", batch: "other", bump: "patch" })).ok, true);
+  const after = await get(); assert.equal(after.repo, "moved"); assert.equal(after.batch, "other"); assert.equal(after.bump, "patch");
   for (const [f, rule] of [[{ repo: "Elsewhere" }, "card-repo"], [{ repo: "x".repeat(41) }, "card-repo"], [{ batch: "a b" }, "card-batch"], [{ batch: 3 }, "card-batch"], [{ bump: "huge" }, "card-bump"]]) {
     const r = await tool("manager", "card_update", { id: "card-v", ...f }); assert.equal(r.refused?.rule, rule, JSON.stringify(f));
   }
