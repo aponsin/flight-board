@@ -1,0 +1,2 @@
+PASS (Full) #C1165 fix: hooks-check reads a settings.json's hook commands only; on the owner's real settings it finds only the pinned install (probed); 7 of 8 mutants killed. LOWs: no-pin test uses an unreadable config, so dropping the 'nothing armed' exit survives; statusLine and other non-hook commands are no longer read (none in today's settings)
+signed-by: Checker 2
