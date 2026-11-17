@@ -1,2 +1,3 @@
-SECURE (Full, G17 line) e32055c23111: ships only inside G17 at 36e0164e85a5, whose head is SECURE; every fix it needed is on that line. Earlier note: SUPERSEDED #C1110 e32055c2: WIP start commit; reviewed with its tip 6bf35adc. Not for shipping on its own. (Security)
+SECURE (Full) e32055c23111 #C1110: covered by the card's signed tip d106ae1b9915 (SECURE), above it in G17 to 36e0164e85a5; ships only with that tip.
+Earlier note: SUPERSEDED #C1110 e32055c2: WIP start commit; reviewed with its tip 6bf35adc. Not for shipping on its own. (Security)
 signed-by: Security
