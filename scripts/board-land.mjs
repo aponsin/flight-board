@@ -9,8 +9,9 @@
 //      line of each note), and whose cards are all free. A tip with a note that says anything else (STOP, FINDINGS, a withdrawn PASS) is not
 //      tried. A line of several commits lands as its tip, in one fast-forward; the branches under it are then on main and drop out.
 //   2. holds: the probe's dispatch job writes <stateDir>/<board>/land-holds.json each minute ({ at, cards: { id: "" | "paused" | "dropped" |
-//      "blocked" | "waiting_on" }}). A tip lands only when every card it carries (the Board-Id trailers of main..tip) is listed with no hold. A file
-//      that is missing, unreadable or older than 10 minutes, or a card it does not list, lands nothing: Release lands by hand as before.
+//      "blocked" | "waiting_on" }, groups: { id: [the other members of its group still to land] }}). A tip lands only when every card it carries (the Board-Id trailers
+//      of main..tip) is listed with no hold, and carries every other member of each card's group still to land (#C1138: only a group's head lands a group, never one
+//      member alone). A file that is missing, unreadable or older than 10 minutes, or a card it does not list, lands nothing: Release lands by hand as before.
 //   3. the refusals: the release tool's dry run (and then its real run) decides; a refusal is written to <stateDir>/<board>/land-report.json
 //      ({ at, landed, refused: [{ branch, sha, cards, reasons }], waiting }) and printed, for Release to take. The job never retries a refused tip
 //      in the same run, never forces, never touches a branch, a note or a hold.
@@ -72,6 +73,12 @@ export function landPlan({ heads, holds, now }) {
     if (!cards.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: "no Board-Id trailer names a card, so no hold can be read" }); continue; }
     if (unknown.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `the holds file does not list ${unknown.join(", ")}` }); continue; }
     if (held.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `held: ${held.map((c) => `${c} (${holds.cards[c]})`).join(", ")}` }); continue; }
+    // #C1138 (11-16 late: #C1126 landed alone at 32438ae1 once every card of G10 that existed was signed, before the group's head was built): groups land whole, so a tip carrying a card
+    // of a group lands only when it carries EVERY other member of that group still to land (the file's `groups`: card id -> the other members that are open and not on main). A group's
+    // head carries them all; a single card's tip does not and waits for it. A file with no `groups` (a probe from before this) asks nothing more.
+    const groups = holds.groups && typeof holds.groups === "object" && !Array.isArray(holds.groups) ? holds.groups : {};
+    const lacking = [...new Set(cards.flatMap((c) => (Array.isArray(groups[c]) ? groups[c] : []).filter((p) => typeof p === "string" && CARD_ID.test(p) && !cards.includes(p))))];
+    if (lacking.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `its group is not whole: this tip lacks ${lacking.slice(0, 6).join(", ")}${lacking.length > 6 ? ` and ${lacking.length - 6} more` : ""}, which land with it as the group's head` }); continue; }
     if (h.dataLines === null) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `its change to ${DATA_FILE} could not be read` }); continue; }
     if (Number.isInteger(h.dataLines) && h.dataLines > 0 && !cards.every((c) => FOLD_CARD.test(c))) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: [`it adds a dated line to ${DATA_FILE}: write the card's line to docs/DATA.d/<card id>.md instead (only the fold card, a Board-Id starting fold-data-fragments, adds dated lines there; a row or a principle may still be edited in the file)`] }); continue; }
     if (!h.forward) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: ["it doesn't continue origin/main: rebase it on main and sign it again"] }); continue; }
