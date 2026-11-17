@@ -225,9 +225,9 @@ export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = pr
   if (typeof spawnedBy === "string" && spawnedBy) {
     for (const s of sessions.filter((x) => x.from === spawnedBy).sort((a, b) => (b.at ?? 0) - (a.at ?? 0))) {
       // Checker's finding on 6c7f684c: a free-text title must not become a key (it would leave the Mac). Only a roster role name, then optional
-      // digits, with spaces between them allowed ("Checker 2" is "Checker2"), is taken; any other title is ignored.
+      // digits, with spaces between them allowed ("Checker2" and "Checker 2" are both the agent "Checker 2", as the roster and the store name it, #C1117), is taken; any other title is ignored.
       const m = /^([A-Za-z]+)\s*(\d*)$/.exec(String(s.title));
-      const role = m && named.includes(m[1]) ? m[1] + m[2] : null;
+      const role = m && named.includes(m[1]) ? (m[2] ? `${m[1]} ${m[2]}` : m[1]) : null;
       if (!role || !ROLE.test(role) || named.includes(role) || Object.hasOwn(out, role)) continue;
       read(role, s, "spawn");
     }

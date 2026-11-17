@@ -3182,7 +3182,7 @@ const STATE_SERVER="Flight Board State",STATE_TOOL="board_state",WAKE_TOOL="boar
 let probe=null,probeNote="",probeAsk=false,liveMcp=null;
 const isT=v=>Number.isInteger(v)&&v>1577836800000&&v<4102444800000;
 const probeFits=s=>!!s&&typeof s==="object"&&s.v===1&&s.board&&isT(s.board.at)&&s.cards&&typeof s.cards==="object"&&s.agents&&typeof s.agents==="object";
-const LIVE_ID=/^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/,LIVE_ROLE=/^[A-Za-z][A-Za-z0-9]{1,23}$/;
+const LIVE_ID=/^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/,LIVE_ROLE=/^(?=.{2,24}$)[A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+)*$/;
 const liveOn=(now=Date.now())=>!!probe&&now-probe.board.at>=-60e3&&now-probe.board.at<LIVE_FRESH;
 // A card as the live state reads it: { phase, at, head12, liveVersion }, or null (no fresh reading, an odd value).
 function liveCard(id,now=Date.now()){if(!liveOn(now)||typeof id!=="string"||!LIVE_ID.test(id)||!Object.hasOwn(probe.cards,id))return null;

@@ -17,7 +17,7 @@ test("a roster role with no open session and a card of its own is to be woken; t
   const cards = [{ who: "Checker", status: "queued" }, { who: "Release", status: "done" }, { who: "Builder", status: "active" }, { who: "Security", status: "paused" }, null];
   assert.deepEqual(wakeNeeds({ roster, agents, cards, lead: "Manager" }), { wake: ["Checker"], missing: ["Release", "Security"] });
   assert.deepEqual(wakeNeeds({ roster, agents: {}, cards: [], lead: "Manager" }), { wake: [], missing: ["Builder", "Checker", "Release", "Security"] }, "the lead is never listed");
-  assert.deepEqual(wakeNeeds({ roster: ["bad role", "Ok"], agents: {}, cards: [{ who: "Ok", status: "queued" }] }), { wake: ["Ok"], missing: [] }, "an odd role name is dropped");
+  assert.deepEqual(wakeNeeds({ roster: ["bad!role", "Ok"], agents: {}, cards: [{ who: "Ok", status: "queued" }] }), { wake: ["Ok"], missing: [] }, "an odd role name is dropped");
 });
 
 test("a role is asked once per spell, and again after it was back", () => {

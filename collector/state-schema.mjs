@@ -39,7 +39,8 @@ export const CI_STATES = ["none", "queued", "running", "passed", "failed", "canc
 const BOARD_ID = /^[A-Za-z0-9-]{1,64}$/;
 export const CARD_ID = /^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/;
 export const CARD_ID_MAX = 40;
-export const ROLE = /^[A-Za-z][A-Za-z0-9]{1,23}$/;
+// #C1117: a role name may hold single spaces between words or digits ("Checker 2"), as the roster and the store's rules already name it: 2 to 24 characters in all.
+export const ROLE = /^(?=.{2,24}$)[A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+)*$/;
 const PHASE = /^[a-z]{2,16}$/;
 const SHA12 = /^[0-9a-f]{12}$/;
 const VERSION = /^\d{1,4}\.\d{1,4}\.\d{1,4}$/;
@@ -167,7 +168,8 @@ const whole = (lo, hi) => (v) => Number.isInteger(v) && v >= lo && v <= hi;
 const CTX = { pct: whole(0, 100), tokens: nullOr(whole(0, 5e6)), at: isTime, over: (v) => typeof v === "boolean" };
 const STUCK = { kind: (v) => STUCK_KINDS.includes(v), card: nullOr(isId), since: isTime };
 const USAGE = { at: isTime, asOf: isTime, weekTotal: whole(0, 1e12), weekPct: nullOr(whole(0, 1000)), pace: nullOr(whole(0, 10000)), level: (v) => USAGE_LEVELS.includes(v), top: (v) => Array.isArray(v) && v.length <= MAX_TOP };
-const USAGE_TOP = { src: re(ROLE), pct: whole(0, 100) };
+// A usage source stays ONE word (a role without a space, "scheduled" or "other"): free text must not become a key or a label (#C1117 widened ROLE, not this).
+const USAGE_TOP = { src: re(/^[A-Za-z][A-Za-z0-9]{1,23}$/), pct: whole(0, 100) };
 const SHIP = { version: nullOr(re(VERSION)), ci: (v) => SHIP_CI.includes(v), at: isTime };
 
 // One record against its fields: exactly those keys, each value passing. The errors name only the schema's own words.

@@ -26,30 +26,30 @@ function home() {
 const row = (n, title, extra = {}) => ({ id: sid(n), title, transcript: tid(n), cwd: "/Users/x/Code/teamrepo", at: T - n * MIN, from: null, ...extra });
 const run = (sessions, extra = {}) => agentStates({ roles: ["Manager", "Checker"], sessions, homeDir: home().h, now: T, ids: new Set(), nums: new Map(), spawnedBy: LEAD, ...extra });
 
-test("a session the lead started, not on the roster, is an agent under its title with spaces dropped, marked by: spawn", () => {
+test("a session the lead started, not on the roster, is an agent under its role name, Checker 2, marked by: spawn", () => {
   const a = run([row(1, "Checker 2", { from: LEAD })]);
-  assert.deepEqual(Object.keys(a), ["Checker2"]);
-  assert.equal(a.Checker2.by, "spawn");
-  assert.equal(a.Checker2.lastActivityAt, T - MIN);
+  assert.deepEqual(Object.keys(a), ["Checker 2"]);
+  assert.equal(a["Checker 2"].by, "spawn");
+  assert.equal(a["Checker 2"].lastActivityAt, T - MIN);
 });
 
 test("a session another session started, one nobody started, and the lead's own are not added; with no lead named, none is", () => {
   const sessions = [row(1, "Checker 2", { from: OTHER }), row(2, "Plain", { from: null }), row(3, "Checker 3", { from: LEAD })];
-  assert.deepEqual(Object.keys(run(sessions)), ["Checker3"]);
+  assert.deepEqual(Object.keys(run(sessions)), ["Checker 3"]);
   assert.deepEqual(Object.keys(run(sessions, { spawnedBy: null })), []);
 });
 
 test("a roster role keeps its own rule: a spawned session titled like one is not a second agent, and the roster's agent is the one found as before", () => {
   const a = run([row(1, "Checker", { from: LEAD }), row(2, "Checker 2", { from: LEAD })]);
-  assert.deepEqual(Object.keys(a).sort(), ["Checker", "Checker2"]);
+  assert.deepEqual(Object.keys(a).sort(), ["Checker", "Checker 2"]);
   assert.equal(a.Checker.by, "title", "found by title, as a roster role is");
-  assert.equal(a.Checker2.by, "spawn");
+  assert.equal(a["Checker 2"].by, "spawn");
 });
 
 test("two spawned sessions with the same name give the newest; a title that is no role name is left out", () => {
   const a = run([row(1, "Checker 2", { from: LEAD, at: T - 9 * MIN }), row(2, "Checker2", { from: LEAD, at: T - MIN }), row(3, "?", { from: LEAD }), row(4, "A", { from: LEAD })]);
-  assert.deepEqual(Object.keys(a), ["Checker2"]);
-  assert.equal(a.Checker2.lastActivityAt, T - MIN);
+  assert.deepEqual(Object.keys(a), ["Checker 2"]);
+  assert.equal(a["Checker 2"].lastActivityAt, T - MIN);
 });
 
 // Checker's finding on 6c7f684c (MEDIUM): a title is free text and must not become an agent key, since the key leaves the Mac in the state.
@@ -58,7 +58,7 @@ test("a spawned session's title that is not a roster role plus digits is ignored
   const sessions = titles.map((t, i) => row(i + 1, t, { from: LEAD }));
   assert.deepEqual(Object.keys(run(sessions)), [], titles.join(" | "));
   // and the ones that are the shape are kept, spaces between role and digits or none
-  assert.deepEqual(Object.keys(run([row(1, "Checker 12", { from: LEAD }), row(2, "Manager7", { from: LEAD })])).sort(), ["Checker12", "Manager7"]);
+  assert.deepEqual(Object.keys(run([row(1, "Checker 12", { from: LEAD }), row(2, "Manager7", { from: LEAD })])).sort(), ["Checker 12", "Manager 7"]);
 });
 
 test("the probe reads from out of the app's session file: only a session id is kept, and nothing else of spawnedFrom", () => {
@@ -76,7 +76,7 @@ test("the probe reads from out of the app's session file: only a session id is k
 
 test("the state accepts by: spawn and still refuses any other word", () => {
   const card = { state: "idle", lastActivityAt: T, tool: null, card: null, since: null };
-  const s = (agent) => ({ v: STATE_VERSION, board: { boardId: "x".repeat(22), at: T, probe: "a".repeat(40), pageVersion: null }, cards: {}, agents: { Checker2: agent } });
+  const s = (agent) => ({ v: STATE_VERSION, board: { boardId: "x".repeat(22), at: T, probe: "a".repeat(40), pageVersion: null }, cards: {}, agents: { "Checker 2": agent } });
   assert.deepEqual(stateErrors(s({ ...card, by: "spawn" })).filter((e) => /by/.test(e)), []);
   assert.ok(stateErrors(s({ ...card, by: "other" })).some((e) => /by/.test(e)));
 });
@@ -85,11 +85,11 @@ const html = readFileSync(new URL("../page/board.template.html", import.meta.url
 test("the Crew tiles draw an agent the probe reads that is not on the roster, with no config edit; a stale reading draws none", () => {
   const b = loadNames(["liveAgent", "probeEvent", "crewBy", "crewHtml"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(T); } static now() { return T; } } });
   Object.assign(b.state, { initRaw: [], steps: [], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [], derived: [], initiatives: [] });
-  const live = (at) => ({ v: 1, board: { boardId: "TestBoard42xyz", at, probe: null, pageVersion: null }, cards: {}, agents: { Checker: { state: "idle", lastActivityAt: at, tool: null, card: null, since: null }, Checker2: { state: "idle", lastActivityAt: at, tool: null, card: null, since: null, by: "spawn" } } });
+  const live = (at) => ({ v: 1, board: { boardId: "TestBoard42xyz", at, probe: null, pageVersion: null }, cards: {}, agents: { Checker: { state: "idle", lastActivityAt: at, tool: null, card: null, since: null }, "Checker 2": { state: "idle", lastActivityAt: at, tool: null, card: null, since: null, by: "spawn" } } });
   b.probeEvent({ type: "data", result: { payload: live(T - 40e3) } }, {});
-  assert.deepEqual([...b.crewBy().names], ["Manager", "Builder", "Checker", "Security", "Release", "Checker2"]);
-  assert.match(b.crewHtml(), /data-agent="Checker2"/);
-  assert.doesNotMatch(b.crewHtml().split('data-agent="Checker2"')[1], /found by title/, "a spawned agent is not 'found by title': that note is for a roster role with no session id");
+  assert.deepEqual([...b.crewBy().names], ["Manager", "Builder", "Checker", "Security", "Release", "Checker 2"]);
+  assert.match(b.crewHtml(), /data-agent="Checker 2"/);
+  assert.doesNotMatch(b.crewHtml().split('data-agent="Checker 2"')[1], /found by title/, "a spawned agent is not 'found by title': that note is for a roster role with no session id");
   b.probeEvent({ type: "data", result: { payload: live(T - 10 * MIN) } }, {});
   assert.deepEqual([...b.crewBy().names], ["Manager", "Builder", "Checker", "Security", "Release"], "no live reading, no extra tile");
   assert.match(html, /const live=probe&&probe\.agents/, "crewBy reads the probe's agents");
