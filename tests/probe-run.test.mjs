@@ -49,7 +49,7 @@ test("a child process is killed at its own timeout", async () => {
 });
 
 test("each cadence is its own launchd job with the OS alarm in front of the program", () => {
-  const plists = Object.keys(JOBS).map((job) => launchdPlist({ job, label: `com.flight-board.probe.${job}`, nodePath: "/usr/bin/node", script: "/x/probe.mjs", logPath: `/x/${job}.log` }));
+  const plists = Object.keys(JOBS).map((job) => launchdPlist({ job, label: `com.flight-board.probe.${job}`, nodePath: "/usr/bin/node", script: job === "land" ? `/x/.flight-board/install/${"a".repeat(40)}/scripts/board-land.mjs` : "/x/probe.mjs", logPath: `/x/${job}.log` }));
   assert.equal(new Set(plists.map((p) => /<key>Label<\/key><string>([^<]+)/.exec(p)[1])).size, 5);
   assert.deepEqual(plists.map((p) => Number(/<key>StartInterval<\/key><integer>(\d+)/.exec(p)[1])), [20, 60, 300, 60, 600]);
   assert.deepEqual(plists.map((p) => /alarm (\d+); exec @ARGV/.exec(p)[1]), ["45", "185", "135", "60", "605"]);

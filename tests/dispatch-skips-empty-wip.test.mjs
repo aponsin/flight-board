@@ -38,17 +38,20 @@ test("dispatch: a tip whose newest commit says WIP wakes no reviewer, Security n
 
 // ---- the probe: real git, a start push and then a real commit ----
 const cfg = { phases: [["plan"], ["build"], ["test"], ["checker"], ["security"], ["ship"], ["live"]], skips: [], collector: { notes: { checker: "x", security: "y" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", mainBranch: "main", repos: [] } };
-function repoWith(headSubject) {
+// #C1144 (Checker 2's LOWs on #C1139): `mainAtTip` puts origin/main on the WIP commit (the tip is then a main commit), `trailer: false` leaves out the Board-Id trailer (a branch with no commit
+// of its own, which the probe reads as bare when it sits at main), and `rest` adds message lines after the subject.
+function repoWith(headSubject, { mainAtTip = false, trailer = true, rest = "" } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "fb-wip-")), git = (...a) => execFileSync("git", a, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   git("init", "-q", "-b", "main"); git("config", "user.email", "t@t"); git("config", "user.name", "t"); git("config", "gc.auto", "0");
   git("commit", "-q", "--allow-empty", "-m", "base"); const main = git("rev-parse", "HEAD");
   git("update-ref", "refs/remotes/origin/main", main);
   mkdirSync(join(dir, "docs"), { recursive: true }); writeFileSync(join(dir, "docs/a.md"), "a\n"); git("add", "-A");
-  const message = `${headSubject}\n\nBoard-Id: a-card`;
+  const message = `${headSubject}\n${rest}${trailer ? "\nBoard-Id: a-card" : ""}`.replace(/\n+$/, "");
   git("commit", "-q", "--allow-empty", "-m", message); const sha = git("rev-parse", "HEAD");
   git("update-ref", "refs/remotes/origin/build/a-card", sha);
+  if (mainAtTip) git("update-ref", "refs/remotes/origin/main", sha);
   const T = Date.now();
-  const tips = [{ branch: "build/a-card", sha, at: T, message }, { branch: "main", sha: main, at: T - 1000, message: "base" }];
+  const tips = [{ branch: "build/a-card", sha, at: T, message }, { branch: "main", sha: mainAtTip ? sha : main, at: T - 1000, message: mainAtTip ? message : "base" }];
   return { read: () => cardState({ id: "a-card", num: 1139, level: "Quick", phase: "plan" }, { git: (args) => git(...args), remote: "origin", main: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, tips, live: null, versionPattern: null }, cfg, T) };
 }
 
@@ -63,4 +66,23 @@ test("the probe: a card whose tip's newest commit starts with WIP reads wipHead:
   assert.equal(Object.hasOwn(repoWith("The sweep gets a bigger buffer (#C1124)").read(), "wipHead"), false);
   assert.equal(Object.hasOwn(repoWith("Fix the WIP: wording").read(), "wipHead"), false, "the word must start the first line");
   assert.equal(Object.hasOwn(repoWith("WIPING the cache").read(), "wipHead"), false, "a word that merely starts with the letters is not WIP");
+});
+
+// #C1144 (Checker 2's LOWs on #C1139: mutants survived when the onMain guard, the bare guard or the first-line-only read were removed).
+test("the probe: a WIP commit that is already on main is not marked (the onMain guard)", () => {
+  const r = repoWith("WIP: branch pushed before the first edit (#C1139)", { mainAtTip: true }).read();
+  assert.equal(r.onMain, true, "the fixture: the tip is a main commit");
+  assert.equal(Object.hasOwn(r, "wipHead"), false);
+});
+
+test("the probe: a WIP commit on a bare branch (named for the card, at main, no commit of its own) is not marked (the bare guard)", () => {
+  const r = repoWith("WIP: nothing of its own yet", { mainAtTip: true, trailer: false }).read();
+  assert.equal(Object.hasOwn(r, "wipHead"), false);
+  assert.equal(r.onMain, false, "the fixture: a bare branch is read as build, not as a main commit");
+});
+
+test("the probe: only the FIRST line says WIP: a later line that starts with WIP does not mark a real commit (the first-line-only read)", () => {
+  assert.equal(Object.hasOwn(repoWith("The sweep gets a bigger buffer (#C1124)", { rest: "\nWIP: carried over from the start commit\n" }).read(), "wipHead"), false, "WIP on a later line of the body");
+  assert.equal(Object.hasOwn(repoWith("The sweep gets a bigger buffer (#C1124)", { rest: "WIP: the second line\n" }).read(), "wipHead"), false, "WIP on the line right after the subject");
+  assert.equal(repoWith("WIP: start", { rest: "A real body line\n" }).read().wipHead, true, "WIP on the first line still marks it, whatever follows");
 });

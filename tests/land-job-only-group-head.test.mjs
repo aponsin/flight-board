@@ -32,6 +32,29 @@ test("a member that is dropped, closed, live or on main is not one still to land
   assert.equal(Object.hasOwn(file(v).groups, "d"), false, "nor one that has landed");
 });
 
+// #C1144 (Checker 2's LOW on #C1138): a group member of another repository has no commit here, so it is no peer of this repository's cards.
+// Security's M1 on cf4eb085: the repo word is unreliable (null until the first push; 'board' and 'flight-board' are one repository), so a peer is dropped only when BOTH cards name a repository
+// and the two differ once every board word reads 'flight-board'; an unknown repo stays a peer (the lone tip waits: #C1126 must not land alone again).
+test("the holds file drops a peer only when both cards name a repository and they differ: another repo is no peer, in either direction", () => {
+  const v = view([card("a", { repo: "flight-board" }), card("b", { repo: "flight-board" }), card("other", { repo: "elsewhere" })], { a: "ship", b: "ship", other: "build" });
+  const g = file(v).groups;
+  assert.deepEqual(g.a, ["b"], "a's peer is b only: not the card of another repo");
+  assert.deepEqual(g.b, ["a"]);
+  assert.equal(Object.hasOwn(g, "other"), false, "the other repo's card is alone in its repo: nothing to wait for");
+  assert.deepEqual(file(view([card("a", { repo: "flight-board" }), card("x", { repo: "elsewhere" })], { a: "ship", x: "build" })).groups, {}, "the only other member is in another repo: a lands as a plain tip");
+  assert.deepEqual(file(view([card("a", { repo: "elsewhere" }), card("x", { repo: "flight-board" })], { a: "ship", x: "build" })).groups, {}, "and the other way round");
+});
+
+test("the holds file keeps a peer whose repository is unknown or spelt another way: null or '' with 'flight-board', and 'board' with 'flight-board', still list each other (Security's M1)", () => {
+  for (const [ra, rb] of [["flight-board", null], ["flight-board", ""], [null, "flight-board"], ["flight-board", "board"], ["board", "flight-board"], ["board", null], [null, null], ["flight-board", undefined], ["flight-board", 7], [" flight-board ", "board"]]) {
+    const g = file(view([card("a", { repo: ra }), card("b", { repo: rb })], { a: "ship", b: "build" })).groups;
+    assert.deepEqual(g.a, ["b"], `a=${JSON.stringify(ra)} b=${JSON.stringify(rb)}: a's tip still waits for b`);
+    assert.deepEqual(g.b, ["a"], `b=${JSON.stringify(rb)} a=${JSON.stringify(ra)}`);
+  }
+  // a card with no repo word is unknown, so it also stays a peer of a card in another repository (fail closed)
+  assert.deepEqual(file(view([card("a", { repo: "elsewhere" }), card("b", { repo: null })], { a: "ship", b: "build" })).groups.a, ["b"]);
+});
+
 test("the plan: one signed card's tip waits while its group has other members to land, naming them; the group's head, which carries them all, is tried", () => {
   const holds = file(allSigned);
   const plan = landPlan({ heads: [head(1), head(2), head(9, { branch: "build/g-group", cards: ["card-1", "card-2", "card-3"], ahead: 6 })], holds, now: NOW });
