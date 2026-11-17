@@ -1,1 +1,2 @@
-SUPERSEDED-BY-REBASE #C1066 870233ba: '=' to 4bf3ba49 (range-diff checked). The tip to ship is cadc711a. (Security)
+SECURE (Full, G17 line) 870233baac26: ships only inside G17 at 36e0164e85a5, whose head is SECURE; every fix it needed is on that line. Earlier note: SUPERSEDED-BY-REBASE #C1066 870233ba: '=' to 4bf3ba49 (range-diff checked). The tip to ship is cadc711a. (Security)
+signed-by: Security
