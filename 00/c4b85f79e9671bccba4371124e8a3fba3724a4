@@ -1,0 +1,3 @@
+SECURE (Full) G14 HEAD 00c4b85f: a clean merge of #C1068 3aa92a45 (--cc and --remerge-diff empty). Every commit from 4bc114de to this head carries SECURE. The residual INFO from 04b8dfcc stands: decision authorship is the self-declared `as`. G14 group head 00c4b85f79e9.
+
+signed-by: Security
