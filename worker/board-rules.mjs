@@ -1217,8 +1217,11 @@ export const SLOW_ROW_END = ": add one or unstick it";
 // #C1122: a role whose session has its Remote Control switch turned off (the probe's `rcOff: true` on the agent's reading, from the app's session file) is a line for Manager,
 // once per spell: its row goes when the switch is on again (the pending-row cleanup), so a later spell wakes again. No row for a role the probe says nothing about (null is unknown, not off).
 export const RC_OFF_CARD = "rc-off:";
+// #C1129 (Security's INFO I1 on #C1122): the role must be a roster role, not just a plain name: a roster role's name with optional digits ("Checker 2"), as the probe's own agent rule takes
+// them, so a session with a made-up title cannot put a name in Manager's batch. ROSTER_ROLES is the Worker's list of the roster (the same list that names who may write as whom).
+const rosterRole = (role) => /^[A-Za-z0-9][A-Za-z0-9 _-]{0,23}$/.test(role) && ROSTER_ROLES.includes(role.replace(/ \d+$/, ""));
 export const rcOffWakes = (agents) => (agents && typeof agents === "object" ? Object.entries(agents) : [])
-  .filter(([role, a]) => /^[A-Za-z0-9][A-Za-z0-9 _-]{0,23}$/.test(role) && a?.rcOff === true)
+  .filter(([role, a]) => rosterRole(role) && a?.rcOff === true)
   .sort(([x], [y]) => (x < y ? -1 : 1))
   .map(([role]) => ({ card_id: `${RC_OFF_CARD}${role}`, num: null, reason: `${role} has Remote Control turned off in the app: switch it on in the session's toolbar` }));
 // Every wording a syncStalls cleanup finds its rows by with LIKE (SQLite's LIKE ignores ASCII case): writer text that carries one would have its row deleted and put back on every
