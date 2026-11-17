@@ -1,0 +1,3 @@
+SECURE (Full) #C1133 tip 06913204: tests and changelog only (fixed fixture dates, so the shas are fixed). The code commit 4683e5ce fails closed. Group head 1560560eb097 (board-flakes).
+
+signed-by: Security
