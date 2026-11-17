@@ -67,11 +67,26 @@ test("the dispatch run reads land-report.json beside its other files: a fresh re
 });
 
 test("the land job's launchd plist runs board-land.mjs with only --config: no --job argument", () => {
-  const p = launchdPlist({ job: "land", label: "com.flight-board.store.land", nodePath: "/usr/bin/node", script: "/h/.flight-board/current/scripts/board-land.mjs", args: ["--config", "/h/board.config.json"], logPath: "/h/land.log" });
+  const PIN = "c".repeat(40), script = `/h/.flight-board/install/${PIN}/scripts/board-land.mjs`;
+  const p = launchdPlist({ job: "land", label: "com.flight-board.store.land", nodePath: "/usr/bin/node", script, args: ["--config", "/h/board.config.json"], logPath: "/h/land.log" });
   assert.doesNotMatch(p, /--job/);
-  assert.match(p, /<string>\/h\/\.flight-board\/current\/scripts\/board-land\.mjs<\/string><string>--config<\/string><string>\/h\/board\.config\.json<\/string><\/array>/);
+  assert.match(p, new RegExp(`<string>/h/\\.flight-board/install/${PIN}/scripts/board-land\\.mjs</string><string>--config</string><string>/h/board\\.config\\.json</string></array>`));
   assert.match(p, new RegExp(`<key>StartInterval</key><integer>${JOBS.land.intervalSec}</integer>`));
   assert.match(launchdPlist({ job: "dispatch", label: "x", nodePath: "n", script: "s", logPath: "l" }), /<string>--job<\/string><string>dispatch<\/string>/, "the probe's jobs keep --job");
+});
+
+// #C1144 (Checker 2's LOW on #C1140): launchdPlist builds the land job's plist only for the pinned install, so a pack that rebuilds the agents cannot put it back on the link.
+test("the land job's launchd plist is refused for the linked copy, a checkout, a short or non-hex pin, or another file; other jobs are not held to it", () => {
+  const land = (script) => () => launchdPlist({ job: "land", label: "l", nodePath: "n", script, args: ["--config", "/c"], logPath: "/l" });
+  const refused = /runs only from a pinned install/;
+  assert.throws(land("/h/.flight-board/current/scripts/board-land.mjs"), refused, "the linked copy");
+  assert.throws(land("/h/Code/flight-board/scripts/board-land.mjs"), refused, "a checkout");
+  assert.throws(land(`/h/.flight-board/install/${"c".repeat(39)}/scripts/board-land.mjs`), refused, "a short pin");
+  assert.throws(land(`/h/.flight-board/install/${"g".repeat(40)}/scripts/board-land.mjs`), refused, "a pin that is not hex");
+  assert.throws(land(`/h/.flight-board/install/${"c".repeat(40)}/scripts/board-release.mjs`), refused, "another file of the pin");
+  assert.throws(land(undefined), refused, "no script");
+  assert.doesNotThrow(land(`/h/.flight-board/install/${"c".repeat(40)}/scripts/board-land.mjs`));
+  assert.doesNotThrow(() => launchdPlist({ job: "dispatch", label: "x", nodePath: "n", script: "/x/probe.mjs", logPath: "l" }), "the probe's jobs are not held to the land rule");
 });
 
 // Checker 2's F1 on e03bb4be: the alarm ends node, not the release tool it spawned, so a landing cut by the alarm pushes on as an orphan while the

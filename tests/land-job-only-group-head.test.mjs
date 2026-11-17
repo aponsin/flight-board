@@ -32,6 +32,18 @@ test("a member that is dropped, closed, live or on main is not one still to land
   assert.equal(Object.hasOwn(file(v).groups, "d"), false, "nor one that has landed");
 });
 
+// #C1144 (Checker 2's LOW on #C1138): a group member of another repository has no commit here, so it is no peer of this repository's cards.
+test("the holds file lists only the members of the card's own repository: a member of another repo (a different repo word) is no peer, in either direction", () => {
+  const v = view([card("a", { repo: "flight-board" }), card("b", { repo: "flight-board" }), card("other", { repo: "elsewhere" }), card("teamflow", { repo: "" }), card("blank", { repo: null })], { a: "ship", b: "ship", other: "build", teamflow: "build", blank: "build" });
+  const g = file(v).groups;
+  assert.deepEqual(g.a, ["b"], "a's peer is b only: not the card of another repo, nor the cards with no repo word");
+  assert.deepEqual(g.b, ["a"]);
+  assert.deepEqual(g.other, undefined, "the other repo's card is alone in its repo: nothing to wait for");
+  assert.deepEqual(g.teamflow, ["blank"], "cards with no repo word are one repository among themselves (an empty or missing word is the same)");
+  assert.deepEqual(g.blank, ["teamflow"]);
+  assert.deepEqual(file(view([card("a", { repo: "flight-board" }), card("x", { repo: "elsewhere" })], { a: "ship", x: "build" })).groups, {}, "the only other member is in another repo: a lands as a plain tip");
+});
+
 test("the plan: one signed card's tip waits while its group has other members to land, naming them; the group's head, which carries them all, is tried", () => {
   const holds = file(allSigned);
   const plan = landPlan({ heads: [head(1), head(2), head(9, { branch: "build/g-group", cards: ["card-1", "card-2", "card-3"], ahead: 6 })], holds, now: NOW });
