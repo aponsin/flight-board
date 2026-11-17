@@ -1,0 +1,1 @@
+PASS (Checker 2, Quick) on #C890: only a part-marked sha in next_note holds a landed card below live and is named in partsMissing; 9 of 9 hand mutants killed; npm test 2699, 0 fail (commit ef10fb83 of stack tip ef10fb83)
