@@ -1,0 +1,3 @@
+SECURE (Full) #C1143 d61a0f35: activeRecently only removes idle-stall lines, when the probe's agents reading carries a lastActivityAt inside the stall time. Only the probe writes agents evidence. A reading without the field behaves as before. INFO: a lastActivityAt far in the future would silence that role's stall lines until then. Only the probe can write it, so it's not a hole; a cap such as now + 5 min would make it robust. Group head cf4eb08534c1 (board-follow-ups).
+
+signed-by: Security
