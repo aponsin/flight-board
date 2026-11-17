@@ -259,6 +259,26 @@ test("sign-note: a sha that is not a commit in this checkout is refused, names t
   assert.match(signNote({ run: mine.run, role: "checker", sha: mine.sha, signer: "Checker", line: "PASS ok" }), /^SIGNED checker/);
 });
 
+// #C1134 (Checker 2's nit on #C1131): when the commit is on origin and only missing here, the refusal says to fetch; it says to change checkout only for a commit origin does not have.
+test("sign-note: a commit that is on origin but not fetched here is refused with 'fetch', nothing is written, and after the fetch it signs", () => {
+  const mine = repo(), root = mkdtempSync(join(tmpdir(), "sgn-f-")), other = join(root, "other");
+  execFileSync("git", ["clone", "-q", mine.g("remote", "get-url", "origin"), other], { stdio: "ignore" });
+  const og = (...a) => execFileSync("git", a, { cwd: other, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).replace(/\n+$/, "");
+  og("config", "user.email", "none"); og("config", "user.name", "t"); og("switch", "-q", "-c", "build/card-x");
+  og("commit", "-q", "--allow-empty", "-m", "only on origin"); og("push", "-q", "origin", "build/card-x");
+  const tip = og("rev-parse", "HEAD");
+  const folder = mine.g("rev-parse", "--show-toplevel");
+  for (const push of [false, true]) {
+    assert.throws(() => signNote({ run: mine.run, role: "checker", sha: tip, signer: "Checker", line: "PASS ok", push }), (e) => e.message.includes(tip.slice(0, 12)) && e.message.includes(folder) && /git fetch origin/.test(e.message) && /nothing was written/.test(e.message) && !/inside the checkout that holds/.test(e.message), `push ${push}`);
+  }
+  assert.equal(mine.g("for-each-ref", "refs/notes/"), "", "nothing was written");
+  // the other-repository case keeps its own wording
+  const elsewhere = repo(), foreign = elsewhere.g("commit-tree", "-m", "only in the other repository", "HEAD^{tree}");
+  assert.throws(() => signNote({ run: mine.run, role: "checker", sha: foreign, signer: "Checker", line: "PASS ok" }), (e) => /not a commit in the checkout/.test(e.message) && /inside the checkout that holds the commit/.test(e.message) && !/git fetch origin/.test(e.message));
+  mine.g("fetch", "-q", "origin");
+  assert.match(signNote({ run: mine.run, role: "checker", sha: tip, signer: "Checker", line: "PASS ok" }), /^SIGNED checker/);
+});
+
 test("sign-note: bad input changes nothing", () => {
   const r = repo();
   for (const [bad, why] of [[{ role: "release" }, /--role is checker or security/], [{ sha: "abc" }, /--sha is the commit's full/], [{ sha: r.sha.toUpperCase().replace(/[0-9]/g, "A") }, /--sha is the commit's full/], [{ signer: "" }, /--signer is your own name/], [{ signer: "Check;er" }, /--signer is your own name/], [{ line: "" }, /--line is the note's one first line/], [{ line: "PASS\nFAKE" }, /--line is the note's one first line/]]) {
