@@ -15,6 +15,7 @@ import { resolve, dirname, join, basename, posix } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { pinnedDir } from "./hooks.mjs";
+import { pinnedCommit as pinnedCommitOf } from "./config.mjs";
 import { isSignoff } from "../collector/signoff.mjs";
 
 export const NOTES_REF = "refs/notes/security";
@@ -69,13 +70,8 @@ export function linkMove({ sha, before, beforeHasSha, beforeOnMain, beforeNote }
   return keep ? "keep" : "move";
 }
 
-// The commit the owner's install pins: the one the gate's hook runs from in the settings, or null.
-export function pinnedCommit(settingsText) {
-  // On the store (hooks.mjs --store) gate.mjs is gone: stop.mjs and publish.mjs, the hooks that remain, run from the same pinned copy.
-  // The gate's hooks must agree on the pin (hooks.mjs installs them together): two different commits name none, so a release refuses.
-  const all = new Set([...String(settingsText ?? "").matchAll(/install\/([0-9a-f]{40})\/gate\/(?:gate|stop|publish)\.mjs/g)].map((m) => m[1]));
-  return all.size === 1 ? [...all][0] : null;
-}
+// The commit the owner's install pins: the one the gate's hook runs from in the settings, or null (#C1166: one reader, scripts/config.mjs, shared with wake-watch.mjs).
+export const pinnedCommit = pinnedCommitOf;
 
 // Every regular file under dir (relative path → bytes); anything else (a link, a device) is a difference in itself.
 function tree(dir) {

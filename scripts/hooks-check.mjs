@@ -35,6 +35,8 @@ export function runnableText(text) {
     for (const [k, x] of Object.entries(v)) { if (k === "command" && typeof x === "string") cmds.push(x); else walk(x); }
   };
   walk(doc.hooks);
+  // #C1166 (Security's INFO and Checker 2's LOW on #C1165): a status line runs a command too, outside `hooks`.
+  if (typeof doc.statusLine?.command === "string") cmds.push(doc.statusLine.command);
   return cmds.join("\n");
 }
 

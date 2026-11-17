@@ -112,6 +112,9 @@ test("a settings.json is read for its hooks' commands only: a permission rule na
   assert.equal(viaLink.status, 1, "a hook on the link is read and refused");
   assert.match(viaLink.stdout, /CHECK FAILED .*current: not a pinned copy/);
   assert.equal(runnableText("a task file, not JSON"), "a task file, not JSON");
+  // #C1166: a status line runs a command outside `hooks`: it is read too; a permission rule beside it still is not.
+  const withStatus = runnableText(JSON.stringify({ permissions: { allow: [rule] }, statusLine: { type: "command", command: `node '${link}/scripts/status.mjs'` }, hooks: { Stop: [{ hooks: [{ command: "echo hook" }] }] } }));
+  assert.ok(withStatus.includes(`${link}/scripts/status.mjs`) && withStatus.includes("echo hook") && !withStatus.includes("pickup-watch"), withStatus);
   assert.equal(runnableText(JSON.stringify({ permissions: { allow: [rule] } })), JSON.stringify({ permissions: { allow: [rule] } }), "JSON with no hooks is read whole");
 });
 

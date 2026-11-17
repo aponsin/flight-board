@@ -65,7 +65,7 @@ export const holdOpen = (c, now, endPassed) => !!c && ((typeof c.hold_end === "s
 export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security", ship: "Release" };
 // The repo words of a card of the board's own repository that gets a deploy pair when it lands: kept in collector/pairs.mjs (#C1020), which the
 // pinned probe imports; re-exported here for the dispatch's callers.
-import { BOARD_REPO_WORDS } from "./pairs.mjs";
+import { BOARD_REPO_WORDS, repoKey, isBoardRepo, isBoardCard } from "./pairs.mjs";
 import { wantsSecurity as wantsSecurityOf } from "./signoff.mjs";
 export { BOARD_REPO_WORDS };
 const ROLE_OF_NOTE = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security" };
@@ -109,13 +109,13 @@ export function turnsOf(card, e, ctx = {}) {
     // #C1013: a pair is for the board's own repository only. A product card (any other repo word) is deployed by Release's ship, so it gets no pair turn.
     // A built pair that waits only for the owner's install and whose pinned commit descends from this card's landing already covers it: no build turn.
     if (e.onMain === true && fullSha && typeof ctx.pairCovers === "function" && ctx.pairCovers(fullSha) === true) return [];
-    if (e.onMain === true) return typeof card.repo === "string" && BOARD_REPO_WORDS.has(card.repo) ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, ...where, signed: signedBy, ...(batchOf(card) ? { batch: batchOf(card) } : {}) }] : [];
+    if (e.onMain === true) return isBoardRepo(card.repo) ? [{ role: card.owner_role, phase: "ship", step: "pair", sha, ...where, signed: signedBy, ...(batchOf(card) ? { batch: batchOf(card) } : {}) }] : [];
     // #C854: signed but no longer continuing main: Release cannot take it. The turn is the owner's, to re-cut it on main (a new commit has a new sha, so a reviewer is woken again).
     if (e.behindMain === true) return [{ role: card.owner_role, phase: "ship", step: "recut", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}) }];
     // #C975: a ship lane per repository. A board card's landing is the landing job's (scripts/board-land.mjs, #C967, the owner's A on #T1779): while
     // its report is fresh, Release is woken only for a tip the job refused. With no fresh report (the job is not running) Release lands it by hand,
     // as before. A product card is Release's. So a board landing never waits behind a product ship, and Release is not asked to land a board tip twice.
-    const board = typeof card.repo === "string" && BOARD_REPO_WORDS.has(card.repo);
+    const board = isBoardRepo(card.repo);
     if (board && ctx.landing?.fresh === true && fullSha && !ctx.landing.refused?.has(fullSha)) return [];
     return [{ role: PHASE_LANES.ship, phase: "ship", step: "land", sha, ...where, signed: signedBy }];
   }
@@ -212,7 +212,7 @@ export function landingFrom(report, now) {
 // one of BOARD_REPO_WORDS), when that role is on the roster; otherwise the phase's own lane (Checker). `reviewers` is { repository word: role }.
 export function reviewerFor(card, reviewers, roster = []) {
   if (!reviewers || typeof reviewers !== "object" || Array.isArray(reviewers)) return undefined;
-  const key = !card?.repo || BOARD_REPO_WORDS.has(card.repo) ? "flight-board" : card.repo;
+  const key = isBoardCard(card) ? "flight-board" : card.repo;
   const role = Object.hasOwn(reviewers, key) ? reviewers[key] : undefined;
   return typeof role === "string" && Array.isArray(roster) && roster.includes(role) ? role : undefined;
 }
@@ -233,7 +233,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // branch is the one the evidence names on any of its cards; a builder's turn carries it, and a reviewer is not woken for a card in the stack
   // while a card of the same repository still has a build turn (design 3: Checker and Security are woken once, when no builder has a card queued).
   const switchOn = (Array.isArray(view?.stackSwitch) ? view.stackSwitch : []).some((s) => s && s.repo === "board" && (s.stack === true || s.stack === 1));
-  const boardCard = (c) => !c.repo || c.repo === "flight-board";
+  const boardCard = isBoardCard;
   // #C914 (R4): in stack mode a dependency the same builder has PUSHED (not yet live) is satisfied for a card of the board's repository: card 2 of a
   // stack starts while card 1 waits for its review. Another role's card, or any other repository, still has to be live.
   const hasHead = (id) => hasHeadEvidence(ev[`cards.${id}`]?.value);
@@ -609,8 +609,7 @@ export function landHoldsFile(view, now) {
   // #C1145: the words are compared as one repository's names, not as typed: case, spaces, an `<owner>/` front and a `.git` end do not make another repository ("Flight-Board", "aponsin/flight-board"
   // and "flight-board.git" are the board's), so a spelling difference never drops a peer and lets a lone tip land. A card with NO commit yet is no different: it is still a member to land
   // (toLand reads no commit, only that the card is open and not on main), and its word, if it has none yet, is unknown and keeps it a peer.
-  const repoWord = (r) => (typeof r === "string" ? r.trim().toLowerCase().replace(/^.*\//, "").replace(/\.git$/, "") : "");
-  const repoOf = new Map(all.map((c) => { const w = repoWord(c.repo); return [c.id, w === "" ? "" : BOARD_REPO_WORDS.has(w) ? "flight-board" : w]; }));
+  const repoOf = new Map(all.map((c) => { const w = repoKey(c.repo); return [c.id, w === "" ? "" : BOARD_REPO_WORDS.has(w) ? "flight-board" : w]; }));
   const sameRepo = (a, b) => { const x = repoOf.get(a), y = repoOf.get(b); return x === "" || y === "" || x === y; };
   const members = new Map();
   for (const c of all) { const g = batchOf(c); if (g && toLand(c)) members.set(g, [...(members.get(g) ?? []), c.id]); }

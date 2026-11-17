@@ -5,6 +5,14 @@
 import { homedir } from "node:os";
 // A config path with a leading ~ made absolute (#C864 step 2a: it lived in gate/gate.mjs, which the live probe should not import).
 export const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
+
+// #C1166 (7): the one reading of the install the owner's settings pin, for every script that needs it (the release job, the pickup pass, the dispatch watch's stale-pin check and its --pinned
+// launch). The commit the gate's hooks run from in the settings text: the one sha of the install/<sha>/gate/{gate,stop,publish}.mjs entries (on the store gate.mjs is gone: stop.mjs and
+// publish.mjs, the hooks that remain, run from the same pinned copy). The hooks must agree on the pin (hooks.mjs installs them together): two different commits name none, so none of them acts.
+export function pinnedCommit(settingsText) {
+  const all = new Set([...String(settingsText ?? "").matchAll(/install\/([0-9a-f]{40})\/gate\/(?:gate|stop|publish)\.mjs/g)].map((m) => m[1]));
+  return all.size === 1 ? [...all][0] : null;
+}
 export const REVIEW_PATTERN = /^[A-Za-z0-9_.*][A-Za-z0-9_.*\/-]{0,199}$/, MAX_REVIEW_PATTERNS = 200;
 export function reviewPathsErrors(v, phaseKeys, at = "reviewPaths") {
   if (v === undefined || v === null) return [];

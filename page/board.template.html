@@ -3237,10 +3237,12 @@ function liveUsage(now=Date.now()){const u=liveOn(now)&&probe.usage;if(!u||typeo
     top:u.top.filter(t=>t&&LIVE_ROLE.test(t.src)&&isPct(t.pct)).slice(0,5)}}
 // An agent as the live state reads it: { state: working|idle, card, since: its last activity }, or null.
 function liveAgent(n,now=Date.now()){if(!liveOn(now)||typeof n!=="string"||!LIVE_ROLE.test(n)||!Object.hasOwn(probe.agents,n))return null;
-  const a=probe.agents[n];if(!a||!["working","idle"].includes(a.state))return null;
+  const a=probe.agents[n];if(!a||!["working","idle","unknown"].includes(a.state))return null;
+  // #C1166: a reset session reads "unknown" until it has said something; the stall rule (worker/board-rules.mjs, #C940) counts it as an open session idle since its last activity, so the page does too.
+  const st=a.state==="unknown"?"idle":a.state;
   const card=typeof a.card==="string"&&LIVE_ID.test(a.card)?a.card:null;
-  const since=a.state==="working"?(isT(a.since)?a.since:null):Math.max(isT(a.since)?a.since:0,isT(a.lastActivityAt)?a.lastActivityAt:0)||null;
-  return {state:a.state,card,since}}
+  const since=st==="working"?(isT(a.since)?a.since:null):Math.max(isT(a.since)?a.since:0,isT(a.lastActivityAt)?a.lastActivityAt:0)||null;
+  return {state:st,card,since}}
 // Building by the live state (#C449, collector/state-schema.mjs's buildingNow, copied: the page can't import it): a
 // fresh reading shows the card's branch with a commit beyond main, or an agent working on it. The card's status, badge,
 // tile and queued line follow; the typed status counts only without a fresh reading.

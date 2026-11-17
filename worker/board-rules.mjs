@@ -530,7 +530,7 @@ export function openGroupWithheld({ now, cards, evidenceOf, askedCards, endPasse
   const hasHead = (id) => { const e = evidenceOf(id); return !!e && typeof e === "object" && (typeof e.headSha12 === "string" || typeof e.headSha === "string"); };
   const holdIsOpen = (c) => (typeof c.hold_end === "string" && c.hold_end.trim() !== "" && !endPassed(c.hold_end)) || (Number.isInteger(c.check_at) && c.check_at > now);
   const open = new Map(rows.filter((k) => !k.dropped && !k.done_at).map((k) => [k.id, k]));
-  const boardCard = (c) => !c.repo || c.repo === "flight-board";
+  const boardCard = isBoardCard;
   const dependsOf = (c) => { let l = c.depends_on; if (typeof l === "string") { try { l = JSON.parse(l); } catch { return []; } } return Array.isArray(l) ? l.filter((d) => typeof d === "string") : []; };
   const pushed = (id) => hasHead(id) && evidenceOf(id).stack?.outside !== true;
   const waitsOn = (c) => dependsOf(c).filter((d) => d !== c.id && open.has(d) && phaseOf(d) !== "live" && !(stackOn && boardCard(c) && boardCard(open.get(d)) && open.get(d).owner_role === c.owner_role && pushed(d)));
@@ -865,7 +865,7 @@ export const reviewersShape = (v) => !!v && typeof v === "object" && !Array.isAr
   && Object.keys(v.reviewers).length <= 20 && Object.entries(v.reviewers).every(([k, r]) => /^[A-Za-z0-9._-]{1,40}$/.test(k) && typeof r === "string" && /^[A-Za-z0-9 _-]{1,24}$/.test(r));
 export function reviewerOf(card, reviewers) {
   if (!reviewers || typeof reviewers !== "object" || Array.isArray(reviewers)) return undefined;
-  const key = !card?.repo || card.repo === "flight-board" || card.repo === "board" ? "flight-board" : card.repo;
+  const key = isBoardCard(card) ? "flight-board" : card.repo;
   const role = Object.hasOwn(reviewers, key) ? reviewers[key] : undefined;
   return typeof role === "string" && /^[A-Za-z0-9 _-]{1,24}$/.test(role) ? role : undefined;
 }
@@ -981,7 +981,7 @@ export function installWaitStep({ repo, next, onMain, open }) {
 // ("part <sha>", #C890) that is not on main stays open: the probe says so in `partsMissing`. Pure: the card's repo word and the reading's two fields in.
 export function closesAtLanding({ repo, onMain, partsMissing }) {
   const word = typeof repo === "string" ? repo.trim() : "";
-  return onMain === true && word !== "" && !LANDED_REPO_WORDS.has(word) && !(Array.isArray(partsMissing) && partsMissing.length > 0);
+  return onMain === true && word !== "" && !isBoardRepo(word) && !(Array.isArray(partsMissing) && partsMissing.length > 0);
 }
 export function stepRefusal(a, now) {
   const refuse = (rule, detail) => ({ rule, detail });
@@ -1048,7 +1048,7 @@ export function dependsNotLive(c, cards, evidence, stackOn = false) {
   let list = c.depends_on;
   if (typeof list === "string") { try { list = JSON.parse(list); } catch { return false; } }
   if (!Array.isArray(list)) return false;
-  const boardCard = (k) => !k.repo || k.repo === "flight-board";
+  const boardCard = isBoardCard;
   const pushed = (d) => { const e = evidence?.[d]; return !!e && typeof e === "object" && (typeof e.headSha12 === "string" || typeof e.headSha === "string") && e.stack?.outside !== true; };
   return list.some((d) => {
     if (typeof d !== "string" || d === c.id) return false;
@@ -1072,12 +1072,17 @@ export const spanWords = (ms) => (ms === 3_600_000 ? "hour" : ms % 3_600_000 ===
 // group (batch), on the group's newest card, or one per card with no group; the words hold times and ids, not a running count, so the line is
 // one row until a pair holds the landing (then nothing is current and the store retires the row). The repo words are collector/pairs.mjs's
 // BOARD_REPO_WORDS (this file imports nothing of the collector: tests/landed-wakes-pack-build.test.mjs holds the two equal).
-export const LANDED_REPO_WORDS = new Set(["flight-board", "board"]), LANDED_UNBUILT_MS = KNOBS.landedUnbuiltSec.default * 1000; // #C1106: the setting landedUnbuiltSec; this is its default
+export const LANDED_REPO_WORDS = new Set(["flight-board", "board"]);
+// #C1166 (2): copies of collector/pairs.mjs's repoKey, isBoardRepo and isBoardCard (this file imports nothing of the collector; tests/small-duplicate-readings.test.mjs holds the two equal).
+export const repoKey = (r) => (typeof r === "string" ? r.trim().toLowerCase().replace(/^.*\//, "").replace(/\.git$/, "") : "");
+export const isBoardRepo = (word) => LANDED_REPO_WORDS.has(repoKey(word));
+export const isBoardCard = (card) => !card?.repo || isBoardRepo(card.repo);
+export const LANDED_UNBUILT_MS = KNOBS.landedUnbuiltSec.default * 1000; // #C1106: the setting landedUnbuiltSec; this is its default
 export const landedUnbuiltMsOf = (stored) => knobFrom(stored, "landedUnbuiltSec") * 1000;
 export function landedUnbuilt({ now, cards, evidence, installStart, unbuiltMs = LANDED_UNBUILT_MS }) {
   const groups = new Map();
   for (const c of cards ?? []) {
-    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || !LANDED_REPO_WORDS.has(String(c.repo ?? ""))) continue;
+    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || !isBoardRepo(c.repo)) continue;
     const v = evidence?.[c.id];
     if (v?.lit?.[0] !== "ship" || v.onMain !== true || v.packed === true) continue;
     const at = installStart instanceof Map ? installStart.get(c.id) : undefined;
@@ -1329,11 +1334,11 @@ export const NOTE_FRESH_MS = 60 * 60_000;
 // #C1120 (11-16, #C1104, #C1105, #C1108: Manager got "rework reason missing" and then, about 30 s after the reason was attached, "is slow with no reason"): attaching a reason
 // clears the card's rework flag, so the #C1063 clause below (which needs the flag) never saw it. `reasonAt` is { card_id: time } of the newest rework_history row; a reason
 // attached in the last NOTE_FRESH_MS counts as the line's reason like a fresh next_note, flag or no flag.
-export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages = [], shipSlowMs = SHIP_SLOW_MS, agents, reasonAt }) {
+export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages = [], shipSlowMs = SHIP_SLOW_MS, agents, reasonAt, stackOn = false }) {
   const out = [];
   const roster = agents && typeof agents === "object" ? agents : {};
   for (const c of cards ?? []) {
-    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || isHeld(c) || holdOpen(c, now, endsPassed) || openAskCards?.has(c.id) || dependsNotLive(c, cards, evidence)) continue;
+    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || isHeld(c) || holdOpen(c, now, endsPassed) || openAskCards?.has(c.id) || dependsNotLive(c, cards, evidence, stackOn)) continue;
     const v = evidence?.[c.id], phase = v?.lit?.[0];
     if (typeof phase !== "string" || !PHASES.includes(phase) || ["live", "pack", "install"].includes(phase)) continue;
     if (phase === "ship" && v.onMain === true) continue;

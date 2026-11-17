@@ -53,6 +53,15 @@ test("wake-watch --pinned, run for real: it hands the same arguments (without --
     assert.equal(none.status, 1);
     assert.match(none.stderr, /--pinned: the Stop hook names no single install in the settings; nothing armed/);
     assert.equal(none.stdout, "", "nothing ran, current included");
+    // #C1166 (Checker 2's LOW on #C1165): with a config that does not exist the watch exits 1 whatever --pinned does, so that run proves little. The exit after "nothing armed" is what keeps
+    // a copy on current from arming itself: with it gone the watch goes on to read the config, so the run must end on that one line and nothing after it.
+    assert.equal(none.stderr.trim().split("\n").length, 1, `no other line after "nothing armed": ${none.stderr}`);
+    const cfg = join(home, "board.config.json");
+    writeFileSync(cfg, "{}");
+    const real = spawnSync(process.execPath, [join(ROOT, "scripts", "wake-watch.mjs"), "--pinned", "--config", cfg, "--role", "Builder", "--once"], { encoding: "utf8", env: { ...process.env, HOME: home }, timeout: 20000 });
+    assert.equal(real.status, 1);
+    assert.equal(real.stderr.trim().split("\n").length, 1, `with a real config too: ${real.stderr}`);
+    assert.equal(real.stdout, "");
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
 

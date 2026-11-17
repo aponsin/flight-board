@@ -9,7 +9,7 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { checkConfig, fullConfig, boardId, home } from "./config.mjs";
+import { checkConfig, fullConfig, boardId, home, pinnedCommit } from "./config.mjs";
 import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, ALIVE_MAX_MS, MAX_RUN_MS } from "../gate/wake.mjs";
 import { RESET_FILE, RESET_SEEN_FILE, WAKE_ROLES_FILE, WAKE_ROLES_SEEN_FILE, resetPending, resetSeen, resetLine, wakeLine as roleWakeLine, missingLine, ASKS_FILE, ASKS_SEEN_FILE, asksPending, asksSeen, askLine, TRUTH_FILE, TRUTH_SEEN_FILE, SHIP_ROLE, truthPending, truthSeen, truthLine, NOEVIDENCE_FILE, NOEVIDENCE_SEEN_FILE, noEvidencePending, noEvidenceLine, DISPATCH_FILE, DISPATCH_LATE_SEEN_FILE, dispatchSeenFile, dispatchWokenFile, dispatchPidFile, dispatchPending, dispatchSeen, dispatchLine, dispatchLateLine, dispatchWatchAlive, LINES_FILE, LINES_SEEN_FILE, linesPending, linesSeen, linesSeenFile, routeOf } from "../gate/reset.mjs";
 
@@ -49,11 +49,8 @@ export function roleTick(dir, role, now, pid = process.pid) {
 // and a pair is told once per role: a role that re-arms from the same stale path keeps running, so this can never be a wake loop.
 const INSTALL_SHA = /\/\.flight-board\/install\/([0-9a-f]{40})(?:\/|$)/;
 export const installShaOf = (path) => INSTALL_SHA.exec(String(path ?? "").replaceAll("\\", "/"))?.[1] ?? null;
-// The install the Stop hook pins: the one sha in the settings text's gate/stop.mjs entries; none, or more than one, is no pin.
-export function pinnedInstallOf(settingsText) {
-  const shas = new Set([...String(settingsText ?? "").matchAll(/\.flight-board\/install\/([0-9a-f]{40})\/gate\/stop\.mjs/g)].map((m) => m[1]));
-  return shas.size === 1 ? [...shas][0] : null;
-}
+// The install the Stop hook pins: the one sha the settings' gate hooks run from; none, or more than one, is no pin (#C1166: scripts/config.mjs's one reader, the release job's and the pickup pass's too).
+export const pinnedInstallOf = pinnedCommit;
 export const staleLine = (own, pin) => `wake-watch: stale pin: this watch runs from install ${own.slice(0, 12)} but the Stop hook pins ${pin.slice(0, 12)}; it ends now so you re-arm on the pinned install (the path your Stop hook prints)`;
 const staleFile = (role) => `stale-pin-${String(role).replace(/[^A-Za-z0-9]+/g, "-")}.json`;
 // The line to print, or null. Marks the pair told only when it is returned.

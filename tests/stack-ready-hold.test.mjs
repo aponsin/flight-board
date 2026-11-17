@@ -553,6 +553,20 @@ test("(g) #C1161: a card that is not the fold card and adds a dated line to docs
   assert.equal(dataRefusal(fold), null);
 });
 
+test("(g2) #C1166: the check is per card over origin/main..HEAD, not the tip's card: a lower card of a stack that adds the line is named, the tip's own clean card does not hide it; a fold card below passes", () => {
+  const dated = (s) => appendFileSync(join(s.work, "docs/DATA.md"), "- 2026-11-17: a new line\n");
+  // A two-card stack: the lower card's commit makes the edit, the tip (another card) changes only a file of its own.
+  const stacked = (lowerId, tipId, lowerEdit) => dataBranch(tipId, (s) => { lowerEdit(s); s.g(["add", "-A"]); s.g(["commit", "-qm", `Lower\n\nBoard-Id: ${lowerId}`]); writeFileSync(join(s.work, "tip.txt"), "x"); });
+  const why = dataRefusal(stacked("card-lower", "card-tip", dated));
+  assert.match(why, /for card card-lower/, "it names the card whose commit adds the line, not the tip's");
+  assert.match(why, /docs\/DATA\.d\/card-lower\.md/);
+  assert.doesNotMatch(why, /card-tip/);
+  // The gap: a fold card at the tip used to hide a lower card's line (only the tip's card was read); the landing job reads every card.
+  assert.match(dataRefusal(stacked("card-lower", "fold-data-fragments", dated)), /for card card-lower/);
+  assert.equal(dataRefusal(stacked("fold-data-fragments", "fold-data-fragments", dated)), null, "the fold card alone adds dated lines as it may");
+  assert.equal(dataRefusal(stacked("card-lower", "card-tip", (s) => writeFileSync(join(s.work, "x.txt"), "1"))), null, "nothing added anywhere: it goes");
+});
+
 test("findConfigPath: --config first, then BOARD_CONFIG, else none; no other source is read", () => {
   assert.equal(findConfigPath({ args: ["--config", "/a.json"], env: { BOARD_CONFIG: "/b.json" } }), "/a.json");
   assert.equal(findConfigPath({ args: [], env: { BOARD_CONFIG: "/b.json" } }), "/b.json");

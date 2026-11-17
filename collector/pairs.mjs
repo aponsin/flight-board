@@ -7,6 +7,14 @@ import { join } from "node:path";
 
 // The repo words of a card of the board's own repository that gets a deploy pair when it lands (the live board has both: "flight-board" and "board").
 export const BOARD_REPO_WORDS = new Set(["flight-board", "board"]);
+// #C1166 (2): one reading of "is this the board's own repository", for the probe, the dispatch and (as a copy in worker/board-rules.mjs, which imports
+// nothing of the collector; tests/small-duplicate-readings.test.mjs holds the two equal). A word is read as one repository's name, not as typed (#C1145):
+// case, spaces, an `<owner>/` front and a `.git` end do not make another repository.
+export const repoKey = (r) => (typeof r === "string" ? r.trim().toLowerCase().replace(/^.*\//, "").replace(/\.git$/, "") : "");
+// A repo WORD that names the board's own repository (a card with no word is unknown here: the pair step needs the word, the probe writes it, #C742).
+export const isBoardRepo = (word) => BOARD_REPO_WORDS.has(repoKey(word));
+// A CARD of the board's own repository: no repo word at all, or one that names it. Stack mode, the dependency checks and the reviewer key ask this.
+export const isBoardCard = (card) => !card?.repo || isBoardRepo(card.repo);
 
 // Whether the commit `landing` is the pair's pin or an ancestor of it (the pin descends from the landing). git(args) -> { status }; an answer it cannot give is false.
 export function descends(git, landing, pin) {

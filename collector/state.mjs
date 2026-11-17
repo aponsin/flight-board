@@ -25,7 +25,7 @@ import { boardIdOf, boardIdsOf } from "./board-id.mjs";
 import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
 import { reviewsFromPaths, pathPhases } from "./review-paths.mjs";
 import { countFindings } from "./findings-count.mjs";
-import { pairsIn, packOf, BOARD_REPO_WORDS } from "./pairs.mjs";
+import { pairsIn, packOf, isBoardRepo } from "./pairs.mjs";
 import { isSignoff, isFindings, securityAlways } from "./signoff.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
 import { NOEVIDENCE_FILE, evidenceAt, noEvidenceSince, DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset.mjs";
@@ -1061,12 +1061,12 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
   }
   // #C1020: a board-repository card on main shows packed and installed from the deploy pairs (pairsIn, the owner's pair folder) and git alone:
   // packed when a pair's pin holds its landing, installed when such a pair's deploy ran. Never for a card of another repository, nor one not on main.
-  const board = Object.entries(repos).find(([name]) => BOARD_REPO_WORDS.has(name))?.[1];
+  const board = Object.entries(repos).find(([name]) => isBoardRepo(name))?.[1];
   if (board && typeof board.git === "function" && pairs.length) {
     const git = (args) => ({ status: ok(() => board.git(args)) ? 0 : 1 });
     for (const id of Object.keys(out)) {
       // The card's own repo word names the board (as the dispatch's pair turn reads it), and it was read from the board's checkout.
-      if (!BOARD_REPO_WORDS.has(String(cardOf[id].repo ?? "")) || repoOfCard[id] !== board || out[id].onMain !== true || !out[id].headSha) continue;
+      if (!isBoardRepo(cardOf[id].repo) || repoOfCard[id] !== board || out[id].onMain !== true || !out[id].headSha) continue;
       const p = packOf(pairs, out[id].headSha, git);
       if (p.packed) out[id] = { ...out[id], packed: true, ...(p.installed ? { installed: true } : {}) };
     }
@@ -1083,10 +1083,10 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
 export const CLOSED_PACK_DAYS = 14, CLOSED_PACK_COMMITS = 500;
 export function closedPacks({ cards, repos, now, pairs = [] }) {
   const out = {};
-  const board = Object.entries(repos ?? {}).find(([name]) => BOARD_REPO_WORDS.has(name))?.[1];
+  const board = Object.entries(repos ?? {}).find(([name]) => isBoardRepo(name))?.[1];
   if (!board || typeof board.git !== "function" || !Array.isArray(pairs) || !pairs.length) return out;
   const since = now - CLOSED_PACK_DAYS * 864e5;
-  const recent = (cards ?? []).filter((k) => k?.status === "done" && BOARD_REPO_WORDS.has(String(k.repo ?? "")) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX
+  const recent = (cards ?? []).filter((k) => k?.status === "done" && isBoardRepo(k.repo) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX
     && Number.isFinite(k.doneAt) && k.doneAt > since && k.doneAt <= now + 60e3).slice(0, MAX_CARDS);
   if (!recent.length) return out;
   const want = new Set(recent.map((k) => k.id)), landing = {};

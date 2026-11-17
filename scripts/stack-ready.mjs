@@ -48,6 +48,28 @@ export function staleFiles(tryOut) {
   return names(base, "HEAD").filter((f) => theirs.has(f) && entry("HEAD", f) !== entry(main, f));
 }
 
+// #C1166 (5): the landing job's rule, over every card in origin/main..HEAD (a stacked branch carries the cards below its tip): when the range adds a dated line to docs/DATA.md, every card
+// it carries must be the fold card. Returns null when the rule holds (or git could not give the log or the diff: no origin/main here, the landing job reads it again), else
+// { sha, card } naming the commit that adds the line and the card its Board-Id trailer names (or, when no single commit shows it, the first card that is not the fold card).
+// tryOut(args) -> text, or { error }.
+export function dataLineOffender(tryOut) {
+  const total = tryOut(dataDiffArgs(MAIN_REF, "HEAD"));
+  if (typeof total !== "string" || !(addedDatedLines(total) > 0)) return null;
+  const log = tryOut(["log", "--no-merges", "--reverse", "--format=%H%x1f%(trailers:key=Board-Id,valueonly,separator=%x2c)%x1e", `${MAIN_REF}..HEAD`]);
+  if (typeof log !== "string") return null;
+  const commits = log.split("\x1e").map((r) => r.trim()).filter(Boolean).map((rec) => {
+    const [sha, ids = ""] = rec.split("\x1f");
+    return { sha, cards: ids.split(/[\n,]/).map((x) => x.trim()).filter(Boolean) };
+  });
+  const cards = new Set(commits.flatMap((c) => c.cards));
+  if (cards.size && [...cards].every((c) => FOLD_CARD.test(c))) return null;
+  for (const c of commits) {
+    const diff = tryOut(["show", "-U0", "--no-renames", "--format=", c.sha, "--", DATA_FILE]);
+    if (typeof diff === "string" && addedDatedLines(diff) > 0) return { sha: c.sha, card: c.cards.at(-1) ?? null };
+  }
+  return { sha: null, card: [...cards].find((c) => !FOLD_CARD.test(c)) ?? null };
+}
+
 // queue: the parsed stack-queue.json ({ at, cards: [{ id, owner_role, repo, dependsOn, started }] }) or null.
 // run(args) -> trimmed stdout; throws on a non-zero exit. Injectable so a test can point it at a temp repo. now() -> an ISO time.
 export function stackReady({ run, queue = null, now = () => new Date().toISOString() }) {
@@ -73,8 +95,9 @@ export function stackReady({ run, queue = null, now = () => new Date().toISOStri
   // #C1161 (11-17: #C1128 put its dated line straight into docs/DATA.md and only Security's read caught that the landing job would refuse it): the landing job's own check, run before
   // the push. A card that is not the fold card (a Board-Id starting fold-data-fragments) must not ADD a dated line to docs/DATA.md; its line goes in docs/DATA.d/<card id>.md.
   // A diff git could not give (no origin/main in this checkout) is not read as a refusal: the landing job reads it again.
-  const dataDiff = tryOut(dataDiffArgs(MAIN_REF, "HEAD"));
-  if (typeof dataDiff === "string" && addedDatedLines(dataDiff) > 0 && !FOLD_CARD.test(id)) fail(`this branch adds a dated line to ${DATA_FILE}, which the landing job refuses: write it to docs/DATA.d/${id}.md and take it out of ${DATA_FILE} (only the fold card, a Board-Id starting fold-data-fragments, adds dated lines there; a row or a principle may still be edited in the file)`);
+  // #C1166 (5): the check is per card, as the landing job's is over every card in origin/main..HEAD, naming the card whose commit adds the line (a stacked branch carries the cards below it too).
+  const offender = dataLineOffender(tryOut);
+  if (offender) fail(`${!offender.sha || offender.sha === sha ? "this branch" : `commit ${offender.sha.slice(0, 12)}`} adds a dated line to ${DATA_FILE} for ${offender.card ? `card ${offender.card}` : "a commit with no Board-Id"}, which the landing job refuses: write it to docs/DATA.d/${offender.card ?? id}.md and take it out of ${DATA_FILE} (only the fold card, a Board-Id starting fold-data-fragments, adds dated lines there; a row or a principle may still be edited in the file)`);
   const pushed = tryOut(["push", "origin", "HEAD"]);
   if (typeof pushed === "object") fail(`git push failed: ${pushed.error}`);
   const at12 = sha.slice(0, 12);
