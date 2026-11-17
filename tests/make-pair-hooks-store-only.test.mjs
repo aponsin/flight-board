@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { makeAll, hooksText, storeOnly, hooksExpectation, hooksWritten, checkHooksExpectation, hookEntriesAt, STORE_ONLY_FIXES, FIRST_PUSH_FIXES } from "../scripts/make-pair.mjs";
+import { makeAll, hookNames, hooksText, storeOnly, hooksExpectation, hooksWritten, checkHooksExpectation, hookEntriesAt, STORE_ONLY_FIXES, FIRST_PUSH_FIXES } from "../scripts/make-pair.mjs";
 import { hookEntries } from "../scripts/hooks.mjs";
 
 const OLD = "1".repeat(40), CUE = "c".repeat(64);
@@ -114,10 +114,30 @@ test("makeAll: an old two-entry template and the repository's hooks.mjs (Stop pl
     assert.deepEqual(hooksExpectation(hooks), { board: 2, stop: 1, publish: 0, first: 1 });
     assert.doesNotMatch(hooks, /page-publish hook|PreToolUse gate\/publish/);
     const steps = readFileSync(join(w.out, "board-store-pc8-steps.md"), "utf8");
-    assert.match(steps, /## Line 3: hooks \(the Stop hook, pinned to this main\)/);
+    // #C1141: both hooks the installer writes are named, in the steps heading and in the hooks script's first comment
+    assert.match(steps, /## Line 3: hooks \(the Stop hook and the first-push guard, pinned to this main\)/);
+    assert.match(hooks.split("\n")[0], /^\/\/ The hooks step of pair pc8 \(pins the Stop hook and the first-push guard to this main\)/);
     assert.doesNotMatch(steps, /page-publish hook/);
     assert.doesNotMatch(steps, /only the pin and the pair number changed/);
   } finally { rmSync(w.dir, { recursive: true, force: true }); }
+});
+
+// #C1141 (Security's INFO on pc77): the heading and first comment named only the Stop hook after the hooks line began to install the first-push guard too. The words come from the
+// entries the installer writes, so a third hook is named without anyone editing a list.
+test("hookNames: every hook the installer writes is named, from its entries: one, two (the repository's own: Stop and the first-push guard), an unknown one by its file, none keeps the old wording", () => {
+  const entry = (file, more = "") => ({ hooks: [{ type: "command", command: `'/bin/node' '/pin/gate/${file}' --config '/c.json'${more}` }] });
+  assert.equal(hookNames({ Stop: entry("stop.mjs", " --store") }), "the Stop hook");
+  assert.equal(hookNames(hookEntries("/pin", "/board.config.json", "/bin/node")), "the Stop hook and the first-push guard", "the repository's own installer: both of its entries");
+  assert.equal(hookNames({ Stop: entry("stop.mjs", " --store"), PreToolUse: entry("first-push.mjs"), PostToolUse: entry("after-thought.mjs") }), "the Stop hook, the first-push guard and the after-thought hook");
+  assert.equal(hookNames({ Stop: [entry("stop.mjs"), entry("stop.mjs")] }), "the Stop hook", "a file named twice is named once");
+  for (const none of [null, undefined, {}, { Stop: { hooks: [] } }]) assert.equal(hookNames(none), "the Stop hook", JSON.stringify(none));
+});
+
+test("hooksText's first comment says the hook words it is given, and the old wording when it is given none", () => {
+  const prev = { n: 7, text: TWO(OLD) };
+  const base = { name: "pc8", sha: "a".repeat(40), cueSha: "b".repeat(64) };
+  assert.match(hooksText(prev, base).split("\n")[0], /\(pins the Stop hook to this main\)/);
+  assert.match(hooksText(prev, { ...base, hookWords: "the Stop hook and the first-push guard" }).split("\n")[0], /\(pins the Stop hook and the first-push guard to this main\)/);
 });
 
 test("makeAll: a hooks file that expects one entry while hooks.mjs at the pin still writes two is refused, and nothing is written", () => {
