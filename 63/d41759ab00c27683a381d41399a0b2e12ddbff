@@ -1,0 +1,2 @@
+PASS #C1058 (commit 1 of 2 to tip 07093627): board-land starts install/<hooks pin>/scripts/board-release.mjs (pinnedReleaseTool, pin 40-hex only), NOT RUN otherwise, no fallback to the link; board-release back in RELEASE_ENTRIES and HOOK_ENTRIES. Owner's live pin 1674baab has the tool. Mutants 9/9 on the tip. Suite 2871 pass, 0 fail.
+signed-by: Checker 2
