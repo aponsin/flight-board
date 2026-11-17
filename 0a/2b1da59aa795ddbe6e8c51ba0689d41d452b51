@@ -1,0 +1,3 @@
+SECURE (Full) #C1125 build/agent-reads-owner-answer: message_id returns owner-authored messages only (author set by the store from auth; as is roster-only), exact id match behind a plain-id regex, no data beyond what thread_id already returns; 26 tests green; mutation check: pass
+
+signed-by: Security
