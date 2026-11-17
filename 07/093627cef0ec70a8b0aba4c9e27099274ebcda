@@ -1,0 +1,3 @@
+SECURE (Full) #C1058 v2 07093627 (tip): closes my LOW on pc59. The landing job starts install/<pin>/scripts/board-release.mjs, pin = pinnedCommit(settings): one 40-hex pin, two give none, so no path traversal; NOT RUN with no pin or no tool, never the linked copy. board-release.mjs back in RELEASE_ENTRIES and HOOK_ENTRIES, so a change to it waits for the owner's pack. 32 tests green; mutation check: pass (landing job pointed back at the linked tool: the test fails). INFO 1: board-land.mjs itself still runs from the link (logged as an owner follow-up). INFO 2: nothing checks install/<pin> against its commit (same trust as the pinned hooks).
+
+signed-by: Security
