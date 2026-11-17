@@ -1,0 +1,3 @@
+SECURE group head ops-knobs-baseline-rest (#C1113): the merge of main resolves a test file only. Posted windows are bounded by knob min/max (threadWindowSec 600..86400, stuckWindowSec 3600..604800, stuckFreshSec 120..7200) with defaults when missing or invalid
+
+signed-by: Security
