@@ -1,0 +1,3 @@
+SECURE (Full) #C1073 17174f9b: merges main 4bc114de. The one conflict, in worker/board-rules.mjs, is resolved as a pure union (openDecisionCards next to ACTIVITY_SKEW_MS/activeRecently). G14 group head 04b8dfcc0c61.
+
+signed-by: Security
