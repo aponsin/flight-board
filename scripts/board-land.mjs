@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC, LAND_SUITE_SEC } from "../worker/probe-jobs.mjs";
 import { pinnedCommit } from "./current.mjs";
 // #C1146: the group check (Checker's read of the files two or more cards touch, and one suite run on the head) before a head of two or more cards lands.
-import { GROUP_NOTE_REF, groupLogArgs, groupVerdict, parseGroupLog, sharedFiles, suiteOnSnapshot } from "./group-check.mjs";
+import { GROUP_NOTE_REF, groupFacts, groupVerdict, suiteOnSnapshot } from "./group-check.mjs";
 
 // #C1058 (the owner chose A on #T1992): the release tool this job starts is the one in the owner's installed copy, <install root>/<the commit his hooks pin>/scripts/,
 // never the one beside this file (the linked copy moves with every release) and never a checkout's. So a changed release tool runs only after his install moves the pin.
@@ -202,7 +202,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       const cards = [...new Set((quiet(["log", "--format=%(trailers:key=Board-Id,valueonly,separator=%x2c)", `${main}..${sha}`]) ?? "").split(/[\n,]/).map((x) => x.trim()).filter(Boolean))];
       const dataLines = addedDatedLines(quiet(dataDiffArgs(main, sha)));
       // #C1146: only a head of two or more cards is read for the group check (the git read is skipped for the rest).
-      const group = cards.length >= 2 ? { shared: sharedFiles(parseGroupLog(quiet(groupLogArgs(main, sha)))), read: quiet(["notes", "--ref=board-release/group", "show", sha]), suite: Object.hasOwn(suites, sha) ? suites[sha] : undefined } : undefined;
+      const group = groupFacts({ cards, quiet, main, sha, suites });
       return { branch, sha, notes, cards, dataLines, group, onMain: quiet(["merge-base", "--is-ancestor", sha, main]) !== null, forward: quiet(["merge-base", "--is-ancestor", main, sha]) !== null, ahead: Number(quiet(["rev-list", "--count", `${main}..${sha}`]) ?? 0) };
     });
     return { main, heads };

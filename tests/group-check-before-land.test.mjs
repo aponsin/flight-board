@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GROUP_NOTE_REF, groupLogArgs, groupVerdict, parseGroupLog, readMissing, readNote, sharedFiles, suiteOnSnapshot } from "../scripts/group-check.mjs";
+import { GROUP_NOTE_REF, groupFacts, groupLogArgs, groupVerdict, parseGroupLog, readMissing, readNote, sharedFiles, suiteOnSnapshot } from "../scripts/group-check.mjs";
 import { landPlan, landRun } from "../scripts/board-land.mjs";
 import { JOBS, LAND_MARGIN_SEC, LAND_SUITE_SEC, LAND_TIP_SEC } from "../worker/probe-jobs.mjs";
 
@@ -92,6 +92,23 @@ test("the plan: a head of two or more cards waits without Checker's READ, is tri
   const green = plan({ shared: [], read: null, suite: GREEN });
   assert.equal(green.try.length, 1);
   assert.equal(green.try[0].needSuite, undefined);
+});
+
+test("groupFacts: read only for a head of two or more cards, from the log, the READ note and the kept verdict; a failed read is null, never empty", () => {
+  const seen = [];
+  const quiet = (a) => { seen.push(a); return a[0] === "log" ? logText([{ sha: sha(1), cards: ["card-1"], files: ["x.mjs"] }, { sha: sha(2), cards: ["card-2"], files: ["x.mjs"] }]) : "READ 1 file\nx.mjs"; };
+  const suites = { [sha(9)]: GREEN };
+  const g = groupFacts({ cards: ["card-1", "card-2"], quiet, main: "MAIN", sha: sha(9), suites });
+  assert.deepEqual(g, { shared: ["x.mjs"], read: "READ 1 file\nx.mjs", suite: GREEN });
+  assert.deepEqual(seen[0].at(-1), `MAIN..${sha(9)}`);
+  assert.deepEqual(seen[1], ["notes", "--ref=board-release/group", "show", sha(9)], "the note read is the fetched copy of the group ref, on this sha");
+  assert.equal(groupFacts({ cards: ["card-1", "card-2"], quiet, main: "M", sha: sha(8), suites }).suite, undefined, "another sha has no verdict");
+  assert.equal(groupFacts({ cards: ["card-1", "card-2"], quiet, main: "M", sha: sha(8) }).suite, undefined, "no verdicts kept at all");
+  assert.equal(groupFacts({ cards: ["card-1"], quiet, main: "M", sha: sha(9), suites }), undefined);
+  assert.equal(groupFacts({ cards: undefined, quiet, main: "M", sha: sha(9), suites }), undefined);
+  const failed = groupFacts({ cards: ["a-1", "b-2"], quiet: () => null, main: "M", sha: sha(9), suites: {} });
+  assert.deepEqual(failed, { shared: null, read: null, suite: undefined });
+  assert.equal(groupVerdict({ cards: ["a-1", "b-2"], ...failed }).state, "wait");
 });
 
 test("a head of one card asks nothing of the group check, whatever its facts say", () => {

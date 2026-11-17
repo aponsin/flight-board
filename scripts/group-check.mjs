@@ -45,6 +45,13 @@ export function readMissing(note, shared) {
 }
 export const readNote = (signer, shared) => `READ ${shared.length} file${shared.length === 1 ? "" : "s"} two or more cards touch, signed by ${signer}\n${shared.join("\n")}`;
 
+// The facts the landing job reads for one head: only a head of two or more cards is read (undefined for the rest, which ask nothing). quiet(args) is a git read that gives
+// null when git fails; suites is the kept verdicts by sha (group-check.json). A failed log read gives shared: null (a wait), a missing note gives read: null.
+export function groupFacts({ cards, quiet, main, sha, suites }) {
+  if (!Array.isArray(cards) || cards.length < 2) return undefined;
+  return { shared: sharedFiles(parseGroupLog(quiet(groupLogArgs(main, sha)))), read: quiet(["notes", "--ref=board-release/group", "show", sha]), suite: suites && Object.hasOwn(suites, sha) ? suites[sha] : undefined };
+}
+
 // What the landing job does with a head: { state, why }.
 //   none  the head carries fewer than two cards: no group check
 //   wait  facts missing or Checker's READ is not there (or is stale: a shared file it does not name)
