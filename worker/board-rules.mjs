@@ -183,7 +183,29 @@ export function closeRefusal(ask, who, role, last = null) {
   if (role !== "owner" && ask.type !== "Approval" && last?.author !== "owner") return refuse("close-not-after-owner", `${ask.id}: an agent closes a thread only when the owner's message is the newest on it; post your note and leave the thread for the owner to close`);
   // An Approval closes answered or not: closing never approves anything (a merged pull request, or one a newer head replaced).
   if (["Decision", "Answer"].includes(ask.type) && !ask.answered_at) return refuse("close-unanswered", `a ${ask.type} is answered before it is closed`);
+  if (role !== "owner") { const uncarded = planStepsRefusal(ask); if (uncarded) return uncarded; }
   return null;
+}
+
+// #C863 (half 1 of 3): an answered plan or decision does not close, for an agent, while its answer lists steps that name no card. A step is a list line (1. or 1), a dash, a
+// star, a bullet, or "Step 1:"); it names a card when it carries a card number (#C123). The answer is the owner's chosen option or typed note and his note beside it. No steps listed,
+// or every step carded, closes as before; the owner's own close is never refused (#C1046: he closes at any time). Applies to a Decision, and to any answered ask whose answer says
+// it "becomes a card". The card is the agent's to make: the board does not make one per step.
+export const STEP_LINE = /^\s*(?:\d{1,2}[.)]|[-*•]|step\s*\d{1,2}\s*[:.)])\s+\S/i;
+export const CARD_REF = /#C\d{1,6}\b/i;
+export function answerStepLines(ask) {
+  const typed = typedOther(ask?.answer);
+  const parts = [typed ? typed.note : ask?.answer, ask?.answer_note].filter((s) => typeof s === "string" && s.trim());
+  return parts.join("\n").split(/\r?\n/).filter((l) => STEP_LINE.test(l));
+}
+export function planStepsRefusal(ask) {
+  if (!ask || !ask.answered_at) return null;
+  const text = [typedOther(ask.answer)?.note ?? ask.answer, ask.answer_note].filter((s) => typeof s === "string").join("\n");
+  if (ask.type !== "Decision" && !/becomes?\s+a\s+card/i.test(text)) return null;
+  const uncarded = answerStepLines(ask).filter((l) => !CARD_REF.test(l));
+  if (!uncarded.length) return null;
+  const shown = uncarded.slice(0, 5).map((l) => `"${l.trim().slice(0, 80)}"`).join("; ");
+  return refuse("plan-steps-uncarded", `${ask.id}: ${uncarded.length} step${uncarded.length === 1 ? "" : "s"} of the answer name no card (add its #C number): ${shown}${uncarded.length > 5 ? "; ..." : ""}`);
 }
 
 // The owner's answer in full (#C725 B2): the button he pressed (status), the note beside it, and "something else" on a Decision.
