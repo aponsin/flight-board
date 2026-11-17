@@ -85,6 +85,10 @@ test("the land job's launchd plist is refused for the linked copy, a checkout, a
   assert.throws(land(`/h/.flight-board/install/${"g".repeat(40)}/scripts/board-land.mjs`), refused, "a pin that is not hex");
   assert.throws(land(`/h/.flight-board/install/${"c".repeat(40)}/scripts/board-release.mjs`), refused, "another file of the pin");
   assert.throws(land(undefined), refused, "no script");
+  // Checker 2's nit: the pattern is anchored at its END, so a path that only STARTS right does not pass
+  assert.throws(land(`/h/.flight-board/install/${"c".repeat(40)}/scripts/board-land.mjs.old`), refused, "a suffix after board-land.mjs");
+  assert.throws(land(`/h/.flight-board/install/${"c".repeat(40)}/scripts/board-land.mjs/x`), refused, "a folder below it");
+  assert.throws(land(`/h/.flight-board/install/${"c".repeat(40)}/scripts/board-land.mjs\n/x`), refused, "a newline then more");
   assert.doesNotThrow(land(`/h/.flight-board/install/${"c".repeat(40)}/scripts/board-land.mjs`));
   assert.doesNotThrow(() => launchdPlist({ job: "dispatch", label: "x", nodePath: "n", script: "/x/probe.mjs", logPath: "l" }), "the probe's jobs are not held to the land rule");
 });
