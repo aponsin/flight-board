@@ -1,0 +1,3 @@
+SECURE #C1170 tip 5a8cffc6: S1 and S2 closed. The token's host is BOARD_BASE_URL in the owner-only env file, or the storeUrl of a config named by a hook command in the account's own ~/.claude/settings.json (home from os.userInfo, so HOME cannot redirect it; compared by real path; permission rules are not trusted). --base is still refused. INFO: the S2 test calls putLocalFile with no settingsText, so it reads the real ~/.claude/settings.json and realpaths the hook's --config path (on this Mac, under ~/Documents). That may trip the privacy prompt on Studio CI; pass a settingsText or a stub realpath instead.
+
+signed-by: Security
