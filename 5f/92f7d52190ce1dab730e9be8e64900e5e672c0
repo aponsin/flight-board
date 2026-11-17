@@ -1,0 +1,3 @@
+SECURE (Full) #C1068 5f92f7d5. The dispatch groups a lane's review turns by group and gives one wake a 'together' list, so it only re-shapes wakes; no sign-off rule changes, since each commit still needs its own notes. gate/reset.mjs togetherList allows only integer numbers, 12-hex shas and a PACK_WORD group into the DISPATCH line, so a card can't inject text into a reviewer's prompt. The page escapes text, and pulseSync only sets a numeric animationDelay. G14 group head 04b8dfcc0c61.
+
+signed-by: Security
