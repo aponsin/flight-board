@@ -1,0 +1,2 @@
+PASS (Quick) #C1153 group head: print mode sets process.exitCode, so the pipe drains; the slow-reader test over 150 KB kills the process.exit mutant; data-fragments and landing tests 18/18
+signed-by: Checker 2
