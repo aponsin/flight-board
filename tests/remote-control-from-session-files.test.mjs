@@ -26,10 +26,10 @@ function root(files) {
   return r;
 }
 
-test("appSessions: rcOff is true only for an explicit false; null, absent, true, or any other value is not off; steeredByRemoteClient is never read", () => {
+test("appSessions: rcOff is true for an explicit false or an absent key (#C1128); null, true, or any other value is not off; steeredByRemoteClient is never read", () => {
   const r = root([[1, { remoteControlUserEnabled: false }], [2, { remoteControlUserEnabled: true }], [3, { remoteControlUserEnabled: null }], [4, {}], [5, { remoteControlUserEnabled: "false" }], [6, { remoteControlUserEnabled: 0 }], [7, { steeredByRemoteClient: false, remoteControlAutoEligible: false, bridgeSessionIds: [] }]]);
   const by = Object.fromEntries(appSessions(r).map((s) => [s.title, s.rcOff]));
-  assert.deepEqual(by, { S1: true, S2: false, S3: false, S4: false, S5: false, S6: false, S7: false });
+  assert.deepEqual(by, { S1: true, S2: false, S3: false, S4: true, S5: false, S6: false, S7: true });
   assert.deepEqual(Object.keys(appSessions(r)[0]).sort(), ["at", "cwd", "effort", "from", "id", "model", "rcOff", "scheduledTaskId", "title", "transcript"], "one new boolean and no other Remote Control key (effort is #C1111's)");
 });
 

@@ -102,9 +102,10 @@ export function appSessions(root, uid = process.getuid(), { includeArchived = fa
       // #C1006: model (the model this session ran on) and scheduledTaskId (set on a scheduled task's run), each only when it is a plain word, else null.
       const word = (v, re) => (typeof v === "string" && re.test(v) ? v : null);
       out.push({ id: f.slice(0, -5), title: s.title, transcript: s.cliSessionId, cwd: s.cwd, at: Number.isFinite(s.lastActivityAt) ? Math.round(s.lastActivityAt) : null, from, model: word(s.model, MODEL_WORD), effort: word(s.effort, EFFORT_WORD), scheduledTaskId: word(s.scheduledTaskId, TASK_ID),
-        // #C1122: the file's remoteControlUserEnabled is the only Remote Control key read, as a boolean: true only when it is exactly false (the switch turned off by hand, which the
-        // live try of 11-16 showed it follows within 5 s both ways). Null or absent is unknown, never off (a session whose switch was never touched has none); steeredByRemoteClient is history, not read.
-        rcOff: s.remoteControlUserEnabled === false });
+        // #C1122: the file's remoteControlUserEnabled is the only Remote Control key read, as a boolean: true when it is exactly false (the switch turned off by hand, which the
+        // live try of 11-16 showed it follows within 5 s both ways). #C1128: also true when the key is absent (the app drops the key after Remote Control is cleared; seen twice with the
+        // switch off). Null (a switch never touched), true and any other value are not off; steeredByRemoteClient is history, not read.
+        rcOff: s.remoteControlUserEnabled === false || !Object.hasOwn(s, "remoteControlUserEnabled") });
     }
   }
   return out;

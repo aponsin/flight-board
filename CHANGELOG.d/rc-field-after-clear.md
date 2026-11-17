@@ -1,0 +1,1 @@
+- A session file with no `remoteControlUserEnabled` key now reads as Remote Control off (the app drops the key after Remote Control is cleared; seen twice with the switch off). Null, true and any other value are still not off (rc-field-after-clear, #C1128). Ships: a probe deploy. Tests: `tests/remote-control-from-session-files.test.mjs`.

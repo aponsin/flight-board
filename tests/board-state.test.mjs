@@ -246,7 +246,7 @@ function studio() {
   mkdirSync(proj, { recursive: true });
   const session = (n, title, entries, extra = {}) => {
     const cli = `00000000-0000-4000-8000-00000000000${n}`;
-    writeFileSync(join(org, `local_00000000-0000-4000-8000-00000000000${n}.json`), JSON.stringify({ sessionId: `local_${n}`, cliSessionId: cli, cwd, title, lastActivityAt: T - n, isArchived: false, lastTurnReport: "Alice Martin's site", postTurnSummary: { text: "sk-ant-api03-XYZ" }, ...extra }));
+    writeFileSync(join(org, `local_00000000-0000-4000-8000-00000000000${n}.json`), JSON.stringify({ sessionId: `local_${n}`, cliSessionId: cli, cwd, title, lastActivityAt: T - n, isArchived: false, remoteControlUserEnabled: true, lastTurnReport: "Alice Martin's site", postTurnSummary: { text: "sk-ant-api03-XYZ" }, ...extra }));
     writeFileSync(join(proj, `${cli}.jsonl`), entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
     utimesSync(join(proj, `${cli}.jsonl`), new Date(T), new Date(T));
   };
