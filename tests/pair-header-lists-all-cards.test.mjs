@@ -16,6 +16,9 @@ function repo() {
   const g = (...a) => execFileSync("git", ["-c", "user.email=none", "-c", "user.name=T", "-c", "commit.gpgsign=false", ...a], { cwd: work, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   execFileSync("git", ["init", "-q", "--bare", "-b", "main", bare]);
   execFileSync("git", ["init", "-q", "-b", "main", work]);
+  // #C1133: git detaches `maintenance run --auto` (gc, pack-refs) after commits and pushes; under load it can run while this fixture's next ~600 git calls read HEAD and objects
+  // ("could not parse HEAD", "Could not read <sha>"). Neither repository needs it.
+  for (const repoDir of [bare, work]) for (const [k, v] of [["gc.auto", "0"], ["maintenance.auto", "false"], ["receive.autogc", "false"]]) execFileSync("git", ["-C", repoDir, "config", k, v]);
   g("remote", "add", "origin", bare);
   const commit = (subject) => { writeFileSync(join(work, "f"), subject); g("add", "-A"); g("commit", "-qm", subject); return g("rev-parse", "HEAD"); };
   return { g, work, out, commit };

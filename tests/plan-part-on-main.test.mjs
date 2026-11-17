@@ -16,8 +16,12 @@ const card = (nextNote) => ({ id: "a-card", num: 890, level: "Quick", phase: "pl
 // A repository whose main holds the card's docs-only commit (so it is landed and reads live); a second commit exists on a branch that never reached main.
 // code: the card's commit changes code (src/a.mjs), so it needs an install and reads ship, not live (Checker 2's M1 on #C1104).
 function world({ code = false } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "fb-parts-")), git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  // #C1133: the commit shas are FIXED (fixed dates, author and content). They used to change on every run, and about 1 run in 40 cut a cited prefix with no letter a to f ("367968441",
+  // "8825951"): citedShas ignores such a word on purpose (a date or a long number is not a sha), so partsMissing read empty and the test failed with no load at all.
+  const dir = mkdtempSync(join(tmpdir(), "fb-parts-")), fixed = { ...process.env, GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z" };
+  const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: fixed });
   git(["init", "-q", "-b", "main"]); git(["config", "user.email", "t@t"]); git(["config", "user.name", "t"]);
+  git(["config", "gc.auto", "0"]); git(["config", "maintenance.auto", "false"]); // #C1133: no detached background maintenance racing the fixture's reads
   git(["commit", "-q", "--allow-empty", "-m", "base"]);
   const base = git(["rev-parse", "HEAD"]).trim();
   mkdirSync(join(dir, code ? "src" : "docs"), { recursive: true }); writeFileSync(join(dir, code ? "src/a.mjs" : "docs/a.md"), "a\n");
@@ -28,6 +32,8 @@ function world({ code = false } = {}) {
   git(["switch", "-q", "-c", "side", base]); writeFileSync(join(dir, "side.txt"), "s\n"); git(["add", "-A"]); git(["commit", "-q", "-m", "a part not on main"]);
   const side = git(["rev-parse", "HEAD"]).trim();
   const tips = [{ branch: "build/a-card", sha, at: T, message: "the card\n\nBoard-Id: a-card" }, { branch: "main", sha, at: T, message: "" }];
+  // the prefixes the tests cite must be words citedShas reads as shas (a digit and a letter a to f); a fixture that breaks this says so, rather than failing a later assertion
+  if (citedShas(`part ${base.slice(0, 7)} part ${side.slice(0, 9)}`).length !== 2) throw new Error(`fixture shas are not citable: ${base.slice(0, 7)} ${side.slice(0, 9)} (change the fixture's content or date)`);
   return { sha, base, side, repo: () => ({ git, remote: "origin", main: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, tips, live: null, versionPattern: null }) };
 }
 
@@ -104,4 +110,38 @@ test("a card that is not at live is not touched: a branch still in review keeps 
   const s = cardState({ ...card(`part ${w.side.slice(0, 9)}`), id: "other-card" }, r, cfg, T);
   assert.notEqual(s.phase, "live");
   assert.equal(Object.hasOwn(s, "partsMissing"), false);
+});
+
+// #C1133: the plan-part read failed open under load (a full-suite run read no partsMissing where one part was missing; alone it passed 6 of 6). git's `is-ancestor` says "no" with exit 1;
+// ANY other failure (a timeout, a spawn error, exit 128) is "unknown", and unknown is never read as "present" or as "landed": the part counts as missing, and a head whose place on main
+// could not be read is not read as on main.
+const failing = (w, when, status) => { const real = w.repo(); return { ...real, git: (args) => { if (args[0] === "merge-base" && when(args)) throw Object.assign(new Error("git failed"), { status, code: status === null ? "ETIMEDOUT" : undefined }); return real.git(args); } }; };
+
+test("#C1133: a failed git call on a cited part (timeout, exit 128) counts the part as missing, never as present; exit 1 is still the plain 'no' and a landed part still reads present", () => {
+  const w = world();
+  const note = `part ${w.base.slice(0, 7)}`;
+  assert.equal(cardState(card(note), w.repo(), cfg, T).phase, "live", "control: the part is on main");
+  for (const status of [null, 128, 2]) {
+    const s = cardState(card(note), failing(w, (a) => a.includes(w.base.slice(0, 7)), status), cfg, T);
+    assert.deepEqual(s.partsMissing, [w.base.slice(0, 7)], `a failure with status ${status} is not an empty list`);
+    assert.equal(s.phase, "ship", "held below live, not landed");
+    assert.ok(!s.seen.includes("live"));
+  }
+  const no = cardState(card(note), failing(w, (a) => a.includes(w.base.slice(0, 7)), 1), cfg, T);
+  assert.deepEqual(no.partsMissing, [w.base.slice(0, 7)], "exit 1 is the ordinary 'not an ancestor'");
+});
+
+test("#C1133: when the git call that places the head on main fails, the card is not read as shipped or live and its marked parts are still held", () => {
+  const w = world();
+  const note = `part ${w.base.slice(0, 7)} and part ${w.side.slice(0, 9)}`;
+  const everything = (a) => a.includes("--is-ancestor");
+  const s = cardState(card(note), failing(w, everything, 128), cfg, T);
+  assert.notEqual(s.phase, "live");
+  assert.notEqual(s.phase, "ship");
+  assert.ok(!s.seen.includes("live"));
+  assert.deepEqual(s.partsMissing, [w.base.slice(0, 7), w.side.slice(0, 9)], "no part is read as present when git could not answer");
+  const clean = cardState(card("built it"), failing(w, everything, 128), cfg, T);
+  assert.equal(Object.hasOwn(clean, "partsMissing"), false, "a card citing no part has nothing to hold");
+  const wrap = (c) => stateErrors({ v: 1, board: { boardId: "TestBoard01", at: T, probe: null, pageVersion: null }, agents: {}, cards: { "a-card": c } });
+  assert.deepEqual(wrap(s), [], "the reading passes the state schema");
 });
