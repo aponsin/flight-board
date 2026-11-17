@@ -1,0 +1,2 @@
+PASS group merge of #C1058 into 5b040a45: remerge-diff empty, second parent the signed tip 07093627. Full suite on 5b040a45: 2887 pass, 0 fail. Only 5b040a45 has resolutions (make-pair HOOK_ENTRIES, tests/release.test.mjs closure list), both exact unions. No DATA fragments.
+signed-by: Checker 2
