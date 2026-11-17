@@ -67,6 +67,28 @@ test("a signed card, or one with no tip yet, is not in the range; Security's own
   assert.deepEqual(security[0].together?.map((x) => x.num), [1102], "a and b are both Full cards waiting for Security: one range for it");
 });
 
+// Checker 2's LOW on 04b8dfcc: a card the dispatch will drop for this lane (an open ask on it, or a waiting_on that names someone else) must not lead the range: dispatchItems would drop
+// its turn and the group's other cards, which lost theirs to the fold, would get no wake at all.
+test("a card with an open ask does not lead the range: the next card does, and the group still gets its one wake", () => {
+  const v = three();
+  v.asks = [{ card_id: "a", closed_at: null, answered_at: null }];
+  const got = reviews(v, "Checker");
+  assert.equal(got.length, 1, "the lane is woken once");
+  assert.equal(got[0].num, 1102, "b leads: a waits for the owner and is dropped");
+  assert.deepEqual(got[0].together, [{ num: 1103, sha: "cccccccccccc" }], "a is not in the range either");
+});
+
+test("a card waiting on another role does not lead the range: the next card does", () => {
+  const v = world({ cards: [card("a", 1101, { waiting_on: "Release: lands first" }), card("b", 1102), card("c", 1103)], ev: { a: pushed("a"), b: pushed("b"), c: pushed("c") } });
+  const got = reviews(v, "Checker");
+  assert.equal(got.length, 1);
+  assert.equal(got[0].num, 1102, "a waits on Release, not on Checker: it is dropped for Checker");
+  assert.deepEqual(got[0].together, [{ num: 1103, sha: "cccccccccccc" }]);
+  const own = world({ cards: [card("a", 1101, { waiting_on: "Checker: review" }), card("b", 1102), card("c", 1103)], ev: { a: pushed("a"), b: pushed("b"), c: pushed("c") } });
+  assert.equal(reviews(own, "Checker")[0].num, 1101, "a waiting_on that names the lane itself keeps the card in the range");
+  assert.equal(reviews(own, "Checker")[0].together.length, 2);
+});
+
 test("dispatchLine checks the range again: a bad number, tip or group word never reaches the line", () => {
   const base = { card: "a", role: "Checker", level: 1, since: NOW, phase: "checker", step: "review", num: 1101, sha: "a".repeat(12) };
   const line = dispatchLine({ ...base, group: "g14-x", together: [{ num: 1102, sha: "b".repeat(12) }, { num: "1; rm", sha: "c".repeat(12) }, { num: 1103, sha: "not-a-sha" }, null] });
