@@ -17,7 +17,7 @@ async function answered(note, answer = "A: go") {
   await postMessage(db, T + 2 * MIN, "owner", { thread_id: a.id, body: "Ack." });
   return { db, id: a.id };
 }
-const close = ({ db, id }, role = "agent") => closeAsk(db, T + 3 * MIN, "Manager", id, role);
+const close = ({ db, id }, role = "agent") => closeAsk(db, T + 2 * 60 * MIN, "Manager", id, role);
 const closedAt = async ({ db, id }) => (await db.prepare("SELECT closed_at FROM asks WHERE id = ?").bind(id).first()).closed_at;
 
 test("steps that name no card are refused, and the refusal lists them", async () => {
@@ -46,7 +46,7 @@ test("the owner's own close is never refused, and an unrelated ask with list lin
   const db = makeDb();
   const a = await createAsk(db, T, { type: "Later", title: "L", asked_by: "Manager", text: "t", eta_at: T + 86_400_000 });
   await postMessage(db, T + MIN, "owner", { thread_id: a.id, body: "Ack." });
-  assert.equal((await closeAsk(db, T + 2 * MIN, "Manager", a.id, "agent")).ok, true);
+  assert.equal((await closeAsk(db, T + 2 * 60 * MIN, "Manager", a.id, "agent")).ok, true);
 });
 
 // M1: a plan posted as a Decision whose QUESTION lists the steps, answered "A: go" with no note. A question that uses "- " bullets for context blocks an agent's close too
