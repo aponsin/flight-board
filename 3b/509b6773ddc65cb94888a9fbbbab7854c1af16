@@ -1,0 +1,3 @@
+SECURE #C1113 slice 3: stuckFreshSec, stuckWindowSec and threadWindowSec are read through knobFrom (finite, inside min..max, else the default); the knobs evidence write is checked by knobsShape; covered by group head b45aae0d
+
+signed-by: Security
