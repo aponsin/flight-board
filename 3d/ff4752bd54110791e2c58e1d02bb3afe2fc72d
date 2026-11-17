@@ -1,0 +1,2 @@
+PASS (Full) #C1140 v2 tip 3dff4752, reviewed only from the board-flakes head 1560560e (fails release-tool-pinned alone; the fold 1560560e fixes the test wording). Land step moves the LaunchAgent to install/<main>; matches the real plist. Mutants 9/13 (1 unreachable). LOWs: untested backup-never-overwritten, post-bootstrap print check, install prefix check; launchdPlist still defaults to current.
+signed-by: Checker 2
