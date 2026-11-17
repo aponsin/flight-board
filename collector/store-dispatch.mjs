@@ -255,7 +255,8 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     const held = inBoard && e?.stackHold === true;
     const turns = turnsOf(c, e, { ...(inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {}), ...(pairCovers ? { pairCovers } : {}), ...(landing ? { landing } : {}), ...(reviewerFor(c, reviewers, roster) ? { reviewer: reviewerFor(c, reviewers, roster) } : {}) });
     // #C1018 / #C1035: a tip a Checker session has claimed (the store's review claim) wakes no Checker for its review again: one checker per tip.
-    const mine = held ? turns.filter((t) => t.step !== "review") : turns;
+    // #C1139: a tip whose newest commit says WIP (the probe's wipHead) is a start push, not a READY: no review turn for it, in any repository and with the stack switch on or off.
+    const mine = held || e?.wipHead === true ? turns.filter((t) => t.step !== "review") : turns;
     const shown = mine.filter((t) => !(/^Checker(?: [0-9]{1,3})?$/.test(String(t.role)) && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
     cards.push({ group: batchOf(c), groupStarted: startedGroups.has(batchOf(c)), rework: shown.some((t) => t.role === c.owner_role && (t.step === "rework" || t.step === "reason")), queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }

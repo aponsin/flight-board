@@ -739,7 +739,13 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
     let shas = []; try { shas = String(repo.git(["rev-list", "--max-count=60", `${mainRef}..${tip.sha}`])).split("\n").map((l) => l.trim()).filter((s) => /^[0-9a-f]{40}$/.test(s)); } catch { /* none */ }
     return countFindings(shas.flatMap((s) => notesOn(s)));
   })();
+  // #C1139 (Checker 2, 11-16 late: the dispatch woke it for #C1124 at 8224f95d and #C1065 at d664bc97, each a single empty "WIP: branch pushed before the first edit" commit with no READY):
+  // a tip whose newest commit says WIP (the word at the start of its first line) is a start push or work in progress, never a READY, whatever the stack switch or a signal says. The
+  // dispatch gives it no review turn. The next real commit is a new tip with no such word. A branch on main, or a bare one, is not read.
+  const headLine = String((head.message ?? tip.message) ?? "").split("\n")[0];
+  const wipHead = !onMain && !bare && /^WIP\b/.test(headLine);
   const extra = {
+    ...(wipHead ? { wipHead: true } : {}),
     ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(findings.length ? { findings } : {}),
     ...(Object.keys(issueCounts).length ? { issueCounts } : {}),
