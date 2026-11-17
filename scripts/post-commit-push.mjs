@@ -14,25 +14,38 @@ export const BUILD_BRANCH = /^refs\/heads\/(build\/[A-Za-z0-9][A-Za-z0-9._-]{0,8
 export const branchToPush = (ref) => { const m = BUILD_BRANCH.exec(String(ref ?? "").trim()); return m ? m[1] : null; };
 
 // The push, with `git` injected: git(args) returns the output or throws. { pushed, why } says what happened, for the tests; the hook says nothing.
-export function wipPush({ git, env = process.env }) {
+// #C1126 (Checker 2's LOW 2): the hook process reads the commit and the branch right after the commit and hands both to the detached child (`sha` and `ref`), so a branch switch
+// or a second commit before the child runs cannot push another commit to this name: the push is `<sha>:refs/heads/<branch>`. With neither given (the tests, --now by hand) it reads HEAD.
+export const SHA = /^[0-9a-f]{40,64}$/;
+export function wipPush({ git, env = process.env, sha = null, ref = null }) {
   if (env.FB_NO_WIP_PUSH) return { pushed: false, why: "switched off" };
-  let ref;
-  try { ref = git(["symbolic-ref", "-q", "HEAD"]); } catch { return { pushed: false, why: "detached" }; }
+  if (ref == null) { try { ref = git(["symbolic-ref", "-q", "HEAD"]); } catch { return { pushed: false, why: "detached" }; } }
   const branch = branchToPush(ref);
   if (!branch) return { pushed: false, why: "not a build branch" };
+  if (sha != null && !SHA.test(String(sha))) return { pushed: false, why: "not a commit" };
   try { git(["remote", "get-url", "origin"]); } catch { return { pushed: false, why: "no origin" }; }
-  try { git(["push", "-q", "origin", `HEAD:refs/heads/${branch}`]); } catch { return { pushed: false, why: "push refused" }; }
+  try { git(["push", "-q", "origin", `${sha ?? "HEAD"}:refs/heads/${branch}`]); } catch { return { pushed: false, why: "push refused" }; }
   return { pushed: true, why: "pushed", branch };
+}
+
+// The `--sha=` and `--ref=` the hook process passes to the child.
+export function passedFacts(argv) {
+  const pick = (k) => argv.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? null;
+  return { sha: pick("sha"), ref: pick("ref") };
 }
 
 const run = (args) => String(execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 120_000 }));
 
 function main() {
   try {
-    if (process.argv.includes("--now") || process.env.FB_WIP_PUSH_SYNC === "1") { wipPush({ git: run }); return; }
+    if (process.argv.includes("--now")) { wipPush({ git: run, ...passedFacts(process.argv) }); return; }
     // Cheap checks first: a commit that is not on a build/ branch spawns nothing.
-    if (process.env.FB_NO_WIP_PUSH || !branchToPush(run(["symbolic-ref", "-q", "HEAD"]))) return;
-    spawn(process.execPath, [fileURLToPath(import.meta.url), "--now"], { detached: true, stdio: "ignore", cwd: process.cwd() }).unref();
+    if (process.env.FB_NO_WIP_PUSH) return;
+    const ref = run(["symbolic-ref", "-q", "HEAD"]);
+    if (!branchToPush(ref)) return;
+    const sha = run(["rev-parse", "HEAD"]).trim();
+    if (process.env.FB_WIP_PUSH_SYNC === "1") { wipPush({ git: run, sha, ref }); return; }
+    spawn(process.execPath, [fileURLToPath(import.meta.url), "--now", `--sha=${sha}`, `--ref=${ref.trim()}`], { detached: true, stdio: "ignore", cwd: process.cwd() }).unref();
   } catch { /* the commit is never harmed */ }
 }
 

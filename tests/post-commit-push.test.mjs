@@ -3,12 +3,12 @@
 // the push inline so the test can look at the result.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, appendFileSync, chmodSync } from "node:fs";
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, appendFileSync, chmodSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { branchToPush, wipPush } from "../scripts/post-commit-push.mjs";
+import { branchToPush, wipPush, passedFacts } from "../scripts/post-commit-push.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -87,6 +87,50 @@ test("the real hook: no origin at all is no error", () => {
   s.g(["remote", "remove", "origin"]);
   s.g(["checkout", "-qb", "build/thing"]);
   assert.doesNotThrow(() => s.commit(1));
+});
+
+test("#C1126 wipPush pushes the sha and branch it was handed, never HEAD; a bad sha is not pushed", () => {
+  const calls = [];
+  const git = (args) => { calls.push(args.join(" ")); return args[0] === "symbolic-ref" ? "refs/heads/build/other\n" : ""; };
+  const sha = "a".repeat(40);
+  assert.deepEqual(wipPush({ git, env: {}, sha, ref: "refs/heads/build/x\n" }), { pushed: true, why: "pushed", branch: "build/x" });
+  assert.equal(calls.at(-1), `push -q origin ${sha}:refs/heads/build/x`, "the handed commit to the handed name, whatever HEAD is by now");
+  assert.ok(!calls.includes("symbolic-ref -q HEAD"), "HEAD is not read again when the hook passed the branch");
+  assert.equal(wipPush({ git, env: {}, sha: "HEAD", ref: "refs/heads/build/x" }).why, "not a commit");
+  assert.equal(wipPush({ git, env: {}, sha: "--delete", ref: "refs/heads/build/x" }).why, "not a commit");
+  assert.equal(wipPush({ git, env: {}, sha, ref: "refs/heads/main" }).why, "not a build branch");
+  assert.deepEqual(passedFacts(["node", "x", "--now", `--sha=${sha}`, "--ref=refs/heads/build/x"]), { sha, ref: "refs/heads/build/x" });
+  assert.deepEqual(passedFacts(["node", "x", "--now"]), { sha: null, ref: null });
+});
+
+test("#C1126 the real script: the commit the hook saw is pushed to its branch even when HEAD has moved on", () => {
+  const s = scratch();
+  s.g(["checkout", "-qb", "build/thing"]);
+  const one = s.commit(1, { FB_NO_WIP_PUSH: "1" });
+  const two = s.commit(2, { FB_NO_WIP_PUSH: "1" });
+  s.g(["checkout", "-qb", "build/elsewhere"]);
+  execFileSync(process.execPath, ["scripts/post-commit-push.mjs", "--now", `--sha=${one}`, "--ref=refs/heads/build/thing"], { cwd: s.work, stdio: "ignore" });
+  assert.equal(s.remote("refs/heads/build/thing"), one, "the sha the hook passed, not the later HEAD");
+  assert.notEqual(s.remote("refs/heads/build/thing"), two);
+  assert.equal(s.remote("refs/heads/build/elsewhere"), null, "and never the branch HEAD is on now");
+});
+
+test("#C1126 (Security I2) the pre-push scan is the gate for an auto-pushed commit: a token-like string in a build/ commit is not pushed, the clean one before it is", () => {
+  const s = scratch();
+  // The real scripts the hook runs (scan, trailer check, group order and what they import) are copied in, and kept out of the scratch repository's own commits.
+  appendFileSync(join(s.work, ".git/info/exclude"), "/scripts/\n/worker/\n/collector/\n/docs/\n/package.json\n");
+  for (const d of ["scripts", "worker", "collector"]) cpSync(join(ROOT, d), join(s.work, d), { recursive: true });
+  copyFileSync(join(ROOT, ".githooks/pre-push"), join(s.work, ".githooks/pre-push")); chmodSync(join(s.work, ".githooks/pre-push"), 0o755);
+  // The scan reads a private word list from outside the repository and refuses every push without one.
+  const words = join(mkdtempSync(join(tmpdir(), "fb-words-")), "words.txt"); writeFileSync(words, "zzprivateword\n");
+  s.g(["config", "flightboard.scanwords", words]);
+  s.g(["checkout", "-qb", "build/thing"]);
+  const clean = s.commit(1);
+  assert.equal(s.remote("refs/heads/build/thing"), clean, "a clean commit goes through the real pre-push hook");
+  const secret = "gh" + "p_" + "A1b2C3d4".repeat(3); // built from pieces: the scan refuses it in a file too
+  writeFileSync(join(s.work, "leak.md"), `${secret}\n`); s.g(["add", "-A"]);
+  s.g(["commit", "-qm", "Leak\n\nBoard-Id: thing"]);
+  assert.equal(s.remote("refs/heads/build/thing"), clean, "the scan refused the push: origin keeps the clean tip");
 });
 
 test("the hook file is executable, tracked, and ends every path with exit 0; the script has no force and no other branch", async () => {

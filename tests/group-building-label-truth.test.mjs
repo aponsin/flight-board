@@ -65,6 +65,23 @@ test("(d) a head carrying the waiting note reads builtWaiting; a later push has 
   assert.equal(covered.builtWaiting, undefined, "the signal covers it: neither flag");
 });
 
+test("#C1126 (d) only the EXACT head's waiting note counts: a note on a commit stacked above the head, or on the head's parent, is not the head's", () => {
+  const s = scratch();
+  const head = branch(s, "solo");
+  // another card's commit stacked on top of solo's head carries the note: the head itself has none
+  s.g(["checkout", "-q", "-b", "build/above", head]); const above = s.commit(20, "b.md", "above"); s.g(["checkout", "-q", "main"]); s.sync();
+  s.note(WAITING, above);
+  const r = s.states(["solo"]).solo;
+  assert.equal(r.stackHold, true);
+  assert.equal(r.builtWaiting, undefined, "a note above the head is not a note on the head");
+  // and the other way: the note is on the head's parent, the head is a later push
+  const t = scratch();
+  const first = branch(t, "solo");
+  t.g(["checkout", "-q", "build/solo"]); t.commit(40, "a.md", "solo"); t.g(["checkout", "-q", "main"]); t.sync();
+  t.note(WAITING, first);
+  assert.equal(t.states(["solo"]).solo.builtWaiting, undefined, "a note below the head is not a note on the head");
+});
+
 test("(d) the schema accepts builtWaiting: true only", () => {
   const base = { phase: "build", headSha12: "aaaaaaaaaaaa", signed: [], onMain: false, lit: ["build"], at: 1 };
   const errs = (extra) => stateErrors({ v: 1, id: "t", cards: { k: { ...base, ...extra } } }).filter((e) => e.startsWith("cards.k") && /builtWaiting/.test(e));
