@@ -1,17 +1,15 @@
 // #C997 (the card's third test): a bare time, interval, threshold or retry constant added in worker/, collector/, scripts/, hooks/ or gate/ fails
 // this test unless it is a setting (worker/knobs.mjs: its value then comes from KNOBS, not a number) or is on the short FIXED list below with a reason.
-// The ones that exist today and are not yet settings sit on the frozen BASELINE (tests/ops-knobs-baseline.json): it only SHRINKS. A baseline entry whose
-// constant is gone or became a setting must be removed from the file (the test names it), and nothing may be added to it.
-// OPS_BASELINE_WRITE=1 rewrites the baseline from the code (use it only to REMOVE entries; the test refuses a rewrite that grows it).
+// There is no baseline any more (#C1113 retired it: every constant that was on it is now a setting or on the FIXED list, see docs/ops-knobs-triage.md), and no
+// way to write one: a new bare time constant fails here until it is a setting or on FIXED with its reason, and a test fails if the baseline file comes back.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync, statSync, mkdirSync, rmSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const DIRS = ["worker", "collector", "scripts", "hooks", "gate"];
-const BASELINE_FILE = join(ROOT, "tests", "ops-knobs-baseline.json");
 
 // Time-ish names: ends in _MS/_SEC/_MIN/_HOURS/_DAYS or holds TIMEOUT, INTERVAL, STALE, FRESH, WITHIN, AFTER, AGAIN, LIMIT, QUIET, WINDOW, REPEAT, BACKOFF, RETRY.
 const NAME = /(?:_(?:MS|SEC|MIN|HOURS|DAYS)$|TIMEOUT|INTERVAL|STALE|FRESH|WITHIN|_AFTER|AGAIN|LIMIT|QUIET|WINDOW|REPEAT|BACKOFF|RETRY)/;
@@ -148,24 +146,16 @@ export function scanAll(dirs = DIRS, root = ROOT) {
   return [...new Set(found)].sort();
 }
 
-const readBaseline = () => JSON.parse(readFileSync(BASELINE_FILE, "utf8"));
-
-test("no new bare time or interval constant: each is a setting, on the FIXED list with a reason, or already on the frozen baseline", () => {
-  const found = scan(), base = new Set(readBaseline());
-  if (process.env.OPS_BASELINE_WRITE === "1") {
-    const old = new Set(readBaseline());
-    const next = found.filter((f) => old.size === 0 || old.has(f));
-    writeFileSync(BASELINE_FILE, JSON.stringify(old.size === 0 ? found : next, null, 1) + "\n");
-    return;
-  }
-  const fresh = found.filter((f) => !base.has(f));
+test("no new bare time or interval constant: each is a setting or on the FIXED list with a reason", () => {
+  const fresh = scan();
   assert.deepEqual(fresh, [], `a new bare time constant: make it a setting (worker/knobs.mjs) or add its name to FIXED in this test with the reason\n${fresh.join("\n")}`);
 });
 
-test("the baseline only shrinks: an entry whose constant is gone or became a setting is removed from tests/ops-knobs-baseline.json", () => {
-  const found = new Set(scan());
-  const stale = readBaseline().filter((b) => !found.has(b));
-  assert.deepEqual(stale, [], `remove these from tests/ops-knobs-baseline.json (run once with OPS_BASELINE_WRITE=1):\n${stale.join("\n")}`);
+// Checker 2's F1 on b45aae0d: with an empty baseline the rewrite path wrote every new constant into it and the lint went green. The baseline and its rewrite are gone, and stay gone.
+test("the baseline is retired: no baseline file, and no rewrite path in this test", () => {
+  assert.equal(existsSync(join(ROOT, "tests", "ops-knobs-baseline.json")), false, "tests/ops-knobs-baseline.json must not come back: a new constant is a setting or a FIXED entry");
+  const src = readFileSync(new URL(import.meta.url), "utf8");
+  assert.equal(/process\.env\.OPS_BASELINE/.test(src), false, "no environment switch may rewrite what the lint accepts");
 });
 
 test("every FIXED name has a reason", () => {
