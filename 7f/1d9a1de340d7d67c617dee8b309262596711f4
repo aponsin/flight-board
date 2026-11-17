@@ -1,0 +1,3 @@
+SECURE (Quick, docs only) #C1130 group-land-recipe 7f1d9a1d: one commit on main 36e0164e, docs/group-land.md + a CHANGELOG.d fragment, no code. The recipe matches board-release (line notes cover no merge, both roles on every commit, non-word notes block); it asks for no force push and no other role's ref.
+
+signed-by: Security
