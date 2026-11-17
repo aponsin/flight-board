@@ -179,10 +179,17 @@ export const ROSTER_ROLES = ["Builder", "Admin", "Demos", "Mainsite", "Linguist"
 // in has no owner's word). The owner closes at any time, from the page or otherwise: his role is not asked. An Approval is the one exception: the
 // Reviewer closes it when its pull request is merged or a newer head replaces it, with no word from the owner, and that is housekeeping, not an
 // agent ending a conversation (closing never approves anything, below); the card's rule is for the threads he talks in.
-export function closeRefusal(ask, who, role, last = null) {
+// #C1109 (the lead's own rule, kept in memory: never close an ask the owner just answered or marked Done, he closes it): an agent cannot close an ask the owner answered within
+// the last ANSWERED_CLOSE_HOLD_MS; the owner's own close is never held. `now` null (an old caller, a test) skips the check.
+export const ANSWERED_CLOSE_HOLD_MS = 3_600_000;
+export function closeRefusal(ask, who, role, last = null, now = null) {
   if (!ask) return refuse("ask-unknown", "no such ask");
   if (ask.closed_at) return refuse("ask-already-closed", String(ask.id));
   if (role !== "owner" && (who === "owner" || who !== ask.asked_by)) return refuse("close-not-yours", `${who ?? "unknown"} did not ask ${ask.id}; only the owner or the asker closes it`);
+  // An Approval is the Reviewer's housekeeping (its pull request merged), not a conversation: the hold does not apply to it.
+  if (role !== "owner" && ask.type !== "Approval" && Number.isFinite(now) && Number.isFinite(ask.answered_at) && ask.answered_at <= now && now - ask.answered_at < ANSWERED_CLOSE_HOLD_MS) {
+    return refuse("close-owner-just-answered", `${ask.id}: the owner answered it ${Math.max(1, Math.round((now - ask.answered_at) / 60_000))} min ago; he closes it (an agent may close it an hour after his answer, and posts a note meanwhile)`);
+  }
   if (role !== "owner" && ask.type !== "Approval" && last?.author !== "owner") return refuse("close-not-after-owner", `${ask.id}: an agent closes a thread only when the owner's message is the newest on it; post your note and leave the thread for the owner to close`);
   // An Approval closes answered or not: closing never approves anything (a merged pull request, or one a newer head replaced).
   if (["Decision", "Answer"].includes(ask.type) && !ask.answered_at) return refuse("close-unanswered", `a ${ask.type} is answered before it is closed`);

@@ -32,6 +32,7 @@ export const FIXED = {
   SHIP_CI_FRESH_MS: "how old the heartbeat may be before the ship-CI wake concludes nothing (10 min, #C1105): a reading window on the evidence, not a cadence, and it lives in the owner-pinned dispatch",
   SHIP_CI_PAIR_MS: "how far the ship reading may trail the heartbeat and still count as written in the same run (3 min, #C1105): a reading window on the evidence, not a cadence",
   SHIP_CI_WINDOW_MS: "how long a ship candidate stays worth a wake (6 h, #C1105): the same bound as a candidate's own age (SHIP_CANDIDATE_MAX_MS), not a cadence",
+  ANSWERED_CLOSE_HOLD_MS: "how long after the owner's answer an agent may not close the ask (1 h, #C1109): the owner's own rule for his answers, a hold on the agent's close, not a cadence",
   MAX_MIN: "a sanity bound",
   STEP_PAST_MS: "write validity of a step's time",
   STEP_FUTURE_MS: "write validity of a step's time",

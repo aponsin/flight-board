@@ -68,9 +68,9 @@ test("closing an ask: an open Later closes, a Decision only after it is answered
   assert.equal((await closeAsk(db, NOW + 2, "Manager", dec.id)).refused.rule, "close-unanswered");
   assert.equal((await closeAsk(db, NOW + 2, "Manager", "t999")).refused.rule, "ask-unknown");
   await answerAsk(db, NOW + 3, "owner", { id: dec.id, answer: "A" });
-  assert.equal((await closeAsk(db, NOW + 4, "Manager", dec.id)).ok, true);
-  const asks = (await readView(db, NOW + 5)).asks;
-  assert.deepEqual(asks.map((a) => [a.id, a.closed_at, a.closed_by]), [[later.id, NOW + 1, "Manager"], [dec.id, NOW + 4, "Manager"]], "both rows are still there, closed, with who closed them");
+  assert.equal((await closeAsk(db, NOW + 3 + 3_600_000, "Manager", dec.id)).ok, true);
+  const asks = (await readView(db, NOW + 3_600_010)).asks;
+  assert.deepEqual(asks.map((a) => [a.id, a.closed_at, a.closed_by]), [[later.id, NOW + 1, "Manager"], [dec.id, NOW + 3 + 3_600_000, "Manager"]], "both rows are still there, closed, with who closed them");
 });
 
 test("only the owner or the asking agent closes an ask: another agent is refused and the refusal is logged (Checker on v10)", async () => {
