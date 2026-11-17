@@ -39,10 +39,20 @@ test("(a) a pushed card with a declared partner (a later card of the same builde
   assert.deepEqual(who(full), ["c2-next:Boardsmith:build"], "Security is not woken for a held Full card either");
 });
 
-test("(b) no partner: a stackHold card dispatches at once (a lone card needs no note), Security too at Full", () => {
-  assert.deepEqual(who(world({ cards: [card("c1-base")], ev: { "c1-base": held(1) } })), ["c1-base:Checker:review"]);
+// #C1066 (a WIP start push, even an empty one, woke Checker and Security on every re-arm): in a stack-mode repository a pushed tip is Building until the
+// builder's stack-ready signal covers it, with or without a declared partner. The signal is the READY, so only a covered tip goes to the review lanes.
+test("(b) #C1066: no partner needed: a pushed card no signal covers (a WIP start push) wakes no reviewer, Security neither at Full", () => {
+  assert.deepEqual(who(world({ cards: [card("c1-base")], ev: { "c1-base": held(1) } })), [], "a lone WIP push: nobody");
   const full = world({ cards: [card("c1-base", { review_level: "Full" })], ev: { "c1-base": held(1) } });
-  assert.deepEqual(who(full).sort(), ["c1-base:Checker:review", "c1-base:Security:review"]);
+  assert.deepEqual(who(full), [], "Security is not woken either");
+});
+
+test("(b1) #C1066: a WIP push wakes no reviewer; a READY push (the signal covers the tip) wakes the review lanes; a second push after READY without a new signal wakes nobody", () => {
+  const full = (ev) => world({ cards: [card("c1-base", { review_level: "Full" })], ev: { "c1-base": ev } });
+  assert.deepEqual(who(full(held(1))), [], "WIP: no stackHold clear, no review");
+  assert.deepEqual(who(full(pushedCard(1))).sort(), ["c1-base:Checker:review", "c1-base:Security:review"], "READY: the probe sees the signal and sets no stackHold");
+  assert.deepEqual(who(full(held(2))), [], "a second push: a new tip with no signal of its own");
+  assert.deepEqual(who(world({ on: false, cards: [card("c1-base")], ev: { "c1-base": held(1) } })), ["c1-base:Checker:review"], "the switch off is as always");
 });
 
 test("(b2) grandfathered: the probe sets no stackHold for a card pushed before the cutoff, so a partner makes no difference", () => {
@@ -60,17 +70,16 @@ test("(c2) a product-repository card is never held, whatever its evidence says",
   assert.deepEqual(who(v), ["c1-base:Checker:review"]);
 });
 
-test("(c3) the hold lifts by itself once the partner is pushed; a paused, dropped or other builder's dependant is no partner", () => {
+test("(c3) the hold lifts only when the signal covers the tip (the probe clears stackHold), whoever else is pushed or open", () => {
+  const covered = world({ cards: [card("c1-base"), card("c2-next", dep("c1-base"))], ev: { "c1-base": pushedCard(1), "c2-next": pushedCard(2) } });
+  assert.ok(who(covered).includes("c1-base:Checker:review"), "covered: reviewed");
+  // #C1066: a partner, pushed or not, paused, dropped or live, changes nothing for a card the signal does not cover
   const pushedBoth = world({ cards: [card("c1-base"), card("c2-next", dep("c1-base"))], ev: { "c1-base": held(1), "c2-next": pushedCard(2) } });
-  assert.ok(who(pushedBoth).includes("c1-base:Checker:review"));
+  assert.ok(!who(pushedBoth).includes("c1-base:Checker:review"), "a pushed partner does not lift it: only the signal does");
   for (const extra of [{ paused: 1 }, { dropped: 1 }, { blocked_reason: "x" }, { done_at: NOW - MIN }, { owner_role: "Release" }, { depends_on: "[]" }]) {
     const v = world({ cards: [card("c1-base"), card("c2-next", { ...dep("c1-base"), ...extra })], ev: { "c1-base": held(1) } });
-    assert.ok(who(v).includes("c1-base:Checker:review"), `no partner for ${JSON.stringify(extra)}`);
+    assert.ok(!who(v).includes("c1-base:Checker:review"), `held with or without a partner: ${JSON.stringify(extra)}`);
   }
-  const v = world({ cards: [card("c1-base"), card("c2-next", { ...dep("c1-base"), repo: "site-one" })], ev: { "c1-base": held(1) } });
-  assert.ok(who(v).includes("c1-base:Checker:review"), "another repository's card is no partner");
-  const live = world({ cards: [card("c1-base"), card("c2-next", dep("c1-base"))], ev: { "c1-base": held(1), "c2-next": { phase: "live", lit: ["live"] } } });
-  assert.ok(who(live).includes("c1-base:Checker:review"), "a live dependant is no partner");
 });
 
 test("(c4) a held card with a partner still holds back nothing else: another card's review goes", () => {
@@ -112,9 +121,10 @@ test("(r4d) a dependency with nothing pushed still waits; so does one outside th
 });
 
 // Checker F1 on 0c24f58: a card closed as done with no branch (#C902) that depends on a base card is no queued partner, in the dispatch or the file.
-test("(q0) a branchless card closed as done holds nothing: the base card is reviewed, and the queue file does not list the done card", () => {
+test("(q0) a branchless card closed as done is no partner: the queue file does not list it, so stack-ready writes the signal for the base card (until then it is held, #C1066)", () => {
   const v = world({ cards: [card("c1-base"), card("c2-next", { ...dep("c1-base"), done_at: NOW - MIN })], ev: { "c1-base": held(1) } });
-  assert.deepEqual(who(v), ["c1-base:Checker:review"]);
+  assert.deepEqual(who(v), [], "no signal yet: Building");
+  assert.deepEqual(who(world({ cards: v.cards, ev: { "c1-base": pushedCard(1) } })), ["c1-base:Checker:review"], "the signal covers it: reviewed");
   assert.deepEqual(stackQueueFile(v, NOW).cards.map((k) => k.id), ["c1-base"]);
 });
 
