@@ -1,0 +1,2 @@
+PASS (Full) #C1169 fixes: a message thread t<n> is accepted and an unknown one refused; the test reads initiativeDoc; the thread lookup is one helper (threadKnown, used by the summary rule too); card_update checks contract and changes_definition whenever summary, contract or the flag is written. Mutants killed: message branch, view contract, view flag, flag-alone trigger, blanked-contract trigger, summary rule's thread check. Suite green 3069/0
+signed-by: Checker 2
