@@ -122,7 +122,7 @@ async function callTool(db, now, who, role, name, args, env = {}, door = "access
     case "queue_move": return text(await moveInQueue(db, now, who, args));
     case "group_move": return text(await moveGroup(db, now, who, args));
     case "set_door_session": return text(await setDoorSession(db, now, who, args?.session, args?.current));
-    case "card_create": return text(await createCard(db, now, who, args, { needSummary: true, needGroup: true }));
+    case "card_create": return text(await createCard(db, now, who, args, { needSummary: true, needGroup: true, needRepo: true }));
     case "card_update": return text(await updateCard(db, now, who, args, { needGroup: true }));
     case "ask":
       // Who asks is who authenticated, never a claimed name.

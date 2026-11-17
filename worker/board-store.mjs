@@ -75,6 +75,9 @@ export async function createCard(db, now, who, fields, opts = {}) {
   // #C1107 (11-16: 15 of 27 cards were loose because grouping lived in the lead's memory): through the card_create TOOL (opts.needGroup) a card with no batch is
   // refused, and the refusal lists the open groups to put it in.
   if (opts.needGroup && !(typeof fields.batch === "string" && fields.batch.trim())) return refuse(db, now, await groupRefusal(db, "a new card needs a group (batch): the group it ships with"), fields.id, who);
+  // #C1149 (the review dispatch woke Checker 2 for #C1148, a product card created with no repo word, which the board reads as its own): through the card_create TOOL
+  // (opts.needRepo) a card with no repo is refused, and the refusal lists the known repos. Old cards with none keep being read as the board's.
+  if (opts.needRepo && !(typeof fields.repo === "string" && fields.repo.trim())) return refuse(db, now, await repoRefusal(db), fields.id, who);
   // #C871: a new card may not take a place at or ahead of one the owner holds in its agent's queue (queueWriteRefusal).
   const floorBad = who !== "owner" && Number.isInteger(fields.queue_pos) && typeof fields.owner_role === "string" ? queueWriteRefusal(fields, null, who, await ownerFloor(db, fields.owner_role, fields.id)) : null;
   if (floorBad) return refuse(db, now, floorBad, fields.id, who);
@@ -97,6 +100,12 @@ async function groupRefusal(db, what) {
 }
 
 // holds-need-an-end (#C838): hold_end names an OPEN ask or a card that is not dropped; null lifts it.
+// #C1149: the known repos for the repo refusal: "flight-board" (the board's own) and every other word an existing card carries ("board" is read as flight-board).
+async function repoRefusal(db) {
+  const rows = (await db.prepare("SELECT DISTINCT repo FROM cards WHERE repo IS NOT NULL AND TRIM(repo) != '' ORDER BY repo").all()).results ?? [];
+  const names = [...new Set(["flight-board", ...rows.map((r) => r.repo).filter((r) => r !== "board")])];
+  return { rule: "card-repo-missing", detail: `a new card needs a repo: the repository its code is in (known: ${names.join(", ")}); the board reads a card with none as flight-board's own, so its review goes to that repository's reviewer` };
+}
 const holdEndUnknown = async (db, fields) => {
   const ref = fields.hold_end;
   if (ref === undefined || ref === null) return null;
