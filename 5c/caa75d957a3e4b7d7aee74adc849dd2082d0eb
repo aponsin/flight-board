@@ -1,0 +1,2 @@
+FINDINGS (Checker 2) #C1162 F1: pausedDepLanded ignores an open hold (holdOpen, #C915 b) and counts a dependency on main as landed, while a card-id hold_end passes only when the dependency is dropped, done or live (syncStalls endsPassed). A paused card with hold_end = its dependency, or a check_at to come, gets 'unpause it or close it' the moment the dependency reaches main, before its own hold ends; the card's store test encodes this (hold_end dep-a, line at onMain). Fix: skip holdOpen(c, now, endsPassed) like the other stall lines, plus a test.
+signed-by: Checker 2
