@@ -71,14 +71,14 @@ export function parseRows(text) {
   return out;
 }
 
-// #C1132 (Security's M1 and L1): which paths --pass may take. The history file is written (mkdir -p, then overwritten), so it must lie inside <home>/.flight-board, be a .json file there and
-// not be a symlink; the config is only read, and must be named board.config.json; the rows come from --rows or --rows-file, not both. Returns the reason, or null when all is well.
+// #C1132 (Security's M1 and L1): which paths --pass may take. The history file is written (mkdir -p, then overwritten), so it may only be the default <home>/.flight-board/pickup-pass.json (Security's M1 on 112256ee: the
+// folder's other .json files are live board state) and not a symlink; the config is only read, and must be named board.config.json; the rows come from --rows or --rows-file, not both. Returns the reason, or null when all is well.
 export function passPathRefusal({ state, config, rows, rowsFile, home }) {
   if (rows && rowsFile) return "--rows and --rows-file together: nothing is done";
   if (config && basename(config) !== "board.config.json") return "--config must name a file called board.config.json";
   if (state) {
-    const root = resolve(home, ".flight-board"), file = resolve(state);
-    if (!file.startsWith(root + sep) || !file.endsWith(".json")) return `--state must be a .json file inside ${root}`;
+    const only = resolve(home, ".flight-board", "pickup-pass.json"), file = resolve(state);
+    if (file !== only) return `--state may only be ${only} (the default history file)`;
     try { if (lstatSync(file).isSymbolicLink()) return "--state is a symbolic link"; } catch { /* not there yet: it is made */ }
   }
   return null;

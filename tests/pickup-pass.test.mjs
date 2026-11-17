@@ -15,7 +15,7 @@ const send = (role, text) => ({ role, do: "send_message", text });
 const cli = (a, session = null) => ({ ...a, session });
 // --pass writes its history only inside ~/.flight-board (#C1132, Security's M1), so a test gives the command its own home folder.
 const homeOf = (dir) => ({ ...process.env, HOME: dir });
-const stateIn = (dir) => join(dir, ".flight-board", "state.json");
+const stateIn = (dir) => join(dir, ".flight-board", "pickup-pass.json");
 // Runs the passes in order, carrying the history and the armed set of each, and returns every pass's actions.
 const run = (passes, state = {}) => passes.map(([rows, watching]) => { const r = passActions(rows, state, new Set(watching || [])); state = r.state; return r.actions; });
 
@@ -127,12 +127,15 @@ test("passPathRefusal: --state only as a .json file inside ~/.flight-board and n
   const ok = (extra = {}) => passPathRefusal({ home, ...extra });
   assert.equal(ok(), null);
   assert.equal(ok({ state: join(home, ".flight-board", "pickup-pass.json"), config: "/x/y/board.config.json", rows: "a" }), null);
-  for (const state of [join(home, ".claude", "settings.json"), join(home, ".flight-board", "..", "x.json"), join(home, ".flight-board"), join(home, ".flight-board", "x.txt"), join(home, ".flight-board-evil", "x.json"), "/etc/passwd", "state.json", join(home, ".flight-board") + "/../.claude/settings.json"]) assert.match(ok({ state }) ?? "", /--state must be a \.json file inside/, state);
-  for (const config of ["/x/board.config.json.bak", "/x/other.json", "/x/settings.json", "/x/board.config.json/.."]) assert.match(ok({ config }) ?? "", /--config must name a file called board\.config\.json/, config);
+  for (const state of [join(home, ".claude", "settings.json"), join(home, ".flight-board", "..", "x.json"), join(home, ".flight-board"), join(home, ".flight-board", "x.txt"), join(home, ".flight-board-evil", "x.json"), "/etc/passwd", "state.json", join(home, ".flight-board") + "/../.claude/settings.json",
+    // Security's M1 on 112256ee: other .json files in the board folder hold live state (land-holds, stack-switch, dispatch-*, current/package.json): not allowed either.
+    join(home, ".flight-board", "land-holds.json"), join(home, ".flight-board", "stack-switch.json"), join(home, ".flight-board", "dispatch-x.json"), join(home, ".flight-board", "current", "package.json"), join(home, ".flight-board", "sub", "pickup-pass.json")]) assert.match(ok({ state }) ?? "", /--state may only be/, state);
+  for (const config of ["/x/myboard.config.json", "/x/board.config.json.bak","/x/other.json", "/x/settings.json", "/x/board.config.json/.."]) assert.match(ok({ config }) ?? "", /--config must name a file called board\.config\.json/, config);
   assert.match(ok({ rows: "a", rowsFile: "b" }) ?? "", /together/);
   mkdirSync(join(home, ".flight-board"), { recursive: true });
   symlinkSync(join(home, "elsewhere.json"), join(home, ".flight-board", "link.json"));
-  assert.match(ok({ state: join(home, ".flight-board", "link.json") }) ?? "", /symbolic link/);
+  symlinkSync(join(home, "elsewhere.json"), join(home, ".flight-board", "pickup-pass.json"));
+  assert.match(ok({ state: join(home, ".flight-board", "pickup-pass.json") }) ?? "", /symbolic link/);
 });
 
 test("the command refuses a --state outside ~/.flight-board: it prints [] and creates and writes nothing (Security reproduced the overwrite)", () => {
@@ -143,7 +146,7 @@ test("the command refuses a --state outside ~/.flight-board: it prints [] and cr
   for (const state of [outside, victim]) {
     const r = run("--state", state);
     assert.equal(r.stdout.trim(), "[]");
-    assert.match(r.stderr, /--state must be a \.json file inside/);
+    assert.match(r.stderr, /--state may only be/);
   }
   assert.equal(existsSync(join(dir, "new-folder")), false, "no folder was made");
   assert.equal(readFileSync(victim, "utf8"), "keep me", "no file was overwritten");
