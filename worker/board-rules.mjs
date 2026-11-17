@@ -1111,6 +1111,13 @@ export function openDecisionCards(messages, cards) {
   }
   return out;
 }
+// #C1143 (11-16/17: "Boardsmith idle since 11:14 pm" and "Builder idle since 10:25 pm" woke Manager while both sessions were running): the idle reading can lag the
+// session. A role whose newest read carries activity inside the stall time (lastActivityAt, the probe's latest read of its transcript) is not idle, whatever its
+// `since` says. A reading with no usable lastActivityAt (a blind one) says nothing here, so the idle `since` decides as before; a time a little ahead of `now`
+// (a skew between the probe's read and now, up to ACTIVITY_SKEW_MS) is still activity; one further ahead is no activity at all (Security's INFO on cf4eb085: a far-future
+// time would silence that role's stall lines for as long as it lies ahead).
+export const ACTIVITY_SKEW_MS = 5 * 60_000;
+export const activeRecently = (a, now, stallMs = STALL_AFTER_MS) => Number.isFinite(a?.lastActivityAt) && a.lastActivityAt - now <= ACTIVITY_SKEW_MS && now - a.lastActivityAt < stallMs;
 export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [], stallMs = STALL_AFTER_MS, postedFreshMs = POSTED_FRESH_MS, reviewers }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
@@ -1139,7 +1146,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
         if (Object.keys(roster).length && waited(c.updated_at, now, outages) >= stallMs) noSession.set(c.owner_role, [...(noSession.get(c.owner_role) ?? []), c]);
         continue;
       }
-      if (!Number.isFinite(idleFrom) || waited(idleFrom, now, outages) < stallMs) continue;
+      if (!Number.isFinite(idleFrom) || waited(idleFrom, now, outages) < stallMs || activeRecently(o, now, stallMs)) continue;
       if (READ_ONLY_ROLES.includes(c.owner_role)) {
         const posted = postedAt instanceof Map ? postedAt.get(c.id) : undefined;
         if (Number.isFinite(posted) && now - posted <= postedFreshMs) continue;
@@ -1173,7 +1180,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
       if (waited(start, now, outages) >= stallMs) out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, no session for ${role}` });
       continue;
     }
-    if (!a || a.state !== "idle" || !Number.isFinite(a.since) || !Number.isFinite(start)) continue;
+    if (!a || a.state !== "idle" || !Number.isFinite(a.since) || !Number.isFinite(start) || activeRecently(a, now, stallMs)) continue;
     if (waited(Math.max(start, a.since), now, outages) < stallMs) continue;
     out.push({ card_id: c.id, num: c.num, phase, role, reason: `${at}, ${role} idle since ${mtTime(a.since)}` });
   }

@@ -22,6 +22,7 @@ const BARE = /^\d[\d_.e*+\-/() ]*$/;
 // protocol, or are write-validity windows and sanity bounds). Adding a name here is a reviewed decision, like adding a setting.
 export const FIXED = {
   FRESH_MS: "a sanity bound on a posted time (30 days)",
+  ACTIVITY_SKEW_MS: "how far ahead of now a session's lastActivityAt may read and still count as activity (5 min, #C1143): a clock-skew tolerance and a sanity bound on a time the probe wrote, not a cadence",
   LAND_TIP_SEC: "the land job's per-tip budget: tied to the job's limit, which launchd's plist holds, and to LAND_REPORT_FRESH_MS (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",
   LAND_MARGIN_SEC: "the land job's margin before its limit: tied to the plist's alarm and the per-tip budget (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",
   LAND_REPORT_FRESH_MS: "how long the land report counts as fresh: lives in the owner-pinned dispatch and must stay over the land job's interval plus limit (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",

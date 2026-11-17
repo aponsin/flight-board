@@ -47,11 +47,15 @@ export function runChild(cmd, args, { timeoutMs, input, cwd, env } = {}) {
 }
 
 // The launchd job for one cadence: started through perl's alarm so the OS ends it even if the event loop is blocked.
-// #C975: the land job runs scripts/board-land.mjs from the signed linked copy (~/.flight-board/current, where #C967 requires it to run), which takes
-// only --config: it gets no "--job" argument (jobArg false).
+// #C975: the land job runs scripts/board-land.mjs, which takes only --config: it gets no "--job" argument (jobArg false).
+// #C1140 / #C1144 (Checker 2's LOW on #C1140): the land job runs from the owner's PINNED install (~/.flight-board/install/<40-hex commit>/scripts/board-land.mjs),
+// not the linked copy (~/.flight-board/current), which every release moves. A land plist whose script is anything else is refused, so a later pack that rebuilds
+// the LaunchAgents with this function cannot quietly put the land job back on the link.
+export const LAND_SCRIPT = /\/\.flight-board\/install\/[0-9a-f]{40}\/scripts\/board-land\.mjs$/;
 export function launchdPlist({ job, label, nodePath, script, args = [], logPath, jobArg = job !== "land" }) {
   const j = JOBS[job];
   if (!j) throw new Error(`unknown job ${job}`);
+  if (job === "land" && !LAND_SCRIPT.test(String(script))) throw new Error("the land job runs only from a pinned install (~/.flight-board/install/<commit>/scripts/board-land.mjs), never the linked copy");
   const alarm = j.limitSec + OUTER_EXTRA_SEC;
   const argv = ["/usr/bin/perl", "-e", `alarm ${alarm}; exec @ARGV`, nodePath, script, ...args, ...(jobArg ? ["--job", job] : [])];
   const x = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
