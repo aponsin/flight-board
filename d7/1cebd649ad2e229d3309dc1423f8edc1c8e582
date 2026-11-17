@@ -1,0 +1,3 @@
+RISKS (Full) #C1132 watchdog-pickup-pass-fits-task d71cebd6: M1 the doc's pre-approved prefix rule Bash(node ~/.flight-board/current/scripts/pickup-watch.mjs:*) allows any arguments, and --state <any path> does mkdir -p and overwrites that file with JSON (shown in a scratch folder), so a prompt-injected watchdog run could clobber e.g. ~/.claude/settings.json with no prompt. L1 --config and --rows-file read any path. parseRows, SESSION_ID and the fixed action texts are fine; 17 tests green.
+
+signed-by: Security
