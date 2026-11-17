@@ -67,6 +67,16 @@ export function staleCheck(dir, role, own, settingsText, now = Date.now()) {
 // Every DISPATCH line says which install decided it (a reader can see a watch on old code).
 export const withInstall = (text, own) => (own ? String(text).split("\n").map((l) => (l.startsWith("DISPATCH ") ? `${l} [watch install ${own.slice(0, 12)}]` : l)).join("\n") : String(text));
 
+// #C1159 (Checker 2's two LOWs on #C1158): one look of an owner's watch, the line to print or null. The stale-pin check goes FIRST: a watch on an old install must not run its old
+// dispatch code (roleTick would decide a card with it, mark it printed and beat the pid file), so it ends with the stale line and leaves the dispatch for the re-armed watch. Every
+// DISPATCH line it does print says which install decided it (the tag is added here, at the print site).
+export function watchLook(dir, role, own, settingsText, now, pid = process.pid) {
+  const stale = staleCheck(dir, role, own, settingsText, now);
+  if (stale) return { line: stale, stale: true };
+  const line = roleTick(dir, role, now, pid);
+  return line ? { line: withInstall(line, own), stale: false } : null;
+}
+
 // The roles the probe asked to reset (#C592, gate/reset.mjs) that this watch has not printed yet; marks them printed.
 function resetLines(dir, roster = null, now = Date.now(), lead = null) {
   // Only roster roles are ever named (Security: a planted file in the state folder must not make the lead wake or reset a role the team does not have).
@@ -159,12 +169,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const own = installShaOf(realpathSync(fileURLToPath(import.meta.url)));
     const settingsFile = join(homedir(), ".claude", "settings.json");
     const look = () => {
-      let line = null;
-      try { line = roleTick(dir, role, Date.now(), process.pid); } catch { /* try again next time */ }
-      if (line) { console.log(withInstall(line, own)); stop(); process.exit(0); }
-      let stale = null;
-      try { stale = staleCheck(dir, role, own, readFileSync(settingsFile, "utf8"), Date.now()); } catch { /* no settings to read: no pin */ }
-      if (stale) { console.log(stale); stop(); process.exit(0); }
+      let settingsText = null;
+      try { settingsText = readFileSync(settingsFile, "utf8"); } catch { /* no settings to read: no pin */ }
+      let got = null;
+      try { got = watchLook(dir, role, own, settingsText, Date.now(), process.pid); } catch { /* try again next time */ }
+      if (got) { console.log(got.line); stop(); process.exit(0); }
     };
     for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { stop(); process.exit(0); });
     look();
