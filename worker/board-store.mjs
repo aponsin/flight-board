@@ -578,7 +578,9 @@ async function syncStalls(db, now) {
   let weekValue = null; try { weekValue = weekRow ? JSON.parse(weekRow.value) : null; } catch { /* none */ }
   const quota = quotaHold({ now, week: sessionWeek({ evidence: { [WEEK_USAGE_KEY]: { value: weekValue, readAt: weekRow?.read_at } } }, now), stalls: waitsAll, outPct: quotaOutPctOf(knobsNow) });
   const waits = quota.stalls;
-  const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages, shipSlowMs: shipSlowMsOf(knobsNow), agents });
+  // #C1120: when each card's newest rework reason was attached (a reason attached in the last hour is the slow line's reason).
+  const reasonAt = new Map((await db.prepare("SELECT card_id, MAX(at) AS at FROM rework_history GROUP BY card_id").all()).results.map((r) => [r.card_id, r.at]));
+  const slowAll = slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages, shipSlowMs: shipSlowMsOf(knobsNow), agents, reasonAt });
   // A card the held stall line would have named is not named by the slow line in its place.
   const slow = slowAll.filter((s) => !waitsAll.some((w) => w.card_id === s.card_id));
   // The slow line's words are the same every spell, so its row (card, reason) must not outlive the spell: once a card is no longer slow with no
