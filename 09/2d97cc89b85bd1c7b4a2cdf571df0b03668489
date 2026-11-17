@@ -1,0 +1,3 @@
+SECURE #C1128 tip: appSessions reads an absent remoteControlUserEnabled as rcOff; still one boolean from the local session file, used only for Manager's Remote Control line; no new data read or sent
+
+signed-by: Security
