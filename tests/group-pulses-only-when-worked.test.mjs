@@ -27,6 +27,19 @@ test("a group of queued and paused cards, and a built one nobody is on, does not
   assert.ok(!steps(row()).some(([, c]) => c.includes("now")), "no tile of the group pulses");
 });
 
+// #C1102 (11-16: G6 read "building" while neither open card had a branch or a step): a group whose cards are all untouched has no tile lit and its Build tile says queued;
+// one card with a branch (or a build start) makes it read as building again.
+test("#C1102: a group whose cards are all untouched reads queued, nothing lit; one card with a branch lights Build", () => {
+  const { row } = board([card("q1", 1), card("q2", 2)], { agents: { Boardsmith: idle } });
+  const html = row();
+  assert.equal(cls(html, "Build"), "step", "no ring, no pulse");
+  assert.ok(!steps(html).some(([, c]) => c.includes("here") || c.includes("now")), "no tile of the group is lit");
+  assert.match(html.split('<div class="g-rail">')[0], /Build<small>queued<\/small>/);
+  const started = board([card("q1", 1), card("b", 2, { branch: "build/b" })], { agents: { Boardsmith: idle } }).row();
+  assert.equal(cls(started, "Build"), "step here", "a card with a branch: the group is building");
+  assert.doesNotMatch(started.split('<div class="g-rail">')[0], /queued/);
+});
+
 test("one member with an agent on it now makes the group's step pulse", () => {
   const { row } = board([card("built", 1, { branch: "build/built" }), card("q1", 2)], { agents: { Boardsmith: working("built") } });
   assert.equal(cls(row(), "Build"), "step now");
