@@ -1,1 +1,2 @@
-SUPERSEDED #C1110 e32055c2: WIP start commit; reviewed with its tip 6bf35adc. Not for shipping on its own. (Security)
+SECURE (Full, G17 line) e32055c23111: ships only inside G17 at 36e0164e85a5, whose head is SECURE; every fix it needed is on that line. Earlier note: SUPERSEDED #C1110 e32055c2: WIP start commit; reviewed with its tip 6bf35adc. Not for shipping on its own. (Security)
+signed-by: Security
