@@ -1,0 +1,5 @@
+FINDINGS #C1170 tip d12085b9: S1 is fixed except for one bypass, S2 (medium): the trusted settings file is found through os.homedir(), which returns $HOME.
+
+An agent's command can set it: HOME=/tmp/h node put-file.mjs shot.png --env /Users/<owner>/<real env> --config /tmp/h/c.json, with /tmp/h/.claude/settings.json holding a hook whose command has --config /tmp/h/c.json and c.json's storeUrl naming another host. ownerConfigs then trusts that config, and the token goes to that host. Checked: HOME=/tmp/fakehome gives os.homedir() /tmp/fakehome but os.userInfo().homedir the real home. Fix: in readSettings and ownerConfigs' ~ expansion, use os.userInfo().homedir (the password database; it ignores HOME), and add a test that a HOME pointing elsewhere does not change which settings file is read. The rest of d12085b9 is right: only hook commands count (a permission rule is not trusted), paths compare by real path, and the --base refusal stays.
+
+signed-by: Security
