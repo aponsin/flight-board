@@ -979,7 +979,7 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
       out[id] = { ...again, stack: field };
     }
     // #C914: stackHold marks a pushed card of this stack-mode repository that no stack-ready signal (scripts/stack-ready.mjs) covers: its head is not
-    // the noted commit or under it. It is a fact for the dispatch, which applies it only to a card with a declared stack partner. Not for a card whose
+    // the noted commit or under it, and no batch peer or declared partner's head is (below). It is a fact for the dispatch, which holds the card's review and build turns (#C1066: every pushed card of a stack-mode repository, not only one with a partner). Not for a card whose
     // head was committed before STACK_HOLD_FROM, one that already carries a review note or findings, or an outsider. The card's `stack` field is left as
     // it is (the page draws it). Same input, same answer: no clock.
     const noted = stackReadyCommits(repo);
@@ -987,10 +987,16 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
       if (Number.isFinite(found[id]?.at)) return found[id].at;
       try { return Number(String(repo.git(["log", "-1", "--format=%ct", heads[id]])).trim()) * 1000; } catch { return NaN; }
     };
+    // #C1066 (Checker 2's M1): a stack-ready signal covers one head, but it is only written once the card's group (or stack partner) is whole, so the signal of ONE member ends the
+    // wait of the others: a held card whose batch peer, or declared partner (depends_on, either way), is covered by a signal is covered too. Same input, same answer.
+    const depsOf = (c) => { let l = c?.depends_on; if (typeof l === "string") { try { l = JSON.parse(l); } catch { return []; } } return Array.isArray(l) ? l.filter((d) => typeof d === "string") : []; };
+    const batchWord = (c) => (typeof c?.batch === "string" ? c.batch.trim() : "");
+    const covered = (id) => !!heads[id] && noted.some((c) => isAncestor(heads[id], c));
+    const peerSignalled = (id) => [...open].some((p) => p !== id && covered(p) && ((batchWord(cardOf[id]) !== "" && batchWord(cardOf[p]) === batchWord(cardOf[id])) || depsOf(cardOf[id]).includes(p) || depsOf(cardOf[p]).includes(id)));
     for (const id of open) {
       if (!heads[id] || fields[id]?.outside || out[id].signed?.length || out[id].findings?.length) continue;
       if (!(headAt(id) >= STACK_HOLD_FROM)) continue; // before the cutoff, or a time git would not give: today's reading
-      if (noted.some((c) => isAncestor(heads[id], c))) continue;
+      if (covered(id) || peerSignalled(id)) continue;
       out[id] = { ...out[id], stackHold: true };
     }
   }
