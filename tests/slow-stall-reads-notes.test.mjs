@@ -95,7 +95,7 @@ async function buildSlowRows(rosterCard) {
   }
   await createCard(db, T, "Manager", { id: "c", title: "A card", owner_role: "Boardsmith" });
   await writeEvidence(db, T, "probe", "cards.c", rd("build"));
-  if (rosterCard !== undefined) { await beat(db, at - 2000); await writeEvidence(db, at - 1000, "probe", "agents", { Boardsmith: rosterCard === null ? { state: "idle", lastActivityAt: at - 1000, since: at - 20 * MIN } : { state: "working", card: rosterCard, lastActivityAt: at - 1000, since: at - 5 * MIN } }); }
+  if (rosterCard !== undefined) { await beat(db, at - 2000); await writeEvidence(db, at - 1000, "probe", "agents", { Boardsmith: rosterCard === null ? { state: "idle", lastActivityAt: at - 20 * MIN, since: at - 20 * MIN } : { state: "working", card: rosterCard, lastActivityAt: at - 1000, since: at - 5 * MIN } }); }
   await wakeAsk(db, at);
   return (await takeInbox(db, at + 1000)).stalls.map((s) => s.reason).filter((r) => /is slow with no reason/.test(r));
 }
