@@ -82,7 +82,10 @@ export function neverRun(folder, n) {
 // at run time without importing them (scripts/build-page.mjs reads page/board.template.html through import.meta.url). A name absent at the sha is skipped.
 // #C1058: the release tool too. The landing job starts the copy in the owner's installed folder (the one his hooks pin), which moves only when the hooks step moves the pin,
 // so a pack that carries a changed release tool, or a file it imports, needs that step.
-export const HOOK_ENTRIES = ["gate/stop.mjs", "gate/publish.mjs", "gate/first-push.mjs", "collector/fence.mjs", "scripts/wake-watch.mjs", "scripts/board-release.mjs"];
+// #C1140: the landing job too (scripts/board-land.mjs). It runs from the owner's pinned install, which exists only once the hooks step has run, so a pack that carries a changed land job,
+// or a file it imports, needs that step and the land step after it (landText).
+export const HOOK_ENTRIES = ["gate/stop.mjs", "gate/publish.mjs", "gate/first-push.mjs", "collector/fence.mjs", "scripts/wake-watch.mjs", "scripts/board-release.mjs", "scripts/board-land.mjs"];
+export const LAND_ENTRIES = ["scripts/board-land.mjs"];
 export const HOOK_READS = ["page/board.template.html"];
 export const HOOK_PINNED = /^(hooks\/|scripts\/hooks\.mjs$)/;
 // The files at `sha` the two entries import, relative imports followed (static and dynamic), entries included: a Set of repo paths.
@@ -102,6 +105,19 @@ export function importClosure(git, sha, entries = HOOK_ENTRIES) {
 export function hookChanged(git, sha, paths) {
   const closure = importClosure(git, sha);
   return paths.filter((p) => HOOK_PINNED.test(p) || HOOK_READS.includes(p) || closure.has(p));
+}
+
+// #C1140: which of the changed paths the landing job runs: scripts/board-land.mjs and the files it imports, at `sha`.
+export function landChanged(git, sha, paths) {
+  const closure = importClosure(git, sha, LAND_ENTRIES);
+  return paths.filter((p) => closure.has(p));
+}
+// The landing-job step of pair `name`, from scripts/pair/land.template.mjs: its only variables are the pair's name and the pinned main. A template that still holds a placeholder is refused.
+export function landText({ name, sha, template = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "pair", "land.template.mjs"), "utf8") }) {
+  if (!/^pc\d{1,6}$/.test(String(name)) || !FULL.test(String(sha))) throw new Error("the landing-job step needs a pair name (pc<n>) and a full sha");
+  const text = template.split("@@NAME@@").join(name).split("@@SIGNED@@").join(sha);
+  if (/@@[A-Z]+@@/.test(text)) throw new Error("the landing-job template has a placeholder this tool does not fill");
+  return text;
 }
 
 // The newest board-store-hooks-pc<k>.mjs before n in the folder, or null.
@@ -205,7 +221,7 @@ export function onMain(git, sha) {
   return { ok: true, tip };
 }
 
-export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha, folder, skipped = [], hooksSha = null, hookPaths = [], boardDeploySha = null }) {
+export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha, folder, skipped = [], hooksSha = null, hookPaths = [], boardDeploySha = null, landSha = null, landPaths = [] }) {
   const s8 = sha.slice(0, 8), s7 = sha.slice(0, 7);
   const cards = [...new Set(commits.flatMap((c) => c.match(/#C\d+/g) ?? []))];
   const groups = groupPaths(paths);
@@ -220,7 +236,7 @@ export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha,
   const worker = groups.some(([g]) => g === "Worker code" || g === "database migration" || g === "Worker config (check for a new binding or secret)");
   return `# ${name}: ${cards.length ? cards.join(", ") : "main"} at ${s8}
 
-Pinned to flight-board main ${sha}. Each line checks the file's SHA-256 first and prints CHECK FAILED instead of running a changed file. ${hooksSha ? "Three lines (the third installs the hooks, pinned to this main)" : "Two lines"}, in this order, one at a time, from any folder: every path is full (#C921).
+Pinned to flight-board main ${sha}. Each line checks the file's SHA-256 first and prints CHECK FAILED instead of running a changed file. ${hooksSha ? (landSha ? "Four lines (the third installs the hooks, the fourth moves the landing job to the pinned install, both pinned to this main)" : "Three lines (the third installs the hooks, pinned to this main)") : "Two lines"}, in this order, one at a time, from any folder: every path is full (#C921).
 ${replaces}${worker ? "The Worker changes: deploy it first (line 1), then the tree (line 2)." : "No Worker code changes: line 1 only tells the Worker which commit it carries."} ${migration ? "A database migration is part of this deploy: answer y if it asks." : "No database migration."}${worker ? " A new secret cannot be seen from the diff: read the Worker code and Worker config lines below." : ""}
 If wrangler is not signed in: fill cloudflareApiToken and cloudflareAccountId in ${folder}/board.private.json (mode 600, made once by you in Terminal, never in a chat; with it nothing opens a browser, so it works over SSH), or sign in once with a browser: npx wrangler@4.150.0 login.
 
@@ -266,8 +282,16 @@ if [ "$(shasum -a 256 ${folder}/board-store-hooks-${name}.mjs | cut -c1-64)" = $
 \`\`\`
 
 It refuses unless line 2 has run (the tree is at ${s7}). Then quit the app and open it again: hooks load when a session starts. Undo: \`node ${folder}/board-store-hooks-${name}.mjs undo\`. Hook files changed since ${prev ? prev.sha.slice(0, 8) : "the start"}: ${hookPaths.join(", ")} (a hook script, the installer, or a file the two gate scripts import).
+` : ""}${hooksSha && landSha ? `
+## Line 4: landing job (moves the LaunchAgent to the pinned install)
+
+\`\`\`bash
+if [ "$(shasum -a 256 ${folder}/board-store-land-${name}.mjs | cut -c1-64)" = ${landSha} ]; then node ${folder}/board-store-land-${name}.mjs; else echo 'CHECK FAILED: board-store-land-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
+\`\`\`
+
+The landing job (the LaunchAgent \`com.flight-board.store.land\`, every 10 minutes) runs scripts/board-land.mjs; this step points it at \`~/.flight-board/install/${sha}/scripts/board-land.mjs\`, the install line 3 made, instead of \`~/.flight-board/current\`, so a changed land job runs only after you install it. It refuses unless that file exists (line 3 has run), keeps a backup of the LaunchAgent's file, reloads the job and checks launchd has it. Last line: \`LAND OK: ...\`. Undo: \`node ${folder}/board-store-land-${name}.mjs undo\`. Land job files changed since ${prev ? prev.sha.slice(0, 8) : "the start"}: ${landPaths.join(", ")}.
 ` : ""}
-Full sha256: deploy ${deploySha}, tree ${treeSha}${boardDeploySha ? `, board-deploy ${boardDeploySha}` : ""}${hooksSha ? `, hooks ${hooksSha}` : ""}.
+Full sha256: deploy ${deploySha}, tree ${treeSha}${boardDeploySha ? `, board-deploy ${boardDeploySha}` : ""}${hooksSha ? `, hooks ${hooksSha}` : ""}${landSha ? `, land ${landSha}` : ""}.
 `;
 }
 
@@ -310,12 +334,20 @@ export function makeAll({ repo, sha, n, out, git = (...a) => spawnSync("git", ["
       if (!c.ok) return { ok: false, why: c.why };
     }
   }
+  // #C1140: the landing job changed (scripts/board-land.mjs or a file it imports): its step moves the LaunchAgent to the pinned install. board-land.mjs is a hook entry, so the hooks step
+  // (which creates that install) is always written with it; without a hooks step there is nothing to run the land step after, and the pack is refused rather than written half.
+  let land = null;
+  const landPaths = landChanged(git, sha, paths);
+  if (landPaths.length) {
+    if (!hooks) return { ok: false, why: "the landing job changed but the pack has no hooks step to create the pinned install it would run from" };
+    try { land = landText({ name, sha }); } catch (e) { return { ok: false, why: e.message }; }
+  }
   const hashes = Object.fromEntries(Object.entries(files).map(([f, t]) => [f, sha256(t)]));
   const hooksName = `board-store-hooks-${name}.mjs`;
   // #C924: the generic one-command runner, copied byte for byte (the same file for every pair; its hash is in the steps file).
   const boardDeploy = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "pair", "board-deploy.mjs"));
-  const steps = stepsText({ name, sha, prev, commits, paths, deploySha: hashes[`board-store-deploy-${name}.mjs`], treeSha: hashes[`board-store-tree-${name}.mjs`], folder: out.startsWith(homedir() + "/") ? "~" + out.slice(homedir().length) : out, skipped: neverRun(out, n), hooksSha: hooks ? sha256(hooks) : null, hookPaths, boardDeploySha: sha256(boardDeploy) });
-  const all = { ...files, ...(hooks ? { [hooksName]: hooks } : {}), "board-deploy.mjs": boardDeploy, [`board-store-${name}-steps.md`]: steps };
+  const steps = stepsText({ name, sha, prev, commits, paths, deploySha: hashes[`board-store-deploy-${name}.mjs`], treeSha: hashes[`board-store-tree-${name}.mjs`], folder: out.startsWith(homedir() + "/") ? "~" + out.slice(homedir().length) : out, skipped: neverRun(out, n), hooksSha: hooks ? sha256(hooks) : null, hookPaths, boardDeploySha: sha256(boardDeploy), landSha: land ? sha256(land) : null, landPaths });
+  const all = { ...files, ...(hooks ? { [hooksName]: hooks } : {}), ...(land ? { [`board-store-land-${name}.mjs`]: land } : {}), "board-deploy.mjs": boardDeploy, [`board-store-${name}-steps.md`]: steps };
   for (const [f, t] of Object.entries(all)) writeFileSync(join(out, f), t);
   return { ok: true, files: Object.fromEntries(Object.entries(all).map(([f, t]) => [f, sha256(t)])) };
 }
