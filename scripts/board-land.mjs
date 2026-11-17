@@ -15,15 +15,19 @@
 //   3. the refusals: the release tool's dry run (and then its real run) decides; a refusal is written to <stateDir>/<board>/land-report.json
 //      ({ at, landed, refused: [{ branch, sha, cards, reasons }], waiting }) and printed, for Release to take. The job never retries a refused tip
 //      in the same run, never forces, never touches a branch, a note or a hold.
+//   4. #C1146, the group check: a head that carries two or more cards lands only with Checker's READ note (refs/notes/group-check, on the exact head) naming every file two or more
+//      of its cards touch, and after ONE run of the full suite on a snapshot of the head, kept per sha in <stateDir>/<board>/group-check.json. scripts/group-check.mjs holds the rules.
 // Flight-board only: the release tool lands into the flight-board repository, and a product ship stays with Release.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 // Checker 2's F2 LOW on 81d976c4: a static import, so importClosure pins worker/probe-jobs.mjs with this RELEASE_ENTRY (the land numbers are the owner's).
-import { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC } from "../worker/probe-jobs.mjs";
+import { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC, LAND_SUITE_SEC } from "../worker/probe-jobs.mjs";
 import { pinnedCommit } from "./current.mjs";
+// #C1146: the group check (Checker's read of the files two or more cards touch, and one suite run on the head) before a head of two or more cards lands.
+import { GROUP_NOTE_REF, groupFacts, groupVerdict, suiteOnSnapshot } from "./group-check.mjs";
 
 // #C1058 (the owner chose A on #T1992): the release tool this job starts is the one in the owner's installed copy, <install root>/<the commit his hooks pin>/scripts/,
 // never the one beside this file (the linked copy moves with every release) and never a checkout's. So a changed release tool runs only after his install moves the pin.
@@ -82,7 +86,12 @@ export function landPlan({ heads, holds, now }) {
     if (h.dataLines === null) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `its change to ${DATA_FILE} could not be read` }); continue; }
     if (Number.isInteger(h.dataLines) && h.dataLines > 0 && !cards.every((c) => FOLD_CARD.test(c))) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: [`it adds a dated line to ${DATA_FILE}: write the card's line to docs/DATA.d/<card id>.md instead (only the fold card, a Board-Id starting fold-data-fragments, adds dated lines there; a row or a principle may still be edited in the file)`] }); continue; }
     if (!h.forward) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: ["it doesn't continue origin/main: rebase it on main and sign it again"] }); continue; }
-    out.try.push(h);
+    // #C1146: a head of two or more cards also needs the group check on this exact commit: Checker's read of the files two or more cards touch (a note), then one suite run (the
+    // job makes it before the release tool's dry run, once per sha). Facts that were not read (no `group`) are a wait, never a pass.
+    const g = groupVerdict({ cards, ...(h.group ?? {}) });
+    if (g.state === "wait") { out.waiting.push({ branch: h.branch, sha: h.sha, why: g.why }); continue; }
+    if (g.state === "fail") { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: [g.why] }); continue; }
+    out.try.push(g.state === "run" ? { ...h, needSuite: true } : h);
   }
   out.try.sort((a, b) => (b.ahead - a.ahead) || String(a.branch).localeCompare(String(b.branch)));
   return out;
@@ -104,8 +113,10 @@ export function refusalReasons(text) {
 // wait for the next run, in the report's `waiting`. With no budget (a hand run) every tip is tried, as before.
 // #C1090: readFragments() -> how many docs/DATA.d fragments wait on origin/main; FOLD_DUE or more is reported (foldDue) and logged as FOLD DUE, which
 // Release and Manager read with the run's other lines: cut the fold card.
-export function landRun({ readFacts, readHolds, release, now = Date.now(), dry = false, log = () => {}, clock = Date.now, budgetMs = Infinity, tipMs = 0, readFragments = () => 0 }) {
-  const landed = [], refused = [], seen = new Set(), start = clock();
+// #C1146: a tip the plan marks needSuite (a head of two or more cards, Checker's read in place) gets runSuite(sha) -> { ok, line } once, before the dry run; the result is kept by
+// recordSuite(sha, result) so no later run repeats it, and a red one is a refusal Release reads. suiteMs is that run's worst case, added to the tip's before it is started.
+export function landRun({ readFacts, readHolds, release, now = Date.now(), dry = false, log = () => {}, clock = Date.now, budgetMs = Infinity, tipMs = 0, readFragments = () => 0, runSuite = null, recordSuite = () => {}, suiteMs = 0 }) {
+  const landed = [], refused = [], held = [], seen = new Set(), start = clock();
   let waiting = [];
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const plan = landPlan({ heads: readFacts().heads.filter((h) => !seen.has(h.sha)), holds: readHolds(), now });
@@ -113,12 +124,21 @@ export function landRun({ readFacts, readHolds, release, now = Date.now(), dry =
     for (const b of plan.blocked) if (!seen.has(b.sha)) { seen.add(b.sha); refused.push(b); }
     const next = plan.try[0];
     if (!next) break;
-    if (clock() - start + tipMs > budgetMs) {
+    if (clock() - start + tipMs + (next.needSuite ? suiteMs : 0) > budgetMs) {
       waiting = [...waiting, ...plan.try.map((h) => ({ branch: h.branch, sha: h.sha, why: "no time left in this run for a whole landing: the next run tries it" }))];
       log(`time: ${plan.try.length} tip(s) wait for the next run`);
       break;
     }
     seen.add(next.sha);
+    if (next.needSuite) {
+      if (typeof runSuite !== "function") { held.push({ branch: next.branch, sha: next.sha, why: "group check: this run has no way to run the suite" }); continue; }
+      let res;
+      try { res = runSuite(next.sha); } catch (e) { res = { ok: false, line: `the suite run failed to start: ${String(e?.message ?? e).split("\n")[0].slice(0, 120)}` }; }
+      if (!res || typeof res.ok !== "boolean") res = { ok: false, line: "the suite run gave no verdict" };
+      try { recordSuite(next.sha, { at: now, ok: res.ok, line: String(res.line ?? "").slice(0, 200) }); } catch { /* the next run runs it again */ }
+      if (!res.ok) { refused.push({ branch: next.branch, sha: next.sha, cards: next.cards, reasons: [`the full suite on the group head was red: ${String(res.line ?? "no detail").slice(0, 200)}`] }); log(`group check: suite red on ${next.branch} ${next.sha.slice(0, 12)}`); continue; }
+      log(`group check: suite green on ${next.branch} ${next.sha.slice(0, 12)}`);
+    }
     const check = release(next.sha, true);
     if (check.code !== 0) { refused.push({ branch: next.branch, sha: next.sha, cards: next.cards, reasons: refusalReasons(check.text) }); log(`refused ${next.branch} ${next.sha.slice(0, 12)}`); continue; }
     if (dry) { landed.push({ branch: next.branch, sha: next.sha, dry: true }); log(`would land ${next.branch} ${next.sha.slice(0, 12)}`); continue; }
@@ -131,7 +151,7 @@ export function landRun({ readFacts, readHolds, release, now = Date.now(), dry =
   try { dataFragments = Number(readFragments()) || 0; } catch { dataFragments = 0; }
   const foldDue = dataFragments >= FOLD_DUE;
   if (foldDue) log(`FOLD DUE: ${dataFragments} DATA fragments wait in docs/DATA.d on origin/main: cut the fold card (a Board-Id starting fold-data-fragments; node scripts/data-fragments.mjs --write)`);
-  return { at: now, landed, refused, waiting, dataFragments, foldDue };
+  return { at: now, landed, refused, waiting: [...waiting, ...held], dataFragments, foldDue };
 }
 
 // #C1140 (Security's F1 on 768c18d0): where this job may run from. Once the LaunchAgent starts the owner's pinned install (the pack's land step), the job's own folder is
@@ -173,13 +193,17 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const readFacts = () => {
     quiet(["fetch", "-q", "origin"]);
     for (const [who, ref] of Object.entries(NOTES)) quiet(["fetch", "-q", "origin", `+${ref}:refs/notes/board-release/${who}`]);
+    quiet(["fetch", "-q", "origin", `+${GROUP_NOTE_REF}:refs/notes/board-release/group`]);
+    const suites = readJson(join(dir, "group-check.json")) ?? {};
     const main = git(["rev-parse", "origin/main"]);
     const heads = (quiet(["for-each-ref", "refs/remotes/origin/build", "--format=%(refname:lstrip=3) %(objectname)"]) ?? "").split("\n").filter(Boolean).map((l) => {
       const [branch, sha] = l.split(" ");
       const notes = Object.fromEntries(Object.keys(NOTES).map((who) => [who, quiet(["notes", `--ref=board-release/${who}`, "show", sha])]));
       const cards = [...new Set((quiet(["log", "--format=%(trailers:key=Board-Id,valueonly,separator=%x2c)", `${main}..${sha}`]) ?? "").split(/[\n,]/).map((x) => x.trim()).filter(Boolean))];
       const dataLines = addedDatedLines(quiet(dataDiffArgs(main, sha)));
-      return { branch, sha, notes, cards, dataLines, onMain: quiet(["merge-base", "--is-ancestor", sha, main]) !== null, forward: quiet(["merge-base", "--is-ancestor", main, sha]) !== null, ahead: Number(quiet(["rev-list", "--count", `${main}..${sha}`]) ?? 0) };
+      // #C1146: only a head of two or more cards is read for the group check (the git read is skipped for the rest).
+      const group = groupFacts({ cards, quiet, main, sha, suites });
+      return { branch, sha, notes, cards, dataLines, group, onMain: quiet(["merge-base", "--is-ancestor", sha, main]) !== null, forward: quiet(["merge-base", "--is-ancestor", main, sha]) !== null, ahead: Number(quiet(["rev-list", "--count", `${main}..${sha}`]) ?? 0) };
     });
     return { main, heads };
   };
@@ -191,7 +215,26 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   };
   // #C975: the scheduled run's time budget (worker/probe-jobs.mjs: the land cadence's limit less a margin, and one tip's worst case).
   const readFragments = () => fragmentCount(quiet(fragmentListArgs("origin/main")));
-  const report = landRun({ readFragments, readFacts, readHolds: () => readJson(join(dir, "land-holds.json")), release, dry, log: (s) => console.log(`land: ${s}`), budgetMs: (JOBS.land.limitSec - LAND_MARGIN_SEC) * 1000, tipMs: LAND_TIP_SEC * 1000 });
+  // #C1146: the group check's one suite run, on a snapshot of the head (a detached worktree, removed after), its own TMPDIR; the verdict is kept per sha in group-check.json.
+  const runSuite = (sha) => suiteOnSnapshot({
+    sha, mkdtemp: () => mkdtempSync(join(tmpdir(), "board-land-suite-")), run: git, remove: (d) => { quiet(["worktree", "remove", "--force", d]); rmSync(d, { recursive: true, force: true }); },
+    suite: (d) => {
+      const td = mkdtempSync(join(tmpdir(), "board-land-tmp-"));
+      try {
+        const r = spawnSync(process.execPath, ["--test", "tests/*.test.mjs"], { cwd: d, env: { ...process.env, TMPDIR: td }, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+        const fail = String(r.stdout ?? "").split("\n").find((l) => /^(not ok|✖)/.test(l));
+        return r.status === 0 ? { ok: true, line: "green" } : { ok: false, line: `exit ${r.status ?? "?"}${fail ? `, ${fail.slice(0, 120)}` : ""}` };
+      } finally { rmSync(td, { recursive: true, force: true }); }
+    },
+  });
+  const recordSuite = (sha, result) => {
+    const file = join(dir, "group-check.json"), have = readJson(file) ?? {};
+    const keep = Object.entries({ ...have, [sha]: result }).sort((a, b) => (b[1]?.at ?? 0) - (a[1]?.at ?? 0)).slice(0, 20);
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const part = `${file}.${process.pid}.part`;
+    writeFileSync(part, JSON.stringify(Object.fromEntries(keep)), { mode: 0o600 }); renameSync(part, file);
+  };
+  const report = landRun({ readFragments, readFacts, readHolds: () => readJson(join(dir, "land-holds.json")), release, dry, log: (s) => console.log(`land: ${s}`), budgetMs: (JOBS.land.limitSec - LAND_MARGIN_SEC) * 1000, tipMs: LAND_TIP_SEC * 1000, runSuite: dry ? null : runSuite, recordSuite, suiteMs: LAND_SUITE_SEC * 1000 });
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(dir, "land-report.json"), part = `${file}.${process.pid}.part`;
   writeFileSync(part, JSON.stringify(report), { mode: 0o600 }); renameSync(part, file);
