@@ -16,7 +16,10 @@ const card = (nextNote) => ({ id: "a-card", num: 890, level: "Quick", phase: "pl
 // A repository whose main holds the card's docs-only commit (so it is landed and reads live); a second commit exists on a branch that never reached main.
 // code: the card's commit changes code (src/a.mjs), so it needs an install and reads ship, not live (Checker 2's M1 on #C1104).
 function world({ code = false } = {}) {
-  const dir = mkdtempSync(join(tmpdir(), "fb-parts-")), git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  // #C1133: the commit shas are FIXED (fixed dates, author and content). They used to change on every run, and about 1 run in 40 cut a cited prefix with no letter a to f ("367968441",
+  // "8825951"): citedShas ignores such a word on purpose (a date or a long number is not a sha), so partsMissing read empty and the test failed with no load at all.
+  const dir = mkdtempSync(join(tmpdir(), "fb-parts-")), fixed = { ...process.env, GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z", GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z" };
+  const git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: fixed });
   git(["init", "-q", "-b", "main"]); git(["config", "user.email", "t@t"]); git(["config", "user.name", "t"]);
   git(["config", "gc.auto", "0"]); git(["config", "maintenance.auto", "false"]); // #C1133: no detached background maintenance racing the fixture's reads
   git(["commit", "-q", "--allow-empty", "-m", "base"]);
@@ -29,6 +32,8 @@ function world({ code = false } = {}) {
   git(["switch", "-q", "-c", "side", base]); writeFileSync(join(dir, "side.txt"), "s\n"); git(["add", "-A"]); git(["commit", "-q", "-m", "a part not on main"]);
   const side = git(["rev-parse", "HEAD"]).trim();
   const tips = [{ branch: "build/a-card", sha, at: T, message: "the card\n\nBoard-Id: a-card" }, { branch: "main", sha, at: T, message: "" }];
+  // the prefixes the tests cite must be words citedShas reads as shas (a digit and a letter a to f); a fixture that breaks this says so, rather than failing a later assertion
+  if (citedShas(`part ${base.slice(0, 7)} part ${side.slice(0, 9)}`).length !== 2) throw new Error(`fixture shas are not citable: ${base.slice(0, 7)} ${side.slice(0, 9)} (change the fixture's content or date)`);
   return { sha, base, side, repo: () => ({ git, remote: "origin", main: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, tips, live: null, versionPattern: null }) };
 }
 
