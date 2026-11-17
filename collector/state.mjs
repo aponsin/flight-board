@@ -661,12 +661,13 @@ export function annotatedOn(repo, ref) {
   }
   return memo.get(ref);
 }
-// #C890 (half 2 of #C863, the #C731 case): a part of a card is named by a commit sha cited in the card's next_note, 7 to 40 hex characters (lower case, as git prints it).
-// A word is a sha only if it has a digit and a letter a to f (so "defaced", a date or a long number is not one), at most 10 of them. Pure: the note in, the list out.
+// #C890 (half 2 of #C863, the #C731 case): a part of a card is named by the word "part" and a commit sha in the card's next_note ("part 1a2b3c4"), 7 to 40 hex characters (lower case,
+// as git prints it). Every other sha in a note (a superseded tip, a review tip, an old stack) is ignored: only a marked one can hold a landed card. The marked word is a sha only if it
+// has a digit and a letter a to f (so "part defaced", a date or a long number is not one), at most 10 of them. Pure: the note in, the list out.
 export function citedShas(note) {
   if (typeof note !== "string") return [];
   const out = [];
-  for (const m of note.matchAll(/(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])/g)) if (/[0-9]/.test(m[0]) && /[a-f]/.test(m[0]) && !out.includes(m[0])) out.push(m[0]);
+  for (const m of note.matchAll(/(?<![0-9A-Za-z])part\s+([0-9a-f]{7,40})(?![0-9A-Za-z])/gi)) if (/[0-9]/.test(m[1]) && /[a-f]/.test(m[1]) && !out.includes(m[1])) out.push(m[1]);
   return out.slice(0, 10);
 }
 function tipState(card, tip, repo, config, now, declared, cover = null) {
