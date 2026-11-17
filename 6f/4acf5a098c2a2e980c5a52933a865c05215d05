@@ -1,0 +1,3 @@
+SECURE (Full) #C1129 build/rc-off-line-checks-roster 6f4acf5a: closes my I1 on #C1122; rcOffWakes names only a ROSTER_ROLES name with optional ' <digits>' (Checker 2 3, Checker2, trailing space, made-up titles refused). 7 Remote Control tests green; mutation check: pass (roster check removed: the new test fails).
+
+signed-by: Security
