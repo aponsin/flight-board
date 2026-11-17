@@ -1,0 +1,3 @@
+SECURE decision-buttons-with-card-thread ed86c27b: page only (threadState order). A non-owner's last message of kind decision, with stored options, reads as a Decision on a card's thread too. The options come from the store, whose post rule already allows agents only A-D keys with labels, and the page escapes them as before. Agents could already post Decisions on other threads, so there is no new input, write or trust path.
+
+signed-by: Security
