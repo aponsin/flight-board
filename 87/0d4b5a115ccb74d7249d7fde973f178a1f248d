@@ -1,2 +1,2 @@
-PASS (Full) line from 00c4b85f79e9671bccba4371124e8a3fba3724a4 #C1113 ops-knobs group head: F1 fixed (baseline file and OPS_BASELINE_WRITE gone; my repro fails the lint with the switch set; a returning baseline file fails the new test), F2 fragments cover slices 1-6, F3 comments corrected; suite 2990/0, mutants M1-M7 killed
+PASS (Full) line from 748fd161a9b9134db07519df8d10a7d059ee56d1 #C1113 ops-knobs group head: F1 fixed (baseline file and OPS_BASELINE_WRITE gone; my repro fails the lint with the switch set; a returning baseline file fails the new test), F2 fragments cover slices 1-6, F3 comments corrected; suite 2990/0, mutants M1-M7 killed; every commit in the line also has its own PASS
 signed-by: Checker 2
