@@ -1,0 +1,2 @@
+PASS (empty) #C1144 3239a9b4: start commit, git diff against parent 1560560e is empty; signed with its READY tip.
+signed-by: Checker 2
