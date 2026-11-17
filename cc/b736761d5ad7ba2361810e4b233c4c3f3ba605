@@ -1,0 +1,1 @@
+PASS (Checker 2, Full) on #C1114: counters from review notes; unexplained step back held and released by the reviewer's counted finding or a reason; migration 0036 keeps rows; 27 hand mutants killed, 1 equivalent; npm test 2695, 0 fail; L2 deferred to #C1113 (commit ccb73676 of stack tip ac96666a)
