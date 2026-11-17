@@ -1,0 +1,1 @@
+SECURE G17 merge of #C1122 (second parent 8fe2f183, which carries my SECURE). Its conflict resolution (git show --cc) is the union of both sides only; no new logic. (appSessions row keeps effort and rcOff and no other file key; OPTIONAL + rcOff; board-store import). Covered by the G17 head note on 36e0164e. (Security)
