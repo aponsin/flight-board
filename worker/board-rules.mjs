@@ -1147,7 +1147,10 @@ export function phaseMedians(rows) {
 // owner has not started is not slow: its owner's session is working a DIFFERENT card now (`agents`: the roster reading { role: { state, card } }). No reading, or the owner
 // idle or on this card, and the old rule stands.
 export const NOTE_FRESH_MS = 60 * 60_000;
-export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages = [], shipSlowMs = SHIP_SLOW_MS, agents }) {
+// #C1120 (11-16, #C1104, #C1105, #C1108: Manager got "rework reason missing" and then, about 30 s after the reason was attached, "is slow with no reason"): attaching a reason
+// clears the card's rework flag, so the #C1063 clause below (which needs the flag) never saw it. `reasonAt` is { card_id: time } of the newest rework_history row; a reason
+// attached in the last NOTE_FRESH_MS counts as the line's reason like a fresh next_note, flag or no flag.
+export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages = [], shipSlowMs = SHIP_SLOW_MS, agents, reasonAt }) {
   const out = [];
   const roster = agents && typeof agents === "object" ? agents : {};
   for (const c of cards ?? []) {
@@ -1172,6 +1175,8 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
     // session is working this very card is being worked on: that owner attaches it. Neither says anything.
     if (v.rework === true && !missing && Number.isFinite(c.updated_at) && c.updated_at <= now && now - c.updated_at < NOTE_FRESH_MS) continue;
     if (missing && on && on.state === "working" && on.card === c.id) continue;
+    const ra = reasonAt instanceof Map ? reasonAt.get(c.id) : reasonAt?.[c.id];
+    if (!missing && typeof c.rework_reason === "string" && c.rework_reason !== "" && Number.isFinite(ra) && ra <= now && now - ra < NOTE_FRESH_MS) continue;
     if (limit !== null && waited(start, now, outages) > limit) out.push({ card_id: c.id, num: c.num, reason: missing ? reworkReasonLine(c.num, owner) : slowLine(c.num) });
   }
   return out;
