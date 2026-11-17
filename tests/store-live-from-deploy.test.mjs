@@ -33,7 +33,7 @@ function rig() {
   g(["checkout", "-qb", "side"]); const d = commit(6, "d.md", "a side line"); g(["checkout", "-q", "main"]);
   g(["checkout", "-qb", "board-fix"]);
   const own = commit(10, "w.md", "The card's work\n\nBoard-Id: board-fix");
-  for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-m", "PASS", own]);
+  for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-m", ref === NOTES.security ? "SECURE" : "PASS", own]);
   g(["checkout", "-q", "main"]); at = T0 + 20; g(["merge", "-q", "--no-ff", "-m", "merge board-fix", "board-fix"]); g(["branch", "-qD", "board-fix"]);
   const c2 = g(["rev-parse", "HEAD"]).trim();
   const c3 = commit(30, "c3.md", "later work");

@@ -86,7 +86,7 @@ function scratch() {
   git(["commit", "-q", "--allow-empty", "-m", "base"]);
   git(["switch", "-q", "-c", "board-x"]); git(["commit", "-q", "--allow-empty", "-m", "work\n\nBoard-Id: board-x"]);
   const sha = git(["rev-parse", "HEAD"]).trim();
-  for (const ref of ["checker", "security"]) git(["notes", `--ref=refs/notes/${ref}`, "add", "-m", "PASS", sha]);
+  for (const ref of ["checker", "security"]) git(["notes", `--ref=refs/notes/${ref}`, "add", "-m", ref === "security" ? "SECURE" : "PASS", sha]);
   git(["update-ref", "refs/remotes/origin/main", "main"]); git(["update-ref", "refs/remotes/origin/board-x", sha]);
   const cfg = { phases: [["plan"], ["build"], ["checker"], ["security"], ["ship"], ["live"]], skips: [], collector: { notes: { checker: "x", security: "y" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", mainBranch: "main", repos: [] } };
   const repo = (extra = {}) => ({ git, remote: "origin", main: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, tips: [{ branch: "board-x", sha, at: T, message: "work\n\nBoard-Id: board-x" }, { branch: "main", sha: "x", at: T, message: "" }], live: null, versionPattern: null, ...extra });

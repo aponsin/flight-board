@@ -28,7 +28,7 @@ function scratch() {
   const shipBranch = (name, trailerId) => {
     g(["checkout", "-qb", name]);
     const sha = commit(10, `${name}.md`, `Work for ${name}\n\nBoard-Id: ${trailerId}`);
-    for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-m", "PASS", sha]);
+    for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-m", ref === NOTES.security ? "SECURE" : "PASS", sha]);
     g(["checkout", "-q", "main"]); at = T0 + 20; g(["merge", "-q", "--no-ff", "-m", `v1.0.0: ${name}`, name]); g(["branch", "-qD", name]);
     return sha;
   };

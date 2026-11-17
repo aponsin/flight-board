@@ -80,7 +80,8 @@ test("F2: a change is taken only when the commit that last changed the file on m
     assert.match(s.line, /last changed on main in aaaaaaa, which carries no SECURE note; the live copy is kept/, why);
   }
   for (const last of ["", "not-a-sha", new Error("git failed")]) assert.match(sync(landed, live, SECURE, last).line, /no commit on main found/, String(last));
-  assert.ok(sync(landed, live, "\nSECURE #C2 aaaaaaa").text, "a SECURE note (leading space aside) lets it through");
+  assert.ok(sync(landed, live, "  SECURE #C2 aaaaaaa").text, "a SECURE note (leading space aside) lets it through");
+  assert.equal(sync(landed, live, "\nSECURE #C2 aaaaaaa").text, null, "a blank first line is no SECURE: the landing job reads the first line only (#C1163)");
   assert.deepEqual(sync({ ...base }, live, null), { text: null, line: null }, "no change to take: no note needed and nothing said");
 });
 

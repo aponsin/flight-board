@@ -22,7 +22,7 @@ const world = (cards, reviewClaims = []) => {
   for (const [n, repo] of Object.entries(cards)) {
     const id = `c${n}-thing`;
     rows.push({ id, num: Number(n), owner_role: "Boardsmith", review_level: "Quick", waiting_on: null, paused: 0, dropped: 0, repo, });
-    evidence[`cards.${id}`] = { readAt: NOW - 5_000, value: { lit: ["checker"], phase: "checker", headSha12: sha(n), signed: [] } };
+    evidence[`cards.${id}`] = { readAt: NOW - 5_000, value: { lit: ["checker"], phase: "checker", headSha12: sha(n), signed: ["flight-board", "board"].includes(repo) ? ["security"] : [] } };
   }
   return { cards: rows, asks: [], evidence, reviewClaims };
 };
@@ -39,7 +39,7 @@ test("a flight-board card at the checker phase wakes Checker 2, a product card w
   const v = world({ 1: "", 2: "flight-board", 3: "board", 4: "product-app" });
   assert.deepEqual(who(run(v, REVIEWERS)), { 1: "Checker 2", 2: "Checker 2", 3: "Checker 2", 4: "Checker" });
   const line = dispatchLine(run(world({ 7: "flight-board" }), REVIEWERS)[0]);
-  assert.match(line, /^DISPATCH #C7 at checker: [0-9a-f]{12}; it is pushed; review it .*\(Checker 2's turn;/);
+  assert.match(line, /^DISPATCH #C7 at checker: [0-9a-f]{12}( signed by Security)?; it is pushed; review it .*\(Checker 2's turn;/);
 });
 
 test("a map for a product repository sends that repository's reviews to its role; a repository with no entry keeps Checker", () => {

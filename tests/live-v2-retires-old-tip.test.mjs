@@ -31,7 +31,7 @@ function fixture({ v1Signed = true, v2Branch = false } = {}) {
   git(["switch", "-q", "-c", "build/a-card"]);
   const v1 = commit("one.txt", "v1\n", "v1\n\nBoard-Id: a-card");
   git(["update-ref", "refs/remotes/origin/build/a-card", v1]);
-  if (v1Signed) { git(["notes", "--ref=refs/notes/checker", "add", "-m", "PASS", v1]); git(["notes", "--ref=refs/notes/security", "add", "-m", "PASS", v1]); }
+  if (v1Signed) { git(["notes", "--ref=refs/notes/checker", "add", "-m", "PASS", v1]); git(["notes", "--ref=refs/notes/security", "add", "-m", "SECURE", v1]); }
   git(["switch", "-q", "main"]);
   commit("other.txt", "someone else's work\n", "other work on main");
   let v2;

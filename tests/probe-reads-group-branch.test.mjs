@@ -25,7 +25,7 @@ function scratch() {
   writeFileSync(join(work, "base.md"), "start\n"); g(["add", "-A"]); g(["commit", "-qm", "start"]);
   const commit = (t, file, msg) => { at = T0 + t; appendFileSync(join(work, file), `${t}\n`); g(["add", "-A"]); g(["commit", "-qm", msg]); return g(["rev-parse", "HEAD"]).trim(); };
   const sync = () => { g(["push", "-q", "--all", "-f", "origin"]); g(["fetch", "-q", "--prune", "origin"]); };
-  const note = (sha, text) => { for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-f", "-m", text, sha]); };
+  const note = (sha, text) => { for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-f", "-m", text === "PASS" && ref === NOTES.security ? "SECURE" : text, sha]); };
   const repo = () => ({ git: (args) => g(args), remote: "origin", main: "main", notes: NOTES, tips: remoteTips((a) => g(a), "origin"), live: null, versionPattern: null });
   return { g, commit, sync, repo, note };
 }

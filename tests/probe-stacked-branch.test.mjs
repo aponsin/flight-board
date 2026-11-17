@@ -24,7 +24,7 @@ function scratch() {
   g(["config", "user.email", "t@example.com"]); g(["config", "user.name", "T"]); g(["remote", "add", "origin", bare]);
   writeFileSync(join(work, "base.md"), "start\n"); g(["add", "-A"]); g(["commit", "-qm", "start"]);
   const commit = (t, file, msg) => { at = T0 + t; appendFileSync(join(work, file), `${t}\n`); g(["add", "-A"]); g(["commit", "-qm", msg]); return g(["rev-parse", "HEAD"]).trim(); };
-  const sign = (sha) => { for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-m", "PASS", sha]); };
+  const sign = (sha) => { for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-m", ref === NOTES.security ? "SECURE" : "PASS", sha]); };
   const sync = () => { g(["push", "-q", "--all", "-f", "origin"]); g(["fetch", "-q", "--prune", "origin"]); };
   const repo = (extra = {}) => ({ git: (args) => g(args), remote: "origin", main: "main", notes: NOTES, tips: remoteTips((a) => g(a), "origin"), live: null, versionPattern: null, ...extra });
   return { g, commit, sign, sync, repo, mainSha: () => g(["rev-parse", "main"]).trim() };

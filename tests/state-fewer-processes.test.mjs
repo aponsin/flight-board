@@ -172,7 +172,7 @@ test("real git: card states with the index and the memo equal the per-card way's
   const ship = (name) => {
     g(["checkout", "-qb", name]); at += 10; appendFileSync(join(work, `${name}.md`), "x\n"); g(["add", "-A"]); g(["commit", "-qm", `Work ${name}\n\nBoard-Id: ${name}`]);
     const s = g(["rev-parse", "HEAD"]).trim();
-    for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-m", "PASS", s]);
+    for (const ref of Object.values(NOTES)) g(["notes", `--ref=${ref}`, "add", "-m", ref === NOTES.security ? "SECURE" : "PASS", s]);
     g(["checkout", "-q", "main"]); at += 10; g(["merge", "-q", "--no-ff", "-m", `v1.0.0: ${name}`, name]); g(["branch", "-qD", name]);
   };
   const shipped = ["card-one", "card-two", "card-three", "card-four", "card-five", "card-six", "card-seven", "card-eight", "card-nine"];
