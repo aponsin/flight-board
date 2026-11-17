@@ -11,6 +11,8 @@ import { basename } from "node:path";
 import { boardIdOf, subjectNum } from "./state.mjs"; // the probe's own copies of derive.mjs's two readers (state.mjs is the file the probe pins)
 
 export const BRANCH_MAX = 60, SWEEP_REPO_MAX = 6;
+// #C1124: the sweep's git reads (for-each-ref carries every branch tip's whole message) run with this buffer, not Node's 1 MB default; output past it is an error, never a partial list.
+export const SWEEP_GIT_MAX_BUFFER = 64 * 1024 * 1024;
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,99}$/;
 const DIR = /^~\/[A-Za-z0-9._\/-]{1,200}$/;
 const NEVER = new Set(["main", "master", "dev", "HEAD"]);
@@ -59,7 +61,11 @@ export function shippedBranchesWrite(configText, { git, openIds, now, log = () =
   const open = { ids: new Set(cards.map((c) => c.id)), nums: new Set(cards.map((c) => c.num).filter(Number.isInteger)) };
   const out = [];
   for (const r of repos) {
-    try { const l = listRepo(r, git, open); if (l.remoteBranches.length || l.localBranches.length) out.push(l); } catch (e) { log(`sweep: ${r.name} could not be read: ${String(e.message).split("\n")[0].slice(0, 80)}`); }
+    try { const l = listRepo(r, git, open); if (l.remoteBranches.length || l.localBranches.length) out.push(l); } catch (e) {
+      // #C1124: git's output longer than the buffer is cut (ENOBUFS). A cut list is never swept: the repository is left out and the log says why, not "could not be read".
+      if (e && (e.code === "ENOBUFS" || /ENOBUFS|maxBuffer/.test(String(e.message)))) log(`sweep: ${r.name} git's output was longer than the ${SWEEP_GIT_MAX_BUFFER}-byte buffer and was cut: nothing was swept for it`);
+      else log(`sweep: ${r.name} could not be read: ${String(e.message).split("\n")[0].slice(0, 80)}`);
+    }
   }
   return { key: "branches.shipped", value: { at: now, repos: out } };
 }
