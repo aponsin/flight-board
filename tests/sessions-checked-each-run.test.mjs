@@ -138,6 +138,21 @@ test("the verdict: matching is green; another model or effort is red with the fi
   assert.deepEqual(v(role(null, OPUS, null, "low")), { c: "mute", txt: "nothing chosen" });
 });
 
+// Checker 2's M1: the panel is part of the Crew view itself, not only a function that draws it.
+test("the Crew view carries the Sessions panel with a red row for a drifted role, and none when there is no reading", () => {
+  const now = Date.now();
+  const crew = (sessionChecks) => {
+    const b = loadNames(["crewHtml", "roleSessionsHtml", "roleVerdict", "probeEvent", "SCHED_OLD"]);
+    Object.assign(b.state, { plan: [], ideas: [], threads: [], waiting: [], derived: [], initiatives: [], meta: [{ id: "context", at: now - 6e4, agents: { Manager: { pct: 44, tokens: 439048, at: now - 6e4 } } }], ctx: [] });
+    b.probeEvent({ type: "data", result: { payload: { v: 1, board: { boardId: "TestBoard42xyz", at: now, probe: null, pageVersion: null }, cards: {}, agents: {}, ...(sessionChecks ? { sessionChecks } : {}) } } }, {});
+    return b.crewHtml(now);
+  };
+  const html = crew({ at: now - H, roles: [role(OPUS, SON, "medium", "medium", now - H)] });
+  assert.match(html, /<div class="panel sm" data-roles>[\s\S]*data-role="Manager"[\s\S]*sm-chip bad">model claude-sonnet-5-5, chosen claude-opus-5-5/);
+  assert.match(html, /data-agent="Manager"/, "the same Crew view still has its tiles");
+  assert.doesNotMatch(crew(null), /data-roles/);
+});
+
 test("the page draws one chip per role, says when the reading is over 36 h old, and draws nothing with no reading or no role", () => {
   const html = page({ at: T - 10 * H, roles: [role(OPUS, SON, "medium", "medium"), { ...role(OPUS, OPUS, null, null), role: "Release" }] }).roleSessionsHtml(T);
   assert.match(html, /data-role="Manager"[\s\S]*sm-chip bad">model claude-sonnet-5-5, chosen claude-opus-5-5/);
