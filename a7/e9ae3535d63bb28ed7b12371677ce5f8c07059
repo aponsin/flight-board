@@ -1,0 +1,2 @@
+PASS (Full) #C1144 a7e9ae35: launchdPlist refuses a non-pinned land script; group peers same repo only; tests now hold every earlier LOW. Mutants 10/12. Nits: LAND_SCRIPT end anchor and repo trim untested; LOW: a same-repo card missing its repo word stops counting as a peer (fails open).
+signed-by: Checker 2
