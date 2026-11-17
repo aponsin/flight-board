@@ -62,7 +62,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "weekTotal", "stack", "stackHold", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "restart", "ledger", "quiet"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "weekTotal", "stack", "stackHold", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "restart", "ledger", "quiet"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -86,6 +86,8 @@ const CARD = {
   readyAt: isTime,
   firm: (v) => v === false,
   waitingFor: (v) => Array.isArray(v) && v.length >= 1 && v.length <= MAX_SIGNED && v.every(re(PHASE)) && new Set(v).size === v.length,
+  // #C890: the commits cited in the card's next_note (7 to 40 hex characters, as the note wrote them) that are not on the repository's main; the card is not read as live while any is.
+  partsMissing: (v) => Array.isArray(v) && v.length >= 1 && v.length <= 10 && v.every((s) => typeof s === "string" && /^[0-9a-f]{7,40}$/.test(s)) && new Set(v).size === v.length,
   // #C852: the reviews whose note on the READY commit starts "FINDINGS" (sent back, not signed). Only ever on a tip still in review.
   findings: (v) => Array.isArray(v) && v.length >= 1 && v.length <= MAX_SIGNED && v.every(re(PHASE)) && new Set(v).size === v.length,
   // #C1114: the findings the reviews put on the branch's commits, by kind (collector/findings-count.mjs); the Worker raises the card's counters to these.
