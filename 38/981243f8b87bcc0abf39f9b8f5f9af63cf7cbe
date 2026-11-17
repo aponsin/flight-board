@@ -1,0 +1,3 @@
+SECURE (Full) #C1131 build/sign-note-checks-commit 38981243: sign-note refuses a sha that is not a commit in its checkout (cat-file -e <sha>^{commit}) before any fetch, write or push; sha already 40-hex-checked, no injection; refusal names the folder only. 7 sign-note tests green; mutation check: pass (check removed: the new test fails).
+
+signed-by: Security
