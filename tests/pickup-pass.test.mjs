@@ -40,6 +40,12 @@ test("M1: three passes send at most one re-arm; a role with no watch ever seen (
   assert.deepEqual(without, [[], [send("Rx", "/pickup Rx")], [], [], [], []]);
 });
 
+test("Checker 2's M1 on 222aa055: an hourly pass never sees the pickup turn; Messages grown from 0 to FRESH or more prove it ran, and the re-arm goes once", () => {
+  const out = run([[[row("Rx", "working", 300_000)], ["Rx"]], [[row("Rx", "idle", 0)], []], [[row("Rx", "idle", 40_000)], []], [[row("Rx", "idle", 40_000)], []], [[row("Rx", "idle", 40_000)], []]]);
+  assert.deepEqual(out, [[], [send("Rx", "/pickup Rx")], [send("Rx", REARM_TEXT)], [], []]);
+  assert.deepEqual(run([[[row("Rx", "working", 300_000)], ["Rx"]], [[row("Rx", "idle", 0)], []], [[row("Rx", "idle", 4_999)], []], [[row("Rx", "idle", 0)], []]]), [[], [send("Rx", "/pickup Rx")], [], []], "a queued pickup stays near 0: not proof");
+});
+
 test("no re-arm while the watch is armed, nor before the role was seen working after the pickup", () => {
   assert.deepEqual(run([[[row("Rx", "idle", 300_000)], ["Rx"]], [[row("Rx", "idle", 0)], []], [[row("Rx", "idle", 0)], []]]), [[], [send("Rx", "/pickup Rx")], []], "idle again at once: the pickup turn may not have begun");
   assert.deepEqual(run([[[row("Rx", "idle", 300_000)], ["Rx"]], [[row("Rx", "idle", 0)], []], [[row("Rx", "working", 20_000)], ["Rx"]], [[row("Rx", "idle", 30_000)], ["Rx"]]]), [[], [send("Rx", "/pickup Rx")], [], []]);
@@ -85,14 +91,21 @@ test("watchRoles reads --role from the wake-watch lines of ps, quoted or not, an
     "node /i/scripts/wake-watch.mjs --config '/c/board.config.json' --role 'Checker 2' --once",
     "node /i/scripts/wake-watch.mjs --role Checker",
     "grep --role Manager something-else.mjs",
+    "grep wake-watch.mjs --role Security",
+    "/usr/bin/tail -f /logs/wake-watch.mjs.log --role Release",
+    "/opt/homebrew/bin/node /i/scripts/wake-watch.mjs --role Release --once",
   ].join("\n");
-  assert.deepEqual([...watchRoles(ps)].sort(), ["Boardsmith", "Checker", "Checker 2"]);
+  assert.deepEqual([...watchRoles(ps)].sort(), ["Boardsmith", "Checker", "Checker 2", "Release"], "node lines only: grep and tail lines naming the script add no role (Checker 2's L1)");
   assert.deepEqual([...watchRoles("")], []);
 });
 
 test("the command keeps the history in its state file and prints the actions as JSON; anything unreadable is []", () => {
-  const dir = mkdtempSync(join(tmpdir(), "pickup-pass-")), file = join(dir, "state.json");
-  const cmd = (arg) => execFileSync("node", ["scripts/pickup-watch.mjs", "--pass", arg, "--state", file], { cwd: new URL("..", import.meta.url), encoding: "utf8" }).trim();
+  const dir = mkdtempSync(join(tmpdir(), "pickup-pass-")), file = join(dir, "state.json"), cfg = join(dir, "board.config.json");
+  writeFileSync(cfg, JSON.stringify({ roster: ["Zed Probe"] }));
+  const bare = (arg) => execFileSync("node", ["scripts/pickup-watch.mjs", "--pass", arg, "--state", file], { cwd: new URL("..", import.meta.url), encoding: "utf8" }).trim();
+  const cmd = (arg) => execFileSync("node", ["scripts/pickup-watch.mjs", "--pass", arg, "--state", file, "--config", cfg], { cwd: new URL("..", import.meta.url), encoding: "utf8" }).trim();
+  assert.equal(bare(JSON.stringify([row("Zed Probe", "working", 300_000)])), "[]");
+  assert.equal(bare(JSON.stringify([row("Zed Probe", "idle", 0, { remoteControl: "off" })])), "[]", "Security's INFO 1: with no --config nothing is sent, not even a Remote Control");
   assert.equal(cmd(JSON.stringify([row("Zed Probe", "working", 300_000)])), "[]");
   assert.equal(cmd(JSON.stringify([row("Zed Probe", "idle", 0)])), JSON.stringify([send("Zed Probe", "/pickup Zed Probe")]));
   assert.equal(cmd(JSON.stringify([row("Zed Probe", "idle", 0)])), "[]", "the second pass finds the pickup in the file");

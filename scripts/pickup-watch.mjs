@@ -34,7 +34,7 @@ export function decide(readings) {
 // local sessions, so the watchdog (the app's session tools) reads each role's row once per pass and runs:
 //   node ~/.flight-board/current/scripts/pickup-watch.mjs --pass x --rows-file <file> --config <board.config.json> [--state <file>]
 //   (the rows are a JSON list like [{"role":"Checker","state":"idle","tokens":0,"remoteControl":"on"}, …], from the file or, with no
-//   --rows-file, from the argument after --pass; --config limits the roles to its roster, and no readable roster sends nothing)
+//   --rows-file, from the argument after --pass; --config is required: it limits the roles to its roster, and no readable roster sends nothing)
 // A row is only what the session tools give: role; state "idle" or "working" (list_sessions); tokens the Messages tokens
 // (get_usage; none listed is 0); remoteControl its remoteControlState. Everything else the program finds out itself
 // (Checker 2's M1 and M2 on 8a27f1be: the watchdog agent judged "reset", "picked up" and "watch armed" from threads, so a
@@ -59,7 +59,8 @@ const ROLE = /^(?=.{2,24}$)[A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+)*$/;
 export function watchRoles(psText) {
   const out = new Set();
   for (const line of String(psText ?? "").split("\n")) {
-    if (!line.includes("wake-watch.mjs")) continue;
+    // Only a node process counts: a "grep wake-watch.mjs --role Security" line is no watch (Checker 2's L1 on 222aa055).
+    if (!line.includes("wake-watch.mjs") || !/^\s*(?:\S*\/)?node\s/.test(line)) continue;
     const m = line.match(/--role[ =]+(?:'([^']*)'|"([^"]*)"|(.+?))(?= --|\s*$)/);
     const name = (m && (m[1] ?? m[2] ?? m[3]) || "").trim();
     if (ROLE.test(name)) out.add(name);
@@ -78,7 +79,9 @@ export function passActions(rows, state = {}, watching = new Set(), roster = nul
     const role = r.role, idle = r.state === "idle", t = tokensOf(r), s = { ...(state[role] || {}) }, armed = watching.has(role);
     if (armed) s.sawWatch = true;
     if (t >= LOW_START) { s.high = true; s.sent = false; s.worked = false; s.rearmed = false; }
-    else if (r.state === "working" && s.sent) s.worked = true;
+    // The pickup ran once the role is seen working, or its Messages have grown from the cleared 0 to FRESH or more (an hourly pass
+    // almost never sees a pickup turn of a few minutes; a queued pickup stays at 0): Checker 2's M1 on 222aa055.
+    else if (s.sent && (r.state === "working" || t >= FRESH)) s.worked = true;
     if (s.high && idle && t < FRESH) {
       actions.push({ role, do: "send_message", text: `/pickup ${role}` });
       s.high = false; s.sent = true; s.worked = false; s.rearmed = false;
@@ -100,10 +103,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let rows = null, state = {}, roster = null;
     try { rows = JSON.parse(opt("--rows-file") ? readFileSync(opt("--rows-file"), "utf8") : (process.argv[3] ?? "[]")); } catch { /* below */ }
     if (!Array.isArray(rows)) { console.log("[]"); process.exit(0); }
+    // --config is required (Security's INFO 1 on 222aa055): without a roster nothing is sent, even if the prompt's own check is skipped.
     if (opt("--config")) {
       try { const c = JSON.parse(readFileSync(opt("--config"), "utf8")); if (Array.isArray(c.roster)) roster = new Set(c.roster.filter((x) => typeof x === "string")); } catch { /* no roster: nothing is sent, below */ }
-      if (!roster) { console.log("[]"); process.exit(0); }
     }
+    if (!roster) { console.log("[]"); process.exit(0); }
     const file = opt("--state") ?? join(homedir(), ".flight-board", "pickup-pass.json");
     try { const j = JSON.parse(readFileSync(file, "utf8")); if (j && typeof j === "object" && !Array.isArray(j)) state = j; } catch { /* no history yet */ }
     let ps = "";
