@@ -1,0 +1,3 @@
+SECURE (Quick) #C1143 f365e5b6: puts ACTIVITY_SKEW_MS on the ops-knobs lint's FIXED list with its reason. Right call: a sanity bound on a probe-written time must not be owner-tunable, or a large value would reopen the far-future hole. Tests only. Group head 4bc114dec09c (board-follow-ups re-cut).
+
+signed-by: Security
