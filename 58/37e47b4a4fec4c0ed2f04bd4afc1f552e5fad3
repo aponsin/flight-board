@@ -1,0 +1,2 @@
+PASS (empty) #C1073 5837e47b: start commit, git diff against parent 1560560e is empty; signed inside the G14 head.
+signed-by: Checker 2
