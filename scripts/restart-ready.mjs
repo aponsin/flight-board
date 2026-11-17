@@ -26,7 +26,7 @@ import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { liveStateFile } from "./live-state.mjs";
 import { shipRuns, liveShip, verdict as shipVerdict, LIVE_FRESH } from "./restart-check.mjs";
 
-export const AGENT_QUIET_MS = 2 * 60e3, OUTSIDE_QUIET_MS = 5 * 60e3;
+export const AGENT_QUIET_MS = 2 * 60e3; // the "outside" check's 5 minutes is the caller's count and the words below, not a constant here (#C1151 dropped the dead OUTSIDE_QUIET_MS)
 export const CHECKS = ["ship", "install", "agents", "outside", "scheduled", "github", "lock", "remote"];
 export const FORCEABLE = ["agents", "outside", "scheduled"]; // only these wait for people; the rest never yield to a force
 const home = (p) => String(p).replace(/^~(?=\/|$)/, homedir());
