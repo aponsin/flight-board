@@ -552,7 +552,12 @@ async function syncStalls(db, now) {
   const slowRows = (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE reason LIKE ?").bind(`%${SLOW_ROW_END}`).all()).results;
   for (const r of slowRows) if (!slowAll.some((s) => s.card_id === r.card_id && s.reason === r.reason)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ? AND reason = ?").bind(r.card_id, r.reason).run();
   // #C1103: a card worked while a higher group has a card for the same role: one line to Manager per spell (its row goes when the spell is over, as the slow line's).
-  const order = outOfOrderWork({ cards, evidence, agents, groupOrder });
+  // #C1118: the cards the owner role has worked itself, apart from a push (which the evidence shows): a step it logged (phase_history from the tool) or an ask it posted.
+  const ownerOf = new Map(cards.filter((c) => c && typeof c.id === "string").map((c) => [c.id, c.owner_role]));
+  const ownWork = new Set();
+  for (const r of (await db.prepare("SELECT DISTINCT card_id, who FROM phase_history WHERE source = 'tool'").all()).results) if (ownerOf.get(r.card_id) === r.who) ownWork.add(r.card_id);
+  for (const r of (await db.prepare("SELECT DISTINCT card_id, asked_by FROM asks WHERE card_id IS NOT NULL").all()).results) if (ownerOf.get(r.card_id) === r.asked_by) ownWork.add(r.card_id);
+  const order = outOfOrderWork({ cards, evidence, agents, groupOrder, ownWork });
   const orderRows = (await db.prepare("SELECT card_id, reason FROM stall_wakes WHERE reason LIKE ?").bind(`%${ORDER_ROW_END}`).all()).results;
   for (const r of orderRows) if (!order.some((s) => s.card_id === r.card_id && s.reason === r.reason)) await db.prepare("DELETE FROM stall_wakes WHERE card_id = ? AND reason = ?").bind(r.card_id, r.reason).run();
   // #C1115: a review 30 minutes past its ETA (claimed time + the checker median + the reviewer's mutants at their measured time) wakes Manager with the reviewer's progress
