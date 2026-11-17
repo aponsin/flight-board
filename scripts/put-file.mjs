@@ -32,15 +32,16 @@ const no = (reason) => ({ ok: false, reason });
 const ROOT_SHAPE = /^(\/|~\/)[^\0<>{}\n]{1,300}$/;
 // #C1174 (Checker 2's find on #C1170): --config is a command-line choice, so a config an agent wrote could widen the folders a file may come from, and every stored file is readable by every
 // agent past Access. As for the address (#C1170's S1), fileRoots is trusted only from a board config the OWNER's hooks name in ~/.claude/settings.json (real paths), and "~/" and the home
-// folder are the account's (os.userInfo), never $HOME (S2). Any other config's fileRoots is ignored: its own folder is still a root, as before, and nothing else.
+// folder are the account's (os.userInfo), never $HOME (S2). Security's finding on df8b862b: the folder that holds the config is a root only for the owner's config too, or an agent could
+// write a JSON file in any folder, even a dot folder, and upload what sits beside it. Any other config gets no roots: the upload is refused, naming the file.
 export function rootsFor(configPath, { realpath = realpathSync, read = (p) => readFileSync(p, "utf8"), home = ownerHome(), exists = existsSync, settingsText = readSettings() } = {}) {
   if (!configPath) return no("--config <the board config> is needed: the folder that holds it is where a file may come from");
   let real; try { real = realpath(configPath); } catch { return no("the board config cannot be read"); }
   let extra = [];
   let owners = false; try { owners = ownerConfigs(settingsText, { home, real: realpath }).has(real); } catch { owners = false; }
+  if (!owners) return no(`${configPath} is not a board config the owner's hooks name (the --config of a hook in settings.json), so no folder is taken from it`);
   try {
-    const parsed = JSON.parse(read(real)); // every config must still be JSON; only an owner's config's fileRoots counts
-    const v = owners ? parsed.fileRoots : undefined;
+    const v = JSON.parse(read(real)).fileRoots;
     if (v !== undefined) {
       if (!Array.isArray(v) || v.length > 5 || !v.every((p) => typeof p === "string" && ROOT_SHAPE.test(p) && !p.split("/").some((s) => s === ".." || s === "."))) return no("fileRoots in the board config is not a list of up to 5 absolute folders");
       extra = v.map((p) => (p.startsWith("~/") ? join(home, p.slice(2)) : p));
@@ -156,14 +157,14 @@ export async function putLocalFile({ path, envFile, configPath, name, fetchImpl 
   return no(`the board answered ${res.status}${rule ? ` (${rule})` : ""}`);
 }
 
-// roots is for the tests only: the command line has no way to name other folders, only the board config does.
-export async function main(argv, { fetchImpl = fetch, out = (l) => console.log(l), err = (l) => console.error(l), exit = (c) => process.exit(c), roots } = {}) {
+// roots and settingsText are for the tests only: the command line has no way to name other folders or another settings file, only the owner's board config does.
+export async function main(argv, { fetchImpl = fetch, out = (l) => console.log(l), err = (l) => console.error(l), exit = (c) => process.exit(c), roots, settingsText } = {}) {
   const get = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   // No --base: the token goes only to the address in the env file. Any other flag that names a host is refused before the env file is read.
   if (argv.some((a) => a === "--base" || a.startsWith("--base="))) { err("PUT FAILED: there is no --base: the board's address is storeUrl in the board config (or BOARD_BASE_URL in the env file)"); return exit(1); }
   const flags = new Set(["--env", "--config", "--name"]);
   const path = argv.find((a, i) => !a.startsWith("--") && !flags.has(argv[i - 1]));
-  const r = await putLocalFile({ path, envFile: get("--env") ?? process.env.BOARD_ENV_FILE, configPath: get("--config") ?? process.env.BOARD_CONFIG, name: get("--name"), fetchImpl, roots });
+  const r = await putLocalFile({ path, envFile: get("--env") ?? process.env.BOARD_ENV_FILE, configPath: get("--config") ?? process.env.BOARD_CONFIG, name: get("--name"), fetchImpl, roots, settingsText });
   if (!r.ok) { err(`PUT FAILED: ${r.reason}`); return exit(1); }
   out(`FILE ${r.id} ${r.name} ${r.type} ${r.size}`);
   out(`Attach it: screenshots: ["${r.id}"] in a post or an ask, or "${r.id} A: label" under a Decision option.`);

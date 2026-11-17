@@ -14,6 +14,8 @@ import worker from "../worker/board-worker.mjs";
 import { MAX_BODY_BYTES, MAX_DAY_BYTES_PER_CALLER, MAX_FILE_BYTES } from "../worker/file-store.mjs";
 import { TYPES, checkPath, credentials, rootsFor, ownerConfigs, settingsFile, putLocalFile, putLocalFile as realPutLocalFile, main } from "../scripts/put-file.mjs";
 
+// settings.json text whose hook names these board configs: stands for the owner's settings file in a test (#C1174).
+const ownerSettings = (...paths) => JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '/x/gate/stop.mjs'${paths.map((p) => ` --config '${p}'`).join("")}` }] }] } });
 const NOW = 1_800_000_000_000;
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
 const SECRET = "s3cr3t-token-value-abcdefghij";
@@ -178,14 +180,15 @@ test("the folders a file may come from are the one that holds the board config, 
   assert.match(why(rootsFor(undefined)), /--config/);
   assert.match(why(rootsFor(join(board, "missing.json"))), /cannot be read/);
   writeFileSync(join(board, "bad.json"), "not json");
-  assert.match(why(rootsFor(join(board, "bad.json"))), /JSON/);
+  assert.match(why(rootsFor(join(board, "bad.json"), { settingsText: ownerSettings(join(board, "bad.json")) })), /JSON/);
   assert.match(why(checkPath(join(board, "a.png"), {})), /no folder to take a file from/);
   assert.match(why(checkPath(join(board, "a.png"), { roots: [] })), /no folder to take a file from/);
 });
 
 // #C1174 (Checker 2's find on #C1170): --config is a command-line choice, so fileRoots is trusted only from a board config the owner's hooks name, as the address is, and the home folder
-// is the account's (os.userInfo), never $HOME. A forged config's fileRoots widens nothing.
-test("#C1174 fileRoots counts only from a config the owner's hooks name: a forged config's list is ignored, its own folder still goes, and a fake HOME names no owner config", () => {
+// is the account's (os.userInfo), never $HOME. Security's finding on df8b862b: the folder that holds a config is a root only for the owner's config, so a config an agent wrote in any
+// folder (a dot folder too) gives no folder at all. A forged config widens nothing and takes nothing.
+test("#C1174 the folders come only from a config the owner's hooks name: a forged config gives no folder (not its own, not its fileRoots), and a fake HOME names no owner config", () => {
   const board = dir(), widened = dir();
   const png = join(widened, "a.png"); writeFileSync(png, PNG); chmodSync(png, 0o644);
   const cfgPath = join(board, "board.config.json"); writeFileSync(cfgPath, JSON.stringify({ fileRoots: [widened] }));
@@ -194,17 +197,23 @@ test("#C1174 fileRoots counts only from a config the owner's hooks name: a forge
   const owned = rootsFor(cfgPath, { settingsText: named(cfgPath) });
   assert.deepEqual(owned.roots, [board, widened]);
   assert.equal(checkPath(png, { roots: owned.roots }).ok, true);
-  // Not named (no settings, another config named, a permission rule that only mentions it): its folder alone, and the file in the widened folder is outside.
+  // Not named (no settings, another config named, a permission rule that only mentions it): no roots at all, so neither the widened folder nor the config's own folder.
   const other = join(dir(), "board.config.json"); writeFileSync(other, "{}");
+  const beside = join(board, "beside.png"); writeFileSync(beside, PNG); chmodSync(beside, 0o644);
   for (const settingsText of ["", "not json", named(other), JSON.stringify({ permissions: { allow: [`Bash(node x --config '${cfgPath}')`] } })]) {
     const r = rootsFor(cfgPath, { settingsText });
-    assert.deepEqual(r.roots, [board], settingsText);
-    assert.match(why(checkPath(png, { roots: r.roots })), /outside the folders/);
+    assert.equal(r.ok, false, settingsText);
+    assert.equal(r.roots, undefined);
+    assert.match(why(r), /not a board config the owner's hooks name/);
   }
-  // A forged config is still read as JSON, so a broken one is refused as before.
+  assert.equal(checkPath(beside, { roots: owned.roots }).ok, true, "beside the owner's config it goes");
+  // A config an agent wrote in a dot folder cannot upload a file beside it (the dot check only looks below the root).
+  const hidden = join(dir(), ".agent"); mkdirSync(hidden);
+  const hiddenCfg = join(hidden, "c.json"), hiddenPng = join(hidden, "a.png"); writeFileSync(hiddenCfg, "{}"); writeFileSync(hiddenPng, PNG); chmodSync(hiddenPng, 0o644);
+  assert.match(why(rootsFor(hiddenCfg, { settingsText: named(other) })), /not a board config the owner's hooks name/);
+  // An owner's config is still read as JSON, so a broken one is refused as before.
   const broken = join(board, "broken.json"); writeFileSync(broken, "not json");
   assert.match(why(rootsFor(broken, { settingsText: named(broken) })), /JSON/);
-  assert.match(why(rootsFor(broken, { settingsText: "" })), /JSON/);
   // "~/" in an owner's list is the account's home (os.userInfo), whatever HOME says.
   const fakeHome = dir(); const prev = process.env.HOME; process.env.HOME = fakeHome;
   try {
@@ -221,7 +230,12 @@ test("#C1174 through the command (a child process): a forged config naming a fol
   writeFileSync(join(fakeHome, ".claude", "settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node x --config '${forged}'` }] }] } }));
   const r = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/put-file.mjs", import.meta.url)), "--config", forged, "--env", join(board, "no-such.env"), png], { env: { ...process.env, HOME: fakeHome }, encoding: "utf8", timeout: 20000 });
   assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
-  assert.match(r.stderr, /PUT FAILED: outside the folders a file may come from/);
+  assert.match(r.stderr, /PUT FAILED: .*not a board config the owner's hooks name/);
+  // the file beside the forged config does not go either
+  const besideForged = join(board, "b.png"); writeFileSync(besideForged, PNG); chmodSync(besideForged, 0o644);
+  const r2 = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/put-file.mjs", import.meta.url)), "--config", forged, "--env", join(board, "no-such.env"), besideForged], { env: { ...process.env, HOME: fakeHome }, encoding: "utf8", timeout: 20000 });
+  assert.equal(r2.status, 1, `${r2.stdout}${r2.stderr}`);
+  assert.match(r2.stderr, /not a board config the owner's hooks name/);
   assert.equal(r.stdout.includes("FILE "), false);
 });
 
@@ -237,8 +251,9 @@ test("a file in the config's folder goes; the same file anywhere else does not, 
   const inside = f("mockups/a.png"), elsewhere = join(outside, "a.png"); writeFileSync(elsewhere, PNG);
   const fetchImpl = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, id: "abc123def456ghi789jkl", name: "a.png", contentType: "image/png", sizeBytes: PNG.length }) });
   const env = envFile(GOOD_ENV);
-  assert.equal((await putLocalFile({ path: inside, envFile: env, configPath: config, fetchImpl })).ok, true);
-  assert.match(why(await putLocalFile({ path: elsewhere, envFile: env, configPath: config, fetchImpl: () => assert.fail("nothing is sent") })), /outside the folders/);
+  const settingsText = ownerSettings(config); // the owner's hooks name this config (#C1174: the folder that holds a config is a root only for the owner's)
+  assert.equal((await putLocalFile({ path: inside, envFile: env, configPath: config, fetchImpl, settingsText })).ok, true);
+  assert.match(why(await putLocalFile({ path: elsewhere, envFile: env, configPath: config, fetchImpl: () => assert.fail("nothing is sent"), settingsText })), /outside the folders/);
   assert.match(why(await putLocalFile({ path: inside, envFile: env, fetchImpl: () => assert.fail("nothing is sent") })), /--config/);
 });
 
@@ -380,10 +395,15 @@ test("the command line prints FILE <id> and how to attach it, or PUT FAILED and 
   assert.equal(code, 1);
   assert.match(err.at(-1), /^PUT FAILED: --config/);
   const config = join(root, "board.config.json"); writeFileSync(config, "{}");
-  await main(["--env", env, "--config", config, path], io);
-  assert.equal(code, 0, "the file is in the config's folder");
+  // #C1174: a config the owner's hooks do not name gives no folder at all, even for a file beside it.
+  await main(["--env", env, "--config", config, path], { ...io, settingsText: ownerSettings("/x/not-this-one.json") });
+  assert.equal(code, 1);
+  assert.match(err.at(-1), /^PUT FAILED: .*not a board config the owner's hooks name/);
+  const owned = { ...io, settingsText: ownerSettings(config) };
+  await main(["--env", env, "--config", config, path], owned);
+  assert.equal(code, 0, "the file is in the owner's config's folder");
   const stranger = join(dir(), "a.png"); writeFileSync(stranger, PNG);
-  await main(["--env", env, "--config", config, stranger], io);
+  await main(["--env", env, "--config", config, stranger], owned);
   assert.equal(code, 1);
   assert.match(err.at(-1), /^PUT FAILED: outside the folders a file may come from/);
   await main(["--env", env], { ...io, roots: [root] });
