@@ -7,10 +7,12 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { passActions, watchRoles, REARM_TEXT } from "../scripts/pickup-watch.mjs";
+import { passActions, watchRoles, parseRows, sessionOf, REARM_TEXT } from "../scripts/pickup-watch.mjs";
 
 const row = (role, state, tokens, o = {}) => ({ role, state, tokens, remoteControl: "on", ...o });
 const send = (role, text) => ({ role, do: "send_message", text });
+// The command's actions carry the session id the config holds for the role (#C1132), null when it holds none.
+const cli = (a, session = null) => ({ ...a, session });
 // Runs the passes in order, carrying the history and the armed set of each, and returns every pass's actions.
 const run = (passes, state = {}) => passes.map(([rows, watching]) => { const r = passActions(rows, state, new Set(watching || [])); state = r.state; return r.actions; });
 
@@ -79,10 +81,54 @@ test("the command takes the rows from a file and the roster from the config; no 
   const cmd = (rs, ...extra) => { writeFileSync(rows, JSON.stringify(rs)); return execFileSync("node", ["scripts/pickup-watch.mjs", "--pass", "unused", "--rows-file", rows, "--state", state, ...extra], { cwd: new URL("..", import.meta.url), encoding: "utf8" }).trim(); };
   writeFileSync(cfg, JSON.stringify({ roster: ["Zed Probe"] }));
   assert.equal(cmd([row("Zed Probe", "working", 300_000), row("Other", "working", 300_000)], "--config", cfg), "[]");
-  assert.equal(cmd([row("Zed Probe", "idle", 0), row("Other", "idle", 0)], "--config", cfg), JSON.stringify([send("Zed Probe", "/pickup Zed Probe")]));
+  assert.equal(cmd([row("Zed Probe", "idle", 0), row("Other", "idle", 0)], "--config", cfg), JSON.stringify([cli(send("Zed Probe", "/pickup Zed Probe"))]));
   assert.equal(cmd([row("Zed Probe", "idle", 0)], "--config", join(dir, "missing.json")), "[]", "a config that can't be read sends nothing");
   writeFileSync(cfg, JSON.stringify({ nope: 1 }));
   assert.equal(cmd([row("Zed Probe", "idle", 0)], "--config", cfg), "[]", "a config with no roster sends nothing");
+});
+
+// #C1132: the scheduled watchdog may not use a file tool (#C443), so the rows come as one argument of plain words and numbers: --rows 'Role,state,tokens,remoteControl;...'.
+test("parseRows keeps only a row of exactly four fields of the right shapes; a quote, a space outside the role or a stray word drops the row", () => {
+  const pr = (role, state, tokens, remoteControl) => ({ role, state, tokens, remoteControl });
+  assert.deepEqual(parseRows("Manager,idle,1200,on;Checker 2,working,70000,off"), [pr("Manager", "idle", 1200, "on"), pr("Checker 2", "working", 70000, "off")]);
+  for (const bad of ["Manager,idle,1200", "Manager,idle,1200,on,x", "Manager,sleeping,1,on", "Manager,idle,-1,on", "Manager,idle,1e3,on", `Manager,idle,${"1".repeat(10)},on`,"Manager, idle,1,on", "Man'ager,idle,1,on", "Manager,idle,1,o'n", "Manager,idle,1,on off", "Manager,idle,1,", "Manager,idle,1,1on", "M,idle,1,on", "Manager,idle,1,$(x)", "Manager;idle", "", null, undefined]) assert.deepEqual(parseRows(bad), [], JSON.stringify(bad));
+  assert.deepEqual(parseRows("Manager,idle,1,on;bad row;Security,idle,2,off"), [pr("Manager", "idle", 1, "on"), pr("Security", "idle", 2, "off")], "a bad row costs only itself");
+  assert.equal(parseRows(Array.from({ length: 80 }, (_, i) => `Role${i},idle,1,on`).join(";")).length, 40, "at most 40 rows");
+});
+
+test("the command takes --rows with no file and no JSON: the same actions as the rows file, and the roster still limits the roles", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pickup-pass-")), state = join(dir, "state.json"), cfg = join(dir, "board.config.json");
+  writeFileSync(cfg, JSON.stringify({ roster: ["Zed Probe", "Checker 2"] }));
+  const cmd = (arg, ...extra) => execFileSync("node", ["scripts/pickup-watch.mjs", "--pass", "x", "--rows", arg, "--state", state, "--config", cfg, ...extra], { cwd: new URL("..", import.meta.url), encoding: "utf8" }).trim();
+  assert.equal(cmd("Zed Probe,working,300000,on;Other,working,300000,on;Checker 2,idle,10,off"), JSON.stringify([cli({ role: "Checker 2", do: "set_remote_control", on: true })]), "Other is off the roster; Checker 2 is on it and is switched on");
+  assert.equal(cmd("Zed Probe,idle,0,on;Other,idle,0,on"), JSON.stringify([cli(send("Zed Probe", "/pickup Zed Probe"))]), "the history of the first pass holds: Zed Probe was big, now cleared");
+  assert.equal(cmd("Zed Probe,idle,0,on"), "[]", "once per clear");
+  assert.equal(cmd("not a row"), "[]", "no valid row is nothing");
+});
+
+test("each action carries the session id the config's rosterSessions holds for its role, only a plain local session id, else null", () => {
+  assert.equal(sessionOf({ Checker: "local_7a92d362-282d-44e7-8b7e-806070f2ad6d" }, "Checker"), "local_7a92d362-282d-44e7-8b7e-806070f2ad6d");
+  for (const bad of ["7a92d362-282d-44e7-8b7e-806070f2ad6d", "local_7a92d362", "local_7a92d362-282d-44e7-8b7e-806070f2ad6d; rm", "../local_7a92d362-282d-44e7-8b7e-806070f2ad6d", 5, null, ""]) assert.equal(sessionOf({ Checker: bad }, "Checker"), null, JSON.stringify(bad));
+  assert.equal(sessionOf({}, "Checker"), null);
+  assert.equal(sessionOf({ Checker: "local_7a92d362-282d-44e7-8b7e-806070f2ad6d" }, "toString"), null, "an inherited key is no entry");
+  const dir = mkdtempSync(join(tmpdir(), "pickup-pass-")), state = join(dir, "state.json"), cfg = join(dir, "board.config.json");
+  const id = "local_7a92d362-282d-44e7-8b7e-806070f2ad6d";
+  writeFileSync(cfg, JSON.stringify({ roster: ["Checker 2", "Security"], rosterSessions: { "Checker 2": id, Security: "not an id" } }));
+  const out = JSON.parse(execFileSync("node", ["scripts/pickup-watch.mjs", "--pass", "x", "--rows", "Checker 2,idle,10,off;Security,idle,10,off", "--state", state, "--config", cfg], { cwd: new URL("..", import.meta.url), encoding: "utf8" }));
+  assert.deepEqual(out, [cli({ role: "Checker 2", do: "set_remote_control", on: true }, id), cli({ role: "Security", do: "set_remote_control", on: true }, null)]);
+});
+
+// #C1132: the doc is pasted into the watchdog task, so it must fit that task's rules: no file tool, one bare command, and every tool it calls loaded in its step 1.
+test("the watchdog doc fits the task: no file tool, the --rows command, the tools it calls loaded, Checker 2 in the title list", () => {
+  const doc = readFileSync(new URL("../docs/watchdog-pickup-pass.md", import.meta.url), "utf8");
+  assert.doesNotMatch(doc.replace(/no file tool[^.]*\./gi, ""), /Write tool|--rows-file|scratch file/i, "no step writes a file");
+  assert.match(doc, /pickup-watch\.mjs --pass x --rows '<the rows>' --config <the path of board\.config\.json/);
+  const line = doc.match(/"select:([^"]+)"/)?.[1] ?? "";
+  for (const tool of ["list_sessions", "list_events", "get_usage", "get_session", "set_remote_control"]) assert.ok(line.split(",").includes(`mcp__ccd_session_mgmt__${tool}`), `${tool} is loaded`);
+  for (const tool of ["PushNotification", "SendMessage"]) assert.ok(line.split(",").includes(tool), `${tool} is loaded`);
+  assert.match(doc, /Designer, Checker 2\./, "Checker 2 is in the title list");
+  assert.match(doc, /Bash\(node ~\/\.flight-board\/current\/scripts\/pickup-watch\.mjs:\*\)/, "the command is named for pre-approval");
+  assert.doesNotMatch(doc, /\/Users\//, "no home path in a committed file (the pre-push scan holds the owner's name)");
 });
 
 test("watchRoles reads --role from the wake-watch lines of ps, quoted or not, and tells Checker from Checker 2", () => {
@@ -107,7 +153,7 @@ test("the command keeps the history in its state file and prints the actions as 
   assert.equal(bare(JSON.stringify([row("Zed Probe", "working", 300_000)])), "[]");
   assert.equal(bare(JSON.stringify([row("Zed Probe", "idle", 0, { remoteControl: "off" })])), "[]", "Security's INFO 1: with no --config nothing is sent, not even a Remote Control");
   assert.equal(cmd(JSON.stringify([row("Zed Probe", "working", 300_000)])), "[]");
-  assert.equal(cmd(JSON.stringify([row("Zed Probe", "idle", 0)])), JSON.stringify([send("Zed Probe", "/pickup Zed Probe")]));
+  assert.equal(cmd(JSON.stringify([row("Zed Probe", "idle", 0)])), JSON.stringify([cli(send("Zed Probe", "/pickup Zed Probe"))]));
   assert.equal(cmd(JSON.stringify([row("Zed Probe", "idle", 0)])), "[]", "the second pass finds the pickup in the file");
   assert.equal(JSON.parse(readFileSync(file, "utf8"))["Zed Probe"].sent, true);
   assert.equal(cmd("not json"), "[]");
