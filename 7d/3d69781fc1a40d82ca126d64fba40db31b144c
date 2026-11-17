@@ -1,0 +1,2 @@
+PASS (Full) #C1161: stack-ready refuses a non-fold tip that adds a dated DATA.md line, before the push; fragment, row edit and fold pass; suite 3018 pass 0 fail; 5 of 5 mutants killed. LOW: it checks the tip's own card only, where the landing job needs every card on the head to be the fold
+signed-by: Checker 2
