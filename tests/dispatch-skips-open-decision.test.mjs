@@ -1,0 +1,105 @@
+// #C1073 (11-12 ~10:45 pm: Builder's watch fired "DISPATCH #C1071 ... build it" again on every re-arm, though the card had an open decision on its thread, the owner's A or B): a Decision the
+// lead posts in a thread (kind "decision", options as buttons, no ask row: #C920) is a question to the owner like an open ask, so the dispatch builds nothing for its card while it is open,
+// and dispatches the card again once the owner has written in the thread (or the thread's later message is marked resolved).
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { dispatchRun, openDecisionCards } from "../collector/store-dispatch.mjs";
+import { openDecisionCards as workerOpenDecisionCards } from "../worker/board-rules.mjs";
+import { makeDb } from "./helpers/d1-sqlite.mjs";
+import { createCard, writeEvidence, wakeAsk, takeInbox } from "../worker/board-store.mjs";
+
+const NOW = 1_800_000_000_000, MIN = 60e3;
+const ROSTER = ["Manager", "Boardsmith", "Checker", "Security", "Release"], LEAD = "Manager";
+const idle = { state: "idle", lastActivityAt: NOW - 2 * MIN, since: NOW - 2 * MIN };
+const card = (id, num, extra = {}) => ({ id, num, owner_role: "Boardsmith", review_level: "Quick", waiting_on: null, paused: 0, dropped: 0, repo: "", ...extra });
+const world = ({ cards, messages = [], asks = [] }) => ({
+  cards, asks, threads: { messages, threads: [] }, stackSwitch: [{ repo: "board", stack: false, set_by: "default", set_at: 0 }],
+  evidence: { agents: { readAt: NOW - 5_000, value: Object.fromEntries(ROSTER.map((r) => [r, idle])) } },
+});
+const who = (v) => dispatchRun(v, { dir: mkdtempSync(join(tmpdir(), "dec-")), roster: ROSTER, lead: LEAD, now: NOW }).items.map((i) => `${i.card}:${i.role}:${i.step}`).sort();
+const decision = (thread, body, over = {}) => ({ id: `m-${thread}-${body.length}`, thread_id: thread, author: LEAD, body, created_at: NOW - 60 * MIN, kind: "decision", resolved: 0, options: "[]", ...over });
+const owner = (thread, at, over = {}) => ({ id: `o-${thread}-${at}`, thread_id: thread, author: "owner", body: "A", created_at: at, kind: null, resolved: 0, ...over });
+const c1071 = card("pick-card", 1071);
+const TITLE = "#C1071: which way?\n\nA or B?\n\nRecommended: A";
+
+test("a card with a decision open on a thread is built for nobody; with the decision answered it is dispatched again", () => {
+  const open = world({ cards: [c1071], messages: [decision("owner-thread", `${TITLE}\n\nCard: pick-card`)] });
+  assert.deepEqual(who(open), [], "open decision: no build turn");
+  const answered = world({ cards: [c1071], messages: [decision("owner-thread", `${TITLE}\n\nCard: pick-card`), owner("owner-thread", NOW - 30 * MIN)] });
+  assert.deepEqual(who(answered), ["pick-card:Boardsmith:build"], "the owner wrote after it: the card is built");
+  assert.deepEqual(who(world({ cards: [c1071] })), ["pick-card:Boardsmith:build"], "the control: no decision at all");
+});
+
+test("the decision names its card by the Card line, or by the one #C<n> in its first line; a decision about another card holds nothing here", () => {
+  const byLine = world({ cards: [c1071], messages: [decision("t", "#C1071: which way?\n\nA or B?")] });
+  assert.deepEqual(who(byLine), [], "named by #C1071 in its first line");
+  const byCardLine = world({ cards: [c1071], messages: [decision("t", "Which way?\n\nA or B?\n\nCard: pick-card")] });
+  assert.deepEqual(who(byCardLine), [], "named by its Card line");
+  assert.deepEqual(who(world({ cards: [c1071], messages: [decision("t", "#C9999: elsewhere\n\nCard: other-card")] })), ["pick-card:Boardsmith:build"], "another card's decision");
+  assert.deepEqual(who(world({ cards: [c1071], messages: [decision("t", "Which way?\n\nA or B?")] })), ["pick-card:Boardsmith:build"], "a decision that names no card holds none");
+  assert.deepEqual([...openDecisionCards({ threads: { messages: [decision("t", "#C1071 and #C1072: both?")] } }, new Map([[1071, "pick-card"], [1072, "two"]]))], [], "a first line naming two cards names none (askCardId's rule)");
+});
+
+test("only an owner message after the decision, or a resolved one, closes it: not an earlier one, another thread's, nor the lead's own", () => {
+  const dec = decision("t", `${TITLE}\n\nCard: pick-card`);
+  const held = (msgs) => who(world({ cards: [c1071], messages: [dec, ...msgs] })).length === 0;
+  assert.equal(held([owner("t", NOW - 90 * MIN)]), true, "an owner message BEFORE the decision does not answer it");
+  assert.equal(held([owner("other-thread", NOW - 30 * MIN)]), true, "the owner wrote in another thread");
+  assert.equal(held([{ ...owner("t", NOW - 30 * MIN), author: LEAD }]), true, "the lead's own later message is not the owner's answer");
+  assert.equal(held([owner("t", NOW - 30 * MIN)]), false, "the owner wrote after it");
+  assert.equal(held([{ ...owner("t", NOW - 30 * MIN), author: LEAD, resolved: 1 }]), false, "a later message marked resolved closes the thread");
+  assert.equal(who(world({ cards: [c1071], messages: [{ ...dec, resolved: 1 }] })).length, 1, "the decision itself marked resolved");
+  assert.equal(who(world({ cards: [c1071], messages: [{ ...dec, kind: null }] })).length, 1, "a plain message of the lead (no kind decision) holds nothing");
+  assert.equal(who(world({ cards: [c1071], messages: [{ ...dec, author: "owner" }] })).length, 1, "a message of the owner is never a decision to the owner");
+});
+
+test("openDecisionCards: pure; the cards of the open decisions, malformed rows ignored", () => {
+  const idByNum = new Map([[1071, "pick-card"], [1072, "two"]]);
+  const view = { threads: { messages: [decision("a", "#C1071: x"), decision("b", "y\n\nCard: two"), decision("c", "z\n\nCard: unknown-card"), null, { thread_id: 7 }, { ...decision("d", "#C1071: q"), created_at: "now" }] } };
+  assert.deepEqual([...openDecisionCards(view, idByNum)].sort(), ["pick-card", "two"]);
+  assert.deepEqual([...openDecisionCards({}, idByNum)], []);
+  assert.deepEqual([...openDecisionCards({ threads: { messages: "x" } }, idByNum)], []);
+});
+
+test("an open decision holds a card that is already pushed too, as an open ask does (dispatchItems drops every turn of a card with an open ask)", () => {
+  const pushed = { lit: ["checker"], phase: "checker", headSha12: "1".repeat(12), signed: [], onMain: false };
+  const v = world({ cards: [c1071], messages: [decision("t", `${TITLE}\n\nCard: pick-card`)] });
+  v.evidence["cards.pick-card"] = { readAt: NOW - 5_000, value: pushed };
+  assert.deepEqual(who(v), [], "no review turn while the owner's decision is open");
+  v.threads.messages.push(owner("t", NOW - 10 * MIN));
+  assert.deepEqual(who(v), ["pick-card:Checker:review"], "answered: the review turn is back");
+});
+
+// ---- the Worker's copy (worker/board-rules.mjs): the same rule, so the idle-agent line never counts or names a card the dispatch holds ----
+test("the Worker's copy of openDecisionCards reads the same cards as the collector's on every case above", () => {
+  const cards = [{ id: "pick-card", num: 1071 }, { id: "two", num: 1072 }];
+  const idByNum = new Map(cards.map((c) => [c.num, c.id]));
+  const messages = [
+    decision("a", "#C1071: x"), decision("b", "y\n\nCard: two"), decision("c", "z\n\nCard: unknown-card"), decision("d", "#C1071 and #C1072: both?"),
+    decision("e", "#C1072: answered"), owner("e", NOW - 5 * MIN), { ...decision("f", "#C1071: resolved"), resolved: 1 }, { ...decision("g", "#C1071: not a decision"), kind: null },
+    { ...decision("h", "#C1071: owner's own"), author: "owner" }, null, { thread_id: 7 }, { ...decision("i", "#C1071: bad time"), created_at: "now" },
+  ];
+  const mine = [...workerOpenDecisionCards(messages, cards)].sort(), theirs = [...openDecisionCards({ threads: { messages } }, idByNum)].sort();
+  assert.deepEqual(mine, theirs);
+  assert.deepEqual(mine, ["pick-card", "two"]);
+  assert.deepEqual([...workerOpenDecisionCards(undefined, undefined)], []);
+});
+
+test("the stall line: a card with a decision open on a thread is not an idle agent's queued card; answered, it is again", async () => {
+  const T = 1_800_000_000_000, later = T + 20 * MIN;
+  const db = makeDb();
+  await createCard(db, T, "Manager", { id: "pick-card", title: "A card", owner_role: "Boardsmith" });
+  await db.prepare("UPDATE cards SET num = 1071").run();
+  await writeEvidence(db, T, "probe", "agents", { Boardsmith: { state: "idle", lastActivityAt: T, since: T, tool: null, card: null }, Manager: { state: "working", lastActivityAt: later, since: T, tool: "Bash", card: null } });
+  await db.prepare("UPDATE evidence SET read_at = ?").bind(later).run();
+  const post = (id, author, at, kind, body) => db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, kind) VALUES (?, ?, ?, ?, ?, ?)").bind(id, "owner-thread", author, body, at, kind).run();
+  assert.equal((await wakeAsk(db, later)).count, 1, "the control: an idle owner with a queued card wakes Manager");
+  await takeInbox(db, later + 1);
+  await post("m1", "Manager", T + MIN, "decision", "#C1071: which way?\n\nA or B?\n\nCard: pick-card");
+  assert.equal((await wakeAsk(db, later + 2 * MIN)).count, 0, "an open decision holds the card: nothing queued, no wake");
+  await post("m2", "owner", T + 5 * MIN, null, "A");
+  assert.equal((await wakeAsk(db, later + 3 * MIN)).count, 1, "answered: the card is queued again");
+});

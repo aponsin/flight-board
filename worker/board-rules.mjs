@@ -1093,6 +1093,24 @@ export function landedUnbuilt({ now, cards, evidence, installStart, unbuiltMs = 
 // during and after it, and one that was not does not turn late because of it. No outages: plain elapsed time, as before.
 export const outageOverlap = (from, to, outages) => (Array.isArray(outages) ? outages : []).reduce((sum, o) => (Number.isFinite(o?.start) && Number.isFinite(o?.end) ? sum + Math.max(0, Math.min(o.end, to) - Math.max(o.start, from)) : sum), 0);
 export const waited = (from, now, outages) => now - from - outageOverlap(from, now, outages);
+// #C1073: a Decision the lead posts in a thread (kind "decision", no ask row: #C920) is open until the owner has written in that thread after it (or a later message of the thread is
+// resolved); the card it names (a "Card: <id>" line, else the one #C<n> in its first line) is held like a card with an open ask. This is collector/store-dispatch.mjs openDecisionCards,
+// copied (this file imports nothing of the collector): a test fails if the two differ. messages: rows { thread_id, author, body, created_at, kind, resolved }; cards: rows { id, num }.
+export function openDecisionCards(messages, cards) {
+  const out = new Set(), idByNum = new Map(), ids = new Set();
+  for (const c of Array.isArray(cards) ? cards : []) if (c && typeof c.id === "string") { ids.add(c.id); if (Number.isInteger(c.num)) idByNum.set(c.num, c.id); }
+  const msgs = (Array.isArray(messages) ? messages : []).filter((m) => m && typeof m.thread_id === "string" && Number.isFinite(m.created_at));
+  const settledAt = new Map();
+  for (const m of msgs) if (m.author === "owner" || m.resolved) settledAt.set(m.thread_id, Math.max(settledAt.get(m.thread_id) ?? -Infinity, m.created_at));
+  for (const m of msgs) {
+    if (m.kind !== "decision" || m.author === "owner" || m.resolved || (settledAt.get(m.thread_id) ?? -Infinity) >= m.created_at) continue;
+    const body = String(m.body ?? ""), named = [...new Set(body.split("\n")[0].match(/#C\d{1,7}\b/g) ?? [])];
+    const tagged = /^Card: ([a-z0-9][a-z0-9-]{0,63})$/m.exec(body)?.[1];
+    const id = tagged && ids.has(tagged) ? tagged : named.length === 1 ? idByNum.get(Number(named[0].slice(2))) ?? null : null;
+    if (id && ids.has(id)) out.add(id);
+  }
+  return out;
+}
 export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [], stallMs = STALL_AFTER_MS, postedFreshMs = POSTED_FRESH_MS, reviewers }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
