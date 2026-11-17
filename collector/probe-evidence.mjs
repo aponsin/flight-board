@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { runActionsUsage } from "./actions-usage.mjs";
 import { appSessions } from "./state.mjs";
 import { scheduleModelsWrite } from "./schedule-models.mjs";
+import { roleSessionsWrite } from "./role-sessions.mjs";
 import { fillRepoWords } from "./repo-words.mjs";
 import { createHash } from "node:crypto";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
@@ -373,6 +374,8 @@ export function deployLastWrite({ configPath, read }) {
 // Archived runs are read too: the newest run of a task is what the verdict needs, and the app archives a task's runs while it keeps running (Checker 2's F1).
 export const scheduleSessions = (root) => appSessions(root, undefined, { includeArchived: true });
 const defaultSessions = () => scheduleSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
+// #C1111: the open sessions only (an archived role session is no session the role runs in).
+const defaultOpenSessions = () => appSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
 
 export async function evidenceJob(o) {
   const t0 = Date.now(), timing = o.timing ?? {};
@@ -384,7 +387,7 @@ export async function evidenceJob(o) {
   }
 }
 
-async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, sessionsRead = defaultSessions, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
+async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, sessionsRead = defaultSessions, openSessionsRead = defaultOpenSessions, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const t0 = Date.now();
   const limitSec = job === "evidence" ? knobs.values.evidenceLimitSec : JOBS[job].limitSec; // #C997: a setting for the evidence job
@@ -471,10 +474,13 @@ async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPa
   // the store keeps its last reading, which the page shows as old after 36 h.
   let schedW = null;
   try { schedW = cfg && scheduleModelsWrite(cfg, { sessions: sessionsRead(), now: Date.now(), log }); } catch (e) { log(`schedule failed: ${String(e.message).slice(0, 80)}`); }
+  // #C1111: each configured role's chosen model and effort against what its open session runs on. A failure is logged; the store keeps its last reading.
+  let rolesW = null;
+  try { rolesW = cfg && roleSessionsWrite(cfg, { sessions: openSessionsRead(), now: Date.now(), log }); } catch (e) { log(`roles failed: ${String(e.message).slice(0, 80)}`); }
   // #C997: the settings this run used and the ones it ignored, for the Worker and the page header.
   let knobsW = null;
   try { knobsW = cfg && knobsWrite(cfg, { log }); } catch (e) { log(`knobs failed: ${String(e.message).slice(0, 80)}`); }
-  const late = [lookW, knobsW, reviewersW, schedW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
+  const late = [lookW, knobsW, reviewersW, schedW, rolesW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
   if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log, deadline: t0 + (limitSec - LATE_TAIL_SEC) * 1000 }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
   return finish(done);
 }

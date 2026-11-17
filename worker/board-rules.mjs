@@ -787,6 +787,15 @@ export const scheduleModelsShape = (v) => v !== null && typeof v === "object" &&
   && Number.isFinite(v.at) && Array.isArray(v.tasks) && v.tasks.length <= 30
   && v.tasks.every((t) => t !== null && typeof t === "object" && !Array.isArray(t) && Object.keys(t).every((k) => ["id", "chosen", "lastRun", "at"].includes(k))
     && typeof t.id === "string" && SCHED_ID.test(t.id) && schedWord(t.chosen, SCHED_MODEL) && schedWord(t.lastRun, SCHED_MODEL) && (t.at === null || Number.isFinite(t.at)));
+// #C1111: each role's chosen model and effort against what its open session runs on (collector/role-sessions.mjs):
+// { at, roles: [{ role, chosen, ran, chosenEffort, ranEffort, at }] }, 20 roles at most; names are plain words, any of them null when not known.
+const ROLE_WORD = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/, EFFORT_RE = /^(low|medium|high|xhigh|max)$/;
+export const sessionChecksShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => k === "at" || k === "roles")
+  && Number.isFinite(v.at) && Array.isArray(v.roles) && v.roles.length <= 20
+  && v.roles.every((t) => t !== null && typeof t === "object" && !Array.isArray(t) && Object.keys(t).every((k) => ["role", "chosen", "ran", "chosenEffort", "ranEffort", "at"].includes(k))
+    && typeof t.role === "string" && ROLE_WORD.test(t.role) && schedWord(t.chosen, SCHED_MODEL) && schedWord(t.ran, SCHED_MODEL)
+    && (t.chosenEffort === null || (typeof t.chosenEffort === "string" && EFFORT_RE.test(t.chosenEffort))) && (t.ranEffort === null || (typeof t.ranEffort === "string" && EFFORT_RE.test(t.ranEffort)))
+    && (t.at === null || Number.isFinite(t.at)));
 const e2eShape =(v) => v !== null && typeof v === "object" && !Array.isArray(v) && E2E_STATES.includes(v.state) && typeof v.reason === "string" && v.reason.length <= 300
   && (v.run === null || v.run === undefined || typeof v.run === "string") && (v.lastGreenAt === null || v.lastGreenAt === undefined || typeof v.lastGreenAt === "string");
 // The one line for Manager's batch when the reading is red, missed or unknown and fresh; null otherwise. Keyed by the state in its first
@@ -816,6 +825,7 @@ export function evidenceRefusal(key, value, who, track) {
   if (key === "run.evidence" && !runShape(value)) return refuse("run-shape", "run.evidence is { ok: true|false, at, line up to 160 characters, ms, stateMs, slow: true }");
   if (key === "deploy.last" && !deployLastShape(value)) return refuse("deploy-last-shape", "deploy.last is { ok: true|false, at, line up to 160 characters }");
   if (key === "schedule.models" && !scheduleModelsShape(value)) return refuse("schedule-models-shape", "schedule.models is { at, tasks: [up to 30 of { id, chosen, lastRun, at }] }, ids and model names plain words");
+  if (key === "session.checks" && !sessionChecksShape(value)) return refuse("session-checks-shape", "session.checks is { at, roles: [up to 20 of { role, chosen, ran, chosenEffort, ranEffort, at }] }, names plain words");
   if (key === "e2e" && !e2eShape(value)) return refuse("e2e-shape", "e2e is { state: ok|red|missed|unknown, reason, run, lastGreenAt }");
   // #C997: the operational settings the probe resolved from the board config's ops section, and the ones it ignored (worker/knobs.mjs).
   if (key === "knobs" && !knobsShape(value)) return refuse("knobs-shape", "knobs is { values: { setting: number }, ignored: [up to 40 of { key, why }] }");

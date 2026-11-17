@@ -3086,7 +3086,7 @@ function crewHtml(now=Date.now()){
   const tot=logTotals("phase",now),fmt=ms=>ms?dur(ms):"—";
   const rows=PHASES.filter(([k])=>tot[k]).map(([k,label])=>`<tr><td>${esc(label)}</td><td>${fmt(tot[k].work)}</td><td>${fmt(tot[k].busy)}</td><td>${fmt(tot[k].gate)}</td></tr>`).join("");
   const table=rows?`<div class="chart-wrap"><table class="qt crew3-ph"><caption>Last 7 days, by phase</caption><thead><tr><th>Phase</th><th>Working</th><th>Queued (busy)</th><th>Gated</th></tr></thead><tbody>${rows}</tbody></table></div>`:"";
-  return stackBar()+(tiles?`<div class="crew3">${tiles}</div>`:'<div class="empty">No agents yet.</div>')+scheduleModelsHtml(now)+table}
+  return stackBar()+(tiles?`<div class="crew3">${tiles}</div>`:'<div class="empty">No agents yet.</div>')+roleSessionsHtml(now)+scheduleModelsHtml(now)+table}
 // #C1006: each scheduled task's chosen model (board config) against the model its last run used (the probe's schedule.models). Green: the same. Red: the
 // last run used another. Amber: no model chosen (the task follows the app default, which is how the watchdog drifted), or the run's model was not read.
 // Grey, never red: a task never run, or not run for 7 days (paused or deleted). A reading over 36 h old says so, so a stopped probe is seen.
@@ -3102,6 +3102,22 @@ function scheduleModelsHtml(now=Date.now()){
   const s=probe&&probe.schedule;if(!s||!Array.isArray(s.tasks)||!s.tasks.length)return "";
   const old=!isT(s.at)||now-s.at>SCHED_OLD;
   return `<div class="panel sm" data-sched><h3>Scheduled tasks · model</h3>${old?'<div class="sm-old">model reading old</div>':""}`+s.tasks.map(t=>{const v=scheduleVerdict(t,now);return `<div class="sm-row" data-task="${esc(t.id)}"><span class="sm-id">${esc(t.id)}</span><span class="sm-chip ${v.c}">${esc(v.txt)}</span></div>`}).join("")+`</div>`}
+// #C1111: each role's chosen model and effort (board config roleSessions) against what its open session runs on (the probe's session.checks). Green: both
+// chosen fields match. Red: one differs, with the exact fix (the session's model or effort menu in the app). Amber: no open session for the role, or a chosen
+// field the session file did not give. Grey: nothing chosen for the role. A reading over 36 h old says so, so a stopped probe is seen.
+function roleVerdict(t){
+  const bad=[];
+  if(t.chosen&&t.ran&&t.chosen!==t.ran)bad.push(`model ${t.ran}, chosen ${t.chosen}: set the model to ${t.chosen} in the app's model menu`);
+  if(t.chosenEffort&&t.ranEffort&&t.chosenEffort!==t.ranEffort)bad.push(`effort ${t.ranEffort}, chosen ${t.chosenEffort}: set the effort to ${t.chosenEffort} in the app's effort menu`);
+  if(bad.length)return {c:"bad",txt:bad.join("; ")};
+  if(!t.chosen&&!t.chosenEffort)return {c:"mute",txt:"nothing chosen"};
+  if(t.at==null&&!t.ran&&!t.ranEffort)return {c:"warn",txt:"no open session"};
+  if((t.chosen&&!t.ran)||(t.chosenEffort&&!t.ranEffort))return {c:"warn",txt:"not read from the session"};
+  return {c:"ok",txt:`✓ ${[t.ran&&t.chosen?t.ran:"",t.ranEffort&&t.chosenEffort?t.ranEffort:""].filter(Boolean).join(" · ")}`}}
+function roleSessionsHtml(now=Date.now()){
+  const s=probe&&probe.sessionChecks;if(!s||!Array.isArray(s.roles)||!s.roles.length)return "";
+  const old=!isT(s.at)||now-s.at>SCHED_OLD;
+  return `<div class="panel sm" data-roles><h3>Sessions · model and effort</h3>${old?'<div class="sm-old">session reading old</div>':""}`+s.roles.map(t=>{const v=roleVerdict(t);return `<div class="sm-row" data-role="${esc(t.role)}"><span class="sm-id">${esc(t.role)}</span><span class="sm-chip ${v.c}">${esc(v.txt)}</span></div>`}).join("")+`</div>`}
 function renderCrew3(){const el=$("crew3");if(!$("v3").hidden&&!$("v3crew").hidden)el.innerHTML=crewHtml()}
 // The new layout's view (Now, Plan or Crew), this browser's choice only.
 let v3view="now";
