@@ -1,0 +1,3 @@
+SECURE (Full) #C1132 v3 91744942 (tip): closes my M1 on 112256ee. In --pass, --state is refused unless it resolves to exactly ~/.flight-board/pickup-pass.json (still no symlink); --config must be named board.config.json; --rows with --rows-file refused (L1). Tests refuse land-holds/stack-switch/dispatch json, current/package.json and a nested pickup-pass.json. 19 tests green; mutation check: pass (exact-path check removed: 2 tests fail). Manager may now install the watchdog edits and the pickup-watch prefix rule.
+
+signed-by: Security
