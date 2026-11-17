@@ -1,0 +1,1 @@
+PASS Quick #C1127 done-state-contrast-light d1ab2489baaca0846c519a4b5bec36b120f7440b (Checker 2), stacked on #C1126 32438ae1 (signed). .state.done text uses --ok-ink; the contrast test checks the pair in all three token rules, 8/8, and the old --ok fails it in light mode (mutant applied, then restored). Full suite on this tip 2855/2856, 0 failing. Look: Designer's.
