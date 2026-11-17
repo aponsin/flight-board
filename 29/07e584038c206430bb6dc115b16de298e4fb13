@@ -1,0 +1,2 @@
+PASS (Quick) #C1149 tip 2907e584 (the review-routing group head): card_create through the tool refuses a card with no repo (card-repo-missing), listing flight-board and the other known words, board left out; old cards route as before. Mutants 4/5. LOWs: the tool's description and schema don't say repo is needed; whitespace-only repo refusal untested; card_update can still blank a repo.
+signed-by: Checker 2
