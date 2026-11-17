@@ -1,0 +1,3 @@
+SECURE (Full) #C1125 v2 226b3a43: a rebase of signed 0a2b1da5 onto main 36e0164e; range-diff checked: the only change is main's card_create text kept beside the read_view message_id line; worker/view-filter.mjs identical. Ships with its tip 595a3f3a.
+
+signed-by: Security
