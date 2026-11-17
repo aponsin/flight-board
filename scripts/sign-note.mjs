@@ -7,6 +7,7 @@
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { noteLineOk, signoffWord } from "../collector/signoff.mjs";
 
 export const ROLE_REFS = { checker: "refs/notes/checker", security: "refs/notes/security" };
 const SIGNER = /^[A-Za-z][A-Za-z0-9 ]{0,30}$/;
@@ -24,6 +25,9 @@ export function signNote({ run, role, sha, signer, line, push = false }) {
   if (!SIGNER.test(String(signer ?? ""))) fail("--signer is your own name, such as Checker 2");
   const first = String(line ?? "");
   if (!first.trim() || /[\r\n]/.test(first)) fail("--line is the note's one first line (PASS ..., SECURE ..., FINDINGS ...)");
+  // #C1163: the board, the landing job and the release tool read the first word, so a line that starts with another word signs nothing (HOLD, "looks fine", a lower-case pass): refused,
+  // nothing written. Checker's word is PASS, Security's is SECURE; FINDINGS (sent back) and STOP (held) are allowed for both.
+  if (!noteLineOk(role, first)) fail(`--line starts with ${signoffWord(role)}, FINDINGS or STOP for a ${role} note (the first word is what the board and the landing job read); got "${first.slice(0, 40)}"`);
   const tryRun = (a) => { try { return { out: String(run(a)).replace(/\n+$/, "") }; } catch (e) { return { error: String(e?.stderr ?? e?.message ?? e).trim().split("\n")[0] }; } };
   // #C1131: the commit must exist in THIS checkout. On 11-16 a reviewer signed two commits from another repository's checkout and the script said "SIGNED ..., pushed" for notes
   // that landed in the wrong repository. Nothing is fetched, written or pushed until the sha is a commit here; the refusal names the folder it ran in.

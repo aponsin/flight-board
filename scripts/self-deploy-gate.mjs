@@ -14,6 +14,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { SIGNOFF_WORD, isSignoff } from "../collector/signoff.mjs";
 
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
 export const MARKER = ".self-deploy-ok";
@@ -36,7 +37,7 @@ const first = (t) => String(t ?? "").split("\n")[0].trim();
 // need not name the same base. A line covers nothing when it holds a merge commit or more than GROUP_MAX commits.
 export const LINE_FROM = /\bline from ([0-9a-f]{40})\b/;
 export const GROUP_MAX = 30;
-export const ROLE_WORD = { checker: { re: /^PASS\b/, word: "PASS", who: "Checker" }, security: { re: /^SECURE\b/, word: "SECURE", who: "Security" } };
+export const ROLE_WORD = { checker: { re: SIGNOFF_WORD.checker, word: "PASS", who: "Checker" }, security: { re: SIGNOFF_WORD.security, word: "SECURE", who: "Security" } }; // #C1163: the words are collector/signoff.mjs's
 export const roleLineBase = (role, note) => (ROLE_WORD[role].re.test(first(note)) ? LINE_FROM.exec(first(note))?.[1] ?? null : null);
 // #C934's both-roles form (the pending pack still reads it): both notes signed and the same base.
 export const lineBase = (notes) => {
@@ -73,8 +74,8 @@ export function gateVerdict({ commit, tip, notes, current, descends, skipInstall
   if (unsigned.length) r.push(`${unsigned.length === 1 ? "a commit" : `${unsigned.length} commits`} since the Worker's BUILD_SHA ${unsigned.length === 1 ? "has" : "have"} no SECURE and PASS: ${unsigned.slice(0, 3).join(", ")}${unsigned.length > 3 ? ", ..." : ""}`);
   if (!FULL.test(String(tip))) r.push("origin/main's tip could not be read");
   else if (commit !== tip) r.push(`the build's commit ${commit.slice(0, 12)} is not main's tip ${tip.slice(0, 12)}`);
-  if (!/^SECURE\b/.test(first(notes?.security))) r.push("no SECURE from Security on this commit");
-  if (!/^PASS\b/.test(first(notes?.checker))) r.push("no PASS from Checker on this commit");
+  if (!isSignoff(notes?.security, "security")) r.push("no SECURE from Security on this commit");
+  if (!isSignoff(notes?.checker, "checker")) r.push("no PASS from Checker on this commit");
   if (!FULL.test(String(current ?? ""))) r.push("the Worker's current BUILD_SHA could not be read as a full sha (a first deploy is the owner's, by a pair)");
   const same = FULL.test(String(current ?? "")) && current === commit;
   if (FULL.test(String(current ?? "")) && !same && !descends) r.push(`the commit does not descend from the Worker's current BUILD_SHA ${current.slice(0, 12)}: forward only`);

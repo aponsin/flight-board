@@ -117,7 +117,7 @@ function chain() {
 
 test("a note on the stack tip signs every card under it (design 4); without the switch the notes stay the card's own", () => {
   const { s, three, run } = chain();
-  for (const ref of Object.values(cfg.collector.notes)) s.g(["notes", `--ref=${ref}`, "add", "-m", "PASS", three]);
+  for (const [phase, ref] of Object.entries(cfg.collector.notes)) s.g(["notes", `--ref=${ref}`, "add", "-m", phase === "security" ? "SECURE" : "PASS", three]); // #C1163: each role signs with its own word
   const on = run();
   for (const id of ["card-one", "card-two", "card-three"]) assert.deepEqual(on[id].signed, ["checker", "security"], id);
   const off = cardStates({ cards: ["card-one", "card-two", "card-three"].map((id) => ({ id })), config: cfg, repos: { "": s.repo() }, now: (T0 + 100) * 1000 });

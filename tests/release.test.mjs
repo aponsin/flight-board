@@ -86,7 +86,7 @@ test("#C278 (Security): the fence takes only collector/export.mjs, which imports
   assert.deepEqual(importClosure(["collector/fence.mjs"], read), ["collector/export.mjs", "collector/fence.mjs", "scripts/config.mjs"]);
   // A new import from a pinned file into the collector's code re-pins it, and this list says so.
   assert.deepEqual(importClosure([...OWNER_ENTRIES, ...RELEASE_ENTRIES], read), [
-    "collector/after-ship.mjs", "collector/export.mjs", "collector/fence.mjs", "collector/findings-count.mjs", "collector/pairs.mjs", "collector/readings.mjs", "collector/review-paths.mjs", "collector/stack.mjs", "collector/state-schema.mjs", "collector/state.mjs", "collector/text.mjs", "collector/watch-readings.mjs",
+    "collector/after-ship.mjs", "collector/export.mjs", "collector/fence.mjs", "collector/findings-count.mjs", "collector/pairs.mjs", "collector/readings.mjs", "collector/review-paths.mjs", "collector/signoff.mjs", "collector/stack.mjs", "collector/state-schema.mjs", "collector/state.mjs", "collector/text.mjs", "collector/watch-readings.mjs",
     "gate/first-push.mjs", "gate/publish.mjs", "gate/reset.mjs", "gate/session.mjs", "gate/stop.mjs", "gate/tools.mjs", "gate/wake.mjs",
     "hooks/red-ask-board.py", "scripts/board-land.mjs", "scripts/board-release.mjs", "scripts/build-page.mjs", "scripts/config.mjs", "scripts/current.mjs", "scripts/fixtures.mjs", "scripts/group-check.mjs", "scripts/hooks.mjs", "scripts/pack-label.mjs", "scripts/scan.mjs", "scripts/self-deploy-gate.mjs", "scripts/state-install.mjs", "scripts/wake-watch.mjs",
     "worker/probe-jobs.mjs", "worker/state-worker.mjs",
