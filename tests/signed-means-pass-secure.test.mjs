@@ -16,7 +16,7 @@ import { signed as landSigned } from "../scripts/board-land.mjs";
 import { signed as recutSigned } from "../scripts/board-recut.mjs";
 import { ROLE_WORD } from "../scripts/self-deploy-gate.mjs";
 import { signNote } from "../scripts/sign-note.mjs";
-import { shownLevel } from "../worker/compat-view.mjs";
+import { shownLevel, initiativeDoc } from "../worker/compat-view.mjs";
 import { dispatchRun } from "../collector/store-dispatch.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -27,6 +27,9 @@ test("isSignoff: the role's word at the start of the first line signs; any other
   for (const n of ["HOLD", "PASS", "secure", "SECUREd", "FINDINGS"]) assert.equal(isSignoff(n, "security"), false, `security: ${n}`);
   assert.equal(isSignoff("looks fine", "linguist"), true, "a role with no word keeps the older rule: any note that is not FINDINGS");
   assert.equal(isSignoff("FINDINGS", "linguist"), false);
+  // Checker 2's LOW 1: a role with no word reads the FIRST line too, so a blank first line with text below signs nothing (as for PASS and SECURE).
+  for (const n of ["\nLOOK-OK", "   \nLOOK-OK", "", "  ", null, undefined]) assert.equal(isSignoff(n, "linguist"), false, `linguist: ${JSON.stringify(n)}`);
+  assert.equal(isSignoff("  LOOK-OK\nmore", "linguist"), true, "leading spaces on the first line are fine");
   assert.equal(isFindings(" FINDINGS: x"), true);
   assert.equal(isFindings("PASS"), false);
 });
@@ -149,4 +152,13 @@ test("the dispatch: a Quick card of the board's repository wakes Security beside
   assert.deepEqual(who(world([card("c1-base", { repo: "site-one" })], { "c1-base": pushed })), ["c1-base:Checker:review"]);
   assert.deepEqual(who(world([card("c1-base")], { "c1-base": pushed })), ["c1-base:Checker:review"]);
   assert.deepEqual(who(world([card("c1-base", { repo: "flight-board" })], { "c1-base": { ...pushed, signed: ["checker", "security"] } })).filter((x) => /Security/.test(x)), [], "signed Security is not woken again");
+});
+
+// Checker 2's LOW 2: the view's card passes the repo word to shownLevel, so a board card with no evidence yet already shows Full (dropping the argument left it Quick).
+test("the view's card shows Full for a board card with no evidence yet, and the typed level for another repository or none", () => {
+  const c = (repo) => ({ id: "c1-base", num: 1, title: "t", owner_role: "Boardsmith", review_level: "Quick", paused: 0, dropped: 0, ...(repo === undefined ? {} : { repo }) });
+  assert.equal(initiativeDoc(c("flight-board"), undefined).level, "Full");
+  assert.equal(initiativeDoc(c("board"), undefined).level, "Full");
+  assert.equal(initiativeDoc(c("site-one"), undefined).level, "Quick");
+  assert.equal(initiativeDoc(c(undefined), undefined).level, "Quick");
 });

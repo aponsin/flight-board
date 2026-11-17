@@ -8,7 +8,7 @@ const WORD_NAME = { checker: "PASS", security: "SECURE" };
 export const noteLine = (note) => String(note ?? "").split("\n")[0].trim();
 export const isFindings = (note) => /^FINDINGS\b/.test(noteLine(note));
 // Whether the note signs the commit for the role.
-export const isSignoff = (note, role) => (Object.hasOwn(SIGNOFF_WORD, role) ? SIGNOFF_WORD[role].test(noteLine(note)) : String(note ?? "").trim() !== "" && !isFindings(note));
+export const isSignoff = (note, role) => (Object.hasOwn(SIGNOFF_WORD, role) ? SIGNOFF_WORD[role].test(noteLine(note)) : noteLine(note) !== "" && !isFindings(note));
 export const signoffWord = (role) => WORD_NAME[role] ?? null;
 // The first lines sign-note.mjs may write for a role: its sign-off word, FINDINGS (sent back) or STOP (held); anything else is refused.
 export const noteLineOk = (role, line) => (Object.hasOwn(SIGNOFF_WORD, role) && SIGNOFF_WORD[role].test(noteLine(line))) || /^(FINDINGS|STOP)\b/.test(noteLine(line));
