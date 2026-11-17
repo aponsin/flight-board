@@ -3,7 +3,7 @@
 The lint (tests/ops-knobs-lint.test.mjs) wants every bare time or interval constant to be a setting (worker/knobs.mjs), on its FIXED list with a reason, or on the frozen
 baseline (tests/ops-knobs-baseline.json, retired by #C1113: the file and its rewrite switch are gone, and a test fails if it returns). This is the one-time pass over the constants the baseline held when #C1113's rest began (slices 1 and 2 had already moved four).
 Each verdict was made from the constant's own declaration and the comment around it. The rule: lean towards FIXED, and make a setting only where someone has already wanted to
-tune it. Nobody has wanted to tune any of these, so every one is FIXED. A FIXED name is matched across the repository, so a later constant of the same name is exempt too; a
+tune it. Nobody has wanted to tune any of these, so every one is FIXED. A FIXED entry is keyed by file and name since #C1151, so a later constant of the same name in another file is not exempt; a
 constant that needs tuning later gets its own card, and moving one to a setting needs the owner's pack when its file is pinned. Putting a name on FIXED changes only the lint test.
 
 | Constant | File | Verdict | Reason |
@@ -58,7 +58,7 @@ constant that needs tuning later gets its own card, and moving one to a setting 
 | STUCK_MS | scripts/prompt-watch.mjs | FIXED | a stopped prompt must be this old (30 min) before the push line names it, once per stop |
 | LIVE_FRESH | scripts/restart-check.mjs | FIXED | state.json older than 3 min reads as nothing: the restart check's own copy of the live-state window (LIVE_FRESH_MS) |
 | AGENT_QUIET_MS | scripts/restart-ready.mjs | FIXED | an agent active within 2 min counts as busy for the restart check |
-| OUTSIDE_QUIET_MS | scripts/restart-ready.mjs | FIXED | 5 min, declared beside AGENT_QUIET_MS but read nowhere in scripts, collector or gate: possibly dead; removing it is its own card |
+| OUTSIDE_QUIET_MS | scripts/restart-ready.mjs | REMOVED | dead: read nowhere (the "outside" check takes a count from its caller and names the 5 minutes in its words); #C1151 deleted it |
 | QUEUE_FRESH_MS | scripts/stack-ready.mjs | FIXED | how old the queue reading may be for stack-ready to trust it (15 min); a reading from the future is refused |
 | STALE_LISTED | scripts/stack-ready.mjs | FIXED | 20: how many stale branch names the line lists before "and N more"; a count, not a time |
 | BOOT_WAIT_MS | scripts/state-install.mjs | FIXED | 10 s to wait for a launchd job to boot: a pause inside the install script |
@@ -71,8 +71,9 @@ constant that needs tuning later gets its own card, and moving one to a setting 
 - slice 5 (collector reading windows, run limits, fixed facts, and the two fence windows): 19
 - slice 6 (collector/state.mjs, gate, hooks, scripts and the page): 38 entries, 37 names
 
-Two things the pass found, for their own cards if wanted: OUTSIDE_QUIET_MS (scripts/restart-ready.mjs) is declared and read nowhere, so it may be dead; and the FIXED name FRESH
-(scripts/pickup-watch.mjs, 5,000 tokens) is generic, so a future bare constant named FRESH anywhere would be exempt too.
+Two things the pass found, both done in #C1151: OUTSIDE_QUIET_MS (scripts/restart-ready.mjs) was declared and read nowhere, so it was deleted (56 FIXED entries remain from this table);
+and the FIXED list matched by name alone, so the generic FRESH (scripts/pickup-watch.mjs, 5,000 tokens) would have exempted any future bare constant of that name. Entries are now keyed
+by file and name ("scripts/pickup-watch.mjs:FRESH"; POLL_MS became two entries, one per file), and a test fails on an entry that matches no bare constant in its file.
 
 No pack is needed for any of this: the FIXED list is in tests/ops-knobs-lint.test.mjs, and no constant's own file was touched. Moving one of these to a setting later would need
 the owner's pack where its file is pinned (gate/*, scripts/*, hooks/*, and collector/state.mjs by the notes in worker/knobs.mjs).
