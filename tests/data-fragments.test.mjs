@@ -134,6 +134,7 @@ test("print mode writes the whole folded DATA.md to a slow pipe, past 64 KB, and
   try {
     mkdirSync(join(D, "scripts")); mkdirSync(join(D, "docs/DATA.d"), { recursive: true });
     copyFileSync(new URL("../scripts/data-fragments.mjs", import.meta.url), join(D, "scripts/data-fragments.mjs"));
+    copyFileSync(new URL("../scripts/is-main.mjs", import.meta.url), join(D, "scripts/is-main.mjs")); // #C1167: the script's main check imports it
     const base = `# Data\n\n${Array.from({ length: 3000 }, (_, i) => `- 2026-11-01: an older change number ${i} that is long enough to fill a pipe (#C${i})`).join("\n")}\n`;
     assert.ok(base.length > 150_000);
     writeFileSync(join(D, "docs/DATA.md"), base);

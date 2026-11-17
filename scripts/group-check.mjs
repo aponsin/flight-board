@@ -130,7 +130,8 @@ export function runGroupSuite({ dir, spawn, mkdtemp, remove, totalMs, env = proc
   }
 }
 
-if (process.argv[1] && process.argv[1].endsWith("group-check.mjs") && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+import { isMain } from "./is-main.mjs";
+if (isMain(import.meta.url)) {
   const a = process.argv.slice(2), cmd = a[0], val = (k) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : undefined; };
   const git = (args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 }).trim();
   const sha = val("--sha") ?? "HEAD";

@@ -197,4 +197,5 @@ async function main(argv) {
   if (out) writeFileSync(out, JSON.stringify({ at: Date.now(), pass: r.pass, results: r.results }, null, 1));
   return r.pass ? 0 : 1;
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main(process.argv.slice(2)).then((c) => process.exit(c));
+import { isMain } from "./is-main.mjs";
+if (isMain(import.meta.url)) main(process.argv.slice(2)).then((c) => process.exit(c));

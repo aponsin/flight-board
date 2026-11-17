@@ -8,6 +8,7 @@
 // it as it judges every push: a push it refuses is simply not made. The push runs detached so the commit returns at once (FB_WIP_PUSH_SYNC=1 runs it inline, for the tests).
 import { execFileSync, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
 
 // The branch name a commit on `ref` (HEAD's symbolic ref) should be pushed as, or null: only refs/heads/build/<name> in the plain shape.
 export const BUILD_BRANCH = /^refs\/heads\/(build\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,80}){0,2})$/;
@@ -49,4 +50,6 @@ function main() {
   } catch { /* the commit is never harmed */ }
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) { main(); process.exitCode = 0; }
+// #C1167: both sides by their real path (a link to this file must still run it). Inline, not scripts/is-main.mjs: this is a git hook that exits 0 whatever happens and imports nothing of ours.
+const isMainFile = () => { try { return Boolean(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } };
+if (isMainFile()) { main(); process.exitCode = 0; }

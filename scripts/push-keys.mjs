@@ -44,4 +44,5 @@ async function main() {
   console.log("PUSH KEY SET. Open the board and tap \"Turn on phone pushes\" (on an iPhone: from the Home Screen icon).");
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
+import { isMain } from "./is-main.mjs";
+if (isMain(import.meta.url)) main();

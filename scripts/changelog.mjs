@@ -86,7 +86,8 @@ export function run(argv, root) {
   return { code: 0, out: `${files.length} card file(s) folded into ${FILE}\n` };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+import { isMain } from "./is-main.mjs";
+if (isMain(import.meta.url)) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   const r = run(process.argv.slice(2), root);
   (r.code ? process.stderr : process.stdout).write(r.out);
