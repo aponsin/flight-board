@@ -107,13 +107,22 @@ const stackOf = (s) => {
 // card is in no lane: its phase is shown only when it is live (the Live and history views keep it). Re-opened, it reads its lane again.
 const closedCard = (c) => !!c && (!!c.dropped || !!c.done_at);
 const lanePhase = (c, phase) => (closedCard(c) && phase !== "live" ? undefined : phase);
+// #C1108 (Manager's ruling on the card): the level a card SHOWS reads Full whenever Security's review is in play on it, whatever was typed: the probe raised the review from the
+// paths the branch touched (a repository's reviewPaths), so a Quick card that Security reviews must not read Quick. Read from the card's evidence only: Security still unsigned
+// (waitingFor), signed (signed) or with a signed-review time (reviews). Typed Full stays Full; the typed value itself is never rewritten, and nothing here lowers anything.
+export function shownLevel(typed, evValue) {
+  const e = evValue && typeof evValue === "object" ? evValue : {};
+  const inPlay = (Array.isArray(e.waitingFor) && e.waitingFor.includes("security")) || (Array.isArray(e.signed) && e.signed.includes("security"))
+    || (e.reviews && typeof e.reviews === "object" && !Array.isArray(e.reviews) && Object.hasOwn(e.reviews, "security"));
+  return inPlay ? "Full" : typed;
+}
 // One card as an old `initiatives` doc; the phase and status are the probe's reading, never typed.
 export function initiativeDoc(c, ev, claim) {
   const lit = lanePhase(c, ev?.value?.lit?.[0]);
   const skip = c.skip ? json(`{"s":${c.skip}}`).s : undefined;
   const deps = c.depends_on ? json(`{"s":${c.depends_on}}`).s : undefined, issues = c.issues ? json(c.issues) : undefined;
   return prune({
-    id: c.id, name: c.title, num: c.num, summary: c.summary, size: c.size, level: c.review_level, who: c.owner_role, phase: lit,
+    id: c.id, name: c.title, num: c.num, summary: c.summary, size: c.size, level: shownLevel(c.review_level, ev?.value), who: c.owner_role, phase: lit,
     status: c.dropped ? "dropped" : c.done_at ? "done" : c.paused ? "paused" : c.blocked_reason ? "blocked" : "active", createdAt: c.created_at, updatedAt: c.updated_at,
     // #C902: a card closed as done by an agent (its work left no branch), with what shows it.
     doneAt: num(c.done_at), doneEvidence: c.done_evidence ?? undefined,
