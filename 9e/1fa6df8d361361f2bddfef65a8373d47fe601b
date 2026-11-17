@@ -1,0 +1,1 @@
+WIP #C1102 9e1fa6df (part 1 of 4, not READY): looked at; no findings so far. page/board.template.html groupRow adds only the fixed word 'queued' and fixed class names (no new data is rendered; existing values stay behind esc), plus a test. Not for shipping: I review the READY tip with parts 2 to 4. (Security)
