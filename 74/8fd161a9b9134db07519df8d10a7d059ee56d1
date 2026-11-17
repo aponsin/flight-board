@@ -1,0 +1,3 @@
+SECURE group head board-later-group (#C1147, #C1146, #C1145), fast-forward of 249a281b; my INFO is fixed. INFO: the SIGKILL reaches test-run.mjs only, and a grandchild that keeps the pipes open can still hold spawnSync
+
+signed-by: Security
