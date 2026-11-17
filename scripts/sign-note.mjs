@@ -29,6 +29,10 @@ export function signNote({ run, role, sha, signer, line, push = false }) {
   // that landed in the wrong repository. Nothing is fetched, written or pushed until the sha is a commit here; the refusal names the folder it ran in.
   if (tryRun(["cat-file", "-e", `${sha}^{commit}`]).error !== undefined) {
     const where = tryRun(["rev-parse", "--show-toplevel"]).out;
+    // #C1134: a commit that is the tip of a ref on origin is only missing here: a fetch brings it, no other checkout is needed (a commit that is not the tip of any ref on origin cannot be told
+    // from another repository's without fetching, and keeps the wording above).
+    const onOrigin = where && String(tryRun(["ls-remote", "origin"]).out ?? "").split("\n").some((l) => l.startsWith(`${sha}\t`));
+    if (onOrigin) fail(`${sha.slice(0, 12)} is on origin but not in the checkout ${where} yet; run git fetch origin there, then sign again, nothing was written`);
     fail(`${sha.slice(0, 12)} is not a commit in ${where ? `the checkout ${where}` : "this folder (it is not a git checkout)"}; run this inside the checkout that holds the commit, nothing was written`);
   }
   // origin's copy of the notes ref, into a private ref (a missing one is fine: nothing signed yet there).
