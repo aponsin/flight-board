@@ -1,0 +1,1 @@
+SECURE #C863 v2 4c1abd32 (tip): one test-only commit on signed f0c8c30e (tests/plan-steps-uncarded.test.mjs). Closes my LOW: with the try/catch around JSON.parse(body) removed, the new non-JSON body test fails (SyntaxError); restored. Unmutated: 7/7 pass. (Security)
