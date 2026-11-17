@@ -30,14 +30,16 @@ function world() {
   return { sha, base, side, repo: () => ({ git, remote: "origin", main: "main", notes: { checker: "refs/notes/checker", security: "refs/notes/security" }, tips, live: null, versionPattern: null }) };
 }
 
-test("citedShas: a word of 7 to 40 hex characters with a digit and a letter; not a long number, a date, a plain word, a longer word, or upper case", () => {
-  assert.deepEqual(citedShas("parts: 3fa91c2 and 0123456789abcdef0123456789abcdef01234567, again 3fa91c2"), ["3fa91c2", "0123456789abcdef0123456789abcdef01234567"]);
-  assert.deepEqual(citedShas("built at 1794873311092 on 2026-11-16, defaced and decade, #C1115, v3.19.0"), []);
-  assert.deepEqual(citedShas("abc123 is too short; 3FA91C2 is upper case; x3fa91c2 and 3fa91c2z are inside a longer word"), []);
-  assert.deepEqual(citedShas("(3fa91c2), sha:3fa91c2."), ["3fa91c2"], "punctuation around a sha is fine");
+test("citedShas: only a sha marked by the word part counts; 7 to 40 hex characters with a digit and a letter; not a long number, a date, a plain word, a longer word, or upper case", () => {
+  assert.deepEqual(citedShas("part 3fa91c2 and part 0123456789abcdef0123456789abcdef01234567, again part 3fa91c2"), ["3fa91c2", "0123456789abcdef0123456789abcdef01234567"]);
+  assert.deepEqual(citedShas("built at part 1794873311092 on part 2026-11-16, part defaced and part decade, #C1115, v3.19.0"), []);
+  assert.deepEqual(citedShas("part abc123 is too short; part 3FA91C2 is upper case; part x3fa91c2 and part 3fa91c2z are inside a longer word"), []);
+  assert.deepEqual(citedShas("(part 3fa91c2), part\n3fa91c2."), ["3fa91c2"], "punctuation around a marked sha is fine");
+  assert.deepEqual(citedShas("superseded tip 3fa91c2, review tip 0123456789abcdef0123456789abcdef01234567, old stack a1b2c3d4"), [], "an unmarked sha is ignored");
+  assert.deepEqual(citedShas("parts 3fa91c2, apart 3fa91c2, part: 3fa91c2"), [], "the marker is the word part, then a space, then the sha");
   assert.deepEqual(citedShas(null), []);
   assert.deepEqual(citedShas(""), []);
-  const many = Array.from({ length: 14 }, (_, i) => `a1b2c3${i.toString(16)}`).join(" ");
+  const many = Array.from({ length: 14 }, (_, i) => `part a1b2c3${i.toString(16)}`).join(" ");
   assert.equal(citedShas(many).length, 10, "ten at most");
 });
 
@@ -46,14 +48,23 @@ test("every cited sha on main reads live; a note with no sha reads as before", (
   const none = cardState(card("built it, nothing else to say"), w.repo(), cfg, T);
   assert.equal(none.phase, "live");
   assert.equal(Object.hasOwn(none, "partsMissing"), false);
-  const all = cardState(card(`parts ${w.base.slice(0, 7)} and ${w.sha}`), w.repo(), cfg, T);
+  const all = cardState(card(`part ${w.base.slice(0, 7)} and part ${w.sha}`), w.repo(), cfg, T);
   assert.equal(all.phase, "live", "base is an ancestor of main, the card's own commit is main");
   assert.equal(Object.hasOwn(all, "partsMissing"), false);
 });
 
+test("an UNMARKED sha not on main holds nothing; a note with no marker behaves as today", () => {
+  const w = world();
+  const s = cardState(card(`superseded tip ${w.side.slice(0, 9)}, review tip ${w.side}, a1b2c3d4e5 was never pushed`), w.repo(), cfg, T);
+  assert.equal(s.phase, "live");
+  assert.equal(Object.hasOwn(s, "partsMissing"), false);
+  const mixed = cardState(card(`old ${w.side.slice(0, 9)}; part ${w.base.slice(0, 7)}`), w.repo(), cfg, T);
+  assert.equal(mixed.phase, "live", "the unmarked missing sha is ignored beside a marked one on main");
+});
+
 test("one missing sha holds the card below live and names that sha; a sha the repository cannot find counts as missing", () => {
   const w = world();
-  const s = cardState(card(`parts ${w.base.slice(0, 7)} and ${w.side.slice(0, 9)}`), w.repo(), cfg, T);
+  const s = cardState(card(`part ${w.base.slice(0, 7)} and part ${w.side.slice(0, 9)}`), w.repo(), cfg, T);
   assert.equal(s.phase, "ship", "held at ship, not live");
   assert.deepEqual(s.partsMissing, [w.side.slice(0, 9)], "names the missing one only");
   assert.ok(!s.seen.includes("live"), "live is not among the phases seen");
@@ -66,7 +77,7 @@ test("one missing sha holds the card below live and names that sha; a sha the re
   assert.deepEqual(unknown.partsMissing, ["deadbee1234"]);
   // a part that lands later: the next reading reads live again
   const landed = world(); // same shape, no missing sha cited
-  assert.equal(cardState(card(`parts ${landed.base.slice(0, 7)}`), landed.repo(), cfg, T).phase, "live");
+  assert.equal(cardState(card(`part ${landed.base.slice(0, 7)}`), landed.repo(), cfg, T).phase, "live");
 });
 
 test("a card that is not at live is not touched: a branch still in review keeps its phase, and partsMissing is only for the live case", () => {
