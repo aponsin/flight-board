@@ -1,0 +1,3 @@
+SECURE #C1163 fix 8ff0a238: isSignoff for a role with no word reads the first line (a blank first line signs nothing); only tightens
+
+signed-by: Security
