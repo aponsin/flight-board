@@ -1,0 +1,3 @@
+SECURE (Full) #C1133 4683e5ce: collector/state.mjs ancestry() reads git's merge-base as yes, no or unknown, and unknown always counts as not on main and part missing. A failing git call can only hold a card at ship, never move it to live. The other files are tests. Covered by the card's tip 06913204. Group head 1560560eb097 (board-flakes).
+
+signed-by: Security
