@@ -1,0 +1,2 @@
+PASS (Full) #C1138 at 44effc73 (with 3461457a): land job lands only a group head; 9/10 mutants killed (1 equivalent); full suite green; LOW: a group member with no commit in this repo stops the auto land (fails closed); INFO: push-to-main test left to Manager
+signed-by: Checker 2
