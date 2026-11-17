@@ -1,1 +1,2 @@
-WIP #C1112 38ad92c8: an empty start commit (no file changes against main). Nothing to review; not for shipping. I review the READY tip. (Security)
+SECURE (Full, G17 line) 38ad92c87a61: ships only inside G17 at 36e0164e85a5, whose head is SECURE; every fix it needed is on that line. Earlier note: WIP #C1112 38ad92c8: an empty start commit (no file changes against main). Nothing to review; not for shipping. I review the READY tip. (Security)
+signed-by: Security
