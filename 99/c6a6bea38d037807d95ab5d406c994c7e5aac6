@@ -1,0 +1,3 @@
+SECURE (Full) #C1144 99c6a6be: closes my M1 on a7e9ae35. repoOf normalises the board words ('board', 'flight-board') to 'flight-board' and an empty or non-string word to unknown; sameRepo keeps a peer when either side is unknown or both match. A peer is dropped only when both name different repositories, so an unpushed or mislabelled member still holds its group's lone tips (fails closed). Tests cover null, '', undefined, 7, 'board' and padded words, both ways; 4 mutants are killed. Group head 4bc114dec09c (board-follow-ups re-cut).
+
+signed-by: Security
