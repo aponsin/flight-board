@@ -1,0 +1,2 @@
+PASS (Full) #C1146 c9f50476: tests pin a start failure as never green and the first run's 80% share. Test-only.
+signed-by: Checker 2
