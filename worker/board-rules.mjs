@@ -879,6 +879,8 @@ export function evidenceRefusal(key, value, who, track) {
   if (key === "look" && !(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).every((k) => k === "visualLanes") && Array.isArray(value.visualLanes) && value.visualLanes.length <= 20 && value.visualLanes.every((r) => typeof r === "string" && LANE_NAME.test(r)))) return refuse("look-shape", "look is { visualLanes: [up to 20 role names] }");
   // #C1100: the config's collector.reviewers, { reviewers: { repository word: role name }, up to 20 }, for the stall line's reviewer.
   if (key === "reviewers" && !reviewersShape(value)) return refuse("reviewers-shape", "reviewers is { reviewers: { repository word: role name, up to 20 } }");
+  // #C1135: the config's roster, { roster: [up to 40 exact role names] }, for the Remote Control lines.
+  if (key === "roster" && !rosterShape(value)) return refuse("roster-shape", "roster is { roster: [up to 40 distinct role names] }");
   if (key.startsWith("cards.")) {
     const lit = value?.lit;
     if (!Array.isArray(lit) || lit.length !== 1) return refuse("one-lit-phase", `${key} has ${Array.isArray(lit) ? lit.length : 0} lit phases`);
@@ -1219,9 +1221,15 @@ export const SLOW_ROW_END = ": add one or unstick it";
 export const RC_OFF_CARD = "rc-off:";
 // #C1129 (Security's INFO I1 on #C1122): the role must be a roster role, not just a plain name: a roster role's name with optional digits ("Checker 2"), as the probe's own agent rule takes
 // them, so a session with a made-up title cannot put a name in Manager's batch. ROSTER_ROLES is the Worker's list of the roster (the same list that names who may write as whom).
-const rosterRole = (role) => /^[A-Za-z0-9][A-Za-z0-9 _-]{0,23}$/.test(role) && ROSTER_ROLES.includes(role.replace(/ \d+$/, ""));
-export const rcOffWakes = (agents) => (agents && typeof agents === "object" ? Object.entries(agents) : [])
-  .filter(([role, a]) => rosterRole(role) && a?.rcOff === true)
+// #C1135 (found on #C1129): that list is hard-coded and drifted two ways: a role added to the config but not to it ("Checker 2" was) never got a line, and any roster name plus digits passed,
+// "Checker 7" too. The probe now posts the config's own roster (the `roster` evidence, { roster: [exact role names] }) and a role passes only by EXACT name in it. Until the first
+// posting arrives (no roster given) the old rule stands.
+export const ROSTER_NAME = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,23}$/;
+export const rosterShape = (v) => !!v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 1 && Array.isArray(v.roster)
+  && v.roster.length <= 40 && v.roster.every((r) => typeof r === "string" && ROSTER_NAME.test(r)) && new Set(v.roster).size === v.roster.length;
+export const rosterRole = (role, roster) => ROSTER_NAME.test(role) && (Array.isArray(roster) ? roster.includes(role) : ROSTER_ROLES.includes(role.replace(/ \d+$/, "")));
+export const rcOffWakes = (agents, roster) => (agents && typeof agents === "object" ? Object.entries(agents) : [])
+  .filter(([role, a]) => rosterRole(role, roster) && a?.rcOff === true)
   .sort(([x], [y]) => (x < y ? -1 : 1))
   .map(([role]) => ({ card_id: `${RC_OFF_CARD}${role}`, num: null, reason: `${role} has Remote Control turned off in the app: switch it on in the session's toolbar` }));
 // Every wording a syncStalls cleanup finds its rows by with LIKE (SQLite's LIKE ignores ASCII case): writer text that carries one would have its row deleted and put back on every
