@@ -30,10 +30,8 @@
  "collector/state.mjs:WEEK_SPAN_MS",
  "collector/state.mjs:WORKING_QUIET_MS",
  "collector/store-dispatch.mjs:AFTER_SHIP_WINDOW_MS",
- "collector/store-dispatch.mjs:AGENTS_FRESH_MS",
  "collector/store-dispatch.mjs:DECISION_FRESH_MS",
  "collector/watch-readings.mjs:QUIET_MS",
- "collector/week-usage.mjs:SESSION_WEEK_FRESH_MS",
  "gate/reset.mjs:CLOSE_AGAIN_MS",
  "gate/reset.mjs:DISPATCH_ALIVE_MS",
  "gate/reset.mjs:DISPATCH_IDLE_MS",
@@ -57,6 +55,5 @@
  "scripts/state-install.mjs:BOOT_POLL_MS",
  "scripts/state-install.mjs:BOOT_RETRY_MS",
  "scripts/state-install.mjs:BOOT_WAIT_MS",
- "worker/board-rules.mjs:STALL_WAKE_AFTER_MS",
  "worker/page.mjs:POLL_MS"
 ]

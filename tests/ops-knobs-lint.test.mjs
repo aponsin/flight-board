@@ -29,7 +29,11 @@ export const FIXED = {
   UNDO_MS: "how long the page's Undo button stays (5 s): the feel of one control on a page that has no board config to read",
   HEARTBEAT_MS: "the state Worker's keep-alive write (15 min): it is tied to the daily KV write budget (WRITES_DEFAULT, the account's shared quota), so moving it moves that arithmetic and is a deploy decision",
   INLINE_LIST_MIN: "how many inline (1) (2) (3) markers in one paragraph count as a packed list (3): the threshold of a wording rule, not a time or an operating number",
-  LAND_MARGIN_SEC: "the land job's margin before its limit: tied to the plist's alarm and the per-tip budget (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",
+  // #C1113 slice 4 (Manager: do not plumb the posted settings into the dispatch; one that needs tuning later gets its own card). Each name is unique in the repository.
+  STALL_WAKE_AFTER_MS: "how long an idle-agent stall must have lasted before the stalled role itself is woken (30 min, #C1097): read by the dispatch (collector/store-dispatch.mjs), which never sees the posted settings; a second step after the Manager's stall line (stallAfterSec), so it is not a cadence; tuning it is its own card",
+  AGENTS_FRESH_MS: "how old the agents reading may be before the dispatch trusts none of it (5 min): a reading window on the evidence the dispatch reads, the same kind as the page's staleAfterSec but read in the owner-pinned dispatch, which has no posted settings; tuning it is its own card",
+  SESSION_WEEK_FRESH_MS: "how old a session's weekly-usage post may be and still count (1 h): a reading window on a session's own report, read on the Mac by the collector, which has no posted settings; tuning it is its own card",
+  LAND_MARGIN_SEC:"the land job's margin before its limit: tied to the plist's alarm and the per-tip budget (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",
   LAND_REPORT_FRESH_MS: "how long the land report counts as fresh: lives in the owner-pinned dispatch and must stay over the land job's interval plus limit (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",
   OUTAGE_KEEP_MS: "how long a recorded outage is kept (7 days): a retention bound on the table, not a cadence",
   NOTE_FRESH_MS: "how long a written next_note counts as a card's reason (1 h, #C1093): a reading window on the note, not a cadence; Manager may move it to a setting with #C1113",
