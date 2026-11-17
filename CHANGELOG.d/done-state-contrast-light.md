@@ -1,0 +1,1 @@
+- The "done" state chip on the board reads at 4.5:1 or more in light mode: its text uses the `--ok-ink` token (it was `--ok`, 4.33:1), and the contrast test now checks it in all three token rules (done-state-contrast-light, #C1127, the Designer's note on #C1102). Ships: a page change. Test: `tests/board-contrast-viewer-targets.test.mjs`.
