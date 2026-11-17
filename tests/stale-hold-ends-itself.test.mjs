@@ -54,6 +54,26 @@ test("the store leaves a hold alone that was rewritten after it was read (the up
   assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM hold_history WHERE card_id = 'race'").first()).n, 0, "nothing was ended, so nothing is logged");
 });
 
+test("Checker 2's L1 on e944b23e: renewing only the date (or only the store's end) mid-run keeps the hold", async () => {
+  for (const [name, sneaky] of [["check_at", `UPDATE cards SET check_at = ${T + 9 * H} WHERE id = 'race'`], ["hold_until", `UPDATE cards SET hold_until = ${T + 9 * H} WHERE id = 'race'`]]) {
+    const db = makeDb();
+    await createCard(db, T, "Manager", { id: "race", title: "RACE" });
+    if (name === "check_at") await updateCard(db, T, "Manager", { id: "race", waiting_on: "same words", check_at: T + H });
+    else { await updateCard(db, T, "Manager", { id: "race", waiting_on: "same words" }); } // the store gives it hold_until = T + 2 h
+    const real = db.prepare.bind(db);
+    db.prepare = (sql) => {
+      const st = real(sql);
+      if (!sql.startsWith("UPDATE cards SET waiting_on = NULL")) return st;
+      return { bind: (...a) => { const b = st.bind(...a); return { run: async () => { await real(sneaky).run(); return b.run(); } }; } };
+    };
+    await wakeAsk(db, T + 3 * H);
+    const row = await db.prepare("SELECT waiting_on, check_at, hold_until FROM cards WHERE id = 'race'").first();
+    assert.equal(row.waiting_on, "same words", `${name}: a renewed end keeps the hold`);
+    assert.equal(row[name], T + 9 * H, `${name}: the new date stays`);
+    assert.equal((await db.prepare("SELECT COUNT(*) AS n FROM hold_history WHERE card_id = 'race'").first()).n, 0);
+  }
+});
+
 test("a card closed live or dropped afterwards is untouched by the store's pass, and no line goes to Manager for an ended hold", async () => {
   const db = makeDb();
   await createCard(db, T, "Manager", { id: "gone", title: "GONE" });

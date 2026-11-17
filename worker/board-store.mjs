@@ -515,7 +515,7 @@ async function syncStalls(db, now) {
   for (const h of endedHolds({ now, cards, endsPassed })) {
     const sets = ["waiting_on = NULL", "blocked_reason = NULL", "hold_end = NULL", "held_at = NULL", "hold_until = NULL", "updated_at = ?"];
     if (h.clearCheckAt) sets.push("check_at = NULL");
-    const gone = await db.prepare(`UPDATE cards SET ${sets.join(", ")} WHERE id = ? AND done_at IS NULL AND dropped = 0 AND waiting_on IS ? AND blocked_reason IS ? AND hold_end IS ?`).bind(now, h.id, h.waiting_on, h.blocked_reason, h.hold_end).run();
+    const gone = await db.prepare(`UPDATE cards SET ${sets.join(", ")} WHERE id = ? AND done_at IS NULL AND dropped = 0 AND waiting_on IS ? AND blocked_reason IS ? AND hold_end IS ? AND check_at IS ? AND hold_until IS ?`).bind(now, h.id, h.waiting_on, h.blocked_reason, h.hold_end, h.check_at, h.hold_until).run();
     if (!(gone?.meta?.changes > 0)) continue;
     await db.prepare("INSERT INTO hold_history (card_id, at, waiting_on, blocked_reason, hold_end) VALUES (?, ?, ?, ?, ?)").bind(h.id, now, h.waiting_on, h.blocked_reason, h.hold_end).run();
     const c = cards.find((x) => x.id === h.id);
