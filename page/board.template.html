@@ -1538,7 +1538,10 @@ const threadCardAny=id=>threadCard(id)||threadCards(id).slice().sort((a,b)=>(num
 // dropped) is an answer (Checker: it stuck under With the team with no Ack and no Close).
 const TSTATE={question:"Question",building:"Building",answer:"Ack",live:"Live",decision:"Decision"};
 function threadState(id){const t=threadOf(id),last=t[t.length-1];if(!last)return null;
-  if(threadOpen(id))return "question";if(threadCard(id))return "building";
+  if(threadOpen(id))return "question";
+  // A Decision as Manager's last word is the owner's to pick, even on the thread of a card still in flight (#C1171, #C1173 on 11-17: the buttons never drew because "building" came first).
+  if(last.from!==OWNER&&last.kind==="decision"&&Array.isArray(last.options)&&last.options.length)return "decision";
+  if(threadCard(id))return "building";
   const k=last.from===OWNER?"":String(last.kind||"");
   if(k==="building")return threadCards(id).some(i=>i.status==="done"&&!i.dropped)?"live":"answer";
   return k==="live"||k==="decision"?k:"answer"}
