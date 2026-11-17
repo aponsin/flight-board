@@ -62,7 +62,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "weekTotal", "stack", "stackHold", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "restart", "ledger", "quiet"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "weekTotal", "stack", "stackHold", "builtWaiting", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "restart", "ledger", "quiet"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -117,9 +117,10 @@ const CARD = {
   // #C914: true only: the card is pushed, in a stack-mode repository, and no stack-ready signal covers its head. The probe's fact; the dispatch
   // decides from it whether a card with a declared stack partner waits. The page never reads it.
   stackHold: (v) => v === true,
+  builtWaiting: (v) => v === true,
   at: isTime,
 };
-const { num: _n, at: _a, branches: _b, stack: _s, stackHold: _h, ...BRANCH_FIELDS } = CARD;
+const { num: _n, at: _a, branches: _b, stack: _s, stackHold: _h, builtWaiting: _bw, ...BRANCH_FIELDS } = CARD;
 const BRANCH = { name: isId, ...BRANCH_FIELDS };
 const AGENT = {
   state: (v) => AGENT_STATES.includes(v),

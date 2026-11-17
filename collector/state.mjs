@@ -933,6 +933,13 @@ export function stackReadyCommits(repo) {
     return String(repo.git(["notes", `--ref=${STACK_READY_REF}`, "list"])).split("\n").map((l) => l.trim().split(/\s+/)[1]).filter((c) => /^[0-9a-f]{40}$/.test(String(c)));
   } catch { return []; }
 }
+// #C1102 (d): the commits carrying a stack-ready WAITING note (scripts/stack-ready.mjs, #C1066): the builder declared READY and was told to wait for its group. Not a signal.
+export const STACK_WAITING_REF = "refs/notes/flight-board/stack-ready-waiting";
+export function stackWaitingCommits(repo) {
+  try {
+    return String(repo.git(["notes", `--ref=${STACK_WAITING_REF}`, "list"])).split("\n").map((l) => l.trim().split(/\s+/)[1]).filter((c) => /^[0-9a-f]{40}$/.test(String(c)));
+  } catch { return []; }
+}
 
 export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] }) {
   const out = {}, repoOfCard = {}, cardOf = {}, todo = [];
@@ -997,7 +1004,7 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
     // the noted commit or under it (stack-ready notes the head of every started member of the group or stack it signals, so a member built before the last card is covered at that head, and a later push of it is not). It is a fact for the dispatch, which holds the card's review and build turns (#C1066: every pushed card of a stack-mode repository, not only one with a partner). Not for a card whose
     // head was committed before STACK_HOLD_FROM, one that already carries a review note or findings, or an outsider. The card's `stack` field is left as
     // it is (the page draws it). Same input, same answer: no clock.
-    const noted = stackReadyCommits(repo);
+    const noted = stackReadyCommits(repo), waiting = stackWaitingCommits(repo);
     const headAt = (id) => {
       if (Number.isFinite(found[id]?.at)) return found[id].at;
       try { return Number(String(repo.git(["log", "-1", "--format=%ct", heads[id]])).trim()) * 1000; } catch { return NaN; }
@@ -1006,7 +1013,9 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
       if (!heads[id] || fields[id]?.outside || out[id].signed?.length || out[id].findings?.length) continue;
       if (!(headAt(id) >= STACK_HOLD_FROM)) continue; // before the cutoff, or a time git would not give: today's reading
       if (noted.some((c) => isAncestor(heads[id], c))) continue;
-      out[id] = { ...out[id], stackHold: true };
+      // #C1102 (d): a held card whose EXACT head carries a waiting note is built: its builder ran stack-ready and was told to wait for the group (or a card queued behind it).
+      // The page reads it as "built, waiting" rather than building; a later push has no note and reads as building again.
+      out[id] = { ...out[id], stackHold: true, ...(waiting.some((c) => c.startsWith(heads[id]) || String(heads[id]).startsWith(c)) ? { builtWaiting: true } : {}) };
     }
   }
   // #C1020: a board-repository card on main shows packed and installed from the deploy pairs (pairsIn, the owner's pair folder) and git alone:

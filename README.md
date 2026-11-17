@@ -18,6 +18,7 @@ Everything particular to one team lives in its own `board.config.json`, outside 
 | `scripts/fixtures.mjs`, `tests/fixtures/board/` | Rendered scenarios: board documents and what the owner must see for each item, drawn by the page's own script. |
 | `scripts/install.mjs` | One-time setup for a team: checks the config, turns on the scan, builds the page. |
 | `scripts/scan.mjs`, `.githooks/pre-push` | The content scan, run before every push. |
+| `scripts/post-commit-push.mjs`, `.githooks/post-commit` | Pushes a commit on a `build/` branch to origin at once (never forced, no reviewer is woken), so the board shows the work within a probe run. `FB_NO_WIP_PUSH=1` turns it off. |
 | `scripts/hooks.mjs` | Installs the hooks below into Claude Code's settings, from a pinned copy of one signed commit. |
 | `scripts/thread-ids.mjs` | The lead's tool for numbering and naming threads. |
 | `scripts/steps-archive.mjs` | The lead's tool for archiving closed cards' steps: each card's steps go to `timings/<card id>`, then leave `steps`; the page counts a closed card's steps from both, each once, so a late one still counts. Only the lead writes `timings` or deletes a step (the gate). |
