@@ -1,0 +1,3 @@
+SECURE #C1174 tip 3290645c: L1 closed. rootsFor refuses any config the owner's hooks don't name before reading it, so it gives no roots (not its own folder, not its fileRoots). An owner's config keeps its folder and its checked fileRoots (home from os.userInfo). main's new settingsText is a JS-only option; argv cannot set it. Tests cover a dot-folder config, a forged config in-process and in a child process with a fake HOME, and main().
+
+signed-by: Security
