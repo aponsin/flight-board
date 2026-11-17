@@ -4,13 +4,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, linkSync, rmSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { checkConfig, fullConfig } from "../scripts/config.mjs";
 import worker from "../worker/board-worker.mjs";
 import { MAX_BODY_BYTES, MAX_DAY_BYTES_PER_CALLER, MAX_FILE_BYTES } from "../worker/file-store.mjs";
-import { TYPES, checkPath, credentials, rootsFor, ownerConfigs, putLocalFile, putLocalFile as realPutLocalFile, main } from "../scripts/put-file.mjs";
+import { TYPES, checkPath, credentials, rootsFor, ownerConfigs, settingsFile, putLocalFile, putLocalFile as realPutLocalFile, main } from "../scripts/put-file.mjs";
 
 const NOW = 1_800_000_000_000;
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
@@ -284,6 +284,19 @@ test("#C1170 the board's address comes from the board config's storeUrl: an env 
   // The settings file cannot be forged by the command line: main() takes no settings, and a config whose real path is not named by a hook is not trusted even by the same name in a link.
   assert.equal(ownerConfigs("not json at all").size, 0);
   assert.equal(ownerConfigs(JSON.stringify({ permissions: { allow: [`Bash(node x --config '${good}')`] } })).size, 0, "a permission rule runs nothing: it does not name the owner's config");
+  // S2 (Security, d12085b9): $HOME is the caller's to set, so a fake home with a settings.json of its own must not change which settings file is read.
+  const fakeHome = mkdtempSync(join(tmpdir(), "c1170-home-"));
+  mkdirSync(join(fakeHome, ".claude"));
+  const evil2 = join(fakeHome, "c.json"); writeFileSync(evil2, JSON.stringify({ storeUrl: "https://elsewhere.example.test" }));
+  writeFileSync(join(fakeHome, ".claude", "settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ command: `node x --config '${evil2}'` }] }] } }));
+  const real = process.env.HOME; process.env.HOME = fakeHome;
+  try {
+    assert.equal(settingsFile(), join(userInfo().homedir, ".claude", "settings.json"), "the owner's settings file, whatever HOME says");
+    assert.notEqual(settingsFile(), join(fakeHome, ".claude", "settings.json"));
+    // The default (no settingsText given): the fake home's hook does not make its config trusted.
+    const viaHome = why(await realPutLocalFile({ path, envFile: env, configPath: evil2, fetchImpl: () => assert.fail("nothing is sent"), roots: [root] }));
+    assert.match(viaHome, /not used|must be https/, viaHome);
+  } finally { process.env.HOME = real; }
   // The command line still cannot name a host.
   const err = []; await main(["--env", env, "--config", good, "--base", "https://evil.test", path], { err: (l) => err.push(l), exit: () => {}, fetchImpl: () => assert.fail("nothing is sent"), roots: [root] });
   assert.match(err.at(-1), /no --base/);

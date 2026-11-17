@@ -12,7 +12,7 @@
 // secret (SECRET_NAME); it must be a plain file, not owner-only (mode 0600 marks a secret on this Mac), not empty, no bigger than the store's cap, and of a type
 // that is a picture or plain text (no JSON). The Worker sniffs the bytes against the type again.
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MAX_FILE_BYTES } from "../worker/file-store.mjs";
@@ -86,7 +86,9 @@ const HTTPS_HOST = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/;
 // Security's S1 on 46a8da4a: --config is a command-line choice, so a config an agent wrote could name any host and the token would go there. The address is therefore read only from a board
 // config the OWNER's hooks name: the --config paths in the hook commands of ~/.claude/settings.json (real paths). Any other config's storeUrl is ignored, and the token then goes only
 // to a BOARD_BASE_URL the owner wrote beside it in the env file, or nowhere.
-export function ownerConfigs(settingsText, { home = homedir(), real = realpathSync } = {}) {
+// The owner's real home, from the account database: $HOME is the caller's to set (`HOME=/tmp/h node put-file.mjs ...` with a settings file of its own: Security's S2), so it is never read here.
+const ownerHome = () => userInfo().homedir;
+export function ownerConfigs(settingsText, { home = ownerHome(), real = realpathSync } = {}) {
   const out = new Set();
   let doc = null; try { doc = JSON.parse(String(settingsText ?? "")); } catch { return out; } // a settings file is JSON; anything else names no owner config
   if (!doc || typeof doc !== "object" || !doc.hooks) return out; // and only its hooks run something: a permission rule that mentions a path is not the owner's config
@@ -97,7 +99,8 @@ export function ownerConfigs(settingsText, { home = homedir(), real = realpathSy
   }
   return out;
 }
-const readSettings = () => { try { return readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"); } catch { return ""; } };
+export const settingsFile = () => join(ownerHome(), ".claude", "settings.json");
+const readSettings = () => { try { return readFileSync(settingsFile(), "utf8"); } catch { return ""; } };
 export function configAddress(configPath, { read = (p) => readFileSync(p, "utf8"), settingsText = readSettings(), real = realpathSync } = {}) {
   if (!configPath) return { ok: true, base: null, file: null };
   let url; try { url = JSON.parse(read(configPath))?.storeUrl; } catch { return no(`the board config ${configPath} cannot be read as JSON`); }
