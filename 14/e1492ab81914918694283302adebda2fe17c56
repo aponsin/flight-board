@@ -1,0 +1,3 @@
+SECURE #C1146 tip. INFO: the suite spawnSync has no timeout and inherits stdin/HOME; a hang stalls the land job (stale report hands landings to Release)
+
+signed-by: Security
