@@ -521,7 +521,7 @@ export function writeOpenAsks(view, { dir, now = Date.now() }) {
   writeAtomic(join(dir, OPEN_ASKS_FILE), JSON.stringify(openAsksFile(view, now)));
 }
 
-// #C967: <dir>/land-holds.json { at, cards: { <card id>: "" | "paused" | "dropped" | "blocked" | "asked" | "waiting_on" } }, what the landing job
+// #C967: <dir>/land-holds.json { at, cards: { <card id>: "" | "paused" | "dropped" | "blocked" | "asked" | "waiting_on" | "group" } }, what the landing job
 // (scripts/board-land.mjs) reads to tell a card held from a card free to land. One entry per card the store knows ("" = no hold), plain words
 // only (never a reason text), by the same atomic writer. A card the file does not list is unknown to the job, which then lands nothing for it.
 export const LAND_HOLDS_FILE = "land-holds.json", LAND_HOLDS_MAX = 2000;
@@ -530,14 +530,27 @@ export const LAND_HOLDS_FILE = "land-holds.json", LAND_HOLDS_MAX = 2000;
 // (F2) `waiting_on` is the lead's routine "next is" pointer ("Checker: PASS at ...", "Release"): one that starts with a review or landing role is no
 // hold, since after Checker and Security sign the landing is the very next step; any other (the owner, Manager, another builder) still is.
 export const LANDING_ROLES = /^\s*(?:Checker|Security|Release)\b/i;
+// #C1119 (11-16, 5:35 pm: the land job landed #C863 alone the moment it was signed, with G17 mostly unbuilt; the only stop was a hand-written waiting_on on each
+// signed card): a card in a group is held ("group") while any other card of its group is open and not yet signed. A member is open unless it is dropped or
+// closed (done_at), and signed once its reading is at ship (every review signed) or live; a card with no reading yet (nothing pushed) is not signed. A card
+// with no group is untouched. The word is checked last, so a card's own hold (dropped, paused, blocked, asked, waiting_on) still names itself.
+const signedOrLanded = (e) => { const p = e?.phase ?? e?.lit?.[0]; return p === "ship" || p === "live"; };
 export function landHoldsFile(view, now) {
   const cards = {};
   const asked = new Set();
   for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null && a.withdrawn_at == null) asked.add(a.card_id);
-  for (const c of Array.isArray(view?.cards) ? view.cards : []) {
-    if (!c || typeof c.id !== "string" || !CARD_ID.test(c.id) || Object.keys(cards).length >= LAND_HOLDS_MAX) continue;
+  const all = (Array.isArray(view?.cards) ? view.cards : []).filter((c) => c && typeof c.id === "string" && CARD_ID.test(c.id));
+  const ev = view && typeof view.evidence === "object" && view.evidence !== null && !Array.isArray(view.evidence) ? view.evidence : {};
+  // The groups that have an open member not yet signed: group word -> how many.
+  const open = (c) => !c.dropped && c.done_at == null; // a member still to land: not dropped, not closed
+  const waits = (c) => open(c) && !signedOrLanded(ev[`cards.${c.id}`]?.value); // ... and not yet signed
+  const unsigned = new Map();
+  for (const c of all) { const g = batchOf(c); if (g && waits(c)) unsigned.set(g, (unsigned.get(g) ?? 0) + 1); }
+  for (const c of all) {
+    if (Object.keys(cards).length >= LAND_HOLDS_MAX) continue;
     const has = (v) => typeof v === "string" && v.trim() !== "";
-    cards[c.id] = c.dropped ? "dropped" : c.paused ? "paused" : has(c.blocked_reason) ? "blocked" : asked.has(c.id) ? "asked" : has(c.waiting_on) && !LANDING_ROLES.test(c.waiting_on) ? "waiting_on" : "";
+    const g = batchOf(c), others = g ? (unsigned.get(g) ?? 0) - (waits(c) ? 1 : 0) : 0; // the unsigned members of its group besides itself
+    cards[c.id] = c.dropped ? "dropped" : c.paused ? "paused" : has(c.blocked_reason) ? "blocked" : asked.has(c.id) ? "asked" : has(c.waiting_on) && !LANDING_ROLES.test(c.waiting_on) ? "waiting_on" : others > 0 ? "group" : "";
   }
   return { at: now, cards };
 }
