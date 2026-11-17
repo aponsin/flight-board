@@ -1,0 +1,5 @@
+FINDINGS Quick: #C1117 context-roles-allow-space 21a2fe2c (Checker 2)
+
+M1 The card's Why is not met. The false "no session for Checker 2" stall does not come from contextRoles, which nothing reads any more (memory readings moved to the probe, #C642). It comes from agentStates (collector/state.mjs:209), which keeps only roster roles matching ROLE = /^[A-Za-z][A-Za-z0-9]{1,23}$/ (collector/state-schema.mjs:42). So "Checker 2" never reaches the agents evidence, and syncStalls' roster has no entry for it. Probe: agentStates with roles [Checker, Checker 2] and a session titled each returns only Checker. The same pattern is in collector/watch-readings.mjs:8; check where else agents keys are checked (the state schema). Fix: let ROLE take a space inside (as the roster and the stall rule's /^Checker( [0-9]{1,3})?$/ do), in agentStates, the schema and watch-readings, and test the card's second case: a Checker 2 session's agents entry exists and a card at checker owned by Checker 2 raises no "no session" stall. The contextRoles change is harmless and may stay.
+
+Checked: the regex and its tests (fine).
