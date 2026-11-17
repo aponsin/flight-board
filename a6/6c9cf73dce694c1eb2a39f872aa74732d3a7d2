@@ -1,0 +1,3 @@
+SECURE #C1153 tip: data-fragments.mjs sets process.exitCode instead of process.exit, so stdout drains; no other change
+
+signed-by: Security
