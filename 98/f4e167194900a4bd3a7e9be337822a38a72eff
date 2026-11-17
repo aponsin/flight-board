@@ -1,0 +1,2 @@
+PASS (Full) #C1113 slice 6: the rest to FIXED and the triage table; the baseline-write hole it opened is closed by 870d4b5a, so it lands only inside group head 870d4b5a
+signed-by: Checker 2
