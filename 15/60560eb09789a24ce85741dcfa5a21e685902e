@@ -1,0 +1,3 @@
+SECURE (Full) group HEAD 1560560e: tests only. Two regexes in tests/release-tool-pinned.test.mjs follow #C1140's new NOT RUN wording, and both still check a refusal from a checkout and from a link to elsewhere. The head's board-land.mjs is the clean union of #C1138 (groups) and #C1140 v2 (selfRefusal). land.template.mjs is unchanged since I signed it at 768c18d0 (launchctl bootout/bootstrap on the one fixed label; the plist is changed only at one board-land <string>, with a backup, a plutil check, a read-back and an undo). Every commit from main to this head now carries SECURE. Group head 1560560eb097 (board-flakes).
+
+signed-by: Security
