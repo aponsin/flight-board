@@ -78,9 +78,9 @@ test("dispatchLine checks the range again: a bad number, tip or group word never
 });
 
 // ---- the page: cards reviewed together pulse in unison ----
-const NAMES = ["groupRow", "initRow", "gates", "enrich", "probeEvent", "state", "isTogether", "pulseStyle"];
-function board(raw, agents) {
-  const document = { documentElement: { getAttribute: () => "store" }, getElementById: () => ({ innerHTML: "", textContent: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {} }), querySelectorAll: () => [], querySelector: () => null, addEventListener() {}, activeElement: null, createRange: () => ({}) };
+const NAMES = ["groupRow", "initRow", "gates", "enrich", "probeEvent", "state", "isTogether", "pulseSync", "pulseOffset"];
+function board(raw, agents, tiles = []) {
+  const document = { documentElement: { getAttribute: () => "store" }, getElementById: () => ({ innerHTML: "", textContent: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {} }), querySelectorAll: (q) => (q === ".step.now" ? tiles : []), querySelector: () => null, addEventListener() {}, activeElement: null, createRange: () => ({}) };
   const b = loadNames(NAMES, { document });
   Object.assign(b.state, { initRaw: raw, initiatives: raw.map((i) => b.gates(b.enrich(i))), steps: [], waiting: [], derived: [], messages: [], threads: [] });
   b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - 20e3 }, cards: {}, agents } } }, {});
@@ -88,32 +88,41 @@ function board(raw, agents) {
 }
 const pcard = (id, num, extra = {}) => ({ id, num, name: `Card ${num}`, size: "S", level: "Quick", status: "active", phase: "checker", who: "Checker", repo: "flight-board", batch: "g5-thing", branch: `build/${id}`, createdAt: 1_800_000_000_000 + num * 60e3, ...extra });
 const on = (id) => ({ state: "working", card: id, lastActivityAt: Date.now(), since: Date.now() - 60e3 });
-const nowTile = (html) => [...html.matchAll(/<div class="(step now[^"]*)" title="Checker[^"]*"( style="[^"]*")?>(.*?)<\/div>/g)].map((m) => ({ cls: m[1], style: m[2] ?? "", inner: m[3] }));
-const delay = (style) => Number(/animation-delay:-(\d+)ms/.exec(style)?.[1]);
+const nowTile = (html) => [...html.matchAll(/<div class="(step now[^"]*)" title="Checker[^"]*">(.*?)<\/div>/g)].map((m) => ({ cls: m[1], inner: m[2] }));
+// A pulsing tile as the page's DOM holds it: its classes and its row (a card's data-card, or a group's data-group).
+const tile = (row, cls) => ({ classList: { contains: (c) => cls.split(" ").includes(c) }, closest: () => ({ dataset: row }), style: {} });
+const delay = (t) => Number(/^-(\d+)ms$/.exec(t.style.animationDelay)?.[1]);
+const near = (x, y) => Math.abs(x - y) <= 50 || Math.abs(Math.abs(x - y) - 2400) <= 50; // the same phase of a 2.4 s pulse, the clock moving a few ms between two reads
 
-test("page: two cards of a group read at the same review phase pulse in unison and say together, at card and group level", () => {
-  const b = board([pcard("alpha-card", 1, {}), pcard("bravo-card", 2, { who: "Checker 2" })], { Checker: on("alpha-card"), "Checker 2": on("bravo-card") }); // ids whose own delays differ, so a shared one is the rule, not luck
+test("page: two cards of a group read at the same review phase say together on their tiles and the group's", () => {
+  const b = board([pcard("alpha-card", 1, {}), pcard("bravo-card", 2, { who: "Checker 2" })], { Checker: on("alpha-card"), "Checker 2": on("bravo-card") });
   const [ta] = nowTile(b.initRow(b.state.initiatives[0])), [tb] = nowTile(b.initRow(b.state.initiatives[1]));
   assert.match(ta.cls, /together/);
   assert.match(ta.inner, /<small class="tog">together<\/small>/);
   assert.match(tb.cls, /together/);
-  assert.ok(Math.abs(delay(ta.style) - delay(tb.style)) <= 50 || Math.abs(Math.abs(delay(ta.style) - delay(tb.style)) - 2400) <= 50, "the same phase of the pulse (the clock moved at most a few ms between the two)");
-  const group = b.groupRow("g5-thing", b.state.initiatives);
-  const gt = group.split('<div class="g-rail">')[0].match(/<div class="(step now[^"]*)" title="Checker"( style="[^"]*")?>(.*?)<\/div>/);
+  const gt = b.groupRow("g5-thing", b.state.initiatives).split('<div class="g-rail">')[0].match(/<div class="(step now[^"]*)" title="Checker">(.*?)<\/div>/);
   assert.match(gt[1], /together/);
-  assert.match(gt[3], /<small>together<\/small>/);
-  assert.ok(Math.abs(delay(gt[2]) - delay(ta.style)) <= 50 || Math.abs(Math.abs(delay(gt[2]) - delay(ta.style)) - 2400) <= 50, "the group's tile beats with its cards");
+  assert.match(gt[2], /<small>together<\/small>/);
 });
 
-test("page: a card reviewed alone pulses by itself: no together label, and its own delay", () => {
+test("page: the pulsing tiles of one batch get the same delay, at card and group level; a lone card's differs", () => {
+  const tiles = [tile({ card: "alpha-card" }, "step now together"), tile({ card: "bravo-card" }, "step now together"), tile({ group: "g5-thing" }, "step now together"), tile({ card: "solo-card" }, "step now"), tile({ card: "other-solo" }, "step now")];
+  const b = board([pcard("alpha-card", 1)], {}, tiles);
+  b.pulseSync();
+  const [a, c, g, s1, s2] = tiles.map(delay);
+  assert.ok([a, c, g, s1, s2].every(Number.isFinite), "every pulsing tile has a delay");
+  assert.ok(near(a, c) && near(a, g), "the batch beats as one, cards and group");
+  assert.ok(!near(s1, s2), "two lone cards do not beat together");
+  assert.ok(!near(s1, a) && !near(s2, a), "a lone card is out of step with the batch");
+});
+
+test("page: a card reviewed alone pulses by itself: no together class or label", () => {
   const b = board([pcard("a", 1), pcard("b", 2, { phase: "build", who: "Boardsmith" })], { Checker: on("a"), Boardsmith: on("b") });
   const [ta] = nowTile(b.initRow(b.state.initiatives[0]));
   assert.ok(ta, "its review tile pulses");
   assert.doesNotMatch(ta.cls, /together/);
   assert.doesNotMatch(ta.inner, /together/);
-  assert.match(ta.style, /animation-delay:-\d+ms/);
   assert.equal(b.isTogether("g5-thing", "checker"), false);
-  assert.match(b.pulseStyle("a", false), /animation-delay/);
 });
 
 test("page: only open, started cards of ONE group at the same review phase count as together", () => {
