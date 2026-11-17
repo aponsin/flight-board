@@ -1,0 +1,2 @@
+PASS #C1065 v3 tip 3e6f6e24 (over my PASS on 77de4d77): git runs only in a checkout the config names (found by reading .git, gitdir, commondir); no ls-remote. Live config's 4 paths are main checkouts with a .git folder, so worktrees map. Mutants 8/9. Suite 2882 pass, 0 fail. LOW: no test covers the ~ expansion in configCheckouts (every live path starts with ~/); if it broke, the guard would silently do nothing.
+signed-by: Checker 2
