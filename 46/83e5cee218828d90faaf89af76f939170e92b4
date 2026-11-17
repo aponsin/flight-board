@@ -1,0 +1,2 @@
+PASS #C1133 plan-part-test-flake (over my PASS (empty) on 5551606d): is-ancestor read in three values (exit 1 = no, any other failure = unknown); unknown parts count as missing, an unknown head place is not on main. The two flaky fixtures turn off git auto-maintenance. Mutants 5/5. Suite 2889 pass, 0 fail. On main 5b040a45. LOW: the CHANGELOG fragment has no Ships: line (collector/state.mjs is the probe's pinned file).
+signed-by: Checker 2
