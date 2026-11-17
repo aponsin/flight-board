@@ -1,0 +1,3 @@
+SECURE (Full) #C1065 v3 3e6f6e24 (tip): closes my M1 on 77de4d77. The hook decides by reading files whether a folder belongs to a checkout the config names (repoPath, repos[].path, refresh.repos; common .git matched, worktrees through commondir) and runs git only there; ls-remote is gone (remote-tracking ref only). Re-ran my reproduction against the hook process with the real board.config.json: a repo outside it with core.sshCommand and core.fsmonitor set ran nothing. 13 tests green; mutation check: pass (checkout match dropped: the M1 test fails).
+
+signed-by: Security
