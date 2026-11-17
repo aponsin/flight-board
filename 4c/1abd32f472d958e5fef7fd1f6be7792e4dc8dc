@@ -1,0 +1,1 @@
+PASS (Checker 2, Full) on #C863: ask_close refuses uncarded plan steps in the answer, note, question and options; M1 and L1 fixed; 17 of 18 hand mutants killed; npm test 2701, 0 fail; LOW: the option-text test is vacuous (the answer equals the option), so not reading options survives (commit 4c1abd32 of stack tip 4c1abd32)
