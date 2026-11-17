@@ -27,7 +27,38 @@ export function decide(readings) {
   return rs.length >= MAX_CHECKS ? "give-up" : "wait";
 }
 
+// #C870: one pass of the scheduled watchdog over the roster, as one decision. The Worker runs in Cloudflare and cannot reach
+// local sessions, so the watchdog (the app's session tools) reads each role's row once per pass and runs:
+//   node ~/.flight-board/current/scripts/pickup-watch.mjs --pass '[{"role":"Checker","state":"idle","tokens":0,"reset":true,"pickedUp":false,"watchRunning":false,"remoteControl":"on"}, …]'
+// A row: role; state "idle" or "working" (list_sessions); tokens the Messages tokens (get_usage; none listed is 0);
+// reset true while the role announced a reset ("resetting after this") that no pickup has answered; pickedUp true once a
+// pickup ran since that reset; watchRunning whether a dispatch watch is armed for it; remoteControl its remoteControlState.
+// It prints a JSON list of {role, do, ...} and the watchdog does exactly those, nothing else:
+//   send_message  - {role, text: "/pickup <Role>"}: the role reset, sits idle with an empty context, and was not picked up.
+//                   Never while it is working (its reset turn may still run: a /pickup queued then ran before the clear and
+//                   blocked it, 2026-11-10 9:47 pm), never twice for one reset, never for a role that did not reset.
+//   send_message  - {role, text: "arm your dispatch watch"}: picked up, idle, and no watch armed (Checker 2026-11-10 9:42 pm).
+//   set_remote_control - {role, on: true}: its Remote Control reads "off" (#C865; "unavailable" and "connecting" are left alone).
+export const REARM_TEXT = "arm your dispatch watch";
+export function passActions(rows) {
+  const out = [];
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (!r || typeof r.role !== "string" || !/^[A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+)*$/.test(r.role)) continue;
+    const idle = r.state === "idle", t = tokensOf(r);
+    if (r.reset === true && r.pickedUp !== true && idle && t < FRESH) out.push({ role: r.role, do: "send_message", text: `/pickup ${r.role}` });
+    else if (r.pickedUp === true && idle && r.watchRunning !== true) out.push({ role: r.role, do: "send_message", text: REARM_TEXT });
+    if (r.remoteControl === "off") out.push({ role: r.role, do: "set_remote_control", on: true });
+  }
+  return out;
+}
+
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  if (process.argv[2] === "--pass") {
+    let rows = null;
+    try { rows = JSON.parse(process.argv[3] ?? "[]"); } catch { /* below */ }
+    console.log(JSON.stringify(Array.isArray(rows) ? passActions(rows) : []));
+    process.exit(0);
+  }
   let readings = null;
   try { readings = JSON.parse(process.argv[2] ?? "[]"); } catch { /* below */ }
   if (!Array.isArray(readings)) { console.log("wait"); process.exit(0); }
