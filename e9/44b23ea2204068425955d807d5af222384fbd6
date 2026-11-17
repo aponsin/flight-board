@@ -1,2 +1,3 @@
-SECURE (Full, G17 line) e944b23ea220: ships only inside G17 at 36e0164e85a5, whose head is SECURE; every fix it needed is on that line. Earlier note: SUPERSEDED #C1104 e944b23e: reviewed as Full (worker/). Closes come only from the probe route (probe role only); the hold UPDATE binds every value. Its UPDATE did not name check_at/hold_until (Checker 2's L1); fixed on 51e2474c. Not for shipping on its own. (Security)
+SECURE (Full) e944b23ea220 #C1104: covered by the card's signed tip 51e2474c64d7 (SECURE), above it in G17 to 36e0164e85a5; ships only with that tip.
+Earlier note: SUPERSEDED #C1104 e944b23e: reviewed as Full (worker/). Closes come only from the probe route (probe role only); the hold UPDATE binds every value. Its UPDATE did not name check_at/hold_until (Checker 2's L1); fixed on 51e2474c. Not for shipping on its own. (Security)
 signed-by: Security
