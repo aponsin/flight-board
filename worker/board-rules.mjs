@@ -542,7 +542,8 @@ export function openGroupWithheld({ now, cards, evidenceOf, askedCards, endPasse
     if (g === "" || !started.has(g) || !active(k) || askedCards?.has(k.id) || holdIsOpen(k)) continue;
     if (typeof k.waiting_on === "string" && k.waiting_on.trim() && !k.waiting_on.trim().startsWith(k.owner_role)) continue;
     const blockers = waitsOn(k);
-    const unready = !hasHead(k.id) || evidenceOf(k.id)?.stackHold === true;
+    // #C1160 (Checker 2's F1): a WIP start push has a head but is not READY, in a repository with the stack switch off too (where nothing sets stackHold).
+    const unready = !hasHead(k.id) || evidenceOf(k.id)?.stackHold === true || evidenceOf(k.id)?.wipHead === true;
     if (blockers.some((d) => open.get(d)?.owner_role !== k.owner_role)) { if (unready) blockedG.set(k.owner_role, new Set([...(blockedG.get(k.owner_role) ?? []), g])); continue; }
     if (unready) { openG.set(k.owner_role, new Set([...(openG.get(k.owner_role) ?? []), g])); for (const d of blockers) needed.add(d); }
   }
