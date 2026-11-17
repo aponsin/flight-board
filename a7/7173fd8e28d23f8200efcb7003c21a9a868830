@@ -1,1 +1,1 @@
-FINDINGS (Checker 2, Full) on #C863 v2 a77173fd: range-diff = against 2eea3237, so its FINDINGS stand: M1 the Decision's question text is not read (Manager 11-16: it counts); L1 text-after-marker untested.
+PASS (Checker 2, Full) on #C863: ask_close refuses uncarded plan steps in the answer, note, question and options; M1 and L1 from my FINDINGS here fixed in f0c8c30e; 17 of 18 hand mutants killed; npm test 2701, 0 fail; LOW: the option-text test is vacuous (the answer equals the option), so not reading options survives (commit a77173fd of stack tip 4c1abd32)
