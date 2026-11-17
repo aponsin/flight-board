@@ -248,7 +248,7 @@ export function readStoreCards(stateDir, id) {
 export function liveCards(stateDir, id) {
   return Object.entries(readStoreCards(stateDir, id).cards).filter(([, d]) => plain(d)).map(([cid, d]) => ({ ...d, id: cid }));
 }
-const boardIdOf = (message) => { const m = /^Board-Id:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*$/im.exec(String(message ?? "")); return m ? m[1].toLowerCase() : null; };
+export const boardIdOf = (message) => { const m = /^Board-Id:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*$/im.exec(String(message ?? "")); return m ? m[1].toLowerCase() : null; };
 // #C985: a repo word that names no listed repository is read as no word (a copy of derive.mjs's namedRepo and repoOf).
 export const namedRepo = (card, config) => (card.repo ? (config.collector.repos ?? []).find((r) => r.name === card.repo) ?? null : null);
 export function repoOf(card, config) {

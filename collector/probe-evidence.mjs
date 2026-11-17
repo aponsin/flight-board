@@ -13,6 +13,7 @@ import { runActionsUsage } from "./actions-usage.mjs";
 import { appSessions } from "./state.mjs";
 import { scheduleModelsWrite } from "./schedule-models.mjs";
 import { roleSessionsWrite } from "./role-sessions.mjs";
+import { shippedBranchesWrite } from "./shipped-branches.mjs";
 import { fillRepoWords } from "./repo-words.mjs";
 import { createHash } from "node:crypto";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
@@ -373,6 +374,9 @@ export function deployLastWrite({ configPath, read }) {
 // #C1006: the app's session files, where each run's model is. A folder that cannot be read gives no sessions (appSessions says so by an empty list).
 // Archived runs are read too: the newest run of a task is what the verdict needs, and the app archives a task's runs while it keeps running (Checker 2's F1).
 export const scheduleSessions = (root) => appSessions(root, undefined, { includeArchived: true });
+// #C1112: git in a configured repository's "~/" folder, for the shipped-branches listing (read-only commands only). Re-read at most every 6 hours.
+const SWEEP_LIST_MS = 6 * 3_600_000;
+const defaultSweepGit = (r, args) => execFileSync("git", ["-C", join(homedir(), r.dir.slice(2)), ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15_000 });
 const defaultSessions = () => scheduleSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
 // #C1111: the open sessions only (an archived role session is no session the role runs in).
 const defaultOpenSessions = () => appSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
@@ -387,7 +391,7 @@ export async function evidenceJob(o) {
   }
 }
 
-async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, sessionsRead = defaultSessions, openSessionsRead = defaultOpenSessions, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
+async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, sessionsRead = defaultSessions, openSessionsRead = defaultOpenSessions, sweepGit = defaultSweepGit, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const t0 = Date.now();
   const limitSec = job === "evidence" ? knobs.values.evidenceLimitSec : JOBS[job].limitSec; // #C997: a setting for the evidence job
@@ -477,10 +481,22 @@ async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPa
   // #C1111: each configured role's chosen model and effort against what its open session runs on. A failure is logged; the store keeps its last reading.
   let rolesW = null;
   try { rolesW = cfg && roleSessionsWrite(cfg, { sessions: openSessionsRead(), now: Date.now(), log }); } catch (e) { log(`roles failed: ${String(e.message).slice(0, 80)}`); }
+  // #C1112: the branches whose tip is on main, listed every 6 hours (the store makes one Terminal ask a week from the list). The time of the last listing is kept
+  // beside the state; a failure is logged and the store keeps its last list.
+  let sweepW = null;
+  try {
+    const sweepFile = join(dirname(stateFile), "branches-listed.json");
+    let lastAt = 0; try { const k = JSON.parse(read(sweepFile)); if (plain(k) && Number.isFinite(k.at)) lastAt = k.at; } catch { /* the first run */ }
+    if (cfg && Date.now() - lastAt >= SWEEP_LIST_MS) {
+      const open = Object.entries(plain(state.cards) ? state.cards : {}).filter(([, c]) => plain(c) && c.phase !== "live").map(([id, c]) => ({ id, num: c.num }));
+      sweepW = shippedBranchesWrite(cfg, { git: sweepGit, openIds: open, now: Date.now(), log });
+      if (sweepW) { try { write(sweepFile, JSON.stringify({ at: Date.now() })); } catch { /* listed again next run */ } }
+    }
+  } catch (e) { log(`sweep failed: ${String(e.message).slice(0, 80)}`); }
   // #C997: the settings this run used and the ones it ignored, for the Worker and the page header.
   let knobsW = null;
   try { knobsW = cfg && knobsWrite(cfg, { log }); } catch (e) { log(`knobs failed: ${String(e.message).slice(0, 80)}`); }
-  const late = [lookW, knobsW, reviewersW, schedW, rolesW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
+  const late = [lookW, knobsW, reviewersW, schedW, rolesW, sweepW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
   if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log, deadline: t0 + (limitSec - LATE_TAIL_SEC) * 1000 }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
   return finish(done);
 }
