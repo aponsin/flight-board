@@ -76,3 +76,19 @@ test("through the store: a pending line for Manager once the dependency lands, t
   await wakeAsk(db, T + 12 * MIN);
   assert.equal((await rows(true)).length, 1, "a later spell tells again");
 });
+
+// Checker 2's LOW on v2: no store test ended a hold_end by the dependency going live, so dropping endsPassed from the store's call went unseen.
+test("through the store: a hold_end naming the dependency stands while it is only on main, and the line comes once the dependency is live", async () => {
+  const db = makeDb();
+  assert.equal((await createCard(db, T, "Manager", { id: "dep-a", title: "The dependency", owner_role: "Boardsmith", repo: "flight-board" })).ok, true);
+  const made = await createCard(db, T, "Manager", { id: "held", title: "The held card", owner_role: "Boardsmith", repo: "flight-board", depends_on: ["dep-a"], paused: 1, next_note: "Paused until the dependency is live." });
+  assert.equal(made.ok, true, JSON.stringify(made));
+  await db.prepare("UPDATE cards SET hold_end = 'dep-a', check_at = NULL WHERE id = 'held'").run();
+  const rows = async () => (await db.prepare(`SELECT card_id FROM stall_wakes WHERE reason LIKE '%${PAUSE_DEP_END}'`).all()).results;
+  await writeEvidence(db, T + 1, "probe", "cards.dep-a", onMain);
+  await wakeAsk(db, T + MIN);
+  assert.deepEqual(await rows(), [], "on main only: the hold_end stands, no line");
+  await writeEvidence(db, T + 2 * MIN, "probe", "cards.dep-a", { lit: ["live"], phase: "live", onMain: true });
+  await wakeAsk(db, T + 3 * MIN);
+  assert.deepEqual((await rows()).map((x) => x.card_id), ["held"], "the dependency is live: the hold ended, one line");
+});
