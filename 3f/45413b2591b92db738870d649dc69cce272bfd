@@ -1,0 +1,2 @@
+PASS (Quick) #C1152 fold of 8 DATA fragments: the 8 deleted lines and the 8 added to docs/DATA.md are byte-identical; data-fragments.mjs run() on the pre-fold tree gives this DATA.md byte for byte (order kept); only README.md left in DATA.d; Board-Id fold-data-fragments-1117 matches the land job's FOLD_CARD; data-fragments and landing-refuses-data-md-edit tests 17/17
+signed-by: Checker 2
