@@ -1,0 +1,3 @@
+SECURE (Full) #C1139 tip b085b56d: wipHead (the newest commit's first line starts with WIP, off main, not a bare branch) only removes review turns from the dispatch. A commit marked WIP gets no review, so it can't be signed or landed: this fails closed. The schema adds one optional key that is only ever true. Checker's LOW on surviving mutants stands; not security. Group head 1560560eb097 (board-flakes).
+
+signed-by: Security
