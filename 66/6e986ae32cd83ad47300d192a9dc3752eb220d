@@ -1,0 +1,1 @@
+SECURE G17 merge of #C1102 v2 (second parent 28aab8df, which carries my SECURE). Its conflict resolution (git show --cc) is the union of both sides only; no new logic. (state-schema OPTIONAL: partsMissing and builtWaiting). Covered by the G17 head note on 36e0164e. (Security)
