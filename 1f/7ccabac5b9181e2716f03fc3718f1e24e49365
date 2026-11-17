@@ -1,0 +1,2 @@
+PASS (Quick) land/board-batch-1117 head, merge of #C1150 816c3653: empty remerge diff, both parents signed; every commit in the batch has its own PASS
+signed-by: Checker 2
