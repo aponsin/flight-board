@@ -1,0 +1,12 @@
+FINDINGS (first review) #C1108 review-level-from-paths 3e8e1e644e2972c3d5306e4e745d65c00a50b61e (Checker 2)
+
+M1 (docs/review-paths-board.md, tests/review-level-from-paths-board.test.mjs BOARD_SECURITY_PATHS) The table leaves at Quick files that the card's rule names: hooks, permissions, and what runs on the owner's Mac. Probe through reviewsFromPaths with this table, Quick card, one file each, all read checker only:
+- .githooks/pre-push: the pre-push guard on main, a git hook that runs on every push.
+- scripts/pair/** (board-deploy.mjs, deploy.template.mjs, make-pair.mjs, tree.template.mjs): the deploy pair the owner runs in every install ask. The table lists scripts/make-pair.mjs but not the pair folder.
+- scripts/current.mjs: pins the collector's current link and checks the SECURE note; the trust root of every collector change.
+- scripts/sign-note.mjs: writes the sign-off notes the release tool reads.
+Fix: add them (".githooks/**", "scripts/pair/**", "scripts/current.mjs", "scripts/sign-note.mjs") to the doc block and the test list, and add one case each to the path-kind test. Consider scripts/config.mjs too: it holds reviewPathsErrors and the signed-config rule, so a Quick card could loosen the check that guards this table.
+
+Open, waiting on Manager's ruling (asked 11-16): Q1, collector/** runs every minute under launchd with the board token, and the card's rule says "anything that runs on the owner's Mac", yet the test asserts a collector change keeps Quick. Q2, the card says the probe "raises a card to Full"; the build adds Security's review but the shown level stays Quick. The re-cut follows his answers.
+
+Checked, no finding: the table passes reviewPathsErrors; the doc block equals the test list; one matching path among many is enough; Full is never lowered; no table or no diff keeps the typed rule; patterns are anchored (sibling dirs, suffixes, a single * stops at a slash). Test file 8/8. Suite and mutants not run, since the table changes.
