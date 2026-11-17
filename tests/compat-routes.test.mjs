@@ -138,9 +138,9 @@ test("options on an agent's message (B1b): drawn from the thread's last word; th
 test("card fields the old page draws (B4a): depends-on, issue counts with their time, queue place, and the thread a card came from", async () => {
   const { tool, compat } = make();
   const ask = await tool("manager", "ask", { type: "Answer", title: "Start?", question: "Start?" });
-  const a = await tool("manager", "card_create", { id: "card-a", title: "A", from_thread: ask.num, batch: "g-test" });
+  const a = await tool("manager", "card_create", { id: "card-a", title: "A", from_thread: ask.num, batch: "g-test", repo: "flight-board" });
   assert.equal(a.ok, true, JSON.stringify(a));
-  const b = await tool("manager", "card_create", { id: "card-b", title: "B", summary: "B, a card with a dependency", depends_on: ["card-a"], issues: { bugs: 2, security: 1 }, queue_pos: 3, owner_role: "Builder", batch: "g-test" });
+  const b = await tool("manager", "card_create", { id: "card-b", title: "B", summary: "B, a card with a dependency", depends_on: ["card-a"], issues: { bugs: 2, security: 1 }, queue_pos: 3, owner_role: "Builder", batch: "g-test", repo: "flight-board" });
   assert.equal(b.ok, true, JSON.stringify(b));
   const docs = (await compat()).collections.initiatives, da = docs.find((x) => x.id === "card-a"), db = docs.find((x) => x.id === "card-b");
   assert.deepEqual(db.dependsOn, ["card-a"]); assert.deepEqual(db.issues, { bugs: 2, security: 1 }); assert.equal(db.queuePos, 3); assert.ok(db.issuesAt > 0);
@@ -163,7 +163,7 @@ test("card fields the old page draws (B4a): depends-on, issue counts with their 
 
 test("the done-test hold (B4b, Designer's gap 1): check_at is written, drawn as checkAt, lifted by null, and a bad time is refused", async () => {
   const { tool, compat } = make();
-  assert.equal((await tool("manager", "card_create", { id: "card-h", title: "H", summary: "H, a card with a check date", check_at: 1_790_000_000_000, batch: "g-test" })).ok, true);
+  assert.equal((await tool("manager", "card_create", { id: "card-h", title: "H", summary: "H, a card with a check date", check_at: 1_790_000_000_000, batch: "g-test", repo: "flight-board" })).ok, true);
   const get = async () => (await compat()).collections.initiatives.find((x) => x.id === "card-h");
   assert.equal((await get()).checkAt, 1_790_000_000_000);
   assert.equal((await tool("manager", "card_update", { id: "card-h", check_at: 1_791_000_000_000 })).ok, true);
@@ -180,8 +180,10 @@ test("what a card's expected version is worked out from (B4b): repo, batch and b
   const d = await get(); assert.equal(d.repo, "elsewhere"); assert.equal(d.batch, "pair"); assert.equal(d.bump, "minor");
   // #C1107: a write cannot clear batch (card-group); it moves the card to another group.
   assert.equal((await tool("manager", "card_update", { id: "card-v", repo: null, batch: null, bump: "patch" })).refused?.rule, "card-group");
-  assert.equal((await tool("manager", "card_update", { id: "card-v", repo: null, batch: "other", bump: "patch" })).ok, true);
-  const after = await get(); assert.equal(after.repo, undefined); assert.equal(after.batch, "other"); assert.equal(after.bump, "patch");
+  // #C1150: a card keeps its repo after it is created: null is refused (nothing in the write is applied); another repository word moves it.
+  assert.equal((await tool("manager", "card_update", { id: "card-v", repo: null, batch: "other", bump: "patch" })).refused?.rule, "card-repo-kept");
+  assert.equal((await tool("manager", "card_update", { id: "card-v", repo: "moved", batch: "other", bump: "patch" })).ok, true);
+  const after = await get(); assert.equal(after.repo, "moved"); assert.equal(after.batch, "other"); assert.equal(after.bump, "patch");
   for (const [f, rule] of [[{ repo: "Elsewhere" }, "card-repo"], [{ repo: "x".repeat(41) }, "card-repo"], [{ batch: "a b" }, "card-batch"], [{ batch: 3 }, "card-batch"], [{ bump: "huge" }, "card-bump"]]) {
     const r = await tool("manager", "card_update", { id: "card-v", ...f }); assert.equal(r.refused?.rule, rule, JSON.stringify(f));
   }
