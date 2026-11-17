@@ -1,0 +1,2 @@
+PASS (Full) #C1143 d61a0f35: stalledWaits skips a role active inside the stall time (queued card and phase wait); blind readings as before. Mutants 4/4. The slow-stall fixture change is sound (idle 20 min with activity 1 s ago is not a real reading).
+signed-by: Checker 2
