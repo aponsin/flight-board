@@ -1,0 +1,3 @@
+SECURE #C1164 tip: worker/held-by.mjs (pure, no imports) is the one reading of waiting_on, same startsWith(role) rule in the dispatch and gate/reset.mjs; it joins the pinned closure (release test); the view's heldBy repeats waiting_on, the page reads it as a boolean
+
+signed-by: Security
