@@ -196,6 +196,8 @@ const SHA12 = /^[0-9a-f]{12}$/, TURN_PHASE = /^[a-z]{2,16}$/, PLAIN_ROLE = /^[A-
 // #C991: a reviewer's queue, card numbers in the store's queue order; the line prints at most DISPATCH_QUEUE_MAX of them.
 export const DISPATCH_QUEUE_MAX = 12;
 const queueNums = (q) => (Array.isArray(q) ? q.filter((n) => Number.isInteger(n) && n >= 1 && n <= 1e6).slice(0, DISPATCH_QUEUE_MAX) : []);
+// #C1068: the other cards a review wake covers, as [{ num, sha }]: a card number and a 12-hex tip each, at most DISPATCH_QUEUE_MAX of them.
+const togetherList = (l) => (Array.isArray(l) ? l.filter((x) => x && Number.isInteger(x.num) && x.num >= 1 && x.num <= 1e6 && SHA12.test(String(x.sha))).map((x) => ({ num: x.num, sha: x.sha })).slice(0, DISPATCH_QUEUE_MAX) : []);
 export function dispatchItems({ cards, agents, asked = new Set(), queues = null, roster = [], lead = "", now, before = null }) {
   const first = before && typeof before.items === "object" && before.items && !Array.isArray(before.items) ? before.items : {};
   const items = [], kept = {};
@@ -233,6 +235,8 @@ export function dispatchItems({ cards, agents, asked = new Set(), queues = null,
         ...(phase && t.stackMode === true && ["build", "rework", "outside"].includes(t.step) ? { stackMode: true } : {}),
         ...(phase && Array.isArray(t.signed) ? { signed: t.signed.filter((s) => PLAIN_ROLE.test(String(s))).slice(0, 4) } : {}),
         ...(phase && t.step === "review" && queues && Object.hasOwn(queues, role) && queueNums(queues[role]).length ? { queue: queueNums(queues[role]) } : {}),
+        // #C1068: a review turn that carries the rest of its group's READY cards for the same lane as one range (numbers and 12-hex tips only; the group a plain word).
+        ...(phase && t.step === "review" && PACK_WORD.test(String(t.group)) && togetherList(t.together).length ? { together: togetherList(t.together), group: t.group } : {}),
         ...(phase && t.step === "decision" && Number.isInteger(t.ask) && t.ask >= 1 && t.ask <= 1e7 ? { ask: t.ask, answer: plainAnswer(t.answer) } : {}),
         // #C1076: the pair turn of a card in a group names the group, so the line says which pack it is for (a plain word, checked again in dispatchLine).
         ...(phase && t.step === "pair" && typeof t.batch === "string" && PACK_WORD.test(t.batch) ? { pack: t.batch } : {}),
@@ -266,9 +270,12 @@ export const dispatchLine = (i) => {
     // #C991: a review line carries the role's whole review queue from the store, so the reviewer needs no list from the lead.
     const nums = i.step === "review" ? queueNums(i.queue) : [];
     const queue = nums.length ? `; your queue: ${nums.map((n) => `#C${n}`).join(", ")}` : "";
+    // #C1068: the rest of the group's READY cards for this lane, read as one range with this one: `; review together with #C2 (tip), #C3 (tip) of group g14-x as one range`.
+    const tog = i.step === "review" && PACK_WORD.test(String(i.group)) ? togetherList(i.together) : [];
+    const together = tog.length ? `; review together with ${tog.map((x) => `#C${x.num} (${x.sha})`).join(", ")} of group ${i.group} as one range` : "";
     // #C1076: a pair line of a group card says the group: `build pack <group>`.
     const group = i.step === "pair" && typeof i.pack === "string" && PACK_WORD.test(i.pack) ? `; build pack ${i.pack}` : "";
-    return `DISPATCH ${card} at ${i.phase}: ${at ? `${at}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on}${queue}${group} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
+    return `DISPATCH ${card} at ${i.phase}: ${at ? `${at}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on}${together}${queue}${group} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
   }
   return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;
 };

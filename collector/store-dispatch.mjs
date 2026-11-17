@@ -374,6 +374,26 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
       (queues[role] ??= []).push(k.num);
     }
   }
+  // #C1068 (the owner, 11-12: "let's build that"): a lane is woken for a group's READY cards as they come when it is free, and ONCE for all of them when it was busy. The
+  // dispatch wakes only a free lane, so the first wake of a lane already finds every READY, unreviewed card of the group: when a role has two or more review turns for cards of
+  // ONE group (the same queue as above), the first of them in the queue's order keeps the turn and carries the others (number and tip) as one range, and the others lose
+  // that role's review turn: the lane is woken once, not once per card. A card without a tip stays on its own. Another role's turn on a card is not touched.
+  const togetherOf = new Map(); // `${role}\n${group}` -> the cards in queue order
+  for (const k of [...cards].sort(queueOrder)) {
+    if (askedCards.has(k.id) || !Number.isInteger(k.num) || !k.group) continue;
+    for (const t of k.turns) {
+      if (t.step !== "review" || typeof t.role !== "string" || !/^[0-9a-f]{12}$/.test(String(t.sha)) || (typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(t.role))) continue;
+      const key = `${t.role}\n${k.group}`;
+      togetherOf.set(key, [...(togetherOf.get(key) ?? []), { k, t }]);
+    }
+  }
+  for (const [key, list] of togetherOf) {
+    if (list.length < 2) continue;
+    const group = key.slice(key.indexOf("\n") + 1);
+    list[0].t.together = list.slice(1).map(({ k, t }) => ({ num: k.num, sha: t.sha }));
+    list[0].t.group = group;
+    for (const { k, t } of list.slice(1)) k.turns = k.turns.filter((u) => u !== t);
+  }
   // The cards left out of the lists above (asked, or waiting on someone else) keep their turn, which dispatchItems drops by the same rule.
   for (const k of cards) { delete k.queuePos; delete k.ownerPlaced; delete k.group; delete k.groupStarted; delete k.rework; }
   // #C858: the deploy pair is one per repository main, not one per landed card: of the cards a role is woken for to build the pair, the newest
