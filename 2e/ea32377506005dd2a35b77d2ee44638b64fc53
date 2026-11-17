@@ -1,0 +1,1 @@
+FINDINGS (Checker 2, Full) on #C863 2eea3237: M1 the rule reads only the answer and note, so a plan whose steps are in the Decision's question, answered A: go, closes unrefused: the card's own Why (Manager 11-16: the question counts). L1 the step pattern's text-after-marker part is untested. Suite 2677, 0 fail; 13 of 14 hand mutants killed.
