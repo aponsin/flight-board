@@ -117,7 +117,7 @@ test("page: a card reviewed alone pulses by itself: no together label, and its o
 });
 
 test("page: only open, started cards of ONE group at the same review phase count as together", () => {
-  const b = board([pcard("a", 1), pcard("b", 2, { status: "paused" }), pcard("c", 3, { batch: "g6-other" }), pcard("d", 4, { phase: "security", who: "Security" })], { Checker: on("a") });
+  const b = board([pcard("a", 1), pcard("b", 2, { status: "paused" }), pcard("c", 3, { batch: "g6-other" }), pcard("d", 4, { phase: "security", who: "Security" }), pcard("e", 5, { phase: "build", who: "Boardsmith" }), pcard("f", 6, { phase: "build", who: "Boardsmith" })], { Checker: on("a") });
   assert.equal(b.isTogether("g5-thing", "checker"), false, "a paused card, a card of another group and one at another phase are not in the batch");
   assert.equal(b.isTogether("g5-thing", "build"), false, "build is no review phase");
   assert.equal(b.isTogether("", "checker"), false, "no group, no batch");
