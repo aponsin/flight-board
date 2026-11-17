@@ -1,0 +1,3 @@
+SECURE 1cc8f295 (#C1164): holdWords bookkeeping on create/update; same parameterized SQL, no new input, caller or permission path; tests only add cases.
+
+signed-by: Security
