@@ -1,0 +1,3 @@
+SECURE #C1156 tip: test and CHANGELOG fragment only; the watchdog doc's mentions of board.config.json are now an exact allow list of four lines, closing the reworded-read gap
+
+signed-by: Security
