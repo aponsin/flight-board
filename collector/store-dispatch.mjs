@@ -554,12 +554,15 @@ export function landHoldsFile(view, now) {
   // is signed, so the first tip the job tried went out alone and the group head no longer continued main. `groups` lists, for each card of a group, the OTHER members still to land
   // (open, and not on main or live): the job lands a tip only when it carries every one of them (board-land.mjs landPlan), that is, only the group's head. A card with no group, or
   // no other member to land, is not listed. Plain card ids only.
+  // #C1144 (Checker 2's LOW on #C1138): only the members of the card's OWN repository count: a member of another repository (a different `repo` word) has no commit here, so no head of this
+  // repository could ever carry it and the group would never land (it failed closed; Release landed it by hand). A member of the same repository with no commit yet still counts.
   const toLand = (c) => open(c) && !landedOnMain(ev[`cards.${c.id}`]?.value);
+  const repoOf = new Map(all.map((c) => [c.id, typeof c.repo === "string" ? c.repo.trim() : ""]));
   const members = new Map();
   for (const c of all) { const g = batchOf(c); if (g && toLand(c)) members.set(g, [...(members.get(g) ?? []), c.id]); }
   const groups = {};
   for (const c of all) {
-    const g = batchOf(c), peers = g && toLand(c) ? (members.get(g) ?? []).filter((id) => id !== c.id) : [];
+    const g = batchOf(c), peers = g && toLand(c) ? (members.get(g) ?? []).filter((id) => id !== c.id && repoOf.get(id) === repoOf.get(c.id)) : [];
     if (peers.length && Object.keys(groups).length < LAND_HOLDS_MAX) groups[c.id] = peers;
   }
   return { at: now, cards, groups };

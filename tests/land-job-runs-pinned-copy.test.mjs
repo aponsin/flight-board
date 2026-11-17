@@ -85,7 +85,7 @@ function sandbox({ pinnedExists = true, plistText } = {}) {
   const home = mkdtempSync(join(tmpdir(), "fb-land-step-")), bin = join(home, "bin"), log = join(home, "launchctl.log"), marker = join(home, "loaded");
   mkdirSync(bin); mkdirSync(join(home, "Library", "LaunchAgents"), { recursive: true });
   // launchctl shim: logs the verb; bootstrap loads (creates the marker) unless FAIL_BOOTSTRAP is set; bootout unloads; print succeeds while loaded.
-  writeFileSync(join(bin, "launchctl"), `#!/bin/sh\necho "$1" >> "${log}"\ncase "$1" in\n  bootout) rm -f "${marker}"; exit 0;;\n  bootstrap) if [ -n "$FAIL_BOOTSTRAP" ]; then echo "Bootstrap failed: 5" >&2; exit 5; fi; : > "${marker}"; exit 0;;\n  print) [ -e "${marker}" ];;\nesac\n`);
+  writeFileSync(join(bin, "launchctl"), `#!/bin/sh\necho "$1" >> "${log}"\ncase "$1" in\n  bootout) rm -f "${marker}"; exit 0;;\n  bootstrap) if [ -n "$FAIL_BOOTSTRAP" ]; then echo "Bootstrap failed: 5" >&2; exit 5; fi; if [ -z "$NO_LOAD" ]; then : > "${marker}"; fi; exit 0;;\n  print) [ -e "${marker}" ];;\nesac\n`);
   writeFileSync(join(bin, "plutil"), `#!/bin/sh\nif grep -q BADPLIST "$2"; then echo "bad plist"; exit 1; fi\nexit 0\n`);
   chmodSync(join(bin, "launchctl"), 0o755); chmodSync(join(bin, "plutil"), 0o755);
   const plist = join(home, "Library", "LaunchAgents", "com.flight-board.store.land.plist");
@@ -191,6 +191,18 @@ test("selfRefusal: the pinned install and the link are accepted; a checkout, a p
   } finally { rmSync(h.home, { recursive: true, force: true }); }
 });
 
+// #C1144 (Checker 2's LOW on #C1140: dropping the startsWith(`${root}/`) check left the tests green): a folder OUTSIDE the install root whose tail happens to read
+// <40 hex>/scripts at the offset the root's length gives must still be refused. The paths are injected, so no folder is made.
+test("selfRefusal: a real path outside the install root is refused even when its tail, past the root's length, reads <40 hex>/scripts", () => {
+  const root = "/h/.flight-board/install", sha = "e".repeat(40);
+  const outside = `/elsewhere/checkout-copy/${sha}/scripts`;
+  assert.equal(root.length + 1, "/elsewhere/checkout-copy/".length, "the fixture: the outside path's tail starts exactly where a pinned folder name would");
+  assert.equal(outside.slice(root.length + 1), `${sha}/scripts`);
+  const realpath = (p) => (p === root ? root : p === outside ? outside : p);
+  assert.match(selfRefusal({ self: outside, home: "/h", realpath, exists: () => false }), /^NOT RUN: this is neither the signed linked copy/, "outside the root");
+  assert.equal(selfRefusal({ self: `${root}/${sha}/scripts`, home: "/h", realpath, exists: () => false }), null, "the same shape inside the root is accepted");
+});
+
 // The real script, run from a copy placed where the LaunchAgent will start it: it must get past its self-check (and stop at the missing config), not print the old "not the signed linked copy".
 test("board-land.mjs runs from ~/.flight-board/install/<commit>/scripts: past the self-check; from a checkout-shaped folder it is refused", () => {
   const h = fakeHome(), checkout = join(h.home, "Documents", "Code", "flight-board");
@@ -204,6 +216,33 @@ test("board-land.mjs runs from ~/.flight-board/install/<commit>/scripts: past th
     const co = run(join(checkout, "scripts", "board-land.mjs"));
     assert.match(co.stdout, /^NOT RUN: this is neither the signed linked copy/, "a checkout is refused");
   } finally { rmSync(h.home, { recursive: true, force: true }); }
+});
+
+// #C1144 (Checker 2's LOW 1 on #C1140: two claims of land.template.mjs no test held). The template is unchanged: only tests here.
+test("the step: an earlier backup is never overwritten by a later move (the first backup stays the file as it was before the first move)", () => {
+  const s = sandbox();
+  try {
+    assert.equal(s.run().status, 0);
+    const original = readFileSync(s.backup, "utf8");
+    assert.ok(original.includes(s.link), "the first backup is the link's file");
+    // The job is later moved back to an earlier pinned install (a different 40-hex folder), and the step runs again: it must change the file again but keep the first backup.
+    const earlier = `${s.home}/.flight-board/install/${"a".repeat(40)}/scripts/board-land.mjs`;
+    writeFileSync(s.plist, readFileSync(s.plist, "utf8").replace(s.pinned, earlier));
+    const again = s.run();
+    assert.equal(again.status, 0, again.stdout);
+    assert.ok(readFileSync(s.plist, "utf8").includes(`<string>${s.pinned}</string>`) && !readFileSync(s.plist, "utf8").includes(earlier), "the file is moved to the pin again");
+    assert.equal(readFileSync(s.backup, "utf8"), original, "the first backup was not overwritten with the earlier pinned file");
+  } finally { rmSync(s.home, { recursive: true, force: true }); }
+});
+
+test("the step: a bootstrap that succeeds but leaves the job unloaded is a failure naming the undo, never LAND OK (the launchctl print check)", () => {
+  const s = sandbox();
+  try {
+    const r = s.run("", { NO_LOAD: "1" });
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stdout, /^LAND FAILED: the job com\.flight-board\.store\.land is not loaded after the bootstrap \(launchctl print cannot find it\); undo is: node board-store-land-pc9\.mjs undo\. Paste this line to Manager\./);
+    assert.doesNotMatch(r.stdout, /LAND OK/);
+  } finally { rmSync(s.home, { recursive: true, force: true }); }
 });
 
 test("the step says so when launchctl cannot load the job again, and names the backup and the undo", () => {
