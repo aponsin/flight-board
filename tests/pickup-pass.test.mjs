@@ -180,10 +180,39 @@ test("the watchdog doc never has the task read board.config.json: the pass is to
   const doc = readFileSync(new URL("../docs/watchdog-pickup-pass.md", import.meta.url), "utf8");
   assert.match(doc, /Never open `board\.config\.json` yourself/, "the pass says so");
   assert.match(doc, /no `cat`, no file tool/);
-  // The rule's own sentence and the "Done means" line name the config to forbid it; any other line that reads it is a step that sends the task to the file.
-  const readers = doc.split("\n").filter((l) => /\b(?:cat|read|open|for each role on the roster in)\b[^.\n]*board\.config\.json/i.test(l) && !/never open|never read|no step reads|not read|reads the roster|never with/i.test(l));
-  assert.deepEqual(readers, [], "a line sends the task to read the config");
   assert.doesNotMatch(doc, /For each role on the roster in `board\.config\.json`/, "the old wording that sent the run to the file");
+});
+
+// #C1156 (Checker 2's LOW on #C1154): the first guard caught only the words cat, read and open, so a line such as "look up the roster in board.config.json" or a jq read of it
+// still passed and would stop the hourly run on a prompt again. So now an ALLOW LIST: the only lines of the doc that may name board.config.json are these exact ones (each
+// anchored at the start of its line, with the words that must follow), and any other line that names it fails. A new line that must name it is added here on purpose.
+export const CONFIG_LINES_ALLOWED = [
+  /^For each session step 2 kept \(its title is a role of the roster; a role with no session is left out\)\. \*\*Never open `board\.config\.json` yourself\*\* \(#C1154: a bare `cat` of it$/,
+  /^ {3}`node ~\/\.flight-board\/current\/scripts\/pickup-watch\.mjs --pass x --rows '<the rows>' --config <the path of board\.config\.json, the same one the task's prompt-watch step names>`$/,
+  /^ {3}is required and must be a file named `board\.config\.json`; pass no `--state` \(the history is `~\/\.flight-board\/pickup-pass\.json`; the$/,
+  /^one bare command the owner pre-approved, no step uses a file tool, no step reads `board\.config\.json` \(the config is a path argument to a pinned script, never read with `cat` or any shell$/,
+];
+// The lines of a doc that name the config but match no allowed line.
+export const strayConfigLines = (doc, allowed = CONFIG_LINES_ALLOWED) => doc.split("\n").filter((l) => /board\.config/i.test(l) && !allowed.some((re) => re.test(l)));
+
+test("the watchdog doc names board.config.json only on the allowed lines; any other line that names it fails (#C1156)", () => {
+  const doc = readFileSync(new URL("../docs/watchdog-pickup-pass.md", import.meta.url), "utf8");
+  assert.deepEqual(strayConfigLines(doc), [], "a line names the config that is not on the allow list");
+  // No dead entry: each allowed line is really in the doc, once.
+  for (const re of CONFIG_LINES_ALLOWED) assert.equal(doc.split("\n").filter((l) => re.test(l)).length, 1, String(re));
+});
+
+test("the allow list refuses the lines the first guard let through: a lookup, a jq read, a cat, and a bad line that borrows a safe word (#C1156)", () => {
+  const ok = "one bare command the owner pre-approved, no step uses a file tool, no step reads `board.config.json` (the config is a path argument to a pinned script, never read with `cat` or any shell";
+  assert.deepEqual(strayConfigLines(ok), []);
+  for (const bad of [
+    "Look up the roster in board.config.json before you start.",
+    "Run jq '.roster' board.config.json to get the roles.",
+    "cat ~/Documents/x/board.config.json",
+    "Check the roster in `board.config.json` (never read it twice).",
+    "Get the sessions from the BOARD.CONFIG.JSON file.",
+    `${ok} and then read it`,
+  ]) assert.deepEqual(strayConfigLines(`a\n${bad}\nb`), [bad], bad);
 });
 
 test("watchRoles reads --role from the wake-watch lines of ps, quoted or not, and tells Checker from Checker 2", () => {
