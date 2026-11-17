@@ -1,0 +1,2 @@
+PASS (Quick) land/watchdog-config-allowlist head: merge of #C1156 042cd558 onto bfbb41e5, empty remerge diff, one Board-Id watchdog-config-allowlist; adds only #C1156's two files
+signed-by: Checker 2
