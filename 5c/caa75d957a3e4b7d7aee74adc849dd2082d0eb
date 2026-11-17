@@ -1,0 +1,3 @@
+SECURE #C1162 tip: pausedDepLanded is a read-only line to Manager (never unpauses); stall_wakes writes and the LIKE cleanup are parameterised with a fixed suffix; the line holds only card numbers or ids already shaped by the card rules
+
+signed-by: Security
