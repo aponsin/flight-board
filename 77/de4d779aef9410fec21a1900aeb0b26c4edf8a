@@ -1,0 +1,3 @@
+RISKS (Full) #C1065 v2 77de4d77: M1 gate/first-push.mjs is a global PreToolUse hook that runs git (incl. ls-remote origin, over the network) in whatever repository a write targets. A repository's own .git/config is honored: in a scratch repo on build/x with core.sshCommand set, one Write call made the hook run that command (reproduced, a touch of a scratch file), no prompt, exit 0. So writing into an untrusted checkout runs its author's code. Fix: act only in the checkouts the config names (read --config), and drop ls-remote (the remote-tracking ref alone; git push updates it).
+
+signed-by: Security
