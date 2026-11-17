@@ -10,6 +10,7 @@ import { KNOBS, knobFrom } from "./knobs.mjs";
 import { staleMsOf, PHASES, typedOther, INSTALL_WAIT } from "./board-rules.mjs";
 import { expectedVersions } from "../collector/expected.mjs";
 import { wantsSecurity } from "../collector/signoff.mjs";
+import { isHeldBy } from "./held-by.mjs"; // #C1164: the page gets the reading in the view (heldBy), not its own rule
 import { applyFiles } from "./file-store.mjs";
 import { applyShips } from "./compat-ships.mjs";
 import { applyThreads } from "./compat-threads.mjs";
@@ -130,7 +131,7 @@ export function initiativeDoc(c, ev, claim) {
     status: c.dropped ? "dropped" : c.done_at ? "done" : c.paused ? "paused" : c.blocked_reason ? "blocked" : "active", createdAt: c.created_at, updatedAt: c.updated_at,
     // #C902: a card closed as done by an agent (its work left no branch), with what shows it.
     doneAt: num(c.done_at), doneEvidence: c.done_evidence ?? undefined,
-    nextNote: c.next_note, nextNoteAt: c.next_note_at, waitingOn: c.waiting_on, blocked: c.blocked_reason, fromThread: c.from_thread,
+    nextNote: c.next_note, nextNoteAt: c.next_note_at, waitingOn: c.waiting_on, heldBy: isHeldBy(c), blocked: c.blocked_reason, fromThread: c.from_thread,
     customerText: c.customer_text === null || c.customer_text === undefined ? undefined : !!c.customer_text, lookChange: c.look_change === null || c.look_change === undefined ? undefined : !!c.look_change,
     skip: Array.isArray(skip) ? skip : undefined, reworkReason: c.rework_reason, plan: c.track,
     // #C1114: a step back from a review phase with no FINDINGS note and no reason (the store's evidence flag rework "unexplained") and when it began: the page's red chip.

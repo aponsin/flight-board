@@ -8,6 +8,7 @@ import { boardTruth } from "../collector/readings.mjs";
 import { truthPending, truthSeen, truthLine, TRUTH_FILE, TRUTH_SEEN_FILE, GAP_AGAIN_MS } from "../gate/reset.mjs";
 import { tick } from "../scripts/wake-watch.mjs";
 import { fullConfig } from "../scripts/config.mjs";
+import { isHeldBy } from "../worker/held-by.mjs";
 import { loadBoard, loadNames, step } from "./harness.mjs";
 
 const T = 1_800_000_000_000, MIN = 60e3;
@@ -133,10 +134,14 @@ test("a card held on purpose (paused, or waiting on a named wait) keeps a plain 
   assert.ok([...b.gaps(paused)].includes("no ETA"), "the gap is still named");
   assert.doesNotMatch(row(b, paused), /gap-red/);
   assert.doesNotMatch(row(b, mk({ status: "parked", who: "Checker" })), /gap-red/, "parked");
-  assert.doesNotMatch(row(b, mk({ status: "active", who: "Builder", waitingOn: "Owner" })), /gap-red/, "waiting on the owner");
-  assert.doesNotMatch(row(b, mk({ status: "active", who: "Builder", waitingOn: "Owner: which colour?" })), /gap-red/, "the owner's question");
-  assert.match(row(b, mk({ status: "active", who: "Builder", waitingOn: "Builder" })), /gap-red/, "the lead's routine next-is field holds nothing");
-  assert.match(row(b, mk({ status: "active", waitingOn: "Boardsmith" })), /gap-red/, "no owner, waiting on Boardsmith: red");
+  // #C1164: whether waiting_on holds the card is the Worker's one reading (worker/held-by.mjs), sent in the view as heldBy; the page keeps no rule of its own, so the items carry it as the Worker gives it.
+  const held = (c) => ({ ...c, heldBy: isHeldBy({ owner_role: c.who, waiting_on: c.waitingOn }) });
+  assert.doesNotMatch(row(b, mk(held({ status: "active", who: "Builder", waitingOn: "Owner" }))), /gap-red/, "waiting on the owner");
+  assert.doesNotMatch(row(b, mk(held({ status: "active", who: "Builder", waitingOn: "Owner: which colour?" }))), /gap-red/, "the owner's question");
+  assert.match(row(b, mk(held({ status: "active", who: "Builder", waitingOn: "Builder" }))), /gap-red/, "the card's own pointer holds nothing");
+  assert.doesNotMatch(row(b, mk(held({ status: "active", who: "Builder", waitingOn: "Checker, Security; then the owner" }))), /gap-red/, "waiting on someone else holds it, for every reader (#C1164)");
+  assert.doesNotMatch(row(b, mk(held({ status: "active", waitingOn: "Boardsmith" }))), /gap-red/, "no owner, waiting on Boardsmith: held on someone, plain (#C1164: one reading)");
+  assert.match(row(b, mk({ status: "active", who: "Builder", waitingOn: "Owner" })), /gap-red/, "no heldBy in the view: the page holds nothing of its own");
   assert.match(row(b, mk({ status: "active", who: "Builder" })), /gap-red/, "the same card, not held: red");
 });
 

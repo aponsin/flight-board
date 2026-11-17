@@ -3,6 +3,7 @@
 // A check returns null when the write is allowed.
 import { mtTime, mtDayTime } from "./team-time.mjs";
 import { KNOBS, knobsShape, knobFrom } from "./knobs.mjs";
+import { isHeldBy } from "./held-by.mjs"; // #C1164: the one reading of waiting_on
 
 export const ASK_TYPES = ["Decision", "Action", "Terminal", "SessionStart", "Later", "Approval", "Answer", "Thread"];
 // The language review's key is "language" (its label is Linguist): the board config's phase key, which the probe reads and writes.
@@ -540,7 +541,7 @@ export function openGroupWithheld({ now, cards, evidenceOf, askedCards, endPasse
     if (typeof k.owner_role !== "string") continue;
     const g = groupOf(k);
     if (g === "" || !started.has(g) || !active(k) || askedCards?.has(k.id) || holdIsOpen(k)) continue;
-    if (typeof k.waiting_on === "string" && k.waiting_on.trim() && !k.waiting_on.trim().startsWith(k.owner_role)) continue;
+    if (isHeldBy(k)) continue;
     const blockers = waitsOn(k);
     // #C1160 (Checker 2's F1): a WIP start push has a head but is not READY, in a repository with the stack switch off too (where nothing sets stackHold).
     const unready = !hasHead(k.id) || evidenceOf(k.id)?.stackHold === true || evidenceOf(k.id)?.wipHead === true;
@@ -671,7 +672,9 @@ export const HOLD_NO_END_AFTER_MS = KNOBS.holdNoEndSec.default * 1000;
 export const holdNoEndMsOf = (stored) => knobFrom(stored, "holdNoEndSec") * 1000;
 export const durWords = (ms) => (ms % 3_600_000 === 0 ? `${ms / 3_600_000} h` : `${Math.ceil(ms / 60_000)} min`);
 const heldWord = (v) => typeof v === "string" && v.trim() !== "";
-export const isHeld = (c) => !!c && (heldWord(c.waiting_on) || heldWord(c.blocked_reason));
+// #C1164: waiting_on has ONE reading (worker/held-by.mjs); the stall rules, the open-group rule, the next-card pick, the dispatch and the page (through the view's heldBy) all use it.
+export { isHeldBy, heldFor } from "./held-by.mjs";
+export const isHeld = (c) => !!c && (!!isHeldBy(c) || heldWord(c.blocked_reason));
 export function holdEndRefusal(fields, existing) {
   if (fields.hold_end !== undefined && fields.hold_end !== null && !(typeof fields.hold_end === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(fields.hold_end))) return refuse("hold-end-shape", "hold_end is the id of an ask or a card, or null");
   // A blocked card must keep an end: refused when the write sets a blocked_reason, or strips the end (check_at or hold_end) of a blocked card, and leaves none.
@@ -1155,7 +1158,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   const working = new Set(Object.values(roster).filter((a) => a && a.state === "working" && typeof a.card === "string").map((a) => a.card));
   for (const c of cards ?? []) {
     // #C915 (b): a card with an open hold end (hold_end on an open ask or card, or a check_at to come) raises no stall: the hold says why it waits.
-    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || c.blocked_reason || c.waiting_on || holdOpen(c, now, endsPassed) || working.has(c.id)) continue;
+    if (!Number.isInteger(c.num) || c.dropped || c.done_at || c.paused || c.blocked_reason || isHeldBy(c) || holdOpen(c, now, endsPassed) || working.has(c.id)) continue;
     const v = evidence?.[c.id], phase = v?.lit?.[0];
     // #C1092 (Checker 2's follow-up on #C1082): the dispatch builds a card whose ask is ANSWERED (an answered Decision left open holds nothing), so the QUEUED test (a
     // card with nothing pushed) asks the same set the dispatch asks, the unanswered open asks; before, c3 with an answered Decision was skipped here ("next #C4")
@@ -1232,7 +1235,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
   // owner's group order, then queue_pos.
   const started = startedGroupSet((cards ?? []).map((c) => ({ ...c, batch: groupOf(c) })), (id) => evidence?.[id]);
   const rankOf = (c, rework) => ({ id: c.id, num: c.num, queue_pos: c.queue_pos, owner: c.queue_set_by === "owner", group: groupOf(c), groupStarted: started.has(groupOf(c)), rework });
-  const fixable = (c) => !c.dropped && !c.done_at && !c.paused && !c.blocked_reason && !(unansweredAskCards ?? openAskCards)?.has(c.id) && !(typeof c.waiting_on === "string" && c.waiting_on.trim() && !c.waiting_on.trim().startsWith(c.owner_role)) && isRework(c, evidence?.[c.id]);
+  const fixable = (c) => !c.dropped && !c.done_at && !c.paused && !c.blocked_reason && !(unansweredAskCards ?? openAskCards)?.has(c.id) && !isHeldBy(c) && isRework(c, evidence?.[c.id]);
   const nextOf = (role, list) => [...list.map((c) => ({ c, k: rankOf(c, false) })), ...(cards ?? []).filter((c) => c.owner_role === role && !list.includes(c) && fixable(c)).map((c) => ({ c, k: rankOf(c, true) }))].sort((x, y) => agentRank(x.k, y.k, groupOrder))[0]?.c;
   // #C1082: a card the dispatch's open-group rule withholds (a started group of the role is not READY yet; #C1080) is not queued for the line: it is
   // neither counted nor named as next, and a role whose whole queue is withheld has no line (the dispatch would wake it for nothing either).
