@@ -1,0 +1,2 @@
+PASS #C1133 tip 06913204 (over my PASS on 5551606d and 4683e5ce): test-only. The plan-part fixture uses fixed commit dates, so its shas are fixed, and it refuses to build if a cited prefix is not citable (the real cause: about 1 run in 40 cut an all-digit prefix). The changelog now says so and has the hardening. Suite 2889 pass, 0 fail. On main 5b040a45.
+signed-by: Checker 2
