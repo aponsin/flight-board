@@ -1,0 +1,3 @@
+SECURE #C1169 follow-up fa906a98: cardFlagText maps only the exact strings 'true' and 'false' of changes_definition to booleans, on a shallow copy of the arguments, at the card_create and card_update door before createCard and updateCard, so the store's rules (card-flag, contract, from_thread for true) run on the result unchanged. Any other value passes through untouched and is refused as before. The spread copies own properties only (no prototype write).
+
+signed-by: Security
