@@ -1,0 +1,9 @@
+FINDINGS Full: #C870 board-picks-up-cleared-role 222aa055 (Checker 2)
+
+My M1 and M2 on 8a27f1be are fixed: facts by program (a state file and ps), one pickup per clear, Manager never told to re-arm. Security's L1 to L3 are in.
+
+M1 (scripts/pickup-watch.mjs passActions, s.worked) The re-arm needs a pass to see the role WORKING after its pickup. The watchdog runs hourly (the stuck-agent watchdog task, cron 0 7-22) and a pickup turn takes minutes, so a pass almost never sees it. The role then sits idle with no watch, gets no work (no watch, no dispatch), is never seen working, and is never re-armed: the card's 9:42 pm case. Probe, passes in order: Checker working at 300k with a watch; idle at 0 (pickup sent); then idle at 40k with no watch three times. Nothing is re-armed. With one pass catching the pickup turn working, it is re-armed once. Fix: count the pickup as run when a later pass reads the role working OR its tokens at FRESH or more (40k after 0 proves the pickup ran; a pickup not yet run stays at 0, which is your queued case). Test: that sequence re-arms exactly once.
+
+L1 (watchRoles) Any ps line holding "wake-watch.mjs" and "--role X" counts as an armed watch: "grep wake-watch.mjs --role Security" adds Security. Only node lines count (for example, require /\bnode\b[^\n]*wake-watch\.mjs/), with a test.
+
+Checked: ps parse with and without quotes ("Checker 2" vs "Checker", --role last); a pickup not yet run is not resent; a pickup by someone else then a new reset gives one pickup; the roster and length filters; --rows-file. Suite and mutants not rerun, since M1 changes the rule.
