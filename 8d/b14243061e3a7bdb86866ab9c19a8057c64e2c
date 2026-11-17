@@ -1,0 +1,2 @@
+PASS (Full) #C1159: stale-pin check runs before the dispatch decision; DISPATCH install tag at the print site; full suite 3014 pass 0 fail; 5 of 5 mutants killed
+signed-by: Checker 2
