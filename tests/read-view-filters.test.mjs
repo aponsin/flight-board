@@ -31,9 +31,9 @@ async function seed(tool) {
   return a.structuredContent;
 }
 
-test("the read_view schema takes owner_role, thread_id and summary, and nothing else", () => {
+test("the read_view schema takes owner_role, thread_id, message_id (#C1125) and summary, and nothing else", () => {
   const t = TOOLS.find((x) => x.name === "read_view");
-  assert.deepEqual(Object.keys(t.inputSchema.properties).sort(), ["owner_role", "summary", "thread_id"]);
+  assert.deepEqual(Object.keys(t.inputSchema.properties).sort(), ["message_id", "owner_role", "summary", "thread_id"]);
   assert.equal(t.inputSchema.additionalProperties, false);
 });
 

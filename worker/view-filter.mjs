@@ -3,6 +3,7 @@
 //   owner_role  the open cards that role owns, the evidence for those cards (the pickup digest reads each card's phase from it), and the open asks it asked or
 //               that sit on one of those cards: a few KB
 //   thread_id   one thread and its messages
+//   message_id  one message the owner wrote (#C1125), to check a forwarded owner answer against the board
 //   summary     true: a short summary (the tags, the live and probe state, the open cards and asks counted per role)
 //   nothing     the whole view, as before: the pickup digest (scripts/pickup-digest.mjs) and the release check (scripts/approvals-check.mjs) read it
 // Only the tool's answer is cut here. readView itself, which the page, the probe and the dispatch read, is not touched. Pure.
@@ -14,7 +15,18 @@ const openAsk = (a) => !a.closed_at;
 
 const head = (view) => ({ tag: view.tag, now: view.now, live: view.live, probe: view.probe, wakeState: view.wakeState });
 
+// #C1125 (11-16: Manager forwarded the owner's answer with its message id and thread, and the builder could not check it against the source, so it asked the owner again in its
+// own chat): message_id returns ONE message by its id, only when the owner wrote it: { id, thread_id, author, body, created_at }. A message by anyone else, or no such id, is
+// `message: null`, so the tool is the check on a forwarded owner answer and nothing wider. The id must be a plain id (letters, digits, "-", "_", at most 64): nothing else is looked up.
+const MESSAGE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const ownerMessage = (m) => ({ id: m.id, thread_id: m.thread_id, author: m.author, body: m.body, created_at: m.created_at });
+
 export function viewForTool(view, args = {}) {
+  if (typeof args.message_id === "string" && args.message_id !== "") {
+    const id = args.message_id;
+    const m = MESSAGE_ID.test(id) ? (view.threads?.messages ?? []).find((x) => x.id === id && x.author === "owner") : null;
+    return { ...head(view), message_id: id, message: m ? ownerMessage(m) : null };
+  }
   if (typeof args.thread_id === "string" && args.thread_id !== "") {
     const id = args.thread_id;
     const thread = (view.threads?.threads ?? []).find((t) => t.id === id) ?? null;
