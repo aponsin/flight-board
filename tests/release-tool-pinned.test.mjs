@@ -76,7 +76,7 @@ test("the landing job takes the release tool from pinnedReleaseTool and from no 
     const run = () => spawnSync(process.execPath, [join(REPO, "scripts/board-land.mjs"), "--config", cfg, "--dry-run"], { encoding: "utf8", env: { ...process.env, HOME: home } });
     const away = run();
     assert.equal(away.status, 1);
-    assert.match(away.stdout, /NOT RUN: this is not the signed linked copy/, "from a checkout (no link at all)");
+    assert.match(away.stdout, /NOT RUN: this is neither the signed linked copy .* nor a pinned install/, "from a checkout (no link at all)");
     mkdirSync(join(home, ".flight-board", "current"), { recursive: true });
     symlinkSync(join(REPO, "scripts"), join(home, ".flight-board", "current", "scripts"));
     const linked = run();
@@ -98,6 +98,6 @@ test("the landing job takes the release tool from pinnedReleaseTool and from no 
     rmSync(join(home, ".flight-board", "current", "scripts"));
     mkdirSync(join(home, "other-scripts"));
     symlinkSync(join(home, "other-scripts"), join(home, ".flight-board", "current", "scripts"));
-    assert.match(run().stdout, /NOT RUN: this is not the signed linked copy/, "a link to some other folder is not this copy");
+    assert.match(run().stdout, /NOT RUN: this is neither the signed linked copy .* nor a pinned install/, "a link to some other folder is not this copy");
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
