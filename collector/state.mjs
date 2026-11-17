@@ -661,6 +661,15 @@ export function annotatedOn(repo, ref) {
   }
   return memo.get(ref);
 }
+// #C890 (half 2 of #C863, the #C731 case): a part of a card is named by the word "part" and a commit sha in the card's next_note ("part 1a2b3c4"), 7 to 40 hex characters (lower case,
+// as git prints it). Every other sha in a note (a superseded tip, a review tip, an old stack) is ignored: only a marked one can hold a landed card. The marked word is a sha only if it
+// has a digit and a letter a to f (so "part defaced", a date or a long number is not one), at most 10 of them. Pure: the note in, the list out.
+export function citedShas(note) {
+  if (typeof note !== "string") return [];
+  const out = [];
+  for (const m of note.matchAll(/(?<![0-9A-Za-z])part\s+([0-9a-f]{7,40})(?![0-9A-Za-z])/gi)) if (/[0-9]/.test(m[1]) && /[a-f]/.test(m[1]) && !out.includes(m[1])) out.push(m[1]);
+  return out.slice(0, 10);
+}
 function tipState(card, tip, repo, config, now, declared, cover = null) {
   // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
   // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
@@ -689,10 +698,15 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   // #C897: the reviews from the paths the branch changed since it left main, when the repository has a reviewPaths table.
   const needs = !onMain && !bare ? reviewsFromPaths(card, cfg, reviewsFor(card, cfg), repo.reviewPaths, branchPaths(repo, mainRef, tip.sha)) : null;
-  const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed, ...(needs ? { needs } : {}) }, cfg);
+  const readPhase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed, ...(needs ? { needs } : {}) }, cfg);
+  // #C890: a card that would read live while a commit cited in its next_note is not an ancestor of main (or is no commit the repository knows) is held at ship, naming the missing shas.
+  // Checker 2's M1 on #C1104 (e944b23e): the marked parts are read whenever the head is on main, not only at a would-be-live reading, because the board closes a card of a
+  // repository with no install step at landing (closesAtLanding) and its code commit reads ship, never live; the phase change (held at ship) stays for a would-be-live reading.
+  const partsMissing = onMain && typeof repo.git === "function" ? citedShas(card.nextNote).filter((s) => !ok(() => repo.git(["merge-base", "--is-ancestor", s, mainRef]))) : [];
+  const phase = partsMissing.length && readPhase === config.collector.livePhase ? config.collector.shipPhase : readPhase;
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
-  const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed });
+  const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed: deployed && !partsMissing.length });
   // #C731 B4b: derive.mjs's readyAt, firm and waitingFor. A phase read as build is not firm (a head with no trailer or sign-off,
   // or a bare branch); otherwise readyAt is the head's time, and a tip still in review lists the reviews unsigned on it.
   const build = phase === config.collector.buildPhase;
@@ -717,6 +731,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
     ...(findings.length ? { findings } : {}),
     ...(Object.keys(issueCounts).length ? { issueCounts } : {}),
     ...(behindMain ? { behindMain: true } : {}),
+    ...(partsMissing.length ? { partsMissing } : {}),
     ...(noInstall ? { noInstall: true } : {}),
     ...(phase && build ? { firm: false } : {}),
     ...(phase && !build && Number.isInteger(head.at) && head.at >= 1577836800000 && head.at <= 4102444800000 ? { readyAt: head.at } : {}),
