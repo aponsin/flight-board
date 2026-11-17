@@ -3,11 +3,12 @@
 // (scripts/board-land.mjs or a file it imports) now carries a fourth step, scripts/pair/land.template.mjs, that points the LaunchAgent at ~/.flight-board/install/<the pack's sha>/scripts/board-land.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync, chmodSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync, chmodSync, symlinkSync, cpSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { makeAll, landText, landChanged, HOOK_ENTRIES, LAND_ENTRIES } from "../scripts/make-pair.mjs";
+import { selfRefusal } from "../scripts/board-land.mjs";
 
 const SHA = "a".repeat(40), SHA2 = "b".repeat(40);
 
@@ -155,6 +156,51 @@ test("the step refuses, and changes nothing, when the pinned install is missing,
     assert.deepEqual(lint.loadLog(), []);
     assert.deepEqual(readdirSync(join(lint.home, "Library", "LaunchAgents")).filter((f) => f.includes(".new-")), [], "the half-written file is removed");
   } finally { rmSync(lint.home, { recursive: true, force: true }); }
+});
+
+// ---- Security's F1 on 768c18d0: the job's own self-check. Once the LaunchAgent starts the pinned install, the job must run from there. ----
+function fakeHome() {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "fb-land-self-")));
+  const sha = "c".repeat(40), pinned = join(home, ".flight-board", "install", sha, "scripts");
+  mkdirSync(pinned, { recursive: true });
+  symlinkSync(join(home, ".flight-board", "install", sha), join(home, ".flight-board", "current"));
+  return { home, sha, pinned, link: join(home, ".flight-board", "current", "scripts") };
+}
+test("selfRefusal: the pinned install and the link are accepted; a checkout, a pinned-looking name whose real place is elsewhere, and a folder that is not 40 hex are refused", () => {
+  const h = fakeHome();
+  try {
+    assert.equal(selfRefusal({ self: h.pinned, home: h.home }), null, "the pinned install, as the LaunchAgent will start it");
+    assert.equal(selfRefusal({ self: h.link, home: h.home }), null, "a hand run through the link");
+    const checkout = join(h.home, "Documents", "Code", "flight-board", "scripts"); mkdirSync(checkout, { recursive: true });
+    assert.match(selfRefusal({ self: checkout, home: h.home }), /^NOT RUN: this is neither the signed linked copy .* nor a pinned install/, "never a checkout");
+    const outside = join(h.home, "elsewhere", "scripts"); mkdirSync(outside, { recursive: true });
+    mkdirSync(join(h.home, ".flight-board", "install", "dddd"), { recursive: true });
+    symlinkSync(outside, join(h.home, ".flight-board", "install", "d".repeat(40)));
+    assert.notEqual(selfRefusal({ self: join(h.home, ".flight-board", "install", "d".repeat(40)), home: h.home }), null, "a 40-hex name that is a link to a folder outside the install root: its real place is outside");
+    mkdirSync(join(h.home, ".flight-board", "install", "main", "scripts"), { recursive: true });
+    assert.notEqual(selfRefusal({ self: join(h.home, ".flight-board", "install", "main", "scripts"), home: h.home }), null, "an install folder that is not a 40-hex commit");
+    mkdirSync(join(h.home, ".flight-board", "install", "C".repeat(40), "scripts"), { recursive: true });
+    assert.notEqual(selfRefusal({ self: join(h.home, ".flight-board", "install", "C".repeat(40), "scripts"), home: h.home }), null, "upper case is not a commit sha");
+    mkdirSync(join(h.home, ".flight-board", "install", h.sha, "scripts", "x"), { recursive: true });
+    assert.notEqual(selfRefusal({ self: join(h.home, ".flight-board", "install", h.sha, "scripts", "x"), home: h.home }), null, "only the scripts folder itself");
+    assert.notEqual(selfRefusal({ self: join(h.home, "nothing", "scripts"), home: h.home }), null, "a folder that does not exist");
+    assert.notEqual(selfRefusal({ self: h.pinned, home: join(h.home, "other-home") }), null, "no install folder under the home it is given");
+  } finally { rmSync(h.home, { recursive: true, force: true }); }
+});
+
+// The real script, run from a copy placed where the LaunchAgent will start it: it must get past its self-check (and stop at the missing config), not print the old "not the signed linked copy".
+test("board-land.mjs runs from ~/.flight-board/install/<commit>/scripts: past the self-check; from a checkout-shaped folder it is refused", () => {
+  const h = fakeHome(), checkout = join(h.home, "Documents", "Code", "flight-board");
+  try {
+    for (const dir of ["scripts", "worker", "collector", "gate", "hooks"]) { cpSync(new URL(`../${dir}`, import.meta.url).pathname, join(h.home, ".flight-board", "install", h.sha, dir), { recursive: true }); cpSync(new URL(`../${dir}`, import.meta.url).pathname, join(checkout, dir), { recursive: true }); }
+    const run = (script) => spawnSync(process.execPath, [script, "--config", join(h.home, "no-such-config.json")], { encoding: "utf8", env: { HOME: h.home, PATH: "/usr/bin:/bin" } });
+    const pinned = run(join(h.home, ".flight-board", "install", h.sha, "scripts", "board-land.mjs"));
+    assert.match(pinned.stdout, /^NOT RUN: the board config is missing or invalid/, pinned.stdout + pinned.stderr);
+    const linked = run(join(h.link, "board-land.mjs"));
+    assert.match(linked.stdout, /^NOT RUN: the board config is missing or invalid/, "through the link");
+    const co = run(join(checkout, "scripts", "board-land.mjs"));
+    assert.match(co.stdout, /^NOT RUN: this is neither the signed linked copy/, "a checkout is refused");
+  } finally { rmSync(h.home, { recursive: true, force: true }); }
 });
 
 test("the step says so when launchctl cannot load the job again, and names the backup and the undo", () => {
