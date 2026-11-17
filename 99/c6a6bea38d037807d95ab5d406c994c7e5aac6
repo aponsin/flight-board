@@ -1,0 +1,2 @@
+PASS (Full) #C1144 99c6a6be: a group peer is dropped only when both cards name a repository and they differ after board words read as flight-board; unknown stays a peer (fails closed). Fixes my LOW and Security's M1. Mutants 3/3.
+signed-by: Checker 2
