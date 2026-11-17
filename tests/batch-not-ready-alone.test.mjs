@@ -1,6 +1,7 @@
 // #C1021: a card in a batch (a group the lead set) never goes READY alone. 11-12, group test g1-board-view: #C971 was built and #C969 (same batch) was not;
 // no queued card DEPENDED on #C971, so stack-ready fired and #C971 went to review alone. Now stack-ready waits while another open card of the batch is not
-// built, the dispatch counts such a card as a partner (the held card gets no review turn), and the queue file carries the batch. A card with no batch, and a card
+// built, and the queue file carries the batch. (#C1066: a pushed card of a stack-mode repository gets no review turn until a stack-ready signal covers it, so the
+// dispatch no longer counts a batch peer as a "partner"; the probe lifts the hold for the whole batch once one member's head is signalled.) A card with no batch, and a card
 // pulled out of its batch (the lead clears it), behave as before.
 import test from "node:test";
 import assert from "node:assert/strict";

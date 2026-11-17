@@ -296,6 +296,39 @@ test("(d4) grandfathered by the head's commit time: before STACK_HOLD_FROM nothi
   assert.equal(m["card-new"].stackHold, true);
 });
 
+// Checker 2's M1 on cd32a559: two cards of one group on two branches; stack-ready writes the signal for the LAST one's head only (the group is whole), and that signal ends the wait of
+// the first too. Without it the first card kept stackHold and no reviewer got a turn for it. A declared partner (depends_on, either way) is the same; a stranger is not covered.
+const twoBranches = (s) => { const one = soloBranch(s, "card-one", 10), two = soloBranch(s, "card-two", 20), other = soloBranch(s, "card-other", 30); return { one, two, other }; };
+const statesOf = (s, cards) => cardStates({ cards, config: cfg, repos: { "": s.repo() }, now: (T0 + 100) * 1000, stacks: [""] });
+
+test("(d5) a signal on one member of a group covers the others: both cards of the group are unmarked, a card of another group stays marked", () => {
+  const s = scratch();
+  const h = twoBranches(s);
+  const cards = [{ id: "card-one", batch: "g1" }, { id: "card-two", batch: "g1" }, { id: "card-other", batch: "g2" }];
+  const before = statesOf(s, cards);
+  for (const id of ["card-one", "card-two", "card-other"]) assert.equal(before[id].stackHold, true, `${id} marked before any signal`);
+  s.signal(h.two);
+  const after = statesOf(s, cards);
+  assert.equal(after["card-two"].stackHold, undefined, "the signalled head");
+  assert.equal(after["card-one"].stackHold, undefined, "its group peer, on its own branch: the wait is over");
+  assert.equal(after["card-other"].stackHold, true, "another group's card is not covered");
+  assert.deepEqual(statesOf(s, cards), after, "same input, same answer");
+  const noBatch = statesOf(s, [{ id: "card-one" }, { id: "card-two" }]);
+  assert.equal(noBatch["card-one"].stackHold, true, "no group, no declared partner: only the signalled head is covered");
+  assert.equal(noBatch["card-two"].stackHold, undefined);
+});
+
+test("(d6) a declared partner (depends_on, in either direction) is covered by its partner's signal; an unrelated card is not", () => {
+  const s = scratch();
+  const h = twoBranches(s);
+  s.signal(h.two);
+  const forward = statesOf(s, [{ id: "card-one" }, { id: "card-two", depends_on: JSON.stringify(["card-one"]) }, { id: "card-other" }]);
+  assert.equal(forward["card-one"].stackHold, undefined, "the card the signalled one depends on");
+  assert.equal(forward["card-other"].stackHold, true);
+  const backward = statesOf(s, [{ id: "card-one", depends_on: JSON.stringify(["card-two"]) }, { id: "card-two" }]);
+  assert.equal(backward["card-one"].stackHold, undefined, "a card that depends on the signalled one");
+});
+
 // ---- the command, against a temp bare remote ----
 function checkout() {
   const s = scratch();

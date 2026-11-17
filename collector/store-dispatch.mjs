@@ -135,7 +135,7 @@ export function stackQueueFile(view, now) {
       repo: typeof c.repo === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(c.repo) ? c.repo : "",
       dependsOn: [...new Set(dependsOf(c).filter((d) => CARD_ID.test(d) && d !== c.id))].slice(0, 50),
       batch: batchOf(c), // #C1021: the group the lead put the card in ("" for none); stack-ready waits for every open card of it
-      held: !!(c.paused || c.blocked_reason), // #C1021 (Checker 2 F1): a paused or blocked card is no partner to wait for,
+      held: !!(c.paused || c.blocked_reason), // #C1021 (Checker 2 F1): a paused or blocked card is no partner to wait for
       // #C1103 (Checker 2's M2): the store's own reading of "held" for the group order (orderCards: paused, isHeld = waiting_on or a blocked_reason, or a dependency not live), so the
       // pre-push check and the store's stall line agree; `held` above stays what stack-ready waits on.
       orderHeld: !!(c.paused || isHeld(c) || dependsNotLive(c, view.cards, evidenceById)),
