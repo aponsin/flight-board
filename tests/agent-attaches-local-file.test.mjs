@@ -10,7 +10,7 @@ import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { checkConfig, fullConfig } from "../scripts/config.mjs";
 import worker from "../worker/board-worker.mjs";
 import { MAX_BODY_BYTES, MAX_DAY_BYTES_PER_CALLER, MAX_FILE_BYTES } from "../worker/file-store.mjs";
-import { TYPES, checkPath, credentials, rootsFor, putLocalFile, main } from "../scripts/put-file.mjs";
+import { TYPES, checkPath, credentials, rootsFor, ownerConfigs, putLocalFile, putLocalFile as realPutLocalFile, main } from "../scripts/put-file.mjs";
 
 const NOW = 1_800_000_000_000;
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
@@ -250,7 +250,10 @@ test("#C1170 the board's address comes from the board config's storeUrl: an env 
   const path = f("a.png");
   const TOKEN_ONLY = `BOARD_SERVICE_TOKEN_ID=idvalue\nBOARD_SERVICE_TOKEN_SECRET=${SECRET}\n`;
   const env = envFile(TOKEN_ONLY);
-  const cfg = (body) => { const p = join(dir(), "board.config.json"); writeFileSync(p, JSON.stringify(body)); return p; };
+  // The owner's settings.json names the board configs its hooks run with (--config <path>); only those are trusted for the address (Security's S1). A config made with owner = false is an agent's own file.
+  const owners = [];
+  const cfg = (body, owner = true) => { const p = join(dir(), "board.config.json"); writeFileSync(p, JSON.stringify(body)); if (owner) owners.push(p); return p; };
+  const putLocalFile = (o) => realPutLocalFile({ settingsText: JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '/x/gate/stop.mjs'${owners.map((p) => ` --config '${p}'`).join("")}` }] }] } }), ...o });
   const urls = [];
   const fetchImpl = async (url) => { urls.push(url); return { ok: true, status: 200, json: async () => ({ ok: true, id: "abc123def456ghi789jkl", name: "a.png", contentType: "image/png", sizeBytes: PNG.length }) }; };
   const good = cfg({ storeUrl: "https://fictional-board.example.test/", collector: {} });
@@ -270,6 +273,17 @@ test("#C1170 the board's address comes from the board config's storeUrl: an env 
   const differ = why(await putLocalFile({ path, envFile: envFile(GOOD_ENV), configPath: good, fetchImpl: () => assert.fail("nothing is sent"), roots: [root] }));
   assert.match(differ, /name different hosts/);
   assert.equal((await putLocalFile({ path, envFile: envFile(GOOD_ENV.replace("board.test", "fictional-board.example.test")), configPath: good, fetchImpl, roots: [root] })).ok, true);
+  // S1 (Security, 46a8da4a): a config an agent wrote, naming another host, is not the owner's: with an env file that has no BOARD_BASE_URL the upload is refused before any fetch, naming the config
+  // and saying its storeUrl was not used; with a BOARD_BASE_URL in the env file the token goes to that host and never to the config's.
+  const evil = cfg({ storeUrl: "https://elsewhere.example.test" }, false);
+  const refusedEvil = why(await putLocalFile({ path, envFile: env, configPath: evil, fetchImpl: () => assert.fail("nothing is sent"), roots: [root] }));
+  assert.ok(refusedEvil.includes(evil) && /not used/.test(refusedEvil), refusedEvil);
+  urls.length = 0;
+  assert.equal((await putLocalFile({ path, envFile: envFile(GOOD_ENV), configPath: evil, fetchImpl, roots: [root] })).ok, true);
+  assert.deepEqual(urls, ["https://board.test/api/probe/file"], "the env file's own host, never the untrusted config's");
+  // The settings file cannot be forged by the command line: main() takes no settings, and a config whose real path is not named by a hook is not trusted even by the same name in a link.
+  assert.equal(ownerConfigs("not json at all").size, 0);
+  assert.equal(ownerConfigs(JSON.stringify({ permissions: { allow: [`Bash(node x --config '${good}')`] } })).size, 0, "a permission rule runs nothing: it does not name the owner's config");
   // The command line still cannot name a host.
   const err = []; await main(["--env", env, "--config", good, "--base", "https://evil.test", path], { err: (l) => err.push(l), exit: () => {}, fetchImpl: () => assert.fail("nothing is sent"), roots: [root] });
   assert.match(err.at(-1), /no --base/);

@@ -17,6 +17,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, sep } from "nod
 import { fileURLToPath } from "node:url";
 import { MAX_FILE_BYTES } from "../worker/file-store.mjs";
 import { loadEnv, accessHeaders, FETCH_TIMEOUT_MS } from "../collector/probe-board.mjs";
+import { runnableText } from "./hooks-check.mjs";
 
 export const TYPES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".pdf": "application/pdf", ".txt": "text/plain", ".md": "text/markdown", ".csv": "text/csv" };
 // A name part that says "secret". secret, token, password, passwd, credential, apikey and the ssh key file names are refused anywhere in the name (so mytoken.txt, passwords.txt,
@@ -82,10 +83,27 @@ export function checkPath(input, { roots, realpath = realpathSync, stat = statSy
 // the one the board config already holds for the probe and the other scripts, its storeUrl. Read from the config the command names (--config), never from the command line itself. Returns
 // { ok: true, base, file } (base null when the config names none), or a reason that names the file it read. Only https://<host> (and an optional port) is an address.
 const HTTPS_HOST = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/;
-export function configAddress(configPath, { read = (p) => readFileSync(p, "utf8") } = {}) {
+// Security's S1 on 46a8da4a: --config is a command-line choice, so a config an agent wrote could name any host and the token would go there. The address is therefore read only from a board
+// config the OWNER's hooks name: the --config paths in the hook commands of ~/.claude/settings.json (real paths). Any other config's storeUrl is ignored, and the token then goes only
+// to a BOARD_BASE_URL the owner wrote beside it in the env file, or nowhere.
+export function ownerConfigs(settingsText, { home = homedir(), real = realpathSync } = {}) {
+  const out = new Set();
+  let doc = null; try { doc = JSON.parse(String(settingsText ?? "")); } catch { return out; } // a settings file is JSON; anything else names no owner config
+  if (!doc || typeof doc !== "object" || !doc.hooks) return out; // and only its hooks run something: a permission rule that mentions a path is not the owner's config
+  for (const m of runnableText(settingsText).matchAll(/--config\s+(?:'([^']+)'|"([^"]+)"|(\S+))/g)) {
+    let p = m[1] ?? m[2] ?? m[3];
+    if (p.startsWith("~/")) p = join(home, p.slice(2));
+    try { out.add(real(p)); } catch { /* a path that does not resolve names nothing */ }
+  }
+  return out;
+}
+const readSettings = () => { try { return readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"); } catch { return ""; } };
+export function configAddress(configPath, { read = (p) => readFileSync(p, "utf8"), settingsText = readSettings(), real = realpathSync } = {}) {
   if (!configPath) return { ok: true, base: null, file: null };
   let url; try { url = JSON.parse(read(configPath))?.storeUrl; } catch { return no(`the board config ${configPath} cannot be read as JSON`); }
   if (url === undefined || url === null || url === "") return { ok: true, base: null, file: configPath };
+  let owners = false; try { owners = ownerConfigs(settingsText, { real }).has(real(configPath)); } catch { owners = false; }
+  if (!owners) return { ok: true, base: null, file: configPath, ignored: true };
   const base = String(url).replace(/\/+$/, "");
   if (!HTTPS_HOST.test(base)) return no(`storeUrl in ${configPath} must be https://<host>`);
   return { ok: true, base, file: configPath };
@@ -103,17 +121,17 @@ export function credentials(envFile, { read = (p) => loadEnv(p), stat = statSync
   const fromEnv = String(env.BOARD_BASE_URL ?? "").replace(/\/+$/, ""), fromConfig = address?.base ?? "";
   if (fromEnv && fromConfig && fromEnv !== fromConfig) return no(`the board's address differs: BOARD_BASE_URL in ${envFile} and storeUrl in ${address.file} name different hosts: keep one`);
   const base = fromConfig || fromEnv;
-  if (!HTTPS_HOST.test(base)) return no(`the board's address must be https://<host>: set storeUrl in the board config${address?.file ? ` (${address.file})` : " (--config)"}, or BOARD_BASE_URL in the env file ${envFile}`);
+  if (!HTTPS_HOST.test(base)) return no(`the board's address must be https://<host>: set storeUrl in the board config the owner's hooks name${address?.file ? ` (${address.file}${address.ignored ? " is not one of them, so its storeUrl was not used" : ""})` : " (--config)"}, or BOARD_BASE_URL in the env file ${envFile}`);
   return { ok: true, headers: accessHeaders(env), base };
 }
 
 // Send it. Returns { ok, id, name, type, size } or { ok: false, reason } (the reason is the Worker's rule word, never the token or the response body).
-export async function putLocalFile({ path, envFile, configPath, name, fetchImpl = fetch, roots, read }) {
+export async function putLocalFile({ path, envFile, configPath, name, fetchImpl = fetch, roots, read, settingsText }) {
   let folders = roots; // a test names them; otherwise they come from the board config
   if (!folders) { const r = rootsFor(configPath); if (!r.ok) return r; folders = r.roots; }
   const p = checkPath(path, { roots: folders });
   if (!p.ok) return p;
-  const address = configAddress(configPath);
+  const address = configAddress(configPath, settingsText === undefined ? {} : { settingsText }); // settingsText is for the tests: the command line has no way to set it
   if (!address.ok) return address;
   const c = credentials(envFile, { ...(read ? { read } : {}), address });
   if (!c.ok) return c;
