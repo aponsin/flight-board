@@ -1,0 +1,2 @@
+PASS (Full) #C1163: one isSignoff (PASS, SECURE) for probe, land, release, recut, self-deploy, current and sign-note; board cards always want Security; product and board notes on origin already read PASS/SECURE/FINDINGS; 7 of 10 mutants killed (1 equivalent). LOWs: blank first line still signs for no-word roles; shownLevel's repo argument untested at its call site
+signed-by: Checker 2
