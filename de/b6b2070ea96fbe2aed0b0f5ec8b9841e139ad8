@@ -1,0 +1,2 @@
+PASS (Full) #C1143 deb6b207: lastActivityAt more than 5 min ahead of now is no activity; both sides of the 5 min edge tested. Mutants 2/2.
+signed-by: Checker 2
