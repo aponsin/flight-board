@@ -1,0 +1,2 @@
+PASS (Quick) #C1130 group-land-recipe: docs only; GROUP_MAX 30, merge refusal, per-role bad-note rule and the script usages checked against board-release.mjs, self-deploy-gate.mjs, sign-note.mjs, make-pair.mjs, data-fragments.mjs. Suite 2851 pass, 0 fail. On main 36e0164e. LOW: trap 3 says 'into main's history'; the block is while the commit sits in origin/main..head.
+signed-by: Checker 2
