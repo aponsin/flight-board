@@ -1,6 +1,6 @@
 // The landing job (#C967): a program lands a flight-board commit that is signed, dry-run clean and not held; Release takes only what it refuses.
 //   node ~/.flight-board/current/scripts/board-land.mjs --config <board.config.json> [--dry-run]
-// Run from the signed linked copy. It calls the release tool of the owner's INSTALLED copy (#C1058, pinnedReleaseTool: <install root>/<the commit his hooks pin>/scripts/
+// Run from the signed linked copy, or (#C1140, once the pack's land step has moved the LaunchAgent) from the owner's pinned install ~/.flight-board/install/<commit>/scripts (selfRefusal). It calls the release tool of the owner's INSTALLED copy (#C1058, pinnedReleaseTool: <install root>/<the commit his hooks pin>/scripts/
 // board-release.mjs, not the linked copy's, which moves with every release, and never a checkout's), so a changed release tool runs only after his pack moves the pin.
 // That tool does every check and the push
 // (Checker's PASS and Security's SECURE on the exact tip, a fast-forward of origin/main, no newer -vN of the card, nothing the owner's install
@@ -9,8 +9,9 @@
 //      line of each note), and whose cards are all free. A tip with a note that says anything else (STOP, FINDINGS, a withdrawn PASS) is not
 //      tried. A line of several commits lands as its tip, in one fast-forward; the branches under it are then on main and drop out.
 //   2. holds: the probe's dispatch job writes <stateDir>/<board>/land-holds.json each minute ({ at, cards: { id: "" | "paused" | "dropped" |
-//      "blocked" | "waiting_on" }}). A tip lands only when every card it carries (the Board-Id trailers of main..tip) is listed with no hold. A file
-//      that is missing, unreadable or older than 10 minutes, or a card it does not list, lands nothing: Release lands by hand as before.
+//      "blocked" | "waiting_on" }, groups: { id: [the other members of its group still to land] }}). A tip lands only when every card it carries (the Board-Id trailers
+//      of main..tip) is listed with no hold, and carries every other member of each card's group still to land (#C1138: only a group's head lands a group, never one
+//      member alone). A file that is missing, unreadable or older than 10 minutes, or a card it does not list, lands nothing: Release lands by hand as before.
 //   3. the refusals: the release tool's dry run (and then its real run) decides; a refusal is written to <stateDir>/<board>/land-report.json
 //      ({ at, landed, refused: [{ branch, sha, cards, reasons }], waiting }) and printed, for Release to take. The job never retries a refused tip
 //      in the same run, never forces, never touches a branch, a note or a hold.
@@ -72,6 +73,12 @@ export function landPlan({ heads, holds, now }) {
     if (!cards.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: "no Board-Id trailer names a card, so no hold can be read" }); continue; }
     if (unknown.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `the holds file does not list ${unknown.join(", ")}` }); continue; }
     if (held.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `held: ${held.map((c) => `${c} (${holds.cards[c]})`).join(", ")}` }); continue; }
+    // #C1138 (11-16 late: #C1126 landed alone at 32438ae1 once every card of G10 that existed was signed, before the group's head was built): groups land whole, so a tip carrying a card
+    // of a group lands only when it carries EVERY other member of that group still to land (the file's `groups`: card id -> the other members that are open and not on main). A group's
+    // head carries them all; a single card's tip does not and waits for it. A file with no `groups` (a probe from before this) asks nothing more.
+    const groups = holds.groups && typeof holds.groups === "object" && !Array.isArray(holds.groups) ? holds.groups : {};
+    const lacking = [...new Set(cards.flatMap((c) => (Array.isArray(groups[c]) ? groups[c] : []).filter((p) => typeof p === "string" && CARD_ID.test(p) && !cards.includes(p))))];
+    if (lacking.length) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `its group is not whole: this tip lacks ${lacking.slice(0, 6).join(", ")}${lacking.length > 6 ? ` and ${lacking.length - 6} more` : ""}, which land with it as the group's head` }); continue; }
     if (h.dataLines === null) { out.waiting.push({ branch: h.branch, sha: h.sha, why: `its change to ${DATA_FILE} could not be read` }); continue; }
     if (Number.isInteger(h.dataLines) && h.dataLines > 0 && !cards.every((c) => FOLD_CARD.test(c))) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: [`it adds a dated line to ${DATA_FILE}: write the card's line to docs/DATA.d/<card id>.md instead (only the fold card, a Board-Id starting fold-data-fragments, adds dated lines there; a row or a principle may still be edited in the file)`] }); continue; }
     if (!h.forward) { out.blocked.push({ branch: h.branch, sha: h.sha, cards, reasons: ["it doesn't continue origin/main: rebase it on main and sign it again"] }); continue; }
@@ -127,6 +134,24 @@ export function landRun({ readFacts, readHolds, release, now = Date.now(), dry =
   return { at: now, landed, refused, waiting, dataFragments, foldDue };
 }
 
+// #C1140 (Security's F1 on 768c18d0): where this job may run from. Once the LaunchAgent starts the owner's pinned install (the pack's land step), the job's own folder is
+// ~/.flight-board/install/<40 hex>/scripts, not the folder the `current` link names, so the old "must be the linked copy" check would have stopped every run: NOT RUN, nothing landed.
+// Accepted: the folder the link `~/.flight-board/current/scripts` resolves to (a hand run through the link, and the copy the link names), or a folder that is exactly
+// <real ~/.flight-board/install>/<40 lower-case hex>/scripts after symbolic links are resolved. Never a checkout, and never a pinned-looking name whose real place is elsewhere.
+// Returns null, or the NOT RUN line. `realpath` and `exists` are injectable for the tests.
+export function selfRefusal({ self, home, realpath = realpathSync, exists = existsSync }) {
+  const refusal = "NOT RUN: this is neither the signed linked copy (~/.flight-board/current) nor a pinned install (~/.flight-board/install/<commit>): run it from one of those";
+  let real;
+  try { real = realpath(self); } catch { return refusal; }
+  const link = join(home, ".flight-board", "current", "scripts");
+  try { if (exists(link) && realpath(link) === real) return null; } catch { /* not the link */ }
+  try {
+    const root = realpath(join(home, ".flight-board", "install"));
+    if (real.startsWith(`${root}/`) && /^[0-9a-f]{40}\/scripts$/.test(real.slice(root.length + 1))) return null;
+  } catch { /* no install folder */ }
+  return refusal;
+}
+
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
 const readText = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
 
@@ -134,9 +159,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const args = process.argv.slice(2), dry = args.includes("--dry-run"), ci = args.indexOf("--config");
   const configPath = ci >= 0 ? args[ci + 1] : null;
   if (!configPath || args.some((a, n) => a !== "--dry-run" && a !== "--config" && n !== ci + 1)) { console.error("Usage: node ~/.flight-board/current/scripts/board-land.mjs --config <board.config.json> [--dry-run]"); process.exit(2); }
-  const self = dirname(fileURLToPath(import.meta.url));
-  const link = join(homedir(), ".flight-board", "current", "scripts");
-  if (!existsSync(link) || realpathSync(link) !== realpathSync(self)) { console.log("NOT RUN: this is not the signed linked copy (~/.flight-board/current): run it from there"); process.exit(1); }
+  const notRun = selfRefusal({ self: dirname(fileURLToPath(import.meta.url)), home: homedir() });
+  if (notRun) { console.log(notRun); process.exit(1); }
   const repo = process.env.FLIGHT_BOARD_REPO || join(homedir(), "Documents/Code/flight-board");
   const git = (a) => execFileSync("git", a, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 }).trim();
   const quiet = (a) => { try { return git(a); } catch { return null; } };

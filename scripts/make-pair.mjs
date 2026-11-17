@@ -82,7 +82,10 @@ export function neverRun(folder, n) {
 // at run time without importing them (scripts/build-page.mjs reads page/board.template.html through import.meta.url). A name absent at the sha is skipped.
 // #C1058: the release tool too. The landing job starts the copy in the owner's installed folder (the one his hooks pin), which moves only when the hooks step moves the pin,
 // so a pack that carries a changed release tool, or a file it imports, needs that step.
-export const HOOK_ENTRIES = ["gate/stop.mjs", "gate/publish.mjs", "gate/first-push.mjs", "collector/fence.mjs", "scripts/wake-watch.mjs", "scripts/board-release.mjs"];
+// #C1140: the landing job too (scripts/board-land.mjs). It runs from the owner's pinned install, which exists only once the hooks step has run, so a pack that carries a changed land job,
+// or a file it imports, needs that step and the land step after it (landText).
+export const HOOK_ENTRIES = ["gate/stop.mjs", "gate/publish.mjs", "gate/first-push.mjs", "collector/fence.mjs", "scripts/wake-watch.mjs", "scripts/board-release.mjs", "scripts/board-land.mjs"];
+export const LAND_ENTRIES = ["scripts/board-land.mjs"];
 export const HOOK_READS = ["page/board.template.html"];
 export const HOOK_PINNED = /^(hooks\/|scripts\/hooks\.mjs$)/;
 // The files at `sha` the two entries import, relative imports followed (static and dynamic), entries included: a Set of repo paths.
@@ -104,6 +107,19 @@ export function hookChanged(git, sha, paths) {
   return paths.filter((p) => HOOK_PINNED.test(p) || HOOK_READS.includes(p) || closure.has(p));
 }
 
+// #C1140: which of the changed paths the landing job runs: scripts/board-land.mjs and the files it imports, at `sha`.
+export function landChanged(git, sha, paths) {
+  const closure = importClosure(git, sha, LAND_ENTRIES);
+  return paths.filter((p) => closure.has(p));
+}
+// The landing-job step of pair `name`, from scripts/pair/land.template.mjs: its only variables are the pair's name and the pinned main. A template that still holds a placeholder is refused.
+export function landText({ name, sha, template = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "pair", "land.template.mjs"), "utf8") }) {
+  if (!/^pc\d{1,6}$/.test(String(name)) || !FULL.test(String(sha))) throw new Error("the landing-job step needs a pair name (pc<n>) and a full sha");
+  const text = template.split("@@NAME@@").join(name).split("@@SIGNED@@").join(sha);
+  if (/@@[A-Z]+@@/.test(text)) throw new Error("the landing-job template has a placeholder this tool does not fill");
+  return text;
+}
+
 // The newest board-store-hooks-pc<k>.mjs before n in the folder, or null.
 function lastHooksFile(folder, n) {
   if (!existsSync(folder)) return null;
@@ -111,9 +127,20 @@ function lastHooksFile(folder, n) {
   return k === undefined ? null : { n: k, text: readFileSync(join(folder, `board-store-hooks-pc${k}.mjs`), "utf8") };
 }
 
+// #C1141 (Security's INFO on pc77): the steps file's heading and the hooks script's first comment named only the Stop hook after the hooks line began installing the first-push guard
+// too. The words now come from the entries scripts/hooks.mjs at the pin writes (hookEntriesAt), not from a hand-typed list: "the Stop hook and the first-push guard". A hook this table
+// does not know is named by its file ("the <file> hook"); no entries (a repository with no readable installer) keeps the old wording.
+const HOOK_LABELS = { "stop.mjs": "Stop hook", "first-push.mjs": "first-push guard" };
+export function hookNames(entries) {
+  const files = Object.values(entries ?? {}).flatMap((e) => [].concat(e)).flatMap((e) => (e?.hooks ?? []).map((h) => /\/([A-Za-z0-9-]+\.mjs)(?:\s|'|$)/.exec(String(h?.command ?? ""))?.[1])).filter(Boolean);
+  const words = [...new Set(files)].map((f) => `the ${HOOK_LABELS[f] ?? `${f.replace(/\.mjs$/, "")} hook`}`);
+  if (!words.length) return "the Stop hook";
+  return words.length === 1 ? words[0] : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
+}
+
 // The hooks file of pair n made from the earlier one: only the pin, the pc number and the first comment line change.
 // cueSha is the sha256 of hooks/send-refused-cue.py at the new sha: the installer checks the cue against it, so a changed cue moves it too.
-export function hooksText(prev, { name, sha, cueSha }) {
+export function hooksText(prev, { name, sha, cueSha, hookWords = "the Stop hook" }) {
   const m = /const SIGNED = "([0-9a-f]{40})"/.exec(prev.text);
   if (!m) throw new Error(`board-store-hooks-pc${prev.n}.mjs has no const SIGNED pin to move`);
   if (!/const CUE_SHA = "[0-9a-f]{64}"/.test(prev.text)) throw new Error(`board-store-hooks-pc${prev.n}.mjs has no const CUE_SHA to move`);
@@ -122,7 +149,7 @@ export function hooksText(prev, { name, sha, cueSha }) {
   lines[0] = "@@FIRST@@";
   // The pair number only as a whole number: pc2 is not the start of pc26.
   const body = lines.join("\n").replace(/const CUE_SHA = "[0-9a-f]{64}"/, `const CUE_SHA = "${cueSha}"`).split(old).join(sha).split(old.slice(0, 8)).join(sha.slice(0, 8)).split(old.slice(0, 7)).join(sha.slice(0, 7)).replace(new RegExp(`pc${prev.n}(?!\\d)`, "g"), name);
-  return storeOnly(body.replace("@@FIRST@@", `// The hooks step of pair ${name} (pins the Stop hook to this main), for flight-board main ${sha}. Made by scripts/make-pair.mjs from board-store-hooks-pc${prev.n}.mjs: the pin and the pair number changed${/two board entries|publish\.length !== 1/.test(prev.text) && !/first\.length/.test(prev.text) ? ", and its read-back now expects the one Stop entry the installer writes (the page-publish entry is retired, #C1054)" : ""}${/board\.length !== \d+ \|\| stop\.length/.test(prev.text) && !/first\.length/.test(prev.text) ? ", and its read-back now also expects the PreToolUse first-push guard entry (gate/first-push.mjs, #C1065)" : ""}. Run by the owner in Terminal AFTER the pair's two lines`));
+  return storeOnly(body.replace("@@FIRST@@", `// The hooks step of pair ${name} (pins ${hookWords} to this main), for flight-board main ${sha}. Made by scripts/make-pair.mjs from board-store-hooks-pc${prev.n}.mjs: the pin and the pair number changed${/two board entries|publish\.length !== 1/.test(prev.text) && !/first\.length/.test(prev.text) ? ", and its read-back now expects the one Stop entry the installer writes (the page-publish entry is retired, #C1054)" : ""}${/board\.length !== \d+ \|\| stop\.length/.test(prev.text) && !/first\.length/.test(prev.text) ? ", and its read-back now also expects the PreToolUse first-push guard entry (gate/first-push.mjs, #C1065)" : ""}. Run by the owner in Terminal AFTER the pair's two lines`));
 }
 
 // Security's RISKS on pc67 line 3 (11-16): the hooks file is made from the previous pair's, so when scripts/hooks.mjs stopped writing the page-publish entry
@@ -205,7 +232,7 @@ export function onMain(git, sha) {
   return { ok: true, tip };
 }
 
-export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha, folder, skipped = [], hooksSha = null, hookPaths = [], boardDeploySha = null }) {
+export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha, folder, skipped = [], hooksSha = null, hookPaths = [], boardDeploySha = null, landSha = null, landPaths = [], hookWords = "the Stop hook" }) {
   const s8 = sha.slice(0, 8), s7 = sha.slice(0, 7);
   const cards = [...new Set(commits.flatMap((c) => c.match(/#C\d+/g) ?? []))];
   const groups = groupPaths(paths);
@@ -220,7 +247,7 @@ export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha,
   const worker = groups.some(([g]) => g === "Worker code" || g === "database migration" || g === "Worker config (check for a new binding or secret)");
   return `# ${name}: ${cards.length ? cards.join(", ") : "main"} at ${s8}
 
-Pinned to flight-board main ${sha}. Each line checks the file's SHA-256 first and prints CHECK FAILED instead of running a changed file. ${hooksSha ? "Three lines (the third installs the hooks, pinned to this main)" : "Two lines"}, in this order, one at a time, from any folder: every path is full (#C921).
+Pinned to flight-board main ${sha}. Each line checks the file's SHA-256 first and prints CHECK FAILED instead of running a changed file. ${hooksSha ? (landSha ? "Four lines (the third installs the hooks, the fourth moves the landing job to the pinned install, both pinned to this main)" : "Three lines (the third installs the hooks, pinned to this main)") : "Two lines"}, in this order, one at a time, from any folder: every path is full (#C921).
 ${replaces}${worker ? "The Worker changes: deploy it first (line 1), then the tree (line 2)." : "No Worker code changes: line 1 only tells the Worker which commit it carries."} ${migration ? "A database migration is part of this deploy: answer y if it asks." : "No database migration."}${worker ? " A new secret cannot be seen from the diff: read the Worker code and Worker config lines below." : ""}
 If wrangler is not signed in: fill cloudflareApiToken and cloudflareAccountId in ${folder}/board.private.json (mode 600, made once by you in Terminal, never in a chat; with it nothing opens a browser, so it works over SSH), or sign in once with a browser: npx wrangler@4.150.0 login.
 
@@ -259,15 +286,23 @@ if [ "$(shasum -a 256 ${folder}/board-store-tree-${name}.mjs | cut -c1-64)" = ${
 
 Should print \`TREE OK: board-store-v4 is at ${s7}\`. Undo: \`node ${folder}/board-store-tree-${name}.mjs back\`. It refuses if line 1 has not run.
 ${hooksSha ? `
-## Line 3: hooks (the Stop hook, pinned to this main)
+## Line 3: hooks (${hookWords}, pinned to this main)
 
 \`\`\`bash
 if [ "$(shasum -a 256 ${folder}/board-store-hooks-${name}.mjs | cut -c1-64)" = ${hooksSha} ]; then node ${folder}/board-store-hooks-${name}.mjs; else echo 'CHECK FAILED: board-store-hooks-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
 \`\`\`
 
 It refuses unless line 2 has run (the tree is at ${s7}). Then quit the app and open it again: hooks load when a session starts. Undo: \`node ${folder}/board-store-hooks-${name}.mjs undo\`. Hook files changed since ${prev ? prev.sha.slice(0, 8) : "the start"}: ${hookPaths.join(", ")} (a hook script, the installer, or a file the two gate scripts import).
+` : ""}${hooksSha && landSha ? `
+## Line 4: landing job (moves the LaunchAgent to the pinned install)
+
+\`\`\`bash
+if [ "$(shasum -a 256 ${folder}/board-store-land-${name}.mjs | cut -c1-64)" = ${landSha} ]; then node ${folder}/board-store-land-${name}.mjs; else echo 'CHECK FAILED: board-store-land-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
+\`\`\`
+
+The landing job (the LaunchAgent \`com.flight-board.store.land\`, every 10 minutes) runs scripts/board-land.mjs; this step points it at \`~/.flight-board/install/${sha}/scripts/board-land.mjs\`, the install line 3 made, instead of \`~/.flight-board/current\`, so a changed land job runs only after you install it. It refuses unless that file exists (line 3 has run), keeps a backup of the LaunchAgent's file, reloads the job and checks launchd has it. Last line: \`LAND OK: ...\`. Undo: \`node ${folder}/board-store-land-${name}.mjs undo\`. Land job files changed since ${prev ? prev.sha.slice(0, 8) : "the start"}: ${landPaths.join(", ")}.
 ` : ""}
-Full sha256: deploy ${deploySha}, tree ${treeSha}${boardDeploySha ? `, board-deploy ${boardDeploySha}` : ""}${hooksSha ? `, hooks ${hooksSha}` : ""}.
+Full sha256: deploy ${deploySha}, tree ${treeSha}${boardDeploySha ? `, board-deploy ${boardDeploySha}` : ""}${hooksSha ? `, hooks ${hooksSha}` : ""}${landSha ? `, land ${landSha}` : ""}.
 `;
 }
 
@@ -294,28 +329,37 @@ export function makeAll({ repo, sha, n, out, git = (...a) => spawnSync("git", ["
   catch (e) { return { ok: false, why: `the pair's header cannot name every card it carries: ${e.message}` }; }
   // A hook file changed since the last pair that ran: the hooks step is written too, from the newest earlier hooks file in the folder.
   // "Hook file" = a hook script, the installer, or any file the two gate entries import (Security R1 on 0f36fd0), read at the new sha.
-  let hooks = null;
+  let hooks = null, hookWords = "the Stop hook";
   const hookPaths = hookChanged(git, sha, paths);
   if (hookPaths.length) {
     const from = lastHooksFile(out, n);
     if (!from) return { ok: false, why: "a hook file changed since the last pair that ran, but the folder has no earlier board-store-hooks-pc<n>.mjs to make the hooks step from" };
     const cue = git("show", `${sha}:hooks/send-refused-cue.py`);
     if (cue.status !== 0) return { ok: false, why: `hooks/send-refused-cue.py is not in ${sha.slice(0, 8)}: its sha256 is pinned in the hooks step` };
-    try { hooks = hooksText(from, { name, sha, cueSha: sha256(cue.stdout) }); } catch (e) { return { ok: false, why: e.message }; }
+    const entries = hookEntriesAt(git, sha); // #C1141: also names the hooks in the steps (hookWords), from what the installer writes
+    hookWords = hookNames(entries);
+    try { hooks = hooksText(from, { name, sha, cueSha: sha256(cue.stdout), hookWords }); } catch (e) { return { ok: false, why: e.message }; }
     // The step's read-back against what the installer at the pin writes (Security's RISKS on pc67): a disagreement writes nothing.
     if (hooksExpectation(hooks)) {
-      const entries = hookEntriesAt(git, sha);
       if (!entries) return { ok: false, why: `scripts/hooks.mjs at ${sha.slice(0, 8)} cannot be read or run, so the hooks step's read-back cannot be checked against it` };
       const c = checkHooksExpectation(hooks, entries);
       if (!c.ok) return { ok: false, why: c.why };
     }
   }
+  // #C1140: the landing job changed (scripts/board-land.mjs or a file it imports): its step moves the LaunchAgent to the pinned install. board-land.mjs is a hook entry, so the hooks step
+  // (which creates that install) is always written with it; without a hooks step there is nothing to run the land step after, and the pack is refused rather than written half.
+  let land = null;
+  const landPaths = landChanged(git, sha, paths);
+  if (landPaths.length) {
+    if (!hooks) return { ok: false, why: "the landing job changed but the pack has no hooks step to create the pinned install it would run from" };
+    try { land = landText({ name, sha }); } catch (e) { return { ok: false, why: e.message }; }
+  }
   const hashes = Object.fromEntries(Object.entries(files).map(([f, t]) => [f, sha256(t)]));
   const hooksName = `board-store-hooks-${name}.mjs`;
   // #C924: the generic one-command runner, copied byte for byte (the same file for every pair; its hash is in the steps file).
   const boardDeploy = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "pair", "board-deploy.mjs"));
-  const steps = stepsText({ name, sha, prev, commits, paths, deploySha: hashes[`board-store-deploy-${name}.mjs`], treeSha: hashes[`board-store-tree-${name}.mjs`], folder: out.startsWith(homedir() + "/") ? "~" + out.slice(homedir().length) : out, skipped: neverRun(out, n), hooksSha: hooks ? sha256(hooks) : null, hookPaths, boardDeploySha: sha256(boardDeploy) });
-  const all = { ...files, ...(hooks ? { [hooksName]: hooks } : {}), "board-deploy.mjs": boardDeploy, [`board-store-${name}-steps.md`]: steps };
+  const steps = stepsText({ name, sha, prev, commits, paths, deploySha: hashes[`board-store-deploy-${name}.mjs`], treeSha: hashes[`board-store-tree-${name}.mjs`], folder: out.startsWith(homedir() + "/") ? "~" + out.slice(homedir().length) : out, skipped: neverRun(out, n), hooksSha: hooks ? sha256(hooks) : null, hookPaths, boardDeploySha: sha256(boardDeploy), landSha: land ? sha256(land) : null, landPaths, hookWords });
+  const all = { ...files, ...(hooks ? { [hooksName]: hooks } : {}), ...(land ? { [`board-store-land-${name}.mjs`]: land } : {}), "board-deploy.mjs": boardDeploy, [`board-store-${name}-steps.md`]: steps };
   for (const [f, t] of Object.entries(all)) writeFileSync(join(out, f), t);
   return { ok: true, files: Object.fromEntries(Object.entries(all).map(([f, t]) => [f, sha256(t)])) };
 }

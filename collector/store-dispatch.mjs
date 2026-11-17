@@ -255,7 +255,8 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     const held = inBoard && e?.stackHold === true;
     const turns = turnsOf(c, e, { ...(inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {}), ...(pairCovers ? { pairCovers } : {}), ...(landing ? { landing } : {}), ...(reviewerFor(c, reviewers, roster) ? { reviewer: reviewerFor(c, reviewers, roster) } : {}) });
     // #C1018 / #C1035: a tip a Checker session has claimed (the store's review claim) wakes no Checker for its review again: one checker per tip.
-    const mine = held ? turns.filter((t) => t.step !== "review") : turns;
+    // #C1139: a tip whose newest commit says WIP (the probe's wipHead) is a start push, not a READY: no review turn for it, in any repository and with the stack switch on or off.
+    const mine = held || e?.wipHead === true ? turns.filter((t) => t.step !== "review") : turns;
     const shown = mine.filter((t) => !(/^Checker(?: [0-9]{1,3})?$/.test(String(t.role)) && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
     cards.push({ group: batchOf(c), groupStarted: startedGroups.has(batchOf(c)), rework: shown.some((t) => t.role === c.owner_role && (t.step === "rework" || t.step === "reason")), queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }
@@ -530,6 +531,8 @@ export const LANDING_ROLES = /^\s*(?:Checker|Security|Release)\b/i;
 // closed (done_at), and signed once its reading is at ship (every review signed) or live; a card with no reading yet (nothing pushed) is not signed. A card
 // with no group is untouched. The word is checked last, so a card's own hold (dropped, paused, blocked, asked, waiting_on) still names itself.
 const signedOrLanded = (e) => { const p = e?.phase ?? e?.lit?.[0]; return p === "ship" || p === "live"; };
+// #C1138: a member that has landed: its reading is live, or its commit is on main (a card at ship with onMain true waits only for its pack).
+const landedOnMain = (e) => (e?.phase ?? e?.lit?.[0]) === "live" || e?.onMain === true;
 export function landHoldsFile(view, now) {
   const cards = {};
   const asked = new Set();
@@ -547,7 +550,19 @@ export function landHoldsFile(view, now) {
     const g = batchOf(c), others = g ? (unsigned.get(g) ?? 0) - (waits(c) ? 1 : 0) : 0; // the unsigned members of its group besides itself
     cards[c.id] = c.dropped ? "dropped" : c.paused ? "paused" : has(c.blocked_reason) ? "blocked" : asked.has(c.id) ? "asked" : has(c.waiting_on) && !LANDING_ROLES.test(c.waiting_on) ? "waiting_on" : others > 0 ? "group" : "";
   }
-  return { at: now, cards };
+  // #C1138 (11-16 late: the land job landed #C1126 alone at 32438ae1, with G10's group head not built): signed members of one group are each free to land on their own once every member
+  // is signed, so the first tip the job tried went out alone and the group head no longer continued main. `groups` lists, for each card of a group, the OTHER members still to land
+  // (open, and not on main or live): the job lands a tip only when it carries every one of them (board-land.mjs landPlan), that is, only the group's head. A card with no group, or
+  // no other member to land, is not listed. Plain card ids only.
+  const toLand = (c) => open(c) && !landedOnMain(ev[`cards.${c.id}`]?.value);
+  const members = new Map();
+  for (const c of all) { const g = batchOf(c); if (g && toLand(c)) members.set(g, [...(members.get(g) ?? []), c.id]); }
+  const groups = {};
+  for (const c of all) {
+    const g = batchOf(c), peers = g && toLand(c) ? (members.get(g) ?? []).filter((id) => id !== c.id) : [];
+    if (peers.length && Object.keys(groups).length < LAND_HOLDS_MAX) groups[c.id] = peers;
+  }
+  return { at: now, cards, groups };
 }
 export function writeLandHolds(view, { dir, now = Date.now() }) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });

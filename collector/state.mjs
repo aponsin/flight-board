@@ -301,6 +301,9 @@ export function phaseOf(card, facts, config) {
 // A repository as the cards read it: git(args) and gh(args) in its clone, its remote, main branch, sign-off notes and
 // the commit live there (the deploy run's for the team's, the installed link's for another).
 const ok = (fn) => { try { fn(); return true; } catch { return false; } };
+// #C1133: git's answer to "is A an ancestor of B" in three values: true (exit 0), false (exit 1: it is not) and null (ANY other failure: a timeout, a spawn error, git's own
+// error 128 under load). `ok` folds the third into "no", which read a cited part as present-or-absent by luck; a caller of this one must say what unknown means.
+const ancestry = (fn) => { try { fn(); return true; } catch (e) { return e?.status === 1 ? false : null; } };
 export function remoteTips(git, remote) {
   const out = git(["for-each-ref", `refs/remotes/${remote}`, "--format=%(refname:lstrip=3)%1f%(objectname)%1f%(committerdate:unix)%1f%(contents)%1e"]);
   return out.split("\x1e").map((r) => r.replace(/^\n/, "")).filter((r) => r.includes("\x1f")).map((r) => {
@@ -686,7 +689,9 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   const after = landed ? null : shippedBase(repo.git, mainRef, tip.sha, { id: card.id, branch: tip.branch, pattern: repo.shippedPattern ?? "" });
   // A tip read as a main commit (landed, or the shipped one) keeps afterShip set: that head is no bare branch (bareBranch).
   const head = landed ? { ...tip, sha: landed, afterShip: true } : after ? { ...tip, sha: after.sha, afterShip: true } : tip;
-  const atMain = !!landed || ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, mainRef]));
+  // #C1133: a git call that FAILED (not "no") leaves the head's place unknown: it is not read as on main (no ship reading from a failed call), and the marked parts below are still held.
+  const mainAnswer = landed ? true : ancestry(() => repo.git(["merge-base", "--is-ancestor", head.sha, mainRef]));
+  const atMain = mainAnswer === true, mainUnknown = mainAnswer === null;
   // #C671: a pushed branch named for the card with no commit of its own sits at a main commit: it is work started (build), and
   // main's sign-off notes and deploy are not the card's.
   const bare = !landed && !after && atMain && bareBranch(card, head);
@@ -709,7 +714,8 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   // #C890: a card that would read live while a commit cited in its next_note is not an ancestor of main (or is no commit the repository knows) is held at ship, naming the missing shas.
   // Checker 2's M1 on #C1104 (e944b23e): the marked parts are read whenever the head is on main, not only at a would-be-live reading, because the board closes a card of a
   // repository with no install step at landing (closesAtLanding) and its code commit reads ship, never live; the phase change (held at ship) stays for a would-be-live reading.
-  const partsMissing = onMain && typeof repo.git === "function" ? citedShas(card.nextNote).filter((s) => !ok(() => repo.git(["merge-base", "--is-ancestor", s, mainRef]))) : [];
+  // #C1133: a cited part counts as present only when git ANSWERED yes; a failed call (unknown) is missing, so a load flake holds the card at ship and never lets it read as landed.
+  const partsMissing = (onMain || (mainUnknown && !bare)) && typeof repo.git === "function" ? citedShas(card.nextNote).filter((s) => ancestry(() => repo.git(["merge-base", "--is-ancestor", s, mainRef])) !== true) : [];
   const phase = partsMissing.length && readPhase === config.collector.livePhase ? config.collector.shipPhase : readPhase;
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
@@ -733,7 +739,13 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
     let shas = []; try { shas = String(repo.git(["rev-list", "--max-count=60", `${mainRef}..${tip.sha}`])).split("\n").map((l) => l.trim()).filter((s) => /^[0-9a-f]{40}$/.test(s)); } catch { /* none */ }
     return countFindings(shas.flatMap((s) => notesOn(s)));
   })();
+  // #C1139 (Checker 2, 11-16 late: the dispatch woke it for #C1124 at 8224f95d and #C1065 at d664bc97, each a single empty "WIP: branch pushed before the first edit" commit with no READY):
+  // a tip whose newest commit says WIP (the word at the start of its first line) is a start push or work in progress, never a READY, whatever the stack switch or a signal says. The
+  // dispatch gives it no review turn. The next real commit is a new tip with no such word. A branch on main, or a bare one, is not read.
+  const headLine = String((head.message ?? tip.message) ?? "").split("\n")[0];
+  const wipHead = !onMain && !bare && /^WIP\b/.test(headLine);
   const extra = {
+    ...(wipHead ? { wipHead: true } : {}),
     ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(findings.length ? { findings } : {}),
     ...(Object.keys(issueCounts).length ? { issueCounts } : {}),

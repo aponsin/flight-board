@@ -1,0 +1,1 @@
+- `docs/group-land.md` trap 3 names the range that blocks: an unsigned `SUPERSEDED` or `WIP` commit blocks the land while it sits in `origin/main..head`, the range from main to the group head, not "once a merge brings it into main's history" (group-land-trap3-wording, #C1136). Docs only. Ships: nothing to install.

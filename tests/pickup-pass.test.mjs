@@ -122,7 +122,7 @@ test("each action carries the session id the config's rosterSessions holds for i
 });
 
 // Security's M1 and L1 on d71cebd6: the command is pre-approved as a prefix rule, so it takes no path that reaches outside the board's own folder.
-test("passPathRefusal: --state only as a .json file inside ~/.flight-board and not a symlink; --config only as board.config.json; --rows and --rows-file not together", () => {
+test("passPathRefusal: --state only as ~/.flight-board/pickup-pass.json and not a symlink; --config only as board.config.json; --rows and --rows-file not together", () => {
   const home = mkdtempSync(join(tmpdir(), "pickup-home-"));
   const ok = (extra = {}) => passPathRefusal({ home, ...extra });
   assert.equal(ok(), null);
