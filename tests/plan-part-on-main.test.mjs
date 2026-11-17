@@ -14,12 +14,13 @@ const cfg = { phases: [["plan"], ["build"], ["test"], ["checker"], ["security"],
 const card = (nextNote) => ({ id: "a-card", num: 890, level: "Quick", phase: "plan", nextNote });
 
 // A repository whose main holds the card's docs-only commit (so it is landed and reads live); a second commit exists on a branch that never reached main.
-function world() {
+// code: the card's commit changes code (src/a.mjs), so it needs an install and reads ship, not live (Checker 2's M1 on #C1104).
+function world({ code = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "fb-parts-")), git = (args) => execFileSync("git", args, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   git(["init", "-q", "-b", "main"]); git(["config", "user.email", "t@t"]); git(["config", "user.name", "t"]);
   git(["commit", "-q", "--allow-empty", "-m", "base"]);
   const base = git(["rev-parse", "HEAD"]).trim();
-  mkdirSync(join(dir, "docs"), { recursive: true }); writeFileSync(join(dir, "docs/a.md"), "a\n");
+  mkdirSync(join(dir, code ? "src" : "docs"), { recursive: true }); writeFileSync(join(dir, code ? "src/a.mjs" : "docs/a.md"), "a\n");
   git(["add", "-A"]); git(["commit", "-q", "-m", "the card\n\nBoard-Id: a-card"]);
   const sha = git(["rev-parse", "HEAD"]).trim();
   git(["update-ref", "refs/remotes/origin/main", sha]); git(["update-ref", "refs/remotes/origin/build/a-card", sha]);
@@ -80,7 +81,23 @@ test("one missing sha holds the card below live and names that sha; a sha the re
   assert.equal(cardState(card(`part ${landed.base.slice(0, 7)}`), landed.repo(), cfg, T).phase, "live");
 });
 
-test("a card that is not at live is not touched: a branch still in review keeps its phase, and partsMissing is only for the live case", () => {
+test("Checker 2's M1 on #C1104: a card whose commit on main is code reads ship, and its marked parts are still read (partsMissing names the missing one, the phase stays)", () => {
+  const w = world({ code: true });
+  const none = cardState(card("built it"), w.repo(), cfg, T);
+  assert.equal(none.phase, "ship", "a code commit is not live without an install");
+  assert.equal(Object.hasOwn(none, "partsMissing"), false);
+  const open = cardState(card(`part ${w.base.slice(0, 7)} and part ${w.side.slice(0, 9)}`), w.repo(), cfg, T);
+  assert.equal(open.phase, "ship", "the phase is what it read: nothing to hold below live");
+  assert.deepEqual(open.partsMissing, [w.side.slice(0, 9)], "the missing part is named even though the card is not at live");
+  const wrap = (c) => stateErrors({ v: 1, board: { boardId: "TestBoard01", at: T, probe: null, pageVersion: null }, agents: {}, cards: { "a-card": c } });
+  assert.deepEqual(wrap(open), []);
+  const landed = cardState(card(`part ${w.base.slice(0, 7)} and part ${w.sha}`), w.repo(), cfg, T);
+  assert.equal(Object.hasOwn(landed, "partsMissing"), false, "every marked part on main: nothing missing, the card may close");
+  const unmarked = cardState(card(`superseded tip ${w.side.slice(0, 9)}`), w.repo(), cfg, T);
+  assert.equal(Object.hasOwn(unmarked, "partsMissing"), false, "an unmarked sha is ignored");
+});
+
+test("a card that is not at live is not touched: a branch still in review keeps its phase, and partsMissing is only read for a head on main", () => {
   const w = world();
   const tips = [{ branch: "build/other-card", sha: w.side, at: T, message: "x\n\nBoard-Id: other-card" }]; // a card with no landing: its tip is the side commit, not on main
   const r = { ...w.repo(), tips };

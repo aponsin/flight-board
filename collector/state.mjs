@@ -700,8 +700,10 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   const needs = !onMain && !bare ? reviewsFromPaths(card, cfg, reviewsFor(card, cfg), repo.reviewPaths, branchPaths(repo, mainRef, tip.sha)) : null;
   const readPhase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed, ...(needs ? { needs } : {}) }, cfg);
   // #C890: a card that would read live while a commit cited in its next_note is not an ancestor of main (or is no commit the repository knows) is held at ship, naming the missing shas.
-  const partsMissing = readPhase === config.collector.livePhase && typeof repo.git === "function" ? citedShas(card.nextNote).filter((s) => !ok(() => repo.git(["merge-base", "--is-ancestor", s, mainRef]))) : [];
-  const phase = partsMissing.length ? config.collector.shipPhase : readPhase;
+  // Checker 2's M1 on #C1104 (e944b23e): the marked parts are read whenever the head is on main, not only at a would-be-live reading, because the board closes a card of a
+  // repository with no install step at landing (closesAtLanding) and its code commit reads ship, never live; the phase change (held at ship) stays for a would-be-live reading.
+  const partsMissing = onMain && typeof repo.git === "function" ? citedShas(card.nextNote).filter((s) => !ok(() => repo.git(["merge-base", "--is-ancestor", s, mainRef]))) : [];
+  const phase = partsMissing.length && readPhase === config.collector.livePhase ? config.collector.shipPhase : readPhase;
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
   const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed: deployed && !partsMissing.length });
