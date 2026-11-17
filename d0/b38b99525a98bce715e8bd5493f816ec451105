@@ -1,2 +1,3 @@
-SECURE (Full, G17 line) d0b38b99525a: ships only inside G17 at 36e0164e85a5, whose head is SECURE; every fix it needed is on that line. Earlier note: SUPERSEDED-BY-REBASE #C1107 d0b38b99: '=' to signed 401d8139 (range-diff checked). The tip to ship is fe1756b0. (Security)
+SECURE (Full) d0b38b99525a #C1107: covered by the card's signed tip fe1756b05b2e (SECURE), above it in G17 to 36e0164e85a5; ships only with that tip.
+Earlier note: SUPERSEDED-BY-REBASE #C1107 d0b38b99: '=' to signed 401d8139 (range-diff checked). The tip to ship is fe1756b0. (Security)
 signed-by: Security
