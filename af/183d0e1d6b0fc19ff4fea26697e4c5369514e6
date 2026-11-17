@@ -1,0 +1,2 @@
+PASS (Quick) #C1155 group head: changelog.mjs print mode sets process.exitCode, so the pipe drains; the slow-reader test over 150 KB kills the process.exit mutant; changelog-per-card tests 8/8
+signed-by: Checker 2
