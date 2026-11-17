@@ -474,11 +474,20 @@ export function orderCards(rows, evidence) {
 // The card's role is working it now (the roster reading { role: { state, card } }) while a higher group waits for that role: a line for Manager.
 export const ORDER_ROW_END = ": stop it, or have the owner move its group up";
 export const orderLine = (c, b) => `#C${c.num} (${c.group || "no group"}) is being worked while #C${b.num} (${b.group}), a higher group's card for the same role, waits${ORDER_ROW_END}`;
-export function outOfOrderWork({ cards, evidence, agents, groupOrder }) {
+// #C1118 (11-16: Manager added review LOWs to #C1113's next_note and the line said "#C1113 is being worked while #C865 waits: stop it"; nobody was building #C1113): the agents
+// reading's `card` is only the last card the session's transcript NAMES, so a role that read a note it did not write looked like it was working that card. Only the owner's own
+// work counts as worked: a push on the card's branch (a head in the card's evidence), or a step or an ask from the owner role (ownWork: the set of card ids that have one,
+// from the store). A next_note or summary write by Manager or a reviewer is none of these.
+export function ownWorkOn(c, evidence, ownWork) {
+  const e = evidence?.[c.id];
+  return (typeof e?.headSha12 === "string" && e.headSha12 !== "") || (typeof e?.headSha === "string" && e.headSha !== "") || (ownWork instanceof Set && ownWork.has(c.id));
+}
+export function outOfOrderWork({ cards, evidence, agents, groupOrder, ownWork }) {
   const all = orderCards(cards, evidence), roster = agents && typeof agents === "object" ? agents : {}, out = [];
   for (const c of all) {
     const on = roster[c.owner_role];
     if (!(on && on.state === "working" && on.card === c.id) || !c.turn) continue;
+    if (!ownWorkOn(c, evidence, ownWork)) continue;
     const b = groupOrderBlock(c, all, groupOrder);
     if (b) out.push({ card_id: c.id, num: c.num, reason: orderLine(c, b) });
   }
