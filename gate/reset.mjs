@@ -172,6 +172,9 @@ export const DISPATCH_STEPS = {
   // #C1090: five or more docs/DATA.d fragments wait on main (the landing job's report says so): the fold is a card of its own, signed like any other.
   // #C1097: a card has waited for this role 30 minutes while the role sat idle (the stall the board also gave Manager).
   stall: "has waited for you 30 minutes while you were idle; read it on the board and pick it up now",
+  // #C1105: the ship candidate's CI run finished. Green: the run passed, so the merge and deploy follow; red: the candidate is gone and its version is not live.
+  shipcigreen: "SHIP CI FINISHED GREEN: the candidate's run passed; check that it merged and deployed, then continue the ship",
+  shipcired: "SHIP CI ENDED WITHOUT PASSING (or went by between two reads): read the candidate's run and the live version, then continue the ship or cut the next candidate",
   folddue: "FOLD DUE: 5 or more DATA fragments wait in docs/DATA.d on main; cut the fold card (a Board-Id starting fold-data-fragments, a branch that only runs node scripts/data-fragments.mjs --write), push it and send READY",
 };
 // #C872: an answered Decision on a card wakes the card's owner with the answer quoted. The answer is the owner's choice (an option Manager

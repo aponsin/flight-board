@@ -205,7 +205,17 @@ function e2eFolder(configText, log, home) {
 const e2eFile = (stateFile) => join(dirname(stateFile), "e2e.json");
 const e2eKept = (read, file) => { try { const k = JSON.parse(read(file)); return plain(k) && Number.isFinite(k.at) && plain(k.value) && E2E_STATES.includes(k.value.state) ? k : null; } catch { return null; } };
 // Usage job: ask the script when the kept answer is 30 minutes old (or none), and keep what it says. Never throws.
-export function e2eStep(configText, { stateFile, env, log = () => {}, now = Date.now(), run = defaultE2eRun, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t), home = homedir() } = {}) {
+// #C1105: a daily run that reads "missed" is started by hand once (gh workflow run <the daily workflow> --ref main, in the product's clone: a
+// workflow_dispatch on main, which the workflow checks out dev from itself). The start is kept beside the answer (startedAt) and stands for the whole
+// miss: it is asked again only after a reading that is not missed has cleared it, so a run that is slow to finish is never started twice. A start that
+// fails (gh missing, signed out, the workflow has no workflow_dispatch) is logged and tried again at the next reading, 30 minutes later.
+export const E2E_WORKFLOW_FILE = "daily-e2e.yml";
+export function defaultE2eStart({ cwd, ref }, env, exec = spawnSync) {
+  const branch = ref.slice(ref.indexOf("/") + 1);
+  if (!SAFE_REF.test(branch) || branch.startsWith("-")) return { error: { code: "bad-ref" } };
+  return exec("gh", ["workflow", "run", E2E_WORKFLOW_FILE, "--ref", branch], { cwd, env, encoding: "utf8", timeout: 30_000, maxBuffer: 1024 * 1024 });
+}
+export function e2eStep(configText, { stateFile, env, log = () => {}, now = Date.now(), run = defaultE2eRun, start = defaultE2eStart, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t), home = homedir() } = {}) {
   try {
     const target = e2eFolder(configText, log, home);
     if (!target) return null;
@@ -213,7 +223,15 @@ export function e2eStep(configText, { stateFile, env, log = () => {}, now = Date
     if (kept && kept.at <= now && now - kept.at < E2E_EVERY_MS) return kept.value;
     const value = e2eReading(run(target, env));
     log(`e2e: the daily run reads ${value.state}`);
-    write(file, JSON.stringify({ at: now, value }));
+    let startedAt = value.state === "missed" && Number.isFinite(kept?.startedAt) && kept.startedAt <= now ? kept.startedAt : null;
+    if (value.state === "missed" && startedAt === null) {
+      try {
+        const r = start(target, env);
+        if (r && !r.error && r.status === 0) { startedAt = now; log("e2e: the daily run was missed: started it by hand on main"); }
+        else log(`e2e: the daily run was missed and could not be started (${String(r?.error?.code ?? r?.stderr ?? `exit ${r?.status}`).split("\n")[0].slice(0, 80)}); tried again at the next reading`);
+      } catch (e) { log(`e2e: starting the daily run failed: ${String(e.message).slice(0, 80)}`); }
+    }
+    write(file, JSON.stringify({ at: now, value, ...(startedAt === null ? {} : { startedAt }) }));
     return value;
   } catch (e) { log(`e2e failed: ${String(e.message).slice(0, 80)}`); return null; }
 }

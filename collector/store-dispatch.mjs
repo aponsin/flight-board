@@ -399,6 +399,48 @@ export function afterShip(view, before, agents, now) {
   return { card: { id, who: AFTER_SHIP_ROLE, status: "active", num: null, waitingOn: null, turns: [{ role: AFTER_SHIP_ROLE, phase: "live", step: "aftership" }] }, live };
 }
 
+// #C1105 (11-16: Release sat on a v1.212.4 candidate whose CI had finished green): a ship candidate's CI run that finishes wakes Release once. The
+// candidate is the evidence key `ship` ({ version, ci, at }, written every run while a candidate stands, so its readAt trails the heartbeat key `board`
+// by no more than SHIP_CI_PAIR_MS while it does and falls behind once there is none). Green: the candidate reads "passed". Red: it was seen and is gone
+// while its version is not the live one (a failed or cancelled run drops the candidate, and a merge that went by between two reads looks the same: the
+// line says so). A candidate that is gone because its version went live is done silently (Ops's after-ship turn covers it). The turn is a card of its
+// own, `shipci-v<x>-<y>-<z>-green|red`; dispatch-state.json keeps `shipci`: { version, ci, at, result?, wokenAt?, done }. As the after-ship turn, it
+// holds until Release has worked after it was woken (no longer idle, or idle since after the wake), so it fires once per candidate, and a candidate
+// first seen more than SHIP_CI_WINDOW_MS ago is done. A stale heartbeat reads nothing: no wake and no conclusion.
+export const SHIP_CI_ROLE = "Release", SHIP_CI_FRESH_MS = 10 * 60e3, SHIP_CI_PAIR_MS = 3 * 60e3, SHIP_CI_WINDOW_MS = 6 * 3600e3;
+export const shipCiId = (version, result) => {
+  const v = typeof version === "string" ? version.replace(/^v/, "") : "";
+  return /^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(v) && (result === "green" || result === "red") ? `shipci-v${v.replace(/\./g, "-")}-${result}` : null; // five dash-separated words at most (gate/reset.mjs CARD)
+};
+// { card: the turn to add or null, shipci: the state to keep }.
+export function shipCiDone(view, before, agents, now) {
+  const isObj = (x) => typeof x === "object" && x !== null && !Array.isArray(x);
+  const prev = before && isObj(before.shipci) ? before.shipci : null;
+  const ev = view && isObj(view.evidence) ? view.evidence : {};
+  const board = isObj(ev.board) ? ev.board : null, ship = isObj(ev.ship) ? ev.ship : null;
+  if (!board || !Number.isFinite(board.readAt) || board.readAt > now || now - board.readAt > SHIP_CI_FRESH_MS) return { card: null, shipci: prev };
+  const cand = ship && isObj(ship.value) && Number.isFinite(ship.readAt) && board.readAt - ship.readAt <= SHIP_CI_PAIR_MS ? ship.value : null;
+  const candVersion = cand && typeof cand.version === "string" && /^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(cand.version.replace(/^v/, "")) ? cand.version.replace(/^v/, "") : null;
+  let cur = prev && typeof prev.version === "string" ? { ...prev } : null;
+  if (candVersion) {
+    if (!cur || cur.version !== candVersion) cur = { version: candVersion, ci: cand.ci, at: now, done: false };
+    else cur.ci = cand.ci;
+    if (!cur.result && cand.ci === "passed") cur.result = "green";
+  } else if (cur && !cur.done && !cur.result) {
+    const liveV = view?.live?.state === "live" ? String(view.live.version ?? "").replace(/^v/, "") : null;
+    if (liveV === cur.version) cur.done = true;
+    else cur.result = "red";
+  }
+  if (!cur) return { card: null, shipci: prev };
+  const ag = agents && Object.hasOwn(agents, SHIP_CI_ROLE) ? agents[SHIP_CI_ROLE] : null;
+  const idleSince = ag && (Number.isFinite(ag.since) ? ag.since : ag.lastActivityAt);
+  if (!cur.done && Number.isFinite(cur.wokenAt) && ag && (ag.state !== "idle" || (Number.isFinite(idleSince) && idleSince > cur.wokenAt))) cur.done = true;
+  if (!cur.done && !(Number.isFinite(cur.at) && now - cur.at <= SHIP_CI_WINDOW_MS)) cur.done = true;
+  const id = cur.done || !cur.result ? null : shipCiId(cur.version, cur.result);
+  if (!id) return { card: null, shipci: cur };
+  return { card: { id, who: SHIP_CI_ROLE, status: "active", num: null, waitingOn: null, turns: [{ role: SHIP_CI_ROLE, phase: "ship", step: cur.result === "green" ? "shipcigreen" : "shipcired" }] }, shipci: cur };
+}
+
 // #C1007 (Director 11-11: the Ops daily scheduled task was a model run whose whole job was one fixed line to one session): the dispatch wakes Ops
 // once a day for its daily check, from DAILY_CHECK_HOUR o'clock MT on, with no card queued and no version shipped. The turn is a card of its own,
 // `ops-daily-<yyyy-mm-dd>` (the MT day), so the DISPATCH line names the day. dispatch-state.json keeps `daily`: { date, wokenAt?, done }. As with
@@ -522,12 +564,14 @@ export function dispatchRun(view, { dir, roster, lead, ceiling = QUOTA_CEILING_D
   const ship = afterShip(view, state, input.agents, now);
   const daily = dailyCheck(state, input.agents, now);
   const fold = foldDueCheck(landing, state, input.agents, now);
-  const r = dispatchItems({ cards: [...input.cards, ...(ship.card ? [ship.card] : []), ...(daily.card ? [daily.card] : []), ...(fold.card ? [fold.card] : []), ...agentStallCards(view, now, lead)], agents: input.agents, asked: input.asked, queues: input.queues, roster, lead, now, before: state });
+  const shipci = shipCiDone(view, state, input.agents, now);
+  const r = dispatchItems({ cards: [...input.cards, ...(ship.card ? [ship.card] : []), ...(daily.card ? [daily.card] : []), ...(fold.card ? [fold.card] : []), ...(shipci.card ? [shipci.card] : []), ...agentStallCards(view, now, lead)], agents: input.agents, asked: input.asked, queues: input.queues, roster, lead, now, before: state });
+  const shipCiKept = shipci.shipci && shipci.card && r.items.some((i) => i.card === shipci.card.id) && !Number.isFinite(shipci.shipci.wokenAt) ? { ...shipci.shipci, wokenAt: now } : shipci.shipci;
   const live = ship.card && r.items.some((i) => i.card === ship.card.id) && !Number.isFinite(ship.live.wokenAt) ? { ...ship.live, wokenAt: now } : ship.live;
   const day = daily.card && r.items.some((i) => i.card === daily.card.id) && !Number.isFinite(daily.daily.wokenAt) ? { ...daily.daily, wokenAt: now } : daily.daily;
   const folded = fold.card && r.items.some((i) => i.card === fold.card.id) && !Number.isFinite(fold.fold.wokenAt) ? { ...fold.fold, wokenAt: now } : fold.fold;
   writeAtomic(join(dir, DISPATCH_FILE), JSON.stringify({ at: now, source: "store", items: r.items }));
-  writeAtomic(join(dir, DISPATCH_STATE_FILE), JSON.stringify({ ...r.state, ...(live ? { live } : {}), ...(day ? { daily: day } : {}), ...(folded ? { fold: folded } : {}) }));
+  writeAtomic(join(dir, DISPATCH_STATE_FILE), JSON.stringify({ ...r.state, ...(live ? { live } : {}), ...(day ? { daily: day } : {}), ...(folded ? { fold: folded } : {}), ...(shipCiKept ? { shipci: shipCiKept } : {}) }));
   // #C940: the roles' states in the log, so a minute with nothing dispatched can be told from a blind or missing session (role names and one word each).
   log(`dispatch: agents ${(Array.isArray(roster) ? roster : []).filter((x) => typeof x === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(x)).map((x) => `${x}=${input.agents[x] ? String(input.agents[x].state).replace(/[^a-z]/g, "") || "?" : "none"}`).join(" ")}`);
   log(`dispatch: ${r.items.length} item(s)`);
