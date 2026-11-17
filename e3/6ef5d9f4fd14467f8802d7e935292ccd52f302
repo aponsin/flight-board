@@ -1,0 +1,3 @@
+SECURE #C1162 v2 tip (supersedes 5ccaa75d): range-diff against v1 adds only the holdOpen skip (now, endsPassed passed in); still a read-only line to Manager, parameterised stall_wakes writes, never unpauses
+
+signed-by: Security
