@@ -16,4 +16,5 @@ export const JOBS = {
   // (collector/store-dispatch.mjs LAND_REPORT_FRESH_MS), longer than an interval plus a full run, so a slow run never hands board landings to Release.
   land: { intervalSec: 600, limitSec: 590 },
 };
-export const LAND_TIP_SEC = 360, LAND_MARGIN_SEC = 20;
+// #C1146: a group head also gets the group check's one suite run before its landing (about 125 s), so such a tip starts only while LAND_SUITE_SEC more fits.
+export const LAND_TIP_SEC = 360, LAND_MARGIN_SEC = 20, LAND_SUITE_SEC = 180;

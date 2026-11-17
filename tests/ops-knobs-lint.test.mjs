@@ -91,6 +91,7 @@ export const FIXED = {
   BOOT_POLL_MS: "0.5 s between looks while it boots: the same pause (scripts/state-install.mjs)",
   BOOT_RETRY_MS: "2 s before a second bootstrap if launchd answers an error: the same pause (scripts/state-install.mjs)",
   BOOT_WAIT_MS: "10 s to wait for a launchd job to boot: a pause inside the install script (scripts/state-install.mjs)",
+  LAND_SUITE_SEC:"the group check's one suite run on a group head, added to the per-tip budget before such a tip starts (#C1146): tied to the same alarm and LAND_TIP_SEC (tests/group-check-before-land.test.mjs); changing it needs an owner install",
   LAND_MARGIN_SEC: "the land job's margin before its limit: tied to the plist's alarm and the per-tip budget (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",
   LAND_REPORT_FRESH_MS: "how long the land report counts as fresh: lives in the owner-pinned dispatch and must stay over the land job's interval plus limit (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",
   OUTAGE_KEEP_MS: "how long a recorded outage is kept (7 days): a retention bound on the table, not a cadence",

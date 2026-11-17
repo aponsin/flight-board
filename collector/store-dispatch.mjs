@@ -603,7 +603,11 @@ export function landHoldsFile(view, now) {
   // ''/null, 'board' and 'flight-board', as BOARD_REPO_WORDS and the dispatch's reviewer key read them), so a peer is dropped only when BOTH cards name a repository (a non-empty word) and the two
   // words, with every board word read as 'flight-board', differ. A card with no word yet, or a word that is not a string, is unknown and stays a peer: it fails closed (the lone tip waits).
   const toLand = (c) => open(c) && !landedOnMain(ev[`cards.${c.id}`]?.value);
-  const repoOf = new Map(all.map((c) => { const w = typeof c.repo === "string" ? c.repo.trim() : ""; return [c.id, w === "" ? "" : BOARD_REPO_WORDS.has(w) ? "flight-board" : w]; }));
+  // #C1145: the words are compared as one repository's names, not as typed: case, spaces, an `<owner>/` front and a `.git` end do not make another repository ("Flight-Board", "aponsin/flight-board"
+  // and "flight-board.git" are the board's), so a spelling difference never drops a peer and lets a lone tip land. A card with NO commit yet is no different: it is still a member to land
+  // (toLand reads no commit, only that the card is open and not on main), and its word, if it has none yet, is unknown and keeps it a peer.
+  const repoWord = (r) => (typeof r === "string" ? r.trim().toLowerCase().replace(/^.*\//, "").replace(/\.git$/, "") : "");
+  const repoOf = new Map(all.map((c) => { const w = repoWord(c.repo); return [c.id, w === "" ? "" : BOARD_REPO_WORDS.has(w) ? "flight-board" : w]; }));
   const sameRepo = (a, b) => { const x = repoOf.get(a), y = repoOf.get(b); return x === "" || y === "" || x === y; };
   const members = new Map();
   for (const c of all) { const g = batchOf(c); if (g && toLand(c)) members.set(g, [...(members.get(g) ?? []), c.id]); }

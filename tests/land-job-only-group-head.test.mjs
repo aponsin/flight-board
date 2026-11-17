@@ -14,7 +14,7 @@ const view = (cards, phases = {}) => ({ cards, evidence: Object.fromEntries(Obje
 const file = (v) => landHoldsFile(v, NOW);
 const ok = { checker: "PASS Full at abc", security: "SECURE at abc" };
 const sha = (n) => String(n).padStart(40, "0");
-const head = (n, over = {}) => ({ branch: `build/card-${n}`, sha: sha(n), notes: ok, cards: [`card-${n}`], onMain: false, forward: true, ahead: 1, dataLines: 0, ...over });
+const head = (n, over = {}) => ({ branch: `build/card-${n}`, sha: sha(n), notes: ok, cards: [`card-${n}`], onMain: false, forward: true, ahead: 1, dataLines: 0, group: { shared: [], read: null, suite: { ok: true, line: "green" } }, ...over }); // #C1146: the group check is done (none shared, the suite green)
 const allSigned = view([card("card-1"), card("card-2"), card("card-3")], { "card-1": "ship", "card-2": "ship", "card-3": "ship" });
 
 test("the holds file lists, for each card of a group, the other members still to land; a card with no group or no other member is not listed", () => {
