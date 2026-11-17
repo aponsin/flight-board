@@ -161,10 +161,13 @@ test("the step refuses, and changes nothing, when the pinned install is missing,
 // ---- Security's F1 on 768c18d0: the job's own self-check. Once the LaunchAgent starts the pinned install, the job must run from there. ----
 function fakeHome() {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "fb-land-self-")));
-  const sha = "c".repeat(40), pinned = join(home, ".flight-board", "install", sha, "scripts");
+  // The link names a NEWER release than the owner's pinned install (every release moves the link; the pinned install moves only with his pack), so the pinned folder is accepted for being
+  // a pinned install, not because it happens to be what the link names.
+  const sha = "c".repeat(40), newer = "e".repeat(40), pinned = join(home, ".flight-board", "install", sha, "scripts");
   mkdirSync(pinned, { recursive: true });
-  symlinkSync(join(home, ".flight-board", "install", sha), join(home, ".flight-board", "current"));
-  return { home, sha, pinned, link: join(home, ".flight-board", "current", "scripts") };
+  mkdirSync(join(home, ".flight-board", "install", newer, "scripts"), { recursive: true });
+  symlinkSync(join(home, ".flight-board", "install", newer), join(home, ".flight-board", "current"));
+  return { home, sha, newer, pinned, link: join(home, ".flight-board", "current", "scripts") };
 }
 test("selfRefusal: the pinned install and the link are accepted; a checkout, a pinned-looking name whose real place is elsewhere, and a folder that is not 40 hex are refused", () => {
   const h = fakeHome();
@@ -192,7 +195,7 @@ test("selfRefusal: the pinned install and the link are accepted; a checkout, a p
 test("board-land.mjs runs from ~/.flight-board/install/<commit>/scripts: past the self-check; from a checkout-shaped folder it is refused", () => {
   const h = fakeHome(), checkout = join(h.home, "Documents", "Code", "flight-board");
   try {
-    for (const dir of ["scripts", "worker", "collector", "gate", "hooks"]) { cpSync(new URL(`../${dir}`, import.meta.url).pathname, join(h.home, ".flight-board", "install", h.sha, dir), { recursive: true }); cpSync(new URL(`../${dir}`, import.meta.url).pathname, join(checkout, dir), { recursive: true }); }
+    for (const dir of ["scripts", "worker", "collector", "gate", "hooks"]) for (const to of [join(h.home, ".flight-board", "install", h.sha), join(h.home, ".flight-board", "install", h.newer), checkout]) cpSync(new URL(`../${dir}`, import.meta.url).pathname, join(to, dir), { recursive: true });
     const run = (script) => spawnSync(process.execPath, [script, "--config", join(h.home, "no-such-config.json")], { encoding: "utf8", env: { HOME: h.home, PATH: "/usr/bin:/bin" } });
     const pinned = run(join(h.home, ".flight-board", "install", h.sha, "scripts", "board-land.mjs"));
     assert.match(pinned.stdout, /^NOT RUN: the board config is missing or invalid/, pinned.stdout + pinned.stderr);
