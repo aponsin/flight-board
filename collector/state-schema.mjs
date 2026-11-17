@@ -62,7 +62,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "weekTotal", "stack", "stackHold", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "restart", "ledger", "quiet"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "weekTotal", "stack", "stackHold", "rcOff", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "restart", "ledger", "quiet"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -126,6 +126,8 @@ const AGENT = {
   card: nullOr(isId),
   since: nullOr(isTime),
   by: (v) => v === "title" || v === "spawn",
+  // #C1122: true only: the role's session has its Remote Control switch turned off (the app's session file says so). Left out otherwise.
+  rcOff: (v) => v === true,
 };
 
 // The probe's own readings, numbers and enums only (#C592, #C593, #C595); a state from a probe before them still fits.
