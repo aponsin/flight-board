@@ -1,0 +1,3 @@
+SECURE (Quick) #C1124 v2 d8c5dd8f: the sweep's git reads get a 64 MB maxBuffer; cut output (ENOBUFS) sweeps nothing for that repo and logs why, never a partial list (fails closed). git still runs only in config-named ~/ dirs, read-only commands. No other change.
+
+signed-by: Security
