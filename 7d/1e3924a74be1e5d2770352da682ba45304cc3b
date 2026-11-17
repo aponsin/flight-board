@@ -1,0 +1,2 @@
+PASS (Full) #C1147 7d1e3924: the shared door refuses a decision message (post kind decision, or Manager's Decision ask to a thread); Manager's own door posts one.
+signed-by: Checker 2
