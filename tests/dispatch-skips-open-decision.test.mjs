@@ -94,12 +94,12 @@ test("an open decision holds a card that is already pushed too, as an open ask d
 
 // ---- the Worker's copy (worker/board-rules.mjs): the same rule, so the idle-agent line never counts or names a card the dispatch holds ----
 test("the Worker's copy of openDecisionCards reads the same cards as the collector's on every case above", () => {
-  const cards = [{ id: "pick-card", num: 1071 }, { id: "two", num: 1072 }, { id: "three", num: 1073 }];
+  const cards = [{ id: "pick-card", num: 1071 }, { id: "two", num: 1072 }, { id: "three", num: 1073 }, { id: "four", num: 1074 }];
   const idByNum = new Map(cards.map((c) => [c.num, c.id]));
   const messages = [
     decision("a", "#C1071: x"), decision("b", "y\n\nCard: two"), decision("c", "z\n\nCard: unknown-card"), decision("d", "#C1071 and #C1072: both?"),
     decision("e", "#C1073: answered"), owner("e", NOW - 5 * MIN), { ...decision("f", "#C1071: resolved"), resolved: 1 }, { ...decision("g", "#C1071: not a decision"), kind: null },
-    { ...decision("h", "#C1071: owner's own"), author: "owner" }, { ...decision("j", "#C1071: another role's"), author: "Checker" }, null, { thread_id: 7 }, { ...decision("i", "#C1071: bad time"), created_at: "now" },
+    { ...decision("h", "#C1071: owner's own"), author: "owner" }, { ...decision("j", "#C1074: another role's"), author: "Checker" }, null, { thread_id: 7 }, { ...decision("i", "#C1071: bad time"), created_at: "now" },
   ];
   const mine = [...workerOpenDecisionCards(messages, cards)].sort(), theirs = [...openDecisionCards({ threads: { messages } }, idByNum)].sort();
   assert.deepEqual(mine, theirs);
