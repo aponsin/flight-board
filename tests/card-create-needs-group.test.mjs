@@ -46,16 +46,40 @@ test("more than 12 open groups are cut to 12 with a count of the rest", async ()
   assert.match(detail, /g14, g13, .*, g03 and 2 more\)/, detail);
 });
 
-test("a write that clears batch is refused; moving to another group is accepted; a loose existing card is still updated, and a write can give it a group", async () => {
+test("a write that clears batch is refused; moving to another group is accepted; a write that does not touch batch is fine on a card that has one", async () => {
   const db = makeDb();
   await make(db, { id: "c-in", title: "In", batch: "g1-first" });
   for (const [i, batch] of [null, "", "  "].entries()) refusedAs(await edit(db, { id: "c-in", batch }), "card-group");
   assert.equal((await edit(db, { id: "c-in", batch: "g2-second" })).ok, true);
-  assert.equal((await edit(db, { id: "c-in", next_note: "no batch word at all" })).ok, true, "a write that does not touch batch is as before");
-  // An old card with no group (made without the tool option): still updated, and a write can give it a group.
-  await createCard(db, T, "Manager", { id: "c-old", title: "Old loose" });
-  assert.equal((await edit(db, { id: "c-old", next_note: "still editable" })).ok, true);
-  assert.equal((await edit(db, { id: "c-old", batch: "g2-second" })).ok, true);
+  assert.equal((await edit(db, { id: "c-in", next_note: "no batch word at all" })).ok, true);
+});
+
+// The lead's ruling (B): a write to a card with no group is refused unless it sets batch; a closing write (done with its evidence, or dropped) needs none.
+test("a write to a loose card is refused unless it sets batch; the same write with a batch is accepted", async () => {
+  const db = makeDb();
+  await make(db, { id: "c-open", title: "Open", batch: "g1-first" });
+  await createCard(db, T, "Manager", { id: "c-old", title: "Old loose" }); // made without the tool option, so with no group
+  const detail = refusedAs(await edit(db, { id: "c-old", next_note: "a note" }), "card-group");
+  assert.match(detail, /c-old has no group yet/);
+  assert.match(detail, /g1-first/, "and lists the open groups");
+  refusedAs(await edit(db, { id: "c-old", waiting_on: "Checker 2" }), "card-group");
+  refusedAs(await edit(db, { id: "c-old", title: "Renamed" }), "card-group");
+  refusedAs(await edit(db, { id: "c-old", batch: "   ", next_note: "x" }), "card-group");
+  assert.equal((await edit(db, { id: "c-old", next_note: "a note", batch: "g1-first" })).ok, true);
+  assert.equal((await edit(db, { id: "c-old", next_note: "a second note" })).ok, true, "now it has a group");
+});
+
+test("a closing write needs no group: done with its evidence, or dropped; a card already closed is not asked for one", async () => {
+  const db = makeDb();
+  for (const id of ["c-d1", "c-d2", "c-d3", "c-d4"]) await createCard(db, T, "Manager", { id, title: id });
+  assert.equal((await edit(db, { id: "c-d1", done: true, done_evidence: "https://example.test/x" })).ok, true);
+  assert.equal((await edit(db, { id: "c-d2", dropped: true })).ok, true);
+  assert.equal((await edit(db, { id: "c-d3", dropped: 1 })).ok, true);
+  // done_evidence alone is no closing write (it is refused on its own, as before): the group rule does not hide that answer
+  refusedAs(await edit(db, { id: "c-d4", done_evidence: "https://example.test/x" }), "card-group");
+  // closed already: a later write (a note on a dropped or done card) is not asked for a group
+  assert.equal((await edit(db, { id: "c-d1", next_note: "closed, still a note" })).ok, true);
+  assert.equal((await edit(db, { id: "c-d2", next_note: "dropped, still a note" })).ok, true);
 });
 
 test("a card without a summary is still refused (the summary rule stands beside the group rule), and the summary is checked first", async () => {
@@ -78,6 +102,14 @@ test("through the card_create and card_update TOOLS (the worker's own wiring): n
   assert.equal(clear.refused?.rule ?? clear.rule, "card-group", JSON.stringify(clear));
   assert.match(JSON.stringify(clear), /g1-first/, "the refusal lists the open groups");
   assert.equal((await tool("card_update", { id: "c-tool-ok", batch: "g2-second" })).ok, true);
+  // a loose card (made through the store with no group) through the TOOL: its next_note write is refused, with a batch it is accepted, a drop needs none
+  const { createCard: plain } = await import("../worker/board-store.mjs");
+  await plain(env.DB, T, "Manager", { id: "c-tool-loose", title: "Loose" });
+  const noGroup = await tool("card_update", { id: "c-tool-loose", next_note: "a note" });
+  assert.equal(noGroup.refused?.rule ?? noGroup.rule, "card-group", JSON.stringify(noGroup));
+  assert.equal((await tool("card_update", { id: "c-tool-loose", next_note: "a note", batch: "g2-second" })).ok, true);
+  await plain(env.DB, T, "Manager", { id: "c-tool-drop", title: "Loose too" });
+  assert.equal((await tool("card_update", { id: "c-tool-drop", dropped: true })).ok, true);
 });
 
 test("the store functions without the tool's option are as before", async () => {

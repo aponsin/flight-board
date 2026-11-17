@@ -145,12 +145,17 @@ function reviewHoldWriterRefusal(fields, who) {
 }
 // Card words changed later: checked against the probe's reading of this card (a typed word cannot contradict it).
 // #C1107: through the card_update TOOL (opts.needGroup) a write that clears batch (null, empty or blanks) is refused: a card leaves a group only by moving to
-// another one, or by the owner's pull-out (pullOutOfGroup, its own tool). A card that has no group yet is still updated as before.
+// another one, or by the owner's pull-out (pullOutOfGroup, its own tool). A card that has no group yet is written only by a write that gives it one (below).
 export async function updateCard(db, now, who, fields, opts = {}) {
   const id = fields?.id;
   if (opts.needGroup && fields && typeof fields === "object" && "batch" in fields && (fields.batch === null || (typeof fields.batch === "string" && !fields.batch.trim()))) return refuse(db, now, await groupRefusal(db, "a write cannot take a card out of its group (batch)"), id, who);
-  const card = typeof id === "string" ? await db.prepare("SELECT id, next_note, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, queue_pos, owner_role, dropped, done_at FROM cards WHERE id = ?").bind(id).first() : null;
+  const card = typeof id === "string" ? await db.prepare("SELECT id, next_note, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, queue_pos, owner_role, dropped, done_at, batch FROM cards WHERE id = ?").bind(id).first() : null;
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
+  // The lead's ruling (B, on the card's note): a card with no group is written only by a write that gives it one; closing it (done with its evidence, or dropped) needs none,
+  // and a card already done or dropped is not asked for one.
+  if (opts.needGroup && !String(card.batch ?? "").trim() && !card.done_at && !card.dropped && !(typeof fields.batch === "string" && fields.batch.trim()) && !(fields.done === true || fields.dropped === true || fields.dropped === 1)) {
+    return refuse(db, now, await groupRefusal(db, `${id} has no group yet: this write must set batch (a write that closes or drops the card needs none)`), id, who);
+  }
   // #C902: done closes the card once, on a card that is not dropped; a thread message named as evidence must be on the board.
   if (fields.done === true) {
     if (card.done_at) return refuse(db, now, { rule: "card-done", detail: `${id} is already done` }, id, who);
