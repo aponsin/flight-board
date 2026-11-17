@@ -241,6 +241,24 @@ test("sign-note: a never-pushed local note on another commit does not overwrite 
   assert.equal(r.gb("notes", "--ref=refs/notes/checker", "show", Y), "PASS y\nsigned-by: Checker");
 });
 
+// #C1131: Security signed two commits from another repository's checkout and the script reported "SIGNED ..., pushed". A sha that is not a commit in the checkout it runs in is refused, naming the folder.
+test("sign-note: a sha that is not a commit in this checkout is refused, names the folder, and writes and pushes nothing", () => {
+  const mine = repo(), elsewhere = repo();
+  const foreign = elsewhere.g("commit-tree", "-m", "only in the other repository", "HEAD^{tree}");
+  const folder = mine.g("rev-parse", "--show-toplevel");
+  for (const push of [false, true]) {
+    assert.throws(() => signNote({ run: mine.run, role: "checker", sha: foreign, signer: "Checker", line: "PASS ok", push }), (e) => e.message.includes(foreign.slice(0, 12)) && e.message.includes(folder) && /not a commit in the checkout/.test(e.message) && /nothing was written/.test(e.message), `push ${push}`);
+  }
+  assert.throws(() => mine.g("notes", "--ref=refs/notes/checker", "show", foreign), "no local note");
+  assert.throws(() => mine.gb("notes", "--ref=refs/notes/checker", "show", foreign), "no note on origin");
+  assert.equal(mine.g("for-each-ref", "refs/notes/"), "", "no notes ref was created locally");
+  assert.equal(mine.gb("for-each-ref", "refs/notes/"), "", "none on origin");
+  // a commit the checkout has, and a tree or blob object that is not a commit, are told apart
+  const tree = mine.g("rev-parse", "HEAD^{tree}");
+  assert.throws(() => signNote({ run: mine.run, role: "checker", sha: tree, signer: "Checker", line: "PASS ok" }), /not a commit in the checkout/);
+  assert.match(signNote({ run: mine.run, role: "checker", sha: mine.sha, signer: "Checker", line: "PASS ok" }), /^SIGNED checker/);
+});
+
 test("sign-note: bad input changes nothing", () => {
   const r = repo();
   for (const [bad, why] of [[{ role: "release" }, /--role is checker or security/], [{ sha: "abc" }, /--sha is the commit's full/], [{ sha: r.sha.toUpperCase().replace(/[0-9]/g, "A") }, /--sha is the commit's full/], [{ signer: "" }, /--signer is your own name/], [{ signer: "Check;er" }, /--signer is your own name/], [{ line: "" }, /--line is the note's one first line/], [{ line: "PASS\nFAKE" }, /--line is the note's one first line/]]) {
