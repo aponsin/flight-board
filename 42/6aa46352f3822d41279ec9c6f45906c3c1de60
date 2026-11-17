@@ -1,0 +1,3 @@
+SECURE (Full) #C1140 v2 426aa463: the selfRefusal fix; covered by the card's signed tip 3dff4752, which adds only test fixtures on top.
+
+signed-by: Security
