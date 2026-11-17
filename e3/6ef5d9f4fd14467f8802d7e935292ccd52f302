@@ -1,0 +1,2 @@
+PASS (Full) #C1162 v2: paused card with every dependency landed is one line to Manager per spell; an open hold is skipped (F1 fixed); 5 of 6 mutants killed. LOW: the store test never ends a hold_end by the dependency going live, so dropping endsPassed in syncStalls goes unseen
+signed-by: Checker 2
