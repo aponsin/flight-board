@@ -141,4 +141,5 @@ export async function main(argv, { env = process.env, exit = (c) => process.exit
     return exit(run.finish(1));
   }
 }
-if (import.meta.url === `file://${process.argv[1]}`) main(process.argv.slice(2));
+import { isMain } from "../scripts/is-main.mjs";
+if (isMain(import.meta.url)) main(process.argv.slice(2));

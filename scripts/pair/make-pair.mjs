@@ -28,7 +28,8 @@ export function makePair({ name, card, what, signed, deployOk, treeOk }) {
   return { [file.deploy]: deploy, [file.tree]: tree };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+import { isMain } from "../is-main.mjs";
+if (isMain(import.meta.url)) {
   const a = Object.fromEntries(process.argv.slice(2).reduce((acc, v, i, all) => (v.startsWith("--") ? [...acc, [v.slice(2), all[i + 1]]] : acc), []));
   if (typeof a.out !== "string" || !a.out) throw new Error("--out <folder> is required: the folder the owner runs the files from");
   const out = a.out;

@@ -142,6 +142,7 @@ test("print mode writes the whole joined CHANGELOG.md to a slow pipe, past 64 KB
   try {
     mkdirSync(join(D, "scripts")); mkdirSync(join(D, DIR));
     copyFileSync(join(ROOT, "scripts/changelog.mjs"), join(D, "scripts/changelog.mjs"));
+    copyFileSync(join(ROOT, "scripts/is-main.mjs"), join(D, "scripts/is-main.mjs")); // #C1167: the script's main check imports it
     const old = Array.from({ length: 2500 }, (_, i) => `- An older bullet number ${i} long enough to fill a pipe (old-card-${i}, #C${i + 1}).`).join("\n");
     const base = `# Changelog\n\n## 0.3.4 - Unreleased\n\n${old}\n\n## 0.3.3\n\n- Shipped (#C800).\n`;
     assert.ok(base.length > 150_000);

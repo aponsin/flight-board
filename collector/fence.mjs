@@ -9,7 +9,7 @@
 // every other call gets no answer but a refusal (exit 2) or silence (exit 0), so the settings alone decide it. Whether a settings
 // deny rule still beats a hook's allow depends on the app's version (Security checks it). Any failure refuses (the "|| exit 2" covers a
 // crash or a missing file, which a hook would otherwise let pass). Paths and links compare as exact strings.
-import { readFileSync, readlinkSync, existsSync, mkdirSync, writeFileSync, renameSync, statSync } from "node:fs";
+import { readFileSync, readlinkSync, realpathSync, existsSync, mkdirSync, writeFileSync, renameSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join, dirname, resolve, basename } from "node:path";
 import { homedir } from "node:os";
@@ -525,7 +525,8 @@ export function readOnce(read = readJson) {
 // The answer to the app for a call whose placeholder the fence filled in: allow it, as rewritten (#C668).
 export const allowAs = (updatedInput) => JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow", updatedInput } });
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+// #C1167: both sides by their real path (a symlink to this file must still run it). Inline, not scripts/is-main.mjs: the fence's import closure is pinned to export.mjs and config.mjs alone (tests/release.test.mjs).
+if (process.argv[1] && (() => { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })()) {
   let reason;
   try { reason = main(process.argv.slice(2), readFileSync(0, "utf8")); } catch (e) { reason = `fence error: ${e?.message ?? e}`; }
   if (reason && typeof reason === "object") { process.stdout.write(`${allowAs(reason.updatedInput)}\n`); process.exit(0); }

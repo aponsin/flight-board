@@ -364,7 +364,8 @@ export function makeAll({ repo, sha, n, out, git = (...a) => spawnSync("git", ["
   return { ok: true, files: Object.fromEntries(Object.entries(all).map(([f, t]) => [f, sha256(t)])) };
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+import { isMain } from "./is-main.mjs";
+if (isMain(import.meta.url)) {
   const args = process.argv.slice(2);
   const flag = (k) => { const i = args.indexOf(`--${k}`); return i >= 0 ? args[i + 1] : undefined; };
   const pos = args.filter((a, i) => !a.startsWith("--") && !(i > 0 && args[i - 1].startsWith("--")));
