@@ -1,0 +1,3 @@
+SECURE #C1154 tip: docs and tests only; the watchdog pass no longer reads board.config.json (only a path argument to pickup-watch.mjs), and a test keeps it so
+
+signed-by: Security
