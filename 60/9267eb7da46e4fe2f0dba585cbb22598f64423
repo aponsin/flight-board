@@ -1,0 +1,3 @@
+SECURE #C1166 tip 609267eb (items 2-5, 7): isBoardRepo/isBoardCard normalise repo words for scheduling, review routing and pairs only (securityAlways untouched); pinnedCommit moved to scripts/config.mjs, still a 40-hex sha that --pinned turns into its own path; hooks-check now also reads statusLine.command (tightens); stack-ready checks every card in origin/main..HEAD with argv git; slowWakes gets stackOn from the store; the page maps a probe 'unknown' agent to idle. No gate, hooks, migrations, Worker config or packages touched. INFO: pinnedInstallOf now matches any install/<sha>/gate/(gate|stop|publish).mjs text, so a settings permission rule naming an old install makes two pins and no watch arms (fails closed).
+
+signed-by: Security
