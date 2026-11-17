@@ -268,6 +268,17 @@ export function reviewersWrite(configText, { log = () => {} } = {}) {
   return { key: "reviewers", value: { reviewers: { ...map } } };
 }
 
+// #C1135 (found on #C1129): the Worker checked roles against a list hard-coded in worker/board-rules.mjs, which drifted from the config ("Checker 2" was on the config and not on the list,
+// and any roster name plus digits passed). The config's own roster, under the key roster as `reviewers` is, so the Worker compares by exact name. Posted every run; a config that
+// cannot be read, has no roster, or whose roster is not up to 40 distinct plain role names writes nothing (the Worker keeps the last good list, or its old rule before the first).
+export function rosterWrite(configText, { log = () => {} } = {}) {
+  let roster;
+  try { roster = JSON.parse(configText)?.roster; } catch { log("roster: the board config could not be read"); return null; }
+  if (roster === undefined) return null;
+  if (!Array.isArray(roster) || roster.length > 40 || !roster.every((r) => typeof r === "string" && /^[A-Za-z0-9][A-Za-z0-9 _-]{0,23}$/.test(r)) || new Set(roster).size !== roster.length) { log("roster: roster is not a list of up to 40 distinct role names; not posted"); return null; }
+  return { key: "roster", value: { roster: [...roster] } };
+}
+
 // #C736: the usage job also posts the day's runner and Actions usage (collector/actions-usage.mjs) to POST /api/probe/usage, which the
 // store's Time spent chart and tiles read. It reads the team repository's workflow runs through gh in the repository folder of the board
 // config (collector.repoPath), at most every 30 minutes for today and until read after the day ended for yesterday (the days read last are
@@ -474,6 +485,8 @@ async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPa
   try { lookW = cfg && lookWrite(cfg, { log }); } catch (e) { log(`look failed: ${String(e.message).slice(0, 80)}`); }
   let reviewersW = null;
   try { reviewersW = cfg && reviewersWrite(cfg, { log }); } catch (e) { log(`reviewers failed: ${String(e.message).slice(0, 80)}`); }
+  let rosterW = null;
+  try { rosterW = cfg && rosterWrite(cfg, { log }); } catch (e) { log(`roster failed: ${String(e.message).slice(0, 80)}`); }
   // #C1006: each scheduled task's chosen model (board config) against the model its last run used (the app's session files). A failure is logged and
   // the store keeps its last reading, which the page shows as old after 36 h.
   let schedW = null;
@@ -496,7 +509,7 @@ async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPa
   // #C997: the settings this run used and the ones it ignored, for the Worker and the page header.
   let knobsW = null;
   try { knobsW = cfg && knobsWrite(cfg, { log }); } catch (e) { log(`knobs failed: ${String(e.message).slice(0, 80)}`); }
-  const late = [lookW, knobsW, reviewersW, schedW, rolesW, sweepW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
+  const late = [lookW, knobsW, reviewersW, rosterW, schedW, rolesW, sweepW, live, e2eW].filter(Boolean); // look first: live stays the last write of the evidence job (e2e, when configured, follows it)
   if (late.length) { const l = await postWrites(late, { base, headers, fetchImpl, log, deadline: t0 + (limitSec - LATE_TAIL_SEC) * 1000 }); return finish({ written: done.written + l.written, refused: done.refused + l.refused }); }
   return finish(done);
 }
