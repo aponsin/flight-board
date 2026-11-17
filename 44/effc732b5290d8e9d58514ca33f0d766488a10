@@ -1,0 +1,3 @@
+SECURE (Full) #C1138 44effc73 (tip): this change only adds a reason for the land job to wait. A tip carrying a grouped card now also needs every other member that is still to land; a holds file without groups behaves as before. board-land checks that groups is an object, that each entry is an array, and that each peer matches CARD_ID before using it, and a peer is only ever used in the waiting text, never in a git command or path. A forged or garbled groups value can only hold a tip back; it can never make one land. The holds file is still written mode 0700 in stateDir. Start commit 3461457a already signed SECURE (empty).
+
+signed-by: Security
