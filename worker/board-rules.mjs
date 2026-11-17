@@ -761,25 +761,37 @@ export const scheduleModelsShape = (v) => v !== null && typeof v === "object" &&
   && Number.isFinite(v.at) && Array.isArray(v.tasks) && v.tasks.length <= 30
   && v.tasks.every((t) => t !== null && typeof t === "object" && !Array.isArray(t) && Object.keys(t).every((k) => ["id", "chosen", "lastRun", "at"].includes(k))
     && typeof t.id === "string" && SCHED_ID.test(t.id) && schedWord(t.chosen, SCHED_MODEL) && schedWord(t.lastRun, SCHED_MODEL) && (t.at === null || Number.isFinite(t.at)));
-// #C1112: the branches whose tip is on main, as the probe lists them (collector/shipped-branches.mjs): { at, repos: [{ name, dir, remote, remoteBranches,
+// #C1112: the branches whose tip is on main, as the probe lists them (collector/shipped-branches.mjs): { at, repos: [{ name, dir, remote, main, remoteBranches,
 // localBranches }] }, 6 repositories and 60 branches of each kind at most, plain names only (the delete lines go to the owner's Terminal as they are).
 const SW_NAME = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,99}$/, SW_DIR = /^~\/[A-Za-z0-9._\/-]{1,200}$/, SW_WORD = /^[A-Za-z0-9._-]{1,40}$/;
 const swBranch = (b) => typeof b === "string" && SW_NAME.test(b) && !b.includes("..") && !b.endsWith("/") && !b.endsWith(".lock");
-const swList = (l) => Array.isArray(l) && l.length <= 60 && l.every(swBranch) && new Set(l).size === l.length;
+// Security's L1 on 1a936c92 (#C1112): the never-list is the Worker's too, so a bad probe reading can never put a delete line for main, master, dev or HEAD, or for
+// the repository's own main branch (the entry's `main`), in an ask the owner pastes.
+const SW_NEVER = new Set(["main", "master", "dev", "HEAD"]);
+const swOk = (b, main) => swBranch(b) && !SW_NEVER.has(b) && b !== main;
+const swUnique = (names) => new Set(names).size === names.length;
+const swList = (l, main) => Array.isArray(l) && l.length <= 60 && l.every((b) => swOk(b, main)) && swUnique(l);
+// A remote branch is { name, sha }: the tip the probe saw, which the delete line leases on (Checker 2's LOW 2: a branch pushed again since the listing is not deleted).
+const swRemoteList = (l, main) => Array.isArray(l) && l.length <= 60
+  && l.every((b) => b !== null && typeof b === "object" && !Array.isArray(b) && Object.keys(b).every((k) => k === "name" || k === "sha") && swOk(b.name, main) && typeof b.sha === "string" && /^[0-9a-f]{40}$/.test(b.sha))
+  && swUnique(l.map((b) => b.name));
 export const shippedBranchesShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && Object.keys(v).every((k) => k === "at" || k === "repos")
   && Number.isFinite(v.at) && Array.isArray(v.repos) && v.repos.length <= 6
-  && v.repos.every((r) => r !== null && typeof r === "object" && !Array.isArray(r) && Object.keys(r).every((k) => ["name", "dir", "remote", "remoteBranches", "localBranches"].includes(k))
+  && v.repos.every((r) => r !== null && typeof r === "object" && !Array.isArray(r) && Object.keys(r).every((k) => ["name", "dir", "remote", "main", "remoteBranches", "localBranches"].includes(k))
     && typeof r.name === "string" && SW_WORD.test(r.name) && typeof r.dir === "string" && SW_DIR.test(r.dir) && !r.dir.split("/").includes("..")
-    && typeof r.remote === "string" && SW_WORD.test(r.remote) && swList(r.remoteBranches) && swList(r.localBranches));
+    && typeof r.remote === "string" && SW_WORD.test(r.remote) && swBranch(r.main) && swRemoteList(r.remoteBranches, r.main) && swList(r.localBranches, r.main));
 export const SWEEP_TITLE = "Shipped branches to delete", SWEEP_CHUNK = 15;
-// The Terminal ask for a posted list: one `git push <remote> --delete ...` line per 15 remote branches and one `git branch -d ...` per 15 local ones
-// (-d refuses an unmerged branch), each a command of its own with its folder (-C), so any line may be run alone. null when there is nothing to delete.
+// The Terminal ask for a posted list: one `git push <remote> --force-with-lease=<b>:<sha> ... --delete ...` line per 15 remote branches (a branch pushed again since the
+// listing no longer has the sha leased, so it is not deleted) and one `git branch -d ...` per 15 local ones (-d refuses an unmerged branch), each a command of its own with its folder (-C), so any line may be run alone. null when there is nothing to delete.
 export function sweepAsk(value) {
   if (!shippedBranchesShape(value)) return null;
   const commands = [];
   let n = 0;
   for (const r of value.repos) {
-    for (let i = 0; i < r.remoteBranches.length; i += SWEEP_CHUNK) commands.push(`git -C ${r.dir} push ${r.remote} --delete ${r.remoteBranches.slice(i, i + SWEEP_CHUNK).join(" ")}`);
+    for (let i = 0; i < r.remoteBranches.length; i += SWEEP_CHUNK) {
+      const chunk = r.remoteBranches.slice(i, i + SWEEP_CHUNK);
+      commands.push(`git -C ${r.dir} push ${r.remote} ${chunk.map((b) => `--force-with-lease=${b.name}:${b.sha}`).join(" ")} --delete ${chunk.map((b) => b.name).join(" ")}`);
+    }
     for (let i = 0; i < r.localBranches.length; i += SWEEP_CHUNK) commands.push(`git -C ${r.dir} branch -d ${r.localBranches.slice(i, i + SWEEP_CHUNK).join(" ")}`);
     n += r.remoteBranches.length + r.localBranches.length;
   }
@@ -814,7 +826,7 @@ export function evidenceRefusal(key, value, who, track) {
   if (key === "run.evidence" && !runShape(value)) return refuse("run-shape", "run.evidence is { ok: true|false, at, line up to 160 characters, ms, stateMs, slow: true }");
   if (key === "deploy.last" && !deployLastShape(value)) return refuse("deploy-last-shape", "deploy.last is { ok: true|false, at, line up to 160 characters }");
   if (key === "schedule.models" && !scheduleModelsShape(value)) return refuse("schedule-models-shape", "schedule.models is { at, tasks: [up to 30 of { id, chosen, lastRun, at }] }, ids and model names plain words");
-  if (key === "branches.shipped" && !shippedBranchesShape(value)) return refuse("branches-shipped-shape", "branches.shipped is { at, repos: [up to 6 of { name, dir (~/ folder), remote, remoteBranches, localBranches }] }, up to 60 plain branch names of each kind");
+  if (key === "branches.shipped" && !shippedBranchesShape(value)) return refuse("branches-shipped-shape", "branches.shipped is { at, repos: [up to 6 of { name, dir (~/ folder), remote, main, remoteBranches: [{ name, sha }], localBranches }] }, up to 60 plain branch names of each kind, never main, master, dev or HEAD");
   if (key === "e2e" && !e2eShape(value)) return refuse("e2e-shape", "e2e is { state: ok|red|missed|unknown, reason, run, lastGreenAt }");
   // #C997: the operational settings the probe resolved from the board config's ops section, and the ones it ignored (worker/knobs.mjs).
   if (key === "knobs" && !knobsShape(value)) return refuse("knobs-shape", "knobs is { values: { setting: number }, ignored: [up to 40 of { key, why }] }");

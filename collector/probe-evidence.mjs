@@ -482,7 +482,7 @@ async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPa
     const sweepFile = join(dirname(stateFile), "branches-listed.json");
     let lastAt = 0; try { const k = JSON.parse(read(sweepFile)); if (plain(k) && Number.isFinite(k.at)) lastAt = k.at; } catch { /* the first run */ }
     if (cfg && Date.now() - lastAt >= SWEEP_LIST_MS) {
-      const open = Object.entries(plain(state.cards) ? state.cards : {}).filter(([, c]) => plain(c) && c.phase !== "live").map(([id]) => id);
+      const open = Object.entries(plain(state.cards) ? state.cards : {}).filter(([, c]) => plain(c) && c.phase !== "live").map(([id, c]) => ({ id, num: c.num }));
       sweepW = shippedBranchesWrite(cfg, { git: sweepGit, openIds: open, now: Date.now(), log });
       if (sweepW) { try { write(sweepFile, JSON.stringify({ at: Date.now() })); } catch { /* listed again next run */ } }
     }
