@@ -1,0 +1,2 @@
+PASS #C1129 rc-off-line-checks-roster: rcOffWakes takes only a ROSTER_ROLES name with optional digits (Ghost, Ghost 2, Checker 2 3 refused; Checker 2, Manager told). Mutants 4/5 caught, R5 equivalent. Full suite 2852 pass, 0 fail, 1 skipped. On main 36e0164e.
+signed-by: Checker 2
