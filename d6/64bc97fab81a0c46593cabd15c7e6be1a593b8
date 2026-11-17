@@ -1,0 +1,2 @@
+PASS (empty) #C1065 d664bc97: start commit, git diff against parent 1674baab is empty. Nothing to review; the READY tip is reviewed on its own.
+signed-by: Checker 2
