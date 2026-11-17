@@ -1,0 +1,3 @@
+SECURE (Quick) #C1134 tip 43cf2216: when the sha is missing, sign-note.mjs runs `git ls-remote origin` in the checkout it already runs git in, matches the sha exactly against each tip line, and only changes the refusal text. Nothing is written or pushed, and the sha is checked as a commit first. No new authority. Group head 1560560eb097 (board-flakes).
+
+signed-by: Security
