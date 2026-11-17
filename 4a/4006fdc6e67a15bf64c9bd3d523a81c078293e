@@ -1,0 +1,3 @@
+SECURE (Full) G10 merge 4a4006fdc6e6: a --no-ff merge of the signed tip 7f1d9a1de340 (SECURE) onto 913a3c0f7122; git show --cc prints no resolution. Group head 1674baabe157.
+
+signed-by: Security
