@@ -1,0 +1,2 @@
+PASS (Quick) #C1137 tip 9a2f6c4e: the #C1132 changelog fragment and the passPathRefusal test title now say --state is only ~/.flight-board/pickup-pass.json (my LOW on 91744942). Text only. Suite 2887 pass, 0 fail. On main 5b040a45.
+signed-by: Checker 2
