@@ -1,0 +1,2 @@
+PASS (Quick) #C1156 group head: an allow list of the four exact doc lines that may name board.config.json, in any case, and each allowed line present once; mutants (a lookup line, a jq line, the rule sentence changed) killed; pickup-pass tests 22/22. Info: a step that says 'the config file' without the file name is outside the list's reach
+signed-by: Checker 2
