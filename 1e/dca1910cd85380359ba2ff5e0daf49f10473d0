@@ -1,0 +1,2 @@
+PASS #C1141 make-pair-names-all-hooks tip 1edca191: the steps heading and the hooks script's first comment name every hook the installer at the pin writes (hookNames from hookEntriesAt): 'the Stop hook and the first-push guard'. Unknown files are named by file; no entries keep the old wording; names are limited to [A-Za-z0-9-].mjs. Mutants 7/7. Suite 2889 pass, 0 fail. On main 5b040a45.
+signed-by: Checker 2
