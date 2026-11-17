@@ -166,8 +166,8 @@ test("the run: a head whose suite is already green does not run it again, and a 
 // Security's INFO on 249a281b: the suite spawn had no timeout and kept the job's stdin and HOME, so a hanging test (a macOS privacy prompt) would stall the land job.
 // Checker 2's LOW: it ran plain `node --test`, not scripts/test-run.mjs (no temp-folder preload or leftovers check, a verdict that could differ from npm test), and one flake
 // blocked a head for good.
-test("suiteSpawn: the snapshot's own test-run script, no stdin, an empty HOME and TMPDIR of its own, a timeout that kills", () => {
-  const s = suiteSpawn({ dir: "/snap", home: "/h", tmp: "/t", failuresFile: "/t/f.txt", timeoutMs: 144000, env: { PATH: "/bin", HOME: "/Users/real", TMPDIR: "/Users/real/tmp", NODE_OPTIONS: "--x", KEEP: "1" }, node: "/node" });
+test("suiteSpawn: the snapshot's own test-run script, no stdin, a TMPDIR of its own, a timeout that kills; HOME and the failures file are the caller's on purpose", () => {
+  const s = suiteSpawn({ dir: "/snap", tmp: "/t", timeoutMs: 144000, env: { PATH: "/bin", HOME: "/Users/real", TMPDIR: "/Users/real/tmp", NODE_OPTIONS: "--x", KEEP: "1" }, node: "/node" });
   assert.equal(s.file, "/node");
   assert.deepEqual(s.args, [SUITE_SCRIPT]);
   assert.equal(SUITE_SCRIPT, "scripts/test-run.mjs");
@@ -176,12 +176,12 @@ test("suiteSpawn: the snapshot's own test-run script, no stdin, an empty HOME an
   assert.deepEqual(s.options.stdio.slice(1), ["pipe", "pipe"]);
   assert.equal(s.options.timeout, 144000);
   assert.equal(s.options.killSignal, "SIGKILL", "a hung test is killed, not asked");
-  assert.equal(s.options.env.HOME, "/h", "never the owner's HOME: nothing under ~/Documents to ask about");
+  assert.equal(s.options.env.HOME, "/Users/real", "HOME is kept: tests/card-eta-wrap's headless Chrome ends with exit 2 under any other HOME (measured on 11-17), which made every head red");
   assert.equal(s.options.env.TMPDIR, "/t");
-  assert.equal(s.options.env.SUITE_FAILURES_FILE, "/t/f.txt", "the failures copy is not written into the owner's temp folder");
+  assert.equal("SUITE_FAILURES_FILE" in s.options.env, false, "the nested test-run tests read this variable: it is not set for them");
   assert.equal(s.options.env.PATH, "/bin");
   assert.equal(s.options.env.KEEP, "1");
-  assert.deepEqual(suiteSpawn({ dir: "/snap", home: "/h", tmp: "/t", failuresFile: "f", timeoutMs: 1, files: ["tests/a.test.mjs"] }).args, [SUITE_SCRIPT, "tests/a.test.mjs"]);
+  assert.deepEqual(suiteSpawn({ dir: "/snap", tmp: "/t", timeoutMs: 1, files: ["tests/a.test.mjs"] }).args, [SUITE_SCRIPT, "tests/a.test.mjs"]);
 });
 
 test("failedLines and failedFiles read only the reporter's FAILED lines, and only tests/<name>.test.mjs names go to a rerun", () => {
@@ -215,14 +215,15 @@ test("runGroupSuite: green runs once; a red that names failing files reruns only
   assert.equal(calls.length, 1);
   assert.equal(FIRST_RUN_SHARE, 0.8);
   assert.equal(calls[0].timeout, 80000, "the first run gets four fifths of the suite's time");
-  assert.notEqual(calls[0].home, "/Users/real");
-  assert.deepEqual(removed.sort(), folders.slice().sort(), "both temporary folders removed");
+  assert.equal(calls[0].home, "/Users/real");
+  assert.deepEqual(removed.sort(), folders.slice().sort(), "the temporary folder is removed");
+  assert.equal(folders.length, 1);
   calls.length = 0; folders.length = 0; removed.length = 0;
   const flaky = runGroupSuite(mk([{ status: 1, stderr: "FAILED tests/a.test.mjs: x -- y\n" }, { status: 0 }]));
   assert.deepEqual(flaky, { ok: true, line: "green: tests/a.test.mjs failed once and passed alone" });
   assert.deepEqual(calls.map((c) => c.args), [[SUITE_SCRIPT], [SUITE_SCRIPT, "tests/a.test.mjs"]]);
   assert.equal(calls[1].timeout, 100000 - 100000 * FIRST_RUN_SHARE, "the whole time is not exceeded: the rerun has the rest");
-  assert.equal(removed.length, 2);
+  assert.equal(removed.length, 1);
   calls.length = 0;
   const real = runGroupSuite(mk([{ status: 1, stderr: "FAILED tests/a.test.mjs: x -- y\n" }, { status: 1, stderr: "FAILED tests/a.test.mjs: x -- y\n" }]));
   assert.equal(real.ok, false);
