@@ -86,13 +86,15 @@ test("the landing job takes the release tool from pinnedReleaseTool and from no 
     writeFileSync(cfg, JSON.stringify({ ...JSON.parse(readFileSync(join(REPO, "board.config.example.json"), "utf8")), boardId: "pin-test-board" }));
     const noPin = run();
     assert.equal(noPin.status, 1, noPin.stdout + noPin.stderr);
-    assert.match(noPin.stdout, /NOT RUN: the owner's settings name no single pinned commit for the hooks: the landing job starts only the release tool of the owner's installed copy/);
+    assert.equal(noPin.stdout, "NOT RUN: the owner's settings name no single pinned commit for the hooks: the landing job starts only the release tool of the owner's installed copy\n", "one line, and nothing after it: no land run, no report");
+    assert.equal(noPin.stderr, "", "a clean stop, not a crash that happens to exit 1");
     mkdirSync(join(home, ".claude"), { recursive: true });
     const PIN = "c".repeat(40);
     writeFileSync(join(home, ".claude", "settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `'/bin/node' '${join(home, ".flight-board", "install", PIN)}/gate/stop.mjs' --config '${cfg}' --store` }] }] } }));
     const noCopy = run();
     assert.equal(noCopy.status, 1);
-    assert.match(noCopy.stdout, /NOT RUN: the owner's installed copy cccccccccccc has no scripts\/board-release\.mjs/, "a pin with no installed copy stops too");
+    assert.equal(noCopy.stdout, "NOT RUN: the owner's installed copy cccccccccccc has no scripts/board-release.mjs: the landing job starts only the release tool of the owner's installed copy\n", "a pin with no installed copy stops too, cleanly");
+    assert.equal(noCopy.stderr, "");
     rmSync(join(home, ".flight-board", "current", "scripts"));
     mkdirSync(join(home, "other-scripts"));
     symlinkSync(join(home, "other-scripts"), join(home, ".flight-board", "current", "scripts"));
