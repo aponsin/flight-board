@@ -1,0 +1,3 @@
+SECURE (Full) #C1143 deb6b207: closes my INFO on d61a0f35. activeRecently ignores a lastActivityAt more than ACTIVITY_SKEW_MS (5 min) ahead of now, so a far-future time can no longer silence stall lines. The constant is fixed in code, not a config setting. Group head 4bc114dec09c (board-follow-ups re-cut).
+
+signed-by: Security
