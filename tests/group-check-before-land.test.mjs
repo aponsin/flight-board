@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GROUP_NOTE_REF, groupFacts, groupLogArgs, groupVerdict, parseGroupLog, readMissing, readNote, sharedFiles, suiteOnSnapshot } from "../scripts/group-check.mjs";
+import { FIRST_RUN_SHARE, GROUP_NOTE_REF, SUITE_SCRIPT, failedFiles, failedLines, groupFacts, groupLogArgs, groupVerdict, parseGroupLog, readMissing, readNote, runGroupSuite, sharedFiles, suiteOnSnapshot, suiteSpawn, suiteVerdict } from "../scripts/group-check.mjs";
 import { landPlan, landRun } from "../scripts/board-land.mjs";
 import { JOBS, LAND_MARGIN_SEC, LAND_SUITE_SEC, LAND_TIP_SEC } from "../worker/probe-jobs.mjs";
 
@@ -161,6 +161,84 @@ test("the run: a head whose suite is already green does not run it again, and a 
   assert.equal(r.landed.length, 1);
   const t = landRun({ readFacts: () => ({ heads: [head(1, { group: { shared: [], read: null, suite: undefined } })] }), readHolds: () => free("card-1", "card-2"), now: NOW, release: () => ({ code: 0, text: "" }), runSuite: () => GREEN, recordSuite: () => { throw new Error("disk full"); } });
   assert.equal(t.landed.length, 1);
+});
+
+// Security's INFO on 249a281b: the suite spawn had no timeout and kept the job's stdin and HOME, so a hanging test (a macOS privacy prompt) would stall the land job.
+// Checker 2's LOW: it ran plain `node --test`, not scripts/test-run.mjs (no temp-folder preload or leftovers check, a verdict that could differ from npm test), and one flake
+// blocked a head for good.
+test("suiteSpawn: the snapshot's own test-run script, no stdin, an empty HOME and TMPDIR of its own, a timeout that kills", () => {
+  const s = suiteSpawn({ dir: "/snap", home: "/h", tmp: "/t", failuresFile: "/t/f.txt", timeoutMs: 144000, env: { PATH: "/bin", HOME: "/Users/real", TMPDIR: "/Users/real/tmp", NODE_OPTIONS: "--x", KEEP: "1" }, node: "/node" });
+  assert.equal(s.file, "/node");
+  assert.deepEqual(s.args, [SUITE_SCRIPT]);
+  assert.equal(SUITE_SCRIPT, "scripts/test-run.mjs");
+  assert.equal(s.options.cwd, "/snap");
+  assert.equal(s.options.stdio[0], "ignore", "no stdin: a prompt cannot wait for one");
+  assert.deepEqual(s.options.stdio.slice(1), ["pipe", "pipe"]);
+  assert.equal(s.options.timeout, 144000);
+  assert.equal(s.options.killSignal, "SIGKILL", "a hung test is killed, not asked");
+  assert.equal(s.options.env.HOME, "/h", "never the owner's HOME: nothing under ~/Documents to ask about");
+  assert.equal(s.options.env.TMPDIR, "/t");
+  assert.equal(s.options.env.SUITE_FAILURES_FILE, "/t/f.txt", "the failures copy is not written into the owner's temp folder");
+  assert.equal(s.options.env.PATH, "/bin");
+  assert.equal(s.options.env.KEEP, "1");
+  assert.deepEqual(suiteSpawn({ dir: "/snap", home: "/h", tmp: "/t", failuresFile: "f", timeoutMs: 1, files: ["tests/a.test.mjs"] }).args, [SUITE_SCRIPT, "tests/a.test.mjs"]);
+});
+
+test("failedLines and failedFiles read only the reporter's FAILED lines, and only tests/<name>.test.mjs names go to a rerun", () => {
+  const text = "noise\nFAILED TESTS (4):\nFAILED tests/a.test.mjs: one -- boom\n  FAILED tests/a.test.mjs: two\nFAILED tests/b.test.mjs: three -- x\nFAILED ../evil.mjs: x\nFAILED (no file): y\nFAILED tests/sub dir/c.test.mjs: z\n";
+  assert.equal(failedLines(text).length, 4, "the header is not a failing test line; '(no file)' and a path with a space do not read as a file name");
+  assert.deepEqual(failedFiles(failedLines(text)), ["tests/a.test.mjs", "tests/b.test.mjs"]);
+  assert.deepEqual(failedFiles(Array.from({ length: 30 }, (_, i) => `FAILED tests/f${i}.test.mjs: x`)).length, 10, "at most ten files");
+  assert.deepEqual(failedFiles(null), []);
+});
+
+test("suiteVerdict: green; red naming the failing tests; a leftover; a timeout; a start failure", () => {
+  assert.deepEqual(suiteVerdict({ status: 0 }, 1000), { ok: true, line: "green", files: [] });
+  const red = suiteVerdict({ status: 1, stderr: "FAILED tests/a.test.mjs: one -- boom\nFAILED tests/b.test.mjs: two\nFAILED tests/c.test.mjs: three\nFAILED tests/d.test.mjs: four\n" }, 1000);
+  assert.equal(red.ok, false);
+  assert.match(red.line, /^exit 1, FAILED tests\/a\.test\.mjs: one -- boom \| FAILED tests\/b\.test\.mjs: two \| FAILED tests\/c\.test\.mjs: three \(and 1 more\)$/);
+  assert.deepEqual(red.files, ["tests/a.test.mjs", "tests/b.test.mjs", "tests/c.test.mjs", "tests/d.test.mjs"]);
+  const left = suiteVerdict({ status: 1, stderr: "TEST TEMP LEFTOVERS: 1 entry, 1 MB, left by tests: fb-* x1" }, 1000);
+  assert.match(left.line, /^exit 1, TEST TEMP LEFTOVERS: 1 entry/);
+  assert.deepEqual(left.files, []);
+  assert.equal(suiteVerdict({ status: null, signal: "SIGKILL", error: Object.assign(new Error("spawnSync node ETIMEDOUT"), { code: "ETIMEDOUT" }) }, 144000).line, "the suite ran past 144 s and was stopped");
+  assert.match(suiteVerdict({ error: new Error("spawn ENOENT\nx") }, 1).line, /^the suite could not start: spawn ENOENT$/);
+  assert.equal(suiteVerdict({ status: 1 }, 1).line, "exit 1");
+  assert.equal(suiteVerdict(undefined, 1).ok, false);
+});
+
+test("runGroupSuite: green runs once; a red that names failing files reruns only those once, and a pass alone is green saying so; red again stays red naming both", () => {
+  const folders = [], removed = [], calls = [];
+  const mk = (results) => ({ dir: "/snap", mkdtemp: () => { const d = `/tmp/f${folders.length}`; folders.push(d); return d; }, remove: (d) => removed.push(d), totalMs: 100000, env: { PATH: "/bin", HOME: "/Users/real" }, spawn: (file, args, options) => { calls.push({ args, timeout: options.timeout, home: options.env.HOME }); return results.shift(); } });
+  assert.deepEqual(runGroupSuite(mk([{ status: 0 }])), { ok: true, line: "green" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].timeout, 100000 * FIRST_RUN_SHARE);
+  assert.notEqual(calls[0].home, "/Users/real");
+  assert.deepEqual(removed.sort(), folders.slice().sort(), "both temporary folders removed");
+  calls.length = 0; folders.length = 0; removed.length = 0;
+  const flaky = runGroupSuite(mk([{ status: 1, stderr: "FAILED tests/a.test.mjs: x -- y\n" }, { status: 0 }]));
+  assert.deepEqual(flaky, { ok: true, line: "green: tests/a.test.mjs failed once and passed alone" });
+  assert.deepEqual(calls.map((c) => c.args), [[SUITE_SCRIPT], [SUITE_SCRIPT, "tests/a.test.mjs"]]);
+  assert.equal(calls[1].timeout, 100000 - 100000 * FIRST_RUN_SHARE, "the whole time is not exceeded: the rerun has the rest");
+  assert.equal(removed.length, 2);
+  calls.length = 0;
+  const real = runGroupSuite(mk([{ status: 1, stderr: "FAILED tests/a.test.mjs: x -- y\n" }, { status: 1, stderr: "FAILED tests/a.test.mjs: x -- y\n" }]));
+  assert.equal(real.ok, false);
+  assert.match(real.line, /^exit 1, FAILED tests\/a\.test\.mjs: x -- y; again alone: exit 1, FAILED tests\/a\.test\.mjs: x -- y$/);
+  calls.length = 0;
+  assert.equal(runGroupSuite(mk([{ status: 1, error: Object.assign(new Error("t"), { code: "ETIMEDOUT" }) }])).ok, false);
+  assert.equal(calls.length, 1, "a timeout is not rerun");
+  calls.length = 0;
+  assert.equal(runGroupSuite(mk([{ status: 1, stderr: "TEST TEMP LEFTOVERS: 1 entry" }])).ok, false);
+  assert.equal(calls.length, 1, "a red with no failing file is not rerun");
+  const throwing = mk([{ status: 0 }]); throwing.remove = () => { throw new Error("busy"); };
+  assert.equal(runGroupSuite(throwing).ok, true, "a folder that will not go does not change the verdict");
+});
+
+test("the real job runs the group suite with the cadence's suite time", () => {
+  const src = readFileSync(fileURLToPath(new URL("../scripts/board-land.mjs", import.meta.url)), "utf8");
+  assert.match(src, /runGroupSuite\(\{ dir: d, spawn: spawnSync,[^\n]*totalMs: LAND_SUITE_SEC \* 1000 \}\)/);
+  assert.doesNotMatch(src, /"--test", "tests\/\*\.test\.mjs"/, "no plain node --test any more");
 });
 
 test("suiteOnSnapshot: a detached worktree of the sha, the suite there, and the folder removed after a green, a red and a failed snapshot", () => {

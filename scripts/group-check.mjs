@@ -85,6 +85,48 @@ export function suiteOnSnapshot({ sha, mkdtemp, run, suite, remove }) {
   }
 }
 
+// The suite run itself (Security's INFO and Checker 2's LOW on 249a281b). It is the snapshot's own `scripts/test-run.mjs`, what `npm test` runs, so its verdict is npm test's (the
+// temp-folder preload and the leftovers check included). A hanging test must not stall the landing job (a macOS privacy prompt waits for a person nobody has put there): stdin is closed,
+// HOME is an empty temporary folder (nothing under ~/Documents or ~/Desktop to ask about), and the run is killed after its time. A red that names failing test files gets ONE rerun of
+// just those files (a git-fixture flake passes alone; a real failure does not): green after that is green, said in the line; red names the failing tests so Release can rerun them.
+export const SUITE_SCRIPT = "scripts/test-run.mjs";
+export const FIRST_RUN_SHARE = 0.8; // of the suite's time; the rest is the rerun's
+const FAILED_LINE = /^FAILED (\S+): /;
+export const failedLines = (text) => String(text ?? "").split("\n").map((l) => l.trim()).filter((l) => FAILED_LINE.test(l));
+// The test files named by failing lines: tests/<name>.test.mjs only, at most 10 (a path from a line never goes to a command line otherwise).
+export const failedFiles = (lines) => [...new Set((lines ?? []).map((l) => FAILED_LINE.exec(l)?.[1]).filter((f) => typeof f === "string" && /^tests\/[A-Za-z0-9._-]+\.test\.mjs$/.test(f)))].slice(0, 10);
+// How the suite is started: { file, args, options } for spawnSync. files: rerun only these (default the whole suite).
+export function suiteSpawn({ dir, home, tmp, failuresFile, timeoutMs, env = process.env, node = process.execPath, files = null }) {
+  return {
+    file: node, args: [SUITE_SCRIPT, ...(files ?? [])],
+    options: { cwd: dir, env: { ...env, HOME: home, TMPDIR: tmp, SUITE_FAILURES_FILE: failuresFile }, stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs, killSignal: "SIGKILL", encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+  };
+}
+// One spawnSync result -> { ok, line, files }: green; red naming up to three failing tests; or why it was stopped.
+export function suiteVerdict(r, timeoutMs) {
+  if (r?.error?.code === "ETIMEDOUT") return { ok: false, line: `the suite ran past ${Math.round(timeoutMs / 1000)} s and was stopped`, files: [] };
+  if (r?.error) return { ok: false, line: `the suite could not start: ${String(r.error.message ?? r.error).split("\n")[0].slice(0, 120)}`, files: [] };
+  if (r?.status === 0) return { ok: true, line: "green", files: [] };
+  const text = `${r?.stderr ?? ""}\n${r?.stdout ?? ""}`, lines = failedLines(text);
+  const leftover = text.split("\n").find((l) => l.startsWith("TEST TEMP LEFTOVERS:"));
+  const named = lines.slice(0, 3).map((l) => l.slice(0, 160)).join(" | ");
+  return { ok: false, line: `exit ${r?.status ?? "?"}${named ? `, ${named}${lines.length > 3 ? ` (and ${lines.length - 3} more)` : ""}` : leftover ? `, ${leftover.slice(0, 160)}` : ""}`, files: failedFiles(lines) };
+}
+// The whole run in one folder: { ok, line }. spawn(file, args, options) and mkdtemp()/remove(dir) are injected; totalMs is the suite's whole time (first run 80%, the rerun the rest).
+export function runGroupSuite({ dir, spawn, mkdtemp, remove, totalMs, env = process.env }) {
+  const home = mkdtemp(), tmp = mkdtemp();
+  try {
+    const failuresFile = `${tmp}/failures-copy.txt`, first = Math.floor(totalMs * FIRST_RUN_SHARE), rest = totalMs - first;
+    const run = (files, timeoutMs) => { const s = suiteSpawn({ dir, home, tmp, failuresFile, timeoutMs, env, files }); return suiteVerdict(spawn(s.file, s.args, s.options), timeoutMs); };
+    const one = run(null, first);
+    if (one.ok || !one.files.length) return { ok: one.ok, line: one.line };
+    const again = run(one.files, rest);
+    return again.ok ? { ok: true, line: `green: ${one.files.join(", ")} failed once and passed alone` } : { ok: false, line: `${one.line}; again alone: ${again.line}`.slice(0, 400) };
+  } finally {
+    for (const d of [home, tmp]) { try { remove(d); } catch { /* left in the temp folder */ } }
+  }
+}
+
 if (process.argv[1] && process.argv[1].endsWith("group-check.mjs") && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   const a = process.argv.slice(2), cmd = a[0], val = (k) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : undefined; };
   const git = (args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 }).trim();

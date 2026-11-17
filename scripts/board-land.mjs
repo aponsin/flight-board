@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC, LAND_SUITE_SEC } from "../worker/probe-jobs.mjs";
 import { pinnedCommit } from "./current.mjs";
 // #C1146: the group check (Checker's read of the files two or more cards touch, and one suite run on the head) before a head of two or more cards lands.
-import { GROUP_NOTE_REF, groupFacts, groupVerdict, suiteOnSnapshot } from "./group-check.mjs";
+import { GROUP_NOTE_REF, groupFacts, groupVerdict, runGroupSuite, suiteOnSnapshot } from "./group-check.mjs";
 
 // #C1058 (the owner chose A on #T1992): the release tool this job starts is the one in the owner's installed copy, <install root>/<the commit his hooks pin>/scripts/,
 // never the one beside this file (the linked copy moves with every release) and never a checkout's. So a changed release tool runs only after his install moves the pin.
@@ -218,14 +218,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   // #C1146: the group check's one suite run, on a snapshot of the head (a detached worktree, removed after), its own TMPDIR; the verdict is kept per sha in group-check.json.
   const runSuite = (sha) => suiteOnSnapshot({
     sha, mkdtemp: () => mkdtempSync(join(tmpdir(), "board-land-suite-")), run: git, remove: (d) => { quiet(["worktree", "remove", "--force", d]); rmSync(d, { recursive: true, force: true }); },
-    suite: (d) => {
-      const td = mkdtempSync(join(tmpdir(), "board-land-tmp-"));
-      try {
-        const r = spawnSync(process.execPath, ["--test", "tests/*.test.mjs"], { cwd: d, env: { ...process.env, TMPDIR: td }, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
-        const fail = String(r.stdout ?? "").split("\n").find((l) => /^(not ok|✖)/.test(l));
-        return r.status === 0 ? { ok: true, line: "green" } : { ok: false, line: `exit ${r.status ?? "?"}${fail ? `, ${fail.slice(0, 120)}` : ""}` };
-      } finally { rmSync(td, { recursive: true, force: true }); }
-    },
+    // the snapshot's own scripts/test-run.mjs (what npm test runs), no stdin, an empty temporary HOME, killed after LAND_SUITE_SEC in all (runGroupSuite)
+    suite: (d) => runGroupSuite({ dir: d, spawn: spawnSync, mkdtemp: () => mkdtempSync(join(tmpdir(), "board-land-tmp-")), remove: (x) => rmSync(x, { recursive: true, force: true }), totalMs: LAND_SUITE_SEC * 1000 }),
   });
   const recordSuite = (sha, result) => {
     const file = join(dir, "group-check.json"), have = readJson(file) ?? {};
