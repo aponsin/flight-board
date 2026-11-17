@@ -24,14 +24,15 @@ function fakeGit(id = "card-a") {
     if (a[0] === "rev-parse") return `${SHA}\n`;
     return "";
   };
-  return { run, calls, wroteNote: () => calls.some((c) => c.startsWith("notes ")) };
+  // the signal note only: a card told to wait writes a waiting note (#C1066, refs/notes/stack-ready-waiting), which is no signal
+  return { run, calls, wroteNote: () => calls.some((c) => c.startsWith("notes --ref=refs/notes/stack-ready add")), wroteWaiting: () => calls.some((c) => c.startsWith("notes --ref=refs/notes/stack-ready-waiting add")) };
 }
 const queueOf = (cards) => ({ at: T_MS - 60e3, cards: cards.map((k) => ({ owner_role: "Boardsmith", repo: "", dependsOn: [], batch: "", started: false, ...k })) });
-const ready = (queue, id) => { const g = fakeGit(id); const r = stackReady({ run: g.run, queue, now: () => T_NOW }); return { ...r, wroteNote: g.wroteNote() }; };
+const ready = (queue, id) => { const g = fakeGit(id); const r = stackReady({ run: g.run, queue, now: () => T_NOW }); return { ...r, wroteNote: g.wroteNote(), wroteWaiting: g.wroteWaiting() }; };
 
 test("a card of a batch waits while another open card of the batch is not built, even though nothing depends on it", () => {
   const r = ready(queueOf([{ id: "card-a", batch: "g1" }, { id: "card-b", batch: "g1" }]), "card-a");
-  assert.equal(r.signal, false); assert.equal(r.wroteNote, false);
+  assert.equal(r.signal, false); assert.equal(r.wroteNote, false); assert.equal(r.wroteWaiting, true, "a card told to wait leaves a waiting note on its head (#C1066)");
   assert.match(r.line, /^STACK-READY OK: pushed build\/x at [0-9a-f]{12}, waiting for its group g1 \(card-b not built\): no signal$/);
   assert.deepEqual(r.queued, ["card-b"]);
 });
