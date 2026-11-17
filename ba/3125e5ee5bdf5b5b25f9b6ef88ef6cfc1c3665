@@ -1,0 +1,1 @@
+SECURE #C1107 ba3125e5 (tip): one commit on signed 9f83f9a6 (worker/board-store.mjs, its test and the changelog fragment). An un-drop (dropped false or 0) of a loose card now needs batch too, so a drop is no way round the group rule. No new input, SQL or text. Test file 10/10. Mutation (un-drop case removed): the closing-write test fails; restored. (Security)
