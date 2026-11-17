@@ -1,0 +1,3 @@
+SECURE #C1149 tip: needRepo is set by callTool on the only card_create path (never from args); the refusal lists repo words read_view already shows card_create's callers
+
+signed-by: Security
