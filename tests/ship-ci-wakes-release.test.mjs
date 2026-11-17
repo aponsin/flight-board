@@ -1,11 +1,11 @@
 // #C1105: a ship candidate's CI run that finishes wakes Release once (11-16: Release sat on a v1.212.4 candidate whose CI had finished green).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dispatchRun, shipCiDone, shipCiId } from "../collector/store-dispatch.mjs";
-import { dispatchLine, DISPATCH_STATE_FILE } from "../gate/reset.mjs";
+import { dispatchLine, dispatchPending, dispatchSeen, DISPATCH_STATE_FILE } from "../gate/reset.mjs";
 
 const MIN = 60e3, HOUR = 60 * MIN;
 const AT = Date.UTC(2026, 10, 16, 20, 0);
@@ -21,7 +21,7 @@ const view = (at, ship, { rel = idle(at), live = "v1.212.3" } = {}) => ({
   evidence: {
     agents: { readAt: at - 10_000, value: { Release: rel, Manager: idle(at, MIN), Builder: idle(at), Ops: idle(at) } },
     board: { readAt: at - 5_000, value: { at: at - 5_000 } },
-    ...(ship ? { ship: { readAt: at - 5_000, value: { version: "1.212.4", at: at - 20 * MIN, ...ship } } } : {}),
+    ...(ship ? { ship: { readAt: at - 5_000, value: { version: "1.212.4", at: AT - 20 * MIN, ...ship } } } : {}), // the tip's time is fixed: a changing one is a new push
   },
 });
 const run = (d, at, ship, o) => dispatchRun(view(at, ship, o), { dir: d, roster: ROSTER, lead: LEAD, now: at });
@@ -92,6 +92,56 @@ test("nothing is concluded from a stale heartbeat, and nothing is woken for a ca
   const odd = dir();
   assert.deepEqual(mine(run(odd, AT, { ci: "passed", version: "latest" })), []);
   assert.equal(shipCiDone(view(AT, { ci: "passed", version: null }), null, {}, AT).card, null);
+});
+
+test("the same version pushed again after a red run is a new candidate: red, Release works, re-pushed at a new tip and passed is one green wake (Checker 2's M1)", () => {
+  const d = dir();
+  run(d, AT, { ci: "running", at: AT - 20 * MIN });
+  assert.equal(mine(run(d, AT + 4 * MIN, null)).length, 1, "the red wake");
+  const working = { state: "working", since: AT + 5 * MIN, lastActivityAt: AT + 5 * MIN, card: null };
+  assert.deepEqual(mine(run(d, AT + 6 * MIN, null, { rel: working })), []);
+  assert.equal(state(d).shipci.done, true);
+  const back = AT + 2 * HOUR, relIdle = idle(back, 30 * MIN);
+  assert.deepEqual(mine(run(d, back, { ci: "running", at: back - MIN }, { rel: relIdle })), [], "re-pushed and running: nothing yet");
+  assert.equal(state(d).shipci.done, false, "started over");
+  const r = run(d, back + 6 * MIN, { ci: "passed", at: back - MIN }, { rel: relIdle });
+  assert.deepEqual(mine(r).map((i) => i.card), ["shipci-v1-212-4-green"]);
+});
+
+test("a green candidate re-pushed under the same version and passing again wakes again: the same card id with a new since is not already handled", () => {
+  const d = dir();
+  run(d, AT, { ci: "running", at: AT - 20 * MIN });
+  const first = run(d, AT + 3 * MIN, { ci: "passed", at: AT - 20 * MIN });
+  assert.equal(mine(first).length, 1);
+  const working = { state: "working", since: AT + 4 * MIN, lastActivityAt: AT + 4 * MIN, card: null };
+  run(d, AT + 5 * MIN, { ci: "passed", at: AT - 20 * MIN }, { rel: working });
+  const back = AT + 3 * HOUR, relIdle = idle(back, 30 * MIN);
+  run(d, back, { ci: "running", at: back - MIN }, { rel: relIdle });
+  const second = run(d, back + 5 * MIN, { ci: "passed", at: back - MIN }, { rel: relIdle });
+  assert.equal(mine(second).length, 1);
+  assert.equal(mine(second)[0].card, mine(first)[0].card, "the same id");
+  assert.notEqual(mine(second)[0].since, mine(first)[0].since, "a new since, so the watch prints it again");
+  const seen = dispatchSeen(null, [mine(first)[0]]);
+  assert.equal(dispatchPending({ items: second.items }, seen, { role: "Release", level: 1 }).length, 1);
+});
+
+test("a tip time that does not change keeps the candidate: a stale read or the same push never starts over", () => {
+  const d = dir();
+  run(d, AT, { ci: "running", at: AT - 20 * MIN });
+  run(d, AT + 2 * MIN, { ci: "running", at: AT - 20 * MIN });
+  assert.equal(state(d).shipci.at, AT, "first seen is kept");
+  assert.equal(state(d).shipci.tip, AT - 20 * MIN);
+});
+
+test("a kept candidate from before the tip was recorded adopts the first tip it reads, and a later push still starts over", () => {
+  const d = dir();
+  writeFileSync(join(d, DISPATCH_STATE_FILE), JSON.stringify({ shipci: { version: "1.212.4", ci: "running", at: AT - 5 * MIN, done: false } }));
+  run(d, AT, { ci: "running", at: AT - 20 * MIN });
+  assert.equal(state(d).shipci.tip, AT - 20 * MIN, "adopted");
+  assert.equal(state(d).shipci.at, AT - 5 * MIN, "the first-seen time of the old state is kept");
+  run(d, AT + MIN, { ci: "running", at: AT - MIN });
+  assert.equal(state(d).shipci.tip, AT - MIN, "a later push started over");
+  assert.equal(state(d).shipci.at, AT + MIN);
 });
 
 test("an old candidate is dropped after 6 hours and a new version starts again", () => {

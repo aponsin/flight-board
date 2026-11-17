@@ -423,8 +423,10 @@ export function shipCiDone(view, before, agents, now) {
   const candVersion = cand && typeof cand.version === "string" && /^\d{1,6}\.\d{1,6}\.\d{1,6}$/.test(cand.version.replace(/^v/, "")) ? cand.version.replace(/^v/, "") : null;
   let cur = prev && typeof prev.version === "string" ? { ...prev } : null;
   if (candVersion) {
-    if (!cur || cur.version !== candVersion) cur = { version: candVersion, ci: cand.ci, at: now, done: false };
-    else cur.ci = cand.ci;
+    // A candidate is a version at a tip: the same version pushed again (a new tip time, after a red run) is a new candidate and starts over (Checker 2's M1 on e8ff165c).
+    const tip = Number.isFinite(cand.at) ? cand.at : null;
+    if (!cur || cur.version !== candVersion || (tip !== null && cur.tip !== undefined && cur.tip !== tip)) cur = { version: candVersion, ci: cand.ci, at: now, done: false, ...(tip === null ? {} : { tip }) };
+    else { cur.ci = cand.ci; if (tip !== null && cur.tip === undefined) cur.tip = tip; }
     if (!cur.result && cand.ci === "passed") cur.result = "green";
   } else if (cur && !cur.done && !cur.result) {
     const liveV = view?.live?.state === "live" ? String(view.live.version ?? "").replace(/^v/, "") : null;
