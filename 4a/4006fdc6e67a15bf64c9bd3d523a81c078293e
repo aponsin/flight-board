@@ -1,0 +1,2 @@
+PASS group merge of #C1130 into 1674baab: remerge-diff empty, second parent the signed tip 7f1d9a1d. Full suite on 1674baab: 2868 pass, 0 fail. No DATA fragments to fold.
+signed-by: Checker 2
