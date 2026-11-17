@@ -2,8 +2,8 @@
 // newer main never conflicts on CHANGELOG.md (Checker 2: every landing conflicted every waiting branch on that file alone).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from "node:fs";
+import { execFileSync, spawnSync, spawn } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -132,4 +132,33 @@ test("this repository: every card file here is a card id's single bullet, CHANGE
   const base = readFileSync(join(ROOT, FILE), "utf8");
   assert.ok(joined.out.length >= base.length);
   assert.equal(joined.out.split("\n").filter((l) => l.startsWith("- ")).length, base.split("\n").filter((l) => l.startsWith("- ")).length + readdirSync(join(ROOT, DIR)).filter((n) => n.endsWith(".md") && n !== "README.md").length, "each card file adds exactly one bullet");
+});
+
+// #C1155 (Checker 2's LOW on #C1153): the print mode (no flag) wrote the joined CHANGELOG.md to stdout and then called process.exit, which cut the output at the pipe's
+// 64 KB buffer when the reader was slower than the writer (the same bug as scripts/data-fragments.mjs, #C1153). The script now sets process.exitCode and ends by itself.
+// The reader holds its first read back so the pipe fills; the copy of the script runs in a temp root with a CHANGELOG.md well over 64 KB.
+test("print mode writes the whole joined CHANGELOG.md to a slow pipe, past 64 KB, and exits with its code (#C1155)", async () => {
+  const D = realpathSync(mkdtempSync(join(tmpdir(), "changelog-pipe-")));
+  try {
+    mkdirSync(join(D, "scripts")); mkdirSync(join(D, DIR));
+    copyFileSync(join(ROOT, "scripts/changelog.mjs"), join(D, "scripts/changelog.mjs"));
+    const old = Array.from({ length: 2500 }, (_, i) => `- An older bullet number ${i} long enough to fill a pipe (old-card-${i}, #C${i + 1}).`).join("\n");
+    const base = `# Changelog\n\n## 0.3.4 - Unreleased\n\n${old}\n\n## 0.3.3\n\n- Shipped (#C800).\n`;
+    assert.ok(base.length > 150_000);
+    writeFileSync(join(D, FILE), base);
+    writeFileSync(join(D, DIR, "new-card.md"), "- The new line (new-card, #C9999).\n");
+    const child = spawn(process.execPath, [join(D, "scripts/changelog.mjs")], { stdio: ["ignore", "pipe", "inherit"] });
+    child.stdout.pause();
+    const chunks = [];
+    const done = new Promise((resolve) => child.on("close", (code) => resolve(code)));
+    await new Promise((r) => setTimeout(r, 400));
+    child.stdout.on("data", (c) => chunks.push(c));
+    child.stdout.resume();
+    const code = await done;
+    const out = Buffer.concat(chunks).toString("utf8");
+    assert.equal(code, 0);
+    assert.ok(out.length > 150_000, `only ${out.length} characters came through`);
+    assert.ok(out.endsWith("- Shipped (#C800).\n"), "the end of the file came through: the print was not cut");
+    assert.ok(out.includes("- The new line (new-card, #C9999)."), "the new card's line is in it");
+  } finally { rmSync(D, { recursive: true, force: true }); }
 });
