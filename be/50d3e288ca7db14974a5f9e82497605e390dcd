@@ -1,0 +1,3 @@
+SECURE #C1160 fix be50d3e2: openGroupWithheld counts wipHead as unready (one more way to read not-ready, never ready); the rest is tests
+
+signed-by: Security
