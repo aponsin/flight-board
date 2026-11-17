@@ -1,0 +1,2 @@
+PASS (Full) #C1169 follow-up: at the card_create and card_update doors only, the exact text true or false is read as the boolean for changes_definition; other text still gets card-flag, and true still needs a known from_thread (tested through the tools). Mutants killed: text true read as false, any text read as a boolean. Suite green 3072/0
+signed-by: Checker 2
