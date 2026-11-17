@@ -73,6 +73,24 @@ test("through the card_create and card_update TOOLS (the worker's own wiring)", 
   assert.equal((await tool("card_update", { id: "c-w2", summary: "Other words.", contract: "principle 1", changes_definition: false })).ok, true);
 });
 
+// No session could create a flight-board card on 11-17: a client whose tool list predates the schema sends changes_definition as the text "false" or "true".
+test("through the TOOLS, changes_definition as the exact text \"true\" or \"false\" is read as the boolean; any other text is still refused, and true still needs the owner's thread", async () => {
+  const db = makeDb();
+  const env = { DB: db };
+  const call = (body) => worker.fetch(new Request("https://board.test/mcp", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "x-as": "manager" } }), env, null, T, async () => ({ who: "Manager", role: "agent" }));
+  const tool = async (name, args) => (await (await call({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } })).json()).result.structuredContent;
+  const base = { title: "A card", summary: "Build it, because it is needed.", batch: "g-test", repo: "flight-board", contract: "principle 1" };
+  assert.equal((await tool("card_create", { id: "c-text-false", ...base, changes_definition: "false" })).ok, true);
+  assert.equal((await db.prepare("SELECT changes_definition AS d FROM cards WHERE id = 'c-text-false'").first()).d, 0, "stored as the boolean, not as text");
+  for (const [i, bad] of ["yes", "1", "", "False", " true"].entries()) refusedAs(await tool("card_create", { id: `c-text-bad-${i}`, ...base, changes_definition: bad }), "card-flag");
+  refusedAs(await tool("card_create", { id: "c-text-true", ...base, changes_definition: "true" }), "card-changes-definition");
+  const num = await decided(db);
+  assert.equal((await tool("card_create", { id: "c-text-true-ok", ...base, changes_definition: "true", from_thread: num })).ok, true);
+  assert.equal((await db.prepare("SELECT changes_definition AS d FROM cards WHERE id = 'c-text-true-ok'").first()).d, 1);
+  assert.equal((await tool("card_update", { id: "c-text-false", contract: "principle 5", changes_definition: "false" })).ok, true);
+  refusedAs(await tool("card_update", { id: "c-text-false", contract: "DATA.md Started", changes_definition: "true" }), "card-changes-definition");
+});
+
 test("the view's own card document (initiativeDoc) carries the contract and the flag; a card written before has neither", async () => {
   const db = makeDb();
   assert.equal((await make(db, { id: "c-view", contract: "principle 1", changes_definition: false })).ok, true);

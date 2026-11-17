@@ -94,6 +94,10 @@ async function font(env, url, file) {
 
 const bare = (status, headers = {}) => new Response(null, { status, headers });
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
+// #C1169 follow-up (11-17: no session could create a flight-board card): a client whose copy of the tool list predates the schema that names changes_definition sends the boolean it has no
+// type for as the text "true" or "false". Exactly those two words are read as the boolean, here at the tool door, so the rule itself (a boolean, from_thread for true) is unchanged and
+// still refuses anything else ("yes", "1", "").
+const cardFlagText = (args) => (args && typeof args === "object" && (args.changes_definition === "true" || args.changes_definition === "false") ? { ...args, changes_definition: args.changes_definition === "true" } : args);
 const text = (result) => ({ content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: result?.ok === false });
 
 // #C1147 (Security's follow-up on #C1073): on the shared door WHO is only the `as` a caller declares, so any session could post a
@@ -122,8 +126,8 @@ async function callTool(db, now, who, role, name, args, env = {}, door = "access
     case "queue_move": return text(await moveInQueue(db, now, who, args));
     case "group_move": return text(await moveGroup(db, now, who, args));
     case "set_door_session": return text(await setDoorSession(db, now, who, args?.session, args?.current));
-    case "card_create": return text(await createCard(db, now, who, args, { needSummary: true, needGroup: true, needRepo: true, needContract: true }));
-    case "card_update": return text(await updateCard(db, now, who, args, { needGroup: true, needContract: true }));
+    case "card_create": return text(await createCard(db, now, who, cardFlagText(args), { needSummary: true, needGroup: true, needRepo: true, needContract: true }));
+    case "card_update": return text(await updateCard(db, now, who, cardFlagText(args), { needGroup: true, needContract: true }));
     case "ask":
       // Who asks is who authenticated, never a claimed name.
       if (args.asked_by !== undefined && args.asked_by !== who) return text(await refuse(db, now, { rule: "asked-by-mismatch", detail: `${args.asked_by} is not ${who}` }, args.card_id, who));
