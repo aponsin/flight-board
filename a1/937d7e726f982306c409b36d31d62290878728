@@ -1,0 +1,2 @@
+PASS (Full) #C1166 F1, F2, LOW: the Board-Id reader matches git %(trailers) on 11 probed messages incl. prose above, --- below, # comment, cherry-pick; the store test sees the stack switch reach slowWakes; the DATA refusal names card-tip over a fold card below; 5 mutants killed; suite green 3057/0. LOW (no fix needed now): git also reads a mixed paragraph holding a Signed-off-by line (its 25% rule), which boardIdsOf reads as none; the team writes Co-Authored-By only
+signed-by: Checker 2
