@@ -2,7 +2,7 @@
 // that branch alone; before that, of the versions of a branch only the newest pushed one is a row. Branches of different names stay rows (#C621).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -21,7 +21,8 @@ function scratch(names) {
   const msg = (n) => `${n}\n\nBoard-Id: a-card`;
   const sha = {};
   names.forEach((name, i) => {
-    git(["switch", "-q", "main"]); git(["switch", "-q", "-c", name]); git(["commit", "-q", "--allow-empty", "-m", msg(name)]);
+    // #C1160: each tip changes a file: an empty commit reads as a start push (building), and these are real tips.
+    git(["switch", "-q", "main"]); git(["switch", "-q", "-c", name]); writeFileSync(join(dir, "work.txt"), `${name}\n`); git(["add", "-A"]); git(["commit", "-q", "-m", msg(name)]);
     sha[name] = git(["rev-parse", "HEAD"]).trim();
     git(["update-ref", `refs/remotes/origin/${name}`, sha[name]]);
   });

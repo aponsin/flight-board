@@ -301,6 +301,8 @@ export function phaseOf(card, facts, config) {
 // A repository as the cards read it: git(args) and gh(args) in its clone, its remote, main branch, sign-off notes and
 // the commit live there (the deploy run's for the team's, the installed link's for another).
 const ok = (fn) => { try { fn(); return true; } catch { return false; } };
+// #C1160: the word WIP at the start of a commit's first line, or right after one card token ("#C1128 WIP", "1128 WIP", "rc-field-after-clear WIP"), as gate/first-push.mjs tells builders to write it.
+const WIP_START = /^(?:(?:#?C?\d+|[a-z0-9]+(?:-[a-z0-9]+)+)\s+)?WIP\b/;
 // #C1133: git's answer to "is A an ancestor of B" in three values: true (exit 0), false (exit 1: it is not) and null (ANY other failure: a timeout, a spawn error, git's own
 // error 128 under load). `ok` folds the third into "no", which read a cited part as present-or-absent by luck; a caller of this one must say what unknown means.
 const ancestry = (fn) => { try { fn(); return true; } catch (e) { return e?.status === 1 ? false : null; } };
@@ -716,7 +718,15 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   // repository with no install step at landing (closesAtLanding) and its code commit reads ship, never live; the phase change (held at ship) stays for a would-be-live reading.
   // #C1133: a cited part counts as present only when git ANSWERED yes; a failed call (unknown) is missing, so a load flake holds the card at ship and never lets it read as landed.
   const partsMissing = (onMain || (mainUnknown && !bare)) && typeof repo.git === "function" ? citedShas(card.nextNote).filter((s) => ancestry(() => repo.git(["merge-base", "--is-ancestor", s, mainRef])) !== true) : [];
-  const phase = partsMissing.length && readPhase === config.collector.livePhase ? config.collector.shipPhase : readPhase;
+  // #C1160 (11-17: the board lit "checker" on #C1128's empty start commit and the owner took it for a stuck review): a tip whose newest commit says WIP (#C1139's wipHead, read here so
+  // the phase can use it) is work in progress, so the card reads at build: the phase and the lit tile stay at build, firm is false and no readyAt is set. The next real commit reads as before.
+  const headLine = String((head.message ?? tip.message) ?? "").split("\n")[0];
+  // The first-push guard (gate/first-push.mjs) tells builders to commit "<card> WIP", so the word also counts right after one card token (a number, #C123, or a hyphenated slug), and an
+  // EMPTY commit (no change against its first parent, no sign-off on it) is a start push whatever it says. A real commit that only mentions WIP ("Fix WIP: wording") is none.
+  const wipWord = WIP_START.test(headLine);
+  const emptyStart = !onMain && !bare && !wipWord && !signed.length && /^[0-9a-f]{40}$/.test(String(head.sha)) && typeof repo.git === "function" && ok(() => repo.git(["diff", "--quiet", `${head.sha}^1`, head.sha]));
+  const wipHead = !onMain && !bare && (wipWord || emptyStart);
+  const phase = wipHead ? config.collector.buildPhase : partsMissing.length && readPhase === config.collector.livePhase ? config.collector.shipPhase : readPhase;
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
   const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed: deployed && !partsMissing.length });
@@ -742,8 +752,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   // #C1139 (Checker 2, 11-16 late: the dispatch woke it for #C1124 at 8224f95d and #C1065 at d664bc97, each a single empty "WIP: branch pushed before the first edit" commit with no READY):
   // a tip whose newest commit says WIP (the word at the start of its first line) is a start push or work in progress, never a READY, whatever the stack switch or a signal says. The
   // dispatch gives it no review turn. The next real commit is a new tip with no such word. A branch on main, or a bare one, is not read.
-  const headLine = String((head.message ?? tip.message) ?? "").split("\n")[0];
-  const wipHead = !onMain && !bare && /^WIP\b/.test(headLine);
+  // (#C1160 reads it above, before the phase.)
   const extra = {
     ...(wipHead ? { wipHead: true } : {}),
     ...(Object.keys(reviews).length ? { reviews } : {}),
@@ -1037,7 +1046,10 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
       // The page reads it as "built, waiting" rather than building; a later push has no note and reads as building again.
       // The head is the same commit as a noted one (#C1126, Security I1): the noted sha is always 40 characters, the head 12 to 40, so only the noted sha may extend the head, never the other way.
       const sameCommit = (c, h) => /^[0-9a-f]{12,40}$/.test(String(h)) && c.startsWith(String(h));
-      out[id] = { ...out[id], stackHold: true, ...(waiting.some((c) => sameCommit(c, heads[id])) ? { builtWaiting: true } : {}) };
+      // #C1160: one reading of "ready" for everyone: a held card has no READY yet, so it reads at build (phase and lit) with no readyAt and no waitingFor, as a WIP head does; the tile, the stall
+      // checks, the slow-wake rule, the open-group rule and the dependency checks all read these fields, so they agree with the dispatch, which holds its review turn.
+      const { readyAt: _r, waitingFor: _w, ...held } = out[id];
+      out[id] = { ...held, ...(held.phase && held.onMain !== true ? { phase: config.collector.buildPhase, firm: false } : {}), stackHold: true, ...(waiting.some((c) => sameCommit(c, heads[id])) ? { builtWaiting: true } : {}) };
     }
   }
   // #C1020: a board-repository card on main shows packed and installed from the deploy pairs (pairsIn, the owner's pair folder) and git alone:

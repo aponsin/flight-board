@@ -231,6 +231,14 @@ test("(d) a pushed card no signal covers is marked stackHold (its stack field un
   const held1 = s.states(["solo"]).solo;
   assert.equal(held1.stackHold, true);
   assert.equal(held1.stack, undefined, "the stack field is not touched by the hold");
+  // #C1160: one reading of "ready": a held card has no READY yet, so it reads at build with no readyAt and no waitingFor (the tile, the stalls and the group rules read these)
+  assert.equal(held1.phase, "build");
+  assert.equal(held1.firm, false);
+  assert.equal(Object.hasOwn(held1, "readyAt"), false);
+  assert.equal(Object.hasOwn(held1, "waitingFor"), false);
+  const off = s.states(["solo"], []).solo;
+  assert.notEqual(off.phase, "build", "switch off: today's reading, the tip reads past build");
+  assert.equal(Number.isInteger(off.readyAt), true);
   assert.equal(s.states(["solo"], []).solo.stackHold, undefined, "switch off: today's reading");
   assert.deepEqual(cardErrors({ v: 1, id: "t", cards: { k: held1 } }), [], "the marked reading passes the schema");
   s.signal(head);
