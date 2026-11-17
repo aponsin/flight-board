@@ -1,0 +1,3 @@
+SECURE #C1147: the shared door refuses a decision message (post kind decision, Manager's thread-bound Decision ask); covered by group head 249a281b
+
+signed-by: Security
