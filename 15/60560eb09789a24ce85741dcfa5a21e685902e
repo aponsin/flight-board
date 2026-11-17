@@ -1,0 +1,2 @@
+PASS (Full) board-flakes group head 1560560e over main 5b040a45: every commit in the range signed by Checker 2; fold updates release-tool-pinned regexes to #C1140's wording and keeps the checkout refusal. Full suite on the head green.
+signed-by: Checker 2
