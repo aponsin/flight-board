@@ -22,7 +22,7 @@ import { checkConfig, fullConfig, boardId, TASK_ID, MODEL_WORD } from "../script
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES, PUBLISHED_FILE, STORE_CARDS_FILE } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
 import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
-import { reviewsFromPaths } from "./review-paths.mjs";
+import { reviewsFromPaths, pathPhases } from "./review-paths.mjs";
 import { countFindings } from "./findings-count.mjs";
 import { pairsIn, packOf, BOARD_REPO_WORDS } from "./pairs.mjs";
 import { wakePaths, readWakeFile, nextWakeFile, ALIVE_FILE, SEEN_FILE } from "../gate/wake.mjs";
@@ -688,7 +688,11 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   const deployed = onMain && (noInstall || (!!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]))));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   // #C897: the reviews from the paths the branch changed since it left main, when the repository has a reviewPaths table.
-  const needs = !onMain && !bare ? reviewsFromPaths(card, cfg, reviewsFor(card, cfg), repo.reviewPaths, branchPaths(repo, mainRef, tip.sha)) : null;
+  const changed = !onMain && !bare ? branchPaths(repo, mainRef, tip.sha) : null;
+  const needs = changed ? reviewsFromPaths(card, cfg, reviewsFor(card, cfg), repo.reviewPaths, changed) : null;
+  // #C1110: a branch that touches the repository's customer-text paths (the reviewPaths table's language list) sets the card's customer-text flag: the
+  // Worker raises it and never clears it, so the language review no longer rests on a box someone ticked at card time.
+  const customerText = Array.isArray(changed) && repo.reviewPaths && typeof repo.reviewPaths === "object" && pathPhases(repo.reviewPaths, changed).has("language");
   const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed, ...(needs ? { needs } : {}) }, cfg);
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
@@ -716,6 +720,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
     ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(findings.length ? { findings } : {}),
     ...(Object.keys(issueCounts).length ? { issueCounts } : {}),
+    ...(customerText ? { customerText: true } : {}),
     ...(behindMain ? { behindMain: true } : {}),
     ...(noInstall ? { noInstall: true } : {}),
     ...(phase && build ? { firm: false } : {}),
