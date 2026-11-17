@@ -186,11 +186,12 @@ test("the entries are what scripts/hooks.mjs writes, the wake-watch script the g
   assert.ok(written.length >= 1, `found the cmd() entries (${written.join(", ")})`);
   for (const f of written) assert.ok(HOOK_ENTRIES.includes(f), `${f} is written into settings.json by scripts/hooks.mjs and must be an entry`);
   assert.ok(HOOK_ENTRIES.includes("scripts/wake-watch.mjs") && HOOK_ENTRIES.includes("collector/fence.mjs"));
+  assert.ok(HOOK_ENTRIES.includes("scripts/board-release.mjs"), "the landing job starts the release tool of the installed copy, which moves only with the hooks step (#C1058)");
   assert.deepEqual(HOOK_READS, ["page/board.template.html"]);
 });
 
 test("a change to scripts/wake-watch.mjs, to the fence, or to the page template the pinned scripts read gives a hooks line", () => {
-  for (const [file, text] of [["scripts/wake-watch.mjs", 'import { w } from "../gate/wake.mjs";\nexport const x = w + 1;\n'], ["collector/fence.mjs", "export const d = 3;\n"], ["page/board.template.html", "<p>2</p>\n"], ["gate/stop.mjs", "export const k = 2;\n"]]) {
+  for (const [file, text] of [["scripts/wake-watch.mjs", 'import { w } from "../gate/wake.mjs";\nexport const x = w + 1;\n'], ["collector/fence.mjs", "export const d = 3;\n"], ["page/board.template.html", "<p>2</p>\n"], ["gate/stop.mjs", "export const k = 2;\n"], ["scripts/board-release.mjs", "export const r = 2;\n"]]) {
     const { work, out, commit } = gateRepo();
     const b = commit(`change ${file} (#C101)`, { [file]: text });
     const r = makeAll({ repo: work, sha: b, n: 8, out });
