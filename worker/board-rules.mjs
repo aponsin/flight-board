@@ -680,6 +680,25 @@ export function autoHoldEnd(fields, existing, now, holdMs = HOLD_NO_END_AFTER_MS
 export function holdOpen(c, now, endsPassed) {
   return !!c && ((heldWord(c.hold_end) && !endsPassed?.has(c.hold_end)) || (Number.isInteger(c.check_at) && c.check_at > now));
 }
+// #C1104 (the owner, 2026-11-16: #C996 kept a Nov 12 hold): a hold whose end has passed ends by itself, instead of a line to Manager to lift it by hand.
+// Only two ends end a hold by themselves (Manager's ruling on #C1104): a check_at that has passed, or the store's own 2 h end (hold_until) on a hold with no
+// explicit end. A hold_end is never one: a hold whose hold_end names something still open (an open card or ask) stands, even with a check_at that has passed
+// (the G17 group holds wait on cards: lapsing them would let the land job land cards alone), and a hold_end that has closed with no check_at still wakes
+// Manager through heldWakes ("its end has passed: lift or renew"). A hold with no end at all is not ended here either (heldWakes: "no end set after 2 h").
+// Returns [{ id, num, waiting_on, blocked_reason, hold_end, check_at, hold_until, clearCheckAt }]: what the hold said (for hold_history) and whether the
+// check_at that ended it goes too (it always is the end here: a check_at still in the future never ends a hold, that date is somebody's wish to look again).
+export function endedHolds({ now, cards, endsPassed }) {
+  const out = [];
+  for (const c of cards ?? []) {
+    if (!c || !Number.isInteger(c.num) || c.dropped || c.done_at || !isHeld(c)) continue;
+    const timed = Number.isInteger(c.check_at) && c.check_at > 0, ref = heldWord(c.hold_end) ? c.hold_end : null, until = Number.isInteger(c.hold_until) && c.hold_until > 0 ? c.hold_until : null;
+    if (ref && !endsPassed?.has(ref)) continue;
+    const passed = timed ? c.check_at <= now : !ref && until !== null && until <= now;
+    if (!passed) continue;
+    out.push({ id: c.id, num: c.num, waiting_on: c.waiting_on ?? null, blocked_reason: c.blocked_reason ?? null, hold_end: c.hold_end ?? null, check_at: c.check_at ?? null, hold_until: c.hold_until ?? null, clearCheckAt: timed && c.check_at <= now });
+  }
+  return out;
+}
 // Held cards that need Manager: `endsPassed` is the Set of hold_end ids whose closing has happened (the ask is closed, the card is dropped or live).
 // (b) a hold whose end has passed: "#Cn held on <reason>, its end has passed: lift or renew"; (c) a hold with no end for 2 h (counted from
 // held_at, else the card's updated_at): "#Cn held on <reason>, no end set after 2 h: lift it or give it an end". One row per (card, reason).
@@ -883,6 +902,14 @@ export const INSTALL_WAIT = "install";
 export function installWaitStep({ repo, next, onMain, open }) {
   const waiting = typeof repo === "string" && repo !== "" && next === "ship" && onMain === true;
   return waiting && !open ? "start" : !waiting && open ? "end" : null;
+}
+// #C1104 part 2 (the owner, 2026-11-16: #C1003 and #C1059 sat open three days after landing; Manager's ruling: option 1): a card in a named repository with no
+// install step closes when its commit is on main, with that commit as evidence. A board card (the repo word is one of LANDED_REPO_WORDS) waits for the
+// owner's install and closes when it reads live (#C832); a product card (no repo) goes live by its deploy. A card with a part marked in its next_note
+// ("part <sha>", #C890) that is not on main stays open: the probe says so in `partsMissing`. Pure: the card's repo word and the reading's two fields in.
+export function closesAtLanding({ repo, onMain, partsMissing }) {
+  const word = typeof repo === "string" ? repo.trim() : "";
+  return onMain === true && word !== "" && !LANDED_REPO_WORDS.has(word) && !(Array.isArray(partsMissing) && partsMissing.length > 0);
 }
 export function stepRefusal(a, now) {
   const refuse = (rule, detail) => ({ rule, detail });

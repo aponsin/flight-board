@@ -80,19 +80,27 @@ test("(a) lifting a hold needs no end and clears the end; an existing end carrie
 });
 
 // ---- (b) a passed end wakes Manager once ----
-test("(b) a held card whose check date has passed goes into Manager's wake once, with the line; it is not sent again", async () => {
+// #C1104: a hold whose end has passed ends by itself (no "lift or renew" line to Manager); the words it held go to hold_history.
+const history = async (db, id) => (await db.prepare("SELECT waiting_on, blocked_reason, hold_end FROM hold_history WHERE card_id = ? ORDER BY id").bind(id).all()).results;
+const noHold = (r) => r.waiting_on === null && r.blocked_reason === null && r.hold_end === null && r.held_at === null && r.hold_until === null;
+
+test("(b) a held card whose check date has passed has its hold ended by the store: no line to Manager, the check date goes, the words are kept in hold_history", async () => {
   const db = makeDb(); await card(db, "late");
   await updateCard(db, T, "Manager", { id: "late", waiting_on: "the owner's deploy", check_at: T + H });
   await wakeAsk(db, T + 30 * 60_000);
   assert.deepEqual(await pending(db, T + 30 * 60_000), [], "not before the end");
+  assert.equal((await row(db, "late")).waiting_on, "the owner's deploy", "the hold stands until its end");
   await wakeAsk(db, T + 2 * H);
-  const num = (await row(db, "late")).num;
-  assert.deepEqual(await pending(db, T + 2 * H), [`#C${num} held on the owner's deploy, its end has passed: lift or renew (end Jan 15 2:00 am MT)`]);
+  assert.deepEqual(await pending(db, T + 2 * H), [], "no lift-or-renew line");
+  const r = await row(db, "late");
+  assert.ok(noHold(r), JSON.stringify(r)); assert.equal(r.check_at, null);
+  assert.deepEqual(await history(db, "late"), [{ waiting_on: "the owner's deploy", blocked_reason: null, hold_end: null }]);
   await wakeAsk(db, T + 3 * H);
-  assert.deepEqual(await pending(db, T + 3 * H), [], "once");
+  assert.deepEqual(await pending(db, T + 3 * H), [], "nothing later either");
+  assert.equal((await history(db, "late")).length, 1, "ended once");
 });
 
-test("(b) a hold whose ask is closed, or whose card is dropped or live, has passed its end", async () => {
+test("(b) a hold whose ask is closed, or whose card is dropped or live, has passed its end; no end of its own lifts it, Manager is told (#C1104: only a check date or the store's 2 h ends a hold)", async () => {
   const db = makeDb(); await card(db, "h1"); await card(db, "h2"); await card(db, "dep");
   const t = await ask(db, "h1");
   // Answered, not closed: the hold's end is still open, and #C904's 10-minute ask line (not this test's subject) stays out.
@@ -106,28 +114,45 @@ test("(b) a hold whose ask is closed, or whose card is dropped or live, has pass
   await wakeAsk(db, T + H + 1000);
   const got = await pending(db, T + H + 1000);
   assert.equal(got.length, 2); assert.ok(got.every((s) => /its end has passed: lift or renew \(end [a-z0-9-]+\)$/.test(s)));
+  for (const id of ["h1", "h2"]) { assert.equal((await history(db, id)).length, 0, `${id}: the store lifted nothing`); assert.ok((await row(db, id)).waiting_on); }
 });
 
-test("(b) a hold renewed with the SAME words and a new end wakes Manager again when the new end passes (Checker F1)", async () => {
+test("(b) a hold renewed after it ended is a new hold, and it ends by itself when ITS end passes (Checker F1, as #C1104)", async () => {
   const db = makeDb(); await card(db, "again");
   await updateCard(db, T, "Boardsmith", { id: "again", waiting_on: "Checker" });
-  await wakeAsk(db, T + 2 * H); assert.equal((await pending(db, T + 2 * H)).length, 1);
-  await updateCard(db, T + 2 * H, "Boardsmith", { id: "again", waiting_on: "Checker" }); // renewed, same words
-  await wakeAsk(db, T + 3 * H); assert.deepEqual(await pending(db, T + 3 * H), []);
-  await wakeAsk(db, T + 4 * H); assert.equal((await pending(db, T + 4 * H)).length, 1, "the second end passing wakes once more");
+  await wakeAsk(db, T + 2 * H); assert.deepEqual(await pending(db, T + 2 * H), []); assert.ok(noHold(await row(db, "again")));
+  await updateCard(db, T + 2 * H, "Boardsmith", { id: "again", waiting_on: "Checker" }); // renewed, same words: a new end at T + 4 h
+  await wakeAsk(db, T + 3 * H); assert.equal((await row(db, "again")).waiting_on, "Checker", "the new hold stands until its own end");
+  await wakeAsk(db, T + 4 * H); assert.deepEqual(await pending(db, T + 4 * H), []); assert.ok(noHold(await row(db, "again")), "the second end ends it again");
   await updateCard(db, T + 4 * H, "Manager", { id: "again", blocked_reason: "keys", next_note: "n", check_at: T + 5 * H });
-  await wakeAsk(db, T + 6 * H); assert.equal((await pending(db, T + 6 * H)).length, 1);
-  await updateCard(db, T + 6 * H, "Manager", { id: "again", check_at: T + 8 * H }); // check_at moved later, same words
-  await wakeAsk(db, T + 9 * H); assert.equal((await pending(db, T + 9 * H)).length, 1);
+  await wakeAsk(db, T + 6 * H);
+  const r = await row(db, "again"); assert.ok(noHold(r)); assert.equal(r.check_at, null);
+  assert.deepEqual((await history(db, "again")).map((h) => h.waiting_on ?? h.blocked_reason), ["Checker", "Checker", "keys"]);
+  await updateCard(db, T + 6 * H, "Manager", { id: "again", blocked_reason: "keys again", next_note: "n", check_at: T + 8 * H });
+  await wakeAsk(db, T + 7 * H); assert.equal((await row(db, "again")).blocked_reason, "keys again", "a check date still to come is no end: the hold stands");
 });
 
-test("(b) a card dropped is an end (Checker F2)", async () => {
+test("(b) a card dropped is an end (Checker F2): Manager is told, the store does not lift the hold (#C1104)", async () => {
   const db = makeDb(); await card(db, "h"); await card(db, "dep");
   await updateCard(db, T, "Boardsmith", { id: "h", waiting_on: "dep", hold_end: "dep" });
   await wakeAsk(db, T + H); assert.deepEqual(await pending(db, T + H), []);
   await db.prepare("UPDATE cards SET dropped = 1 WHERE id = 'dep'").run();
   await wakeAsk(db, T + H + 1000);
   assert.equal((await pending(db, T + H + 1000)).length, 1);
+  assert.equal((await row(db, "h")).waiting_on, "dep");
+});
+
+test("(b) an OPEN hold_end holds even when a check date has passed: the G17 group holds do not lapse (#C1104, Manager)", async () => {
+  const db = makeDb(); await card(db, "grp"); await card(db, "dep");
+  await updateCard(db, T, "Manager", { id: "grp", waiting_on: "land job", hold_end: "dep", check_at: T + H });
+  await wakeAsk(db, T + 2 * H);
+  const r = await row(db, "grp");
+  assert.equal(r.waiting_on, "land job"); assert.equal(r.hold_end, "dep"); assert.equal(r.check_at, T + H);
+  assert.equal((await history(db, "grp")).length, 0);
+  await db.prepare("UPDATE cards SET dropped = 1 WHERE id = 'dep'").run(); // its end has come, and so has the check date: now it ends
+  await wakeAsk(db, T + 3 * H);
+  assert.ok(noHold(await row(db, "grp")));
+  assert.deepEqual(await history(db, "grp"), [{ waiting_on: "land job", blocked_reason: null, hold_end: "dep" }]);
 });
 
 test("(a) stripping a blocked card's only end is refused; stripping a waiting_on's explicit end is not (the store gives 2 h)", async () => {
@@ -141,19 +166,20 @@ test("(a) stripping a blocked card's only end is refused; stripping a waiting_on
 });
 
 // ---- (c) no end for 2 h ----
-test("(b) the end the store gave a routine waiting_on wakes Manager once when it passes; a renewed write moves it", async () => {
+test("(b) the end the store gave a routine waiting_on ends the hold when it passes; a renewed write moves it", async () => {
   const db = makeDb(); await card(db, "r");
   await updateCard(db, T, "Boardsmith", { id: "r", waiting_on: "Checker" });
   await wakeAsk(db, T + 2 * H - 1000);
-  assert.deepEqual(await pending(db, T + 2 * H - 1000), []);
+  assert.deepEqual(await pending(db, T + 2 * H - 1000), []); assert.equal((await row(db, "r")).waiting_on, "Checker");
   await updateCard(db, T + H, "Boardsmith", { id: "r", waiting_on: "Security" }); // renewed to T + 3 h
   await wakeAsk(db, T + 2 * H + 1000);
-  assert.deepEqual(await pending(db, T + 2 * H + 1000), []);
+  assert.deepEqual(await pending(db, T + 2 * H + 1000), []); assert.equal((await row(db, "r")).waiting_on, "Security", "the renewed end has not come");
   await wakeAsk(db, T + 3 * H);
-  const num = (await row(db, "r")).num;
-  assert.deepEqual(await pending(db, T + 3 * H), [`#C${num} held on Security, its end has passed: lift or renew (end Jan 15 4:00 am MT)`]);
+  assert.deepEqual(await pending(db, T + 3 * H), [], "no line to Manager");
+  assert.ok(noHold(await row(db, "r")));
+  assert.deepEqual(await history(db, "r"), [{ waiting_on: "Security", blocked_reason: null, hold_end: null }]);
   await wakeAsk(db, T + 9 * H);
-  assert.deepEqual(await pending(db, T + 9 * H), [], "once");
+  assert.deepEqual(await pending(db, T + 9 * H), []);
 });
 
 test("(c) a hold that already has no end wakes Manager once after 2 h (counted from the card's last change when held_at is unknown)", async () => {
