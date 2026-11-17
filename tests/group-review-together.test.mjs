@@ -90,7 +90,8 @@ const pcard = (id, num, extra = {}) => ({ id, num, name: `Card ${num}`, size: "S
 const on = (id) => ({ state: "working", card: id, lastActivityAt: Date.now(), since: Date.now() - 60e3 });
 const nowTile = (html) => [...html.matchAll(/<div class="(step now[^"]*)" title="Checker[^"]*">(.*?)<\/div>/g)].map((m) => ({ cls: m[1], inner: m[2] }));
 // A pulsing tile as the page's DOM holds it: its classes and its row (a card's data-card, or a group's data-group).
-const tile = (row, cls) => ({ classList: { contains: (c) => cls.split(" ").includes(c) }, closest: () => ({ dataset: row }), style: {} });
+// The page's own shape (Designer F1 on 04b8dfcc): a card's .i-row holds a [data-card] div that closes before the track, so the tile's closest .i-row has no dataset of its own and finds its card inside; a group's .i-row carries data-group.
+const tile = (row, cls) => ({ classList: { contains: (c) => cls.split(" ").includes(c) }, closest: (q) => (q === ".i-row" ? (row.group ? { dataset: { group: row.group }, querySelector: () => null } : { dataset: {}, querySelector: (s) => (s === "[data-card]" ? { dataset: { card: row.card } } : null) }) : null), style: {} });
 const delay = (t) => Number(/^-(\d+)ms$/.exec(t.style.animationDelay)?.[1]);
 const near = (x, y) => Math.abs(x - y) <= 50 || Math.abs(Math.abs(x - y) - 2400) <= 50; // the same phase of a 2.4 s pulse, the clock moving a few ms between two reads
 
@@ -102,7 +103,7 @@ test("page: two cards of a group read at the same review phase say together on t
   assert.match(tb.cls, /together/);
   const gt = b.groupRow("g5-thing", b.state.initiatives).split('<div class="g-rail">')[0].match(/<div class="(step now[^"]*)" title="Checker">(.*?)<\/div>/);
   assert.match(gt[1], /together/);
-  assert.match(gt[2], /<small>together<\/small>/);
+  assert.match(gt[2], /<small class="tog">together<\/small>/);
 });
 
 test("page: the pulsing tiles of one batch get the same delay, at card and group level; a lone card's differs", () => {
@@ -114,6 +115,29 @@ test("page: the pulsing tiles of one batch get the same delay, at card and group
   assert.ok(near(a, c) && near(a, g), "the batch beats as one, cards and group");
   assert.ok(!near(s1, s2), "two lone cards do not beat together");
   assert.ok(!near(s1, a) && !near(s2, a), "a lone card is out of step with the batch");
+});
+
+test("page (Designer F1): two lone cards get different delays, and a lone card inside a group does not pulse with its group", () => {
+  const tiles = [tile({ card: "solo-card" }, "step now"), tile({ card: "other-solo" }, "step now"), tile({ group: "g5-thing" }, "step now"), tile({ card: "in-group-solo" }, "step now")];
+  board([pcard("solo-card", 1)], {}, tiles).pulseSync();
+  const [s1, s2, g, c] = tiles.map(delay);
+  assert.ok([s1, s2, g, c].every(Number.isFinite));
+  assert.ok(!near(s1, s2), "two lone cards: own delays");
+  assert.ok(!near(g, c) && !near(g, s1), "a lone card in a group, and the group's own tile (not together), each beat by themselves");
+});
+
+test("page (Designer F1): a card row's markup is the shape pulseSync reads: [data-card] inside the .i-row, the track after it, no data-group", () => {
+  const b = board([pcard("alpha-card", 1)], { Checker: on("alpha-card") });
+  const html = b.initRow(b.state.initiatives[0]);
+  assert.match(html, /^<div class="i-row[^"]*"><div data-card="alpha-card">/);
+  assert.ok(html.indexOf('data-card="alpha-card"') < html.indexOf('<div class="track"'), "the card's id comes before its track, inside the row");
+  assert.doesNotMatch(html, /data-group=/);
+  assert.match(b.groupRow("g5-thing", b.state.initiatives), /^<div class="i-row g-row" data-group="g5-thing">/);
+});
+
+test("page (Designer F2): the group tile's together label has the tog class, as the card's", () => {
+  const b = board([pcard("alpha-card", 1), pcard("bravo-card", 2, { who: "Checker 2" })], { Checker: on("alpha-card"), "Checker 2": on("bravo-card") });
+  assert.match(b.groupRow("g5-thing", b.state.initiatives).split('<div class="g-rail">')[0], /<small class="tog">together<\/small>/);
 });
 
 test("page: a card reviewed alone pulses by itself: no together class or label", () => {
