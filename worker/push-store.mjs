@@ -2,13 +2,14 @@
 // Only the owner adds or removes a subscription (the Worker's routes check the role); the cron runs with no identity at all.
 import { endpointAllowed, b64u, sendPush, vapidJwk, publicPoint } from "./web-push.mjs";
 import { pushesDue, pushLimits } from "./push-rules.mjs";
+import { knobFrom } from "./knobs.mjs";
 
 export const MAX_SUBSCRIPTIONS = 5;
 // #C922 (Checker's LOW1 on #C904): a device that fails this many sends in a row without a 404 or 410 (a 403 after the key
 // was replaced, say) is removed, so it is not retried forever and the page stops saying "on" for it.
 export const MAX_FAILS = 5;
 const RESULT_MAX = 200;
-const STUCK_FRESH_MS = 15 * 60e3; // the stuck reading counts while the probe wrote it within this
+// #C1113: the stuck reading counts while the probe wrote it within the setting stuckFreshSec (worker/knobs.mjs; 15 min by default).
 
 // #C922: whether this endpoint is one of the owner's devices, so the page shows "on" only for a device the board still has.
 export async function pushKnown(db, endpoint) {
@@ -72,7 +73,7 @@ export async function pushRun(db, now, env, fetchFn = fetch) {
   // #C1005: the probe's stuck reading (evidence key "stuck"), only while it is fresh: an old one is a silent probe, which has its own push.
   const stuckRow = await db.prepare("SELECT value, read_at FROM evidence WHERE key = 'stuck'").first();
   let stuck = null;
-  if (stuckRow && now - stuckRow.read_at <= STUCK_FRESH_MS) { try { stuck = JSON.parse(stuckRow.value); } catch { stuck = null; } }
+  if (stuckRow && now - stuckRow.read_at <= knobFrom(knobsRow, "stuckFreshSec") * 1000) { try { stuck = JSON.parse(stuckRow.value); } catch { stuck = null; } }
   const due = pushesDue({ asks, ships, sent, now, deploy: env.BUILD_SHA, lastEvidenceAt, stuck, lim }); // #C968: "board deployed <short sha>", once per deployed commit
   if (!due.payload) { await record(db, now, "nothing due", false); return { ok: true, sent: 0 }; }
   const subs = (await db.prepare("SELECT endpoint, p256dh, auth FROM push_subscriptions").all()).results;

@@ -39,6 +39,10 @@ export const KNOBS = {
   // #C1113 (Checker 2's LOW on #C1106): the silence must outlast one whole evidence cycle, or a healthy probe with a long interval sends false "Mac may be down" pushes (300 s against a 600 s interval).
   silentPushSec: { default: 900, min: 300, max: 7200, over: ["evidenceIntervalSec", "evidenceLimitSec"], label: "the phone is told the Mac may be down after this long without a post (s)" },
   shipWindowSec: { default: 604800, min: 86400, max: 2592000, label: "a ship is pushed only while it is newer than this and unacknowledged (s)" },
+  // #C1113 slice 3: three more Worker-side windows.
+  stuckFreshSec: { default: 900, min: 120, max: 7200, over: ["evidenceIntervalSec", "evidenceLimitSec"], label: "the probe's stuck reading counts for the phone's push while it was written within this (s)" },
+  stuckWindowSec: { default: 86400, min: 3600, max: 604800, label: "a refused write shows on the page's stuck line for this long (s)" },
+  threadWindowSec: { default: 7200, min: 600, max: 86400, label: "an owner thread whose last word is newer than this blocks a decision naming the same card or ask (s)" },
   // Not settings yet (they stay on the lint baseline): gate/reset.mjs EVIDENCE_STALE_MS (no card shows a commit for 10 min; the file is pinned by the owner's
   // install, so changing it needs an owner pack, and it is NOT the page's probe edge staleAfterSec) and collector/store-dispatch.mjs AGENTS_FRESH_MS.
 };

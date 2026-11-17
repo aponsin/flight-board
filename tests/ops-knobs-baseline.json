@@ -58,8 +58,5 @@
  "scripts/state-install.mjs:BOOT_RETRY_MS",
  "scripts/state-install.mjs:BOOT_WAIT_MS",
  "worker/board-rules.mjs:STALL_WAKE_AFTER_MS",
- "worker/board-store.mjs:THREAD_WINDOW_MS",
- "worker/compat-view.mjs:STUCK_WINDOW_MS",
- "worker/page.mjs:POLL_MS",
- "worker/push-store.mjs:STUCK_FRESH_MS"
+ "worker/page.mjs:POLL_MS"
 ]

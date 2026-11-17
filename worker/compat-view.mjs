@@ -6,6 +6,7 @@
 // readings and the live version), meta/live, and the probe document. Left out until their stage: messages, threads, steps,
 // events, usage, plan, timings, ctx*, checkRequests, threadPings, pingThreads, agentPrs, approvals.
 
+import { KNOBS, knobFrom } from "./knobs.mjs";
 import { staleMsOf, PHASES, typedOther, INSTALL_WAIT } from "./board-rules.mjs";
 import { expectedVersions } from "../collector/expected.mjs";
 import { applyFiles } from "./file-store.mjs";
@@ -25,15 +26,16 @@ const KEY = (i) => String.fromCharCode(65 + i); // a Decision's options are plai
 // { reason: <rule>, at, who, owner: <who> } }. One line per role and rule (the newest refusal of that pair that names an open card), nothing older
 // than a day, and a line goes as soon as its card has been written after the refusal (a write for that card passed). A refusal naming no card, an
 // unknown or closed card, or a name that is no role is left out: the page never prints a word the store has not checked.
-export const STUCK_WINDOW_MS = 24 * 3_600_000;
+export const STUCK_WINDOW_MS = KNOBS.stuckWindowSec.default * 1000; // #C1113: the setting stuckWindowSec; this is its default
 const STUCK_WHO = /^[A-Za-z][A-Za-z0-9]{1,23}$/;
-export function stuckDoc(view) {
+export function stuckDoc(view, stored) {
+  const windowMs = knobFrom(stored, "stuckWindowSec") * 1000;
   const cards = new Map((view.cards ?? []).map((c) => [c.id, c]));
   const doc = { id: "stuck" };
   const seen = new Set();
   for (const r of view.refusals ?? []) {
     if (typeof r.card_id !== "string" || !STUCK_WHO.test(r.who ?? "") || typeof r.rule !== "string" || !Number.isFinite(r.at)) continue;
-    if (view.now - r.at > STUCK_WINDOW_MS) continue;
+    if (view.now - r.at > windowMs) continue;
     const c = cards.get(r.card_id);
     if (!c || c.dropped || c.done_at) continue;
     const key = `${r.who}|${r.rule}`;
@@ -266,7 +268,7 @@ export function compatView(view) {
   if ((view.groupOrder ?? []).length) collections.meta = [...(collections.meta ?? []), { id: "groupOrder", rows: view.groupOrder.map((r) => ({ batch: r.batch, pos: r.pos, setBy: r.set_by, setAt: r.set_at })) }];
   if ((view.pings ?? []).length) collections.threadPings = view.pings.map((p) => ({ id: p.id, at: p.at })); // #C1009: the owner's Ping presses
   // #C880: refused writes on the page's "stuck" line (meta/stuck, which the old gate wrote and the page already draws as "<who> stuck on <card>: <why>").
-  const stuck = stuckDoc(view);
+  const stuck = stuckDoc(view, view.evidence?.knobs?.value);
   if (stuck) collections.meta = [...(collections.meta ?? []), stuck];
   applyThreads(collections, view); // before applyFiles: it adds assets to the messages
   applyFiles(collections, view);

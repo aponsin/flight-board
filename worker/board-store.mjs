@@ -247,14 +247,14 @@ export async function createAsk(db, now, ask) {
 // item is made) or the literal "none" (refused only when the decision names a card #C<n> or an ask #T<n> that an open thread of the
 // owner's from the last 2 hours also names; the refusal names that thread). Other roles' asks are as before. The tool layer calls
 // this; createAsk itself stays the plain store write.
-export const THREAD_WINDOW_MS = 2 * 3_600_000;
+export const THREAD_WINDOW_MS = KNOBS.threadWindowSec.default * 1000; // #C1113: the setting threadWindowSec; this is its default
 const REF = /#([CT])(\d{1,7})\b/gi;
 const refsOf = (...texts) => { const out = new Set(); for (const t of texts) for (const m of String(t ?? "").matchAll(REF)) out.add(`${m[1].toUpperCase()}${Number(m[2])}`); return out; };
 const KEYS = ["A", "B", "C", "D"];
 
 // The owner's open threads whose last owner message is within the window: { id, title, refs }.
 async function openOwnerThreads(db, now) {
-  const rows = (await db.prepare("SELECT thread_id, MAX(created_at) AS last FROM messages WHERE author = 'owner' AND created_at >= ? GROUP BY thread_id").bind(now - THREAD_WINDOW_MS).all()).results;
+  const rows = (await db.prepare("SELECT thread_id, MAX(created_at) AS last FROM messages WHERE author = 'owner' AND created_at >= ? GROUP BY thread_id").bind(now - knobFrom(await knobsStored(db), "threadWindowSec") * 1000).all()).results;
   const out = [];
   for (const { thread_id: id } of rows) {
     const ask = await db.prepare("SELECT num, title, closed_at FROM asks WHERE id = ?").bind(id).first();
