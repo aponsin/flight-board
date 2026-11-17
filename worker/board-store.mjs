@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER } from "./board-rules.mjs";
+import { landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, endedHolds, closesAtLanding, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner, wakeLimits } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -510,6 +510,17 @@ async function syncStalls(db, now) {
     const card = cards.find((c) => c.id === ref);
     if (card && (card.dropped || card.done_at || evidence[ref]?.lit?.[0] === "live")) endsPassed.add(ref);
   }
+  // #C1104: a hold whose end has passed ends by itself (endedHolds, board-rules.mjs), before the lines below are built, so it never becomes a "lift or renew" line.
+  // The words it held go to hold_history first, as #C1036's landing does. The update names the hold it read: a write that changed it since keeps its own.
+  for (const h of endedHolds({ now, cards, endsPassed })) {
+    const sets = ["waiting_on = NULL", "blocked_reason = NULL", "hold_end = NULL", "held_at = NULL", "hold_until = NULL", "updated_at = ?"];
+    if (h.clearCheckAt) sets.push("check_at = NULL");
+    const gone = await db.prepare(`UPDATE cards SET ${sets.join(", ")} WHERE id = ? AND done_at IS NULL AND dropped = 0 AND waiting_on IS ? AND blocked_reason IS ? AND hold_end IS ?`).bind(now, h.id, h.waiting_on, h.blocked_reason, h.hold_end).run();
+    if (!(gone?.meta?.changes > 0)) continue;
+    await db.prepare("INSERT INTO hold_history (card_id, at, waiting_on, blocked_reason, hold_end) VALUES (?, ?, ?, ?, ?)").bind(h.id, now, h.waiting_on, h.blocked_reason, h.hold_end).run();
+    const c = cards.find((x) => x.id === h.id);
+    if (c) Object.assign(c, { waiting_on: null, blocked_reason: null, hold_end: null, held_at: null, hold_until: null, ...(h.clearCheckAt ? { check_at: null } : {}) });
+  }
   // #C904: an ask the owner has left 10 min wakes Manager once, before the owner's phone gets it at 30 (push-rules.mjs).
   const openAsks = (await db.prepare("SELECT id, num, type, eta_at, created_at, answered_at, closed_at, withdrawn_at, owed_by FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND withdrawn_at IS NULL").all()).results;
   // #C927: a repository whose oldest open card reading is over an hour old wakes Manager once per spell (staleCopies, board-rules.mjs). The row is
@@ -963,7 +974,9 @@ export async function writeEvidence(db, now, who, key, value, track) {
   // #C832: a card whose reading is live is finished: the program closes it (done_at = when it first read live, done_evidence = its commit's link),
   // nothing is typed. Not a dropped or already-done card, and not one the lead gave a check date (a date is a wish to look again). A reading with
   // no full head sha or repository name has no link to show, so it closes nothing (the next reading with one does).
-  const link = next === "live" ? liveDoneEvidence(reading) : null;
+  // #C1104 part 2: a card in a named repository with no install step (not a board card, not a product card) closes the same way as soon as its commit is on main,
+  // unless a part marked in its next_note is not on main yet (the reading's `partsMissing`, #C890). The same guards: a done, dropped or check-dated card is left.
+  const link = next === "live" ? liveDoneEvidence(reading) : closesAtLanding({ repo: cardRow?.repo, onMain: reading.onMain, partsMissing: reading.partsMissing }) ? liveDoneEvidence(reading) : null;
   const closes = link
     ? [db.prepare("UPDATE cards SET done_at = ?, done_evidence = ?, updated_at = ? WHERE id = ? AND done_at IS NULL AND dropped = 0 AND check_at IS NULL").bind(now, link, now, cardId)] : [];
   // #C1036: the first reading with the card's commit on main ends its holds: what a hold waited for has landed. The words go to hold_history first;
