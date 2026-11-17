@@ -1214,6 +1214,13 @@ export const slowLine = (num) => `#C${num}${SLOW_LINE_TAIL}`;
 // not "slow with no reason": its line says what is missing and who attaches it, and the dispatch wakes that owner too (store-dispatch.mjs).
 // The row ends with the same words as the slow line's, so the store keeps and clears it the same way.
 export const SLOW_ROW_END = ": add one or unstick it";
+// #C1122: a role whose session has its Remote Control switch turned off (the probe's `rcOff: true` on the agent's reading, from the app's session file) is a line for Manager,
+// once per spell: its row goes when the switch is on again (the pending-row cleanup), so a later spell wakes again. No row for a role the probe says nothing about (null is unknown, not off).
+export const RC_OFF_CARD = "rc-off:";
+export const rcOffWakes = (agents) => (agents && typeof agents === "object" ? Object.entries(agents) : [])
+  .filter(([role, a]) => /^[A-Za-z0-9][A-Za-z0-9 _-]{0,23}$/.test(role) && a?.rcOff === true)
+  .sort(([x], [y]) => (x < y ? -1 : 1))
+  .map(([role]) => ({ card_id: `${RC_OFF_CARD}${role}`, num: null, reason: `${role} has Remote Control turned off in the app: switch it on in the session's toolbar` }));
 // Every wording a syncStalls cleanup finds its rows by with LIKE (SQLite's LIKE ignores ASCII case): writer text that carries one would have its row deleted and put back on every
 // sync, a fresh wake each time. claim_review's progress line is refused if it contains any of them, in any case. A new cleanup's mark goes in this list (Security's LOW 1 on #C1115).
 export const STALL_LIKE_MARKS = [SLOW_ROW_END, ORDER_ROW_END, REVIEW_LATE_MARK];

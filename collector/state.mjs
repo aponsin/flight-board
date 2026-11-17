@@ -101,7 +101,10 @@ export function appSessions(root, uid = process.getuid(), { includeArchived = fa
       const from = typeof s.spawnedFrom?.sessionId === "string" && /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s.spawnedFrom.sessionId) ? s.spawnedFrom.sessionId : null;
       // #C1006: model (the model this session ran on) and scheduledTaskId (set on a scheduled task's run), each only when it is a plain word, else null.
       const word = (v, re) => (typeof v === "string" && re.test(v) ? v : null);
-      out.push({ id: f.slice(0, -5), title: s.title, transcript: s.cliSessionId, cwd: s.cwd, at: Number.isFinite(s.lastActivityAt) ? Math.round(s.lastActivityAt) : null, from, model: word(s.model, MODEL_WORD), effort: word(s.effort, EFFORT_WORD), scheduledTaskId: word(s.scheduledTaskId, TASK_ID) });
+      out.push({ id: f.slice(0, -5), title: s.title, transcript: s.cliSessionId, cwd: s.cwd, at: Number.isFinite(s.lastActivityAt) ? Math.round(s.lastActivityAt) : null, from, model: word(s.model, MODEL_WORD), effort: word(s.effort, EFFORT_WORD), scheduledTaskId: word(s.scheduledTaskId, TASK_ID),
+        // #C1122: the file's remoteControlUserEnabled is the only Remote Control key read, as a boolean: true only when it is exactly false (the switch turned off by hand, which the
+        // live try of 11-16 showed it follows within 5 s both ways). Null or absent is unknown, never off (a session whose switch was never touched has none); steeredByRemoteClient is history, not read.
+        rcOff: s.remoteControlUserEnabled === false });
     }
   }
   return out;
@@ -210,7 +213,7 @@ export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = pr
     const p = transcriptPath(homeDir, s.cwd, s.transcript);
     const tail = p ? readTail(p, TAIL_BYTES, uid) : null;
     const a = tail ? activity(lastEntries(tail), { mtimeMs: tail.mtimeMs, now, ids, nums }) : { state: "unknown", tool: null, card: null, since: null };
-    out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, since: a.since, ...(by ? { by } : {}) };
+    out[role] = { state: a.state, lastActivityAt: s.at, tool: a.tool, card: a.card, since: a.since, ...(by ? { by } : {}), ...(s.rcOff === true ? { rcOff: true } : {}) };
     if (prompts && a.prompt != null) prompts[role] = a.prompt;
     if (tools && a.promptTool != null) tools[role] = a.promptTool;
     if (tokens && a.tokens != null) tokens[role] = a.tokens;
