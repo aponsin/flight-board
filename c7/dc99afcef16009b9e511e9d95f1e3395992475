@@ -1,0 +1,3 @@
+SECURE (Full) #C1135 c7dc99af (tip): the new roster evidence goes through POST /api/probe/evidence, which only the probe token can call (403 otherwise; evidenceRefusal checks who=probe again). rosterShape takes up to 40 distinct ROSTER_NAME strings (letters, digits, space, _ and -) and nothing else. The roster only narrows which agents' names reach the rc-off lines; the probe already writes the agents those names come from, so nothing new reaches Manager's batch. ROSTER_ROLES (who may write as whom) is unchanged. The rc-off LIKE prefix is fixed text. INFO: an empty roster passes, which silences every Remote Control line; that's the owner's config, not a hole. Start commit 0d06f6e5 already signed SECURE (empty).
+
+signed-by: Security
