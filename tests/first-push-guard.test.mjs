@@ -3,11 +3,15 @@
 // must still allow comes first here (the guard-false-positives), then what it refuses, with real git repositories (a bare origin and a clone).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, existsSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
-import { refusal, bashTargets, reason, CARD_BRANCH } from "../gate/first-push.mjs";
+import { refusal as refusalIn, bashTargets, reason, CARD_BRANCH, configCheckouts } from "../gate/first-push.mjs";
+
+// The hook acts only in the checkouts the board config names (#C1065 v3): world() names its clone, so `refusal` here is the hook with that config.
+let ROOTS = [];
+const refusal = (call, git) => refusalIn(call, git, ROOTS);
 
 const git = (cwd, ...a) => execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=T", "-c", "commit.gpgsign=false", ...a], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
@@ -20,8 +24,10 @@ function world(branch = "build/card-x", { push = false } = {}) {
   writeFileSync(join(work, "a.txt"), "a\n"); git(work, "add", "-A"); git(work, "commit", "-qm", "first"); git(work, "push", "-q", "origin", "main");
   if (branch !== "main") git(work, "switch", "-qc", branch);
   if (push) git(work, "push", "-q", "origin", branch);
+  ROOTS = [realpathSync(work)];
   return { dir, work, bare, file: join(work, "a.txt"), outside: join(dir, "msg.txt") };
 }
+const realG = (cwd, args) => execFileSync("git", ["-C", cwd, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 const edit = (file, cwd) => ({ tool_name: "Edit", tool_input: { file_path: file }, cwd });
 const bash = (command, cwd) => ({ tool_name: "Bash", tool_input: { command }, cwd });
 const withWorld = (fn, ...a) => { const w = world(...a); try { fn(w); } finally { rmSync(w.dir, { recursive: true, force: true }); } };
@@ -34,17 +40,58 @@ test("ALLOWED: a branch origin has, a branch that is not a card branch, a detach
   withWorld((w) => assert.equal(refusal(edit(join(tmpdir(), "no-such-folder-fb-c1065", "x.txt"), w.work)), null, "a folder that does not exist, outside any repository"));
 });
 
-test("ALLOWED: the remote has the branch though this clone has no remote-tracking ref for it (pushed from another clone)", () => {
+test("the remote is never asked (no ls-remote, no network): a branch only another clone pushed shows no remote-tracking ref here and is refused until a push or fetch writes it", () => {
   withWorld((w) => {
     const other = join(w.dir, "other");
     execFileSync("git", ["clone", "-q", w.bare, other]);
     git(other, "switch", "-qc", "build/card-x"); git(other, "commit", "-q", "--allow-empty", "-m", "wip"); git(other, "push", "-q", "origin", "build/card-x");
-    assert.equal(refusal(edit(w.file, w.work)), null);
+    const calls = [];
+    assert.equal(refusalIn(edit(w.file, w.work), (cwd, args) => { calls.push(args[0]); return realG(cwd, args); }, ROOTS), reason("build/card-x"));
+    assert.ok(!calls.includes("ls-remote"), `git calls: ${calls.join(",")}`);
+    git(w.work, "fetch", "-q");
+    assert.equal(refusal(edit(w.file, w.work)), null, "a fetch writes the tracking ref: allowed");
   });
 });
 
-test("ALLOWED: every doubt: a remote that cannot be reached, not a git repository, an unreadable call, a tool the guard does not watch", () => {
-  withWorld((w) => { git(w.work, "remote", "set-url", "origin", join(w.dir, "gone.git")); assert.equal(refusal(edit(w.file, w.work)), null, "ls-remote fails: the answer is yes"); });
+test("M1 (Security): a repository the config does not name runs NO git at all, however hostile its own .git/config (core.sshCommand, fsmonitor), and is allowed; a named one still is guarded", () => {
+  withWorld((w) => {
+    const evil = join(w.dir, "evil"), mark = join(w.dir, "RAN");
+    execFileSync("git", ["init", "-q", "-b", "build/card-x", evil]);
+    execFileSync("git", ["-C", evil, "config", "core.sshCommand", `touch ${mark}`]);
+    execFileSync("git", ["-C", evil, "config", "core.fsmonitor", `touch ${mark}`]);
+    execFileSync("git", ["-C", evil, "remote", "add", "origin", "ssh://example.invalid/x.git"]);
+    const seen = [];
+    assert.equal(refusalIn(edit(join(evil, "f.txt"), evil), (cwd, args) => { seen.push(cwd); return realG(cwd, args); }, ROOTS), null, "not named: allowed");
+    assert.deepEqual(seen, [], "and no git was run in it");
+    assert.equal(refusal(edit(join(evil, "f.txt"), evil)), null);
+    assert.equal(existsSync(mark), false, "the hostile config ran nothing");
+    // the same through the hook process, with a config file that names only the real clone
+    const cfg = join(w.dir, "board.config.json"); writeFileSync(cfg, JSON.stringify({ collector: { repoPath: w.work } }));
+    const run = (call) => spawnSync(process.execPath, [new URL("../gate/first-push.mjs", import.meta.url).pathname, "--config", cfg], { input: JSON.stringify(call), encoding: "utf8" });
+    assert.equal(run(edit(join(evil, "f.txt"), evil)).status, 0);
+    assert.equal(existsSync(mark), false);
+    assert.equal(run(edit(w.file, w.work)).status, 2, "the named clone is still guarded");
+    // a hostile repository nested in a named one, and a forged .git file pointing at nowhere named, are not the named one either
+    const nested = join(w.work, "nested"); mkdirSync(nested); execFileSync("git", ["init", "-q", "-b", "build/card-x", nested]);
+    assert.equal(refusal(edit(join(nested, "f.txt"), nested)), null);
+    const forged = join(w.dir, "forged"); mkdirSync(forged); writeFileSync(join(forged, ".git"), `gitdir: ${join(evil, ".git")}\n`);
+    assert.equal(refusal(edit(join(forged, "f.txt"), forged)), null);
+    assert.equal(existsSync(mark), false);
+  });
+});
+
+test("configCheckouts reads the folders the config names (repoPath, repos[].path, refresh.repos) and nothing from a broken config", () => {
+  withWorld((w) => {
+    const cfg = join(w.dir, "c.json");
+    writeFileSync(cfg, JSON.stringify({ collector: { repoPath: w.work, repos: [{ path: w.dir }, {}], refresh: { repos: [w.bare, "/no/such/folder"] } } }));
+    assert.deepEqual(configCheckouts(cfg).sort(), [w.work, w.dir, w.bare].map((p) => realpathSync(p)).sort());
+    writeFileSync(cfg, "{not json"); assert.deepEqual(configCheckouts(cfg), []);
+    assert.deepEqual(configCheckouts(join(w.dir, "missing.json")), []);
+    assert.equal(refusalIn(edit(w.file, w.work), undefined, []), null, "no checkout named: nothing guarded, nothing run");
+  });
+});
+
+test("ALLOWED: every doubt: not a git repository, an unreadable call, a tool the guard does not watch", () => {
   assert.equal(refusal({ tool_name: "Edit", tool_input: {}, cwd: tmpdir() }), null);
   assert.equal(refusal({ tool_name: "Read", tool_input: { file_path: "/etc/hosts" }, cwd: tmpdir() }), null);
   assert.equal(refusal(null), null);
@@ -119,8 +166,9 @@ test("bashTargets reads the written files and only those; CARD_BRANCH names the 
 
 test("the hook as the app runs it: JSON on stdin, exit 2 and the reason on stderr to refuse, exit 0 and nothing for anything else or for garbage", () => {
   const script = new URL("../gate/first-push.mjs", import.meta.url).pathname;
-  const run = (input) => spawnSync(process.execPath, [script, "--config", "/x/board.config.json"], { input, encoding: "utf8" });
   withWorld((w) => {
+    const cfg = join(w.dir, "board.config.json"); writeFileSync(cfg, JSON.stringify({ collector: { repoPath: w.work } }));
+    const run = (input) => spawnSync(process.execPath, [script, "--config", cfg], { input, encoding: "utf8" });
     const refused = run(JSON.stringify(edit(w.file, w.work)));
     assert.equal(refused.status, 2);
     assert.equal(refused.stderr.trim(), reason("build/card-x"));
@@ -130,5 +178,5 @@ test("the hook as the app runs it: JSON on stdin, exit 2 and the reason on stder
     assert.equal(ok.status, 0);
     assert.equal(ok.stderr, "");
   });
-  for (const garbage of ["", "not json", "[]", "null", "{}"]) assert.equal(run(garbage).status, 0, JSON.stringify(garbage));
+  for (const garbage of ["", "not json", "[]", "null", "{}"]) assert.equal(spawnSync(process.execPath, [script, "--config", "/x/board.config.json"], { input: garbage, encoding: "utf8" }).status, 0, JSON.stringify(garbage));
 });

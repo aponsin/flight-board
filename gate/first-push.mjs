@@ -1,14 +1,16 @@
 // #C1065: a PreToolUse hook that refuses the first edit on a card branch that is not pushed yet. The board counts a card as started only from its first push
 // (#C1059 was worked about 30 minutes with none, so the board showed its group as not started). It guards Edit, Write, MultiEdit, NotebookEdit and the file writes of Bash.
 //   refused: a write to a file inside a git work tree whose branch is a card branch (build/, admin/, mainsite/, lang/ ...) and is not on origin
-//   allowed: git commands themselves (the push, the empty commit), files outside any repository (the scratchpad's message files), anything inside .git, a branch that is not
-//   a card branch (main, dev, manager/ ...), a detached HEAD, a branch origin has, and EVERY doubt: a git call that fails, a remote that cannot be reached, a command that
-//   cannot be read. The hook never blocks on its own failure (exit 0).
+//   allowed: git commands themselves (the push, the empty commit), files outside any repository (the scratchpad's message files), a repository the board config does not
+//   name (NO git runs there: git would honor that repository's own core.sshCommand, #C1065 v3), anything inside .git, a branch that is not a card branch (main, dev,
+//   manager/ ...), a detached HEAD, a branch the remote-tracking ref shows (no network call), and EVERY doubt: a git call that fails, a config that cannot be read, a command
+//   that cannot be read. The hook never blocks on its own failure (exit 0).
 // Bash is read best-effort: the targets of a redirection (> and >>), tee, sed -i, perl -i, cp and mv (the last word), rm, touch, mkdir and rmdir (every word) are the
 // writes; a command that only reads, or only runs git, node or npm, is never refused.
-// Refusal: exit 2 with the reason on stderr (the tool call does not run). Usage in settings: node gate/first-push.mjs --config <board.config.json> (the config is not read).
+// Refusal: exit 2 with the reason on stderr (the tool call does not run). Usage in settings: node gate/first-push.mjs --config <board.config.json> (read only for the checkouts it names).
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -57,14 +59,48 @@ function nearestDir(file) {
   return d;
 }
 
-// Is the branch on origin? The remote-tracking ref says so at once; else ask the remote (exit 2 = it has no such branch); a remote that cannot be asked counts as yes.
+// Is the branch on origin? Only the remote-tracking ref is asked (a local read: no network, so no ssh command of any repository runs; `git push` writes that ref).
 function onOrigin(top, branch, git) {
-  try { git(top, ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`]); return true; } catch { /* not seen: ask the remote */ }
-  try { git(top, ["ls-remote", "--exit-code", "--heads", "origin", branch]); return true; } catch (e) { return e?.status !== 2; }
+  try { git(top, ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`]); return true; } catch { return false; }
 }
 
+// #C1065 v3 (Security's M1): git honors a repository's own .git/config (core.sshCommand, ...), so the hook runs git ONLY in a checkout the board config names, and finds out
+// whether a folder is one by READING files, never by running git there. The checkouts: collector.repoPath, collector.repos[].path, collector.refresh.repos (~ allowed).
+export function configCheckouts(configPath) {
+  try {
+    const c = JSON.parse(readFileSync(configPath, "utf8")), k = c?.collector ?? {}, out = [];
+    for (const p of [k.repoPath, ...(Array.isArray(k.repos) ? k.repos.map((r) => r?.path) : []), ...(Array.isArray(k.refresh?.repos) ? k.refresh.repos : [])]) {
+      if (typeof p !== "string" || !p) continue;
+      try { out.push(realpathSync(p.replace(/^~(?=\/|$)/, homedir()))); } catch { /* not there */ }
+    }
+    return out;
+  } catch { return []; }
+}
+
+// The folder holding the nearest ".git" above `dir`, and the common git folder it belongs to (a linked worktree's .git FILE says gitdir: <repo>/.git/worktrees/x, whose
+// "commondir" file points back to <repo>/.git). File reads only.
+function gitHome(dir) {
+  let d = dir;
+  for (;;) {
+    const g = resolve(d, ".git");
+    if (existsSync(g)) {
+      try {
+        let gd = g;
+        if (!statSync(g).isDirectory()) { const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(g, "utf8")); if (!m) return null; gd = resolve(d, m[1].trim()); }
+        let common = gd;
+        try { common = resolve(gd, readFileSync(resolve(gd, "commondir"), "utf8").trim()); } catch { /* no commondir: gd is the common folder */ }
+        return { top: realpathSync(d), common: realpathSync(common) };
+      } catch { return null; }
+    }
+    const up = dirname(d);
+    if (up === d) return null;
+    d = up;
+  }
+}
+const namedCheckout = (dir, checkouts) => { const h = gitHome(dir); return h && checkouts.some((c) => h.common === resolve(c, ".git")) ? h.top : null; };
+
 // The refusal text for one tool call ({ tool_name, tool_input, cwd }), or null.
-export function refusal(call, git = realGit) {
+export function refusal(call, git = realGit, checkouts = []) {
   try {
     const tool = call?.tool_name, input = call?.tool_input ?? {}, cwd = typeof call?.cwd === "string" && call.cwd ? call.cwd : process.cwd();
     let targets = [];
@@ -75,8 +111,8 @@ export function refusal(call, git = realGit) {
       const file = resolve(cwd, t);
       const dir = nearestDir(file);
       if (!dir) continue;
-      let top;
-      try { top = realpathSync(git(dir, ["rev-parse", "--show-toplevel"])); } catch { continue; } // not in a repository
+      const top = namedCheckout(dir, checkouts); // not in a checkout the config names (or in no repository): no git runs there
+      if (!top) continue;
       let real = file;
       try { real = resolve(realpathSync(dir), relative(dir, file)); } catch { /* keep */ }
       if (real === resolve(top, ".git") || real.startsWith(resolve(top, ".git") + sep)) continue;
@@ -93,6 +129,7 @@ export function refusal(call, git = realGit) {
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   let call = null;
   try { call = JSON.parse(readFileSync(0, "utf8")); } catch { /* unreadable: allow */ }
-  const why = call ? refusal(call) : null;
+  const at = process.argv.indexOf("--config"), cfg = at > 0 ? process.argv[at + 1] : null;
+  const why = call && cfg ? refusal(call, realGit, configCheckouts(cfg)) : null;
   if (why) { console.error(why); process.exit(2); }
 }
