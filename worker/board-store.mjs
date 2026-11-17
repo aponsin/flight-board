@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER } from "./board-rules.mjs";
+import { landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER, sweepAsk, SWEEP_TITLE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner, wakeLimits } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -619,6 +619,19 @@ async function syncE2e(db, now) {
   const had = await db.prepare("SELECT reason FROM stall_wakes WHERE card_id = ?").bind(E2E_CARD).first();
   return [{ card_id: E2E_CARD, num: null, reason: had?.reason ?? wake.reason }];
 }
+// #C1112: the shipped branches the probe lists (evidence branches.shipped) become ONE Terminal ask a week, asked as the lead (who used to batch them by hand), with
+// the delete lines. Nothing is asked while a sweep ask is still open or one was made in the last 7 days, or when the list is over 2 days old or empty.
+const SWEEP_EVERY_MS = 7 * 86_400_000, SWEEP_FRESH_MS = 2 * 86_400_000;
+export async function syncBranchSweep(db, now) {
+  const row = await db.prepare("SELECT value, read_at FROM evidence WHERE key = 'branches.shipped'").first();
+  if (!row || !(now - row.read_at <= SWEEP_FRESH_MS)) return null;
+  let value = null; try { value = JSON.parse(row.value); } catch { /* none */ }
+  const ask = sweepAsk(value);
+  if (!ask) return null;
+  const had = await db.prepare("SELECT 1 AS x FROM asks WHERE type = 'Terminal' AND title LIKE ? AND (closed_at IS NULL OR created_at > ?) LIMIT 1").bind(`${SWEEP_TITLE}%`, now - SWEEP_EVERY_MS).first();
+  if (had) return null;
+  return createAsk(db, now, { type: "Terminal", title: ask.title, asked_by: "Manager", commands: ask.commands });
+}
 const wakeFacts = (w, askedAt) => ({ askedAt, batchId: w.batch_id, count: w.batch_count, batchAt: w.batch_at, takenAt: w.taken_at, lastSendAt: w.last_send_at ?? undefined, lastSendBatch: w.last_send_batch, lastSendOk: w.last_send_ok === null ? undefined : w.last_send_ok === 1, lastSendReason: w.last_send_reason ?? undefined, lastSendFix: w.last_send_fix ?? undefined });
 
 // The probe's 20-second ask: the heartbeat, and the answer to "anything for Manager?". Opens a batch when something is
@@ -627,6 +640,7 @@ export async function wakeAsk(db, now) {
   await db.prepare("UPDATE wake SET alive_at = ? WHERE id = 1").bind(now).run();
   let w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
   await syncStalls(db, now);
+  try { await syncBranchSweep(db, now); } catch { /* a sweep ask is never worth the wake */ }
   const n = await pendingForManager(db);
   const open = w.batch_id && w.taken_at < w.batch_at;
   if (n > 0 && !open) {
