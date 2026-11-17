@@ -24,8 +24,8 @@ const size = (r) => JSON.stringify(r.structuredContent).length;
 
 async function seed(tool) {
   const pad = "x".repeat(2000);
-  for (let i = 0; i < 60; i++) assert.equal((await tool("manager", "card_create", { id: `b-${i}`, title: `Build ${i}`, summary: pad, owner_role: "Builder", batch: "g-test" })).isError, false);
-  for (const id of ["o-one", "o-two", "o-three"]) assert.equal((await tool("manager", "card_create", { id, title: id, summary: "an Ops card", owner_role: "Ops", batch: "g-test" })).isError, false);
+  for (let i = 0; i < 60; i++) assert.equal((await tool("manager", "card_create", { id: `b-${i}`, title: `Build ${i}`, summary: pad, owner_role: "Builder", batch: "g-test", repo: "flight-board" })).isError, false);
+  for (const id of ["o-one", "o-two", "o-three"]) assert.equal((await tool("manager", "card_create", { id, title: id, summary: "an Ops card", owner_role: "Ops", batch: "g-test", repo: "flight-board" })).isError, false);
   const a = await tool("manager", "ask", { type: "Thread", title: "Hello", text: "first words" });
   assert.equal(a.isError, false);
   return a.structuredContent;

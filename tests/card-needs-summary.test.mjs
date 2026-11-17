@@ -44,7 +44,7 @@ test("through the card_create TOOL (the worker's own wiring): no summary and no 
   const bare = await tool({ id: "c-tool-bare", title: "No words" });
   assert.equal(bare.ok, false, JSON.stringify(bare));
   assert.equal(bare.refused?.rule ?? bare.rule, "card-summary", JSON.stringify(bare));
-  assert.equal((await tool({ id: "c-tool-ok", title: "With words", summary: "Build the thing, because it is needed.", batch: "g-test" })).ok, true);
+  assert.equal((await tool({ id: "c-tool-ok", title: "With words", summary: "Build the thing, because it is needed.", batch: "g-test", repo: "flight-board" })).ok, true);
 });
 
 test("the refusal is logged and says what to do", async () => {
