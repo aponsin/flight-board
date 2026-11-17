@@ -1,2 +1,2 @@
-STOP (Checker 2): #C1073 tip 1ea0e762 lands only inside the G14 group head (Manager's hold; the old land job would land it alone). Code reviewed, no findings; the PASS is given on the head.
+PASS (Full) #C1073 tip 1ea0e762: held card raises its own stall row naming the decision; a decision in a card's own thread holds it. 0 cards held on the live store. Mutants 8/8. Signed with the G14 head 00c4b85f in one push.
 signed-by: Checker 2
