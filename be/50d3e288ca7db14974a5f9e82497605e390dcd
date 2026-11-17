@@ -1,0 +1,2 @@
+PASS (Full) #C1160 fix: openGroupWithheld counts a wipHead card as not READY (stack switch off too); empty-start no-sign-off guard tested; 3 of 3 mutants killed
+signed-by: Checker 2
