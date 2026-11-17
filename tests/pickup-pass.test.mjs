@@ -174,6 +174,18 @@ test("the watchdog doc fits the task: no file tool, the --rows command, the tool
   assert.doesNotMatch(doc, /\/Users\//, "no home path in a committed file (the pre-push scan holds the owner's name)");
 });
 
+// #C1154 (11-17, 8:04 am: the hourly watchdog ran a bare `cat` of board.config.json, which was not pre-approved, so the run stopped on its own permission prompt and reported
+// it as a stuck agent): the pass text must never send the task to read the config. The roster comes from the program (--config is a path argument), not from the task.
+test("the watchdog doc never has the task read board.config.json: the pass is told so, and no step reads the config (#C1154)", () => {
+  const doc = readFileSync(new URL("../docs/watchdog-pickup-pass.md", import.meta.url), "utf8");
+  assert.match(doc, /Never open `board\.config\.json` yourself/, "the pass says so");
+  assert.match(doc, /no `cat`, no file tool/);
+  // The rule's own sentence and the "Done means" line name the config to forbid it; any other line that reads it is a step that sends the task to the file.
+  const readers = doc.split("\n").filter((l) => /\b(?:cat|read|open|for each role on the roster in)\b[^.\n]*board\.config\.json/i.test(l) && !/never open|never read|no step reads|not read|reads the roster|never with/i.test(l));
+  assert.deepEqual(readers, [], "a line sends the task to read the config");
+  assert.doesNotMatch(doc, /For each role on the roster in `board\.config\.json`/, "the old wording that sent the run to the file");
+});
+
 test("watchRoles reads --role from the wake-watch lines of ps, quoted or not, and tells Checker from Checker 2", () => {
   const ps = [
     "node /Users/x/.flight-board/install/abc/scripts/wake-watch.mjs --config /c/board.config.json --role Boardsmith --once",
