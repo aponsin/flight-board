@@ -1,0 +1,2 @@
+PASS #C1132 watchdog-pickup-pass-fits-task: parseRows keeps only exact 4-field rows (max 40), sessionOf only local_<uuid>, doc fits the task. My 16 mutants all killed. Full suite 2855 pass, 0 fail. On main 36e0164e. Not landable alone: Security's RISKS M1 (--state writes any path under the new prefix rule) awaits a re-cut. LOW: sessionOf reads only rosterSessions, not gate.managerSession (live config has Manager there, so fine today).
+signed-by: Checker 2
