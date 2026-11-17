@@ -1,0 +1,3 @@
+SECURE (Full) #C1125 v2 595a3f3a (tip): 226b3a43 (the signed 0a2b1da5 rebased, range-diff checked) plus one test-only commit pinning the exact-id match (a prefix or a longer id reads message: null). No code change beyond the rebase. 37 tests green (touched plus card-create-needs-group).
+
+signed-by: Security
