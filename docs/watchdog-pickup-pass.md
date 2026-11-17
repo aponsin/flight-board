@@ -17,7 +17,9 @@ no tool the task has not loaded.
 
 ## Pickup pass (every run, after the stuck check and before the last step)
 
-For each role on the roster in `board.config.json` (its sessions are the ones step 2 kept; a role with no session is left out):
+For each session step 2 kept (its title is a role of the roster; a role with no session is left out). **Never open `board.config.json` yourself** (#C1154: a bare `cat` of it
+was not pre-approved, so the run stopped on its own permission prompt and reported that prompt as a stuck agent): no `cat`, no file tool. The config is only a path you pass to the
+program in step 4, which reads the roster and the `rosterSessions` itself and drops any role that is not on the roster:
 
 1. Read its row with `list_sessions` (or `get_session` for `remoteControlState`): `state` is "idle" or "working".
 2. Read its Messages tokens with `get_usage` (none listed is 0).
@@ -58,4 +60,5 @@ passes never read it big (a first run on an already cleared session) gets no pic
 
 ## Done means
 Manager pastes this file's three edits and the pass into the task, and a run finishes with no prompt: every command in it is
-one bare command the owner pre-approved, no step uses a file tool, and every tool it calls is loaded in step 1.
+one bare command the owner pre-approved, no step uses a file tool, no step reads `board.config.json` (the config is a path argument to a pinned script, never read with `cat` or any shell
+read), and every tool it calls is loaded in step 1.
