@@ -88,7 +88,7 @@ function board(raw, agents) {
 }
 const pcard = (id, num, extra = {}) => ({ id, num, name: `Card ${num}`, size: "S", level: "Quick", status: "active", phase: "checker", who: "Checker", repo: "flight-board", batch: "g5-thing", branch: `build/${id}`, createdAt: 1_800_000_000_000 + num * 60e3, ...extra });
 const on = (id) => ({ state: "working", card: id, lastActivityAt: Date.now(), since: Date.now() - 60e3 });
-const nowTile = (html) => [...html.matchAll(/<div class="(step now[^"]*)"( style="[^"]*")? title="Checker[^"]*">(.*?)<\/div>/g)].map((m) => ({ cls: m[1], style: m[2] ?? "", inner: m[3] }));
+const nowTile = (html) => [...html.matchAll(/<div class="(step now[^"]*)" title="Checker[^"]*"( style="[^"]*")?>(.*?)<\/div>/g)].map((m) => ({ cls: m[1], style: m[2] ?? "", inner: m[3] }));
 const delay = (style) => Number(/animation-delay:-(\d+)ms/.exec(style)?.[1]);
 
 test("page: two cards of a group read at the same review phase pulse in unison and say together, at card and group level", () => {
@@ -99,7 +99,7 @@ test("page: two cards of a group read at the same review phase pulse in unison a
   assert.match(tb.cls, /together/);
   assert.ok(Math.abs(delay(ta.style) - delay(tb.style)) <= 50 || Math.abs(Math.abs(delay(ta.style) - delay(tb.style)) - 2400) <= 50, "the same phase of the pulse (the clock moved at most a few ms between the two)");
   const group = b.groupRow("g5-thing", b.state.initiatives);
-  const gt = group.split('<div class="g-rail">')[0].match(/<div class="(step now[^"]*)"( style="[^"]*")? title="Checker"[^>]*>(.*?)<\/div>/);
+  const gt = group.split('<div class="g-rail">')[0].match(/<div class="(step now[^"]*)" title="Checker"( style="[^"]*")?>(.*?)<\/div>/);
   assert.match(gt[1], /together/);
   assert.match(gt[3], /<small>together<\/small>/);
   assert.ok(Math.abs(delay(gt[2]) - delay(ta.style)) <= 50 || Math.abs(Math.abs(delay(gt[2]) - delay(ta.style)) - 2400) <= 50, "the group's tile beats with its cards");
