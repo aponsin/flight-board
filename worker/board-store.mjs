@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { pausedDepLanded, PAUSE_DEP_END, openDecisionHolds, rcOffWakes, RC_OFF_CARD, landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, endedHolds, closesAtLanding, holdWords, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER, sweepAsk, SWEEP_TITLE } from "./board-rules.mjs";
+import { pausedDepLanded, PAUSE_DEP_END, openDecisionHolds, rcOffWakes, RC_OFF_CARD, landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, endedHolds, closesAtLanding, holdWords, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, isBoardCard, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER, sweepAsk, SWEEP_TITLE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner, wakeLimits } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -47,7 +47,7 @@ async function lookContext(db, ask) {
   return { lanes, cardOwner: card?.owner_role ?? null };
 }
 
-const COLUMNS = ["title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end", "removes"];
+const COLUMNS = ["title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end", "removes", "contract", "changes_definition"];
 // true/false are stored as 1/0; a list or the issue counts are stored as JSON text (null stays null: "not said").
 const bool = (v) => (v === true ? 1 : v === false ? 0 : Array.isArray(v) || (v && typeof v === "object") ? JSON.stringify(v) : v);
 
@@ -80,6 +80,8 @@ export async function createCard(db, now, who, fields, opts = {}) {
   // #C1149 (the review dispatch woke Checker 2 for #C1148, a product card created with no repo word, which the board reads as its own): through the card_create TOOL
   // (opts.needRepo) a card with no repo is refused, and the refusal lists the known repos. Old cards with none keep being read as the board's.
   if (opts.needRepo && !(typeof fields.repo === "string" && fields.repo.trim())) return refuse(db, now, await repoRefusal(db), fields.id, who);
+  // #C1169: through the card_create TOOL (opts.needContract) a flight-board card names what it touches (see contractRefusal); said after the group and repo rules.
+  if (opts.needContract && isBoardCard(fields)) { const noContract = await contractRefusal(db, fields); if (noContract) return refuse(db, now, noContract, fields.id, who); }
   // #C871: a new card may not take a place at or ahead of one the owner holds in its agent's queue (queueWriteRefusal).
   const floorBad = who !== "owner" && Number.isInteger(fields.queue_pos) && typeof fields.owner_role === "string" ? queueWriteRefusal(fields, null, who, await ownerFloor(db, fields.owner_role, fields.id)) : null;
   if (floorBad) return refuse(db, now, floorBad, fields.id, who);
@@ -88,6 +90,17 @@ export async function createCard(db, now, who, fields, opts = {}) {
   await db.prepare(`INSERT INTO cards (id, num, ${COLUMNS.join(", ")}, issues_at, held_at, hold_until, created_at, updated_at) VALUES (?, ?, ${COLUMNS.map(() => "?").join(", ")}, ?, ?, ?, ?, ?)`)
     .bind(fields.id, num, ...row, fields.issues ? now : null, holdWords(fields) ? now : null, autoHoldEnd(fields, null, now, holdNoEndMsOf(await knobsStored(db))), now, now).run();
   return { ok: true, id: fields.id, num };
+}
+// #C1169 (11-17: a card was carded against DATA.md:131 without checking it; the owner: cards about the flight-board must match the first-level principles; principles 1
+// and 5: a note is not a rule, refuse early): a flight-board card is written with `contract`, the principle numbers and DATA.md rows or definitions it touches, and
+// `changes_definition`, true or false. True needs from_thread, the number of the thread where the owner decided it, else the card is refused.
+const threadKnown = async (db, t) => Number.isInteger(t) && t > 0 && !!(await db.prepare("SELECT 1 AS x FROM asks WHERE num = ? UNION ALL SELECT 1 AS x FROM messages WHERE thread_id = ?").bind(t, `t${t}`).first());
+async function contractRefusal(db, fields) {
+  const c = fields.contract, d = fields.changes_definition;
+  if (!(typeof c === "string" && c.trim())) return { rule: "card-contract", detail: "a flight-board card needs contract: the principle numbers and DATA.md rows or definitions it touches (or \"touches no definition\" and why), and changes_definition true or false" };
+  if (![true, false, 1, 0].includes(d)) return { rule: "card-contract", detail: "a flight-board card needs changes_definition: true if it changes a principle or a DATA.md definition, else false" };
+  if ((d === true || d === 1) && !(await threadKnown(db, fields.from_thread))) return { rule: "card-changes-definition", detail: `this changes ${c.trim().slice(0, 120)}: ask the owner first, then give from_thread, the number of the thread where the owner decided it` };
+  return null;
 }
 const defaultFor = (c) => (c === "summary" ? "" : c === "track" ? "product" : c === "paused" || c === "dropped" ? 0 : null);
 
@@ -168,6 +181,11 @@ export async function updateCard(db, now, who, fields, opts = {}) {
   const undrop = fields.dropped === false || fields.dropped === 0;
   if (opts.needGroup && !String(card.batch ?? "").trim() && (undrop || (!card.done_at && !card.dropped)) && !(typeof fields.batch === "string" && fields.batch.trim()) && !(fields.done === true || fields.dropped === true || fields.dropped === 1)) {
     return refuse(db, now, await groupRefusal(db, `${id} has no group yet: this write must set batch (a write that closes or drops the card needs none)`), id, who);
+  }
+  // #C1169: through the card_update TOOL (opts.needContract) a write that changes a flight-board card's summary carries its contract in the same write.
+  if (opts.needContract && "summary" in fields && isBoardCard({ repo: "repo" in fields ? fields.repo : card.repo })) {
+    const noContract = await contractRefusal(db, fields);
+    if (noContract) return refuse(db, now, noContract, id, who);
   }
   // #C902: done closes the card once, on a card that is not dropped; a thread message named as evidence must be on the board.
   if (fields.done === true) {

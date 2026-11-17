@@ -100,7 +100,7 @@ test("through the card_create and card_update TOOLS (the worker's own wiring): n
   const env = { DB: makeDb() };
   const call = (body) => worker.fetch(new Request("https://board.test/mcp", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "x-as": "manager" } }), env, null, T, async () => ({ who: "Manager", role: "agent" }));
   const tool = async (name, args) => (await (await call({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } })).json()).result.structuredContent;
-  const words = { summary: "Build the thing, because it is needed.", repo: "flight-board" };
+  const words = { summary: "Build the thing, because it is needed.", repo: "flight-board", contract: "principle 1", changes_definition: false };
   const bare = await tool("card_create", { id: "c-tool-bare", title: "x", ...words });
   assert.equal(bare.refused?.rule ?? bare.rule, "card-group", JSON.stringify(bare));
   assert.equal((await tool("card_create", { id: "c-tool-ok", title: "x", ...words, batch: "g1-first" })).ok, true);

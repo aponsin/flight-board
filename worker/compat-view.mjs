@@ -149,6 +149,9 @@ export function initiativeDoc(c, ev, claim) {
     reviewMutants: Number.isInteger(claim?.mutants) && claim.mutants > 0 ? claim.mutants : undefined, mutantSec: Number.isInteger(claim?.mutant_sec) && claim.mutant_sec > 0 ? claim.mutant_sec : undefined,
     // #C866: what the card removes, one plain line (or none).
     removes: typeof c.removes === "string" && c.removes ? c.removes : undefined,
+    // #C1169: what a flight-board card touches, and whether it changes a definition (none on a card written before).
+    contract: typeof c.contract === "string" && c.contract ? c.contract : undefined,
+    changesDefinition: c.changes_definition === 1 ? true : c.changes_definition === 0 ? false : undefined,
     // #C1008: the group the owner pulled it out of, who and when (the page tags the row "pulled out of G3 · 10:05 AM by <owner>").
     pulledFrom: typeof c.pulled_from === "string" && c.pulled_from ? c.pulled_from : undefined, pulledBy: typeof c.pulled_by === "string" && c.pulled_by ? c.pulled_by : undefined, pulledAt: num(c.pulled_at),
     // holds-need-an-end (#C838): the id of the ask or card whose closing ends the hold, and when the hold began (the page draws "held: <reason>, until <end>").

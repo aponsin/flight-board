@@ -586,7 +586,7 @@ export function listWriteRefusal(fields, { create = false } = {}) {
 }
 
 // Card words: only these fields are typed; status, phase, evidence and numbers are never written by a session.
-const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end", "removes", "done", "done_evidence"]);
+const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end", "removes", "contract", "changes_definition", "done", "done_evidence"]);
 // #C902: what shows a card with no branch is done: a file path (~/ or /), an https link, or a thread message's id (m-<time>-<8 hex>).
 export const DONE_EVIDENCE = /^(?:(?:~\/|\/)[^\s]|https:\/\/[^\s]|m-\d{10,16}-[0-9a-f]{8}$)/;
 export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
@@ -640,6 +640,9 @@ export function cardWriteRefusal(fields, evidence) {
   if (fields.bump !== undefined && fields.bump !== null && !["patch", "minor", "major"].includes(fields.bump)) return refuse("card-bump", "bump is patch, minor or major");
   // #C866: what the card removes, one line of plain words (the page escapes it); null clears it.
   if (fields.removes !== undefined && fields.removes !== null && !(typeof fields.removes === "string" && fields.removes.length <= 300 && !/[\u0000-\u001f\u007f]/.test(fields.removes))) return refuse("card-removes", "removes is one line of up to 300 characters, or null to clear it");
+  // #C1169: what a flight-board card touches: one line of plain words naming principle numbers and DATA.md rows (null clears it), and whether it changes one.
+  if (fields.contract !== undefined && fields.contract !== null && !(typeof fields.contract === "string" && fields.contract.length <= 400 && !/[\u0000-\u001f\u007f]/.test(fields.contract))) return refuse("card-contract", "contract is one line of up to 400 characters, or null to clear it");
+  if (fields.changes_definition !== undefined && fields.changes_definition !== null && ![0, 1, true, false].includes(fields.changes_definition)) return refuse("card-flag", "changes_definition is true or false");
   // #C731 B4b: the done-test hold, a time in ms (2020 to 2100), or null to lift it.
   if (fields.check_at !== undefined && fields.check_at !== null && !(Number.isInteger(fields.check_at) && fields.check_at >= 1577836800000 && fields.check_at <= 4102444800000)) return refuse("card-check", "check_at is a time in milliseconds, or null to lift the hold");
   if ((fields.blocked_reason !== undefined || fields.paused === 1 || fields.paused === true) && !present(fields.next_note)) {
