@@ -62,7 +62,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "weekTotal", "stack", "stackHold", "builtWaiting", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "restart", "ledger", "quiet"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "behindMain", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "restart", "ledger", "quiet"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -92,6 +92,8 @@ const CARD = {
   findings: (v) => Array.isArray(v) && v.length >= 1 && v.length <= MAX_SIGNED && v.every(re(PHASE)) && new Set(v).size === v.length,
   // #C1114: the findings the reviews put on the branch's commits, by kind (collector/findings-count.mjs); the Worker raises the card's counters to these.
   issueCounts: (v) => plain(v) && Object.keys(v).length >= 1 && Object.entries(v).every(([k, n]) => ["bugs", "security", "language", "design"].includes(k) && Number.isInteger(n) && n >= 1 && n <= 99),
+  // #C1110: the branch touches the repository's customer-text paths (only ever true); the Worker sets the card's customer_text and never clears it.
+  customerText: (v) => v === true,
   // #C854: a tip waiting at ship that does not continue main (only ever true): it goes back to its builder to re-cut.
   behindMain: (v) => v === true,
   // #C882: a landing that changed no deployed or pinned file (only docs and tests) needs no install: the card reads Live. Only ever true.

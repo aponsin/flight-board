@@ -981,6 +981,8 @@ export async function writeEvidence(db, now, who, key, value, track) {
     const up = raisedIssues(have, sent.issueCounts);
     if (up) await db.prepare("UPDATE cards SET issues = ?, issues_at = ?, updated_at = ? WHERE id = ?").bind(JSON.stringify(up), now, now, cardId).run();
   }
+  // #C1110: a branch that touches the customer-text paths sets the card's flag; only ever raised (null or 0 becomes 1), never cleared.
+  if (cardRow && sent.customerText === true) await db.prepare("UPDATE cards SET customer_text = 1, updated_at = ? WHERE id = ? AND (customer_text IS NULL OR customer_text = 0)").bind(now, cardId).run();
   const rows = prev === next ? [] : historyRows(cardId, prev, next, now, whoForPhase(cardId, next, agents, ownerRole), prevWho);
   // #C881: Started is the first push (PARITY row 35). A card whose first reading is already past build, with no row of its own (the probe sees a
   // card only once something is pushed), gets its build start and end at that first push, so every lit card has a build row and a start time.
