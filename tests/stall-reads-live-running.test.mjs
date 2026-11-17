@@ -39,4 +39,11 @@ test("a blind reading (no lastActivityAt) reads as before: the idle `since` deci
 
 test("activity a little ahead of the clock (a skew between the probe's read and now) is still activity: no stall", () => {
   assert.deepEqual(atPhase({ Checker: agent({ lastActivityAt: NOW + 5_000 }) }), []);
+  assert.deepEqual(atPhase({ Checker: agent({ lastActivityAt: NOW + 5 * MIN }) }), [], "up to 5 min ahead");
+});
+
+test("activity far ahead of the clock is no activity: it cannot silence a role's stall lines (Security's INFO)", () => {
+  assert.equal(atPhase({ Checker: agent({ lastActivityAt: NOW + 5 * MIN + 1 }) }).length, 1, "just past the 5 min skew");
+  assert.equal(atPhase({ Checker: agent({ lastActivityAt: NOW + 24 * 60 * MIN }) }).length, 1, "a day ahead");
+  assert.equal(queued({ Boardsmith: agent({ lastActivityAt: NOW + 24 * 60 * MIN }) }).length, 1, "a queued card too");
 });

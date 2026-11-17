@@ -1096,8 +1096,10 @@ export const waited = (from, now, outages) => now - from - outageOverlap(from, n
 // #C1143 (11-16/17: "Boardsmith idle since 11:14 pm" and "Builder idle since 10:25 pm" woke Manager while both sessions were running): the idle reading can lag the
 // session. A role whose newest read carries activity inside the stall time (lastActivityAt, the probe's latest read of its transcript) is not idle, whatever its
 // `since` says. A reading with no usable lastActivityAt (a blind one) says nothing here, so the idle `since` decides as before; a time a little ahead of `now`
-// (a skew between the probe's read and now) is still activity.
-export const activeRecently = (a, now, stallMs = STALL_AFTER_MS) => Number.isFinite(a?.lastActivityAt) && now - a.lastActivityAt < stallMs;
+// (a skew between the probe's read and now, up to ACTIVITY_SKEW_MS) is still activity; one further ahead is no activity at all (Security's INFO on cf4eb085: a far-future
+// time would silence that role's stall lines for as long as it lies ahead).
+export const ACTIVITY_SKEW_MS = 5 * 60_000;
+export const activeRecently = (a, now, stallMs = STALL_AFTER_MS) => Number.isFinite(a?.lastActivityAt) && a.lastActivityAt - now <= ACTIVITY_SKEW_MS && now - a.lastActivityAt < stallMs;
 export function stalledWaits({ now, cards, evidence, agents, openAskCards, phaseStart, postedAt, endsPassed, groupOrder = [], claims, stackOn = false, unansweredAskCards, outages = [], stallMs = STALL_AFTER_MS, postedFreshMs = POSTED_FRESH_MS, reviewers }) {
   const out = [], queued = new Map(), idleOf = new Map(), noSession = new Map();
   const roster = agents && typeof agents === "object" ? agents : {};
