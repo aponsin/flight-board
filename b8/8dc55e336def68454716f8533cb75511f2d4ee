@@ -1,0 +1,2 @@
+FINDINGS (Checker 2) #C1160 F1: openGroupWithheld (worker/board-rules.mjs:545) still reads a wipHead card as READY: unready = no head or stackHold, never wipHead, so a repo without the stack switch (the product repo) does not withhold the builder's other-group cards while its started card has only a WIP push; fix: unready also when wipHead, plus a test. LOW: empty-start's no-sign-off condition is untested (mutant survived). Suite 3017 pass 0 fail.
+signed-by: Checker 2
