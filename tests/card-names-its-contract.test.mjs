@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker from "../worker/board-worker.mjs";
 import { createCard, updateCard, createAsk } from "../worker/board-store.mjs";
+import { initiativeDoc } from "../worker/compat-view.mjs";
 
 const T = 1_800_000_000_000;
 const OPTS = { needSummary: true, needGroup: true, needRepo: true, needContract: true };
@@ -72,14 +73,39 @@ test("through the card_create and card_update TOOLS (the worker's own wiring)", 
   assert.equal((await tool("card_update", { id: "c-w2", summary: "Other words.", contract: "principle 1", changes_definition: false })).ok, true);
 });
 
-test("the view carries the contract and the flag; a card written before has neither", async () => {
+test("the view's own card document (initiativeDoc) carries the contract and the flag; a card written before has neither", async () => {
   const db = makeDb();
   assert.equal((await make(db, { id: "c-view", contract: "principle 1", changes_definition: false })).ok, true);
-  const row = await db.prepare("SELECT * FROM cards WHERE id = 'c-view'").first();
-  assert.equal(row.contract, "principle 1");
-  assert.equal(row.changes_definition, 0);
+  assert.equal((await make(db, { id: "c-view2", contract: "DATA.md Started", changes_definition: true, from_thread: await decided(db) })).ok, true);
+  const row = async (id) => db.prepare("SELECT * FROM cards WHERE id = ?").bind(id).first();
+  const doc = initiativeDoc(await row("c-view"), null);
+  assert.equal(doc.contract, "principle 1");
+  assert.equal(doc.changesDefinition, false);
+  assert.equal(initiativeDoc(await row("c-view2"), null).changesDefinition, true);
   assert.equal((await createCard(db, T, "Manager", { id: "c-old", title: "Old" })).ok, true);
-  const old = await db.prepare("SELECT contract, changes_definition FROM cards WHERE id = 'c-old'").first();
-  assert.equal(old.contract, null);
-  assert.equal(old.changes_definition, null);
+  const old = initiativeDoc(await row("c-old"), null);
+  assert.equal(old.contract, undefined);
+  assert.equal(old.changesDefinition, undefined);
+});
+
+// Checker 2's F1: the owner often decides in a plain message thread (t<n>), not an ask; that must be accepted, and an unknown one refused.
+test("a message thread t<n> is accepted as the owner's decision thread for changes_definition true; an unknown one is refused", async () => {
+  const db = makeDb();
+  await db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at) VALUES ('m-1', 't777', 'owner', 'yes, change it', ?)").bind(T).run();
+  const ok = await make(db, { id: "c-msg", contract: "DATA.md Started", changes_definition: true, from_thread: 777 });
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  refusedAs(await make(db, { id: "c-nomsg", contract: "DATA.md Started", changes_definition: true, from_thread: 778 }), "card-changes-definition");
+});
+
+// Checker 2's LOW 3: the flag (or a blanked contract) written alone, with no summary, must not get past the from_thread rule.
+test("card_update: changes_definition true or a blanked contract with no summary in the write is checked too", async () => {
+  const db = makeDb();
+  assert.equal((await make(db, { id: "c-flag", contract: "principle 1", changes_definition: false })).ok, true);
+  const upd = (f) => updateCard(db, T, "Manager", { id: "c-flag", ...f }, { needGroup: true, needContract: true });
+  refusedAs(await upd({ changes_definition: true }), "card-contract");
+  refusedAs(await upd({ contract: "DATA.md Started", changes_definition: true }), "card-changes-definition");
+  refusedAs(await upd({ contract: null }), "card-contract");
+  refusedAs(await upd({ contract: "   ", changes_definition: false }), "card-contract");
+  assert.equal((await upd({ contract: "principle 5", changes_definition: false })).ok, true);
+  assert.equal((await upd({ contract: "DATA.md Started", changes_definition: true, from_thread: await decided(db) })).ok, true);
 });

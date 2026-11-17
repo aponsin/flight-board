@@ -70,9 +70,7 @@ export async function createCard(db, now, who, fields, opts = {}) {
   if (typeof fields.title !== "string" || !fields.title.trim()) return refuse(db, now, { rule: "card-shape", detail: "title is required" }, fields.id, who);
   if (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(fields.id).first()) return refuse(db, now, { rule: "card-exists", detail: fields.id }, fields.id, who);
   if (opts.needSummary && !(typeof fields.summary === "string" && fields.summary.trim())) {
-    const t = fields.from_thread;
-    const known = Number.isInteger(t) && t > 0 && (await db.prepare("SELECT 1 AS x FROM asks WHERE num = ? UNION ALL SELECT 1 AS x FROM messages WHERE thread_id = ?").bind(t, `t${t}`).first());
-    if (!known) return refuse(db, now, { rule: "card-summary", detail: "a new card needs a summary (what to build and why): write it, or give from_thread, the number of a thread that already explains the card" }, fields.id, who);
+    if (!(await threadKnown(db, fields.from_thread))) return refuse(db, now, { rule: "card-summary", detail: "a new card needs a summary (what to build and why): write it, or give from_thread, the number of a thread that already explains the card" }, fields.id, who);
   }
   // #C1107 (11-16: 15 of 27 cards were loose because grouping lived in the lead's memory): through the card_create TOOL (opts.needGroup) a card with no batch is
   // refused, and the refusal lists the open groups to put it in.
@@ -182,8 +180,9 @@ export async function updateCard(db, now, who, fields, opts = {}) {
   if (opts.needGroup && !String(card.batch ?? "").trim() && (undrop || (!card.done_at && !card.dropped)) && !(typeof fields.batch === "string" && fields.batch.trim()) && !(fields.done === true || fields.dropped === true || fields.dropped === 1)) {
     return refuse(db, now, await groupRefusal(db, `${id} has no group yet: this write must set batch (a write that closes or drops the card needs none)`), id, who);
   }
-  // #C1169: through the card_update TOOL (opts.needContract) a write that changes a flight-board card's summary carries its contract in the same write.
-  if (opts.needContract && "summary" in fields && isBoardCard({ repo: "repo" in fields ? fields.repo : card.repo })) {
+  // #C1169: through the card_update TOOL (opts.needContract) a write that changes a flight-board card's summary, its contract or its changes_definition carries both, in the same write
+  // (Checker 2's LOW 3: the flag alone, or a blanked contract, must not get past the from_thread rule).
+  if (opts.needContract && ("summary" in fields || "contract" in fields || "changes_definition" in fields) && isBoardCard({ repo: "repo" in fields ? fields.repo : card.repo })) {
     const noContract = await contractRefusal(db, fields);
     if (noContract) return refuse(db, now, noContract, id, who);
   }
