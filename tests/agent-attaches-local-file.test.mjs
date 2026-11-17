@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, symlinkSync, linkSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { checkConfig, fullConfig } from "../scripts/config.mjs";
 import worker from "../worker/board-worker.mjs";
@@ -144,9 +146,11 @@ test("checkPath: a file over the store's cap is refused without being read", () 
 test("the folders a file may come from are the one that holds the board config, plus the config's own fileRoots; nothing is named in the code", () => {
   const home = dir(), board = dir(), extra = dir();
   const cfg = (v) => { const p = join(board, "board.config.json"); writeFileSync(p, JSON.stringify(v)); return p; };
-  assert.deepEqual(rootsFor(cfg({})).roots, [board]);
-  assert.deepEqual(rootsFor(cfg({ fileRoots: [extra, "~/mockups"] }), { home }).roots, [board, extra, join(home, "mockups")]);
-  const bad = (v, re) => assert.match(why(rootsFor(cfg({ fileRoots: v }))), re, JSON.stringify(v));
+  // #C1174: fileRoots counts only from a config the owner's hooks name (settingsText stands for ~/.claude/settings.json); S names this one.
+  const S = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '/x/gate/stop.mjs' --config '${join(board, "board.config.json")}'` }] }] } });
+  assert.deepEqual(rootsFor(cfg({}), { settingsText: S }).roots, [board]);
+  assert.deepEqual(rootsFor(cfg({ fileRoots: [extra, "~/mockups"] }), { home, settingsText: S }).roots, [board, extra, join(home, "mockups")]);
+  const bad = (v, re) => assert.match(why(rootsFor(cfg({ fileRoots: v }), { settingsText: S })), re, JSON.stringify(v));
   bad("x", /fileRoots/);
   bad(["relative/dir"], /fileRoots/);
   bad(["/a/../etc"], /fileRoots/);
@@ -157,7 +161,7 @@ test("the folders a file may come from are the one that holds the board config, 
   bad(["~/."], /fileRoots/);
   bad(["/a/./b"], /fileRoots/);
   // Judged by where the folder really is: the whole disk, the home folder itself and a checkout are refused; a folder that is not there yet is unused.
-  const badReal = (v, re) => assert.match(why(rootsFor(cfg({ fileRoots: v }), { home })), re, JSON.stringify(v));
+  const badReal = (v, re) => assert.match(why(rootsFor(cfg({ fileRoots: v }), { home, settingsText: S })), re, JSON.stringify(v));
   bad(["/"], /fileRoots/);
   bad(["~/"], /fileRoots/);
   badReal(["//"], /whole disk/);
@@ -165,18 +169,60 @@ test("the folders a file may come from are the one that holds the board config, 
   const link = join(dir(), "homelink"); symlinkSync(home, link);
   badReal([link], /whole disk or the home/);
   const homeLink = join(dir(), "home-as-link"); symlinkSync(home, homeLink);
-  assert.match(why(rootsFor(cfg({ fileRoots: [home] }), { home: homeLink })), /whole disk or the home/, "a home folder reached through a link is still the home folder");
+  assert.match(why(rootsFor(cfg({ fileRoots: [home] }), { home: homeLink, settingsText: S })), /whole disk or the home/, "a home folder reached through a link is still the home folder");
   const checkout = join(home, "Code"); mkdirSync(join(checkout, ".git"), { recursive: true });
   badReal(["~/Code"], /checkout/);
   badReal([checkout], /checkout/);
-  assert.equal(rootsFor(cfg({ fileRoots: ["~/not-made-yet"] }), { home }).ok, true);
-  assert.match(why(rootsFor(cfg({ fileRoots: [extra] }), { home, exists: () => true })), /checkout/, "the .git test is on the real folder");
+  assert.equal(rootsFor(cfg({ fileRoots: ["~/not-made-yet"] }), { home, settingsText: S }).ok, true);
+  assert.match(why(rootsFor(cfg({ fileRoots: [extra] }), { home, exists: () => true, settingsText: S })), /checkout/, "the .git test is on the real folder");
   assert.match(why(rootsFor(undefined)), /--config/);
   assert.match(why(rootsFor(join(board, "missing.json"))), /cannot be read/);
   writeFileSync(join(board, "bad.json"), "not json");
   assert.match(why(rootsFor(join(board, "bad.json"))), /JSON/);
   assert.match(why(checkPath(join(board, "a.png"), {})), /no folder to take a file from/);
   assert.match(why(checkPath(join(board, "a.png"), { roots: [] })), /no folder to take a file from/);
+});
+
+// #C1174 (Checker 2's find on #C1170): --config is a command-line choice, so fileRoots is trusted only from a board config the owner's hooks name, as the address is, and the home folder
+// is the account's (os.userInfo), never $HOME. A forged config's fileRoots widens nothing.
+test("#C1174 fileRoots counts only from a config the owner's hooks name: a forged config's list is ignored, its own folder still goes, and a fake HOME names no owner config", () => {
+  const board = dir(), widened = dir();
+  const png = join(widened, "a.png"); writeFileSync(png, PNG); chmodSync(png, 0o644);
+  const cfgPath = join(board, "board.config.json"); writeFileSync(cfgPath, JSON.stringify({ fileRoots: [widened] }));
+  const named = (p) => JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '/x/gate/stop.mjs' --config '${p}'` }] }] } });
+  // Named by the owner's hooks: the folder counts, and the file in it passes.
+  const owned = rootsFor(cfgPath, { settingsText: named(cfgPath) });
+  assert.deepEqual(owned.roots, [board, widened]);
+  assert.equal(checkPath(png, { roots: owned.roots }).ok, true);
+  // Not named (no settings, another config named, a permission rule that only mentions it): its folder alone, and the file in the widened folder is outside.
+  const other = join(dir(), "board.config.json"); writeFileSync(other, "{}");
+  for (const settingsText of ["", "not json", named(other), JSON.stringify({ permissions: { allow: [`Bash(node x --config '${cfgPath}')`] } })]) {
+    const r = rootsFor(cfgPath, { settingsText });
+    assert.deepEqual(r.roots, [board], settingsText);
+    assert.match(why(checkPath(png, { roots: r.roots })), /outside the folders/);
+  }
+  // A forged config is still read as JSON, so a broken one is refused as before.
+  const broken = join(board, "broken.json"); writeFileSync(broken, "not json");
+  assert.match(why(rootsFor(broken, { settingsText: named(broken) })), /JSON/);
+  assert.match(why(rootsFor(broken, { settingsText: "" })), /JSON/);
+  // "~/" in an owner's list is the account's home (os.userInfo), whatever HOME says.
+  const fakeHome = dir(); const prev = process.env.HOME; process.env.HOME = fakeHome;
+  try {
+    const tilde = join(dir(), "board.config.json"); writeFileSync(tilde, JSON.stringify({ fileRoots: ["~/c1174-mockups"] }));
+    assert.deepEqual(rootsFor(tilde, { settingsText: named(tilde) }).roots.slice(1), [join(userInfo().homedir, "c1174-mockups")]);
+  } finally { process.env.HOME = prev; }
+});
+
+test("#C1174 through the command (a child process): a forged config naming a folder in fileRoots cannot upload a file from it, even with a fake HOME whose settings name the forged config", () => {
+  const board = dir(), widened = dir(), fakeHome = dir();
+  const png = join(widened, "a.png"); writeFileSync(png, PNG); chmodSync(png, 0o644);
+  const forged = join(board, "board.config.json"); writeFileSync(forged, JSON.stringify({ fileRoots: [widened], storeUrl: "https://elsewhere.example.test" }));
+  mkdirSync(join(fakeHome, ".claude"));
+  writeFileSync(join(fakeHome, ".claude", "settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node x --config '${forged}'` }] }] } }));
+  const r = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/put-file.mjs", import.meta.url)), "--config", forged, "--env", join(board, "no-such.env"), png], { env: { ...process.env, HOME: fakeHome }, encoding: "utf8", timeout: 20000 });
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /PUT FAILED: outside the folders a file may come from/);
+  assert.equal(r.stdout.includes("FILE "), false);
 });
 
 test("config: fileRoots defaults to none; up to 5 absolute (or ~/) folders with no .. are accepted, anything else is refused", () => {

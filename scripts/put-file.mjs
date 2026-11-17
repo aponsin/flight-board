@@ -30,12 +30,17 @@ const no = (reason) => ({ ok: false, reason });
 // config lists under fileRoots (up to 5, absolute or "~/"). Nothing is named here, and the command line has no way to add a folder: only the owner's own config does.
 // Never a repository checkout. Returns { ok, roots } or why not.
 const ROOT_SHAPE = /^(\/|~\/)[^\0<>{}\n]{1,300}$/;
-export function rootsFor(configPath, { realpath = realpathSync, read = (p) => readFileSync(p, "utf8"), home = homedir(), exists = existsSync } = {}) {
+// #C1174 (Checker 2's find on #C1170): --config is a command-line choice, so a config an agent wrote could widen the folders a file may come from, and every stored file is readable by every
+// agent past Access. As for the address (#C1170's S1), fileRoots is trusted only from a board config the OWNER's hooks name in ~/.claude/settings.json (real paths), and "~/" and the home
+// folder are the account's (os.userInfo), never $HOME (S2). Any other config's fileRoots is ignored: its own folder is still a root, as before, and nothing else.
+export function rootsFor(configPath, { realpath = realpathSync, read = (p) => readFileSync(p, "utf8"), home = ownerHome(), exists = existsSync, settingsText = readSettings() } = {}) {
   if (!configPath) return no("--config <the board config> is needed: the folder that holds it is where a file may come from");
   let real; try { real = realpath(configPath); } catch { return no("the board config cannot be read"); }
   let extra = [];
+  let owners = false; try { owners = ownerConfigs(settingsText, { home, real: realpath }).has(real); } catch { owners = false; }
   try {
-    const v = JSON.parse(read(real)).fileRoots;
+    const parsed = JSON.parse(read(real)); // every config must still be JSON; only an owner's config's fileRoots counts
+    const v = owners ? parsed.fileRoots : undefined;
     if (v !== undefined) {
       if (!Array.isArray(v) || v.length > 5 || !v.every((p) => typeof p === "string" && ROOT_SHAPE.test(p) && !p.split("/").some((s) => s === ".." || s === "."))) return no("fileRoots in the board config is not a list of up to 5 absolute folders");
       extra = v.map((p) => (p.startsWith("~/") ? join(home, p.slice(2)) : p));
@@ -131,7 +136,7 @@ export function credentials(envFile, { read = (p) => loadEnv(p), stat = statSync
 // Send it. Returns { ok, id, name, type, size } or { ok: false, reason } (the reason is the Worker's rule word, never the token or the response body).
 export async function putLocalFile({ path, envFile, configPath, name, fetchImpl = fetch, roots, read, settingsText }) {
   let folders = roots; // a test names them; otherwise they come from the board config
-  if (!folders) { const r = rootsFor(configPath); if (!r.ok) return r; folders = r.roots; }
+  if (!folders) { const r = rootsFor(configPath, settingsText === undefined ? {} : { settingsText }); if (!r.ok) return r; folders = r.roots; }
   const p = checkPath(path, { roots: folders });
   if (!p.ok) return p;
   const address = configAddress(configPath, settingsText === undefined ? {} : { settingsText }); // settingsText is for the tests: the command line has no way to set it
