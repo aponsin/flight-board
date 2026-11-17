@@ -9,10 +9,10 @@
 //                working under LOW_START at an earlier check: a fresh session (before its clear the lead reads far more).
 //   wait       - not cleared yet: wait 60 s again.
 //   give-up    - MAX_CHECKS checks done: leave it to the keeper's hourly step 4.
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const FRESH = 5_000, LOW_START = 60_000, MAX_CHECKS = 10;
@@ -32,7 +32,9 @@ export function decide(readings) {
 
 // #C870: one pass of the scheduled watchdog over the roster, as one decision. The Worker runs in Cloudflare and cannot reach
 // local sessions, so the watchdog (the app's session tools) reads each role's row once per pass and runs:
-//   node ~/.flight-board/current/scripts/pickup-watch.mjs --pass x --rows-file <file> --config <board.config.json> [--state <file>]
+//   node ~/.flight-board/current/scripts/pickup-watch.mjs --pass x --rows '<role>,<state>,<tokens>,<rc>;...' --config <board.config.json> [--state <file>]
+//   (#C1132: --rows is the scheduled watchdog's form, no file tool; --rows-file <file> with the JSON list is the older one. Each printed action also carries `session`,
+//   the id the config's rosterSessions holds for the role, or null)
 //   (the rows are a JSON list like [{"role":"Checker","state":"idle","tokens":0,"remoteControl":"on"}, …], from the file or, with no
 //   --rows-file, from the argument after --pass; --config is required: it limits the roles to its roster, and no readable roster sends nothing)
 // A row is only what the session tools give: role; state "idle" or "working" (list_sessions); tokens the Messages tokens
@@ -54,6 +56,37 @@ export function decide(readings) {
 export const REARM_TEXT = "arm your dispatch watch";
 // The ROLE form of the state schema: 2 to 24 characters, a letter first, single spaces inside (Security's L3 on 8a27f1be: no cap).
 const ROLE = /^(?=.{2,24}$)[A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+)*$/;
+
+// #C1132: the compact rows of --rows: "<role>,<state>,<tokens>,<remoteControl>" joined by ";" (a role may hold single spaces: "Checker 2"). A row is kept only when every
+// field has its exact shape: role (ROLE), state idle or working, tokens digits (at most 9), remoteControl a word of letters, "_" and "-" (at most 20). So no quote, no space outside a role,
+// no shell character and no free text reaches a command line, and a row that does not fit is dropped, never repaired. Returns the rows as passActions reads them.
+const ROW_STATE = /^(?:idle|working)$/, ROW_TOKENS = /^\d{1,9}$/, ROW_RC = /^[A-Za-z][A-Za-z_-]{0,19}$/;
+export function parseRows(text) {
+  const out = [];
+  for (const part of String(text ?? "").split(";").slice(0, 40)) {
+    const f = part.split(",");
+    if (f.length !== 4 || !ROLE.test(f[0]) || !ROW_STATE.test(f[1]) || !ROW_TOKENS.test(f[2]) || !ROW_RC.test(f[3])) continue;
+    out.push({ role: f[0], state: f[1], tokens: Number(f[2]), remoteControl: f[3] });
+  }
+  return out;
+}
+
+// #C1132 (Security's M1 and L1): which paths --pass may take. The history file is written (mkdir -p, then overwritten), so it may only be the default <home>/.flight-board/pickup-pass.json (Security's M1 on 112256ee: the
+// folder's other .json files are live board state) and not a symlink; the config is only read, and must be named board.config.json; the rows come from --rows or --rows-file, not both. Returns the reason, or null when all is well.
+export function passPathRefusal({ state, config, rows, rowsFile, home }) {
+  if (rows && rowsFile) return "--rows and --rows-file together: nothing is done";
+  if (config && basename(config) !== "board.config.json") return "--config must name a file called board.config.json";
+  if (state) {
+    const only = resolve(home, ".flight-board", "pickup-pass.json"), file = resolve(state);
+    if (file !== only) return `--state may only be ${only} (the default history file)`;
+    try { if (lstatSync(file).isSymbolicLink()) return "--state is a symbolic link"; } catch { /* not there yet: it is made */ }
+  }
+  return null;
+}
+
+// The session id the config's rosterSessions holds for a role, only when it is a plain local session id (local_ and a uuid), else null (a role with none is reported, not sent to).
+export const SESSION_ID = /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+export const sessionOf = (sessions, role) => (sessions && Object.hasOwn(sessions, role) && typeof sessions[role] === "string" && SESSION_ID.test(sessions[role]) ? sessions[role] : null);
 
 // The roles with a dispatch watch armed, from `ps -axo args` text: a wake-watch.mjs line carrying "--role <name>".
 export function watchRoles(psText) {
@@ -100,12 +133,24 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // Rows come from a file (--rows-file <file>: the watchdog writes it with the Write tool, so no quote in a value can break a
     // shell argument; Security's L3) or, as before, from the next argument. --config <board.config.json> limits the roles to its roster.
     const opt = (k) => { const i = process.argv.indexOf(k); return i > 2 && process.argv[i + 1] ? process.argv[i + 1] : null; };
+    // #C1132: --rows '<role>,<state>,<tokens>,<remoteControl>;<next row>' takes the rows with no file tool (the scheduled watchdog forbids them, #C443) and no
+    // JSON in a shell argument: every field is a plain word or a number, so nothing in it can be a quote, and a row that is not that shape is dropped (parseRows).
+    // Security's M1 and L1 on d71cebd6: the command is pre-approved as a prefix rule, so every path it takes is the program's to hold, not the prompt's. Refused (prints [], says why on stderr,
+    // touches nothing): a --state outside ~/.flight-board (it creates folders and overwrites the file), a --config not named board.config.json, and --rows with --rows-file.
+    const bad = passPathRefusal({ state: opt("--state"), config: opt("--config"), rows: opt("--rows"), rowsFile: opt("--rows-file"), home: homedir() });
+    if (bad) { console.error(`pickup-watch: ${bad}`); console.log("[]"); process.exit(0); }
     let rows = null, state = {}, roster = null;
-    try { rows = JSON.parse(opt("--rows-file") ? readFileSync(opt("--rows-file"), "utf8") : (process.argv[3] ?? "[]")); } catch { /* below */ }
+    try { rows = opt("--rows") ? parseRows(opt("--rows")) : JSON.parse(opt("--rows-file") ? readFileSync(opt("--rows-file"), "utf8") : (process.argv[3] ?? "[]")); } catch { /* below */ }
     if (!Array.isArray(rows)) { console.log("[]"); process.exit(0); }
     // --config is required (Security's INFO 1 on 222aa055): without a roster nothing is sent, even if the prompt's own check is skipped.
+    let sessions = {};
     if (opt("--config")) {
-      try { const c = JSON.parse(readFileSync(opt("--config"), "utf8")); if (Array.isArray(c.roster)) roster = new Set(c.roster.filter((x) => typeof x === "string")); } catch { /* no roster: nothing is sent, below */ }
+      try {
+        const c = JSON.parse(readFileSync(opt("--config"), "utf8"));
+        if (Array.isArray(c.roster)) roster = new Set(c.roster.filter((x) => typeof x === "string"));
+        // #C1132: each action carries the session id the config holds for its role (rosterSessions), so the scheduled run reads no file to find it.
+        if (c.rosterSessions && typeof c.rosterSessions === "object") sessions = c.rosterSessions;
+      } catch { /* no roster: nothing is sent, below */ }
     }
     if (!roster) { console.log("[]"); process.exit(0); }
     const file = opt("--state") ?? join(homedir(), ".flight-board", "pickup-pass.json");
@@ -114,7 +159,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     try { ps = execFileSync("ps", ["-axo", "args"], { encoding: "utf8", maxBuffer: 16 << 20 }); } catch { /* no watch seen */ }
     const { actions, state: next } = passActions(rows, state, watchRoles(ps), roster);
     try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, JSON.stringify(next)); } catch { /* the history is lost: no pickup is sent twice by it, the next pass starts clean */ }
-    console.log(JSON.stringify(actions));
+    console.log(JSON.stringify(actions.map((a) => ({ ...a, session: sessionOf(sessions, a.role) }))));
     process.exit(0);
   }
   let readings = null;
