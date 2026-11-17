@@ -27,7 +27,7 @@ test("a role's context is its last assistant entry's input, cache read and cache
 });
 
 test("ctx: percent of the window, over at resetAt; an odd role or count is dropped", () => {
-  const c = ctxReadings({ tokens: { Builder: 400000, Checker: 100000, "bad role": 5, Odd: 1.5 }, resetAt: 400000, now: T });
+  const c = ctxReadings({ tokens: { Builder: 400000, Checker: 100000, "bad!role": 5, Odd: 1.5 }, resetAt: 400000, now: T });
   assert.deepEqual(c, { Builder: { pct: 40, tokens: 400000, at: T, over: true }, Checker: { pct: 10, tokens: 100000, at: T, over: false } });
 });
 
@@ -180,7 +180,7 @@ test("the state carries ctx, stuck and usage only as the schema allows", () => {
   assert.deepEqual(Object.keys(buildState(base)).sort(), ["agents", "board", "cards", "v"], "a probe without them still fits");
   const bad = (patch) => stateErrors({ ...structuredClone(s), ...patch });
   assert.ok(bad({ ctx: { Builder: { pct: 400, tokens: 1, at: T, over: true } } }).length);
-  assert.ok(bad({ ctx: { "a b": { pct: 1, tokens: 1, at: T, over: true } } }).length);
+  assert.ok(bad({ ctx: { "a!b": { pct: 1, tokens: 1, at: T, over: true } } }).length);
   assert.ok(bad({ stuck: { AA: { kind: "because the build is slow", card: null, since: T } } }).length, "no free text in a kind");
   assert.ok(bad({ usage: { ...s.usage, level: "purple" } }).length);
   assert.ok(bad({ usage: { ...s.usage, top: [{ src: "Manager says hi", pct: 1 }] } }).length, "a source is a word");
@@ -202,7 +202,7 @@ test("the Worker's change key moves for a reset, a stuck role or the usage colou
 test("CONTEXT RESET: the lead's wake watch prints one line per role asked, once, with the wake line first", () => {
   const dir = mkdtempSync(join(tmpdir(), "reset-"));
   assert.equal(tick(dir, T), null);
-  writeFileSync(join(dir, "context-reset.json"), JSON.stringify({ at: T, roles: { Builder: T, Checker: T, "bad role": T } }));
+  writeFileSync(join(dir, "context-reset.json"), JSON.stringify({ at: T, roles: { Builder: T, Checker: T, "bad!role": T } }));
   assert.equal(tick(dir, T + 1000), `${resetLine("Builder")}\n${resetLine("Checker")}`);
   assert.equal(tick(dir, T + 2000), null, "printed once");
   writeFileSync(join(dir, "context-reset.json"), JSON.stringify({ at: T, roles: { Builder: T + 5 } }));
@@ -222,7 +222,7 @@ const live = (extra) => ({ v: 1, board: { at: NOW }, cards: {}, agents: {}, ...e
 const json = (v) => JSON.parse(JSON.stringify(v));
 
 test("the page: a fresh probe's context replaces an older tile and keeps its saved flag; an odd or stale one is ignored", () => {
-  const b = page(live({ ctx: { Builder: { pct: 41, tokens: 410000, at: NOW }, "bad role": { pct: 1, tokens: 1, at: NOW }, Odd: { pct: 400, tokens: 1, at: NOW } } }));
+  const b = page(live({ ctx: { Builder: { pct: 41, tokens: 410000, at: NOW }, "bad!role": { pct: 1, tokens: 1, at: NOW }, Odd: { pct: 400, tokens: 1, at: NOW } } }));
   b.state.meta = [{ id: "context", at: NOW - 3600e3, agents: { Builder: { pct: 10, tokens: 100000, at: NOW - 3600e3, saved: true } } }];
   b.state.ctx = [];
   assert.deepEqual(json(b.liveCtx(NOW)), { Builder: { pct: 41, tokens: 410000, at: NOW } });

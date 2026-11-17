@@ -5,7 +5,7 @@
 // Pure: lines and ids in, a reading out. The probe (collector/state.mjs) keeps `before` in its own small file and posts the reading as the state's `watch`
 // (collector/state-schema.mjs); nothing here carries a command, a message or a title, only roles, tool words, counts and times.
 export const QUIET_MS = 24 * 60 * 60_000;
-const ROLE = /^[A-Za-z][A-Za-z0-9]{1,23}$/, TOOL = /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/;
+const ROLE = /^(?=.{2,24}$)[A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+)*$/, TOOL = /^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/;
 export const MAX_PROMPTS = 12;
 
 // ids: the roster's session ids now; before: { ids } as kept. A restart: the probe knew sessions and none of them is among today's. The ids it keeps are
