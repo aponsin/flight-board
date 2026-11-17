@@ -1,0 +1,3 @@
+SECURE (Full) G15 head 5b040a45: a --no-ff merge of the signed tip 07093627 (#C1058, SECURE). Two resolutions, read with git show --cc, both a union: make-pair HOOK_ENTRIES keeps gate/first-push.mjs (#C1065) and scripts/board-release.mjs (#C1058); the release test's importClosure list adds first-push, board-release and self-deploy-gate. No other code. All 8 commits of 1674baab..5b040a45 now SECURE. The pack must carry the hooks line (pinned release tool and first-push hook).
+
+signed-by: Security
