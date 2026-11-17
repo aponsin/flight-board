@@ -1,0 +1,3 @@
+SECURE #C1167 tip 59a8d34b: scripts/is-main.mjs compares realpath(argv[1]) with realpath(import.meta.url), and an unresolvable path is not main. The fence and the post-commit hook inline the same check, with no new import in the fence's pinned closure. Called through a link, the fence used to exit 0 silently and now runs, so it only tightens; push-keys and make-pair are unchanged apart from running through a link. INFO: the branch is cut on 609267eb, not the #C1166 tip a1937d7e.
+
+signed-by: Security
