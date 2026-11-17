@@ -1,0 +1,3 @@
+SECURE #C1165 tip: wake-watch --pinned takes only the single 40-hex sha of the Stop hook entries from settings.json and builds ~/.flight-board/install/<sha>/scripts/wake-watch.mjs itself (no traversal, no other folder), spawns it with an argv (no shell) without --pinned (no loop); no pin = nothing armed. hooks-check refuses current as a pin; pickup-watch counts only the pinned copy. Only tightens
+
+signed-by: Security
