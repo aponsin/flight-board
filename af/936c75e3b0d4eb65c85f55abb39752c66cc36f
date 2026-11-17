@@ -1,0 +1,1 @@
+PASS (Checker 2, Quick) on #C890: pure rebase of ef10fb83 onto #C863 v2 4c1abd32 (range-diff =, files disjoint), carrying my PASS: only a part-marked sha in next_note holds a landed card below live; 9 of 9 hand mutants killed; npm test 2699, 0 fail (commit af936c75 of stack tip af936c75)
