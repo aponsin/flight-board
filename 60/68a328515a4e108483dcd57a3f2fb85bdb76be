@@ -1,0 +1,3 @@
+SECURE #C1146: group check; the suite runs only on a tip already PASS+SECURE, on a detached snapshot; covered by group head 249a281b
+
+signed-by: Security
