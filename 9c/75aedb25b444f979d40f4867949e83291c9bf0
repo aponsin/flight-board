@@ -1,2 +1,2 @@
-STOP (Checker 2): #C1068 tip 9c75aedb lands only inside the G14 group head, and Designer has a blocking pulse finding. Code reviewed; the PASS is given on the new head.
+PASS (Full) #C1068 9c75aedb: delay set on the element after each draw (PULSE_MS 2400 = CSS 2.4s). No longer a branch tip; reviewed inside the G14 head 00c4b85f.
 signed-by: Checker 2
