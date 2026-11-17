@@ -39,6 +39,17 @@ test("a message anyone else wrote, an id that is not there and an id that is not
   }
 });
 
+// Checker 2's LOW on 0a2b1da5: nothing held the exact-id match, so a prefix match (startsWith, or a LIKE) would have gone unseen.
+test("an id that is only the start of a real owner message id, or a real id with more after it, is message: null", async () => {
+  const { tool, env } = make();
+  await seed(env.DB);
+  assert.equal((await tool("builder", "read_view", { message_id: "m-owner-1" })).structuredContent.message.id, "m-owner-1", "the whole id is found");
+  for (const id of ["m-owner-", "m-owner", "m-o", "m", "m-owner-10", "m-owner-1-x", "M-OWNER-1"]) {
+    const r = (await tool("builder", "read_view", { message_id: id })).structuredContent;
+    assert.equal(r.message, null, `${id} is not m-owner-1`);
+  }
+});
+
 test("message_id wins over the other arguments, an empty one is ignored, and no message_id leaves every other answer as before", async () => {
   const { tool, env } = make();
   await seed(env.DB);
