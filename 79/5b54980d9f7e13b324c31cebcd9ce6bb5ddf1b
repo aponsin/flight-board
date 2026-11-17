@@ -1,0 +1,3 @@
+SECURE #C1145 tip: repo-name normalisation only widens the same-repo set (fails closed)
+
+signed-by: Security
