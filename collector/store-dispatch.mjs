@@ -27,6 +27,27 @@ export function askCardId(ask, idByNum) {
   return named.length === 1 ? idByNum.get(Number(named[0].slice(2))) ?? null : null;
 }
 
+// #C1073 (11-12 ~10:45 pm: Builder's watch fired "DISPATCH #C1071 ... build it" on every re-arm, though the card had an open decision on its thread, the owner's A or B): a Decision the
+// lead posts in a thread (kind "decision", with its options; no ask row is made, #C920) is a question to the owner like an open ask, but the asks list never held it, so the dispatch kept
+// waking the card's owner. A decision message is OPEN until the owner has written in that thread after it (or the thread's later message is marked resolved). It names its card by the
+// "Card: <id>" line the store adds when the Decision carried a card_id, else by the one #C<n> its first line names (askCardId). A card the view does not hold names none. Pure.
+// Returns the Set of card ids with an open decision. idByNum: the view's cards, number to id.
+// Security's L1 (17174f9b): only the LEAD's decision holds a card; any other role's (or a prompt-injected session's) "decision" holds nothing. An unnamed lead holds nothing (fails closed).
+export function openDecisionCards(view, idByNum, lead = "Manager") {
+  const out = new Set(), ids = new Set(idByNum.values());
+  const msgs = (Array.isArray(view?.threads?.messages) ? view.threads.messages : []).filter((m) => m && typeof m.thread_id === "string" && Number.isFinite(m.created_at));
+  const settledAt = new Map(); // thread id -> the time of its newest owner message or resolved message
+  for (const m of msgs) if (m.author === "owner" || m.resolved) settledAt.set(m.thread_id, Math.max(settledAt.get(m.thread_id) ?? -Infinity, m.created_at));
+  for (const m of msgs) {
+    if (m.kind !== "decision" || typeof lead !== "string" || !lead || m.author !== lead || (settledAt.get(m.thread_id) ?? -Infinity) >= m.created_at) continue; // a resolved decision is settled by itself (settledAt counts it)
+    const body = String(m.body ?? ""), line = body.split("\n")[0];
+    const tagged = /^Card: ([a-z0-9][a-z0-9-]{0,63})$/m.exec(body)?.[1];
+    const id = tagged && ids.has(tagged) ? tagged : askCardId({ title: line }, idByNum) ?? (ids.has(m.thread_id) ? m.thread_id : null); // else the card whose own thread it is posted in (Checker 2's note)
+    if (id && ids.has(id)) out.add(id);
+  }
+  return out;
+}
+
 const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 // #C915 (b): worker/board-rules.mjs holdOpen, copied (this pinned file imports only gate/): a hold_end whose end has not come (endPassed(ref) false),
 // or a check_at in the future. A test fails if the two differ.
@@ -308,6 +329,8 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // ask, or waiting on someone else, take the agent's only turn and then be dropped: the agent was woken for nothing and its 22 other cards lost theirs.
   const askedCards = new Set();
   for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null) askedCards.add(a.card_id);
+  const decided = openDecisionCards(view, idByNum, lead); // #C1073: a decision open on a thread holds its card as an open ask does
+  for (const id of decided) askedCards.add(id);
   const notStarted = (k) => k.turns.some((t) => t.step === "build" && !t.sha) && !askedCards.has(k.id) && !(typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(k.who));
   // The same order as the store's (worker/board-rules.mjs queueRank; a held card was skipped above): at one place a card the owner placed comes
   // before one an agent placed (Checker F1 on ac3d31b), then the card's number.
@@ -365,6 +388,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // board (!done && !response): a withdrawn approval has its answer cleared and waits for the owner's Approve again, so it is still open.
   const asked = new Set();
   for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null) asked.add(a.card_id);
+  for (const id of decided) asked.add(id);
   return { cards, agents, asked, queues };
 }
 
