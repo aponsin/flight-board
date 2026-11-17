@@ -1,0 +1,2 @@
+PASS #C1058 tip 07093627: NOT RUN is a clean one-line stop (exit 1, empty stderr) for no pin and for a pin with no copy. Mutants 9/9 (fallback to link, no exists check, linked spawn, no exit, exit 0, wrong folder, entries). Suite 2871 pass, 0 fail. On main 1674baab. LOW: tests/release-tool-pinned.test.mjs header says the job starts the tool from ~/.flight-board/current; it starts the installed copy.
+signed-by: Checker 2
