@@ -25,6 +25,12 @@ export function signNote({ run, role, sha, signer, line, push = false }) {
   const first = String(line ?? "");
   if (!first.trim() || /[\r\n]/.test(first)) fail("--line is the note's one first line (PASS ..., SECURE ..., FINDINGS ...)");
   const tryRun = (a) => { try { return { out: String(run(a)).replace(/\n+$/, "") }; } catch (e) { return { error: String(e?.stderr ?? e?.message ?? e).trim().split("\n")[0] }; } };
+  // #C1131: the commit must exist in THIS checkout. On 11-16 a reviewer signed two commits from another repository's checkout and the script said "SIGNED ..., pushed" for notes
+  // that landed in the wrong repository. Nothing is fetched, written or pushed until the sha is a commit here; the refusal names the folder it ran in.
+  if (tryRun(["cat-file", "-e", `${sha}^{commit}`]).error !== undefined) {
+    const where = tryRun(["rev-parse", "--show-toplevel"]).out;
+    fail(`${sha.slice(0, 12)} is not a commit in ${where ? `the checkout ${where}` : "this folder (it is not a git checkout)"}; run this inside the checkout that holds the commit, nothing was written`);
+  }
   // origin's copy of the notes ref, into a private ref (a missing one is fine: nothing signed yet there).
   const priv = `refs/notes/sign-note-${role}`;
   tryRun(["fetch", "-q", "origin", `+${ref}:${priv}`]);
