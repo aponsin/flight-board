@@ -1,0 +1,2 @@
+PASS (Full) #C1174 L1 fix: a config the owner's hooks do not name gets no folder at all and is refused naming the file; the owner's real config still gets its own folder (probed read-only), a temp config is refused. Mutant (an unnamed config keeps its own folder) killed. Suite green 3071/0. Closes my LOW 1 on df8b862b
+signed-by: Checker 2
