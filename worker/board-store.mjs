@@ -72,6 +72,9 @@ export async function createCard(db, now, who, fields, opts = {}) {
     const known = Number.isInteger(t) && t > 0 && (await db.prepare("SELECT 1 AS x FROM asks WHERE num = ? UNION ALL SELECT 1 AS x FROM messages WHERE thread_id = ?").bind(t, `t${t}`).first());
     if (!known) return refuse(db, now, { rule: "card-summary", detail: "a new card needs a summary (what to build and why): write it, or give from_thread, the number of a thread that already explains the card" }, fields.id, who);
   }
+  // #C1107 (11-16: 15 of 27 cards were loose because grouping lived in the lead's memory): through the card_create TOOL (opts.needGroup) a card with no batch is
+  // refused, and the refusal lists the open groups to put it in.
+  if (opts.needGroup && !(typeof fields.batch === "string" && fields.batch.trim())) return refuse(db, now, await groupRefusal(db, "a new card needs a group (batch): the group it ships with"), fields.id, who);
   // #C871: a new card may not take a place at or ahead of one the owner holds in its agent's queue (queueWriteRefusal).
   const floorBad = who !== "owner" && Number.isInteger(fields.queue_pos) && typeof fields.owner_role === "string" ? queueWriteRefusal(fields, null, who, await ownerFloor(db, fields.owner_role, fields.id)) : null;
   if (floorBad) return refuse(db, now, floorBad, fields.id, who);
@@ -82,6 +85,16 @@ export async function createCard(db, now, who, fields, opts = {}) {
   return { ok: true, id: fields.id, num };
 }
 const defaultFor = (c) => (c === "summary" ? "" : c === "track" ? "product" : c === "paused" || c === "dropped" ? 0 : null);
+
+// #C1107: the open groups (a batch with a card that is neither dropped nor done), newest first, for the refusal to name. At most 12, then "and N more".
+const OPEN_GROUPS_SHOWN = 12;
+async function groupRefusal(db, what) {
+  const rows = (await db.prepare("SELECT batch, MAX(num) AS newest FROM cards WHERE batch IS NOT NULL AND TRIM(batch) != '' AND dropped = 0 AND done_at IS NULL GROUP BY batch ORDER BY newest DESC").all()).results ?? [];
+  const names = rows.map((r) => r.batch);
+  const shown = names.slice(0, OPEN_GROUPS_SHOWN).join(", ");
+  const more = names.length > OPEN_GROUPS_SHOWN ? ` and ${names.length - OPEN_GROUPS_SHOWN} more` : "";
+  return { rule: "card-group", detail: `${what}; give batch an open group (${names.length ? `${shown}${more}` : "none is open"}) or a new group's id (lower case letters, digits and -)` };
+}
 
 // holds-need-an-end (#C838): hold_end names an OPEN ask or a card that is not dropped; null lifts it.
 const holdEndUnknown = async (db, fields) => {
@@ -131,10 +144,20 @@ function reviewHoldWriterRefusal(fields, who) {
   return { rule: "review-hold-writer", detail: `"${String(fields.waiting_on).trim().slice(0, 60)}" is a review hold, which ends by itself when ${role} signs: only ${REVIEW_HOLD_WRITERS.join(" or ")} or ${role} may write it; ${who ?? "unknown"} can hold the card in other words` };
 }
 // Card words changed later: checked against the probe's reading of this card (a typed word cannot contradict it).
-export async function updateCard(db, now, who, fields) {
+// #C1107: through the card_update TOOL (opts.needGroup) a write that clears batch (null, empty or blanks) is refused: a card leaves a group only by moving to
+// another one, or by the owner's pull-out (pullOutOfGroup, its own tool). A card that has no group yet is written only by a write that gives it one (below).
+export async function updateCard(db, now, who, fields, opts = {}) {
   const id = fields?.id;
-  const card = typeof id === "string" ? await db.prepare("SELECT id, next_note, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, queue_pos, owner_role, dropped, done_at FROM cards WHERE id = ?").bind(id).first() : null;
+  if (opts.needGroup && fields && typeof fields === "object" && "batch" in fields && (fields.batch === null || (typeof fields.batch === "string" && !fields.batch.trim()))) return refuse(db, now, await groupRefusal(db, "a write cannot take a card out of its group (batch)"), id, who);
+  const card = typeof id === "string" ? await db.prepare("SELECT id, next_note, waiting_on, blocked_reason, check_at, hold_end, held_at, hold_until, queue_set_by, queue_pos, owner_role, dropped, done_at, batch FROM cards WHERE id = ?").bind(id).first() : null;
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
+  // The lead's ruling (B, on the card's note): a card with no group is written only by a write that gives it one; closing it (done with its evidence, or dropped) needs none,
+  // and a card already done or dropped is not asked for one.
+  // Checker 2's round 2: an un-drop (dropped false or 0) puts the card back among the open ones, so it needs a group like any write to a loose card.
+  const undrop = fields.dropped === false || fields.dropped === 0;
+  if (opts.needGroup && !String(card.batch ?? "").trim() && (undrop || (!card.done_at && !card.dropped)) && !(typeof fields.batch === "string" && fields.batch.trim()) && !(fields.done === true || fields.dropped === true || fields.dropped === 1)) {
+    return refuse(db, now, await groupRefusal(db, `${id} has no group yet: this write must set batch (a write that closes or drops the card needs none)`), id, who);
+  }
   // #C902: done closes the card once, on a card that is not dropped; a thread message named as evidence must be on the board.
   if (fields.done === true) {
     if (card.done_at) return refuse(db, now, { rule: "card-done", detail: `${id} is already done` }, id, who);
