@@ -6,6 +6,7 @@
 // or the transcript: counters and times only.
 import { readFileSync, realpathSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId, home } from "./config.mjs";
 import { wakePaths, readWakeFile, writeAtomic, wakePending, wakeLine, POLL_MS, ALIVE_MAX_MS, MAX_RUN_MS } from "../gate/wake.mjs";
@@ -40,6 +41,31 @@ export function roleTick(dir, role, now, pid = process.pid) {
   }
   return [...due.map(dispatchLine), ...mine].join("\n");
 }
+
+// #C1158 (11-17: a start push woke the reviewers although #C1139 stops that, because their --once watches had been started from older installs, which have no such rule, and a
+// --once watch keeps the code it started with until it fires): a watch knows the install it runs from and the install the Stop hook pins (settings.json), and when they differ it
+// prints one line and ends, so its role re-arms on the pinned install. Only an install folder counts (a watch run from a checkout, or a settings file with no single pin, is left alone),
+// and a pair is told once per role: a role that re-arms from the same stale path keeps running, so this can never be a wake loop.
+const INSTALL_SHA = /\/\.flight-board\/install\/([0-9a-f]{40})(?:\/|$)/;
+export const installShaOf = (path) => INSTALL_SHA.exec(String(path ?? "").replaceAll("\\", "/"))?.[1] ?? null;
+// The install the Stop hook pins: the one sha in the settings text's gate/stop.mjs entries; none, or more than one, is no pin.
+export function pinnedInstallOf(settingsText) {
+  const shas = new Set([...String(settingsText ?? "").matchAll(/\.flight-board\/install\/([0-9a-f]{40})\/gate\/stop\.mjs/g)].map((m) => m[1]));
+  return shas.size === 1 ? [...shas][0] : null;
+}
+export const staleLine = (own, pin) => `wake-watch: stale pin: this watch runs from install ${own.slice(0, 12)} but the Stop hook pins ${pin.slice(0, 12)}; it ends now so you re-arm on the pinned install (the path your Stop hook prints)`;
+const staleFile = (role) => `stale-pin-${String(role).replace(/[^A-Za-z0-9]+/g, "-")}.json`;
+// The line to print, or null. Marks the pair told only when it is returned.
+export function staleCheck(dir, role, own, settingsText, now = Date.now()) {
+  const pin = pinnedInstallOf(settingsText);
+  if (!own || !pin || own === pin) return null;
+  let seen = null; try { seen = JSON.parse(readFileSync(join(dir, staleFile(role)), "utf8")); } catch { /* none */ }
+  if (seen?.own === own && seen?.pin === pin) return null;
+  writeAtomic(join(dir, staleFile(role)), JSON.stringify({ own, pin, at: now }));
+  return staleLine(own, pin);
+}
+// Every DISPATCH line says which install decided it (a reader can see a watch on old code).
+export const withInstall = (text, own) => (own ? String(text).split("\n").map((l) => (l.startsWith("DISPATCH ") ? `${l} [watch install ${own.slice(0, 12)}]` : l)).join("\n") : String(text));
 
 // The roles the probe asked to reset (#C592, gate/reset.mjs) that this watch has not printed yet; marks them printed.
 function resetLines(dir, roster = null, now = Date.now(), lead = null) {
@@ -129,10 +155,16 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const pidFile = join(dir, dispatchPidFile(role));
     if (dispatchWatchAlive(pidFile, start) && (() => { try { return JSON.parse(readFileSync(pidFile, "utf8")).pid !== process.pid; } catch { return false; } })()) { console.log(`wake-watch: ${role}'s watch is already running; nothing to arm`); process.exit(0); }
     const stop = () => { try { if (JSON.parse(readFileSync(pidFile, "utf8")).pid === process.pid) unlinkSync(pidFile); } catch { /* none, or not ours */ } };
+    // #C1158: the install this watch runs from, and the settings file whose Stop hook entry pins the install to be on.
+    const own = installShaOf(realpathSync(fileURLToPath(import.meta.url)));
+    const settingsFile = join(homedir(), ".claude", "settings.json");
     const look = () => {
       let line = null;
       try { line = roleTick(dir, role, Date.now(), process.pid); } catch { /* try again next time */ }
-      if (line) { console.log(line); stop(); process.exit(0); }
+      if (line) { console.log(withInstall(line, own)); stop(); process.exit(0); }
+      let stale = null;
+      try { stale = staleCheck(dir, role, own, readFileSync(settingsFile, "utf8"), Date.now()); } catch { /* no settings to read: no pin */ }
+      if (stale) { console.log(stale); stop(); process.exit(0); }
     };
     for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { stop(); process.exit(0); });
     look();
