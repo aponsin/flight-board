@@ -196,9 +196,18 @@ export function closeRefusal(ask, who, role, last = null) {
 // it "becomes a card". The card is the agent's to make: the board does not make one per step.
 export const STEP_LINE = /^\s*(?:\d{1,2}[.)]|[-*•]|step\s*\d{1,2}\s*[:.)])\s+\S/i;
 export const CARD_REF = /#C\d{1,6}\b/i;
+// The ask's own question and option text (asks.body is JSON {question, options, ...}): a plan posted as a Decision lists its steps in the question and is answered "A: go" (#C863 M1).
+// Note: a question that uses "- " bullets for context therefore blocks an agent's close until each such line names a card; the owner can always close.
+export function questionStepText(ask) {
+  let body = ask?.body;
+  if (typeof body === "string") { try { body = JSON.parse(body); } catch { return []; } }
+  if (!body || typeof body !== "object") return [];
+  const opts = Array.isArray(body.options) ? body.options.flatMap((o) => (typeof o === "string" ? [o] : o && typeof o === "object" ? [o.label, o.description, o.text].filter((s) => typeof s === "string") : [])) : [];
+  return [body.question, ...opts].filter((s) => typeof s === "string" && s.trim());
+}
 export function answerStepLines(ask) {
   const typed = typedOther(ask?.answer);
-  const parts = [typed ? typed.note : ask?.answer, ask?.answer_note].filter((s) => typeof s === "string" && s.trim());
+  const parts = [typed ? typed.note : ask?.answer, ask?.answer_note, ...questionStepText(ask)].filter((s) => typeof s === "string" && s.trim());
   return parts.join("\n").split(/\r?\n/).filter((l) => STEP_LINE.test(l));
 }
 export function planStepsRefusal(ask) {

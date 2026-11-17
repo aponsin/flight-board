@@ -49,6 +49,38 @@ test("the owner's own close is never refused, and an unrelated ask with list lin
   assert.equal((await closeAsk(db, T + 2 * MIN, "Manager", a.id, "agent")).ok, true);
 });
 
+// M1: a plan posted as a Decision whose QUESTION lists the steps, answered "A: go" with no note. A question that uses "- " bullets for context blocks an agent's close too
+// (the owner can always close); that is the price of reading the question.
+async function answeredQuestion(question, options = ["A: go", "B: change it"]) {
+  const db = makeDb();
+  const a = await createAsk(db, T, { ...decision, question, options, recommended: options[0] });
+  assert.equal((await answerAsk(db, T + MIN, "owner", { id: a.id, status: "chose", answer: options[0] })).ok, true);
+  await postMessage(db, T + 2 * MIN, "owner", { thread_id: a.id, body: "Ack." });
+  return { db, id: a.id };
+}
+
+test("steps listed in the question, answered 'A: go', are refused unless every step names a card", async () => {
+  const bad = await answeredQuestion("Plan:\n1. Build the probe half\n2. Build the Worker half #C901\nGo?");
+  const r = await close(bad);
+  assert.equal(r.refused.rule, "plan-steps-uncarded");
+  assert.match(r.refused.detail, /1 step of the answer name no card/);
+  assert.match(r.refused.detail, /Build the probe half/);
+  assert.equal(await closedAt(bad), null);
+  const ok = await answeredQuestion("Plan:\n1. Probe half #C901\n2. Worker half #C902\nGo?");
+  assert.equal((await close(ok)).ok, true);
+  assert.equal((await close(await answeredQuestion("Plan:\n- context bullet\nGo?"))).refused.rule, "plan-steps-uncarded", "dash bullets in a question count");
+  assert.equal((await close(await answeredQuestion("Plan:\n- context bullet\nGo?"), "owner")).ok, true, "the owner always closes");
+  const inOption = await answeredQuestion("Go?", ["A: go\n1. do the thing", "B: no"]);
+  assert.equal((await close(inOption)).refused.rule, "plan-steps-uncarded", "option text that lists steps counts");
+});
+
+test("not steps: '1.5 hours', '-1 point' and a bare '-' (L1)", () => {
+  const ask = (note) => ({ id: "a", type: "Decision", answered_at: T, answer: "A", answer_note: note });
+  for (const line of ["1.5 hours", "-1 point", "-", "2.5x faster", "*bold*", "3)"]) assert.equal(answerStepLines(ask(line)).length, 0, line);
+  assert.equal(planStepsRefusal(ask("1.5 hours\n-1 point\n-")), null);
+  assert.equal(answerStepLines(ask("1. a\n- b\n* c")).length, 3);
+});
+
 test("the pure rule: step lines, an answer that becomes a card on another type, a typed-other note, an unanswered ask", () => {
   const ask = (extra) => ({ id: "a", type: "Decision", answered_at: T, answer: "A", answer_note: null, ...extra });
   assert.deepEqual(answerStepLines(ask({ answer_note: "Intro\n1. one\n 2) two\n* three\n• four\nStep 5: five\nnot a step" })).length, 5);
