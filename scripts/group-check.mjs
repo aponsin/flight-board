@@ -87,7 +87,10 @@ export function suiteOnSnapshot({ sha, mkdtemp, run, suite, remove }) {
 
 // The suite run itself (Security's INFO and Checker 2's LOW on 249a281b). It is the snapshot's own `scripts/test-run.mjs`, what `npm test` runs, so its verdict is npm test's (the
 // temp-folder preload and the leftovers check included). A hanging test must not stall the landing job (a macOS privacy prompt waits for a person nobody has put there): stdin is closed,
-// HOME is an empty temporary folder (nothing under ~/Documents or ~/Desktop to ask about), and the run is killed after its time. A red that names failing test files gets ONE rerun of
+// and the run is killed after its time (SIGKILL), so a test that waits on a prompt ends the run instead of the job. HOME is NOT swapped for an empty folder, though Security asked: tests/card-eta-wrap
+// measures the page in headless Chrome, and Chrome under another HOME ends with exit 2 after its 10 s "teardown watchdog" (tried: an empty folder and one with ~/Library made; the same Chrome
+// call is clean under the real HOME), so every head would be red. The suite's own TMPDIR is a temporary folder, and SUITE_FAILURES_FILE is left alone (the tests that start a nested
+// test-run read it). A red that names failing test files gets ONE rerun of
 // just those files (a git-fixture flake passes alone; a real failure does not): green after that is green, said in the line; red names the failing tests so Release can rerun them.
 export const SUITE_SCRIPT = "scripts/test-run.mjs";
 export const FIRST_RUN_SHARE = 0.8; // of the suite's time; the rest is the rerun's
@@ -96,10 +99,10 @@ export const failedLines = (text) => String(text ?? "").split("\n").map((l) => l
 // The test files named by failing lines: tests/<name>.test.mjs only, at most 10 (a path from a line never goes to a command line otherwise).
 export const failedFiles = (lines) => [...new Set((lines ?? []).map((l) => FAILED_LINE.exec(l)?.[1]).filter((f) => typeof f === "string" && /^tests\/[A-Za-z0-9._-]+\.test\.mjs$/.test(f)))].slice(0, 10);
 // How the suite is started: { file, args, options } for spawnSync. files: rerun only these (default the whole suite).
-export function suiteSpawn({ dir, home, tmp, failuresFile, timeoutMs, env = process.env, node = process.execPath, files = null }) {
+export function suiteSpawn({ dir, tmp, timeoutMs, env = process.env, node = process.execPath, files = null }) {
   return {
     file: node, args: [SUITE_SCRIPT, ...(files ?? [])],
-    options: { cwd: dir, env: { ...env, HOME: home, TMPDIR: tmp, SUITE_FAILURES_FILE: failuresFile }, stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs, killSignal: "SIGKILL", encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+    options: { cwd: dir, env: { ...env, TMPDIR: tmp }, stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs, killSignal: "SIGKILL", encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
   };
 }
 // One spawnSync result -> { ok, line, files }: green; red naming up to three failing tests; or why it was stopped.
@@ -114,16 +117,16 @@ export function suiteVerdict(r, timeoutMs) {
 }
 // The whole run in one folder: { ok, line }. spawn(file, args, options) and mkdtemp()/remove(dir) are injected; totalMs is the suite's whole time (first run 80%, the rerun the rest).
 export function runGroupSuite({ dir, spawn, mkdtemp, remove, totalMs, env = process.env }) {
-  const home = mkdtemp(), tmp = mkdtemp();
+  const tmp = mkdtemp();
   try {
-    const failuresFile = `${tmp}/failures-copy.txt`, first = Math.floor(totalMs * FIRST_RUN_SHARE), rest = totalMs - first;
-    const run = (files, timeoutMs) => { const s = suiteSpawn({ dir, home, tmp, failuresFile, timeoutMs, env, files }); return suiteVerdict(spawn(s.file, s.args, s.options), timeoutMs); };
+    const first = Math.floor(totalMs * FIRST_RUN_SHARE), rest = totalMs - first;
+    const run = (files, timeoutMs) => { const s = suiteSpawn({ dir, tmp, timeoutMs, env, files }); return suiteVerdict(spawn(s.file, s.args, s.options), timeoutMs); };
     const one = run(null, first);
     if (one.ok || !one.files.length) return { ok: one.ok, line: one.line };
     const again = run(one.files, rest);
     return again.ok ? { ok: true, line: `green: ${one.files.join(", ")} failed once and passed alone` } : { ok: false, line: `${one.line}; again alone: ${again.line}`.slice(0, 400) };
   } finally {
-    for (const d of [home, tmp]) { try { remove(d); } catch { /* left in the temp folder */ } }
+    try { remove(tmp); } catch { /* left in the temp folder */ }
   }
 }
 
