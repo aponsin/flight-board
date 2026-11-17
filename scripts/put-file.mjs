@@ -78,16 +78,32 @@ export function checkPath(input, { roots, realpath = realpathSync, stat = statSy
   return { ok: true, real, type, size: st.size, name: basename(real) };
 }
 
+// #C1170 (11-17: Mainsite could not put four screenshots on the board: no env file on this Mac had a BOARD_BASE_URL line, so the upload had never worked for an agent): the board's address is
+// the one the board config already holds for the probe and the other scripts, its storeUrl. Read from the config the command names (--config), never from the command line itself. Returns
+// { ok: true, base, file } (base null when the config names none), or a reason that names the file it read. Only https://<host> (and an optional port) is an address.
+const HTTPS_HOST = /^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/;
+export function configAddress(configPath, { read = (p) => readFileSync(p, "utf8") } = {}) {
+  if (!configPath) return { ok: true, base: null, file: null };
+  let url; try { url = JSON.parse(read(configPath))?.storeUrl; } catch { return no(`the board config ${configPath} cannot be read as JSON`); }
+  if (url === undefined || url === null || url === "") return { ok: true, base: null, file: configPath };
+  const base = String(url).replace(/\/+$/, "");
+  if (!HTTPS_HOST.test(base)) return no(`storeUrl in ${configPath} must be https://<host>`);
+  return { ok: true, base, file: configPath };
+}
+
 // The env file's credentials, only when the file is readable by its owner alone. Returns { headers, base } or a reason.
-export function credentials(envFile, { read = (p) => loadEnv(p), stat = statSync } = {}) {
+// The address is the board config's storeUrl (`address`, from configAddress); a BOARD_BASE_URL line in the env file is still accepted, and the two must agree when both are there.
+export function credentials(envFile, { read = (p) => loadEnv(p), stat = statSync, address = null } = {}) {
   if (!envFile) return no("--env <the probe's env file> is needed");
   let st; try { st = stat(envFile); } catch { return no("the env file cannot be read"); }
   if (!st.isFile() || (st.mode & 0o077) !== 0) return no("the env file must be a plain file readable by its owner only (chmod 600)");
   let env; try { env = read(envFile); } catch { return no("the env file cannot be read"); }
   if (!env.BOARD_SERVICE_TOKEN_ID || !env.BOARD_SERVICE_TOKEN_SECRET) return no("the env file has no BOARD_SERVICE_TOKEN_ID and BOARD_SERVICE_TOKEN_SECRET");
-  // The address is only ever the one the owner wrote in the same env file as the token: the command line cannot name a host, so the token cannot be sent to one.
-  const base = String(env.BOARD_BASE_URL ?? "").replace(/\/+$/, "");
-  if (!/^https:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(base)) return no("the board's address must be https://<host> (BOARD_BASE_URL in the env file)");
+  // The address is only ever one the owner wrote in a file (the board config's storeUrl, or BOARD_BASE_URL in the env file with the token): the command line cannot name a host, so the token cannot be sent to one.
+  const fromEnv = String(env.BOARD_BASE_URL ?? "").replace(/\/+$/, ""), fromConfig = address?.base ?? "";
+  if (fromEnv && fromConfig && fromEnv !== fromConfig) return no(`the board's address differs: BOARD_BASE_URL in ${envFile} and storeUrl in ${address.file} name different hosts: keep one`);
+  const base = fromConfig || fromEnv;
+  if (!HTTPS_HOST.test(base)) return no(`the board's address must be https://<host>: set storeUrl in the board config${address?.file ? ` (${address.file})` : " (--config)"}, or BOARD_BASE_URL in the env file ${envFile}`);
   return { ok: true, headers: accessHeaders(env), base };
 }
 
@@ -97,7 +113,9 @@ export async function putLocalFile({ path, envFile, configPath, name, fetchImpl 
   if (!folders) { const r = rootsFor(configPath); if (!r.ok) return r; folders = r.roots; }
   const p = checkPath(path, { roots: folders });
   if (!p.ok) return p;
-  const c = credentials(envFile, read ? { read } : {});
+  const address = configAddress(configPath);
+  if (!address.ok) return address;
+  const c = credentials(envFile, { ...(read ? { read } : {}), address });
   if (!c.ok) return c;
   let res;
   try {
@@ -116,7 +134,7 @@ export async function putLocalFile({ path, envFile, configPath, name, fetchImpl 
 export async function main(argv, { fetchImpl = fetch, out = (l) => console.log(l), err = (l) => console.error(l), exit = (c) => process.exit(c), roots } = {}) {
   const get = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   // No --base: the token goes only to the address in the env file. Any other flag that names a host is refused before the env file is read.
-  if (argv.some((a) => a === "--base" || a.startsWith("--base="))) { err("PUT FAILED: there is no --base: the board's address is BOARD_BASE_URL in the env file"); return exit(1); }
+  if (argv.some((a) => a === "--base" || a.startsWith("--base="))) { err("PUT FAILED: there is no --base: the board's address is storeUrl in the board config (or BOARD_BASE_URL in the env file)"); return exit(1); }
   const flags = new Set(["--env", "--config", "--name"]);
   const path = argv.find((a, i) => !a.startsWith("--") && !flags.has(argv[i - 1]));
   const r = await putLocalFile({ path, envFile: get("--env") ?? process.env.BOARD_ENV_FILE, configPath: get("--config") ?? process.env.BOARD_CONFIG, name: get("--name"), fetchImpl, roots });

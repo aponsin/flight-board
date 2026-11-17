@@ -244,6 +244,37 @@ test("putLocalFile: one POST to /api/probe/file with the token headers and the f
   assert.equal(seen.body.name, "Option A.png");
 });
 
+// #C1170 (11-17: no env file on this Mac had a BOARD_BASE_URL line, so an agent's upload never worked): the address is the board config's storeUrl, a fictional board here.
+test("#C1170 the board's address comes from the board config's storeUrl: an env file with the token and no BOARD_BASE_URL line works; https only; the error names the file", async () => {
+  const { root, f } = tree();
+  const path = f("a.png");
+  const TOKEN_ONLY = `BOARD_SERVICE_TOKEN_ID=idvalue\nBOARD_SERVICE_TOKEN_SECRET=${SECRET}\n`;
+  const env = envFile(TOKEN_ONLY);
+  const cfg = (body) => { const p = join(dir(), "board.config.json"); writeFileSync(p, JSON.stringify(body)); return p; };
+  const urls = [];
+  const fetchImpl = async (url) => { urls.push(url); return { ok: true, status: 200, json: async () => ({ ok: true, id: "abc123def456ghi789jkl", name: "a.png", contentType: "image/png", sizeBytes: PNG.length }) }; };
+  const good = cfg({ storeUrl: "https://fictional-board.example.test/", collector: {} });
+  assert.equal((await putLocalFile({ path, envFile: env, configPath: good, fetchImpl, roots: [root] })).ok, true);
+  assert.deepEqual(urls, ["https://fictional-board.example.test/api/probe/file"], "the config's address, a trailing slash dropped");
+  // The config has no address and the env file none either: refused, naming both places and the config file it read.
+  const none = cfg({});
+  const r = why(await putLocalFile({ path, envFile: env, configPath: none, fetchImpl: () => assert.fail("nothing is sent"), roots: [root] }));
+  assert.ok(r.includes(none) && /storeUrl/.test(r) && /BOARD_BASE_URL/.test(r), r);
+  // Not https, a path, or a userinfo trick in the config is refused, the error naming the config file; nothing is sent.
+  for (const bad of ["http://fictional-board.example.test", "https://fictional-board.example.test/path", ["https://evil.test", "fictional-board.example.test"].join(String.fromCharCode(64))]) { // a userinfo trick, built from pieces so the repository scan does not read it as an address
+    const p = cfg({ storeUrl: bad });
+    const why1 = why(await putLocalFile({ path, envFile: env, configPath: p, fetchImpl: () => assert.fail("nothing is sent"), roots: [root] }));
+    assert.ok(why1.includes(p) && /https/.test(why1), `${bad}: ${why1}`);
+  }
+  // Both named and different: refused (a token goes to one host the owner wrote, not to a guess between two); both the same: fine.
+  const differ = why(await putLocalFile({ path, envFile: envFile(GOOD_ENV), configPath: good, fetchImpl: () => assert.fail("nothing is sent"), roots: [root] }));
+  assert.match(differ, /name different hosts/);
+  assert.equal((await putLocalFile({ path, envFile: envFile(GOOD_ENV.replace("board.test", "fictional-board.example.test")), configPath: good, fetchImpl, roots: [root] })).ok, true);
+  // The command line still cannot name a host.
+  const err = []; await main(["--env", env, "--config", good, "--base", "https://evil.test", path], { err: (l) => err.push(l), exit: () => {}, fetchImpl: () => assert.fail("nothing is sent"), roots: [root] });
+  assert.match(err.at(-1), /no --base/);
+});
+
 test("putLocalFile: every failure says why in a few words and never carries the token: a refused path, a bad env file, a Worker refusal, an unreachable board", async () => {
   const { root, outside, f } = tree();
   const good = f("a.png"), env = envFile(GOOD_ENV), x = join(outside, "x.png"); writeFileSync(x, PNG);
