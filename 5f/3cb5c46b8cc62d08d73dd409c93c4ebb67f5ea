@@ -1,0 +1,2 @@
+PASS (Quick) #C1136 tip 5f3cb5c4: docs/group-land.md trap 3 now says a bad-word commit blocks while it sits in origin/main..head, through a merge or on the group's own line (my LOW on 7f1d9a1d); matches groupCoverage in board-release.mjs. Docs only. Suite 2887 pass, 0 fail. On main 5b040a45.
+signed-by: Checker 2
