@@ -1,0 +1,2 @@
+PASS (Full) #C1158 group head: a watch from an install other than the Stop hook's single pin prints one stale line, drops its pid file and ends, once per role and pair; the real settings pin one install by sha, so it applies. Suite 3012/0; mutants killed: stale exit off, once-per-pair off, two pins read as one, checkout watch treated as stale. LOWs: the DISPATCH install tag at the call site is untested (dropping it survives); the stale check runs after roleTick, so one tick after an install can still print an old-code dispatch (check stale first)
+signed-by: Checker 2
