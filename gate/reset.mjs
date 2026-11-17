@@ -260,8 +260,8 @@ export const dispatchLine = (i) => {
     const signers = Array.isArray(i.signed) ? i.signed.filter((s) => typeof s === "string" && PLAIN_ROLE.test(s)).slice(0, 4) : [];
     const who = signers.length ? ` signed by ${signers.join(" and ")}` : "";
     const card = Number.isInteger(i.num) ? `#C${i.num}` : i.card;
-    // #C914: in stack mode the push is `node scripts/stack-ready.mjs`: it pushes the branch and decides by itself whether cards are still queued.
-    const cmd = i.stackMode === true && ["build", "rework", "outside"].includes(i.step) ? "push with node scripts/stack-ready.mjs --config <the board.config.json path of your wake-watch line> (it pushes the branch and decides by itself whether cards are still queued)" : "";
+    // #C914: in stack mode the push is stack-ready.mjs from the scripts folder of the builder's own wake-watch line (#C1165: the pinned install, run inside the worktree): it pushes the branch and decides by itself whether cards are still queued.
+    const cmd = i.stackMode === true && ["build", "rework", "outside"].includes(i.step) ? "push with node <the scripts folder of your wake-watch line>/stack-ready.mjs --config <the board.config.json path of your wake-watch line>, run inside your worktree (it pushes the branch and decides by itself whether cards are still queued)" : "";
     const on = stackBranch(i.stack) ? `; stack mode is on, the stack branch is ${i.stack}: one commit per card, rebased on its tip${cmd ? `; ${cmd}` : " before you push"}` : cmd ? `; stack mode is on: ${cmd}` : "";
     // #C872: `DISPATCH #C862 at decision: DECISION #T1782 answered: "A, the ship's run too"; go (Builder's turn; ...)`. The answer is cut again here.
     if (i.step === "decision" && Number.isInteger(i.ask) && i.ask >= 1 && i.ask <= 1e7) return `DISPATCH ${card} at decision: DECISION #T${i.ask} answered: "${plainAnswer(i.answer)}"; go (${i.role}'s turn; read the answer on the ask's thread, act on it, push your own build branch and send READY: no go needed from anyone)`;

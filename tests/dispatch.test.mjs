@@ -120,6 +120,6 @@ test("the owner's watch as an owner runs it: blocks, prints the DISPATCH line, r
     const cfg = fullConfig({ artifactUrl: "https://claude.ai/" + "artifact/TestBoard01", roster, gate: { stateDir: join(home, "state") } });
     const s = dispatchState(cfg, "/c d/it's.json", "Builder", Date.now());
     assert.deepEqual([s.on, s.alive, s.askedAt], [true, false, null]);
-    assert.ok(s.command.endsWith(` --config '/c d/it'\\''s.json' --role 'Builder' --once`), "a space and a quote stay one word");
+    assert.ok(s.command.endsWith(` --config '/c d/it'\\''s.json' --role 'Builder' --once --pinned`), "a space and a quote stay one word; the re-arm line arms from the Stop hook's pin (#C1165)");
   } finally { rmSync(home, { recursive: true, force: true }); }
 });

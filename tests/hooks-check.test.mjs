@@ -62,7 +62,7 @@ test("only a pinned copy is imported: a planted folder outside the install root 
   assert.equal(isPinnedCopy(join(root, "nope"), root), false);
 });
 
-test("the owner's real settings shapes (Checker on 3ede5a0): ~/ expands, the current link and an install copy pass, another repository's hooks are skipped", async () => {
+test("the owner's real settings shapes (Checker on 3ede5a0): ~/ expands, an install copy passes, the current link is refused as no pin (#C1165), another repository's hooks are skipped", async () => {
   const home = mkdtempSync(join(tmpdir(), "home-"));
   const root = join(home, ".flight-board", "install");
   const copy = join(root, SHA_NEW);
@@ -81,9 +81,14 @@ test("the owner's real settings shapes (Checker on 3ede5a0): ~/ expands, the cur
   assert.deepEqual(roots, [join(home, ".flight-board", "current"), other, copy].sort(), "~ is the home folder, and no root is just '/.flight-board/current'");
   assert.equal(roots.includes("/.flight-board/current"), false);
   const r = report(await dryRun(roots, config, root));
-  assert.equal(r.ok, true, r.lines.join("\n"));
-  assert.match(r.lines.join("\n"), new RegExp(`skipped ${other.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: no scripts/config.mjs`));
+  const esc = (p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.equal(r.ok, false, "the current link follows every release: it is no pin, though its real path lands in an install");
+  assert.match(r.lines.join("\n"), new RegExp(`CHECK FAILED ${esc(join(home, ".flight-board", "current"))}: not a pinned copy`));
+  assert.match(r.lines.join("\n"), new RegExp(`ok ${esc(copy)}`));
+  assert.match(r.lines.join("\n"), new RegExp(`skipped ${esc(other)}: no scripts/config.mjs`));
   assert.equal(r.checked, 2, "the current link and the install copy were checked");
+  assert.equal(isPinnedCopy(join(home, ".flight-board", "current"), root), false);
+  assert.equal(isPinnedCopy(copy, root), true);
 });
 
 test("the command: exit 1 naming the stale copy, 0 when all accept, 2 with nothing to check", () => {

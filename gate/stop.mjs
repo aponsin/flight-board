@@ -134,7 +134,7 @@ export function dispatchState(config, configPath, role, now) {
   const script = join(dirname(dirname(fileURLToPath(import.meta.url))), "scripts", "wake-watch.mjs");
   const readJ = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
   const checked = readJ(dispatchWaitCheckedFile(role));
-  return { on, woken: readJ(dispatchWokenFile(role)), checkedAt: Number.isFinite(checked?.at) ? checked.at : null, alive: dispatchWatchAlive(join(dir, dispatchPidFile(role)), now), askedAt, command: `node ${shQuote(script)} --config ${shQuote(configPath)} --role ${shQuote(role)} --once` };
+  return { on, woken: readJ(dispatchWokenFile(role)), checkedAt: Number.isFinite(checked?.at) ? checked.at : null, alive: dispatchWatchAlive(join(dir, dispatchPidFile(role)), now), askedAt, command: `node ${shQuote(script)} --config ${shQuote(configPath)} --role ${shQuote(role)} --once --pinned` };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {

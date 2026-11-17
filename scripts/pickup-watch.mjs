@@ -14,6 +14,7 @@ import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { pinnedCommit } from "./current.mjs"; // #C1165: the install the Stop hook pins
 
 export const FRESH = 5_000, LOW_START = 60_000, MAX_CHECKS = 10;
 const tokensOf = (r) => (Number.isFinite(r?.tokens) && r.tokens >= 0 ? r.tokens : 0);
@@ -89,11 +90,14 @@ export const SESSION_ID = /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 export const sessionOf = (sessions, role) => (sessions && Object.hasOwn(sessions, role) && typeof sessions[role] === "string" && SESSION_ID.test(sessions[role]) ? sessions[role] : null);
 
 // The roles with a dispatch watch armed, from `ps -axo args` text: a wake-watch.mjs line carrying "--role <name>".
-export function watchRoles(psText) {
+// #C1165: with `pin` (the 40-hex install the Stop hook pins in the settings) only a watch RUNNING that install's copy counts: a watch on an older install, on `current` or on a checkout is not armed
+// on the code the board decides with, so its role is re-armed. With no pin known (the settings name none) every wake-watch line counts, as before.
+export function watchRoles(psText, pin = null) {
   const out = new Set();
   for (const line of String(psText ?? "").split("\n")) {
     // Only a node process counts: a "grep wake-watch.mjs --role Security" line is no watch (Checker 2's L1 on 222aa055).
     if (!line.includes("wake-watch.mjs") || !/^\s*(?:\S*\/)?node\s/.test(line)) continue;
+    if (/^[0-9a-f]{40}$/.test(String(pin ?? "")) && !line.includes(`/install/${pin}/scripts/wake-watch.mjs`)) continue;
     const m = line.match(/--role[ =]+(?:'([^']*)'|"([^"]*)"|(.+?))(?= --|\s*$)/);
     const name = (m && (m[1] ?? m[2] ?? m[3]) || "").trim();
     if (ROLE.test(name)) out.add(name);
@@ -157,7 +161,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     try { const j = JSON.parse(readFileSync(file, "utf8")); if (j && typeof j === "object" && !Array.isArray(j)) state = j; } catch { /* no history yet */ }
     let ps = "";
     try { ps = execFileSync("ps", ["-axo", "args"], { encoding: "utf8", maxBuffer: 16 << 20 }); } catch { /* no watch seen */ }
-    const { actions, state: next } = passActions(rows, state, watchRoles(ps), roster);
+    let pin = null; try { pin = pinnedCommit(readFileSync(join(homedir(), ".claude", "settings.json"), "utf8")); } catch { /* no settings: no pin */ }
+    const { actions, state: next } = passActions(rows, state, watchRoles(ps, pin), roster);
     try { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, JSON.stringify(next)); } catch { /* the history is lost: no pickup is sent twice by it, the next pass starts clean */ }
     console.log(JSON.stringify(actions.map((a) => ({ ...a, session: sessionOf(sessions, a.role) }))));
     process.exit(0);

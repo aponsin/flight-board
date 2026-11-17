@@ -7,13 +7,13 @@
 // answers a config it can't read with silence. Exit 0: every copy accepts it; 1: a copy refuses it (each line named);
 // 2: nothing to check.
 import { readFileSync, existsSync, realpathSync, statSync } from "node:fs";
-import { resolve, join, basename } from "node:path";
+import { resolve, join, basename, relative } from "node:path";
 import { homedir } from "node:os";
 import { pathToFileURL, fileURLToPath } from "node:url";
 
 // The folders of the flight-board scripts a text runs: the path before /gate|collector|scripts|worker/<file>.mjs. Quotes
 // around a path (hooks.mjs shellQuote) are not part of it.
-// A leading "~/" is the home folder (the settings write ~/.flight-board/current/…), not the "/" after it.
+// A leading "~/" is the home folder (a settings path may be written ~/.flight-board/install/<sha>/…), not the "/" after it.
 const SCRIPT = /((?:~)?\/[^\s'"`]+?)\/(?:gate|collector|scripts|worker)\/[A-Za-z0-9._-]+\.mjs/g;
 export function pinnedRoots(texts, home = homedir()) {
   const roots = new Set();
@@ -24,8 +24,11 @@ export function pinnedRoots(texts, home = homedir()) {
 // Only a pinned copy is ever imported (Security: a line in a file an agent can edit must not get a folder of its choosing
 // run as the owner): the root's real path is exactly <install root>/<40 hex>, a directory this user owns.
 export const INSTALL_ROOT = join(homedir(), ".flight-board", "install");
+// #C1165: the folder as the settings WRITE it must itself be <install root>/<40 hex>. A moving link such as ~/.flight-board/current lands in an install by its real path but is not a pin
+// (it follows every release), so it is refused here, whatever it resolves to.
 export function isPinnedCopy(root, installRoot = INSTALL_ROOT, uid = process.getuid()) {
   try {
+    if (![resolve(installRoot), realpathSync(installRoot)].some((b) => /^[0-9a-f]{40}$/.test(relative(b, resolve(root))))) return false;
     const real = realpathSync(root), base = realpathSync(installRoot);
     if (real !== join(base, basename(real)) || !/^[0-9a-f]{40}$/.test(basename(real))) return false;
     const st = statSync(real);

@@ -4,7 +4,8 @@
 // last printed, wake-seen.json), nothing else, and stops by itself before the Monitor's 30 minutes are up. Its
 // heartbeat (wake-watch.alive.json) is what the lead's Stop hook looks at to ask for a re-arm. Nothing here reads the board
 // or the transcript: counters and times only.
-import { readFileSync, realpathSync, unlinkSync } from "node:fs";
+import { readFileSync, realpathSync, unlinkSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -63,6 +64,18 @@ export function staleCheck(dir, role, own, settingsText, now = Date.now()) {
   if (seen?.own === own && seen?.pin === pin) return null;
   writeAtomic(join(dir, staleFile(role)), JSON.stringify({ own, pin, at: now }));
   return staleLine(own, pin);
+}
+// #C1165 (Manager's audit 11-17: after a restart, roles whose Stop hook had printed no path re-armed from memory, on old installs or on `current`): `wake-watch.mjs --pinned ...` arms the watch
+// from the install the Stop hook pins in the settings, whichever copy of this file the command named. This decides it, pure: { file } is the pinned install's wake-watch.mjs and { here } says
+// whether that is this very file (then it just runs); { why } is no pin, or a pinned install with no such file. It never names `current`, a checkout or any other folder: only
+// <install root>/<the one sha the settings pin>/scripts/wake-watch.mjs. `real` and `exists` are injectable for the tests.
+export function pinnedLaunch({ settingsText, installRoot, self, exists = existsSync, real = realpathSync }) {
+  const pin = pinnedInstallOf(settingsText);
+  if (!pin) return { why: "the Stop hook names no single install in the settings" };
+  const file = join(installRoot, pin, "scripts", "wake-watch.mjs");
+  if (!exists(file)) return { why: `the pinned install ${pin.slice(0, 12)} has no scripts/wake-watch.mjs` };
+  let here = false; try { here = real(file) === real(self); } catch { here = false; }
+  return { file, pin, here };
 }
 // Every DISPATCH line says which install decided it (a reader can see a watch on old code).
 export const withInstall = (text, own) => (own ? String(text).split("\n").map((l) => (l.startsWith("DISPATCH ") ? `${l} [watch install ${own.slice(0, 12)}]` : l)).join("\n") : String(text));
@@ -145,6 +158,19 @@ export function otherWatchAlive(dir, now, pid = process.pid) {
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
+  // #C1165: --pinned hands over to the pinned install's copy of this file (same arguments, without --pinned) unless this already is it; no pin, no watch.
+  if (process.argv.includes("--pinned")) {
+    let settingsText = null; try { settingsText = readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"); } catch { /* no settings: no pin */ }
+    const launch = pinnedLaunch({ settingsText, installRoot: join(homedir(), ".flight-board", "install"), self: fileURLToPath(import.meta.url) });
+    if (launch.why) { console.error(`wake-watch: --pinned: ${launch.why}; nothing armed`); process.exit(1); }
+    if (!launch.here) {
+      const child = spawn(process.execPath, [launch.file, ...process.argv.slice(2).filter((a) => a !== "--pinned")], { stdio: "inherit" });
+      for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => child.kill(sig));
+      child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
+      child.on("error", (e) => { console.error(`wake-watch: --pinned: could not start the pinned copy: ${e.message}`); process.exit(1); });
+      await new Promise(() => {}); // the child's exit ends this process
+    }
+  }
   const at = process.argv.indexOf("--config");
   let config;
   try {
