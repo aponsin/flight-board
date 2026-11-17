@@ -1,0 +1,3 @@
+SECURE #C1163: collector/signoff.mjs is the one reading of signed (PASS/SECURE first line, as before); land, release, recut, self-deploy gate, current.mjs and the probe use it; sign-note refuses any other first line; board cards always want Security; signoff.mjs joins the pinned closure. Only tightens. Covered by tip 85029510
+
+signed-by: Security
