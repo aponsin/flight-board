@@ -90,5 +90,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const root = join(dirname(fileURLToPath(import.meta.url)), "..");
   const r = run(process.argv.slice(2), root);
   (r.code ? process.stderr : process.stdout).write(r.out);
-  process.exit(r.code);
+  // #C1155: set the exit code and let the process end by itself, so a pipe is drained first (process.exit cut the print at 64 KB, as in data-fragments.mjs, #C1153).
+  process.exitCode = r.code;
 }
