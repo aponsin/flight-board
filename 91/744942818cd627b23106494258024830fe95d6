@@ -1,0 +1,2 @@
+PASS #C1132 tip 91744942 (over my PASS on d71cebd6, 70e57fd3, 112256ee): --state only resolve(home, .flight-board, pickup-pass.json), not a symlink; myboard.config.json refused. Mutants 4/5 (dropping resolve survives, stricter only). Suite 2857 pass, 0 fail. LOW: CHANGELOG.d fragment and one test title still say --state may be any .json inside ~/.flight-board.
+signed-by: Checker 2
