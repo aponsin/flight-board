@@ -17,11 +17,14 @@ const NEW = "/Users/x/.flight-board/install/65b5bddb870b65924fdc381387be1d5076d5
 const cfg = "/Users/x/Documents/Board/board.config.json";
 const cmds = (settings) => Object.entries(settings.hooks).flatMap(([event, es]) => es.flatMap((e) => (e.hooks ?? []).map((h) => `${event}: ${h.command}`)));
 
-test("--store: one Stop entry (stop.mjs --store) and nothing else; no page-publish entry in either mode (#C1054 b)", () => {
+test("--store: the Stop entry (stop.mjs --store) and the PreToolUse first-push guard (#C1065), nothing else; no page-publish entry in either mode (#C1054 b)", () => {
   const e = hookEntries(NEW, cfg, "/bin/node", { store: true });
-  assert.deepEqual(Object.keys(e), ["Stop"]);
+  assert.deepEqual(Object.keys(e), ["Stop", "PreToolUse"]);
   assert.equal(e.Stop.hooks.length, 1);
   assert.equal(e.Stop.hooks[0].command, `'/bin/node' '${NEW}/gate/stop.mjs' --config '${cfg}' --store`);
+  assert.equal(e.PreToolUse.matcher, "Edit|Write|MultiEdit|NotebookEdit|Bash");
+  assert.equal(e.PreToolUse.hooks.length, 1);
+  assert.equal(e.PreToolUse.hooks[0].command, `'/bin/node' '${NEW}/gate/first-push.mjs' --config '${cfg}'`);
   assert.deepEqual(hookEntries(NEW, cfg, "/bin/node"), e, "the store form is the only form (#C864 step 3): the old gate hooks are deleted");
   assert.doesNotMatch(JSON.stringify(e), /publish\.mjs/, "no entry names the publish hook");
 });
@@ -47,7 +50,9 @@ test("--store over a settings file with the old gate and an older publish entry:
   for (const f of ["gate/gate.mjs", "gate/publish.mjs", "gate/commit.mjs", "gate/after.mjs", "gate/digest.mjs", "gate/stop.mjs", "collector/refresh.mjs"]) assert.ok(old.includes(`${OLD}/${f}`), f);
   const { settings, retired, replaced } = withHooks(before, hookEntries(NEW, cfg, "/bin/node", { store: true }));
   const now = cmds(settings);
-  assert.deepEqual(now.filter((c) => c.includes("/gate/") || c.includes("refresh")).sort(), [`Stop: '/bin/node' '${NEW}/gate/stop.mjs' --config '${cfg}' --store`]);
+  assert.deepEqual(now.filter((c) => c.includes("/gate/") || c.includes("refresh")).sort(), [`PreToolUse: '/bin/node' '${NEW}/gate/first-push.mjs' --config '${cfg}'`, `Stop: '/bin/node' '${NEW}/gate/stop.mjs' --config '${cfg}' --store`]);
+  const again = withHooks(settings, hookEntries(NEW, cfg, "/bin/node", { store: true })).settings; // a second install replaces the first-push entry, never doubles it (#C1065)
+  assert.equal(cmds(again).filter((c) => c.includes("first-push.mjs")).length, 1);
   assert.equal(now.some((c) => c.includes("publish.mjs")), false, "the older publish entry is gone");
   assert.equal(settings.hooks.PostToolUse.length + settings.hooks.UserPromptSubmit.length, 0, "after and digest are gone");
   assert.equal(now.some((c) => c.includes("34ebdde")), false, "no 34ebdde left in settings (Director's step 6)");
@@ -71,9 +76,10 @@ test("the installer as run: --store prints one Stop entry with --store; without 
       return JSON.parse(r.stdout.slice(0, r.stdout.lastIndexOf("}") + 1)).hooks;
     };
     const store = run(["--store"]);
-    assert.deepEqual(Object.keys(store), ["Stop"]);
+    assert.deepEqual(Object.keys(store), ["Stop", "PreToolUse"]);
     assert.match(store.Stop[0].hooks[0].command, / --store$/);
-    assert.deepEqual(Object.keys(run([])), ["Stop"], "without --store it is the same: the store form is the only form");
+    assert.match(store.PreToolUse[0].hooks[0].command, /\/gate\/first-push\.mjs' --config /);
+    assert.deepEqual(Object.keys(run([])), ["Stop", "PreToolUse"], "without --store it is the same: the store form is the only form");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

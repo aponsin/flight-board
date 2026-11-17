@@ -80,7 +80,7 @@ export function neverRun(folder, n) {
 // Security R1b on ab5355a: the entries are every script scripts/hooks.mjs can write into settings.json (cmd("...")), plus the scripts the gate tells every
 // agent to run from the pinned copy (scripts/wake-watch.mjs, named in gate/wake.mjs) and the collector's fence; HOOK_READS are files the closure reads
 // at run time without importing them (scripts/build-page.mjs reads page/board.template.html through import.meta.url). A name absent at the sha is skipped.
-export const HOOK_ENTRIES = ["gate/stop.mjs", "gate/publish.mjs", "collector/fence.mjs", "scripts/wake-watch.mjs"];
+export const HOOK_ENTRIES = ["gate/stop.mjs", "gate/publish.mjs", "gate/first-push.mjs", "collector/fence.mjs", "scripts/wake-watch.mjs"];
 export const HOOK_READS = ["page/board.template.html"];
 export const HOOK_PINNED = /^(hooks\/|scripts\/hooks\.mjs$)/;
 // The files at `sha` the two entries import, relative imports followed (static and dynamic), entries included: a Set of repo paths.
@@ -120,7 +120,7 @@ export function hooksText(prev, { name, sha, cueSha }) {
   lines[0] = "@@FIRST@@";
   // The pair number only as a whole number: pc2 is not the start of pc26.
   const body = lines.join("\n").replace(/const CUE_SHA = "[0-9a-f]{64}"/, `const CUE_SHA = "${cueSha}"`).split(old).join(sha).split(old.slice(0, 8)).join(sha.slice(0, 8)).split(old.slice(0, 7)).join(sha.slice(0, 7)).replace(new RegExp(`pc${prev.n}(?!\\d)`, "g"), name);
-  return storeOnly(body.replace("@@FIRST@@", `// The hooks step of pair ${name} (pins the Stop hook to this main), for flight-board main ${sha}. Made by scripts/make-pair.mjs from board-store-hooks-pc${prev.n}.mjs: the pin and the pair number changed${/two board entries|publish\.length !== 1/.test(prev.text) ? ", and its read-back now expects the one Stop entry the installer writes (the page-publish entry is retired, #C1054)" : ""}. Run by the owner in Terminal AFTER the pair's two lines`));
+  return storeOnly(body.replace("@@FIRST@@", `// The hooks step of pair ${name} (pins the Stop hook to this main), for flight-board main ${sha}. Made by scripts/make-pair.mjs from board-store-hooks-pc${prev.n}.mjs: the pin and the pair number changed${/two board entries|publish\.length !== 1/.test(prev.text) && !/first\.length/.test(prev.text) ? ", and its read-back now expects the one Stop entry the installer writes (the page-publish entry is retired, #C1054)" : ""}${/board\.length !== \d+ \|\| stop\.length/.test(prev.text) && !/first\.length/.test(prev.text) ? ", and its read-back now also expects the PreToolUse first-push guard entry (gate/first-push.mjs, #C1065)" : ""}. Run by the owner in Terminal AFTER the pair's two lines`));
 }
 
 // Security's RISKS on pc67 line 3 (11-16): the hooks file is made from the previous pair's, so when scripts/hooks.mjs stopped writing the page-publish entry
@@ -134,28 +134,50 @@ export const STORE_ONLY_FIXES = [
   ["exactly two board entries (Stop stop.mjs --store, PreToolUse publish.mjs), both from ${SIGNED.slice(0, 8)};", "exactly one board entry (Stop stop.mjs --store; no page-publish entry) from ${SIGNED.slice(0, 8)};"],
 ];
 export function storeOnly(text) {
+  if (/first\.length/.test(text)) return text; // already moved to the first-push read-back (#C1065): its "two board entries" is the new wording, not the retired page-publish one
   let out = text;
   for (const [from, to] of STORE_ONLY_FIXES) out = out.split(from).join(to);
   if (/two board entries|publish\.length !== 1/.test(out)) throw new Error("the hooks file still expects two board entries (the page-publish entry): the template's read-back wording is not one this tool knows how to move; fix it by hand and add the wording to STORE_ONLY_FIXES");
+  return firstPushToo(out);
+}
+
+// #C1065: scripts/hooks.mjs also writes the PreToolUse first-push guard (gate/first-push.mjs), so the hooks step's read-back expects two board entries: the Stop
+// --store one and that one, both from the pin. The previous pair's hooks file says one; this moves its wording and its check, string for string. A text that already
+// expects the first-push entry (it holds "first.length") is left as it is, and a text with no read-back line (a fixture) too.
+export const FIRST_PUSH_FIXES = [
+  ["That leaves exactly one board entry,\n//     Stop gate/stop.mjs --store, from the pinned copy of ", "That leaves exactly two board entries,\n//     Stop gate/stop.mjs --store and PreToolUse gate/first-push.mjs, both from the pinned copy of "],
+  ["exactly one board entry, from ", "exactly two board entries, both from "],
+  ["// Read it back: one board entry (the Stop hook) from the signed commit,", "// Read it back: two board entries (the Stop hook and the first-push guard) from the signed commit,"],
+  ["const publish = board.filter((c) => c.includes(`/${SIGNED}/gate/publish.mjs`));", "const publish = board.filter((c) => c.includes(`/${SIGNED}/gate/publish.mjs`));\nconst first = board.filter((c) => c.includes(`/${SIGNED}/gate/first-push.mjs`));"],
+  ["board.length !== 1 || stop.length !== 1 || publish.length !== 0 ||", "board.length !== 2 || stop.length !== 1 || publish.length !== 0 || first.length !== 1 ||"],
+  ["(board entries ${board.length}, stop --store ${stop.length}, publish ${publish.length},", "(board entries ${board.length}, stop --store ${stop.length}, publish ${publish.length}, first-push ${first.length},"],
+  ["exactly one board entry (Stop stop.mjs --store; no page-publish entry) from ${SIGNED.slice(0, 8)};", "exactly two board entries (Stop stop.mjs --store and PreToolUse first-push.mjs; no page-publish entry) from ${SIGNED.slice(0, 8)};"],
+];
+export function firstPushToo(text) {
+  if (!/board\.length !== \d+ \|\| stop\.length !== \d+/.test(text) || /first\.length/.test(text)) return text;
+  let out = text;
+  for (const [from, to] of FIRST_PUSH_FIXES) out = out.split(from).join(to);
+  // The read-back now names `first`: if the line that defines it did not land, the step would stop with a ReferenceError on the owner's Mac AFTER the installer wrote. Refuse here.
+  if (!/const first = board\.filter/.test(out)) throw new Error("the hooks file has a read-back but no `const publish = board.filter(...)` line to put the first-push count beside: the template's wording is not one this tool knows how to move; fix it by hand and add the wording to FIRST_PUSH_FIXES");
   return out;
 }
 
 // What the hooks step expects of settings.json after the installer ran (its read-back line), and what scripts/hooks.mjs at the pin writes: the two must
 // agree, or the step fails on the owner's Mac after the installer has already written (the pc67 case). The counts are { board, stop, publish }.
 export function hooksExpectation(text) {
-  const m = /board\.length !== (\d+) \|\| stop\.length !== (\d+) \|\| publish\.length !== (\d+)/.exec(String(text));
-  return m ? { board: Number(m[1]), stop: Number(m[2]), publish: Number(m[3]) } : null;
+  const m = /board\.length !== (\d+) \|\| stop\.length !== (\d+) \|\| publish\.length !== (\d+)(?: \|\| first\.length !== (\d+))?/.exec(String(text));
+  return m ? { board: Number(m[1]), stop: Number(m[2]), publish: Number(m[3]), first: Number(m[4] ?? 0) } : null; // a text with no first-push check expects none (#C1065)
 }
 export function hooksWritten(entries) {
   const commands = Object.values(entries ?? {}).flatMap((e) => [].concat(e)).flatMap((e) => (e?.hooks ?? []).map((h) => String(h?.command ?? "")));
-  return { board: commands.length, stop: commands.filter((c) => c.includes("/gate/stop.mjs") && c.endsWith("--store")).length, publish: commands.filter((c) => c.includes("/gate/publish.mjs")).length };
+  return { board: commands.length, stop: commands.filter((c) => c.includes("/gate/stop.mjs") && c.endsWith("--store")).length, publish: commands.filter((c) => c.includes("/gate/publish.mjs")).length, first: commands.filter((c) => c.includes("/gate/first-push.mjs")).length };
 }
 export function checkHooksExpectation(text, entries) {
   const want = hooksExpectation(text);
   if (!want) return { ok: true, skipped: true }; // a text with no read-back line (a fixture) has nothing to compare
   const got = hooksWritten(entries);
-  const same = want.board === got.board && want.stop === got.stop && want.publish === got.publish;
-  return same ? { ok: true } : { ok: false, why: `the hooks step expects ${want.board} board entr${want.board === 1 ? "y" : "ies"} (${want.stop} Stop --store, ${want.publish} publish) after the install, but scripts/hooks.mjs at the pin writes ${got.board} (${got.stop} Stop --store, ${got.publish} publish)` };
+  const same = want.board === got.board && want.stop === got.stop && want.publish === got.publish && want.first === got.first;
+  return same ? { ok: true } : { ok: false, why: `the hooks step expects ${want.board} board entr${want.board === 1 ? "y" : "ies"} (${want.stop} Stop --store, ${want.publish} publish, ${want.first} first-push) after the install, but scripts/hooks.mjs at the pin writes ${got.board} (${got.stop} Stop --store, ${got.publish} publish, ${got.first} first-push)` };
 }
 // The entries scripts/hooks.mjs at `sha` writes: that file read from git, run in a child with fixed arguments (it imports only node's own modules).
 export function hookEntriesAt(git, sha) {
