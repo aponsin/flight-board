@@ -1,0 +1,3 @@
+SECURE #C1165 fix a26a9be0: hooks-check reads a settings.json's hooks command strings only (permission rules run nothing); a hook naming current is still refused; non-settings files read whole as before. INFO: a top-level statusLine command also runs and is no longer read
+
+signed-by: Security
