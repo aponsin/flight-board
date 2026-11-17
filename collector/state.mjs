@@ -1023,7 +1023,9 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
       if (noted.some((c) => isAncestor(heads[id], c))) continue;
       // #C1102 (d): a held card whose EXACT head carries a waiting note is built: its builder ran stack-ready and was told to wait for the group (or a card queued behind it).
       // The page reads it as "built, waiting" rather than building; a later push has no note and reads as building again.
-      out[id] = { ...out[id], stackHold: true, ...(waiting.some((c) => c.startsWith(heads[id]) || String(heads[id]).startsWith(c)) ? { builtWaiting: true } : {}) };
+      // The head is the same commit as a noted one (#C1126, Security I1): the noted sha is always 40 characters, the head 12 to 40, so only the noted sha may extend the head, never the other way.
+      const sameCommit = (c, h) => /^[0-9a-f]{12,40}$/.test(String(h)) && c.startsWith(String(h));
+      out[id] = { ...out[id], stackHold: true, ...(waiting.some((c) => sameCommit(c, heads[id])) ? { builtWaiting: true } : {}) };
     }
   }
   // #C1020: a board-repository card on main shows packed and installed from the deploy pairs (pairsIn, the owner's pair folder) and git alone:
