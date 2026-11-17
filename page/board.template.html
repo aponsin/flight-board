@@ -2473,7 +2473,8 @@ function togetherN(batch,phase,cards){return !batch||!REVIEW_LANES.includes(phas
 const isTogether=(batch,phase,cards)=>togetherN(batch,phase,cards)>=2;
 function pulseOffset(id,together){let h=0;for(const ch of String(id))h=(h*31+ch.charCodeAt(0))>>>0;return (Date.now()+(together?0:h%PULSE_MS))%PULSE_MS}
 // After every draw: each pulsing tile gets its delay (set on the element, so the tile's own markup is unchanged). A row is its card's id or its group's.
-function pulseSync(){document.querySelectorAll(".step.now").forEach(el=>{const row=el.closest("[data-card],[data-group]"),id=row&&row.dataset?(row.dataset.card||"group:"+row.dataset.group):"";el.style.animationDelay="-"+pulseOffset(id,el.classList.contains("together"))+"ms"})}
+// Designer F1 on 04b8dfcc: a card's data-card sits on a div inside its .i-row that closes before the track, so the tile's own row is the .i-row (a group's carries data-group; a card's holds one [data-card]).
+function pulseSync(){document.querySelectorAll(".step.now").forEach(el=>{const row=el.closest(".i-row"),cd=row&&!(row.dataset&&row.dataset.group)&&row.querySelector?row.querySelector("[data-card]"):null,id=row?(row.dataset&&row.dataset.group?"group:"+row.dataset.group:cd&&cd.dataset?cd.dataset.card:""):"";el.style.animationDelay="-"+pulseOffset(id,el.classList.contains("together"))+"ms"})}
 // The group row's facts (Manager on #C1008): its phase is the earliest among its cards (the group lands together, so it moves at its
 // slowest card), its ETA the latest card's, its start the earliest card's.
 function groupFacts(cards){const ix=i=>notStarted(i)?phaseIndex(BUILD_PHASE):phaseIndex(i.phase);
@@ -2513,7 +2514,7 @@ function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(c
     const n=phaseIndex(k),sk=skipAll(k)&&n!==f.idx,done=n<f.idx||(landedAll&&k===SHIP_PHASE),q=queuedAll&&n===f.idx;
     // #C1068: the group's own tile pulses with the cards reviewed together at its phase (same delay), and says "together"; a group of lone reviews pulses by itself.
     const pulsing=!sk&&!done&&!q&&n===f.idx&&worked,tg=pulsing&&isTogether(b,f.phase,cards);
-    return `<div class="step${n<0?"":sk?" skip":done?" done":q?"":n===f.idx?(worked?" now":" here"):""}${tg?" together":""}" title="${esc(l)}">${esc(l)}<small>${sk?"not needed":q?"queued":tg?"together":"&nbsp;"}</small></div>`}).join("");
+    return `<div class="step${n<0?"":sk?" skip":done?" done":q?"":n===f.idx?(worked?" now":" here"):""}${tg?" together":""}" title="${esc(l)}">${esc(l)}<small${tg&&!sk&&!q?' class="tog"':""}>${sk?"not needed":q?"queued":tg?"together":"&nbsp;"}</small></div>`}).join("");
   const eta=f.eta!=null?`<div class="lbl">Live in</div><div class="big" data-eta="${f.eta}">${f.eta>Date.now()?dur(f.eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(f.eta)}</div>`:`<div class="lbl">ETA</div><div class="big">—</div>`;
   const rail=cards.map(i=>{const [c,w]=railState(i);
     return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span><strong>${esc(i.name)}</strong><span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
