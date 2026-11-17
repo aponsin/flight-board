@@ -1,0 +1,2 @@
+PASS (Quick) #C1124 sweep-git-maxbuffer v2: the sweep's git reader runs with a 64 MB buffer; ENOBUFS leaves the repository out with a 'cut' log line, never a partial list. Mutants 4/4. Suite 2870 pass, 0 fail on rerun; the first run had one unrelated load flake (pair-header-lists-all-cards 'could not parse HEAD', 3/3 alone). On main 1674baab.
+signed-by: Checker 2
