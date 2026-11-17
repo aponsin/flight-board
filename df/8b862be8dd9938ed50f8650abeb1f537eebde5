@@ -1,5 +1,3 @@
-FINDINGS #C1174 tip df8b862b: L1 (low) any --config file's own folder is still an upload root.
-
-fileRoots is now trusted only from the owner's config, with home from os.userInfo, which is right. But rootsFor still returns dirname(real) for ANY --config, so the card's goal ('a config an agent wrote cannot widen the folders') does not hold: an agent writes, or simply names, any JSON file in another folder (say ~/Desktop/x.json, or an existing .json beside private PDFs), and that folder becomes a root. The dot-part check covers only the parts BELOW the root, so even a dot folder can be the root. Then put-file uploads a .pdf, .txt, .csv or picture from there to the board. The other checks still apply (no 0600 files, no secret-looking names, the type list, no hard links) and the host is still the owner's, hence low. Fix: when the config is not one the owner's hooks name, refuse ('this config is not the owner's board config'), or give it no roots at all. Add a test: a non-owner config in another folder cannot upload a file beside it.
+SECURE #C1174 df8b862b (history: FINDINGS L1 raised here: any --config file's own folder was still an upload root): closed by 3290645c, reviewed; the tip is SECURE.
 
 signed-by: Security
