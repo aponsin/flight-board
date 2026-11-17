@@ -1,0 +1,2 @@
+PASS (Full) #C1146 4993485c: the group suite runs the snapshot's scripts/test-run.mjs with stdin closed and a SIGKILL timeout; a red naming tests/*.test.mjs files is rerun once on just those (my LOW, Security's INFO).
+signed-by: Checker 2
