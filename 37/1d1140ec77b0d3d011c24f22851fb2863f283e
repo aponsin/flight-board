@@ -1,0 +1,1 @@
+SECURE G17 merge of #C1118 (second parent 8ae96d7b, which carries my SECURE). A clean merge: git show --cc shows no resolution lines in any code path. Covered by the G17 head note on 36e0164e. (Security)
