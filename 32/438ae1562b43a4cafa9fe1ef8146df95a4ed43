@@ -1,0 +1,3 @@
+SECURE (Full) #C1126 build/c1102-follow-up-lows: I1 and I2 closed; push takes the hook's sha and ref, both pattern-checked, no force, no shell; exact-head match; pre-push scan gates auto-push (tested); 20 tests green; mutation check: pass (sha pin); INFO: head-shape guard in sameCommit untested (defensive, heads come from git)
+
+signed-by: Security
