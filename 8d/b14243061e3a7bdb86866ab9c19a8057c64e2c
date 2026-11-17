@@ -1,0 +1,3 @@
+SECURE #C1159 tip: watchLook runs the stale-pin check before roleTick, so an old install never decides or marks a dispatch; settings read unchanged (sha only); a missing settings file is no pin
+
+signed-by: Security
