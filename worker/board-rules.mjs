@@ -1086,6 +1086,31 @@ export function landedUnbuilt({ now, cards, evidence, installStart, unbuiltMs = 
     return { card_id: newest.id, num: newest.num, reason: `${nums} landed at ${mtTime(first)} and no deploy pair holds ${list.length > 1 ? "them" : "it"}: ${who} builds it${key !== newest.id ? ` (pack ${/^[A-Za-z0-9._\/-]{1,100}$/.test(key) ? key : "of its group"})` : ""}` };
   });
 }
+// #C1162 (11-17: #C843 sat paused "until #C827's deploy pair has run" long after #C827 landed, and nobody unpaused it): a card that is paused and names cards in depends_on, every one of
+// which has landed (done, or on main, or live), is one line to Manager: its pause reason has landed, unpause it or close it. The board never unpauses a card by itself. A card paused
+// with no depends_on, one with a dependency still open (or dropped, or unknown to the board), and a dropped or done card are untouched. The words hold ids, not times, so the row is one
+// row per spell: PAUSE_DEP_END ends every such line, and the store drops the row when the line is no longer current (unpaused, or a dependency moved), so a later spell tells again.
+export const PAUSE_DEP_END = ": unpause it or close it";
+export function pausedDepLanded({ cards, evidence }) {
+  const out = [];
+  for (const c of cards ?? []) {
+    if (!c || !Number.isInteger(c.num) || !c.paused || c.dropped || c.done_at) continue;
+    let list = c.depends_on;
+    if (typeof list === "string") { try { list = JSON.parse(list); } catch { continue; } }
+    if (!Array.isArray(list) || !list.length) continue;
+    const deps = list.filter((d) => typeof d === "string" && d !== c.id);
+    if (!deps.length) continue;
+    const landed = deps.map((d) => {
+      const dep = (cards ?? []).find((k) => k && k.id === d);
+      const ev = evidence?.[d];
+      return dep && !dep.dropped && (!!dep.done_at || ev?.onMain === true || ev?.lit?.[0] === "live") ? dep : null;
+    });
+    if (landed.some((d) => !d)) continue;
+    const nums = landed.map((d) => (Number.isInteger(d.num) ? `#C${d.num}` : d.id)).join(", ");
+    out.push({ card_id: c.id, num: c.num, reason: `#C${c.num}'s pause has outlived its dependency: ${nums} ${landed.length > 1 ? "have" : "has"} landed${PAUSE_DEP_END}` });
+  }
+  return out;
+}
 // #C990 (11-11 about 11:40 pm MT, the disk-full outage: the probe could not run, every step kept its clock, and #C964's Checker step turned red as if
 // Checker were stalled): while the probe is silent the team is in an outage, and a step's clock does not run. An outage is { start, end }, the time of the
 // last probe post before the silence and of the first one after it (the open one ends at `now`); worker/board-store.mjs records them (team_outages, 0035).
