@@ -1,0 +1,3 @@
+SECURE (Full) #C1073 ebe30bfb: openDecisionCards (pinned dispatch copy and Worker copy, equal by test). Only ever adds holds, so it fails closed. The store's SQL query is fixed text. My L1 on this commit is closed by 5e1265a3; covered by the card tip 1ea0e762. G14 group head 04b8dfcc0c61.
+
+signed-by: Security
