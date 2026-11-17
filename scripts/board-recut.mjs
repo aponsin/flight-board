@@ -15,6 +15,7 @@ import { mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isSignoff } from "../collector/signoff.mjs";
 
 // Private copies of origin's notes (git reads a notes ref only under refs/notes/); the checkout's own notes refs are never touched.
 export const NOTE_REFS = { checker: "refs/notes/board-recut-checker", security: "refs/notes/board-recut-security" };
@@ -23,7 +24,7 @@ export const CARD_BRANCH = /^build\/([a-z0-9][a-z0-9-]{0,63}?)(?:-v(\d{1,4}))?$/
 const HEX40 = /^[0-9a-f]{40}$/;
 
 // The notes' first lines: Checker's PASS and Security's SECURE, on this exact sha.
-export const signed = (notes) => /^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim()) && /^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim());
+export const signed = (notes) => isSignoff(notes?.checker, "checker") && isSignoff(notes?.security, "security"); // #C1163: collector/signoff.mjs, the one reading of "signed"
 
 // origin's build branches [{ branch, sha }] -> the newest branch of each card: [{ card, n, branch, sha }].
 export function newestPerCard(heads) {

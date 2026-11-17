@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 // Checker 2's F2 LOW on 81d976c4: a static import, so importClosure pins worker/probe-jobs.mjs with this RELEASE_ENTRY (the land numbers are the owner's).
 import { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC, LAND_SUITE_SEC } from "../worker/probe-jobs.mjs";
 import { pinnedCommit } from "./current.mjs";
+import { isSignoff } from "../collector/signoff.mjs";
 // #C1146: the group check (Checker's read of the files two or more cards touch, and one suite run on the head) before a head of two or more cards lands.
 import { GROUP_NOTE_REF, groupFacts, groupVerdict, runGroupSuite, suiteOnSnapshot } from "./group-check.mjs";
 
@@ -56,7 +57,7 @@ export const fragmentListArgs = (main) => ["ls-tree", "--name-only", main, DATA_
 export const addedDatedLines = (diff) => (typeof diff === "string" ? diff.split("\n").filter((l) => DATED_LINE.test(l)).length : null);
 // How many fragments the tree listing holds: docs/DATA.d/<card id>.md, the README and anything else not a card file not counted.
 export const fragmentCount = (listing) => (typeof listing === "string" ? listing.split("\n").filter((p) => /^docs\/DATA\.d\/[a-z0-9][a-z0-9-]*\.md$/.test(p)).length : 0); // lower case only: README.md is not a card file
-export const signed = (notes) => /^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim()) && /^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim());
+export const signed = (notes) => isSignoff(notes?.checker, "checker") && isSignoff(notes?.security, "security"); // #C1163: collector/signoff.mjs, the one reading of "signed"
 
 // The tips to try, from the facts only. heads: [{ branch, sha, notes: { checker, security }, cards: [ids], onMain, forward, ahead }]
 // (onMain: already an ancestor of main; forward: main is an ancestor of it; ahead: commits it adds to main; dataLines: how many dated lines the line adds

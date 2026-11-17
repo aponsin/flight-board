@@ -65,6 +65,7 @@ export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: 
 // The repo words of a card of the board's own repository that gets a deploy pair when it lands: kept in collector/pairs.mjs (#C1020), which the
 // pinned probe imports; re-exported here for the dispatch's callers.
 import { BOARD_REPO_WORDS } from "./pairs.mjs";
+import { wantsSecurity as wantsSecurityOf } from "./signoff.mjs";
 export { BOARD_REPO_WORDS };
 const ROLE_OF_NOTE = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security" };
 // #C859 slice 3 (stack mode): ctx.stackBranch is the branch of the stack the card's repository has (when its switch is on), named in a
@@ -122,7 +123,8 @@ export function turnsOf(card, e, ctx = {}) {
   // #C1098: the checker phase's reviewer is the one the board's config names for the card's repository (ctx.reviewer, a roster role); none names the phase's lane.
   if (!signed.includes(phase)) out.push({ role: phase === "checker" && typeof ctx.reviewer === "string" ? ctx.reviewer : PHASE_LANES[phase], phase, step: "review", sha, ...where, signed: signedBy });
   // #C897: Security beside Checker for a Full card, or when the probe read a security review as needed from the branch's paths.
-  const wantsSecurity = card.review_level === "Full" || (Array.isArray(e?.waitingFor) && e.waitingFor.includes("security"));
+  // #C1163: one rule with the page's level (compat-view shownLevel): collector/signoff.mjs wantsSecurity, which also wants it for every card of the board's own repository.
+  const wantsSecurity = wantsSecurityOf({ review_level: card.review_level, repo: card.repo, waitingFor: e?.waitingFor });
   if (phase === "checker" && wantsSecurity && !signed.includes("security")) out.push({ role: "Security", phase, step: "review", sha, ...where, signed: signedBy });
   return out;
 }

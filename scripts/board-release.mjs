@@ -30,6 +30,7 @@ import { OWNER_ENTRIES, TASK_FILE, importClosure, pinnedCommit, linkedCommit } f
 import { checkConfig, fullConfig, boardId } from "./config.mjs";
 import { packLabel } from "./pack-label.mjs";
 import { GROUP_MAX, ROLE_WORD, roleLineBase, roleUnsigned, lineBase } from "./self-deploy-gate.mjs";
+import { isSignoff } from "../collector/signoff.mjs";
 
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
 // The release tool and what it runs are the owner's (Security: a release can't loosen the next one). #C1058 (the owner chose A on #T1992, 2026-11-17, replacing
@@ -104,7 +105,7 @@ export const configFromSettings = (text) => {
 export const leadOf = (config, settingsText) => config?.gate?.managerSession || leadFromSettings(settingsText);
 export const leadFromSettings = (text) => /collector\/fence\.mjs'? [^"]*?--send-to ([A-Za-z0-9_-]{1,100})/.exec(String(text ?? ""))?.[1] ?? null;
 
-const signed = (notes) => /^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim()) && /^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim());
+const signed = (notes) => isSignoff(notes?.checker, "checker") && isSignoff(notes?.security, "security"); // #C1163: collector/signoff.mjs, the one reading of "signed"
 
 // #C934: a review of a stack's tip may be a review of its whole line. Both notes on the commit (Checker's PASS, Security's SECURE) say, on their
 // first line, "line from <40-hex sha>" with the same sha: they read every commit from that base (not included) up to this one. Returns the base
@@ -237,12 +238,12 @@ export function carryCheck({ c, o, main, facts }) {
     if ((f.owned ?? []).includes(x.path)) r.push(`${x.path} is in the owner's closure`);
   }
   const n = f.notes(o);
-  if (!/^PASS\b/.test(noteLine(n?.checker))) r.push(`the signed commit ${o.slice(0, 12)} has no PASS from Checker`);
-  if (!/^SECURE\b/.test(noteLine(n?.security))) r.push(`the signed commit ${o.slice(0, 12)} has no SECURE from Security`);
+  if (!isSignoff(n?.checker, "checker")) r.push(`the signed commit ${o.slice(0, 12)} has no PASS from Checker`);
+  if (!isSignoff(n?.security, "security")) r.push(`the signed commit ${o.slice(0, 12)} has no SECURE from Security`);
   for (const s of f.siblings ?? []) {
     const ck = noteLine(s.notes?.checker), sc = noteLine(s.notes?.security);
-    if (ck && !/^PASS\b/.test(ck)) r.push(`${s.sha.slice(0, 12)} of the same card has a Checker note that is not PASS: "${ck.slice(0, 60)}"`);
-    if (sc && !/^SECURE\b/.test(sc)) r.push(`${s.sha.slice(0, 12)} of the same card has a Security note that is not SECURE: "${sc.slice(0, 60)}"`);
+    if (ck && !isSignoff(ck, "checker")) r.push(`${s.sha.slice(0, 12)} of the same card has a Checker note that is not PASS: "${ck.slice(0, 60)}"`);
+    if (sc && !isSignoff(sc, "security")) r.push(`${s.sha.slice(0, 12)} of the same card has a Security note that is not SECURE: "${sc.slice(0, 60)}"`);
   }
   return r;
 }
@@ -352,8 +353,8 @@ export function verdict({ forward, notes, pinned, changed, owned, settingsChange
   // #C1032: with the run's coverage (every commit of main..tip, per role), its refusals stand in for the tip-only check; without it (the tests' older callers), the tip's notes alone.
   if (coverage) r.push(...coverage.refusals);
   else {
-    if (!/^PASS\b/.test(String(notes?.checker ?? "").split("\n")[0].trim())) r.push(`no PASS from Checker on it in ${NOTES.checker}`);
-    if (!/^SECURE\b/.test(String(notes?.security ?? "").split("\n")[0].trim())) r.push(`no SECURE from Security on it in ${NOTES.security}`);
+    if (!isSignoff(notes?.checker, "checker")) r.push(`no PASS from Checker on it in ${NOTES.checker}`);
+    if (!isSignoff(notes?.security, "security")) r.push(`no SECURE from Security on it in ${NOTES.security}`);
   }
   if (!forward) r.push("it doesn't continue origin/main: rebase it on main and sign it again");
   if (superseded) r.push(`it is superseded: a newer branch of the same card, ${superseded}, is on origin; release that one`);
@@ -430,7 +431,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     // this very tip (its own snapshot) and refuses on red. Nothing is written to a note, and self-deploy still wants real notes.
     let carried = null, carrySuite = null;
     if (!signed(notes) && forward) {
-      const ownBad = [["checker", /^PASS\b/], ["security", /^SECURE\b/]].some(([k, re]) => notes[k] && !re.test(String(notes[k]).split("\n")[0].trim()));
+      const ownBad = ["checker", "security"].some((k) => notes[k] && !isSignoff(notes[k], k));
       const facts = ownBad ? null : gatherCarry({ quiet, sha, main, owned, noteRef: (who) => `board-release/${who}` });
       carried = ownBad ? { refusals: ["the commit's own note is not PASS/SECURE"] } : facts ? carryFrom({ c: sha, main, facts }) : { refusals: ["no Board-Id trailer naming a card"] };
       if (carried.from) {

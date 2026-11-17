@@ -9,6 +9,7 @@
 import { KNOBS, knobFrom } from "./knobs.mjs";
 import { staleMsOf, PHASES, typedOther, INSTALL_WAIT } from "./board-rules.mjs";
 import { expectedVersions } from "../collector/expected.mjs";
+import { wantsSecurity } from "../collector/signoff.mjs";
 import { applyFiles } from "./file-store.mjs";
 import { applyShips } from "./compat-ships.mjs";
 import { applyThreads } from "./compat-threads.mjs";
@@ -112,9 +113,10 @@ const lanePhase = (c, phase) => (closedCard(c) && phase !== "live" ? undefined :
 // #C1108 (Manager's ruling on the card): the level a card SHOWS reads Full whenever Security's review is in play on it, whatever was typed: the probe raised the review from the
 // paths the branch touched (a repository's reviewPaths), so a Quick card that Security reviews must not read Quick. Read from the card's evidence only: Security still unsigned
 // (waitingFor), signed (signed) or with a signed-review time (reviews). Typed Full stays Full; the typed value itself is never rewritten, and nothing here lowers anything.
-export function shownLevel(typed, evValue) {
+// #C1163: the same rule as the dispatch's (collector/signoff.mjs wantsSecurity), which also wants Security for every card of the board's own repository (`repo`, the card's repo word).
+export function shownLevel(typed, evValue, repo = null) {
   const e = evValue && typeof evValue === "object" ? evValue : {};
-  const inPlay = (Array.isArray(e.waitingFor) && e.waitingFor.includes("security")) || (Array.isArray(e.signed) && e.signed.includes("security"))
+  const inPlay = wantsSecurity({ repo, waitingFor: e.waitingFor, signed: e.signed })
     || (e.reviews && typeof e.reviews === "object" && !Array.isArray(e.reviews) && Object.hasOwn(e.reviews, "security"));
   return inPlay ? "Full" : typed;
 }
@@ -124,7 +126,7 @@ export function initiativeDoc(c, ev, claim) {
   const skip = c.skip ? json(`{"s":${c.skip}}`).s : undefined;
   const deps = c.depends_on ? json(`{"s":${c.depends_on}}`).s : undefined, issues = c.issues ? json(c.issues) : undefined;
   return prune({
-    id: c.id, name: c.title, num: c.num, summary: c.summary, size: c.size, level: shownLevel(c.review_level, ev?.value), who: c.owner_role, phase: lit,
+    id: c.id, name: c.title, num: c.num, summary: c.summary, size: c.size, level: shownLevel(c.review_level, ev?.value, c.repo), who: c.owner_role, phase: lit,
     status: c.dropped ? "dropped" : c.done_at ? "done" : c.paused ? "paused" : c.blocked_reason ? "blocked" : "active", createdAt: c.created_at, updatedAt: c.updated_at,
     // #C902: a card closed as done by an agent (its work left no branch), with what shows it.
     doneAt: num(c.done_at), doneEvidence: c.done_evidence ?? undefined,

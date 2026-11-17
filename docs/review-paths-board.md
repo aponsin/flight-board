@@ -13,6 +13,10 @@ The owner's config carries the table on the board repository's entry, `collector
 Left out on purpose, until the owner decides on the board: `collector/**` as a whole (only `collector/review-paths.mjs`, the engine that decides who reviews, is listed) stays Quick. Two
 breadth calls are Security's asks and the owner's to prune: `page/**` (the page renders agent text) and the scripts a model acts on (the watches and restart checks).
 
+A card of the board's own repository (repo word `flight-board` or `board`) always has Security's review (#C1163, `securityAlways` in `collector/signoff.mjs`), whatever its typed level
+or the paths it touched: the landing job wants SECURE on every commit, so a Quick card touching only `collector/`, `tests/` or `docs/` can no longer read "every review signed" at ship and
+be left unlanded. The table above still decides the review of every other repository's cards, and of a board card's other reviews.
+
 The level a card shows reads Full whenever Security's review is in play on it (waiting, or signed), whatever was typed (`shownLevel` in `worker/compat-view.mjs`); the typed value is never rewritten.
 
 `tests/review-level-from-paths-board.test.mjs` holds this list against the engine and checks that this block and the test's list are the same. A change to `reviewPaths` takes effect only

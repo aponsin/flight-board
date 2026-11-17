@@ -15,6 +15,7 @@ import { resolve, dirname, join, basename, posix } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { pinnedDir } from "./hooks.mjs";
+import { isSignoff } from "../collector/signoff.mjs";
 
 export const NOTES_REF = "refs/notes/security";
 // What the owner's install runs, pinned in the settings: the gate's hooks, the refresh hook, the fence and the memory hook. Everything
@@ -46,7 +47,7 @@ export function importClosure(entries, read) {
 // install's files (importClosure of OWNER_ENTRIES); changed: the files that differ from the commit the settings pin.
 export function judge({ onMain, note, changed, owned = [] }) {
   if (!onMain) return { ok: false, reason: "not on origin/main: merge it first" };
-  if (!/^SECURE\b/.test(String(note ?? "").split("\n")[0].trim())) return { ok: false, reason: `no SECURE note on it in ${NOTES_REF}: Security signs first` };
+  if (!isSignoff(note, "security")) return { ok: false, reason: `no SECURE note on it in ${NOTES_REF}: Security signs first` };
   const files = changed ?? [];
   return { ok: true, ownerFiles: files.filter((f) => owned.includes(f)), taskChanged: files.includes(TASK_FILE) };
 }
@@ -64,7 +65,7 @@ export function goesLive(changed, ownerFiles = []) {
 // pack moves the link to its commit the link may already be at a later one that has it. The link stays there when that
 // later commit is on origin/main and signed SECURE; anything else moves to sha, as before.
 export function linkMove({ sha, before, beforeHasSha, beforeOnMain, beforeNote }) {
-  const keep = Boolean(before) && before !== sha && beforeHasSha && beforeOnMain && /^SECURE\b/.test(String(beforeNote ?? "").split("\n")[0].trim());
+  const keep = Boolean(before) && before !== sha && beforeHasSha && beforeOnMain && isSignoff(beforeNote, "security");
   return keep ? "keep" : "move";
 }
 
