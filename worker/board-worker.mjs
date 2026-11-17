@@ -96,7 +96,22 @@ const bare = (status, headers = {}) => new Response(null, { status, headers });
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 const text = (result) => ({ content: [{ type: "text", text: JSON.stringify(result) }], structuredContent: result, isError: result?.ok === false });
 
-async function callTool(db, now, who, role, name, args, env = {}) {
+// #C1147 (Security's follow-up on #C1073): on the shared door WHO is only the `as` a caller declares, so any session could post a
+// "decision" as Manager and hold a card (openDecisionHolds trusts the author). A message of kind "decision" is accepted only from a
+// caller the Worker has authenticated: Manager's own door (its secret, no `as`) or the owner's Access role. Two ways to write one: the
+// post tool with kind decision, and Manager's Decision ask that names a thread (askFromTool posts it there). A Decision ask with
+// related_thread "none" makes an ask, not a message, and is as before.
+export function decisionRefusal(door, name, who, args) {
+  if (door !== "shared") return null;
+  // The kind is matched exactly: the hold reads kind = 'decision' only, and any other spelling is refused by the message-shape rule.
+  const asksThread = name === "ask" && who === "Manager" && args?.type === "Decision" && args?.related_thread !== "none";
+  if (!(name === "post" && args?.kind === "decision") && !asksThread) return null;
+  return { rule: "decision-needs-manager-door", detail: `a decision message is accepted only from Manager's own door; ${who} came in on the shared door, where the name is only a claim` };
+}
+
+async function callTool(db, now, who, role, name, args, env = {}, door = "access") {
+  const hold = decisionRefusal(door, name, who, args);
+  if (hold) return text(await refuse(db, now, hold, args?.thread_id ?? args?.card_id, who));
   switch (name) {
     case "file_put": return text(await putFile({ db, bucket: env.FILES, now, who, refuse }, { name: args.name, type: args.type, data: args.data_base64 }));
     case "read_view": return text(viewForTool(await readView(db, now), args ?? {}));
@@ -170,13 +185,13 @@ async function connector(request, env, now, door = "shared") {
       await refuse(env.DB, now, { rule: "as-on-manager-door", detail: "this door is Manager's and takes no `as`" }, null, "Manager");
       return err(-32602, "this door takes no `as`");
     }
-    return ok(await callTool(env.DB, now, "Manager", "agent", tool.name, args, env));
+    return ok(await callTool(env.DB, now, "Manager", "agent", tool.name, args, env, "manager"));
   }
   if (!ROSTER_ROLES.includes(as)) {
     await refuse(env.DB, now, { rule: "as-not-in-roster", detail: `as: ${typeof as === "string" ? as.slice(0, 40) : typeof as}` }, null, "connector");
     return err(-32602, "as is one of the roster's roles");
   }
-  return ok(await callTool(env.DB, now, as, "agent", tool.name, args, env));
+  return ok(await callTool(env.DB, now, as, "agent", tool.name, args, env, "shared"));
 }
 
 async function mcp(request, env, auth, now, parsed) {
