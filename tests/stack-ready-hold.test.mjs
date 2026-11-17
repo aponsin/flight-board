@@ -563,6 +563,11 @@ test("(g2) #C1166: the check is per card over origin/main..HEAD, not the tip's c
   assert.doesNotMatch(why, /card-tip/);
   // The gap: a fold card at the tip used to hide a lower card's line (only the tip's card was read); the landing job reads every card.
   assert.match(dataRefusal(stacked("card-lower", "fold-data-fragments", dated)), /for card card-lower/);
+  // The LOW (Checker 2): the fold card's commit adds the line and a non-fold card sits on top: the refusal names the non-fold card, not the fold card.
+  const foldBelow = dataRefusal(stacked("fold-data-fragments", "card-tip", dated));
+  assert.match(foldBelow, /for card card-tip/);
+  assert.match(foldBelow, /docs\/DATA\.d\/card-tip\.md/);
+  assert.doesNotMatch(foldBelow, /fold-data-fragments\.md/);
   assert.equal(dataRefusal(stacked("fold-data-fragments", "fold-data-fragments", dated)), null, "the fold card alone adds dated lines as it may");
   assert.equal(dataRefusal(stacked("card-lower", "card-tip", (s) => writeFileSync(join(s.work, "x.txt"), "1"))), null, "nothing added anywhere: it goes");
 });

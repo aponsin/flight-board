@@ -25,6 +25,28 @@ test("the board's own repository is read one way: the probe's pairs.mjs and the 
   assert.equal(probe.isBoardRepo(undefined), false);
 });
 
+// (3, F2 of Checker 2 on 609267eb) the store's own call: syncStalls hands slowWakes the stack switch. Card "c" sits at ship past the slow limit and depends on "d", the same owner's card, pushed
+// and not live: with the switch on the dependency holds nothing, so c is named slow; with it off c is held behind d and is not.
+async function slowFor(stackOn) {
+  const { makeDb } = await import("./helpers/d1-sqlite.mjs");
+  const { createCard, writeEvidence, setStackSwitch } = await import("../worker/board-store.mjs");
+  const { beat, wakeAsk, takeInbox } = await import("./helpers/beating-store.mjs");
+  const db = makeDb(), at = T + worker.SHIP_SLOW_MS + 2 * MIN;
+  for (const f of [{ id: "c1-dep", title: "The dependency", owner_role: "Boardsmith" }, { id: "c2-card", title: "The card", owner_role: "Boardsmith", depends_on: ["c1-dep"] }]) { const r = await createCard(db, T, "Manager", f); assert.ok(r.ok, JSON.stringify(r)); }
+  await writeEvidence(db, T, "probe", "cards.c1-dep", rd("build"));
+  await writeEvidence(db, T, "probe", "cards.c2-card", rd("ship"));
+  assert.equal((await setStackSwitch(db, T, "owner", { repo: "board", stack: stackOn })).ok, true); // set both ways: the switch's default is not the "off" case
+  await beat(db, at - 1000);
+  await wakeAsk(db, at);
+  const num = (await db.prepare("SELECT num FROM cards WHERE id = 'c2-card'").first()).num;
+  return (await takeInbox(db, at + 1000)).stalls.map((s) => s.reason).filter((r) => /is slow with no reason/.test(r) && r.includes(`#C${num} `));
+}
+test("the store passes the stack switch to slowWakes: with it on a card whose same-owner dependency is pushed is named slow, with it off it is held", async () => {
+  const off = await slowFor(false);
+  assert.equal(off.length, 0, `switch off: held behind its dependency: ${JSON.stringify(off)}`);
+  assert.equal((await slowFor(true)).length, 1, "switch on: the dependency is pushed, the card is slow");
+});
+
 // (7) the install the settings pin has one reader: the release job's, the pickup pass's and the dispatch watch's are the same function and agree on every settings text.
 test("the pinned install is read one way: current.mjs, wake-watch.mjs and config.mjs agree on every settings text, and two commits name none", async () => {
   const { pinnedCommit: fromCurrent } = await import("../scripts/current.mjs");

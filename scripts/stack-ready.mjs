@@ -65,7 +65,11 @@ export function dataLineOffender(tryOut) {
   if (cards.size && [...cards].every((c) => FOLD_CARD.test(c))) return null;
   for (const c of commits) {
     const diff = tryOut(["show", "-U0", "--no-renames", "--format=", c.sha, "--", DATA_FILE]);
-    if (typeof diff === "string" && addedDatedLines(diff) > 0) return { sha: c.sha, card: c.cards.at(-1) ?? null };
+    if (typeof diff === "string" && addedDatedLines(diff) > 0) {
+      // A fold card's own line is no fault; what the landing job refuses is the non-fold card on the same head, so that one is named (Checker 2's LOW): its fragment file is the way out.
+      const card = c.cards.at(-1) ?? null;
+      return { sha: c.sha, card: card && FOLD_CARD.test(card) ? [...cards].find((x) => !FOLD_CARD.test(x)) ?? card : card };
+    }
   }
   return { sha: null, card: [...cards].find((c) => !FOLD_CARD.test(c)) ?? null };
 }

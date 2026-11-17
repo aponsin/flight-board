@@ -11,6 +11,9 @@ export function boardIdsOf(message) {
   if (!text) return [];
   const paragraphs = text.split(/\n[ \t]*\n/);
   const last = paragraphs.length > 1 ? paragraphs[paragraphs.length - 1] : "";
+  // Git counts the last paragraph as a trailer block only when every line in it is a trailer, a folded line, a "#" comment or a "(cherry picked from ...)" line (F1, Checker 2): prose
+  // above or a "---" below the Board-Id line makes it no trailer at all, and the landing job reads none.
+  for (const line of last.split("\n")) if (!/^([A-Za-z0-9-]+[ \t]*:|[ \t]|#|\(cherry picked from )/.test(line)) return [];
   const out = [];
   let open = null;
   for (const line of last.split("\n")) {
