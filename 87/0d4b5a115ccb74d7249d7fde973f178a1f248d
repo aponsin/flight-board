@@ -1,0 +1,3 @@
+SECURE group head ops-knobs-baseline-rest (#C1113), on top of b45aae0d (signed): the lint baseline and its OPS_BASELINE_WRITE rewrite are retired with a test that keeps them gone; knobs.mjs changes a comment only; no runtime change
+
+signed-by: Security
