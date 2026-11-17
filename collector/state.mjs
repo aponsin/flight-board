@@ -661,6 +661,14 @@ export function annotatedOn(repo, ref) {
   }
   return memo.get(ref);
 }
+// #C890 (half 2 of #C863, the #C731 case): a part of a card is named by a commit sha cited in the card's next_note, 7 to 40 hex characters (lower case, as git prints it).
+// A word is a sha only if it has a digit and a letter a to f (so "defaced", a date or a long number is not one), at most 10 of them. Pure: the note in, the list out.
+export function citedShas(note) {
+  if (typeof note !== "string") return [];
+  const out = [];
+  for (const m of note.matchAll(/(?<![0-9A-Za-z])[0-9a-f]{7,40}(?![0-9A-Za-z])/g)) if (/[0-9]/.test(m[0]) && /[a-f]/.test(m[0]) && !out.includes(m[0])) out.push(m[0]);
+  return out.slice(0, 10);
+}
 function tipState(card, tip, repo, config, now, declared, cover = null) {
   // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
   // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
@@ -689,10 +697,13 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   // #C897: the reviews from the paths the branch changed since it left main, when the repository has a reviewPaths table.
   const needs = !onMain && !bare ? reviewsFromPaths(card, cfg, reviewsFor(card, cfg), repo.reviewPaths, branchPaths(repo, mainRef, tip.sha)) : null;
-  const phase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed, ...(needs ? { needs } : {}) }, cfg);
+  const readPhase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed, ...(needs ? { needs } : {}) }, cfg);
+  // #C890: a card that would read live while a commit cited in its next_note is not an ancestor of main (or is no commit the repository knows) is held at ship, naming the missing shas.
+  const partsMissing = readPhase === config.collector.livePhase && typeof repo.git === "function" ? citedShas(card.nextNote).filter((s) => !ok(() => repo.git(["merge-base", "--is-ancestor", s, mainRef]))) : [];
+  const phase = partsMissing.length ? config.collector.shipPhase : readPhase;
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
-  const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed });
+  const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed: deployed && !partsMissing.length });
   // #C731 B4b: derive.mjs's readyAt, firm and waitingFor. A phase read as build is not firm (a head with no trailer or sign-off,
   // or a bare branch); otherwise readyAt is the head's time, and a tip still in review lists the reviews unsigned on it.
   const build = phase === config.collector.buildPhase;
@@ -717,6 +728,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
     ...(findings.length ? { findings } : {}),
     ...(Object.keys(issueCounts).length ? { issueCounts } : {}),
     ...(behindMain ? { behindMain: true } : {}),
+    ...(partsMissing.length ? { partsMissing } : {}),
     ...(noInstall ? { noInstall: true } : {}),
     ...(phase && build ? { firm: false } : {}),
     ...(phase && !build && Number.isInteger(head.at) && head.at >= 1577836800000 && head.at <= 4102444800000 ? { readyAt: head.at } : {}),
