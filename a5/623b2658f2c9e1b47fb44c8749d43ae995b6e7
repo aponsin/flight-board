@@ -1,0 +1,2 @@
+PASS (empty) #C1149 a5623b26: start commit, git diff against parent 748fd161 is empty.
+signed-by: Checker 2
