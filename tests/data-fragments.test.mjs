@@ -2,8 +2,8 @@
 // add a line no longer conflict on the end of DATA.md.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync, readdirSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync, readdirSync, copyFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFragment, fragmentBullets, joinData, run } from "../scripts/data-fragments.mjs";
@@ -124,4 +124,31 @@ test("this repository's own docs/DATA.d passes --check, and docs/DATA.md ends wi
   const r = run(["--check"], root);
   assert.equal(r.code, 0, r.out);
   assert.ok(readFileSync(join(root, "docs/DATA.md"), "utf8").endsWith("\n"));
+});
+
+// #C1153 (Checker 2's LOW on #C1152): the print mode (no flag) wrote the folded DATA.md to stdout and then called process.exit, which cut the output at the pipe's
+// 64 KB buffer when the reader was slower than the writer. The script now sets process.exitCode and ends by itself. The reader below holds its first read back,
+// so the pipe fills; it runs a copy of the script in a temp root with a DATA.md well over 64 KB.
+test("print mode writes the whole folded DATA.md to a slow pipe, past 64 KB, and exits with its code (#C1153)", async () => {
+  const D = realpathSync(mkdtempSync(join(tmpdir(), "datafrag-pipe-")));
+  try {
+    mkdirSync(join(D, "scripts")); mkdirSync(join(D, "docs/DATA.d"), { recursive: true });
+    copyFileSync(new URL("../scripts/data-fragments.mjs", import.meta.url), join(D, "scripts/data-fragments.mjs"));
+    const base = `# Data\n\n${Array.from({ length: 3000 }, (_, i) => `- 2026-11-01: an older change number ${i} that is long enough to fill a pipe (#C${i})`).join("\n")}\n`;
+    assert.ok(base.length > 150_000);
+    writeFileSync(join(D, "docs/DATA.md"), base);
+    writeFileSync(join(D, "docs/DATA.d/new-card.md"), `${line("2026-11-17", "the new line (#C9999)")}\n`);
+    const child = spawn(process.execPath, [join(D, "scripts/data-fragments.mjs")], { stdio: ["ignore", "pipe", "inherit"] });
+    child.stdout.pause();
+    const chunks = [];
+    const done = new Promise((resolve) => child.on("close", (code) => resolve(code)));
+    await new Promise((r) => setTimeout(r, 400));
+    child.stdout.on("data", (c) => chunks.push(c));
+    child.stdout.resume();
+    const code = await done;
+    const out = Buffer.concat(chunks).toString("utf8");
+    assert.equal(code, 0);
+    assert.ok(out.length > 150_000, `only ${out.length} characters came through`);
+    assert.ok(out.endsWith(`${line("2026-11-17", "the new line (#C9999)")}\n`), "the folded line is at the end: the print was not cut");
+  } finally { rmSync(D, { recursive: true, force: true }); }
 });
