@@ -1,6 +1,8 @@
 // The landing job (#C967): a program lands a flight-board commit that is signed, dry-run clean and not held; Release takes only what it refuses.
 //   node ~/.flight-board/current/scripts/board-land.mjs --config <board.config.json> [--dry-run]
-// Run from the signed linked copy, like the release tool it calls (board-release.mjs, beside it): that tool does every check and the push
+// Run from the signed linked copy. It calls the release tool of the owner's INSTALLED copy (#C1058, pinnedReleaseTool: <install root>/<the commit his hooks pin>/scripts/
+// board-release.mjs, not the linked copy's, which moves with every release, and never a checkout's), so a changed release tool runs only after his pack moves the pin.
+// That tool does every check and the push
 // (Checker's PASS and Security's SECURE on the exact tip, a fast-forward of origin/main, no newer -vN of the card, nothing the owner's install
 // pins, the Board-Id trailers, the page). This job adds three things around it:
 //   1. which tips to try: origin's build/* branches that continue main, carry a Checker PASS and a Security SECURE on the exact tip (the first
@@ -20,6 +22,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 // Checker 2's F2 LOW on 81d976c4: a static import, so importClosure pins worker/probe-jobs.mjs with this RELEASE_ENTRY (the land numbers are the owner's).
 import { JOBS, LAND_TIP_SEC, LAND_MARGIN_SEC } from "../worker/probe-jobs.mjs";
+import { pinnedCommit } from "./current.mjs";
+
+// #C1058 (the owner chose A on #T1992): the release tool this job starts is the one in the owner's installed copy, <install root>/<the commit his hooks pin>/scripts/,
+// never the one beside this file (the linked copy moves with every release) and never a checkout's. So a changed release tool runs only after his install moves the pin.
+// Returns { file } or { why } (no pin in his settings, or the pinned copy has no release tool).
+export function pinnedReleaseTool(settingsText, installRoot, exists = existsSync) {
+  const pin = pinnedCommit(settingsText);
+  if (!pin) return { why: "the owner's settings name no single pinned commit for the hooks" };
+  const file = join(installRoot, pin, "scripts", "board-release.mjs");
+  return exists(file) ? { file, pin } : { why: `the owner's installed copy ${pin.slice(0, 12)} has no scripts/board-release.mjs` };
+}
 
 export const NOTES = { security: "refs/notes/security", checker: "refs/notes/checker" };
 export const HOLDS_FRESH_MS = 10 * 60e3, MAX_ROUNDS = 10;
@@ -115,6 +128,7 @@ export function landRun({ readFacts, readHolds, release, now = Date.now(), dry =
 }
 
 const readJson = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return null; } };
+const readText = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } };
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const args = process.argv.slice(2), dry = args.includes("--dry-run"), ci = args.indexOf("--config");
@@ -145,8 +159,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     });
     return { main, heads };
   };
+  const tool = pinnedReleaseTool(readText(join(homedir(), ".claude", "settings.json")), join(homedir(), ".flight-board", "install"));
+  if (!tool.file) { console.log(`NOT RUN: ${tool.why}: the landing job starts only the release tool of the owner's installed copy`); process.exit(1); }
   const release = (sha, dryRun) => {
-    const r = spawnSync(process.execPath, [join(self, "board-release.mjs"), sha, ...(dryRun ? ["--dry-run"] : [])], { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+    const r = spawnSync(process.execPath, [tool.file, sha, ...(dryRun ? ["--dry-run"] : [])], { cwd: repo, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
     return { code: r.status ?? 1, text: `${r.stderr ?? ""}\n${r.stdout ?? ""}` };
   };
   // #C975: the scheduled run's time budget (worker/probe-jobs.mjs: the land cadence's limit less a margin, and one tip's worst case).

@@ -80,7 +80,9 @@ export function neverRun(folder, n) {
 // Security R1b on ab5355a: the entries are every script scripts/hooks.mjs can write into settings.json (cmd("...")), plus the scripts the gate tells every
 // agent to run from the pinned copy (scripts/wake-watch.mjs, named in gate/wake.mjs) and the collector's fence; HOOK_READS are files the closure reads
 // at run time without importing them (scripts/build-page.mjs reads page/board.template.html through import.meta.url). A name absent at the sha is skipped.
-export const HOOK_ENTRIES = ["gate/stop.mjs", "gate/publish.mjs", "collector/fence.mjs", "scripts/wake-watch.mjs"];
+// #C1058: the release tool too. The landing job starts the copy in the owner's installed folder (the one his hooks pin), which moves only when the hooks step moves the pin,
+// so a pack that carries a changed release tool, or a file it imports, needs that step.
+export const HOOK_ENTRIES = ["gate/stop.mjs", "gate/publish.mjs", "collector/fence.mjs", "scripts/wake-watch.mjs", "scripts/board-release.mjs"];
 export const HOOK_READS = ["page/board.template.html"];
 export const HOOK_PINNED = /^(hooks\/|scripts\/hooks\.mjs$)/;
 // The files at `sha` the two entries import, relative imports followed (static and dynamic), entries included: a Set of repo paths.
