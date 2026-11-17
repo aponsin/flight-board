@@ -1,7 +1,7 @@
 # Ops knobs: the triage of the constants that were on the lint baseline (#C1113)
 
 The lint (tests/ops-knobs-lint.test.mjs) wants every bare time or interval constant to be a setting (worker/knobs.mjs), on its FIXED list with a reason, or on the frozen
-baseline (tests/ops-knobs-baseline.json). This is the one-time pass over the constants the baseline held when #C1113's rest began (slices 1 and 2 had already moved four).
+baseline (tests/ops-knobs-baseline.json, retired by #C1113: the file and its rewrite switch are gone, and a test fails if it returns). This is the one-time pass over the constants the baseline held when #C1113's rest began (slices 1 and 2 had already moved four).
 Each verdict was made from the constant's own declaration and the comment around it. The rule: lean towards FIXED, and make a setting only where someone has already wanted to
 tune it. Nobody has wanted to tune any of these, so every one is FIXED. A FIXED name is matched across the repository, so a later constant of the same name is exempt too; a
 constant that needs tuning later gets its own card, and moving one to a setting needs the owner's pack when its file is pinned. Putting a name on FIXED changes only the lint test.
