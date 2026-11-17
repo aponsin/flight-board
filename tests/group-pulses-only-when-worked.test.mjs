@@ -72,6 +72,23 @@ test("#C1051: a member already read live counts as past Land; with a landed memb
   assert.equal(cls(allLive, "Live"), "step here");
 });
 
+// #C1102 (d) (the owner, 11-16 ~1:35 pm:#C1093 and #C1100 showed in build though they were built and held until g13's turn): a card whose head carries the stack-ready waiting note
+// (the probe's builtWaiting) reads "Built, waiting", and a group with only such cards is not being built: no tile pulses. The next push has no note and reads as building again.
+test("#C1102 (d): a built card held for its group reads Built, waiting, and its group does not pulse; without the note it reads Building and pulses", () => {
+  const raw = [card("held", 1, { branch: "build/held" })];
+  const live = (extra) => ({ held: { phase: "build", headSha12: "aaaaaaaaaaaa", onMain: false, seen: ["build"], ...extra } });
+  const agents = { Boardsmith: working("held") };
+  const waiting = board(raw, { cards: live({ builtWaiting: true }), agents }).row();
+  assert.match(waiting, /<span class="state done">Built, waiting<\/span>/);
+  assert.equal(cls(waiting, "Build"), "step here", "stands still: nothing in the group is being built");
+  const wip = board(raw, { cards: live({}), agents }).row();
+  assert.match(wip, /<span class="state active">Building<\/span>/);
+  assert.equal(cls(wip, "Build"), "step now");
+  const mixed = board([...raw, card("other", 2, { branch: "build/other" })], { cards: { ...live({ builtWaiting: true }), other: { phase: "build", headSha12: "bbbbbbbbbbbb", onMain: false, seen: ["build"] } }, agents: { Boardsmith: working("other") } }).row();
+  assert.equal(cls(mixed, "Build"), "step now", "one card still being built: the group pulses");
+  assert.equal([...mixed.matchAll(/Built, waiting/g)].length, 1, "only the waiting card says so");
+});
+
 test("a group with one card still unlanded is not landed: it stays at Land, and Pack is unlit", () => {
   const raw = [card("a", 1, { phase: "ship", branch: "build/a" }), card("b", 2, { phase: "ship", branch: "build/b" })];
   const html = board(raw, { cards: { a: { phase: "ship", headSha12: "4079cdbd8c9e", onMain: true, seen: ["ship"] }, b: { phase: "ship", headSha12: "522a8532aaaa", onMain: false, seen: ["ship"] } }, agents: { Release: idle } }).row();

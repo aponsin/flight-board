@@ -2467,7 +2467,9 @@ function groupFacts(cards){const ix=i=>notStarted(i)?phaseIndex(BUILD_PHASE):pha
   const idx=Math.min(...cards.map(ix)),etas=cards.map(shownEta).filter(t=>num(t)!=null),starts=cards.map(i=>num(firstPush(i)??i.createdAt)).filter(t=>t!=null);
   return {idx,phase:(PHASES[idx]||[])[0]??null,eta:etas.length?Math.max(...etas):null,started:starts.length?Math.min(...starts):null,who:[...new Set(cards.map(i=>i.who).filter(Boolean))]}}
 // A card's own state on the rail: one word, then its issue chips.
-function railState(i){return i.status==="stuck"?["stuck","Blocked"]:i.status==="paused"?["paused","Paused"]:notStarted(i)?["queued","Queued"]:phaseIndex(i.phase)>phaseIndex(BUILD_PHASE)?["done","Built"]:["active","Building"]}
+// #C1102 (d): a card the builder declared READY and was told to wait (its head carries the stack-ready waiting note, the probe's builtWaiting) reads "Built, waiting", not Building.
+const builtWaiting=i=>{const L=liveCard(i.id);return !!L&&L.builtWaiting===true&&!L.onMain&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)};
+function railState(i){return i.status==="stuck"?["stuck","Blocked"]:i.status==="paused"?["paused","Paused"]:notStarted(i)?["queued","Queued"]:phaseIndex(i.phase)>phaseIndex(BUILD_PHASE)?["done","Built"]:builtWaiting(i)?["done","Built, waiting"]:["active","Building"]}
 function railChips(i){const iss=i.issues||{};return ISSUE_KINDS.map(([k,l])=>{const v=num(iss[k])||0;return v?`<span class="chip">${v} ${issueLabel(l,v)}</span>`:""}).join("")}
 // The owner's up and down on a group (#C1053): shown on the store page only; `at` is {n: its place, of: how many groups} so the top one cannot go up.
 function groupMoveButtons(b,at){if(!STORE||!at)return "";const l=groupLabel(b);
@@ -2490,7 +2492,7 @@ function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(c
   // #C1051 (Checker 2's LOW on #C1050): a member already read live (its card held open by a check date) is past Land too, not short of it.
   const L=cards.map(i=>liveCard(i.id)||{}),landedAll=L.every(x=>x.onMain===true&&(x.phase===SHIP_PHASE||x.phase===LIVE_PHASE));
   const litAll=k=>L.every(x=>(Array.isArray(x.seen)&&x.seen.includes(LIVE_PHASE))||(k==="pack"?x.packed===true:x.installed===true));
-  const worked=cards.some(i=>{if(["paused","stuck","done","queued"].includes(i.status)||notStarted(i))return false;const on=agentsOn(i.id);return on===null||on.length>0});
+  const worked=cards.some(i=>{if(["paused","stuck","done","queued"].includes(i.status)||notStarted(i)||builtWaiting(i))return false;const on=agentsOn(i.id);return on===null||on.length>0});
   const queuedAll=cards.length>0&&cards.every(notStarted);
   const unlit=k=>UNLIT_PHASES.includes(k)&&phaseIndex(k)<0,standAt=landedAll?(shownT.find(([k])=>unlit(k)&&!litAll(k))||[])[0]:null;
   const tiles=shownT.map(([k,l])=>{if(unlit(k))return litAll(k)?packTile({packed:litAll("pack"),installed:litAll("install")},k,l):k===standAt?`<div class="step here" title="${esc(l)}: every card has landed; waiting on the owner's ${k==="pack"?"pack":"install"}">${esc(l)}<small>&nbsp;</small></div>`:unlitTile(l);
@@ -3169,7 +3171,7 @@ const liveOn=(now=Date.now())=>!!probe&&now-probe.board.at>=-60e3&&now-probe.boa
 // A card as the live state reads it: { phase, at, head12, liveVersion }, or null (no fresh reading, an odd value).
 function liveCard(id,now=Date.now()){if(!liveOn(now)||typeof id!=="string"||!LIVE_ID.test(id)||!Object.hasOwn(probe.cards,id))return null;
   const c=probe.cards[id];if(!c||typeof c!=="object"||!PHASES.some(p=>p[0]===c.phase)||typeof c.headSha12!=="string"||!/^[0-9a-f]{12}$/.test(c.headSha12))return null;
-  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,onMain:c.onMain===true,shipping:c.shipping===true,packed:c.onMain===true&&c.packed===true,installed:c.onMain===true&&c.packed===true&&c.installed===true,seen:Array.isArray(c.seen)?c.seen.filter(k=>PHASES.some(p=>p[0]===k)):[],liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null,branches:liveBranches(c.branches)}}
+  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,builtWaiting:c.builtWaiting===true,onMain:c.onMain===true,shipping:c.shipping===true,packed:c.onMain===true&&c.packed===true,installed:c.onMain===true&&c.packed===true&&c.installed===true,seen:Array.isArray(c.seen)?c.seen.filter(k=>PHASES.some(p=>p[0]===k)):[],liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null,branches:liveBranches(c.branches)}}
 // A card's branch records (#C621): each tip read on its own, an odd one skipped; fewer than two good ones is none.
 function liveBranches(list){if(!Array.isArray(list))return [];const names=new Set();
   const out=list.slice(0,6).filter(b=>b&&typeof b==="object"&&typeof b.name==="string"&&LIVE_ID.test(b.name)&&!names.has(b.name)&&PHASES.some(p=>p[0]===b.phase)&&typeof b.headSha12==="string"&&/^[0-9a-f]{12}$/.test(b.headSha12)&&(names.add(b.name),true))

@@ -1,0 +1,5 @@
+#!/bin/sh
+# #C1102 (a): a commit on a build/ branch is pushed to origin at once (never forced, never a reviewer's wake), so the board shows the work within a probe run.
+# It never fails the commit: scripts/post-commit-push.mjs says nothing and exits 0. FB_NO_WIP_PUSH=1 turns it off.
+node scripts/post-commit-push.mjs >/dev/null 2>&1 || true
+exit 0
