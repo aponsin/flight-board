@@ -1,0 +1,2 @@
+PASS #C1065 push-branch-before-first-edit v2: gate/first-push.mjs refuses only a write in a card-branch worktree origin lacks (exit 2), allows .git, detached, non-card branches, outside files, unreachable remotes; hooks.mjs PreToolUse entry with Bash in the matcher; make-pair read-back expects first-push. Mutants 22/23 (survivor: the outer catch, which no input reaches). Suite 2880 pass, 0 fail. On main 1674baab.
+signed-by: Checker 2
