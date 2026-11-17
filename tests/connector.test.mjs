@@ -85,10 +85,10 @@ test("the connector offers only the agents' tools, each with a required `as` tha
 test("read_view on both doors lists owner_role, thread_id and summary besides `as` (#C1101)", async () => {
   const { rpc } = make();
   const shared = (await rpc("tools/list")).result.tools.find((t) => t.name === "read_view");
-  assert.deepEqual(Object.keys(shared.inputSchema.properties).sort(), ["as", "owner_role", "summary", "thread_id"]);
+  assert.deepEqual(Object.keys(shared.inputSchema.properties).sort(), ["as", "message_id", "owner_role", "summary", "thread_id"]);
   assert.equal(shared.inputSchema.additionalProperties, false);
   const mgr = (await rpc("tools/list", undefined, MSECRET)).result.tools.find((t) => t.name === "read_view");
-  assert.deepEqual(Object.keys(mgr.inputSchema.properties).sort(), ["owner_role", "summary", "thread_id"], "Manager's door has no `as`");
+  assert.deepEqual(Object.keys(mgr.inputSchema.properties).sort(), ["message_id", "owner_role", "summary", "thread_id"], "Manager's door has no `as`");
 });
 
 test("`as` outside the roster (the owner, a made-up name, nothing) is refused and logged; the owner's tools are not there", async () => {
