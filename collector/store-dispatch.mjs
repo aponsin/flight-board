@@ -32,13 +32,14 @@ export function askCardId(ask, idByNum) {
 // waking the card's owner. A decision message is OPEN until the owner has written in that thread after it (or the thread's later message is marked resolved). It names its card by the
 // "Card: <id>" line the store adds when the Decision carried a card_id, else by the one #C<n> its first line names (askCardId). A card the view does not hold names none. Pure.
 // Returns the Set of card ids with an open decision. idByNum: the view's cards, number to id.
-export function openDecisionCards(view, idByNum) {
+// Security's L1 (17174f9b): only the LEAD's decision holds a card; any other role's (or a prompt-injected session's) "decision" holds nothing. An unnamed lead holds nothing (fails closed).
+export function openDecisionCards(view, idByNum, lead = "Manager") {
   const out = new Set(), ids = new Set(idByNum.values());
   const msgs = (Array.isArray(view?.threads?.messages) ? view.threads.messages : []).filter((m) => m && typeof m.thread_id === "string" && Number.isFinite(m.created_at));
   const settledAt = new Map(); // thread id -> the time of its newest owner message or resolved message
   for (const m of msgs) if (m.author === "owner" || m.resolved) settledAt.set(m.thread_id, Math.max(settledAt.get(m.thread_id) ?? -Infinity, m.created_at));
   for (const m of msgs) {
-    if (m.kind !== "decision" || m.author === "owner" || (settledAt.get(m.thread_id) ?? -Infinity) >= m.created_at) continue; // a resolved decision is settled by itself (settledAt counts it)
+    if (m.kind !== "decision" || typeof lead !== "string" || !lead || m.author !== lead || (settledAt.get(m.thread_id) ?? -Infinity) >= m.created_at) continue; // a resolved decision is settled by itself (settledAt counts it)
     const body = String(m.body ?? ""), line = body.split("\n")[0];
     const tagged = /^Card: ([a-z0-9][a-z0-9-]{0,63})$/m.exec(body)?.[1];
     const id = tagged && ids.has(tagged) ? tagged : askCardId({ title: line }, idByNum);
@@ -328,7 +329,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // ask, or waiting on someone else, take the agent's only turn and then be dropped: the agent was woken for nothing and its 22 other cards lost theirs.
   const askedCards = new Set();
   for (const a of Array.isArray(view?.asks) ? view.asks : []) if (a && typeof a.card_id === "string" && a.closed_at == null && a.answered_at == null) askedCards.add(a.card_id);
-  const decided = openDecisionCards(view, idByNum); // #C1073: a decision open on a thread holds its card as an open ask does
+  const decided = openDecisionCards(view, idByNum, lead); // #C1073: a decision open on a thread holds its card as an open ask does
   for (const id of decided) askedCards.add(id);
   const notStarted = (k) => k.turns.some((t) => t.step === "build" && !t.sha) && !askedCards.has(k.id) && !(typeof k.waitingOn === "string" && k.waitingOn.trim() && !k.waitingOn.trim().startsWith(k.who));
   // The same order as the store's (worker/board-rules.mjs queueRank; a held card was skipped above): at one place a card the owner placed comes

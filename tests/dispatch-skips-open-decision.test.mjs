@@ -64,6 +64,17 @@ test("only an owner message after the decision, or a resolved one, closes it: no
   assert.equal(who(world({ cards: [c1071], messages: [{ ...dec, author: "owner" }] })).length, 1, "a message of the owner is never a decision to the owner");
 });
 
+test("Security's L1: only the lead's decision holds a card; a decision posted by any other role holds nothing", () => {
+  for (const author of ["Boardsmith", "Checker", "Security", "Release", "someone-else"]) {
+    const v = world({ cards: [c1071], messages: [decision("t", `${TITLE}\n\nCard: pick-card`, { author })] });
+    assert.deepEqual(who(v), ["pick-card:Boardsmith:build"], `a decision from ${author} does not park the card`);
+  }
+  const idByNum = new Map([[1071, "pick-card"]]), msgs = [decision("t", "#C1071: x", { author: "Boardsmith" })];
+  assert.deepEqual([...openDecisionCards({ threads: { messages: msgs } }, idByNum)], [], "default lead: Manager only");
+  assert.deepEqual([...openDecisionCards({ threads: { messages: [decision("t", "#C1071: x", { author: "" })] } }, idByNum, "")], [], "no lead named: fails closed, even for a message with no author");
+  assert.deepEqual([...openDecisionCards({ threads: { messages: [decision("t", "#C1071: x", { author: "Boss" })] } }, idByNum, "Boss")].length, 1, "the named lead's decision holds");
+});
+
 test("openDecisionCards: pure; the cards of the open decisions, malformed rows ignored", () => {
   const idByNum = new Map([[1071, "pick-card"], [1072, "two"]]);
   const view = { threads: { messages: [decision("a", "#C1071: x"), decision("b", "y\n\nCard: two"), decision("c", "z\n\nCard: unknown-card"), null, { thread_id: 7 }, { ...decision("d", "#C1071: q"), created_at: "now" }] } };
@@ -88,7 +99,7 @@ test("the Worker's copy of openDecisionCards reads the same cards as the collect
   const messages = [
     decision("a", "#C1071: x"), decision("b", "y\n\nCard: two"), decision("c", "z\n\nCard: unknown-card"), decision("d", "#C1071 and #C1072: both?"),
     decision("e", "#C1073: answered"), owner("e", NOW - 5 * MIN), { ...decision("f", "#C1071: resolved"), resolved: 1 }, { ...decision("g", "#C1071: not a decision"), kind: null },
-    { ...decision("h", "#C1071: owner's own"), author: "owner" }, null, { thread_id: 7 }, { ...decision("i", "#C1071: bad time"), created_at: "now" },
+    { ...decision("h", "#C1071: owner's own"), author: "owner" }, { ...decision("j", "#C1071: another role's"), author: "Checker" }, null, { thread_id: 7 }, { ...decision("i", "#C1071: bad time"), created_at: "now" },
   ];
   const mine = [...workerOpenDecisionCards(messages, cards)].sort(), theirs = [...openDecisionCards({ threads: { messages } }, idByNum)].sort();
   assert.deepEqual(mine, theirs);
