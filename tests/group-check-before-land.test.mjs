@@ -203,6 +203,7 @@ test("suiteVerdict: green; red naming the failing tests; a leftover; a timeout; 
   assert.deepEqual(left.files, []);
   assert.equal(suiteVerdict({ status: null, signal: "SIGKILL", error: Object.assign(new Error("spawnSync node ETIMEDOUT"), { code: "ETIMEDOUT" }) }, 144000).line, "the suite ran past 144 s and was stopped");
   assert.match(suiteVerdict({ error: new Error("spawn ENOENT\nx") }, 1).line, /^the suite could not start: spawn ENOENT$/);
+  assert.equal(suiteVerdict({ error: new Error("spawn ENOENT") }, 1).ok, false, "a suite that could not start is never green");
   assert.equal(suiteVerdict({ status: 1 }, 1).line, "exit 1");
   assert.equal(suiteVerdict(undefined, 1).ok, false);
 });
@@ -212,7 +213,8 @@ test("runGroupSuite: green runs once; a red that names failing files reruns only
   const mk = (results) => ({ dir: "/snap", mkdtemp: () => { const d = `/tmp/f${folders.length}`; folders.push(d); return d; }, remove: (d) => removed.push(d), totalMs: 100000, env: { PATH: "/bin", HOME: "/Users/real" }, spawn: (file, args, options) => { calls.push({ args, timeout: options.timeout, home: options.env.HOME }); return results.shift(); } });
   assert.deepEqual(runGroupSuite(mk([{ status: 0 }])), { ok: true, line: "green" });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].timeout, 100000 * FIRST_RUN_SHARE);
+  assert.equal(FIRST_RUN_SHARE, 0.8);
+  assert.equal(calls[0].timeout, 80000, "the first run gets four fifths of the suite's time");
   assert.notEqual(calls[0].home, "/Users/real");
   assert.deepEqual(removed.sort(), folders.slice().sort(), "both temporary folders removed");
   calls.length = 0; folders.length = 0; removed.length = 0;
