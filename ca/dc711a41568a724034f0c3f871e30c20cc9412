@@ -1,0 +1,1 @@
+SECURE #C1066 v3 cadc711a (tip): v2 (signed 0ae93a89) rebased onto main 12e3ad2d. I checked the range-diff myself: all four commits are '=' (4bf3ba49->870233ba, a964b322->18a8a339, 34f1dbaa->489e7e9d, 0ae93a89->cadc711a), and the tip continues main. My v2 review stands. (Security)
