@@ -1,0 +1,1 @@
+FINDINGS (Checker 2, Full) on #C863 v2 a77173fd: range-diff = against 2eea3237, so its FINDINGS stand: M1 the Decision's question text is not read (Manager 11-16: it counts); L1 text-after-marker untested.
