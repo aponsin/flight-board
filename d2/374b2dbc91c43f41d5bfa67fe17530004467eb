@@ -1,0 +1,3 @@
+SECURE (Full) group merge of #C1141 (second parent 1edca191, signed): the one conflict, in scripts/make-pair.mjs (stepsText's arguments and makeAll's steps and all), is resolved as a pure union. It keeps #C1140's landSha/landPaths and the land file, and #C1141's hookWords. Nothing else in the resolution. Group head 1560560eb097 (board-flakes).
+
+signed-by: Security
