@@ -52,6 +52,27 @@ test("a repository with no reviewPaths table says nothing about customer text", 
   assert.ok(!("customerText" in scratch(["strings/en.json"], { security: ["worker/**"] })()), "a table with no language list says nothing either");
 });
 
+// Checker 2's M1: only the language list sets the flag; a branch that matches only the design or the security list does not.
+test("with language, design and security lists, a design-only or security-only path leaves customerText out and a language path sets it", () => {
+  const table = { language: ["strings/**"], design: ["assets/css/**"], security: ["lib/services/**"] };
+  assert.ok(!("customerText" in scratch(["assets/css/site.css"], table)()), "a design-only branch");
+  assert.ok(!("customerText" in scratch(["lib/services/auth.mjs"], table)()), "a security-only branch");
+  assert.ok(!("customerText" in scratch(["assets/css/site.css", "lib/services/auth.mjs"], table)()), "both, still no language path");
+  assert.equal(scratch(["strings/en.json"], table)().customerText, true);
+  assert.equal(scratch(["assets/css/site.css", "strings/en.json"], table)().customerText, true, "a language path among others sets it");
+});
+
+// Checker 2's L1: the word is only ever true, to the schema and to the Worker.
+test("the schema refuses a customerText that is not true, and the Worker leaves the flag alone for one", async () => {
+  const doc = (v) => stateErrors({ v: 1, board: { boardId: "b", at: T0 * 1000, probe: null, pageVersion: null }, cards: { "card-t": { ...scratch(["strings/en.json"])(), customerText: v } }, agents: {} });
+  assert.deepEqual(doc(true), []);
+  for (const v of [false, "yes", 1, null, "true"]) assert.ok(doc(v).some((e) => /customerText/.test(e)), `refused: ${JSON.stringify(v)}`);
+  const db = makeDb();
+  await createCard(db, 1_800_000_000_000, "Manager", { id: "a-card", title: "A card", owner_role: "Builder" });
+  for (const v of ["yes", 1, "true", false]) await writeEvidence(db, 1_800_000_001_000, "probe", "cards.a-card", rd({ customerText: v }));
+  assert.ok(!(await flag(db)), "nothing but true sets it");
+});
+
 const rd = (extra = {}) => ({ lit: ["checker"], phase: "checker", headSha12: "aaaaaaaaaaaa", signed: [], onMain: false, ...extra });
 const flag = async (db) => (await db.prepare("SELECT customer_text AS c FROM cards WHERE id = 'a-card'").first()).c;
 
