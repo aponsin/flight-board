@@ -2,8 +2,8 @@
 // hand-off messages, PostToolUse after them, Stop on the lead's replies (the gate's check, then the collector on demand),
 // UserPromptSubmit on the lead's prompts (the digest).
 // Printed by default; written only with --write, which keeps every other entry and replaces an older flight-board one.
-// --store (#C825, the board on the store): one entry, the Stop hook gate/stop.mjs --store (#C1054 retired the page-publish entry with the old
-// artifact board); the gate, commit, after, digest, publish and refresh entries are removed (withHooks drops every flight-board entry it
+// --store (#C825, the board on the store): the Stop hook gate/stop.mjs --store and (#C1065) the PreToolUse first-push guard gate/first-push.mjs (#C1054 retired the page-publish
+// entry with the old artifact board); the gate, commit, after, digest, publish and refresh entries are removed (withHooks drops every flight-board entry it
 // knows before adding the new ones). The installer has no other remove mode, so --write without --store would reinstall the old gate.
 // Usage: node scripts/hooks.mjs <board.config.json> --pin <signed commit> [--write] [--store] [--retire <text>]... [--settings <file>]
 // [--install-root <folder>]. Run it from a checkout of that commit: the entries it writes are this file's.
@@ -15,7 +15,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 // A flight-board hook, from this checkout or a pinned copy: replaced on every install.
-const MARK = /(?:flight-board|\/[0-9a-f]{40})\/(?:gate\/(?:gate|stop|after|digest|publish|commit)|collector\/refresh)\.mjs/;
+const MARK = /(?:flight-board|\/[0-9a-f]{40})\/(?:gate\/(?:gate|stop|after|digest|publish|commit|first-push)|collector\/refresh)\.mjs/;
 // A path as one shell word, in single quotes (a ' inside written '\''): sh expands nothing in it, so a folder with a
 // space ("Application Support") or a crafted name with $( ) or backticks stays a plain path.
 export const shellQuote = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
@@ -26,7 +26,11 @@ export function hookEntries(repo, configPath, node = process.execPath) {
   const cmd = (file, dir = "gate", more = "") => `${q(node)} ${q(resolve(repo, dir, file))} --config ${q(resolve(configPath))}${more}`;
   // #C1054 (b): no page-publish entry any more. The old artifact board is deleted, so there is no page to guard; an older install's
   // publish.mjs entry is still in MARK, so withHooks removes it on the next install.
-  return { Stop: { hooks: [{ type: "command", command: cmd("stop.mjs", "gate", " --store") }] } };
+  // #C1065: the first-push guard, PreToolUse on file writes: it refuses the first edit on a card branch origin does not have yet. It fails open (never blocks on its own error).
+  return {
+    Stop: { hooks: [{ type: "command", command: cmd("stop.mjs", "gate", " --store") }] },
+    PreToolUse: { matcher: "Edit|Write|MultiEdit|NotebookEdit|Bash", hooks: [{ type: "command", command: cmd("first-push.mjs") }] },
+  };
 }
 
 // settings with the gate's entries in. Every hook whose command holds one of `retire` (an older board gate) goes, and an
