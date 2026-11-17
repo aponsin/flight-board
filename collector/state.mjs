@@ -994,7 +994,7 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
       out[id] = { ...again, stack: field };
     }
     // #C914: stackHold marks a pushed card of this stack-mode repository that no stack-ready signal (scripts/stack-ready.mjs) covers: its head is not
-    // the noted commit or under it. It is a fact for the dispatch, which applies it only to a card with a declared stack partner. Not for a card whose
+    // the noted commit or under it (stack-ready notes the head of every started member of the group or stack it signals, so a member built before the last card is covered at that head, and a later push of it is not). It is a fact for the dispatch, which holds the card's review and build turns (#C1066: every pushed card of a stack-mode repository, not only one with a partner). Not for a card whose
     // head was committed before STACK_HOLD_FROM, one that already carries a review note or findings, or an outsider. The card's `stack` field is left as
     // it is (the page draws it). Same input, same answer: no clock.
     const noted = stackReadyCommits(repo);

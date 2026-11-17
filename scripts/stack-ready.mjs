@@ -6,6 +6,9 @@
 // probe's dispatch job writes it each minute: ids only), finds this card by the Board-Id trailer of HEAD, and
 //   - when an unstarted card of the same builder and repository depends on this card: prints "more queued" and writes NO note;
 //   - otherwise (the last card, a lone card, a card the file does not list): writes the note on HEAD and pushes the notes ref.
+// #C1066: the signal also notes the head of every started member of the group or stack (same batch, or a declared partner either way, same repository) that declared READY (a
+// waiting note in refs/notes/stack-ready-waiting, written when it was told to wait), so a member built before the group was whole is covered at that head; a start push, a later
+// push of it, or a card that joins later, waits for its own signal.
 // A queue file that is missing, unreadable or older than 15 minutes means no wait is possible: the note is written and the line says so. Never a
 // deadlock. There is no flag to remember. Run it inside your checkout, on the build branch, with a clean tree and HEAD's message carrying a Board-Id
 // trailer. It refuses, changing nothing, printing `STACK-READY FAILED: <why>` and exiting 1. It also refuses (#C1047) a tip that would undo main: a file
@@ -16,6 +19,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const SIGNAL_REF = "refs/notes/stack-ready";
+// #C1066 (Checker 2's M1 on 34f1dbaa): a card that ran stack-ready and was told to wait ("more queued" or "waiting for its group") leaves a note on that head in this ref. The probe
+// does not read it as a signal; the final signal of the group notes a member's head only when that exact head carries one, so a member that only made a WIP start push, or pushed
+// again after it waited, is never noted as READY.
+export const WAITING_REF = "refs/notes/stack-ready-waiting";
 export const QUEUE_FRESH_MS = 15 * 60e3;
 
 class Refusal extends Error {}
@@ -69,27 +76,50 @@ export function stackReady({ run, queue = null, now = () => new Date().toISOStri
   const nowMs = Date.parse(now());
   const fresh = !!queue && typeof queue === "object" && Array.isArray(queue.cards) && Number.isFinite(queue.at) && Number.isFinite(nowMs)
     && nowMs - queue.at <= QUEUE_FRESH_MS && queue.at - nowMs <= 60e3;
-  let why = "";
+  let why = "", members = [];
   if (!fresh) why = " (the queue file was missing or stale: no wait was possible)";
   else {
     const me = queue.cards.find((k) => k && k.id === id);
+    // #C1066 (Checker 2's M1): the signal on this head is READY for the whole group or stack that waited for it, so the heads of the members already pushed are noted
+    // too (below): a card of the same batch, or one this card depends on or that depends on it, same repository, started. A later push of a member is a new head the
+    // note does not cover, and a card that joins the group later has no note either: both wait for their own signal.
+    members = me ? queue.cards.filter((k) => k && k.id !== id && k.started === true && k.repo === me.repo
+      && ((typeof me.batch === "string" && me.batch !== "" && k.batch === me.batch) || (Array.isArray(k.dependsOn) && k.dependsOn.includes(id)) || (Array.isArray(me.dependsOn) && me.dependsOn.includes(k.id)))).map((k) => String(k.id)) : [];
     const queued = me ? queue.cards.filter((k) => k && k.id !== id && k.started === false && k.owner_role === me.owner_role && k.repo === me.repo
       && Array.isArray(k.dependsOn) && k.dependsOn.includes(id)).map((k) => String(k.id)) : [];
-    if (queued.length) return { branch, sha, signal: false, queued, line: `STACK-READY OK: pushed ${branch} at ${at12}, more queued (${queued.join(", ")}): no signal` };
+    const wait = () => { tryOut(["fetch", "-q", "origin", `+${WAITING_REF}:${WAITING_REF}`]); const w = tryOut(["notes", `--ref=${WAITING_REF}`, "add", "-f", "-m", `stack-ready-waiting\n${now()}`, "HEAD"]); if (typeof w !== "object") tryOut(["push", "origin", `${WAITING_REF}:${WAITING_REF}`]); };
+    if (queued.length) { wait(); return { branch, sha, signal: false, queued, line: `STACK-READY OK: pushed ${branch} at ${at12}, more queued (${queued.join(", ")}): no signal` }; }
     // #C1021: a card of a batch (a group) is ready only when every open card of that batch is built: the batch is one review and one pack. Any builder,
     // the same repository. The lead pulls a card out of its batch (clears the batch) to send it alone.
     const batch = typeof me?.batch === "string" ? me.batch : "";
     const waiting = batch ? queue.cards.filter((k) => k && k.id !== id && k.batch === batch && k.repo === me.repo && k.started === false && k.held !== true).map((k) => String(k.id)) : [];
-    if (waiting.length) return { branch, sha, signal: false, queued: waiting, line: `STACK-READY OK: pushed ${branch} at ${at12}, waiting for its group ${batch} (${waiting.join(", ")} not built): no signal` };
+    if (waiting.length) { wait(); return { branch, sha, signal: false, queued: waiting, line: `STACK-READY OK: pushed ${branch} at ${at12}, waiting for its group ${batch} (${waiting.join(", ")} not built): no signal` }; }
   }
   // The notes ref is shared by every READY: take what the remote has first, or this checkout's fresh ref would be refused as not a fast-forward.
   // A remote with no such ref yet is fine (nothing to take).
   tryOut(["fetch", "-q", "origin", `+${SIGNAL_REF}:${SIGNAL_REF}`]);
   const noted = tryOut(["notes", `--ref=${SIGNAL_REF}`, "add", "-f", "-m", `stack-ready\n${now()}`, "HEAD"]);
   if (typeof noted === "object") fail(`the branch is pushed but the signal note failed: ${noted.error}`);
+  // The newest remote tip carrying each member's Board-Id trailer (a stale -vN branch of the card is older); a member with no such tip is left out.
+  const noted12 = [];
+  if (members.length) {
+    tryOut(["fetch", "-q", "origin"]);
+    tryOut(["fetch", "-q", "origin", `+${WAITING_REF}:${WAITING_REF}`]);
+    const refs = tryOut(["for-each-ref", "--sort=-committerdate", "--format=%(objectname)", "refs/remotes/origin"]);
+    const tips = typeof refs === "string" ? refs.split("\n").map((l) => l.trim()).filter((l) => /^[0-9a-f]{40}$/.test(l)) : [];
+    for (const m of members) {
+      const tip = tips.find((t) => { const tr = tryOut(["log", "-1", "--format=%(trailers:key=Board-Id,valueonly)", t]); return typeof tr === "string" && tr.split("\n").map((l) => l.trim()).filter(Boolean).at(-1) === m; });
+      if (!tip || tip === sha) continue;
+      if (typeof tryOut(["notes", `--ref=${WAITING_REF}`, "show", tip]) !== "string") continue;
+      // only a head its builder declared READY: it ran stack-ready on exactly this head and was told to wait (a start push, or a push after the wait, carries no such note)
+      const n = tryOut(["notes", `--ref=${SIGNAL_REF}`, "add", "-f", "-m", `stack-ready\n${now()}\nmember of ${id}`, tip]);
+      if (typeof n === "object") fail(`the branch is pushed but the member head ${tip.slice(0, 12)} could not be noted: ${n.error}`);
+      noted12.push(tip.slice(0, 12));
+    }
+  }
   const sent = tryOut(["push", "origin", `${SIGNAL_REF}:${SIGNAL_REF}`]);
   if (typeof sent === "object") fail(`the branch is pushed but the signal could not be pushed: ${sent.error}`);
-  return { branch, sha, signal: true, queued: [], line: `STACK-READY OK: pushed ${branch} at ${at12}, signal written${why}` };
+  return { branch, sha, signal: true, queued: [], noted: noted12, line: `STACK-READY OK: pushed ${branch} at ${at12}, signal written${noted12.length ? `, member heads noted (${noted12.join(", ")})` : ""}${why}` };
 }
 
 // The board config: --config <file> (the same path as in your wake-watch line), else $BOARD_CONFIG. Nothing else is read to find it (the user's

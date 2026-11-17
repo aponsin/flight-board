@@ -39,10 +39,20 @@ test("(a) a pushed card with a declared partner (a later card of the same builde
   assert.deepEqual(who(full), ["c2-next:Boardsmith:build"], "Security is not woken for a held Full card either");
 });
 
-test("(b) no partner: a stackHold card dispatches at once (a lone card needs no note), Security too at Full", () => {
-  assert.deepEqual(who(world({ cards: [card("c1-base")], ev: { "c1-base": held(1) } })), ["c1-base:Checker:review"]);
+// #C1066 (a WIP start push, even an empty one, woke Checker and Security on every re-arm): in a stack-mode repository a pushed tip is Building until the
+// builder's stack-ready signal covers it, with or without a declared partner. The signal is the READY, so only a covered tip goes to the review lanes.
+test("(b) #C1066: no partner needed: a pushed card no signal covers (a WIP start push) wakes no reviewer, Security neither at Full", () => {
+  assert.deepEqual(who(world({ cards: [card("c1-base")], ev: { "c1-base": held(1) } })), [], "a lone WIP push: nobody");
   const full = world({ cards: [card("c1-base", { review_level: "Full" })], ev: { "c1-base": held(1) } });
-  assert.deepEqual(who(full).sort(), ["c1-base:Checker:review", "c1-base:Security:review"]);
+  assert.deepEqual(who(full), [], "Security is not woken either");
+});
+
+test("(b1) #C1066: a WIP push wakes no reviewer; a READY push (the signal covers the tip) wakes the review lanes; a second push after READY without a new signal wakes nobody", () => {
+  const full = (ev) => world({ cards: [card("c1-base", { review_level: "Full" })], ev: { "c1-base": ev } });
+  assert.deepEqual(who(full(held(1))), [], "WIP: no stackHold clear, no review");
+  assert.deepEqual(who(full(pushedCard(1))).sort(), ["c1-base:Checker:review", "c1-base:Security:review"], "READY: the probe sees the signal and sets no stackHold");
+  assert.deepEqual(who(full(held(2))), [], "a second push: a new tip with no signal of its own");
+  assert.deepEqual(who(world({ on: false, cards: [card("c1-base")], ev: { "c1-base": held(1) } })), ["c1-base:Checker:review"], "the switch off is as always");
 });
 
 test("(b2) grandfathered: the probe sets no stackHold for a card pushed before the cutoff, so a partner makes no difference", () => {
@@ -60,17 +70,16 @@ test("(c2) a product-repository card is never held, whatever its evidence says",
   assert.deepEqual(who(v), ["c1-base:Checker:review"]);
 });
 
-test("(c3) the hold lifts by itself once the partner is pushed; a paused, dropped or other builder's dependant is no partner", () => {
+test("(c3) the hold lifts only when the signal covers the tip (the probe clears stackHold), whoever else is pushed or open", () => {
+  const covered = world({ cards: [card("c1-base"), card("c2-next", dep("c1-base"))], ev: { "c1-base": pushedCard(1), "c2-next": pushedCard(2) } });
+  assert.ok(who(covered).includes("c1-base:Checker:review"), "covered: reviewed");
+  // #C1066: a partner, pushed or not, paused, dropped or live, changes nothing for a card the signal does not cover
   const pushedBoth = world({ cards: [card("c1-base"), card("c2-next", dep("c1-base"))], ev: { "c1-base": held(1), "c2-next": pushedCard(2) } });
-  assert.ok(who(pushedBoth).includes("c1-base:Checker:review"));
+  assert.ok(!who(pushedBoth).includes("c1-base:Checker:review"), "a pushed partner does not lift it: only the signal does");
   for (const extra of [{ paused: 1 }, { dropped: 1 }, { blocked_reason: "x" }, { done_at: NOW - MIN }, { owner_role: "Release" }, { depends_on: "[]" }]) {
     const v = world({ cards: [card("c1-base"), card("c2-next", { ...dep("c1-base"), ...extra })], ev: { "c1-base": held(1) } });
-    assert.ok(who(v).includes("c1-base:Checker:review"), `no partner for ${JSON.stringify(extra)}`);
+    assert.ok(!who(v).includes("c1-base:Checker:review"), `held with or without a partner: ${JSON.stringify(extra)}`);
   }
-  const v = world({ cards: [card("c1-base"), card("c2-next", { ...dep("c1-base"), repo: "site-one" })], ev: { "c1-base": held(1) } });
-  assert.ok(who(v).includes("c1-base:Checker:review"), "another repository's card is no partner");
-  const live = world({ cards: [card("c1-base"), card("c2-next", dep("c1-base"))], ev: { "c1-base": held(1), "c2-next": { phase: "live", lit: ["live"] } } });
-  assert.ok(who(live).includes("c1-base:Checker:review"), "a live dependant is no partner");
 });
 
 test("(c4) a held card with a partner still holds back nothing else: another card's review goes", () => {
@@ -112,9 +121,10 @@ test("(r4d) a dependency with nothing pushed still waits; so does one outside th
 });
 
 // Checker F1 on 0c24f58: a card closed as done with no branch (#C902) that depends on a base card is no queued partner, in the dispatch or the file.
-test("(q0) a branchless card closed as done holds nothing: the base card is reviewed, and the queue file does not list the done card", () => {
+test("(q0) a branchless card closed as done is no partner: the queue file does not list it, so stack-ready writes the signal for the base card (until then it is held, #C1066)", () => {
   const v = world({ cards: [card("c1-base"), card("c2-next", { ...dep("c1-base"), done_at: NOW - MIN })], ev: { "c1-base": held(1) } });
-  assert.deepEqual(who(v), ["c1-base:Checker:review"]);
+  assert.deepEqual(who(v), [], "no signal yet: Building");
+  assert.deepEqual(who(world({ cards: v.cards, ev: { "c1-base": pushedCard(1) } })), ["c1-base:Checker:review"], "the signal covers it: reviewed");
   assert.deepEqual(stackQueueFile(v, NOW).cards.map((k) => k.id), ["c1-base"]);
 });
 
@@ -284,6 +294,91 @@ test("(d4) grandfathered by the head's commit time: before STACK_HOLD_FROM nothi
   const m = mix.states(["card-old", "card-new"]);
   assert.equal(m["card-old"].stackHold, undefined);
   assert.equal(m["card-new"].stackHold, true);
+});
+
+// Checker 2's M1 on cd32a559, ced52090 and 34f1dbaa: two cards of one group on two branches. stack-ready writes the signal on the LAST card's head (the group is whole) AND notes the head
+// of each member that DECLARED READY: a member that ran stack-ready and was told to wait leaves a waiting note on that exact head (its own ref, which the probe does not read as a
+// signal). The probe reads only whether a card's own head is covered, so a member that only made a start push, a push after its wait, or a card joining the group later is never
+// covered by another card's signal and waits for its own.
+const twoBranches = (s) => { const one = soloBranch(s, "card-one", 10), two = soloBranch(s, "card-two", 20), other = soloBranch(s, "card-other", 30); return { one, two, other }; };
+const statesOf = (s, cards) => cardStates({ cards, config: cfg, repos: { "": s.repo() }, now: (T0 + 100) * 1000, stacks: [""] });
+const WAITING = "refs/notes/stack-ready-waiting";
+const runOn = (s, branch, queue) => { s.g(["checkout", "-q", branch]); return ready(s, queue); };
+const q = (...cards) => queueOf(cards.map((c) => ({ batch: "g1", started: true, ...c })));
+
+test("(d5) the probe: a signal on one member's head covers only that head; no peer rule", () => {
+  const s = scratch();
+  const h = twoBranches(s);
+  s.signal(h.two);
+  const after = statesOf(s, [{ id: "card-one", batch: "g1" }, { id: "card-two", batch: "g1" }]);
+  assert.equal(after["card-two"].stackHold, undefined, "the signalled head");
+  assert.equal(after["card-one"].stackHold, true, "its group peer is covered only when its own head is noted");
+});
+
+test("(d6) a member that ran stack-ready and waited is noted when the last card signals; a later push of it, a card joining the group, and another group stay held", () => {
+  const s = scratch();
+  const h = twoBranches(s);
+  const first = runOn(s, "build/card-one", q({ id: "card-one" }, { id: "card-two", started: false }));
+  assert.equal(first.signal, false, "waiting for its group");
+  assert.match(execFileSync("git", ["notes", `--ref=${WAITING}`, "show", h.one], { cwd: s.bare, encoding: "utf8" }), /^stack-ready-waiting\n/, "the waiting note is on the head and pushed");
+  assert.deepEqual(stackReadyCommits(s.repo()), [], "a waiting note is no signal");
+  const r = runOn(s, "build/card-two", q({ id: "card-one" }, { id: "card-two" }, { id: "card-other", batch: "g2" }));
+  assert.equal(r.signal, true);
+  assert.deepEqual(r.noted, [h.one.slice(0, 12)], "the member that waited; not the card of another group");
+  assert.match(r.line, /signal written, member heads noted \([0-9a-f]{12}\)$/);
+  s.g(["fetch", "-q", "origin", "+refs/notes/*:refs/notes/flight-board/*"]);
+  assert.deepEqual([...stackReadyCommits(s.repo())].sort(), [h.one, h.two].sort());
+  const cards = [{ id: "card-one", batch: "g1" }, { id: "card-two", batch: "g1" }, { id: "card-other", batch: "g2" }];
+  const on = statesOf(s, cards);
+  assert.equal(on["card-one"].stackHold, undefined, "covered at the head that waited for the group");
+  assert.equal(on["card-two"].stackHold, undefined);
+  assert.equal(on["card-other"].stackHold, true, "another group is not covered");
+  // (a) card-one pushes a WIP fix after the group went READY: a new head, no note, held again
+  s.g(["checkout", "-q", "build/card-one"]); s.commit(40, "a.md", "card-one"); s.g(["checkout", "-q", "main"]); s.sync();
+  assert.equal(statesOf(s, cards)["card-one"].stackHold, true, "(a) a push after READY waits for its own signal");
+  // (b) a new card joins g1 and makes a WIP start push: held
+  soloBranch(s, "card-new", 50);
+  const joined = statesOf(s, [...cards, { id: "card-new", batch: "g1" }]);
+  assert.equal(joined["card-new"].stackHold, true, "(b) a card that joins the group later waits for its own signal");
+  assert.equal(joined["card-two"].stackHold, undefined);
+});
+
+test("(d6b) a member that never ran stack-ready (a start push only), or pushed again after its wait, is not noted and stays held", () => {
+  const s = scratch();
+  const h = twoBranches(s);
+  const r = runOn(s, "build/card-two", q({ id: "card-one" }, { id: "card-two" }));
+  assert.equal(r.signal, true);
+  assert.deepEqual(r.noted, [], "card-one only made a start push: never declared READY, so not noted");
+  s.g(["fetch", "-q", "origin", "+refs/notes/*:refs/notes/flight-board/*"]);
+  assert.equal(statesOf(s, [{ id: "card-one", batch: "g1" }, { id: "card-two", batch: "g1" }])["card-one"].stackHold, true, "stays held");
+  // a waiting head followed by a WIP push: the waiting note is on the old head only
+  const t = scratch();
+  twoBranches(t);
+  runOn(t, "build/card-one", q({ id: "card-one" }, { id: "card-two", started: false }));
+  t.g(["checkout", "-q", "build/card-one"]); const wip = t.commit(40, "a.md", "card-one"); t.g(["push", "-q", "origin", "build/card-one"]);
+  const r2 = runOn(t, "build/card-two", q({ id: "card-one" }, { id: "card-two" }));
+  assert.deepEqual(r2.noted, [], "the head carries no waiting note any more");
+  t.g(["fetch", "-q", "origin", "+refs/notes/*:refs/notes/flight-board/*"]);
+  assert.equal(statesOf(t, [{ id: "card-one", batch: "g1" }, { id: "card-two", batch: "g1" }])["card-one"].stackHold, true, `the WIP head ${wip.slice(0, 7)} is held`);
+});
+
+test("(d7) a declared partner that waited is noted either way; one that is unstarted, of another repository, or never ran stack-ready is not", () => {
+  const s = scratch();
+  const h = twoBranches(s);
+  // card-one and card-other (another repository) each wait for card-two, which depends on both; both wait with a note, card-two signals last and notes only the same repository's
+  const w1 = runOn(s, "build/card-one", queueOf([{ id: "card-one", started: true }, { id: "card-two", started: false, dependsOn: ["card-one", "card-other"] }]));
+  assert.equal(w1.signal, false);
+  const w2 = runOn(s, "build/card-other", queueOf([{ id: "card-other", started: true, repo: "site-one" }, { id: "card-two", started: false, repo: "site-one", dependsOn: ["card-other"] }]));
+  assert.equal(w2.signal, false);
+  const r = runOn(s, "build/card-two", queueOf([{ id: "card-one", started: true }, { id: "card-other", started: true, repo: "site-one" }, { id: "card-two", started: true, dependsOn: ["card-one", "card-other"] }]));
+  assert.deepEqual(r.noted, [h.one.slice(0, 12)], "a started card this one depends on, which waited; not another repository's, though it waited too");
+  const t = scratch();
+  twoBranches(t);
+  const stray = runOn(t, "build/card-two", queueOf([{ id: "card-one", started: true }, { id: "card-two", started: true, dependsOn: ["card-one"] }]));
+  assert.deepEqual(stray.noted, [], "a partner that never ran stack-ready (only a start push) is not noted");
+  const alone = scratch();
+  twoBranches(alone);
+  assert.deepEqual(runOn(alone, "build/card-two", queueOf([{ id: "card-one", started: true }, { id: "card-two", started: true }])).noted, [], "no batch, no dependency: no member");
 });
 
 // ---- the command, against a temp bare remote ----

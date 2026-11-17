@@ -1,6 +1,7 @@
 // #C1021: a card in a batch (a group the lead set) never goes READY alone. 11-12, group test g1-board-view: #C971 was built and #C969 (same batch) was not;
 // no queued card DEPENDED on #C971, so stack-ready fired and #C971 went to review alone. Now stack-ready waits while another open card of the batch is not
-// built, the dispatch counts such a card as a partner (the held card gets no review turn), and the queue file carries the batch. A card with no batch, and a card
+// built, and the queue file carries the batch. (#C1066: a pushed card of a stack-mode repository gets no review turn until a stack-ready signal covers it, so the
+// dispatch no longer counts a batch peer as a "partner"; the probe lifts the hold for the whole batch once one member's head is signalled.) A card with no batch, and a card
 // pulled out of its batch (the lead clears it), behave as before.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -23,14 +24,15 @@ function fakeGit(id = "card-a") {
     if (a[0] === "rev-parse") return `${SHA}\n`;
     return "";
   };
-  return { run, calls, wroteNote: () => calls.some((c) => c.startsWith("notes ")) };
+  // the signal note only: a card told to wait writes a waiting note (#C1066, refs/notes/stack-ready-waiting), which is no signal
+  return { run, calls, wroteNote: () => calls.some((c) => c.startsWith("notes --ref=refs/notes/stack-ready add")), wroteWaiting: () => calls.some((c) => c.startsWith("notes --ref=refs/notes/stack-ready-waiting add")) };
 }
 const queueOf = (cards) => ({ at: T_MS - 60e3, cards: cards.map((k) => ({ owner_role: "Boardsmith", repo: "", dependsOn: [], batch: "", started: false, ...k })) });
-const ready = (queue, id) => { const g = fakeGit(id); const r = stackReady({ run: g.run, queue, now: () => T_NOW }); return { ...r, wroteNote: g.wroteNote() }; };
+const ready = (queue, id) => { const g = fakeGit(id); const r = stackReady({ run: g.run, queue, now: () => T_NOW }); return { ...r, wroteNote: g.wroteNote(), wroteWaiting: g.wroteWaiting() }; };
 
 test("a card of a batch waits while another open card of the batch is not built, even though nothing depends on it", () => {
   const r = ready(queueOf([{ id: "card-a", batch: "g1" }, { id: "card-b", batch: "g1" }]), "card-a");
-  assert.equal(r.signal, false); assert.equal(r.wroteNote, false);
+  assert.equal(r.signal, false); assert.equal(r.wroteNote, false); assert.equal(r.wroteWaiting, true, "a card told to wait leaves a waiting note on its head (#C1066)");
   assert.match(r.line, /^STACK-READY OK: pushed build\/x at [0-9a-f]{12}, waiting for its group g1 \(card-b not built\): no signal$/);
   assert.deepEqual(r.queued, ["card-b"]);
 });
@@ -92,27 +94,23 @@ const world = ({ cards, ev = {} }) => ({
 const who = (v) => dispatchRun(v, { dir: mkdtempSync(join(tmpdir(), "bnra-")), roster: ROSTER, lead: LEAD, now: NOW }).items.map((i) => `${i.card}:${i.role}:${i.step}`);
 const heldEv = (n) => ({ lit: ["checker"], phase: "checker", headSha12: `${n}`.repeat(12), signed: [], onMain: false, stackHold: true });
 
-test("a built card whose batch peer is not built is held: no review turn; the moment the peer is built the hold lifts", () => {
-  const alone = world({ cards: [card("c1-base", { batch: "g1" }), card("c2-peer", { batch: "g1", owner_role: "Boardsmith" })], ev: { "c1-base": heldEv(1) } });
-  assert.deepEqual(who(alone).filter((l) => l.startsWith("c1-base")), [], "no review for the built card while its peer has nothing pushed");
-  const both = world({ cards: [card("c1-base", { batch: "g1" }), card("c2-peer", { batch: "g1", owner_role: "Boardsmith" })], ev: { "c1-base": heldEv(1), "c2-peer": { ...heldEv(2), stackHold: undefined } } });
-  assert.ok(who(both).includes("c1-base:Checker:review"), "peer built: the card is reviewed");
-});
-
-test("without a batch (or pulled out of it) a lone built card is reviewed at once, as before", () => {
-  const solo = world({ cards: [card("c1-base"), card("c2-other", { owner_role: "Boardsmith" })], ev: { "c1-base": heldEv(1) } });
-  assert.ok(who(solo).includes("c1-base:Checker:review"));
-  const pulled = world({ cards: [card("c1-base", { batch: "" }), card("c2-peer", { batch: "g1", owner_role: "Boardsmith" })], ev: { "c1-base": heldEv(1) } });
-  assert.ok(who(pulled).includes("c1-base:Checker:review"));
-  const otherBatch = world({ cards: [card("c1-base", { batch: "g1" }), card("c2-peer", { batch: "g2", owner_role: "Boardsmith" })], ev: { "c1-base": heldEv(1) } });
-  assert.ok(who(otherBatch).includes("c1-base:Checker:review"));
-  const otherRepo = world({ cards: [card("c1-base", { batch: "g1" }), card("c2-peer", { batch: "g1", owner_role: "Boardsmith", repo: "site-one" })], ev: { "c1-base": heldEv(1) } });
-  assert.ok(who(otherRepo).includes("c1-base:Checker:review"), "a peer of another repository is no partner");
-});
-
-test("a finished, dropped or paused peer does not hold the batch", () => {
-  for (const extra of [{ dropped: 1 }, { done_at: 5 }, { paused: 1 }]) {
-    const v = world({ cards: [card("c1-base", { batch: "g1" }), card("c2-peer", { batch: "g1", owner_role: "Boardsmith", ...extra })], ev: { "c1-base": heldEv(1) } });
-    assert.ok(who(v).includes("c1-base:Checker:review"), JSON.stringify(extra));
+// #C1066: the batch wait is stack-ready's alone (above): it writes no signal while a peer is not built, and the dispatch reads only the probe's fact, stackHold
+// (pushed, no signal covers the tip): such a card is Building whoever its peers are, and the moment a signal covers it the probe clears stackHold and it is reviewed.
+test("a built card no signal covers has no review turn, whatever its batch peers are; with the signal on it (no stackHold) it is reviewed", () => {
+  const peers = [
+    ["a peer not built", { batch: "g1" }, { batch: "g1", owner_role: "Boardsmith" }],
+    ["no batch", {}, { owner_role: "Boardsmith" }],
+    ["pulled out of its batch", { batch: "" }, { batch: "g1", owner_role: "Boardsmith" }],
+    ["another batch", { batch: "g1" }, { batch: "g2", owner_role: "Boardsmith" }],
+    ["a peer of another repository", { batch: "g1" }, { batch: "g1", owner_role: "Boardsmith", repo: "site-one" }],
+    ["a dropped peer", { batch: "g1" }, { batch: "g1", owner_role: "Boardsmith", dropped: 1 }],
+    ["a finished peer", { batch: "g1" }, { batch: "g1", owner_role: "Boardsmith", done_at: 5 }],
+    ["a paused peer", { batch: "g1" }, { batch: "g1", owner_role: "Boardsmith", paused: 1 }],
+  ];
+  for (const [name, a, b] of peers) {
+    const noSignal = world({ cards: [card("c1-base", a), card("c2-peer", b)], ev: { "c1-base": heldEv(1) } });
+    assert.ok(!who(noSignal).includes("c1-base:Checker:review"), `${name}: no signal, no review`);
+    const signalled = world({ cards: [card("c1-base", a), card("c2-peer", b)], ev: { "c1-base": { ...heldEv(1), stackHold: undefined } } });
+    assert.ok(who(signalled).includes("c1-base:Checker:review"), `${name}: the signal covers it, so it is reviewed`);
   }
 });
