@@ -1,0 +1,2 @@
+PASS (Full) #C1146 14e1492a: groupFacts tested; pinned-files list names group-check.mjs. Mutants 10/10. No longer the tip; my LOW is fixed in 4993485c.
+signed-by: Checker 2
