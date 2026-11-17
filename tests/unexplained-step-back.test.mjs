@@ -51,6 +51,44 @@ test("a step back with no reason keeps the review reading, marks it unexplained,
   assert.equal((await updateCard(db, NOW + 130e3, "Builder", { id: "a-card", next_note: "working on it" })).ok, true, "an unexplained step back blocks no other write");
 });
 
+// Checker 2's M1 on a7bd1ff5: the wake asks the reviewer to write the FINDINGS note on the held head (A); the probe's reading of the new tip (B) has no `findings` of its own,
+// but counts that note in issueCounts. That rise ends the hold; before the fix the chip stayed, the card stayed at review and the reviewer kept a turn already done.
+test("the hold ends when the reviewer's finding on the held head is counted: the card moves back and asks for the reason in the usual way", async () => {
+  assert.equal(unexplainedStepBack(rd("checker", { rework: "unexplained", reworkCounts: 0 }), rd("build", { headSha12: B, issueCounts: { bugs: 2 } })), false, "a rise above what the hold began with explains it");
+  assert.equal(unexplainedStepBack(rd("checker", { rework: "unexplained", reworkCounts: 2 }), rd("build", { headSha12: B, issueCounts: { bugs: 2 } })), true, "no rise: still held");
+  assert.equal(unexplainedStepBack(rd("checker", { rework: "unexplained" }), rd("build", { headSha12: B, issueCounts: { bugs: 1 } })), false, "a hold with no recorded count began at 0");
+  assert.equal(unexplainedStepBack(rd("checker"), rd("build", { headSha12: B, issueCounts: { bugs: 2 } })), true, "a first hold is not ended by counts already there: the hold records them");
+  const db = await fresh();
+  await read(db, NOW, rd("checker"));
+  await read(db, NOW + 60e3, rd("build", { headSha12: B }));
+  assert.equal((await ev(db)).rework, "unexplained");
+  assert.equal((await ev(db)).reworkCounts, 0);
+  await read(db, NOW + 90e3, rd("build", { headSha12: B }));
+  assert.equal((await ev(db)).rework, "unexplained", "nothing new: still held");
+  await read(db, NOW + 120e3, rd("build", { headSha12: B, issueCounts: { bugs: 2 } }));
+  const e = await ev(db);
+  assert.equal(e.rework, true, "the card is in rework now, with no reason yet: its owner is asked for one");
+  assert.deepEqual(e.lit, ["build"], "and it is at build");
+  assert.equal(e.reworkCounts, undefined);
+  assert.equal(e.actual, undefined);
+  assert.deepEqual(await issues(db), { bugs: 2 }, "the counters filled from the note");
+  assert.ok((await phaseRows(db)).includes("build:start"));
+  // a hold that began with counts already on the reading is not ended by those same counts, only by a rise above them
+  const db2 = await fresh();
+  await read(db2, NOW, rd("checker"));
+  await read(db2, NOW + 60e3, rd("build", { headSha12: B, issueCounts: { bugs: 2 } }));
+  assert.equal((await ev(db2)).rework, "unexplained");
+  assert.equal((await ev(db2)).reworkCounts, 2, "the hold records the counts it began with");
+  await read(db2, NOW + 90e3, rd("build", { headSha12: B, issueCounts: { bugs: 2 } }));
+  assert.equal((await ev(db2)).rework, "unexplained", "the same counts: still held");
+  await read(db2, NOW + 100e3, rd("build", { headSha12: B, issueCounts: { bugs: 1 } }));
+  assert.equal((await ev(db2)).reworkCounts, 2, "the count the hold began with is kept, not lowered by a later reading");
+  await read(db2, NOW + 110e3, rd("build", { headSha12: B, issueCounts: { bugs: 2 } }));
+  assert.equal((await ev(db2)).rework, "unexplained", "back to the same counts: still held, not a rise");
+  await read(db2, NOW + 120e3, rd("build", { headSha12: B, issueCounts: { bugs: 3 } }));
+  assert.equal((await ev(db2)).rework, true, "a rise ends it");
+});
+
 test("a reason attached lets the next reading at that head move the card back, adds 1 to its counter once, and asks for no second reason", async () => {
   const db = await fresh();
   await read(db, NOW, rd("checker"));
@@ -110,4 +148,26 @@ test("a reading that returns to a review phase (the reviewer filed findings) rel
   assert.deepEqual(e.lit, ["checker"]);
   assert.equal(e.rework, true, "findings are a rework that needs its reason, as before");
   assert.equal(e.actual, undefined);
+});
+
+// Checker 2's L1 on a7bd1ff5: migration 0036 on a database that already holds rows (the other tests run it on an empty one).
+test("migration 0036 on a filled database keeps the cards, their reasons, the history rows and their ids and index; 'wording' is refused before and accepted after", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { readFileSync, readdirSync } = await import("node:fs");
+  const dir = new URL("../worker/migrations/", import.meta.url);
+  const files = readdirSync(dir).filter((n) => n.endsWith(".sql")).sort();
+  const sql = new DatabaseSync(":memory:");
+  sql.exec("PRAGMA foreign_keys = ON");
+  for (const f of files.filter((n) => n < "0036")) sql.exec(readFileSync(new URL(f, dir), "utf8"));
+  sql.exec("INSERT INTO cards (id, num, title, rework_reason, created_at, updated_at) VALUES ('c1', 1, 'One', 'bug found in test', 1, 1), ('c2', 2, 'Two', NULL, 1, 1)");
+  sql.exec("INSERT INTO rework_history (card_id, reason, at, who) VALUES ('c1', 'bug found in test', 10, 'Builder'), ('c1', 'review findings', 20, NULL)");
+  assert.throws(() => sql.exec("INSERT INTO rework_history (card_id, reason, at) VALUES ('c1', 'wording', 30)"), /CHECK|constraint/i, "refused before");
+  for (const f of files.filter((n) => n.startsWith("0036"))) sql.exec(readFileSync(new URL(f, dir), "utf8"));
+  assert.deepEqual(sql.prepare("SELECT id, rework_reason FROM cards ORDER BY num").all().map((r) => ({ ...r })), [{ id: "c1", rework_reason: "bug found in test" }, { id: "c2", rework_reason: null }]);
+  assert.deepEqual(sql.prepare("SELECT id, card_id, reason, at, who FROM rework_history ORDER BY id").all().map((r) => ({ ...r })), [{ id: 1, card_id: "c1", reason: "bug found in test", at: 10, who: "Builder" }, { id: 2, card_id: "c1", reason: "review findings", at: 20, who: null }], "rows and ids kept");
+  assert.equal(sql.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'rework_history_card'").all().length, 1, "the index is kept");
+  sql.exec("INSERT INTO rework_history (card_id, reason, at) VALUES ('c1', 'wording', 30)");
+  assert.equal(sql.prepare("SELECT id FROM rework_history WHERE reason = 'wording'").get().id, 3, "the next id follows the old ones");
+  sql.exec("UPDATE cards SET rework_reason = 'wording' WHERE id = 'c2'");
+  assert.equal(sql.prepare("SELECT rework_reason FROM cards WHERE id = 'c2'").get().rework_reason, "wording", "accepted after");
 });

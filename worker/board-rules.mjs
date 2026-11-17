@@ -803,9 +803,14 @@ export function reworkTriggered(prev, next) {
 // draws it red, the dispatch wakes the reviewer to file the finding) and keeps the real reading in `actual`. A reason attached to it (updateCard) records the
 // head it was given for in `reasoned`, and the reading at that head then moves the card back as before. A WIP push before READY is never one: the card
 // was not at a review phase (#C1066). Same guards as reworkTriggered: the first push, a card on main or live, nothing before it.
+// The sum of a reading's issueCounts (the review notes' items the probe counted across the branch's commits): what the hold compares, so a finding filed on the held head ends it.
+export const issueTotal = (c) => (c && typeof c === "object" && !Array.isArray(c) ? Object.values(c).filter((n) => Number.isInteger(n) && n > 0).reduce((a, b) => a + b, 0) : 0);
 export function unexplainedStepBack(prev, next) {
   if (!prev || typeof prev !== "object" || !next || typeof next !== "object") return false;
   if (prev.onMain === true || next.onMain === true || next.lit?.[0] === "live") return false;
+  // Checker 2's M1 on a7bd1ff5: the reviewer's FINDINGS note is written on the HELD head (A), which the probe's reading of the new tip (B) does not carry as `findings`, but does count
+  // in issueCounts (the notes across the branch). A hold ends when that total rises above what the card held at the start of it (`reworkCounts`): the step back is explained.
+  if (prev.rework === "unexplained" && issueTotal(next.issueCounts) > (Number.isInteger(prev.reworkCounts) ? prev.reworkCounts : 0)) return false;
   if (typeof prev.headSha12 !== "string" || prev.headSha12 === "") return false;
   if (Array.isArray(prev.findings) && prev.findings.length > 0) return false;
   if (typeof prev.reasoned === "string" && prev.reasoned !== "" && prev.reasoned === next.headSha12) return false;
