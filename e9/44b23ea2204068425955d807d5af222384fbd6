@@ -1,0 +1,1 @@
+SUPERSEDED #C1104 e944b23e: reviewed as Full (worker/). Closes come only from the probe route (probe role only); the hold UPDATE binds every value. Its UPDATE did not name check_at/hold_until (Checker 2's L1); fixed on 51e2474c. Not for shipping on its own. (Security)
