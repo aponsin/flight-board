@@ -1,0 +1,2 @@
+PASS (Full) #C1068 tip 9c75aedb: delay set on the element after each draw (PULSE_MS 2400 = CSS 2.4s). Mutants 8/10; LOW: the asked and waiting-on-other guards on the together range have no test. Code only; Designer's look finding is separate.
+signed-by: Checker 2
