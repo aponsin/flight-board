@@ -4,11 +4,11 @@
 // choosing run as the owner.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync, symlinkSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { pinnedRoots, dryRun, report, isPinnedCopy } from "../scripts/hooks-check.mjs";
+import { pinnedRoots, dryRun, report, isPinnedCopy, runnableText } from "../scripts/hooks-check.mjs";
 
 const here = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 const CLI = join(here, "scripts", "hooks-check.mjs");
@@ -89,6 +89,30 @@ test("the owner's real settings shapes (Checker on 3ede5a0): ~/ expands, an inst
   assert.equal(r.checked, 2, "the current link and the install copy were checked");
   assert.equal(isPinnedCopy(join(home, ".flight-board", "current"), root), false);
   assert.equal(isPinnedCopy(copy, root), true);
+});
+
+test("a settings.json is read for its hooks' commands only: a permission rule naming current runs nothing and passes, a hook naming current still fails (#C1165 F1)", () => {
+  const { root, cur } = installRoot();
+  const work = mkdtempSync(join(tmpdir(), "settings-"));
+  const cfg = join(work, "board.config.json");
+  writeFileSync(cfg, JSON.stringify(config));
+  const link = join(work, "current");
+  symlinkSync(cur, link); // a real moving link into an install, as ~/.flight-board/current is
+  const rule = `Bash(node ${link}/scripts/pickup-watch.mjs *)`;
+  const hook = (dir) => ({ hooks: { Stop: [{ hooks: [{ type: "command", command: `node '${dir}/gate/stop.mjs' --config '${cfg}'` }] }] } });
+  const onPin = join(work, "settings-pin.json"), onLink = join(work, "settings-link.json");
+  writeFileSync(onPin, JSON.stringify({ permissions: { allow: [rule] }, ...hook(cur) }));
+  writeFileSync(onLink, JSON.stringify({ permissions: { allow: [rule] }, ...hook(link) }));
+  const run = (f) => spawnSync(process.execPath, [CLI, cfg, f], { encoding: "utf8", env: { ...process.env, FLIGHT_BOARD_INSTALL_ROOT: root } });
+  const good = run(onPin);
+  assert.equal(good.status, 0, good.stdout + good.stderr);
+  assert.doesNotMatch(good.stdout, /current/);
+  assert.equal(runnableText(readFileSync(onPin, "utf8")).includes(link), false, "the permission rule is not read");
+  const viaLink = run(onLink);
+  assert.equal(viaLink.status, 1, "a hook on the link is read and refused");
+  assert.match(viaLink.stdout, /CHECK FAILED .*current: not a pinned copy/);
+  assert.equal(runnableText("a task file, not JSON"), "a task file, not JSON");
+  assert.equal(runnableText(JSON.stringify({ permissions: { allow: [rule] } })), JSON.stringify({ permissions: { allow: [rule] } }), "JSON with no hooks is read whole");
 });
 
 test("the command: exit 1 naming the stale copy, 0 when all accept, 2 with nothing to check", () => {

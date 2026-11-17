@@ -21,6 +21,23 @@ export function pinnedRoots(texts, home = homedir()) {
   return [...roots].sort();
 }
 
+// The text of a file that runs something. A settings.json (JSON with a `hooks` object): only the hooks' command strings, because a
+// permissions rule names a path it allows and runs nothing (the owner's rules for ~/.flight-board/current/scripts/pickup-watch.mjs must not fail a
+// pack). Any other file (a task's TASK.md or SKILL.md, or JSON with no hooks): its whole text, as before.
+export function runnableText(text) {
+  let doc;
+  try { doc = JSON.parse(String(text)); } catch { return String(text); }
+  if (!doc || typeof doc !== "object" || Array.isArray(doc) || !doc.hooks || typeof doc.hooks !== "object") return String(text);
+  const cmds = [];
+  const walk = (v) => {
+    if (Array.isArray(v)) { for (const x of v) walk(x); return; }
+    if (!v || typeof v !== "object") return;
+    for (const [k, x] of Object.entries(v)) { if (k === "command" && typeof x === "string") cmds.push(x); else walk(x); }
+  };
+  walk(doc.hooks);
+  return cmds.join("\n");
+}
+
 // Only a pinned copy is ever imported (Security: a line in a file an agent can edit must not get a folder of its choosing
 // run as the owner): the root's real path is exactly <install root>/<40 hex>, a directory this user owns.
 export const INSTALL_ROOT = join(homedir(), ".flight-board", "install");
@@ -72,7 +89,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   let config;
   try { config = JSON.parse(readFileSync(resolve(configPath), "utf8")); } catch (e) { console.error(`CHECK FAILED the config: ${String(e.message).split("\n")[0]}`); process.exit(1); }
   const texts = [];
-  for (const f of files) { try { texts.push(readFileSync(resolve(f), "utf8")); } catch { console.error(`CHECK FAILED cannot read ${f}`); process.exit(1); } }
+  for (const f of files) { try { texts.push(runnableText(readFileSync(resolve(f), "utf8"))); } catch { console.error(`CHECK FAILED cannot read ${f}`); process.exit(1); } }
   const { lines, ok, checked } = report(await dryRun(pinnedRoots(texts), config, process.env.FLIGHT_BOARD_INSTALL_ROOT || INSTALL_ROOT));
   for (const l of lines) console.log(l);
   if (!checked) { console.error("CHECK FAILED no pinned hook found in those files: nothing was checked"); process.exit(2); }
