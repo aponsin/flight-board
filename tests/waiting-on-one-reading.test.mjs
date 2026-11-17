@@ -10,7 +10,9 @@ import { fileURLToPath } from "node:url";
 import { isHeldBy, heldFor } from "../worker/held-by.mjs";
 import * as rules from "../worker/board-rules.mjs";
 import { initiativeDoc } from "../worker/compat-view.mjs";
-import { dispatchRun } from "../collector/store-dispatch.mjs";
+import { dispatchRun, dispatchInput } from "../collector/store-dispatch.mjs";
+import { makeDb } from "./helpers/d1-sqlite.mjs";
+import { createCard, updateCard } from "../worker/board-store.mjs";
 import { dispatchItems } from "../gate/reset.mjs";
 
 const T = 1_800_000_000_000, MIN = 60e3, ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -47,8 +49,11 @@ test("isHeld (blocked or held on someone), the view's heldBy and the dispatch ga
 const ROSTER = ["Manager", "Boardsmith", "Builder", "Checker"], idleNow = { state: "idle", lastActivityAt: T - 2 * MIN, since: T - 2 * MIN };
 const PUSHED = { lit: ["build", "checker"], phase: "checker", headSha12: "abcdef012345", signed: [], onMain: false };
 const row = ([id, batch, pos, extra = {}]) => ({ id, num: Number(id.replace(/\D/g, "")), owner_role: "Boardsmith", review_level: "Quick", waiting_on: null, paused: 0, dropped: 0, repo: "", queue_pos: pos, updated_at: T - MIN, ...(batch ? { batch } : {}), ...extra });
-function both(specs) {
-  const cards = specs.map(row), ev = { "c1-one": PUSHED };
+function viewOf(cards, ev) {
+  return { cards, asks: [], stackSwitch: [{ repo: "board", stack: false, set_by: "default", set_at: 0 }], evidence: { agents: { readAt: T - 5_000, value: { Boardsmith: idleNow, Builder: idleNow, Checker: idleNow, Manager: idleNow } }, ...Object.fromEntries(Object.entries(ev).map(([id, value]) => [`cards.${id}`, { value, readAt: T - 5_000 }])) } };
+}
+function both(specs, ev = { "c1-one": PUSHED }) {
+  const cards = specs.map(row);
   const view = { cards, asks: [], stackSwitch: [{ repo: "board", stack: false, set_by: "default", set_at: 0 }], evidence: { agents: { readAt: T - 5_000, value: { Boardsmith: idleNow, Builder: idleNow, Checker: idleNow, Manager: idleNow } }, ...Object.fromEntries(Object.entries(ev).map(([id, value]) => [`cards.${id}`, { value, readAt: T - 5_000 }])) } };
   const dispatched = dispatchRun(view, { dir: mkdtempSync(join(tmpdir(), "c1164-")), roster: ROSTER, lead: "Manager", now: T }).items.filter((i) => i.role === "Boardsmith").map((i) => i.card)[0] ?? null;
   const lines = rules.stalledWaits({ now: T, cards, evidence: ev, agents: { Boardsmith: { state: "idle", tool: null, card: null, since: T - 40 * MIN }, Manager: idleNow, Builder: idleNow, Checker: idleNow }, openAskCards: new Set(), unansweredAskCards: new Set(), phaseStart: new Map(), endsPassed: new Set(), groupOrder: [], stackOn: false })
@@ -71,6 +76,40 @@ test("a card held on someone raises no 'waits at' stall, the owner's own pointer
   assert.deepEqual(stalls("next is Checker"), [], "held: no stall");
   assert.equal(stalls("").length, 1, "with no hold the same card does raise a stall");
   assert.deepEqual(stalls("Boardsmith: next"), stalls(""), "the owner's own pointer reads as no hold");
+});
+
+// Checker 2's LOW 1 on 72925255: two sites the card names had no test (dropping either survived). The review queue (dispatchInput): a card held for Checker is not in Checker's queue; the stall line's
+// next-card pick for a card in rework (stalledWaits' fixable): a held rework card is not the next card, in the dispatch and in the stall line alike.
+test("the review queue skips a card held for that reviewer, and the next-card pick skips a held rework card", () => {
+  const queue = (w) => dispatchInput(viewOf([row(["c1-one", null, 1, { waiting_on: w }])], { "c1-one": PUSHED }), T, { lead: "Manager", reviewers: null, roster: ROSTER }).queues.Checker ?? [];
+  assert.deepEqual(queue(""), [1], "not held: in Checker's queue");
+  assert.deepEqual(queue("Checker: Full review"), [1], "the pointer names Checker: not held for Checker");
+  assert.deepEqual(queue("waiting on the owner"), [], "held for the reviewer");
+  assert.deepEqual(queue("next is Security"), [], "held for the reviewer");
+  const fix = { lit: ["build", "checker"], phase: "checker", headSha12: "abcdef012345", findings: ["checker"], signed: [], onMain: false };
+  const next = (w) => both([["c3-three", null, 2], ["c6-six", null, 1, { waiting_on: w }]], { "c6-six": fix });
+  assert.deepEqual(next(""), ["c6-six", "c6-six"], "a rework card is the next card in both");
+  assert.deepEqual(next("waiting on the owner"), ["c3-three", "c3-three"], "held: the loose card in both");
+});
+
+test("isHeldBy with an empty role: nothing is exempt, every words-bearing waiting_on holds (Checker 2's LOW 3)", () => {
+  assert.equal(isHeldBy({ owner_role: "", waiting_on: "next is Checker" }), "next is Checker");
+  assert.equal(isHeldBy({ waiting_on: "next is Checker" }), "next is Checker", "no owner role at all");
+  assert.equal(isHeldBy({ owner_role: "Boardsmith", waiting_on: "x" }, ""), "x", "an empty role passed on purpose");
+  assert.equal(isHeldBy({ owner_role: "", waiting_on: "" }), null);
+});
+
+// Checker 2's LOW 2: the store's hold bookkeeping goes by the words, so a create and an update of the same own-pointer write the same held_at and hold_until.
+test("hold bookkeeping is the same on create and update for an own-pointer waiting_on (held_at and hold_until set by the words, not by who they name)", async () => {
+  const db = makeDb();
+  const made = await createCard(db, T, "Manager", { id: "own-ptr", title: "t", owner_role: "Boardsmith", repo: "flight-board", waiting_on: "Boardsmith: next", check_at: null });
+  assert.equal(made.ok, true, JSON.stringify(made));
+  const made2 = await createCard(db, T, "Manager", { id: "own-ptr2", title: "t", owner_role: "Boardsmith", repo: "flight-board" });
+  assert.equal(made2.ok, true, JSON.stringify(made2));
+  assert.equal((await updateCard(db, T + 1, "Manager", { id: "own-ptr2", waiting_on: "Boardsmith: next" })).ok, true);
+  const read = async (id) => await db.prepare("SELECT held_at IS NOT NULL AS h, hold_until IS NOT NULL AS u FROM cards WHERE id = ?").bind(id).first();
+  assert.deepEqual(await read("own-ptr"), await read("own-ptr2"), "created with it and updated to it leave the same bookkeeping");
+  assert.deepEqual(await read("own-ptr"), { h: 1, u: 1 });
 });
 
 // No second copy of the rule: every file that reads a card's words for "who it waits on" goes through held-by.mjs.
