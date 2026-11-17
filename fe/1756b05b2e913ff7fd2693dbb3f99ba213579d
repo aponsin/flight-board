@@ -1,0 +1,1 @@
+SECURE #C1107 fe1756b0 (tip, v2): a rebase onto main 12e3ad2d of signed ba3125e5. I checked the range-diff myself: all 3 commits are '=' (401d8139->d0b38b99, 9f83f9a6->5fd75579, ba3125e5->fe1756b0). My reviews of those stand. (Security)
