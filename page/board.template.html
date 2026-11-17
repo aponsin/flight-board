@@ -2491,9 +2491,11 @@ function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(c
   const L=cards.map(i=>liveCard(i.id)||{}),landedAll=L.every(x=>x.onMain===true&&(x.phase===SHIP_PHASE||x.phase===LIVE_PHASE));
   const litAll=k=>L.every(x=>(Array.isArray(x.seen)&&x.seen.includes(LIVE_PHASE))||(k==="pack"?x.packed===true:x.installed===true));
   const worked=cards.some(i=>{if(["paused","stuck","done","queued"].includes(i.status)||notStarted(i))return false;const on=agentsOn(i.id);return on===null||on.length>0});
+  const queuedAll=cards.length>0&&cards.every(notStarted);
   const unlit=k=>UNLIT_PHASES.includes(k)&&phaseIndex(k)<0,standAt=landedAll?(shownT.find(([k])=>unlit(k)&&!litAll(k))||[])[0]:null;
   const tiles=shownT.map(([k,l])=>{if(unlit(k))return litAll(k)?packTile({packed:litAll("pack"),installed:litAll("install")},k,l):k===standAt?`<div class="step here" title="${esc(l)}: every card has landed; waiting on the owner's ${k==="pack"?"pack":"install"}">${esc(l)}<small>&nbsp;</small></div>`:unlitTile(l);
-    const n=phaseIndex(k),sk=skipAll(k)&&n!==f.idx,done=n<f.idx||(landedAll&&k===SHIP_PHASE);return `<div class="step${n<0?"":sk?" skip":done?" done":n===f.idx?(worked?" now":" here"):""}" title="${esc(l)}">${esc(l)}<small>${sk?"not needed":"&nbsp;"}</small></div>`}).join("");
+    // #C1102 (11-16: G6 read "building" while neither open card had a branch or a step): a group none of whose cards is started has nothing lit; its Build tile says "queued".
+    const n=phaseIndex(k),sk=skipAll(k)&&n!==f.idx,done=n<f.idx||(landedAll&&k===SHIP_PHASE),q=queuedAll&&n===f.idx;return `<div class="step${n<0?"":sk?" skip":done?" done":q?"":n===f.idx?(worked?" now":" here"):""}" title="${esc(l)}">${esc(l)}<small>${sk?"not needed":q?"queued":"&nbsp;"}</small></div>`}).join("");
   const eta=f.eta!=null?`<div class="lbl">Live in</div><div class="big" data-eta="${f.eta}">${f.eta>Date.now()?dur(f.eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(f.eta)}</div>`:`<div class="lbl">ETA</div><div class="big">—</div>`;
   const rail=cards.map(i=>{const [c,w]=railState(i);
     return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span><strong>${esc(i.name)}</strong><span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
