@@ -1,0 +1,3 @@
+SECURE #C1155 tip: changelog.mjs sets process.exitCode instead of process.exit, so stdout drains; tests and a CHANGELOG fragment otherwise
+
+signed-by: Security
