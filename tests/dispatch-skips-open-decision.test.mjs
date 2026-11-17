@@ -33,6 +33,14 @@ test("a card with a decision open on a thread is built for nobody; with the deci
   assert.deepEqual(who(world({ cards: [c1071] })), ["pick-card:Boardsmith:build"], "the control: no decision at all");
 });
 
+test("the held card does not take the owner's one build turn: the next queued card is dispatched instead", () => {
+  const next = card("next-card", 1075);
+  const v = world({ cards: [c1071, next], messages: [decision("t", `${TITLE}\n\nCard: pick-card`)] });
+  assert.deepEqual(who(v), ["next-card:Boardsmith:build"], "the owner has an open decision on #C1071: it is woken for #C1075, not for nothing");
+  v.threads.messages.push(owner("t", NOW - 10 * MIN));
+  assert.deepEqual(who(v), ["pick-card:Boardsmith:build"], "answered: #C1071 is first again");
+});
+
 test("the decision names its card by the Card line, or by the one #C<n> in its first line; a decision about another card holds nothing here", () => {
   const byLine = world({ cards: [c1071], messages: [decision("t", "#C1071: which way?\n\nA or B?")] });
   assert.deepEqual(who(byLine), [], "named by #C1071 in its first line");
@@ -75,11 +83,11 @@ test("an open decision holds a card that is already pushed too, as an open ask d
 
 // ---- the Worker's copy (worker/board-rules.mjs): the same rule, so the idle-agent line never counts or names a card the dispatch holds ----
 test("the Worker's copy of openDecisionCards reads the same cards as the collector's on every case above", () => {
-  const cards = [{ id: "pick-card", num: 1071 }, { id: "two", num: 1072 }];
+  const cards = [{ id: "pick-card", num: 1071 }, { id: "two", num: 1072 }, { id: "three", num: 1073 }];
   const idByNum = new Map(cards.map((c) => [c.num, c.id]));
   const messages = [
     decision("a", "#C1071: x"), decision("b", "y\n\nCard: two"), decision("c", "z\n\nCard: unknown-card"), decision("d", "#C1071 and #C1072: both?"),
-    decision("e", "#C1072: answered"), owner("e", NOW - 5 * MIN), { ...decision("f", "#C1071: resolved"), resolved: 1 }, { ...decision("g", "#C1071: not a decision"), kind: null },
+    decision("e", "#C1073: answered"), owner("e", NOW - 5 * MIN), { ...decision("f", "#C1071: resolved"), resolved: 1 }, { ...decision("g", "#C1071: not a decision"), kind: null },
     { ...decision("h", "#C1071: owner's own"), author: "owner" }, null, { thread_id: 7 }, { ...decision("i", "#C1071: bad time"), created_at: "now" },
   ];
   const mine = [...workerOpenDecisionCards(messages, cards)].sort(), theirs = [...openDecisionCards({ threads: { messages } }, idByNum)].sort();
@@ -90,16 +98,22 @@ test("the Worker's copy of openDecisionCards reads the same cards as the collect
 
 test("the stall line: a card with a decision open on a thread is not an idle agent's queued card; answered, it is again", async () => {
   const T = 1_800_000_000_000, later = T + 20 * MIN;
-  const db = makeDb();
-  await createCard(db, T, "Manager", { id: "pick-card", title: "A card", owner_role: "Boardsmith" });
-  await db.prepare("UPDATE cards SET num = 1071").run();
-  await writeEvidence(db, T, "probe", "agents", { Boardsmith: { state: "idle", lastActivityAt: T, since: T, tool: null, card: null }, Manager: { state: "working", lastActivityAt: later, since: T, tool: "Bash", card: null } });
-  await db.prepare("UPDATE evidence SET read_at = ?").bind(later).run();
-  const post = (id, author, at, kind, body) => db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, kind) VALUES (?, ?, ?, ?, ?, ?)").bind(id, "owner-thread", author, body, at, kind).run();
-  assert.equal((await wakeAsk(db, later)).count, 1, "the control: an idle owner with a queued card wakes Manager");
-  await takeInbox(db, later + 1);
-  await post("m1", "Manager", T + MIN, "decision", "#C1071: which way?\n\nA or B?\n\nCard: pick-card");
-  assert.equal((await wakeAsk(db, later + 2 * MIN)).count, 0, "an open decision holds the card: nothing queued, no wake");
-  await post("m2", "owner", T + 5 * MIN, null, "A");
-  assert.equal((await wakeAsk(db, later + 3 * MIN)).count, 1, "answered: the card is queued again");
+  // a fresh store per case: a stall row, once raised, is kept (not re-told) while it lasts, so one store cannot show "held, then back"
+  const wakes = async (messages) => {
+    const db = makeDb();
+    await createCard(db, T, "Manager", { id: "pick-card", title: "A card", owner_role: "Boardsmith" });
+    await db.prepare("UPDATE cards SET num = 1071").run();
+    await writeEvidence(db, T, "probe", "agents", { Boardsmith: { state: "idle", lastActivityAt: T, since: T, tool: null, card: null }, Manager: { state: "working", lastActivityAt: later, since: T, tool: "Bash", card: null } });
+    await db.prepare("UPDATE evidence SET read_at = ?").bind(later).run();
+    for (const [id, author, at, kind, body] of messages) await db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, kind) VALUES (?, 'owner-thread', ?, ?, ?, ?)").bind(id, author, body, at, kind).run();
+    const n = (await wakeAsk(db, later)).count;
+    return { n, line: n ? (await takeInbox(db, later + 1)).stalls.map((s) => s.reason).join("|") : "" };
+  };
+  const ask = ["m1", "Manager", T + MIN, "decision", "#C1071: which way?\n\nA or B?\n\nCard: pick-card"];
+  const none = await wakes([]);
+  assert.equal(none.n, 1, "the control: an idle owner with a queued card wakes Manager");
+  assert.match(none.line, /^Boardsmith idle since .*, 1 queued, next #C1071$/);
+  assert.equal((await wakes([ask])).n, 0, "an open decision holds the card: nothing queued, no wake");
+  const answered = await wakes([ask, ["m2", "owner", T + 5 * MIN, null, "A"]]); // (the owner's own message also wakes Manager: the stall line is what is asked)
+  assert.match(answered.line, /Boardsmith idle since .*, 1 queued, next #C1071/, "answered: the card is queued again");
 });

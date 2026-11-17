@@ -1103,7 +1103,7 @@ export function openDecisionCards(messages, cards) {
   const settledAt = new Map();
   for (const m of msgs) if (m.author === "owner" || m.resolved) settledAt.set(m.thread_id, Math.max(settledAt.get(m.thread_id) ?? -Infinity, m.created_at));
   for (const m of msgs) {
-    if (m.kind !== "decision" || m.author === "owner" || m.resolved || (settledAt.get(m.thread_id) ?? -Infinity) >= m.created_at) continue;
+    if (m.kind !== "decision" || m.author === "owner" || (settledAt.get(m.thread_id) ?? -Infinity) >= m.created_at) continue; // a resolved decision is settled by itself (settledAt counts it)
     const body = String(m.body ?? ""), named = [...new Set(body.split("\n")[0].match(/#C\d{1,7}\b/g) ?? [])];
     const tagged = /^Card: ([a-z0-9][a-z0-9-]{0,63})$/m.exec(body)?.[1];
     const id = tagged && ids.has(tagged) ? tagged : named.length === 1 ? idByNum.get(Number(named[0].slice(2))) ?? null : null;
