@@ -42,7 +42,7 @@ export function openDecisionCards(view, idByNum, lead = "Manager") {
     if (m.kind !== "decision" || typeof lead !== "string" || !lead || m.author !== lead || (settledAt.get(m.thread_id) ?? -Infinity) >= m.created_at) continue; // a resolved decision is settled by itself (settledAt counts it)
     const body = String(m.body ?? ""), line = body.split("\n")[0];
     const tagged = /^Card: ([a-z0-9][a-z0-9-]{0,63})$/m.exec(body)?.[1];
-    const id = tagged && ids.has(tagged) ? tagged : askCardId({ title: line }, idByNum);
+    const id = tagged && ids.has(tagged) ? tagged : askCardId({ title: line }, idByNum) ?? (ids.has(m.thread_id) ? m.thread_id : null); // else the card whose own thread it is posted in (Checker 2's note)
     if (id && ids.has(id)) out.add(id);
   }
   return out;

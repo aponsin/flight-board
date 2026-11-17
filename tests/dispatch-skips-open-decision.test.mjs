@@ -7,7 +7,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dispatchRun, openDecisionCards } from "../collector/store-dispatch.mjs";
-import { openDecisionCards as workerOpenDecisionCards } from "../worker/board-rules.mjs";
+import { openDecisionCards as workerOpenDecisionCards, openDecisionHolds as workerOpenDecisionHolds } from "../worker/board-rules.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { createCard, writeEvidence, wakeAsk, takeInbox } from "../worker/board-store.mjs";
 
@@ -49,6 +49,11 @@ test("the decision names its card by the Card line, or by the one #C<n> in its f
   assert.deepEqual(who(world({ cards: [c1071], messages: [decision("t", "#C9999: elsewhere\n\nCard: other-card")] })), ["pick-card:Boardsmith:build"], "another card's decision");
   assert.deepEqual(who(world({ cards: [c1071], messages: [decision("t", "Which way?\n\nA or B?")] })), ["pick-card:Boardsmith:build"], "a decision that names no card holds none");
   assert.deepEqual([...openDecisionCards({ threads: { messages: [decision("t", "#C1071 and #C1072: both?")] } }, new Map([[1071, "pick-card"], [1072, "two"]]))], [], "a first line naming two cards names none (askCardId's rule)");
+});
+
+test("a decision posted in a card's own thread (thread id = the card id) with no Card line and no single #C<n> holds that card; in another card's thread it holds nothing", () => {
+  assert.deepEqual(who(world({ cards: [c1071], messages: [decision("pick-card", "Which way?\n\nA or B?")] })), [], "its own thread holds it");
+  assert.deepEqual(who(world({ cards: [c1071], messages: [decision("some-other-thread", "Which way?\n\nA or B?")] })), ["pick-card:Boardsmith:build"], "a thread that is no card holds nothing");
 });
 
 test("only an owner message after the decision, or a resolved one, closes it: not an earlier one, another thread's, nor the lead's own", () => {
@@ -99,22 +104,23 @@ test("the Worker's copy of openDecisionCards reads the same cards as the collect
   const messages = [
     decision("a", "#C1071: x"), decision("b", "y\n\nCard: two"), decision("c", "z\n\nCard: unknown-card"), decision("d", "#C1071 and #C1072: both?"),
     decision("e", "#C1073: answered"), owner("e", NOW - 5 * MIN), { ...decision("f", "#C1071: resolved"), resolved: 1 }, { ...decision("g", "#C1071: not a decision"), kind: null },
-    { ...decision("h", "#C1071: owner's own"), author: "owner" }, { ...decision("j", "#C1074: another role's"), author: "Checker" }, null, { thread_id: 7 }, { ...decision("i", "#C1071: bad time"), created_at: "now" },
+    { ...decision("h", "#C1071: owner's own"), author: "owner" }, { ...decision("j", "#C1074: another role's"), author: "Checker" }, decision("four", "A plain question that names no card"), null, { thread_id: 7 }, { ...decision("i", "#C1071: bad time"), created_at: "now" },
   ];
   const mine = [...workerOpenDecisionCards(messages, cards)].sort(), theirs = [...openDecisionCards({ threads: { messages } }, idByNum)].sort();
   assert.deepEqual(mine, theirs);
-  assert.deepEqual(mine, ["pick-card", "two"]);
+  assert.deepEqual(mine, ["four", "pick-card", "two"], "four: a decision posted in the card's own thread (thread id = the card's id) that names no card holds that card");
+  assert.equal(workerOpenDecisionHolds(messages, cards).get("four"), decision("four", "A plain question that names no card").id, "the holds map names the decision's message id");
   assert.deepEqual([...workerOpenDecisionCards(undefined, undefined)], []);
 });
 
 test("the stall line: a card with a decision open on a thread is not an idle agent's queued card; answered, it is again", async () => {
   const T = 1_800_000_000_000, later = T + 20 * MIN;
   // a fresh store per case: a stall row, once raised, is kept (not re-told) while it lasts, so one store cannot show "held, then back"
-  const wakes = async (messages) => {
+  const wakes = async (messages, activeAt = T) => {
     const db = makeDb();
     await createCard(db, T, "Manager", { id: "pick-card", title: "A card", owner_role: "Boardsmith" });
     await db.prepare("UPDATE cards SET num = 1071").run();
-    await writeEvidence(db, T, "probe", "agents", { Boardsmith: { state: "idle", lastActivityAt: T, since: T, tool: null, card: null }, Manager: { state: "working", lastActivityAt: later, since: T, tool: "Bash", card: null } });
+    await writeEvidence(db, T, "probe", "agents", { Boardsmith: { state: "idle", lastActivityAt: activeAt, since: T, tool: null, card: null }, Manager: { state: "working", lastActivityAt: later, since: T, tool: "Bash", card: null } });
     await db.prepare("UPDATE evidence SET read_at = ?").bind(later).run();
     for (const [id, author, at, kind, body] of messages) await db.prepare("INSERT INTO messages (id, thread_id, author, body, created_at, kind) VALUES (?, 'owner-thread', ?, ?, ?, ?)").bind(id, author, body, at, kind).run();
     const n = (await wakeAsk(db, later)).count;
@@ -124,7 +130,14 @@ test("the stall line: a card with a decision open on a thread is not an idle age
   const none = await wakes([]);
   assert.equal(none.n, 1, "the control: an idle owner with a queued card wakes Manager");
   assert.match(none.line, /^Boardsmith idle since .*, 1 queued, next #C1071$/);
-  assert.equal((await wakes([ask])).n, 0, "an open decision holds the card: nothing queued, no wake");
+  // Manager's second change: held out of the dispatch and the idle count, but one row names the card and the decision, so a decision settled elsewhere cannot freeze it silently
+  const held = await wakes([ask]);
+  assert.equal(held.n, 1, "an open decision holds the card out of the queue, and its row still wakes Manager");
+  assert.match(held.line, /^#C1071 held by open decision m1, Boardsmith idle since .*$/);
+  assert.doesNotMatch(held.line, /queued/, "the held card is not counted as queued");
+  assert.equal((await wakes([ask], later - MIN)).n, 0, "an owner that was active a minute ago is not idle: the held card raises no row yet");
+  const other = await wakes([["m9", "Builder", T + MIN, "decision", ask[4]]]);
+  assert.match(other.line, /1 queued, next #C1071$/, "a decision from another role holds nothing: the card is queued as usual, with no held row");
   const answered = await wakes([ask, ["m2", "owner", T + 5 * MIN, null, "A"]]); // (the owner's own message also wakes Manager: the stall line is what is asked)
   assert.match(answered.line, /Boardsmith idle since .*, 1 queued, next #C1071/, "answered: the card is queued again");
 });
