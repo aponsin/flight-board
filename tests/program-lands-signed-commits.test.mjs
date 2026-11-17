@@ -131,9 +131,9 @@ test("land-holds.json: one plain word per card the store knows, '' for none; wri
     { id: "empty", blocked_reason: "  ", waiting_on: "" }, { id: "Bad Id" }, { id: 7 }, null,
   ] };
   const f = landHoldsFile(view, NOW);
-  assert.deepEqual(f, { at: NOW, cards: { "free-card": "", p: "paused", d: "dropped", b: "blocked", w: "waiting_on", empty: "" } });
+  assert.deepEqual(f, { at: NOW, cards: { "free-card": "", p: "paused", d: "dropped", b: "blocked", w: "waiting_on", empty: "" }, groups: {} }); // groups (#C1138): none here, no card has a group
   assert.doesNotMatch(JSON.stringify(f), /Owner/, "never a reason text");
-  assert.deepEqual(landHoldsFile({}, NOW), { at: NOW, cards: {} });
+  assert.deepEqual(landHoldsFile({}, NOW), { at: NOW, cards: {}, groups: {} });
   const dir = mkdtempSync(join(tmpdir(), "land-holds-"));
   try {
     writeLandHolds(view, { dir, now: NOW });
