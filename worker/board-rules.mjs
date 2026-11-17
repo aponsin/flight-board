@@ -675,6 +675,9 @@ const heldWord = (v) => typeof v === "string" && v.trim() !== "";
 // #C1164: waiting_on has ONE reading (worker/held-by.mjs); the stall rules, the open-group rule, the next-card pick, the dispatch and the page (through the view's heldBy) all use it.
 export { isHeldBy, heldFor } from "./held-by.mjs";
 export const isHeld = (c) => !!c && (!!isHeldBy(c) || heldWord(c.blocked_reason));
+// #C1164 (Checker 2's LOW 2): the store's hold BOOKKEEPING (held_at, hold_until, the end it gives a waiting_on) goes by the words alone, whoever they name and whether or not the row or write carries an
+// owner_role, so create and update write the same thing; isHeld/isHeldBy above are the READING of who the card is held for.
+export const holdWords = (c) => !!c && (heldWord(c.waiting_on) || heldWord(c.blocked_reason));
 export function holdEndRefusal(fields, existing) {
   if (fields.hold_end !== undefined && fields.hold_end !== null && !(typeof fields.hold_end === "string" && /^[a-z0-9][a-z0-9-]{0,63}$/.test(fields.hold_end))) return refuse("hold-end-shape", "hold_end is the id of an ask or a card, or null");
   // A blocked card must keep an end: refused when the write sets a blocked_reason, or strips the end (check_at or hold_end) of a blocked card, and leaves none.
