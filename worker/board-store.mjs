@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { pausedDepLanded, PAUSE_DEP_END, openDecisionHolds, rcOffWakes, RC_OFF_CARD, landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, endedHolds, closesAtLanding, isHeld, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER, sweepAsk, SWEEP_TITLE } from "./board-rules.mjs";
+import { pausedDepLanded, PAUSE_DEP_END, openDecisionHolds, rcOffWakes, RC_OFF_CARD, landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, endedHolds, closesAtLanding, holdWords, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER, sweepAsk, SWEEP_TITLE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner, wakeLimits } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -86,7 +86,7 @@ export async function createCard(db, now, who, fields, opts = {}) {
   const num = await mint(db, "C");
   const row = COLUMNS.map((c) => (c in fields ? bool(fields[c]) : null) ?? defaultFor(c));
   await db.prepare(`INSERT INTO cards (id, num, ${COLUMNS.join(", ")}, issues_at, held_at, hold_until, created_at, updated_at) VALUES (?, ?, ${COLUMNS.map(() => "?").join(", ")}, ?, ?, ?, ?, ?)`)
-    .bind(fields.id, num, ...row, fields.issues ? now : null, isHeld(fields) ? now : null, autoHoldEnd(fields, null, now, holdNoEndMsOf(await knobsStored(db))), now, now).run();
+    .bind(fields.id, num, ...row, fields.issues ? now : null, holdWords(fields) ? now : null, autoHoldEnd(fields, null, now, holdNoEndMsOf(await knobsStored(db))), now, now).run();
   return { ok: true, id: fields.id, num };
 }
 const defaultFor = (c) => (c === "summary" ? "" : c === "track" ? "product" : c === "paused" || c === "dropped" ? 0 : null);
@@ -208,10 +208,10 @@ export async function updateCard(db, now, who, fields, opts = {}) {
   // When the hold began: set by the write that makes the card held, kept while it stays held, cleared (with its end) when it is lifted.
   if (keys.includes("waiting_on") || keys.includes("blocked_reason")) {
     const after = { waiting_on: "waiting_on" in fields ? fields.waiting_on : card.waiting_on, blocked_reason: "blocked_reason" in fields ? fields.blocked_reason : card.blocked_reason };
-    sets.push("held_at = ?"); vals.push(isHeld(after) ? (isHeld(card) ? card.held_at ?? now : now) : null);
-    if (!isHeld(after) && !("hold_end" in fields)) sets.push("hold_end = NULL");
+    sets.push("held_at = ?"); vals.push(holdWords(after) ? (holdWords(card) ? card.held_at ?? now : now) : null);
+    if (!holdWords(after) && !("hold_end" in fields)) sets.push("hold_end = NULL");
     // a waiting_on with no explicit end gets one from the store (now + 2 h, renewed by each such write); lifting the hold, or an explicit end, clears it
-    sets.push("hold_until = ?"); vals.push(isHeld(after) ? autoHoldEnd(fields, card, now, holdNoEndMsOf(await knobsStored(db))) : null);
+    sets.push("hold_until = ?"); vals.push(holdWords(after) ? autoHoldEnd(fields, card, now, holdNoEndMsOf(await knobsStored(db))) : null);
   }
   await db.prepare(`UPDATE cards SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`).bind(...vals, now, id).run();
   // #C875: a reason attached ends the rework's wait for one (the flag in the card's evidence goes) and is kept in the card's reason history.
