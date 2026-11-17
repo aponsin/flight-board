@@ -17,6 +17,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DATA_FILE, FOLD_CARD, dataDiffArgs, addedDatedLines } from "./board-land.mjs";
 
 export const SIGNAL_REF = "refs/notes/stack-ready";
 // #C1066 (Checker 2's M1 on 34f1dbaa): a card that ran stack-ready and was told to wait ("more queued" or "waiting for its group") leaves a note on that head in this ref. The probe
@@ -69,6 +70,11 @@ export function stackReady({ run, queue = null, now = () => new Date().toISOStri
     const shown = stale.slice(0, STALE_LISTED).join(", ") + (stale.length > STALE_LISTED ? ` and ${stale.length - STALE_LISTED} more` : "");
     fail(`the tip does not carry main's change to ${stale.length} file${stale.length === 1 ? "" : "s"} this branch also changes, so landing it would undo main: ${shown}. Rebase onto origin/main (git fetch origin, git rebase origin/main), run the suite again and push`);
   }
+  // #C1161 (11-17: #C1128 put its dated line straight into docs/DATA.md and only Security's read caught that the landing job would refuse it): the landing job's own check, run before
+  // the push. A card that is not the fold card (a Board-Id starting fold-data-fragments) must not ADD a dated line to docs/DATA.md; its line goes in docs/DATA.d/<card id>.md.
+  // A diff git could not give (no origin/main in this checkout) is not read as a refusal: the landing job reads it again.
+  const dataDiff = tryOut(dataDiffArgs(MAIN_REF, "HEAD"));
+  if (typeof dataDiff === "string" && addedDatedLines(dataDiff) > 0 && !FOLD_CARD.test(id)) fail(`this branch adds a dated line to ${DATA_FILE}, which the landing job refuses: write it to docs/DATA.d/${id}.md and take it out of ${DATA_FILE} (only the fold card, a Board-Id starting fold-data-fragments, adds dated lines there; a row or a principle may still be edited in the file)`);
   const pushed = tryOut(["push", "origin", "HEAD"]);
   if (typeof pushed === "object") fail(`git push failed: ${pushed.error}`);
   const at12 = sha.slice(0, 12);

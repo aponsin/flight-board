@@ -522,6 +522,37 @@ test("(f3) the command line: no flag, one last line, exit 1 on a refusal, exit 2
     assert.match(String(e.stdout), /^STACK-READY FAILED: the working tree is not clean/);
   }
 });
+// #C1161 (11-17: #C1128 wrote its dated line straight into docs/DATA.md and only Security's read caught that the landing job refuses it): stack-ready runs the same check before it pushes.
+function dataBranch(id, edit) {
+  const s = scratch();
+  mkdirSync(join(s.work, "docs"), { recursive: true });
+  writeFileSync(join(s.work, "docs/DATA.md"), "# Data\n\n- 2026-11-01: an old line\n");
+  s.g(["add", "-A"]); s.g(["commit", "-qm", "data file"]);
+  s.sync();
+  s.g(["checkout", "-qb", "build/x"]);
+  edit(s);
+  s.g(["add", "-A"]); s.g(["commit", "-qm", `Work on ${id}\n\nBoard-Id: ${id}`]);
+  return s;
+}
+const dataRefusal = (s) => { try { ready(s, null); return null; } catch (e) { return String(e.message); } };
+test("(g) #C1161: a card that is not the fold card and adds a dated line to docs/DATA.md is refused before the push, naming its fragment file; a fragment, a row edit and the fold card pass", () => {
+  const dated = (s) => appendFileSync(join(s.work, "docs/DATA.md"), "- 2026-11-17: a new line\n");
+  const bad = dataBranch("card-a", dated);
+  const why = dataRefusal(bad);
+  assert.match(why, /adds a dated line to docs\/DATA\.md/);
+  assert.match(why, /docs\/DATA\.d\/card-a\.md/);
+  assert.equal(execFileSync("git", ["branch", "--list", "build/x"], { cwd: bad.bare, encoding: "utf8" }).trim(), "", "nothing was pushed");
+  // a fragment file passes
+  const frag = dataBranch("card-a", (s) => { mkdirSync(join(s.work, "docs/DATA.d"), { recursive: true }); writeFileSync(join(s.work, "docs/DATA.d/card-a.md"), "- 2026-11-17: a new line\n"); });
+  assert.equal(dataRefusal(frag), null);
+  // a row edit (no dated line added) passes
+  const row = dataBranch("card-a", (s) => writeFileSync(join(s.work, "docs/DATA.md"), "# Data, reworded\n\n- 2026-11-01: an old line\n"));
+  assert.equal(dataRefusal(row), null);
+  // the fold card adds dated lines
+  const fold = dataBranch("fold-data-fragments", dated);
+  assert.equal(dataRefusal(fold), null);
+});
+
 test("findConfigPath: --config first, then BOARD_CONFIG, else none; no other source is read", () => {
   assert.equal(findConfigPath({ args: ["--config", "/a.json"], env: { BOARD_CONFIG: "/b.json" } }), "/a.json");
   assert.equal(findConfigPath({ args: [], env: { BOARD_CONFIG: "/b.json" } }), "/b.json");
