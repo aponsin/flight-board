@@ -135,7 +135,7 @@ export function stackQueueFile(view, now) {
       repo: typeof c.repo === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(c.repo) ? c.repo : "",
       dependsOn: [...new Set(dependsOf(c).filter((d) => CARD_ID.test(d) && d !== c.id))].slice(0, 50),
       batch: batchOf(c), // #C1021: the group the lead put the card in ("" for none); stack-ready waits for every open card of it
-      held: !!(c.paused || c.blocked_reason), // #C1021 (Checker 2 F1): a paused or blocked card is no partner to wait for, as the dispatch's activeCard has it
+      held: !!(c.paused || c.blocked_reason), // #C1021 (Checker 2 F1): a paused or blocked card is no partner to wait for,
       // #C1103 (Checker 2's M2): the store's own reading of "held" for the group order (orderCards: paused, isHeld = waiting_on or a blocked_reason, or a dependency not live), so the
       // pre-push check and the store's stall line agree; `held` above stays what stack-ready waits on.
       orderHeld: !!(c.paused || isHeld(c) || dependsNotLive(c, view.cards, evidenceById)),
@@ -216,16 +216,9 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   const pushed = (id) => hasHead(id) && ev[`cards.${id}`].value.stack?.outside !== true;
   const waitsOn = (c) => dependsOf(c).filter((d) => d !== c.id && open.has(d) && phaseOf(d) !== "live"
     && !(switchOn && boardCard(c) && boardCard(open.get(d)) && open.get(d).owner_role === c.owner_role && pushed(d)));
-  // #C914 (R3): a card WAITS (the probe's stackHold is applied) only when it has a declared stack partner: another open card of the same builder
-  // and repository that depends on it and has nothing pushed yet. The instant the partner is pushed the hold lifts by itself.
-  const activeCard = (k) => !k.paused && !k.dropped && !k.done_at && !k.blocked_reason && phaseOf(k.id) !== "live"; // #C902: a card closed as done is no partner
   // #C1053 (the owner, 11-12 8:18 pm: "we work on groups and don't segment them"): a group is STARTED when one of its cards (not dropped) has been pushed, landed
   // (live) or closed as done. An agent finishes every card it owns in a started group before it takes a card from another group (queueOrder below).
   const startedGroups = startedGroupSet(all.map((k) => (k && typeof k === "object" ? { ...k, batch: batchOf(k) } : k)), (id) => ev[`cards.${id}`]?.value);
-  const hasPartner = (c) => all.some((k) => k && typeof k.id === "string" && k.id !== c.id && activeCard(k) && k.owner_role === c.owner_role && boardCard(k) === boardCard(c)
-    && (boardCard(c) || k.repo === c.repo) && !hasHead(k.id) && dependsOf(k).includes(c.id))
-    // #C1021: a card of the same batch (any builder, the same repository) that is not built yet is a partner too: the batch is one review and one pack.
-    || (batchOf(c) !== "" && all.some((k) => k && typeof k.id === "string" && k.id !== c.id && activeCard(k) && batchOf(k) === batchOf(c) && (k.repo || null) === (c.repo || null) && !hasHead(k.id)));
   // #C953: the stack a card is told to join is one of ITS OWN repository: only a card with the same repo word (none matching none) names the
   // branch. A product card with no repo word (Builder's #C930 to #C951 stack) no longer hands its branch to a flight-board card (#C928 was told to
   // stack on #C948's product branch); with no same-repo card on a stack the card builds from main, as with the switch off.
@@ -255,9 +248,11 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     // card is dispatched again, and the store's held-card line has already told Manager to lift or renew it.
     if (holdOpen(c, now, endPassed)) continue;
     const inBoard = switchOn && boardCard(c);
-    // #C914: a card the probe marks stackHold (pushed, no stack-ready signal covers its head) AND that has a declared stack partner waiting to
-    // start has no review turn, and is no builder turn either. Any other card dispatches as it always did.
-    const held = inBoard && e?.stackHold === true && hasPartner(c);
+    // #C914: a card the probe marks stackHold (pushed, no stack-ready signal covers its head) has no review turn, and is no builder turn either.
+    // #C1066 (11-12 and 11-16: a WIP start push, even an empty one, woke Checker and Security on every re-arm): in a stack-mode repository a pushed tip
+    // is Building until the builder's stack-ready signal covers it, with or without a declared partner; a second push after the signal is a new tip and
+    // waits for its own. The signal is the READY, so only a covered tip (the probe clears stackHold) goes to the review lanes.
+    const held = inBoard && e?.stackHold === true;
     const turns = turnsOf(c, e, { ...(inBoard ? { stackOn: true, stackBranch: stackBranchFor(c) } : {}), ...(pairCovers ? { pairCovers } : {}), ...(landing ? { landing } : {}), ...(reviewerFor(c, reviewers, roster) ? { reviewer: reviewerFor(c, reviewers, roster) } : {}) });
     // #C1018 / #C1035: a tip a Checker session has claimed (the store's review claim) wakes no Checker for its review again: one checker per tip.
     const mine = held ? turns.filter((t) => t.step !== "review") : turns;
