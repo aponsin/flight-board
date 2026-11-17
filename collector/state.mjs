@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId, TASK_ID, MODEL_WORD, EFFORT_WORD } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES, PUBLISHED_FILE, STORE_CARDS_FILE } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
+import { boardIdOf, boardIdsOf } from "./board-id.mjs";
 import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
 import { reviewsFromPaths, pathPhases } from "./review-paths.mjs";
 import { countFindings } from "./findings-count.mjs";
@@ -252,7 +253,7 @@ export function readStoreCards(stateDir, id) {
 export function liveCards(stateDir, id) {
   return Object.entries(readStoreCards(stateDir, id).cards).filter(([, d]) => plain(d)).map(([cid, d]) => ({ ...d, id: cid }));
 }
-export const boardIdOf = (message) => { const m = /^Board-Id:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*$/im.exec(String(message ?? "")); return m ? m[1].toLowerCase() : null; };
+export { boardIdOf }; // #C1166: git's last-paragraph reading, one file for every reader (collector/board-id.mjs)
 // #C985: a repo word that names no listed repository is read as no word (a copy of derive.mjs's namedRepo and repoOf).
 export const namedRepo = (card, config) => (card.repo ? (config.collector.repos ?? []).find((r) => r.name === card.repo) ?? null : null);
 export function repoOf(card, config) {
@@ -627,7 +628,7 @@ function noInstallCard(repo, card, mainRef, headSha) {
     const out = String(repo.git(["log", "-400", "--fixed-strings", `--grep=Board-Id: ${card.id}`, "--format=%H%x1f%B%x1e", mainRef]));
     for (const r of out.split("\x1e")) {
       const [h, body] = r.replace(/^\n/, "").split("\x1f");
-      const ids = [...String(body ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)].map((m) => m[1]);
+      const ids = boardIdsOf(body);
       if (/^[0-9a-f]{40}$/.test(h ?? "") && ids.includes(card.id)) shas.add(h);
     }
   } catch { return false; }
@@ -799,7 +800,7 @@ export function trailerIndex(repo) {
         const [sha, at, message] = r.replace(/^\n/, "").split("\x1f");
         if (!/^[0-9a-f]{40}$/.test(sha ?? "")) continue;
         n++;
-        for (const m of String(message ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)) if (!heads.has(m[1])) heads.set(m[1], { branch: repo.main, sha, at: Number(at) * 1000, message });
+        for (const id of boardIdsOf(message)) if (!heads.has(id)) heads.set(id, { branch: repo.main, sha, at: Number(at) * 1000, message });
       }
       index = { heads, complete: n < TRAILER_INDEX_MAX };
     } catch { index = null; }
@@ -842,7 +843,7 @@ export function trailerHead(repo, id, branch = repo.main, depth = 400) {
   try { out = repo.git(["log", `-${depth}`, "--fixed-strings", `--grep=Board-Id: ${id}`, "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${branch}`]); } catch { return null; }
   for (const r of out.split("\x1e")) {
     const [sha, at, message] = r.replace(/^\n/, "").split("\x1f");
-    const ids = [...String(message ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)].map((m) => m[1]);
+    const ids = boardIdsOf(message);
     if (/^[0-9a-f]{40}$/.test(sha ?? "") && ids.includes(id)) return { branch, sha, at: Number(at) * 1000, message };
   }
   return null;
@@ -954,7 +955,7 @@ export function stackHeads(repo, tips, open) {
     for (const rec of log.split("\x1e")) {
       const [sha, at, message] = rec.replace(/^\n/, "").split("\x1f");
       if (!/^[0-9a-f]{40}$/.test(String(sha))) continue;
-      for (const m of String(message ?? "").matchAll(/^Board-Id:[ \t]*(\S+)[ \t]*$/gm)) if (open.has(m[1]) && !heads[m[1]]) heads[m[1]] = { branch: t.branch, sha, at: Number(at) * 1000, message };
+      for (const id of boardIdsOf(message)) if (open.has(id) && !heads[id]) heads[id] = { branch: t.branch, sha, at: Number(at) * 1000, message };
     }
   }
   return heads;

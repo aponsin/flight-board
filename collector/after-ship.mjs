@@ -4,10 +4,12 @@
 // is "extra commits after ship", never a review reopened. The collector (collect.mjs) and the minute probe (state.mjs,
 // pinned) both read it this way. Pure on git(args), which returns stdout and throws on a non-zero exit.
 
+import { boardIdOf } from "./board-id.mjs";
+
 export const AFTER_SHIP_MAX = 20, MAIN_SUBJECTS = 400;
 const SHA = /^[0-9a-f]{40}$/;
 const ok = (fn) => { try { fn(); return true; } catch { return false; } };
-const idIn = (message) => { const m = /^Board-Id:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*$/im.exec(String(message ?? "")); return m ? m[1].toLowerCase() : null; };
+const idIn = boardIdOf; // #C1166: git's last-paragraph reading (collector/board-id.mjs)
 
 // Whether a commit on main is the card's shipped one: its Board-Id is the card's, or main's line names this branch at
 // that commit (shippedPattern's groups: branch, sha; the team's "v1.170.2: <branch>@<sha>"). A sign-off alone is not

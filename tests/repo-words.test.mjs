@@ -14,13 +14,14 @@ import { evidenceJob } from "../collector/probe-evidence.mjs";
 const NOW = Date.now();
 const REPOS = [{ name: "flight-board", path: "/x/board", mainBranch: "main" }];
 
-test("Board-Id lines are read from the whole message, a trailer block or not", () => {
-  assert.deepEqual([...idsOf("s\n\nBoard-Id: c1-a\n\nCo-Authored-By: x\nBoard-Id: C2\n see Board-Id: c3-b")], ["c1-a"]);
+test("Board-Id is read as git reads it (#C1166): the last paragraph of each message, never a line in the middle", () => {
+  assert.deepEqual([...idsOf("s\n\nBoard-Id: c1-a\n\nCo-Authored-By: x\nBoard-Id: C2\n see Board-Id: c3-b")], [], "one message: c1-a is in a middle paragraph, C2 is no card id");
+  assert.deepEqual([...idsOf("s\n\nBoard-Id: c1-a\n\nbody\x1es\n\nBoard-Id: c4\nCo-Authored-By: y\n\x1es\n\nBoard-Id: c5\n")].sort(), ["c4", "c5"], "each message ends at the record mark; the id sits with the co-author line");
 });
 
 test("ids come from the configured remote and main branch, and from the tips of its build/ branches", () => {
   const calls = [];
-  const git = (args) => { calls.push(args.join(" ")); if (args[0] === "log" && args[1] === "up/trunk") return "Board-Id: on-main\n"; if (args[0] === "for-each-ref") return "refs/remotes/up/build/b1\n"; return "Board-Id: not-landed\n"; };
+  const git = (args) => { calls.push(args.join(" ")); if (args[0] === "log" && args[1] === "up/trunk") return "s\n\nBoard-Id: on-main\n\x1e"; if (args[0] === "for-each-ref") return "refs/remotes/up/build/b1\n"; return "s\n\nBoard-Id: not-landed\n\x1e"; };
   assert.deepEqual([...boardIdsFromGit(git, { remote: "up", main: "trunk" })].sort(), ["not-landed", "on-main"]);
   assert.ok(calls.some((c) => c.includes("refs/remotes/up/build/")));
 });
@@ -44,11 +45,11 @@ test("a card two repositories claim is left alone; a repository git cannot read,
   assert.deepEqual(repoWordsToFill([{ id: "a" }], undefined, () => new Set(["a"])), []);
 });
 
-test("real git: a commit on origin/main with the id, above the co-author line, gives the card its repo word", async () => {
+test("real git: a commit on origin/main with the id in the trailer block, above the co-author line, gives the card its repo word", async () => {
   const dir = mkdtempSync(join(tmpdir(), "rw-"));
   const g = (...a) => execFileSync("git", ["-C", dir, "-c", "user.email=t@e.x", "-c", "user.name=t", ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   g("init", "-q", "-b", "main"); writeFileSync(join(dir, "f"), "1"); g("add", "f");
-  g("commit", "-q", "-m", "change\n\nBoard-Id: real-card\n\nCo-Authored-By: someone");
+  g("commit", "-q", "-m", "change\n\nBoard-Id: real-card\nCo-Authored-By: someone");
   g("update-ref", "refs/remotes/origin/main", "HEAD");
   const posts = [];
   const n = await fillRepoWords({ cards: [{ id: "real-card" }, { id: "other" }], repos: [{ name: "flight-board", path: dir }], base: "https://b.example", headers: {}, fetchImpl: async (u, o) => { posts.push([u, JSON.parse(o.body)]); return { ok: true, status: 200 }; } });
@@ -59,7 +60,7 @@ test("real git: a commit on origin/main with the id, above the co-author line, g
 test("a refused or failing post is logged and the next card still goes; nothing throws", async () => {
   const log = [], seen = [];
   const fetchImpl = async (u, o) => { const b = JSON.parse(o.body); seen.push(b.id); if (b.id === "a") return { ok: false, status: 422 }; if (b.id === "b") throw new Error("down"); return { ok: true, status: 200 }; };
-  const n = await fillRepoWords({ cards: [{ id: "a" }, { id: "b" }, { id: "c" }], repos: REPOS, base: "https://b.example", headers: {}, fetchImpl, log: (l) => log.push(l), gitIn: () => () => "Board-Id: a\nBoard-Id: b\nBoard-Id: c\n" });
+  const n = await fillRepoWords({ cards: [{ id: "a" }, { id: "b" }, { id: "c" }], repos: REPOS, base: "https://b.example", headers: {}, fetchImpl, log: (l) => log.push(l), gitIn: () => () => "s\n\nBoard-Id: a\n\x1es\n\nBoard-Id: b\n\x1es\n\nBoard-Id: c\n\x1e" });
   assert.deepEqual(seen, ["a", "b"], "a throw ends this run's fills, it does not escape");
   assert.equal(n, 0);
   assert.ok(log.some((l) => /card a answered 422|for a answered 422/.test(l)));
@@ -110,7 +111,7 @@ test("the evidence job fills the repo words of the store's cards from the config
     prepare: async () => { order.push("prepare"); return { configPath: "/pc", stateFile: "/s/state.json", cards: [{ id: "a", repo: null }, { id: "b", repo: "kept" }] }; },
     deployRead: async () => ({ worker: "", tree: "" }), build: async () => { order.push("build"); }, read, liveFetch: async () => ({ ok: false, status: 500 }),
     fetchImpl: async (u, o) => { if (u.endsWith("/api/probe/card-repo")) { order.push("fill"); posts.push(JSON.parse(o.body)); } return { ok: true, status: 200 }; },
-    repoWords: { gitIn: () => () => "Board-Id: a\nBoard-Id: b\n" },
+    repoWords: { gitIn: () => () => "s\n\nBoard-Id: a\n\x1es\n\nBoard-Id: b\n\x1e" },
   });
   assert.deepEqual(posts, [{ id: "a", repo: "flight-board" }], "b already has a word and is left alone");
   assert.deepEqual(order.slice(0, 3), ["prepare", "fill", "build"]);

@@ -7,15 +7,17 @@
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { FETCH_TIMEOUT_MS } from "./probe-board.mjs";
+import { boardIdsOf } from "./board-id.mjs";
 
-// The Board-Id lines of a git log output, from the whole message (a trailer block would miss an id above the co-author line).
-export const idsOf = (text) => new Set([...String(text).matchAll(/^Board-Id:[ \t]*([a-z0-9][a-z0-9-]{0,63})[ \t]*$/gm)].map((m) => m[1]));
+// The Board-Id trailers of a git log output: each message ends at RECORD_END and is read as git reads it (the last paragraph, #C1166).
+const RECORD_END = "\x1e";
+export const idsOf = (text) => new Set(String(text).split(RECORD_END).flatMap((message) => boardIdsOf(message)));
 
 // Which card ids the repository holds work for: commits on <remote>/<main>, and the tip of each <remote>/build/ branch.
 export function boardIdsFromGit(git, { remote = "origin", main = "main" } = {}) {
-  const ids = idsOf(git(["log", `${remote}/${main}`, "--format=%B"]));
+  const ids = idsOf(git(["log", `${remote}/${main}`, `--format=%B%x1e`]));
   const refs = git(["for-each-ref", "--format=%(refname)", `refs/remotes/${remote}/build/`]).split("\n").map((s) => s.trim()).filter(Boolean);
-  for (const ref of refs) for (const id of idsOf(git(["log", "-1", "--format=%B", ref]))) ids.add(id);
+  for (const ref of refs) for (const id of idsOf(git(["log", "-1", "--format=%B%x1e", ref]))) ids.add(id);
   return ids;
 }
 

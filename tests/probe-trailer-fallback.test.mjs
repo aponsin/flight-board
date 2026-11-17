@@ -93,8 +93,8 @@ test('a card that still has a branch tip is read from the tip, not from a traile
 });
 
 test('a sha field that is not 40 hex characters gives no head', () => {
-  const git = () => 'not-a-sha\x1f123\x1fBoard-Id: bad-sha\n\x1e';
+  const git = () => 'not-a-sha\x1f123\x1fs\n\nBoard-Id: bad-sha\n\x1e';
   assert.equal(trailerHead({ remote: 'origin', main: 'main', git }, 'bad-sha'), null);
-  const ok = () => 'a'.repeat(40) + '\x1f123\x1fBoard-Id: bad-sha\n\x1e';
+  const ok = () => 'a'.repeat(40) + '\x1f123\x1fs\n\nBoard-Id: bad-sha\n\x1e';
   assert.ok(trailerHead({ remote: 'origin', main: 'main', git: ok }, 'bad-sha'));
 });

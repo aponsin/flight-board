@@ -11,6 +11,7 @@
 //   live   - the head is on the main branch and a successful deploy run contains it (with the version it shipped in).
 // Anything the facts can't show (plan, a card with no branch) is left as declared: derived is null.
 import { idText, lineText } from "./text.mjs";
+import { boardIdOf } from "./board-id.mjs";
 
 // The repository a card lives in (#C278): one of collector.repos by the card's own repo field, else the first whose id
 // prefix the card carries; null for the team's own repository (collector.repoPath).
@@ -22,11 +23,8 @@ export function repoOf(card, config) {
   return namedRepo(card, config) ?? repos.find((r) => (r.idPrefixes ?? []).some((p) => String(card.id).startsWith(p))) ?? null;
 }
 
-// The id a commit's message names in its "Board-Id:" trailer, or null.
-export function boardIdOf(message) {
-  const m = /^Board-Id:\s*([a-z0-9]+(?:-[a-z0-9]+)*)\s*$/im.exec(String(message ?? ""));
-  return m ? m[1].toLowerCase() : null;
-}
+// The id a commit's message names in its "Board-Id:" trailer, or null (#C1166: git's reading, collector/board-id.mjs).
+export { boardIdOf };
 
 // The card's commit: a "Board-Id" trailer on a branch head wins, else a branch whose last path segment is the card's id.
 // heads: [{ branch, sha, at, message }]. Returns the newest match, or null.
