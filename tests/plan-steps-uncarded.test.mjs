@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { createAsk, answerAsk, closeAsk, postMessage } from "../worker/board-store.mjs";
-import { planStepsRefusal, answerStepLines } from "../worker/board-rules.mjs";
+import { planStepsRefusal, answerStepLines, questionStepText } from "../worker/board-rules.mjs";
 
 const T = 1_800_000_000_000, MIN = 60_000;
 const decision = { type: "Decision", title: "The plan", asked_by: "Manager", question: "Go on the plan?", options: ["A: go", "B: change it"], recommended: "A: go" };
@@ -72,6 +72,18 @@ test("steps listed in the question, answered 'A: go', are refused unless every s
   assert.equal((await close(await answeredQuestion("Plan:\n- context bullet\nGo?"), "owner")).ok, true, "the owner always closes");
   const inOption = await answeredQuestion("Go?", ["A: go\n1. do the thing", "B: no"]);
   assert.equal((await close(inOption)).refused.rule, "plan-steps-uncarded", "option text that lists steps counts");
+});
+
+// Security's LOW on f0c8c30e: an asks.body that is not JSON is judged on the answer alone and never throws (the try/catch around JSON.parse in questionStepText).
+test("a body that is not JSON does not throw: the close is judged on the answer alone", async () => {
+  const bad = await answeredQuestion("Plan:\n1. no card here\nGo?");
+  await bad.db.prepare("UPDATE asks SET body = ? WHERE id = ?").bind("{oops", bad.id).run();
+  const r = await close(bad);
+  assert.equal(r.ok, true, "no steps in the answer, and the broken body is ignored");
+  const withAnswer = await answered("1. uncarded step");
+  await withAnswer.db.prepare("UPDATE asks SET body = ? WHERE id = ?").bind("{oops", withAnswer.id).run();
+  assert.equal((await close(withAnswer)).refused.rule, "plan-steps-uncarded", "the answer's own steps still count");
+  for (const body of ["{oops", "null", "42", "\"text\"", "{\"options\":\"x\"}", "{\"question\":7,\"options\":[null,7,{\"label\":3}]}"]) assert.deepEqual(questionStepText({ body }), [], body);
 });
 
 test("not steps: '1.5 hours', '-1 point' and a bare '-' (L1)", () => {
