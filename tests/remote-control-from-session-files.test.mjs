@@ -60,6 +60,12 @@ test("rcOffWakes: one line per role whose reading says rcOff: true, in name orde
   for (const none of [undefined, null, {}, [], "x"]) assert.deepEqual(rcOffWakes(none), []);
 });
 
+// #C1129 (Security's INFO I1 on #C1122): a plain name is not enough; the role is a roster role (or one with digits after it, like Checker 2).
+test("rcOffWakes: only a roster role's name, with optional digits, names a role; a made-up title that is a plain word does not", () => {
+  const all = rcOffWakes({ "Checker 2": { rcOff: true }, Manager: { rcOff: true }, Ghost: { rcOff: true }, "Ghost 2": { rcOff: true }, "Not A Role": { rcOff: true }, "Checker 2 3": { rcOff: true }, "Checker2": { rcOff: true }, "Sales ": { rcOff: true } });
+  assert.deepEqual(all.map((l) => l.card_id), [`${RC_OFF_CARD}Checker 2`, `${RC_OFF_CARD}Manager`], "Ghost, Ghost 2, Not A Role, Checker 2 3, Checker2 and a trailing space name no role");
+});
+
 test("the store: an off role reaches Manager once; when the switch is on again its line is no longer pending", async () => {
   const db = makeDb();
   await createCard(db, T, "Manager", { id: "c", title: "A card", owner_role: "Boardsmith" });
