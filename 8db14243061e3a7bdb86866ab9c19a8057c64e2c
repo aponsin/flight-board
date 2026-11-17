@@ -1,0 +1,3 @@
+READ 2 files two or more cards touch, signed by Checker 2
+scripts/wake-watch.mjs
+tests/watch-ends-on-stale-pin.test.mjs
