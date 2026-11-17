@@ -35,9 +35,9 @@ test("the shared door refuses a post of kind decision, whoever `as` claims to be
   assert.ok((await refusals()).includes("decision-needs-manager-door"));
 });
 
-test("the shared door refuses the kind however it is spelled, and Manager's Decision ask that names a thread", async () => {
+test("the shared door stores no decision under another spelling of the kind, and refuses Manager's Decision ask that names a thread", async () => {
   const { shared, decisions } = await make();
-  for (const kind of ["Decision", " DECISION ", "decision"]) {
+  for (const kind of ["Decision", " DECISION ", "decision"]) { // the first two are refused by the message shape; the hold reads the exact word
     assert.equal((await shared("Manager", "post", { thread_id: "t-100", body: "x", kind, options: OPTIONS })).isError, true, kind);
   }
   const ask = await shared("Manager", "ask", { ...ASK, related_thread: "t-100" });

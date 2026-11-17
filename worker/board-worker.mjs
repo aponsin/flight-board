@@ -103,9 +103,9 @@ const text = (result) => ({ content: [{ type: "text", text: JSON.stringify(resul
 // related_thread "none" makes an ask, not a message, and is as before.
 export function decisionRefusal(door, name, who, args) {
   if (door !== "shared") return null;
-  const kind = typeof args?.kind === "string" ? args.kind.trim().toLowerCase() : null;
+  // The kind is matched exactly: the hold reads kind = 'decision' only, and any other spelling is refused by the message-shape rule.
   const asksThread = name === "ask" && who === "Manager" && args?.type === "Decision" && args?.related_thread !== "none";
-  if (!(name === "post" && kind === "decision") && !asksThread) return null;
+  if (!(name === "post" && args?.kind === "decision") && !asksThread) return null;
   return { rule: "decision-needs-manager-door", detail: `a decision message is accepted only from Manager's own door; ${who} came in on the shared door, where the name is only a claim` };
 }
 
