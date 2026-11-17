@@ -1,0 +1,1 @@
+LOOK-OK #C1127 done-state-contrast-light d1ab2489baaca0846c519a4b5bec36b120f7440b (Designer). One line: .state.done text goes from --ok to --ok-ink. Light is now 5.29 (was 4.33), and dark is unchanged at 7.11 because --ok-ink equals --ok there. The pill keeps its shape, background and place, and its green is only a little darker. (commit d1ab2489)
