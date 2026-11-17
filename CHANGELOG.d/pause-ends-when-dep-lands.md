@@ -1,0 +1,1 @@
+- A paused card whose depends_on cards have all landed now raises one line to Manager ("#C843's pause has outlived its dependency: #C827 has landed: unpause it or close it"), once per spell. The board never unpauses a card by itself (pause-ends-when-dep-lands, #C1162). Ships: a Worker deploy. Tests: `tests/pause-ends-when-dep-lands.test.mjs`.
