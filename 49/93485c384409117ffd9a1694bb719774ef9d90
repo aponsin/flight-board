@@ -1,0 +1,3 @@
+SECURE #C1146: the group suite runs the snapshot's scripts/test-run.mjs, stdin ignored, SIGKILL timeout; rerun files limited to tests/<name>.test.mjs, passed as argv (no shell); covered by group head 748fd161
+
+signed-by: Security
