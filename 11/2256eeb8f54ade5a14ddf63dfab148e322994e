@@ -1,0 +1,2 @@
+PASS #C1132 tip 112256ee (doc wording on fix 70e57fd3, over my PASS on d71cebd6): every commit of 36e0164e..112256ee now signed by Checker 2. Suite 2857 pass, 0 fail. LOWs: --state reaches other .json in ~/.flight-board (fails closed for holds); --config endsWith mutant survives; sessionOf vs gate.managerSession (carded).
+signed-by: Checker 2
