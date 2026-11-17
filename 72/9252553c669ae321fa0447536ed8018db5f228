@@ -1,0 +1,2 @@
+PASS (Full) #C1164: one isHeldBy/heldFor for dispatch, reset.mjs, stall, slow, open-group, next-card pick, isHeld and the page's heldBy; DATA.md Stalled definition unchanged; store write path keeps hold_end on an own-pointer write (probed); 9 of 12 mutants killed. LOWs: the review-queue and next-card-pick sites are untested (behaviour as before); held_at at create reads the owner, at update it does not
+signed-by: Checker 2
