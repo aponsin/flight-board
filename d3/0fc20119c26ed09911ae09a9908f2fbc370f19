@@ -1,0 +1,2 @@
+PASS (Full) #C1068 d30fc201: a card tile finds its own card for the pulse offset (the .i-row's [data-card]); the group tile's together label has the tog class (Designer F1, F2). Code only; Designer owns the look.
+signed-by: Checker 2
