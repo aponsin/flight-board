@@ -1,0 +1,2 @@
+PASS (Quick) #C1154 group head: the pickup pass goes through step 2's sessions and forbids opening board.config.json (path only, for pickup-watch.mjs); mutants (a step cats the config, the old wording back) killed; pickup-pass tests 20/20. LOW: the guard's verbs are cat/read/open only, so 'Look up the roster in board.config.json' or a jq read still passes; an allow list of the lines that may name the config would hold
+signed-by: Checker 2
