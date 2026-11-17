@@ -1,0 +1,3 @@
+SECURE #C1158 tip: wake-watch reads ~/.claude/settings.json only for the 40-hex install sha of gate/stop.mjs entries and prints only short shas; the role is sanitised in the state file name; one line per role and pair, so no wake loop
+
+signed-by: Security
