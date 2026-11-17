@@ -1,0 +1,3 @@
+SECURE #C1150 tip: a blank repo is refused before the shape rule; card_update cannot null a card's repo (card-repo-kept); arguments are always an object, so no throw
+
+signed-by: Security
