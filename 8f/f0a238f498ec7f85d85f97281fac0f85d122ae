@@ -1,0 +1,2 @@
+PASS (Full) #C1163 LOW fixes: no-word roles read the note's first line (blank first line signs nothing); the view's card passes the repo word to shownLevel, tested; both earlier surviving mutants killed; suite 3035 pass 0 fail
+signed-by: Checker 2
