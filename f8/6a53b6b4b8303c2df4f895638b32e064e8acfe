@@ -1,0 +1,2 @@
+PASS (Full) #C1166: the same change as 1cc8f295 (signed PASS under #C1164), carried under #C1166's id; range-diff shows only the subject's card id and the Board-Id value differ; suite green at 609267eb (3056 pass, 0 fail)
+signed-by: Checker 2
