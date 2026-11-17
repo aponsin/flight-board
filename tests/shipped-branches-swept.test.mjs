@@ -4,11 +4,11 @@
 // each remote delete leased on the sha the probe saw. Real git; fictional repository and names.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { shippedBranchesWrite, sweepRepos, plainBranch } from "../collector/shipped-branches.mjs";
+import { shippedBranchesWrite, sweepRepos, plainBranch, SWEEP_GIT_MAX_BUFFER } from "../collector/shipped-branches.mjs";
 import { evidenceJob } from "../collector/probe-evidence.mjs";
 import { shippedBranchesShape, sweepAsk, askRefusal, evidenceRefusal, SWEEP_TITLE } from "../worker/board-rules.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
@@ -102,6 +102,25 @@ test("a repository git cannot read is left out and logged; the others are still 
   assert.deepEqual(v.repos.map((r) => r.name), ["other"]);
   assert.equal(logs.length, 1);
   assert.match(logs[0], /demo-repo could not be read: not a repository$/);
+});
+
+// #C1124 (Security's INFO I1 on 5ac5d9df): git's output past the buffer must read as a plain "cut" and sweep nothing for that repository, never a partial list.
+test("git output past the buffer: the repository is left out and the log says the output was cut; the other repository is still listed", () => {
+  const git = scratch(), logs = [];
+  const two = cfgOf({ repoPath: "~/Code/demo-repo", repos: [{ name: "other", path: "~/Code/other" }] });
+  let real;
+  try { execFileSync("git", ["--version"], { encoding: "utf8", maxBuffer: 1 }); } catch (e) { real = e; } // the error Node really throws on an overflow
+  assert.ok(real, "a 1-byte buffer overflows");
+  const v = shippedBranchesWrite(two, { git: (r, args) => { if (r.name === "demo-repo" && args[0] === "for-each-ref") throw real; return git(r, args); }, openIds: [], now: T, log: (l) => logs.push(l) }).value;
+  assert.deepEqual(v.repos.map((r) => r.name), ["other"]);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /demo-repo git's output was longer than the \d+-byte buffer and was cut: nothing was swept for it$/);
+  assert.doesNotMatch(logs[0], /could not be read/);
+});
+
+test("the sweep's real git reader runs with the big buffer, far above Node's 1 MB default", () => {
+  assert.ok(SWEEP_GIT_MAX_BUFFER >= 16 * 1024 * 1024);
+  assert.match(readFileSync(new URL("../collector/probe-evidence.mjs", import.meta.url), "utf8"), /const defaultSweepGit = [^\n]*maxBuffer: SWEEP_GIT_MAX_BUFFER/);
 });
 
 test("the config: only a ~/ folder with plain words is listed; none or an unreadable config posts nothing", () => {

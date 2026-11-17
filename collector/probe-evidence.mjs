@@ -13,7 +13,7 @@ import { runActionsUsage } from "./actions-usage.mjs";
 import { appSessions } from "./state.mjs";
 import { scheduleModelsWrite } from "./schedule-models.mjs";
 import { roleSessionsWrite } from "./role-sessions.mjs";
-import { shippedBranchesWrite } from "./shipped-branches.mjs";
+import { shippedBranchesWrite, SWEEP_GIT_MAX_BUFFER } from "./shipped-branches.mjs";
 import { fillRepoWords } from "./repo-words.mjs";
 import { createHash } from "node:crypto";
 import { runChild, startRun, JOBS } from "./probe-run.mjs";
@@ -376,7 +376,7 @@ export function deployLastWrite({ configPath, read }) {
 export const scheduleSessions = (root) => appSessions(root, undefined, { includeArchived: true });
 // #C1112: git in a configured repository's "~/" folder, for the shipped-branches listing (read-only commands only). Re-read at most every 6 hours.
 const SWEEP_LIST_MS = 6 * 3_600_000;
-const defaultSweepGit = (r, args) => execFileSync("git", ["-C", join(homedir(), r.dir.slice(2)), ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15_000 });
+const defaultSweepGit = (r, args) => execFileSync("git", ["-C", join(homedir(), r.dir.slice(2)), ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 15_000, maxBuffer: SWEEP_GIT_MAX_BUFFER });
 const defaultSessions = () => scheduleSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
 // #C1111: the open sessions only (an archived role session is no session the role runs in).
 const defaultOpenSessions = () => appSessions(join(homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"));
