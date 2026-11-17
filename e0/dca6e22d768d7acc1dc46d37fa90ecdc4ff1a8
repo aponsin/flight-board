@@ -1,0 +1,1 @@
+SECURE G17 merge of #C1110 (second parent d106ae1b, which carries my SECURE). Its conflict resolution (git show --cc) is the union of both sides only; no new logic. (OPTIONAL + customerText; tipState keeps #C1110's changed/customerText and #C890's readPhase/partsMissing, one phase). Covered by the G17 head note on 36e0164e. (Security)
