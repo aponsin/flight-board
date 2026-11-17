@@ -1,0 +1,1 @@
+SECURE G17 merge of #C1111 (second parent 2842b378, which carries my SECURE). A clean merge: git show --cc shows no resolution lines in any code path. Its only conflict was docs/DATA.md (both entries kept). Covered by the G17 head note on 36e0164e. (Security)
