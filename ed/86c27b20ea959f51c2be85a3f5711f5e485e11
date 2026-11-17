@@ -1,0 +1,2 @@
+PASS (Full) decision-buttons-with-card-thread: threadState reads a Decision with options as the last non-owner word as decision before building, so a thread with a card in flight draws the buttons; the owner's open question still comes first. Mutants killed: rule off, no-options Decision also winning. Suite green 3074/0. LOW: dropping the last.from!==OWNER part survives; no test has an owner message of kind decision with options as the last word
+signed-by: Checker 2
