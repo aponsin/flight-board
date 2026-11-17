@@ -1,0 +1,3 @@
+SECURE #C1160 tip: a WIP or empty start head and a stack-held card read at build with no readyAt or waitingFor (only less ready, never more; landing still needs the notes); the empty check runs git diff --quiet on a 40-hex sha as an argument; WIP_START is anchored, no catastrophic backtracking
+
+signed-by: Security
