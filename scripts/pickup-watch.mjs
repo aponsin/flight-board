@@ -9,10 +9,10 @@
 //                working under LOW_START at an earlier check: a fresh session (before its clear the lead reads far more).
 //   wait       - not cleared yet: wait 60 s again.
 //   give-up    - MAX_CHECKS checks done: leave it to the keeper's hourly step 4.
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const FRESH = 5_000, LOW_START = 60_000, MAX_CHECKS = 10;
@@ -71,6 +71,19 @@ export function parseRows(text) {
   return out;
 }
 
+// #C1132 (Security's M1 and L1): which paths --pass may take. The history file is written (mkdir -p, then overwritten), so it must lie inside <home>/.flight-board, be a .json file there and
+// not be a symlink; the config is only read, and must be named board.config.json; the rows come from --rows or --rows-file, not both. Returns the reason, or null when all is well.
+export function passPathRefusal({ state, config, rows, rowsFile, home }) {
+  if (rows && rowsFile) return "--rows and --rows-file together: nothing is done";
+  if (config && basename(config) !== "board.config.json") return "--config must name a file called board.config.json";
+  if (state) {
+    const root = resolve(home, ".flight-board"), file = resolve(state);
+    if (!file.startsWith(root + sep) || !file.endsWith(".json")) return `--state must be a .json file inside ${root}`;
+    try { if (lstatSync(file).isSymbolicLink()) return "--state is a symbolic link"; } catch { /* not there yet: it is made */ }
+  }
+  return null;
+}
+
 // The session id the config's rosterSessions holds for a role, only when it is a plain local session id (local_ and a uuid), else null (a role with none is reported, not sent to).
 export const SESSION_ID = /^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const sessionOf = (sessions, role) => (sessions && Object.hasOwn(sessions, role) && typeof sessions[role] === "string" && SESSION_ID.test(sessions[role]) ? sessions[role] : null);
@@ -122,6 +135,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const opt = (k) => { const i = process.argv.indexOf(k); return i > 2 && process.argv[i + 1] ? process.argv[i + 1] : null; };
     // #C1132: --rows '<role>,<state>,<tokens>,<remoteControl>;<next row>' takes the rows with no file tool (the scheduled watchdog forbids them, #C443) and no
     // JSON in a shell argument: every field is a plain word or a number, so nothing in it can be a quote, and a row that is not that shape is dropped (parseRows).
+    // Security's M1 and L1 on d71cebd6: the command is pre-approved as a prefix rule, so every path it takes is the program's to hold, not the prompt's. Refused (prints [], says why on stderr,
+    // touches nothing): a --state outside ~/.flight-board (it creates folders and overwrites the file), a --config not named board.config.json, and --rows with --rows-file.
+    const bad = passPathRefusal({ state: opt("--state"), config: opt("--config"), rows: opt("--rows"), rowsFile: opt("--rows-file"), home: homedir() });
+    if (bad) { console.error(`pickup-watch: ${bad}`); console.log("[]"); process.exit(0); }
     let rows = null, state = {}, roster = null;
     try { rows = opt("--rows") ? parseRows(opt("--rows")) : JSON.parse(opt("--rows-file") ? readFileSync(opt("--rows-file"), "utf8") : (process.argv[3] ?? "[]")); } catch { /* below */ }
     if (!Array.isArray(rows)) { console.log("[]"); process.exit(0); }
