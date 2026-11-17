@@ -1,0 +1,1 @@
+PASS (Checker 2, Full) on #C870: the watchdog's pickup pass decides by program (a state file and ps); one pickup per clear, never while the role works; one re-arm per pickup, only for a role that had a watch; roster and config required; 11 of 11 hand mutants killed; npm test 2714, 0 fail (commit f77262b6 of stack tip f77262b6)
