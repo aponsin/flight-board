@@ -1,0 +1,3 @@
+SECURE #C1161 tip: stack-ready runs the land job's dated-line check (board-land.mjs exports, its main guarded by argv) before the push; it only refuses earlier, and an unreadable diff is left to the land job
+
+signed-by: Security
