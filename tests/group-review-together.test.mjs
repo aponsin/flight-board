@@ -118,10 +118,11 @@ test("page: the pulsing tiles of one batch get the same delay, at card and group
 });
 
 test("page (Designer F1): two lone cards get different delays, and a lone card inside a group does not pulse with its group", () => {
-  const tiles = [tile({ card: "solo-card" }, "step now"), tile({ card: "other-solo" }, "step now"), tile({ group: "g5-thing" }, "step now"), tile({ card: "in-group-solo" }, "step now")];
+  const tiles = [tile({ card: "solo-card" }, "step now"), tile({ card: "other-solo" }, "step now"), tile({ group: "g5-thing" }, "step now"), tile({ card: "in-group-solo" }, "step now"), tile({ group: "g6-other" }, "step now")];
   board([pcard("solo-card", 1)], {}, tiles).pulseSync();
-  const [s1, s2, g, c] = tiles.map(delay);
-  assert.ok([s1, s2, g, c].every(Number.isFinite));
+  const [s1, s2, g, c, g2] = tiles.map(delay);
+  assert.ok([s1, s2, g, c, g2].every(Number.isFinite));
+  assert.ok(!near(g, g2), "two groups that are not reviewed together beat by themselves");
   assert.ok(!near(s1, s2), "two lone cards: own delays");
   assert.ok(!near(g, c) && !near(g, s1), "a lone card in a group, and the group's own tile (not together), each beat by themselves");
 });
