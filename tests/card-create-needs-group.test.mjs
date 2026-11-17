@@ -77,6 +77,12 @@ test("a closing write needs no group: done with its evidence, or dropped; a card
   assert.equal((await edit(db, { id: "c-d3", dropped: 1 })).ok, true);
   // done_evidence alone is no closing write (it is refused on its own, as before): the group rule does not hide that answer
   refusedAs(await edit(db, { id: "c-d4", done_evidence: "https://example.test/x" }), "card-group");
+  // Checker 2's round 2: an un-drop puts a loose card back among the open ones, so it needs a group; with one it is accepted
+  await createCard(db, T, "Manager", { id: "c-d5", title: "c-d5" });
+  assert.equal((await edit(db, { id: "c-d5", dropped: true })).ok, true);
+  for (const dropped of [false, 0]) refusedAs(await edit(db, { id: "c-d5", dropped }), "card-group");
+  assert.equal((await edit(db, { id: "c-d5", dropped: false, batch: "g1-first" })).ok, true);
+  assert.equal((await edit(db, { id: "c-d5", next_note: "back, and grouped" })).ok, true);
   // closed already: a later write (a note on a dropped or done card) is not asked for a group
   assert.equal((await edit(db, { id: "c-d1", next_note: "closed, still a note" })).ok, true);
   assert.equal((await edit(db, { id: "c-d2", next_note: "dropped, still a note" })).ok, true);

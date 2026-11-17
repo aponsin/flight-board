@@ -153,7 +153,9 @@ export async function updateCard(db, now, who, fields, opts = {}) {
   if (!card) return refuse(db, now, { rule: "card-unknown", detail: String(id) }, id, who);
   // The lead's ruling (B, on the card's note): a card with no group is written only by a write that gives it one; closing it (done with its evidence, or dropped) needs none,
   // and a card already done or dropped is not asked for one.
-  if (opts.needGroup && !String(card.batch ?? "").trim() && !card.done_at && !card.dropped && !(typeof fields.batch === "string" && fields.batch.trim()) && !(fields.done === true || fields.dropped === true || fields.dropped === 1)) {
+  // Checker 2's round 2: an un-drop (dropped false or 0) puts the card back among the open ones, so it needs a group like any write to a loose card.
+  const undrop = fields.dropped === false || fields.dropped === 0;
+  if (opts.needGroup && !String(card.batch ?? "").trim() && (undrop || (!card.done_at && !card.dropped)) && !(typeof fields.batch === "string" && fields.batch.trim()) && !(fields.done === true || fields.dropped === true || fields.dropped === 1)) {
     return refuse(db, now, await groupRefusal(db, `${id} has no group yet: this write must set batch (a write that closes or drops the card needs none)`), id, who);
   }
   // #C902: done closes the card once, on a card that is not dropped; a thread message named as evidence must be on the board.
