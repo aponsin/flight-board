@@ -1,3 +1,3 @@
-RISKS (Full) #C1132 v2 112256ee (fix commits 70e57fd3 + 112256ee): M1 narrowed, still open. --state may be ANY .json under ~/.flight-board, which holds the board's live state (land-holds.json read by the land job, stack-switch.json, dispatch-*.json) and, through the current symlink folder, the installed tree (current/package.json); lstat checks only the last component. Under the any-arguments prefix rule, a steered run can still overwrite those with no prompt. Fix: allow only the default ~/.flight-board/pickup-pass.json (or refuse --state in --pass). L1 closed (--config name, --rows with --rows-file).
+SECURE (Full) #C1132 112256ee: covered by the card's signed tip 91744942, above it on this branch, which closes the M1 found here; ships only with that tip. Earlier note: RISKS M1 narrowed (any .json under ~/.flight-board).
 
 signed-by: Security
