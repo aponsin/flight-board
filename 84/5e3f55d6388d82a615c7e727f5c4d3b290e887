@@ -1,0 +1,2 @@
+PASS (Full) #C1146 tip 845e3f55: HOME and SUITE_FAILURES_FILE kept (headless Chrome, nested test-run); timeout and closed stdin stay. Mutants 6/6 on the fix. Signed with the head in one push.
+signed-by: Checker 2
