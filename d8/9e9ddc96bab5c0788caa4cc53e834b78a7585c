@@ -1,1 +1,2 @@
-SUPERSEDED #C1102 d89e9ddc: part 1 WIP (rebased from 9e1fa6df onto #C1066 v3); reviewed with its tip 28aab8df. Not for shipping on its own. (Security)
+SECURE (Full, G17 line) d89e9ddc96ba: ships only inside G17 at 36e0164e85a5, whose head is SECURE; every fix it needed is on that line. Earlier note: SUPERSEDED #C1102 d89e9ddc: part 1 WIP (rebased from 9e1fa6df onto #C1066 v3); reviewed with its tip 28aab8df. Not for shipping on its own. (Security)
+signed-by: Security
