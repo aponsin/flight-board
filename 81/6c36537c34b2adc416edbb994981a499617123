@@ -1,0 +1,2 @@
+PASS (Quick) #C1150 group head: the card_create description and repo property say repo is required; a blank repo is card-repo-missing with the known list; card_update repo:null on a card with a repo is card-repo-kept; mutants on each guard and the description killed; card-create-needs-repo and compat-routes 24/24
+signed-by: Checker 2
