@@ -1,0 +1,2 @@
+PASS #C1226: suite 3131 pass 0 fail; mutation pass (watchdog doc back to current/scripts/pickup-watch.mjs, 2 pickup-pass tests failed, restored). pinned-run only runs pickup-watch/prompt-watch from the pinned install, args pass through. LOW: keeper/TASK.md still says the lead records pickedAt; nobody writes it now, so a re-enabled hourly keeper could send Manager a second /pickup (no keeper task is scheduled today).
+signed-by: Checker 2
