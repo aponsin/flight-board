@@ -124,6 +124,8 @@ test("a screen reader hears Sending: the dots hold a visually hidden word, only 
   assert.match(css, /\.sdots \.sr\{position:absolute;width:1px;height:1px;[^}]*overflow:hidden;clip:rect\(0 0 0 0\)[^}]*\}/, "visually hidden, not display:none (which a reader skips)");
   assert.ok(!/\.sdots \.sr\{[^}]*display:none/.test(css));
   assert.match(css, /\.sdots\{position:relative;/, "the hidden word is placed inside the dots element");
+  assert.match(css, /\.sdots i:nth-of-type\(2\)\{animation-delay:\.2s\}\.sdots i:nth-of-type\(3\)\{animation-delay:\.4s\}/, "the pulse still runs left to right: the word is the first child, so the dots are counted among their own kind (Checker 2)");
+  assert.ok(!/\.sdots i:nth-child/.test(css));
   t.w.seen = 1000; t.apply(2500);
   assert.ok(!row.summary.dots, "taken: the word goes with the dots and the type label is the title bar's first child again");
 });
