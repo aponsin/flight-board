@@ -39,20 +39,24 @@ export function headFor(id, heads) {
 // name, newest first. A card is one branch; a second one is a rework that belongs in a sub-card.
 // #C649: a commit whose message starts "#C<num>:" belongs to the card with that number too (num, when the card has one), so a card
 // worked on without its Board-Id trailer or a branch named for it still has a head: the board then shows it as build.
-export const subjectNum = (message) => { const m = /^#C(\d{1,6}):/.exec(String(message ?? "")); return m ? Number(m[1]) : null; };
+// #C1204: "#C<num> (<Role>):" is read the same way (a signed commit written with the role in brackets), and a branch whose last segment starts
+// "c<num>-" names the card by number (branchNum): either finds the card's head when there is no Board-Id trailer. state.mjs holds a copy.
+export const subjectNum = (message) => { const m = /^#C(\d{1,6})(?::| \()/.exec(String(message ?? "")); return m ? Number(m[1]) : null; };
+export const branchNum = (branch) => { const m = /^c(\d{1,6})-/.exec(String(branch ?? "").split("/").pop()); return m ? Number(m[1]) : null; };
+const namesCard = (card, branch) => String(branch).split("/").pop() === card.id || (Number.isInteger(card.num) && branchNum(branch) === card.num);
 // #C671 (done-when 2): a branch named for the card (its last path segment is the card's id) whose tip carries neither the card's
 // Board-Id trailer nor its "#C<num>:" subject: the name alone found it. When that tip is also on main it is a branch pushed
 // before any commit, and it shows the card as being worked (build), never as shipped or live. state.mjs holds a copy.
 export function bareBranch(card, head) {
   // A tip read as the card's shipped commit (afterShip: commits after a ship) is that commit's own, not a branch without one.
   // A head from a release commit's "branch@sha" (shipped: a branch deleted since) is a shipped one, not a pushed branch.
-  if (!head || head.afterShip || head.shipped || String(head.branch).split("/").pop() !== card.id) return false;
+  if (!head || head.afterShip || head.shipped || !namesCard(card, head.branch)) return false;
   return boardIdOf(head.message) !== card.id && !(Number.isInteger(card.num) && subjectNum(head.message) === card.num);
 }
 export function headsFor(id, heads, num = null) {
   const tips = new Map();
   for (const h of heads) {
-    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && !(Number.isInteger(num) && subjectNum(h.message) === num)) continue;
+    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && !(Number.isInteger(num) && (subjectNum(h.message) === num || branchNum(h.branch) === num))) continue;
     const had = tips.get(h.branch);
     if (!had || (h.at ?? 0) > (had.at ?? 0)) tips.set(h.branch, h);
   }

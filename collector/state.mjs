@@ -262,18 +262,21 @@ export function repoOf(card, config) {
 }
 // #C649: a commit whose message starts "#C<num>:" belongs to the card with that number too (num, when the card has one), so a card
 // worked on without its Board-Id trailer or a branch named for it still has a head: the board then shows it as build.
-export const subjectNum = (message) => { const m = /^#C(\d{1,6}):/.exec(String(message ?? "")); return m ? Number(m[1]) : null; };
+// #C1204: "#C<num> (<Role>):" is read the same way, and a branch whose last segment starts "c<num>-" names the card by number (a copy of derive.mjs's).
+export const subjectNum = (message) => { const m = /^#C(\d{1,6})(?::| \()/.exec(String(message ?? "")); return m ? Number(m[1]) : null; };
+export const branchNum = (branch) => { const m = /^c(\d{1,6})-/.exec(String(branch ?? "").split("/").pop()); return m ? Number(m[1]) : null; };
+const namesCard = (card, branch) => String(branch).split("/").pop() === card.id || (Number.isInteger(card.num) && branchNum(branch) === card.num);
 // #C671 (done-when 2): a branch named for the card (its last path segment is the card's id) whose tip carries neither the card's
 // Board-Id trailer nor its "#C<num>:" subject: the name alone found it. When that tip is also on main it is a branch pushed
 // before any commit, and it shows the card as being worked (build), never as shipped or live. A copy of derive.mjs's bareBranch.
 export function bareBranch(card, head) {
-  if (!head || head.afterShip || head.shipped || String(head.branch).split("/").pop() !== card.id) return false;
+  if (!head || head.afterShip || head.shipped || !namesCard(card, head.branch)) return false;
   return boardIdOf(head.message) !== card.id && !(Number.isInteger(card.num) && subjectNum(head.message) === card.num);
 }
 export function headsFor(id, heads, num = null) {
   const tips = new Map();
   for (const h of heads) {
-    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && !(Number.isInteger(num) && subjectNum(h.message) === num)) continue;
+    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && !(Number.isInteger(num) && (subjectNum(h.message) === num || branchNum(h.branch) === num))) continue;
     const had = tips.get(h.branch);
     if (!had || (h.at ?? 0) > (had.at ?? 0)) tips.set(h.branch, h);
   }
