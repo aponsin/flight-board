@@ -1,2 +1,2 @@
-FINDINGS #C1233 at the merge: F1 fixed here (the merge keeps 978afbf5's --hist-shade in all three themes; the thread-scroll test change only allows applySending). F2 stands from 989c22d4: a failed send, Close or Ack leaves the thread folded, so its 'Not saved' line and the restored text are hidden. Reopen the thread on failure and test it.
+PASS #C1233: the merge onto 978afbf5 (my F1 fixed here); its F2 is fixed by f12c011a on top; covered.
 signed-by: Checker 2
