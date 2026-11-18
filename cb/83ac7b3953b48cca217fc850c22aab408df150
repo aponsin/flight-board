@@ -1,0 +1,5 @@
+SECURE
+
+#C1235, by diff on the signed 54f366ff. applySending inserts the same createElement-built dots span before the summary's .kind chip (insertBefore; fixed selectors), instead of appending to .w-text; one CSS rule hides .kind while details.sending. No innerHTML (audit 42), no network, storage or data change. Tests 22/22 (sending-state 9, hostile-text 8, fast-threads 5).
+
+signed-by: Security
