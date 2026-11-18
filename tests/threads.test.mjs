@@ -250,7 +250,7 @@ test("a thread the owner opened stays open through every live re-draw, in whiche
 test("Needs you draws its thread rows with the folds as the owner left them (#C241: they were always drawn shut)", () => {
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   const fn = html.slice(html.indexOf("function renderWaiting("), html.indexOf("\n}\n", html.indexOf("function renderWaiting(")));
-  assert.match(fn, /el\.innerHTML=[^\n]*answeredRows;\n\s*restoreFolds\(el,open\);/);
+  assert.match(fn, /patchHtml\(el,[^\n]*answeredRows\);\n\s*restoreFolds\(el,open\);/); // #C1229: drawn through patchHtml, which keeps unchanged rows
 });
 
 test("the stuck line: \"Manager stuck on <item>: <reason>\" for each item the gate stuck on, oldest first; none when cleared", () => {

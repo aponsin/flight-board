@@ -858,10 +858,11 @@ function renderWaiting(){
   queueMicrotask(()=>{Object.entries(drafts).forEach(([id,v])=>{const x=document.getElementById(id);if(x){x.value=v;fitBox(x)}});if(focusId){const x=document.getElementById(focusId);if(x){x.focus();x.selectionStart=x.selectionEnd=x.value.length}}});
   const item=(w,qn=null)=>askHtml(w,open,w.since,"",qn);
   const y=window.scrollY;
-  el.innerHTML=queueHtml(asks,item)+answeredRows;
+  patchHtml(el,queueHtml(asks,item)+answeredRows);
   restoreFolds(el,open);if(window.scrollY!==y)window.scrollTo(0,y);
-  el.querySelectorAll("[data-act]").forEach(b=>b.addEventListener("click",onReply));
-  el.querySelectorAll("details.w-item").forEach(d=>d.addEventListener("toggle",()=>{if(d.open)closedAnswers.delete(d.dataset.id);else closedAnswers.add(d.dataset.id)}));
+  // #C1229: a node the redraw kept already has its listeners; only a new one gets them (else each redraw would add another to every kept row).
+  el.querySelectorAll("[data-act]").forEach(b=>{if(b._wired)return;b._wired=true;b.addEventListener("click",onReply)});
+  el.querySelectorAll("details.w-item").forEach(d=>{if(d._wired)return;d._wired=true;d.addEventListener("toggle",()=>{if(d.open)closedAnswers.delete(d.dataset.id);else closedAnswers.add(d.dataset.id)})});
 }
 
 // The agent's pull requests (#C554, gate/agent-prs.mjs): the ones that need the owner's Approve. agentPrs/pr<n> is the team's entry
@@ -1728,7 +1729,7 @@ function teamRow(id,now){const c=threadCardAny(id),title=c&&(c.name||c.title)?St
   return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row"><span class="kind later">Team</span><div class="w-text"><b class="t-name">${esc(title.replace(/\s+/g," ").trim())}</b></div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,"team",{box:false})}</details>`}
 function teamHtml(now){const q=qOf("team"),ids=threadSets(now,q).team;
   return ids.length?ids.map(id=>teamRow(id,now)).join(""):isOn(q)?NO_MATCH:'<div class="empty">No team notes.</div>'}
-function renderTeam(){const el=$("teamnotes");if(!el)return;keep(el,()=>{el.innerHTML=teamHtml(Date.now())})}
+function renderTeam(){const el=$("teamnotes");if(!el)return;keep(el,()=>{patchHtml(el,teamHtml(Date.now()))})}
 function threadRows(now,q=rQuery){const s=threadSets(now,q);
   return {open:s.open.map(id=>threadRow(id,now)).join(""),answered:s.answered.map(id=>threadRow(id,now)).join("")}}
 // Resolved threads, folded at the panel's end: those of the last 7 days, and a search box that finds any resolved
@@ -1763,7 +1764,7 @@ document.addEventListener("click",e=>{if(e.target.closest&&e.target.closest("[da
   const t=document.querySelectorAll("#resolved .w-item > summary")[had]||document.querySelector("#resolved [data-rmore]");if(t&&t.focus)t.focus()}});
 // The Resolved tab (#C351): its list, no fold; its count is on the tab, and its search is the box over every tab (#C356).
 function resolvedHtml(now,q=qOf("resolved")){return `<div id="rlist">${rlistHtml(now,q)}</div>`}
-function renderResolved(){const el=$("resolved");keep(el,()=>{el.innerHTML=resolvedHtml(Date.now())})}
+function renderResolved(){const el=$("resolved");keep(el,()=>{patchHtml(el,resolvedHtml(Date.now()))})}
 // The search box over the tabs (#C356; #C363, the owner on the live board: it filtered every tab at once and was slow):
 // it filters the open tab's list only, with Resolved's matching (an exact #T number, or any text in the name, the item
 // or a message, any case); every tab's count stays its real total, and the row says the open tab's matches. Switching
@@ -1810,6 +1811,17 @@ const foldKey=d=>String(d.dataset.id||"").replace(/^i?th-/,"");
 document.addEventListener("toggle",e=>{const d=e.target;if(d&&d.tagName==="DETAILS"&&d.dataset&&d.dataset.id)folds.set(foldKey(d),d.open)},true);
 // After a part is drawn again: each fold as the owner last left it, else as it was in that part (open: its data-ids).
 function restoreFolds(el,open){el.querySelectorAll("details[data-id]").forEach(d=>{const k=foldKey(d),want=folds.has(k)?folds.get(k):open.has(d.dataset.id);if(want!==d.open)d.open=want})}
+// #C1229: draws html into el, but leaves alone every top-level node whose html is what it drew last time, so a redraw never touches a row that did not
+// change (a selection inside it, and the Copy box beside it, stay). A node's last drawn html is kept on the node itself (_sig), because the live node
+// differs from it as soon as a fold is opened or a note is typed; only a changed, new or surplus node is replaced, added or removed.
+function patchHtml(el,html){if(!el.childNodes||typeof document.createElement!=="function"){el.innerHTML=html;return}
+  const t=document.createElement("template");t.innerHTML=html;
+  const nw=[...t.content.childNodes],old=[...el.childNodes],sigOf=n=>n.nodeType===1?n.outerHTML:n.textContent;
+  nw.forEach((n,i)=>{const o=old[i];
+    if(o&&o.nodeType===n.nodeType&&(o._sig!=null?o._sig:sigOf(o))===sigOf(n))return;
+    if(n.nodeType===1)n._sig=n.outerHTML;
+    if(o)el.replaceChild(n,o);else el.appendChild(n)});
+  old.slice(nw.length).forEach(o=>el.removeChild(o))}
 // Re-draws a part of the page without losing what the owner is typing, which folds are open, or where the page is scrolled
 // (the part's own scroll too: the owner's strip scrolls on its own).
 function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id)),drafts={};
@@ -1825,7 +1837,7 @@ function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]
   Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t){t.value=v;fitBox(t)}});
   Object.entries(said).forEach(([id,v])=>{const m=document.getElementById(id);if(m&&!m.innerHTML)m.innerHTML=v});
   if(focus){const t=document.getElementById(focus);if(t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}}
-function renderThreads(){const el=$("threads");keep(el,()=>{el.innerHTML=threadsHtml(Date.now())});const nf=$("ntfiles");if(nf)nf.innerHTML=ntFilesHtml(pendingFiles.get("new")||[]);const na=$("ntattach");if(na)na.innerHTML=ntAttachHtml(!!assetsRef);ntHas()}
+function renderThreads(){const el=$("threads");keep(el,()=>{patchHtml(el,threadsHtml(Date.now()))});const nf=$("ntfiles");if(nf)nf.innerHTML=ntFilesHtml(pendingFiles.get("new")||[]);const na=$("ntattach");if(na)na.innerHTML=ntAttachHtml(!!assetsRef);ntHas()}
 (()=>{const t=$("nttext"),mq=typeof window.matchMedia==="function"?window.matchMedia("(max-width:600px)"):null;if(!t||!mq)return;
   const set=()=>{t.placeholder=ntPlaceholder(mq.matches)};set();if(mq.addEventListener)mq.addEventListener("change",set)})();
 // The new-thread form folds to one line plus Attach (#C351); focus, typed text or a waiting file opens it to the whole form.
@@ -2562,12 +2574,12 @@ function renderBoard(){
   const dOn=isOn(dQuery),doneAny=state.initiatives.filter(i=>i.status==="done").sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0));
   const doneDay=doneAny.filter(i=>(num(i.doneAt)??0)>Date.now()-DAY),done=dOn?doneAny.filter(i=>initHit(i,dQuery)):doneDay;
   const gl=groupList(open),gn=gl.filter(x=>x.group).length,groupEtaMap=groupEtas(groupList(all));let gi=0; // #C1099: from every open card, so a search does not move a group's time
-  keep($("board"),()=>{$("board").innerHTML=open.length?gl.map(x=>x.group?groupRow(x.group,x.cards,{n:++gi,of:gn},groupEtaMap.get(x.group)):initRow(x.card)).join(""):on?NO_MATCH:'<div class="empty">No initiatives in flight.</div>'});
+  keep($("board"),()=>{patchHtml($("board"),open.length?gl.map(x=>x.group?groupRow(x.group,x.cards,{n:++gi,of:gn},groupEtaMap.get(x.group)):initRow(x.card)).join(""):on?NO_MATCH:'<div class="empty">No initiatives in flight.</div>')});
   // The heading's count (#C295): the cards the list above draws, none when there are none; "N of M" while searching.
   $("initcount").textContent=on?`${open.length} of ${all.length}`:all.length?String(all.length):""; $("initcount").hidden=!on&&!all.length;
   $("donebox").hidden=!doneAny.length; $("donesum").textContent=dOn?`Done: ${done.length} found, any age`:`Done in the last 24 h (${doneDay.length})`;
   const more=done.length>DONE_SHOWN?`<div class="empty">The newest ${DONE_SHOWN} of ${done.length} shown: add a word to narrow it.</div>`:"";
-  keep($("doneboard"),()=>{$("doneboard").innerHTML=done.length?done.slice(0,DONE_SHOWN).map(initRow).join("")+more:dOn?NO_MATCH:'<div class="empty">Nothing done in the last 24 h: search for older cards.</div>'});
+  keep($("doneboard"),()=>{patchHtml($("doneboard"),done.length?done.slice(0,DONE_SHOWN).map(initRow).join("")+more:dOn?NO_MATCH:'<div class="empty">Nothing done in the last 24 h: search for older cards.</div>')});
   try{pulseSync()}catch(_){} // #C1068: the pulsing tiles' delays (a batch beats together)
 }
 // Shipped and reported (#C362): every event, of any age, newest first (it scrolls inside), and its own search box, at
@@ -3177,8 +3189,16 @@ document.addEventListener("input",()=>{lastTyped=Date.now()});
 // A thread's rename box holds while it has focus: it lives in a row the redraw replaces, and keep() can't bring it back.
 const typingText=(now=Date.now())=>{const a=document.activeElement;if(!a)return false;if(a.tagName==="INPUT"&&a.closest&&a.closest("[data-thead]"))return true;
   return (a.tagName==="TEXTAREA"||a.tagName==="INPUT")&&!!a.value&&now-lastTyped<TYPE_IDLE};
+// #C1229 (the owner: the board's frequent refresh broke mouse text selection, so copying worked about one time in five): a redraw also waits while
+// text is selected on the page or a pointer is down (a drag in progress), and draws once the selection clears. The wait is the same short poll as the
+// batch above; nothing is lost, the redraw draws the newest state. patchHtml (above keep) keeps unchanged nodes, so a selection in a row that did not change survives a redraw that does run.
+let pointerDown=false;
+["pointerdown","mousedown"].forEach(t=>document.addEventListener(t,()=>{pointerDown=true},true));
+["pointerup","mouseup","pointercancel","dragend","blur"].forEach(t=>document.addEventListener(t,()=>{pointerDown=false},true));
+const selectionHeld=()=>{if(pointerDown)return true;try{const s=getSelection();return !!s&&s.rangeCount>0&&s.isCollapsed===false}catch(_){return false}};
 function renderSoon(){if(renderDue!=null)return;
-  const go=()=>{if(typingText()){renderDue=setTimeout(go,Math.max(lastTyped+TYPE_IDLE-Date.now(),RENDER_BATCH));return}renderDue=null;renderAnchored()};
+  const go=()=>{if(typingText()){renderDue=setTimeout(go,Math.max(lastTyped+TYPE_IDLE-Date.now(),RENDER_BATCH));return}
+    if(selectionHeld()){renderDue=setTimeout(go,RENDER_BATCH);return}renderDue=null;renderAnchored()};
   renderDue=setTimeout(go,RENDER_BATCH)}
 // After the owner's own write: drawn on the next tick, once the caller has written its receipt (keep() carries it).
 function renderOwn(){setTimeout(()=>{if(renderDue!=null){clearTimeout(renderDue);renderDue=null}renderAnchored()},0)}
@@ -3495,7 +3515,7 @@ else{
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-v3view")}catch(e){}if(v==="plan"||v==="crew")setV3View(v)})();
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-view")}catch(e){}if(typeof location!=="undefined"&&location.hash==="#v3")v="v3";if(v==="v3")setView("v3")})();
 }
-setInterval(()=>{tick();if(!typingText()&&document.querySelector("[data-shipat]"))renderBoard()},15000);tick();renderAll();
+setInterval(()=>{tick();if(!typingText()&&!selectionHeld()&&document.querySelector("[data-shipat]"))renderBoard()},15000);tick();renderAll();
 
 (async()=>{
   const db=window.claude&&await window.claude.use("db");

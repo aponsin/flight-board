@@ -138,6 +138,8 @@ for (const host of ["store", null]) for (const mode of ["all", "end", "start"]) 
 // (pushHelpHtml); nothing from the board or the user agent is written raw (the user agent is only matched, never shown).
 // #C1049 added two: renderRestart's "Not now: agents working" button (a fixed word through esc()) and the pop-over's list of who is working (each name
 // through esc()); tests/not-now-badge-short.test.mjs draws a hostile agent name and finds no raw markup.
-test("the page's innerHTML sinks are the 46 audited (41 for #C723, 1 for #C874, 1 for #C919, 1 for #C972, 2 for #C1049): a new one fails here until it is audited", () => {
-  assert.equal((template.match(/innerHTML/g) ?? []).length, 46);
+// #C1229 took six sinks out (the board, the done list, the threads, Needs you, the team notes and the resolved list each now hand the same escaped html to patchHtml) and put two in:
+// patchHtml's own, `t.innerHTML=html` on a detached template and its fallback `el.innerHTML=html` when there is no DOM to patch. Both write only what the six callers built through esc() before.
+test("the page's innerHTML sinks are the 42 audited (41 for #C723, 1 for #C874, 1 for #C919, 1 for #C972, 2 for #C1049, less 6 and plus 2 for #C1229): a new one fails here until it is audited", () => {
+  assert.equal((template.match(/innerHTML/g) ?? []).length, 42);
 });
