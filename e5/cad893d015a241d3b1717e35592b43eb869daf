@@ -1,0 +1,2 @@
+PASS (Full) #C1210 tip, by diff from 918074fe: base is the last pack whose probes step ran (.done marker), none = every job; jobsAt refuses an unread entry; suite 3116/0; mutant (drop the count check) caught. On this Mac the first step changes ask 45 to 80 AND evidence 105 to 185 (JOBS evidence limit 170); the other three already match. LOW: undo leaves the .done marker, so after an undo the next pack offers no step
+signed-by: Checker 2
