@@ -1,2 +1,2 @@
-FINDINGS #C1206: its own change is sound (threadKnown finds an owner thread by threads.num with a message; 4/4 tests; mutants drop-lookup and drop-message-check both caught), but this tip stacks on #C1204 29216693, which is FINDINGS (M1 unfixed), so the line ending here is not PASS: a PASS here would cover #C1204. Re-sign after #C1204's fix lands under it.
+PASS (Full) #C1206: own change sound (4/4 tests, both mutants caught); the stacked #C1204 M1 fixed in 8b874e02, merged on top; reviewed as part of the line ending at 818f77da474e7421024d2a308671d3ef985ab10b
 signed-by: Checker 2
