@@ -1,0 +1,5 @@
+SECURE
+
+Part of #C1229, reviewed as the range main..2b044831: patchHtml replaces six innerHTML writes with the same escaped html, parsed in an inert template; the hostile-text audit passes at 42 sinks.
+
+signed-by: Security
