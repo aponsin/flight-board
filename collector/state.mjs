@@ -755,7 +755,10 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
     ? { ...(coverSha ? signedTimesOf(repo.git, coverSha, repo.notes, signed, head.at) : {}), ...signedTimesOf(repo.git, after ? after.sha : tip.sha, repo.notes, signed, head.at) } : {};
   // #C854: a tip that has its sign-offs (the phase is ship) but does not continue main (main has a commit the tip lacks) cannot be landed as it
   // is: it goes back to its builder to re-cut. Read only for a tip waiting at ship, so a card in review costs no extra git call.
-  const behindMain = !onMain && !bare && phase === config.collector.shipPhase && typeof repo.git === "function" && !ok(() => repo.git(["merge-base", "--is-ancestor", mainRef, tip.sha]));
+  // #C1207 (11-18: the watch sent Builder "signed but behind main, re-cut" for two lower cards of a stack whose tip, fully signed, already had main merged in; a re-cut would have cost every signature): a card
+  // read under a stack tip (coverSha) that is a lower card of it is never behind main by its own commit: the stack's tip carries the question, once, and is behind main only when the tip itself lacks it.
+  const lowerOfStack = !!coverSha && String(tip.sha) !== coverSha;
+  const behindMain = !onMain && !bare && !lowerOfStack && phase === config.collector.shipPhase && typeof repo.git === "function" && !ok(() => repo.git(["merge-base", "--is-ancestor", mainRef, tip.sha]));
   const findings = bare || onMain ? [] : [...new Set([...findingsOn(after ? after.sha : tip.sha), ...(coverSha ? findingsOn(coverSha) : [])])].sort();
   // #C1114: the findings every review has put on the branch's commits (not only the tip's), counted by kind; the Worker raises the card's counters to these.
   const issueCounts = (() => {
