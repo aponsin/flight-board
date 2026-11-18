@@ -165,12 +165,14 @@ test("the command refuses a --state outside ~/.flight-board: it prints [] and cr
 test("the watchdog doc fits the task: no file tool, the --rows command, the tools it calls loaded, Checker 2 in the title list", () => {
   const doc = readFileSync(new URL("../docs/watchdog-pickup-pass.md", import.meta.url), "utf8");
   assert.doesNotMatch(doc.replace(/no file tool[^.]*\./gi, ""), /Write tool|--rows-file|scratch file/i, "no step writes a file");
-  assert.match(doc, /pickup-watch\.mjs --pass x --rows '<the rows>' --config <the path of board\.config\.json/);
+  assert.match(doc, /pinned-run\.mjs pickup-watch --pass x --rows '<the rows>' --config <the path of board\.config\.json/);
   const line = doc.match(/"select:([^"]+)"/)?.[1] ?? "";
   for (const tool of ["list_sessions", "list_events", "get_usage", "get_session", "set_remote_control"]) assert.ok(line.split(",").includes(`mcp__ccd_session_mgmt__${tool}`), `${tool} is loaded`);
   for (const tool of ["PushNotification", "SendMessage"]) assert.ok(line.split(",").includes(tool), `${tool} is loaded`);
   assert.match(doc, /Designer, Checker 2\./, "Checker 2 is in the title list");
-  assert.match(doc, /Bash\(node ~\/\.flight-board\/current\/scripts\/pickup-watch\.mjs:\*\)/, "the command is named for pre-approval");
+  assert.match(doc, /Bash\(node ~\/\.flight-board\/current\/scripts\/pinned-run\.mjs pickup-watch:\*\)/, "the command is named for pre-approval");
+  // #C1226: the stable entry only. The 12:04 run hit a prompt on the old form, so no line of the doc may run either script by its own path through current.
+  assert.doesNotMatch(doc, /node ~\/\.flight-board\/current\/scripts\/(pickup|prompt)-watch\.mjs/, "no run through current's own copy");
   assert.doesNotMatch(doc, /\/Users\//, "no home path in a committed file (the pre-push scan holds the owner's name)");
 });
 
@@ -188,7 +190,7 @@ test("the watchdog doc never has the task read board.config.json: the pass is to
 // anchored at the start of its line, with the words that must follow), and any other line that names it fails. A new line that must name it is added here on purpose.
 export const CONFIG_LINES_ALLOWED = [
   /^For each session step 2 kept \(its title is a role of the roster; a role with no session is left out\)\. \*\*Never open `board\.config\.json` yourself\*\* \(#C1154: a bare `cat` of it$/,
-  /^ {3}`node ~\/\.flight-board\/current\/scripts\/pickup-watch\.mjs --pass x --rows '<the rows>' --config <the path of board\.config\.json, the same one the task's prompt-watch step names>`$/,
+  /^ {3}`node ~\/\.flight-board\/current\/scripts\/pinned-run\.mjs pickup-watch --pass x --rows '<the rows>' --config <the path of board\.config\.json, the same one the task's prompt-watch step names>`$/,
   /^ {3}is required and must be a file named `board\.config\.json`; pass no `--state` \(the history is `~\/\.flight-board\/pickup-pass\.json`; the$/,
   /^one bare command the owner pre-approved, no step uses a file tool, no step reads `board\.config\.json` \(the config is a path argument to a pinned script, never read with `cat` or any shell$/,
 ];

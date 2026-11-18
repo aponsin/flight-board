@@ -18,10 +18,11 @@ sender is second sees a Manager already picked up: this task's script reads "pic
 pickup goes out once either way.
 
 The task's permissions allow Bash for exactly the command `sleep 60` (an exact rule) and for the pickup-watch script
-under the same rule Steward holds, `Bash(node ~/.flight-board/current/scripts/pickup-watch.mjs *)`, never Bash in
+under the one rule every morning watch holds, `Bash(node ~/.flight-board/current/scripts/pinned-run.mjs pickup-watch *)` (#C1226:
+the stable entry that runs the pinned install's copy, #C1205; a command naming `pickup-watch.mjs` through `current` hit a prompt at 12:04), never Bash in
 general (Security): the task reads session titles, so a broad grant would let a crafted title run commands. It never
-reads or writes the board, so it has no database-tool rule (no `mcp__claude-artifacts__db_*`); Manager records its own pickedAt (the keeper's step 4 then
-skips it).
+reads or writes the board, so it has no database-tool rule (no `mcp__claude-artifacts__db_*`); it asks Manager for nothing on the board either (the memory tile is the
+collector's, not an agent's).
 
 ## Prompt
 
@@ -33,8 +34,8 @@ You are the {{TEAM}} morning clear. You reset the lead, Manager, once a day and 
 3. Wait for Manager to be idle: if its row says working, wait with a background shell sleep of 60 seconds (Bash, run_in_background: true, "sleep 60"; never a foreground sleep) and list again, at most 15 waits. Still working after that: send nothing, reply "Manager busy, no reset" and stop.
 4. get_usage with its sessionId. Skip the reset only on a real reading: its context status is "ok" and the tokens of its "Messages" category are under 60,000 (a category not listed counts as 0 only when the status is "ok"). Then it is fresh already; send nothing, reply "Manager fresh at <tokens>, no reset" and stop. A status that isn't "ok" (an idle session whose process has stopped reports its context unavailable, with no categories) is no reading: reset anyway, never skip on it.
 5. Send Manager exactly "CONTEXT RESET" and nothing else.
-6. Pick it back up: keep a list of readings, empty at first. Wait with a background "sleep 60" as in step 3, then read Manager's row state from list_sessions ("idle" or "working") and its Messages tokens from get_usage, add {"state":"<state>","tokens":<tokens>} to the list, and run exactly (one Bash call, nothing around it) node ~/.flight-board/current/scripts/pickup-watch.mjs '<the list as JSON>'. It prints one word: "send": send Manager exactly "/pickup Manager" and nothing else, once, then go to step 7. "wait": wait and read again. "picked-up" or "give-up": send nothing more and go to step 7.
-7. If you sent the pickup, send Manager, as its own message: "Morning clear: CONTEXT RESET and /pickup Manager sent. Set agents.Manager.pickedAt on the board's meta/context to now (milliseconds) and delete its saved, savedTokens and savedPct." Reply with one line: the messages sent and the script's last word.
+6. Pick it back up: keep a list of readings, empty at first. Wait with a background "sleep 60" as in step 3, then read Manager's row state from list_sessions ("idle" or "working") and its Messages tokens from get_usage, add {"state":"<state>","tokens":<tokens>} to the list, and run exactly (one Bash call, nothing around it) node ~/.flight-board/current/scripts/pinned-run.mjs pickup-watch '<the list as JSON>'. It prints one word: "send": send Manager exactly "/pickup Manager" and nothing else, once, then go to step 7. "wait": wait and read again. "picked-up" or "give-up": send nothing more and go to step 7.
+7. Send nothing more: the pickup needs no word about the board. Reply with one line: the messages sent and the script's last word.
 ```
 
 ## Dry run (the acceptance)

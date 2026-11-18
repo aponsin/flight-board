@@ -26,7 +26,8 @@ test("the cue and the pickup are the exact words, sent only to Manager, after it
 
 test("the pickup is the script's word, from readings taken after the cue (not idle-and-under-5,000 by eye)", () => {
   assert.match(step(6), /keep a list of readings, empty at first/);
-  assert.match(step(6), /run exactly \(one Bash call, nothing around it\) node ~\/\.flight-board\/current\/scripts\/pickup-watch\.mjs '<the list as JSON>'/);
+  assert.match(step(6), /run exactly \(one Bash call, nothing around it\) node ~\/\.flight-board\/current\/scripts\/pinned-run\.mjs pickup-watch '<the list as JSON>'/);
+  assert.doesNotMatch(prompt, /current\/scripts\/pickup-watch\.mjs/, "#C1226: the stable entry only, the old form hit a permission prompt");
   assert.match(step(6), /"picked-up" or "give-up": send nothing more/);
   assert.doesNotMatch(prompt, /under 5,000/);
   assert.doesNotMatch(prompt, /under 25,000 tokens/, "the total never falls that low");
@@ -49,8 +50,11 @@ test("a context that isn't 'ok' is no reading: the reset goes ahead, never skipp
   assert.equal(skips({ status: "unavailable", messages: 0 }), false, "idle overnight, process stopped: reset anyway");
 });
 
-test("Manager records its own pickedAt, so the keeper's hourly step 4 doesn't pick it up again", () => {
-  assert.match(step(7), /Set agents\.Manager\.pickedAt on the board's meta\/context to now \(milliseconds\)/);
+// #C1226: step 7 asked Manager to write pickedAt on the old board artifact; the memory tile is the collector's now, so step 7 sends nothing.
+test("step 7 asks Manager for nothing on the board (no pickedAt, no saved fields)", () => {
+  assert.match(step(7), /^Send nothing more/);
+  assert.doesNotMatch(step(7), /pickedAt|savedTokens|savedPct|meta\/context|SendMessage|send_message/);
+  assert.doesNotMatch(prompt, /pickedAt/);
   assert.doesNotMatch(prompt, /ArtifactData|mcp__claude-artifacts__db_/, "the task never reads or writes the board");
 });
 
@@ -58,7 +62,8 @@ test("it never clears a session or touches Remote Control; its Bash is two exact
   assert.match(prompt, /Never clear a session yourself, never touch Remote Control/);
   assert.doesNotMatch(prompt, /clear_session|set_remote_control/);
   assert.match(doc, /allow Bash for exactly the command `sleep 60` \(an exact rule\)/);
-  assert.match(doc, /`Bash\(node ~\/\.flight-board\/current\/scripts\/pickup-watch\.mjs \*\)`, never Bash in\ngeneral/);
+  assert.match(doc, /`Bash\(node ~\/\.flight-board\/current\/scripts\/pinned-run\.mjs pickup-watch \*\)`/);
+  assert.match(doc, /never Bash in\ngeneral/);
 });
 
 test("a dry run on a test role is the acceptance, then three live mornings", () => {

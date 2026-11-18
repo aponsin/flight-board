@@ -10,7 +10,7 @@ no tool the task has not loaded.
    `Load the session tools with ToolSearch: "select:mcp__ccd_session_mgmt__list_sessions,mcp__ccd_session_mgmt__list_events,mcp__ccd_session_mgmt__get_usage,mcp__ccd_session_mgmt__get_session,mcp__ccd_session_mgmt__set_remote_control,PushNotification,SendMessage".`
    (the pass reads `get_usage` and `get_session` and may call `set_remote_control`; `SendMessage` is already there).
 2. **The title list** (step 2) gains "Checker 2": `... Boardsmith, Steward, Ops, Designer, Checker 2.`
-3. **One more pre-approved command** (the task says the owner pre-approved exactly its commands): `Bash(node ~/.flight-board/current/scripts/pickup-watch.mjs:*)`
+3. **One more pre-approved command** (the task says the owner pre-approved exactly its commands): `Bash(node ~/.flight-board/current/scripts/pinned-run.mjs pickup-watch:*)` (#C1226: the stable entry that runs the pinned install's copy, #C1205; a rule naming `pickup-watch.mjs` through `current` hit a prompt; the task's prompt-watch step needs `Bash(node ~/.flight-board/current/scripts/pinned-run.mjs prompt-watch:*)` the same way)
    in the permissions the task runs under. The command below carries a different `--rows` text every run, so the rule is a prefix rule; without it the first run waits on a prompt.
 
 ---
@@ -33,7 +33,7 @@ program in step 4, which reads the roster and the `rosterSessions` itself and dr
 4. Run, as one bare Bash command with nothing around it, the rows in single quotes (they hold only words, digits, commas, semicolons
    and the spaces of a role name, so nothing in them can end the quote):
 
-   `node ~/.flight-board/current/scripts/pickup-watch.mjs --pass x --rows '<the rows>' --config <the path of board.config.json, the same one the task's prompt-watch step names>`
+   `node ~/.flight-board/current/scripts/pinned-run.mjs pickup-watch --pass x --rows '<the rows>' --config <the path of board.config.json, the same one the task's prompt-watch step names>`
 
    for example `--rows 'Manager,idle,1200,on;Checker 2,working,70000,on'`. No file tool is used (the program writes only its own history file). `--config`
    is required and must be a file named `board.config.json`; pass no `--state` (the history is `~/.flight-board/pickup-pass.json`; the
