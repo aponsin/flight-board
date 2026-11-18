@@ -51,6 +51,15 @@ test("it stays usable: opening a gray thread is not undone by the next draw, and
   t.mark("t1", 6000); assert.equal(row.open, false, "a follow-up folds it again"); assert.equal(t.size(), 1);
 });
 
+test("a write that failed opens the thread again, whichever row draws it, so its Not saved line is in sight (Checker 2's F2); a clear without a failure leaves it folded", () => {
+  const t = world(); const ask = t.w.mkRow("t1"), row = t.w.mkRow("th-t1"), card = t.w.mkRow("ith-t1", { card: true }), other = t.w.mkRow("th-t2", { open: false });
+  t.mark("t1", 1000);
+  t.run('clearSending("t1",true)');
+  for (const r of [ask, row, card]) { assert.equal(r.open, true, "open again"); assert.ok(!r.cls.has("sending") && !r.summary.dots, "no longer gray"); }
+  assert.equal(other.open, false, "another thread is left alone"); assert.equal(t.folds().get("t1"), true, "and a redraw keeps it open"); assert.equal(t.size(), 0);
+  t.mark("t1", 2000); t.run('clearSending("t1")'); assert.equal(row.open, false, "without the failure flag it stays folded");
+});
+
 test("the dots go once Manager has taken the message: the delivered time reaches it, or Manager wrote after it", () => {
   let t = world({ live: true, seen: 999 }); let row = t.w.mkRow("th-t1"); t.mark("t1", 1000); t.apply(2000);
   assert.ok(row.cls.has("sending"), "delivered before it was sent is not delivered");
@@ -68,10 +77,10 @@ test("with the watch not live nothing is taken, and after ten minutes the state 
 
 test("every answer button marks the thread before anything is awaited and clears it when the write fails", () => {
   assert.match(script, /btn\.disabled=true;lastPing="";if\(key!=="new"\)markSending\(id\);const anchor=await prepAnchor\(btn\);/, "Send, and a decision option (through sendThread), not the new-thread form");
-  assert.equal((script.match(/clearSending\(id\);restore\(\)/g) || []).length, 2, "both failures of a send clear it");
+  assert.equal((script.match(/clearSending\(id,true\);restore\(\)/g) || []).length, 2, "both failures of a send clear it and open the thread");
   assert.match(script, /b\.disabled=true;markSending\(id\);try\{await applyWrites\(closeWrites\(id,Date\.now\(\)/, "Close");
   assert.match(script, /b\.disabled=true;markSending\(id\);try\{await applyWrites\(threadState\(id\)==="building"/, "Ack");
-  assert.equal((script.match(/catch\(err\)\{b\.disabled=false;clearSending\(id\);/g) || []).length, 2, "Close and Ack clear it when not saved");
+  assert.equal((script.match(/catch\(err\)\{b\.disabled=false;clearSending\(id,true\);/g) || []).length, 2, "Close and Ack clear it and open the thread when not saved");
   assert.match(script, /renderAgentPrs\(\);applySending\(\);liveWas/, "a whole redraw puts it back");
   assert.match(script, /restoreFolds\(el,open\);applySending\(\);back\(\)/, "so does a part's");
 });

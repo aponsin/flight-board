@@ -1846,7 +1846,10 @@ document.addEventListener("toggle",e=>{const d=e.target;if(d&&d.tagName==="DETAI
 const sending=new Map(),SENDING_MAX=10*60e3;
 function markSending(id,now=Date.now()){if(!id)return;sending.set(id,now);folds.set(id,false);
   document.querySelectorAll("details[data-id]").forEach(d=>{if(foldKey(d)===id&&d.open)d.open=false});applySending(now)}
-function clearSending(id){sending.delete(id);applySending()}
+// A write that failed (Checker 2's F2): the thread opens again, so its "Not saved" line and the text put back in its box are in sight, and it is not mistaken for sent.
+function clearSending(id,reopen=false){sending.delete(id);
+  if(reopen){folds.set(id,true);document.querySelectorAll("details[data-id]").forEach(d=>{if(foldKey(d)===id&&!d.open)d.open=true})}
+  applySending()}
 function sendingTaken(id,at,now){const seen=liveOn(now)?wakeSeen():null;
   return now-at>SENDING_MAX||seen!=null&&seen>=at||threadOf(id).some(m=>m&&m.from!==OWNER&&isT(m.at)&&m.at>at)}
 function applySending(now=Date.now()){if(typeof document.querySelectorAll!=="function")return;
@@ -1966,10 +1969,10 @@ async function sendThread(btn,id,text,msg,kind,restore,key="th:"+id){
   if(!dbRef){restore();msg.textContent="Can't save from here. Tell Manager in chat instead.";return}if(!text&&!(pendingFiles.get(key)||[]).length){msg.textContent="Write your message first.";return}
   btn.disabled=true;lastPing="";if(key!=="new")markSending(id);const anchor=await prepAnchor(btn);
   const lp=longPaste(text,MAXT,Date.now(),!!assetsRef),unattach=attachLong(key,lp);
-  let stored;try{stored=await storeFiles(key,msg)}catch(err){unattach();btn.disabled=false;clearSending(id);restore();msg.textContent=err.message;return}
+  let stored;try{stored=await storeFiles(key,msg)}catch(err){unattach();btn.disabled=false;clearSending(id,true);restore();msg.textContent=err.message;return}
   const now=Date.now();
   try{await applyWrites(threadWrites(id,lp.text,stored,now,kind,Math.random().toString(36).slice(2,8)));(pendingFiles.get(key)||[]).forEach(dropPreview);pendingFiles.delete(key)}
-  catch(err){unattach();btn.disabled=false;clearSending(id);restore();msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead.";return}
+  catch(err){unattach();btn.disabled=false;clearSending(id,true);restore();msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead.";return}
   const long=longLine(lp,MAXT);
   if(wakeMode()==="batch"){if(key==="new"){msg.innerHTML=sentLine(id,"batch")+esc(long)}else msg.textContent="Saved. Manager reads it at its next check (within 5 minutes)."+long;btn.disabled=false;return}
   // The ping is cut shorter still (1,900): a cut text says so first, so the auto-reply never reads the cut as the whole.
@@ -2030,14 +2033,14 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
   const id=b.dataset.tclose,msg=document.getElementById(`tmsg-${b.dataset.where}-${id}`);
   if(!dbRef){if(msg)msg.textContent="Can't save from here.";return}
   b.disabled=true;markSending(id);try{await applyWrites(closeWrites(id,Date.now(),Math.random().toString(36).slice(2,8)));if(msg)msg.textContent="Closed."}
-  catch(err){b.disabled=false;clearSending(id);if(msg)msg.textContent="Not closed ("+(err&&err.code||"error")+")."}});
+  catch(err){b.disabled=false;clearSending(id,true);if(msg)msg.textContent="Not closed ("+(err&&err.code||"error")+")."}});
 // Ack on Manager's answer or live word (#C364): one click closes the thread, no note, no ping.
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tack]");if(!b||b.disabled)return;
   const id=b.dataset.tack,msg=document.getElementById(`tmsg-${b.dataset.where}-${id}`);
   if(!dbRef){if(msg)msg.textContent="Can't save from here.";return}
   const now=Date.now(),rid=Math.random().toString(36).slice(2,8);
   b.disabled=true;markSending(id);try{await applyWrites(threadState(id)==="building"?ackWrites(id,now,rid):closeWrites(id,now,rid,"Ack."));if(msg)msg.textContent="Acknowledged."}
-  catch(err){b.disabled=false;clearSending(id);if(msg)msg.textContent="Not saved ("+(err&&err.code||"error")+")."}});
+  catch(err){b.disabled=false;clearSending(id,true);if(msg)msg.textContent="Not saved ("+(err&&err.code||"error")+")."}});
 // A decision's option in a thread (#C364): the pick, and anything typed in the box under it, sent as the owner's message.
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-topt]");if(!b||b.disabled)return;
   const id=b.dataset.topt,pick=optionText(id,b.dataset.choice);if(!pick)return;
