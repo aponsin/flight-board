@@ -1,0 +1,2 @@
+PASS #C1229: F2 fixed; the pause note shows only for a held row (heldRows && selectionIn), never on a plain press. Suite 3160 pass 0 fail; mutation pass (pointerDown back in holdOn: plain-click test failed, restored). LOW: the comment above holdOn still says the note shows while a drag is on.
+signed-by: Checker 2
