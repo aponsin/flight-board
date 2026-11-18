@@ -1,5 +1,7 @@
 # The context keeper's task
 
+> **Retired (#C1228).** No keeper task is scheduled today: the morning clear (`keeper/MORNING.md`) and the watchdog's pickup pass (`docs/watchdog-pickup-pass.md`) do its resets and pickups, and the memory tile is the collector's. Nothing writes `agents.<Title>.pickedAt` any more (the morning clear's step 7 no longer asks for it), so step 4's "skip a session picked up since its reset" rule below has nothing to read: a keeper saved from this text again would send a second `/pickup` to a session just picked up (#C401). Rewrite steps 4 and 6 on the store before re-enabling it.
+
 The scheduled task that measures every agent's context, cues resets and picks the reset sessions back up. The lead saves
 the prompt below into the task (`update_scheduled_task`) after a release that changes it, with the team's values in
 place of `{{TEAM}}` (the team's name), `{{FOLDERS}}` (#C456: the words the agents' folders contain, each in double quotes, comma-separated, e.g. `"team", "flight-board"`, so an agent working in the board's own repository is measured too) and `{{ROLES}}` (the

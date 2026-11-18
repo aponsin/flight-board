@@ -155,6 +155,7 @@ export const DISPATCH_IDLE_MS = 15 * 60e3, DISPATCH_LATE_MS = 30 * 60e3;
 // an idle agent at once; the 15 minutes above stay for a card without turns, the old rule). A pair is a role, a card AND the phase, so a
 // new phase is a new first wake, and an old phase's pair is forgotten when the card moves on.
 export const DISPATCH_TURN_IDLE_MS = 60e3;
+export const DISPATCH_READY_TEXT = "is pushed, but no READY covers this tip, so nobody reviews it; send the READY with stack-ready.mjs (if it refuses, read why: the commit's last paragraph must hold Board-Id and Co-Authored-By together)";
 export const DISPATCH_STEPS = {
   build: "has nothing pushed; build it and push the branch (the push is the READY)",
   rework: "came back with findings; fix them and push the new commit (the push hands it back to review)",
@@ -227,6 +228,8 @@ export function dispatchItems({ cards, agents, asked = new Set(), queues = null,
         ...(phase && Object.hasOwn(DISPATCH_STEPS, t.step) ? { phase, step: t.step } : {}),
         ...(phase && Number.isInteger(card.num) && card.num >= 1 && card.num <= 1e6 ? { num: card.num } : {}),
         ...(phase && SHA12.test(String(t.sha)) ? { sha: t.sha } : {}),
+        // #C1228: a build turn for a pushed tip that no READY covers.
+        ...(phase && t.step === "build" && t.ready === true && SHA12.test(String(t.sha)) ? { ready: true } : {}),
         // #C895: the full sha (it must be the 12 the line would have named), the repository (owner/name) and the branch.
         ...(phase && SHA12.test(String(t.sha)) && SHA40.test(String(t.fullSha)) && String(t.fullSha).startsWith(t.sha) ? { fullSha: t.fullSha } : {}),
         ...(phase && SHA12.test(String(t.sha)) && REPO_FULL.test(String(t.repo)) ? { repo: t.repo } : {}),
@@ -276,7 +279,9 @@ export const dispatchLine = (i) => {
     const together = tog.length ? `; review together with ${tog.map((x) => `#C${x.num} (${x.sha})`).join(", ")} of group ${i.group} as one range` : "";
     // #C1076: a pair line of a group card says the group: `build pack <group>`.
     const group = i.step === "pair" && typeof i.pack === "string" && PACK_WORD.test(i.pack) ? `; build pack ${i.pack}` : "";
-    return `DISPATCH ${card} at ${i.phase}: ${at ? `${at}${who}; ` : ""}it ${DISPATCH_STEPS[i.step]}${on}${together}${queue}${group} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
+    // #C1228: a pushed tip with no READY over it is not "nothing pushed": the signal is what is missing (stack-ready refuses a commit whose last paragraph has no Board-Id trailer).
+    const text = i.step === "build" && i.ready === true && SHA12.test(String(i.sha)) ? DISPATCH_READY_TEXT : DISPATCH_STEPS[i.step];
+    return `DISPATCH ${card} at ${i.phase}: ${at ? `${at}${who}; ` : ""}it ${text}${on}${together}${queue}${group} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
   }
   return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;
 };

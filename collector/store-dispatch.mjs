@@ -90,7 +90,10 @@ export function turnsOf(card, e, ctx = {}) {
   const signedBy = signed.map((s) => ROLE_OF_NOTE[s]);
   // #C914: stackMode marks a builder's turn for a card of a stack-mode repository: its wake names the stack-ready command as the push.
   const mode = ctx.stackOn === true ? { stackMode: true } : {};
-  const owner = { role: card.owner_role, phase: "build", step: "build", ...(branch ? { stack: branch } : {}), ...mode };
+  // #C1228 (11-18: #C1225 was woken on every re-arm with "nothing pushed" while its tip was pushed and signed; stack-ready had refused it for a trailer): a
+  // build turn for a tip that is pushed (not a WIP start push) and that no READY covers says so, and names the commit, so the line asks for the signal.
+  const unready = ctx.stackOn === true && e?.stackHold === true && e?.wipHead !== true && sha ? { sha, ...where, ready: true } : {};
+  const owner = { role: card.owner_role, phase: "build", step: "build", ...(branch ? { stack: branch } : {}), ...mode, ...unready };
   if (stack?.outside === true && e?.onMain !== true) return [{ role: card.owner_role, phase: "build", step: "outside", ...(branch ? { stack: branch } : {}), ...mode }];
   // #C981: a rework the store read with no reason attached (evidence `rework`; the store clears it once a reason is set) is the owner's turn
   // first: until then every other write to the card is refused, so nothing else on it can move.
