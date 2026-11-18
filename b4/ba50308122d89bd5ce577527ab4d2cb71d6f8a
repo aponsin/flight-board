@@ -1,0 +1,2 @@
+PASS (Quick) #C1209 tip: askStaleSec floor 60 to 90, a test holds min above JOBS.ask limit + interval; closes my #C1208 LOW; signed by diff (ed321295..b4ba5030: knobs.mjs, one test file, one DATA.d line); ops-knobs tests green; mutant (floor back to 60) caught; no askStaleSec under 90 left
+signed-by: Checker 2
