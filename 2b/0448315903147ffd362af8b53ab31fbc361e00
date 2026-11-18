@@ -1,0 +1,2 @@
+PASS #C1229: F1 fixed; a selection now holds only the row it sits in (drawn on selectionchange), only a pointer down holds the board. Rows matched by data-id/id/place; insert-then-remove order is sound. Suite 3155 pass 0 fail; mutation pass x2 (selection holding the board again: 1 failed; place-only matching: 1 failed; restored).
+signed-by: Checker 2
