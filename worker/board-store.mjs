@@ -749,8 +749,10 @@ async function syncAll(db, now) {
 }
 export async function wakeAsk(db, now, after = null) {
   await db.prepare("UPDATE wake SET alive_at = ? WHERE id = 1").bind(now).run();
-  await openBatch(db, now, true);
-  if (typeof after === "function") after(syncAll(db, now));
+  const owner = await openBatch(db, now, true);
+  // #C1214 (Checker 2's F1): the sync is handed to `after` only when the owner's words already hold the batch open; with none pending nothing is urgent, so the
+  // sync runs first and the count below is of rows it has retired (a stall line that is over can no longer open a batch on the Worker's route either).
+  if (typeof after === "function" && owner > 0) after(syncAll(db, now));
   else { await syncAll(db, now); }
   const n = await openBatch(db, now);
   let w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();

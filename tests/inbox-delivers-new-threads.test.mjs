@@ -95,6 +95,33 @@ test("a stall line that is already over opens no batch: the first count is the o
   assert.equal((await env.DB.prepare("SELECT batch_id FROM wake WHERE id = 1").first()).batch_id, null, "no batch was opened for it");
 });
 
+// #C1214 (Checker 2's F1): the same, on the Worker's route, where waitUntil is set.
+const wakeRoute = (env, waited, at) => worker.fetch(new Request("https://board.test/api/probe/wake", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }), env, { waitUntil: (p) => waited.push(p) }, at, async () => ({ who: "probe", role: "probe" })).then((r) => r.json());
+const overStall = (env) => env.DB.prepare("INSERT INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind("gone-card", "a card waits that no longer does", NOW).run();
+
+test("on the Worker's route a stall line that is already over opens no batch either (waitUntil set, no owner word)", async () => {
+  const { env } = make();
+  await overStall(env);
+  const waited = [];
+  const body = await wakeRoute(env, waited, NOW + 20_000);
+  assert.equal(body.count, 0);
+  assert.equal(body.send, false);
+  assert.equal((await env.DB.prepare("SELECT batch_id FROM wake WHERE id = 1").first()).batch_id, null, "no batch was opened for it");
+  assert.equal(waited.length, 0, "nothing urgent: the sync ran before the count");
+});
+
+test("on the Worker's route an owner word still opens the batch at once and the sync waits for waitUntil", async () => {
+  const { env, write } = make();
+  await overStall(env);
+  assert.equal((await write(newThread("m2-bbbbbb", "t-1795017662309", "what about PR#324 ?", 2), NOW)).status, 200);
+  const waited = [];
+  const body = await wakeRoute(env, waited, NOW + 20_000);
+  assert.equal(body.send, true);
+  assert.ok(body.count >= 1);
+  assert.equal(waited.length, 1, "the sync was handed to waitUntil");
+  await Promise.all(waited);
+});
+
 test("a stall line that is still current opens a batch once the sync has run, as before", async () => {
   const { env } = make();
   await env.DB.prepare("INSERT INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind("ping:t1", "The owner pinged thread t1", NOW).run();
