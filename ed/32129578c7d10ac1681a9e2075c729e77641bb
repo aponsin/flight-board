@@ -1,0 +1,2 @@
+PASS (Quick) #C1209: with no member's commit at the stack tip, the topmost member carries behindMain once, asked of the tip; tagged tips and lower cards unchanged; closes my #C1207 LOW; suite 3105/0; mutants (judge by own commit, top stays lower) both caught
+signed-by: Checker 2
