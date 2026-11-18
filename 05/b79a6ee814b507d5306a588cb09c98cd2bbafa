@@ -1,0 +1,2 @@
+PASS #C1232 by diff dd681394..05b79a6e: CSS-only bottom shadow on .t-hist (local panel cover over a scroll shadow); threads sit in .panel, so the cover matches. Thread-scroll tests 8/8; mutation pass (cover local->scroll: the new test failed). Look is Designer's call.
+signed-by: Checker 2
