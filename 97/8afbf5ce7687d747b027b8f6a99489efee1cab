@@ -1,0 +1,5 @@
+SECURE
+
+#C1232 Designer's F2, by diff on the signed 05b79a6e: one static custom property --hist-shade (a fixed rgba per theme block, three blocks) replaces the shadow's literal colour in the .t-hist background; a test and a changelog sentence. CSS only: no script, markup, innerHTML, data or outside resource. Tests 9/9 (board-thread-scroll).
+
+signed-by: Security
