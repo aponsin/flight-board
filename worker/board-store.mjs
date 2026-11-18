@@ -92,7 +92,9 @@ export async function createCard(db, now, who, fields, opts = {}) {
 // #C1169 (11-17: a card was carded against DATA.md:131 without checking it; the owner: cards about the flight-board must match the first-level principles; principles 1
 // and 5: a note is not a rule, refuse early): a flight-board card is written with `contract`, the principle numbers and DATA.md rows or definitions it touches, and
 // `changes_definition`, true or false. True needs from_thread, the number of the thread where the owner decided it, else the card is refused.
-const threadKnown = async (db, t) => Number.isInteger(t) && t > 0 && !!(await db.prepare("SELECT 1 AS x FROM asks WHERE num = ? UNION ALL SELECT 1 AS x FROM messages WHERE thread_id = ?").bind(t, `t${t}`).first());
+// #C1206 (11-17: the owner chose a Decision in thread #T2043, id t-1794984971436, and the card was still refused): a thread opened by the owner has an id of its own
+// and its number in threads.num, so its messages never carry thread_id "t<num>"; a threads row with that number and a message in it is a known thread too.
+const threadKnown = async (db, t) => Number.isInteger(t) && t > 0 && !!(await db.prepare("SELECT 1 AS x FROM asks WHERE num = ? UNION ALL SELECT 1 AS x FROM messages WHERE thread_id = ? UNION ALL SELECT 1 AS x FROM threads WHERE num = ? AND EXISTS (SELECT 1 FROM messages WHERE messages.thread_id = threads.id)").bind(t, `t${t}`, t).first());
 async function contractRefusal(db, fields) {
   const c = fields.contract, d = fields.changes_definition;
   if (!(typeof c === "string" && c.trim())) return { rule: "card-contract", detail: "a flight-board card needs contract: the principle numbers and DATA.md rows or definitions it touches (or \"touches no definition\" and why), and changes_definition true or false" };
