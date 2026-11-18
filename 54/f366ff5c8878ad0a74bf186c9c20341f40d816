@@ -1,0 +1,5 @@
+SECURE
+
+#C1234, on main cdbae95d. Tests only: tests/board-fast-threads.test.mjs takes the best of five runs with a 600 ms bound (was one run, 300 ms), plus a changelog fragment. No page, Worker, hook, script or config change; nothing ships to a browser.
+
+signed-by: Security
