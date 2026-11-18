@@ -86,7 +86,9 @@ test("every answer button marks the thread before anything is awaited and clears
 });
 
 test("the look is made of the board's own tokens, in both themes, with the dots still when motion is reduced", () => {
-  assert.match(css, /details\.sending>summary\{filter:grayscale\(1\);opacity:\.72;background:color-mix\(in srgb,var\(--line\) 35%,var\(--panel\)\)\}/);
+  assert.match(css, /details\.sending>summary\{background:color-mix\(in srgb,var\(--line\) 35%,var\(--panel\)\)\}/, "the band keeps the board's tint");
+  assert.match(css, /details\.sending>summary>\*\{filter:grayscale\(1\)\}/, "the grayscale is on the children, not on the band (Designer's F2)");
+  assert.ok(!/details\.sending[^{]*\{[^}]*opacity/.test(css), "no opacity: faded text fails the contrast bar (Designer's F1)");
   assert.match(css, /details\.sending>summary,details\.sending>summary \*\{color:var\(--muted\)\}/);
   assert.match(css, /\.sdots i\{[^}]*background:var\(--muted\);animation:pulse 1\.2s/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{\.sdots i\{animation:none\}\}/);
