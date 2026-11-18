@@ -411,7 +411,7 @@ export default {
     // The wake, probe only: the 20-second ask (heartbeat + "anything for Manager?") and the report of a finished send.
     if (url.pathname === "/api/probe/wake" && request.method === "POST") {
       if (auth.role !== "probe") return bare(403);
-      return json(200, await wakeAsk(env.DB, now));
+      return json(200, await wakeAsk(env.DB, now, typeof _ctx?.waitUntil === "function" ? (p) => _ctx.waitUntil(p) : null));
     }
     if (url.pathname === "/api/probe/wake-result" && request.method === "POST") {
       if (auth.role !== "probe") return bare(403);

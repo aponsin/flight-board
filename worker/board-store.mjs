@@ -721,17 +721,30 @@ const wakeFacts = (w, askedAt) => ({ askedAt, batchId: w.batch_id, count: w.batc
 
 // The probe's 20-second ask: the heartbeat, and the answer to "anything for Manager?". Opens a batch when something is
 // pending and none is open; says whether to send now (once per batch, again at most every 5 minutes) and with which line.
-export async function wakeAsk(db, now) {
-  await db.prepare("UPDATE wake SET alive_at = ? WHERE id = 1").bind(now).run();
-  let w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
-  await syncStalls(db, now);
-  try { await syncBranchSweep(db, now); } catch { /* a sweep ask is never worth the wake */ }
+// #C1213 (inbox-delivers-new-threads; 11-18 from 16:01Z the probe's ask timed out at its 8 s on every run, so the owner's new threads #T2053 and #T2055 never
+// opened a batch and Manager was never woken for them): the owner's own words (messages, answers, pings) open the batch BEFORE the stall sync, which is the slow
+// part and the part that can throw; a sync that throws is only a missed stall line, never a missed owner word. With `after` (the Worker's waitUntil) the sync
+// runs after the answer is built, so a slow sync no longer holds the answer back: its lines join the batch from the next ask (20 s later) on.
+async function openBatch(db, now) {
+  const w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
   const n = await pendingForManager(db);
   const open = w.batch_id && w.taken_at < w.batch_at;
   if (n > 0 && !open) {
     await db.prepare("UPDATE wake SET batch_id = ?, batch_count = ?, batch_at = ? WHERE id = 1").bind(`b-${now}`, n, now).run();
   } else if (n > 0) await db.prepare("UPDATE wake SET batch_count = ? WHERE id = 1").bind(n).run();
-  w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
+  return n;
+}
+async function syncAll(db, now) {
+  try { await syncStalls(db, now); } catch { /* a stall line is never worth the owner's word */ }
+  try { await syncBranchSweep(db, now); } catch { /* a sweep ask is never worth the wake */ }
+}
+export async function wakeAsk(db, now, after = null) {
+  await db.prepare("UPDATE wake SET alive_at = ? WHERE id = 1").bind(now).run();
+  await openBatch(db, now);
+  if (typeof after === "function") after(syncAll(db, now));
+  else { await syncAll(db, now); }
+  const n = await openBatch(db, now);
+  let w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
   const facts = { ...wakeFacts(w, now), ownerWaiting: n > 0 && await ownerWaiting(db) };
   const lim = wakeLimits(await knobsStored(db)); // #C1106: the posted wake settings (a missing or out-of-bounds one is its default)
   const status = wakeStatus(facts, now, lim);
@@ -938,12 +951,15 @@ export async function moveGroup(db, now, who, b) {
 }
 export async function guardedInbox(db, now, session) {
   const expected = await db.prepare("SELECT session, set_by, set_at FROM door_session WHERE id = 1").first();
-  const claimed = typeof session === "string" ? session.slice(0, 80) : null;
+  const claimed = typeof session === "string" && session.trim() ? session.slice(0, 80) : null;
   const log = (ok, reason) => db.prepare("INSERT INTO inbox_takes (at, claimed, ok, reason) VALUES (?, ?, ?, ?)").bind(now, claimed, ok ? 1 : 0, reason).run();
-  if (expected && claimed !== expected.session) {
+  // #C1213 (11-18: a Boardsmith session called read_inbox with no `session` and took Manager's batch, because no door session was set and the guard let
+  // every take through): a take that names no session is refused whether or not one is set; with none set, a take that names one still goes through
+  // unguarded, so a deploy never shuts Manager out.
+  if (claimed === null || (expected && claimed !== expected.session)) {
     await log(false, claimed === null ? "no session given" : "session does not match");
     // The expected id is never echoed back.
-    const lastSet = `the door's session was last set by ${expected.set_by} at ${mtDayTime(expected.set_at)}`;
+    const lastSet = expected ? `the door's session was last set by ${expected.set_by} at ${mtDayTime(expected.set_at)}` : "no session has been set for the door yet";
     return refuse(db, now, { rule: "door-session-mismatch", detail: `${claimed === null ? "read_inbox needs the \`session\` argument: Manager's own session id." : "the session given is not the one set for Manager's door."} If you are not Manager's session, stop and tell Manager; never call set_door_session to get past this refusal. (${lastSet})` }, null, "Manager");
   }
   await log(true, expected ? "match" : "no session set: unguarded");

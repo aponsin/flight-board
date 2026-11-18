@@ -17,11 +17,33 @@ const call = async (env, who, role, name, args) => {
 };
 const withMessage = async (db) => { await postMessage(db, T + 1000, "owner", { thread_id: "c-one", body: "hello Manager" }); };
 
-test("with no session set, read_inbox still takes the batch (so a deploy never shuts Manager out) and the take is logged as unguarded", async () => {
+test("with no session set, a read_inbox that names its session still takes the batch (so a deploy never shuts Manager out) and the take is logged as unguarded", async () => {
   const db = makeDb(); await withMessage(db);
-  const got = await guardedInbox(db, T + 2000, undefined);
+  const got = await guardedInbox(db, T + 2000, SESSION);
   assert.equal(got.messages.length, 1); assert.equal(await unread(db), 0);
-  assert.deepEqual(await takes(db), [{ claimed: null, ok: 1, reason: "no session set: unguarded" }]);
+  assert.deepEqual(await takes(db), [{ claimed: SESSION, ok: 1, reason: "no session set: unguarded" }]);
+});
+
+test("a take that names no session is refused even with none set, and leaves the batch untaken (#C1213: a session that was not Manager's took it)", async () => {
+  const db = makeDb(); await withMessage(db);
+  for (const none of [undefined, null, "", 7]) {
+    const r = await guardedInbox(db, T + 2000, none);
+    assert.equal(r.ok, false, String(none)); assert.equal(r.refused.rule, "door-session-mismatch");
+  }
+  assert.equal(await unread(db), 1, "the owner's message is still unread");
+  assert.ok((await takes(db)).every((t) => t.ok === 0 && t.reason === "no session given"));
+  assert.equal((await guardedInbox(db, T + 3000, SESSION)).messages.length, 1, "Manager's own take still gets it");
+});
+
+test("over the tool call, read_inbox with no session leaves the batch for Manager, whether or not a door session is set", async () => {
+  const env = { DB: makeDb() }; await withMessage(env.DB);
+  const bare = await call(env, "Manager", "manager-door", "read_inbox", {});
+  assert.notEqual(bare.result?.structuredContent?.ok, true, JSON.stringify(bare));
+  assert.equal(await unread(env.DB), 1);
+  assert.equal((await setDoorSession(env.DB, T, "Manager", SESSION)).ok, true);
+  const wrong = await call(env, "Manager", "manager-door", "read_inbox", { session: OTHER });
+  assert.notEqual(wrong.result?.structuredContent?.ok, true);
+  assert.equal(await unread(env.DB), 1);
 });
 
 test("a take whose session is not the one set is refused as door-session-mismatch and the batch stays for Manager", async () => {

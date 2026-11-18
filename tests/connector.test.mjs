@@ -120,7 +120,7 @@ test("read_inbox lives on Manager's own door only: the shared door refuses it fo
   const { tool, mtool, env, rpc } = make();
   for (const as of ["Builder", "Manager"]) assert.equal((await tool(as, "read_inbox", {})).error.message, "unknown tool", as);
   assert.deepEqual((await readView(env.DB, NOW)).refusals.map((r) => r.rule), ["tool-not-allowed", "tool-not-allowed"]);
-  assert.equal((await mtool("read_inbox")).result.isError, false);
+  assert.equal((await mtool("read_inbox", { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de" })).result.isError, false);
   // Over Access, an agent token named Manager has no read_inbox either: it is not listed and a call is refused and logged.
   const asManager = async () => ({ who: "Manager", role: "agent" });
   const over = (method, params) => worker.fetch(new Request("https://board.test/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) }), env, null, NOW, asManager).then((r) => r.json());
@@ -175,7 +175,7 @@ test("end to end: the owner writes, the 20 s ask opens one batch and says send, 
   assert.equal((await wakeAsk(env.DB, NOW - 6000)).count, 1, "still untaken");
   assert.equal((await tool("Manager", "read_inbox", {})).error.message, "unknown tool", "not even as Manager on the shared door");
   assert.equal((await wakeAsk(env.DB, NOW - 5500)).count, 1, "still untaken");
-  const got = (await mtool("read_inbox")).result.structuredContent;
+  const got = (await mtool("read_inbox", { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de" })).result.structuredContent;
   assert.deepEqual(got.messages.map((m) => m.body), ["please look"]);
   const after = await wakeAsk(env.DB, NOW + 1000);
   assert.deepEqual([after.send, after.count, after.status.state], [false, 0, "idle"], "taken: the batch is closed");

@@ -122,7 +122,7 @@ test("over HTTP only the probe asks and reports, and only Manager's role reads t
   assert.equal((await post(as("probe", "probe"), "/api/probe/wake")).status, 200);
   assert.equal((await post(as("probe", "probe"), "/api/probe/wake-result", { exit: "x" })).status, 422);
   assert.equal((await post(as("probe", "probe"), "/api/probe/wake-result", { exit: 0, batchId: "b-1", text: GOOD })).status, 200);
-  const rpc = (auth) => worker.fetch(new Request("https://b.test/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_inbox", arguments: {} } }) }), env, null, T, auth).then((r) => r.json());
+  const rpc = (auth) => worker.fetch(new Request("https://b.test/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_inbox", arguments: { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de" } } }) }), env, null, T, auth).then((r) => r.json());
   assert.equal((await rpc(as("Manager", "agent"))).error.code, -32602, "over Access no role reads the inbox: it is Manager's own connector door only (#T1661)");
   assert.equal((await rpc(as("owner", "owner"))).error.code, -32602);
 });

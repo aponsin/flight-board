@@ -63,7 +63,7 @@ test("the Manager door's read_inbox returns the files over the tool call", async
   const m = await postMessage(env.DB, T + 1000, "owner", { thread_id: "c-one", body: "see the picture" });
   await linkFiles(env.DB, T + 1000, "message", m.id, [img.id]);
   const auth = async () => ({ who: "Manager", role: "manager-door" });
-  const r = await worker.fetch(new Request("https://b.test/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_inbox", arguments: {} } }) }), env, null, T + 5000, auth);
+  const r = await worker.fetch(new Request("https://b.test/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_inbox", arguments: { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de" } } }) }), env, null, T + 5000, auth);
   const out = (await r.json()).result.structuredContent;
   assert.equal(out.messages[0].files[0].id, img.id);
   assert.equal(out.messages[0].files[0].fetch, `/_blob/${img.id}`);
