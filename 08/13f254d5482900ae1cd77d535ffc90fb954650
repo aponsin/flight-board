@@ -1,0 +1,2 @@
+PASS (Quick) #C1207: behindMain skips a lower card read under a stack tip, so a stack is re-cut once for its tip; suite 3099/0; mutant (drop !lowerOfStack) caught. LOW: a stack whose tip carries no card's Board-Id (a fix-up) and lacks main now names no card for re-cut (main named each); suggest lowerOfStack only when the cover commit carries an open card's Board-Id
+signed-by: Checker 2
