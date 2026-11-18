@@ -1,0 +1,2 @@
+PASS (Full) #C1204: byNumberOnly reads a head found only by branch number whose tip is another card's commit as build with no sign-offs (probe: stacked c1196 branch on a signed c1195 tip reads build, signed []); sweep keeps an open card's numbered branch; suite 3081 pass 0 fail; mutants (drop byNumberOnly from bare, drop branchNum from isOpen) both caught
+signed-by: Checker 2
