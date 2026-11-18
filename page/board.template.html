@@ -273,7 +273,8 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 details.sending>summary{background:color-mix(in srgb,var(--line) 35%,var(--panel))}
 details.sending>summary>*{filter:grayscale(1)}
 details.sending>summary,details.sending>summary *{color:var(--muted)}
-.sdots{display:flex;gap:4px;margin-top:4px}
+details.sending>summary>.kind{display:none}
+.sdots{display:flex;gap:4px;align-items:center;padding:2px 7px;min-height:1.4rem}
 .sdots i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:pulse 1.2s ease-in-out infinite}
 .sdots i:nth-child(2){animation-delay:.2s}.sdots i:nth-child(3){animation-delay:.4s}
 @media (prefers-reduced-motion:reduce){.sdots i{animation:none}}
@@ -1858,7 +1859,9 @@ function applySending(now=Date.now()){if(typeof document.querySelectorAll!=="fun
   document.querySelectorAll("details[data-id]").forEach(d=>{const on=sending.has(foldKey(d));
     if(d.classList.contains("sending")!==on)d.classList.toggle("sending",on);
     const dots=d.querySelector(":scope>summary .sdots");
-    if(on&&!dots){const s=d.querySelector(":scope>summary");if(!s)return;const host=s.querySelector(".w-text")||s,h=document.createElement("span");h.className="sdots";h.setAttribute("aria-hidden","true");for(let k=0;k<3;k++)h.appendChild(document.createElement("i"));host.appendChild(h)}
+    // #C1235 (the owner: the dots under the line looked out of place): they take the type label's place (CSS hides the label while the thread is sending, so it is back when the class goes), and nothing is added under the line.
+    if(on&&!dots){const s=d.querySelector(":scope>summary");if(!s)return;const kind=s.querySelector(":scope>.kind"),h=document.createElement("span");h.className="sdots";h.setAttribute("aria-hidden","true");for(let k=0;k<3;k++)h.appendChild(document.createElement("i"));
+      if(kind)s.insertBefore(h,kind);else s.insertBefore(h,s.firstChild||null)}
     else if(!on&&dots)dots.remove()})}
 // After a part is drawn again: each fold as the owner last left it, else as it was in that part (open: its data-ids).
 function restoreFolds(el,open){el.querySelectorAll("details[data-id]").forEach(d=>{const k=foldKey(d),want=folds.has(k)?folds.get(k):open.has(d.dataset.id);if(want!==d.open)d.open=want})}

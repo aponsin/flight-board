@@ -1,4 +1,4 @@
-// #C1233 (the owner: after he clicks an answer button he cannot tell whether it went). The thread folds at once, turns gray and shows small pulsing dots under its id until Manager has
+// #C1233 (the owner: after he clicks an answer button he cannot tell whether it went). The thread folds at once, turns gray and shows small pulsing dots in place of its type label (#C1235) until Manager has
 // taken the message; it stays usable (a click opens it, a follow-up sends). The state is kept in markSending / applySending, run here on the page's own text with a stand-in list of rows.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -14,8 +14,11 @@ const OWNER = "Reader";
 function world({ live = true, seen = null, messages = [] } = {}) {
   const w = { rows: [], live, seen, messages };
   const mkRow = (dataId, { card = false, open = true } = {}) => {
-    const summary = { dots: null, appended: 0, wtext: card ? null : { appendChild(h) { summary.appended++; summary.dots = h; h.remove = () => { summary.dots = null; }; } },
-      querySelector(s) { return s === ".w-text" ? this.wtext : null; }, appendChild(h) { summary.appended++; summary.dots = h; h.remove = () => { summary.dots = null; }; } };
+    // A summary lists its children: the type label (.kind) first, then the text; the dots go in before the label, never into the text (#C1235).
+    const kind = card ? null : { cls: "kind" };
+    const summary = { dots: null, appended: 0, kids: [kind, { cls: "w-text", under: 0 }].filter(Boolean),
+      querySelector(s) { return s === ":scope>.kind" ? kind : null; },
+      insertBefore(h, ref) { summary.appended++; summary.dots = h; summary.before = ref; summary.kids.splice(ref ? summary.kids.indexOf(ref) : summary.kids.length, 0, h); h.remove = () => { summary.dots = null; summary.kids.splice(summary.kids.indexOf(h), 1); }; } , get firstChild() { return summary.kids[0] || null; } };
     const cls = new Set();
     const row = { dataset: { id: dataId }, open, cls, summary, classList: { contains: (c) => cls.has(c), toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) },
       querySelector(s) { return s === ":scope>summary" ? summary : s === ":scope>summary .sdots" ? summary.dots : null; } };
@@ -29,7 +32,7 @@ function world({ live = true, seen = null, messages = [] } = {}) {
   return { w, run, mark: (id, at) => run(`markSending(${JSON.stringify(id)},${at})`), apply: (now) => run(`applySending(${now})`), folds: () => run("folds"), size: () => run("sending.size") };
 }
 
-test("a click folds the thread at once, grays it and shows the dots under its id, whichever row draws it", () => {
+test("a click folds the thread at once, grays it and shows the dots, whichever row draws it", () => {
   const t = world(); const ask = t.w.mkRow("t1"), row = t.w.mkRow("th-t1"), card = t.w.mkRow("ith-t1", { card: true }), other = t.w.mkRow("th-t2");
   t.mark("t1", 1000);
   for (const r of [ask, row, card]) { assert.equal(r.open, false, "folded to its title bar"); assert.ok(r.cls.has("sending"), "gray"); assert.ok(r.summary.dots, "dots"); }
@@ -93,4 +96,18 @@ test("the look is made of the board's own tokens, in both themes, with the dots 
   assert.match(css, /\.sdots i\{[^}]*background:var\(--muted\);animation:pulse 1\.2s/);
   assert.match(css, /@media \(prefers-reduced-motion:reduce\)\{\.sdots i\{animation:none\}\}/);
   assert.ok(!/details\.sending[^{]*\{[^}]*#[0-9a-fA-F]{3,6}/.test(css), "no color of its own");
+});
+
+// #C1235 (the owner, on #C1233: the dots sat under the thread's line): while it is sending they take the place of the type label (Answer / Decision / Question), nothing is added under the line, and the label is back once it is taken.
+test("the dots stand in the type label's place: before it, nothing under the line, the label is hidden while sending and shown again after", () => {
+  const t = world(); const row = t.w.mkRow("th-t1"), card = t.w.mkRow("ith-t1", { card: true });
+  t.mark("t1", 1000);
+  const [first, second] = row.summary.kids;
+  assert.equal(first, row.summary.dots, "the dots are the first thing in the title bar, where the label was");
+  assert.equal(second.cls, "kind", "the label stays in the page (CSS hides it), right after the dots");
+  assert.equal(row.summary.kids.find((k) => k.cls === "w-text").under, 0, "nothing is added under the line (the text block is untouched)");
+  assert.equal(card.summary.kids[0], card.summary.dots, "a row with no label gets the dots first as well");
+  assert.match(css, /details\.sending>summary>\.kind\{display:none\}/, "the label is hidden only while the class is on");
+  t.w.seen = 1000; t.apply(2500);
+  assert.ok(!row.cls.has("sending") && !row.summary.dots && row.summary.kids.length === 2 && row.summary.kids[0].cls === "kind", "taken: the dots are gone and the label is the first thing again");
 });
