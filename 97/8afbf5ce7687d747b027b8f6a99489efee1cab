@@ -1,0 +1,2 @@
+PASS #C1232 by diff 05b79a6e..978afbf5: --hist-shade token in the light and both dark theme blocks, gradient uses it. Thread-scroll tests 9/9; mutation pass (token dropped from the toggled dark block: the new test failed).
+signed-by: Checker 2
