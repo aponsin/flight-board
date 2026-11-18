@@ -1,0 +1,5 @@
+SECURE
+
+#C1237, by diff on main cb83ac7b. applySending adds a span.sr whose textContent is the fixed word 'Sending' inside the dots span; aria-hidden moves from the span to each dot; CSS clips .sdots .sr. createElement and textContent only, no innerHTML (audit 42), no board data in it, no network or storage change. Tests 18/18 (sending-state 10, hostile-text 8).
+
+signed-by: Security
