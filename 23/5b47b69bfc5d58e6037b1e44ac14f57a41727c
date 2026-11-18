@@ -1,0 +1,5 @@
+SECURE
+
+Part of #C1229, reviewed as the range main..2b044831. On its own it carried Security's F1 (carryBoxes' id match untested); 2b044831 adds the test.
+
+signed-by: Security
