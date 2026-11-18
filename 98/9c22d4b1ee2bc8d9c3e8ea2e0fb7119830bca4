@@ -1,0 +1,5 @@
+SECURE
+
+#C1233, on #C1232's signed 05b79a6e line. A sending state per thread: an in-page Map (id -> time), a 'sending' class and a dots span built with createElement (no innerHTML; audit stays 42). Ids are Map keys compared with foldKey, never put in a selector; selectors are fixed. markSending runs before any await on every answer path (send, close, ack); clearSending on each write failure; ends on the watch's delivered time, a newer non-owner message, or 10 minutes. No network, storage or data change. Tests 31/31 (sending-state 7, thread-scroll 9, hostile-text 8, threads-tabs 7).
+
+signed-by: Security
