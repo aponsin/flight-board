@@ -273,6 +273,10 @@ export function bareBranch(card, head) {
   if (!head || head.afterShip || head.shipped || !namesCard(card, head.branch)) return false;
   return boardIdOf(head.message) !== card.id && !(Number.isInteger(card.num) && subjectNum(head.message) === card.num);
 }
+// #C1204 (Checker 2's M1): a head found only by its branch's number, whose tip is not this card's own commit, is work started (build) with no sign-offs: a copy of derive.mjs's byNumberOnly.
+export function byNumberOnly(card, head) {
+  return !!head && Number.isInteger(card.num) && String(head.branch).split("/").pop() !== card.id && branchNum(head.branch) === card.num && boardIdOf(head.message) !== card.id && subjectNum(head.message) !== card.num;
+}
 export function headsFor(id, heads, num = null) {
   const tips = new Map();
   for (const h of heads) {
@@ -703,7 +707,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   const atMain = mainAnswer === true, mainUnknown = mainAnswer === null;
   // #C671: a pushed branch named for the card with no commit of its own sits at a main commit: it is work started (build), and
   // main's sign-off notes and deploy are not the card's.
-  const bare = !landed && !after && atMain && bareBranch(card, head);
+  const bare = !landed && !after && ((atMain && bareBranch(card, head)) || byNumberOnly(card, head));
   const coverSha = cover && !bare && !landed && !after && /^[0-9a-f]{40}$/.test(String(cover)) ? cover : null;
   // A review that sent the tip back (FINDINGS) is no sign-off for any card under it, whatever its note on the card's own commit says.
   const sentBack = coverSha ? findingsOn(coverSha) : [];

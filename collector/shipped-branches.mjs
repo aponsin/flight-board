@@ -8,7 +8,7 @@
 // does (collector/derive.mjs headsFor): the branch's last path segment is the card's id, or its tip carries the card's Board-Id trailer, or its subject starts
 // "#C<number>:". A branch with commits main does not have is never "merged", so an unmerged branch is never listed. Pure but for the git function given.
 import { basename } from "node:path";
-import { boardIdOf, subjectNum } from "./state.mjs"; // the probe's own copies of derive.mjs's two readers (state.mjs is the file the probe pins)
+import { boardIdOf, subjectNum, branchNum } from "./state.mjs"; // the probe's own copies of derive.mjs's two readers (state.mjs is the file the probe pins)
 
 export const BRANCH_MAX = 60, SWEEP_REPO_MAX = 6;
 // #C1124: the sweep's git reads (for-each-ref carries every branch tip's whole message) run with this buffer, not Node's 1 MB default; output past it is an error, never a partial list.
@@ -44,7 +44,8 @@ function listRepo(r, git, open) {
   // well as by the branch name: collector/derive.mjs headsFor), records ended by \x1e and fields by \x1f.
   const refs = (prefix) => String(git(r, ["for-each-ref", `--merged=refs/remotes/${mainRef}`, "--format=%(refname)%1f%(objectname)%1f%(contents)%1e", prefix]))
     .split("\x1e").map((rec) => rec.replace(/^\n/, "").split("\x1f")).filter((p) => p.length === 3 && p[0]).map(([ref, sha, message]) => ({ ref, sha, message }));
-  const isOpen = (name, message) => open.ids.has(name.split("/").pop()) || open.ids.has(boardIdOf(message)) || (Number.isInteger(subjectNum(message)) && open.nums.has(subjectNum(message)));
+  // #C1204 (Checker 2's L1): a branch named "c<num>-..." ties to the open card with that number, as headsFor does.
+  const isOpen = (name, message) => open.ids.has(name.split("/").pop()) || open.ids.has(boardIdOf(message)) || (Number.isInteger(subjectNum(message)) && open.nums.has(subjectNum(message))) || (Number.isInteger(branchNum(name)) && open.nums.has(branchNum(name)));
   const clean = (name, sha, message) => plainBranch(name) && !NEVER.has(name) && name !== r.main && sha !== tip && !isOpen(name, message);
   const pick = (prefix) => refs(prefix).map((x) => ({ ...x, name: x.ref.slice(prefix.length) })).filter((x) => clean(x.name, x.sha, x.message));
   const remote = pick(`refs/remotes/${r.remote}/`).filter((x) => /^[0-9a-f]{40}$/.test(x.sha)).map((x) => ({ name: x.name, sha: x.sha }));
