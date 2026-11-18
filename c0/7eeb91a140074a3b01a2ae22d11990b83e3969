@@ -1,0 +1,2 @@
+FINDINGS #C1206: its own change is sound (threadKnown finds an owner thread by threads.num with a message; 4/4 tests; mutants drop-lookup and drop-message-check both caught), but this tip stacks on #C1204 29216693, which is FINDINGS (M1 unfixed), so the line ending here is not PASS: a PASS here would cover #C1204. Re-sign after #C1204's fix lands under it.
+signed-by: Checker 2
