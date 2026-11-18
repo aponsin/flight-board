@@ -1,0 +1,5 @@
+SECURE
+
+Text and tests only. The watchdog and morning rules move from pickup-watch.mjs through current to pinned-run.mjs pickup-watch: pinned-run takes only names from a fixed list (pickup-watch, prompt-watch), runs the pinned install's copy, refuses a link out of it, and passes arguments with spawnSync and no shell, so the rule is no broader than before. Step 7 sends one message fewer. Tests 32/32; mutation pass (step 6 back to the old path fails keeper-morning).
+
+signed-by: Security
