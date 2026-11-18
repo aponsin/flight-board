@@ -60,7 +60,14 @@ function run(before, after) {
 test("a soft shadow at the bottom says there is more below: a panel-coloured cover that scrolls with the content over a fixed shadow (scroll bars are hidden until a scroll on a Mac and a phone)", () => {
   const rule = css.match(/\.t-hist\{[^}]*\}/)[0];
   assert.match(rule, /linear-gradient\(transparent,var\(--panel\) 70%\) 0 100%\/100% 28px no-repeat local/, "the cover moves with the content");
-  assert.match(rule, /radial-gradient\(farthest-side at 50% 100%,rgba\(0,0,0,\.22\),transparent\) 0 100%\/100% 10px no-repeat scroll/, "the shadow stays at the box's bottom");
+  assert.match(rule, /radial-gradient\(farthest-side at 50% 100%,var\(--hist-shade\),transparent\) 0 100%\/100% 10px no-repeat scroll/, "the shadow stays at the box's bottom");
+});
+
+test("the shadow's colour is a token in every theme: dark on the light panel, light on the dark one (a black shadow cannot show on a near-black panel)", () => {
+  const defs = [...css.matchAll(/--panel:(#[0-9a-fA-F]{6});\s*--hist-shade:(rgba\([^)]*\));/g)].map((m) => ({ panel: m[1], shade: m[2] }));
+  assert.equal(defs.length, 3, "the light block and both dark ones");
+  assert.deepEqual(defs.filter((d) => d.panel === "#ffffff").map((d) => d.shade), ["rgba(0,0,0,.22)"]);
+  assert.deepEqual(defs.filter((d) => d.panel === "#171e26").map((d) => d.shade), ["rgba(255,255,255,.16)", "rgba(255,255,255,.16)"]);
 });
 
 test("a reader at the newest end stays there when a message is added above", () => {
