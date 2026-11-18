@@ -10,9 +10,9 @@ const html = readFileSync(new URL("../page/board.template.html", import.meta.url
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 // ---- (1) patchHtml on a stand-in DOM: top-level nodes are split out of the html by tag depth, a node is its outerHTML ----
-const fnSrc = script.slice(script.indexOf("function patchHtml("), script.indexOf("// Re-draws a part of the page without losing"));
+const fnSrc = script.slice(script.indexOf("let heldRows=false;"), script.indexOf("// Re-draws a part of the page without losing"));
 // A text box: it keeps its own value, cursor, selection and scroll; moving it into another row (replaceWith) takes its twin's place there; focus() makes it the active element of the current page.
-let activeDoc = null;
+let activeDoc = null, selection = { rangeCount: 0, isCollapsed: true };
 const box = (id) => ({ id, type: "textarea", value: "", selectionStart: 0, selectionEnd: 0, selectionDirection: "none", scrollTop: 0, owner: null,
   replaceWith(b) { const k = this.owner.boxes.indexOf(this); this.owner.boxes[k] = b; b.owner = this.owner; },
   focus() { activeDoc.activeElement = this; },
@@ -23,15 +23,16 @@ function split(h) {
     if (h[i] !== "<") { const j = h.indexOf("<", i); const t = h.slice(i, j < 0 ? h.length : j); out.push({ nodeType: 3, textContent: t }); i += t.length; continue; }
     let depth = 0, j = i; const re = /<(\/?)([a-z0-9]+)[^>]*>/gi; re.lastIndex = i; let m;
     while ((m = re.exec(h))) { if (m[1]) depth--; else if (!/^(br|hr|img|input)$/i.test(m[2])) depth++; j = re.lastIndex; if (depth === 0) break; }
-    const outer = h.slice(i, j), boxes = [...outer.matchAll(/<(?:textarea|input)[^>]*id="([^"]+)"/g)].map((b) => box(b[1])); const node = { nodeType: 1, outerHTML: outer, boxes, querySelectorAll() { return this.boxes; } }; boxes.forEach((b) => { b.owner = node; }); out.push(node); i = j;
+    const outer = h.slice(i, j), boxes = [...outer.matchAll(/<(?:textarea|input)[^>]*id="([^"]+)"/g)].map((b) => box(b[1])); const tag = outer.match(/^<[^>]*>/)[0], did = tag.match(/data-id="([^"]+)"/), pid = tag.match(/\sid="([^"]+)"/); const node = { nodeType: 1, outerHTML: outer, boxes, dataset: did ? { id: did[1] } : {}, id: pid ? pid[1] : "", parentNode: null, contains(x) { return !!x && (x === this || x.within === this); }, querySelectorAll() { return this.boxes; } }; boxes.forEach((b) => { b.owner = node; }); out.push(node); i = j;
   }
   return out;
 }
 function dom() {
-  const el = { childNodes: [], replaceChild(n, o) { this.childNodes[this.childNodes.indexOf(o)] = n; }, appendChild(n) { this.childNodes.push(n); }, removeChild(n) { this.childNodes.splice(this.childNodes.indexOf(n), 1); } };
+  const el = { childNodes: [], insertBefore(n, ref) { const k = this.childNodes.indexOf(n); if (k >= 0) this.childNodes.splice(k, 1); const at = ref ? this.childNodes.indexOf(ref) : this.childNodes.length; this.childNodes.splice(at, 0, n); n.parentNode = this; }, removeChild(n) { this.childNodes.splice(this.childNodes.indexOf(n), 1); n.parentNode = null; } };
   const document = { activeElement: null, createElement: () => ({ content: { get childNodes() { return split(this.h); }, h: "" }, set innerHTML(v) { this.content.h = v; } }) };
   activeDoc = document;
-  const ctx = { document }; vm.createContext(ctx); vm.runInContext(fnSrc, ctx);
+  selection = { rangeCount: 0, isCollapsed: true };
+  const ctx = { document, getSelection: () => selection }; vm.createContext(ctx); vm.runInContext(fnSrc, ctx);
   return { el, ctx, patch: (h) => vm.runInContext("patchHtml", ctx)(el, h) };
 }
 const step = (n) => `<details data-id="c${n}"><summary>c${n}</summary><ol class="steps"><li>step ${n}<div class="cmd"><code>node a.mjs ${n}</code><button class="copy" data-copy="x">Copy</button></div></li></ol></details>`;
@@ -105,12 +106,42 @@ async function page() {
   return { runTo, fire, say, select: (on) => { selection = on ? { rangeCount: 1, isCollapsed: false } : { rangeCount: 0, isCollapsed: true }; }, get now() { return now; }, get renders() { return renders; }, ctx, rows, scrolls, onRender: (f) => { onRender = f; } };
 }
 
-test("a redraw waits while text is selected, and draws once the selection clears", async () => {
+// Checker 2's F1 on 235b47b6: a selection stays after a copy, so it must not hold the whole board (it would sit stale until a click elsewhere, with new asks and moves unseen).
+test("a text selection that stays does not hold the board: the redraw runs, and so does the 15 s ship redraw", async () => {
   const p = await page();
-  p.select(true); p.say(); p.runTo(p.now + 5000);
-  assert.equal(p.renders, 0, "nothing redrawn under a selection, however long it stays");
-  p.select(false); p.runTo(p.now + 300);
-  assert.equal(p.renders, 1, "drawn once, with the newest state, when the selection clears");
+  p.select(true); p.say(); p.runTo(p.now + 300);
+  assert.equal(p.renders, 1, "drawn at once under a selection; the row it sits in is the only one held (patchHtml)");
+  p.say(); p.runTo(p.now + 20_000);
+  assert.equal(p.renders, 2, "and again 20 s later with the selection still there");
+  assert.match(script, /const selectionHeld=\(\)=>pointerDown;/, "only a drag in progress holds the whole board");
+});
+
+test("a row held for the selection in it is drawn when the selection goes (selectionchange); while the selection stays, nothing is drawn again for it", async () => {
+  const p = await page();
+  vm.runInContext("heldRows=true", p.ctx);
+  p.select(true); p.fire("selectionchange"); p.runTo(p.now + 500);
+  assert.equal(p.renders, 0, "the selection is still there: the held row waits");
+  p.select(false); p.fire("selectionchange"); p.runTo(p.now + 500);
+  assert.equal(p.renders, 1, "it is gone: the held row is drawn");
+  p.fire("selectionchange"); p.runTo(p.now + 500);
+  assert.equal(p.renders, 1, "once");
+});
+
+test("patchHtml leaves a changed row alone while the selection is in it, draws the other rows, and draws that row once the selection is gone", () => {
+  const { el, ctx, patch } = dom();
+  patch(row(1, "one") + row(2, "two"));
+  const [r1, r2] = el.childNodes;
+  selection = { rangeCount: 1, isCollapsed: false, anchorNode: { within: r1 }, focusNode: { within: r1 } };
+  patch(row(1, "one!") + row(2, "two!"));
+  assert.equal(el.childNodes[0], r1, "the row with the selection is the same node, untouched");
+  assert.match(r1.outerHTML, /one</, "and stale until the selection goes");
+  assert.notEqual(el.childNodes[1], r2, "the row without it is drawn");
+  assert.match(el.childNodes[1].outerHTML, /two!/);
+  assert.equal(vm.runInContext("heldRows", ctx), true, "the page knows a row is held");
+  selection = { rangeCount: 0, isCollapsed: true };
+  patch(row(1, "one!") + row(2, "two!"));
+  assert.notEqual(el.childNodes[0], r1);
+  assert.match(el.childNodes[0].outerHTML, /one!/);
 });
 
 test("a redraw waits while a pointer is down (a drag in progress), and draws after the pointer is up", async () => {
@@ -166,6 +197,39 @@ test("an empty box without focus is not carried (the fresh one is used), and a b
   patch(row(1, "two") + `<div data-id="t2"><b>y</b></div>`);
   assert.notEqual(el.childNodes[0].boxes[0], empty, "nothing to keep in an empty, unfocused box");
   assert.equal(el.childNodes[1].boxes.length, 0, "the new row has no such box, so nothing is carried into it");
+});
+
+// Security's F1 on 235b47b6: the carry matches a box by its id. With no match a draft would move into whatever box the new row holds and be sent to another thread.
+test("an unsent draft is never carried into a box with another id: same row, different box; unkeyed row at the same place, different box", () => {
+  const { el, patch } = dom();
+  patch(`<div data-id="t1"><b>a</b><textarea id="note-t1"></textarea></div>`);
+  const first = el.childNodes[0].boxes[0];
+  first.value = "my unsent reply to thread one";
+  patch(`<div data-id="t1"><b>b</b><textarea id="tnote-t1"></textarea></div>`);
+  const other = el.childNodes[0].boxes[0];
+  assert.notEqual(other, first, "the new row's box has another id: the draft does not move into it");
+  assert.equal(other.value, "", "and the new row's box stays empty");
+  const { el: e2, patch: p2 } = dom();
+  p2(`<p><textarea id="reply-a"></textarea></p>`);
+  const a = e2.childNodes[0].boxes[0]; a.value = "draft a";
+  p2(`<p>x<textarea id="reply-b"></textarea></p>`);
+  assert.notEqual(e2.childNodes[0].boxes[0], a);
+  assert.equal(e2.childNodes[0].boxes[0].value, "", "an unkeyed row at the same place, with another box: nothing moves");
+});
+
+test("a row added above leaves the rows below it the same nodes, and the draft in one of them stays in its own row", () => {
+  const { el, patch } = dom();
+  patch(row(1, "one") + row(2, "two"));
+  const [r1, r2] = el.childNodes;
+  r2.boxes[0].value = "unsent in thread two";
+  patch(row(0, "new") + row(1, "one") + row(2, "two"));
+  assert.deepEqual(el.childNodes.map((n) => n.dataset.id), ["t0", "t1", "t2"]);
+  assert.equal(el.childNodes[1], r1, "the row below the new one was not redrawn");
+  assert.equal(el.childNodes[2], r2, "nor the next, and its draft is where it was");
+  assert.equal(r2.boxes[0].value, "unsent in thread two");
+  patch(row(1, "one") + row(2, "two"));
+  assert.equal(el.childNodes[0], r1);
+  assert.equal(el.childNodes[1], r2, "a row taken from above leaves the others alone too");
 });
 
 test("the keep() and Needs you restores do not set a value or the focus again when the box is already as it was", () => {

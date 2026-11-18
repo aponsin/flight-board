@@ -1814,16 +1814,29 @@ function restoreFolds(el,open){el.querySelectorAll("details[data-id]").forEach(d
 // #C1229: draws html into el, but leaves alone every top-level node whose html is what it drew last time, so a redraw never touches a row that did not
 // change (a selection inside it, and the Copy box beside it, stay). A node's last drawn html is kept on the node itself (_sig), because the live node
 // differs from it as soon as a fold is opened or a note is typed; only a changed, new or surplus node is replaced, added or removed.
+let heldRows=false;
+// Whether the page's text selection (a non-empty one) has an end inside node o; with o null, whether there is one at all.
+function selectionIn(o){try{const s=getSelection();if(!s||s.rangeCount<1||s.isCollapsed!==false)return false;
+  return o==null||typeof o.contains==="function"&&(o.contains(s.anchorNode)||o.contains(s.focusNode))}catch(_){return false}}
 function patchHtml(el,html){if(!el.childNodes||typeof document.createElement!=="function"){el.innerHTML=html;return}
   const t=document.createElement("template");t.innerHTML=html;
+  // A row is matched to the old row with the same data-id (else the same id), so a row added or removed above does not shift every row below it into a redraw; a node with neither is matched by place.
   const nw=[...t.content.childNodes],old=[...el.childNodes],sigOf=n=>n.nodeType===1?n.outerHTML:n.textContent;
-  nw.forEach((n,i)=>{const o=old[i];
-    if(o&&o.nodeType===n.nodeType&&(o._sig!=null?o._sig:sigOf(o))===sigOf(n))return;
+  const keyOf=n=>n.nodeType!==1?null:n.dataset&&n.dataset.id!=null?"d"+n.dataset.id:n.id?"i"+n.id:null;
+  const byKey=new Map(),used=new Set(),settle=[];old.forEach(o=>{const k=keyOf(o);if(k!=null&&!byKey.has(k))byKey.set(k,o)});
+  nw.forEach((n,i)=>{const k=keyOf(n);let o=k!=null?byKey.get(k):old[i];
+    if(o&&(used.has(o)||o.nodeType!==n.nodeType||(k==null&&keyOf(o)!=null)))o=null;
+    if(o)used.add(o);
+    const at=el.childNodes[i];
+    if(o&&(o._sig!=null?o._sig:sigOf(o))===sigOf(n)){if(at!==o)el.insertBefore(o,at||null);return}
+    // The row has the owner's text selection in it: it stays as it is (stale) until the selection goes, and selectionchange then draws it. Every other row is drawn.
+    if(o&&selectionIn(o)){heldRows=true;if(at!==o)el.insertBefore(o,at||null);return}
     if(n.nodeType===1)n._sig=n.outerHTML;
     const moved=o?carryBoxes(o,n):[];
-    if(o)el.replaceChild(n,o);else el.appendChild(n);
-    settleBoxes(moved)});
-  old.slice(nw.length).forEach(o=>el.removeChild(o))}
+    el.insertBefore(n,at||null);if(o)el.removeChild(o);
+    settle.push(...moved)});
+  old.forEach(o=>{if(!used.has(o)&&o.parentNode===el)el.removeChild(o)});
+  settleBoxes(settle)}
 // #C1229 (the owner: a redraw disturbs typing, and moving the cursor back a few lines goes wrong): in a row that did change, a text box with focus or with unsent text is the same element afterwards:
 // the old one is moved into the new row in place of its fresh twin (same id), and its focus, cursor, selection and scroll are put back, so nothing about the box is rebuilt.
 const BOXES="textarea[id],input[id]",NOT_TEXT=/^(button|checkbox|radio|submit|reset|file|hidden|image|range|color)$/;
@@ -3209,7 +3222,11 @@ const typingText=(now=Date.now())=>{const a=document.activeElement;if(!a)return 
 let pointerDown=false;
 ["pointerdown","mousedown"].forEach(t=>document.addEventListener(t,()=>{pointerDown=true},true));
 ["pointerup","mouseup","pointercancel","dragend","blur"].forEach(t=>document.addEventListener(t,()=>{pointerDown=false},true));
-const selectionHeld=()=>{if(pointerDown)return true;try{const s=getSelection();return !!s&&s.rangeCount>0&&s.isCollapsed===false}catch(_){return false}};
+// Checker 2's F1 on 235b47b6: a selection stays after a copy (⌘C does not clear it), so holding every redraw while text is selected left the board stale until a click elsewhere. Only a drag in progress holds the
+// whole board now (it ends with the pointer); a selection holds just the row it sits in (patchHtml leaves that row as it is while the selection is in it) and the board draws everything else.
+// When the selection goes, the held row is drawn (selectionchange below).
+const selectionHeld=()=>pointerDown;
+document.addEventListener("selectionchange",()=>{if(heldRows&&!selectionIn(null)){heldRows=false;renderSoon()}});
 function renderSoon(){if(renderDue!=null)return;
   const go=()=>{if(typingText()){renderDue=setTimeout(go,Math.max(lastTyped+TYPE_IDLE-Date.now(),RENDER_BATCH));return}
     if(selectionHeld()){renderDue=setTimeout(go,RENDER_BATCH);return}renderDue=null;renderAnchored()};
