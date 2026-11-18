@@ -1,0 +1,5 @@
+SECURE
+
+Door guard: read_inbox with no, empty or blank session is now refused whether or not a door session is set (logged, batch untaken, expected id never echoed); a wrong session still refused. wakeAsk opens the batch from the owner's words before the stall sync; the sync's throws are caught and, on the probe-only /api/probe/wake route, run under waitUntil. Overlapping syncs are harmless (stall_wakes ON CONFLICT (card_id, reason); hold-end updates conditional on the read state). No new route, role, secret or write path. Mutation checks: pass (old guard fails 2 tests; uncaught syncStalls fails 1). INFO: with no door session set, a take naming any session still goes through, and the refusal now says no session is set.
+
+signed-by: Security
