@@ -1,0 +1,5 @@
+SECURE
+
+Diff 918074fe..e5cad893: lastProbesPair (base = newest pack whose probes step left its .done; none = every job, each compared with the installed file); jobsAt now refuses a table with job lines it cannot read (my INFO, mutation check: pass); step writes board-store-probes-pc<n>.done beside itself on PROBES OK only. Owner's 5 LaunchAgents all in the readable form: first run moves ask 45->80 and evidence 105->185 (its JOBS limit 170), others unchanged. INFO: undo leaves the .done marker, so after an undo the next pack would compare with this pack; delete the marker on undo.
+
+signed-by: Security
