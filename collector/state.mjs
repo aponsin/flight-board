@@ -687,7 +687,7 @@ export function citedShas(note) {
   for (const m of note.matchAll(/(?<![0-9A-Za-z])part\s+([0-9a-f]{7,40})(?![0-9A-Za-z])/gi)) if (/[0-9]/.test(m[1]) && /[a-f]/.test(m[1]) && !out.includes(m[1])) out.push(m[1]);
   return out.slice(0, 10);
 }
-function tipState(card, tip, repo, config, now, declared, cover = null) {
+function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop = false) {
   // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
   // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
   const notesOn = (sha) => Object.entries(repo.notes).map(([p, ref]) => { const have = annotatedOn(repo, ref); if (have && /^[0-9a-f]{40}$/.test(String(sha)) && !have.has(sha)) return null; let t = null; try { t = repo.git(["notes", `--ref=${ref}`, "show", sha]); } catch { /* none */ } return t === null || t === undefined || t === false ? null : [p, String(t)]; }).filter(Boolean);
@@ -757,8 +757,11 @@ function tipState(card, tip, repo, config, now, declared, cover = null) {
   // is: it goes back to its builder to re-cut. Read only for a tip waiting at ship, so a card in review costs no extra git call.
   // #C1207 (11-18: the watch sent Builder "signed but behind main, re-cut" for two lower cards of a stack whose tip, fully signed, already had main merged in; a re-cut would have cost every signature): a card
   // read under a stack tip (coverSha) that is a lower card of it is never behind main by its own commit: the stack's tip carries the question, once, and is behind main only when the tip itself lacks it.
-  const lowerOfStack = !!coverSha && String(tip.sha) !== coverSha;
-  const behindMain = !onMain && !bare && !lowerOfStack && phase === config.collector.shipPhase && typeof repo.git === "function" && !ok(() => repo.git(["merge-base", "--is-ancestor", mainRef, tip.sha]));
+  // #C1209 (Checker 2's LOW on #C1207): when no card's commit IS the stack's tip (a fix-up or merge commit with no card's Board-Id), nobody owned the question and the stack was never named; the stack's
+  // topmost card (nudgeTop, set by the stack read) then carries it, once, and it is asked of the stack's tip, not of the card's own older commit.
+  const lowerOfStack = !!coverSha && String(tip.sha) !== coverSha && !(nudgeTop && coverSha);
+  const behindRef = nudgeTop && coverSha ? coverSha : tip.sha;
+  const behindMain = !onMain && !bare && !lowerOfStack && phase === config.collector.shipPhase && typeof repo.git === "function" && !ok(() => repo.git(["merge-base", "--is-ancestor", mainRef, behindRef]));
   const findings = bare || onMain ? [] : [...new Set([...findingsOn(after ? after.sha : tip.sha), ...(coverSha ? findingsOn(coverSha) : [])])].sort();
   // #C1114: the findings every review has put on the branch's commits (not only the tip's), counted by kind; the Worker raises the card's counters to these.
   const issueCounts = (() => {
@@ -902,7 +905,7 @@ export function cardState(card, repo, config, now, opts = {}) {
   if (tips[0]) tips = [ownHead(repo, card, tips[0]), ...tips.slice(1)];
   let tip = tips[0];
   if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };
-  let one = tipState(card, tip, repo, config, now, declared, opts.cover ?? null);
+  let one = tipState(card, tip, repo, config, now, declared, opts.cover ?? null, opts.nudgeTop === true);
   // #C915 (incident 11-11: a card's v2 shipped in v1.209.9 and its v1 branch stayed, read "signed but behind main, re-cut" and dispatched to the
   // builder; a landed card's stale tip went to Checker five times): when none of the card's branch tips is on main but a commit on main carries
   // its Board-Id trailer, that main commit is the card (landed, or live once deployed) and the older tips are no longer worked. The branch of the
@@ -922,7 +925,7 @@ export function cardState(card, repo, config, now, opts = {}) {
   if (tips.length > 1) {
     tips = tips.slice(0, MAX_BRANCH_ROWS);
     const read = new Map([[tip, one]]);
-    const stateOf = (t) => { if (!read.has(t)) read.set(t, tipState(card, t, repo, config, now, declared, t === tips[0] ? opts.cover ?? null : null)); return read.get(t); };
+    const stateOf = (t) => { if (!read.has(t)) read.set(t, tipState(card, t, repo, config, now, declared, t === tips[0] ? opts.cover ?? null : null, t === tips[0] && opts.nudgeTop === true)); return read.get(t); };
     const landed = tips.find((t) => stateOf(t).onMain === true);
     if (landed) tips = [landed];
     else { const seen = new Set(); tips = tips.filter((t) => { const f = branchFamily(t.branch); if (seen.has(f)) return false; seen.add(f); return true; }); }
@@ -1040,10 +1043,14 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
     const isAncestor = (a, b) => a === b || String(b).startsWith(a) || ok(() => repo.git(["merge-base", "--is-ancestor", a, b]));
     const stack = readStack({ heads, tips, isAncestor });
     const fields = stackFields(stack);
+    // #C1209: with no member's commit at the stack tip, the topmost member (every other member's head is under it) is asked the behind-main question for the tip.
+    const members = stack?.members ?? [];
+    const tipless = members.length > 1 && !members.some((id) => isAncestor(stack.tip, heads[id]) );
+    const topId = tipless ? members.find((id) => members.every((o) => isAncestor(heads[o], heads[id]))) : null;
     for (const [id, field] of Object.entries(fields)) {
       // A member is read again at its own commit with the stack tip as cover (design 4: a note on the tip counts for every card under it),
       // and a middle-of-chain card, which the first pass could not find, is read at the commit its trailer names. An outsider keeps its reading.
-      const again = field.outside ? out[id] : cardState(cardOf[id], repo, config, now, { head: found[id], cover: stack.tip });
+      const again = field.outside ? out[id] : cardState(cardOf[id], repo, config, now, { head: found[id], cover: stack.tip, ...(id === topId ? { nudgeTop: true } : {}) });
       out[id] = { ...again, stack: field };
     }
     // #C914: stackHold marks a pushed card of this stack-mode repository that no stack-ready signal (scripts/stack-ready.mjs) covers: its head is not
