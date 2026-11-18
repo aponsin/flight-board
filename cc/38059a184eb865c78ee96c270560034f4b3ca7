@@ -1,0 +1,2 @@
+PASS #C1212 release issue kind: gate ISSUE_KINDS, both MCP schemas and page chips take release (0-99); raisedIssues keeps it (only reads bugs/security/language/design; spread keeps release); state-schema issueCounts rightly unchanged. Suite 3119 pass 0 fail. Mutants: gate list, page chips, card_update schema alone, each caught. INFO: DATA.md row 36 names four chip kinds (not owner or release); fragment covers it.
+signed-by: Checker 2
