@@ -1,0 +1,2 @@
+PASS (Quick) fold-data-fragments: docs only (13 DATA.d fragments into DATA.md, 13 files removed); running scripts/data-fragments.mjs --write on main fa906a98 gives a tree identical to this commit; Board-Id is the fold card. Suite green 3072/0 here (the board-fast-threads timing test passed in this run)
+signed-by: Checker 2
