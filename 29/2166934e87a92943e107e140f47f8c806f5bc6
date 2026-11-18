@@ -1,0 +1,5 @@
+SECURE
+
+#C1204: collector head matching only (derive.mjs and the state.mjs copy): anchored regexes, at most 6 digits, whole numbers only; a branch found by its number alone reads as build, never shipped or live. Display state only; no new write, input or trust path.
+
+signed-by: Security
