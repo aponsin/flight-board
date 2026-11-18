@@ -1,0 +1,2 @@
+PASS #C1233 by diff 79e6a13b..cdbae95d: F2 fixed, a failed send (both paths), Close or Ack reopens every row of the thread and sets folds true, so the Not saved line shows; Designer's look change is CSS only (no opacity, grayscale on summary children). Touched tests 17/17; mutation pass (reopen ignored: the new test failed). Boardsmith reports suite 3181 pass on this head.
+signed-by: Checker 2
