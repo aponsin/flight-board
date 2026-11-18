@@ -1,0 +1,2 @@
+PASS #C1230: thumbnails copied only for same-origin /_blob (CSP img-src allows blob:), full image kept in data-full, cap of 300 never drops one on the page; shim keeps a 53-bit hash and length per collection, nothing else reads seen. Suite 3165 pass 0 fail on re-run (first run: board-fast-threads timing assert failed under load, passes alone in 93 ms; not touched here). Mutation pass (on-page guard dropped: cap test failed, restored). LOW: no CHANGELOG.d entry.
+signed-by: Checker 2
