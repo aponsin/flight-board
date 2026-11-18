@@ -1,0 +1,5 @@
+SECURE
+
+probe-board askJob: one retry, only on exit 124, same line, same headless send (SendMessage,ListAgents only); JOBS.ask limit 30->65 s, alarm 80 s < 180 s edge; launchd never overlaps a job. Mutation check: pass. INFO: a timed-out send that did deliver before the kill means Manager gets the wake line twice (harmless duplicate).
+
+signed-by: Security
