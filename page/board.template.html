@@ -1510,8 +1510,11 @@ function itemOf(id){const w=state.waiting.find(x=>x.id===id);if(w)return {coll:"
 // Resolved: its item is done (an ask or idea done, an initiative done), or Manager's last word marked it resolved.
 // An owner's Ack on a building thread (#C510, ackWrites) is resolved for Manager's gates (nothing for it to answer) but
 // leaves the thread with the team while its card is in flight.
+// #C1203 (the owner in t-1794938282960: "why did this thread come back up ?", his last word an "Ack." stored resolved, nobody writing after it): his Ack leaves the thread with the team only while
+// a card that was already in flight when he wrote it is still in flight. A card made after his word (a follow-up that names the thread) never reopens it: a closed thread stays closed until someone writes in it.
+const ackHeldByCard=(id,last)=>threadCards(id).some(i=>i&&i.status!=="done"&&i.status!=="dropped"&&(num(i.createdAt)??0)<=(num(last&&last.at)??0));
 function threadResolved(id){if(threadOpen(id))return false;const it=itemOf(id),t=threadOf(id),last=t[t.length-1];
-  if(last&&last.resolved&&!(last.kind==="ack"&&threadCard(id)))return true;if(!it)return false;
+  if(last&&last.resolved&&!(last.kind==="ack"&&ackHeldByCard(id,last)))return true;if(!it)return false;
   const done=it.coll==="initiatives"?it.doc.status==="done":it.coll==="waiting"?settled(it.doc):!!it.doc.done;
   return done&&!postAfterClose(id,it)}
 // #C941 (the owner on #T1825: Manager closed an ask, then answered his follow-up in the same thread; it had gone to Resolved and he never
