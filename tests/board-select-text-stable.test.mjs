@@ -203,15 +203,24 @@ test("a click on a Copy button releases the hold too, whatever way the copy is m
   assert.equal(note(p), true);
 });
 
-test("a drag in progress shows the note and holds the board; the note goes with the pointer; no timeout: a slow selection keeps its hold", async () => {
+test("a drag in progress holds the board with no timeout, and says nothing; the redraw comes with the pointer", async () => {
   const p = await page();
   p.fire("pointerdown");
-  assert.equal(note(p), false, "the note shows during the drag");
   p.say(); p.runTo(p.now + 60_000);
   assert.equal(p.renders, 0, "a minute later it is still held (no timeout)");
   p.fire("pointerup"); p.runTo(p.now + 300);
   assert.equal(p.renders, 1);
-  assert.equal(note(p), true);
+  assert.equal(note(p), true, "the note is for a held row only");
+});
+
+// Checker 2's F2: a plain click or tap (press and release, no selection) never shows a note that says text is selected.
+test("a plain click never shows the note: press, release, with no selection and no held row", async () => {
+  const p = await page();
+  p.els.holdnote = { hidden: true };
+  p.fire("pointerdown"); assert.equal(p.els.holdnote.hidden, true, "pressed");
+  p.fire("mousedown"); assert.equal(p.els.holdnote.hidden, true);
+  p.fire("pointerup"); assert.equal(p.els.holdnote.hidden, true, "released");
+  p.select(true); p.fire("pointerdown"); assert.equal(p.els.holdnote.hidden, true, "a selection with no row held says nothing either");
 });
 
 // ---- (3) a text box in a row that did change ----

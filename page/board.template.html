@@ -3227,7 +3227,8 @@ let pointerDown=false;
 ["pointerup","mouseup","pointercancel","dragend","blur"].forEach(t=>document.addEventListener(t,()=>{pointerDown=false;holdNote()},true));
 // The hold ends with the copy (Manager, on Checker 2's F1: a copy must never leave the board stale): the copy event (⌘C, the menu, a Copy button's fallback) and a click on a Copy button release it, the held row is drawn, and a new press
 // starts the hold again. No timeout (a slow selection must not lose its hold). While a row is held, or a drag is on, a small fixed note says so; a click anywhere ends it (the selection goes, selectionchange draws).
-const holdOn=()=>pointerDown||(heldRows&&selectionIn(null));
+// Checker 2's F2 on 35a58b0b: only a held row shows the note. A bare press (a click on a button or a fold, a tap) holds the board for an instant but pauses nothing the owner can see, so it says nothing.
+const holdOn=()=>heldRows&&selectionIn(null);
 function holdNote(){const n=typeof document.getElementById==="function"?document.getElementById("holdnote"):null;if(n)n.hidden=!holdOn()}
 function releaseHold(){released=true;holdNote();if(heldRows){heldRows=false;renderSoon()}}
 document.addEventListener("copy",releaseHold);
