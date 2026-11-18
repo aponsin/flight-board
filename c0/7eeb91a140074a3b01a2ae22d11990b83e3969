@@ -1,0 +1,5 @@
+SECURE
+
+#C1206: threadKnown also accepts a threads row with that num and at least one message; bound parameters, positive integer still required. The gate stays an existence check (the #C1169 INFO: any ask's num already passes it); no new write or trust path.
+
+signed-by: Security
