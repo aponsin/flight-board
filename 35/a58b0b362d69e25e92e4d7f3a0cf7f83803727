@@ -1,0 +1,5 @@
+SECURE
+
+#C1229 follow-on on the landed 2b044831. A fixed-text note (static markup, hidden toggled) says updates are paused while a row is held; a copy event or a Copy button click releases the hold and draws the row; a new press starts it again. No new innerHTML (hostile-text 42 pass). It also narrows 2b044831's INFO: the held row is now marked. Tests 32/32; mutation pass (removing the copy listener fails the copy-release test).
+
+signed-by: Security
