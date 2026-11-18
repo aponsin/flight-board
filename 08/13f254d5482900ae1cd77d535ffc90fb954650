@@ -1,0 +1,5 @@
+SECURE
+
+collector/state.mjs: behindMain no longer set for a lower card read under a stack tip; only narrows the re-cut hint, the landing gate (one head continuing main) is unchanged; no new input, no execution. Test is real git; mutation check: pass. Base 473a1d6a: main now has 66f8b2bc, so it no longer continues main.
+
+signed-by: Security
