@@ -1,0 +1,2 @@
+PASS (Full) decision-buttons-with-card-thread, by diff: a merge of main 95d1fa8a into ed86c27b (signed PASS). ed86c27b..afd204e8 is exactly the fold's 13 fragments and DATA.md; against main the branch still adds only the card's 4 files, unchanged since ed86c27b. Boardsmith reports the suite green 3074/0 on the merged head
+signed-by: Checker 2
