@@ -188,6 +188,7 @@ test("the step: undo puts the backup back and reloads the job; with no backup it
     assert.match(first.stdout, /No LaunchAgent file here for: usage\./);
     const undone = s.run("undo");
     assert.match(undone.stdout, /^PROBES UNDONE: ask run with the alarm and interval they had before/);
+    assert.equal(existsSync(join(s.home, "board-store-probes-pc9.done")), false, "an undone step leaves no marker: the next pack does not compare with this pack's table");
     assert.equal(alarmOf(readFileSync(s.file("ask"), "utf8")), 45);
     assert.deepEqual(s.loadLog().map((l) => l.split(" ")[0]), ["bootout", "bootstrap", "bootout", "bootstrap"]);
   } finally { rmSync(s.home, { recursive: true, force: true }); }

@@ -56,6 +56,8 @@ if (process.argv[2] === "undo") {
   const back = Object.keys(WANT).filter((job) => existsSync(backupOf(job)));
   if (!back.length) fail(`no backup of any probe job's file (${backupOf(Object.keys(WANT)[0])} and the others)`);
   for (const job of back) { copyFileSync(backupOf(job), plistOf(job)); reload(job); }
+  // Security's INFO on e5cad893: an undone step is not a step that ran, so the next pack must not compare with this pack's table.
+  try { unlinkSync(join(dirname(fileURLToPath(import.meta.url)), `board-store-probes-${NAME}.done`)); } catch { /* none */ }
   console.log(`PROBES UNDONE: ${back.join(", ")} run with the alarm and interval they had before this step. They have been reloaded.`);
   process.exit(0);
 }
