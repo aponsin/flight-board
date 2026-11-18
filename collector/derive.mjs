@@ -53,6 +53,11 @@ export function bareBranch(card, head) {
   if (!head || head.afterShip || head.shipped || !namesCard(card, head.branch)) return false;
   return boardIdOf(head.message) !== card.id && !(Number.isInteger(card.num) && subjectNum(head.message) === card.num);
 }
+// #C1204 (Checker 2's M1): a head found ONLY by its branch's number ("c<num>-..."), whose tip is not this card's own commit (no Board-Id of the card, not its "#C<num>" subject), is a branch
+// cut on another card's tip, or one with no commit of its own yet: it is work started (build), and the notes on that tip are the other commit's, never this card's. state.mjs holds a copy.
+export function byNumberOnly(card, head) {
+  return !!head && Number.isInteger(card.num) && String(head.branch).split("/").pop() !== card.id && branchNum(head.branch) === card.num && boardIdOf(head.message) !== card.id && subjectNum(head.message) !== card.num;
+}
 export function headsFor(id, heads, num = null) {
   const tips = new Map();
   for (const h of heads) {
@@ -106,7 +111,7 @@ export function reviewsFor(card, config) {
 export function derivePhase(card, facts, config) {
   const d = phaseFromFacts(card, facts, config);
   const at = facts?.signedAt;
-  if ((facts?.onMain && bareBranch(card, facts?.head)) || !facts?.head || !at || typeof at !== "object") return d;
+  if ((facts?.onMain && bareBranch(card, facts?.head)) || byNumberOnly(card, facts?.head) || !facts?.head || !at || typeof at !== "object") return d;
   const reviews = {};
   for (const p of Object.keys(config.collector.notes)) if (facts.signed?.has(p) && Number.isFinite(at[p])) reviews[p] = at[p];
   return Object.keys(reviews).length ? { ...d, reviews } : d;
@@ -120,6 +125,7 @@ function phaseFromFacts(card, facts, config) {
   const readyAt = Number.isFinite(facts.head.at) ? facts.head.at : null;
   // #C671: a branch pushed for the card before its first commit sits at a main commit: work started, not shipped.
   if (facts.onMain && bareBranch(card, facts.head)) return { phase: c.buildPhase, head, firm: false, evidence: `${facts.head.branch} at ${short} has no commits beyond ${c.mainBranch} yet` };
+  if (byNumberOnly(card, facts.head)) return { phase: c.buildPhase, head, firm: false, evidence: `${facts.head.branch} at ${short} is named for the card by number and its tip is not the card's own commit yet` };
   // onMain (#C662): the card's commit is on the main branch, the evidence the ship rule asks for (gate/card-rules.mjs).
   if (facts.onMain && facts.deployed) return { phase: c.livePhase, onMain: true, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch} and deployed${facts.version ? ` in ${facts.version}` : ""}` };
   if (facts.onMain) return { phase: c.shipPhase, onMain: true, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch}, not deployed yet` };
