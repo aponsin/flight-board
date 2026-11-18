@@ -9,7 +9,7 @@ import { pairCoversFor, boardRepoPath } from "./pair-wait.mjs";
 import { dispatchRun, writeStackQueue, writeOpenAsks, writeLandHolds } from "./store-dispatch.mjs";
 import { checkConfig, fullConfig, boardId, home } from "../scripts/config.mjs";
 
-export const SEND_TIMEOUT_MS = 25_000;  // inside the ask job's 30 s limit
+export const SEND_TIMEOUT_MS = 25_000;  // two of them fit inside the ask job's limit (#C1208)
 export const FETCH_TIMEOUT_MS = 8_000;
 
 export function loadEnv(path) {
@@ -56,8 +56,15 @@ export async function askJob({ base, headers, fetchImpl = fetch, send = realSend
   if (a.tellOwner) log(`TELL OWNER once: ${a.status.reason}: ${a.status.fix}`);
   if (!a.send) return { sent: false, tellOwner: !!a.tellOwner, status: a.status };
   log(`send batch ${a.batchId}`);
-  const s = await send(a.line);
+  let s = await send(a.line);
   log(`send exit ${s.exit}`);
+  // #C1208: a send that only timed out (124) is tried once more in this run before the store hears of a failure: normal sends take 10 to
+  // 25 s against the 25 s limit, the next minute's send succeeds, and a red row with a TELL OWNER line for it was noise. Two timeouts still report.
+  if (s.exit === 124) {
+    log("send timed out, trying once more");
+    s = await send(a.line);
+    log(`send exit ${s.exit} (second try)`);
+  }
   const rr = await post(fetchImpl, base, headers, "/api/probe/wake-result", { batchId: a.batchId, exit: s.exit, text: s.text });
   if (!rr.ok) throw new Error(`wake-result answered ${rr.status}`);
   return { sent: true, exit: s.exit, tellOwner: !!a.tellOwner, status: a.status };

@@ -6,7 +6,7 @@
 // part 3 brought the median to 18 s, p95 53 s, but the max of the last 400 runs was 103 s. THE LIMIT (170 -> 90) AND THE PAGE'S EDGE
 // (STALE_AFTER_MS, 5 -> 3 minutes) STILL REVERT: look again after a week with every run under 90 s.
 export const JOBS = {
-  ask: { intervalSec: 20, limitSec: 30 },
+  ask: { intervalSec: 20, limitSec: 65 }, // #C1208: room for two sends of 25 s (SEND_TIMEOUT_MS) and the posts
   evidence: { intervalSec: 60, limitSec: 170 },
   usage: { intervalSec: 300, limitSec: 120 },
   dispatch: { intervalSec: 60, limitSec: 45 }, // #C821: the owners' DISPATCH files from the store's view

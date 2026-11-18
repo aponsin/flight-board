@@ -30,7 +30,47 @@ test("the send is a plain headless claude send by name with only the send tools,
   const a = sendArgs("1 for Manager, batch b-1");
   assert.ok(a.join(" ").includes("session named 'Manager'"));
   assert.deepEqual(a.slice(a.indexOf("--allowedTools")), ["--allowedTools", "SendMessage,ListAgents"]);
-  assert.ok(SEND_TIMEOUT_MS < JOBS.ask.limitSec * 1000);
+  assert.ok(SEND_TIMEOUT_MS * 2 < JOBS.ask.limitSec * 1000, "#C1208: two sends fit in the job's limit");
+});
+
+test("#C1208: a send that times out is tried once more in the same run; a good second send tells nobody", async () => {
+  const env = { DB: makeDb() };
+  await postMessage(env.DB, Date.now(), "owner", { thread_id: "t", body: "x" });
+  const exits = [124, 0], sends = [], logs = [];
+  const send = async (line) => { sends.push(line); return { exit: exits.shift(), text: "" }; };
+  const f = wired(env);
+  const r = await askJob({ base: BASE, headers: H, fetchImpl: f, send, log: (l) => logs.push(l) });
+  assert.equal(sends.length, 2);
+  assert.equal(sends[0], sends[1], "the same line is sent again");
+  assert.deepEqual([r.sent, r.exit], [true, 0]);
+  const next = await askJob({ base: BASE, headers: H, fetchImpl: f, send, log: (l) => logs.push(l) });
+  assert.equal(next.status.state === "red", false);
+  assert.equal(next.tellOwner, false);
+  assert.ok(!logs.some((l) => /TELL OWNER/.test(l)));
+  assert.equal((await readView(env.DB, Date.now())).wake.last_send_ok, 1);
+});
+
+test("#C1208: two timeouts in a row are reported, and only one retry is made", async () => {
+  const env = { DB: makeDb() };
+  await postMessage(env.DB, Date.now(), "owner", { thread_id: "t", body: "x" });
+  let n = 0;
+  const send = async () => { n++; return { exit: 124, text: "" }; };
+  const f = wired(env);
+  const r = await askJob({ base: BASE, headers: H, fetchImpl: f, send, log: () => {} });
+  assert.equal(n, 2);
+  assert.equal(r.exit, 124);
+  const next = await askJob({ base: BASE, headers: H, fetchImpl: f, send, log: () => {} });
+  assert.equal(next.status.state, "red");
+  assert.equal(next.tellOwner, true);
+});
+
+test("#C1208: a send that failed another way is not retried", async () => {
+  const env = { DB: makeDb() };
+  await postMessage(env.DB, Date.now(), "owner", { thread_id: "t", body: "x" });
+  let n = 0;
+  const send = async () => { n++; return { exit: 1, text: "Failed to authenticate" }; };
+  await askJob({ base: BASE, headers: H, fetchImpl: wired(env), send, log: () => {} });
+  assert.equal(n, 1);
 });
 
 test("a quiet ask sends nothing; an owner message makes one send and its good result is stored", async () => {
