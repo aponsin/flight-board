@@ -1,0 +1,5 @@
+SECURE
+
+Adds release to ISSUE_KINDS: the gate still takes only integers 0-99 for listed keys and refuses any other key; both MCP schemas list it; the page draws it through num() with a fixed label, so nothing written reaches the page unescaped; raisedIssues leaves it typed-only. No new secret, route, role or write path. Mutation check: pass (gate without release fails 2 tests).
+
+signed-by: Security
