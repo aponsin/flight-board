@@ -1,0 +1,5 @@
+SECURE
+
+worker/knobs.mjs: askStaleSec min 60->90 (tighter bound; out-of-bounds falls back to the 180 s default), test ties it to JOBS.ask limit+interval; DATA fragment line. Diff ed321295..b4ba5030 only.
+
+signed-by: Security
