@@ -1,0 +1,5 @@
+SECURE
+
+#C1233 Checker 2's F2, by diff on the signed 79e6a13b: clearSending(id,true) on the four failure paths also sets folds and d.open=true on rows whose foldKey equals the id (string compare, fixed selector). No markup, innerHTML, network or data change. Tests 32/32.
+
+signed-by: Security
