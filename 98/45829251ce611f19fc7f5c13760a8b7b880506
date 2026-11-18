@@ -1,0 +1,2 @@
+PASS (Full) #C1210 head, by diff from e5cad893 (PASS): undo removes the .done marker (closes my LOW); the steps text says the first run moves any job whose installed alarm differs (evidence 105 to 185 here); #C1210 tests green; mutant (keep the marker on undo) caught
+signed-by: Checker 2
