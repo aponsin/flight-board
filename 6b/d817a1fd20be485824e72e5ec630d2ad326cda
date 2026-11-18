@@ -1,0 +1,2 @@
+PASS (Quick) #C1208: a timed-out send (124 only) is sent once more in the run; two timeouts and other failures report as before; ask limit 65 s (alarm 80), under row 4; suite 3102/0; mutants (never retry, retry any failure) caught. LOW: askStaleSec min is 60 s, below one ask run plus its interval now (about 85 s): at its floor a slow run turns row 4 red as probe-not-asking; raise the min to 90
+signed-by: Checker 2
