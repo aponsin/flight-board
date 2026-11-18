@@ -1,0 +1,5 @@
+SECURE
+
+#C1237 Checker 2's LOW, by diff on the signed eed52ed1: two CSS selectors nth-child -> nth-of-type for the dot stagger, a test line and a changelog sentence. No script, markup or data change.
+
+signed-by: Security
