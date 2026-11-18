@@ -47,6 +47,6 @@ test("it fits on input, after ⌘+Enter, on a restored draft and after sending",
   assert.match(page, /document\.addEventListener\("input",e=>fitBox\(e\.target\)\)/, "typing, a paste and ⌘+Enter (it dispatches input) refit the box");
   assert.match(page, /function takeDraft\(ta\)\{const text=\(ta&&ta\.value\|\|""\)\.trim\(\);if\(ta\)\{ta\.value="";fitBox\(ta\)\}/, "sending shrinks it back");
   assert.match(page, /if\(t&&!t\.value\)\{t\.value=text;fitBox\(t\)\}/, "a failed send's text comes back fitted");
-  assert.match(page, /Object\.entries\(drafts\)\.forEach\(\(\[id,v\]\)=>\{const t=document\.getElementById\(id\);if\(t\)\{t\.value=v;fitBox\(t\)\}\}\)/, "a draft restored after a re-draw is fitted");
-  assert.match(page, /Object\.entries\(drafts\)\.forEach\(\(\[id,v\]\)=>\{const x=document\.getElementById\(id\);if\(x\)\{x\.value=v;fitBox\(x\)\}\}\)/, "Needs you's own restore too");
+  assert.match(page, /Object\.entries\(drafts\)\.forEach\(\(\[id,v\]\)=>\{const t=document\.getElementById\(id\);if\(t\)\{if\(t\.value!==v\)t\.value=v;fitBox\(t\)\}\}\)/, "a draft restored after a re-draw is fitted"); // #C1229: not set again when the box was carried across
+  assert.match(page, /Object\.entries\(drafts\)\.forEach\(\(\[id,v\]\)=>\{const x=document\.getElementById\(id\);if\(x\)\{if\(x\.value!==v\)x\.value=v;fitBox\(x\)\}\}\)/, "Needs you's own restore too");
 });

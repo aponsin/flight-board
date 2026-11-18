@@ -855,7 +855,7 @@ function renderWaiting(){
   // Keep what the owner is typing: a live update re-draws the list, which would otherwise wipe the note boxes.
   const drafts={};el.querySelectorAll("textarea[id^='note-'],textarea[id^='tnote-']").forEach(x=>{if(x.value)drafts[x.id]=x.value});
   const focusId=document.activeElement&&document.activeElement.id&&/^t?note-/.test(document.activeElement.id)?document.activeElement.id:null;
-  queueMicrotask(()=>{Object.entries(drafts).forEach(([id,v])=>{const x=document.getElementById(id);if(x){x.value=v;fitBox(x)}});if(focusId){const x=document.getElementById(focusId);if(x){x.focus();x.selectionStart=x.selectionEnd=x.value.length}}});
+  queueMicrotask(()=>{Object.entries(drafts).forEach(([id,v])=>{const x=document.getElementById(id);if(x){if(x.value!==v)x.value=v;fitBox(x)}});if(focusId){const x=document.getElementById(focusId);if(x&&document.activeElement!==x){x.focus();x.selectionStart=x.selectionEnd=x.value.length}}});
   const item=(w,qn=null)=>askHtml(w,open,w.since,"",qn);
   const y=window.scrollY;
   patchHtml(el,queueHtml(asks,item)+answeredRows);
@@ -1820,8 +1820,21 @@ function patchHtml(el,html){if(!el.childNodes||typeof document.createElement!=="
   nw.forEach((n,i)=>{const o=old[i];
     if(o&&o.nodeType===n.nodeType&&(o._sig!=null?o._sig:sigOf(o))===sigOf(n))return;
     if(n.nodeType===1)n._sig=n.outerHTML;
-    if(o)el.replaceChild(n,o);else el.appendChild(n)});
+    const moved=o?carryBoxes(o,n):[];
+    if(o)el.replaceChild(n,o);else el.appendChild(n);
+    settleBoxes(moved)});
   old.slice(nw.length).forEach(o=>el.removeChild(o))}
+// #C1229 (the owner: a redraw disturbs typing, and moving the cursor back a few lines goes wrong): in a row that did change, a text box with focus or with unsent text is the same element afterwards:
+// the old one is moved into the new row in place of its fresh twin (same id), and its focus, cursor, selection and scroll are put back, so nothing about the box is rebuilt.
+const BOXES="textarea[id],input[id]",NOT_TEXT=/^(button|checkbox|radio|submit|reset|file|hidden|image|range|color)$/;
+function carryBoxes(o,n){const moved=[];if(o.nodeType!==1||n.nodeType!==1||typeof o.querySelectorAll!=="function")return moved;
+  [...o.querySelectorAll(BOXES)].filter(b=>!NOT_TEXT.test(b.type||"")).forEach(b=>{const focused=document.activeElement===b;if(!focused&&!b.value)return;
+    const nb=[...n.querySelectorAll(BOXES)].find(x=>x.id===b.id);if(!nb)return;
+    const st={b,focused,s:b.selectionStart,e:b.selectionEnd,d:b.selectionDirection,top:b.scrollTop};
+    nb.replaceWith(b);moved.push(st)});
+  return moved}
+function settleBoxes(moved){moved.forEach(({b,focused,s,e,d,top})=>{try{if(focused&&document.activeElement!==b)b.focus({preventScroll:true});
+  if(s!=null&&typeof b.setSelectionRange==="function")b.setSelectionRange(s,e,d||"none");if(b.scrollTop!==top)b.scrollTop=top}catch(_){}})}
 // Re-draws a part of the page without losing what the owner is typing, which folds are open, or where the page is scrolled
 // (the part's own scroll too: the owner's strip scrolls on its own).
 function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id)),drafts={};
@@ -1834,9 +1847,10 @@ function keep(el,draw){const open=new Set([...el.querySelectorAll("details[open]
   const y=window.scrollY,inner=el.scrollTop;
   draw();restoreFolds(el,open);
   if(el.scrollTop!==inner)el.scrollTop=inner;if(window.scrollY!==y)window.scrollTo(0,y);
-  Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t){t.value=v;fitBox(t)}});
+  // #C1229: a box patchHtml carried across is already as it was: its value is not set again (setting it moves the cursor to the end), and a box that still has focus is not focused again.
+  Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t){if(t.value!==v)t.value=v;fitBox(t)}});
   Object.entries(said).forEach(([id,v])=>{const m=document.getElementById(id);if(m&&!m.innerHTML)m.innerHTML=v});
-  if(focus){const t=document.getElementById(focus);if(t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}}
+  if(focus){const t=document.getElementById(focus);if(t&&document.activeElement!==t){t.focus();t.selectionStart=t.selectionEnd=t.value.length}}}
 function renderThreads(){const el=$("threads");keep(el,()=>{patchHtml(el,threadsHtml(Date.now()))});const nf=$("ntfiles");if(nf)nf.innerHTML=ntFilesHtml(pendingFiles.get("new")||[]);const na=$("ntattach");if(na)na.innerHTML=ntAttachHtml(!!assetsRef);ntHas()}
 (()=>{const t=$("nttext"),mq=typeof window.matchMedia==="function"?window.matchMedia("(max-width:600px)"):null;if(!t||!mq)return;
   const set=()=>{t.placeholder=ntPlaceholder(mq.matches)};set();if(mq.addEventListener)mq.addEventListener("change",set)})();
@@ -3203,13 +3217,20 @@ function renderSoon(){if(renderDue!=null)return;
 // After the owner's own write: drawn on the next tick, once the caller has written its receipt (keep() carries it).
 function renderOwn(){setTimeout(()=>{if(renderDue!=null){clearTimeout(renderDue);renderDue=null}renderAnchored()},0)}
 // Draws everything now, keeping the row the owner is on (the box he's in, else the row under the pointer) where it was.
-function renderAnchored(){const row=(document.activeElement&&document.activeElement.closest&&document.activeElement.closest("details[data-id]"))||(lastRow&&lastRow.isConnected?lastRow:null);
+// #C1229 (the owner: the page jumps while he scrolls to read): the anchor is the row he is in (the box with focus), else the row he last pointed at while it is on screen, else the topmost row in
+// view, so a redraw that adds or grows content above the viewport moves the scroll by the same amount and the row he reads keeps its place on screen. The browser's own overflow-anchor is not relied on.
+const inView=r=>{const b=r.getBoundingClientRect();return b.bottom>0&&b.top<(window.innerHeight||1e9)};
+function anchorRow(){const act=document.activeElement&&document.activeElement.closest&&document.activeElement.closest("details[data-id]");
+  if(act)return act;if(lastRow&&lastRow.isConnected&&inView(lastRow))return lastRow;
+  return [...document.querySelectorAll("details[data-id]")].find(d=>d.offsetParent!==null&&inView(d))||null}
+function anchored(draw){const row=anchorRow();
   const key=row?foldKey(row):null,top=row?row.getBoundingClientRect().top:0;
-  renderAll();
+  draw();
   if(key==null)return;
   const all=[...document.querySelectorAll("details[data-id]")].filter(d=>foldKey(d)===key&&d.offsetParent!==null);
   const same=all.find(d=>d.dataset.id===row.dataset.id)||all[0];
   if(same){lastRow=same;const dy=same.getBoundingClientRect().top-top;if(Math.abs(dy)>=1)window.scrollBy(0,dy)}}
+function renderAnchored(){anchored(renderAll)}
 // The row the owner was last on (pointed at, touched or in): only the anchor for the redraw, never a hold.
 const onRow=e=>{const r=e&&e.target&&e.target.closest?e.target.closest("details[data-id]"):null;if(r)lastRow=r};
 document.addEventListener("pointerover",onRow);
@@ -3515,7 +3536,7 @@ else{
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-v3view")}catch(e){}if(v==="plan"||v==="crew")setV3View(v)})();
 (()=>{let v=null;try{v=localStorage.getItem("flight-board-view")}catch(e){}if(typeof location!=="undefined"&&location.hash==="#v3")v="v3";if(v==="v3")setView("v3")})();
 }
-setInterval(()=>{tick();if(!typingText()&&!selectionHeld()&&document.querySelector("[data-shipat]"))renderBoard()},15000);tick();renderAll();
+setInterval(()=>{tick();if(!typingText()&&!selectionHeld()&&document.querySelector("[data-shipat]"))anchored(renderBoard)},15000);tick();renderAll();
 
 (async()=>{
   const db=window.claude&&await window.claude.use("db");
