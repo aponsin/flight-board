@@ -46,13 +46,15 @@ test("a stall sync that throws does not hold back the owner's word: the batch op
   const { env, write } = make();
   assert.equal((await write(newThread("m2-bbbbbb", "t-1795017662309", "what about PR#324 ?", 2), NOW)).status, 200);
   const broken = failingOn(env.DB, (sql) => sql.startsWith("SELECT id, num, owner_role"), async () => { throw new Error("sync broke"); });
-  const r = await wakeAsk(broken, NOW + 20_000);
+  const realLog = console.log; console.log = () => {};
+  let r; try { r = await wakeAsk(broken, NOW + 20_000); } finally { console.log = realLog; }
   assert.equal(r.count, 1);
   assert.equal(r.send, true);
   assert.match(r.line, /^1 for Manager, batch b-\d+$/);
 });
 
-test("with the Worker's waitUntil the sync runs after the answer: a slow sync does not hold the ask", async () => {
+// #C1214 (Checker 2's L1 on #C1213): { timeout } so a wakeAsk that stops handing the sync to waitUntil fails this test; the gate below never opens then.
+test("with the Worker's waitUntil the sync runs after the answer: a slow sync does not hold the ask", { timeout: 5000 }, async () => {
   const { env, write } = make();
   assert.equal((await write(newThread("m2-bbbbbb", "t-1795017662309", "what about PR#324 ?", 2), NOW)).status, 200);
   let release; const gate = new Promise((res) => { release = res; });
@@ -64,6 +66,41 @@ test("with the Worker's waitUntil the sync runs after the answer: a slow sync do
   assert.ok(deferred instanceof Promise);
   release();
   await deferred;
+});
+
+test("a sync that fails leaves one line in the Worker's log with the reason, and a quiet sync leaves none", async () => {
+  const { env } = make();
+  const lines = [], realLog = console.log;
+  console.log = (...a) => { lines.push(a.join(" ")); };
+  try {
+    await wakeAsk(env.DB, NOW + 20_000);
+    assert.deepEqual(lines, [], "a quiet sync logs nothing");
+    const broken = failingOn(env.DB, (sql) => sql.startsWith("SELECT id, num, owner_role"), async () => { throw new Error("cards table unreadable"); });
+    await wakeAsk(broken, NOW + 40_000);
+  } finally { console.log = realLog; }
+  assert.equal(lines.length, 1);
+  const o = JSON.parse(lines[0]).wakeSync;
+  assert.equal(o.stalls, "cards table unreadable");
+  assert.equal(o.sweep, "ok");
+  assert.ok(Number.isInteger(o.ms) && Number.isInteger(o.stallsMs));
+});
+
+// #C1214 (Checker 2's L2): a stall row that is over is retired by the sync, so it must not open a batch before the sync runs (Manager would be woken to an empty inbox).
+test("a stall line that is already over opens no batch: the first count is the owner's words only", async () => {
+  const { env } = make();
+  await env.DB.prepare("INSERT INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind("gone-card", "a card waits that no longer does", NOW).run();
+  const r = await wakeAsk(env.DB, NOW + 20_000);
+  assert.equal(r.count, 0);
+  assert.equal(r.send, false);
+  assert.equal((await env.DB.prepare("SELECT batch_id FROM wake WHERE id = 1").first()).batch_id, null, "no batch was opened for it");
+});
+
+test("a stall line that is still current opens a batch once the sync has run, as before", async () => {
+  const { env } = make();
+  await env.DB.prepare("INSERT INTO stall_wakes (card_id, reason, created_at) VALUES (?, ?, ?)").bind("ping:t1", "The owner pinged thread t1", NOW).run();
+  const r = await wakeAsk(env.DB, NOW + 20_000);
+  assert.equal(r.count, 1);
+  assert.equal(r.send, true);
 });
 
 test("the probe's wake route hands the sync to the Worker's waitUntil, and still answers with the owner's word", async () => {

@@ -515,12 +515,13 @@ const pendingForManager = async (db) => {
 };
 // #C963: whether the owner's own words wait (a message or an answer Manager has not read), as against a stall line: a failed send is retried
 // sooner for these (shouldSend). The same two counts pendingForManager adds up.
-const ownerWaiting = async (db) => {
+const ownerWordsPending = async (db) => {
   const m = await db.prepare("SELECT COUNT(*) AS n FROM messages WHERE delivered_at IS NULL AND author = 'owner'").first();
   const a = await db.prepare("SELECT COUNT(*) AS n FROM asks WHERE answered_at IS NOT NULL AND answer_taken_at IS NULL").first();
   const p = await db.prepare("SELECT COUNT(*) AS n FROM stall_wakes WHERE taken_at IS NULL AND card_id LIKE ?").bind(`${PING_CARD}%`).first();
-  return m.n + a.n + p.n > 0;
+  return m.n + a.n + p.n;
 };
+const ownerWaiting = async (db) => (await ownerWordsPending(db)) > 0;
 // #C1009: the owner's Ping on a thread is a wake of its own, not a comment: one row per (thread, minute) in stall_wakes under card_id
 // "ping:<thread id>", which Manager's next read takes with the rest. A second press in the same minute renews the same row (untaken again).
 // syncStalls leaves these rows alone (they are not a stall that can be over), and the view's threadPings gives the page "Pinged HH:MM".
@@ -725,22 +726,30 @@ const wakeFacts = (w, askedAt) => ({ askedAt, batchId: w.batch_id, count: w.batc
 // opened a batch and Manager was never woken for them): the owner's own words (messages, answers, pings) open the batch BEFORE the stall sync, which is the slow
 // part and the part that can throw; a sync that throws is only a missed stall line, never a missed owner word. With `after` (the Worker's waitUntil) the sync
 // runs after the answer is built, so a slow sync no longer holds the answer back: its lines join the batch from the next ask (20 s later) on.
-async function openBatch(db, now) {
+// #C1214 (Checker 2's L2 on #C1213): the count before the sync is the owner's words only. A stall row that is over is retired by the sync, so counting it here
+// could open a batch for a line that never reaches Manager (a wake to an empty inbox); the count after the sync is the whole of it, as before.
+async function openBatch(db, now, ownerOnly = false) {
   const w = await db.prepare("SELECT * FROM wake WHERE id = 1").first();
-  const n = await pendingForManager(db);
+  const n = ownerOnly ? await ownerWordsPending(db) : await pendingForManager(db);
   const open = w.batch_id && w.taken_at < w.batch_at;
   if (n > 0 && !open) {
     await db.prepare("UPDATE wake SET batch_id = ?, batch_count = ?, batch_at = ? WHERE id = 1").bind(`b-${now}`, n, now).run();
-  } else if (n > 0) await db.prepare("UPDATE wake SET batch_count = ? WHERE id = 1").bind(n).run();
+  } else if (n > 0 && !ownerOnly) await db.prepare("UPDATE wake SET batch_count = ? WHERE id = 1").bind(n).run();
   return n;
 }
+// #C1214: the sync's own time (when it took 1 s or more) and any failure go to the Worker's log (wrangler tail), one line per run, so the slow ask of 11-18 16:01Z can be read there next time:
+// {"wakeSync":{"ms":..,"stalls":"ok"|"<message>","sweep":"ok"|"<message>"}}. Nothing is stored; no reader of the board's data sees it.
 async function syncAll(db, now) {
-  try { await syncStalls(db, now); } catch { /* a stall line is never worth the owner's word */ }
-  try { await syncBranchSweep(db, now); } catch { /* a sweep ask is never worth the wake */ }
+  const t0 = Date.now(), out = { stalls: "ok", sweep: "ok" };
+  try { await syncStalls(db, now); } catch (e) { out.stalls = String(e?.message ?? e).slice(0, 200); /* a stall line is never worth the owner's word */ }
+  const t1 = Date.now();
+  try { await syncBranchSweep(db, now); } catch (e) { out.sweep = String(e?.message ?? e).slice(0, 200); /* a sweep ask is never worth the wake */ }
+  const ms = Date.now() - t0;
+  if (ms >= 1000 || out.stalls !== "ok" || out.sweep !== "ok") { try { console.log(JSON.stringify({ wakeSync: { ms, stallsMs: t1 - t0, ...out } })); } catch { /* a log line is never worth the ask */ } }
 }
 export async function wakeAsk(db, now, after = null) {
   await db.prepare("UPDATE wake SET alive_at = ? WHERE id = 1").bind(now).run();
-  await openBatch(db, now);
+  await openBatch(db, now, true);
   if (typeof after === "function") after(syncAll(db, now));
   else { await syncAll(db, now); }
   const n = await openBatch(db, now);
