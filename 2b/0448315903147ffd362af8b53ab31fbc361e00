@@ -1,0 +1,5 @@
+SECURE
+
+#C1229 range main..2b044831. patchHtml writes the same escaped html the six callers built through esc() (inert template, hostile-text 42 sinks pass). Rows match by data-id, else id, else place; keys are Map keys only. A draft moves only into the box with its own id (F1 fixed: find(x=>true) now fails the new test, mutation pass). A selection holds only its own row; a drag holds the board until pointerup, cancel or blur. Tests 73/73. INFO: a row held for a selection stays stale until the selection goes, so a click on its button can act on the old row; the old version held the whole board instead.
+
+signed-by: Security
