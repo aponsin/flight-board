@@ -1,0 +1,2 @@
+PASS (Full) #C1205 + #C1203 line head: pinned-run runs only pickup-watch or prompt-watch from the single pinned install, refuses no pin, two pins, other names and a link out; the test's real-script runs stay pure (no home read); suite 3096/0; mutants (link-out guard, name list) caught
+signed-by: Checker 2
