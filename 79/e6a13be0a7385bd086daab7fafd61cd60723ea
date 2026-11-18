@@ -1,0 +1,5 @@
+SECURE
+
+Merge of #C1232's signed 978afbf5 into #C1233's 989c22d4. --remerge-diff is not empty only because three files conflicted (changelog fragment, the .t-hist background, its test); each is resolved to 978afbf5's side verbatim, no other line. Nothing new beyond the two signed parents.
+
+signed-by: Security
