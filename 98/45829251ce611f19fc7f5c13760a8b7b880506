@@ -1,0 +1,5 @@
+SECURE
+
+Diff e5cad893..98458292: undo unlinks only board-store-probes-<NAME>.done beside itself (fixed name, try/catch, imports already present); steps text sentence; test asserts the marker is gone. Closes my undo INFO.
+
+signed-by: Security
