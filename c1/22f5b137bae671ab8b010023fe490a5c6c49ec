@@ -1,0 +1,5 @@
+SECURE
+
+wakeAsk hands the sync to waitUntil only when the owner's words already hold the batch open; otherwise the sync runs first, so an over stall row opens no batch on the Worker route either. Owner words are still counted and the batch opened before any sync. No new route, role, secret or write path. Mutation check: pass (dropping owner > 0 fails the route test). INFO (availability, not security): with no owner word pending, a slow sync can again make the probe's ask time out; owner words are unaffected.
+
+signed-by: Security
