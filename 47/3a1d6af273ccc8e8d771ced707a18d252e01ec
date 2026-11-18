@@ -1,0 +1,5 @@
+SECURE
+
+#C1205: scripts/pinned-run.mjs runs only pickup-watch or prompt-watch (fixed list, never a path) from the install the hooks pin (pinnedCommit: exactly one 40-hex sha), refuses a script that realpaths out of that install, passes args via spawnSync without a shell. INFO: the entry itself still comes from ~/.flight-board/current, as the watch scripts did before; only its target is pinned, so no weaker than today.
+
+signed-by: Security
