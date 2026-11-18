@@ -1,0 +1,5 @@
+SECURE
+
+#C1230. Thumbnails: only a loaded img inside .thumb whose src is the store's own /_blob/<id> is redrawn on a canvas (same origin, never an https picture), shown as an escaped blob: URL our canvas made; img-src already allows blob:; the lightbox keeps /_blob; copies capped at 300 and revoked. Shim: change detection by a 53-bit hash plus length instead of the JSON text; no new data reaches the page. No new innerHTML (42). Tests 13/13; mutation pass (dropping the /_blob/ check fails the leave-alone test). INFO: a crafted hash collision could hide one collection change until the next one; not practical with live data.
+
+signed-by: Security
