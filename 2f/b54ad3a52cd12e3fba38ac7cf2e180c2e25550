@@ -1,0 +1,5 @@
+SECURE
+
+wakeAsk's first count is the owner's words only (messages, answers, pings), so an over stall row can't open a batch; the post-sync count is unchanged. syncAll logs one Worker-log line (timings, error messages cut to 200 chars, nothing stored, no board reader sees it) when slow or failed; the log write is itself caught. Test-only timeout. No new route, role, secret or write path. Mutation check: pass (first count without ownerOnly fails the over-stall test).
+
+signed-by: Security
