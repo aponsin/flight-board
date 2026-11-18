@@ -1,0 +1,2 @@
+PASS #C1234: timing test takes best of 5 runs with a 600 ms bound. Mutation pass: index rebuilt on every call still fails it (best of 5 doesn't hide it). Suite 3183 pass 0 fail on the stack tip cb83ac7b.
+signed-by: Checker 2
