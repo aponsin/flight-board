@@ -589,7 +589,7 @@ export function listWriteRefusal(fields, { create = false } = {}) {
 const CARD_WORDS = new Set(["id", "title", "summary", "size", "review_level", "from_thread", "track", "owner_role", "next_note", "waiting_on", "blocked_reason", "paused", "dropped", "rework_reason", "customer_text", "look_change", "skip", "depends_on", "issues", "queue_pos", "check_at", "repo", "batch", "bump", "hold_end", "removes", "contract", "changes_definition", "done", "done_evidence"]);
 // #C902: what shows a card with no branch is done: a file path (~/ or /), an https link, or a thread message's id (m-<time>-<8 hex>).
 export const DONE_EVIDENCE = /^(?:(?:~\/|\/)[^\s]|https:\/\/[^\s]|m-\d{10,16}-[0-9a-f]{8}$)/;
-export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner"];
+export const ISSUE_KINDS = ["bugs", "security", "language", "design", "owner", "release"];
 // #C1114: the counters the probe read from the review notes (reading.issueCounts: bugs, security, language, design) raise the card's stored `issues`: each kind
 // becomes the larger of the stored number and the read one, so a later PASS, the same note read again, or a hand-typed number above the read one never lowers
 // or doubles anything. `owner` is only ever typed. Returns the new counts, or null when nothing rises (or the reading is no counts).

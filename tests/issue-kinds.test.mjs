@@ -10,12 +10,12 @@ const chip = (n, label) => `<span class="chip ${n ? "" : "zero"}">${n} ${label}<
 test("#C465's issues show as 2 design fixes and 1 owner change, beside the three kinds there were", () => {
   const { issueChips } = loadNames(["issueChips"]);
   const c465 = { issues: { bugs: 0, design: 2, language: 0, owner: 1, security: 0 } };
-  assert.equal(issueChips(c465), [chip(0, "bugs"), chip(0, "security fixes"), chip(0, "wording fixes"), chip(2, "design fixes"), chip(1, "owner change")].join(" "));
+  assert.equal(issueChips(c465), [chip(0, "bugs"), chip(0, "security fixes"), chip(0, "wording fixes"), chip(2, "design fixes"), chip(1, "owner change"), chip(0, "release")].join(" "));
 });
 
 test("no issues, or junk in them: every chip at 0", () => {
   const { issueChips } = loadNames(["issueChips"]);
-  const zero = [chip(0, "bugs"), chip(0, "security fixes"), chip(0, "wording fixes"), chip(0, "design fixes"), chip(0, "owner changes")].join(" ");
+  const zero = [chip(0, "bugs"), chip(0, "security fixes"), chip(0, "wording fixes"), chip(0, "design fixes"), chip(0, "owner changes"), chip(0, "release")].join(" ");
   assert.equal(issueChips({}), zero);
   assert.equal(issueChips({ issues: { design: "2<b>", owner: null } }), zero, "a count is a number or nothing");
 });

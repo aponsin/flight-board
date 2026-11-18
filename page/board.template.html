@@ -2312,7 +2312,7 @@ function cardFrom(i){const ids=[...new Set([i.thread,...(Array.isArray(i.threads
   return ids.length?`<span class="c-from">from ${ids.map(t=>`<a href="#" class="t-ref" data-tref="${esc(t)}">#T${threadNum(t)}</a>`).join(", ")}</span>`:""}
 // A card's issue chips: what sent it back, by kind (#C468, the owner's #T1170: #C465 went back to build for Designer's two
 // findings and his own menu decision, and its chips said 0 bugs, 0 security fixes, 0 wording fixes).
-const ISSUE_KINDS=[["bugs","bugs"],["security","security fixes"],["language","wording fixes"],["design","design fixes"],["owner","owner changes"]];
+const ISSUE_KINDS=[["bugs","bugs"],["security","security fixes"],["language","wording fixes"],["design","design fixes"],["owner","owner changes"],["release","release"]];
 // Designer on #C1008: "1 design fix", not "1 design fixes" (the label's last word in the singular at exactly one).
 function issueLabel(l,v){return v===1?l.replace(/(fix)es$|s$/,"$1"):l}
 function issueChips(i){const iss=i.issues||{};return ISSUE_KINDS.map(([k,l])=>{const v=num(iss[k])||0;return `<span class="chip ${v?"":"zero"}">${v} ${issueLabel(l,v)}</span>`}).join(" ")}
