@@ -253,6 +253,8 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .evidence{font:600 .72rem var(--mono);border:1px solid var(--line);border-radius:4px;padding:2px 7px;color:var(--muted)}.evidence.differs{border-style:dashed;border-color:var(--muted);background:none;cursor:pointer;font:600 .72rem var(--mono);color:var(--muted)}.evidence.differs[aria-expanded="true"]{border-style:solid}.ev-diff{font:.75rem var(--mono);color:var(--muted);margin:2px 0 4px;overflow-wrap:anywhere}.asof{font:.7rem var(--mono);color:var(--muted)}.usual{color:var(--muted)}.asof.stale{color:var(--warn);font-weight:600}.evidence.old{background:var(--line);border-color:var(--line);color:var(--ink)}.oldsrc{display:block;font:.82rem var(--mono);color:var(--muted)}.oldsrc.stale{color:var(--warn-ink);font-weight:600}#synced.stale{color:var(--warn-ink);font-weight:600}.newboard{display:block;font:600 .82rem var(--mono);color:var(--warn-ink)}.newboard[hidden]{display:none}
 .shipline{margin:0;padding:8px 12px;border:1px solid var(--warn);border-radius:8px;background:var(--warn-soft);color:var(--warn-ink);font-size:.9rem}
 .shipline b{font-weight:700}
+.holdnote{position:fixed;left:12px;bottom:12px;z-index:30;max-width:calc(100vw - 24px);margin:0;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font-size:.8rem;box-shadow:0 1px 6px rgba(0,0,0,.2)}
+.holdnote[hidden]{display:none}
 .stuckline{margin:0 0 12px;padding:8px 12px;border:1px solid var(--bad);border-radius:8px;color:var(--bad);font-size:.9rem}
 .stuckline .sl-owner{color:var(--warn-ink)}.stuckline.amber{border-color:var(--warn);color:var(--warn-ink)}
 .stuckline .deaf .cmd{margin-top:6px;color:var(--ink)}
@@ -626,6 +628,7 @@ table.crew3-ph{margin-top:14px}
   </header>
   <div class="pushhelp" id="pushhelp" role="region" aria-label="How to allow phone pushes" hidden></div>
   <div class="shipline" id="shipline" role="status" hidden></div>
+  <div class="holdnote" id="holdnote" role="status" hidden>Updates paused while text is selected — click anywhere to resume</div>
   <div class="stuckline" id="threadsfull" role="status" hidden></div>
   <div class="stuckline" id="stuck" hidden></div>
   <p style="margin:0"><button type="button" class="viewlink" id="viewlink">Try the new layout</button></p>
@@ -1124,7 +1127,7 @@ function zoomBy(f,cx,cy){zoomTo(lbZ*f,cx,cy)}
   sc.addEventListener("wheel",e=>{if(!e.ctrlKey)return;e.preventDefault();zoomBy(Math.exp(-e.deltaY/100),e.clientX,e.clientY)},{passive:false});})();
 document.addEventListener("keydown",e=>{if($("lightbox").hidden)return;if(e.key==="ArrowRight"){e.preventDefault();stepShot(1)}if(e.key==="ArrowLeft"){e.preventDefault();stepShot(-1)}if(e.key==="+"||e.key==="="){e.preventDefault();zoomBy(1.5)}if(e.key==="-"){e.preventDefault();zoomBy(1/1.5)}});
 document.addEventListener("click",e=>{const t=e.target.closest&&e.target.closest(".thumb");if(t){e.preventDefault();openShot(t)}
-  const c=e.target.closest&&e.target.closest(".copy");if(c){e.preventDefault();const txt=c.dataset.copy;
+  const c=e.target.closest&&e.target.closest(".copy");if(c){e.preventDefault();releaseHold();const txt=c.dataset.copy;
     c.dataset.label??=c.textContent;const orig=c.dataset.label;
     const done=()=>{c.textContent="Copied";setTimeout(()=>{c.textContent=orig},1500)};
     const fallback=()=>{const code=c.parentElement.querySelector("code");let tmp=null;if(!code){tmp=document.createElement("span");tmp.textContent=txt;tmp.style.cssText="position:fixed;left:-9999px;top:0;white-space:pre";document.body.appendChild(tmp)}
@@ -1814,9 +1817,9 @@ function restoreFolds(el,open){el.querySelectorAll("details[data-id]").forEach(d
 // #C1229: draws html into el, but leaves alone every top-level node whose html is what it drew last time, so a redraw never touches a row that did not
 // change (a selection inside it, and the Copy box beside it, stay). A node's last drawn html is kept on the node itself (_sig), because the live node
 // differs from it as soon as a fold is opened or a note is typed; only a changed, new or surplus node is replaced, added or removed.
-let heldRows=false;
-// Whether the page's text selection (a non-empty one) has an end inside node o; with o null, whether there is one at all.
-function selectionIn(o){try{const s=getSelection();if(!s||s.rangeCount<1||s.isCollapsed!==false)return false;
+let heldRows=false,released=false;
+// Whether the page's text selection (a non-empty one) has an end inside node o; with o null, whether there is one at all. Not once a copy has released it (a new press starts the hold again).
+function selectionIn(o){if(released)return false;try{const s=getSelection();if(!s||s.rangeCount<1||s.isCollapsed!==false)return false;
   return o==null||typeof o.contains==="function"&&(o.contains(s.anchorNode)||o.contains(s.focusNode))}catch(_){return false}}
 function patchHtml(el,html){if(!el.childNodes||typeof document.createElement!=="function"){el.innerHTML=html;return}
   const t=document.createElement("template");t.innerHTML=html;
@@ -3220,13 +3223,19 @@ const typingText=(now=Date.now())=>{const a=document.activeElement;if(!a)return 
 // text is selected on the page or a pointer is down (a drag in progress), and draws once the selection clears. The wait is the same short poll as the
 // batch above; nothing is lost, the redraw draws the newest state. patchHtml (above keep) keeps unchanged nodes, so a selection in a row that did not change survives a redraw that does run.
 let pointerDown=false;
-["pointerdown","mousedown"].forEach(t=>document.addEventListener(t,()=>{pointerDown=true},true));
-["pointerup","mouseup","pointercancel","dragend","blur"].forEach(t=>document.addEventListener(t,()=>{pointerDown=false},true));
+["pointerdown","mousedown"].forEach(t=>document.addEventListener(t,()=>{pointerDown=true;released=false;holdNote()},true));
+["pointerup","mouseup","pointercancel","dragend","blur"].forEach(t=>document.addEventListener(t,()=>{pointerDown=false;holdNote()},true));
+// The hold ends with the copy (Manager, on Checker 2's F1: a copy must never leave the board stale): the copy event (⌘C, the menu, a Copy button's fallback) and a click on a Copy button release it, the held row is drawn, and a new press
+// starts the hold again. No timeout (a slow selection must not lose its hold). While a row is held, or a drag is on, a small fixed note says so; a click anywhere ends it (the selection goes, selectionchange draws).
+const holdOn=()=>pointerDown||(heldRows&&selectionIn(null));
+function holdNote(){const n=typeof document.getElementById==="function"?document.getElementById("holdnote"):null;if(n)n.hidden=!holdOn()}
+function releaseHold(){released=true;holdNote();if(heldRows){heldRows=false;renderSoon()}}
+document.addEventListener("copy",releaseHold);
 // Checker 2's F1 on 235b47b6: a selection stays after a copy (⌘C does not clear it), so holding every redraw while text is selected left the board stale until a click elsewhere. Only a drag in progress holds the
 // whole board now (it ends with the pointer); a selection holds just the row it sits in (patchHtml leaves that row as it is while the selection is in it) and the board draws everything else.
 // When the selection goes, the held row is drawn (selectionchange below).
 const selectionHeld=()=>pointerDown;
-document.addEventListener("selectionchange",()=>{if(heldRows&&!selectionIn(null)){heldRows=false;renderSoon()}});
+document.addEventListener("selectionchange",()=>{if(heldRows&&!selectionIn(null)){heldRows=false;renderSoon()}holdNote()});
 function renderSoon(){if(renderDue!=null)return;
   const go=()=>{if(typingText()){renderDue=setTimeout(go,Math.max(lastTyped+TYPE_IDLE-Date.now(),RENDER_BATCH));return}
     if(selectionHeld()){renderDue=setTimeout(go,RENDER_BATCH);return}renderDue=null;renderAnchored()};
@@ -3247,7 +3256,7 @@ function anchored(draw){const row=anchorRow();
   const all=[...document.querySelectorAll("details[data-id]")].filter(d=>foldKey(d)===key&&d.offsetParent!==null);
   const same=all.find(d=>d.dataset.id===row.dataset.id)||all[0];
   if(same){lastRow=same;const dy=same.getBoundingClientRect().top-top;if(Math.abs(dy)>=1)window.scrollBy(0,dy)}}
-function renderAnchored(){anchored(renderAll)}
+function renderAnchored(){anchored(renderAll);holdNote()}
 // The row the owner was last on (pointed at, touched or in): only the anchor for the redraw, never a hold.
 const onRow=e=>{const r=e&&e.target&&e.target.closest?e.target.closest("details[data-id]"):null;if(r)lastRow=r};
 document.addEventListener("pointerover",onRow);

@@ -10,7 +10,7 @@ const html = readFileSync(new URL("../page/board.template.html", import.meta.url
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 // ---- (1) patchHtml on a stand-in DOM: top-level nodes are split out of the html by tag depth, a node is its outerHTML ----
-const fnSrc = script.slice(script.indexOf("let heldRows=false;"), script.indexOf("// Re-draws a part of the page without losing"));
+const fnSrc = script.slice(script.indexOf("let heldRows=false,released=false;"), script.indexOf("// Re-draws a part of the page without losing"));
 // A text box: it keeps its own value, cursor, selection and scroll; moving it into another row (replaceWith) takes its twin's place there; focus() makes it the active element of the current page.
 let activeDoc = null, selection = { rangeCount: 0, isCollapsed: true };
 const box = (id) => ({ id, type: "textarea", value: "", selectionStart: 0, selectionEnd: 0, selectionDirection: "none", scrollTop: 0, owner: null,
@@ -103,7 +103,7 @@ async function page() {
   const fire = (type, ev = {}) => { for (const fn of listeners[type] ?? []) fn(ev); };
   const msgs = [];
   const say = () => { msgs.push({ id: "m" + msgs.length, data: () => ({ thread: "t-1", from: "Manager", text: "hi", at: now }) }); subs.messages({ docs: msgs }); };
-  return { runTo, fire, say, select: (on) => { selection = on ? { rangeCount: 1, isCollapsed: false } : { rangeCount: 0, isCollapsed: true }; }, get now() { return now; }, get renders() { return renders; }, ctx, rows, scrolls, onRender: (f) => { onRender = f; } };
+  return { runTo, fire, say, select: (on) => { selection = on ? { rangeCount: 1, isCollapsed: false } : { rangeCount: 0, isCollapsed: true }; }, get now() { return now; }, get renders() { return renders; }, ctx, els, rows, scrolls, onRender: (f) => { onRender = f; } };
 }
 
 // Checker 2's F1 on 235b47b6: a selection stays after a copy, so it must not hold the whole board (it would sit stale until a click elsewhere, with new asks and moves unseen).
@@ -166,6 +166,52 @@ test("a collapsed caret (a click, no selection) holds nothing: the board redraws
   const p = await page();
   p.say(); p.runTo(p.now + 500);
   assert.equal(p.renders, 1);
+});
+
+// Manager, on Checker 2's F1: the hold ends with the copy, and while it is on a small note says so. No timeout.
+const copyBtn = { dataset: { copy: "node a.mjs" }, textContent: "Copy", parentElement: { querySelector: () => ({}) } };
+const copyClick = { target: { closest: (s) => (s === ".copy" ? copyBtn : null) }, preventDefault() {} };
+const note = (p) => p.els.holdnote.hidden;
+
+test("the small note is in the page, fixed, with Manager's words", () => {
+  assert.match(html, /<div class="holdnote" id="holdnote" role="status" hidden>Updates paused while text is selected — click anywhere to resume<\/div>/);
+  assert.match(html, /\.holdnote\{position:fixed;/);
+});
+
+test("while a row is held for the selection in it the note shows; a copy event releases the hold, the row is drawn, and the note goes", async () => {
+  const p = await page();
+  vm.runInContext("heldRows=true", p.ctx);
+  p.select(true); p.fire("selectionchange"); p.runTo(p.now + 500);
+  assert.equal(note(p), false, "held: the note shows");
+  assert.equal(p.renders, 0);
+  p.fire("copy"); p.runTo(p.now + 500);
+  assert.equal(p.renders, 1, "the copy released it: the held row is drawn though the selection is still there");
+  assert.equal(note(p), true, "and the note is gone");
+  assert.equal(vm.runInContext("heldRows", p.ctx), false);
+  assert.equal(vm.runInContext("released", p.ctx), true, "released: the selection that is still there holds no row (selectionIn is false)");
+  p.fire("pointerdown"); p.fire("pointerup");
+  assert.equal(vm.runInContext("released", p.ctx), false, "a new press starts the hold again");
+});
+
+test("a click on a Copy button releases the hold too, whatever way the copy is made", async () => {
+  const p = await page();
+  vm.runInContext("heldRows=true", p.ctx);
+  p.select(true); p.fire("selectionchange"); p.runTo(p.now + 500);
+  assert.equal(p.renders, 0);
+  p.fire("click", copyClick); p.runTo(p.now + 500);
+  assert.equal(p.renders, 1);
+  assert.equal(note(p), true);
+});
+
+test("a drag in progress shows the note and holds the board; the note goes with the pointer; no timeout: a slow selection keeps its hold", async () => {
+  const p = await page();
+  p.fire("pointerdown");
+  assert.equal(note(p), false, "the note shows during the drag");
+  p.say(); p.runTo(p.now + 60_000);
+  assert.equal(p.renders, 0, "a minute later it is still held (no timeout)");
+  p.fire("pointerup"); p.runTo(p.now + 300);
+  assert.equal(p.renders, 1);
+  assert.equal(note(p), true);
 });
 
 // ---- (3) a text box in a row that did change ----
@@ -279,5 +325,5 @@ test("a redraw that moves nothing does not scroll", async () => {
 
 test("the ship redraw every 15 s is anchored too", () => {
   assert.match(script, /anchored\(renderBoard\)/);
-  assert.match(script, /function renderAnchored\(\)\{anchored\(renderAll\)\}/);
+  assert.match(script, /function renderAnchored\(\)\{anchored\(renderAll\);holdNote\(\)\}/);
 });
