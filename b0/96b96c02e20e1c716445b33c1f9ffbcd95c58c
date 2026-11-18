@@ -1,0 +1,5 @@
+SECURE
+
+#C1229 F2: the pause note's condition only (heldRows && a selection); the hold itself (selectionHeld = pointerDown) is unchanged and nothing new is drawn. Tests 33/33 with hostile-text 42.
+
+signed-by: Security
