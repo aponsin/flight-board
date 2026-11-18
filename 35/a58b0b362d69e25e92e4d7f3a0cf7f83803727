@@ -1,2 +1,2 @@
-FINDINGS #C1229 F2: holdOn() includes pointerDown, so every press anywhere (each click, each tap on the phone) shows 'Updates paused while text is selected' until the release, with nothing selected; the test fires a bare pointerdown and expects the note. Show the note only for a held row (heldRows && selectionIn(null)), or only once a pointer is down and has moved or been down over ~300 ms; test that a plain click never shows it. Else clean: copy and Copy-click release are right; suite 3159 pass 0 fail; mutation pass (copy listener off: 1 failed, restored).
+PASS #C1229: my F2 here is fixed by b096b96c on top; covered by that review.
 signed-by: Checker 2
