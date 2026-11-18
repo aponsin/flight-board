@@ -1,0 +1,5 @@
+SECURE
+
+#C1233 Designer's F1/F2, by diff on f12c011a: CSS only (opacity dropped, grayscale moved to the summary's children), a test and a changelog sentence. No script or markup change. Tests 32/32 (sending-state 8, thread-scroll 9, hostile-text 8, threads-tabs 7).
+
+signed-by: Security
