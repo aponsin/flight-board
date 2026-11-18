@@ -1,0 +1,5 @@
+SECURE
+
+collector/state.mjs: behindMain hint moves to the topmost member when the stack tip carries no card; merge-base asked of the git-derived stack tip sha; only a dispatch hint, landing gate unchanged; no new input. Mutation check: pass (tipless off -> test fails).
+
+signed-by: Security
