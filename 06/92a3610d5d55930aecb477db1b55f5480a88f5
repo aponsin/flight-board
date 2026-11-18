@@ -1,0 +1,2 @@
+PASS #C1237 by diff eed52ed1..0692a361: dot delays now use :nth-of-type, so the hidden word no longer shifts the pulse (my LOW fixed). Sending-state tests 10/10; mutation pass (one delay back on nth-child: the test failed).
+signed-by: Checker 2
