@@ -57,6 +57,12 @@ function run(before, after) {
   return list.map((b) => b.scrollTop);
 }
 
+test("a soft shadow at the bottom says there is more below: a panel-coloured cover that scrolls with the content over a fixed shadow (scroll bars are hidden until a scroll on a Mac and a phone)", () => {
+  const rule = css.match(/\.t-hist\{[^}]*\}/)[0];
+  assert.match(rule, /linear-gradient\(transparent,var\(--panel\) 70%\) 0 100%\/100% 28px no-repeat local/, "the cover moves with the content");
+  assert.match(rule, /radial-gradient\(farthest-side at 50% 100%,rgba\(0,0,0,\.22\),transparent\) 0 100%\/100% 10px no-repeat scroll/, "the shadow stays at the box's bottom");
+});
+
 test("a reader at the newest end stays there when a message is added above", () => {
   assert.deepEqual(run([{ key: "x-t1", top: 0, height: 1000 }], [{ key: "x-t1", height: 1160 }]), [0]);
   assert.deepEqual(run([{ key: "x-t1", top: 2, height: 1000 }], [{ key: "x-t1", height: 1160 }]), [0]);
