@@ -1,0 +1,5 @@
+SECURE
+
+#C1210: probes step edits only 'alarm N; exec @ARGV' and StartInterval of named jobs (labels com.flight-board.store.<job>, job names /^[a-z]{1,20}$/, whole positive ints, injected as JSON, leftover placeholders refused); all files read before any write; first backup kept, plutil -lint, reload, read-back, undo. Hash-checked line like every pack step. prev = last pack that ran (.done), so a never-run pack can't hide a change. Tests sandbox HOME + PATH shims (real ask job untouched). Mutation check: pass (name guard off -> '../x' test fails). INFO: jobsAt silently skips a JOBS entry not in the one-line form (no step for it, fail-open but harmless); MARGIN comes from the tool's checkout, not the packed sha.
+
+signed-by: Security
