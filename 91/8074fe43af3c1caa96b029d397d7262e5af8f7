@@ -1,0 +1,2 @@
+PASS (Full) #C1210: a pack whose JOBS limit or interval changed writes the probes step (alarm = limit + 15, interval; backup, plutil, reload, read-back, undo); labels com.flight-board.store.<job> match this Mac, the live ask file has one alarm 45 and one interval 20 in the forms it reads (it would become 80); tests sandbox HOME and shim launchctl/plutil; suite 3115/0; mutants (ignore interval change, drop backup) caught. INFO: with two jobs, a failure on the second leaves the first rewritten (undo covers it)
+signed-by: Checker 2
