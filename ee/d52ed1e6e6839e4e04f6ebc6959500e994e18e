@@ -1,0 +1,2 @@
+PASS #C1237: .sdots holds a visually hidden span.sr 'Sending' (textContent), only the three dots are aria-hidden; closes my #C1235 LOW. Suite 3184 pass 0 fail; mutation pass (aria-hidden back on .sdots: the new test failed). LOW: span.sr is now .sdots' first child, so '.sdots i:nth-child(2/3)' delays land on dots 1 and 2 and dot 3 gets none (the wave runs 3,1,2); use :nth-of-type.
+signed-by: Checker 2
