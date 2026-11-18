@@ -1,0 +1,5 @@
+SECURE
+
+#C1203: page only (threadResolved): an owner's Ack stays held open only by a card created at or before his word; no new input, write or trust path.
+
+signed-by: Security
