@@ -16,6 +16,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve, posix } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { makePair } from "./pair/make-pair.mjs";
+import { OUTER_EXTRA_SEC } from "../collector/probe-run.mjs";
 
 const FULL = /^[0-9a-f]{40}$/;
 export const SAFE_FOLDER = /^\/[A-Za-z0-9._\/-]{0,500}$/;
@@ -117,6 +118,36 @@ export function landText({ name, sha, template = readFileSync(join(dirname(fileU
   if (!/^pc\d{1,6}$/.test(String(name)) || !FULL.test(String(sha))) throw new Error("the landing-job step needs a pair name (pc<n>) and a full sha");
   const text = template.split("@@NAME@@").join(name).split("@@SIGNED@@").join(sha);
   if (/@@[A-Z]+@@/.test(text)) throw new Error("the landing-job template has a placeholder this tool does not fill");
+  return text;
+}
+
+// #C1210 (Security on pc87: the ask LaunchAgent kept its alarm of 45 s after #C1208 raised the ask job's limit to 65 s, and no pack step rewrote it): the probe jobs' numbers are read from
+// worker/probe-jobs.mjs (JOBS) at a sha. The file is a plain literal that imports nothing, one `name: { intervalSec: N, limitSec: M }` per job; a file that is there but that this cannot read as that gives null, no file gives {}.
+export function jobsAt(git, sha) {
+  const r = git("show", `${sha}:worker/probe-jobs.mjs`);
+  if (r.status !== 0) return {}; // no such file at that commit: no jobs to compare (a repository without a probe)
+  const body = /export const JOBS = \{([\s\S]*?)\n\};/.exec(String(r.stdout))?.[1];
+  if (body === undefined) return null;
+  const out = {};
+  for (const m of body.matchAll(/^\s*(\w+):\s*\{\s*(intervalSec|limitSec):\s*(\d+),\s*(intervalSec|limitSec):\s*(\d+)\s*\}/gm)) {
+    if (m[2] === m[4]) return null;
+    out[m[1]] = { [m[2]]: Number(m[3]), [m[4]]: Number(m[5]) };
+  }
+  return Object.keys(out).length ? out : null;
+}
+// The jobs whose limitSec or intervalSec at `sha` differs from `prevSha` (a job new at `sha` counts), as { job: { intervalSec, limitSec } }; {} when none changed. Either side unreadable: an error, never {}.
+export function probesChanged(git, prevSha, sha) {
+  const before = jobsAt(git, prevSha), after = jobsAt(git, sha);
+  if (!before || !after) throw new Error("worker/probe-jobs.mjs cannot be read as the JOBS table at one of the two commits, so the probe jobs' limits cannot be compared");
+  return Object.fromEntries(Object.entries(after).filter(([job, v]) => before[job]?.limitSec !== v.limitSec || before[job]?.intervalSec !== v.intervalSec));
+}
+// The probe-jobs step of pair `name`, from scripts/pair/probes.template.mjs: it names only the jobs given. A template that still holds a placeholder is refused.
+export function probesText({ name, jobs, template = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "pair", "probes.template.mjs"), "utf8") }) {
+  if (!/^pc\d{1,6}$/.test(String(name))) throw new Error("the probe-jobs step needs a pair name (pc<n>)");
+  const entries = Object.entries(jobs ?? {});
+  if (!entries.length || !entries.every(([job, v]) => /^[a-z]{1,20}$/.test(job) && Number.isInteger(v?.limitSec) && v.limitSec > 0 && Number.isInteger(v?.intervalSec) && v.intervalSec > 0)) throw new Error("the probe-jobs step needs at least one job with a whole limitSec and intervalSec");
+  const text = template.split("@@NAME@@").join(name).split("@@MARGIN@@").join(String(OUTER_EXTRA_SEC)).split("@@JOBS@@").join(JSON.stringify(Object.fromEntries(entries.map(([job, v]) => [job, { intervalSec: v.intervalSec, limitSec: v.limitSec }]))));
+  if (/@@[A-Z]+@@/.test(text)) throw new Error("the probe-jobs template has a placeholder this tool does not fill");
   return text;
 }
 
@@ -232,7 +263,7 @@ export function onMain(git, sha) {
   return { ok: true, tip };
 }
 
-export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha, folder, skipped = [], hooksSha = null, hookPaths = [], boardDeploySha = null, landSha = null, landPaths = [], hookWords = "the Stop hook" }) {
+export function stepsText({ name, sha, prev, commits, paths, deploySha, treeSha, folder, skipped = [], hooksSha = null, hookPaths = [], boardDeploySha = null, landSha = null, landPaths = [], hookWords = "the Stop hook", probesSha = null, probeJobs = {} }) {
   const s8 = sha.slice(0, 8), s7 = sha.slice(0, 7);
   const cards = [...new Set(commits.flatMap((c) => c.match(/#C\d+/g) ?? []))];
   const groups = groupPaths(paths);
@@ -301,8 +332,16 @@ if [ "$(shasum -a 256 ${folder}/board-store-land-${name}.mjs | cut -c1-64)" = ${
 \`\`\`
 
 The landing job (the LaunchAgent \`com.flight-board.store.land\`, every 10 minutes) runs scripts/board-land.mjs; this step points it at \`~/.flight-board/install/${sha}/scripts/board-land.mjs\`, the install line 3 made, instead of \`~/.flight-board/current\`, so a changed land job runs only after you install it. It refuses unless that file exists (line 3 has run), keeps a backup of the LaunchAgent's file, reloads the job and checks launchd has it. Last line: \`LAND OK: ...\`. Undo: \`node ${folder}/board-store-land-${name}.mjs undo\`. Land job files changed since ${prev ? prev.sha.slice(0, 8) : "the start"}: ${landPaths.join(", ")}.
+` : ""}${probesSha ? `
+## Probe jobs (moves the probe LaunchAgents to the new limits; run it after the lines above)
+
+\`\`\`bash
+if [ "$(shasum -a 256 ${folder}/board-store-probes-${name}.mjs | cut -c1-64)" = ${probesSha} ]; then node ${folder}/board-store-probes-${name}.mjs; else echo 'CHECK FAILED: board-store-probes-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
+\`\`\`
+
+A probe job's time limit or interval changed since ${prev ? prev.sha.slice(0, 8) : "the start"}: ${Object.entries(probeJobs).map(([job, v]) => `${job} (limit ${v.limitSec} s, every ${v.intervalSec} s)`).join(", ")}. Each job is a LaunchAgent (\`com.flight-board.store.<job>\`) that the OS ends at its alarm; the pack changes the program, not the alarm, so this step rewrites the alarm (the limit plus ${OUTER_EXTRA_SEC} s) and the interval of those jobs only, keeps a backup of each file, checks it with plutil, reloads the job and reads the file back. A job with no file here is skipped and said so. Last line: \`PROBES OK: ...\`. Undo: \`node ${folder}/board-store-probes-${name}.mjs undo\`.
 ` : ""}
-Full sha256: deploy ${deploySha}, tree ${treeSha}${boardDeploySha ? `, board-deploy ${boardDeploySha}` : ""}${hooksSha ? `, hooks ${hooksSha}` : ""}${landSha ? `, land ${landSha}` : ""}.
+Full sha256: deploy ${deploySha}, tree ${treeSha}${boardDeploySha ? `, board-deploy ${boardDeploySha}` : ""}${hooksSha ? `, hooks ${hooksSha}` : ""}${landSha ? `, land ${landSha}` : ""}${probesSha ? `, probes ${probesSha}` : ""}.
 `;
 }
 
@@ -354,12 +393,18 @@ export function makeAll({ repo, sha, n, out, git = (...a) => spawnSync("git", ["
     if (!hooks) return { ok: false, why: "the landing job changed but the pack has no hooks step to create the pinned install it would run from" };
     try { land = landText({ name, sha }); } catch (e) { return { ok: false, why: e.message }; }
   }
+  // #C1210: a probe job's limit or interval changed since the last pair: its LaunchAgent keeps the old alarm until a step rewrites it. The step needs no pinned install, so it has no hooks dependency.
+  let probes = null, probeJobs = {};
+  if (prev) {
+    try { probeJobs = probesChanged(git, prev.sha, sha); } catch (e) { return { ok: false, why: e.message }; }
+    if (Object.keys(probeJobs).length) { try { probes = probesText({ name, jobs: probeJobs }); } catch (e) { return { ok: false, why: e.message }; } }
+  }
   const hashes = Object.fromEntries(Object.entries(files).map(([f, t]) => [f, sha256(t)]));
   const hooksName = `board-store-hooks-${name}.mjs`;
   // #C924: the generic one-command runner, copied byte for byte (the same file for every pair; its hash is in the steps file).
   const boardDeploy = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "pair", "board-deploy.mjs"));
-  const steps = stepsText({ name, sha, prev, commits, paths, deploySha: hashes[`board-store-deploy-${name}.mjs`], treeSha: hashes[`board-store-tree-${name}.mjs`], folder: out.startsWith(homedir() + "/") ? "~" + out.slice(homedir().length) : out, skipped: neverRun(out, n), hooksSha: hooks ? sha256(hooks) : null, hookPaths, boardDeploySha: sha256(boardDeploy), landSha: land ? sha256(land) : null, landPaths, hookWords });
-  const all = { ...files, ...(hooks ? { [hooksName]: hooks } : {}), ...(land ? { [`board-store-land-${name}.mjs`]: land } : {}), "board-deploy.mjs": boardDeploy, [`board-store-${name}-steps.md`]: steps };
+  const steps = stepsText({ name, sha, prev, commits, paths, deploySha: hashes[`board-store-deploy-${name}.mjs`], treeSha: hashes[`board-store-tree-${name}.mjs`], folder: out.startsWith(homedir() + "/") ? "~" + out.slice(homedir().length) : out, skipped: neverRun(out, n), hooksSha: hooks ? sha256(hooks) : null, hookPaths, boardDeploySha: sha256(boardDeploy), landSha: land ? sha256(land) : null, landPaths, hookWords, probesSha: probes ? sha256(probes) : null, probeJobs });
+  const all = { ...files, ...(hooks ? { [hooksName]: hooks } : {}), ...(land ? { [`board-store-land-${name}.mjs`]: land } : {}), ...(probes ? { [`board-store-probes-${name}.mjs`]: probes } : {}), "board-deploy.mjs": boardDeploy, [`board-store-${name}-steps.md`]: steps };
   for (const [f, t] of Object.entries(all)) writeFileSync(join(out, f), t);
   return { ok: true, files: Object.fromEntries(Object.entries(all).map(([f, t]) => [f, sha256(t)])) };
 }
