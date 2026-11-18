@@ -12,6 +12,8 @@
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const NAME = "@@NAME@@";
 const MARGIN = @@MARGIN@@;
@@ -22,6 +24,8 @@ const plistOf = (job) => `${HOME}/Library/LaunchAgents/${label(job)}.plist`;
 const backupOf = (job) => `${plistOf(job)}.before-${NAME}`;
 const ALARM = /alarm (\d+); exec @ARGV/g;
 const INTERVAL = /(<key>StartInterval<\/key>\s*<integer>)(\d+)(<\/integer>)/g;
+// A step that ran (every job it names is now as wanted) leaves board-store-probes-@@NAME@@.done beside itself: the next pack compares with this pack's table only then (scripts/make-pair.mjs lastProbesPair).
+const ran = () => { try { writeFileSync(join(dirname(fileURLToPath(import.meta.url)), `board-store-probes-${NAME}.done`), "ok\n"); } catch { /* the marker is a convenience: without it the next pack names every job again, which is harmless */ } };
 const fail = (why) => { console.log(`PROBES FAILED: ${why}. Paste this line to Manager.`); process.exit(1); };
 const uid = typeof process.getuid === "function" ? process.getuid() : 501;
 const launchctl = (args) => spawnSync("launchctl", args, { encoding: "utf8" });
@@ -68,7 +72,7 @@ for (const [job, want] of Object.entries(WANT)) {
   if (Number(alarms[0][1]) === alarm && Number(intervals[0][2]) === want.intervalSec) continue;
   plan.push({ job, before, alarm, interval: want.intervalSec });
 }
-if (!plan.length) { console.log(`PROBES OK: every probe job named here already has its alarm and interval${skipped.length ? ` (no LaunchAgent file here for: ${skipped.join(", ")})` : ""}; nothing changed.`); process.exit(0); }
+if (!plan.length) { console.log(`PROBES OK: every probe job named here already has its alarm and interval${skipped.length ? ` (no LaunchAgent file here for: ${skipped.join(", ")})` : ""}; nothing changed.`); ran(); process.exit(0); }
 
 for (const p of plan) {
   if (!existsSync(backupOf(p.job))) copyFileSync(plistOf(p.job), backupOf(p.job));
@@ -79,3 +83,4 @@ for (const p of plan) {
   if (a.length !== 1 || a[0] !== p.alarm || i.length !== 1 || i[0] !== p.interval) fail(`the read-back of ${p.job} is wrong (alarm ${a.join(", ") || "none"}, interval ${i.join(", ") || "none"}); undo is: node board-store-probes-${NAME}.mjs undo`);
 }
 console.log(`PROBES OK: ${plan.map((p) => `${p.job} alarm ${p.alarm} s, every ${p.interval} s`).join("; ")}; launchd has them loaded.${skipped.length ? ` No LaunchAgent file here for: ${skipped.join(", ")}.` : ""} Backups: <file>.before-${NAME}. Undo: node board-store-probes-${NAME}.mjs undo`);
+ran();

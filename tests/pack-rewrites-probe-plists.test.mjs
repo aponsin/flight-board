@@ -23,6 +23,7 @@ test("jobsAt reads the JOBS table of the real file as the module itself exports 
   assert.deepEqual(jobsAt(gitWith({}), SHA), {}, "no file at that commit: no jobs");
   assert.equal(jobsAt(gitWith({ "worker/probe-jobs.mjs": "export const JOBS = makeJobs();\n" }), SHA), null, "a file this cannot read");
   assert.equal(jobsAt(gitWith({ "worker/probe-jobs.mjs": "export const JOBS = {\n  a: { limitSec: 5, limitSec: 6 },\n};\n" }), SHA), null, "a repeated key is no job");
+  assert.equal(jobsAt(gitWith({ "worker/probe-jobs.mjs": "export const JOBS = {\n  a: { intervalSec: 1, limitSec: 5 },\n  b: { intervalSec: 2, limitSec: 6, note: 1 },\n};\n" }), SHA), null, "a job in another form is not silently left out");
 });
 
 test("probesChanged: a limit change names that job only; no change names none; a new job counts; an unreadable table is an error, never an empty answer", () => {
@@ -73,16 +74,42 @@ test("makeAll: a pack that changes a job's limit writes the probes step and a st
     assert.equal(r.ok, true, r.why);
     assert.deepEqual(probeFiles(w.out), ["board-store-probes-pc2.mjs"]);
     const step = readFileSync(join(w.out, "board-store-probes-pc2.mjs"), "utf8"), steps = readFileSync(join(w.out, "board-store-pc2-steps.md"), "utf8");
-    assert.ok(step.includes('const WANT = {"ask":{"intervalSec":20,"limitSec":65}};'), "only the changed job");
+    assert.ok(step.includes('const WANT = {"ask":{"intervalSec":20,"limitSec":65},"land":{"intervalSec":600,"limitSec":590}};'), "no probes step ever ran here: every job is named, each compared with the file actually installed");
     assert.match(steps, /## Probe jobs \(moves the probe LaunchAgents to the new limits/);
     assert.ok(steps.includes(`board-store-probes-pc2.mjs | cut -c1-64)" = ${r.files["board-store-probes-pc2.mjs"]}`), "the line carries the step's own hash");
     assert.ok(steps.includes(`, probes ${r.files["board-store-probes-pc2.mjs"]}.`), "the full hash list names it");
     assert.match(steps, /ask \(limit 65 s, every 20 s\)/);
     writeFileSync(join(w.out, "board-store-deploy-pc2.done"), b + "\n");
+    // pc2's probes step has NOT run (no .done beside it): the next pack still compares with nothing and names every job again.
     const c = w.commit("docs only (#C102)", { "docs/x.md": "2\n" });
     assert.equal(makeAll({ repo: w.work, sha: c, n: 3, out: w.out }).ok, true);
-    assert.deepEqual(probeFiles(w.out), ["board-store-probes-pc2.mjs"], "no probes step for pc3");
-    assert.doesNotMatch(readFileSync(join(w.out, "board-store-pc3-steps.md"), "utf8"), /Probe jobs|probes /);
+    assert.deepEqual(probeFiles(w.out), ["board-store-probes-pc2.mjs", "board-store-probes-pc3.mjs"], "pc2's step did not run, so pc3 carries it again");
+    // Once a probes step has run, the next pack compares with ITS table: no change, no step; a changed limit names that job only.
+    writeFileSync(join(w.out, "board-store-deploy-pc3.done"), c + "\n");
+    writeFileSync(join(w.out, "board-store-probes-pc3.done"), "ok\n");
+    const d = w.commit("docs only again (#C103)", { "docs/x.md": "3\n" });
+    assert.equal(makeAll({ repo: w.work, sha: d, n: 4, out: w.out }).ok, true);
+    assert.deepEqual(probeFiles(w.out), ["board-store-probes-pc2.mjs", "board-store-probes-pc3.mjs"], "no probes step for pc4");
+    assert.doesNotMatch(readFileSync(join(w.out, "board-store-pc4-steps.md"), "utf8"), /Probe jobs|probes /);
+    writeFileSync(join(w.out, "board-store-deploy-pc4.done"), d + "\n");
+    const e = w.commit("the land limit (#C104)", { "worker/probe-jobs.mjs": table({ ask: { intervalSec: 20, limitSec: 65 }, land: { intervalSec: 600, limitSec: 700 } }) });
+    assert.equal(makeAll({ repo: w.work, sha: e, n: 5, out: w.out }).ok, true);
+    assert.ok(readFileSync(join(w.out, "board-store-probes-pc5.mjs"), "utf8").includes('const WANT = {"land":{"intervalSec":600,"limitSec":700}};'), "after a run step, only the changed job");
+  } finally { rmSync(w.dir, { recursive: true, force: true }); }
+});
+
+// Manager's case: the pack that changed the ask limit (pc87) carried NO probes step (the tool had none), so a comparison with the last PACK would see nothing in the next one and the alarm would stay at 45 s.
+test("makeAll: the first pack after a pack that changed a limit without a probes step carries the step, naming every job, though its own diff touches no probe file", () => {
+  const w = world();
+  try {
+    const b = w.commit("the ask limit, in a pack made before this tool (#C101)", { "worker/probe-jobs.mjs": table({ ...two, ask: { intervalSec: 20, limitSec: 65 } }) });
+    assert.equal(makeAll({ repo: w.work, sha: b, n: 2, out: w.out }).ok, true);
+    rmSync(join(w.out, "board-store-probes-pc2.mjs")); // as if an older tool had made pc2: it has no probes step
+    writeFileSync(join(w.out, "board-store-deploy-pc2.done"), b + "\n");
+    const c = w.commit("something else (#C102)", { "docs/x.md": "2\n" });
+    assert.equal(makeAll({ repo: w.work, sha: c, n: 3, out: w.out }).ok, true);
+    const step = readFileSync(join(w.out, "board-store-probes-pc3.mjs"), "utf8");
+    assert.ok(step.includes('"ask":{"intervalSec":20,"limitSec":65}'), "the ask job at 65 s is in the step");
   } finally { rmSync(w.dir, { recursive: true, force: true }); }
 });
 
@@ -136,6 +163,7 @@ test("the step: the ask job's alarm goes from 45 to 80 s with a backup, a reload
     assert.match(s.run().stdout, /^PROBES OK: every probe job named here already has its alarm and interval; nothing changed\./);
     assert.equal(readFileSync(s.file("ask"), "utf8"), text);
     assert.equal(s.loadLog().length, 2, "no second reload");
+    assert.equal(readFileSync(join(s.home, "board-store-probes-pc9.done"), "utf8"), "ok\n", "a step that ran leaves its marker beside itself: the next pack compares with this pack's table");
   } finally { rmSync(s.home, { recursive: true, force: true }); }
 });
 
@@ -165,7 +193,7 @@ test("the step: undo puts the backup back and reloads the job; with no backup it
   } finally { rmSync(s.home, { recursive: true, force: true }); }
 });
 
-test("the step refuses, and changes nothing for any job, when a file has no alarm, two alarms or no interval; or plutil rejects the new file; or the job does not come back", () => {
+test("the step refuses, with every file as it was, when a file has no alarm, two alarms or no interval (all are read first); a plutil or bootstrap failure stops at that job (a job done before it stays done: undo covers it)", () => {
   for (const [why, mangle] of [["no alarm", (t) => t.replace(/alarm \d+;/, "")], ["two alarms", (t) => t.replace("</array>", "<string>alarm 5; exec @ARGV</string></array>")], ["no interval", (t) => t.replace(/<key>StartInterval<\/key><integer>\d+<\/integer>/, "")]]) {
     const s = sandbox({ jobs: { ask: { intervalSec: 20, limitSec: 65 }, evidence: { intervalSec: 60, limitSec: 400 } } });
     try {
@@ -178,6 +206,7 @@ test("the step refuses, and changes nothing for any job, when a file has no alar
       assert.equal(readFileSync(s.file("ask"), "utf8"), before, why);
       assert.equal(readFileSync(s.file("evidence"), "utf8"), evidence, `${why}: the other job too (every file is read before any is written)`);
       assert.deepEqual(s.loadLog(), [], why);
+      assert.equal(existsSync(join(s.home, "board-store-probes-pc9.done")), false, `${why}: a refused step leaves no marker`);
     } finally { rmSync(s.home, { recursive: true, force: true }); }
   }
   const lint = sandbox();

@@ -69,6 +69,15 @@ export function lastPair(folder, n) {
   return p ? { n: p.n, sha: p.sha } : null;
 }
 
+// #C1210 (Manager: pc87 changed the ask limit but wrote no plist, so a comparison with the last PACK would find no change in pc88 and the alarm would stay at 45 s): the newest earlier pair whose
+// probes step RAN here (it leaves board-store-probes-pc<k>.done beside itself), { n, sha }, or null. What its step wrote is what the LaunchAgents hold, so that is the base to compare with.
+export function lastProbesPair(folder, n) {
+  if (!existsSync(folder)) return null;
+  const names = readdirSync(folder);
+  const p = pairsBefore(folder, n).find((x) => names.includes(`board-store-probes-pc${x.n}.mjs`) && names.includes(`board-store-probes-pc${x.n}.done`));
+  return p ? { n: p.n, sha: p.sha } : null;
+}
+
 // The pairs between the last one that ran and n that were never run: the new pair replaces them. [{ n, sha }], newest first.
 export function neverRun(folder, n) {
   const all = pairsBefore(folder, n);
@@ -133,11 +142,14 @@ export function jobsAt(git, sha) {
     if (m[2] === m[4]) return null;
     out[m[1]] = { [m[2]]: Number(m[3]), [m[4]]: Number(m[5]) };
   }
+  // Security's INFO on #C1210: an entry in another form (two lines, a third key) must not just get no step: a body with more job lines than were read is a table this cannot read.
+  if (Object.keys(out).length !== (body.match(/^\s*\w+:\s*\{/gm) ?? []).length) return null;
   return Object.keys(out).length ? out : null;
 }
-// The jobs whose limitSec or intervalSec at `sha` differs from `prevSha` (a job new at `sha` counts), as { job: { intervalSec, limitSec } }; {} when none changed. Either side unreadable: an error, never {}.
-export function probesChanged(git, prevSha, sha) {
-  const before = jobsAt(git, prevSha), after = jobsAt(git, sha);
+// The jobs whose limitSec or intervalSec at `sha` differs from `baseSha` (a job new at `sha` counts; no base, as when no probes step ever ran here, is every job), as { job: { intervalSec, limitSec } };
+// {} when none changed. Either side unreadable: an error, never {}.
+export function probesChanged(git, baseSha, sha) {
+  const before = baseSha ? jobsAt(git, baseSha) : {}, after = jobsAt(git, sha);
   if (!before || !after) throw new Error("worker/probe-jobs.mjs cannot be read as the JOBS table at one of the two commits, so the probe jobs' limits cannot be compared");
   return Object.fromEntries(Object.entries(after).filter(([job, v]) => before[job]?.limitSec !== v.limitSec || before[job]?.intervalSec !== v.intervalSec));
 }
@@ -339,7 +351,7 @@ The landing job (the LaunchAgent \`com.flight-board.store.land\`, every 10 minut
 if [ "$(shasum -a 256 ${folder}/board-store-probes-${name}.mjs | cut -c1-64)" = ${probesSha} ]; then node ${folder}/board-store-probes-${name}.mjs; else echo 'CHECK FAILED: board-store-probes-${name}.mjs is not the signed file. Paste this line to Manager.'; fi
 \`\`\`
 
-A probe job's time limit or interval changed since ${prev ? prev.sha.slice(0, 8) : "the start"}: ${Object.entries(probeJobs).map(([job, v]) => `${job} (limit ${v.limitSec} s, every ${v.intervalSec} s)`).join(", ")}. Each job is a LaunchAgent (\`com.flight-board.store.<job>\`) that the OS ends at its alarm; the pack changes the program, not the alarm, so this step rewrites the alarm (the limit plus ${OUTER_EXTRA_SEC} s) and the interval of those jobs only, keeps a backup of each file, checks it with plutil, reloads the job and reads the file back. A job with no file here is skipped and said so. Last line: \`PROBES OK: ...\`. Undo: \`node ${folder}/board-store-probes-${name}.mjs undo\`.
+The jobs this step checks (the first time, every one; later, those whose limit or interval changed since the last pack whose probes step ran): ${Object.entries(probeJobs).map(([job, v]) => `${job} (limit ${v.limitSec} s, every ${v.intervalSec} s)`).join(", ")}. Each job is a LaunchAgent (\`com.flight-board.store.<job>\`) that the OS ends at its alarm; the pack changes the program, not the alarm, so this step rewrites the alarm (the limit plus ${OUTER_EXTRA_SEC} s) and the interval of those jobs only, keeps a backup of each file, checks it with plutil, reloads the job and reads the file back. A job with no file here is skipped and said so. Last line: \`PROBES OK: ...\`. Undo: \`node ${folder}/board-store-probes-${name}.mjs undo\`.
 ` : ""}
 Full sha256: deploy ${deploySha}, tree ${treeSha}${boardDeploySha ? `, board-deploy ${boardDeploySha}` : ""}${hooksSha ? `, hooks ${hooksSha}` : ""}${landSha ? `, land ${landSha}` : ""}${probesSha ? `, probes ${probesSha}` : ""}.
 `;
@@ -396,7 +408,10 @@ export function makeAll({ repo, sha, n, out, git = (...a) => spawnSync("git", ["
   // #C1210: a probe job's limit or interval changed since the last pair: its LaunchAgent keeps the old alarm until a step rewrites it. The step needs no pinned install, so it has no hooks dependency.
   let probes = null, probeJobs = {};
   if (prev) {
-    try { probeJobs = probesChanged(git, prev.sha, sha); } catch (e) { return { ok: false, why: e.message }; }
+    // The base is the last pair whose probes step RAN here, not the last pair: a pack that changed a job's limit without the step (pc87) would otherwise be the base, and the next pack would find nothing to do.
+    // With no such pair, every job is named: the step compares each with the LaunchAgent actually installed and changes only a file that differs.
+    const lastProbes = lastProbesPair(out, n);
+    try { probeJobs = probesChanged(git, lastProbes?.sha ?? null, sha); } catch (e) { return { ok: false, why: e.message }; }
     if (Object.keys(probeJobs).length) { try { probes = probesText({ name, jobs: probeJobs }); } catch (e) { return { ok: false, why: e.message }; } }
   }
   const hashes = Object.fromEntries(Object.entries(files).map(([f, t]) => [f, sha256(t)]));
