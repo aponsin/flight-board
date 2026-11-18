@@ -969,8 +969,24 @@ function setDownloads(d){downloadsRef=d||null}
 // Images first, side by side; then the other files, " · " between them so two names never read as one. A file whose id
 // isn't a stored asset's is left out here too, whoever calls (Security).
 const isImage=f=>/^image\//.test(String(f.type||""));
+// #C1230 (the owner: the board's tab used 2 GB in Safari): a thumbnail showed the whole screenshot, which the browser decodes at full size (about 270 MB for the 40 pictures on the board now, more for retina ones).
+// A thumbnail whose picture has loaded (so only the ones the page really shows: they stay lazy) and is wider than THUMB_W is drawn once into a small copy, and the thumbnail shows that from the next draw on; the lightbox still opens the full one (data-full).
+// A copy that cannot be made leaves the picture as it was. The copies are kept up to THUMB_KEEP, oldest first, and one still on the page is never dropped.
+const THUMB_W=720,THUMB_KEEP=300,BLOB_PATH=/^\/_blob\/[A-Za-z0-9_-]+$/,thumbs=new Map(),thumbWork=new Set();
+function thumbSrc(u){if(typeof u!=="string"||!thumbs.has(u))return u;const v=thumbs.get(u);thumbs.delete(u);thumbs.set(u,v);return v}
+function thumbDone(u,v){thumbs.set(u,v);
+  if(thumbs.size>THUMB_KEEP){const used=new Set([...document.images].map(i=>i.getAttribute("src")));
+    for(const [k,x] of thumbs){if(thumbs.size<=THUMB_KEEP)break;if(k===u||used.has(x))continue;thumbs.delete(k);thumbWork.delete(k);if(x!==k&&typeof URL!=="undefined"&&URL.revokeObjectURL)URL.revokeObjectURL(x)}}
+  if(v!==u&&typeof renderSoon==="function")renderSoon()}
+function makeThumb(u,img){thumbWork.add(u);
+  try{const w=img.naturalWidth,h=img.naturalHeight;if(!w||!h||w<=THUMB_W){thumbDone(u,u);return}
+    const c=document.createElement("canvas");c.width=THUMB_W;c.height=Math.max(1,Math.round(h*THUMB_W/w));
+    const x=c.getContext("2d");x.fillStyle="#fff";x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);
+    c.toBlob(b=>{c.width=c.height=0;thumbDone(u,b?URL.createObjectURL(b):u)},"image/jpeg",.85)}catch(_){thumbDone(u,u)}}
+if(typeof document.addEventListener==="function")document.addEventListener("load",e=>{const i=e.target;if(!i||i.tagName!=="IMG"||!i.closest||!i.closest(".thumb"))return;
+  const u=i.getAttribute("src");if(BLOB_PATH.test(u||"")&&!thumbWork.has(u))makeThumb(u,i)},true);
 function fileLinks(fs){const ok=(fs||[]).filter(f=>f&&blobId(f.id));
-  const imgs=ok.filter(isImage).map(f=>`<button type="button" class="thumb fthumb" data-full="/_blob/${f.id}" data-cap="${esc(f.name||"image")}"><img src="/_blob/${f.id}" alt="${esc(f.name||"image")}" loading="lazy"></button>`);
+  const imgs=ok.filter(isImage).map(f=>`<button type="button" class="thumb fthumb" data-full="/_blob/${f.id}" data-cap="${esc(f.name||"image")}"><img src="${esc(thumbSrc("/_blob/"+f.id))}" alt="${esc(f.name||"image")}" loading="lazy"></button>`);
   const docs=ok.filter(f=>!isImage(f)).map(f=>downloadsRef
     ?`<span class="fsave"><button type="button" class="filesave" data-save="${f.id}" data-name="${esc(f.name||"file")}" data-type="${esc(f.type||"")}">${esc(f.name||"file")}</button><small class="savenote" role="status"></small></span>`
     :`<span class="fname" title="Saving files isn't available in this view">${esc(f.name||"file")}</span>`);
@@ -1088,7 +1104,7 @@ if(typeof window.addEventListener==="function")window.addEventListener("scroll",
 document.addEventListener("click",e=>{const a=e.target.closest&&e.target.closest("[data-cref]");if(!a)return;e.preventDefault();cbubHide();
   if(!cardOpen(a.dataset.cref))a.title="That card is no longer shown on the board"});
 function safeImg(u){return typeof u==="string"&&(/^\/_blob\/[A-Za-z0-9_-]+$/.test(u)||/^https:\/\/[^\s"'<>]+$/.test(u))?u:null}
-function shotThumb(i,opt){return `<button type="button" class="thumb" data-full="${esc(safeImg(i.url))}" data-cap="${esc((opt?"Option "+opt+" · ":"")+(i.label||""))}"><img src="${esc(safeImg(i.url))}" alt="${esc(i.label||"Screenshot")}" loading="lazy"><span>${esc(i.label||"")}</span></button>`}
+function shotThumb(i,opt){return `<button type="button" class="thumb" data-full="${esc(safeImg(i.url))}" data-cap="${esc((opt?"Option "+opt+" · ":"")+(i.label||""))}"><img src="${esc(thumbSrc(safeImg(i.url)))}" alt="${esc(i.label||"Screenshot")}" loading="lazy"><span>${esc(i.label||"")}</span></button>`}
 // An open decision's option pictures sit beside their buttons (#C344), not above them; once answered they show above, by option.
 function besideKeys(w){return w.kind==="decision"&&!(w.response&&w.response.status)&&Array.isArray(w.options)?new Set(w.options.filter(o=>o&&o.key).map(o=>String(o.key))):new Set()}
 function optShots(w,key){return (Array.isArray(w.images)?w.images:[]).filter(i=>i&&safeImg(i.url)&&String(i.option||"")===String(key)).map(i=>shotThumb(i,key)).join("")}

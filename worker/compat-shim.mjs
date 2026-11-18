@@ -15,6 +15,13 @@
 export const COMPAT_SHIM = String.raw`(function () {
   var POLL_MS = 2500;
   var subs = [], watchers = [], etag = null, data = { collections: {}, probe: null }, seen = {}, probeSeen = "", loaded = false, failing = false, timer = null, busy = false;
+  var hashOf = function (s) {
+    var h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (var i = 0; i < s.length; i++) { var c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 0x9e3779b1); h2 = Math.imul(h2 ^ c, 0x5f356495); }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 0x85ebca6b) ^ Math.imul(h2 ^ (h2 >>> 13), 0xc2b2ae35);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 0x85ebca6b) ^ Math.imul(h1 ^ (h1 >>> 13), 0xc2b2ae35);
+    return s.length + ":" + (0x100000000 * (0x1fffff & h2) + (h1 >>> 0));
+  };
   var nameOf = function (path) { return String(path).split("/")[0]; };
   // The store keeps the owner's messages under its own word "owner"; the page knows the owner by the name in its config (its
   // OWNER constant, defined by its own script, read when a message arrives or is sent, never at load).
@@ -34,7 +41,8 @@ export const COMPAT_SHIM = String.raw`(function () {
   var deliver = function (s) { try { s.next({ docs: docsOf(s.name) }); } catch (e) { /* the page's handler failed: not ours */ } };
   var notify = function (force) {
     var changed = {};
-    Object.keys(data.collections).forEach(function (n) { var j = JSON.stringify(data.collections[n]); if (force || seen[n] !== j) { seen[n] = j; changed[n] = true; } });
+    // #C1230: what each collection read last time is kept as a 53-bit hash and its length (a few bytes), not as its whole JSON text (megabytes held for as long as the tab lived).
+    Object.keys(data.collections).forEach(function (n) { var j = hashOf(JSON.stringify(data.collections[n])); if (force || seen[n] !== j) { seen[n] = j; changed[n] = true; } });
     subs.forEach(function (s) { if (changed[s.name] || (force && !data.collections[s.name])) deliver(s); });
     var pj = JSON.stringify(data.probe);
     if (data.probe && (force || pj !== probeSeen)) { probeSeen = pj; watchers.forEach(function (w) { try { w({ type: "data", result: { payload: data.probe } }); } catch (e) { /* ignore */ } }); }
