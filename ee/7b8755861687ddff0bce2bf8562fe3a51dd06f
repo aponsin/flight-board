@@ -1,0 +1,2 @@
+PASS #C1228: suite 3135 pass 0 fail; mutation pass x2 (ready flag dropped: test 1 failed; wipHead guard dropped: test 2 failed; restored). Line text from fixed strings only; nothing parses the old wording; probe buildStarts now rightly skips a pushed tip (item carries sha). keeper/TASK.md retired note closes my #C1226 LOW.
+signed-by: Checker 2
