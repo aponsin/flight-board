@@ -23,15 +23,19 @@ function board(n = 500, per = 30, gap = 0.4) {
   Object.assign(b.state, { messages, threads, waiting: [], todo: [], ideas: [], initRaw: [], initiatives: [] });
   return b;
 }
-const ms = (f) => { const s = performance.now(); f(); return performance.now() - s; };
+// The best of a few runs, not one: a full suite runs files side by side, and one run can lose its slice of the CPU (#C1234:
+// the Resolved list took over 300 ms twice in a loaded run and 94 ms alone). A real slowdown is slow in every run.
+const ms = (f, runs = 5) => { let best = Infinity; for (let i = 0; i < runs; i++) { const s = performance.now(); f(); best = Math.min(best, performance.now() - s); } return best; };
+// The scan this guards against took 1.6 s on 444 threads; the index takes about 0.1 s. 600 ms leaves headroom for load and still fails the scan.
+const BOUND = 600;
 
 test("a tab switch with 500 resolved threads (15k messages) is fast: it was 1.6 s on 444", () => {
   const b = board();
   b.tabCounts(T); // the first look builds the index
-  assert.ok(ms(() => b.showTab("resolved")) < 300, "a switch");
-  assert.ok(ms(() => b.showTab("lead")) < 300, "another switch");
-  assert.ok(ms(() => b.tabCounts(T)) < 300, "the counts of every tab");
-  assert.ok(ms(() => b.resolvedHtml(T)) < 300, "the Resolved list");
+  assert.ok(ms(() => b.showTab("resolved")) < BOUND, "a switch");
+  assert.ok(ms(() => b.showTab("lead")) < BOUND, "another switch");
+  assert.ok(ms(() => b.tabCounts(T)) < BOUND, "the counts of every tab");
+  assert.ok(ms(() => b.resolvedHtml(T)) < BOUND, "the Resolved list");
 });
 
 test("the thread index: same threads and order as a scan, and a new message shows at once", () => {
