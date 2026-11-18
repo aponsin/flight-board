@@ -6,6 +6,7 @@ import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { createCard, updateCard, createAsk, answerAsk, writeEvidence, writeWeekUsage, wakeAsk, wakeResult, readView, takeInbox, postMessage } from "../worker/board-store.mjs";
 import { beat } from "./helpers/beating-store.mjs";
 import { resolveKnobs, KNOBS } from "../worker/knobs.mjs";
+import { JOBS } from "../worker/probe-jobs.mjs";
 import { shouldSend, wakeLimits } from "../worker/wake-rules.mjs";
 import { pushLimits } from "../worker/push-rules.mjs";
 import { pushRun } from "../worker/push-store.mjs";
@@ -209,8 +210,12 @@ test("through the store: a posted askStaleSec moves when the Manager chip reads 
   assert.equal(dflt.state, "red"); assert.equal(dflt.reason, "probe-not-asking");
   assert.equal(dflt.fix, "the probe has not asked the store for 3 min");
   assert.notEqual((await run({ askStaleSec: 600 })).reason, "probe-not-asking", "posted 10 min: 4 min of silence is fine");
-  const short = await run({ askStaleSec: 60 });
-  assert.equal(short.fix, "the probe has not asked the store for 1 min");
+  const short = await run({ askStaleSec: 120 });
+  assert.equal(short.fix, "the probe has not asked the store for 2 min");
+});
+
+test("#C1209 (Checker 2's LOW on #C1208): the lowest askStaleSec a setting can take is longer than one ask run plus the interval before the next", () => {
+  assert.ok(KNOBS.askStaleSec.min * 1000 > (JOBS.ask.limitSec + JOBS.ask.intervalSec) * 1000, "a run of two slow sends must not read as the probe not asking");
 });
 
 test("the retry after a failed send to the owner's words follows the setting; the limits are the old numbers by default", () => {

@@ -25,7 +25,7 @@ export const KNOBS = {
   wakeTakenSec: { default: 180, min: 60, max: 1800, label: "a batch not read this long after a good send is a failure (s)" },
   wakeResendSec: { default: 300, min: 60, max: 3600, label: "an untaken batch is sent again at most this often (s)" },
   wakeRetryFailedSec: { default: 60, min: 20, max: 600, label: "a failed send is retried this soon while the owner's own words wait (s)" },
-  askStaleSec: { default: 180, min: 60, max: 1800, label: "the Manager chip is red when the probe has not asked the store for this long (s)" },
+  askStaleSec: { default: 180, min: 90, max: 1800, label: "the Manager chip is red when the probe has not asked the store for this long (s)" },
   // The share of the week at which the idle-agent stall lines are held and Manager gets one line (the Worker's #C1078 hold); the dispatch's own ceiling for new build work is collector.quotaCeilingPct.
   quotaOutPct: { default: 98, min: 50, max: 100, label: "at this share of the week's quota the idle-agent stall lines are held until the reset (%)" },
   // What the board says to Manager and pushes to the owner's phone, and when (worker/push-rules.mjs). The nudge to Manager stays under the owner's push.
