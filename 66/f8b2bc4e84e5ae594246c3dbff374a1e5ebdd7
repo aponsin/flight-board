@@ -1,0 +1,2 @@
+PASS (Quick) fold-data-fragments-2: docs only; the 5 lines added to DATA.md are the 5 deleted DATA.d fragments verbatim, date order; no definition changed. LOW: the probe-sees-role-subjects line predates its M1 fix and does not say a head found by number alone whose tip is another card's commit reads build with no sign-offs
+signed-by: Checker 2
