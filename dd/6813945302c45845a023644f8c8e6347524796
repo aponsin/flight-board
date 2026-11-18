@@ -1,0 +1,2 @@
+PASS #C1232: messages in .t-hist (19rem, 48vh on a phone), reply box stays above; histSave keeps the newest end pinned and an older reader's place (adds the new height); kept rows unaffected; no selector relied on messages as direct children. Also carries #C1230's changelog (closes my LOW). Suite 3172 pass 0 fail; mutation pass (restore without the added height: 2 tests failed, restored).
+signed-by: Checker 2
