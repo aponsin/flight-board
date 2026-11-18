@@ -1,0 +1,5 @@
+SECURE
+
+Wording only. A build turn for a pushed, non-WIP tip with no READY gets a fixed text constant instead of 'has nothing pushed'; the flag is set only under stackOn, stackHold and a sha, and the line uses it only on the build step with a SHA12-shaped sha, so no store value reaches the text. keeper/TASK.md gains a retired banner. Tests 4/4; mutation pass (dropping the step and sha guard fails the fixed-texts test).
+
+signed-by: Security
