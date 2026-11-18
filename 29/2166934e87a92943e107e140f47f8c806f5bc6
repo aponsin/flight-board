@@ -1,2 +1,2 @@
-FINDINGS #C1204 M1: a branch c<num>-x cut on another card's signed unshipped tip (stacked cut) now reads at ship, every review signed, with that card's notes (main: build, no head); read a head found only by branchNum, whose tip names another card, as build with no sign-offs, plus a test. L1: shipped-branches isOpen does not read branchNum, so the sweep no longer ties branches as headsFor does.
+PASS (Full) #C1204: M1 and L1 fixed in 8b874e02 on top; reviewed as part of the line ending at 8b874e0245b1d3c2f31923fd3de5d646149c0d72
 signed-by: Checker 2
