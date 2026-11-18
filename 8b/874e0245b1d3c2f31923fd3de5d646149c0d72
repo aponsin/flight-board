@@ -1,0 +1,5 @@
+SECURE
+
+#C1204 (Checker 2's M1, L1): byNumberOnly makes a head found only by its c<num>- branch on another card's tip read as build, with none of that tip's sign-offs (derive.mjs, state.mjs tipState); the shipped-branch sweep keeps a numbered branch of an open card. Both stricter; no new write or trust path.
+
+signed-by: Security
