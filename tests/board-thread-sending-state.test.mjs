@@ -25,7 +25,7 @@ function world({ live = true, seen = null, messages = [] } = {}) {
     w.rows.push(row); return row;
   };
   w.mkRow = mkRow;
-  const ctx = { document: { querySelectorAll: () => w.rows, addEventListener() {}, createElement: () => ({ setAttribute() {}, className: "", appendChild() { this.kids = (this.kids || 0) + 1; } }) },
+  const ctx = { document: { querySelectorAll: () => w.rows, addEventListener() {}, createElement: () => ({ attrs: {}, children: [], className: "", textContent: "", setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.children.push(c); this.kids = (this.kids || 0) + 1; } }) },
     liveOn: () => w.live, wakeSeen: () => w.seen, threadOf: () => w.messages, isT: (n) => typeof n === "number", OWNER, Map, Set, Date, Array, String };
   vm.createContext(ctx); vm.runInContext(fragment, ctx);
   const run = (code) => vm.runInContext(code, ctx);
@@ -42,7 +42,7 @@ test("a click folds the thread at once, grays it and shows the dots, whichever r
 
 test("a redraw that makes a new row for the thread puts the state back; the dots are not drawn twice", () => {
   const t = world(); const row = t.w.mkRow("th-t1"); t.mark("t1", 1000); t.apply(2000); t.apply(3000);
-  assert.ok(row.summary.dots); assert.equal(row.summary.appended, 1, "one dots element however many draws"); assert.equal(row.summary.dots.kids, 3, "three dots, built as elements (no new innerHTML sink)");
+  assert.ok(row.summary.dots); assert.equal(row.summary.appended, 1, "one dots element however many draws"); assert.equal(row.summary.dots.children.filter((c) => c.attrs["aria-hidden"] === "true").length, 3, "three dots, built as elements (no new innerHTML sink)");
   const fresh = t.w.mkRow("th-t1"); t.w.rows.splice(t.w.rows.indexOf(row), 1);
   t.apply(4000); assert.ok(fresh.cls.has("sending") && fresh.summary.dots);
 });
@@ -110,4 +110,20 @@ test("the dots stand in the type label's place: before it, nothing under the lin
   assert.match(css, /details\.sending>summary>\.kind\{display:none\}/, "the label is hidden only while the class is on");
   t.w.seen = 1000; t.apply(2500);
   assert.ok(!row.cls.has("sending") && !row.summary.dots && row.summary.kids.length === 2 && row.summary.kids[0].cls === "kind", "taken: the dots are gone and the label is the first thing again");
+});
+
+// #C1237 (Checker 2's LOW on #C1235): with the type label hidden, a screen reader must still hear that the thread is sending.
+test("a screen reader hears Sending: the dots hold a visually hidden word, only the three dots are aria-hidden, and the word goes with them", () => {
+  const t = world(); const row = t.w.mkRow("th-t1"); t.mark("t1", 1000);
+  const d = row.summary.dots;
+  assert.notEqual(d.attrs["aria-hidden"], "true", "the dots element itself is not hidden from a reader");
+  const words = d.children.filter((c) => c.className === "sr");
+  assert.equal(words.length, 1); assert.equal(words[0].textContent, "Sending", "the word is plain text, set as text (no innerHTML)");
+  assert.ok(!words[0].attrs["aria-hidden"], "and not hidden");
+  assert.equal(d.children.filter((c) => c.attrs["aria-hidden"] === "true").length, 3, "the three dots are decoration");
+  assert.match(css, /\.sdots \.sr\{position:absolute;width:1px;height:1px;[^}]*overflow:hidden;clip:rect\(0 0 0 0\)[^}]*\}/, "visually hidden, not display:none (which a reader skips)");
+  assert.ok(!/\.sdots \.sr\{[^}]*display:none/.test(css));
+  assert.match(css, /\.sdots\{position:relative;/, "the hidden word is placed inside the dots element");
+  t.w.seen = 1000; t.apply(2500);
+  assert.ok(!row.summary.dots, "taken: the word goes with the dots and the type label is the title bar's first child again");
 });

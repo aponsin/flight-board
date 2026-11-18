@@ -274,7 +274,8 @@ details.sending>summary{background:color-mix(in srgb,var(--line) 35%,var(--panel
 details.sending>summary>*{filter:grayscale(1)}
 details.sending>summary,details.sending>summary *{color:var(--muted)}
 details.sending>summary>.kind{display:none}
-.sdots{display:flex;gap:4px;align-items:center;padding:2px 7px;min-height:1.4rem}
+.sdots{position:relative;display:flex;gap:4px;align-items:center;padding:2px 7px;min-height:1.4rem}
+.sdots .sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 .sdots i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:pulse 1.2s ease-in-out infinite}
 .sdots i:nth-child(2){animation-delay:.2s}.sdots i:nth-child(3){animation-delay:.4s}
 @media (prefers-reduced-motion:reduce){.sdots i{animation:none}}
@@ -1860,7 +1861,7 @@ function applySending(now=Date.now()){if(typeof document.querySelectorAll!=="fun
     if(d.classList.contains("sending")!==on)d.classList.toggle("sending",on);
     const dots=d.querySelector(":scope>summary .sdots");
     // #C1235 (the owner: the dots under the line looked out of place): they take the type label's place (CSS hides the label while the thread is sending, so it is back when the class goes), and nothing is added under the line.
-    if(on&&!dots){const s=d.querySelector(":scope>summary");if(!s)return;const kind=s.querySelector(":scope>.kind"),h=document.createElement("span");h.className="sdots";h.setAttribute("aria-hidden","true");for(let k=0;k<3;k++)h.appendChild(document.createElement("i"));
+    if(on&&!dots){const s=d.querySelector(":scope>summary");if(!s)return;const kind=s.querySelector(":scope>.kind"),h=document.createElement("span");h.className="sdots";const say=document.createElement("span");say.className="sr";say.textContent="Sending";h.appendChild(say);for(let k=0;k<3;k++){const dot=document.createElement("i");dot.setAttribute("aria-hidden","true");h.appendChild(dot)}
       if(kind)s.insertBefore(h,kind);else s.insertBefore(h,s.firstChild||null)}
     else if(!on&&dots)dots.remove()})}
 // After a part is drawn again: each fold as the owner last left it, else as it was in that part (open: its data-ids).
