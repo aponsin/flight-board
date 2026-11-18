@@ -1,0 +1,2 @@
+PASS #C1235: dots inserted before the summary's .kind chip (or first), chip hidden by CSS only while .sending, back after. Suite 3183 pass 0 fail; mutation pass (dots appended at the end: the new test failed). LOW: while sending, the type label is hidden and the dots are aria-hidden, so a screen reader hears neither the type nor that it is sending.
+signed-by: Checker 2
