@@ -265,8 +265,17 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .t-msg.t-owner .t-from{color:var(--accent)}.t-text{white-space:pre-wrap;overflow-wrap:anywhere}
 .thread .reply{margin:6px 0 4px 0}
 /* #C1232: a long thread's messages scroll in their own box (about four messages tall; the reply box above it stays put); on a phone it is at most half the screen, so the page can still be scrolled past it. */
-.t-hist{max-height:19rem;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:4px}
+.t-hist{max-height:19rem;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:4px;
+  /* Designer's F1: Mac and iPhone hide scroll bars until a scroll, so a soft shadow at the bottom says there is more below; the panel-coloured cover scrolls with the content and hides it at the end (CSS only, nothing redrawn). */
+  background:linear-gradient(transparent,var(--panel) 70%) 0 100%/100% 28px no-repeat local,radial-gradient(farthest-side at 50% 100%,rgba(0,0,0,.22),transparent) 0 100%/100% 10px no-repeat scroll}
 @media (max-width:600px){.t-hist{max-height:min(19rem,48vh)}}
+/* #C1233: a thread whose answer is on its way to Manager: folded, in the board's grays (the grays of its own text and lines, in both themes) with three small pulsing dots under its id; it still opens on a click. */
+details.sending>summary{filter:grayscale(1);opacity:.72;background:color-mix(in srgb,var(--line) 35%,var(--panel))}
+details.sending>summary,details.sending>summary *{color:var(--muted)}
+.sdots{display:flex;gap:4px;margin-top:4px}
+.sdots i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:pulse 1.2s ease-in-out infinite}
+.sdots i:nth-child(2){animation-delay:.2s}.sdots i:nth-child(3){animation-delay:.4s}
+@media (prefers-reduced-motion:reduce){.sdots i{animation:none}}
 .t-badge{font-size:.75rem;border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin-left:6px;color:var(--muted);white-space:nowrap}.t-badge.you{color:var(--bad);border-color:var(--bad)}.t-badge.open{color:var(--accent);border-color:var(--accent)}.t-badge.agent{color:var(--warn);border-color:var(--warn)}
 /* The owner's word unanswered 5+ minutes (#C297): the lead owes it now. */
 .late{display:inline-block;font:600 .75rem var(--mono);color:var(--bad);margin-left:6px;white-space:nowrap}
@@ -1831,6 +1840,22 @@ function threadsHtml(now){const q=qOf("lead"),r=threadRows(now,q),asks=leadAsks(
 const folds=new Map();
 const foldKey=d=>String(d.dataset.id||"").replace(/^i?th-/,"");
 document.addEventListener("toggle",e=>{const d=e.target;if(d&&d.tagName==="DETAILS"&&d.dataset&&d.dataset.id)folds.set(foldKey(d),d.open)},true);
+// #C1233 (the owner: after he clicks an answer button he cannot tell whether it went): the thread folds to its title bar at once, turns gray and shows small pulsing dots under its id until Manager has taken the message
+// (the watch's "delivered" time reaches it) or the thread has a newer word from Manager; after SENDING_MAX it stops anyway, so the page never says "sending" for good. It stays usable: a click opens it (the fold is
+// the one the owner last left, `folds`), and a follow-up sends as any message does. The state is a class and a dots element put on the row after each draw (applySending), so a row drawn again gets it back.
+const sending=new Map(),SENDING_MAX=10*60e3;
+function markSending(id,now=Date.now()){if(!id)return;sending.set(id,now);folds.set(id,false);
+  document.querySelectorAll("details[data-id]").forEach(d=>{if(foldKey(d)===id&&d.open)d.open=false});applySending(now)}
+function clearSending(id){sending.delete(id);applySending()}
+function sendingTaken(id,at,now){const seen=liveOn(now)?wakeSeen():null;
+  return now-at>SENDING_MAX||seen!=null&&seen>=at||threadOf(id).some(m=>m&&m.from!==OWNER&&isT(m.at)&&m.at>at)}
+function applySending(now=Date.now()){if(typeof document.querySelectorAll!=="function")return;
+  for(const [id,at] of [...sending])if(sendingTaken(id,at,now))sending.delete(id);
+  document.querySelectorAll("details[data-id]").forEach(d=>{const on=sending.has(foldKey(d));
+    if(d.classList.contains("sending")!==on)d.classList.toggle("sending",on);
+    const dots=d.querySelector(":scope>summary .sdots");
+    if(on&&!dots){const s=d.querySelector(":scope>summary");if(!s)return;const host=s.querySelector(".w-text")||s,h=document.createElement("span");h.className="sdots";h.setAttribute("aria-hidden","true");for(let k=0;k<3;k++)h.appendChild(document.createElement("i"));host.appendChild(h)}
+    else if(!on&&dots)dots.remove()})}
 // After a part is drawn again: each fold as the owner last left it, else as it was in that part (open: its data-ids).
 function restoreFolds(el,open){el.querySelectorAll("details[data-id]").forEach(d=>{const k=foldKey(d),want=folds.has(k)?folds.get(k):open.has(d.dataset.id);if(want!==d.open)d.open=want})}
 // #C1229: draws html into el, but leaves alone every top-level node whose html is what it drew last time, so a redraw never touches a row that did not
@@ -1886,7 +1911,7 @@ function keep(el,draw){const back=histSave(),open=new Set([...el.querySelectorAl
   // row that had moved into its place).
   const a=document.activeElement,focus=a&&a.id&&(drafts[a.id]!=null||a.tagName==="TEXTAREA"&&typeof el.contains==="function"&&el.contains(a))?a.id:null;
   const y=window.scrollY,inner=el.scrollTop;
-  draw();restoreFolds(el,open);back();
+  draw();restoreFolds(el,open);applySending();back();
   if(el.scrollTop!==inner)el.scrollTop=inner;if(window.scrollY!==y)window.scrollTo(0,y);
   // #C1229: a box patchHtml carried across is already as it was: its value is not set again (setting it moves the cursor to the end), and a box that still has focus is not focused again.
   Object.entries(drafts).forEach(([id,v])=>{const t=document.getElementById(id);if(t){if(t.value!==v)t.value=v;fitBox(t)}});
@@ -1939,12 +1964,12 @@ document.addEventListener("keydown",e=>{const b=e.target&&e.target.closest&&e.ta
 // key: where the box's files wait (a thread's reply box "th:<id>", the new thread's "new").
 async function sendThread(btn,id,text,msg,kind,restore,key="th:"+id){
   if(!dbRef){restore();msg.textContent="Can't save from here. Tell Manager in chat instead.";return}if(!text&&!(pendingFiles.get(key)||[]).length){msg.textContent="Write your message first.";return}
-  btn.disabled=true;lastPing="";const anchor=await prepAnchor(btn);
+  btn.disabled=true;lastPing="";if(key!=="new")markSending(id);const anchor=await prepAnchor(btn);
   const lp=longPaste(text,MAXT,Date.now(),!!assetsRef),unattach=attachLong(key,lp);
-  let stored;try{stored=await storeFiles(key,msg)}catch(err){unattach();btn.disabled=false;restore();msg.textContent=err.message;return}
+  let stored;try{stored=await storeFiles(key,msg)}catch(err){unattach();btn.disabled=false;clearSending(id);restore();msg.textContent=err.message;return}
   const now=Date.now();
   try{await applyWrites(threadWrites(id,lp.text,stored,now,kind,Math.random().toString(36).slice(2,8)));(pendingFiles.get(key)||[]).forEach(dropPreview);pendingFiles.delete(key)}
-  catch(err){unattach();btn.disabled=false;restore();msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead.";return}
+  catch(err){unattach();btn.disabled=false;clearSending(id);restore();msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead.";return}
   const long=longLine(lp,MAXT);
   if(wakeMode()==="batch"){if(key==="new"){msg.innerHTML=sentLine(id,"batch")+esc(long)}else msg.textContent="Saved. Manager reads it at its next check (within 5 minutes)."+long;btn.disabled=false;return}
   // The ping is cut shorter still (1,900): a cut text says so first, so the auto-reply never reads the cut as the whole.
@@ -2004,15 +2029,15 @@ document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tclose]");if(!b||b.disabled)return;
   const id=b.dataset.tclose,msg=document.getElementById(`tmsg-${b.dataset.where}-${id}`);
   if(!dbRef){if(msg)msg.textContent="Can't save from here.";return}
-  b.disabled=true;try{await applyWrites(closeWrites(id,Date.now(),Math.random().toString(36).slice(2,8)));if(msg)msg.textContent="Closed."}
-  catch(err){b.disabled=false;if(msg)msg.textContent="Not closed ("+(err&&err.code||"error")+")."}});
+  b.disabled=true;markSending(id);try{await applyWrites(closeWrites(id,Date.now(),Math.random().toString(36).slice(2,8)));if(msg)msg.textContent="Closed."}
+  catch(err){b.disabled=false;clearSending(id);if(msg)msg.textContent="Not closed ("+(err&&err.code||"error")+")."}});
 // Ack on Manager's answer or live word (#C364): one click closes the thread, no note, no ping.
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tack]");if(!b||b.disabled)return;
   const id=b.dataset.tack,msg=document.getElementById(`tmsg-${b.dataset.where}-${id}`);
   if(!dbRef){if(msg)msg.textContent="Can't save from here.";return}
   const now=Date.now(),rid=Math.random().toString(36).slice(2,8);
-  b.disabled=true;try{await applyWrites(threadState(id)==="building"?ackWrites(id,now,rid):closeWrites(id,now,rid,"Ack."));if(msg)msg.textContent="Acknowledged."}
-  catch(err){b.disabled=false;if(msg)msg.textContent="Not saved ("+(err&&err.code||"error")+")."}});
+  b.disabled=true;markSending(id);try{await applyWrites(threadState(id)==="building"?ackWrites(id,now,rid):closeWrites(id,now,rid,"Ack."));if(msg)msg.textContent="Acknowledged."}
+  catch(err){b.disabled=false;clearSending(id);if(msg)msg.textContent="Not saved ("+(err&&err.code||"error")+")."}});
 // A decision's option in a thread (#C364): the pick, and anything typed in the box under it, sent as the owner's message.
 document.addEventListener("click",e=>{const b=e.target.closest&&e.target.closest("[data-topt]");if(!b||b.disabled)return;
   const id=b.dataset.topt,pick=optionText(id,b.dataset.choice);if(!pick)return;
@@ -3568,7 +3593,7 @@ document.addEventListener("keydown",onRestartKey);
 function renderShipLine(){const el=$("shipline");if(!el)return;const s=shipNow();el.hidden=!s;if(!s){el.innerHTML="";return}
   const i=state.initRaw.find(x=>x&&x.id===s.id),n=i&&Number.isInteger(i.num)?`#C${i.num}`:esc(s.id);
   el.innerHTML=`<b>Don't restart: shipping.</b> ${esc(SHIP_ROLE)} is shipping ${s.version?`<b>v${esc(s.version)}</b> `:""}(${n}); closing the agents now would stop it halfway.`}
-function renderAll(){qText.clear();msgIxOf=null;state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderTeam();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();renderAgentPrs();liveWas=liveOn();renderStamp()}
+function renderAll(){qText.clear();msgIxOf=null;state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderTeam();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();renderAgentPrs();applySending();liveWas=liveOn();renderStamp()}
 let liveWas=false;
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
