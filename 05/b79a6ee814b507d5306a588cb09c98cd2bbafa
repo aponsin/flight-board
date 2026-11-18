@@ -1,0 +1,5 @@
+SECURE
+
+#C1232 Designer's F1, by diff on the signed dd681394: one CSS background (two gradients, no url, no outside resource) on .t-hist, a test and a changelog sentence. No script, markup or innerHTML change.
+
+signed-by: Security
