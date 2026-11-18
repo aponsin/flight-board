@@ -1,0 +1,5 @@
+SECURE
+
+#C1232, on #C1230's signed be391fae. A thread's messages sit in a .t-hist box (CSS height cap); its data-hist is esc()'d; histSave/back restore each box's scrollTop as numbers around both redraw paths. Plus #C1230's changelog line. No new innerHTML (42), no data change. Tests 47/47 (thread scroll, hostile-text, threads); layout only, no new guard to mutate.
+
+signed-by: Security
