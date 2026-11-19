@@ -1,0 +1,2 @@
+PASS #C1244 release-line-note-prefix, line from 8ce74dffda8c3a724ffe50537850f34278feb12f: an older line base counts only when main is on the tip's line and main's commit has PASS and SECURE; coverage stays main..tip (inside the note's range), merges and GROUP_MAX still checked from the base, the pending-pack lineCovers (#C934) and self-deploy rules unchanged; suite 3203 pass 0 fail; mutation check pass (Checker-only signed(main): killed).
+signed-by: Checker 2
