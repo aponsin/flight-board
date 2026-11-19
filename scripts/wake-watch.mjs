@@ -74,6 +74,20 @@ export function pinnedLaunch({ settingsText, installRoot, self, exists = existsS
   let here = false; try { here = real(file) === real(self); } catch { here = false; }
   return { file, pin, here };
 }
+// #C1240 (11-18: after each of six installs every role's watch ended "stale pin" and had to be re-armed by hand; Triage, Demos and Sales re-armed several times and asked whether something looped,
+// Triage stopped re-arming): a watch armed with --pinned runs as a child of a small launcher that stays up. When the pin moves, the child (told so by FOLLOW_ENV) ends with STALE_EXIT and prints
+// nothing; the launcher reads the settings again and starts the new pin's copy, so the role is never woken for a pin change and never sits unwatched. The launcher only ever starts
+// <install root>/<the one sha the settings pin>/scripts/wake-watch.mjs (pinnedLaunch), as before. A watch armed on a path, with no --pinned, keeps the old behaviour: the stale line, then it ends.
+export const STALE_EXIT = 75, FOLLOW_ENV = "WAKE_WATCH_FOLLOW", FOLLOW_MAX = 3, FOLLOW_WINDOW_MS = 60e3;
+// What the launcher does when its child has ended: { again: true, recent } to start the pin's copy again, or { again: false, code, why? } to end with that code. A child that ended any other way
+// (it printed a DISPATCH line and exited 0, or failed) ends the launcher the same way; more than FOLLOW_MAX pin changes inside FOLLOW_WINDOW_MS is a loop, not a re-install, and ends it with a line.
+export function followStep({ code, signal, error }, recent, now) {
+  if (error) return { again: false, code: 1 };
+  if (code !== STALE_EXIT) return { again: false, code: code ?? (signal ? 1 : 0) };
+  const kept = [...recent.filter((t) => now - t < FOLLOW_WINDOW_MS && t <= now), now];
+  if (kept.length > FOLLOW_MAX) return { again: false, code: 1, why: `the pin changed ${kept.length} times in ${FOLLOW_WINDOW_MS / 1000} s; the watch ends, arm it again by hand` };
+  return { again: true, recent: kept };
+}
 // Every DISPATCH line says which install decided it (a reader can see a watch on old code).
 export const withInstall = (text, own) => (own ? String(text).split("\n").map((l) => (l.startsWith("DISPATCH ") ? `${l} [watch install ${own.slice(0, 12)}]` : l)).join("\n") : String(text));
 
@@ -156,16 +170,26 @@ export function otherWatchAlive(dir, now, pid = process.pid) {
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   // #C1165: --pinned hands over to the pinned install's copy of this file (same arguments, without --pinned) unless this already is it; no pin, no watch.
-  if (process.argv.includes("--pinned")) {
-    let settingsText = null; try { settingsText = readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"); } catch { /* no settings: no pin */ }
-    const launch = pinnedLaunch({ settingsText, installRoot: join(homedir(), ".flight-board", "install"), self: fileURLToPath(import.meta.url) });
-    if (launch.why) { console.error(`wake-watch: --pinned: ${launch.why}; nothing armed`); process.exit(1); }
-    if (!launch.here) {
-      const child = spawn(process.execPath, [launch.file, ...process.argv.slice(2).filter((a) => a !== "--pinned")], { stdio: "inherit" });
-      for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => child.kill(sig));
-      child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
-      child.on("error", (e) => { console.error(`wake-watch: --pinned: could not start the pinned copy: ${e.message}`); process.exit(1); });
-      await new Promise(() => {}); // the child's exit ends this process
+  // #C1240: the launcher stays up and follows the pin (see followStep): the pinned copy runs as its child, also when it is this very file, and the child is told to end quietly (STALE_EXIT) when the pin moves.
+  if (process.argv.includes("--pinned") && process.env[FOLLOW_ENV] !== "1") {
+    const settingsNow = () => { try { return readFileSync(join(homedir(), ".claude", "settings.json"), "utf8"); } catch { return null; /* no settings: no pin */ } };
+    const installRoot = join(homedir(), ".flight-board", "install");
+    let current = null;
+    for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { if (current) current.kill(sig); else process.exit(0); });
+    let recent = [], first = true;
+    for (;;) {
+      const launch = pinnedLaunch({ settingsText: settingsNow(), installRoot, self: fileURLToPath(import.meta.url) });
+      if (launch.why) { console.error(first ? `wake-watch: --pinned: ${launch.why}; nothing armed` : `wake-watch: --pinned: ${launch.why}; the watch ends, arm it again by hand`); process.exit(1); }
+      first = false;
+      const ended = await new Promise((resolve) => {
+        current = spawn(process.execPath, [launch.file, ...process.argv.slice(2).filter((a) => a !== "--pinned")], { stdio: "inherit", env: { ...process.env, [FOLLOW_ENV]: "1" } });
+        current.on("exit", (code, signal) => resolve({ code, signal }));
+        current.on("error", (e) => { console.error(`wake-watch: --pinned: could not start the pinned copy: ${e.message}`); resolve({ error: e }); });
+      });
+      current = null;
+      const step = followStep(ended, recent, Date.now());
+      if (!step.again) { if (step.why) console.error(`wake-watch: --pinned: ${step.why}`); process.exit(step.code); }
+      recent = step.recent;
     }
   }
   const at = process.argv.indexOf("--config");
@@ -196,6 +220,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       try { settingsText = readFileSync(settingsFile, "utf8"); } catch { /* no settings to read: no pin */ }
       let got = null;
       try { got = watchLook(dir, role, own, settingsText, Date.now(), process.pid); } catch { /* try again next time */ }
+      // #C1240: under a --pinned launcher a moved pin ends this copy quietly, so the launcher starts the new pin's copy and nobody is woken for it.
+      if (got?.stale && process.env[FOLLOW_ENV] === "1") { stop(); process.exit(STALE_EXIT); }
       if (got) { console.log(got.line); stop(); process.exit(0); }
     };
     for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => { stop(); process.exit(0); });
