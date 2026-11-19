@@ -1,0 +1,2 @@
+PASS Quick #C1279, line from 937daa1167afae9791d91f11cdb25ee04ee6ec75: full npm test on this tip 3258 pass 0 fail (includes the phone-track fix that was only run alone); mutation check pass (old stuck rule restored: the no-reading test fails); closes my #C1277 LOW. Stacked on #C1280 500c8c1f (PASS), reviewed only c59d0ac8. The phone CSS rule is a look change: Designer's call, not mine.
+signed-by: Checker 2
