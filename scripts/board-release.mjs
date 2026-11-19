@@ -173,7 +173,13 @@ export function groupFacts({ quiet, main, tip, noteRef, git = quiet }) {
     if (!anc(base, tip)) return { why: "it is not an ancestor of the tip" };
     // The base is where the tip's line left main (git merge-base main tip, or a commit on the line at or after it), never main's own commits.
     const fork = quiet(["merge-base", main, tip]);
-    if (!fork || !anc(fork, base)) return { why: "it is before the point where the tip's line left origin/main" };
+    // #C1244: a group signed by one line note lands a card at a time, and after the first card main is on the line itself (main is an ancestor of the tip), so the
+    // note's base, where the line left main, is now before main. It still counts when main only moved forward along this line (fork is main) and main's own commit
+    // carries both roles' sign-off: release landed it on those notes, so the commits from the base to main are the signed part of the line that already landed. A main
+    // that went somewhere else (fork is not main), or a main commit nobody signed, keeps the old rule: the base is where the line left main, never main's own commits.
+    const mainSha = quiet(["rev-parse", main]);
+    const onLine = !!fork && !!mainSha && fork === mainSha && signed(notes(mainSha));
+    if (!fork || (!anc(fork, base) && !onLine)) return { why: "it is before the point where the tip's line left origin/main" };
     return { covers: list(["rev-list", `${base}..${tip}`]), merges: list(["rev-list", "--merges", `${base}..${tip}`]).length };
   };
   return { tip, commits: gitList(["rev-list", "--reverse", `${main}..${tip}`]), notes, line };

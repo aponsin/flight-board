@@ -145,3 +145,32 @@ test("the verdict takes the coverage in place of the tip-only note check; withou
   assert.equal(verdict({ ...good, notes: {}, coverage: { refusals: [], usedLine: [] } }).ok, true, "the coverage, not the tip's own notes, decides");
   assert.equal(verdict({ ...good, notes: {} }).ok, false, "no coverage: the tip's notes are read as before");
 });
+
+// #C1244: a group signed by one line note lands a card at a time. After card 1 lands, main is on the line (c1), and the tip's note still says "line from M"
+// (where the line left main then). It still covers the rest while main only moved forward along this line and main's own commit is signed by both roles.
+test("a line note whose base is behind main still covers the rest of the line when main only moved forward along it and main's commit is signed", () => {
+  const w = world(4); lineNote(w, w.M); sign(w, [w.c[0]]);
+  assert.deepEqual(w.cov(w.c[3], w.c[0]), { refusals: [], usedLine: ["checker", "security"] }, "card 1 landed (c1 on main): the old base M still covers c2..c4");
+  const two = world(4); lineNote(two, two.M); sign(two, [two.c[1]]);
+  assert.deepEqual(two.cov(two.c[3], two.c[1]), { refusals: [], usedLine: ["checker", "security"] }, "and after c2 landed too");
+});
+
+test("#C1244 still refused: main's commit unsigned, signed by one role only, or main gone somewhere else; a base that is not an ancestor of main or of the tip; a merge or too long a line", () => {
+  const unsigned = world(4); lineNote(unsigned, unsigned.M);
+  assert.match(unsigned.cov(unsigned.c[3], unsigned.c[0]).refusals.join("\n"), /Checker line note.*before the point where the tip's line left origin\/main/, "main's commit has no sign-off");
+  const half = world(4); lineNote(half, half.M); sign(half, [half.c[0]], ["checker"]);
+  assert.match(half.cov(half.c[3], half.c[0]).refusals.join("\n"), /Security line note.*before the point/, "Security never signed main's commit");
+  // main on another line (a commit not on the tip's line): the base must still be where the tip's line left main.
+  const diverged = world(3); diverged.g("checkout", "-q", "-b", "other", diverged.M); const X = diverged.commit("x"); diverged.g("checkout", "-q", "line"); sign(diverged, [X]); lineNote(diverged, diverged.M0);
+  assert.match(diverged.cov(diverged.c[2], X).refusals.join("\n"), /not an ancestor of origin\/main|before the point where the tip's line left origin\/main/, "a diverged main keeps the old rule");
+  // the base is ahead of main (a commit of the line main does not have yet): not an ancestor of main.
+  const ahead = world(4); sign(ahead, [ahead.c[0]]); lineNote(ahead, ahead.c[2]);
+  assert.match(ahead.cov(ahead.c[3], ahead.c[0]).refusals.join("\n"), /not an ancestor of origin\/main/);
+  // a merge in the signed range is still refused: groups are linear.
+  const merged = world(2); merged.g("checkout", "-q", "-b", "side", merged.c[0]); const S = merged.commit("s"); merged.g("checkout", "-q", "line"); merged.g("merge", "-q", "--no-ff", "-m", "merge", S);
+  const tip = merged.g("rev-parse", "HEAD"); sign(merged, [merged.c[0]]); lineNote(merged, merged.M, tip);
+  assert.match(merged.cov(tip, merged.c[0]).refusals.join("\n"), /merge commit: groups are linear/);
+  // the length limit still counts base..tip.
+  const long = world(GROUP_MAX + 2); lineNote(long, long.M); sign(long, [long.c[0]]);
+  assert.match(long.cov(long.c.at(-1), long.c[0]).refusals.join("\n"), new RegExp(`a group is at most ${GROUP_MAX}`));
+});
