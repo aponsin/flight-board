@@ -23,7 +23,7 @@ function board({ messages = [], storage = memory(), now = T } = {}) {
 }
 const card = (b) => b.initRow(b.gates(b.enrich({ id: "x", name: "X", status: "active", level: "Quick", skip: ["plan"] })));
 // A board first opened at T, so what came before T is not new. Replies at T+10m and T+20m from the team; one of the owner's.
-const thread = (b) => { b.state.messages = [msg("Owner", "can you check?", T - 600_000), msg("Manager", "old answer", T - 300_000), msg("Owner", "and this?", T + 300_000), msg("Manager", "first reply", T + 600_000), msg("Builder", "second reply", T + 1_200_000)]; };
+const thread = (b) => { b.state.messages = [msg("Owner", "can you check?", T - 600_000), msg("Manager", "old answer", T - 300_000), msg("Owner", "and this?", T + 300_000), msg("Manager", "first reply", T + 600_000), msg("Manager", "second reply", T + 1_200_000)]; };
 
 test("a reply is new when someone other than the owner wrote it after the board last marked the thread read; the owner's own words never are", () => {
   const b = board();

@@ -1743,7 +1743,7 @@ function fitBox(t){if(!t||t.tagName!=="TEXTAREA"||!t.style)return;cmpHas(t);
   const top=(t.value.slice(0,at).split("\n").length-1)*lh;
   if(top<t.scrollTop)t.scrollTop=top;else if(top+lh>t.scrollTop+t.clientHeight)t.scrollTop=top+lh-t.clientHeight}
 document.addEventListener("input",e=>fitBox(e.target));
-function msgHtml(m,newAt=null){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&blobId(f.id)),fresh=typeof newAt==="number"&&m.from!==OWNER&&num(m.at)!=null&&m.at>newAt;
+function msgHtml(m,newAt=null){const fs=(Array.isArray(m.assets)?m.assets:[]).filter(f=>f&&blobId(f.id)),fresh=typeof newAt==="number"&&countsNew(m)&&num(m.at)!=null&&m.at>newAt;
   return `<div class="t-msg${m.from===OWNER?" t-owner":""}${fresh?" t-new":""}"><span class="t-from">${esc(m.from||"?")}</span>${fresh?' <span class="t-newtag">new</span>':""} <span class="t-at">${dayLabel(m.at)}</span><div class="t-text">${askText(m.text||"")}</div>${shots({images:m.images})}${fs.length?`<div class="sentfiles">Files: ${fileLinks(fs)}</div>`:""}${seenTick(m)}</div>`}
 // A thread: its reply box at the top, then the messages, newest first (display only: threadOf stays oldest first). An
 // unanswered ask draws it with box false, so its own response box above is the only one. where: the place it is drawn
@@ -1905,7 +1905,9 @@ function seenAt(id){const s=seenLoad(),t=num(s.t[id]);return Math.max(s.base,t==
 function markThreadSeen(id,now=Date.now()){const s=seenLoad();s.t[id]=Math.max(now,threadOf(id).reduce((a,m)=>Math.max(a,num(m&&m.at)||0),0));
   // #C1271 (Checker 2's LOW on #C1266): a thread dropped past SEEN_MAX falls back to `base`, so `base` rises to the newest time dropped: what was read stays read.
   const ks=Object.keys(s.t);if(ks.length>SEEN_MAX)ks.sort((a,b)=>s.t[a]-s.t[b]).slice(0,ks.length-SEEN_MAX).forEach(k=>{s.base=Math.max(s.base,s.t[k]);delete s.t[k]});seenSave()}
-function newReplies(id){const at=seenAt(id);return threadOf(id).filter(m=>m&&m.from!==OWNER&&num(m.at)!=null&&m.at>at)}
+// #C1287 (the owner, #T2129, mockup A): only what is for him counts as a new reply: a message from Manager, or a decision (kind "decision") from anyone but him. Other agents' messages in a thread do not.
+const countsNew=m=>!!m&&m.from!==OWNER&&(m.from==="Manager"||m.kind==="decision");
+function newReplies(id){const at=seenAt(id);return threadOf(id).filter(m=>countsNew(m)&&num(m.at)!=null&&m.at>at)}
 function newPill(n){return n?`<span class="newpill" title="${n} ${n>1?"replies":"reply"} you have not read yet">${n} new ${n>1?"replies":"reply"}</span>`:""}
 function threadRead(id){markThreadSeen(id);if(typeof setTimeout==="function")setTimeout(()=>{try{renderBoard();renderNow()}catch(e){}},0)}
 try{seenLoad()}catch(e){}

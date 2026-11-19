@@ -29,7 +29,7 @@ test("a closed card in a group shows the new-reply pill on its summary line, one
 });
 
 test("it is today's count: the owner's own words and replies from before the baseline do not count, and several read as replies", () => {
-  const summary = board([msg("Manager", "old", T - 5), msg("Owner", "q", T + 1), msg("Manager", "a", T + 2), msg("Builder", "b", T + 3)]);
+  const summary = board([msg("Manager", "old", T - 5), msg("Owner", "q", T + 1), msg("Manager", "a", T + 2), msg("Manager", "b", T + 3)]);
   assert.match(summary(), /<span class="newpill"[^>]*>2 new replies<\/span>/);
 });
 
