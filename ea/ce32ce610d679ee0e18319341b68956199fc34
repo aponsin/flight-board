@@ -1,0 +1,5 @@
+SECURE
+
+#C1284: option button CSS, and openDecision keeps the newest unanswered non-owner decision message (kind decision with valid options) pinned with its buttons until the owner's 'Chose ...' follows. Options still come only from a non-owner message, buttons and the pinned message go through esc/msgHtml, and a pick still sends optionText through the existing thread path. No data, route, permission or Worker change.
+
+signed-by: Security
