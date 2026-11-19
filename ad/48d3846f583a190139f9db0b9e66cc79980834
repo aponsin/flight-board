@@ -1,0 +1,5 @@
+SECURE
+
+#C1275: collector/state.mjs tipState treats a tip whose newest commit names only other cards' Board-Ids as a start push (wipHead), so no review turn is dispatched for it. It only withholds dispatch, never grants a sign-off or a ship (Release still needs every note on the exact sha); commit-message text is parsed, never executed. No Worker, hook, route or permission change. a35b89b3, cad798e7, bb21329e were already noted SECURE.
+
+signed-by: Security
