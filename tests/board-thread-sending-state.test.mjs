@@ -213,5 +213,8 @@ test("each button's handler marks before it awaits and clears when its write fai
 test("the look of a button with the dots: its label hidden but kept (for width and a reader), the dots centred, same colours and pulse", () => {
   assert.match(css, /\.sbtn\{position:relative;color:transparent!important\}/);
   assert.match(css, /\.sbtn>\.sdots\{position:absolute;inset:0;justify-content:center;align-items:center;padding:0;min-height:0\}/);
-  assert.ok(!/\.sbtn[^{]*\{[^}]*(opacity|display:none|#[0-9a-fA-F]{3,6})/.test(css), "no colour of its own, never display:none (a reader skips it)");
+  assert.match(css, /button\.sbtn\.sbtn:disabled\{opacity:1\}/, "a sending button is not dimmed: the dots are the cue and fall under 3:1 at .6");
+  assert.match(css, /\.td-btns button\.td-start\.sbtn\{background:var\(--accent-soft\)\}/, "Let's start sits on the soft accent so the muted dots show");
+  const base = css.split("\n").filter((l) => /\.sbtn/.test(l) && !/button\.sbtn\.sbtn:disabled|button\.td-start\.sbtn/.test(l)).join("\n");
+  assert.ok(!/\.sbtn[^{]*\{[^}]*(opacity|display:none|#[0-9a-fA-F]{3,6})/.test(base), "no colour of its own, never display:none (a reader skips it)");
 });
