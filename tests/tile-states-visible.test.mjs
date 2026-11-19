@@ -30,7 +30,7 @@ const tile = (h, label) => { const m = h.match(new RegExp(`<div class="(step[^"]
 test("slow with nobody on it is the stuck tile and says slow · N× usual", () => {
   const t = tile(board(base, { probe: reading("idle") }), "Build");
   assert.match(t.cls, /\bstuck\b/);
-  assert.match(t.inner, /<small class="slow">slow · 2\.5× usual<\/small>/);
+  assert.match(t.inner, /<small class="slow">slow<span class="sl"> ·<\/span> 2\.5×<span class="sl"> usual<\/span><\/small>/); // #C1279: the words shorten to "slow 2.5×" on a phone (CSS hides .sl)
 });
 
 test("slow with an agent working keeps the blue and says slow N×, never the stuck tile", () => {
