@@ -1,0 +1,5 @@
+SECURE
+
+#C1268: decision options wrapped in one .opt-grid div with CSS; the only new interpolation is --n:${Math.min(options.length,4)}, a number; option keys and labels are still escaped. Plus a static template test. No script logic, data, route, permission or Worker change.
+
+signed-by: Security
