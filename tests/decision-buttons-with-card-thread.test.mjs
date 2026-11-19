@@ -44,7 +44,8 @@ test("must still allow: a card's thread whose last word is a plain note is still
   const note = { id: "m-note", thread: "t-100", from: "Manager", text: "On it", at: NOW + 1000 };
   const withNote = page({ ...collections, messages: [...collections.messages, note] }, [card("active")]);
   assert.equal(withNote.threadState("t-100"), "building");
-  assert.deepEqual(buttons(withNote.threadHtml("t-100", "ask", { decide: true })), []);
+  // #C1284: the thread still reads building, but an unanswered decision stays pinned with its buttons until the owner picks (a plain note after it no longer hides them).
+  assert.deepEqual(buttons(withNote.threadHtml("t-100", "ask", { decide: true })), ["t-100:A", "t-100:B"]);
   const picked = { id: "m-pick", thread: "t-100", from: "Owner", text: "Chose A: Yes", at: NOW + 2000 };
   const answered = page({ ...collections, messages: [...collections.messages, picked] }, [card("active")]);
   assert.notEqual(answered.threadState("t-100"), "decision", "once the owner has picked, the Decision is answered");
@@ -52,7 +53,8 @@ test("must still allow: a card's thread whose last word is a plain note is still
   const asked = { id: "m-q", thread: "t-100", from: "Owner", text: "which one do you mean?", at: NOW + 3000 };
   const question = page({ ...collections, messages: [...collections.messages, asked] }, [card("active")]);
   assert.equal(question.threadState("t-100"), "question", "the owner's open question is the last word");
-  assert.deepEqual(buttons(question.threadHtml("t-100", "ask", { decide: true })), []);
+  // #C1284: his own question under the decision (#T2132: "where is the A button?") no longer takes the buttons away; only a pick does.
+  assert.deepEqual(buttons(question.threadHtml("t-100", "ask", { decide: true })), ["t-100:A", "t-100:B"]);
   const bare = page({ ...collections, messages: collections.messages.map((m) => (m.kind === "decision" ? { ...m, options: [] } : m)) }, [card("active")]);
   assert.equal(bare.threadState("t-100"), "building");
 });
