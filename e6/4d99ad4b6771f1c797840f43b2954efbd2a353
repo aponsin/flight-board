@@ -1,0 +1,5 @@
+SECURE
+
+#C1255: postMessage reads an ask thread's card (parameterised SELECT card_id FROM asks WHERE id = ?), falling back to the thread id as before, so a decision in a lane card's ask thread loses the Yes/No exemption. Only tightens c36d3415. Mutation check: pass (ignoring the ask's card fails the ask-thread test).
+
+signed-by: Security
