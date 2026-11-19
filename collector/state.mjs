@@ -715,7 +715,11 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   const onMain = atMain && !bare;
   // #C882: a landing that changed only docs and tests has nothing to deploy or install: it is live the moment it is on main, not "waiting for install".
   const noInstall = onMain && typeof repo.git === "function" && noInstallCard(repo, card, mainRef, head.sha);
-  const deployed = onMain && (noInstall || (!!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]))));
+  // #C1278 (11-19: no ships row after 1.218.0, so no Acknowledge button for ten versions): Release merges a card's commit into dev and CI goes green on that merge BEFORE the version commit ("v1.226.3: ...")
+  // is made, so the newest green run already contains the card's head while no commit naming a version is in it yet. The card read live, closed, and its reading carried no version: no ship was ever noted.
+  // In a repository that names its versions (versionPattern), a card is deployed only when a commit naming one lies between its head and the live commit; until then it reads ship, and the reading that
+  // makes it live carries the version.
+  const deployed = onMain && (noInstall || (!!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live])) && (!repo.versionPattern || versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) !== null)));
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   // #C897: the reviews from the paths the branch changed since it left main, when the repository has a reviewPaths table.
   const changed = !onMain && !bare ? branchPaths(repo, mainRef, tip.sha) : null;
