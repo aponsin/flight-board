@@ -1,0 +1,2 @@
+PASS (Quick) #C1240 watch-survives-new-pin-v2, line from 563dad2d3b186aecc9d1972390573bd63f51544d: straight re-cut with no merge; tree identical to b2e59e7f (signed PASS, LOW to Boardsmith unchanged).
+signed-by: Checker 2
