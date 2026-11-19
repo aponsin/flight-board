@@ -232,5 +232,6 @@ test("(e) a board-repo card on main and not deployed names its open ask, or the 
   const draw = (id, derived) => { b.state.derived = [{ id: "all", cards: { [id]: derived } }]; b.state.steps = []; b.state.waiting = []; return b.initRow(b.gates(b.enrich({ id, level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", nextNote: "x", nextNoteAt: old, createdAt: old, etaLive: Date.now() + 1 }))); };
   assert.match(draw("r1", { phase: "ship", wait: "install", waitAsk: t.num, evidence: "e" }), new RegExp(`Waiting for install: #T${t.num}`));
   assert.match(draw("r2", { phase: "ship", wait: "install", evidence: "e" }), /Waiting for install: no deploy ask yet/);
-  assert.match(draw("r2", { phase: "ship", wait: "release", evidence: "e" }), /Queued for board release/);
+  // #C1288: the draw here has no repo word, so it is a product card: its release wait names Release's product ship (the board's own card still says "board release": tests/ship-tile-says-who-acts.test.mjs).
+  assert.match(draw("r2", { phase: "ship", wait: "release", evidence: "e" }), /Queued for Release(?:'|&#39;)s product ship/);
 });

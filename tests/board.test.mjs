@@ -238,7 +238,7 @@ test("#C278: a wait the repository explains (queued for a board release, waiting
   const old = Date.now() - 5 * 3600e3;
   const base = { etaLive: Date.now() + 1, nextNote: "x", nextNoteAt: old, createdAt: old };
   const derived = (wait) => { b.state.derived = [{ id: "all", cards: { "board-x": { phase: "ship", wait, evidence: "e" } } }]; };
-  for (const [wait, says] of [["release", "Queued for board release"], ["install", "Waiting for install"]]) {
+  for (const [wait, says] of [["release", "Queued for Release(?:'|&#39;)s product ship"], ["install", "Waiting for install"]]) {
     derived(wait);
     const i = item(b, "board-x", [step("board-x", "build", "Boardsmith", "start", old - 1), step("board-x", "build", "Boardsmith", "end", old)], base);
     assert.equal(b.stalled(i), 0, wait);
