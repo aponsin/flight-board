@@ -1,0 +1,2 @@
+PASS #C1266 card-thread-unread-replies (group board-unread-replies with #C1268), line from d21ee12d83ac8ac45c015500ad3ca1444ef3eb26: unread pill, new tag and accent per card thread, cleared on collapse, per device in localStorage, nothing to the store; DATA.md row 20 and fragment; suite 3238 pass 0 fail; mutant (owner's own words counted new) killed by 3 tests. LOW to Boardsmith: past 300 threads an evicted one falls back to base, so replies read before can show new again
+signed-by: Checker 2
