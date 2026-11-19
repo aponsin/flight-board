@@ -1,0 +1,5 @@
+SECURE
+
+#C1248: docs only. The 7 lines added to docs/DATA.md equal, byte for byte, the 7 deleted docs/DATA.d fragments (checked as sets). No code, worker, hooks or scripts touched.
+
+signed-by: Security
