@@ -1,0 +1,2 @@
+PASS #C1268 decision-options-side-by-side, line from d21ee12d83ac8ac45c015500ad3ca1444ef3eb26: options in one .opt-grid, equal columns, two a row at 1000 px, stacked at 760 px; existing .opt-shots rules scale the pictures; no script depends on the old structure; suite 3218 pass (tracks-per-repo failed at load under load, 8/8 alone); mutant (drop the phone stack rule) killed
+signed-by: Checker 2
