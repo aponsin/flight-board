@@ -1,0 +1,5 @@
+SECURE
+
+#C1239, on main 0692a361. shipCitedHead reads only first-parent subjects of origin/main (400 max, each <=400 chars), with the repo's own shippedPattern; branch and sha are shape-checked (no leading '-') and go to git as argv; the cited commit must rev-parse to 40 hex and be an ancestor of main; used only when no tip carries the card's own trailer. looseBoardIdsOf/misplacedBoardId only set trailerMisplaced, which picks a fixed DISPATCH_TRAILER_TEXT; it never matches a card, lights a phase or counts for a landing; boardIdsOf (git's reading) is unchanged. Tests 61/61 (recut-branch, one-reading, trailer-fallback, store-dispatch, dispatch, signed-means-pass-secure, board-recut). Mutation: dropping the is-ancestor check fails the 'only on main' test.
+
+signed-by: Security
