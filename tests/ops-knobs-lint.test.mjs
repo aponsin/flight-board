@@ -89,6 +89,8 @@ export const FIXED = {
   "scripts/stack-ready.mjs:STALE_LISTED": "20: how many stale branch names the line lists before \"and N more\"; a count, not a time (scripts/stack-ready.mjs)",
   "scripts/state-install.mjs:BOOT_POLL_MS": "0.5 s between looks while it boots: the same pause (scripts/state-install.mjs)",
   "scripts/state-install.mjs:BOOT_RETRY_MS": "2 s before a second bootstrap if launchd answers an error: the same pause (scripts/state-install.mjs)",
+  "scripts/wake-watch.mjs:FOLLOW_WINDOW_MS": "the window (60 s) in which more than 3 pin changes end the --pinned launcher with a line instead of following them (#C1240): a loop guard on a re-install, not a cadence; six installs a day never reach it",
+  "scripts/wake-watch.mjs:STALE_EXIT": "75: the exit code a watch ends with when the pin moved under a --pinned launcher (#C1240), the one thing the launcher reads it for; an exit code, not a time (scripts/wake-watch.mjs)",
   "scripts/state-install.mjs:BOOT_WAIT_MS": "10 s to wait for a launchd job to boot: a pause inside the install script (scripts/state-install.mjs)",
   "worker/probe-jobs.mjs:LAND_SUITE_SEC": "the group check's one suite run on a group head, added to the per-tip budget before such a tip starts (#C1146): tied to the same alarm and LAND_TIP_SEC (tests/group-check-before-land.test.mjs); changing it needs an owner install",
   "worker/probe-jobs.mjs:LAND_MARGIN_SEC": "the land job's margin before its limit: tied to the plist's alarm and the per-tip budget (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",
