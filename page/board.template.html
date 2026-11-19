@@ -442,6 +442,7 @@ button.sbtn.sbtn:disabled{opacity:1}
 /* An option's pictures at a readable width (#C353: they sat in a ~50 px column): a 240 px column beside its button on a
    laptop, full width above it on a phone, each label on one or two lines. */
 .opt-line{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:8px 14px;align-items:start;flex-basis:100%}
+/* #C1271 (Designer on #C1268): pictures of different heights in one row: the lines stretch and the buttons sit on one line under them */
 .opt-shots{display:flex;flex-direction:column;gap:8px;min-width:0}
 .opt-shots .thumb{width:100%;max-width:none;padding:0;border-radius:8px;font:inherit;font-size:1rem}
 .opt-shots .thumb img{height:auto;max-height:200px}
@@ -451,8 +452,8 @@ button.sbtn.sbtn:disabled{opacity:1}
 @media (max-width:760px){.opt-line{grid-template-columns:minmax(0,1fr);row-gap:6px}.opt-line+.opt-line{margin-top:12px}}
 /* #C1268 (the owner: the options and their pictures stacked and took too much room): side by side on a laptop, two to four in a row at equal widths, each picture
    scaled to its column with its button under it; three or four drop to two a row below 1000 px, and a phone stacks them as before. */
-.opt-grid{display:grid;grid-template-columns:repeat(var(--n,1),minmax(0,1fr));gap:12px;flex:1 0 100%;align-items:start}
-.opt-grid>.opt-line{grid-template-columns:minmax(0,1fr);row-gap:6px}
+.opt-grid{display:grid;grid-template-columns:repeat(var(--n,1),minmax(0,1fr));gap:12px;flex:1 0 100%;align-items:stretch}
+.opt-grid>.opt-line{grid-template-columns:minmax(0,1fr);grid-template-rows:1fr auto;row-gap:6px}
 .opt-grid>.opt-line+.opt-line{margin-top:0}
 .opt-grid>.opt-line>button.opt{justify-self:stretch}
 .opt-grid>button.opt{width:100%}
@@ -1887,7 +1888,8 @@ function seenLoad(){if(seenStore)return seenStore;let v=null;try{v=JSON.parse(lo
   seenStore=v;return v}
 function seenAt(id){const s=seenLoad(),t=num(s.t[id]);return Math.max(s.base,t==null?0:t)}
 function markThreadSeen(id,now=Date.now()){const s=seenLoad();s.t[id]=Math.max(now,threadOf(id).reduce((a,m)=>Math.max(a,num(m&&m.at)||0),0));
-  const ks=Object.keys(s.t);if(ks.length>SEEN_MAX)ks.sort((a,b)=>s.t[a]-s.t[b]).slice(0,ks.length-SEEN_MAX).forEach(k=>{delete s.t[k]});seenSave()}
+  // #C1271 (Checker 2's LOW on #C1266): a thread dropped past SEEN_MAX falls back to `base`, so `base` rises to the newest time dropped: what was read stays read.
+  const ks=Object.keys(s.t);if(ks.length>SEEN_MAX)ks.sort((a,b)=>s.t[a]-s.t[b]).slice(0,ks.length-SEEN_MAX).forEach(k=>{s.base=Math.max(s.base,s.t[k]);delete s.t[k]});seenSave()}
 function newReplies(id){const at=seenAt(id);return threadOf(id).filter(m=>m&&m.from!==OWNER&&num(m.at)!=null&&m.at>at)}
 function newPill(n){return n?`<span class="newpill" title="${n} ${n>1?"replies":"reply"} you have not read yet">${n} new ${n>1?"replies":"reply"}</span>`:""}
 function threadRead(id){markThreadSeen(id);if(typeof setTimeout==="function")setTimeout(()=>{try{renderBoard();renderNow()}catch(e){}},0)}

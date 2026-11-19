@@ -50,8 +50,8 @@ test("more than four options still read in rows of four: the count is capped", (
 });
 
 test("laptop: equal columns, the picture fills its column and scales to fit, each option's button under its picture", () => {
-  assert.match(css, /\.opt-grid\{display:grid;grid-template-columns:repeat\(var\(--n,1\),minmax\(0,1fr\)\);gap:12px;flex:1 0 100%;align-items:start\}/, "equal widths");
-  assert.match(css, /\.opt-grid>\.opt-line\{grid-template-columns:minmax\(0,1fr\);row-gap:6px\}/, "inside a column the picture is over its button");
+  assert.match(css, /\.opt-grid\{display:grid;grid-template-columns:repeat\(var\(--n,1\),minmax\(0,1fr\)\);gap:12px;flex:1 0 100%;align-items:stretch\}/, "equal widths (#C1271: the lines stretch to one height)");
+  assert.match(css, /\.opt-grid>\.opt-line\{grid-template-columns:minmax\(0,1fr\);grid-template-rows:1fr auto;row-gap:6px\}/, "inside a column the picture is over its button (#C1271: the button on the last row)");
   assert.match(css, /\.opt-shots \.thumb\{width:100%;max-width:none;/, "the picture fills its column");
   assert.match(css, /\.opt-shots \.thumb img\{height:auto;max-height:200px\}/, "scaled to fit, never stretched");
   assert.match(css, /\.opt-shots \.thumb span\{[^}]*-webkit-line-clamp:2/, "its caption on one or two lines");
