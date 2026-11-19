@@ -1,0 +1,2 @@
+PASS #C1248 fold-data-fragments-1119, line from bf656ce5ea1681d9b10873315317631cb57e291f: docs only; data-fragments --write rerun on main gives the identical tree; 7 fragments folded oldest first, files gone, README kept; suite 3203 pass 0 fail (one earlier run lost tracks-per-repo to load; alone 8/8, rerun green)
+signed-by: Checker 2
