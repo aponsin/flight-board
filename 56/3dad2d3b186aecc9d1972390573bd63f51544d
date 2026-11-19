@@ -1,0 +1,5 @@
+SECURE
+
+#C1239 Checker 2's F1, by diff on the signed bed0c76c: cardState uses the ship-cited commit only when no tip newer than it is unmerged; one merge-base --is-ancestor per tip, sha shape-checked to 40 hex first (a bad sha counts as unmerged: cited not used), argv only. Narrows the earlier rule. Tests 19/19. Mutation: dropping the newer-tip check fails the 'new work after a ship' test.
+
+signed-by: Security
