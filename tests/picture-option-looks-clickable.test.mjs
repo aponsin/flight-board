@@ -40,10 +40,29 @@ test("a thread that asks for neither acts nor decide draws no pin, as before; an
   assert.equal(b.optionText("t1", "B"), "Chose B: Right", "the options come from the pinned decision, not the last note");
 });
 
+// Checker 2's F1 on eace32ce: a decision whose thread was closed without a pick is not pinned and draws no buttons (a click would send a stale "Chose A" that reopens a closed thread).
+test("a decision closed without a pick is not pinned: Manager resolves it, the owner resolves in words, the owner's closer, a resolved mark after it", () => {
+  const closed = (name, messages) => { const b = load(messages); const html = b.threadHtml("t1", "ask", { decide: true }); const html2 = b.threadHtml("t1", "ask", { acts: true }); for (const h of [html, html2]) { assert.deepEqual(buttons(h), [], `${name}: no buttons`); assert.doesNotMatch(h, /t-pin/, `${name}: not pinned`); } };
+  closed("Manager no longer needed, resolved", [decision(now - 5000), { ...plain("m2", now - 3000), text: "No longer needed", resolved: true }]);
+  closed("owner resolves in words", [decision(now - 5000), { ...owner("m2", now - 3000, "go with A"), resolved: true }]);
+  closed("owner's closer", [decision(now - 5000), plain("m2", now - 4000), owner("m3", now - 3000, "thanks")]);
+  closed("a resolved mark after it", [decision(now - 5000), { ...plain("m2", now - 3000), resolved: true }]);
+});
+
+test("the owner's question or a plain note after the decision keeps it open and pinned (his A button is still there)", () => {
+  for (const messages of [[decision(now - 5000), owner("m2", now - 3000)], [decision(now - 5000), plain("m2", now - 3000)]]) {
+    const h = load(messages).threadHtml("t1", "ask", { decide: true });
+    assert.deepEqual(buttons(h), ["t1:A", "t1:B"]);
+    assert.match(h, /t-pin/);
+  }
+});
+
 test("the look: an option is a bordered bar that says Choose, with hover and focus, in board tokens only", () => {
   assert.match(css, /\.cchoice button\.opt,\.opt-line>button\.opt,\.opt-grid>button\.opt\{[^}]*border:2px solid var\(--accent\)[^}]*min-height:44px/);
   assert.match(css, /button\.opt::before\{content:"Choose "/);
   assert.match(css, /button\.opt:hover\{background:var\(--accent\)/);
+  assert.match(css, /button\.opt:hover \.recl\{color:var\(--panel\)\}/, "Manager's pick stays readable on the filled hover bar (Designer's F1)");
+  assert.match(css, /\.t-pin \.t-msg\.t-new\{background:none;border-left:0/, "no second blue edge inside the pin");
   assert.match(css, /button\.opt:focus-visible\{outline:3px solid var\(--accent\)/);
   assert.match(css, /\.t-pin\{[^}]*border:2px solid var\(--accent\)/);
   assert.ok(!/(button\.opt[^{]*|\.t-pin)\{[^}]*#[0-9a-fA-F]{3,6}/.test(css), "no colour of its own");

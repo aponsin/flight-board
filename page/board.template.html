@@ -464,10 +464,11 @@ button.sbtn.sbtn:disabled{opacity:1}
 .cchoice button.opt,.opt-line>button.opt,.opt-grid>button.opt{border:2px solid var(--accent);border-radius:8px;min-height:44px;padding:8px 14px;font-weight:600;cursor:pointer}
 .cchoice button.opt::before,.opt-line>button.opt::before,.opt-grid>button.opt::before{content:"Choose ";font-weight:400}
 .cchoice button.opt:hover,.opt-line>button.opt:hover,.opt-grid>button.opt:hover{background:var(--accent);color:var(--panel)}
-.cchoice button.opt:hover b,.opt-line>button.opt:hover b,.opt-grid>button.opt:hover b{color:var(--panel)}
+.cchoice button.opt:hover b,.opt-line>button.opt:hover b,.opt-grid>button.opt:hover b,.cchoice button.opt:hover .recl,.opt-line>button.opt:hover .recl,.opt-grid>button.opt:hover .recl{color:var(--panel)}
 .cchoice button.opt:focus-visible,.opt-line>button.opt:focus-visible,.opt-grid>button.opt:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 /* #C1284: an unanswered decision stays pinned above the thread's scrolling messages, with its pictures, until the owner picks. */
 .t-pin{border:2px solid var(--accent);border-radius:8px;padding:2px 10px;margin:8px 0;background:var(--accent-soft)}
+.t-pin .t-msg.t-new{background:none;border-left:0;padding:0}
 .thumb{display:flex;flex-direction:column;gap:4px;width:150px;max-width:45%;padding:0;border:1px solid var(--line);border-radius:8px;background:var(--panel);cursor:zoom-in;overflow:hidden;text-align:left;color:var(--ink)}
 .thumb img{display:block;width:100%;height:100px;object-fit:cover;object-position:top}
 .thumb span{font-size:.75rem;padding:0 6px 6px;color:var(--muted)}
@@ -1626,7 +1627,9 @@ function threadState(id){const t=threadOf(id),last=t[t.length-1];if(!last)return
 // A decision's options, from Manager's last word (as an ask's: {key, label}).
 // #C1284 (the owner, #T2132: he wrote under a decision and its A button was gone): a decision stays open, pinned and answerable, until the owner's "Chose ..." comes after it, whoever wrote since.
 function openDecision(id){const t=threadOf(id),d=t.findLastIndex(m=>m&&m.from!==OWNER&&m.kind==="decision"&&Array.isArray(m.options)&&m.options.some(o=>o&&o.key&&o.label));
-  return d>=0&&!t.slice(d+1).some(m=>m&&m.from===OWNER&&/^Chose /.test(String(m.text||"")))?{i:d,m:t[d]}:null}
+  // Checker 2's F1 on eace32ce: it also ends when the thread is closed without a pick: resolved (a later message marked resolved, or threadResolved), or the owner's own closer ("thanks", "ok") after it. Manager withdrawing in plain words does not end it: Manager marks it resolved.
+  if(d<0||threadResolved(id))return null;const opts=t[d].options.filter(o=>o&&o.key&&o.label);
+  return !t.slice(d+1).some(m=>m&&(m.resolved||(m.from===OWNER&&(/^Chose /.test(String(m.text||""))||ownerCloser(m,opts)))))?{i:d,m:t[d]}:null}
 function threadOptions(id){const t=threadOf(id),last=t[t.length-1],od=openDecision(id),src=od?od.m:last;
   return src&&src.from!==OWNER&&Array.isArray(src.options)?src.options.filter(o=>o&&o.key&&o.label):[]}
 // The owner's pick, as the message it sends: "Chose A: Red"; null for a key the decision doesn't offer.
