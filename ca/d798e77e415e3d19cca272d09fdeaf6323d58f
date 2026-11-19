@@ -1,0 +1,2 @@
+PASS #C1267 tile-states-visible, line from 80306160936aa754fdc5dfc53709b1f97c7d1a61: tile looks per DATA.md's new Tile states line; stuck only with nobody on the step (no fresh reading: stuck as before); slowTag computes only after overUsual; suite 3241 pass, 1 clock flake (check-live-now 13 s vs 12 s, 5/5 alone); mutant (slow with an agent reads stuck) killed
+signed-by: Checker 2
