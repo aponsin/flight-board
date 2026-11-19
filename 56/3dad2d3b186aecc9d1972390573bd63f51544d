@@ -1,0 +1,2 @@
+PASS (Quick) #C1239 board-recut-branch-evidence F1 fixed: the ship-cited head stands only when no unmerged tip is newer; new test covers new work after a ship and a newer tip already on main; suite 3190 pass 0 fail at 563dad2d; mutation check pass (guard removed and on-main exception removed, both killed). Covers bed0c76c and 1abe7c23.
+signed-by: Checker 2
