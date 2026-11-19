@@ -1,0 +1,2 @@
+PASS #C1255 look-guard-ask-thread-lane, line from c36d3415485b4a65d32509012d2473ac3b96c00e: postMessage reads the ask's card when thread_id is an ask id, so a Yes/No look decision in a Designer-card ask's thread needs pictures; other-role, no-card, unknown thread and no-lanes keep the exemption; suite 3211 pass 0 fail; mutant (drop the card-thread fallback) killed by two tests
+signed-by: Checker 2
