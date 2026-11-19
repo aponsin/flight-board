@@ -1,0 +1,2 @@
+PASS Quick #C1280, line from 937daa1167afae9791d91f11cdb25ee04ee6ec75: npm test 3255 pass 0 fail; mutation check pass (drop the version-commit clause: the merge-before-version test fails); versionAfter is the same nearest first-parent lookup liveVersion already uses, so the version is right; isnearby's last 25 first-parent commits show every ship followed by its version commit. LOW, not blocking: a card that lands with no version commit after it (a data merge) waits at ship until the next release and takes that release's version.
+signed-by: Checker 2
