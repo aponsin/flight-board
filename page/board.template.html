@@ -1906,7 +1906,7 @@ function markThreadSeen(id,now=Date.now()){const s=seenLoad();s.t[id]=Math.max(n
   // #C1271 (Checker 2's LOW on #C1266): a thread dropped past SEEN_MAX falls back to `base`, so `base` rises to the newest time dropped: what was read stays read.
   const ks=Object.keys(s.t);if(ks.length>SEEN_MAX)ks.sort((a,b)=>s.t[a]-s.t[b]).slice(0,ks.length-SEEN_MAX).forEach(k=>{s.base=Math.max(s.base,s.t[k]);delete s.t[k]});seenSave()}
 // #C1287 (the owner, #T2129, mockup A): only what is for him counts as a new reply: a message from Manager, or a decision (kind "decision") from anyone but him. Other agents' messages in a thread do not.
-const countsNew=m=>!!m&&m.from!==OWNER&&(m.from==="Manager"||m.kind==="decision");
+const countsNew=m=>!!m&&m.from!==OWNER&&(m.from===LEAD_ROLE||m.kind==="decision"); // Checker 2's F1 on e6de6cc9: the board's lead role (config gate.managerRole), not the word "Manager"; read at call time, as teamOnly does
 function newReplies(id){const at=seenAt(id);return threadOf(id).filter(m=>countsNew(m)&&num(m.at)!=null&&m.at>at)}
 function newPill(n){return n?`<span class="newpill" title="${n} ${n>1?"replies":"reply"} you have not read yet">${n} new ${n>1?"replies":"reply"}</span>`:""}
 function threadRead(id){markThreadSeen(id);if(typeof setTimeout==="function")setTimeout(()=>{try{renderBoard();renderNow()}catch(e){}},0)}
