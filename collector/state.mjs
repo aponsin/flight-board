@@ -739,7 +739,11 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   // EMPTY commit (no change against its first parent, no sign-off on it) is a start push whatever it says. A real commit that only mentions WIP ("Fix WIP: wording") is none.
   const wipWord = WIP_START.test(headLine);
   const emptyStart = !onMain && !bare && !wipWord && !signed.length && /^[0-9a-f]{40}$/.test(String(head.sha)) && typeof repo.git === "function" && ok(() => repo.git(["diff", "--quiet", `${head.sha}^1`, head.sha]));
-  const wipHead = !onMain && !bare && (wipWord || emptyStart);
+  // #C1275 (11-19: Designer got a review turn for #C1272 at e1a12981, which was #C1269's tip: the branch had no commit of its own yet): a tip whose newest commit names Board-Ids and not this card's is another
+  // card's commit, the base of a stacked branch, not this card's work: it reads as a start push, no review turn, until a commit of the card's own is on it.
+  const headIds = !landed && !after ? boardIdsOf(String((head.message ?? tip.message) ?? "")) : [];
+  const foreignHead = !onMain && !bare && headIds.length > 0 && !headIds.includes(card.id);
+  const wipHead = !onMain && !bare && (wipWord || emptyStart || foreignHead);
   const phase = wipHead ? config.collector.buildPhase : partsMissing.length && readPhase === config.collector.livePhase ? config.collector.shipPhase : readPhase;
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
