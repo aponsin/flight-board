@@ -1,0 +1,5 @@
+SECURE
+
+#C1254: lookRefusal's Yes/No exemption is off on a visual lane's card (!lane) and needs Yes/No as a whole word; a real look choice still needs a picture per option, through createAsk and askFromTool. Mutation check: pass (dropping !lane fails the lane test; dropping (?!\w) fails the whole-word test). Not a security boundary: a look choice worded as Yes/No outside a lane passes with no pictures; the owner still sees its text.
+
+signed-by: Security
