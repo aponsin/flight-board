@@ -1,0 +1,2 @@
+PASS (Quick) #C1240 watch-survives-new-pin, line from 563dad2d3b186aecc9d1972390573bd63f51544d: suite 3195 pass 0 fail at b2e59e7f; real-install probe (two full copies of the branch under a temp HOME) follows A->B and A->B->A->B quietly, launcher stays up, no stale line; merge clean, continues main; mutation check pass (launcher loop removed: killed). LOW: the real child's quiet exit is tested only by a source regex (the launcher tests use fake copies).
+signed-by: Checker 2
