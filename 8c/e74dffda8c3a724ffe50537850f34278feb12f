@@ -1,2 +1,2 @@
-PASS (Quick) #C1241 board-sending-state-on-asks-v2, line from 563dad2d3b186aecc9d1972390573bd63f51544d: straight re-cut with no merge; tree identical to 0c5dd3b4 (signed PASS), each commit's tree matches the signed one (57c9677f = 9a55f64a, 7121bea1 = b2e59e7f, WIPs change nothing).
+PASS (Quick) #C1241 board-sending-state-on-asks-v2, line from 7121bea18a5eaba03680d5223b42d3548e322b6f: straight re-cut, tree identical to 0c5dd3b4 (signed PASS); 57c9677f = 9a55f64a's tree, WIP 83339ad9 changes nothing.
 signed-by: Checker 2
