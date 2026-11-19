@@ -1,0 +1,7 @@
+SECURE
+
+#C1285: gate/first-push.mjs (PreToolUse hook) refuses a Bash git commit whose typed Board-Id value is outside BOARD_ID_SHAPE. Text only: no git or shell call, no file read, no new output path; it only adds a refusal, returned before the existing checks, which still run when it allows; every error allows. Regexes are linear-ish on command text. Reason echoes at most 40 chars of the value back to the agent only.
+
+INFO (no action needed): (1) BOARD_ID_SHAPE is a copy of collector/board-id.mjs's; importing it would keep them from drifting. (2) The match is on the whole command, so a commit message that quotes a bad example in prose ("said Board-Id: C1274") or a non-commit line containing both git and commit is refused too; fails closed, a rephrase gets past it.
+
+signed-by: Security
