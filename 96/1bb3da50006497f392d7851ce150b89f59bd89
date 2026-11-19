@@ -1,0 +1,2 @@
+PASS Quick #C1283, line from 937daa1167afae9791d91f11cdb25ee04ee6ec75: npm test 3261 pass 0 fail; mutation check pass (pill removed from the group summary: tests 1 and 2 fail); newPill draws nothing at zero and takes only a number; cards outside a group already show the pill on their visible name line, so groups were the only gap. Stacked on #C1279 c59d0ac8 (PASS), reviewed only 961bb3da.
+signed-by: Checker 2
