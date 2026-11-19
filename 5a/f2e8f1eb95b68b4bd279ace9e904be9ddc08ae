@@ -1,0 +1,5 @@
+SECURE
+
+#C1287 re-cut (Checker 2 F1 on e6de6cc9): countsNew compares m.from to LEAD_ROLE (existing const from CONFIG.gate.managerRole, default Manager, already used by teamOnly) instead of the literal Manager; plus a test. Display filter only. No data, route, permission or Worker change.
+
+signed-by: Security
