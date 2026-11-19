@@ -440,6 +440,15 @@ button.sbtn.sbtn:disabled{opacity:1}
 .opt-line>button.opt{justify-self:start}
 /* On a phone a button sits closer to its own picture than to the next option's (Designer on 90bb412). */
 @media (max-width:760px){.opt-line{grid-template-columns:minmax(0,1fr);row-gap:6px}.opt-line+.opt-line{margin-top:12px}}
+/* #C1268 (the owner: the options and their pictures stacked and took too much room): side by side on a laptop, two to four in a row at equal widths, each picture
+   scaled to its column with its button under it; three or four drop to two a row below 1000 px, and a phone stacks them as before. */
+.opt-grid{display:grid;grid-template-columns:repeat(var(--n,1),minmax(0,1fr));gap:12px;flex:1 0 100%;align-items:start}
+.opt-grid>.opt-line{grid-template-columns:minmax(0,1fr);row-gap:6px}
+.opt-grid>.opt-line+.opt-line{margin-top:0}
+.opt-grid>.opt-line>button.opt{justify-self:stretch}
+.opt-grid>button.opt{width:100%}
+@media (max-width:1000px){.opt-grid.many{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){.opt-grid,.opt-grid.many{grid-template-columns:minmax(0,1fr)}}
 .thumb{display:flex;flex-direction:column;gap:4px;width:150px;max-width:45%;padding:0;border:1px solid var(--line);border-radius:8px;background:var(--panel);cursor:zoom-in;overflow:hidden;text-align:left;color:var(--ink)}
 .thumb img{display:block;width:100%;height:100px;object-fit:cover;object-position:top}
 .thumb span{font-size:.75rem;padding:0 6px 6px;color:var(--muted)}
@@ -1299,8 +1308,9 @@ function replyBox(w){
   const id=esc(w.id),narrow=NARROW(),opts=w.kind==="decision"&&Array.isArray(w.options)&&w.options.length;
   const b=(act,cls,label,x="")=>`<button type="button"${cls?` class="${cls}"`:""} data-act="${act}" data-id="${id}"${x}>${label}</button>`;
   const [choices,ph,act,label,hint]=opts
-    ?[w.options.map(o=>{const pics=optShots(w,o.key),btn=`<button type="button" class="opt${o.recommended?" rec":""}" data-act="chose" data-choice="${esc(o.key)}" data-id="${id}"><b>${esc(o.key)}</b> ${esc(o.label)}${o.recommended?' <span class="recl">Manager\'s pick</span>':""}</button>`;
-        return pics?`<div class="opt-line"><div class="opt-shots">${pics}</div>${btn}</div>`:btn}).join("")+`<button type="button" class="other" data-focus="note-${id}">Something else (say what)</button>`,
+    // #C1268: the options sit in one grid, side by side at equal widths (CSS: .opt-grid), Something else after it.
+    ?[`<div class="opt-grid${w.options.length>2?" many":""}" style="--n:${Math.min(w.options.length,4)}">${w.options.map(o=>{const pics=optShots(w,o.key),btn=`<button type="button" class="opt${o.recommended?" rec":""}" data-act="chose" data-choice="${esc(o.key)}" data-id="${id}"><b>${esc(o.key)}</b> ${esc(o.label)}${o.recommended?' <span class="recl">Manager\'s pick</span>':""}</button>`;
+        return pics?`<div class="opt-line"><div class="opt-shots">${pics}</div>${btn}</div>`:btn}).join("")}</div>`+`<button type="button" class="other" data-focus="note-${id}">Something else (say what)</button>`,
       narrow?"Anything to add?":"Anything to add? (optional)","other","Send as something else",CMP_HINT.other]
     :w.kind==="decision"?[b("ok","ok","OK")+b("change","","Change something"),narrow?"What should change?":"What should change? (optional)","change","Send",CMP_HINT.change]
     :w.kind==="answer"?[b("ack","ok","Ack"),narrow?"Reply":"Reply to Manager","ack","Send",CMP_HINT.send]
