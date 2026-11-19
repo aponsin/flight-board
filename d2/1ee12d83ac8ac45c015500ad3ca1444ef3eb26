@@ -1,0 +1,5 @@
+SECURE
+
+#C1263: three CSS rules in page/board.template.html (.i-thread summary dots inline, no background) plus a static test reading the template. No script, data, route, permission or Worker change.
+
+signed-by: Security
