@@ -1,0 +1,5 @@
+SECURE
+
+#C1279: the stuck tile needs onN !== null && onN.length === 0; slowTag now also on 'here' tiles and wraps fixed words in <span class="sl">, whose only value is the computed number x; phone CSS hides .sl. No input, git, network, route, permission or Worker change.
+
+signed-by: Security
