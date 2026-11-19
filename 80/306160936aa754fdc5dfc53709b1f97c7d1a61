@@ -1,0 +1,5 @@
+SECURE
+
+#C1266: per-thread read times in this browser's localStorage (flight-board-thread-seen: {base, t:{thread id: ms}}, capped at 300, parsed in try, shape-checked, numbers through num()). Nothing goes to the store or the Worker. The pill text is an integer count; the new tag is a fixed string; message text still goes through askText and esc. DATA.md row 20 says it is per-device and browser-only. No route, permission, hook script or Worker change.
+
+signed-by: Security
