@@ -1,0 +1,5 @@
+SECURE
+
+#C1240, by diff on #C1239's signed bed0c76c. scripts/wake-watch.mjs --pinned becomes a launcher that stays up: it only ever spawns pinnedLaunch's file (<install root>/<the one pinned sha>/scripts/wake-watch.mjs, unchanged), as argv with no shell, re-reading settings.json after each child; the child exits 75 quietly on a moved pin only when WAKE_WATCH_FOLLOW=1; more than 3 pin changes in 60 s end it with a line; a DISPATCH or any other exit ends it as before; a watch without --pinned keeps the stale line. INFO: WAKE_WATCH_FOLLOW=1 in a caller's own environment skips the --pinned hand-over; only someone who already runs node as the user can set it. Tests 26/26 (follow-pin, stale-pin, ops-knobs-lint, morning-watch-reads-pin). Mutation: disabling the FOLLOW_MAX loop guard fails the followStep test.
+
+signed-by: Security
