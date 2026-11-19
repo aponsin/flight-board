@@ -1,0 +1,5 @@
+SECURE
+
+#C1254 fix (Checker 2's F1): postMessage passes lookContext (probe lanes + the thread's card owner) for a decision with options; messageExtrasRefusal sets noYesNo on a visual lane's card, so the Yes/No exemption is off there. Only tightens 482ee293. Options always need kind decision, so the gate covers every post with options. Mutation check: pass (noYesNo forced false fails the lane-thread test).
+
+signed-by: Security
