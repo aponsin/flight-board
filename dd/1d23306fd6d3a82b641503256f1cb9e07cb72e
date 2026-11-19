@@ -1,0 +1,5 @@
+SECURE
+
+#C1284 re-cut (Checker 2 F1, Designer F1): openDecision now also returns null when threadResolved(id), a later message has resolved set, or the owner's later message is a pick or ownerCloser; both are existing read-only predicates. It only shows buttons and the pin in fewer cases. Two CSS lines (.recl hover colour, .t-pin .t-new). No input, output, data, route, permission or Worker change.
+
+signed-by: Security
