@@ -1,0 +1,2 @@
+PASS Quick #C1275, line from 80306160936aa754fdc5dfc53709b1f97c7d1a61: npm test 3247 pass 0 fail; foreignHead only applies to branch-name tips (trailer-matched tips always name the card); mutation check pass (drop foreignHead: test 1 fails; drop the card-id guard: tests 2 and 3 fail). Stacked on #C1271 bb21329e, reviewed only ad48d384.
+signed-by: Checker 2
