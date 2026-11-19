@@ -73,7 +73,8 @@ test("a paused card that nobody started reads Paused, not Queued (Checker LOW: t
 test("stuck is twice the phase's usual time", () => {
   const done = (id, ms) => ({ id, status: "done", size: "S", doneAt: NOW - H, phaseLog: [{ phase: "build", start: NOW - 9 * H, end: NOW - 9 * H + ms }] });
   const hist = [done("d1", H), done("d2", H), done("d3", H)];
-  const over = (hrs) => tile(html(board(base, { probe: reading("working"), done: hist, steps: [step(ID, "build", "Builder", "start", NOW - hrs * H)] })), "Build");
+  // #C1267: stuck is the dark tile and only when nobody is on the step; an agent working slowly stays blue (tests/tile-states-visible.test.mjs).
+  const over = (hrs) => tile(html(board(base, { probe: reading("idle"), done: hist, steps: [step(ID, "build", "Builder", "start", NOW - hrs * H)] })), "Build");
   assert.doesNotMatch(over(1.5).cls, /stuck/, "1.5 times the usual: not stuck");
   assert.match(over(2.5).cls, /stuck/, "2.5 times the usual: stuck");
 });
