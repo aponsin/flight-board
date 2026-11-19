@@ -285,6 +285,9 @@ button.sbtn.sbtn:disabled{opacity:1}
 .sdots i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:pulse 1.2s ease-in-out infinite}
 .sdots i:nth-of-type(2){animation-delay:.2s}.sdots i:nth-of-type(3){animation-delay:.4s}
 @media (prefers-reduced-motion:reduce){.sdots i{animation:none}}
+/* #C1263 (the owner: a stray marker over a grey box of dots, with "Thread (7)" stacked under it): on a card the thread's fold is one line of small text beside Details, so while its answer is on its way the dots sit inline before the label, in no box, and the label stays. */
+.i-thread>summary>.sdots{display:inline-flex;vertical-align:middle;padding:0 6px 0 0;min-height:0}
+.i-thread.sending>summary{background:none}
 .t-badge{font-size:.75rem;border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin-left:6px;color:var(--muted);white-space:nowrap}.t-badge.you{color:var(--bad);border-color:var(--bad)}.t-badge.open{color:var(--accent);border-color:var(--accent)}.t-badge.agent{color:var(--warn);border-color:var(--warn)}
 /* The owner's word unanswered 5+ minutes (#C297): the lead owes it now. */
 .late{display:inline-block;font:600 .75rem var(--mono);color:var(--bad);margin-left:6px;white-space:nowrap}
