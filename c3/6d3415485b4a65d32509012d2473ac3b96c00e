@@ -1,0 +1,2 @@
+PASS #C1254 look-guard-feature-words, line from 7651561f4b2c0819c622ed5330036b702383d7d3: F1 fixed; postMessage passes the card's lane context, a Yes/No look decision on a lane card's thread is refused again (my probe), card outside lanes and free threads keep the exemption; suite 3208 pass 0 fail; mutant (drop !noYesNo) killed by the new test
+signed-by: Checker 2
