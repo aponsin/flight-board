@@ -1,0 +1,5 @@
+SECURE
+
+#C1244, read as a sign-off bypass check. groupFacts.line() also accepts a base before the fork only when merge-base(main, tip) == rev-parse(main), so main is on the tip's line, AND main's own commit passes signed(): both roles' word, from their own notes in origin's refs, with no line-note inheritance and no refs/notes/landed. What a line note covers is unchanged: base..tip, which the signer named and attested on that exact tip. The commits that need coverage are still main..tip. Base must be an ancestor of main and of the tip; a merge in base..tip refuses; GROUP_MAX now counts the landed part too (stricter). A diverged or unsigned main keeps the old rule, so it fails closed. Tests group-sign 16/16. Mutations: dropping signed(main) fails 'main's commit has no sign-off'; dropping fork===main fails 'a diverged main keeps the old rule'.
+
+signed-by: Security
