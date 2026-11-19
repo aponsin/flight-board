@@ -53,6 +53,11 @@ export const LOOK_WORDS = ["mock-up", "mockup", "screenshot", "layout", "band", 
 const LOOK_RE = new RegExp("(?<![A-Za-z])(?:" + LOOK_WORDS.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+")).join("|") + ")(?:e?s)?(?![A-Za-z])", "i");
 export const isLookText = (...texts) => texts.some((t) => typeof t === "string" && LOOK_RE.test(t));
 const NO_PICTURE = /^(?:something else|not now)[.!]?$/i;
+// #C1254 (the owner on #T2106,"add a copy-and-open button for Google Voice texts?"): a feature yes/no that names a look word ("button") was held to a
+// picture per option and refused, so he got a plain ask with no buttons. An option that starts "Yes" or "No" as a word ("Yes, add the button",
+// "No, leave it") answers a yes/no and shows no look, so it needs no picture. Not on a visual lane's card (a lane's Decision is a look one
+// whatever its words say, #C956); and a real look choice ("A: blue band", "B: green band") names its options by their looks, so it still needs them.
+const YES_NO = /^(?:yes|no)(?!\w)/i;
 // options: [{ key, label }]; shots: the screenshot strings. null when fine, else the refusal naming the options without a picture.
 // #C956: lane is true when the Decision's card is built in one of the team's visual lanes (config decisions.visualLanes, which the probe posts
 // as evidence `look`): such a Decision is a look one whatever its words say, as the old board's gate held.
@@ -61,7 +66,8 @@ export const inVisualLane = (owner, lanes) => typeof owner === "string" && Array
 export function lookRefusal({ texts, options, shots, lane = false }) {
   if (!lane && !isLookText(...texts)) return null;
   const shown = new Set((Array.isArray(shots) ? shots : []).map((s) => /^\s*[A-Za-z0-9_-]{16,64}\s+([A-D]):/.exec(String(s ?? ""))?.[1]).filter(Boolean));
-  const missing = (options ?? []).filter((o) => o && !NO_PICTURE.test(String(o.label ?? "").trim()) && !shown.has(o.key)).map((o) => o.key);
+  const bare = (o) => { const l = String(o.label ?? "").trim(); return NO_PICTURE.test(l) || (!lane && YES_NO.test(l)); };
+  const missing = (options ?? []).filter((o) => o && !bare(o) && !shown.has(o.key)).map((o) => o.key);
   return missing.length ? refuse("look-needs-screenshots", `a look decision needs a screenshot for each option (missing: ${missing.join(", ")}); add each as "<file id> A: label" in screenshots, the letter being the option's`) : null;
 }
 
