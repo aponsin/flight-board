@@ -1,0 +1,5 @@
+SECURE
+
+#C1271: pruning the browser-only read store past 300 now raises base to the newest dropped time (s.t values are numbers written by markThreadSeen), plus grid CSS for the option rows. No data written beyond this browser's localStorage; no route, permission or Worker change. a35b89b3 and cad798e7 (#C1267) were already noted SECURE.
+
+signed-by: Security
