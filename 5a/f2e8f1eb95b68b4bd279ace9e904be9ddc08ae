@@ -1,0 +1,2 @@
+PASS Quick #C1287, line from 937daa1167afae9791d91f11cdb25ee04ee6ec75: F1 from e6de6cc9 fixed (countsNew uses LEAD_ROLE; the new test loads the page with gate.managerRole 'Lead' through loadNames' page argument). npm test 3271 pass 0 fail; mutation check pass ("Manager" put back: the lead-role test fails). Reviewed e6de6cc9..5af2e8f1.
+signed-by: Checker 2
