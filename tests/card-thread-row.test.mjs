@@ -9,7 +9,7 @@ const html = readFileSync(new URL("../page/board.template.html", import.meta.url
 const css = html.slice(html.indexOf("<style"), html.indexOf("</style>"));
 
 // The card's thread fold, as the template builds it (the line that makes `const thread=`).
-const threadLine = html.split("\n").find((l) => l.includes('const thread=`<details class="i-thread"'));
+const threadLine = html.split("\n").find((l) => l.includes('const thread=`<details class="i-thread'));
 const detLine = html.split("\n").find((l) => l.includes('<details class="i-det"'));
 
 test("the row still shows its label: Thread (N), Thread, or Start a thread, in the fold's own summary", () => {
