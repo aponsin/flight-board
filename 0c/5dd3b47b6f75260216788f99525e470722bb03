@@ -1,0 +1,5 @@
+SECURE
+
+#C1241, by diff on the signed 9a55f64a (one commit). Designer's two CSS rules: button.sbtn.sbtn:disabled{opacity:1} and .td-btns button.td-start.sbtn{background:var(--accent-soft)}, an existing token, no url() or import; the test asserts both and keeps the no-own-colour check on the rest. No script, sink, network or data change; audit stays at 42. Tests: sending-state 16/16, hostile-text 8/8.
+
+signed-by: Security
