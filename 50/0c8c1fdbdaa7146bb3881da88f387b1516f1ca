@@ -1,0 +1,5 @@
+SECURE
+
+#C1280: collector/state.mjs deployed also needs versionAfter (the existing helper: git log with argument arrays, the repo config's versionPattern) to find a version commit between the head and live, so a card reads live only once its version commit exists. It only delays the live reading; it grants no sign-off or ship. No Worker, hook, route or permission change.
+
+signed-by: Security
