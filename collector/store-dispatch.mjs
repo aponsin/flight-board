@@ -93,7 +93,9 @@ export function turnsOf(card, e, ctx = {}) {
   // #C1228 (11-18: #C1225 was woken on every re-arm with "nothing pushed" while its tip was pushed and signed; stack-ready had refused it for a trailer): a
   // build turn for a tip that is pushed (not a WIP start push) and that no READY covers says so, and names the commit, so the line asks for the signal.
   const unready = ctx.stackOn === true && e?.stackHold === true && e?.wipHead !== true && sha ? { sha, ...where, ready: true } : {};
-  const owner = { role: card.owner_role, phase: "build", step: "build", ...(branch ? { stack: branch } : {}), ...mode, ...unready };
+  // #C1239: a pushed tip whose Board-Id line is not git's trailer (the line sits in a paragraph of its own): the board cannot match the card to it, so the build turn says what is wrong with the commit.
+  const misplaced = e?.trailerMisplaced === true && e?.wipHead !== true && sha ? { sha, ...where, trailer: true } : {};
+  const owner = { role: card.owner_role, phase: "build", step: "build", ...(branch ? { stack: branch } : {}), ...mode, ...unready, ...misplaced };
   if (stack?.outside === true && e?.onMain !== true) return [{ role: card.owner_role, phase: "build", step: "outside", ...(branch ? { stack: branch } : {}), ...mode }];
   // #C981: a rework the store read with no reason attached (evidence `rework`; the store clears it once a reason is set) is the owner's turn
   // first: until then every other write to the card is refused, so nothing else on it can move.

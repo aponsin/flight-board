@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { checkConfig, fullConfig, boardId, TASK_ID, MODEL_WORD, EFFORT_WORD } from "../scripts/config.mjs";
 import { STATE_VERSION, stateErrors, pickState, toolClass, CARD_ID, CARD_ID_MAX, ROLE, MAX_BYTES, MAX_CARDS, MAX_RELEASES, PUBLISHED_FILE, STORE_CARDS_FILE } from "./state-schema.mjs";
 import { shippedBase, fetchBranches } from "./after-ship.mjs";
-import { boardIdOf, boardIdsOf } from "./board-id.mjs";
+import { boardIdOf, boardIdsOf, misplacedBoardId } from "./board-id.mjs";
 import { readStack, stackFields, STACK_HOLD_FROM } from "./stack.mjs";
 import { reviewsFromPaths, pathPhases } from "./review-paths.mjs";
 import { countFindings } from "./findings-count.mjs";
@@ -775,6 +775,8 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   // (#C1160 reads it above, before the phase.)
   const extra = {
     ...(wipHead ? { wipHead: true } : {}),
+    // #C1239: the tip's message names the card in a Board-Id line that is not git's trailer (the line sits in a paragraph of its own): the board cannot match it, and the builder is told so.
+    ...(!onMain && !wipHead && !wipWord && misplacedBoardId(head.message ?? tip.message, card.id) ? { trailerMisplaced: true } : {}),
     ...(Object.keys(reviews).length ? { reviews } : {}),
     ...(findings.length ? { findings } : {}),
     ...(Object.keys(issueCounts).length ? { issueCounts } : {}),
@@ -890,6 +892,34 @@ export function mainEvidence(repo, card) {
   const ship = repo.versionPattern ? mine.filter((l) => new RegExp(repo.versionPattern).test(l.subject) && Number.isInteger(l.at) && l.at >= 1577836800000 && l.at <= 4102444800000).map((l) => l.at) : [];
   return { workSeen: true, ...(ship.length ? { shippedAt: Math.max(...ship) } : {}) };
 }
+// #C1239 (11-18, #C1236: re-cut and shipped as "v1.217.1: admin/c1236-demo-map@7f395db4", its commits without a git trailer, so no trailer search on main could find them and the old branch on origin held the
+// card at build "nothing pushed" for good): a ship commit on main (the repository's shippedPattern, "<branch>@<sha>") that cites a branch of THIS card, by its id as the branch's last part or by its number (the
+// c<num> the branch is named for), names the commit that shipped. That commit, when it is on main, is the card's head { branch: main, sha, at, message }. Read only for a card whose branch tips all lack its trailer
+// (found by number, or none at all), never to override a tip that carries the card's own Board-Id. The branch name and the sha come from a ship line on main and go to git as plain arguments after the checks.
+export function shipCitedHead(repo, card) {
+  if (!repo || typeof repo.git !== "function" || !repo.shippedPattern || !Number.isInteger(card.num) || card.num < 1 || card.num > 1e6) return null;
+  let re;
+  try { re = new RegExp(repo.shippedPattern, "g"); } catch { return null; }
+  const mainRef = `${repo.remote}/${repo.main}`;
+  let subjects = [];
+  try { subjects = String(repo.git(["log", "--first-parent", "-400", "--format=%s", mainRef])).split("\n"); } catch { return null; }
+  for (const subject of subjects) {
+    if (subject.length > 400) continue;
+    for (const m of subject.matchAll(re)) {
+      const branch = m[1], sha = m[2];
+      if (!/^[A-Za-z0-9._\/-]{1,100}$/.test(String(branch)) || String(branch).startsWith("-") || !/^[0-9a-f]{7,40}$/.test(String(sha))) continue;
+      if (String(branch).split("/").pop() !== card.id && branchNum(branch) !== card.num) continue;
+      let full = "";
+      try { full = String(repo.git(["rev-parse", "--verify", "--quiet", `${sha}^{commit}`])).trim(); } catch { continue; }
+      if (!/^[0-9a-f]{40}$/.test(full) || !ok(() => repo.git(["merge-base", "--is-ancestor", full, mainRef]))) continue;
+      try {
+        const [at, ...rest] = String(repo.git(["log", "-1", "--format=%ct%x1f%B", full])).split("\x1f");
+        return { branch: repo.main, sha: full, at: Number(at) * 1000, message: rest.join("\x1f") };
+      } catch { continue; }
+    }
+  }
+  return null;
+}
 // opts (#C859 slice 3, stack mode): head { branch, sha, at, message } is the card's commit found by its trailer on a stack branch, used when
 // neither its branch name nor a branch tip names it; cover is the full sha of the stack tip, whose notes count for the card (design 4).
 export function cardState(card, repo, config, now, opts = {}) {
@@ -902,6 +932,8 @@ export function cardState(card, repo, config, now, opts = {}) {
   // shows it queued or stalled, because the store carries none of the Collector's readings.
   if (!tips.length && opts.head) tips = [opts.head];
   if (!tips.length && typeof repo.git === "function") { const t = trailerHead(repo, card.id); if (t) tips = [t]; }
+  // #C1239: no branch tip carries the card's own trailer (found by number only, or nothing found): a ship commit on main that cites a branch of the card names the commit that shipped.
+  if (typeof repo.git === "function" && tips.every((t) => boardIdOf(t.message) !== card.id)) { const cited = shipCitedHead(repo, card); if (cited) tips = [cited]; }
   if (tips[0]) tips = [ownHead(repo, card, tips[0]), ...tips.slice(1)];
   let tip = tips[0];
   if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };

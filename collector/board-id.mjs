@@ -27,3 +27,17 @@ export function boardIdsOf(message) {
 
 // The card a commit message names: git's last Board-Id trailer, or null.
 export const boardIdOf = (message) => boardIdsOf(message).at(-1) ?? null;
+
+// #C1239 (11-18, #C1236: its Board-Id sat in a paragraph of its own, above Co-Authored-By, so git saw no trailer and the board read the card by its branch number only: build, signed [], "nothing pushed",
+// even after it shipped). A Board-Id line anywhere in the message, as a card id, for ONE use: telling the builder the line is there but is not a trailer. It never matches a card, lights a phase or
+// counts for a landing; only boardIdsOf (git's reading) does.
+export function looseBoardIdsOf(message) {
+  const out = [];
+  for (const line of String(message ?? "").replace(/\r\n?/g, "\n").split("\n")) {
+    const m = /^Board-Id[ \t]*:[ \t]*(.*?)[ \t]*$/i.exec(line);
+    if (m && BOARD_ID_SHAPE.test(m[1])) out.push(m[1]);
+  }
+  return out;
+}
+// True when the message names the card in a Board-Id line that git does not read as a trailer.
+export const misplacedBoardId = (message, id) => typeof id === "string" && looseBoardIdsOf(message).includes(id) && !boardIdsOf(message).includes(id);
