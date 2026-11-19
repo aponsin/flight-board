@@ -1,0 +1,2 @@
+PASS (Quick) #C1241 board-sending-state-on-asks, line from b2e59e7fc6944807dbeb03b5bbbedcb2e5033272: asks, the new-thread form and Ping, Check, Let's start, tile refresh all mark before the first await and clear on every failure path; suite 3201 pass 0 fail at 9a55f64a; mutation check pass (button state ignoring its thread's Manager word: killed; redraw not drawing button dots: killed). Look left to Designer; not seen in a real browser.
+signed-by: Checker 2
