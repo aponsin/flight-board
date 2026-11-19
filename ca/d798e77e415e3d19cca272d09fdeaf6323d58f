@@ -1,0 +1,5 @@
+SECURE
+
+#C1267: tile state CSS (stripes, the dark stuck tile) and slowTag, whose only interpolation is a number (ms / median, rounded; overUsual requires a median > 0). The class choice reads existing probe fields. No data, route, permission or Worker change.
+
+signed-by: Security
