@@ -99,10 +99,30 @@ function gitHome(dir) {
 }
 const namedCheckout = (dir, checkouts) => { const h = gitHome(dir); return h && checkouts.some((c) => h.common === resolve(c, ".git")) ? h.top : null; };
 
+// #C1285 (11-19: a commit said "Board-Id: C1274", not the card's id, so once its branches were deleted nothing could find the card and the board kept showing a ship in progress): a git commit whose
+// message, as typed in the command, has a Board-Id trailer that is not a valid card id (BOARD_ID_SHAPE in collector/board-id.mjs, the shape the landing job reads: lowercase letters, digits and hyphens)
+// is refused before it is made, naming the right form. Text only (no git runs), so it holds in any repository, the board's own or a product's. A message read from a file (-F) or built by a shell
+// substitution cannot be seen and is let through; the hook never blocks on its own doubt.
+export const BOARD_ID_SHAPE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+export const badBoardIdReason = (value) => `Board-Id must be the card's id: lowercase letters, digits and hyphens, as the board shows it (for example "picture-option-looks-clickable"), not "${String(value).slice(0, 40)}". A commit with any other value cannot be found once its branch is deleted. Fix the trailer in the commit message and commit again. (#C1285)`;
+export function boardIdRefusal(command) {
+  try {
+    const text = String(command ?? "");
+    if (!/\bgit\b[^\n]*?\bcommit\b/.test(text)) return null;
+    for (const m of text.matchAll(/Board-Id[ \t]*:[ \t]*([^\s"'`\\]*)/gi)) {
+      const value = m[1];
+      if (!value || /[<>$(){}]/.test(value)) continue; // an empty value (a message built elsewhere), a placeholder or a shell expansion: not read
+      if (!BOARD_ID_SHAPE.test(value)) return badBoardIdReason(value);
+    }
+  } catch { /* every doubt allows */ }
+  return null;
+}
+
 // The refusal text for one tool call ({ tool_name, tool_input, cwd }), or null.
 export function refusal(call, git = realGit, checkouts = []) {
   try {
     const tool = call?.tool_name, input = call?.tool_input ?? {}, cwd = typeof call?.cwd === "string" && call.cwd ? call.cwd : process.cwd();
+    if (tool === "Bash") { const bad = boardIdRefusal(input.command); if (bad) return bad; }
     let targets = [];
     if (FILE_TOOLS.has(tool)) targets = [input.file_path ?? input.notebook_path].filter((p) => typeof p === "string" && p);
     else if (tool === "Bash") targets = bashTargets(input.command);
