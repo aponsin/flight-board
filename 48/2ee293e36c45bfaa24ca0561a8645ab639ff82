@@ -1,2 +1,2 @@
-FINDINGS #C1254 look-guard-feature-words F1: the lane hold is lost on thread posts. messageExtrasRefusal calls lookRefusal with no lane, so a Yes/No look decision posted into a visual lane card's thread with no pictures (design-card, 'Make the band blue?', 'Yes, blue band'/'No, keep green') is now accepted; on main it was refused. Contradicts the CHANGELOG's 'every Decision on a visual lane's card, a Yes/No one too'. Suite 3207 pass 0 fail.
+PASS #C1254 look-guard-feature-words, line from 7651561f4b2c0819c622ed5330036b702383d7d3: covered by tip c36d3415, which fixes this commit's F1 (thread posts on a lane card kept the Yes/No exemption)
 signed-by: Checker 2
