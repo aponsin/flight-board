@@ -1,0 +1,5 @@
+SECURE
+
+#C1241 re-cut: range-diff shows it equal to the signed 0c5dd3b4, and the tree equals 0c5dd3b4 (git diff empty).
+
+signed-by: Security
