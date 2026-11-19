@@ -1,0 +1,5 @@
+SECURE
+
+#C1277: a tile is blue only with a probe reading that shows an agent (agentOn needs onN !== null), plus one fixed evidence string in the escaped title. scripts/fixtures.mjs is test tooling: render takes an optional probe and feeds it through the page's own probeEvent in the vm; observe splits the title. No Worker, collector, hook, migration, route or permission change.
+
+signed-by: Security
