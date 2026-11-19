@@ -12,7 +12,14 @@ const fragment = script.slice(script.indexOf("const folds=new Map();"), script.i
 
 const OWNER = "Reader";
 function world({ live = true, seen = null, messages = [] } = {}) {
-  const w = { rows: [], live, seen, messages };
+  const w = { rows: [], btns: [], live, seen, messages };
+  // #C1241: a button the page marks by its data attributes (Ping, Check, Let's start, a context tile's refresh): a class and the dots as its child.
+  w.mkBtn = (dataset) => {
+    const cls = new Set(), btn = { dataset, cls, dots: null, adds: 0, classList: { contains: (c) => cls.has(c), toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) },
+      querySelector(s) { return s === ":scope>.sdots" ? btn.dots : null; },
+      appendChild(h) { btn.adds++; btn.dots = h; h.remove = () => { btn.dots = null; }; } };
+    w.btns.push(btn); return btn;
+  };
   const mkRow = (dataId, { card = false, open = true } = {}) => {
     // A summary lists its children: the type label (.kind) first, then the text; the dots go in before the label, never into the text (#C1235).
     const kind = card ? null : { cls: "kind" };
@@ -25,8 +32,8 @@ function world({ live = true, seen = null, messages = [] } = {}) {
     w.rows.push(row); return row;
   };
   w.mkRow = mkRow;
-  const ctx = { document: { querySelectorAll: () => w.rows, addEventListener() {}, createElement: () => ({ attrs: {}, children: [], className: "", textContent: "", setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.children.push(c); this.kids = (this.kids || 0) + 1; } }) },
-    liveOn: () => w.live, wakeSeen: () => w.seen, threadOf: () => w.messages, isT: (n) => typeof n === "number", OWNER, Map, Set, Date, Array, String };
+  const ctx = { document: { querySelectorAll: (sel) => (String(sel).startsWith("details") ? w.rows : w.btns), addEventListener() {}, createElement: () => ({ attrs: {}, children: [], className: "", textContent: "", setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.children.push(c); this.kids = (this.kids || 0) + 1; } }) },
+    liveOn: () => w.live, wakeSeen: () => w.seen, threadOf: (id) => w.messages.filter((m) => !m.thread || m.thread === id), isT: (n) => typeof n === "number", OWNER, Map, Set, Date, Array, String };
   vm.createContext(ctx); vm.runInContext(fragment, ctx);
   const run = (code) => vm.runInContext(code, ctx);
   return { w, run, mark: (id, at) => run(`markSending(${JSON.stringify(id)},${at})`), apply: (now) => run(`applySending(${now})`), folds: () => run("folds"), size: () => run("sending.size") };
@@ -79,7 +86,7 @@ test("with the watch not live nothing is taken, and after ten minutes the state 
 });
 
 test("every answer button marks the thread before anything is awaited and clears it when the write fails", () => {
-  assert.match(script, /btn\.disabled=true;lastPing="";if\(key!=="new"\)markSending\(id\);const anchor=await prepAnchor\(btn\);/, "Send, and a decision option (through sendThread), not the new-thread form");
+  assert.match(script, /btn\.disabled=true;lastPing="";markSending\(id\);const anchor=await prepAnchor\(btn\);/, "Send, and a decision option (through sendThread), and the new-thread form too (#C1241)");
   assert.equal((script.match(/clearSending\(id,true\);restore\(\)/g) || []).length, 2, "both failures of a send clear it and open the thread");
   assert.match(script, /b\.disabled=true;markSending\(id\);try\{await applyWrites\(closeWrites\(id,Date\.now\(\)/, "Close");
   assert.match(script, /b\.disabled=true;markSending\(id\);try\{await applyWrites\(threadState\(id\)==="building"/, "Ack");
@@ -128,4 +135,83 @@ test("a screen reader hears Sending: the dots hold a visually hidden word, only 
   assert.ok(!/\.sdots i:nth-child/.test(css));
   t.w.seen = 1000; t.apply(2500);
   assert.ok(!row.summary.dots, "taken: the word goes with the dots and the type label is the title bar's first child again");
+});
+
+// ---- #C1241 (the owner: the same sending state everywhere his click goes to Manager, through one path) ----
+
+test("every ask reply marks the ask before anything is awaited and clears it, opening the ask again, when the write fails (Done, help, an option, Ack, a note's Send)", () => {
+  const body = script.slice(script.indexOf("async function onReply(e)"), script.indexOf("// Stores a reply's pending files"));
+  assert.match(body, /btn\.disabled=true; lastPing="";\s*\/\/[^\n]*\n\s*markSending\(id\);\s*const anchor=await prepAnchor\(btn\);/, "marked at the click, before the first await, after the empty-note checks");
+  assert.equal((body.match(/clearSending\(id,true\)/g) || []).length, 2, "a file that cannot be stored and a write that fails both open the ask again");
+  assert.match(body, /Not saved \("\+\(err&&err\.code\|\|"error"\)\+"\)/, "with its Not saved line");
+  assert.ok(body.indexOf("markSending(id)") > body.indexOf("Say in a few words what you'd like"), "a click that only asks for a note does not fold the ask");
+  // The ask row is the thread's row by id: the shared path folds, grays and puts the dots in the type label's place for every ask kind.
+  const t = world(); const asks = ["t2090", "t2091", "t2092"].map((id) => t.w.mkRow(id));
+  t.mark("t2090", 1000);
+  assert.ok(asks[0].cls.has("sending") && asks[0].open === false && asks[0].summary.dots && asks[0].summary.kids[0] === asks[0].summary.dots, "folded, gray, the dots first");
+  assert.ok(!asks[1].cls.has("sending") && asks[1].open === true, "another ask is left alone");
+  t.run('clearSending("t2090",true)');
+  assert.ok(asks[0].open === true && !asks[0].cls.has("sending") && !asks[0].summary.dots, "a failed save: open again, the type label back");
+  t.mark("t2090", 2000); asks[0].open = true; t.apply(3000);
+  assert.ok(asks[0].open === true && asks[0].cls.has("sending"), "it stays clickable: reopened by hand it stays open and gray");
+});
+
+test("the new-thread form is sent through the same path: its thread row gets the state when the write draws it", () => {
+  assert.match(script, /btn\.disabled=true;lastPing="";markSending\(id\);const anchor=await prepAnchor\(btn\);/);
+  assert.ok(!/if\(key!=="new"\)markSending/.test(script));
+  const t = world(); t.mark("t-1795000000000", 1000);
+  const drawn = t.w.mkRow("th-t-1795000000000"); t.apply(1500);
+  assert.ok(drawn.cls.has("sending") && drawn.summary.dots, "a row drawn after the click carries the state");
+  assert.equal(t.folds().get("t-1795000000000"), false, "and is drawn folded: the fold is remembered (restoreFolds)");
+});
+
+test("the buttons that are not a row to fold take the dots in place of their label: Ping, Check, Let's start, a context tile's refresh", () => {
+  const t = world();
+  const ping = t.w.mkBtn({ tping: "t5" }), check = t.w.mkBtn({ check: "card-a" }), start = t.w.mkBtn({ td: "start", id: "idea-1", coll: "ideas" }), ctx = t.w.mkBtn({ ctxref: "Builder" });
+  const move = t.w.mkBtn({ td: "up", id: "idea-1", coll: "ideas" }), other = t.w.mkBtn({ tping: "t6" });
+  assert.deepEqual([ping, check, start, ctx, move].map((b) => t.run(`btnKeyOf(${JSON.stringify({ dataset: b.dataset })})`)), ["b:ping:t5", "b:check:card-a", "b:start:idea-1", "b:ctx:Builder", null], "each control has its own key; the arrows have none");
+  for (const [key, b] of [["b:ping:t5", ping], ["b:check:card-a", check], ["b:start:idea-1", start], ["b:ctx:Builder", ctx]]) {
+    t.run(`markButton(${JSON.stringify(key)},1000)`);
+    assert.ok(b.cls.has("sbtn"), `${key}: the button wears the state`);
+    assert.ok(b.dots && b.dots.children.some((c) => c.className === "sr" && c.textContent === "Sending"), `${key}: the dots are in the button, with the word for a reader`);
+    assert.equal(b.dots.children.filter((c) => c.attrs["aria-hidden"] === "true").length, 3);
+  }
+  assert.ok(!move.cls.has("sbtn") && !other.cls.has("sbtn") && !other.dots, "another button is left alone");
+  t.apply(2000); t.apply(3000);
+  assert.equal(ping.adds, 1, "one dots element however many draws");
+  // A redraw makes a new button for the same control: it gets the state back.
+  const fresh = t.w.mkBtn({ tping: "t5" }); t.w.btns.splice(t.w.btns.indexOf(ping), 1); t.apply(4000);
+  assert.ok(fresh.cls.has("sbtn") && fresh.dots, "a redrawn button carries it");
+  // A failed write ends it at once.
+  t.run('clearSending("b:ping:t5")'); assert.ok(!fresh.cls.has("sbtn") && !fresh.dots, "the dots go, the label is back");
+});
+
+test("a button's state ends when Manager has taken it (the delivered time, or his word in the thread it writes to) or after ten minutes, and never folds a row", () => {
+  const t = world({ live: true, seen: 999, messages: [] }); const row = t.w.mkRow("th-t5"), ping = t.w.mkBtn({ tping: "t5" });
+  t.run('markButton("b:ping:t5",1000)');
+  assert.ok(ping.cls.has("sbtn") && row.open === true && !row.cls.has("sending"), "the thread row is not touched by a button's state");
+  t.w.seen = 1000; t.apply(1500); assert.ok(!ping.cls.has("sbtn") && t.size() === 0, "delivered at or after it: taken");
+  const u = world({ live: false, messages: [{ from: "Manager", at: 2000, thread: "card-a" }, { from: "Manager", at: 2000, thread: "elsewhere" }] }); const c = u.w.mkBtn({ check: "card-a" }), d = u.w.mkBtn({ check: "card-b" });
+  u.run('markButton("b:check:card-a",1000)'); u.run('markButton("b:check:card-b",1000)'); u.apply(1500);
+  assert.ok(!c.cls.has("sbtn"), "Manager wrote in that thread after it: taken");
+  assert.ok(d.cls.has("sbtn"), "his word in another thread does not end it");
+  assert.equal(u.run('btnThread("b:ctx:Builder")'), "ctx-Builder", "a tile's refresh writes to its ctx thread");
+  assert.equal(u.run('btnThread("b:start:idea-1")'), "idea-1"); assert.equal(u.run('btnThread("t5")'), null);
+  const v = world({ live: false }); const p = v.w.mkBtn({ tping: "t5" }); v.run('markButton("b:ping:t5",1000)');
+  v.apply(1000 + 9 * 60e3); assert.ok(p.cls.has("sbtn")); v.apply(1000 + 10 * 60e3 + 1); assert.ok(!p.cls.has("sbtn"), "ten minutes at most");
+});
+
+test("each button's handler marks before it awaits and clears when its write fails", () => {
+  assert.match(script, /markButton\(sk\);[^\n]*\n\s*lastPing="";const anchor=await prepAnchor\(b\),sent=await sendPing\(/, "Ping");
+  assert.equal((script.match(/clearSending\(sk\)/g) || []).length, 6, "Ping: not sent and refused (2); Check: failed and thrown (2); Let's start: failed (1); a tile's refresh: failed (1)");
+  assert.match(script, /const sk="b:check:"\+i\.id;if\(dbRef\)markButton\(sk\);\s*try\{if\(!await pressCheck\(i\.id\)\)clearSending\(sk\)\}/, "Check");
+  assert.match(script, /return !\(dbRef&&r\[1\]\.status==="rejected"\)\}/, "Check knows its write failed (it used to swallow it)");
+  assert.match(script, /const t=list\[i\],sk="b:start:"\+t\.id;markButton\(sk\);const anchor=await prepAnchor\(b\);/, "Let's start");
+  assert.match(script, /const sk="b:ctx:"\+n;markButton\(sk\);\s*const anchor=await prepAnchor\(r\);/, "a context tile's refresh");
+});
+
+test("the look of a button with the dots: its label hidden but kept (for width and a reader), the dots centred, same colours and pulse", () => {
+  assert.match(css, /\.sbtn\{position:relative;color:transparent!important\}/);
+  assert.match(css, /\.sbtn>\.sdots\{position:absolute;inset:0;justify-content:center;align-items:center;padding:0;min-height:0\}/);
+  assert.ok(!/\.sbtn[^{]*\{[^}]*(opacity|display:none|#[0-9a-fA-F]{3,6})/.test(css), "no colour of its own, never display:none (a reader skips it)");
 });

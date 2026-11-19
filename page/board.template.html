@@ -275,6 +275,9 @@ details.sending>summary>*{filter:grayscale(1)}
 details.sending>summary,details.sending>summary *{color:var(--muted)}
 details.sending>summary>.kind{display:none}
 .sdots{position:relative;display:flex;gap:4px;align-items:center;padding:2px 7px;min-height:1.4rem}
+/* #C1241: a button with no row to fold shows the dots in place of its label (the label's text stays for a reader and keeps the button's width), until Manager has taken it. */
+.sbtn{position:relative;color:transparent!important}
+.sbtn>.sdots{position:absolute;inset:0;justify-content:center;align-items:center;padding:0;min-height:0}
 .sdots .sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 .sdots i{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:pulse 1.2s ease-in-out infinite}
 .sdots i:nth-of-type(2){animation-delay:.2s}.sdots i:nth-of-type(3){animation-delay:.4s}
@@ -1313,10 +1316,12 @@ async function onReply(e){
   if(e.currentTarget.hasAttribute&&e.currentTarget.hasAttribute("data-csend")&&!note.trim()&&!files.length){msg.textContent="Write your note first, or pick a choice above.";focus();return}
   if((act==="help"||act==="change"||act==="other")&&!note.trim()&&!files.length){msg.textContent="Say in a few words what you'd like, in the box below, then press again.";focus();return}
   const btn=e.currentTarget; btn.disabled=true; lastPing="";
+  // #C1241: an ask is sent the way a thread is: it folds, grays and shows the dots at the click, and opens again with its "Not saved" line if the write fails.
+  markSending(id);
   const anchor=await prepAnchor(btn);
   const lp=longPaste(note,NOTE_MAX,Date.now(),!!assetsRef),unattach=attachLong(id,lp);
   // Files first: the reply is saved only once every file is stored, so Manager never gets a reply with a missing file.
-  let stored;try{stored=await storeFiles(id,msg)}catch(err){unattach();btn.disabled=false;msg.textContent=err.message;return}
+  let stored;try{stored=await storeFiles(id,msg)}catch(err){unattach();btn.disabled=false;clearSending(id,true);msg.textContent=err.message;return}
   const w=state.waiting.find(x=>x.id===id)||{id};
   const writes=replyWrites(w,act,lp.text,stored,Date.now(),choice,Math.random().toString(36).slice(2,8));
   const response=writes[0].data.response;
@@ -1328,7 +1333,7 @@ async function onReply(e){
     msg.textContent=(STORE?"Saved. Manager has it.":pinged?"Saved and sent to Manager.":"Saved. Not sent to Manager ("+lastPing+"); Manager picks it up at its next check.")+longLine(lp,NOTE_MAX);
     try{await dbRef.doc("waiting/"+id).update({ping:pinged?"sent":lastPing})}catch(_){}
     setTimeout(settleRedraw,2600)}
-  catch(err){unattach();btn.disabled=false;msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead."}
+  catch(err){unattach();btn.disabled=false;clearSending(id,true);msg.textContent="Not saved ("+(err&&err.code||"error")+"). Tell Manager in chat instead."}
 }
 // Stores a reply's pending files (key: its reply box) as board assets, one by one; throws with the line to show if one fails.
 async function storeFiles(key,msg){const files=pendingFiles.get(key)||[],stored=[];
@@ -1742,9 +1747,10 @@ function threadPingText(id,now){const t=threadOf(id),w=[...t].reverse().find(m=>
   return `Board ping [${id}]: waiting ${Math.floor((now-threadLast(id))/60000)} min: ${cut}`}
 function threadPingWrites(id,now){return /^[A-Za-z0-9_-]{1,100}$/.test(String(id))?[{op:"set",path:`threadPings/${id}`,data:{at:now}}]:[]}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-tping]");if(!b)return;e.preventDefault();e.stopPropagation();
-  const id=b.dataset.tping,now=Date.now();if(!dbRef||b.disabled||pingState(id,now).show!=="ping")return;b.disabled=true;
+  const id=b.dataset.tping,now=Date.now(),sk="b:ping:"+id;if(!dbRef||b.disabled||pingState(id,now).show!=="ping")return;b.disabled=true;
+  markButton(sk); // #C1241: the dots take the button's label until Manager has taken the ping
   lastPing="";const anchor=await prepAnchor(b),sent=await sendPing(anchor,threadPingText(id,now),id);
-  try{if(sent)await applyWrites(threadPingWrites(id,now));else{b.disabled=false;b.textContent="Not sent";b.title=lastPing||""}}catch(_){b.disabled=false;if(STORE){b.textContent="Not sent";b.title="the board refused the ping"}}});
+  try{if(sent)await applyWrites(threadPingWrites(id,now));else{b.disabled=false;clearSending(sk);b.textContent="Not sent";b.title=lastPing||""}}catch(_){b.disabled=false;clearSending(sk);if(STORE){b.textContent="Not sent";b.title="the board refused the ping"}}});
 // where: the thread's place on the page, for unique box ids. ask: a card's closed ask (#C288), drawn as the ask it was
 // (its own kind and colour, no "Reply to:"), with a hint that writing reopens it.
 // A thread's kind is its state now (#C364): Question, Building #C356, Answer, Live, Decision; a resolved one keeps the
@@ -1853,17 +1859,31 @@ function markSending(id,now=Date.now()){if(!id)return;sending.set(id,now);folds.
 function clearSending(id,reopen=false){sending.delete(id);
   if(reopen){folds.set(id,true);document.querySelectorAll("details[data-id]").forEach(d=>{if(foldKey(d)===id&&!d.open)d.open=true})}
   applySending()}
-function sendingTaken(id,at,now){const seen=liveOn(now)?wakeSeen():null;
-  return now-at>SENDING_MAX||seen!=null&&seen>=at||threadOf(id).some(m=>m&&m.from!==OWNER&&isT(m.at)&&m.at>at)}
+// #C1241 (the owner: the same everywhere his click goes to Manager): the one sending state serves asks (a reply, Done, help, an option, Ack: the ask's id is the key, as a thread's is), threads, a new thread, and the
+// buttons that are not a row to fold (Ping, ↻ Check, Let's start, a context tile's ↻): a button's key is "b:<kind>:<id>", it takes the dots in place of its label (`.sbtn`, CSS) until Manager has taken it, and nothing else on the
+// page changes. Every control marks before it awaits, clears when its write fails, and ends the same way (taken, or SENDING_MAX).
+const BTN_SELECTOR="[data-tping],[data-check],[data-td=start],[data-ctxref]";
+function btnKeyOf(b){const d=(b&&b.dataset)||{};return d.tping?"b:ping:"+d.tping:d.check?"b:check:"+d.check:d.td==="start"&&d.id?"b:start:"+d.id:d.ctxref?"b:ctx:"+d.ctxref:null}
+// The thread whose Manager word ends a button's state: the thread the button writes to (a context tile's is ctx-<role>).
+function btnThread(key){const m=/^b:(ping|check|start|ctx):(.+)$/.exec(String(key));return m?(m[1]==="ctx"?"ctx-"+m[2]:m[2]):null}
+function markButton(key,now=Date.now()){if(!key)return;sending.set(key,now);applySending(now)}
+function sendDots(){const h=document.createElement("span");h.className="sdots";const say=document.createElement("span");say.className="sr";say.textContent="Sending";h.appendChild(say);for(let k=0;k<3;k++){const dot=document.createElement("i");dot.setAttribute("aria-hidden","true");h.appendChild(dot)}return h}
+function sendingTaken(id,at,now){const seen=liveOn(now)?wakeSeen():null,tid=String(id).startsWith("b:")?btnThread(id):id;
+  return now-at>SENDING_MAX||seen!=null&&seen>=at||!!tid&&threadOf(tid).some(m=>m&&m.from!==OWNER&&isT(m.at)&&m.at>at)}
 function applySending(now=Date.now()){if(typeof document.querySelectorAll!=="function")return;
   for(const [id,at] of [...sending])if(sendingTaken(id,at,now))sending.delete(id);
   document.querySelectorAll("details[data-id]").forEach(d=>{const on=sending.has(foldKey(d));
     if(d.classList.contains("sending")!==on)d.classList.toggle("sending",on);
     const dots=d.querySelector(":scope>summary .sdots");
     // #C1235 (the owner: the dots under the line looked out of place): they take the type label's place (CSS hides the label while the thread is sending, so it is back when the class goes), and nothing is added under the line.
-    if(on&&!dots){const s=d.querySelector(":scope>summary");if(!s)return;const kind=s.querySelector(":scope>.kind"),h=document.createElement("span");h.className="sdots";const say=document.createElement("span");say.className="sr";say.textContent="Sending";h.appendChild(say);for(let k=0;k<3;k++){const dot=document.createElement("i");dot.setAttribute("aria-hidden","true");h.appendChild(dot)}
+    if(on&&!dots){const s=d.querySelector(":scope>summary");if(!s)return;const kind=s.querySelector(":scope>.kind"),h=sendDots();
       if(kind)s.insertBefore(h,kind);else s.insertBefore(h,s.firstChild||null)}
-    else if(!on&&dots)dots.remove()})}
+    else if(!on&&dots)dots.remove()});
+  // #C1241: a button with a state shows the dots in place of its label.
+  document.querySelectorAll(BTN_SELECTOR).forEach(b=>{const k=btnKeyOf(b),on=!!k&&sending.has(k);
+    if(b.classList.contains("sbtn")!==on)b.classList.toggle("sbtn",on);
+    const dots=b.querySelector(":scope>.sdots");
+    if(on&&!dots)b.appendChild(sendDots());else if(!on&&dots)dots.remove()})}
 // After a part is drawn again: each fold as the owner last left it, else as it was in that part (open: its data-ids).
 function restoreFolds(el,open){el.querySelectorAll("details[data-id]").forEach(d=>{const k=foldKey(d),want=folds.has(k)?folds.get(k):open.has(d.dataset.id);if(want!==d.open)d.open=want})}
 // #C1229: draws html into el, but leaves alone every top-level node whose html is what it drew last time, so a redraw never touches a row that did not
@@ -1972,7 +1992,8 @@ document.addEventListener("keydown",e=>{const b=e.target&&e.target.closest&&e.ta
 // key: where the box's files wait (a thread's reply box "th:<id>", the new thread's "new").
 async function sendThread(btn,id,text,msg,kind,restore,key="th:"+id){
   if(!dbRef){restore();msg.textContent="Can't save from here. Tell Manager in chat instead.";return}if(!text&&!(pendingFiles.get(key)||[]).length){msg.textContent="Write your message first.";return}
-  btn.disabled=true;lastPing="";if(key!=="new")markSending(id);const anchor=await prepAnchor(btn);
+  // #C1241: the new-thread form too: the thread's row is drawn by the write, and applySending puts the state on it.
+  btn.disabled=true;lastPing="";markSending(id);const anchor=await prepAnchor(btn);
   const lp=longPaste(text,MAXT,Date.now(),!!assetsRef),unattach=attachLong(key,lp);
   let stored;try{stored=await storeFiles(key,msg)}catch(err){unattach();btn.disabled=false;clearSending(id,true);restore();msg.textContent=err.message;return}
   const now=Date.now();
@@ -2251,12 +2272,13 @@ function checkHtml(i,now){if(!checkable(i,now))return "";const line=liveCard(i.i
 // #C589 (the owner): the button also writes "Status check please." into the card's thread as the owner's message, so the
 // write itself wakes the lead (wakeKind: an owner's message) and it checks the card and answers there.
 const CHECK_ASK="Status check please.";
-async function pressCheck(id,now=Date.now()){const ws=checkWrites(id,now);if(!ws.length)return;
+// #C1241: true when the write went (or there was none to make), false when it failed, so the button's sending state can end at once.
+async function pressCheck(id,now=Date.now()){const ws=checkWrites(id,now);if(!ws.length)return true;
   ws.push(...threadWrites(id,CHECK_ASK,[],now,undefined,Math.random().toString(36).slice(2,8)));checkPressed.add(id);
-  await Promise.allSettled([liveMcp?readLiveNow(liveMcp):null,dbRef?applyWrites(ws):null]);renderAll()}
+  const r=await Promise.allSettled([liveMcp?readLiveNow(liveMcp):null,dbRef?applyWrites(ws):null]);renderAll();return !(dbRef&&r[1].status==="rejected")}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-check]");if(!b||!dbRef&&!liveMcp)return;
-  const i=state.initiatives.find(x=>x.id===b.dataset.check);if(!i)return;b.disabled=true;
-  try{await pressCheck(i.id)}finally{b.disabled=false}});
+  const i=state.initiatives.find(x=>x.id===b.dataset.check);if(!i)return;b.disabled=true;const sk="b:check:"+i.id;if(dbRef)markButton(sk);
+  try{if(!await pressCheck(i.id))clearSending(sk)}catch(_){clearSending(sk)}finally{b.disabled=false}});
 function phaseTimes(log,doneAt){const t={};const l=(Array.isArray(log)?log:[]).filter(e=>e&&e.phase&&num(e.start)!=null).sort((a,b)=>a.start-b.start);
   l.forEach((e,k)=>{if(e.wait)return;const next=l[k+1];const en=num(e.end)??(next?next.start:(num(doneAt)??Date.now()));t[e.phase]=(t[e.phase]||0)+Math.max(0,en-e.start)});return t}
 // Waits: time an item sat queued (its agent was busy, wait:"busy") or gated (held by a decision, wait:"gate"),
@@ -2888,13 +2910,13 @@ function renderTodo(){renderList("todo");renderList("ideas")}
 document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.closest("[data-td]");if(!b||!dbRef)return;const c=b.dataset.coll;if(!LISTS[c])return;
   const list=listOpen(c),i=list.findIndex(t=>t.id===b.dataset.id);if(i<0)return;b.disabled=true;
   // "Let's start": asks Manager to start on an idea (a talk, a build or an assessment); Manager turns it into an initiative.
-  if(b.dataset.td==="start"){const t=list[i],anchor=await prepAnchor(b);
+  if(b.dataset.td==="start"){const t=list[i],sk="b:start:"+t.id;markButton(sk);const anchor=await prepAnchor(b);
     // The ask is the owner's message in the idea's thread (#C589): a wake carries no text, so the lead finds it there; the
     // comment (sendPing) is only the fallback when no wake got through.
     try{const now=Date.now(),text=`Let's start this (${t.kind||"idea"}): "${t.text}".`;
       await applyWrites([{op:"update",path:c+"/"+t.id,data:{startAt:now}},...threadWrites(t.id,text,[],now,undefined,Math.random().toString(36).slice(2,8))]);let ok=false;
       try{ok=await sendPing(anchor,`Board idea [${t.id}]: ${text}`.slice(0,1900),t.id)}catch(_){}
-      if(!ok)await dbRef.doc(c+"/"+t.id).update({startPing:"not sent"})}catch(_){b.disabled=false}
+      if(!ok)await dbRef.doc(c+"/"+t.id).update({startPing:"not sent"})}catch(_){b.disabled=false;clearSending(sk)}
     return}
   try{if(b.dataset.td==="done")await dbRef.doc(c+"/"+list[i].id).update({done:true,doneAt:Date.now()});
     else{const j=b.dataset.td==="up"?i-1:i+1;if(j<0||j>=list.length)return;
@@ -2969,11 +2991,12 @@ function ctxRefreshWrites(n,now){return /^[A-Za-z0-9_-]{1,60}$/.test(String(n))?
 const ctxPingText=n=>`Board: refresh ${n}'s memory tile (wake ${n}, then run board-collector)`;
 document.addEventListener("click",async e=>{const r=e.target.closest&&e.target.closest("[data-ctxref]");if(!r||!dbRef)return;
   const now=Date.now(),n=r.dataset.ctxref,ws=ctxRefreshWrites(n,now);if(!ws.length)return;r.disabled=true;
+  const sk="b:ctx:"+n;markButton(sk);
   const anchor=await prepAnchor(r);
   // The ask is the owner's message in the tile's thread (ctx-<role>, #C589): a wake carries no text, so the lead reads it
   // there; the comment is the fallback when no wake got through.
   ws.push(...threadWrites(`ctx-${n}`,ctxPingText(n),[],now,undefined,Math.random().toString(36).slice(2,8)));
-  try{await applyWrites(ws);await sendPing(anchor,ctxPingText(n),`ctx-${n}`)}catch(_){r.disabled=false}});
+  try{await applyWrites(ws);await sendPing(anchor,ctxPingText(n),`ctx-${n}`)}catch(_){r.disabled=false;clearSending(sk)}});
 // Steps: each agent logs its own step as it happens, one document per event in "steps":
 // {init: <initiative id>, phase: plan|build|language|checker|security|ship|live, who, kind: "start"|"end", at: <ms>, wait?: "busy"|"gate", version?}.
 // The page turns them into phase entries, so Manager no longer has to relay or guess times.
