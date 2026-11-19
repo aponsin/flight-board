@@ -1,0 +1,2 @@
+PASS #C1271 board-unread-followups, line from 80306160936aa754fdc5dfc53709b1f97c7d1a61 (covers #C1267 a35b89b3, cad798e7, both signed): eviction raises base to the newest dropped time so read stays read; option lines stretch with the button on the last row; suite 3244 pass 0 fail; mutant (drop the base raise) killed. Note: the raise also counts as read any never-collapsed thread's replies older than the dropped time (older than the 300th latest read): an acceptable trade
+signed-by: Checker 2
