@@ -344,7 +344,8 @@ async function ownerReads(db, threadId) {
 export async function postMessage(db, now, who, m) {
   const ok = m && typeof m === "object" && Object.keys(m).every((k) => ["thread_id", "body", "kind", "options", "screenshots"].includes(k)) && typeof m.thread_id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(m.thread_id) && typeof m.body === "string" && m.body.trim() && m.body.length <= 8000;
   if (!ok) return refuse(db, now, { rule: "message-shape", detail: "thread_id and body, body 1 to 8000 characters, and for an agent a kind, options and screenshots; nothing else" }, m?.thread_id, who);
-  const extra = messageExtrasRefusal(m, who);
+  // #C1254: a decision post on a card of a visual lane gets no Yes/No exemption, so the store tells the rule which card it is on.
+  const extra = messageExtrasRefusal(m, who, m.kind === "decision" && Array.isArray(m.options) ? await lookContext(db, { card_id: m.thread_id }) : {});
   if (extra) return refuse(db, now, extra, m.thread_id, who);
   // #C979: an agent's post in a thread the owner reads carries no UTC "Z" time (Mountain Time only). The owner reads an ask's thread, a free
   // thread (his) and any thread he has written in; a card thread only agents have written in is theirs, and keeps its Z times.

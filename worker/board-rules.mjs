@@ -63,10 +63,12 @@ const YES_NO = /^(?:yes|no)(?!\w)/i;
 // as evidence `look`): such a Decision is a look one whatever its words say, as the old board's gate held.
 export const LANE_NAME = /^[^<>{}\n]{1,60}$/; // the config's own NAME rule (scripts/config.mjs), so a lane the config accepts is one the store takes
 export const inVisualLane = (owner, lanes) => typeof owner === "string" && Array.isArray(lanes) && lanes.includes(owner);
-export function lookRefusal({ texts, options, shots, lane = false }) {
+// #C1254 (Checker 2's F1 on 482ee293): noYesNo turns the Yes/No exemption off without making the Decision a lane one. A thread post reads the words only
+// (the lane hold is the ask's), so on a card of a visual lane the post keeps its words rule and loses the exemption: it needs pictures as it did before.
+export function lookRefusal({ texts, options, shots, lane = false, noYesNo = false }) {
   if (!lane && !isLookText(...texts)) return null;
   const shown = new Set((Array.isArray(shots) ? shots : []).map((s) => /^\s*[A-Za-z0-9_-]{16,64}\s+([A-D]):/.exec(String(s ?? ""))?.[1]).filter(Boolean));
-  const bare = (o) => { const l = String(o.label ?? "").trim(); return NO_PICTURE.test(l) || (!lane && YES_NO.test(l)); };
+  const bare = (o) => { const l = String(o.label ?? "").trim(); return NO_PICTURE.test(l) || (!lane && !noYesNo && YES_NO.test(l)); };
   const missing = (options ?? []).filter((o) => o && !bare(o) && !shown.has(o.key)).map((o) => o.key);
   return missing.length ? refuse("look-needs-screenshots", `a look decision needs a screenshot for each option (missing: ${missing.join(", ")}); add each as "<file id> A: label" in screenshots, the letter being the option's`) : null;
 }
@@ -254,7 +256,8 @@ export function answerShapeRefusal(ask, { status, note, other, hasFiles } = {}) 
 // options {key A to D, label}: the page shows them as buttons under the message, and the owner's pick is his own message
 // ("Chose A: Red"). The owner's messages carry neither (#C725 B1b). Returns null when fine.
 const MESSAGE_KIND = /^[a-z][a-z-]{0,19}$/;
-export function messageExtrasRefusal(m, who) {
+// look: { lanes, cardOwner } from the store when the thread is a card (postMessage); a thread of a visual lane's card gets no Yes/No exemption (#C1254).
+export function messageExtrasRefusal(m, who, look = {}) {
   if (m.kind === undefined && m.options === undefined && m.screenshots === undefined) return null;
   if (who === "owner") return refuse("message-shape", "the owner's message carries no kind, options or screenshots");
   if (m.kind !== undefined && !(typeof m.kind === "string" && MESSAGE_KIND.test(m.kind))) return refuse("message-shape", "kind is a short lower-case word");
@@ -269,8 +272,8 @@ export function messageExtrasRefusal(m, who) {
       keys.add(x.key);
     }
     // #C952: a look decision in a thread carries a picture per option too ("<id> A: label"), the same shape an ask's pictures read.
-    const look = lookRefusal({ texts: [m.body], options: o, shots: m.screenshots });
-    if (look) return look;
+    const lookBad = lookRefusal({ texts: [m.body], options: o, shots: m.screenshots, noYesNo: inVisualLane(look?.cardOwner, look?.lanes) });
+    if (lookBad) return lookBad;
   }
   return null;
 }

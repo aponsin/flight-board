@@ -3,7 +3,7 @@
 // word answers a yes/no and needs no picture. Still refused: a real look choice between two looks, and any Decision on a visual lane's card.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAsk, createCard, writeEvidence, askFromTool } from "../worker/board-store.mjs";
+import { createAsk, createCard, writeEvidence, askFromTool, postMessage } from "../worker/board-store.mjs";
 import { lookRefusal, messageExtrasRefusal } from "../worker/board-rules.mjs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 
@@ -55,6 +55,23 @@ test("must still refuse: a real look choice between two looks with no pictures; 
   assert.equal(viaThread.refused?.rule, "look-needs-screenshots", "the thread post too");
   const ok = await createAsk(db, NOW, band({ screenshots: [`${RED} A: blue band`, `${BLUE} B: green band`] }));
   assert.equal(ok.ok, true, JSON.stringify(ok));
+});
+
+// Checker 2's F1 on 482ee293: the thread-post path (postMessage) read no lane, so the exemption applied in full there.
+test("a decision posted straight to a visual lane's card thread: the Yes/No exemption is off, so it needs pictures as it did; a card outside the lanes and a thread that is no card keep it", async () => {
+  const db = await seeded({ lanes: ["Designer"] });
+  const post = (thread_id, extra = {}) => postMessage(db, NOW, "Manager", { thread_id, body: "Make the band blue?", kind: "decision", options: [{ key: "A", label: "Yes, blue band" }, { key: "B", label: "No, keep green" }], ...extra });
+  const bad = await post("design-card");
+  assert.equal(bad.ok, false, "Checker 2's probe: refused on main, and still");
+  assert.equal(bad.refused.rule, "look-needs-screenshots");
+  assert.match(bad.refused.detail, /missing: A, B\)/);
+  const ok = await post("design-card", { screenshots: [`${RED} A: blue`, `${BLUE} B: green`] });
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  assert.equal((await post("code-card")).ok, true, "a card of another role");
+  assert.equal((await post("t-100")).ok, true, "a free thread is no card");
+  assert.equal((await postMessage(db, NOW, "Manager", { thread_id: "design-card", body: "Friday or Monday?", kind: "decision", options: [{ key: "A", label: "Friday" }, { key: "B", label: "Monday" }] })).ok, true, "a post whose words are not about the look reads as before, lane card or not");
+  const none = await seeded();
+  assert.equal((await postMessage(none, NOW, "Manager", { thread_id: "design-card", body: "Make the band blue?", kind: "decision", options: [{ key: "A", label: "Yes, blue band" }, { key: "B", label: "No, keep green" }] })).ok, true, "no lanes posted yet: the exemption stands");
 });
 
 test("must still refuse: any Decision on a visual lane's card with no pictures, a Yes/No one too; a card outside the lanes is not held", async () => {
