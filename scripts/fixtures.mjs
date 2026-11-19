@@ -23,7 +23,8 @@ export function times(v, now) {
 }
 
 // The page's script, run on a fixture's documents. Returns the HTML of each section it drew.
-export function render(html, docs) {
+// #C1277: `probe` (optional) is the live reading the page would have been sent; without it nothing on a card is drawn as active (blue), as on a page with no live state.
+export function render(html, docs, probe = null) {
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   const els = {};
   const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, scrollTop: 0, dataset: {}, style: {},
@@ -33,7 +34,7 @@ export function render(html, docs) {
   const ctx = { document, window: { scrollY: 0, scrollTo() {}, addEventListener() {} }, console, setInterval() {}, setTimeout() {}, clearTimeout() {}, queueMicrotask() {}, navigator: {}, getSelection: () => ({}),
     localStorage: { getItem: () => null, setItem() {} }, location: { hash: "", search: "" }, Date, Math, JSON, Number, String, Array, Object, Set, Map, WeakMap, isFinite, URLSearchParams };
   vm.createContext(ctx);
-  vm.runInContext(script + "\n;globalThis.__b={state,renderAll,OWNER};", ctx);
+  vm.runInContext(script + "\n;globalThis.__b={state,renderAll,OWNER,probeEvent};", ctx);
   const b = ctx.__b;
   // "@owner" in a fixture is the page's own owner (the template's, or the team's in a built page).
   const own = (v) => (v === "@owner" ? b.OWNER : Array.isArray(v) ? v.map(own) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, own(x)])) : v);
@@ -41,6 +42,7 @@ export function render(html, docs) {
     const key = c === "initiatives" ? "initRaw" : c;
     if (Array.isArray(b.state[key])) b.state[key] = own(list);
   }
+  if (probe) b.probeEvent({ type: "data", result: { payload: probe } }, {});
   b.renderAll();
   const h = (id) => (els[id] ? els[id].innerHTML : "");
   return { "needs-you": h("waiting"), "waiting-on-manager": h("threads"), later: h("later"), resolved: h("resolved"), board: h("board"), done: h("doneboard") };
@@ -88,7 +90,7 @@ export function observe(drawn, id) {
     return out;
   }
   const steps = [...first.row.matchAll(/<div class="step([^"]*)" title="([^"]+)"/g)].filter((m) => /\b(now|upnext)\b/.test(m[1]));
-  out.phase = steps.length ? steps[steps.length - 1][2].split(":")[0] : null;
+  out.phase = steps.length ? steps[steps.length - 1][2].split(/ \| |:/)[0] : null; // the tile's name: before the ": detail" and before the " | evidence" a tile's hover adds
   out.status = strip((/<span class="state [^"]*">([\s\S]*?)<\/span>/.exec(first.row) ?? ["", ""])[1]);
   out.version = strip((/<div class="pv">([\s\S]*?)<\/div>/.exec(first.row) ?? ["", ""])[1]) || null;
   out.gated = /<div class="wait gate/.test(first.row);

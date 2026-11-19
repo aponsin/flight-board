@@ -15,7 +15,7 @@ const T = Date.now(), MIN = 60_000, HOUR = 60 * MIN;
 const page = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 const tile = (html, label) => { const m = html.match(new RegExp(`<div class="(step[^"]*)" title="(${label}[^"]*)"`)); return m && { cls: m[1], title: m[2] }; };
 // The page's board for card c1 only (the card it waits for, c0, is drawn first).
-const board = async (db) => { const h = render(page, compatView(await readView(db, Date.now())).collections).board, at = h.indexOf('data-card="c1"'); return at < 0 ? h : h.slice(at); };
+const board = async (db) => { const cv = compatView(await readView(db, Date.now())), h = render(page, cv.collections, cv.probe).board, at = h.indexOf('data-card="c1"'); return at < 0 ? h : h.slice(at); };
 const checker = { lit: ["checker"], phase: "checker" };
 // A card paused until another card closes (a hold needs an end and a note).
 const seed = async (extra = {}) => {

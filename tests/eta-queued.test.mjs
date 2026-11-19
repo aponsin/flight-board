@@ -5,7 +5,7 @@
 // shows Build as queued, never lit as if someone were on it, and its line says how long it has waited, with no due.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadBoard, step } from "./harness.mjs";
+import { loadBoard, step, probeWorking } from "./harness.mjs";
 
 const H = 3600e3, MIN = 60e3;
 // Work seen (#C655): a build start alone, with no commit, branch or live agent, is "start logged, no work seen" and not lit.
@@ -33,6 +33,7 @@ test("beside 'so far': the size's usual hours, a hint with no due time", () => {
 test("Designer 1: one ETA per card; a running tile shows who and how long only", () => {
   const b = loadBoard(), now = Date.now();
   const i = card(b, [step("x", "build", "Admin", "start", now - 20 * MIN)], { createdAt: now - 30 * MIN, size: "M", etaLive: now + 2 * H }, SEEN);
+  probeWorking(b, "x", "Admin"); // #C1277: active needs a reading
   const html = b.initRow(i);
   assert.match(html, /class="step now"[^>]*>Build<small>Admin · 20 min<\/small>/);
   assert.doesNotMatch(html, /due ~/, "no due time beside the ETA box (#C450)");

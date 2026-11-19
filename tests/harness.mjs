@@ -11,8 +11,16 @@ export function loadBoard({ els = null } = {}) {
   const document = { getElementById: el, querySelectorAll: () => [], querySelector: () => null, addEventListener() {}, activeElement: null, createRange: () => ({}) };
   const ctx = { document, window: {}, console, setInterval() {}, setTimeout() {}, clearTimeout() {}, queueMicrotask() {}, navigator: {}, getSelection: () => ({}), Date, Math, JSON, Number, String, Array, Object, Set, Map, isFinite, URLSearchParams };
   vm.createContext(ctx);
-  vm.runInContext(script + "\n;globalThis.__b={state,enrich,gates,initRow,linkify,phaseIndex,PHASES,waitBoxes,phaseTimes,renderAll,replyBox,dur,askText,gaps,waitGaps,liveGap,stalled,fileCheck,pingText};", ctx);
+  vm.runInContext(script + "\n;globalThis.__b={state,enrich,gates,initRow,linkify,phaseIndex,PHASES,waitBoxes,phaseTimes,renderAll,replyBox,dur,askText,gaps,waitGaps,liveGap,stalled,fileCheck,pingText,probeEvent};", ctx);
   return ctx.__b;
+}
+// #C1277: a tile is active (blue, blinking) only from a probe reading that shows an agent on the card, so a test that wants an active tile says so:
+// a fresh reading in which `agent` is working on card `id`. `card` overlays the card's own part of the reading.
+export function probeWorking(b, id, agent = "Builder", card = {}) {
+  const at = Date.now() - 12e3;
+  b.probeEvent({ type: "data", result: { payload: { v: 1, board: { boardId: "TestBoard42xyz", at, probe: null, pageVersion: null },
+    cards: { [id]: { num: 1, phase: "build", headSha12: "a1b2c3d4e5f6", signed: [], onMain: false, ci: "passed", ciMin: 4, liveVersion: null, at, ...card } },
+    agents: { [agent]: { state: "working", lastActivityAt: at, tool: "Read", card: id, since: Date.now() - 5 * 60e3 } } } } }, {});
 }
 // A step event, as agents log them.
 export const step = (init, phase, who, kind, at, extra = {}) => ({ init, phase, who, kind, at, ...extra });

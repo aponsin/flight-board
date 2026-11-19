@@ -21,7 +21,7 @@ test("live with a check due: Verifying, when the check is due, the Live step say
   const html = b.initRow({ ...i, lastStepAt: old });
   assert.deepEqual(badge(html), ["verifying", "Verifying"]);
   assert.match(html, /class="verify-line">Live · <b>checking at \d\d:\d\d [AP]M<\/b> \(in 9 min\)</);
-  assert.match(html, /class="step verifying" title="Live">Live<small>check \d\d:\d\d [AP]M<\/small>/);
+  assert.match(html, /class="step verifying" title="Live[^"]*">Live<small>check \d\d:\d\d [AP]M<\/small>/);
   assert.doesNotMatch(html, /Stalled|Live, still open|No step logged/);
 });
 

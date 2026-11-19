@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadBoard, loadNames, step, renderWaitingHtml } from "./harness.mjs";
+import { loadBoard, loadNames, step, renderWaitingHtml, probeWorking } from "./harness.mjs";
 
 const T = 1_800_000_000_000;
 function item(b, init, steps, fields = {}) {
@@ -24,6 +24,7 @@ test("a phase someone is working on shows as now, with who", () => {
   const i = item(b, "x", [step("x", "build", "Admin", "start", T), step("x", "build", "Admin", "end", T + 1), step("x", "checker", "Checker", "start", T + 2)]);
   assert.equal(i.phase, "checker");
   assert.ok(!i.upNext);
+  probeWorking(b, "x", "Checker", { phase: "checker" }); // #C1277: active needs a reading
   assert.match(b.initRow(i), /class="step now"[^>]*>Checker<small>Checker/);
 });
 
@@ -52,6 +53,7 @@ test("the Test phase is hidden when no test step was logged, shown when one was"
   assert.doesNotMatch(b.initRow(without), />Test</);
   const withTest = item(b, "x", [step("x", "build", "Demos", "start", T), step("x", "build", "Demos", "end", T + 1), step("x", "test", "Demos", "start", T + 2)]);
   assert.equal(withTest.phase, "test");
+  probeWorking(b, "x", "Demos", { phase: "test" }); // #C1277: active needs a reading
   assert.match(b.initRow(withTest), /class="step now"[^>]*>Test<small>Demos/);
 });
 

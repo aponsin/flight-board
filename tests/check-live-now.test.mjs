@@ -62,8 +62,10 @@ test("without the connector, a press says what each source is: no live state, th
 test("a fresh reading already drives the card: the button (#C495), no check line, its age on the source", () => {
   const b = board();
   b.state.checkRequests = [{ id: ID, at: NOW - 3 * MIN }];
-  b.probeEvent({ type: "data", result: { payload: reading(NOW - 12e3) } }, {});
-  const html = row(b);
+  // #C1277: a fixed clock: the age is read at render time, and "12 s ago" must not become "13 s ago" on a loaded machine.
+  const realNow = Date.now; Date.now = () => NOW;
+  let html;
+  try { b.probeEvent({ type: "data", result: { payload: reading(NOW - 12e3) } }, {}); html = row(b); } finally { Date.now = realNow; }
   assert.match(html, /<button type="button" class="c-num i-check" data-check="rev-card"[^>]*>#C448<span class="i-ic" aria-hidden="true">↻<\/span><\/button>/);
   assert.doesNotMatch(html, /i-checked|checking/);
   assert.match(html, />Live: Language<\/button> <small class="asof"[^>]*>12 s ago</);

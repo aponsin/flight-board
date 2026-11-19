@@ -8,7 +8,7 @@
     "Later tab": { "test": "decision-not-before.test.mjs::a Decision with a future date is not on Needs you, and is drawn under Later with its options", "find": "Decide future" },
     "Pull request panel": { "test": "compat-approvals.test.mjs::the panel shows an approved pull request apart with its Withdraw; a merged one (closed) leaves the panel", "find": "1 approved: merge at the next ship" },
     "Status pill": { "test": "compat-view.test.mjs::a paused card the probe reads stays paused: after the active ones, marked Paused, no version line", "find": "<span class=\"state paused\">Paused" },
-    "Track: lit phase, skips": { "test": "compat-view.test.mjs::a card is drawn on the board at the probe's lit phase, never a typed one", "find": "<div class=\"step now\" title=\"Build\">" },
+    "Track: lit phase, skips": { "test": "compat-view.test.mjs::a card is drawn on the board at the probe's lit phase, never a typed one", "find": "<div class=\"step here\" title=\"Build" },
     "Track: who · time on each tile": { "test": "phase-history.test.mjs::the compat view gives the history as the old steps, and the old page puts the who on the tile", "find": "Plan<small>50 min" },
     "Done in the last 24 h, search": { "test": "compat-ships.test.mjs::the old page draws them: the Done list in the last 24 h with its version, and the shipped feed with the card links", "find": "Done in the last 24 h" },
     "Shipped feed, search": { "test": "compat-ships.test.mjs::the old page draws them: the Done list in the last 24 h with its version, and the shipped feed with the card links", "find": "<span class=\"ver\">" },
