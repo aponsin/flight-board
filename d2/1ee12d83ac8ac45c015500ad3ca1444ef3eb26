@@ -1,0 +1,2 @@
+PASS #C1263 card-thread-row-fix, line from e64d99ad4b6771f1c797840f43b2954efbd2a353: 3 CSS lines; .i-thread.sending>summary (0,2,1) beats details.sending>summary (0,1,2) and .i-thread>summary>.sdots beats .sdots; ask and thread rows untouched; suite 3219 pass 0 fail; mutant (drop background:none) killed
+signed-by: Checker 2
