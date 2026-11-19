@@ -1,0 +1,5 @@
+SECURE
+
+#C1287: countsNew(m) narrows the new-reply pill and the new tag to messages from Manager or a decision from anyone but the owner; msgHtml and newReplies call it. Display filter only: values still go through esc/askText, the seen marks stay in this browser's localStorage. DATA.md row 20 updated. No data, route, permission or Worker change. INFO: m.from is the store's recorded author; a role writing as Manager could raise a pill count, nothing more (pre-existing trust).
+
+signed-by: Security
