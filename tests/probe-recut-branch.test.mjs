@@ -105,6 +105,33 @@ test("a card re-cut on a second branch and shipped, its commits without a traile
   assert.ok(merged);
 });
 
+// Checker 2's F1 on bed0c76c: a card that shipped once and then got new work carrying the same slip must show the new work and tell its builder, not read as the old shipped commit.
+test("new work after a ship, with the same slip, stays the card's row and gets the trailer line; a newer tip that already is on main does not", () => {
+  const s = scratch();
+  const cut = s.onBranch("admin/c1236-demo-map", 20, SPLIT("#C1236 The visitor map, re-cut"));
+  s.sign(cut);
+  s.ship("admin/c1236-demo-map", cut);
+  s.g(["branch", "-qD", "admin/c1236-demo-map"]);
+  const fix = s.onBranch("admin/c1236-demo-map-fix", 200, SPLIT("#C1236 The visitor map, follow-on fix"));
+  s.sync();
+  const repo = s.repo([s.tip("admin/c1236-demo-map-fix", fix, 200, SPLIT("#C1236 The visitor map, follow-on fix"))], { shippedPattern: SHIPPED });
+  const st = cardState(CARD, repo, cfg, now);
+  assert.equal(st.headSha12, fix.slice(0, 12), "the new work is the card's row, not the old shipped commit");
+  assert.equal(st.onMain, false);
+  assert.equal(st.trailerMisplaced, true);
+  assert.equal(turnsOf(CARD, st)[0].trailer, true, "its builder is told about the trailer");
+  // The same tip, but already merged to main (an ancestor of it): not new work, the cited commit still reads.
+  const t = scratch();
+  const first = t.onBranch("admin/c1236-demo-views-map", 30, SPLIT("#C1236 The visitor map, first cut"));
+  const recut = t.onBranch("admin/c1236-demo-map", 20, SPLIT("#C1236 The visitor map, re-cut"));
+  t.sign(recut);
+  t.ship("admin/c1236-demo-views-map", first);
+  t.ship("admin/c1236-demo-map", recut);
+  t.sync();
+  const su = cardState(CARD, t.repo([t.tip("admin/c1236-demo-views-map", first, 30, SPLIT("#C1236 The visitor map, first cut"))], { shippedPattern: SHIPPED }), cfg, now);
+  assert.equal(su.onMain, true); assert.notEqual(su.phase, "build");
+});
+
 test("the ship line is read only for a card whose tips lack its trailer, and only for a branch of that card that is on main", () => {
   // A tip that carries the card's own trailer is never overridden by a ship line.
   const s = scratch();

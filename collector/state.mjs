@@ -933,7 +933,14 @@ export function cardState(card, repo, config, now, opts = {}) {
   if (!tips.length && opts.head) tips = [opts.head];
   if (!tips.length && typeof repo.git === "function") { const t = trailerHead(repo, card.id); if (t) tips = [t]; }
   // #C1239: no branch tip carries the card's own trailer (found by number only, or nothing found): a ship commit on main that cites a branch of the card names the commit that shipped.
-  if (typeof repo.git === "function" && tips.every((t) => boardIdOf(t.message) !== card.id)) { const cited = shipCitedHead(repo, card); if (cited) tips = [cited]; }
+  // Checker 2's F1 on bed0c76c: only when no tip is NEWER than the cited commit and still unmerged: a card that shipped once and then got new work (carrying the same slip) keeps that tip as its row, so the new work
+  // is seen and its builder is told about the trailer. A newer tip that is an ancestor of main is no new work.
+  if (typeof repo.git === "function" && tips.every((t) => boardIdOf(t.message) !== card.id)) {
+    const cited = shipCitedHead(repo, card);
+    const mainRef = `${repo.remote}/${repo.main}`;
+    const newer = cited ? tips.some((t) => Number.isFinite(t.at) && t.at > cited.at && !(/^[0-9a-f]{40}$/.test(String(t.sha)) && ok(() => repo.git(["merge-base", "--is-ancestor", t.sha, mainRef])))) : false;
+    if (cited && !newer) tips = [cited];
+  }
   if (tips[0]) tips = [ownHead(repo, card, tips[0]), ...tips.slice(1)];
   let tip = tips[0];
   if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };
