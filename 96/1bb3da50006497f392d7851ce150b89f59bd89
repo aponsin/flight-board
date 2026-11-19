@@ -1,0 +1,5 @@
+SECURE
+
+#C1283: a group card's summary line also calls newPill(newReplies(id).length), the #C1266 pill whose only value is an integer count. No data, route, permission or Worker change.
+
+signed-by: Security
