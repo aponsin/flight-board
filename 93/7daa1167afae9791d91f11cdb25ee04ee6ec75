@@ -1,0 +1,2 @@
+PASS Quick #C1277, line from 80306160936aa754fdc5dfc53709b1f97c7d1a61: npm test 3251 pass 0 fail; mutation check pass (agentOn fallback restored: no-reading test fails; norec class dropped: no-record test fails); queued is in scope; DATA.md Tile states line plus dated DATA.d entry. LOW, not blocking and older than this card: a slow tile with no reading still draws the dark stuck tile ('nobody on it'), via sk=stuck||(slow&&!(onN&&onN.length)). Stacked on #C1275 ad48d384, reviewed only 937daa11.
+signed-by: Checker 2
