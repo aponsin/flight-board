@@ -1,0 +1,5 @@
+SECURE
+
+#C1241, by diff on #C1240's signed b2e59e7f. The sending state spreads to asks (onReply), the new-thread form and four buttons (Ping, Check, Let's start, ctx refresh). Button keys 'b:<kind>:<id>' come from data attributes and are only Map keys and string compares; BTN_SELECTOR and the ':scope>.sdots' query are fixed; sendDots builds elements with textContent 'Sending', no innerHTML (audit 42). Every handler marks before its first await and clears on failure; pressCheck reports a rejected write. No network, storage or data change. Tests 65/65 (sending-state 16, hostile-text 8, threads, thread-ping).
+
+signed-by: Security
