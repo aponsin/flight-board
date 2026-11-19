@@ -1,0 +1,2 @@
+PASS (Quick) #C1241 board-sending-state-on-asks, line from b2e59e7fc6944807dbeb03b5bbbedcb2e5033272: new tip by diff from 9a55f64a (signed PASS): CSS only, Designer's two findings; the new rules (0,3,1) outrank every :disabled and .td-start rule they override; touched test 16/16; mutation check pass (opacity back to .6: killed).
+signed-by: Checker 2
