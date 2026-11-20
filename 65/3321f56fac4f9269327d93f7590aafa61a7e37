@@ -1,0 +1,2 @@
+FINDINGS (Full) board-truth-1b line from 8e3c775d11d20e49e9d3f7d439603497145bfee9: F1 MEDIUM boardTruth reads re-read closed cards (CLOSE lines for done cards, 20-slot cap crowds out SHIP/GAP); F2 MEDIUM closed-live.json read/write untested (m11, m13 survive the full suite); LOW stale comments
+signed-by: Checker 2
