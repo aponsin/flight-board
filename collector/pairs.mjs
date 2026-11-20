@@ -48,17 +48,25 @@ export function pairsIn(folder) {
 // nothing a card or a note says is read. Security's SAFE is not read (Manager's pick A on #C1020): packed means built, not signed. Each pin is asked
 // once per landing. #C1034 (Checker 2's LOW on #C1020): pins are main commits and pairs come newest first, so once a pin does not hold the landing
 // no older pin does: the walk stops there. A landed card no pair holds yet costs one git question, not one per pair.
+// #C1309 (the owner, t-1795149842663): `pack` is the number of the OLDEST pair that holds the landing, the pack the card first rode in ("pc111"), so the Install
+// tile can name it. Pins are main commits and pairs come newest first, so the pairs that hold the landing are a prefix of the list: the oldest one is found by a
+// galloping search from the newest pair (1, 2, 4, ... pairs back, then a binary search inside the last gap: a landing a pack or two old costs two git questions, an old
+// one stays logarithmic in the pairs, never one per pair), and the card is installed when any pair in that prefix ran.
 export function packOf(pairs, landing, git) {
   const out = { packed: false, installed: false };
-  if (!/^[0-9a-f]{40}$/.test(String(landing ?? "")) || !Array.isArray(pairs)) return out;
+  if (!/^[0-9a-f]{40}$/.test(String(landing ?? "")) || !Array.isArray(pairs) || !pairs.length) return out;
   const asked = new Map();
-  for (const p of pairs) {
-    if (out.installed) break;
-    if (out.packed && !p.ran) continue;
-    if (!asked.has(p.sha)) asked.set(p.sha, descends(git, landing, p.sha));
-    if (!asked.get(p.sha)) break;
-    out.packed = true;
-    if (p.ran) out.installed = true;
+  const holds = (p) => { if (!asked.has(p.sha)) asked.set(p.sha, descends(git, landing, p.sha)); return asked.get(p.sha); };
+  if (!holds(pairs[0])) return out;
+  let lo = 0, hi, step = 1; // pairs[lo] holds the landing; find the last index that does
+  for (;;) {
+    const j = lo + step;
+    if (j >= pairs.length) { hi = pairs.length - 1; break; }
+    if (holds(pairs[j])) { lo = j; step *= 2; } else { hi = j - 1; break; }
   }
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (holds(pairs[mid])) lo = mid; else hi = mid - 1; }
+  out.packed = true;
+  if (Number.isInteger(pairs[lo].n) && pairs[lo].n > 0 && pairs[lo].n < 1e6) out.pack = pairs[lo].n;
+  out.installed = pairs.slice(0, lo + 1).some((p) => p.ran);
   return out;
 }

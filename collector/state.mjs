@@ -1132,7 +1132,7 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
       // The card's own repo word names the board (as the dispatch's pair turn reads it), and it was read from the board's checkout.
       if (!isBoardRepo(cardOf[id].repo) || repoOfCard[id] !== board || out[id].onMain !== true || !out[id].headSha) continue;
       const p = packOf(pairs, out[id].headSha, git);
-      if (p.packed) out[id] = { ...out[id], packed: true, ...(p.installed ? { installed: true } : {}) };
+      if (p.packed) out[id] = { ...out[id], packed: true, ...(p.pack ? { pack: p.pack } : {}), ...(p.installed ? { installed: true } : {}) };
     }
   }
   return out;
@@ -1167,7 +1167,7 @@ export function closedPacks({ cards, repos, now, pairs = [] }) {
   const git = (args) => ({ status: ok(() => board.git(args)) ? 0 : 1 });
   for (const id of Object.keys(landing)) {
     const p = packOf(pairs, landing[id], git);
-    if (p.packed) out[id] = { packed: true, ...(p.installed ? { installed: true } : {}) };
+    if (p.packed) out[id] = { packed: true, ...(p.pack ? { pack: p.pack } : {}), ...(p.installed ? { installed: true } : {}) };
   }
   return out;
 }

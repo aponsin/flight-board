@@ -33,6 +33,15 @@ test("a landed card waiting for the install: the Ship cell says 'Queued for your
   assert.equal(/slow \(est\.\)|deploying \(est\.\)|tests \(est\.\)/.test(html), false, "no estimate words");
 });
 
+// #C1309 (on #C1308's tile): the green wait names the pack when the probe read its number: "pc111" alone on a phone, "pc111 · <owner>'s install" on a laptop. No number: the owner's name as before.
+test("the waiting Install tile names the pack when its number is read, and not otherwise", () => {
+  const named = draw({}, { packed: true, pack: 111 });
+  assert.match(named, /<div class="step waits rel" title="Install: [^"]*">Install<small class="rs">pc111<span class="sl"> · [^<]+'s install<\/span><\/small>/);
+  assert.match(draw({}, { packed: true }), /<small class="rs">[^<]+<span class="sl">'s install<\/span><\/small>/, "no number read: the owner's name as before");
+  assert.equal(/class="rs">pc/.test(draw({}, { packed: true, pack: "111" })), false, "a number that is not an integer is not shown");
+  assert.equal(/class="rs">pc/.test(draw({}, { packed: true, pack: 0 })), false, "nor zero");
+});
+
 // Checker 2's F1 on #C1308: once the install is seen (the live reading says installed, or has seen the Live phase) the green Install wait goes away.
 test("a packed, landed card whose live reading is installed, or has seen Live, draws no waiting Install tile", () => {
   assert.match(draw({}, { packed: true }), /class="step waits rel"/, "control: packed and not installed waits green");

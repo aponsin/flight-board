@@ -91,6 +91,6 @@ test("(C) a pair below the landing, built or held, never covers it; one whose pi
   const git = (args) => ({ status: args[0] === "merge-base" && anc.has(`${args[2]}>${args[3]}`) ? 0 : 1 });
   assert.deepEqual(packOf([{ n: 63, sha: OLD, ran: false }], LAND, git), { packed: false, installed: false }, "a held older pair covers nothing");
   assert.deepEqual(packOf([{ n: 63, sha: OLD, ran: true }], LAND, git), { packed: false, installed: false }, "nor does an installed older one");
-  assert.deepEqual(packOf([{ n: 64, sha: LAND, ran: false }], LAND, git), { packed: true, installed: false }, "a pair built on the landing itself does");
-  assert.deepEqual(packOf([{ n: 65, sha: NEWER, ran: false }, { n: 64, sha: LAND, ran: true }], LAND, git), { packed: true, installed: true });
+  assert.deepEqual(packOf([{ n: 64, sha: LAND, ran: false }], LAND, git), { packed: true, installed: false, pack: 64 }, "a pair built on the landing itself does");
+  assert.deepEqual(packOf([{ n: 65, sha: NEWER, ran: false }, { n: 64, sha: LAND, ran: true }], LAND, git), { packed: true, installed: true, pack: 64 }, "the pack named is the oldest that holds it");
 });
