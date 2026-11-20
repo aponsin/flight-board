@@ -1,0 +1,5 @@
+SECURE
+
+#C1294 (Checker 2 F1): tests/open-decision-gates-card.test.mjs only, one test for the card-thread guard. No shipped file changed; my review of 290dca8c stands.
+
+signed-by: Security
