@@ -64,6 +64,9 @@ export const STATES = ["done", "unknown", "rework", "working", "waiting", "stuck
 export const WAITS = ["turn", "group", "land", "pack", "install", "deploy", "ask", "hold"];
 // The phases a reviewer holds, and the work phases the card's owner holds.
 const REVIEW = ["language", "design", "checker", "security"];
+// #C1387: the unread sources (collector/state-schema.mjs UNREAD_SOURCES) a card's phase rests on: a failed read of one makes the card `unknown` with a why naming it. Others (start, behind) set a flag only.
+const UNKNOWN_BY = ["main", "deploy", "version", "stack"];
+const UNREAD_WORDS = { main: "main", deploy: "the live deploy", version: "the live version", stack: "the stack" };
 const OWNER_PHASES = ["plan", "build", "test"];
 export const STUCK_TIMES = 2; // over twice the phase's median (the Tile states line: "slow N× usual")
 
@@ -161,6 +164,9 @@ export function reading(card, evidence, claims, agents, config, now, ctx = {}) {
   // unknown: a repository word the config does not list, or a stale reading with no earlier good one.
   if (kind === null) return out("unknown", null, `the repository word "${card?.repo ?? ""}" is not in the config`);
   if (stale && staleSince === null) return out("unknown", null, "no fresh reading and no earlier good one");
+  // #C1387: a read the phase rests on failed this run (a failed call is never "no"): the card is unknown, naming the source, never working and never done. A minor source (start, behind) is no state.
+  const unread = Array.isArray(e?.unread) ? UNKNOWN_BY.filter((s) => e.unread.includes(s)) : [];
+  if (!stale && unread.length) return out("unknown", null, `could not read ${unread.map((s) => UNREAD_WORDS[s]).join(" and ")}`);
   // queued: nothing of its own pushed yet.
   if (!pushed(e)) {
     const role = card?.owner_role ?? null;

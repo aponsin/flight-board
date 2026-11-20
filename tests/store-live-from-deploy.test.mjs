@@ -73,7 +73,7 @@ test("unreadable: no Worker build, no tree commit, or two lines: the card stays 
 
 test("state.mjs reads the installed link for these cards only when the store's rule is off (the old state job)", () => {
   const src = readFileSync(new URL("../collector/state.mjs", import.meta.url), "utf8");
-  assert.match(src, /process\.env\.FB_DEPLOY_RULE === "1" \? deployedSha\(at\.git, process\.env\.FB_DEPLOY_WORKER, process\.env\.FB_DEPLOY_TREE\) : installed/);
+  assert.match(src, /process\.env\.FB_DEPLOY_RULE === "1" \? deployedSha\(at\.git, process\.env\.FB_DEPLOY_WORKER, process\.env\.FB_DEPLOY_TREE, dn\) : installed/);
 });
 
 test("readDeploy: the Worker's 40-hex build and the tree's commit; anything else reads as unknown, with the reason logged", async () => {

@@ -63,7 +63,10 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "pack", "restart", "ledger", "quiet", "stale", "staleSince"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "pack", "restart", "ledger", "quiet", "stale", "staleSince", "unread"]);
+// #C1387: the sources a card's reading can fail to read (a git or GitHub call that failed, which is not the answer "no"). A new source is one word added here (and to UNKNOWN_BY in worker/reading.mjs
+// when the phase rests on it); #C1395 adds notes, install, pair and ci.
+export const UNREAD_SOURCES = ["main", "deploy", "version", "stack", "start", "behind", "notes", "install", "pair", "ci"];
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -100,6 +103,8 @@ const CARD = {
   // #C1377: this card's repository could not be read fresh this run (only ever true), and the time it last was (staleSince, optional); the page greys the card and says "no fresh reading since ...".
   stale: (v) => v === true,
   staleSince: isTime,
+  // #C1387: the sources this card's reading could not read this run (a failed call is never "no"); the Worker reads the ones the phase rests on as `unknown`. Only present when not empty.
+  unread: (v) => Array.isArray(v) && v.length >= 1 && v.length <= UNREAD_SOURCES.length && v.every((s) => UNREAD_SOURCES.includes(s)) && new Set(v).size === v.length,
   trailerMisplaced: (v) => v === true, // #C1239: the tip names the card in a Board-Id line git does not read as a trailer
   wipHead: (v) => v === true, // #C1139: the newest commit says WIP: no review turn
   // #C882: a landing that changed no deployed or pinned file (only docs and tests) needs no install: the card reads Live. Only ever true.

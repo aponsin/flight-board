@@ -512,7 +512,8 @@ export function shipCandidate({ tips, pattern, now, onMain, ci, shipped = () => 
 // --first-parent the ancestry-path is judged along the first-parent line only, which the commit is not on (#C1315, #C1320 to #C1323, #C1333, #C1224). So the two are asked
 // apart: the main line's first-parent commits after sha, oldest first, and the set of commits that descend from sha; the first main-line commit in that set is the first one that
 // contains it. A commit main took directly gives what it gave before.
-function versionAfter(git, sha, ref, pattern) {
+// #C1387: `note` (optional) gets failed = true when a git call FAILED (no version found is null with failed false; a failed read is null with failed true).
+function versionAfter(git, sha, ref, pattern, note = null) {
   try {
     const re = new RegExp(pattern);
     const descends = new Set(git(["rev-list", "--ancestry-path", `${sha}..${ref}`]).split("\n").filter(Boolean));
@@ -523,7 +524,7 @@ function versionAfter(git, sha, ref, pattern) {
       const v = m ? m[1] ?? m[0] : null;
       if (v && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(v)) return v;
     }
-  } catch { /* no version */ }
+  } catch { if (note) note.failed = true; }
   return null;
 }
 
@@ -542,7 +543,8 @@ export function changeId(git, sha, ids = {}) {
 // Where a tip's change landed on main when the tip itself isn't there (a restack, a cherry-pick: #C400's READY sat in
 // ship a day): the newest main commit carrying one of its changes, when every commit it has beyond main is on main as
 // the same change; else null.
-export function landedOn(git, ref, sha, ids = {}) {
+// #C1387: `note` (optional) gets failed = true when a git call failed (null with failed false is "not landed").
+export function landedOn(git, ref, sha, ids = {}, note = null) {
   try {
     const lines = (args) => git(args).split("\n").filter((s) => /^[0-9a-f]{40}$/.test(s));
     const beyond = lines(["rev-list", sha, `^${ref}`]);
@@ -551,7 +553,7 @@ export function landedOn(git, ref, sha, ids = {}) {
     for (const s of onMain) { const id = changeId(git, s, ids); if (id && !byId.has(id)) byId.set(id, s); }
     const found = beyond.map((s) => byId.get(changeId(git, s, ids)));
     return found.every(Boolean) ? onMain.find((s) => found.includes(s)) : null;
-  } catch { return null; }
+  } catch { if (note) note.failed = true; return null; }
 }
 
 // #C620: the phases a card has evidence for, in the board's order, whatever the hand-written steps say: build (a branch
@@ -576,13 +578,14 @@ export function seenPhases(config, facts) {
 // the commit of the tree the probe runs from (the launchd jobs'); the installed link is not read for it. The one sha both contain: the older
 // of the two when one is an ancestor of the other. Either unknown (not 40 hex), not in this repository, or the two on different lines: null,
 // and the card stays at ship (never live).
-export function deployedSha(git, worker, tree) {
+// #C1387: `note` (optional) gets failed = true when an ancestry question FAILED (git status other than 1); the two on different lines, or a commit this repository lacks, stay null with failed false.
+export function deployedSha(git, worker, tree, note = null) {
   const hex = (v) => /^[0-9a-f]{40}$/.test(String(v ?? ""));
   if (!hex(worker) || !hex(tree)) return null;
   try {
     for (const s of [worker, tree]) git(["cat-file", "-e", `${s}^{commit}`]);
     if (worker === tree) return worker;
-    const behind = (a, b) => { try { git(["merge-base", "--is-ancestor", a, b]); return true; } catch { return false; } };
+    const behind = (a, b) => { const r = ancestry(() => git(["merge-base", "--is-ancestor", a, b])); if (r === null && note) note.failed = true; return r === true; };
     if (behind(worker, tree)) return worker;
     if (behind(tree, worker)) return tree;
   } catch { /* not in this repository */ }
@@ -733,7 +736,12 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   const signedOn = (sha) => notesOn(sha).filter(([p, t]) => isSignoff(t, p)).map(([p]) => p).sort();
   const findingsOn = (sha) => notesOn(sha).filter(([, t]) => isFindings(t)).map(([p]) => p).sort();
   const mainRef = `${repo.remote}/${repo.main}`;
-  const landed = ok(() => repo.git(["merge-base", "--is-ancestor", tip.sha, mainRef])) ? null : landedOn(repo.git, mainRef, tip.sha, repo.ids);
+  // #C1387: a source whose read FAILED (git status other than 1) is named in `unread`, never read as "no"; the Worker reads the ones the phase rests on as unknown.
+  const unread = new Set();
+  const tipOnMain = ancestry(() => repo.git(["merge-base", "--is-ancestor", tip.sha, mainRef]));
+  let landed = null;
+  if (tipOnMain === null) unread.add("main");
+  else if (tipOnMain === false) { const note = {}; landed = landedOn(repo.git, mainRef, tip.sha, repo.ids, note); if (note.failed) unread.add("main"); }
   // A tip with commits after the card's shipped one (#C527, collector/after-ship.mjs) is read as that commit, with its
   // sign-offs.
   const after = landed ? null : shippedBase(repo.git, mainRef, tip.sha, { id: card.id, branch: tip.branch, pattern: repo.shippedPattern ?? "" });
@@ -742,6 +750,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   // #C1133: a git call that FAILED (not "no") leaves the head's place unknown: it is not read as on main (no ship reading from a failed call), and the marked parts below are still held.
   const mainAnswer = landed ? true : ancestry(() => repo.git(["merge-base", "--is-ancestor", head.sha, mainRef]));
   const atMain = mainAnswer === true, mainUnknown = mainAnswer === null;
+  if (mainUnknown) unread.add("main");
   // #C671: a pushed branch named for the card with no commit of its own sits at a main commit: it is work started (build), and
   // main's sign-off notes and deploy are not the card's.
   const bare = !landed && !after && ((atMain && bareBranch(card, head)) || byNumberOnly(card, head));
@@ -756,7 +765,20 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   // is made, so the newest green run already contains the card's head while no commit naming a version is in it yet. The card read live, closed, and its reading carried no version: no ship was ever noted.
   // In a repository that names its versions (versionPattern), a card is deployed only when a commit naming one lies between its head and the live commit; until then it reads ship, and the reading that
   // makes it live carries the version.
-  const deployed = onMain && (noInstall || (!!repo.live && ok(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live])) && (!repo.versionPattern || versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) !== null)));
+  // #C1387: a failed ancestry question, a failed version read or a live commit that could not be read at all (repo.liveUnread) is unread "deploy" or "version", not "not deployed".
+  let deployedAns = false;
+  if (onMain && !noInstall) {
+    if (!repo.live) { if (repo.liveUnread === true) unread.add("deploy"); }
+    else {
+      const inLive = ancestry(() => repo.git(["merge-base", "--is-ancestor", head.sha, repo.live]));
+      if (inLive === null) unread.add("deploy");
+      else if (inLive) {
+        if (!repo.versionPattern) deployedAns = true;
+        else { const note = {}, v = versionAfter(repo.git, head.sha, repo.live, repo.versionPattern, note); if (note.failed) unread.add("version"); else deployedAns = v !== null; }
+      }
+    }
+  }
+  const deployed = onMain && (noInstall || deployedAns);
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   // #C897: the reviews from the paths the branch changed since it left main, when the repository has a reviewPaths table.
   const changed = !onMain && !bare ? branchPaths(repo, mainRef, tip.sha) : null;
@@ -779,7 +801,11 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   // The first-push guard (gate/first-push.mjs) tells builders to commit "<card> WIP", so the word also counts right after one card token (a number, #C123, or a hyphenated slug), and an
   // EMPTY commit (no change against its first parent, no sign-off on it) is a start push whatever it says. A real commit that only mentions WIP ("Fix WIP: wording") is none.
   const wipWord = WIP_START.test(headLine);
-  const emptyStart = !onMain && !bare && !wipWord && !signed.length && /^[0-9a-f]{40}$/.test(String(head.sha)) && typeof repo.git === "function" && ok(() => repo.git(["diff", "--quiet", `${head.sha}^1`, head.sha]));
+  // #C1387: `diff --quiet` exits 0 (no change: an empty start) or 1 (a change); any other failure is unread "start" (a minor source: no state, never the answer "empty").
+  const asksEmpty = !onMain && !bare && !wipWord && !signed.length && /^[0-9a-f]{40}$/.test(String(head.sha)) && typeof repo.git === "function";
+  const emptyAns = asksEmpty ? ancestry(() => repo.git(["diff", "--quiet", `${head.sha}^1`, head.sha])) : false;
+  if (emptyAns === null) unread.add("start");
+  const emptyStart = emptyAns === true;
   // #C1275 (11-19: Designer got a review turn for #C1272 at e1a12981, which was #C1269's tip: the branch had no commit of its own yet): a tip whose newest commit names Board-Ids and not this card's is another
   // card's commit, the base of a stacked branch, not this card's work: it reads as a start push, no review turn, until a commit of the card's own is on it.
   const headIds = !landed && !after ? boardIdsOf(String((head.message ?? tip.message) ?? "")) : [];
@@ -806,7 +832,11 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   // topmost card (nudgeTop, set by the stack read) then carries it, once, and it is asked of the stack's tip, not of the card's own older commit.
   const lowerOfStack = !!coverSha && String(tip.sha) !== coverSha && !(nudgeTop && coverSha);
   const behindRef = nudgeTop && coverSha ? coverSha : tip.sha;
-  const behindMain = !onMain && !bare && !lowerOfStack && phase === config.collector.shipPhase && typeof repo.git === "function" && !ok(() => repo.git(["merge-base", "--is-ancestor", mainRef, behindRef]));
+  // #C1387: only exit 1 says "main has a commit the tip lacks" (re-cut); a failed call answers neither (unread "behind": no re-cut, no state).
+  const asksBehind = !onMain && !bare && !lowerOfStack && phase === config.collector.shipPhase && typeof repo.git === "function";
+  const behindAns = asksBehind ? ancestry(() => repo.git(["merge-base", "--is-ancestor", mainRef, behindRef])) : true;
+  if (behindAns === null) unread.add("behind");
+  const behindMain = asksBehind && behindAns === false;
   const findings = bare || onMain ? [] : [...new Set([...findingsOn(after ? after.sha : tip.sha), ...(coverSha ? findingsOn(coverSha) : [])])].sort();
   // #C1114: the findings every review has put on the branch's commits (not only the tip's), counted by kind; the Worker raises the card's counters to these.
   const issueCounts = (() => {
@@ -827,6 +857,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
     ...(Object.keys(issueCounts).length ? { issueCounts } : {}),
     ...(customerText ? { customerText: true } : {}),
     ...(behindMain ? { behindMain: true } : {}),
+    ...(unread.size && typeof repo.git === "function" ? { unread: [...unread].sort() } : {}),
     ...(partsMissing.length ? { partsMissing } : {}),
     ...(noInstall ? { noInstall: true } : {}),
     ...(phase && build ? { firm: false } : {}),
@@ -895,7 +926,8 @@ export function memoGit(git) {
   read.stats = stats;
   return read;
 }
-export function trailerHead(repo, id, branch = repo.main, depth = 400) {
+// #C1387: `note` (optional) gets failed = true when git's log FAILED (null with failed false is "no commit carries the id").
+export function trailerHead(repo, id, branch = repo.main, depth = 400, note = null) {
   if (repo.indexed === true && branch === repo.main && depth === 400) {
     const index = trailerIndex(repo);
     const found = index?.heads.get(id);
@@ -903,7 +935,7 @@ export function trailerHead(repo, id, branch = repo.main, depth = 400) {
     if (index?.complete) return null;
   }
   let out = "";
-  try { out = repo.git(["log", `-${depth}`, "--fixed-strings", `--grep=Board-Id: ${id}`, "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${branch}`]); } catch { return null; }
+  try { out = repo.git(["log", `-${depth}`, "--fixed-strings", `--grep=Board-Id: ${id}`, "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${branch}`]); } catch { if (note) note.failed = true; return null; }
   for (const r of out.split("\x1e")) {
     const [sha, at, message] = r.replace(/^\n/, "").split("\x1f");
     const ids = boardIdsOf(message);
@@ -944,13 +976,14 @@ export function mainEvidence(repo, card) {
 // card at build "nothing pushed" for good): a ship commit on main (the repository's shippedPattern, "<branch>@<sha>") that cites a branch of THIS card, by its id as the branch's last part or by its number (the
 // c<num> the branch is named for), names the commit that shipped. That commit, when it is on main, is the card's head { branch: main, sha, at, message }. Read only for a card whose branch tips all lack its trailer
 // (found by number, or none at all), never to override a tip that carries the card's own Board-Id. The branch name and the sha come from a ship line on main and go to git as plain arguments after the checks.
-export function shipCitedHead(repo, card) {
+// #C1387: `note` (optional) gets failed = true when a git call on main FAILED (the log, or a cited commit's ancestry); null with failed false is "no ship line cites it".
+export function shipCitedHead(repo, card, note = null) {
   if (!repo || typeof repo.git !== "function" || !repo.shippedPattern || !Number.isInteger(card.num) || card.num < 1 || card.num > 1e6) return null;
   let re;
   try { re = new RegExp(repo.shippedPattern, "g"); } catch { return null; }
   const mainRef = `${repo.remote}/${repo.main}`;
   let subjects = [];
-  try { subjects = String(repo.git(["log", "--first-parent", "-400", "--format=%s", mainRef])).split("\n"); } catch { return null; }
+  try { subjects = String(repo.git(["log", "--first-parent", "-400", "--format=%s", mainRef])).split("\n"); } catch { if (note) note.failed = true; return null; }
   for (const subject of subjects) {
     if (subject.length > 400) continue;
     for (const m of subject.matchAll(re)) {
@@ -959,7 +992,10 @@ export function shipCitedHead(repo, card) {
       if (String(branch).split("/").pop() !== card.id && branchNum(branch) !== card.num) continue;
       let full = "";
       try { full = String(repo.git(["rev-parse", "--verify", "--quiet", `${sha}^{commit}`])).trim(); } catch { continue; }
-      if (!/^[0-9a-f]{40}$/.test(full) || !ok(() => repo.git(["merge-base", "--is-ancestor", full, mainRef]))) continue;
+      if (!/^[0-9a-f]{40}$/.test(full)) continue;
+      const onMainAns = ancestry(() => repo.git(["merge-base", "--is-ancestor", full, mainRef]));
+      if (onMainAns === null && note) note.failed = true;
+      if (onMainAns !== true) continue;
       try {
         const [at, ...rest] = String(repo.git(["log", "-1", "--format=%ct%x1f%B", full])).split("\x1f");
         return { branch: repo.main, sha: full, at: Number(at) * 1000, message: rest.join("\x1f") };
@@ -979,19 +1015,25 @@ export function cardState(card, repo, config, now, opts = {}) {
   // as the Collector did (collect.mjs trailerOnMain, #C281/#C716). Without it the probe has no head for a shipped card and the board
   // shows it queued or stalled, because the store carries none of the Collector's readings.
   if (!tips.length && opts.head) tips = [opts.head];
-  if (!tips.length && typeof repo.git === "function") { const t = trailerHead(repo, card.id); if (t) tips = [t]; }
+  // #C1387: a read of main that FAILED (the trailer search, the ship line, an ancestry question) is not "no commit on main": the card says unread "main", whichever row it ends up with.
+  const miss = new Set();
+  const withMiss = (o) => (miss.size ? { ...o, unread: [...new Set([...(o.unread ?? []), ...miss])].sort() } : o);
+  if (!tips.length && typeof repo.git === "function") { const n = {}, t = trailerHead(repo, card.id, undefined, undefined, n); if (n.failed) miss.add("main"); if (t) tips = [t]; }
   // #C1239: no branch tip carries the card's own trailer (found by number only, or nothing found): a ship commit on main that cites a branch of the card names the commit that shipped.
   // Checker 2's F1 on bed0c76c: only when no tip is NEWER than the cited commit and still unmerged: a card that shipped once and then got new work (carrying the same slip) keeps that tip as its row, so the new work
   // is seen and its builder is told about the trailer. A newer tip that is an ancestor of main is no new work.
   if (typeof repo.git === "function" && tips.every((t) => boardIdOf(t.message) !== card.id)) {
-    const cited = shipCitedHead(repo, card);
+    const cn = {}, cited = shipCitedHead(repo, card, cn);
+    if (cn.failed) miss.add("main");
     const mainRef = `${repo.remote}/${repo.main}`;
-    const newer = cited ? tips.some((t) => Number.isFinite(t.at) && t.at > cited.at && !(/^[0-9a-f]{40}$/.test(String(t.sha)) && ok(() => repo.git(["merge-base", "--is-ancestor", t.sha, mainRef])))) : false;
+    // A tip whose place on main could not be read stays a row of its own (counts as newer, as it did), and the card says unread "main".
+    const tipOnMain = (t) => { if (!/^[0-9a-f]{40}$/.test(String(t.sha))) return false; const a = ancestry(() => repo.git(["merge-base", "--is-ancestor", t.sha, mainRef])); if (a === null) miss.add("main"); return a === true; };
+    const newer = cited ? tips.some((t) => Number.isFinite(t.at) && t.at > cited.at && !tipOnMain(t)) : false;
     if (cited && !newer) tips = [cited];
   }
   if (tips[0]) tips = [ownHead(repo, card, tips[0]), ...tips.slice(1)];
   let tip = tips[0];
-  if (!tip) return { ...base, ...(mainEvidence(repo, card) ?? {}) };
+  if (!tip) return withMiss({ ...base, ...(mainEvidence(repo, card) ?? {}) });
   let one = tipState(card, tip, repo, config, now, declared, opts.cover ?? null, opts.nudgeTop === true);
   // #C915 (incident 11-11: a card's v2 shipped in v1.209.9 and its v1 branch stayed, read "signed but behind main, re-cut" and dispatched to the
   // builder; a landed card's stale tip went to Checker five times): when none of the card's branch tips is on main but a commit on main carries
@@ -999,8 +1041,12 @@ export function cardState(card, repo, config, now, opts = {}) {
   // newer version is often deleted at merge, so the tips alone cannot show it. A tip that is built ON the main commit (the commit is its ancestor)
   // is rework after the landing, not an older version: it stays the card's tip (tests/probe-trailer-fallback.test.mjs).
   if (!one.onMain && typeof repo.git === "function") {
-    const landedHead = trailerHead(repo, card.id);
-    if (landedHead && !ok(() => repo.git(["merge-base", "--is-ancestor", landedHead.sha, tip.sha]))) {
+    const hn = {}, landedHead = trailerHead(repo, card.id, undefined, undefined, hn);
+    if (hn.failed) miss.add("main");
+    // A failed ancestry question here answers neither: the card keeps its own tip (no swap) and says unread "main".
+    const underTip = landedHead ? ancestry(() => repo.git(["merge-base", "--is-ancestor", landedHead.sha, tip.sha])) : true;
+    if (underTip === null) miss.add("main");
+    if (landedHead && underTip === false) {
       const m = tipState(card, landedHead, repo, config, now, declared, null);
       if (m.onMain === true) { tips = [landedHead]; tip = landedHead; one = m; }
     }
@@ -1022,9 +1068,9 @@ export function cardState(card, repo, config, now, opts = {}) {
       const taken = new Set();
       out.branches = tips.map((t, n) => ({ name: branchName(t.branch, taken, n), ci: "none", ciMin: null, ...stateOf(t) }));
     }
-    return out;
+    return withMiss(out);
   }
-  return { ...base, ...one };
+  return withMiss({ ...base, ...one });
 }
 // A branch's family: the whole branch name without a version suffix, so build/x, build/x-v2 and build/x-v3 are versions of one thing (the
 // re-cut naming is <id>-v<N>). The path stays in it: build/x and admin/x are twins (#C621), two rows, not versions.
@@ -1051,16 +1097,17 @@ export function readStacks(dir, now, read = readTail) {
 // `cache` is { old: { branch: { key, recs } }, next: {} }: old is read, next gets every branch read this run (so a branch that is gone drops out of the file).
 // The answer is the same with or without it.
 export const STACK_CACHE_MAX_RECS_BYTES = 64 * 1024;
-export function mergedBranches(repo) {
+// #C1387: `note` (optional) gets failed = true when a git call FAILED (a failed list is an empty set with failed true, never "no branch is merged").
+export function mergedBranches(repo, note = null) {
   try {
     return new Set(String(repo.git(["for-each-ref", "--merged", `${repo.remote}/${repo.main}`, `refs/remotes/${repo.remote}`, "--format=%(refname:lstrip=3)"])).split("\n").map((s) => s.trim()).filter(Boolean));
-  } catch { return new Set(); }
+  } catch { if (note) note.failed = true; return new Set(); }
 }
-export function stackHeads(repo, tips, open, cache = null) {
+export function stackHeads(repo, tips, open, cache = null, note = null) {
   const heads = {};
   if (!open.size || typeof repo.git !== "function") return heads;
   const mainSha = (repo.tips ?? []).find((t) => t.branch === repo.main)?.sha;
-  const merged = mergedBranches(repo);
+  const merged = mergedBranches(repo, note);
   for (const t of [...tips].sort((a, b) => (b.at ?? 0) - (a.at ?? 0))) {
     if (!/^[A-Za-z0-9._\/-]+$/.test(String(t.branch)) || String(t.branch).startsWith("-")) continue;
     if (merged.has(t.branch)) continue;
@@ -1068,7 +1115,7 @@ export function stackHeads(repo, tips, open, cache = null) {
     let recs = key && cache.old?.[t.branch]?.key === key && Array.isArray(cache.old[t.branch].recs) ? cache.old[t.branch].recs : null;
     if (!recs) {
       let log = "";
-      try { log = String(repo.git(["log", "-100", "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${t.branch}`, "--not", `${repo.remote}/${repo.main}`])); } catch { continue; }
+      try { log = String(repo.git(["log", "-100", "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${t.branch}`, "--not", `${repo.remote}/${repo.main}`])); } catch { if (note) note.failed = true; continue; }
       recs = [];
       for (const rec of log.split("\x1e")) {
         const [sha, at, message] = rec.replace(/^\n/, "").split("\x1f");
@@ -1169,15 +1216,19 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [],
     if (!wantsHead.has(repo)) wantsHead.set(repo, new Set());
     wantsHead.get(repo).add(card.id);
   }
-  const groupHead = {};
+  const groupHead = {}, groupUnread = new Set();
   for (const [repo, ids] of wantsHead) {
     const groupTips = (repo.tips ?? []).filter((h) => h.branch !== repo.main && batchedIds.has(boardIdOf(h.message)));
-    Object.assign(groupHead, stackHeads(repo, groupTips, ids));
+    // #C1387: a read of the group's branches that failed leaves its members with no head: they say unread "stack", not "not built".
+    const gn = {};
+    Object.assign(groupHead, stackHeads(repo, groupTips, ids, null, gn));
+    if (gn.failed) for (const id of ids) groupUnread.add(id);
   }
+  const markUnread = (o, src) => ({ ...o, unread: [...new Set([...(o.unread ?? []), src])].sort() });
   // The group tip's notes cover every member under it (design 4, as the stack path does: one review per group, #C1032), so the cover is the full sha of the
   // tip of the branch the head was found on; a FINDINGS on the tip reaches the members the same way (tipState).
   const coverOf = (repo, head) => (repo.tips ?? []).find((t) => t.branch === head.branch)?.sha ?? null;
-  for (const [card, repo] of todo) out[card.id] = cardState(card, repo, config, now, groupHead[card.id] ? { head: groupHead[card.id], cover: coverOf(repo, groupHead[card.id]) } : {});
+  for (const [card, repo] of todo) { out[card.id] = cardState(card, repo, config, now, groupHead[card.id] ? { head: groupHead[card.id], cover: coverOf(repo, groupHead[card.id]) } : {}); if (groupUnread.has(card.id) && !groupHead[card.id]) out[card.id] = markUnread(out[card.id], "stack"); }
   // #C859 slice 2: for a repository whose stack switch is on (`stacks`: the repository names, "" for the team's own), the stack read from git.
   // Nothing is added for a switch that is off, which is the default: the switch off is today's reading.
   for (const name of stacks) {
@@ -1187,7 +1238,8 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [],
     // A card in the middle of a chain has its commit on the branch but not at its tip, and the branch is not named for it: headsFor does not
     // find it. The stack reads every commit the branch holds beyond main (its last 100) for the Board-Id trailers of the repository's open cards.
     const open = new Set(Object.keys(out).filter((id) => repoOfCard[id] === repo && !out[id].onMain));
-    const found = stackHeads(repo, tips, open, stackCache ? { old: stackCache.old?.[name] ?? {}, next: (stackCache.next[name] = {}) } : null);
+    const sn = {}; // #C1387: sn.failed is set when a stack read FAILED (the branches' commits, the merged list, an ancestry question): every open card of the repository then says unread "stack"
+    const found = stackHeads(repo, tips, open, stackCache ? { old: stackCache.old?.[name] ?? {}, next: (stackCache.next[name] = {}) } : null, sn);
     const heads = Object.fromEntries(Object.entries(found).map(([id, h]) => [id, h.sha]));
     for (const id of open) if (!heads[id] && out[id].headSha12) heads[id] = out[id].headSha12;
     // #C1311 (measured 11-19: readStack asked `merge-base --is-ancestor` once per branch tip per head, 627 x 6, about 3800 calls and 27 s): a head is asked of
@@ -1203,11 +1255,15 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [],
       }
       return holders.get(a);
     };
-    const isAncestor = (a, b) => {
+    // #C1387: git's exit 1 is "no"; any other failure answers false here (the shape of the stack) AND marks the stack unread; `quiet` is for the stackHold question, whose noted commits may be pruned (not a read failure).
+    const ancestorOf = (a, b, quiet) => {
       if (a === b || String(b).startsWith(a)) return true;
       if (tipShas.has(b)) { const held = holdersOf(a); if (held) return held.has(b); }
-      return ok(() => repo.git(["merge-base", "--is-ancestor", a, b]));
+      const r = ancestry(() => repo.git(["merge-base", "--is-ancestor", a, b]));
+      if (r === null && !quiet) sn.failed = true;
+      return r === true;
     };
+    const isAncestor = (a, b) => ancestorOf(a, b, false);
     const stack = readStack({ heads, tips, isAncestor });
     const fields = stackFields(stack);
     // #C1209: with no member's commit at the stack tip, the topmost member (every other member's head is under it) is asked the behind-main question for the tip.
@@ -1232,7 +1288,7 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [],
     // under), and a rev-list git still refuses falls back to the pairs, so the answer is the same in every case.
     let notedReach = null;
     if (noted.length) { try { notedReach = String(repo.git(["rev-list", "--ignore-missing", ...noted])).split("\n").filter((s) => /^[0-9a-f]{40}$/.test(s)); } catch { notedReach = null; } }
-    const underNoted = (h) => (notedReach ? notedReach.some((s) => s.startsWith(String(h))) : noted.some((c) => isAncestor(h, c)));
+    const underNoted = (h) => (notedReach ? notedReach.some((s) => s.startsWith(String(h))) : noted.some((c) => ancestorOf(h, c, true)));
     const headAt = (id) => {
       if (Number.isFinite(found[id]?.at)) return found[id].at;
       try { return Number(String(repo.git(["log", "-1", "--format=%ct", heads[id]])).trim()) * 1000; } catch { return NaN; }
@@ -1250,6 +1306,7 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [],
       const { readyAt: _r, waitingFor: _w, ...held } = out[id];
       out[id] = { ...held, ...(held.phase && held.onMain !== true ? { phase: config.collector.buildPhase, firm: false } : {}), stackHold: true, ...(waiting.some((c) => sameCommit(c, heads[id])) ? { builtWaiting: true } : {}) };
     }
+    if (sn.failed) for (const id of open) out[id] = markUnread(out[id], "stack");
   }
   // #C1020: a board-repository card on main shows packed and installed from the deploy pairs (pairsIn, the owner's pair folder) and git alone:
   // packed when a pair's pin holds its landing, installed when such a pair's deploy ran. Never for a card of another repository, nor one not on main.
@@ -1549,9 +1606,10 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const repos = {};
   if (c.repoPath) {
     const r = repoAt(home(c.repoPath), c.remote, c.mainBranch, c.notes);
-    let live = null;
-    if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { /* none */ } }
-    repos[""] = { ...r, ci: ciReader(r.gh, now, ciCache, backoff, { batch: true }), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern, reviewPaths: c.reviewPaths ?? null };
+    let live = null, liveUnread = false;
+    // #C1387: a deploy run list that FAILED (gh down, a bad answer) is liveUnread, not "nothing deployed"; an empty list is none.
+    if (c.deployWorkflow) { try { live = JSON.parse(r.gh(["run", "list", "--branch", c.mainBranch, "--workflow", c.deployWorkflow, "--status", "success", "--limit", "1", "--json", "headSha"]))[0]?.headSha ?? null; } catch { liveUnread = true; } }
+    repos[""] = { ...r, ...(liveUnread ? { liveUnread: true } : {}), ci: ciReader(r.gh, now, ciCache, backoff, { batch: true }), ships: now < backoff.until ? null : shipRuns(r.gh, now, shipBackoff, { git: r.git, shippedPattern: c.shippedPattern }), live: /^[0-9a-f]{40}$/.test(live ?? "") ? live : null, versionPattern: c.versionPattern, shippedPattern: c.shippedPattern, reviewPaths: c.reviewPaths ?? null };
     // #C974: the live config follows the copy landed on main (the next run reads it). A failure here never stops the run.
     if (c.configInRepo) { const l = syncLiveConfig({ git: r.git, tip: `${c.remote}/${c.mainBranch}`, file: c.configInRepo, notesRef: r.notes.security, livePath: process.argv[at + 1] }); if (l) console.log(l); }
   }
@@ -1559,8 +1617,9 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const installed = installedSha(home(x.installedLink ?? ""));
     const at = repoAt(home(x.path), x.remote ?? "origin", x.mainBranch ?? "main", x.notes);
     // #C737: the evidence job of the store sets FB_DEPLOY_RULE; the old state job does not, and keeps reading the installed link.
-    const live = process.env.FB_DEPLOY_RULE === "1" ? deployedSha(at.git, process.env.FB_DEPLOY_WORKER, process.env.FB_DEPLOY_TREE) : installed;
-    repos[x.name] = { ...at, gh: null, live, versionPattern: null, reviewPaths: x.reviewPaths ?? null };
+    const dn = {}; // #C1387: dn.failed is set when the ancestry between the two deployed commits could not be read
+    const live = process.env.FB_DEPLOY_RULE === "1" ? deployedSha(at.git, process.env.FB_DEPLOY_WORKER, process.env.FB_DEPLOY_TREE, dn) : installed;
+    repos[x.name] = { ...at, gh: null, live, ...(dn.failed ? { liveUnread: true } : {}), versionPattern: null, reviewPaths: x.reviewPaths ?? null };
   }
   lap("repos");
   // The store's cards as the evidence job left them (store-cards.json); the agents from the app's files.
