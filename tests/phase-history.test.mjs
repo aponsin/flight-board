@@ -51,16 +51,17 @@ test("the compat view gives the history as the old steps, and the old page puts 
   const db = await seed();
   const now = Date.now();
   await writeEvidence(db, now - 3_600_000, "probe", "cards.c1", lit("plan"));
-  await writeEvidence(db, now - 600_000, "probe", "cards.c1", lit("build"));
+  await writeEvidence(db, now - 600_000, "probe", "cards.c1", { ...lit("build"), headSha12: "a1b2c3d4e5f6", onMain: false });
+  await writeEvidence(db, now - 60_000, "probe", "agents", { Builder: { state: "working", card: "c1" } });
   const view = await readView(db, now);
   const c = compatView(view).collections;
   assert.deepEqual(c.steps.map((s) => [s.init, s.phase, s.kind, s.who]), [["c1", "plan", "start", "Builder"], ["c1", "plan", "end", "Builder"], ["c1", "build", "start", "Builder"]]);
   const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
   const board = render(html, c).board;
-  // Plan is over after the 50 minutes the history says (the old page shows a finished tile's time); Build is the one in progress,
-  // from the history's start (the old page's own "start logged HH:MM" line, until it sees work).
-  assert.match(board, /<div class="step done" title="Plan">Plan<small>50 min<\/small>/);
-  assert.match(board, /<div class="step now[^"]*" title="Build">Build<small[^>]*>start logged /);
+  // #C1382: the card row draws the Worker's reading: Build is the tile in progress, worked by the role the history names, with the time from the history's start.
+  // (The page's old "start logged HH:MM" line and the Plan tile's finished time came from the step log read by the page itself and are gone.)
+  assert.deepEqual(c.readings.map((r) => [r.id, r.state, r.phase, r.with]), [["c1", "working", "build", "Builder"]]);
+  assert.match(board, /<div class="step now" title="Build[^"]*">Build<small>Builder · \d+ min<\/small>/);
 });
 
 test("no history, no steps collection", async () => {

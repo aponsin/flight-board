@@ -3,7 +3,7 @@
 // it came from, when and by whom. The group's number and name are in its batch id (Manager: "g3-probe-and-watchdog" → "G3 · Probe and watchdog").
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadNames } from "./harness.mjs";
+import { loadNames, readingDoc, setReadings } from "./harness.mjs";
 
 const NAMES = ["groupLabel", "groupShort", "groupOrderRows", "groupRankOf", "groupCmp", "groupMoveButtons", "groupList", "groupFacts", "groupRow", "pulledTag", "railState", "renderBoard", "initRow", "gates", "enrich", "PHASES"];
 function board(initRaw, host = "store") {
@@ -53,6 +53,7 @@ test("the group row's phase is its earliest card's, its ETA the latest, its star
 test("the board draws one group row with its cards on the rail, each with its state and Pull out; an ungrouped card stays a normal row", () => {
   const skip = ["test", "security"];
   const b = board([card("one", 977, { batch: "g3-board-look-fixes", phase: "checker", skip }), card("two", 983, { batch: "g3-board-look-fixes", skip }), card("solo", 981)]);
+  setReadings(b, readingDoc("one", { phase: "checker", with: "Checker" }));
   b.renderBoard();
   const h = b.els.board.innerHTML;
   assert.equal((h.match(/class="i-row g-row"/g) || []).length, 1);
@@ -65,7 +66,10 @@ test("the board draws one group row with its cards on the rail, each with its st
   assert.equal((h.match(/<strong>Card 977<\/strong>/g) || []).length, 1, "the card's title is drawn once, with its row opened");
   const opened = h.slice(h.indexOf('data-card="one"'), h.indexOf('data-card="one"') + 600);
   assert.doesNotMatch(opened, /<strong>|class="size"|class="c-repo"/, "the opened card's own line has no title, size or repo badge");
-  assert.match(opened, /<span class="state active">In flight<\/span>/, "its state stays");
+  // #C1382: the opened card's state is its reading's words ("Waits for Checker"); a card with no reading is "No reading", never a guess.
+  assert.match(opened, /<span class="state active">Waits for Checker<\/span>/, "its state stays, from its reading");
+  const two = h.slice(h.indexOf('data-card="two"'), h.indexOf('data-card="two"') + 600);
+  assert.match(two, /<span class="state active">No reading<\/span>/, "no reading served: the plain ring's word");
   assert.match(h, /<div data-card="solo"><div class="i-name">[^]*?<strong>Card 981<\/strong>[^]*?<span class="size">S<\/span>/, "an ungrouped card keeps its one line with the title and size");
   assert.doesNotMatch(h, /<span class="state done">Built<\/span>/, "no open card past Build says Built");
   assert.equal((h.match(/data-pull="(one|two)"/g) || []).length, 2, "a Pull out per grouped card");

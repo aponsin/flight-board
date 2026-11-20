@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dispatchRun } from "../collector/store-dispatch.mjs";
 import { dispatchItems, dispatchLine } from "../gate/reset.mjs";
-import { loadNames } from "./harness.mjs";
+import { loadNames, readingDoc, setReadings } from "./harness.mjs";
 
 const NOW = 1_800_000_000_000, MIN = 60_000;
 const ROSTER = ["Manager", "Boardsmith", "Checker", "Security", "Release"], LEAD = "Manager";
@@ -100,16 +100,17 @@ test("dispatchLine checks the range again: a bad number, tip or group word never
 });
 
 // ---- the page: cards reviewed together pulse in unison ----
-const NAMES = ["groupRow", "initRow", "gates", "enrich", "probeEvent", "state", "isTogether", "pulseSync", "pulseOffset"];
-function board(raw, agents, tiles = []) {
+const NAMES = ["groupRow", "initRow", "gates", "enrich", "state", "isTogether", "pulseSync", "pulseOffset"];
+// #C1382: a card row draws the Worker's reading; `readings` maps a card id to the reading's own fields.
+function board(raw, readings, tiles = []) {
   const document = { documentElement: { getAttribute: () => "store" }, getElementById: () => ({ innerHTML: "", textContent: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {} }), querySelectorAll: (q) => (q === ".step.now" ? tiles : []), querySelector: () => null, addEventListener() {}, activeElement: null, createRange: () => ({}) };
   const b = loadNames(NAMES, { document });
   Object.assign(b.state, { initRaw: raw, initiatives: raw.map((i) => b.gates(b.enrich(i))), steps: [], waiting: [], derived: [], messages: [], threads: [] });
-  b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - 20e3 }, cards: {}, agents } } }, {});
+  setReadings(b, ...Object.entries(readings).map(([id, over]) => readingDoc(id, over)));
   return b;
 }
 const pcard = (id, num, extra = {}) => ({ id, num, name: `Card ${num}`, size: "S", level: "Quick", status: "active", phase: "checker", who: "Checker", repo: "flight-board", batch: "g5-thing", branch: `build/${id}`, createdAt: 1_800_000_000_000 + num * 60e3, ...extra });
-const on = (id) => ({ state: "working", card: id, lastActivityAt: Date.now(), since: Date.now() - 60e3 });
+const on = (phase, who) => ({ phase, state: "working", wait: null, with: who, working: true });
 const nowTile = (html) => [...html.matchAll(/<div class="(step now[^"]*)" title="Checker[^"]*">(.*?)<\/div>/g)].map((m) => ({ cls: m[1], inner: m[2] }));
 // A pulsing tile as the page's DOM holds it: its classes and its row (a card's data-card, or a group's data-group).
 // The page's own shape (Designer F1 on 04b8dfcc): a card's .i-row holds a [data-card] div that closes before the track, so the tile's closest .i-row has no dataset of its own and finds its card inside; a group's .i-row carries data-group.
@@ -118,7 +119,7 @@ const delay = (t) => Number(/^-(\d+)ms$/.exec(t.style.animationDelay)?.[1]);
 const near = (x, y) => Math.abs(x - y) <= 50 || Math.abs(Math.abs(x - y) - 2400) <= 50; // the same phase of a 2.4 s pulse, the clock moving a few ms between two reads
 
 test("page: two cards of a group read at the same review phase say together on their tiles and the group's", () => {
-  const b = board([pcard("alpha-card", 1, {}), pcard("bravo-card", 2, { who: "Checker 2" })], { Checker: on("alpha-card"), "Checker 2": on("bravo-card") });
+  const b = board([pcard("alpha-card", 1, {}), pcard("bravo-card", 2, { who: "Checker 2" })], { "alpha-card": on("checker", "Checker"), "bravo-card": on("checker", "Checker 2") });
   const [ta] = nowTile(b.initRow(b.state.initiatives[0])), [tb] = nowTile(b.initRow(b.state.initiatives[1]));
   assert.match(ta.cls, /together/);
   assert.match(ta.inner, /<small class="tog">together<\/small>/);
@@ -150,7 +151,7 @@ test("page (Designer F1): two lone cards get different delays, and a lone card i
 });
 
 test("page (Designer F1): a card row's markup is the shape pulseSync reads: [data-card] inside the .i-row, the track after it, no data-group", () => {
-  const b = board([pcard("alpha-card", 1)], { Checker: on("alpha-card") });
+  const b = board([pcard("alpha-card", 1)], { "alpha-card": on("checker", "Checker") });
   const html = b.initRow(b.state.initiatives[0]);
   assert.match(html, /^<div class="i-row[^"]*"><div data-card="alpha-card">/);
   assert.ok(html.indexOf('data-card="alpha-card"') < html.indexOf('<div class="track"'), "the card's id comes before its track, inside the row");
@@ -159,12 +160,12 @@ test("page (Designer F1): a card row's markup is the shape pulseSync reads: [dat
 });
 
 test("page (Designer F2): the group tile's together label has the tog class, as the card's", () => {
-  const b = board([pcard("alpha-card", 1), pcard("bravo-card", 2, { who: "Checker 2" })], { Checker: on("alpha-card"), "Checker 2": on("bravo-card") });
+  const b = board([pcard("alpha-card", 1), pcard("bravo-card", 2, { who: "Checker 2" })], { "alpha-card": on("checker", "Checker"), "bravo-card": on("checker", "Checker 2") });
   assert.match(b.groupRow("g5-thing", b.state.initiatives).split('<div class="g-rail">')[0], /<small class="tog">together<\/small>/);
 });
 
 test("page: a card reviewed alone pulses by itself: no together class or label", () => {
-  const b = board([pcard("a", 1), pcard("b", 2, { phase: "build", who: "Boardsmith" })], { Checker: on("a"), Boardsmith: on("b") });
+  const b = board([pcard("a", 1), pcard("b", 2, { phase: "build", who: "Boardsmith" })], { a: on("checker", "Checker"), b: on("build", "Boardsmith") });
   const [ta] = nowTile(b.initRow(b.state.initiatives[0]));
   assert.ok(ta, "its review tile pulses");
   assert.doesNotMatch(ta.cls, /together/);
@@ -173,7 +174,7 @@ test("page: a card reviewed alone pulses by itself: no together class or label",
 });
 
 test("page: only open, started cards of ONE group at the same review phase count as together", () => {
-  const b = board([pcard("a", 1), pcard("b", 2, { status: "paused" }), pcard("c", 3, { batch: "g6-other" }), pcard("d", 4, { phase: "security", who: "Security" }), pcard("e", 5, { phase: "build", who: "Boardsmith" }), pcard("f", 6, { phase: "build", who: "Boardsmith" })], { Checker: on("a") });
+  const b = board([pcard("a", 1), pcard("b", 2, { status: "paused" }), pcard("c", 3, { batch: "g6-other" }), pcard("d", 4, { phase: "security", who: "Security" }), pcard("e", 5, { phase: "build", who: "Boardsmith" }), pcard("f", 6, { phase: "build", who: "Boardsmith" })], { a: on("checker", "Checker") });
   assert.equal(b.isTogether("g5-thing", "checker"), false, "a paused card, a card of another group and one at another phase are not in the batch");
   assert.equal(b.isTogether("g5-thing", "build"), false, "build is no review phase");
   assert.equal(b.isTogether("", "checker"), false, "no group, no batch");

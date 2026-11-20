@@ -7,7 +7,7 @@
 //    the card says "Waiting on you" and names the ask, a link to it.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadNames, step } from "./harness.mjs";
+import { loadNames, step, readingDoc, setReadings } from "./harness.mjs";
 
 const MIN = 60e3;
 const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -71,8 +71,11 @@ test("a card with an open ask to the owner: not stalled, no stale next step, no 
   const b = loadNames(NAMES), i = owned(b);
   assert.equal(b.ownerWait(i).id, "w1");
   assert.equal(b.stalled(i), 0);
+  // #C1382: the words and the tile are the reading's: an ask wait is "Waiting on you" and the red and white stripes tile; the row's own link to the ask stays.
+  setReadings(b, readingDoc("x", { state: "waiting", wait: "ask", ask: 77, with: "Owner", phase: "build" }));
   const html = b.initRow(i);
-  assert.match(html, /<span class="state active">Waiting on you<\/span>/);
+  assert.match(html, /<span class="state \w+">Waiting on you<\/span>/);
+  assert.match(html, /<div class="step waits ask" title="Build/);
   assert.match(html, /<span class="ow-line">waiting on you: <a href="#" class="t-ref" data-tref="w1">/);
   assert.doesNotMatch(html, /No step logged|next step over 1 h old|ETA passed|Stalled/);
 });
@@ -82,8 +85,12 @@ test("once the owner has answered, or with no ask, the timers run again", () => 
     const b = loadNames(NAMES), i = owned(b, opts);
     assert.equal(b.ownerWait(i), null);
     assert.ok(b.stalled(i) >= 30, "stalled again");
+    // #C1382: the row says what the reading says (the page's own Stalled word is gone); the stall is asked of the reading.
+    setReadings(b, readingDoc("x", { state: "waiting", wait: "turn", with: "Builder", phase: "build" }));
     const html = b.initRow(i);
-    assert.match(html, />Stalled</);
+    assert.match(html, /<span class="state active">Waits for Builder<\/span>/);
+    assert.doesNotMatch(html, /waiting on you|Waiting on you/);
+    assert.match(html, /<div class="step waits proc" title="Build/);
     assert.match(html, /ETA passed/);
     assert.match(html, /next step over 1 h old/);
   }

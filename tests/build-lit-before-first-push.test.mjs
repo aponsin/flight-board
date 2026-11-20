@@ -40,14 +40,25 @@ test("the first push keeps it building with the usual line: no 'nothing pushed y
   const taken = rowOf((await draw(db)).html, "Taken card");
   assert.doesNotMatch(taken, /nothing pushed yet/);
   assert.doesNotMatch(taken, /<span class="state \w+">Queued<\/span>/);
-  assert.match(taken, /<span class="state active">Building<\/span>/, "a pushed head is building");
+  // #C1382: the row draws the reading. A pushed head with nobody on it waits for its owner's turn (the Builder), it is not queued and it is not "building".
+  assert.match(taken, /<span class="state active">Waits for Builder<\/span>/, "a pushed head waits for the Builder's turn");
+  assert.match(taken, /<div class="step waits proc" title="Build/, "the Build tile is the yellow wait tile");
+  // And with the Builder's session on the pushed card, the reading is working: the pill says Building and the tile blinks.
+  await writeEvidence(db, NOW - 1 * MIN, "probe", "agents", { Builder: { state: "working", card: "c-taken", since: NOW - 2 * MIN } });
+  const busy = rowOf((await draw(db)).html, "Taken card");
+  assert.match(busy, /<span class="state active">Building<\/span>/);
+  assert.match(busy, /<div class="step now" title="Build/);
 });
 
 test("the builder on the card (the probe's agents reading) is building too; a builder tile with no card stays idle", async () => {
   const db = await seed();
   await writeEvidence(db, NOW - 1 * MIN, "probe", "agents", { Builder: { state: "working", card: "c-wait", since: NOW - 2 * MIN } });
+  // #C1382: with no push of its own the reading is still `queued` (state before working in the page's tile), but it carries working: the Build tile is the queued tile.
   const working = await draw(db);
-  assert.doesNotMatch(rowOf(working.html, "Waiting card"), /<span class="state \w+">Queued</, "the builder's first Edit/Bash takes it");
+  assert.match(rowOf(working.html, "Waiting card"), /<div class="step now queued" title="Build/, "the builder on it: the queued tile, no push yet");
+  // Once it pushes, the builder's session on it is Building.
+  await writeEvidence(db, NOW - 1 * MIN, "probe", "cards.c-wait", { lit: ["build"], phase: "build", headSha12: "abc123def456", workSeen: true });
+  assert.match(rowOf((await draw(db)).html, "Waiting card"), /<span class="state active">Building<\/span>/, "the builder's first Edit/Bash takes it");
   const idle = await seed();
   await writeEvidence(idle, NOW - 1 * MIN, "probe", "agents", { Builder: { state: "idle" } });
   const d = await draw(idle);

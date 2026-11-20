@@ -32,10 +32,10 @@ test("a paused card whose repository phase is checker reads paused with the stil
   const html = await board(db), t = tile(html, "Checker");
   assert.ok(t, "the Checker tile is drawn");
   assert.doesNotMatch(t.cls, /\bnow\b/, "not blue");
-  assert.match(t.cls, /\bwaits\b/, "the still ring");
+  assert.equal(t.cls, "step here", "the still ring (#C1382: a paused card's own tile is drawn as unknown, whatever its reading says)");
   assert.doesNotMatch(html, /<div class="step[^"]*\bnow\b[^"]*" title="(?!Build)/, "no tile of the paused card is lit");
   assert.match(html, /<span class="state paused">Paused<\/span>/);
-  assert.match(html, /Checker<small>Paused<\/small>/);
+  assert.match(html, /Checker[^<]*<small><\/small>/, "the ring carries no word of its own: the pill says Paused");
 });
 
 test("a paused card stays still even with a reviewer's agent on it in the live reading", async () => {

@@ -1,7 +1,7 @@
 // #C207: a card's phase is the repository's (the collector's derived/all) when it has firm evidence; steps give timings.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadBoard, step } from "./harness.mjs";
+import { loadBoard, step, readingDoc, setReadings } from "./harness.mjs";
 
 const T = 1_800_000_000_000;
 function card(b, steps, derived, fields = {}) {
@@ -19,12 +19,15 @@ test("live by the evidence: the card says Live, still open, never stalled, whate
   assert.equal(i.stepPhase, "checker");
   assert.equal(i.version, "1.104.1");
   assert.equal(i.upNext, false);
+  // #C1382: the row draws the reading: a reading "done" is Live, still open, every tile done, never stalled by the page's own clock.
   const old = Date.now() - 9e6;
-  assert.equal(b.stalled({ ...i, lastStepAt: old }), 0);
-  assert.ok(b.stalled({ ...i, byEvidence: false, lastStepAt: old }) > 0, "the same card by its steps alone would stall");
+  setReadings(b, readingDoc("x", { state: "done", wait: null, with: null, phase: "live" }));
   const html = b.initRow({ ...i, lastStepAt: old });
   assert.match(html, /Live, still open/);
   assert.doesNotMatch(html, /Stalled|up next/);
+  assert.match(html, /<div class="step done" title="Live"/);
+  assert.match(html, /<div class="step done" title="Build"/);
+  assert.doesNotMatch(html, /class="step( now| here| waits)/, "no tile is lit as in progress");
   assert.match(html, /class="evidence differs" data-evdiff="[^"]*" aria-expanded="false" title="steps say Checker[^"]*">Repository: Live 1\.104\.1</, "the steps in the hover (#C450)");
 });
 

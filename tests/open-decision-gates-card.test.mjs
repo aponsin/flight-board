@@ -3,7 +3,7 @@
 // ("Chose ...", after it) or the decision is resolved. The worker already treats such a card as asked (decisionHolds, dispatch and stall lines); this is the page.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadNames } from "./harness.mjs";
+import { loadNames, readingDoc, setReadings } from "./harness.mjs";
 
 const NAMES = ["gates", "enrich", "initRow", "ownerWait", "stalled", "waitsOn", "threadSets", "threadRow", "cardDecision", "waitBoxes", "tabCounts", "state"];
 const now = Date.now(), MIN = 60e3;
@@ -35,9 +35,13 @@ test("an unpicked decision in the card's thread gates the card at its phase, ope
 test("the card reads Waiting on you and is not stalled while the decision is open", () => {
   const withDec = load([decision(now - 20 * MIN)]);
   assert.ok(withDec.ownerWait(withDec.state.initiatives[0]), "an owner wait is found");
+  // #C1382: the Worker's reading of such a card is the ask wait (decisionHolds); the row draws that: the stripes tile and "Waiting on you", no red box before it.
+  setReadings(withDec, readingDoc("c1-look", { state: "waiting", wait: "ask", with: "Owner", phase: "build", ask: null }));
   const row = withDec.initRow(withDec.state.initiatives[0]);
   assert.match(row, /ow-line">waiting on you: /, "the card says what it waits on");
-  assert.match(row, /<div class="wait gate live"/, "and its tile is the red gated one");
+  assert.match(row, /<div class="step waits ask" title="Build/, "and its Build tile is the red and white stripes one");
+  assert.match(row, /<span class="state [a-z ]*">Waiting on you<\/span>/, "the pill says so");
+  assert.doesNotMatch(row, /<div class="wait gate/, "no red Gated box in front of the tile any more");
   assert.equal(withDec.stalled(raw()), 0, "an hour without a step is not a stall");
   const without = load([]);
   assert.equal(without.ownerWait(without.state.initiatives[0]), null);

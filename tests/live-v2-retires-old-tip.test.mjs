@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { loadBoard } from "./harness.mjs";
+import { loadBoard, readingDoc, setReadings } from "./harness.mjs";
 import { createCard, updateCard, createAsk, writeEvidence } from "../worker/board-store.mjs";
 import { wakeAsk, takeInbox } from "./helpers/beating-store.mjs";
 import { holdOpen as workerHoldOpen, phaseMedians, slowLine, slowWakes, SHIP_SLOW_MS } from "../worker/board-rules.mjs";
@@ -152,7 +152,8 @@ test("(b) a card with an open hold_end is not dispatched; once its ask is closed
 });
 
 // ---- (c) the page ----
-const draw = (f) => { const b = loadBoard(); b.state.steps = []; b.state.waiting = []; return b.initRow(b.gates(b.enrich({ id: "x", level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", phase: "ship", ...f }))); };
+// #C1382: the card row draws its reading; the ship in progress is a working reading at ship (the "(est.)" line is drawn on that tile only).
+const draw = (f) => { const b = loadBoard(); b.state.steps = []; b.state.waiting = []; setReadings(b, readingDoc("x", { state: "working", wait: null, with: "Release", working: true, phase: "ship" })); return b.initRow(b.gates(b.enrich({ id: "x", level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", phase: "ship", ...f }))); };
 const SLOW_SHIP = { shipAt: Date.now() - 30 * MIN };
 test("(c) waiting_on shows on the tile as 'Held: <reason>'; a hold end alone shows 'Held: waiting on <id>'", () => {
   // #C935: the reason stays in view; the end is "Until: <end>" inside the card's Details fold.

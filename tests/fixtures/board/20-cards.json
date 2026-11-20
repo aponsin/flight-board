@@ -13,15 +13,21 @@
       "shipping": { "phase": "ship", "head": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "readyAt": "now-25m", "evidence": "every review signed", "shipping": true, "at": "now-3m" },
       "live": { "phase": "live", "head": "cccccccccccccccccccccccccccccccccccccccc", "readyAt": "now-2h", "version": "1.2.3", "evidence": "on main and deployed", "at": "now-3m" }
     } }],
+    "readings": [
+      { "id": "queued", "phase": "ship", "state": "waiting", "wait": "deploy", "with": "Release", "working": false, "since": null, "asOf": "now-3m", "why": "queued for the ship", "pack": null },
+      { "id": "shipping", "phase": "ship", "state": "working", "wait": null, "with": "Release", "working": true, "since": null, "asOf": "now-3m", "why": "shipping now", "pack": null },
+      { "id": "live", "phase": "live", "state": "done", "wait": null, "with": null, "working": false, "since": null, "asOf": "now-3m", "why": "live", "pack": null },
+      { "id": "gated", "phase": "build", "state": "waiting", "wait": "ask", "with": null, "working": false, "since": null, "asOf": "now-3m", "why": "waits on the owner's pick", "pack": null }
+    ],
     "waiting": [{ "id": "gate-pick", "kind": "decision", "initiative": "gated", "text": "Which colour?", "options": [{ "key": "A", "label": "Blue" }, { "key": "B", "label": "Green" }], "since": "now-15m" }],
     "threads": [{ "id": "gate-pick", "num": 21, "title": "Colour" }],
     "steps": [{ "id": "s1", "init": "gated", "phase": "build", "who": "Builder", "kind": "start", "at": "now-40m" }]
   },
   "expect": {
-    "queued": { "section": "board", "rows": 1, "phase": "Ship", "version": "Queued (1)" },
+    "queued": { "section": "board", "rows": 1, "phase": null, "status": "Queued for Release&#39;s ship", "version": "Queued (1)" },
     "shipping": { "section": "board", "rows": 1, "phase": "Ship", "version": "Shipping now" },
     "live": { "section": "board", "rows": 1, "status": "Live, still open", "version": "Live in v1.2.3" },
-    "gated": { "section": "board", "rows": 1, "gated": true },
+    "gated": { "section": "board", "rows": 1, "status": "Waiting on you", "gated": false },
     "gate-pick": { "section": "needs-you", "rows": 1, "badge": "waiting on you" }
   }
 }

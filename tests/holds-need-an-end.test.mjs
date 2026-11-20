@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
-import { loadBoard } from "./harness.mjs";
+import { loadBoard, readingDoc, setReadings } from "./harness.mjs";
 import { createCard, updateCard, createAsk, wakeAsk, takeInbox, writeEvidence, readView } from "../worker/board-store.mjs";
 import { holdEndRefusal, heldWakes } from "../worker/board-rules.mjs";
 import { derivedDoc, initiativeDoc } from "../worker/compat-view.mjs";
@@ -228,10 +228,12 @@ test("(e) a board-repo card on main and not deployed names its open ask, or the 
   for (const id of ["r1", "r2"]) await writeEvidence(db, T, "probe", `cards.${id}`, { lit: ["ship"], phase: "ship", onMain: true });
   const d = derivedDoc(await readView(db, T + 1000)).cards;
   assert.equal(d.r1.wait, "install"); assert.equal(d.r1.waitAsk, t.num); assert.equal(d.r2.waitAsk, undefined);
+  // #C1382: the row no longer draws the install wait's ask from the evidence (derived.waitAsk): it draws the reading. The install wait is the green stripes tile and the pill 'Waiting for install';
+  // a wait for the release of a product card (the draw here has no repo word, so it is a product card) is the yellow 'Queued for Release's ship'.
   const b = loadBoard(), old = Date.now() - 5 * H;
-  const draw = (id, derived) => { b.state.derived = [{ id: "all", cards: { [id]: derived } }]; b.state.steps = []; b.state.waiting = []; return b.initRow(b.gates(b.enrich({ id, level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", nextNote: "x", nextNoteAt: old, createdAt: old, etaLive: Date.now() + 1 }))); };
-  assert.match(draw("r1", { phase: "ship", wait: "install", waitAsk: t.num, evidence: "e" }), new RegExp(`Waiting for install: #T${t.num}`));
-  assert.match(draw("r2", { phase: "ship", wait: "install", evidence: "e" }), /Waiting for install: no deploy ask yet/);
-  // #C1288: the draw here has no repo word, so it is a product card: its release wait names Release's product ship (the board's own card still says "board release": tests/ship-tile-says-who-acts.test.mjs).
-  assert.match(draw("r2", { phase: "ship", wait: "release", evidence: "e" }), /Queued for Release(?:'|&#39;)s product ship/);
+  const draw = (id, reading) => { b.state.steps = []; b.state.waiting = []; setReadings(b, readingDoc(id, reading)); return b.initRow(b.gates(b.enrich({ id, level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", nextNote: "x", nextNoteAt: old, createdAt: old, etaLive: Date.now() + 1 }))); };
+  const inst = draw("r1", { phase: "install", state: "waiting", wait: "install", with: null });
+  assert.match(inst, /<span class="state queued">Waiting for install<\/span>/);
+  assert.doesNotMatch(inst, /Waiting for install: /, "the page no longer builds the ask's words from the evidence");
+  assert.match(draw("r2", { phase: "ship", state: "waiting", wait: "deploy", with: null }), /Queued for Release(?:'|&#39;)s ship/);
 });

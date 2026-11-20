@@ -2667,13 +2667,15 @@ function waitPillWord(i,R){const w=R.wait;
   if(w==="turn")return "Waits for "+(R.with||"a turn");if(w==="group")return "Waits for group";if(w==="land")return "Queued to land";if(w==="pack")return "Queued for pack";
   if(w==="install")return "Waiting for install";if(w==="deploy")return `Queued for ${RELEASE_ROLE}'s ship`;if(w==="ask")return "Waiting on you";if(w==="hold")return "Held";return ""}
 function tileCtx(i){
-  const R=readingOf(i.id),times=phaseTimes(i.phaseLog,i.status==="done"?i.doneAt:null),skip=Array.isArray(i.skip)?i.skip:[];
+  let R=readingOf(i.id);if(!R.phase)R={...R,phase:STRIP.includes(i.phase)?i.phase:"build"}; // no reading served: the plain ring at the card's own phase
+  const times=phaseTimes(i.phaseLog,i.status==="done"?i.doneAt:null),skip=Array.isArray(i.skip)?i.skip:[];
   {const gr=groupReadyAt(i);if(gr&&num(times[i.phase])!=null)times[i.phase]=Math.min(times[i.phase],Math.max(0,Date.now()-gr))} // #C1358: the clock starts at the group's READY
   return {R,times,skip,paused:i.status==="paused"};
 }
 function cardTile(i,X,k,l){const {R,times,skip,paused}=X;
   const T=paused&&k===R.phase?"unknown":tileAt(R,k),here=k===R.phase&&!/^(done|future)$/.test(T);
-  if(T==="future"){if(skip.includes(k))return {pre:"",html:"",skipTest:k==="test"};return {pre:"",html:UNLIT_PHASES.includes(k)&&phaseIndex(k)<0?unlitTile(l):`<div class="step" title="${esc(l)}">${esc(l)}<small>&nbsp;</small></div>`}}
+  if((T==="future"||T==="done")&&skip.includes(k)){if(T==="future"&&k==="test")return {pre:"",html:"",skipTest:true};return {pre:"",html:`<div class="step skip" title="${esc(l)}: not needed">${esc(l)}<small>not needed</small></div>`}}
+  if(T==="future"){return {pre:"",html:UNLIT_PHASES.includes(k)&&phaseIndex(k)<0?unlitTile(l):`<div class="step" title="${esc(l)}">${esc(l)}<small>&nbsp;</small></div>`}}
   let c="step",t="";
   if(T==="done")c+=" done";
   else if(T==="working")c+=" now";
@@ -2681,7 +2683,7 @@ function cardTile(i,X,k,l){const {R,times,skip,paused}=X;
   else if(T==="queued")c+=" now queued";
   else if(T==="unknown")c+=" here";
   else if(T==="ask")c+=" waits ask";
-  else if(T==="afterwork")c+=R.wait==="install"?" waits rel":" waits proc";
+  else if(T==="afterwork")c+=R.wait==="install"&&cardRepo(i)===BOARD_REPO?" waits rel":" waits proc"; // green is only the owner's install, and only a board card has one (#C1300)
   else c+=" waits proc";
   const stale=R.stale===true&&here;
   if(T==="done")t=times[k]?`<small>${dur(times[k])}</small>`:`<small>&nbsp;</small>`;
@@ -2697,9 +2699,9 @@ function cardTile(i,X,k,l){const {R,times,skip,paused}=X;
   const sd=sm!=null?(heldLine(i)?`<small data-shipat="1">held ${sm} min</small>`:`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`):"";
   // #C1309: a product card's Live tile names the version it shipped in ("v1.226.10"): a done card's own version, or the open card's live version, only once it is live.
   const vv=k===LIVE_PHASE&&cardRepo(i)!==BOARD_REPO&&(i.status==="done"||T==="done")?(i.version||(liveCard(i.id)||{}).liveVersion||""):"",verTag=/^v?\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(String(vv||""))?`<small class="seen">v${esc(String(vv).replace(/^v/,""))}</small>`:"";
-  const vf=k===LIVE_PHASE&&here&&verifying(i),tg=!vf&&T==="working"&&isTogether(i.batch,i.phase);
+  const vf=k===LIVE_PHASE&&(here||T==="done")&&i.status!=="done"&&verifying(i),tg=!vf&&T==="working"&&isTogether(i.batch,i.phase);
   const why=here&&R.why?" | "+esc(R.why)+(stale?" (no fresh reading"+(Number.isFinite(R.staleSince)?" since "+hhmm(R.staleSince):"")+")":""):"";
-  return {pre:"",html:`<div class="${vf?"step verifying":c+(tg?" together":"")}" title="${esc(l)}${why}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:(verTag||t)}${tg?'<small class="tog">together</small>':""}${slow}${sd}</div>`}
+  return {pre:"",html:`<div class="${vf?"step verifying":c+(tg?" together":"")}" title="${esc(l)}${why}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:(verTag||t)}${tg?'<small class="tog">together</small>':""}${slow}${/^(done|working|stuck)$/.test(T)?sinceTag(i,k):""}${sd}</div>`}
 }
 // The pill beside a card's name: what its reading says in words. Paused, Dropped, a typed Blocked and Done are the card's own status, as before.
 function pillOf(i,R){if(i.status==="stuck")return "Blocked";if(i.status==="paused")return "Paused";if(i.dropped)return "Dropped";if(i.status==="done")return "Done";if(verifying(i))return "Verifying";

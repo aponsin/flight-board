@@ -5,7 +5,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { loadNames, step } from "./harness.mjs";
+import { loadNames, step, readingDoc, setReadings } from "./harness.mjs";
 
 const NOW = Date.now(), MIN = 60e3, H = 36e5, ID = "rev-card";
 const reading = (at) => ({
@@ -92,19 +92,24 @@ test("the disagreement opens and closes under the name row by a press; nothing t
 
 // (d) Manager, from Checker on this card's own render: the source said "Live: Language" while the track lit Build
 // ("Builder · 2 h", the steps' open start) and Language "up next".
-test("the owner's #C448 case: the track lights Language with Linguist, the reviewer the live state shows; Build isn't current", () => {
+test("the owner's #C448 case: the track lights Language with Linguist, the reviewer the reading names; Build isn't current", () => {
+  // #C1382: the row draws the reading (phase language, Linguist on it), not the live state's evidence or the steps' open build start.
   const b = board();
   b.probeEvent({ type: "data", result: { payload: reading(NOW - 12e3) } }, {});
+  setReadings(b, readingDoc(ID, { phase: "language", state: "working", wait: null, with: "Linguist", working: true }));
   const html = row(b);
   assert.match(html, /<div class="step now"[^>]*>Language<small>Linguist/, "Language lit, named");
-  assert.doesNotMatch(html, /class="step[^"]*\bnow\b[^"]*"[^>]*>Build</, "Build not current");
-  // The builder's clock is "Builder · 2 h"; the finished Build tile's own "Builder · Nov 10 ..." start time (#C881) is not a clock.
+  assert.match(html, /<div class="step done"[^>]*>Build</, "Build is passed, not current");
   assert.doesNotMatch(html, /up next|Builder · \d/, "no 'up next', no builder's clock");
-  const two = board(), later = reading(NOW - 12e3);
-  later.cards[ID].phase = "checker";
-  two.probeEvent({ type: "data", result: { payload: later } }, {});
-  assert.match(row(two), /<div class="step now"[^>]*>Language<small>Linguist/, "the card on Checker, Linguist still on it: Linguist lights Language (its notes ref), not Checker");
+  // On Checker with the Checker's turn: Language stands done and the Checker tile is the yellow wait tile.
+  const two = board();
+  setReadings(two, readingDoc(ID, { phase: "checker", state: "waiting", wait: "turn", with: "Checker" }));
+  const t2 = row(two);
+  assert.match(t2, /<div class="step done"[^>]*>Language</);
+  assert.match(t2, /<div class="step waits proc"[^>]*>Checker<small class="rs">Waits<span class="sl"> for<\/span> Checker/);
+  // Nobody on it, still at build: the steps' old build start lights nothing blue.
   const gone = board();
   gone.probeEvent({ type: "data", result: { payload: { ...reading(NOW - 12e3), agents: {} } } }, {});
+  setReadings(gone, readingDoc(ID, { phase: "build", state: "waiting", wait: "turn", with: "Builder", working: false }));
   assert.doesNotMatch(row(gone), /class="step[^"]*\bnow\b[^"]*"[^>]*>Build</, "nobody on it now: the steps' old build start still lights nothing");
 });

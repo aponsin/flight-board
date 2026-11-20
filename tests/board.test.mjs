@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadBoard, loadNames, step, renderWaitingHtml, probeWorking } from "./harness.mjs";
+import { loadBoard, loadNames, step, renderWaitingHtml, readingDoc, setReadings } from "./harness.mjs";
 
 const T = 1_800_000_000_000;
 function item(b, init, steps, fields = {}) {
@@ -9,13 +9,17 @@ function item(b, init, steps, fields = {}) {
   return b.gates(b.enrich({ id: init, level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", ...fields }));
 }
 
-test("a phase nobody has started yet shows as 'up next', not as work in progress", () => {
+test("a phase nobody has started yet shows as waiting for its turn, not as work in progress", () => {
   const b = loadBoard();
   const i = item(b, "x", [step("x", "build", "Admin", "start", T), step("x", "build", "Admin", "end", T + 1), step("x", "checker", "Checker", "start", T + 2), step("x", "checker", "Checker", "end", T + 3)]);
   assert.equal(i.phase, "ship");
   assert.equal(i.upNext, true);
+  // #C1382: the row draws the reading: signed and with Release for its turn is the yellow tile, the phases before it are done, the ones after it are plain.
+  setReadings(b, readingDoc("x", { phase: "ship", state: "waiting", wait: "turn", with: "Release" }));
   const html = b.initRow(i);
-  assert.match(html, /class="step upnext"[^>]*>Ship<small>up next<\/small>/);
+  assert.match(html, /class="step waits proc"[^>]*>Ship<small class="rs">Waits<span class="sl"> for<\/span> Release<\/small>/);
+  assert.match(html, /class="step done"[^>]*>Checker</);
+  assert.match(html, /<div class="step" title="Live">/);
   assert.doesNotMatch(html, /class="step now"/);
 });
 
@@ -24,7 +28,7 @@ test("a phase someone is working on shows as now, with who", () => {
   const i = item(b, "x", [step("x", "build", "Admin", "start", T), step("x", "build", "Admin", "end", T + 1), step("x", "checker", "Checker", "start", T + 2)]);
   assert.equal(i.phase, "checker");
   assert.ok(!i.upNext);
-  probeWorking(b, "x", "Checker", { phase: "checker" }); // #C1277: active needs a reading
+  setReadings(b, readingDoc("x", { phase: "checker", state: "working", wait: null, with: "Checker", working: true }));
   assert.match(b.initRow(i), /class="step now"[^>]*>Checker<small>Checker/);
 });
 
@@ -36,8 +40,12 @@ test("two agents working at once light both phases; the most advanced one is cur
   assert.equal(i.phase, "checker");
   assert.deepEqual(Object.keys(i.nowPhases).sort(), ["build", "checker"]);
   assert.deepEqual([...i.nowPhases.build], ["Admin"]);
+  // #C1382: a card has one place, its reading's: the most advanced phase is the one lit, Build behind it stands done.
+  setReadings(b, readingDoc("x", { phase: "checker", state: "working", wait: null, with: "Checker", working: true }));
   const html = b.initRow(i);
-  assert.match(html, /class="step now"[^>]*>Build<small>Admin/);
+  assert.match(html, /class="step now"[^>]*>Checker<small>Checker/);
+  assert.match(html, /class="step done"[^>]*>Build</);
+  assert.doesNotMatch(html, /class="step now"[^>]*>Build</);
 });
 
 test("a second start by the same agent closes its first one", () => {
@@ -53,7 +61,7 @@ test("the Test phase is hidden when no test step was logged, shown when one was"
   assert.doesNotMatch(b.initRow(without), />Test</);
   const withTest = item(b, "x", [step("x", "build", "Demos", "start", T), step("x", "build", "Demos", "end", T + 1), step("x", "test", "Demos", "start", T + 2)]);
   assert.equal(withTest.phase, "test");
-  probeWorking(b, "x", "Demos", { phase: "test" }); // #C1277: active needs a reading
+  setReadings(b, readingDoc("x", { phase: "test", state: "working", wait: null, with: "Demos", working: true }));
   assert.match(b.initRow(withTest), /class="step now"[^>]*>Test<small>Demos/);
 });
 
@@ -84,20 +92,13 @@ test("a partial ship (ship end, no live step) keeps the item open (2026-10-18)",
 test("while Release ships, the Ship box shows Release and the test/deploy estimate", () => {
   const b = loadBoard();
   const i = item(b, "x", [step("x", "ship", "Release", "start", Date.now() - 3 * 60000)]);
+  setReadings(b, readingDoc("x", { phase: "ship", state: "working", wait: null, with: "Release", working: true }));
   const html = b.initRow(i);
   assert.match(html, /Ship<small>Release/);
   assert.match(html, /tests \(est\.\) 3\/~10 min/);
 });
 
 // ---- Waits and gates ----
-
-test("a busy wait shows a Queued box before its phase; ending it removes the live pulse", () => {
-  const b = loadBoard();
-  const open = item(b, "x", [step("x", "ship", "Release", "start", T, { wait: "busy" })]);
-  assert.match(b.initRow(open), /class="wait busy live"[^>]*>⧗ Queued<small>Release/);
-  const closed = item(b, "x", [step("x", "ship", "Release", "start", T, { wait: "busy" }), step("x", "ship", "Release", "end", T + 1, { wait: "busy" }), step("x", "ship", "Release", "start", T + 2)]);
-  assert.doesNotMatch(b.initRow(closed), /wait busy live/);
-});
 
 test("an open question to Owner tied to an item gates it on Owner", () => {
   const b = loadBoard();
@@ -238,52 +239,23 @@ test("#C278: a wait the repository explains (queued for a board release, waiting
   const old = Date.now() - 5 * 3600e3;
   const base = { etaLive: Date.now() + 1, nextNote: "x", nextNoteAt: old, createdAt: old };
   const derived = (wait) => { b.state.derived = [{ id: "all", cards: { "board-x": { phase: "ship", wait, evidence: "e" } } }]; };
-  for (const [wait, says] of [["release", "Queued for Release(?:'|&#39;)s product ship"], ["install", "Waiting for install"]]) {
+  // #C1382: the row says the wait the reading names (deploy, install), and never a Stalled of its own.
+  for (const [wait, says, rwait] of [["release", "Queued for Release(?:'|&#39;)s ship", "deploy"], ["install", "Waiting for install", "install"]]) {
     derived(wait);
+    setReadings(b, readingDoc("board-x", { phase: "ship", state: "waiting", wait: rwait, with: rwait === "install" ? "Owner" : "Release" }));
     const i = item(b, "board-x", [step("board-x", "build", "Boardsmith", "start", old - 1), step("board-x", "build", "Boardsmith", "end", old)], base);
-    assert.equal(b.stalled(i), 0, wait);
     assert.ok(![...b.gaps(i)].some((g) => /over 1 h old|never started/.test(g)), wait);
     assert.match(b.initRow(i), new RegExp(says));
     assert.doesNotMatch(b.initRow(i), /Stalled/);
     const fresh = item(b, "board-x", [], { ...base, lastStepAt: undefined });
     assert.ok(![...b.gaps(fresh)].includes("never started"), `${wait}: no step logged is fine while waiting`);
   }
-  // Without a known wait (or an unknown one) the alarms are as before.
+  // Without a known wait (or an unknown one) the step-log gaps are as before.
   for (const wait of [undefined, "lunch", "constructor"]) {
     derived(wait);
     const i = item(b, "board-x", [step("board-x", "build", "Boardsmith", "start", old - 1), step("board-x", "build", "Boardsmith", "end", old)], base);
-    assert.ok(b.stalled(i) > 0, String(wait));
     assert.ok([...b.gaps(i)].includes("next step over 1 h old"), String(wait));
   }
-});
-
-test("9. stalled: in flight with no step for 30+ min shows a Stalled flag, not a Manager-missed line", () => {
-  const b = loadBoard();
-  const old = Date.now() - 31 * 60e3;
-  const base = { etaLive: Date.now() + 1, nextNote: "x", nextNoteAt: Date.now() };
-  const i = item(b, "x", [step("x", "build", "Admin", "start", old - 1), step("x", "build", "Admin", "end", old)], base);
-  assert.equal(b.stalled(i), 31);
-  assert.ok(![...b.gaps(i)].some((g) => /stalled/.test(g)));
-  // An open step that has run 30+ min with nothing logged is stalled too: the board can't tell work from a hang.
-  const open = item(b, "x", [step("x", "build", "Admin", "start", old)], { ...base, branch: "build/x" });
-  assert.equal(b.stalled(open), 31);
-  // A start with no branch, commit or agent behind it is "no work seen" (#C655), never a stall.
-  assert.equal(b.stalled(item(b, "x", [step("x", "build", "Admin", "start", old)], base)), 0);
-  const fresh = item(b, "x", [step("x", "build", "Admin", "start", Date.now() - 1), step("x", "build", "Admin", "end", Date.now())], base);
-  assert.equal(b.stalled(fresh), 0);
-  // Queued behind a busy agent, or held by Owner, or done: not stalled.
-  const queued = item(b, "x", [step("x", "build", "Admin", "start", old, { wait: "busy" })], base);
-  assert.equal(b.stalled(queued), 0);
-  b.state.waiting = [{ id: "w", initiative: "x", since: old, text: "pick" }];
-  const gated = b.gates(b.enrich({ id: "x", level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", ...base }));
-  assert.equal(b.stalled(gated), 0);
-  const done = item(b, "x", [step("x", "build", "Admin", "start", old - 2), step("x", "live", "Release", "end", old, { version: "v1" })], base);
-  assert.equal(b.stalled(done), 0);
-  // The row says so, with the last step's time.
-  const row = b.initRow(i);
-  assert.match(row, /class="state stalled">Stalled</);
-  assert.match(row, /class="stall">No step logged for 31 min \(last at /);
-  assert.doesNotMatch(b.initRow(fresh), /Stalled/);
 });
 
 test("10. never started: created 15+ min ago with no step logged", () => {

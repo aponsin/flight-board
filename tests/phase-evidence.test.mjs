@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { seenPhases, cardState } from "../collector/state.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
-import { loadNames } from "./harness.mjs";
+import { loadNames, readingDoc, setReadings } from "./harness.mjs";
 
 const T = Date.now() - 1234;
 const cfg = { phases: [["plan"], ["build"], ["test"], ["checker"], ["security"], ["ship"], ["live"]], skips: [], collector: { notes: { checker: "x", security: "y" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", mainBranch: "main", repos: [] } };
@@ -75,27 +75,26 @@ test("the page reads seen from a fresh live state, keeps only phases it has, and
   assert.deepEqual(seen({ seen: "build" }), []);
 });
 
-// The tile row of a card in the checker phase, as the page draws it (steps silent for every phase).
-function tiles(probeCard, phase = "checker") {
+// #C1382: the 'in the repo' and amber 'no record' looks of a phase are gone from the card row: the reading's phase decides (a phase passed is done, one not reached is plain),
+// and the probe's `seen` list lights nothing.
+function readTiles(readingPhase, probeCard) {
   const b = loadNames(["initRow", "liveCard", "probeEvent"]);
   Object.assign(b.state, { steps: [], derived: [], todo: [], ideas: [], waiting: [], messages: [], threads: [] });
-  const card = { id: "board-x", num: 620, name: "X", size: "S", status: "active", phase, createdAt: Date.now() - 6e4, etaLive: Date.now() + 36e5 };
+  const card = { id: "board-x", num: 620, name: "X", size: "S", status: "active", phase: "build", createdAt: Date.now() - 6e4, etaLive: Date.now() + 36e5 };
   Object.assign(b.state, { initRaw: [card], initiatives: [card] });
   if (probeCard) b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - 20e3 }, cards: { "board-x": { headSha12: "a1b2c3d4e5f6", onMain: false, phase: "checker", ...probeCard } }, agents: {} } } });
+  if (readingPhase) setReadings(b, readingDoc("board-x", { state: "working", wait: null, with: "Checker", working: true, phase: readingPhase }));
   const row = b.initRow(card);
   return (label) => new RegExp(`<div class="(step[^"]*)"[^>]*>${label}(<small[^>]*>[^<]*</small>)`).exec(row);
 }
 
-test("a past phase with evidence is lit 'in the repo'; with nothing behind it, the tile is amber 'no record'", () => {
-  const ahead = tiles({ seen: ["build", "test", "checker"] }, "build"); // a card at build: Test and Checker are ahead of it
-  assert.match(ahead("Test")[1], /^step done seen$/);
-  assert.match(ahead("Checker")[0], /class="step done seen"[^>]*>Checker<small class="seen">in the repo/);
-  const tile = tiles({ seen: ["build", "checker", "security"] });
-  assert.match(tile("Build")[0], /class="step done"[^>]*>Build<small class="seen">in the repo/);
-  assert.match(tile("Security")[1], /^step done seen$/, "ahead of the card's phase but seen: lit");
-  assert.match(tile("Security")[2], /in the repo/);
-  const bare = tiles(null);
-  assert.match(bare("Build")[1], /^step done norec$/, "nothing behind it: the tile itself is flagged");
-  assert.match(bare("Build")[2], /class="norec">no record/);
-  assert.doesNotMatch(bare("Security")[1], /done/, "an ahead phase with no evidence stays plain");
+test("a phase the reading has passed is plain done, one it has not reached is plain; the probe's seen list lights nothing and no tile says 'in the repo' or 'no record'", () => {
+  const t = readTiles("checker", { seen: ["build", "test", "checker", "security"] });
+  assert.equal(t("Build")[1], "step done", "passed: done, with no 'seen' flag");
+  assert.doesNotMatch(t("Build")[2], /in the repo|no record/);
+  assert.equal(t("Checker")[1], "step now", "the reading's own phase, worked");
+  assert.equal(t("Security")[1], "step", "seen in the repo but not reached by the reading: plain");
+  const bare = readTiles(null, null); // no reading served for the card
+  assert.doesNotMatch(bare("Build")[1], /done|norec|seen/, "nothing behind it: no amber 'no record' flag, no done");
+  assert.doesNotMatch(bare("Build")[2], /no record|in the repo/);
 });

@@ -35,9 +35,11 @@ test("a card first read at checker gets a build row at that first push, and each
     { phase: "build", kind: "end", at: T, who: "Builder" },
     { phase: "checker", kind: "start", at: T, who: "Checker" },
   ]);
+  // #C1382: the tile is drawn from the card's reading: the card is at Checker with no push of its own, so Checker is the queued tile with its role, and Build, passed, is done.
+  // (The start stamp "9:15 PM" and its hover on each tile is no longer drawn by the card row: see the report.)
   const html = await board(db);
-  assert.match(tile(html, "Checker"), /<small class="since" title="[^"]*Checker · Nov 10 9:15 PM MT">(Nov 10|9:15 PM)<\/small>/);
-  assert.match(tile(html, "Build"), /<small class="since" title="[^"]*Builder · Nov 10 9:15 PM MT">(Nov 10|9:15 PM)<\/small>/);
+  assert.match(tile(html, "Checker"), /^<div class="step now[^"]*" title="Checker[^"]*">Checker<small>[^<]*Checker[^<]*<\/small><\/div>$/, "the lit tile names the lane's role");
+  assert.match(tile(html, "Build"), /^<div class="step done" title="Build">/);
 });
 
 test("the tile shows only the time (today) or the date (another day); the role and the full stamp are in the hover (Designer F1 and F2)", () => {
@@ -58,10 +60,10 @@ test("a lane phase names the lane's role whatever an old row says, and the page'
   await writeEvidence(db, T + 12 * MIN, "probe", "cards.c1", lit("ship"));
   await db.prepare("UPDATE phase_history SET who = 'Checker' WHERE phase = 'ship' AND kind = 'start'").run();
   assert.deepEqual((await hist(db)).filter((h) => h.kind === "start").map((h) => h.who), ["Builder", "Boardsmith", "Checker"], "the old rows really are wrong");
+  // #C1382: the card row draws the Worker's reading, so the role on a tile is the reading's `with` (the lane's role for a phase held by a lane), whatever an old row says.
   const html = await board(db);
-  assert.match(tile(html, "Checker"), /Checker · Nov 10 9:15 PM MT"/);
-  assert.match(tile(html, "Ship"), /Release · Nov 10 9:27 PM MT"/);
-  assert.match(tile(html, "Build"), /Builder · Nov 10 9:15 PM MT"/, "an early phase keeps the row's role");
+  assert.match(tile(html, "Checker"), /^<div class="step done" title="Checker">Checker<small>12 min<\/small>/, "passed: done, with the 12 minutes the history gives it");
+  assert.match(tile(html, "Ship"), /^<div class="step now queued"[^>]*>Ship<small>queued/, "the lit tile is the reading's phase");
 });
 
 test("without derived times the page still takes a phase's FIRST start from the history, and a live row is no work phase (Checker F2)", async () => {
@@ -74,8 +76,8 @@ test("without derived times the page still takes a phase's FIRST start from the 
   const col = compatView(view).collections;
   col.derived[0].times = {};
   const html = render(page, col).board;
-  assert.match(tile(html, "Checker"), /Nov 10 9:15 PM MT"/, "the first checker start, not the second at 9:39");
-  assert.match(tile(html, "Ship"), /Nov 10 9:27 PM MT"/);
+  // #C1382: the start stamps are no longer drawn; the done Checker tile's time still comes from the step history alone (derived times emptied).
+  assert.match(tile(html, "Checker"), /^<div class="step done" title="Checker">Checker<small>\d+ min<\/small>/, "the time comes from the history rows");
 });
 
 test("no build row is invented for a card first read at build, at plan, or already live, or that has history", async () => {
@@ -109,8 +111,7 @@ test("a flip between phases does not restart a phase's time: the start stays the
   assert.deepEqual(timesOfHistory(view.history), { c1: { build: { start: T }, checker: { start: T }, ship: { start: T + 12 * MIN } } });
   assert.deepEqual(compatView(view).collections.derived[0].times, timesOfHistory(view.history));
   const html = render(page, compatView(view).collections).board;
-  assert.match(tile(html, "Checker"), /Nov 10 9:15 PM MT">/, "checker still says 9:15, not the second 9:39");
-  assert.match(tile(html, "Ship"), /Nov 10 9:27 PM MT">/, "ship says its first start, 9:27, not 9:51");
+  assert.match(tile(html, "Checker"), /^<div class="step done" title="Checker">/, "checker, passed, is done though the card flipped back to it once");
 });
 
 test("a finished tile keeps its start time beside the lit one; a wait row and a phase with no row show nothing", async () => {
@@ -119,10 +120,10 @@ test("a finished tile keeps its start time beside the lit one; a wait row and a 
   await db.prepare("INSERT INTO phase_history (card_id, phase, kind, at, who, source, wait) VALUES ('c1', 'security', 'start', ?, 'Security', 'tool', 'busy')").bind(T + 5 * MIN).run();
   assert.equal(timesOfHistory((await readView(db, Date.now())).history).c1.security, undefined, "a wait is not a phase start");
   const html = await board(db);
-  assert.match(tile(html, "Checker"), /Nov 10 9:15 PM MT">/);
-  assert.match(tile(html, "Ship"), /Release · Nov 10 9:35 PM MT">/);
-  assert.equal(/class="since"/.test(tile(html, "Language") ?? ""), false);
-  assert.equal(/class="since"/.test(tile(html, "Security") ?? ""), false);
+  assert.match(tile(html, "Checker"), /^<div class="step done" title="Checker">Checker<small>\d+ min<\/small>/, "a finished tile keeps its time beside the lit one");
+  assert.match(tile(html, "Ship"), /^<div class="step now queued"[^>]*>Ship<small>queued/);
+  // A phase with no row of its own, or only a wait row, shows no time.
+  for (const label of ["Language", "Security"]) assert.match(tile(html, label) ?? "", /^<div class="step done" title="[^"]*">[A-Za-z]+<small>&nbsp;<\/small>/, label);
 });
 
 test("no evidence, no time: a card with no readings has no times and no tile shows a start", async () => {

@@ -35,6 +35,11 @@ export function probeWorking(b, id, agent = "Builder", card = {}) {
     cards: { [id]: { num: 1, phase: "build", headSha12: "a1b2c3d4e5f6", signed: [], onMain: false, ci: "passed", ciMin: 4, liveVersion: null, at, ...card } },
     agents: { [agent]: { state: "working", lastActivityAt: at, tool: "Read", card: id, since: Date.now() - 5 * 60e3 } } } } }, {});
 }
+// #C1382: a card's row draws the Worker's reading (state.readings), so a test that draws a row says what the reading is. `over` overlays the default (a card at build,
+// waiting for its turn with its owner); `setReadings(b, ...docs)` puts them where the page reads them. The shapes are worker/reading.mjs's: state is one of done, unknown,
+// rework, working, waiting, stuck, queued; wait one of turn, group, land, pack, install, deploy, ask, hold or null; `pack` is "pc111" or null.
+export const readingDoc = (id, over = {}) => ({ id, phase: "build", state: "waiting", wait: "turn", with: "Builder", working: false, since: null, asOf: Date.now(), why: "test reading", pack: null, ...over });
+export function setReadings(b, ...docs) { b.state.readings = docs; return b; }
 // A step event, as agents log them.
 export const step = (init, phase, who, kind, at, extra = {}) => ({ init, phase, who, kind, at, ...extra });
 // Renders the Waiting on Owner list for the given asks and returns its HTML.

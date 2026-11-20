@@ -15,7 +15,7 @@ import { BOARD_REPO_WORDS as DISPATCH_WORDS } from "../collector/store-dispatch.
 import { descends } from "../collector/pair-wait.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
 import { mirrorCard } from "../collector/store-cards.mjs";
-import { loadNames, step } from "./harness.mjs";
+import { loadNames, step, readingDoc, setReadings } from "./harness.mjs";
 
 const T0 = 1_790_000_000;
 const NOTES = { checker: "refs/notes/checker", security: "refs/notes/security" };
@@ -150,11 +150,13 @@ const NOW = Date.now(), H = 36e5, ID = "board-c";
 // side by side (the file waited, the reading aged) and the Pack and Install tiles read unlit. The reading is always 12 s old when the page reads it.
 const reading = (c) => { const at = Date.now() - 12e3; return { v: 1, board: { boardId: "TestBoard42xyz", at, probe: null, pageVersion: null },
   cards: { [ID]: { num: 9, phase: "ship", headSha12: "a1b2c3d4e5f6", signed: ["checker", "security"], onMain: true, ci: "passed", ciMin: 4, liveVersion: null, at, ...c } }, agents: {} }; };
-function row(cardFields, probe, steps = [step(ID, "build", "Builder", "start", NOW - 2 * H)]) {
+// #C1382: the row draws the card's reading (state.readings, from the Worker); the probe's own cards are no longer what lights a tile.
+function row(cardFields, rd, probe = null, steps = [step(ID, "build", "Builder", "start", NOW - 2 * H)]) {
   const b = loadNames(["enrich", "gates", "initRow", "probeEvent", "phaseMedians", "CONFIG"]);
   const c = { id: ID, num: 9, name: "A board card", status: "active", phase: "ship", size: "S", level: "Full", who: "Builder", repo: "flight-board", createdAt: NOW - 5 * H, ...cardFields };
   Object.assign(b.state, { initRaw: [c], steps, waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [], checkRequests: [], derived: [] });
   if (probe) b.probeEvent({ type: "data", result: { payload: probe } }, {});
+  if (rd) setReadings(b, readingDoc(ID, rd));
   b.state.initiatives = [b.gates(b.enrich(c))];
   b.state.phaseMed = b.phaseMedians(b.state.initiatives);
   return b.initRow(b.state.initiatives[0]);
@@ -162,32 +164,30 @@ function row(cardFields, probe, steps = [step(ID, "build", "Builder", "start", N
 const tile = (h, label) => { const m = h.match(new RegExp(`<div class="(step[^"]*)" title="(${label}[^"]*)"`)); return m && { cls: m[1], title: m[2] }; };
 
 test("the page: Pack lights from packed, Install from installed, both from a Live deploy; nothing else lights them", () => {
-  const unlit = row({}, reading({}));
-  assert.equal(tile(unlit, "Pack").cls, "step unlit"); assert.equal(tile(unlit, "Install").cls, "step unlit");
-  const packed = row({}, reading({ packed: true }));
-  assert.equal(tile(packed, "Pack").cls, "step done seen"); assert.equal(tile(packed, "Install").cls, "step unlit");
-  assert.match(tile(packed, "Pack").title, /built, not signed/, "Manager's A: Pack means built, never read as signed");
-  const installed = row({}, reading({ packed: true, installed: true }));
-  assert.equal(tile(installed, "Pack").cls, "step done seen"); assert.equal(tile(installed, "Install").cls, "step done seen");
-  const live = row({}, reading({ phase: "live", seen: ["build", "checker", "security", "ship", "live"] }));
-  assert.equal(tile(live, "Pack").cls, "step done seen"); assert.equal(tile(live, "Install").cls, "step done seen");
-  // installed without packed, or either one off main, is no evidence the page trusts.
-  const odd = row({}, reading({ installed: true }));
-  assert.equal(tile(odd, "Install").cls, "step unlit");
-  const offMain = row({}, reading({ onMain: false, packed: true, installed: true }));
-  assert.equal(tile(offMain, "Pack").cls, "step unlit"); assert.equal(tile(offMain, "Install").cls, "step unlit");
+  // #C1382: the reading's phase decides; a phase not reached is the unlit tile (a board card's Pack and Install are not in the page's own phase list), one passed is done.
+  const unlit = row({}, null);
+  assert.equal(tile(unlit, "Pack").cls, "step unlit", "no reading"); assert.equal(tile(unlit, "Install").cls, "step unlit");
+  const shipping = row({}, { phase: "ship", state: "working", wait: null, working: true });
+  assert.equal(tile(shipping, "Pack").cls, "step unlit", "not reached"); assert.equal(tile(shipping, "Install").cls, "step unlit");
+  const packing = row({}, { phase: "pack", wait: "pack" });
+  assert.equal(tile(packing, "Pack").cls, "step waits proc", "waiting for its pack"); assert.equal(tile(packing, "Install").cls, "step unlit");
+  const installing = row({}, { phase: "install", wait: "install", pack: "pc7" });
+  assert.equal(tile(installing, "Pack").cls, "step done", "the pack is cut"); assert.equal(tile(installing, "Install").cls, "step waits rel", "waiting for the owner's install");
+  const live = row({}, { phase: "live", state: "done", wait: null, with: null });
+  assert.equal(tile(live, "Pack").cls, "step done"); assert.equal(tile(live, "Install").cls, "step done");
 });
 
 test("the page: words never light Pack or Install (status done, a next note, a step, a card at live)", () => {
   const words = { status: "done", phase: "live", doneAt: NOW - H, nextNote: "pc49 installed, Pack done", waitingOn: "installed" };
   const steps = [step(ID, "build", "Builder", "start", NOW - 3 * H), step(ID, "install", "Release", "end", NOW - H), step(ID, "pack", "Builder", "end", NOW - 2 * H)];
-  for (const h of [row(words, null, steps), row({ phase: "live", nextNote: "installed" }, reading({}), steps)]) {
+  // With no reading served, even the probe's packed and installed no longer light them: the row draws the reading and nothing else.
+  for (const h of [row(words, null, null, steps), row({ phase: "live", nextNote: "installed" }, null, reading({ packed: true, installed: true }), steps)]) {
     assert.equal(tile(h, "Pack").cls, "step unlit"); assert.equal(tile(h, "Install").cls, "step unlit");
   }
 });
 
 test("the page: a product card never draws Pack or Install, whatever its reading says", () => {
-  const h = row({ repo: "shopsite" }, reading({ packed: true, installed: true }));
+  const h = row({ repo: "shopsite" }, { phase: "install", wait: "install", pack: "pc7" });
   assert.equal(tile(h, "Pack"), null); assert.equal(tile(h, "Install"), null);
 });
 
@@ -202,15 +202,15 @@ test("Designer on #C969 v2 (1): an unlit tile looks different from a skipped one
   assert.doesNotMatch(unlit, /opacity/, "no fading: small text keeps 4.5:1 (Designer on ab46d92f: .6 gave 2.46:1)");
 });
 
-test("Designer on #C969 v2 (3): a Gated or Queued wait box counts in the phone's --per, and takes a tile's width there", () => {
+test("Designer on #C969 v2 (3), after #C1382: the card row draws no Gated or Queued wait box, so the phone's --per is the even split of the tiles alone", () => {
   const per = (h) => Number(h.match(/class="track" style="--per:(\d+)"/)[1]);
-  const plain = row({ phase: "checker" }, reading({ onMain: false }));
-  const waited = row({ phase: "checker" }, reading({ onMain: false }), [step(ID, "build", "Builder", "start", NOW - 3 * H), step(ID, "build", "Builder", "end", NOW - 2 * H), step(ID, "checker", "Checker", "start", NOW - 2 * H, { wait: "busy" }), step(ID, "checker", "Checker", "start", NOW - H)]);
-  assert.match(waited, /class="wait busy/, "the row draws a wait box");
+  const rd = { phase: "checker", state: "working", wait: null, working: true };
+  const plain = row({ phase: "checker" }, rd);
+  const waited = row({ phase: "checker" }, rd, null, [step(ID, "build", "Builder", "start", NOW - 3 * H), step(ID, "build", "Builder", "end", NOW - 2 * H), step(ID, "checker", "Checker", "start", NOW - 2 * H, { wait: "busy" }), step(ID, "checker", "Checker", "start", NOW - H)]);
+  assert.doesNotMatch(waited, /class="wait /, "a step log's wait is no box in the card row");
   const n = (h) => (h.match(/<div class="(step|wait)[ "]/g) || []).length;
-  assert.equal(n(waited), n(plain) + 1);
-  assert.equal(per(plain), Math.ceil(n(plain) / Math.ceil(n(plain) / 4)), "the even split of the tiles alone");
-  assert.equal(per(waited), Math.ceil(n(waited) / Math.ceil(n(waited) / 4)), "the even split counts the wait box");
+  assert.equal(n(waited), n(plain));
+  assert.equal(per(waited), Math.ceil(n(waited) / Math.ceil(n(waited) / 4)), "the even split counts the tiles");
   assert.match(TEMPLATE, /@media \(max-width:760px\)\{[^\n]*\.track>\.wait\{flex:1 1 calc\(100% \/ var\(--per,4\) - 4px\)\}/, "on the phone a wait box is a tile's width");
 });
 
@@ -278,18 +278,18 @@ test("the schema takes closedPacks of true values only, and buildState sends it 
   assert.deepEqual(built({ "c-one": { packed: true } }).closedPacks, { "c-one": { packed: true } });
 });
 
-test("the page: a done board card lights Pack and Install from closedPacks; without an entry it keeps today's unlit look", () => {
+test("the page (#C1382): a done board card's Pack and Install stand done from its done reading; closedPacks no longer lights them, and no reading keeps the unlit look", () => {
   const closedReading = (packs) => ({ ...reading({}), cards: {}, ...(packs ? { closedPacks: packs } : {}) });
   const fin = { status: "done", phase: "live", doneAt: NOW - H };
-  const both = row(fin, closedReading({ [ID]: { packed: true, installed: true } }));
-  assert.equal(tile(both, "Pack").cls, "step done seen"); assert.equal(tile(both, "Install").cls, "step done seen");
-  const packedOnly = row(fin, closedReading({ [ID]: { packed: true } }));
-  assert.equal(tile(packedOnly, "Pack").cls, "step done seen"); assert.equal(tile(packedOnly, "Install").cls, "step unlit");
-  for (const h of [row(fin, closedReading(null)), row(fin, closedReading({ "other-card": { packed: true, installed: true } })), row(fin, null)]) {
+  const dr = { state: "done", phase: "live", wait: null, with: null };
+  const both = row(fin, dr);
+  assert.equal(tile(both, "Pack").cls, "step done"); assert.equal(tile(both, "Install").cls, "step done");
+  // The probe's closedPacks is read by nothing in the card row: with no reading the tiles are unlit whatever it says.
+  for (const h of [row(fin, null, closedReading({ [ID]: { packed: true, installed: true } })), row(fin, null, closedReading(null)), row(fin, null)]) {
     assert.equal(tile(h, "Pack").cls, "step unlit"); assert.equal(tile(h, "Install").cls, "step unlit");
   }
-  // An open card never reads closedPacks: its own reading decides, and with none it stays unlit.
-  for (const open of [row({}, { ...reading({}), closedPacks: { [ID]: { packed: true, installed: true } } }), row({ phase: "live" }, closedReading({ [ID]: { packed: true, installed: true } }))]) {
+  // An open card with no reading stays unlit too, closedPacks or not.
+  for (const open of [row({}, null, { ...reading({}), closedPacks: { [ID]: { packed: true, installed: true } } }), row({ phase: "live" }, null, closedReading({ [ID]: { packed: true, installed: true } }))]) {
     assert.equal(tile(open, "Pack").cls, "step unlit"); assert.equal(tile(open, "Install").cls, "step unlit");
   }
 });

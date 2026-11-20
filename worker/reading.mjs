@@ -131,7 +131,9 @@ export function reading(card, evidence, claims, agents, config, now, ctx = {}) {
   // queued: nothing of its own pushed yet.
   if (!pushed(e)) {
     const role = card?.owner_role ?? null;
-    return out("queued", busyElsewhere(agents, role, card?.id) ? { kind: "turn" } : null, "not started: no push of its own yet", { working: isWorking(agents, role, card?.id) });
+    // A session on a card that has pushed nothing yet is working on it (the state order puts working before queued): the first edit makes it Building, as it always did.
+    if (!stale && isWorking(agents, role, card?.id)) return out("working", null, `${role} is on it, nothing pushed yet`, { working: true });
+    return out("queued", busyElsewhere(agents, role, card?.id) ? { kind: "turn" } : null, "not started: no push of its own yet");
   }
   // A stale reading is never working: an old reading cannot say a session is on the card now, so it falls through to the wait or the turn it last had.
   const working = (role) => !stale && (isWorking(agents, role, card.id) || e.ci === "queued" || e.shipping === true);

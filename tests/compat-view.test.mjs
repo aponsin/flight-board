@@ -48,7 +48,9 @@ test("a card is drawn on the board at the probe's lit phase, never a typed one",
   // store has no ETA or plan yet: that is B3b / A4, noted in the parity list, not a drawing failure.)
   const board = draw(v).board;
   assert.match(board, /data-card="c1"/); assert.match(board, /<strong>A card<\/strong>/);
-  assert.match(board, /<div class="step here" title="Build \| evidence: no live reading, so the tile is not shown as active">/); // #C1277: lit at the probe's phase; no agent reading, so the plain ring, not the blinking blue
+  // #C1382: the row draws the Worker's reading, not the evidence: at build with no agent on it, the Builder's turn is the yellow wait tile (it was the plain ring of #C1277 from the evidence alone).
+  assert.match(board, /<div class="step waits proc" title="Build \| at build, with Builder">/);
+  assert.match(board, /<span class="state active">Waits for Builder<\/span>/);
 });
 
 test("a card with no probe reading has no phase of its own", () => {

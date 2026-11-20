@@ -4,7 +4,7 @@
 // createdAt; a card without one comes last and says "queued · <who>". Only a positive whole number counts.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadNames } from "./harness.mjs";
+import { loadNames, readingDoc, setReadings } from "./harness.mjs";
 
 const T = Date.now();
 // Today's Boardsmith cards, as the queue stood when the owner asked.
@@ -39,7 +39,10 @@ test("a queued card's box: 'queued · Boardsmith · 3rd'; without a place, 'queu
   assert.equal(b.queueLabel(of(b, "ctx-tokens")), "queued · Boardsmith");
   assert.equal(b.queueLabel(of(b, "bad-pos")), "queued · Boardsmith", "\"2\" is no place");
   assert.equal(b.queueLabel({ ...of(b, "ctx-tokens"), who: "" }), "queued");
+  // #C1382: the box is the tile of a queued reading (nothing of its own pushed yet) at Build, with the queue's own words.
+  setReadings(b, readingDoc("board-queue-order", { state: "queued", wait: null, with: "Boardsmith", working: false, phase: "build" }));
   assert.match(b.initRow(of(b, "board-queue-order")), /<div class="step now queued"[^>]*>Build<small>queued · Boardsmith · 3rd<\/small>/);
+  assert.match(b.initRow(of(b, "board-queue-order")), /<span class="state[a-z ]*">Queued<\/span>/, "and the pill says Queued");
 });
 
 test("the card's line: the whole queue, each number a link, this one as 'this', started ones say where they are", () => {

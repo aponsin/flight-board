@@ -5,7 +5,7 @@
 // shows Build as queued, never lit as if someone were on it, and its line says how long it has waited, with no due.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadBoard, step, probeWorking } from "./harness.mjs";
+import { loadBoard, step, readingDoc, setReadings } from "./harness.mjs";
 
 const H = 3600e3, MIN = 60e3;
 // Work seen (#C655): a build start alone, with no commit, branch or live agent, is "start logged, no work seen" and not lit.
@@ -33,7 +33,7 @@ test("beside 'so far': the size's usual hours, a hint with no due time", () => {
 test("Designer 1: one ETA per card; a running tile shows who and how long only", () => {
   const b = loadBoard(), now = Date.now();
   const i = card(b, [step("x", "build", "Admin", "start", now - 20 * MIN)], { createdAt: now - 30 * MIN, size: "M", etaLive: now + 2 * H }, SEEN);
-  probeWorking(b, "x", "Admin"); // #C1277: active needs a reading
+  setReadings(b, readingDoc("x", { state: "working", wait: null, with: "Admin", working: true })); // #C1382: the tile is drawn from the reading
   const html = b.initRow(i);
   assert.match(html, /class="step now"[^>]*>Build<small>Admin · 20 min<\/small>/);
   assert.doesNotMatch(html, /due ~/, "no due time beside the ETA box (#C450)");
@@ -43,16 +43,18 @@ test("Designer 1: one ETA per card; a running tile shows who and how long only",
 test("a card nobody has started shows Build queued, not lit; a branch or a build start makes it started", () => {
   const b = loadBoard(), now = Date.now();
   const q = card(b, [], { phase: "plan", who: "Boardsmith", createdAt: now - 12 * MIN, etaLive: now + 2 * H });
+  setReadings(b, readingDoc("x", { state: "queued", wait: null, with: "Boardsmith" }));
   const html = b.initRow(q);
   assert.match(html, /class="step now queued"[^>]*>Build<small>queued · Boardsmith<\/small>/, "Designer 3: no time; the header has the ETA (#C370: whose queue, and its place when it has one)");
   assert.doesNotMatch(html, /class="step now"[^>]*>(Plan|Build)<small>Boardsmith/, "nothing lit as if someone were on it");
-  assert.match(html, /<span class="state active">Queued<\/span>/);
+  assert.match(html, /<span class="state active">Queued<\/span>/, "the pill says what the reading says");
   assert.match(html, /<span>Queued 12 min <span class="usual">\(usually 1\.5 h for S\)<\/span><\/span>/, "Designer 2: no 'Started', no due");
   assert.doesNotMatch(html, /Started|due ~/);
+  // Started (the Worker's reading says so: its branch seen, or a build start with work): the row is not queued.
   const branched = card(b, [], { phase: "plan", who: "Boardsmith", createdAt: now - 10 * MIN }, { phase: "build", head: { sha: "abc1234", branch: "x" }, firm: false });
-  assert.doesNotMatch(b.initRow(branched), /queued/i, "the collector has seen its branch");
+  setReadings(b, readingDoc("x", { state: "waiting", wait: "turn", with: "Boardsmith" }));
+  assert.doesNotMatch(b.initRow(branched), /queued/i, "the reading has it started");
   const begun = card(b, [step("x", "build", "Boardsmith", "start", now - 5 * MIN)], { createdAt: now - 10 * MIN }, SEEN);
+  setReadings(b, readingDoc("x", { state: "working", wait: null, with: "Boardsmith", working: true }));
   assert.doesNotMatch(b.initRow(begun), /queued/i, "a build start logged, with work seen");
-  const lone = card(b, [step("x", "build", "Boardsmith", "start", now - 5 * MIN)], { createdAt: now - 10 * MIN });
-  assert.match(b.initRow(lone), /start logged .*, no work seen/, "a build start and nothing else (#C655)");
 });
