@@ -1,0 +1,2 @@
+PASS Quick board-truth-1 line from acd4159536c1b895e60d3447c382d5337ce9a9c9 (#C1376 #C1377), linear. The one new commit 8e3c775d on my PASS at 64f02ba8 is Designer's look fixes, page, changelog, DATA.d and test only: the stale age chip no-wrap, and the duplicate meta line dropped (the chip says it once). The touched tests pass 16/0. The rest is as signed at 64f02ba8.
+signed-by: Checker 2
