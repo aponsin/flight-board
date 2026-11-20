@@ -72,6 +72,14 @@ test("a decision in a thread that is not a card's, a plain question and a closed
   assert.equal(gate(done.state.initiatives[0]).length, 0);
 });
 
+// Checker 2's F1 on 290dca8c: the Needs-you rule is for a card's thread only. A decision in a thread no card holds keeps the bucket it had: the owner wrote after it, so it is With the team ("lead").
+test("a decision in a thread no card holds keeps its bucket: the owner's reply after it reads With the team, not Needs you", () => {
+  const b = load([decision(now - 20 * MIN, { thread: "t-9" }), { id: "m2", thread: "t-9", from: "Owner", text: "can you show me both?", at: now - 10 * MIN }]);
+  assert.equal(b.waitsOn("t-9", now), "lead");
+  assert.deepEqual([...b.threadSets(now, "").answered], [], "not under Needs you");
+  assert.ok([...b.threadSets(now, "").open].includes("t-9"), "under With the team, as before");
+});
+
 test("a card already held by an open ask gets no second gate from the decision", () => {
   const b = loadNames(NAMES);
   Object.assign(b.state, { messages: [decision(now - 20 * MIN)], threads: [{ id: "t-1", num: 7 }], steps: [], derived: [], meta: [], todo: [], ideas: [], initRaw: [raw()],
