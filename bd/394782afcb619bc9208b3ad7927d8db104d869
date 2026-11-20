@@ -1,0 +1,1 @@
+SECURE: #C1366 re-cut of e3b02f18 onto main 767b07e7. The range-diff shows the same patch, with only the subject changed: the same 9 docs/DATA.d fragments folded verbatim into docs/DATA.md, no code. Security 2026-11-20.
