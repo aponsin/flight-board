@@ -1,0 +1,1 @@
+SECURE: #C1331 Designer follow-up, CSS only (.cb transparent border, .ccols right-edge mask-image with an inline gradient, no url()) plus two tests that read the CSS; no script or markup change. Security 2026-11-20.
