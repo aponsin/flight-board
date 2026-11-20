@@ -107,7 +107,10 @@ export const BOARD_ID_SHAPE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const badBoardIdReason = (value) => `Board-Id must be the card's id: lowercase letters, digits and hyphens, as the board shows it (for example "picture-option-looks-clickable"), not "${String(value).slice(0, 40)}". A commit with any other value cannot be found once its branch is deleted. Fix the trailer in the commit message and commit again. (#C1285)`;
 // Checker 2's F1 on 4a694486: only a TRAILER line counts (the line starts with Board-Id, after a real newline or a literal \n inside -m), so prose that mentions a bad id is let through; and only the
 // git commit command's own segment is read (cut at &&, ||, ; and | outside quotes and heredocs), so a later git log --grep or echo is not.
+// #C1289 (Security LOW on 72673a62): the masking regexes below go quadratic on many unterminated "<<" (a contrived 200 KB command took 6.9 s), and this hook sees every Bash command. A command
+// that does not hold both "git" and "commit" has no commit segment, so it is not scanned at all.
 const commitSegments = (text) => {
+  if (!/\bgit\b/.test(text) || !/\bcommit\b/.test(text)) return [];
   const noDocs = text.replace(/(<<-?[ \t]*(["']?)(\w+)\2[^\n]*)\n[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, (m, head) => head + "Q".repeat(m.length - head.length));
   const mask = noDocs.replace(/"[^"]*"|'[^']*'/g, (m) => "Q".repeat(m.length));
   const out = []; let from = 0;
