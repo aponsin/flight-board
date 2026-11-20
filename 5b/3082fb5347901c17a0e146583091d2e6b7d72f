@@ -1,0 +1,5 @@
+SECURE
+
+#C1300 (page only: page/board.template.html, DATA.md, CHANGELOG.d, two tests). greenWait narrows the green stripes to a board-repo card whose pack is cut or the install wait; a new .step.waits.proc class gives yellow stripes otherwise. Class names and tile words are fixed literals; idleWord still goes through esc(); the wait-box filter only hides an open gate box at the install phase when greenWait holds, inserting nothing new. No Worker, store, route, secret, hook or permission change. Ships as a page publish.
+
+signed-by: Security
