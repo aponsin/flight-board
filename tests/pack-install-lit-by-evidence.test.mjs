@@ -146,8 +146,10 @@ test("the schema takes packed and installed as true only", () => {
 
 // ---- the page ----
 const NOW = Date.now(), H = 36e5, ID = "board-c";
-const reading = (c) => ({ v: 1, board: { boardId: "TestBoard42xyz", at: NOW - 12e3, probe: null, pageVersion: null },
-  cards: { [ID]: { num: 9, phase: "ship", headSha12: "a1b2c3d4e5f6", signed: ["checker", "security"], onMain: true, ci: "passed", ciMin: 4, liveVersion: null, at: NOW - 12e3, ...c } }, agents: {} });
+// #C1359: the reading's time is made when the reading is, not when the file loads: the page calls a reading stale by the real clock, so a time fixed at load went stale when full suites ran
+// side by side (the file waited, the reading aged) and the Pack and Install tiles read unlit. The reading is always 12 s old when the page reads it.
+const reading = (c) => { const at = Date.now() - 12e3; return { v: 1, board: { boardId: "TestBoard42xyz", at, probe: null, pageVersion: null },
+  cards: { [ID]: { num: 9, phase: "ship", headSha12: "a1b2c3d4e5f6", signed: ["checker", "security"], onMain: true, ci: "passed", ciMin: 4, liveVersion: null, at, ...c } }, agents: {} }; };
 function row(cardFields, probe, steps = [step(ID, "build", "Builder", "start", NOW - 2 * H)]) {
   const b = loadNames(["enrich", "gates", "initRow", "probeEvent", "phaseMedians", "CONFIG"]);
   const c = { id: ID, num: 9, name: "A board card", status: "active", phase: "ship", size: "S", level: "Full", who: "Builder", repo: "flight-board", createdAt: NOW - 5 * H, ...cardFields };
