@@ -1,0 +1,5 @@
+SECURE
+
+Group tip, re-cut of af60261a (SECURE), range-diff identical (#C1314). Tree diff af60261a..5883807e: page text and CSS only plus tests; no collector, probe, Worker, hook or git-argument change; sink count 44. Touched page tests 28/28 at this tip; full suite 3387/0 at af60261a.
+
+signed-by: Security
