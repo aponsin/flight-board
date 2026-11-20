@@ -1,0 +1,2 @@
+PASS Quick #C1304, line from cd19305252e7967d00beba5402cb5534981a14bd: docs-only fold; running scripts/data-fragments.mjs --write on main gives exactly the tip's tree (6 fragments into docs/DATA.md, 6 files removed); suite 3339 pass 0 fail. No guard added, so no mutant.
+signed-by: Checker 2
