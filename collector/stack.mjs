@@ -25,8 +25,14 @@ export function readStack({ heads, tips, isAncestor }) {
   }
   if (!best) return null;
   const inside = new Set(best.members);
-  return { tip: best.tip, branch: best.branch, members: best.members, outside: ids.filter((id) => !inside.has(id)) };
+  return { tip: best.tip, branch: best.branch, members: best.members, outside: ids.filter((id) => !inside.has(id) && !isFoldCard(id)) };
 }
+
+// #C1337 (11-20: the dispatch told Boardsmith that #C1335, a fold in its own group cut from main, was "outside the stack" and must be re-cut on another group's tip): folds go alone
+// (the owner, 11-17), and a re-cut would void the fold's SECURE. A fold card (the Board-Id starts `fold-data-fragments`, the landing job's own rule for a fold, docs/DATA.d/README.md)
+// is never outside a stack: it carries no stack field, so the dispatch does not tell it to re-cut. It only has to continue main once the earlier group lands. An ordinary card
+// that was not cut from the tip is still outside.
+export const isFoldCard = (id) => typeof id === "string" && id.startsWith("fold-data-fragments");
 
 // #C914: cards whose head was committed before this time dispatch as they always did (grandfathered: nobody had the stack-ready command yet).
 // 1_794_420_000_000 ms = 2026-11-11T18:00:00Z (checked with node).
