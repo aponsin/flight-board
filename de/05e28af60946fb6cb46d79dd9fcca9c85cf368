@@ -1,1 +1,3 @@
 SECURE: re-cut of 5229123502c6 onto main dc4c640f (patch identical, range-diff =; tip tree equals 52291235's). Was: SECURE: #C1331 docs only (DATA.md row 17, a DATA.d line). Security 2026-11-20. Security 2026-11-20.
+
+SECURE pack pc114 (pin de05e28a == origin/main): sha256 of deploy f5b15121, tree 27874bf5, hooks fe542c84, land eda9fa3b, board-deploy 7a021248 (unchanged), steps b563bef4 match. Diffs vs pc113 change only pin, pack number, hashes and change lists; steps' file list equals git diff 7fef3cb7..de05e28a (incl. collector/state.mjs in the tree step, gate/reset.mjs + page + board-land.mjs named for hooks, land line present); no migration, no wrangler config; pc113 .done = 7fef3cb7; all 11 commits noted SECURE. Security 2026-11-20.
