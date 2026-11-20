@@ -1,0 +1,2 @@
+PASS Quick #C1288, line from 937daa1167afae9791d91f11cdb25ee04ee6ec75: v2 restacked on #C1285 1810dad1; range-diff shows 6e4a46da is the same commit as 0bb3e322. F1 fixed: RELEASE_ROLE comes from gate.releaseRole, used in waitWord, waitTile and waitEvidence. The status line is now esc()'d (every statusTxt value is plain text, so nothing breaks). The 'Release ships' tile word (Designer F1) fits a phone. npm test 3285 pass 0 fail; mutation check pass (RELEASE_ROLE pinned to 'Release': the Shipper test fails). Reviewed 1810dad1..e72fa012.
+signed-by: Checker 2
