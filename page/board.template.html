@@ -2492,10 +2492,6 @@ const parkedStatus=i=>!!i&&(i.status==="paused"||i.status==="parked"||((CONFIG.n
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
 // repository explains, or done. Returns minutes.
-function stalled(i){if(!i||i.status!=="active"||i.noWork||i.stepLogBehind||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE)||knownWait(i)||ownerWait(i)||i.heldBy||liveWorkers(i.id).length||groupWaitFor(i).length)return 0;
-  const log=Array.isArray(i.phaseLog)?i.phaseLog:[];if(log.some(e=>e&&e.wait&&e.end==null))return 0;
-  const last=num(i.lastStepAt)??log.reduce((m,e)=>Math.max(m,num(e&&e.end)??num(e&&e.start)??0),0);
-  if(!last)return 0;const m=Math.floor((Date.now()-last)/60000);return m>=30?m:0}
 // Verifying (#C581): live by the evidence while its done test is still open, with the check's due time in the card's own
 // checkAt (Manager sets it when the pack is installed). Calm while it is due; "check overdue" in amber once it passes.
 function verifying(i){return !!i&&i.status!=="done"&&!!i.byEvidence&&i.phase===LIVE_PHASE&&num(i.checkAt)!=null}

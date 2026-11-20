@@ -123,7 +123,7 @@ test("no file keeps its own startsWith test on waiting_on or waitingOn; the page
   assert.deepEqual(own, [], "a card's waiting_on is read only through isHeldBy / heldFor");
   const page = readFileSync(join(ROOT, "page", "board.template.html"), "utf8");
   const fn = (name) => new RegExp(`function ${name}\\([^)]*\\)\\{[\\s\\S]*?\\n`).exec(page)?.[0] ?? "";
-  assert.match(page, /function stalled\(i\)\{[^\n]*i\.heldBy/, "stalled() reads the view's heldBy");
+  assert.equal(/function stalled\(/.test(page), false, "the page's own 'no step logged for 30 min' rule is gone (#C1382): the reading's stuck state is the one rule, so no function reads the view's heldBy for it");
   // #C1299: heldOnPurpose had no caller since #C1301 took gapRed away (Checker 2's nit); it is gone, so no second reading of waiting_on is left on the page.
   assert.equal(page.includes("heldOnPurpose"), false, "no heldOnPurpose on the page");
 });

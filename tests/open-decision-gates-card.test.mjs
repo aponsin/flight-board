@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadNames, readingDoc, setReadings } from "./harness.mjs";
 
-const NAMES = ["gates", "enrich", "initRow", "ownerWait", "stalled", "waitsOn", "threadSets", "threadRow", "cardDecision", "waitBoxes", "tabCounts", "state"];
+const NAMES = ["gates", "enrich", "initRow", "ownerWait", "waitsOn", "threadSets", "threadRow", "cardDecision", "waitBoxes", "tabCounts", "state"];
 const now = Date.now(), MIN = 60e3;
 const two = [{ key: "A", label: "Left" }, { key: "B", label: "Right" }];
 const decision = (at, extra = {}) => ({ id: "m-dec", thread: "t-1", from: "Manager", text: "Which look?\n\nA or B?", at, kind: "decision", options: two, ...extra });
@@ -42,10 +42,9 @@ test("the card reads Waiting on you and is not stalled while the decision is ope
   assert.match(row, /<div class="step waits ask" title="Build/, "and its Build tile is the red and white stripes one");
   assert.match(row, /<span class="state [a-z ]*">Waiting on you<\/span>/, "the pill says so");
   assert.doesNotMatch(row, /<div class="wait gate/, "no red Gated box in front of the tile any more");
-  assert.equal(withDec.stalled(raw()), 0, "an hour without a step is not a stall");
+  // (the page's own stalled() is gone, #C1385: the stall is asked of the reading; the control is that without the decision there is no owner wait)
   const without = load([]);
   assert.equal(without.ownerWait(without.state.initiatives[0]), null);
-  assert.ok(without.stalled(raw()) >= 30, "the same card with no decision does stall (the control)");
 });
 
 test("its thread sits under Needs you with a waiting-on-you badge, even when others wrote after the decision", () => {

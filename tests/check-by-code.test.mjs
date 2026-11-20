@@ -11,7 +11,7 @@ import { loadNames, step, readingDoc, setReadings } from "./harness.mjs";
 
 const MIN = 60e3;
 const hhmm = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const NAMES = ["initRow", "enrich", "gates", "checkLine", "stalled", "ownerWait"];
+const NAMES = ["initRow", "enrich", "gates", "checkLine", "ownerWait"];
 const derived = (runAt, ids = ["ctx-tokens"]) => [{ id: "all", at: runAt, cards: Object.fromEntries(ids.map((id) => [id, { at: runAt, phase: "build" }])) }];
 
 test("#C350's state: asked at :12, the Collector ran at :21, no lead stamp → checked by the Collector", () => {
@@ -70,7 +70,6 @@ function owned(b, { ask = true, answered = false } = {}) {
 test("a card with an open ask to the owner: not stalled, no stale next step, no passed ETA; it says what it waits on", () => {
   const b = loadNames(NAMES), i = owned(b);
   assert.equal(b.ownerWait(i).id, "w1");
-  assert.equal(b.stalled(i), 0);
   // #C1382: the words and the tile are the reading's: an ask wait is "Waiting on you" and the red and white stripes tile; the row's own link to the ask stays.
   setReadings(b, readingDoc("x", { state: "waiting", wait: "ask", ask: 77, with: "Owner", phase: "build" }));
   const html = b.initRow(i);
@@ -84,7 +83,6 @@ test("once the owner has answered, or with no ask, the timers run again", () => 
   for (const opts of [{ answered: true }, { ask: false }]) {
     const b = loadNames(NAMES), i = owned(b, opts);
     assert.equal(b.ownerWait(i), null);
-    assert.ok(b.stalled(i) >= 30, "stalled again");
     // #C1382: the row says what the reading says (the page's own Stalled word is gone); the stall is asked of the reading.
     setReadings(b, readingDoc("x", { state: "waiting", wait: "turn", with: "Builder", phase: "build" }));
     const html = b.initRow(i);
