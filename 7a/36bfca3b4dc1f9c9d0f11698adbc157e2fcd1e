@@ -1,2 +1,2 @@
-FINDINGS (Full) board-truth-2 #C1380-#C1385, line from 05185b91f2b9ee833355b93ce92a648a3495439c: F1 page copy of STRIP/tileOf/tileAt has no parity test though its comment says one; the rework+working tile line is untested (mutant survives full suite). F2 turn wait for a busy reviewer and land-needs-signed untested (removing either survives; a slow card with a busy reviewer would read stuck). F3 LOW docs/DATA.d group-rows-draw-fold still says one stale member greys the group row; #C1385 changed it. LOW dead page stalled(). Suite 3605/0/1 green.
+PASS (Full) as part of its stack only (group), covered by the PASS on 99d37cd8851d2d1ed388ac12ffc6d4756c7297aa (replaces my FINDINGS; fixed in 99d37cd8)
 signed-by: Checker 2
