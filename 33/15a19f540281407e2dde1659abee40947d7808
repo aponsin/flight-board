@@ -1,0 +1,1 @@
+SECURE: #C1332 withdraw_decision description now says 'Refused once the owner has picked one of its options' (closes my INFO); one string, a test reading it, a DATA.d line. Security 2026-11-20.
