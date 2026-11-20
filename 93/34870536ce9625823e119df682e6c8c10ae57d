@@ -1,0 +1,1 @@
+SECURE: #C1348 card_create's schema names paused; the store already took paused as a column, and cardWriteRefusal still needs a next_note for a paused card. Mutation (drop `fields.paused === true` from that rule): caught by card-born-paused. Security 2026-11-20.
