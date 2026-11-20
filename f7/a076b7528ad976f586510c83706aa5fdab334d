@@ -1,0 +1,5 @@
+SECURE
+
+#C1310 re-cut of 7fb22e34 (SECURE), by range-diff: two CSS rules only (.stkbar .sw sizing, .stkbar button nowrap; Designer F2) plus a test. No sink or script change. board-polish-five v3, tip 5883807e.
+
+signed-by: Security
