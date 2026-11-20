@@ -1,0 +1,5 @@
+SECURE
+
+#C1297 v4, by diff: range-diff shows 197d39d4 = 8cb73a4b (signed), rebased onto #C1296 fcccb56c (tests only). Group board-polish head: every commit 458541c5..197d39d4 noted SECURE.
+
+signed-by: Security
