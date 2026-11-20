@@ -39,6 +39,13 @@ test("must allow: prose mentioning a bad Board-Id, a backticked mention, and a l
   assert.equal(boardIdRefusal('git commit -m "x\n\nBoard-Id: good-id"; echo "Board-Id: C1274" | cat'), null, "(c) after ; and |");
 });
 
+// Checker 2's F2 on 72673a62: the filter that keeps only the commit's own segment had no failing test (the mutant "every segment counts as a commit" passed all of them).
+test("must allow: a bad Board-Id written to a file by a command that is not a git commit (cat heredoc, printf), alone or before a good commit", () => {
+  assert.equal(boardIdRefusal(`cat > msg.txt <<'EOF'\nx\n\nBoard-Id: C1274\nEOF`), null, "a heredoc into a file");
+  assert.equal(boardIdRefusal('printf "x\\n\\nBoard-Id: C1274\\n" > msg.txt'), null, "a printf into a file");
+  assert.equal(boardIdRefusal('printf "x\\n\\nBoard-Id: C1274\\n" > f.txt && git commit -m "y\n\nBoard-Id: good-id"'), null, "a printf before a good commit");
+});
+
 test("still refused: the bad trailer in the commit's own segment, in -m with real newlines, with a literal backslash-n, in a heredoc, and before an && command", () => {
   assert.ok(boardIdRefusal('git commit -m "x\n\nBoard-Id: C1274" && git push'));
   assert.ok(boardIdRefusal('git commit -m "x\\n\\nBoard-Id: C1274\\nCo-Authored-By: X <x@example.com>"'), "a literal \\n inside -m");
