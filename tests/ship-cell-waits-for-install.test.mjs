@@ -13,14 +13,14 @@ const draw = (cardExtra = {}, probeExtra = {}, host = "store") => drawPage({ ini
 test("a landed card with no pack yet says 'Queued for pack' on the yellow stripes, not the install's green", () => {
   const html = draw();
   assert.match(html, /Queued<span class="sl"> for pack<\/span>/);
-  assert.equal(/Queued for your install/.test(html), false);
+  assert.equal(/<small>Your install<\/small>/.test(html), false);
   assert.match(html, /class="step waits proc"/);
   assert.equal(/class="step waits rel"/.test(html), false);
 });
 
 test("a landed card waiting for the install: the Ship cell says 'Queued for your install', with no counter and no slow word", () => {
   const html = draw({}, { packed: true });
-  assert.match(html, /Queued for your install/);
+  assert.match(html, /<small>Your install<\/small>/);
   assert.match(html, /class="step waits rel"/);
   assert.equal(/data-shipat/.test(html), false, "no running counter");
   assert.equal(/slow \(est\.\)|deploying \(est\.\)|tests \(est\.\)/.test(html), false, "no estimate words");
@@ -29,23 +29,23 @@ test("a landed card waiting for the install: the Ship cell says 'Queued for your
 test("still shown: a Release step in progress keeps its counter, and no 'Queued for your install'", () => {
   const html = draw({}, { shipping: true });
   assert.match(html, /data-shipat="1"/);
-  assert.equal(/Queued for your install/.test(html), false);
+  assert.equal(/<small>Your install<\/small>/.test(html), false);
 });
 
 test("still shown: a card not yet on main keeps its counter, and a product card keeps its deploy timing", () => {
   assert.match(draw({}, { onMain: false }), /data-shipat="1"/, "not on main");
   const product = draw({ repo: "Platform" });
   assert.match(product, /data-shipat="1"/, "a product card");
-  assert.equal(/Queued for your install/.test(product), false);
+  assert.equal(/<small>Your install<\/small>/.test(product), false);
 });
 
 test("still shown: a landing that failed (a red line on the card) is not called queued", () => {
   const failed = drawPage({ initiatives: [card()], waiting: [], messages: [], steps: [], threads: [], derived: [{ id: "all", cards: { "landed-card": { red: ["on ship with nothing on main"] } } }] }, { probe: probe(), host: "store" }).html;
-  assert.equal(/Queued for your install/.test(failed), false);
+  assert.equal(/<small>Your install<\/small>/.test(failed), false);
   assert.match(failed, /on ship with nothing on main/, "control: the red line is drawn");
 });
 
 test("the artifact page (not the store) is unchanged", () => {
   const html = draw({}, {}, null);
-  assert.equal(/Queued for your install/.test(html), false);
+  assert.equal(/<small>Your install<\/small>/.test(html), false);
 });

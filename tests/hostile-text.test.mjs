@@ -140,6 +140,8 @@ for (const host of ["store", null]) for (const mode of ["all", "end", "start"]) 
 // through esc()); tests/not-now-badge-short.test.mjs draws a hostile agent name and finds no raw markup.
 // #C1229 took six sinks out (the board, the done list, the threads, Needs you, the team notes and the resolved list each now hand the same escaped html to patchHtml) and put two in:
 // patchHtml's own, `t.innerHTML=html` on a detached template and its fallback `el.innerHTML=html` when there is no DOM to patch. Both write only what the six callers built through esc() before.
-test("the page's innerHTML sinks are the 42 audited (41 for #C723, 1 for #C874, 1 for #C919, 1 for #C972, 2 for #C1049, less 6 and plus 2 for #C1229): a new one fails here until it is audited", () => {
-  assert.equal((template.match(/innerHTML/g) ?? []).length, 42);
+// #C1299 added one: askDialog's `d.innerHTML=` (the dialog that asks a group's name or answers the in-review warning). Its question, its input's value and both button words go through esc();
+// tests/group-controls-page.test.mjs draws a group named with markup and finds none raw.
+test("the page's innerHTML sinks are the 43 audited (41 for #C723, 1 for #C874, 1 for #C919, 1 for #C972, 2 for #C1049, less 6 and plus 2 for #C1229, plus 1 for #C1299): a new one fails here until it is audited", () => {
+  assert.equal((template.match(/innerHTML/g) ?? []).length, 43);
 });

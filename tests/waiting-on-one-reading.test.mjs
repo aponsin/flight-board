@@ -124,7 +124,6 @@ test("no file keeps its own startsWith test on waiting_on or waitingOn; the page
   const page = readFileSync(join(ROOT, "page", "board.template.html"), "utf8");
   const fn = (name) => new RegExp(`function ${name}\\([^)]*\\)\\{[\\s\\S]*?\\n`).exec(page)?.[0] ?? "";
   assert.match(page, /function stalled\(i\)\{[^\n]*i\.heldBy/, "stalled() reads the view's heldBy");
-  // #C1301: gapRed is gone; heldOnPurpose now ends where the next comment, "// Stalled:", begins.
-  assert.match(fn("heldOnPurpose") + page.slice(page.indexOf("function heldOnPurpose"), page.indexOf("// Stalled:")), /i\.heldBy/, "heldOnPurpose reads it");
-  assert.doesNotMatch(page.slice(page.indexOf("function heldOnPurpose"), page.indexOf("// Stalled:")), /waitingOn/, "heldOnPurpose has no waitingOn rule of its own");
+  // #C1299: heldOnPurpose had no caller since #C1301 took gapRed away (Checker 2's nit); it is gone, so no second reading of waiting_on is left on the page.
+  assert.equal(page.includes("heldOnPurpose"), false, "no heldOnPurpose on the page");
 });
