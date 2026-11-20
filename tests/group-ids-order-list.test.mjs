@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { createCard, updateCard, moveGroup, openSlots, pullOutOfGroup, renameGroup, moveToGroup, writeEvidence, readView } from "../worker/board-store.mjs";
+import { compatView } from "../worker/compat-view.mjs";
 import { agentRank, groupOrderBlock, slotOf, slotKeyOf, moveToGroupRefusal, groupRenameRefusal, slugOfName, groupPastBuild } from "../worker/board-rules.mjs";
 
 const T = 1_800_000_000_000;
@@ -30,6 +31,21 @@ test("the store mints a #G number the first time a group has a card, the same gr
   assert.deepEqual(r, { ok: true, batch: "g1-a", num: 1, name: "Board polish" });
   assert.equal((await view(db)).groupNames.find((g) => g.batch === "g1-a").name, "Board polish");
   assert.equal((await view(db)).cards.find((c) => c.id === "a1-one").batch, "g1-a", "the cards still carry the batch id");
+});
+
+// Checker 2 on 4526baee: the page reads /api/compat, so the view's groupNames and the order rows (a single card's "c:<id>" among them) must reach its meta collection, or every group loses its
+// #G number and name, and a placed single card its place, with the suite still green.
+test("the compat view the page reads carries meta/groupNames {batch, num, name} and meta/groupOrder with a single card's own place", async () => {
+  const db = await world();
+  assert.ok((await renameGroup(db, ++t, "owner", { batch: "g1-a", name: "Alpha" })).ok);
+  assert.ok((await pullOutOfGroup(db, ++t, "owner", { id: "b1-one" })).ok);
+  const meta = compatView(await view(db)).collections.meta;
+  const names = meta.find((d) => d.id === "groupNames");
+  assert.deepEqual(names.rows, [{ batch: "g1-a", num: 1, name: "Alpha" }, { batch: "g2-b", num: 2, name: null }, { batch: "g3-c", num: 3, name: null }]);
+  const order = meta.find((d) => d.id === "groupOrder");
+  assert.deepEqual(order.rows.map((r) => r.batch), ["g1-a", slotKeyOf("b1-one"), "g3-c"]);
+  const bare = compatView(await view(makeDb())).collections.meta ?? [];
+  assert.equal(bare.some((d) => d.id === "groupNames"), false, "a board with no groups carries no groupNames");
 });
 
 test("only the owner renames, shaped {batch, name}, an open group, a name of 1 to 60 characters on one line; refusals are logged", async () => {
