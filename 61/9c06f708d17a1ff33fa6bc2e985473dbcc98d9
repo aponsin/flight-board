@@ -1,0 +1,1 @@
+SECURE: #C1358 review fixes. groupReadyAt (Worker and page) only moves when a slow clock starts, to the group's last member reaching review, capped at now; no write or permission change. The page's pill, meta line and 'Waiting for' note go through esc() (gwLabel from #C number or id). Linear on my SECURE 9ff81820. Security 2026-11-20.
