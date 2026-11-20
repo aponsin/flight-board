@@ -1,0 +1,5 @@
+SECURE
+
+#C1308 (page only): the Install tile now draws the install wait: class 'step waits rel' (fixed), title and label via esc(l), the owner's name via esc(OWNER), and fixed literals; the Land tile reads done under greenWait. No new input or innerHTML sink (count stays 43).
+
+signed-by: Security
