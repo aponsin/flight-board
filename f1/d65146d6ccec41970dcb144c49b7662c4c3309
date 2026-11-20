@@ -1,0 +1,5 @@
+SECURE
+
+#C1310: sink count 43 to 44 audited in tests/hostile-text.test.mjs; hostile switch name drawn as text. Test only. board-polish-five group, tip af60261a.
+
+signed-by: Security
