@@ -1,0 +1,5 @@
+SECURE
+
+#C1292: CSS resize: vertical on .t-hist plus a phone rule; script stores one height in this browser's localStorage (flight-board-thread-box-height). The stored value is read through histClamp (Number, finite, >0, rounded, clamped 96-4000) before it reaches style.height as a px number, so a tampered value cannot inject CSS or markup; every storage access is in try/catch. Pointer listeners only read geometry and set a height. No network, store, route, permission, hook or Worker change.
+
+signed-by: Security
