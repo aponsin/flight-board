@@ -14,7 +14,7 @@ import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.
 import { writeUsageDay } from "./compat-usage.mjs";
 import { subscribePush, unsubscribePush, pushKnown, pushFacts, pushRun } from "./push-store.mjs";
 import { SW_SOURCE, MANIFEST } from "./push-page.mjs";
-import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, doorWriteRefusal, DOOR_UNGUARDED_TOOLS, setDoorSession, setStackSwitch, claimReview, releaseReview, moveInQueue, pullOutOfGroup, moveGroup } from "./board-store.mjs";
+import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, doorWriteRefusal, DOOR_UNGUARDED_TOOLS, setDoorSession, setStackSwitch, claimReview, releaseReview, moveInQueue, pullOutOfGroup, moveGroup, renameGroup, moveToGroup } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 import { viewForTool } from "./view-filter.mjs";
@@ -323,6 +323,21 @@ export default {
       try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
       const r = await moveGroup(env.DB, now, auth.who, b);
       return json(r.ok ? 200 : 422, r);
+    }
+    // #C1299: the owner renames a group, and moves a card to an open group of its repository or to a new group made from a name.
+    if (url.pathname === "/api/group-rename" && request.method === "POST") {
+      if (auth.role !== "owner") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await renameGroup(env.DB, now, auth.who, b);
+      return json(r.ok ? 200 : 422, r);
+    }
+    if (url.pathname === "/api/move-to-group" && request.method === "POST") {
+      if (auth.role !== "owner") return bare(403);
+      let b;
+      try { b = await request.json(); } catch { return json(400, { error: "not JSON" }); }
+      const r = await moveToGroup(env.DB, now, auth.who, b);
+      return json(r.ok ? 200 : r.warn ? 409 : 422, r);
     }
     // The owner's Pull out on a card in a group (#C1008): the card leaves its group, tagged with where from, who and when.
     if (url.pathname === "/api/pull-out" && request.method === "POST") {

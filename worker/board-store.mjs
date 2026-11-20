@@ -1,6 +1,6 @@
 // Board store operations on D1 (#C719). Every write goes through the rules in board-rules.mjs in the same call; a refusal is
 // logged (rule, card, who, time) and returned, nothing is written. `db` is a D1 binding (or tests/helpers/d1-sqlite.mjs).
-import { pausedDepLanded, PAUSE_DEP_END, openDecisionHolds, rcOffWakes, RC_OFF_CARD, landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, endedHolds, closesAtLanding, holdWords, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, isBoardCard, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER, sweepAsk, SWEEP_TITLE } from "./board-rules.mjs";
+import { pausedDepLanded, PAUSE_DEP_END, openDecisionHolds, rcOffWakes, RC_OFF_CARD, landedUnbuilt, reviewLateWakes, REVIEW_LATE_MARK, reworkTriggered, signoffClears, reviewHoldRole, staleCopies, COPY_CARD, E2E_CARD, e2eWake, e2eWakeLine, staleMsOf, holdEndRefusal, autoHoldEnd, heldWakes, endedHolds, closesAtLanding, holdWords, phaseMedians, slowWakes, SLOW_ROW_END, outOfOrderWork, ORDER_ROW_END, askRefusal, cardWriteRefusal, closeRefusal, withdrawRefusal, answerShapeRefusal, messageExtrasRefusal, listWriteRefusal, evidenceRefusal, liveNow, historyRows, whoForPhase, PHASES, stalledWaits, stallMsOf, shipSlowMsOf, quotaHold, postedFreshMsOf, copyStaleMsOf, landedUnbuiltMsOf, holdNoEndMsOf, autoCloseMsOf, quotaOutPctOf, stepRefusal, stackSwitchRefusal, reviewClaimRefusal, queueWriteRefusal, queueMoveRefusal, pullOutRefusal, groupMoveRefusal, groupRenameRefusal, moveToGroupRefusal, slugOfName, groupPastBuild, slotKeyOf, SLOT_PREFIX, hasPlace, groupCompare, agentRank, isRework, startedGroupSet, groupOf, queueRank, dependsNotLive, ASK_PARTS, ASK_OPTIONAL_PARTS, APPROVE, PROBE_CARD_ID, PROBE_CARD_ID_MAX, isBoardCard, typedOther, zTimeRefusal, inlineListRefusal, installWaitStep, INSTALL_WAIT, movedOnAsks, AUTO_CLOSED_BY, DONE_EVIDENCE, AGENT_STALL, agentStallRow, agentStallOf, raisedIssues, unexplainedStepBack, issueTotal, REASON_COUNTER, sweepAsk, SWEEP_TITLE } from "./board-rules.mjs";
 import { classifySend, nudgeLine, shouldSend, wakeStatus, shouldTellOwner, wakeLimits } from "./wake-rules.mjs";
 import { readFiles, screenshotsRefusal, parseShot } from "./file-store.mjs";
 import { noteShip, readShips } from "./compat-ships.mjs";
@@ -87,6 +87,7 @@ export async function createCard(db, now, who, fields, opts = {}) {
   const row = COLUMNS.map((c) => (c in fields ? bool(fields[c]) : null) ?? defaultFor(c));
   await db.prepare(`INSERT INTO cards (id, num, ${COLUMNS.join(", ")}, issues_at, held_at, hold_until, created_at, updated_at) VALUES (?, ?, ${COLUMNS.map(() => "?").join(", ")}, ?, ?, ?, ?, ?)`)
     .bind(fields.id, num, ...row, fields.issues ? now : null, holdWords(fields) ? now : null, autoHoldEnd(fields, null, now, holdNoEndMsOf(await knobsStored(db))), now, now).run();
+  if (typeof fields.batch === "string" && fields.batch.trim()) await ensureGroup(db, now, who, fields.batch);
   return { ok: true, id: fields.id, num };
 }
 // #C1169 (11-17: a card was carded against DATA.md:131 without checking it; the owner: cards about the flight-board must match the first-level principles; principles 1
@@ -233,6 +234,8 @@ export async function updateCard(db, now, who, fields, opts = {}) {
     sets.push("hold_until = ?"); vals.push(holdWords(after) ? autoHoldEnd(fields, card, now, holdNoEndMsOf(await knobsStored(db))) : null);
   }
   await db.prepare(`UPDATE cards SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`).bind(...vals, now, id).run();
+  // #C1299: a card put in a group has the group's number minted (a new group gets its #G number here) and loses a single card's own place in the order list.
+  if (keys.includes("batch") && typeof fields.batch === "string" && fields.batch.trim()) await joinedGroup(db, now, who, id, fields.batch);
   // #C875: a reason attached ends the rework's wait for one (the flag in the card's evidence goes) and is kept in the card's reason history.
   if (keys.includes("rework_reason") && typeof fields.rework_reason === "string") {
     await db.prepare("INSERT INTO rework_history (card_id, reason, at, who) VALUES (?, ?, ?, ?)").bind(id, fields.rework_reason, now, who ?? null).run();
@@ -940,8 +943,87 @@ export async function pullOutOfGroup(db, now, who, b) {
   const card = await db.prepare("SELECT id, batch, dropped, done_at FROM cards WHERE id = ?").bind(b.id).first();
   if (!card || card.dropped || card.done_at) return refuse(db, now, { rule: "card-unknown", detail: String(b.id) }, b.id, who);
   if (!card.batch) return refuse(db, now, { rule: "pull-out-no-group", detail: `${b.id} is in no group` }, b.id, who);
+  // #C1299: the card becomes a single card in the one order list, just above the group it left.
+  const slots = await openSlots(db);
   await db.prepare("UPDATE cards SET batch = NULL, pulled_from = ?, pulled_by = ?, pulled_at = ?, updated_at = ? WHERE id = ?").bind(card.batch, who, now, now, b.id).run();
+  const at = slots.indexOf(card.batch);
+  slots.splice(at < 0 ? slots.length : at, 0, slotKeyOf(b.id));
+  // A group whose only open card this was has no card now: it disappears from the list.
+  const left = await db.prepare("SELECT 1 AS x FROM cards WHERE batch = ? AND COALESCE(dropped, 0) = 0 AND done_at IS NULL LIMIT 1").bind(card.batch).first();
+  await writeOrder(db, now, who, left ? slots : slots.filter((k) => k !== card.batch));
   return { ok: true, id: b.id, from: card.batch };
+}
+// #C1299: the order list rows. A row is a group's batch id or a single card's "c:<card id>"; writeOrder renumbers the given keys 1..n and drops every other row.
+async function writeOrder(db, now, who, keys) {
+  await db.batch([db.prepare("DELETE FROM group_order"), ...keys.map((g, n) => db.prepare("INSERT INTO group_order (batch, pos, set_by, set_at) VALUES (?, ?, ?, ?)").bind(g, n + 1, who, now))]);
+}
+// A group's number and name, minted the first time the store sees the group (a card written into it, or a rename). Returns { num, name }.
+export async function ensureGroup(db, now, who, batch) {
+  if (typeof batch !== "string" || !batch.trim()) return null;
+  const have = await db.prepare("SELECT num, name FROM groups WHERE batch = ?").bind(batch).first();
+  if (have) return have;
+  // One statement picks the number and writes the row; the UNIQUE on num makes a racing second writer fail rather than repeat a number.
+  await db.prepare("INSERT OR IGNORE INTO groups (batch, num, name, created_by, created_at) SELECT ?, COALESCE(MAX(num), 0) + 1, NULL, ?, ? FROM groups").bind(batch, who ?? "store", now).run();
+  return await db.prepare("SELECT num, name FROM groups WHERE batch = ?").bind(batch).first();
+}
+// A card put in a group by any write: the group has its number, and a place of its own as a single card is gone (it is in the group's place now).
+const joinedGroup = async (db, now, who, id, batch) => {
+  await ensureGroup(db, now, who, batch);
+  await db.prepare("DELETE FROM group_order WHERE batch = ?").bind(slotKeyOf(id)).run();
+};
+// #C1299: the owner renames a group. The batch id stays (every card carries it); the name is for the page.
+export async function renameGroup(db, now, who, b) {
+  const bad = groupRenameRefusal(b, who);
+  if (bad) return refuse(db, now, bad, null, who);
+  const open = await db.prepare("SELECT 1 AS x FROM cards WHERE batch = ? AND COALESCE(dropped, 0) = 0 AND done_at IS NULL LIMIT 1").bind(b.batch).first();
+  if (!open) return refuse(db, now, { rule: "group-unknown", detail: `${b.batch} is not an open group` }, null, who);
+  const g = await ensureGroup(db, now, who, b.batch);
+  await db.prepare("UPDATE groups SET name = ? WHERE batch = ?").bind(b.name.trim(), b.batch).run();
+  return { ok: true, batch: b.batch, num: g.num, name: b.name.trim() };
+}
+// #C1299: the owner moves a card to an open group of its own repository, or to a new group made from a name (no empty groups: the group exists with the card in it).
+// A group with a card past Build is in review, and adding a card restarts its review: without `confirm: true` the store answers { ok: false, warn: "in-review" } and writes nothing.
+// A new group takes the place the card had in the order list (a single card's own place, or just above the group it left).
+export async function moveToGroup(db, now, who, b) {
+  const bad = moveToGroupRefusal(b, who);
+  if (bad) return refuse(db, now, bad, b?.id, who);
+  const card = await db.prepare("SELECT id, batch, repo, dropped, done_at FROM cards WHERE id = ?").bind(b.id).first();
+  if (!card || card.dropped || card.done_at) return refuse(db, now, { rule: "card-unknown", detail: String(b.id) }, b.id, who);
+  let target = b.batch;
+  if ("batch" in b) {
+    if (target === card.batch) return refuse(db, now, { rule: "move-to-same", detail: `${b.id} is already in ${target}` }, b.id, who);
+    const members = (await db.prepare("SELECT id, repo FROM cards WHERE batch = ? AND COALESCE(dropped, 0) = 0 AND done_at IS NULL").bind(target).all()).results ?? [];
+    if (!members.length) return refuse(db, now, { rule: "group-unknown", detail: `${target} is not an open group` }, b.id, who);
+    if (members.some((m) => String(m.repo ?? "").toLowerCase() !== String(card.repo ?? "").toLowerCase())) return refuse(db, now, { rule: "move-to-repo", detail: `${target} holds cards of another repository than ${b.id}` }, b.id, who);
+    if (b.confirm !== true) {
+      const phases = [];
+      for (const m of members) { const e = await evidenceOf(db, `cards.${m.id}`); phases.push(e?.phase ?? e?.lit?.[0] ?? null); }
+      if (groupPastBuild(phases)) return { ok: false, warn: "in-review", batch: target, message: "This group is in review: adding a card restarts its review" };
+    }
+  } else {
+    const base = slugOfName(b.new_name);
+    let n = 1;
+    target = base;
+    while (await db.prepare("SELECT 1 AS x FROM groups WHERE batch = ? UNION ALL SELECT 1 AS x FROM cards WHERE batch = ?").bind(target, target).first()) target = `${base}-${++n}`;
+  }
+  const slots = await openSlots(db);
+  const was = card.batch ? card.batch : slotKeyOf(b.id);
+  await db.prepare("UPDATE cards SET batch = ?, pulled_from = NULL, pulled_by = NULL, pulled_at = NULL, updated_at = ? WHERE id = ?").bind(target, now, b.id).run();
+  await joinedGroup(db, now, who, b.id, target);
+  if (!("batch" in b)) {
+    await db.prepare("UPDATE groups SET name = ? WHERE batch = ?").bind(b.new_name.trim(), target).run();
+    // The new group takes the card's place: a single card's own slot, or just above the group it left.
+    const at = slots.indexOf(was);
+    if (card.batch) slots.splice(at < 0 ? slots.length : at, 0, target);
+    else if (at >= 0) slots[at] = target;
+    else slots.push(target);
+  }
+  // The card's old group may be empty now (it disappears from the list), and a single card's own place is gone: write the list as it is.
+  const open = new Set(await openSlots(db));
+  const next = [...new Set(slots)].filter((k) => open.has(k));
+  await writeOrder(db, now, who, next);
+  const g = await db.prepare("SELECT num, name FROM groups WHERE batch = ?").bind(target).first();
+  return { ok: true, id: b.id, batch: target, from: card.batch ?? null, num: g.num, name: g.name ?? null, created: !("batch" in b) };
 }
 // #C1053: the open groups in the owner's order. A group is a batch id of a card not done and not dropped; the order is group_order's places, a group
 // with none after the placed ones (by id): groupCompare, the rule the dispatch and the page read too.
@@ -952,16 +1034,31 @@ export async function openGroups(db) {
 }
 // #C1053: the owner (or Manager, as the fallback) moves a group one place up or down. Every open group is renumbered 1..n and so placed (a new group
 // stays at the bottom until then); a row of a group that is no longer open goes. At the top going up, or the bottom going down, nothing moves.
+// #C1299: the one order list: the open groups and the single cards the owner has placed ("c:<card id>"), by place. A single card nobody placed is in no place and
+// not in the list (it sorts after everything, as before); the first move of its own arrows puts it at the end of the list, then moves it.
+export async function openSlots(db) {
+  const groups = await openGroups(db);
+  const order = (await db.prepare("SELECT batch, pos FROM group_order").all()).results ?? [];
+  const singles = (await db.prepare("SELECT id FROM cards WHERE (batch IS NULL OR TRIM(batch) = '') AND COALESCE(dropped, 0) = 0 AND done_at IS NULL").all()).results ?? [];
+  const placed = singles.map((r) => slotKeyOf(r.id)).filter((k) => hasPlace(k, order));
+  return [...groups, ...placed].sort((a, b) => groupCompare(a, b, order));
+}
 export async function moveGroup(db, now, who, b) {
   const bad = groupMoveRefusal(b, who);
   if (bad) return refuse(db, now, bad, null, who);
-  const groups = await openGroups(db);
-  const at = groups.indexOf(b.batch);
-  if (at < 0) return refuse(db, now, { rule: "group-unknown", detail: `${b.batch} is not an open group` }, null, who);
+  const groups = await openSlots(db);
+  let at = groups.indexOf(b.batch);
+  if (at < 0 && b.batch.startsWith(SLOT_PREFIX)) {
+    // A single card with no place of its own yet: it joins the end of the list, then moves.
+    const id = b.batch.slice(SLOT_PREFIX.length);
+    const card = await db.prepare("SELECT id FROM cards WHERE id = ? AND (batch IS NULL OR TRIM(batch) = '') AND COALESCE(dropped, 0) = 0 AND done_at IS NULL").bind(id).first();
+    if (card) { groups.push(b.batch); at = groups.length - 1; }
+  }
+  if (at < 0) return refuse(db, now, { rule: "group-unknown", detail: `${b.batch} is not an open group or a single card` }, null, who);
   const to = b.dir === "up" ? at - 1 : at + 1;
   if (to < 0 || to >= groups.length) return { ok: true, batch: b.batch, moved: false, order: groups };
   [groups[at], groups[to]] = [groups[to], groups[at]];
-  await db.batch([db.prepare("DELETE FROM group_order"), ...groups.map((g, n) => db.prepare("INSERT INTO group_order (batch, pos, set_by, set_at) VALUES (?, ?, ?, ?)").bind(g, n + 1, who, now))]);
+  await writeOrder(db, now, who, groups);
   return { ok: true, batch: b.batch, moved: true, order: groups };
 }
 // #C1298 (11-19: a session that was not Manager's wrote through Manager's connector, and the board signed it "Manager"; the owner got a new-reply badge for it): the door guard that read_inbox has
@@ -1177,9 +1274,11 @@ export async function readView(db, now) {
   const reviewClaims = await all("SELECT sha, card_id, checker, claimed_at, mutants, mutant_sec, progress, progress_at FROM review_claims WHERE released_at IS NULL ORDER BY claimed_at, sha");
   // #C1053: the owner's order of the groups (pos 1 goes live first), read by the page and the dispatch.
   const groupOrder = await all("SELECT batch, pos, set_by, set_at FROM group_order ORDER BY pos, batch");
+  // #C1299: each group's number and name (the page draws "#G12 name"; a group with no name shows its batch id).
+  const groupNames = await all("SELECT batch, num, name FROM groups ORDER BY num");
   // #C1097: the idle-agent stalls now current, each with the time the store first raised it; the dispatch wakes the stalled role once one is 30 minutes old.
   const agentStalls = (await db.prepare("SELECT card_id, reason, created_at FROM stall_wakes WHERE card_id LIKE ? ORDER BY created_at, card_id").bind(`${AGENT_STALL}%`).all()).results.map(agentStallOf).filter(Boolean);
-  const content = { pings, agentStalls, cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reviewClaims, reworkHistory, groupOrder };
+  const content = { pings, agentStalls, cards, asks, lists, evidence, refusals, wake, history, historyCards, files, ships, usage, threads, stackSwitch, reviewClaims, reworkHistory, groupOrder, groupNames };
   // The tag covers what the page shows; a probe going silent changes it, the clock moving alone does not.
   const wakeState = wakeStatus(wakeFacts(wake, wake.alive_at || undefined), now, wakeLimits(knobsRead));
   const tag = (await sha256hex(JSON.stringify([content, probe.state, wakeState.state, wakeState.reason ?? null]))).slice(0, 16);

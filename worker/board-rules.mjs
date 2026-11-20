@@ -399,13 +399,41 @@ export function pullOutRefusal(b, who) {
   return null;
 }
 
+// #C1299: a group's name (the owner's words, 1 to 60 characters, no line breaks or control characters), and the two writes that use it. Both are the owner's alone.
+export const GROUP_NAME_MAX = 60;
+export const groupNameOk = (s) => typeof s === "string" && s.trim().length >= 1 && s.trim().length <= GROUP_NAME_MAX && !/[\u0000-\u001f\u007f]/.test(s);
+// Rename a group: {batch, name}.
+export function groupRenameRefusal(b, who) {
+  if (who !== "owner") return refuse("group-rename-owner", `${who ?? "unknown"} cannot rename a group; only the owner can`);
+  if (b === null || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => k !== "batch" && k !== "name")) return refuse("group-rename-shape", "a group rename is {batch, name}");
+  if (typeof b.batch !== "string" || !GROUP_ID_SHAPE.test(b.batch)) return refuse("group-rename-shape", "batch is a group id");
+  if (!groupNameOk(b.name)) return refuse("group-rename-name", `name is 1 to ${GROUP_NAME_MAX} characters on one line`);
+  return null;
+}
+// Move a card to a group: {id, batch} (an open group of the card's repository) or {id, new_name} (a new group with the card in it, asked for by name); `confirm: true`
+// answers the "this group is in review" warning (Move anyway).
+export function moveToGroupRefusal(b, who) {
+  if (who !== "owner") return refuse("move-to-owner", `${who ?? "unknown"} cannot move a card to a group; only the owner can`);
+  if (b === null || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => !["id", "batch", "new_name", "confirm"].includes(k))) return refuse("move-to-shape", "a move is {id, batch} or {id, new_name}, with confirm: true to answer the in-review warning");
+  if (typeof b.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(b.id)) return refuse("move-to-shape", "id is a card id");
+  if (("batch" in b) === ("new_name" in b)) return refuse("move-to-shape", "give exactly one of batch (an open group) and new_name (a new group's name)");
+  if ("batch" in b && !(typeof b.batch === "string" && GROUP_ID_SHAPE.test(b.batch))) return refuse("move-to-shape", "batch is a group id");
+  if ("new_name" in b && !groupNameOk(b.new_name)) return refuse("move-to-name", `new_name is 1 to ${GROUP_NAME_MAX} characters on one line`);
+  if ("confirm" in b && b.confirm !== true) return refuse("move-to-shape", "confirm is true or left out");
+  return null;
+}
+// The slug a new group gets from its name: lower case letters, digits and dashes, at most 40; "group" when the name has none. The store adds -2, -3 ... when it is taken.
+export const slugOfName = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/g, "") || "group";
+// A group is "in review" for a card joining it when a card in it has gone past Build (its evidence phase is a later one): adding a card then restarts the review.
+export const groupPastBuild = (phases) => (Array.isArray(phases) ? phases : []).some((p) => typeof p === "string" && p !== "" && p !== "build" && p !== "plan");
+
 // The order of the card groups (#C1053). The owner moves a group up or down from the page; Manager's tool is the fallback. Shaped {batch, dir}.
 export const GROUP_ORDER_WRITERS = ["owner", "Manager"];
 export const GROUP_ID_SHAPE = /^[A-Za-z0-9._\/-]{1,100}$/;
 export function groupMoveRefusal(b, who) {
   if (!GROUP_ORDER_WRITERS.includes(who)) return refuse("group-move-owner", `${who ?? "unknown"} cannot order the groups; only the owner (or Manager, as the fallback) can`);
   if (b === null || typeof b !== "object" || Array.isArray(b) || Object.keys(b).some((k) => k !== "batch" && k !== "dir")) return refuse("group-move-shape", "a group move is {batch, dir}");
-  if (typeof b.batch !== "string" || !GROUP_ID_SHAPE.test(b.batch)) return refuse("group-move-shape", "batch is a group id");
+  if (typeof b.batch !== "string" || !(GROUP_ID_SHAPE.test(b.batch) || SLOT_SHAPE.test(b.batch))) return refuse("group-move-shape", "batch is a group id, or c:<card id> for a single card's place");
   if (b.dir !== "up" && b.dir !== "down") return refuse("group-move-shape", "dir is up or down");
   return null;
 }
@@ -422,6 +450,15 @@ export const groupIdCompare = (a, b) => String(a || "").localeCompare(String(b |
 export function groupCompare(a, b, order) {
   return groupRank(a, order) - groupRank(b, order) || groupIdCompare(a, b);
 }
+// #C1299: ONE order list holds groups and single cards. A group sits in it by its batch id; a single card the owner has placed (Pull out, or its own arrows)
+// sits in it by "c:<card id>". A card in a group is in the list by its group; a single card with no place of its own is in no group and no place, after every
+// one, as before. `order` is the list of { batch, pos } (or a Map batch -> pos) groupRank reads.
+export const SLOT_PREFIX = "c:";
+export const slotKeyOf = (id) => `${SLOT_PREFIX}${id}`;
+export const SLOT_SHAPE = /^c:[a-z0-9][a-z0-9-]{0,63}$/;
+export const hasPlace = (key, order) => (order instanceof Map ? order.has(key) : Array.isArray(order) && order.some((o) => o && o.batch === key));
+// c is { group, id } (the plain card of the rule). Returns the key groupRank reads: the group, else the card's own slot when it has one, else "".
+export const slotOf = (c, order) => (typeof c?.group === "string" && c.group ? c.group : typeof c?.id === "string" && hasPlace(slotKeyOf(c.id), order) ? slotKeyOf(c.id) : "");
 
 // ONE order of an agent's work, read by the dispatch (collector/store-dispatch.mjs), the stall line (stalledWaits) and the owner's queue move
 // (queueCards), so no part of the board can name a different next card than the dispatch wakes the agent for (#C1053, the owner's A and B on 11-12):
@@ -430,7 +467,7 @@ export function groupCompare(a, b, order) {
 //   the owner placed before one an agent placed, then the card's number (queueRank).
 // A card here is { held, rework, groupStarted, group, queue_pos, owner, num, id }.
 export function agentRank(a, b, order) {
-  return (a.held ? 1 : 0) - (b.held ? 1 : 0) || (a.rework ? 0 : 1) - (b.rework ? 0 : 1) || (a.groupStarted ? 0 : 1) - (b.groupStarted ? 0 : 1) || groupCompare(a.group, b.group, order) || queueRank(a, b);
+  return (a.held ? 1 : 0) - (b.held ? 1 : 0) || (a.rework ? 0 : 1) - (b.rework ? 0 : 1) || (a.groupStarted ? 0 : 1) - (b.groupStarted ? 0 : 1) || groupCompare(slotOf(a, order), slotOf(b, order), order) || queueRank(a, b);
 }
 // A card's group as a plain word: its batch id when it is in the plain shape, "" for none or an odd value (as the dispatch's batchOf reads it).
 export const groupOf = (c) => (typeof c?.batch === "string" && GROUP_ID_SHAPE.test(c.batch.trim()) ? c.batch.trim() : "");
@@ -459,16 +496,17 @@ export function ownerTurn(c, e) {
 // The owner's ruling (the owner chose A on 11-16, #C1103; Checker 2's M1): the group order decides only which NEW work starts. A card sent back with findings (`rework`) and
 // the next card of a group already started (`groupStarted`) come first, as the dispatch's agentRank puts them, so neither is ever blocked or named.
 export function groupOrderBlock(card, cards, order) {
-  const role = card?.owner_role, mine = typeof card?.group === "string" ? card.group : "";
+  const role = card?.owner_role, mine = slotOf(card, order);
   if (typeof role !== "string" || !role) return null;
   if (card.rework === true || card.groupStarted === true) return null;
-  let best = null;
+  let best = null, bestSlot = "";
   for (const c of Array.isArray(cards) ? cards : []) {
-    if (!c || c.id === card.id || c.owner_role !== role || !c.turn || c.held || typeof c.group !== "string" || !c.group || c.group === mine) continue;
-    if (groupCompare(c.group, mine, order) >= 0) continue;
-    if (!best || groupCompare(c.group, best.group, order) < 0 || (c.group === best.group && queueRank(c, best) < 0)) best = c;
+    const slot = slotOf(c, order);
+    if (!c || c.id === card.id || c.owner_role !== role || !c.turn || c.held || !slot || slot === mine) continue;
+    if (groupCompare(slot, mine, order) >= 0) continue;
+    if (!best || groupCompare(slot, bestSlot, order) < 0 || (slot === bestSlot && queueRank(c, best) < 0)) { best = c; bestSlot = slot; }
   }
-  return best ? { id: best.id, num: best.num, group: best.group } : null;
+  return best ? { id: best.id, num: best.num, group: best.group || bestSlot } : null;
 }
 // The rows of the store (cards, the evidence by card id) as the rule's plain cards. A dropped, done or live card is no card of the rule.
 export function orderCards(rows, evidence) {
