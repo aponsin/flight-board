@@ -1,0 +1,2 @@
+PASS (Full) board-truth-2 #C1380-#C1385, line from 05185b91f2b9ee833355b93ce92a648a3495439c: re-signed by range-diff from 7a36bfca (FINDINGS F1-F3 fixed: page tile-copy parity test, turn and land-needs-sign-off wait tests, DATA.d line, dead stalled() gone; d84e2d45 renames fixture ids only). Suite 3609/0/1; 38 mutants, all killed but 2 equivalent redundant guards.
+signed-by: Checker 2
