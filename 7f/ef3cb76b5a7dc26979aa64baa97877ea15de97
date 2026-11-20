@@ -1,1 +1,3 @@
 SECURE: #C1324 re-cut of 7b72da97; loosening lets kind decision and non-empty screenshots through agentNoteRefusal (a UX rule, not a trust boundary: Manager's door only; postMessage still validates decision options and stored screenshots). Mutation (empty list bypasses): caught. Security 2026-11-20.
+
+SECURE pack pc113 (pin 7fef3cb7 == origin/main): sha256 of deploy 91dd53ff, tree 3fa27533, hooks 5921ce50, land d1e25ac9, board-deploy 7a021248 (unchanged), steps 4b7e11b1 match. Diffs vs pc112 (land vs pc89) change only pin, pack number, hashes and the change lists; changed-file list equals git diff 910f08aa..7fef3cb7; no wrangler config, no migration; pc112 .done = 910f08aa; all 8 commits noted SECURE. Security 2026-11-20.
