@@ -1,0 +1,7 @@
+SECURE
+
+#C1298, Worker: doorWriteRefusal guards every write tool on Manager's door with the same rule as guardedInbox (read_inbox): no session named = refused; a set door session that differs = refused; none set + one named = allowed (no deploy lock-out). Refusals go through refuse() (logged as door-session-mismatch, nothing written, the expected id never echoed: only set_by and set_at). session is stripped from args before callTool for guarded tools and stored nowhere; read_view, read_inbox, set_door_session keep their own paths, and set_door_session already needs the current id to change a set one (Security F1 test), so a stray session cannot rebind the door to itself. tools/list on Manager's door marks session required on write tools; the shared door and Access path are unchanged. Ran 58/58 at 982ee832 (manager-door-writes-bound, door-guard, connector, close-from-every-door, decision-needs-manager-door, session-writes-week-percent). Accident guard by design (the Worker cannot see the caller), as the DATA.d line says.
+
+INFO (rollout): this is a Worker deploy; after it, every Manager write must pass its own session id, or it is refused. Manager's claude.ai connector may need a reconnect to see the new required field.
+
+signed-by: Security
