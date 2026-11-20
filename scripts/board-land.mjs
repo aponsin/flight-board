@@ -145,7 +145,7 @@ export function landRun({ readFacts, readHolds, release, now = Date.now(), dry =
     if (dry) { landed.push({ branch: next.branch, sha: next.sha, dry: true }); log(`would land ${next.branch} ${next.sha.slice(0, 12)}`); continue; }
     const real = release(next.sha, false);
     if (real.code !== 0) { refused.push({ branch: next.branch, sha: next.sha, cards: next.cards, reasons: refusalReasons(real.text) }); log(`refused on the real run ${next.branch} ${next.sha.slice(0, 12)}`); continue; }
-    landed.push({ branch: next.branch, sha: next.sha });
+    landed.push({ branch: next.branch, sha: next.sha, cards: next.cards });
     log(`landed ${next.branch} ${next.sha.slice(0, 12)}`);
   }
   let dataFragments = 0;
@@ -153,6 +153,37 @@ export function landRun({ readFacts, readHolds, release, now = Date.now(), dry =
   const foldDue = dataFragments >= FOLD_DUE;
   if (foldDue) log(`FOLD DUE: ${dataFragments} DATA fragments wait in docs/DATA.d on origin/main: cut the fold card (a Board-Id starting fold-data-fragments; node scripts/data-fragments.mjs --write)`);
   return { at: now, landed, refused, waiting: [...waiting, ...held], dataFragments, foldDue };
+}
+
+// #C1318: once a landing is done, each landed card's folder is removed (a builder's worktree of this repository: `git worktree list`), so ~/Documents/Code stops
+// filling with folders of work that is on main. A folder is removed only when ALL of these hold: it is a linked worktree (never the repository's own folder or the
+// one this job runs in), it is on a branch named for a landed card (the landed branch itself, or `[build/]<card id>[-vN]`), and its HEAD is an ancestor of origin/main
+// (onMain). The removal is plain `git worktree remove`, never --force, so git itself refuses a dirty or locked folder; a refusal prints its reason and one ready line
+// for the owner, and never fails the land. Returns { removed: [path], kept: [{ path, why }] }.
+export const parseWorktrees = (text) => String(text ?? "").split(/\n\n+/).map((b) => {
+  const f = Object.fromEntries(b.split("\n").filter(Boolean).map((l) => { const i = l.indexOf(" "); return i < 0 ? [l, true] : [l.slice(0, i), l.slice(i + 1)]; }));
+  return f.worktree ? { path: f.worktree, head: f.HEAD ?? null, branch: typeof f.branch === "string" ? f.branch.replace(/^refs\/heads\//, "") : null, locked: f.locked !== undefined, bare: f.bare === true } : null;
+}).filter(Boolean);
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Checker 2's F on #C1318: `git worktree remove` deletes a folder's gitignored files without a word (a *token* file, a local config), so a folder that holds an ignored file
+// is kept, naming the first one: `ignored(path)` returns the folder's ignored entries (`git status --ignored`), and only dependency folders (node_modules) are let go.
+export const keepsIgnored = (paths) => (Array.isArray(paths) ? paths : []).filter((p) => typeof p === "string" && p && !/^node_modules\/?$/.test(p) && !p.startsWith("node_modules/"));
+export function landedFolders({ landed, worktrees, onMain, remove, repo, cwd = null, log = () => {}, ignored = () => [] }) {
+  const out = { removed: [], kept: [] };
+  const cards = new Set((landed ?? []).flatMap((l) => (Array.isArray(l.cards) ? l.cards : [])).filter((c) => CARD_ID.test(String(c))));
+  const branches = new Set((landed ?? []).map((l) => l.branch).filter(Boolean));
+  const named = (b) => !!b && (branches.has(b) || [...cards].some((c) => new RegExp(`^(build/)?${escapeRe(c)}(-v\\d+)?$`).test(b)));
+  for (const w of (worktrees ?? []).slice(1)) { // the first entry is the repository's own folder
+    if (w.bare || w.path === repo || (cwd && w.path === cwd) || !named(w.branch)) continue;
+    const keep = (why) => { out.kept.push({ path: w.path, why }); log(`folder kept ${w.path}: ${why}. To remove it yourself: git -C ${repo} worktree remove ${w.path}`); };
+    if (w.locked) { keep("it is locked"); continue; }
+    if (!w.head || !onMain(w.head)) { keep("its work is not on origin/main"); continue; }
+    let keepers = [];
+    try { keepers = keepsIgnored(ignored(w.path)); } catch { keep("its ignored files could not be read"); continue; }
+    if (keepers.length) { keep(`it holds an ignored file git would delete without asking (${keepers[0].slice(0, 80)}${keepers.length > 1 ? ` and ${keepers.length - 1} more` : ""})`); continue; }
+    try { remove(w.path); out.removed.push(w.path); log(`folder removed ${w.path}`); } catch (e) { keep(String(e?.stderr ?? e?.message ?? e).split("\n").map((l) => l.trim()).filter(Boolean)[0]?.split(w.path).join("the folder").slice(0, 160) ?? "git refused"); } // git's line names the folder first: the path is dropped so the reason is what is read
+  }
+  return out;
 }
 
 // #C1140 (Security's F1 on 768c18d0): where this job may run from. Once the LaunchAgent starts the owner's pinned install (the pack's land step), the job's own folder is
@@ -235,4 +266,16 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   writeFileSync(part, JSON.stringify(report), { mode: 0o600 }); renameSync(part, file);
   console.log(`land: ${report.landed.length} landed${dry ? " (dry run)" : ""}, ${report.refused.length} refused, ${report.waiting.length} waiting`);
   for (const r of report.refused) console.log(`REFUSED ${r.branch} ${r.sha.slice(0, 12)}: ${r.reasons.join("; ")}`);
+  // #C1318: the landed cards' folders, after the report is written; nothing here can fail the land.
+  if (!dry && report.landed.length) {
+    try {
+      quiet(["fetch", "-q", "origin"]);
+      landedFolders({
+        landed: report.landed, worktrees: parseWorktrees(quiet(["worktree", "list", "--porcelain"])), repo, cwd: process.cwd(), log: (s) => console.log(`land: ${s}`),
+        onMain: (sha) => quiet(["merge-base", "--is-ancestor", sha, "origin/main"]) !== null,
+        remove: (p) => git(["worktree", "remove", p]),
+        ignored: (p) => execFileSync("git", ["status", "--ignored", "--porcelain"], { cwd: p, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024 }).split("\n").filter((l) => l.startsWith("!! ")).map((l) => l.slice(3)),
+      });
+    } catch (e) { console.log(`land: folders not cleaned: ${String(e?.message ?? e).split("\n")[0].slice(0, 120)}`); }
+  }
 }
