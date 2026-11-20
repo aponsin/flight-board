@@ -1,0 +1,5 @@
+SECURE
+
+#C1288 v2, by diff vs my SECURE on 0bb3e322 (range-diff: 6e4a46da = 0bb3e322, rebased onto #C1285 1810dad1). cb38df33 and e72fa012: waitTile (short tile word); RELEASE_ROLE from CONFIG.gate.releaseRole (default Release, the owner's config) built into waitWord/waitTile/waitEvidence; every path is drawn through esc (idleWord, the title evidence) and the card's status line is now esc(statusTxt), which tightens a previously unescaped spot. Page text only: no data, route, permission, hook or Worker change.
+
+signed-by: Security
