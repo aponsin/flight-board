@@ -1,0 +1,2 @@
+PASS Quick board-polish-thirteen line from bd394782afcb619bc9208b3ad7927d8db104d869 (#C1367 #C1369 #C1370), suite 3518/0 +1 skipped, linear. 856d7a41 (tests only, on b8b795fa) fixes my F1: one docs commit plus one unreadable commit keeps waiting, with the unreadable one at the tip or under it, and the both-readable pair is a docs landing. The k !== "code" mutant is now KILLED, and all 5 #C1369 mutants are killed. #C1370 and #C1367 are as at b8b795fa.
+signed-by: Checker 2
