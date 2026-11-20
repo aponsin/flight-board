@@ -145,12 +145,16 @@ const isPrompt = (e) => e.type === "user" && (typeof e.message.content === "stri
 
 // The card a session is on: the newest entry naming a card on the board, and in it the last such name (an exact id, or
 // #C<num> of a card on the board). Only the id leaves; the text is read here and dropped.
+// #C1311 (lead, not proven as the cause of the outlined tile): what a tool printed back (a git log, a test run, a board read) names whatever cards its
+// text happens to hold, so a reviewer working on one card read as on another. A tool_result block is not read; the prompt, the agent's own words and its
+// tool calls are.
+const withoutResults = (content) => (Array.isArray(content) ? content.filter((b) => !(plain(b) && b.type === "tool_result")) : content);
 export function cardIn(entries, ids, nums) {
   const known = [...ids].filter((id) => CARD_ID.test(id) && id.length <= CARD_ID_MAX).sort((a, b) => b.length - a.length);
   const re = new RegExp(`${known.length ? `(?<![A-Za-z0-9-])(${known.join("|")})(?![A-Za-z0-9-])|` : ""}#C(\\d{1,6})(?!\\d)`, "g");
   for (let k = entries.length - 1; k >= 0; k--) {
     let text = "";
-    try { text = JSON.stringify(entries[k].message.content ?? ""); } catch { continue; }
+    try { text = JSON.stringify(withoutResults(entries[k].message.content) ?? ""); } catch { continue; }
     let last = null;
     for (const m of text.matchAll(re)) {
       const id = m[1] ?? nums.get(Number(m[2]));
@@ -1005,20 +1009,63 @@ export function readStacks(dir, now, read = readTail) {
 
 // { cardId: { branch, sha, at, message } }: for each open card, the newest commit with its Board-Id trailer on any branch tip's commits beyond main
 // (last 100 per branch), taken from the newest branch first. A branch name that git could take for a flag is never passed to it.
-export function stackHeads(repo, tips, open) {
+// #C1311 (Manager, 11-19: the stack read ran one `git log` per remote branch, 626 of them, 15 s quiet and 38 s with a suite running): (a) a branch already
+// merged into main has an empty log beyond it, so it is never asked; (b) the commits of a branch that carry a Board-Id trailer are kept from run to run
+// by the branch's tip AND main's tip (the log is taken beyond main, so a main that moved asks again), and a branch that has not moved is not asked.
+// `cache` is { old: { branch: { key, recs } }, next: {} }: old is read, next gets every branch read this run (so a branch that is gone drops out of the file).
+// The answer is the same with or without it.
+export const STACK_CACHE_MAX_RECS_BYTES = 64 * 1024;
+export function mergedBranches(repo) {
+  try {
+    return new Set(String(repo.git(["for-each-ref", "--merged", `${repo.remote}/${repo.main}`, `refs/remotes/${repo.remote}`, "--format=%(refname:lstrip=3)"])).split("\n").map((s) => s.trim()).filter(Boolean));
+  } catch { return new Set(); }
+}
+export function stackHeads(repo, tips, open, cache = null) {
   const heads = {};
   if (!open.size || typeof repo.git !== "function") return heads;
+  const mainSha = (repo.tips ?? []).find((t) => t.branch === repo.main)?.sha;
+  const merged = mergedBranches(repo);
   for (const t of [...tips].sort((a, b) => (b.at ?? 0) - (a.at ?? 0))) {
     if (!/^[A-Za-z0-9._\/-]+$/.test(String(t.branch)) || String(t.branch).startsWith("-")) continue;
-    let log = "";
-    try { log = String(repo.git(["log", "-100", "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${t.branch}`, "--not", `${repo.remote}/${repo.main}`])); } catch { continue; }
-    for (const rec of log.split("\x1e")) {
-      const [sha, at, message] = rec.replace(/^\n/, "").split("\x1f");
-      if (!/^[0-9a-f]{40}$/.test(String(sha))) continue;
-      for (const id of boardIdsOf(message)) if (open.has(id) && !heads[id]) heads[id] = { branch: t.branch, sha, at: Number(at) * 1000, message };
+    if (merged.has(t.branch)) continue;
+    const key =cache && /^[0-9a-f]{40}$/.test(String(t.sha)) && /^[0-9a-f]{40}$/.test(String(mainSha)) ? `${t.sha}:${mainSha}` : null;
+    let recs = key && cache.old?.[t.branch]?.key === key && Array.isArray(cache.old[t.branch].recs) ? cache.old[t.branch].recs : null;
+    if (!recs) {
+      let log = "";
+      try { log = String(repo.git(["log", "-100", "--format=%H%x1f%ct%x1f%B%x1e", `${repo.remote}/${t.branch}`, "--not", `${repo.remote}/${repo.main}`])); } catch { continue; }
+      recs = [];
+      for (const rec of log.split("\x1e")) {
+        const [sha, at, message] = rec.replace(/^\n/, "").split("\x1f");
+        if (!/^[0-9a-f]{40}$/.test(String(sha)) || !boardIdsOf(message).length) continue;
+        recs.push({ sha, at: Number(at) * 1000, message });
+      }
     }
+    if (key && cache.next && JSON.stringify(recs).length <= STACK_CACHE_MAX_RECS_BYTES) cache.next[t.branch] = { key, recs };
+    for (const { sha, at, message } of recs) for (const id of boardIdsOf(message)) if (open.has(id) && !heads[id]) heads[id] = { branch: t.branch, sha, at, message };
   }
   return heads;
+}
+// The cache's file (collector/state.mjs writes it beside the probe's other files): { v: 1, repos: { <repository name>: { <branch>: { key, recs } } } }.
+// Anything that is not that shape is dropped on the way in: a bad file is an empty cache, never a failed run.
+export const STACK_CACHE_FILE = "stack-heads-cache.json";
+export function readStackCache(dir, read = readTail) {
+  const out = {};
+  try {
+    const r = read(join(dir, STACK_CACHE_FILE), 4 * 1024 * 1024);
+    if (!r?.whole) return out;
+    const f = JSON.parse(r.text);
+    if (!plain(f) || f.v !== 1 || !plain(f.repos)) return out;
+    for (const [name, branches] of Object.entries(f.repos)) {
+      if (!plain(branches)) continue;
+      out[name] = {};
+      for (const [branch, e] of Object.entries(branches)) {
+        if (!plain(e) || !/^[0-9a-f]{40}:[0-9a-f]{40}$/.test(String(e.key)) || !Array.isArray(e.recs)) continue;
+        const recs = e.recs.filter((x) => plain(x) && /^[0-9a-f]{40}$/.test(String(x.sha)) && Number.isFinite(x.at) && typeof x.message === "string");
+        if (recs.length === e.recs.length) out[name][branch] = { key: e.key, recs };
+      }
+    }
+  } catch { /* none, or not ours: an empty cache */ }
+  return out;
 }
 
 // #C914: the commits carrying a stack-ready note (the builder's signal, scripts/stack-ready.mjs): `git notes list` prints "<note> <commit>" pairs.
@@ -1037,7 +1084,7 @@ export function stackWaitingCommits(repo) {
   } catch { return []; }
 }
 
-export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] }) {
+export function cardStates({ cards, config, repos, now, stacks = [], pairs = [], stackCache = null }) {
   const out = {}, repoOfCard = {}, cardOf = {}, todo = [];
   for (const card of cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX).slice(0, MAX_CARDS)) {
     const r = repoOf(card, config);
@@ -1084,10 +1131,27 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
     // A card in the middle of a chain has its commit on the branch but not at its tip, and the branch is not named for it: headsFor does not
     // find it. The stack reads every commit the branch holds beyond main (its last 100) for the Board-Id trailers of the repository's open cards.
     const open = new Set(Object.keys(out).filter((id) => repoOfCard[id] === repo && !out[id].onMain));
-    const found = stackHeads(repo, tips, open);
+    const found = stackHeads(repo, tips, open, stackCache ? { old: stackCache.old?.[name] ?? {}, next: (stackCache.next[name] = {}) } : null);
     const heads = Object.fromEntries(Object.entries(found).map(([id, h]) => [id, h.sha]));
     for (const id of open) if (!heads[id] && out[id].headSha12) heads[id] = out[id].headSha12;
-    const isAncestor = (a, b) => a === b || String(b).startsWith(a) || ok(() => repo.git(["merge-base", "--is-ancestor", a, b]));
+    // #C1311 (measured 11-19: readStack asked `merge-base --is-ancestor` once per branch tip per head, 627 x 6, about 3800 calls and 27 s): a head is asked of
+    // the branch TIPS in one `for-each-ref --contains <head>` (every tip that holds it), once per head. For any other second argument (a commit that is no
+    // tip), or when git refuses the head, the old single question is asked, so the answer is the same in every case.
+    const tipShas = new Set((repo.tips ?? []).map((t) => t.sha));
+    const holders = new Map();
+    const holdersOf = (a) => {
+      if (!holders.has(a)) {
+        let set = null;
+        if (/^[0-9a-f]{12,40}$/.test(String(a))) { try { set = new Set(String(repo.git(["for-each-ref", "--contains", a, `refs/remotes/${repo.remote}`, "--format=%(objectname)"])).split("\n").map((s) => s.trim()).filter(Boolean)); } catch { set = null; } }
+        holders.set(a, set);
+      }
+      return holders.get(a);
+    };
+    const isAncestor = (a, b) => {
+      if (a === b || String(b).startsWith(a)) return true;
+      if (tipShas.has(b)) { const held = holdersOf(a); if (held) return held.has(b); }
+      return ok(() => repo.git(["merge-base", "--is-ancestor", a, b]));
+    };
     const stack = readStack({ heads, tips, isAncestor });
     const fields = stackFields(stack);
     // #C1209: with no member's commit at the stack tip, the topmost member (every other member's head is under it) is asked the behind-main question for the tip.
@@ -1105,6 +1169,14 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
     // head was committed before STACK_HOLD_FROM, one that already carries a review note or findings, or an outsider. The card's `stack` field is left as
     // it is (the page draws it). Same input, same answer: no clock.
     const noted = stackReadyCommits(repo), waiting = stackWaitingCommits(repo);
+    // #C1311: "is this head at or under a noted commit" was one `git merge-base --is-ancestor` per open card per noted commit (about 400 calls and 2 s a run in the
+    // measurement of 11-19, growing with every note). The commits reachable from the noted ones are listed in ONE rev-list, and a head is under a noted commit
+    // when it is in that list (a head may be a 12-character prefix, as isAncestor reads it). Checker 2's F1: a note stays on a commit after its branch is re-cut, deleted
+    // and pruned, so a noted commit git no longer has is the common case, not the rare one: --ignore-missing leaves it out of the list (it holds nothing a head could be
+    // under), and a rev-list git still refuses falls back to the pairs, so the answer is the same in every case.
+    let notedReach = null;
+    if (noted.length) { try { notedReach = String(repo.git(["rev-list", "--ignore-missing", ...noted])).split("\n").filter((s) => /^[0-9a-f]{40}$/.test(s)); } catch { notedReach = null; } }
+    const underNoted = (h) => (notedReach ? notedReach.some((s) => s.startsWith(String(h))) : noted.some((c) => isAncestor(h, c)));
     const headAt = (id) => {
       if (Number.isFinite(found[id]?.at)) return found[id].at;
       try { return Number(String(repo.git(["log", "-1", "--format=%ct", heads[id]])).trim()) * 1000; } catch { return NaN; }
@@ -1112,7 +1184,7 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [] 
     for (const id of open) {
       if (!heads[id] || fields[id]?.outside || out[id].signed?.length || out[id].findings?.length) continue;
       if (!(headAt(id) >= STACK_HOLD_FROM)) continue; // before the cutoff, or a time git would not give: today's reading
-      if (noted.some((c) => isAncestor(heads[id], c))) continue;
+      if (underNoted(heads[id])) continue;
       // #C1102 (d): a held card whose EXACT head carries a waiting note is built: its builder ran stack-ready and was told to wait for the group (or a card queued behind it).
       // The page reads it as "built, waiting" rather than building; a later push has no note and reads as building again.
       // The head is the same commit as a noted one (#C1126, Security I1): the noted sha is always 40 characters, the head 12 to 40, so only the noted sha may extend the head, never the other way.
@@ -1530,8 +1602,15 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   let cardsNow, packs = null;
   try {
     const pairs = c.pairFolder ? pairsIn(home(c.pairFolder)) : [];
-    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now), pairs });
+    // #C1311: each branch's Board-Id commits, kept from run to run by the branch's tip and main's tip (stackHeads); written only when it changed.
+    const stackCache = { old: readStackCache(dir), next: {} };
+    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now), pairs, stackCache });
     lap("cardStates");
+    try {
+      const before = JSON.stringify({ v: 1, repos: stackCache.old }), after = JSON.stringify({ v: 1, repos: stackCache.next });
+      if (after !== before && (Object.keys(stackCache.next).length || Object.keys(stackCache.old).length)) writeAtomic(join(dir, STACK_CACHE_FILE), after);
+    } catch { /* the cache is an aid: a write that fails costs only the next run's time */ }
+    lap("stackCache");
     try { packs = closedPacks({ cards, repos, now, pairs }); } catch { packs = null; } // #C1034: a failure here leaves done cards unlit, never the state
     lap("closedPacks");
     // #C632: the last time any open card past plan showed a branch commit; kept from run to run, and the lead's watch told once

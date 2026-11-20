@@ -2760,7 +2760,7 @@ function groupFacts(cards){const ix=i=>notStarted(i)?phaseIndex(BUILD_PHASE):pha
 // A card's own state on the rail: one word, then its issue chips.
 // #C1102 (d): a card the builder declared READY and was told to wait (its head carries the stack-ready waiting note, the probe's builtWaiting) reads "Built, waiting", not Building.
 const builtWaiting=i=>{const L=liveCard(i.id);return !!L&&L.builtWaiting===true&&!L.onMain&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)};
-function railState(i){return i.status==="stuck"?["stuck","Blocked"]:i.status==="paused"?["paused","Paused"]:notStarted(i)?["queued","Queued"]:phaseIndex(i.phase)>phaseIndex(BUILD_PHASE)?["done","Built"]:builtWaiting(i)?["done","Built, waiting"]:["active","Building"]}
+function railState(i){return i.status==="stuck"?["stuck","Blocked"]:i.status==="paused"?["paused","Paused"]:notStarted(i)?["queued","Queued"]:phaseIndex(i.phase)>phaseIndex(BUILD_PHASE)?(i.status==="done"?["done","Done"]:["active",(PHASES.find(p=>p[0]===i.phase)||[])[1]||"In flight"]):builtWaiting(i)?["done","Built, waiting"]:["active","Building"]}
 function railChips(i){const iss=i.issues||{};return ISSUE_KINDS.map(([k,l])=>{const v=num(iss[k])||0;return v?`<span class="chip">${v} ${issueLabel(l,v)}</span>`:""}).join("")}
 // The owner's up and down on a group (#C1053): shown on the store page only; `at` is {n: its place, of: how many groups} so the top one cannot go up.
 // #C1299: the same arrows on a single card ("c:<card id>", `what` "card #C12" for the label): a card with no place of its own has n null, joins the end on its first up, and has no down.

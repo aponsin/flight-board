@@ -217,6 +217,20 @@ test("the probe: the card a session is on is an exact board id or a #C number of
   assert.equal(cardIn([entry("user", "board-state-probe then #C405", T)], ids, nums), "ship-resume", "the last name in an entry");
 });
 
+// #C1311 (the white outlined tile on a card its reviewer was working: lead, not proven): a tool's printed result names other cards (a git log lists
+// the commits' #C numbers), and it was the newest entry, so the agent's card flipped to the last card the output named.
+test("the probe: a tool's result never names the agent's card; its own words and calls still do", () => {
+  const asked = entry("user", "re-sign board-state-probe by diff", T);
+  const call = entry("assistant", [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "git log --oneline" } }], T + 1, { stop_reason: "tool_use" });
+  const result = entry("user", [{ type: "tool_result", tool_use_id: "t1", content: "abc fix for #C405 and the one before, #C420 and ship-resume" }], T + 2);
+  assert.equal(cardIn([asked, call, result], ids, nums), "board-state-probe", "the card in the request holds while the output names two others");
+  assert.equal(cardIn([asked, result], ids, nums), "board-state-probe", "a result alone sets nothing");
+  const said = entry("assistant", [{ type: "text", text: "now on ship-resume" }], T + 3);
+  assert.equal(cardIn([asked, call, result, said], ids, nums), "ship-resume", "the agent's own words move the card");
+  const ran = entry("assistant", [{ type: "tool_use", id: "t2", name: "Bash", input: { command: "git show ship-resume" } }], T + 4, { stop_reason: "tool_use" });
+  assert.equal(cardIn([asked, result, ran], ids, nums), "ship-resume", "its own tool call moves it too");
+});
+
 // #C960: a #C number of a card whose id the probe cannot read (7 words, which the store once took) gave cardIn that id, the schema refused the whole
 // state ("agents.Security.card: not allowed"), the state child exited 1 and no card's reading was rewritten for an hour.
 test("the probe: a #C number naming a card whose id is over CARD_ID is no agent's card, and the state it would have spoilt still fits the schema", () => {
