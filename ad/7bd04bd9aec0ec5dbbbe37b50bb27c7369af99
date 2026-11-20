@@ -1,0 +1,5 @@
+SECURE
+
+#C1304 (docs only): six docs/DATA.d fragments removed and the same six lines added to docs/DATA.md, byte for byte (checked: removed set == added set). No code, page, Worker, hook or script change.
+
+signed-by: Security
