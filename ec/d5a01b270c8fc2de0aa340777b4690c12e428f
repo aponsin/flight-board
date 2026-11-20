@@ -1,0 +1,5 @@
+SECURE
+
+Tests only (tests/product-stack-wiring.test.mjs): runs the real prepareStoreState writer in mkdtemp folders with a stubbed fetch; no switchFile is passed, so ~/.flight-board is never written. No code change.
+
+signed-by: Security
