@@ -1,0 +1,1 @@
+- A group row carries the same repo badge its cards carry (the platform repo or flight-board), right after its Group tag, so a group reads as one repo's at a glance. A group is cut per repo, so the badge is its first card's, drawn by the one `repoBadge` a card row uses (group-repo-badge, #C1293). Ships: a page change only. Tests: `tests/group-repo-badge.test.mjs`.
