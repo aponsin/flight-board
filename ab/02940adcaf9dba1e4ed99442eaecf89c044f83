@@ -1,0 +1,5 @@
+SECURE
+
+#C1309: pack number on Pack/Install tiles and version on Live tile. pack is integer-checked 1..999999 in schema, collector and page; version tag regex-checked and esc()'d. packOf galloping search asks only descends() on pair shas already in use. board-polish-five group, tip af60261a.
+
+signed-by: Security
