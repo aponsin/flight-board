@@ -837,13 +837,18 @@ const LIVE_PHASE=(CONFIG.collector&&CONFIG.collector.livePhase)||"live";
 const KIND={decision:"Decision",action:"Your click",session:"Session",later:"Later",answer:"Answer"};
 // The labels a chip can show once a thread has moved on from the ask that began it (#C667, askNeed).
 const ASKLABEL=Object.assign({},KIND,{question:"Question",conversation:"Conversation",building:"Building",live:"Live"});
+// #C1350 (the owner: the board is sluggish; a full redraw took about 1.4 s on every probe tick): while renderAll runs (one synchronous pass, nothing writes the state in it) these answers are worked out once per
+// thread or item and kept for the pass, then dropped: before, waitsOn, threadOpen, threadResolved, teamOnly and itemOf each ran tens of thousands of times over the same few hundred threads. Outside a pass (a click, a
+// tab switch) every function is as it was. A time passed in (now) is the pass's: within one redraw it moves by milliseconds, and nothing here turns on that.
+let pass=null;
 const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[],agentPrs:[],approvals:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
 function dur(ms){if(ms==null)return"";const m=Math.round(Math.abs(ms)/60000);if(m<60)return m+" min";const h=Math.floor(m/60),r=m%60;if(h<48)return h+" h"+(r?" "+r+" min":"");return Math.round(h/24)+" d"}
-function hhmm(t){const d=new Date(t);return d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}
-function dayLabel(t,now=Date.now()){const d=new Date(t),n=new Date(now);if(d.toDateString()===n.toDateString())return hhmm(t);return d.toLocaleDateString([], {month:"short",day:"numeric"})+" "+hhmm(t)}
+// #C1350: the same words as toLocaleTimeString and toLocaleDateString, from formatters made once and kept on the function (each call of those builds one: 70 ms of a 250 ms redraw on a board of today's size).
+function hhmm(t){const d=new Date(t);return isNaN(d)?"Invalid Date":(hhmm.f||(hhmm.f=new Intl.DateTimeFormat([],{hour:"2-digit",minute:"2-digit"}))).format(d)}
+function dayLabel(t,now=Date.now()){const d=new Date(t),n=new Date(now);if(d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate())return hhmm(t);return (isNaN(d)?"Invalid Date":(dayLabel.f||(dayLabel.f=new Intl.DateTimeFormat([],{month:"short",day:"numeric"}))).format(d))+" "+hhmm(t)}
 
 // Where an ask shows in the Threads panel: under "Needs you" while it is open and unanswered (or answered under 2.5 s
 // ago, the "sent" moment), then under "With the team" until Manager closes it, with the reply and its thread.
@@ -882,7 +887,7 @@ function leadLast(id,after=0){const t=threadOf(id),last=t[t.length-1];
 // #C1317: a click ask (Terminal or Action) that names an owner thread (its `thread`) is drawn inside that thread, not as a row of its
 // own: the thread waits on the owner while the click is open (until he presses Done), and the ask's row is left out of every list.
 const inThread=w=>!!(w&&w.thread&&threadOf(w.thread).length);
-const clickIn=(id,now)=>state.waiting.filter(w=>w&&w.thread===id&&inThread(w)&&needsYou(w,now));
+let clickIn=(id,now)=>state.waiting.filter(w=>w&&w.thread===id&&inThread(w)&&needsYou(w,now));
 function waitsOn(id,now){const it=itemOf(id);
   if(clickIn(id,now).length)return "you";
   if(it&&it.coll==="waiting"&&!settled(it.doc))return needsYou(it.doc,now)||leadLast(id,num(it.doc.response&&it.doc.response.at)??0)?"you":"lead";
@@ -2605,10 +2610,11 @@ function firstPush(i){const s=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filter(e
 // #C881: each phase tile says when its phase first began and by whom, in Mountain time, from the phase log (the evidence). A phase the log
 // has no work entry for says nothing. The first entry wins, so a phase that flipped away and back keeps its first time.
 const MT_ZONE=["America","Den"+"ver"].join("/");
-function mtStamp(t){return new Date(t).toLocaleString("en-US",{timeZone:MT_ZONE,month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).replace(",","").replace(/\s+/g," ")+" MT"}
+// #C1350: formatters made once and kept on the function (a toLocale call builds one each time), the same words.
+function mtStamp(t){const d=new Date(t);return (isNaN(d)?"Invalid Date":(mtStamp.f||(mtStamp.f=new Intl.DateTimeFormat("en-US",{timeZone:MT_ZONE,month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))).format(d)).replace(",","").replace(/\s+/g," ")+" MT"}
 // What the tile itself shows (Designer F1/F2 on e3e166b: the full stamp was cut off on a phone): the time ("9:15 PM") when it began today, else the
 // date ("Nov 10"); the role and the full stamp are in the hover.
-function mtShort(t,now=Date.now()){const day=x=>new Date(x).toLocaleDateString("en-CA",{timeZone:MT_ZONE});return day(t)===day(now)?new Date(t).toLocaleTimeString("en-US",{timeZone:MT_ZONE,hour:"numeric",minute:"2-digit"}):new Date(t).toLocaleDateString("en-US",{timeZone:MT_ZONE,month:"short",day:"numeric"})}
+function mtShort(t,now=Date.now()){const F=mtShort.f||(mtShort.f={day:new Intl.DateTimeFormat("en-CA",{timeZone:MT_ZONE}),time:new Intl.DateTimeFormat("en-US",{timeZone:MT_ZONE,hour:"numeric",minute:"2-digit"}),date:new Intl.DateTimeFormat("en-US",{timeZone:MT_ZONE,month:"short",day:"numeric"})}),fmt=(f,x)=>{const d=new Date(x);return isNaN(d)?"Invalid Date":f.format(d)},day=x=>fmt(F.day,x);return day(t)===day(now)?fmt(F.time,t):fmt(F.date,t)}
 function phaseStart(i,k){const l=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filter(e=>e&&e.phase===k&&!e.wait&&!e.signed&&num(e.start)!=null).sort((a,b)=>a.start-b.start);return l.length?l[0]:null}
 // A phase with a lane is the lane's role whatever an old row says (Checker F1 on e3e166b: 85 of 271 lane starts on open cards named the wrong role
 // before whoForPhase was fixed). The same map as PHASE_LANES in worker/board-rules.mjs; a test fails if they differ.
@@ -3838,14 +3844,18 @@ function renderStamp(){renderManagerChip();renderBoardVer();renderRestart();cons
   const old=oldestLine();if(old)el.append(old)}
 // One read of the live state now, outside the minute's watch: "Allow live" and ↻ Check (#C450). The page's one callTool.
 function readLiveNow(mcp){return mcp.callTool(STATE_SERVER,STATE_TOOL,null).then(r=>probeEvent({type:"data",result:r},mcp),e=>probeEvent({type:"error",error:e},mcp))}
-function probeEvent(ev,mcp){liveMcp=mcp||liveMcp;
-  if(ev.type==="data"){const s=ev.result&&ev.result.payload;if(probeFits(s)){probe=s;probeNote="";probeAsk=false}else probeNote="The Studio's state has an unexpected shape; not read."}
-  else{const code=ev.error&&ev.error.code;probeAsk=false;
+// #C1350 (the owner: the board is sluggish): the connector re-reads the Studio's state about every 2.5 s, and each read redrew the whole board, though almost every one was the very reading the page already drew. A reading equal to the last one
+// (and no note or ask to change) redraws nothing, only the clock line; the board is drawn anyway when the last draw is PROBE_SKIP_MAX old, so the ages on its tiles keep moving.
+let probeSig="",lastDrawn=0;const PROBE_SKIP_MAX=15000;
+function probeEvent(ev,mcp){liveMcp=mcp||liveMcp;let same=false;
+  if(ev.type==="data"){const s=ev.result&&ev.result.payload;if(probeFits(s)){const sig=JSON.stringify(s);same=sig===probeSig&&probeNote===""&&!probeAsk&&!!probe;probeSig=sig;probe=s;probeNote="";probeAsk=false}else{probeSig="";probeNote="The Studio's state has an unexpected shape; not read."}}
+  else{probeSig="";const code=ev.error&&ev.error.code;probeAsk=false;
     if(["needs_reauth"].includes(code)){probe=null;probeNote=`Reconnect ${STATE_SERVER} in claude.ai Settings → Connectors to read it live.`}
     else if(["server_not_connected","selection_required","server_not_found"].includes(code)){probe=null;probeNote=""}
     else if(code==="approval_required"){probe=null;probeNote=`${STATE_SERVER} needs your approval for this page.`;probeAsk=true}
     else if(["not_in_manifest","blocked_by_policy","not_granted","capability_disabled","capability_removed","consent_required","user_changed"].includes(code)){probe=null;probeNote=""}
     else probeNote=probe?"Couldn't refresh just now; reading the last one while it's fresh.":""}
+  if(same&&Date.now()-lastDrawn<PROBE_SKIP_MAX&&liveOn()===liveWas){renderStamp();return}
   renderSoon()}
 // A ship running now (#C505: both of 2026-10-30's install restarts stopped Release mid-ship): the ship role working on
 // a card in the ship phase, by a fresh live state, or an open card the Collector reads as shipping now (its run's
@@ -3914,7 +3924,19 @@ document.addEventListener("keydown",onRestartKey);
 function renderShipLine(){const el=$("shipline");if(!el)return;const s=shipNow();el.hidden=!s;if(!s){el.innerHTML="";return}
   const i=state.initRaw.find(x=>x&&x.id===s.id),n=i&&Number.isInteger(i.num)?`#C${i.num}`:esc(s.id);
   el.innerHTML=`<b>Don't restart: shipping.</b> ${esc(SHIP_ROLE)} is shipping ${s.version?`<b>v${esc(s.version)}</b> `:""}(${n}); closing the agents now would stop it halfway.`}
-function renderAll(){qText.clear();msgIxOf=null;state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderTeam();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();renderAgentPrs();applySending();liveWas=liveOn();renderStamp()}
+// #C1350: the functions the redraw asks the same question of tens of thousands of times answer from the pass memo while one runs. They are put on after their definitions, so each stays as written (and as other tests read it); outside a pass (pass is null) every call goes straight to the original.
+// memoOff is for the test that compares a redraw with and without the memo.
+let memoOff=false;
+const memoized=(f,key)=>function(...a){if(!pass)return f.apply(this,a);const k=key(a);let m=pass.get(f);if(!m)pass.set(f,m=new Map());if(m.has(k))return m.get(k);const v=f.apply(this,a);m.set(k,v);return v};
+waitsOn=memoized(waitsOn,a=>a[0]);teamOnly=memoized(teamOnly,a=>a[0]);threadOpen=memoized(threadOpen,a=>a[0]);threadResolved=memoized(threadResolved,a=>a[0]);itemOf=memoized(itemOf,a=>a[0]);
+threadSets=memoized(threadSets,a=>a[1]===undefined?rQuery:a[1]);
+// Lookups that scanned a whole list for each call (a thread's doc, the click asks of a thread) read an index by id built once per pass; the lists are read-only in a pass, and each answer is what the scan found.
+const passIndex=(f,build)=>{let m=pass.get(f);if(!m)pass.set(f,m=build());return m};
+const byKey=(list,key)=>{const m=new Map();for(const x of list)if(x){const k=key(x);if(k!==undefined)(m.get(k)||m.set(k,[]).get(k)).push(x)}return m};
+{const was=threadDoc;threadDoc=id=>pass?(passIndex(was,()=>byKey(state.threads,t=>t.id)).get(id)||[null])[0]:was(id)}
+{const memo=memoized(stepsOf,a=>a[0].id+"|"+a[0].status);stepsOf=i=>{const r=memo(i);return pass?r.slice():r}} // a card's steps, once per card and status in a pass; each caller gets its own copy, as the scan gave
+{const was=clickIn;clickIn=(id,now)=>pass?(passIndex(was,()=>byKey(state.waiting,w=>w.thread&&inThread(w)&&needsYou(w,now)?w.thread:undefined)).get(id)||[]):was(id,now)}
+function renderAll(){qText.clear();pass=memoOff?null:new Map();lastDrawn=Date.now();try{msgIxOf=null;state.initiatives=state.initRaw.map(i=>gates(enrich(asShown(i))));state.phaseMed=phaseMedians(state.initiatives);renderStuck();renderCtx();renderTodo();renderQueue();renderLive();renderWaiting();renderThreads();renderLater();renderTeam();renderResolved();renderTabs();renderBoard();renderFeed();renderUsage();renderNow();renderPlan();renderCrew3();renderShipLine();renderThreadsFull();renderAgentPrs();applySending();liveWas=liveOn();renderStamp()}finally{pass=null}}
 let liveWas=false;
 function tick(){$("clock").textContent=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   document.querySelectorAll("[data-eta]").forEach(e=>{const t=+e.dataset.eta;e.textContent=t>Date.now()?dur(t-Date.now()):"due"});
