@@ -1,0 +1,1 @@
+- A card missing its owner or its ETA no longer turns its whole row red; the gap words stay as plain small text, so red on the board means only you (drop-red-gap-rows, #C1301). Ships: a page publish. Tests: `tests/no-owner-no-eta-red.test.mjs` (mutation-checked).

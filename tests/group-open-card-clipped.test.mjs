@@ -15,8 +15,10 @@ test("an opened card in a group has a left padding wider than the red edge, and 
   const pad = rules[0].match(/(?:^|;)padding:([^;]+)/);
   assert.ok(pad, "it sets its padding");
   const [top, right, bottom, left] = (([a, b = a, c = a, d = b]) => [a, b, c, d])(pad[1].trim().split(/\s+/).map(px));
-  const edge = px(css.match(/\.i-row\.gap-red\{[^}]*box-shadow:inset (\d+px)/)[1]);
-  assert.ok(left >= edge + 8, `left ${left}px clears the ${edge}px red edge with room`);
+  // #C1301: the red row edge is gone (no .i-row.gap-red rule); the 4px it measured stays as the clearance the left padding keeps from the group's rail.
+  assert.equal(/\.i-row\.gap-red/.test(css), false, "no red row edge any more");
+  const edge = 4;
+  assert.ok(left >= edge + 8, `left ${left}px clears the ${edge}px rail edge with room`);
   for (const [k, v] of Object.entries({ top, right, bottom })) assert.ok(v >= 8, `${k} ${v}px`);
 });
 

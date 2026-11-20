@@ -1,7 +1,7 @@
 // #C619: an open card with no owner or no ETA shows red on its row, and the probe lists every such card for the lead's watch.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { boardTruth } from "../collector/readings.mjs";
@@ -99,7 +99,8 @@ test("the seen file keeps the miss in place of a sha; odd gap entries are droppe
 // ---- the page
 const row = (b, i) => b.initRow(i);
 
-test("an open card with no owner is flagged 'no owner', and its row goes red", () => {
+// #C1301 (the owner): the gap words stay, as plain small text; the red row (background and edge) is gone, so red means only the owner (#C1300).
+test("an open card with no owner is flagged 'no owner' in plain words, and its row stays plain", () => {
   const b = loadBoard();
   const now = Date.now();
   b.state.steps = [];
@@ -107,11 +108,12 @@ test("an open card with no owner is flagged 'no owner', and its row goes red", (
   const i = b.gates(b.enrich({ id: "x", level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", etaLive: now + 3600e3, nextNote: "n", nextNoteAt: now, phase: "build" }));
   assert.ok(!i.who, "nobody on it");
   assert.ok([...b.gaps(i)].includes("no owner"), [...b.gaps(i)].join(", "));
-  assert.match(row(b, i), /class="i-row gap-red"/);
+  assert.match(row(b, i), /class="i-row"/);
+  assert.doesNotMatch(row(b, i), /gap-red/);
   assert.match(row(b, i), /Manager missed: [^<]*no owner/);
 });
 
-test("a card with an owner and an ETA keeps a plain row; a card with no ETA goes red too", () => {
+test("a card with an owner and an ETA keeps a plain row; a card with no ETA keeps one too and names the gap", () => {
   const b = loadBoard();
   const now = Date.now();
   const mk = (fields) => { b.state.steps = [step("x", "build", "Admin", "start", now)]; b.state.waiting = []; return b.gates(b.enrich({ id: "x", level: "Quick", customerText: false, skip: ["plan"], status: "active", name: "X", nextNote: "n", nextNoteAt: now, ...fields })); };
@@ -121,10 +123,12 @@ test("a card with an owner and an ETA keeps a plain row; a card with no ETA goes
   assert.match(row(b, ok), /class="i-row"/);
   const noEta = mk({ etaLive: undefined });
   assert.ok([...b.gaps(noEta)].includes("no ETA"));
-  assert.match(row(b, noEta), /class="i-row gap-red"/);
+  assert.match(row(b, noEta), /class="i-row"/);
+  assert.doesNotMatch(row(b, noEta), /gap-red/);
+  assert.match(row(b, noEta), /Manager missed: [^<]*no ETA/);
 });
 
-test("a card held on purpose (paused, or waiting on a named wait) keeps a plain row though its gaps are named", () => {
+test("no row goes red for a gap, held on purpose or not: the gaps are named in plain words only where they are not held", () => {
   const b = loadNames(["gaps", "initRow", "enrich", "gates", "CONFIG"]);
   const now = Date.now();
   // The built page carries the full config (nudges.parked defaults to ["paused"]); the harness's bare template does not.
@@ -138,19 +142,19 @@ test("a card held on purpose (paused, or waiting on a named wait) keeps a plain 
   const held = (c) => ({ ...c, heldBy: isHeldBy({ owner_role: c.who, waiting_on: c.waitingOn }) });
   assert.doesNotMatch(row(b, mk(held({ status: "active", who: "Builder", waitingOn: "Owner" }))), /gap-red/, "waiting on the owner");
   assert.doesNotMatch(row(b, mk(held({ status: "active", who: "Builder", waitingOn: "Owner: which colour?" }))), /gap-red/, "the owner's question");
-  assert.match(row(b, mk(held({ status: "active", who: "Builder", waitingOn: "Builder" }))), /gap-red/, "the card's own pointer holds nothing");
+  assert.doesNotMatch(row(b, mk(held({ status: "active", who: "Builder", waitingOn: "Builder" }))), /gap-red/, "the card's own pointer holds nothing, and a gap is no red row anyway");
   assert.doesNotMatch(row(b, mk(held({ status: "active", who: "Builder", waitingOn: "Checker, Security; then the owner" }))), /gap-red/, "waiting on someone else holds it, for every reader (#C1164)");
   assert.doesNotMatch(row(b, mk(held({ status: "active", waitingOn: "Boardsmith" }))), /gap-red/, "no owner, waiting on Boardsmith: held on someone, plain (#C1164: one reading)");
-  assert.match(row(b, mk({ status: "active", who: "Builder", waitingOn: "Owner" })), /gap-red/, "no heldBy in the view: the page holds nothing of its own");
-  assert.match(row(b, mk({ status: "active", who: "Builder" })), /gap-red/, "the same card, not held: red");
+  assert.doesNotMatch(row(b, mk({ status: "active", who: "Builder", waitingOn: "Owner" })), /gap-red/, "no heldBy in the view: still no red row");
+  const open = row(b, mk({ status: "active", who: "Builder" }));
+  assert.doesNotMatch(open, /gap-red/, "the same card, not held: the gap words, no red row");
+  assert.match(open, /Manager missed: [^<]*no ETA/);
 });
 
-test("only the two gaps that leave a card without a name or a time go red; the others stay a line of text", () => {
-  const { gapRed } = loadNames(["gapRed"]);
-  assert.equal(gapRed(["no owner"]), true);
-  assert.equal(gapRed(["next step over 1 h old", "no ETA"]), true);
-  assert.equal(gapRed(["no next step", "no review level", "ETA passed", "never started"]), false);
-  assert.equal(gapRed([]), false);
+test("#C1301: the page has no red gap row: no .gap-red rule, no gapRed function, and the gap words are plain muted text", () => {
+  const src = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.equal(/gap-red|gapRed/.test(src), false, "nothing of the red row is left");
+  assert.match(src, /\.gaps\{color:var\(--muted\);font-size:\.78rem\}/);
 });
 
 test("no 'no owner' for a card waiting in a known wait, one up next between phases, or one being worked by the live state; never a done card", () => {

@@ -116,8 +116,8 @@ section{min-width:0}
 /* The item's own text on its own line under the #T number, title and badge (#C234: it ran on after the badge). */
 .w-body,.w-answer{display:block;margin-top:4px}
 .w-item:not([open]) .w-answer{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
-.gaps{color:var(--bad);font-weight:600;font-size:.85rem}
-.i-row.gap-red{background:color-mix(in srgb,var(--bad-soft) 55%,var(--panel));box-shadow:inset 4px 0 0 var(--bad)}
+/* #C1301 (the owner): a missing owner or ETA is plain small text; the red row background and edge are gone, so red means only the owner (#C1300). */
+.gaps{color:var(--muted);font-size:.78rem}
 .c-num{font:600 .75rem var(--mono);color:var(--muted);margin-right:6px}
 .c-repo{font:600 .66rem var(--mono);color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px;margin-right:6px;white-space:nowrap;vertical-align:1px}
 .c-repo.fb{color:var(--accent);border-color:var(--accent)}
@@ -2429,7 +2429,6 @@ const parkedStatus=i=>!!i&&(i.status==="paused"||i.status==="parked"||((CONFIG.n
 // #C1164: whether waiting_on holds the card is the Worker's reading (the view's heldBy, worker/held-by.mjs), not a rule of the page's own.
 function heldOnPurpose(i){if(!i)return false;
   return i.status==="parked"||((CONFIG.nudges||{}).parked||[]).includes(i.status)||!!i.heldBy||!!ownerWait(i)}
-function gapRed(g,i){return (g.includes("no owner")||g.includes("no ETA"))&&!heldOnPurpose(i)}
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
 // repository explains, or done. Returns minutes.
@@ -2620,9 +2619,9 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   // #C866: the card's own line of what it removes, in the Details fold beside the Next line.
   const removes=i.removes?`<span>Removes: <b>${esc(i.removes)}</b></span>`:"";
   const detBody=`${next}${removes}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
-  const gp=liveOpen?[]:gaps(i),red=gapRed(gp,i);
+  const gp=liveOpen?[]:gaps(i);
   const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip,track):"";
-  return `<div class="i-row${red?" gap-red":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
+  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track" style="--per:${per}">${steps}</div>`}
