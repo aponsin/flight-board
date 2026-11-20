@@ -431,14 +431,14 @@ button.sbtn.sbtn:disabled{opacity:1}
 /* Who is on what (#C1331, the owner's design): one column per agent, no table lines or shading, the busiest on the left and idle agents on the right, sideways scroll when it does not fit.
    Each card is a badge with its order number in front (1 = on it now, then its queue); a badge takes the card's own tile state and every badge is the same width, no icon inside. */
 .crew{padding:6px 0 10px}
-.ccols{display:flex;gap:22px;overflow-x:auto;padding:0 12px 6px}
+.ccols{display:flex;gap:22px;overflow-x:auto;padding:0 20px 6px 12px;-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 20px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 20px),transparent)}
 .ccol{display:flex;flex-direction:column;gap:6px;min-width:96px}
 .ccol h3{margin:0 0 2px;font:700 .86rem var(--display);letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
 .ccol.idle h3,.ccol.idle small{color:var(--muted)}
 .ccol small{font-size:.74rem;white-space:nowrap}
 .cit{display:flex;align-items:center;gap:5px}
 .cn{font:600 .68rem var(--mono);color:var(--muted);width:.9em;text-align:right}
-.cb{display:inline-block;box-sizing:border-box;min-width:5.6em;text-align:center;font:600 .78rem var(--mono);padding:3px 7px;border-radius:6px;white-space:nowrap}
+.cb{display:inline-block;box-sizing:border-box;min-width:5.6em;text-align:center;font:600 .78rem var(--mono);padding:3px 7px;border:1.5px solid transparent;border-radius:6px;white-space:nowrap}
 .cb.now{background:var(--accent);color:var(--panel);animation:pulse 2.4s ease-in-out infinite}
 .cb.here{color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent)}
 .cb.queued{color:var(--warn-ink);background:var(--warn-soft);background-image:repeating-linear-gradient(-45deg,var(--warn-soft) 0 6px,var(--panel) 6px 12px);box-shadow:inset 0 0 0 2px var(--warn)}
