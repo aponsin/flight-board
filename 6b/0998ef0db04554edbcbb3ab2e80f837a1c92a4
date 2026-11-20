@@ -1,0 +1,1 @@
+SECURE: re-cut of e6e7ecf05f53 onto main dc4c640f (patch identical, range-diff =; tip tree equals 52291235's). Was: SECURE: #C1331 Designer follow-up, CSS only (.cb transparent border, .ccols right-edge mask-image with an inline gradient, no url()) plus two tests that read the CSS; no script or markup change. Security 2026-11-20. Security 2026-11-20.
