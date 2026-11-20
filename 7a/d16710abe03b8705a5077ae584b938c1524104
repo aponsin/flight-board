@@ -1,1 +1,3 @@
 SECURE: #C1359 tests only (the pack-lit test takes the probe reading's time when it is made) and a changelog line. Security 2026-11-20.
+
+SECURE: pack pc116 (delta on pc115 6a92b674, pin 7ad16710 == origin/main). deploy 35af8df0, tree 6cccda59, hooks 166497ba, board-deploy 7a021248 (unchanged), steps 4634362b: hashes match. Deploy and tree differ from pc115, and hooks from pc114, only in pin, pack number and card lists. pc115 .done names 6a92b674. All 9 commits 6a92b674..7ad16710 are noted SECURE. No migration, and no new secret, env or config in the Worker range. The hand-added steps section is a Manager-only check (one throwaway paused card, then dropped) with no owner command. Security 2026-11-20.
