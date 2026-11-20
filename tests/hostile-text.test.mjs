@@ -142,6 +142,8 @@ for (const host of ["store", null]) for (const mode of ["all", "end", "start"]) 
 // patchHtml's own, `t.innerHTML=html` on a detached template and its fallback `el.innerHTML=html` when there is no DOM to patch. Both write only what the six callers built through esc() before.
 // #C1299 added one: askDialog's `d.innerHTML=` (the dialog that asks a group's name or answers the in-review warning). Its question, its input's value and both button words go through esc();
 // tests/group-controls-page.test.mjs draws a group named with markup and finds none raw.
-test("the page's innerHTML sinks are the 43 audited (41 for #C723, 1 for #C874, 1 for #C919, 1 for #C972, 2 for #C1049, less 6 and plus 2 for #C1229, plus 1 for #C1299): a new one fails here until it is audited", () => {
-  assert.equal((template.match(/innerHTML/g) ?? []).length, 43);
+// #C1310 added one: renderStackBar's `el.innerHTML=stackBar()` (the Stack mode bar). stackBar writes the two repository words, "on" or "off", the button words and who set the switch, each
+// through esc() or a fixed word; tests/stack-switch-on-now-view.test.mjs draws a switch set by a name with markup and finds none raw.
+test("the page's innerHTML sinks are the 44 audited (41 for #C723, 1 for #C874, 1 for #C919, 1 for #C972, 2 for #C1049, less 6 and plus 2 for #C1229, plus 1 for #C1299, plus 1 for #C1310): a new one fails here until it is audited", () => {
+  assert.equal((template.match(/innerHTML/g) ?? []).length, 44);
 });

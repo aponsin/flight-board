@@ -25,6 +25,14 @@ test("the store's board draws the stack bar into its own element: Board on, Prod
   assert.match(html, /Product: <b>off<\/b><button type="button" data-sw="product" data-on="1">Turn on<\/button>/);
 });
 
+test("the owner's name text is written escaped: a switch set by a name with markup shows as text", () => {
+  const { b, els } = page("store");
+  b.state.meta = [{ id: "stackSwitch", rows: [{ repo: "board", stack: true, setBy: "<img src=x onerror=alert(1)>", setAt: Date.now() }, { repo: "product", stack: false, setBy: "default", setAt: 0 }] }];
+  b.renderStackBar();
+  assert.doesNotMatch(els.stackbar.innerHTML, /<img/);
+  assert.match(els.stackbar.innerHTML, /&lt;img src=x/);
+});
+
 test("not on the store (the artifact page) the bar is empty, and with no switch rows there is none", () => {
   const { b, els } = page("artifact");
   b.renderStackBar();
