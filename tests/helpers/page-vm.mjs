@@ -7,7 +7,7 @@ export const SCRIPT = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 export const T0 = 1_800_000_000_000;
 const DAY = 864e5, MIN = 60e3;
 
-export async function loadPage({ now = T0 } = {}) {
+export async function loadPage({ now = T0, script = SCRIPT } = {}) {
   class FakeDate extends Date { constructor(...a) { super(...(a.length ? a : [now])); } static now() { return now; } }
   const listeners = {}, subs = {};
   const fresh = (id) => ({ id, innerHTML: "", textContent: "", value: "", hidden: false, children: [], style: {}, classList: { add() {}, remove() {}, toggle() {}, contains: () => false }, addEventListener() {}, removeEventListener() {}, querySelectorAll: () => [], querySelector: () => null, closest: () => null, dataset: {}, setAttribute() {}, getAttribute: () => null, appendChild() {}, append() {}, prepend() {}, remove() {}, getBoundingClientRect: () => ({ left: 0, top: 0, bottom: 0, width: 0 }), contains: () => false });
@@ -18,7 +18,7 @@ export async function loadPage({ now = T0 } = {}) {
   const timers = [];
   const ctx = { document, window, console, setInterval() {}, setTimeout: (fn) => timers.push(fn), clearTimeout() {}, queueMicrotask() {}, navigator: {}, getSelection: () => ({}), Date: FakeDate, Math, JSON, Number, String, Array, Object, Set, Map, isFinite, URLSearchParams, WeakMap, WeakSet, File, performance, RegExp, Promise, Symbol, Error, localStorage: { getItem: () => null, setItem() {} }, history: { replaceState() {} }, location: { hash: "", search: "", href: "https://board.test/" } };
   vm.createContext(ctx);
-  vm.runInContext(SCRIPT, ctx);
+  vm.runInContext(script, ctx);
   for (let k = 0; k < 10; k++) await null;
   return { ctx, els, timers, run: (code) => vm.runInContext(code, ctx), setNow: (t) => { now = t; }, listeners, subs };
 }

@@ -6,18 +6,43 @@ const ZONE = ["America", "Den" + "ver"].join("/"); // the page's own zone for it
 process.env.TZ = ZONE; // the page writes local times; the tests compare words, so the zone is fixed
 import test from "node:test";
 import assert from "node:assert/strict";
-import { loadPage, fixture, load, T0 } from "./helpers/page-vm.mjs";
+import { loadPage, fixture, load, T0, SCRIPT } from "./helpers/page-vm.mjs";
 
 const snapshot = (p) => Object.fromEntries(Object.entries(p.els).filter(([, e]) => typeof e.innerHTML === "string" && e.innerHTML).map(([k, e]) => [k, e.innerHTML]));
-const best = (f, runs = 5) => { let b = Infinity; for (let i = 0; i < runs; i++) { const s = performance.now(); f(); b = Math.min(b, performance.now() - s); } return b; };
+const median = (f, runs = 5) => { const t = []; for (let i = 0; i < runs; i++) { const s = performance.now(); f(); t.push(performance.now() - s); } return t.sort((a, b) => a - b)[runs >> 1]; };
 
-test("a full redraw on a board the size of today's is under the budget (it was about 1,000 ms)", async () => {
-  const p = await loadPage();
+// The budget counts the work, not the clock (Security saw the old 300 ms bound fail once at 459 ms under a loaded full suite): how many times each memoized answer is really worked out in one redraw. The pass
+// memo works each out once per thread, card or ask (about 1,000 here); without it each was worked out 24,000 to 58,000 times. The count is the same on any machine under any load.
+const MEMOIZED = "const memoized=(f,key)=>function(...a){if(!pass)return f.apply(this,a);const k=key(a);let m=pass.get(f);if(!m)pass.set(f,m=new Map());if(m.has(k))return m.get(k);const v=f.apply(this,a);m.set(k,v);return v};";
+const COUNTED = "const memoized=(f1,key)=>{const f=function(...a){const c=(globalThis.__calls||(globalThis.__calls={}));c[f1.name]=(c[f1.name]||0)+1;return f1.apply(this,a)};return function(...a){if(!pass)return f.apply(this,a);const k=key(a);let m=pass.get(f);if(!m)pass.set(f,m=new Map());if(m.has(k))return m.get(k);const v=f.apply(this,a);m.set(k,v);return v}};";
+const LIMITS = { waitsOn: 3000, teamOnly: 3000, threadOpen: 3000, threadResolved: 3000, itemOf: 3000, stepsOf: 600, threadSets: 2 };
+const counted = async (memoOff) => {
+  assert.ok(SCRIPT.includes(MEMOIZED), "the page's memoized helper is the one this test counts (update the test with it)");
+  const p = await loadPage({ script: SCRIPT.replace(MEMOIZED, COUNTED) });
   load(p, fixture());
   p.run("renderAll()"); // the first draw warms the formatters and the code
-  // The pass memo makes it about 65 ms here; the bound leaves room for a loaded run (the suite runs files side by side) and still fails the repeated work.
-  const ms = best(() => p.run("renderAll()"));
-  assert.ok(ms < 300, `a redraw took ${ms.toFixed(0)} ms; the budget is 300 ms (target 100)`);
+  p.run("globalThis.__calls={}");
+  p.run(memoOff ? "memoOff=true;renderAll();memoOff=false" : "renderAll()");
+  return JSON.parse(p.run("JSON.stringify(globalThis.__calls)"));
+};
+
+test("a full redraw works each memoized answer out once, not tens of thousands of times (it was 24,000 to 58,000)", async () => {
+  const calls = await counted(false);
+  for (const [name, max] of Object.entries(LIMITS)) assert.ok((calls[name] ?? 0) <= max, `${name} was worked out ${calls[name]} times in one redraw; the limit is ${max}`);
+  assert.ok(Object.keys(LIMITS).every((n) => calls[n] > 0), "every counted function ran (the count is real)");
+});
+
+test("the count can fail: with the pass memo off the same redraw works the answers out far past every limit", async () => {
+  const calls = await counted(true);
+  for (const name of ["waitsOn", "teamOnly", "threadOpen", "threadResolved", "itemOf"]) assert.ok(calls[name] > 3 * LIMITS[name], `${name}: ${calls[name]} without the memo`);
+});
+
+test("wall time is only a loose guard: the median of five redraws is far under what the repeated work took (about 1,000 ms)", async () => {
+  const p = await loadPage();
+  load(p, fixture());
+  p.run("renderAll()");
+  const ms = median(() => p.run("renderAll()"));
+  assert.ok(ms < 1000, `the median redraw took ${ms.toFixed(0)} ms; the guard is 1,000 ms (it takes about 65 ms)`);
 });
 
 test("the redraw draws exactly what it drew before the memo: every element's HTML is equal with and without the pass memo", async () => {
