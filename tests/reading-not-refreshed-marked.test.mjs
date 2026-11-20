@@ -155,3 +155,11 @@ test("a fresh live reading speaks for the card: the derived copy's stale mark do
   live({ phase: "build", headSha12: "a".repeat(12), signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: NOW - 10e3, stale: true, staleSince: FRESH_AT + 1000 });
   assert.match(b.staleLine({ id: "one" }), new RegExp(`from ${b.hhmm(FRESH_AT + 1000).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "its own mark, its own time");
 });
+
+// Designer's look check on 64f02ba8: the age chip never wraps ("AM" alone on a second line at 390 px), and the words are said once per card (the chip), not again in the meta line.
+test("the stale age chip stays on one line and the meta line does not repeat its words", () => {
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(html, /\.asof\.stale\{[^}]*white-space:nowrap/, "the stale chip must not wrap");
+  const meta = html.split('<div class="i-meta">')[1].split('<div class="i-acts">')[0];
+  assert.doesNotMatch(meta, /staleLine\(/, "the card's meta line must not draw the stale words a second time");
+});
