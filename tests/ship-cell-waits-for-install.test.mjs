@@ -13,7 +13,7 @@ const draw = (cardExtra = {}, probeExtra = {}, host = "store") => drawPage({ ini
 test("a landed card with no pack yet says 'Queued for pack' on the yellow stripes, not the install's green", () => {
   const html = draw();
   assert.match(html, /Queued<span class="sl"> for pack<\/span>/);
-  assert.equal(/<small>Your install<\/small>/.test(html), false);
+  assert.equal(/'s install<\/span>/.test(html), false);
   assert.match(html, /class="step waits proc"/);
   assert.equal(/class="step waits rel"/.test(html), false);
 });
@@ -30,23 +30,27 @@ test("a landed card waiting for the install: the Ship cell says 'Queued for your
 test("still shown: a Release step in progress keeps its counter, and no 'Queued for your install'", () => {
   const html = draw({}, { shipping: true });
   assert.match(html, /data-shipat="1"/);
-  assert.equal(/<small>Your install<\/small>/.test(html), false);
+  assert.equal(/'s install<\/span>/.test(html), false);
 });
 
 test("still shown: a card not yet on main keeps its counter, and a product card keeps its deploy timing", () => {
   assert.match(draw({}, { onMain: false }), /data-shipat="1"/, "not on main");
   const product = draw({ repo: "Platform" });
   assert.match(product, /data-shipat="1"/, "a product card");
-  assert.equal(/<small>Your install<\/small>/.test(product), false);
+  assert.equal(/'s install<\/span>/.test(product), false);
+  // Checker 2's F2 on a0e01b87: green is only the owner's install, never a product card, even when the repository reads the install wait for it.
+  const wait = (repo) => drawPage({ initiatives: [card({ repo })], waiting: [], messages: [], steps: [], threads: [], derived: [{ id: "all", cards: { "landed-card": { wait: "install" } } }] }, { probe: probe(), host: "store" }).html;
+  assert.match(wait("Flight-Board"), /class="step waits rel"/, "control: the board's own card waiting on the install is green");
+  assert.equal(/class="step waits rel"/.test(wait("Platform")), false, "a product card is never green");
 });
 
 test("still shown: a landing that failed (a red line on the card) is not called queued", () => {
   const failed = drawPage({ initiatives: [card()], waiting: [], messages: [], steps: [], threads: [], derived: [{ id: "all", cards: { "landed-card": { red: ["on ship with nothing on main"] } } }] }, { probe: probe(), host: "store" }).html;
-  assert.equal(/<small>Your install<\/small>/.test(failed), false);
+  assert.equal(/'s install<\/span>/.test(failed), false);
   assert.match(failed, /on ship with nothing on main/, "control: the red line is drawn");
 });
 
 test("the artifact page (not the store) is unchanged", () => {
   const html = draw({}, {}, null);
-  assert.equal(/<small>Your install<\/small>/.test(html), false);
+  assert.equal(/'s install<\/span>/.test(html), false);
 });
