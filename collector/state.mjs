@@ -492,10 +492,16 @@ export function shipCandidate({ tips, pattern, now, onMain, ci, shipped = () => 
 
 // The version a commit went live in: the first subject naming one (versionPattern), from the commit itself on along
 // the main line's first parents that descend from it.
+// #C1376: `git log --first-parent --ancestry-path sha..ref` answers nothing for a commit that reached main INSIDE a group (under the head main merged): with
+// --first-parent the ancestry-path is judged along the first-parent line only, which the commit is not on (#C1315, #C1320 to #C1323, #C1333, #C1224). So the two are asked
+// apart: the main line's first-parent commits after sha, oldest first, and the set of commits that descend from sha; the first main-line commit in that set is the first one that
+// contains it. A commit main took directly gives what it gave before.
 function versionAfter(git, sha, ref, pattern) {
   try {
     const re = new RegExp(pattern);
-    const subjects = [git(["log", "-1", "--format=%s", sha]).trim(), ...git(["log", "--first-parent", "--ancestry-path", "--reverse", "--format=%s", `${sha}..${ref}`]).split("\n")];
+    const descends = new Set(git(["rev-list", "--ancestry-path", `${sha}..${ref}`]).split("\n").filter(Boolean));
+    const line = git(["log", "--first-parent", "--reverse", "--format=%H%x1f%s", `${sha}..${ref}`]).split("\n").filter(Boolean).map((l) => l.split("\x1f")).filter(([h]) => descends.has(h)).map(([, s]) => s ?? "");
+    const subjects = [git(["log", "-1", "--format=%s", sha]).trim(), ...line];
     for (const s of subjects) {
       const m = re.exec(s);
       const v = m ? m[1] ?? m[0] : null;
