@@ -123,7 +123,8 @@ section{min-width:0}
 .c-repo.fb{color:var(--accent);border-color:var(--accent)}
 .w-text{min-width:0}
 .pgap{display:block;height:.5em}.optk{font-weight:700}
-.w-list{margin:6px 0;padding-left:1.4em}.w-list li{margin:3px 0}
+/* #C1297: room for the number (two digits and the dot) outside the text, so it never covers the first letters. */
+.w-list{margin:6px 0;padding-left:2.2em}.w-list li{margin:3px 0}ol.w-list{list-style-position:outside}
 .w-sub{color:var(--muted);font-size:.85rem}
 .age{font:400 .82rem var(--mono);color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
 /* initiatives */
@@ -1105,9 +1106,12 @@ function askText(t){
   const close=()=>{if(list){out+=`<${list.tag} class="w-list">${list.items.join("")}</${list.tag}>`;list=null}};
   for(const line of raw){
     if(!line){gap=!!(out||list);continue}
-    if(gap){close();out+='<span class="pgap"></span>';prevText=false;gap=false}
     const m=line.match(/^(?:(\d{1,2})\.|[-•])\s+(.*)$/);
-    if(m){const tag=m[1]?"ol":"ul";if(!list||list.tag!==tag){close();list={tag,items:[]}}list.items.push(`<li>${askLine(m[2])}</li>`);prevText=false;continue}
+    // #C1297 (a numbered list with blank lines between its items read "1." on every item, each in a list of its own): a blank line between two items of the same kind of list
+    // does not end the list, and each numbered item keeps the number it was written with (value=), so a list that starts at 3 or skips one reads as written.
+    if(gap&&!(list&&m&&list.tag===(m[1]?"ol":"ul"))){close();out+='<span class="pgap"></span>';prevText=false}
+    gap=false;
+    if(m){const tag=m[1]?"ol":"ul";if(!list||list.tag!==tag){close();list={tag,items:[]}}list.items.push(`<li${m[1]?` value="${Number(m[1])}"`:""}>${askLine(m[2])}</li>`);prevText=false;continue}
     close();out+=(prevText?"<br>":"")+askLine(line);prevText=true}
   close();return out}
 function linkify(t){
