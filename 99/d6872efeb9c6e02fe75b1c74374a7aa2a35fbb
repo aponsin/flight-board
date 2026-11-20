@@ -1,0 +1,5 @@
+SECURE
+
+#C1295 (Worker rules, store, collector): the stack switch becomes per repository (board / product). board-rules adds stackKeyOf, stackOnFor, stackSatisfies (pure); board-store's stall sync reads the on rows with a fixed SQL (repo IN ('board','product')); dispatch holds reviewers only while the SAME repository has a build turn. The collector's stacks.json gets product repo names from the owner's own board.config (collector.repos names, strings <= 40, not the board's), written 0600; state.mjs reads them back with the same filter and uses each only as a key into the configured repos (unknown names skipped; git via argument arrays). The switch itself stays owner-only (/api/stack-switch 403 for anyone else, tool refused by role: tests pass), and stack sign-off semantics are unchanged (a FINDINGS on the tip beats a card's own PASS). Ran 57/57 at 99d6872e (product-groups-stack, stack-dispatch, stack-switch, stack-read, store-dispatch, dispatch). No new route, secret, permission or hook change. Ships as a Worker deploy.
+
+signed-by: Security
