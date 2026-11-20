@@ -106,3 +106,12 @@ test("the sideways scroll, a fixed badge width and the reduced-motion rule are i
   assert.match(html, /prefers-reduced-motion:reduce\)\{\.cb\.now,\.cb\.work\{animation:none\}/);
   assert.match(html, /\.cb\.work\{[^}]*dashed/);
 });
+
+test("every badge has the same border box, so the dashed work badge is no taller than the others", () => {
+  assert.match(html, /\.cb\{[^}]*border:1\.5px solid transparent/);
+});
+
+test("the scrolling columns fade at the right edge, with padding so the last column is not dimmed at the end", () => {
+  assert.match(html, /\.ccols\{[^}]*mask-image:linear-gradient\(to right,#000 calc\(100% - 20px\),transparent\)/);
+  assert.match(html, /\.ccols\{[^}]*padding:0 20px 6px 12px/);
+});
