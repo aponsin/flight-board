@@ -1,0 +1,5 @@
+SECURE
+
+#C1309 re-cut of ab02940a (SECURE), by range-diff: waiting Install tile text drops "'s install" after the pack number (Designer F1); OWNER still esc()'d, pack integer-checked. Test updated. board-polish-five v3, tip 5883807e.
+
+signed-by: Security
