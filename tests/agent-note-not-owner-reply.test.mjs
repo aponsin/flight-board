@@ -1,6 +1,6 @@
 // #C1324 (the owner on a card's thread, "that wasn't for me"): Manager posted a technical note for an agent on a card's thread and the owner saw "1 new reply". Manager's own door now
 // refuses a `post` on a card's thread (thread_id is a card id) when the owner has written nothing there, rule agent-note-on-card, and the hint is send_message. The cases that stay
-// allowed come first (guard-false-positives): the owner's own threads, an ask's thread, a card thread where the owner has written, and the shared door (another role's post).
+// allowed come first (guard-false-positives): the owner's own threads, an ask's thread and a card thread where the owner has written. #C1336 gives the shared door the same rule (below).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
@@ -67,8 +67,43 @@ test("a post on a card thread the owner never wrote in is refused on Manager's d
   assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM refusals WHERE rule = 'agent-note-on-card'").first()).n, 1);
 });
 
-test("must still allow: the shared door (another role's own post on its card's thread) is unchanged", async () => {
+// #C1336 (11-20: an agent posted "resetting after this" on #C1331's thread through the shared connector, and the owner got "1 new reply"): the shared connector's post carries the same rule.
+// The hint there is "send it to Manager by message". What stays allowed: answering him in a card thread he wrote in, the owner's free threads, an ask's thread, and a post with pictures.
+test("the shared door refuses an agent's post on a card thread the owner never wrote in, logged, nothing written, and the hint says to message Manager", async () => {
+  const { env, shared, count } = await make();
+  for (const who of ["Builder", "Boardsmith", "Checker"]) {
+    const r = await shared(who, { thread_id: "card-a", body: "resetting after this" });
+    assert.equal(r.isError, true, who);
+    assert.equal(r.structuredContent.refused.rule, "agent-note-on-card", who);
+    assert.match(r.structuredContent.refused.detail, /send it to Manager by message/);
+    assert.doesNotMatch(r.structuredContent.refused.detail, /note for an agent goes by send_message to that agent/, "the shared hint is its own");
+  }
+  assert.equal(await count("card-a"), 0, "nothing written");
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM refusals WHERE rule = 'agent-note-on-card'").first()).n, 3);
+});
+
+test("must still allow: on the shared door, an answer in a card thread the owner wrote in, the owner's free thread, an ask's thread, and a post with a picture", async () => {
+  const { env, shared, count, ownerSays } = await make();
+  await ownerSays("card-a");
+  assert.equal((await shared("Builder", { thread_id: "card-a", body: "answering him" })).isError, false, "a card thread he wrote in");
+  await env.DB.prepare("INSERT INTO threads (id, num, title, created_at) VALUES ('t-901', 901, 'Mine', ?)").bind(NOW - 5000).run();
+  assert.equal((await shared("Builder", { thread_id: "t-901", body: "an answer" })).isError, false, "a free thread, which no card owns");
+  const ask = await createAsk(env.DB, NOW, { type: "Thread", title: "Q", asked_by: "Boardsmith", text: "hello" });
+  assert.equal(ask.ok, true, JSON.stringify(ask));
+  assert.equal((await shared("Boardsmith", { thread_id: ask.id, body: "in the ask's thread" })).isError, false, "an ask's thread");
+  assert.equal(await count("card-a"), 2);
+  assert.equal((await createCard(env.DB, NOW, "Manager", { id: "card-b", title: "Another" })).ok, true);
+  const shots = await shared("Designer", { thread_id: "card-b", body: "Look at this", screenshots: ["no-such-file"] });
+  assert.notEqual(shots.structuredContent?.refused?.rule, "agent-note-on-card", "a post with a picture is not refused as an agent's note");
+});
+
+test("must still refuse on the shared door too: any kind but decision on a card thread the owner never wrote in; a decision is the decision rule's (Manager's door only)", async () => {
   const { shared, count } = await make();
-  assert.equal((await shared("Builder", { thread_id: "card-a", body: "built it" })).isError, false);
-  assert.equal(await count("card-a"), 1);
+  for (const kind of ["note", "status", ""]) {
+    const r = await shared("Builder", { thread_id: "card-a", body: "a note", kind });
+    assert.equal(r.structuredContent?.refused?.rule, "agent-note-on-card", `kind ${JSON.stringify(kind)}`);
+  }
+  const d = await shared("Builder", { thread_id: "card-a", body: "Which?", kind: "decision", options: [{ key: "A", label: "Yes" }, { key: "B", label: "No" }] });
+  assert.equal(d.structuredContent.refused.rule, "decision-needs-manager-door");
+  assert.equal(await count("card-a"), 0, "nothing written");
 });

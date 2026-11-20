@@ -118,7 +118,8 @@ async function callTool(db, now, who, role, name, args, env = {}, door = "access
   const hold = decisionRefusal(door, name, who, args);
   if (hold) return text(await refuse(db, now, hold, args?.thread_id ?? args?.card_id, who));
   // #C1324: Manager's own door never posts an agent's note on a card thread the owner has not written in (send_message is the way to an agent).
-  if (door === "manager" && name === "post") { const note = await agentNoteRefusal(db, now, who, args); if (note) return text(note); }
+  // #C1336: nor does the shared connector (a note for Manager goes by message to Manager).
+  if (name === "post") { const note = await agentNoteRefusal(db, now, who, args, door); if (note) return text(note); }
   switch (name) {
     case "file_put": return text(await putFile({ db, bucket: env.FILES, now, who, refuse }, { name: args.name, type: args.type, data: args.data_base64 }));
     case "read_view": return text(viewForTool(await readView(db, now), args ?? {}));

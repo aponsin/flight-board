@@ -1100,14 +1100,16 @@ export async function doorWriteRefusal(db, now, tool, session) {
 // own door a `post` on a card's thread (thread_id is a card id) is refused when the owner has written nothing there: nobody is replying to him, so the note is an
 // agent's and goes by send_message. Never refused: the owner's own threads (a free thread), an ask's thread, and a card thread where the owner has a message.
 // Returns the refusal (already logged) or null.
-export async function agentNoteRefusal(db, now, who, args) {
+// #C1336 (11-20: an agent posted "resetting after this" on #C1331's thread through the shared connector and the owner got "1 new reply"): the same rule on the shared connector's post.
+// `door` is the door the call came in on; on Manager's it names send_message to the agent, on the shared one it tells the agent to send its note to Manager by message.
+export async function agentNoteRefusal(db, now, who, args, door = "manager") {
   const t = args?.thread_id;
   if (typeof t !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(t)) return null; // a malformed post is the message-shape rule's
   // Checker 2's F1 on 7b72da97: a decision (kind "decision": #C1294 puts them on card threads before he has written) and a post that carries screenshots are meant for the owner.
   if (args?.kind === "decision" || (Array.isArray(args?.screenshots) && args.screenshots.length)) return null;
   if (!(await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(t).first())) return null; // not a card's thread
   if (await db.prepare("SELECT 1 AS x FROM messages WHERE thread_id = ? AND author = 'owner' LIMIT 1").bind(t).first()) return null;
-  return refuse(db, now, { rule: "agent-note-on-card", detail: `the owner has written nothing on ${t}'s thread, so a post there would show to him as a reply that is not one: a note for an agent goes by send_message to that agent` }, t, who);
+  return refuse(db, now, { rule: "agent-note-on-card", detail: `the owner has written nothing on ${t}'s thread, so a post there would show to him as a reply that is not one: ${door === "manager" ? "a note for an agent goes by send_message to that agent" : "send it to Manager by message (send_message), not as a post on a card thread"}` }, t, who);
 }
 // #C1332 (the owner, t-1795159050363: a mockup made Manager's A/B moot and the buttons stayed, with no tool to take them away): Manager's door withdraws a decision message it posted that the
 // owner has not answered. The buttons go (options null), the message reads "No longer needed", and its kind becomes "withdrawn", so the card it held is released (openDecisionHolds
