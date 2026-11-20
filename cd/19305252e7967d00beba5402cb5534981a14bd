@@ -3,3 +3,7 @@ SECURE
 #C1300 F1 / #C1302 tip, by diff from e2cbd0b0 (SECURE): packShort (fixed booleans) chooses a fixed literal <small class="rs">Queued<span class="sl"> for pack</span></small> in place of esc(idleWord) when idleWord is exactly that fixed string; nothing from data is inserted. Test assertion updated. Ran 11/11 at cd193052 (ship-cell-waits-for-install, tile-states-visible). Page only; no Worker, store, route, secret, hook or permission change. Group board-polish-two SECURE at this tip.
 
 signed-by: Security
+
+Pack pc110 SECURE (steps board-store-pc110-steps.md sha256 ec4df9837c502e00a1b400451f5bf0c00dac87d11c88dd0c343fc185aaff34fc): all 5 file hashes match (deploy 3def4618, tree 5edead5f, hooks 556bbacb, board-deploy 7a021248 unchanged); deploy/tree/hooks differ from pc109 only by pin and pc number; steps differ only by pin, pc, hashes and the card/file lists; origin/main == cd193052; security notes on all 11 commits 197d39d4..cd193052; worker/collector diff (board-rules, board-store, board-worker, store-cards, store-dispatch) is exactly #C1298 + #C1295, none after 99d6872e; no wrangler config, migration, hooks or scripts change; pc109.done exists. Rollout INFO from #C1298 stands: after this deploy Manager's door writes need his session id.
+
+signed-by: Security
