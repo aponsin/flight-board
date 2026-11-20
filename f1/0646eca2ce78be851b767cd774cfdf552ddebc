@@ -1,0 +1,1 @@
+SECURE: #C1350 a per-redraw memo (keyed by id, dropped in finally) and formatters made once; it caches data, not HTML, and escaping is unchanged. A probe reading equal to the last skips the redraw for up to 15 s. INFO (Checker's lane): board-render-budget failed once in the full suite under load (459 ms of 300) and passed alone. Security 2026-11-20.
