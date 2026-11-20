@@ -3,6 +3,7 @@
 // that is no open decision, from the shared door, and with a malformed argument. The refusals are tested first (nothing changes), then the working case.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker from "../worker/board-worker.mjs";
 import { createCard, withdrawDecision } from "../worker/board-store.mjs";
@@ -152,4 +153,10 @@ test("the tool is on Manager's door only, and takes its session like every write
   const noSession = await rpc(MSECRET, { name: "withdraw_decision", arguments: { message_id: "m-x" } });
   assert.equal(noSession.isError, true);
   assert.notEqual(rule(noSession), "withdraw-no-message", "the session check comes before the tool");
+});
+
+test("the tool's description says what withdrawDecision enforces: refused once the owner has picked one of its options, not once he has written", () => {
+  const line = readFileSync(new URL("../worker/board-worker.mjs", import.meta.url), "utf8").split("\n").find((l) => l.includes('name: "withdraw_decision"'));
+  assert.match(line, /Refused once the owner has picked one of its options/);
+  assert.doesNotMatch(line, /has written in that thread/);
 });
