@@ -1,0 +1,1 @@
+SECURE: re-cut of 838a1a768c6f onto main dc4c640f (patch identical, range-diff =; tip tree equals 52291235's). Was: SECURE: #C1329 derive.mjs slugOfBranch copy (same anchored regex as state.mjs); card_create refuses ids ending -v<digits> (card-id-vn), a tightening. Security 2026-11-20. Security 2026-11-20.
