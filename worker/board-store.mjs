@@ -1093,6 +1093,17 @@ export async function doorWriteRefusal(db, now, tool, session) {
   const lastSet = expected ? `the door's session was last set by ${expected.set_by} at ${mtDayTime(expected.set_at)}` : "no session has been set for the door yet";
   return refuse(db, now, { rule: "door-session-mismatch", detail: `${claimed === null ? `${tool} on Manager's door needs the \`session\` argument: Manager's own session id.` : "the session given is not the one set for Manager's door."} Nothing was written. If you are not Manager's session, stop and tell Manager, and write through the shared connector with your own \`as\`; never call set_door_session to get past this refusal. (${lastSet})` }, null, "Manager");
 }
+// #C1324 (the owner on #C1321's card, "that wasn't for me"): a note Manager wrote for an agent on a card's thread showed to the owner as "1 new reply". On Manager's
+// own door a `post` on a card's thread (thread_id is a card id) is refused when the owner has written nothing there: nobody is replying to him, so the note is an
+// agent's and goes by send_message. Never refused: the owner's own threads (a free thread), an ask's thread, and a card thread where the owner has a message.
+// Returns the refusal (already logged) or null.
+export async function agentNoteRefusal(db, now, who, args) {
+  const t = args?.thread_id;
+  if (typeof t !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(t)) return null; // a malformed post is the message-shape rule's
+  if (!(await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(t).first())) return null; // not a card's thread
+  if (await db.prepare("SELECT 1 AS x FROM messages WHERE thread_id = ? AND author = 'owner' LIMIT 1").bind(t).first()) return null;
+  return refuse(db, now, { rule: "agent-note-on-card", detail: `the owner has written nothing on ${t}'s thread, so a post there would show to him as a reply that is not one: a note for an agent goes by send_message to that agent` }, t, who);
+}
 export async function guardedInbox(db, now, session) {
   const expected = await db.prepare("SELECT session, set_by, set_at FROM door_session WHERE id = 1").first();
   const claimed = typeof session === "string" && session.trim() ? session.slice(0, 80) : null;
