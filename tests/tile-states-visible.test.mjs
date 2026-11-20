@@ -45,13 +45,33 @@ test("not slow: no slow word", () => {
   assert.doesNotMatch(t.inner, /class="slow"/);
 });
 
-test("a landed card waiting for the install is the green stripes (waits rel); a paused card is not", () => {
+// #C1300: red is the owner's open ask, except the install's own ask, which reads green: an open gate wait at the phase of an install wait draws no red box; any other open gate keeps it.
+test("an open ask at the phase holding an install wait is green, not red; an open ask at another phase stays red", () => {
+  const gate = (phase) => step(ID, phase, "Owner", "start", NOW - 20 * MIN, { wait: "gate" });
   const p = reading("idle", { phase: "ship", onMain: true });
-  const landed = tile(board({ ...base, phase: "ship" }, { probe: p, derived: { wait: "install", waitAsk: 77 } }), "Ship");
+  const boardCard = { ...base, phase: "ship", repo: "Flight-Board" };
+  const install = board(boardCard, { probe: p, derived: { wait: "install", waitAsk: 77 }, steps: [step(ID, "build", "Builder", "start", NOW - 2.5 * H), gate("ship")] });
+  assert.doesNotMatch(install, /class="wait gate/, "the install's ask is not a red box");
+  assert.match(tile(install, "Land").cls, /\brel\b/); // a board card's Ship tile is called Land
+  const other = board({ ...base, phase: "checker", repo: "Flight-Board" }, { probe: { ...reading("idle"), cards: {} }, derived: { phase: "checker" }, steps: [step(ID, "build", "Builder", "start", NOW - 2.5 * H), gate("checker")] });
+  assert.match(other, /class="wait gate/, "an ask that is not the install's is still red");
+});
+
+// #C1300 (the owner's pick A): green stripes mean one thing, the owner's install; yellow stripes are the normal process (a board release by Release, a product ship, a pack not cut yet).
+test("a landed card waiting for the install is the green stripes (waits rel); a release or product wait is yellow (waits proc); a paused card is neither", () => {
+  const p = reading("idle", { phase: "ship", onMain: true });
+  const boardCard = { ...base, phase: "ship", repo: "Flight-Board" };
+  const landed = tile(board(boardCard, { probe: p, derived: { wait: "install", waitAsk: 77 } }), "Land");
   assert.match(landed.cls, /\bwaits\b/);
-  assert.match(landed.cls, /\brel\b/, "done but not live yet: the green stripes");
-  const rel = tile(board({ ...base, phase: "ship" }, { probe: p, derived: { wait: "release" } }), "Ship");
-  assert.match(rel.cls, /\brel\b/, "queued for a board release too");
+  assert.match(landed.cls, /\brel\b/, "only the install is green");
+  assert.doesNotMatch(landed.cls, /\bproc\b/);
+  const rel = tile(board(boardCard, { probe: p, derived: { wait: "release" } }), "Land");
+  assert.match(rel.cls, /\bproc\b/, "queued for a board release by Release: yellow");
+  assert.doesNotMatch(rel.cls, /\brel\b/, "a release wait is no longer green");
+  const product = tile(board({ ...base, phase: "ship", repo: "Platform" }, { probe: p, derived: { wait: "release" } }), "Ship");
+  assert.match(product.cls, /\bproc\b/, "a product ship: yellow");
+  const productInstall = tile(board({ ...base, phase: "ship", repo: "Platform" }, { probe: p, derived: { wait: "install" } }), "Ship");
+  assert.doesNotMatch(productInstall.cls, /\brel\b/, "a product card is never green");
   const paused = tile(board({ ...base, status: "paused", phase: "checker" }, { probe: { ...reading("idle"), cards: {} }, steps: [], derived: { phase: "checker", wait: "release" } }), "Checker");
   assert.match(paused.cls, /\bwaits\b/);
   assert.doesNotMatch(paused.cls, /\brel\b/, "paused is not a release or install wait");

@@ -9,9 +9,19 @@ const card = (extra = {}) => ({ id: "landed-card", num: 937, name: "A landed car
 const probe = (c = {}) => ({ v: 1, board: { at: Date.now() - 20e3 }, cards: { "landed-card": { headSha12: "a1b2c3d4e5f6", onMain: true, phase: "ship", shipping: false, ...c } }, agents: {} });
 const draw = (cardExtra = {}, probeExtra = {}, host = "store") => drawPage({ initiatives: [card(cardExtra)], waiting: [], messages: [], steps: [], derived: [], threads: [] }, { probe: probe(probeExtra), host }).html;
 
-test("a landed card waiting for the install: the Ship cell says 'Queued for your install', with no counter and no slow word", () => {
+// #C1300: with no pack cut yet the landed card waits on the normal process (yellow, "Queued for pack"); the install is the owner's only once the pack is cut.
+test("a landed card with no pack yet says 'Queued for pack' on the yellow stripes, not the install's green", () => {
   const html = draw();
+  assert.match(html, /Queued for pack/);
+  assert.equal(/Queued for your install/.test(html), false);
+  assert.match(html, /class="step waits proc"/);
+  assert.equal(/class="step waits rel"/.test(html), false);
+});
+
+test("a landed card waiting for the install: the Ship cell says 'Queued for your install', with no counter and no slow word", () => {
+  const html = draw({}, { packed: true });
   assert.match(html, /Queued for your install/);
+  assert.match(html, /class="step waits rel"/);
   assert.equal(/data-shipat/.test(html), false, "no running counter");
   assert.equal(/slow \(est\.\)|deploying \(est\.\)|tests \(est\.\)/.test(html), false, "no estimate words");
 });
