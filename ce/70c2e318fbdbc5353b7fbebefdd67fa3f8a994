@@ -1,0 +1,5 @@
+SECURE
+
+Group board-polish-three tip, by diff a0e01b87..ce70c2e3 (a0e01b87 SECURE): two test-only commits (product-stack-wiring, ship-cell-waits-for-install). No code, page, Worker, migration or hook change; the pack stays as it was (Worker deploy + migration 0039 + probe file collector/store-cards.mjs).
+
+signed-by: Security
