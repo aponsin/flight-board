@@ -3,3 +3,7 @@ SECURE
 #C1297 v4, by diff: range-diff shows 197d39d4 = 8cb73a4b (signed), rebased onto #C1296 fcccb56c (tests only). Group board-polish head: every commit 458541c5..197d39d4 noted SECURE.
 
 signed-by: Security
+
+pc109 pack SECURE: steps sha256 7c9c40d58f84f1ca1acb16f43c71c01e8ba19efec569be87670cff187d727714. origin/main == 197d39d4 (pin). The other 4 hashes match the message (deploy 76b34e8b, tree f991ccd9, hooks a609e12a, board-deploy 7a021248, unchanged since pc106). deploy, tree and hooks scripts differ from pc108 only in the pin and the pc number. Every commit 458541c5..197d39d4 noted SECURE. No change under worker, collector, migrations, hooks, scripts or gate: page/board.template.html only; the hooks line only re-pins the unchanged hook files. pc108's deploy marker exists, so this delta starts where the Worker is.
+
+signed-by: Security
