@@ -1,0 +1,5 @@
+SECURE
+
+#C1290 v2, by diff: range-diff shows ae0dd5e4 = 5fa0af44 (signed), rebased onto main 131c95e1 (#C1289). Docs-only DATA.d fold; no code, test, hook, page, Worker or installer change.
+
+signed-by: Security
