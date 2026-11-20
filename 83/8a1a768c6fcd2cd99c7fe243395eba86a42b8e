@@ -1,0 +1,1 @@
+SECURE: #C1329 derive.mjs slugOfBranch copy (same anchored regex as state.mjs); card_create refuses ids ending -v<digits> (card-id-vn), a tightening. Security 2026-11-20.
