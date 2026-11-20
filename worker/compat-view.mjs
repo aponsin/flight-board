@@ -16,6 +16,7 @@ import { applyShips } from "./compat-ships.mjs";
 import { applyThreads } from "./compat-threads.mjs";
 import { applyUsage } from "./compat-usage.mjs";
 import { applyApprovals } from "./compat-approvals.mjs";
+import { applyReadings } from "./compat-reading.mjs";
 import { withSessionWeek } from "../collector/week-usage.mjs";
 
 const num = (v) => (Number.isFinite(v) ? v : undefined);
@@ -286,5 +287,6 @@ export function compatView(view) {
   applyShips(collections, view);
   applyUsage(collections, view);
   applyApprovals(collections, view);
+  applyReadings(collections, view); // #C1381: each card's reading, and the groups and crew folded from them (the page reads them from step 3)
   return { tag: view.tag, at: view.now, collections, probe: probeDoc(view) };
 }

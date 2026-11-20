@@ -1,0 +1,8018 @@
+{
+ "now": 1795208133170,
+ "tag": "t",
+ "cards": [
+  {
+   "id": "install-wait-on-install-tile",
+   "num": 1308,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-six",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795161600000,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "referral-program-idea",
+   "num": 1315,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": "referral-program",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795190400000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "referral-billing-link",
+   "num": 1320,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": "referral-program",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795190400000,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "referral-page-and-intake",
+   "num": 1322,
+   "repo": "widgets",
+   "owner_role": "Mainsite",
+   "batch": "referral-program",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795190400000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "referral-send-all",
+   "num": 1323,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": "referral-program",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795190400000,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "dispatch-sees-v2-branches",
+   "num": 1325,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-seven",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795167391505,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "stale-product-stack-pointer",
+   "num": 1327,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-seven",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795167391505,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "close-two-test-gaps",
+   "num": 1328,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-seven",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795167391505,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "heads-copy-and-vn-ids",
+   "num": 1329,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-seven",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795167391505,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "ship-diff-sees-main-merges",
+   "num": 1330,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": "referral-program",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795190400000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "crew-columns-numbered",
+   "num": 1331,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-seven",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795167391505,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "withdraw-posted-decision",
+   "num": 1332,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-seven",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795167391505,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "look-ask-option-no-picture",
+   "num": 1334,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-eight",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795170000000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "agent-notes-off-card-threads",
+   "num": 1336,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-eight",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795170000000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "dispatch-lets-folds-alone",
+   "num": 1337,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-eight",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795170000000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "onmain-test-not-always-true",
+   "num": 1338,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-eight",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795170000000,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "group-install-tile-matches-card",
+   "num": 1343,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-nine",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795197600000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "card-body-uses-full-width",
+   "num": 1344,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-nine",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795197600000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "card-born-paused",
+   "num": 1348,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-nine",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795197600000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "board-render-butter-smooth",
+   "num": 1350,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-nine",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795197600000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "demo-shots-never-missing",
+   "num": 1351,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": "referral-follow-ups",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795194000000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "dispatch-sees-merged-member",
+   "num": 1357,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-nine",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795197600000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "group-member-waits-not-stuck",
+   "num": 1358,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-ten",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795197600000,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "pack-lit-test-clock-fixed",
+   "num": 1359,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "b-1795192413943",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795196030000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "tests-clock-at-load-sweep",
+   "num": 1362,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-twelve",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795206000000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "fold-data-fragments-1120b",
+   "num": 1366,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "fold-1120b",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": "",
+   "check_at": 1795206000000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "wake-send-test-temp-cleanup",
+   "num": 1367,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-thirteen",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795203600000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "test-run-retry-on-signal",
+   "num": 1371,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-polish-fourteen",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795201500000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "live-behind-merge",
+   "num": 1376,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-1",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795201837162,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "reading-not-refreshed-marked",
+   "num": 1377,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-1",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1795201837162,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "product-card-closes-on-live",
+   "num": 1378,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-1b",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "repair-false-install-waits",
+   "num": 1379,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-1b",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "one-reading-module",
+   "num": 1380,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-2",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "worker-serves-reading",
+   "num": 1381,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-2",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "card-rows-draw-reading",
+   "num": 1382,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-2",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "group-rows-draw-fold",
+   "num": 1383,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-2",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "crew-draws-reading",
+   "num": 1384,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-2",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "gates-read-one-module",
+   "num": 1385,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-2",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "truth-check-job",
+   "num": 1386,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-3",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "failed-reads-say-unknown",
+   "num": 1387,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-3",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "reading-tidy-ups",
+   "num": 1388,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-truth-3",
+   "done_at": null,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "pickup-door-session",
+   "num": 843,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": "product-roll-2",
+   "done_at": 1794935498569,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "plan-steps-become-cards",
+   "num": 863,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g17-guards-not-memory",
+   "done_at": 1794892881590,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": "G17 group pack: #C863 is on main (4c1abd32); its deploy pair is cut with the rest of G17 as one pack (owner's one-pack-per-group rule)",
+   "blocked_reason": "",
+   "check_at": null,
+   "hold_end": "group-building-label-truth",
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "old-board-code-cleanup",
+   "num": 864,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g9-old-board-cleanup",
+   "done_at": 1794853371131,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "card-says-what-it-removes",
+   "num": 866,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g9-old-board-cleanup",
+   "done_at": 1794853371105,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "board-picks-up-cleared-role",
+   "num": 870,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g17-guards-not-memory",
+   "done_at": 1794892881138,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": "G17 group pack: landed on main early (land job); its deploy pair is cut with the rest of G17 as one pack (owner's one-pack-per-group rule)",
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": "group-building-label-truth",
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "plan-part-on-main",
+   "num": 890,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g17-guards-not-memory",
+   "done_at": 1794892881488,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "import-message-pictures",
+   "num": 913,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g9-old-board-cleanup",
+   "done_at": 1794853977684,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": "Release: land on 441be59 (or Boardsmith re-cut)",
+   "blocked_reason": null,
+   "check_at": 1794495600000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "look-rule-config-visual-lanes",
+   "num": 956,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g10-small-rules",
+   "done_at": 1794853979327,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": "Boardsmith",
+   "blocked_reason": "Held on Boardsmith behind #C1076 and G9 (groups whole).",
+   "check_at": 1794880800000,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "outage-pauses-step-clocks",
+   "num": 990,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g6-settings",
+   "done_at": 1794865494892,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": "",
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "evidence-run-times-out",
+   "num": 996,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g3-probe-and-watchdog",
+   "done_at": 1794857384865,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": "",
+   "blocked_reason": "",
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "ops-knobs-in-config",
+   "num": 997,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g6-settings",
+   "done_at": 1794865494869,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": "One pack for all of g6: Boardsmith builds it when #C1106 lands.",
+   "check_at": null,
+   "hold_end": "ops-knobs-part-b",
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "retire-old-collector-files",
+   "num": 999,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g9-old-board-cleanup",
+   "done_at": 1794853371704,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "depends-on-known-ids",
+   "num": 1003,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g10-small-rules",
+   "done_at": 1794856610119,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1794668400000,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "board-id-not-artifact-link",
+   "num": 1054,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g9-old-board-cleanup",
+   "done_at": 1794853371221,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "land-job-pins-release-tool",
+   "num": 1058,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g15-landing-guards",
+   "done_at": 1794932773720,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "board-tests-clean-tmp",
+   "num": 1059,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g10-small-rules",
+   "done_at": 1794856611765,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": 1794668400000,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "rework-stall-flap",
+   "num": 1063,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g13-review-follow-ups",
+   "done_at": 1794866597950,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "push-branch-before-first-edit",
+   "num": 1065,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g15-landing-guards",
+   "done_at": 1794932774166,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "review-waits-for-ready",
+   "num": 1066,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g17-guards-not-memory",
+   "done_at": 1794892881733,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "group-review-hybrid",
+   "num": 1068,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g14-dispatch-rules",
+   "done_at": 1794932853026,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "renewal-reminder-30-days",
+   "num": 1071,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": "g16-product-follow-ups",
+   "done_at": 1794938058748,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "dispatch-skips-open-decision",
+   "num": 1073,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g14-dispatch-rules",
+   "done_at": 1794932853030,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  },
+  {
+   "id": "line-note-covers-after-landing",
+   "num": 1074,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g12-pc68-landed",
+   "done_at": 1794854225812,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": "pc68 carries it; Boardsmith builds pc68 after #C1091 and #C1096 land",
+   "check_at": null,
+   "hold_end": "scan-skips-hex-commit-ids",
+   "rework_reason": null
+  },
+  {
+   "id": "retire-old-board-artifact-refs",
+   "num": 1075,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "g12-pc68-landed",
+   "done_at": 1794854226153,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": "pc68 carries it; Boardsmith builds pc68 after #C1091 and #C1096 land",
+   "check_at": null,
+   "hold_end": "scan-skips-hex-commit-ids",
+   "rework_reason": "review findings"
+  },
+  {
+   "id": "landed-wakes-pack-build",
+   "num": 1076,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": null,
+   "done_at": 1794853371164,
+   "dropped": 0,
+   "paused": 0,
+   "waiting_on": null,
+   "blocked_reason": null,
+   "check_at": null,
+   "hold_end": null,
+   "rework_reason": null
+  }
+ ],
+ "evidence": {
+  "cards.install-wait-on-install-tile": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1308,
+    "phase": "live",
+    "headSha12": "1b52b7f942c9",
+    "headSha": "1b52b7f942c92f60a2c31a4c2632bbb3be5bc1cb",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795150858000,
+    "packed": true,
+    "installed": true,
+    "pack": 112,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757673
+  },
+  "cards.referral-program-idea": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1315,
+    "phase": "live",
+    "headSha12": "d5af0dd8a48a",
+    "headSha": "d5af0dd8a48a580367b2dc07e3e3fdd8b5d2530a",
+    "headBranch": "main",
+    "repoFull": "widgets/widgets",
+    "signed": [
+     "checker",
+     "language",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "passed",
+    "ciMin": 2,
+    "liveVersion": "1.226.16",
+    "shipping": false,
+    "seen": [
+     "build",
+     "test",
+     "language",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795157186000,
+    "at": 1795207738490
+   },
+   "readAt": 1795207758032
+  },
+  "cards.referral-billing-link": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1320,
+    "phase": "live",
+    "headSha12": "ecdc51f485c5",
+    "headSha": "ecdc51f485c5d7dd476e5da7cd4d6e4f5c207754",
+    "headBranch": "main",
+    "repoFull": "widgets/widgets",
+    "signed": [
+     "checker",
+     "language",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "passed",
+    "ciMin": 2,
+    "liveVersion": "1.226.16",
+    "shipping": false,
+    "seen": [
+     "build",
+     "test",
+     "language",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795159551000,
+    "at": 1795207738490
+   },
+   "readAt": 1795207758000
+  },
+  "cards.referral-page-and-intake": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1322,
+    "phase": "live",
+    "headSha12": "e7cf75e34d00",
+    "headSha": "e7cf75e34d00e8bb32f690e5f59a9670851d1926",
+    "headBranch": "main",
+    "repoFull": "widgets/widgets",
+    "signed": [
+     "checker",
+     "design",
+     "language",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": "1.226.16",
+    "shipping": false,
+    "seen": [
+     "build",
+     "language",
+     "design",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795158325000,
+    "at": 1795207738490
+   },
+   "readAt": 1795207758036
+  },
+  "cards.referral-send-all": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1323,
+    "phase": "live",
+    "headSha12": "38676ca9073f",
+    "headSha": "38676ca9073f9f23177494e70d05e2ffbd803e3b",
+    "headBranch": "main",
+    "repoFull": "widgets/widgets",
+    "signed": [
+     "checker"
+    ],
+    "onMain": true,
+    "ci": "passed",
+    "ciMin": 2,
+    "liveVersion": "1.226.16",
+    "shipping": false,
+    "seen": [
+     "build",
+     "test",
+     "checker",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162422000,
+    "at": 1795207738490
+   },
+   "readAt": 1795207758064
+  },
+  "cards.dispatch-sees-v2-branches": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1325,
+    "phase": "live",
+    "headSha12": "c976f9690eb7",
+    "headSha": "c976f9690eb7ee2d5a6e87efa477e8f6e97e8862",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162452000,
+    "packed": true,
+    "installed": true,
+    "pack": 114,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757357
+  },
+  "cards.stale-product-stack-pointer": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1327,
+    "phase": "live",
+    "headSha12": "c04c0bc62beb",
+    "headSha": "c04c0bc62bebe9c8e53a42125040bb138e28c453",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162453000,
+    "packed": true,
+    "installed": true,
+    "pack": 114,
+    "at": 1795207738490
+   },
+   "readAt": 1795207758380
+  },
+  "cards.close-two-test-gaps": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1328,
+    "phase": "live",
+    "headSha12": "704089c1aae5",
+    "headSha": "704089c1aae59ac2ed57918c100df4608b8de777",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162453000,
+    "packed": true,
+    "installed": true,
+    "pack": 114,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757065
+  },
+  "cards.heads-copy-and-vn-ids": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1329,
+    "phase": "live",
+    "headSha12": "d967279665e4",
+    "headSha": "d967279665e483d9938d5f0c95c4cc91963c48b3",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162453000,
+    "packed": true,
+    "installed": true,
+    "pack": 114,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757565
+  },
+  "cards.ship-diff-sees-main-merges": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1330,
+    "phase": "live",
+    "headSha12": "c6b160f05b8a",
+    "headSha": "c6b160f05b8a363b113e914077cb495f743bb49b",
+    "headBranch": "main",
+    "repoFull": "widgets/widgets",
+    "signed": [
+     "checker",
+     "design",
+     "language",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "passed",
+    "ciMin": 2,
+    "liveVersion": "1.226.16",
+    "shipping": false,
+    "seen": [
+     "build",
+     "test",
+     "language",
+     "design",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162968000,
+    "at": 1795207558692
+   },
+   "readAt": 1795207577094
+  },
+  "cards.crew-columns-numbered": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1331,
+    "phase": "live",
+    "headSha12": "de05e28af609",
+    "headSha": "de05e28af60946fb6cb46d79dd9fcca9c85cf368",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162453000,
+    "packed": true,
+    "installed": true,
+    "pack": 114,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757205
+  },
+  "cards.withdraw-posted-decision": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1332,
+    "phase": "live",
+    "headSha12": "2ce39b1a6c90",
+    "headSha": "2ce39b1a6c905558b6c50e2990b9d7579ed6035b",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162453000,
+    "packed": true,
+    "installed": true,
+    "pack": 114,
+    "at": 1795207738490
+   },
+   "readAt": 1795207758619
+  },
+  "cards.look-ask-option-no-picture": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1334,
+    "phase": "live",
+    "headSha12": "35ee8ff53d96",
+    "headSha": "35ee8ff53d966f76bdc2cd2c5c921dc69592bec8",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162878000,
+    "packed": true,
+    "installed": true,
+    "pack": 115,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757746
+  },
+  "cards.agent-notes-off-card-threads": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1336,
+    "phase": "live",
+    "headSha12": "6a92b6741f63",
+    "headSha": "6a92b6741f6327027d6959b24ccc3437285bdb49",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795163440000,
+    "packed": true,
+    "installed": true,
+    "pack": 115,
+    "at": 1795207738490
+   },
+   "readAt": 1795207756943
+  },
+  "cards.dispatch-lets-folds-alone": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1337,
+    "phase": "live",
+    "headSha12": "d56afa7ea706",
+    "headSha": "d56afa7ea7067528477cc34cbc3a357e14ff397b",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162890000,
+    "packed": true,
+    "installed": true,
+    "pack": 115,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757251
+  },
+  "cards.onmain-test-not-always-true": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1338,
+    "phase": "live",
+    "headSha12": "dfda43f52466",
+    "headSha": "dfda43f524662250d8c5fdf960eb1d301bfa0c43",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795162996000,
+    "noInstall": true,
+    "packed": true,
+    "installed": true,
+    "pack": 115,
+    "at": 1795207558692
+   },
+   "readAt": 1795207577065
+  },
+  "cards.group-install-tile-matches-card": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1343,
+    "phase": "live",
+    "headSha12": "3e4cbe067a89",
+    "headSha": "3e4cbe067a89e6926b2d7c9d84df4bf4257e2dce",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795187596000,
+    "packed": true,
+    "installed": true,
+    "pack": 116,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757407
+  },
+  "cards.card-body-uses-full-width": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1344,
+    "phase": "live",
+    "headSha12": "38f62d3f0a39",
+    "headSha": "38f62d3f0a39fde3bbdec604ae0afb8b7b502ebf",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795186603000,
+    "packed": true,
+    "installed": true,
+    "pack": 116,
+    "at": 1795207738490
+   },
+   "readAt": 1795207756970
+  },
+  "cards.card-born-paused": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1348,
+    "phase": "live",
+    "headSha12": "9334870536ce",
+    "headSha": "9334870536ce9625823e119df682e6c8c10ae57d",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795187091000,
+    "packed": true,
+    "installed": true,
+    "pack": 116,
+    "at": 1795207738490
+   },
+   "readAt": 1795207756942
+  },
+  "cards.board-render-butter-smooth": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1350,
+    "phase": "live",
+    "headSha12": "f10646eca2ce",
+    "headSha": "f10646eca2ce78be851b767cd774cfdf552ddebc",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795189086000,
+    "packed": true,
+    "installed": true,
+    "pack": 116,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757029
+  },
+  "cards.demo-shots-never-missing": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1351,
+    "phase": "live",
+    "headSha12": "ef23357db08c",
+    "headSha": "ef23357db08c56c5944e3090105b975016b6d01f",
+    "headBranch": "main",
+    "repoFull": "widgets/widgets",
+    "signed": [
+     "checker",
+     "design",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "passed",
+    "ciMin": 3,
+    "liveVersion": "1.226.19",
+    "shipping": false,
+    "seen": [
+     "build",
+     "test",
+     "design",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795188561000,
+    "at": 1795207558692
+   },
+   "readAt": 1795207577008
+  },
+  "cards.dispatch-sees-merged-member": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1357,
+    "phase": "live",
+    "headSha12": "bbec627a2c4a",
+    "headSha": "bbec627a2c4ad03a0e69a70b468e80ffcc10d843",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795189583000,
+    "noInstall": true,
+    "packed": true,
+    "installed": true,
+    "pack": 116,
+    "at": 1795207647995
+   },
+   "readAt": 1795207666531
+  },
+  "cards.group-member-waits-not-stuck": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1358,
+    "phase": "live",
+    "headSha12": "619c06f708d1",
+    "headSha": "619c06f708d17a1ff33fa6bc2e985473dbcc98d9",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795191344000,
+    "packed": true,
+    "installed": true,
+    "pack": 116,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757441
+  },
+  "cards.pack-lit-test-clock-fixed": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1359,
+    "phase": "live",
+    "headSha12": "7ad16710abe0",
+    "headSha": "7ad16710abe03b8705a5077ae584b938c1524104",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795191379000,
+    "noInstall": true,
+    "packed": true,
+    "installed": true,
+    "pack": 116,
+    "at": 1795207647995
+   },
+   "readAt": 1795207666329
+  },
+  "cards.tests-clock-at-load-sweep": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1362,
+    "phase": "live",
+    "headSha12": "767b07e7fed9",
+    "headSha": "767b07e7fed9a4a80ad1918e5217582981a04e0a",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795194682000,
+    "noInstall": true,
+    "packed": true,
+    "installed": true,
+    "pack": 117,
+    "at": 1795207738490
+   },
+   "readAt": 1795207758458
+  },
+  "cards.fold-data-fragments-1120b": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1366,
+    "phase": "live",
+    "headSha12": "bd394782afcb",
+    "headSha": "bd394782afcb619bc9208b3ad7927d8db104d869",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795194913000,
+    "noInstall": true,
+    "packed": true,
+    "installed": true,
+    "pack": 117,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757355
+  },
+  "cards.wake-send-test-temp-cleanup": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1367,
+    "phase": "live",
+    "headSha12": "57c66ec45c02",
+    "headSha": "57c66ec45c0258ebc5d545ea34f6405db8474a34",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795195388000,
+    "noInstall": true,
+    "packed": true,
+    "installed": true,
+    "pack": 117,
+    "at": 1795207738490
+   },
+   "readAt": 1795207758445
+  },
+  "cards.test-run-retry-on-signal": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1371,
+    "phase": "live",
+    "headSha12": "b708a881f178",
+    "headSha": "b708a881f1789cafcb95c88b89a34607f45c851b",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795198135000,
+    "packed": true,
+    "installed": true,
+    "pack": 118,
+    "at": 1795207738490
+   },
+   "readAt": 1795207758395
+  },
+  "cards.live-behind-merge": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1376,
+    "phase": "live",
+    "headSha12": "186bc3ef2d69",
+    "headSha": "186bc3ef2d69453acabef84a5a3ebb30fd20b365",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795199116000,
+    "packed": true,
+    "installed": true,
+    "pack": 119,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757704
+  },
+  "cards.reading-not-refreshed-marked": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1377,
+    "phase": "live",
+    "headSha12": "8e3c775d11d2",
+    "headSha": "8e3c775d11d20e49e9d3f7d439603497145bfee9",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1795201897000,
+    "packed": true,
+    "installed": true,
+    "pack": 119,
+    "at": 1795207738490
+   },
+   "readAt": 1795207757933
+  },
+  "cards.product-card-closes-on-live": {
+   "value": {
+    "lit": [
+     "build"
+    ],
+    "num": 1378,
+    "phase": "build",
+    "headSha12": "09bb9234b32f",
+    "headSha": "09bb9234b32f6ae85317fbbe48d51c5af95646f2",
+    "headBranch": "build/product-card-closes-on-live",
+    "repoFull": "acme/flight-board",
+    "signed": [],
+    "onMain": false,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build"
+    ],
+    "firm": false,
+    "wipHead": true,
+    "stackHold": true,
+    "at": 1795207647995
+   },
+   "readAt": 1795207666319
+  },
+  "cards.one-reading-module": {
+   "value": {
+    "lit": [
+     "build"
+    ],
+    "num": 1380,
+    "phase": "build",
+    "headSha12": "96182d364014",
+    "headSha": "96182d364014e1e8c06437b3883d02bc08989f57",
+    "headBranch": "build/one-reading-module",
+    "repoFull": "acme/flight-board",
+    "signed": [],
+    "onMain": false,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build"
+    ],
+    "firm": false,
+    "wipHead": true,
+    "stackHold": true,
+    "at": 1795207457263
+   },
+   "readAt": 1795207486533
+  },
+  "cards.pickup-door-session": {
+   "value": {
+    "lit": [
+     "ship"
+    ],
+    "num": 843,
+    "phase": "ship",
+    "headSha12": "8ff7378113c3",
+    "headSha": "8ff7378113c35b4bf255076815b703ea7502b6c8",
+    "headBranch": "main",
+    "repoFull": "widgets/widgets",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "passed",
+    "ciMin": 1,
+    "liveVersion": null,
+    "shipping": false,
+    "seen": [
+     "build",
+     "test",
+     "checker",
+     "security",
+     "ship"
+    ],
+    "readyAt": 1794934760000,
+    "at": 1794935487723
+   },
+   "readAt": 1794935498569
+  },
+  "cards.plan-steps-become-cards": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 863,
+    "phase": "live",
+    "headSha12": "4c1abd32f472",
+    "headSha": "4c1abd32f472d958e5fef7fd1f6be7792e4dc8dc",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794875274000,
+    "packed": true,
+    "installed": true,
+    "at": 1794892870456
+   },
+   "readAt": 1794892881590
+  },
+  "cards.old-board-code-cleanup": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 864,
+    "phase": "live",
+    "headSha12": "7a9045f07fe7",
+    "headSha": "7a9045f07fe7ec6ae728eee638c96869fa0cfc06",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794816586000,
+    "packed": true,
+    "installed": true,
+    "at": 1794853341006
+   },
+   "readAt": 1794853371131
+  },
+  "cards.card-says-what-it-removes": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 866,
+    "phase": "live",
+    "headSha12": "d71b8f0b1c80",
+    "headSha": "d71b8f0b1c8005bb4dd40045095c3dbef7c8a95b",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794811454000,
+    "packed": true,
+    "installed": true,
+    "at": 1794853341006
+   },
+   "readAt": 1794853371105
+  },
+  "cards.board-picks-up-cleared-role": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 870,
+    "phase": "live",
+    "headSha12": "f77262b6488e",
+    "headSha": "f77262b6488ee74fdb65568fd16b451ab8c9cc0e",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794879263000,
+    "packed": true,
+    "installed": true,
+    "at": 1794892870456
+   },
+   "readAt": 1794892881138
+  },
+  "cards.plan-part-on-main": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 890,
+    "phase": "live",
+    "headSha12": "12fa4eaf9d6e",
+    "headSha": "12fa4eaf9d6e0a5f3845a3a19a622f46dc90651a",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794880440000,
+    "packed": true,
+    "installed": true,
+    "at": 1794892870456
+   },
+   "readAt": 1794892881488
+  },
+  "cards.import-message-pictures": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 913,
+    "phase": "live",
+    "headSha12": "98643c2b68bc",
+    "headSha": "98643c2b68bc3a4df986bfd25891ae47d4384ad0",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794436839000,
+    "packed": true,
+    "installed": true,
+    "at": 1794853446173
+   },
+   "readAt": 1794853464668
+  },
+  "cards.look-rule-config-visual-lanes": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 956,
+    "phase": "live",
+    "headSha12": "e21931df1615",
+    "headSha": "e21931df16155b55b49bfae86a0a4dadf1cba14b",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794461170000,
+    "packed": true,
+    "installed": true,
+    "at": 1794853446173
+   },
+   "readAt": 1794853464740
+  },
+  "cards.outage-pauses-step-clocks": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 990,
+    "phase": "live",
+    "headSha12": "f33fa20293d4",
+    "headSha": "f33fa20293d4b21dc7d81225b140204383af9ed3",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794860867000,
+    "packed": true,
+    "installed": true,
+    "at": 1794865484483
+   },
+   "readAt": 1794865494892
+  },
+  "cards.evidence-run-times-out": {
+   "value": {
+    "lit": [
+     "ship"
+    ],
+    "num": 996,
+    "phase": "ship",
+    "headSha12": "1ba7c3267afb",
+    "headSha": "1ba7c3267afb4f40a37ac36118f81ec80848c48e",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship"
+    ],
+    "readyAt": 1794856915000,
+    "packed": true,
+    "installed": true,
+    "at": 1794857330822
+   },
+   "readAt": 1794857340020
+  },
+  "cards.ops-knobs-in-config": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 997,
+    "phase": "live",
+    "headSha12": "1de5ee783498",
+    "headSha": "1de5ee783498dd0a24517a8c44bafa7a8a491bef",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794859791000,
+    "packed": true,
+    "installed": true,
+    "at": 1794865484483
+   },
+   "readAt": 1794865494869
+  },
+  "cards.retire-old-collector-files": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 999,
+    "phase": "live",
+    "headSha12": "03171676c838",
+    "headSha": "03171676c838cb44ca411d9c3a03d8fe479c3bd8",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794815389000,
+    "packed": true,
+    "installed": true,
+    "at": 1794853341006
+   },
+   "readAt": 1794853371704
+  },
+  "cards.depends-on-known-ids": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1003,
+    "phase": "live",
+    "headSha12": "f20df91e7c5f",
+    "headSha": "f20df91e7c5f9d3f432680468ee1a7a4d325893d",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794598830000,
+    "packed": true,
+    "installed": true,
+    "at": 1794856580909
+   },
+   "readAt": 1794856602728
+  },
+  "cards.board-id-not-artifact-link": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1054,
+    "phase": "live",
+    "headSha12": "82c28b1c73d7",
+    "headSha": "82c28b1c73d78df439569f8164db9cb533f16f59",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794811454000,
+    "packed": true,
+    "installed": true,
+    "at": 1794853341006
+   },
+   "readAt": 1794853371221
+  },
+  "cards.land-job-pins-release-tool": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1058,
+    "phase": "live",
+    "headSha12": "5b040a45b82c",
+    "headSha": "5b040a45b82cc8d676287e069cba372e2f3e45d3",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794899422000,
+    "packed": true,
+    "installed": true,
+    "at": 1794932762687
+   },
+   "readAt": 1794932773720
+  },
+  "cards.board-tests-clean-tmp": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1059,
+    "phase": "live",
+    "headSha12": "b64be2670503",
+    "headSha": "b64be267050354f225806b580c3d9a0a2535f16f",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794598044000,
+    "packed": true,
+    "installed": true,
+    "at": 1794856580909
+   },
+   "readAt": 1794856602695
+  },
+  "cards.rework-stall-flap": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1063,
+    "phase": "live",
+    "headSha12": "4713756c59f1",
+    "headSha": "4713756c59f181fe49f4ccc5ea30079f9c3e2d0a",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794865318000,
+    "packed": true,
+    "installed": true,
+    "at": 1794866578403
+   },
+   "readAt": 1794866597950
+  },
+  "cards.push-branch-before-first-edit": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1065,
+    "phase": "live",
+    "headSha12": "3e6f6e24653c",
+    "headSha": "3e6f6e24653cbf45a720f3d9259a33e327d7b488",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794898819000,
+    "packed": true,
+    "installed": true,
+    "at": 1794932762687
+   },
+   "readAt": 1794932774166
+  },
+  "cards.review-waits-for-ready": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1066,
+    "phase": "live",
+    "headSha12": "cadc711a4156",
+    "headSha": "cadc711a41568a724034f0c3f871e30c20cc9412",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794887631000,
+    "packed": true,
+    "installed": true,
+    "at": 1794892870456
+   },
+   "readAt": 1794892881733
+  },
+  "cards.group-review-hybrid": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1068,
+    "phase": "live",
+    "headSha12": "00c4b85f79e9",
+    "headSha": "00c4b85f79e9671bccba4371124e8a3fba3724a4",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794910237000,
+    "packed": true,
+    "installed": true,
+    "at": 1794932843570
+   },
+   "readAt": 1794932853026
+  },
+  "cards.renewal-reminder-30-days": {
+   "value": {
+    "lit": [
+     "ship"
+    ],
+    "num": 1071,
+    "phase": "ship",
+    "headSha12": "840f13d08267",
+    "headSha": "840f13d08267d3491d71b0a4e2ff5c23bbbe8fcd",
+    "headBranch": "main",
+    "repoFull": "widgets/widgets",
+    "signed": [
+     "checker",
+     "language",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "passed",
+    "ciMin": 2,
+    "liveVersion": null,
+    "shipping": false,
+    "seen": [
+     "build",
+     "test",
+     "language",
+     "checker",
+     "security",
+     "ship"
+    ],
+    "readyAt": 1794936734000,
+    "at": 1794938048840
+   },
+   "readAt": 1794938058748
+  },
+  "cards.dispatch-skips-open-decision": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1073,
+    "phase": "live",
+    "headSha12": "1ea0e762a599",
+    "headSha": "1ea0e762a599b7fb08fb755ac6ab70549a0ec62e",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794908545000,
+    "packed": true,
+    "installed": true,
+    "at": 1794932843570
+   },
+   "readAt": 1794932853030
+  },
+  "cards.line-note-covers-after-landing": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1074,
+    "phase": "live",
+    "headSha12": "7c7d99cb0906",
+    "headSha": "7c7d99cb0906295197725098d14a7603920de035",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794824201000,
+    "packed": true,
+    "installed": true,
+    "at": 1794854215570
+   },
+   "readAt": 1794854225812
+  },
+  "cards.retire-old-board-artifact-refs": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1075,
+    "phase": "live",
+    "headSha12": "6ecec5297b0a",
+    "headSha": "6ecec5297b0a43ffbed0f911b92a67255bc1348c",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794820858000,
+    "packed": true,
+    "installed": true,
+    "at": 1794854215570
+   },
+   "readAt": 1794854226153
+  },
+  "cards.landed-wakes-pack-build": {
+   "value": {
+    "lit": [
+     "live"
+    ],
+    "num": 1076,
+    "phase": "live",
+    "headSha12": "da209babeffd",
+    "headSha": "da209babeffd6b26de0f00d9078d3e8015aaf0bc",
+    "headBranch": "main",
+    "repoFull": "acme/flight-board",
+    "signed": [
+     "checker",
+     "security"
+    ],
+    "onMain": true,
+    "ci": "none",
+    "ciMin": null,
+    "liveVersion": null,
+    "seen": [
+     "build",
+     "checker",
+     "security",
+     "ship",
+     "live"
+    ],
+    "readyAt": 1794810954000,
+    "packed": true,
+    "installed": true,
+    "at": 1794853341006
+   },
+   "readAt": 1794853371164
+  },
+  "agents": {
+   "value": {
+    "Admin": {
+     "state": "idle",
+     "card": null
+    },
+    "Boardsmith": {
+     "state": "working",
+     "card": "product-card-closes-on-live"
+    },
+    "Builder": {
+     "state": "idle",
+     "card": "demo-shots-never-missing"
+    },
+    "Checker": {
+     "state": "idle",
+     "card": "demo-shots-never-missing"
+    },
+    "Checker 2": {
+     "state": "idle",
+     "card": null
+    },
+    "Demos": {
+     "state": "idle",
+     "card": null
+    },
+    "Designer": {
+     "state": "idle",
+     "card": "crew-columns-numbered"
+    },
+    "Linguist": {
+     "state": "idle",
+     "card": null
+    },
+    "Mainsite": {
+     "state": "idle",
+     "card": "referral-billing-link"
+    },
+    "Manager": {
+     "state": "idle",
+     "card": "repair-false-install-waits"
+    },
+    "Ops": {
+     "state": "idle",
+     "card": "agent-notes-off-card-threads"
+    },
+    "Release": {
+     "state": "idle",
+     "card": "agent-notes-off-card-threads"
+    },
+    "Reviewer": {
+     "state": "idle",
+     "card": null
+    },
+    "Sales": {
+     "state": "idle",
+     "card": null
+    },
+    "Security": {
+     "state": "idle",
+     "card": "referral-billing-link"
+    },
+    "Steward": {
+     "state": "idle",
+     "card": "agent-notes-off-card-threads"
+    },
+    "Triage": {
+     "state": "idle",
+     "card": null
+    }
+   },
+   "readAt": 1795208051693
+  }
+ },
+ "asks": [
+  {
+   "id": "t2192",
+   "num": 2192,
+   "card_id": "pack-lit-test-clock-fixed",
+   "closed_at": null
+  }
+ ],
+ "reviewClaims": [],
+ "history": [
+  {
+   "id": 20549,
+   "card_id": "import-message-pictures",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794414431452,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 20895,
+   "card_id": "import-message-pictures",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794436899718,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 20896,
+   "card_id": "import-message-pictures",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794436899718,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 20898,
+   "card_id": "import-message-pictures",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794437034451,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 20899,
+   "card_id": "import-message-pictures",
+   "phase": "security",
+   "kind": "start",
+   "at": 1794437034451,
+   "who": "Security",
+   "wait": null
+  },
+  {
+   "id": 20900,
+   "card_id": "import-message-pictures",
+   "phase": "security",
+   "kind": "end",
+   "at": 1794437155081,
+   "who": "Security",
+   "wait": null
+  },
+  {
+   "id": 20901,
+   "card_id": "import-message-pictures",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794437155081,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 20907,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794452637558,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 20908,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794452637558,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 20909,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794452637558,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 20914,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794453457328,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 20915,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794453457328,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 20931,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794454940241,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 20932,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794454940241,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 20936,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794455048002,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 20937,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794455048002,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 20995,
+   "card_id": "evidence-run-times-out",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794464329243,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 20996,
+   "card_id": "evidence-run-times-out",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794464329243,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 20997,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794464329243,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21014,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794465931296,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21015,
+   "card_id": "evidence-run-times-out",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794465931296,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21018,
+   "card_id": "plan-steps-become-cards",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794466122736,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21032,
+   "card_id": "import-message-pictures",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794466270922,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21033,
+   "card_id": "import-message-pictures",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794466270922,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21035,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794466271064,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21036,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794466271064,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21064,
+   "card_id": "evidence-run-times-out",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794467594441,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21065,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794467594441,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21159,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794509252026,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21160,
+   "card_id": "evidence-run-times-out",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794509252026,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21229,
+   "card_id": "evidence-run-times-out",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794512363596,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21230,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794512363596,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21232,
+   "card_id": "import-message-pictures",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794512363669,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21233,
+   "card_id": "import-message-pictures",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794512363669,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21235,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794512363703,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21236,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794512363703,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21241,
+   "card_id": "import-message-pictures",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794512437527,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21242,
+   "card_id": "import-message-pictures",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794512437527,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21244,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794512437643,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21245,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794512437643,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21247,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794512437667,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21248,
+   "card_id": "evidence-run-times-out",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794512437667,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21288,
+   "card_id": "import-message-pictures",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794514193610,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21289,
+   "card_id": "import-message-pictures",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794514193610,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21291,
+   "card_id": "evidence-run-times-out",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794514193613,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21292,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794514193613,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21297,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794514193637,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21298,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794514193637,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21305,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794514270039,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21306,
+   "card_id": "evidence-run-times-out",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794514270039,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21311,
+   "card_id": "import-message-pictures",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794514270068,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21312,
+   "card_id": "import-message-pictures",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794514270068,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21314,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794514270184,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21315,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794514270184,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21614,
+   "card_id": "evidence-run-times-out",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794531730858,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21615,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794531730858,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21633,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794533469028,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21634,
+   "card_id": "evidence-run-times-out",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794533469028,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21642,
+   "card_id": "depends-on-known-ids",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794533636014,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21643,
+   "card_id": "depends-on-known-ids",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794533636014,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21644,
+   "card_id": "depends-on-known-ids",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794533636014,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21713,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794540972283,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21714,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794540972283,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21715,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794540972283,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21719,
+   "card_id": "ops-knobs-in-config",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794542342004,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21722,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794544007126,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21723,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794544007126,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21741,
+   "card_id": "old-board-code-cleanup",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794545376274,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21750,
+   "card_id": "renewal-reminder-30-days",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794548158281,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 21754,
+   "card_id": "old-board-code-cleanup",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794548421646,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21755,
+   "card_id": "old-board-code-cleanup",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794548421646,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21758,
+   "card_id": "retire-old-collector-files",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794548466178,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21768,
+   "card_id": "card-says-what-it-removes",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794549241984,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21769,
+   "card_id": "card-says-what-it-removes",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794549241984,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21770,
+   "card_id": "card-says-what-it-removes",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794549241984,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21771,
+   "card_id": "retire-old-collector-files",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794549498511,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21772,
+   "card_id": "retire-old-collector-files",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794549498511,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21773,
+   "card_id": "board-id-not-artifact-link",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794549574092,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21774,
+   "card_id": "board-id-not-artifact-link",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794550523234,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21775,
+   "card_id": "board-id-not-artifact-link",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794550523234,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21831,
+   "card_id": "depends-on-known-ids",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794599068234,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21832,
+   "card_id": "depends-on-known-ids",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794599068234,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21834,
+   "card_id": "landed-wakes-pack-build",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794599178833,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21835,
+   "card_id": "landed-wakes-pack-build",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794599178833,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21836,
+   "card_id": "landed-wakes-pack-build",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794599178833,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21838,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794599343887,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21839,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794599343887,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21841,
+   "card_id": "depends-on-known-ids",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794599343907,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21842,
+   "card_id": "depends-on-known-ids",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794599343907,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21849,
+   "card_id": "outage-pauses-step-clocks",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794602790298,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21853,
+   "card_id": "evidence-run-times-out",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794609298569,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21854,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794609298569,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21850,
+   "card_id": "import-message-pictures",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794609298575,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21851,
+   "card_id": "import-message-pictures",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794609298575,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21856,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794609298626,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21857,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794609298626,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21859,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794609298825,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21860,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794609298825,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21862,
+   "card_id": "depends-on-known-ids",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794609298905,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21863,
+   "card_id": "depends-on-known-ids",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794609298905,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21865,
+   "card_id": "depends-on-known-ids",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794609376172,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21866,
+   "card_id": "depends-on-known-ids",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794609376172,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21871,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794609376190,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21872,
+   "card_id": "board-tests-clean-tmp",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794609376190,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21868,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794609376213,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21869,
+   "card_id": "evidence-run-times-out",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794609376213,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21874,
+   "card_id": "import-message-pictures",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794609376285,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21875,
+   "card_id": "import-message-pictures",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794609376285,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21877,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794609376341,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21878,
+   "card_id": "look-rule-config-visual-lanes",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794609376341,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21881,
+   "card_id": "landed-wakes-pack-build",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794811203791,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21882,
+   "card_id": "landed-wakes-pack-build",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794811203791,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21891,
+   "card_id": "board-id-not-artifact-link",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794817140831,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21892,
+   "card_id": "board-id-not-artifact-link",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794817140831,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21893,
+   "card_id": "card-says-what-it-removes",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794817140840,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21894,
+   "card_id": "card-says-what-it-removes",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794817140840,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21895,
+   "card_id": "old-board-code-cleanup",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794817140851,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21896,
+   "card_id": "old-board-code-cleanup",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794817140851,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21897,
+   "card_id": "retire-old-collector-files",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794817140972,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21898,
+   "card_id": "retire-old-collector-files",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794817140972,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21916,
+   "card_id": "retire-old-board-artifact-refs",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794819856807,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21917,
+   "card_id": "retire-old-board-artifact-refs",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794819856807,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21918,
+   "card_id": "retire-old-board-artifact-refs",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794819856807,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21938,
+   "card_id": "retire-old-board-artifact-refs",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794821234262,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21939,
+   "card_id": "retire-old-board-artifact-refs",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794821234262,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 21955,
+   "card_id": "line-note-covers-after-landing",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794823274620,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21956,
+   "card_id": "line-note-covers-after-landing",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794823274620,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 21957,
+   "card_id": "line-note-covers-after-landing",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794823274620,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21970,
+   "card_id": "line-note-covers-after-landing",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794824570418,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 21971,
+   "card_id": "line-note-covers-after-landing",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794824570418,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22007,
+   "card_id": "card-says-what-it-removes",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794853371105,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22008,
+   "card_id": "card-says-what-it-removes",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794853371105,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22010,
+   "card_id": "old-board-code-cleanup",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794853371131,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22011,
+   "card_id": "old-board-code-cleanup",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794853371131,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22013,
+   "card_id": "landed-wakes-pack-build",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794853371164,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22014,
+   "card_id": "landed-wakes-pack-build",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794853371164,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22016,
+   "card_id": "board-id-not-artifact-link",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794853371221,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22017,
+   "card_id": "board-id-not-artifact-link",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794853371221,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22020,
+   "card_id": "retire-old-collector-files",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794853371704,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22021,
+   "card_id": "retire-old-collector-files",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794853371704,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22054,
+   "card_id": "line-note-covers-after-landing",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794854225812,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22055,
+   "card_id": "line-note-covers-after-landing",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794854225812,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22066,
+   "card_id": "retire-old-board-artifact-refs",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794854226153,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22067,
+   "card_id": "retire-old-board-artifact-refs",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794854226153,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22120,
+   "card_id": "rework-stall-flap",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794856429269,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22124,
+   "card_id": "ops-knobs-in-config",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794856845599,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22125,
+   "card_id": "ops-knobs-in-config",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794856845599,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22126,
+   "card_id": "evidence-run-times-out",
+   "phase": "live",
+   "kind": "end",
+   "at": 1794857086951,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22127,
+   "card_id": "evidence-run-times-out",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794857086951,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22129,
+   "card_id": "outage-pauses-step-clocks",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794858124497,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22130,
+   "card_id": "outage-pauses-step-clocks",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794858124497,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22134,
+   "card_id": "ops-knobs-in-config",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794861738732,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22135,
+   "card_id": "ops-knobs-in-config",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794861738732,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22137,
+   "card_id": "outage-pauses-step-clocks",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794862892269,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22138,
+   "card_id": "outage-pauses-step-clocks",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794862892269,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22146,
+   "card_id": "rework-stall-flap",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794864374768,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22147,
+   "card_id": "rework-stall-flap",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794864374768,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22158,
+   "card_id": "rework-stall-flap",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794865302010,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22159,
+   "card_id": "rework-stall-flap",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794865302010,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22168,
+   "card_id": "rework-stall-flap",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794865402148,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22169,
+   "card_id": "rework-stall-flap",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794865402148,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22172,
+   "card_id": "ops-knobs-in-config",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794865494869,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22173,
+   "card_id": "ops-knobs-in-config",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794865494869,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22178,
+   "card_id": "outage-pauses-step-clocks",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794865494892,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22179,
+   "card_id": "outage-pauses-step-clocks",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794865494892,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22188,
+   "card_id": "rework-stall-flap",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794866273148,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22189,
+   "card_id": "rework-stall-flap",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794866273148,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22205,
+   "card_id": "rework-stall-flap",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794866597950,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22206,
+   "card_id": "rework-stall-flap",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794866597950,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22229,
+   "card_id": "plan-steps-become-cards",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794874129150,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22230,
+   "card_id": "plan-steps-become-cards",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794874129150,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22234,
+   "card_id": "plan-part-on-main",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794874507972,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22235,
+   "card_id": "plan-part-on-main",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794874507972,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22236,
+   "card_id": "plan-part-on-main",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794874507972,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22237,
+   "card_id": "review-waits-for-ready",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794874839898,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22238,
+   "card_id": "review-waits-for-ready",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794874839898,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22239,
+   "card_id": "review-waits-for-ready",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794874839898,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22240,
+   "card_id": "plan-steps-become-cards",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794875536614,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22241,
+   "card_id": "plan-steps-become-cards",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794875536614,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22243,
+   "card_id": "plan-part-on-main",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794875700960,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22244,
+   "card_id": "plan-part-on-main",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794875700960,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22257,
+   "card_id": "review-waits-for-ready",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794877469113,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22258,
+   "card_id": "review-waits-for-ready",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794877469113,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22261,
+   "card_id": "board-picks-up-cleared-role",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794877990274,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22262,
+   "card_id": "board-picks-up-cleared-role",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794878417277,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22263,
+   "card_id": "board-picks-up-cleared-role",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794878417277,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22265,
+   "card_id": "board-picks-up-cleared-role",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794879458596,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22266,
+   "card_id": "board-picks-up-cleared-role",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794879458596,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22271,
+   "card_id": "plan-part-on-main",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794880494905,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22272,
+   "card_id": "plan-part-on-main",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794880494905,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22273,
+   "card_id": "plan-part-on-main",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794880920527,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22274,
+   "card_id": "plan-part-on-main",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794880920527,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22345,
+   "card_id": "review-waits-for-ready",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794887880381,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22346,
+   "card_id": "review-waits-for-ready",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794887880381,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22348,
+   "card_id": "review-waits-for-ready",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794888047789,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22349,
+   "card_id": "review-waits-for-ready",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794888047789,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22403,
+   "card_id": "board-picks-up-cleared-role",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794892881138,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22404,
+   "card_id": "board-picks-up-cleared-role",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794892881138,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22421,
+   "card_id": "plan-part-on-main",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794892881488,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22422,
+   "card_id": "plan-part-on-main",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794892881488,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22433,
+   "card_id": "plan-steps-become-cards",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794892881590,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22434,
+   "card_id": "plan-steps-become-cards",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794892881590,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22445,
+   "card_id": "review-waits-for-ready",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794892881733,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22446,
+   "card_id": "review-waits-for-ready",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794892881733,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22478,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794894381608,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22518,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794897388433,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22519,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794897388433,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22520,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794897388433,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22521,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794897618783,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22522,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794897618783,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22523,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794898029113,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22524,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794898029113,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22525,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794898104390,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22526,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794898104390,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22527,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794898104486,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22528,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794898104486,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22529,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794898408140,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22530,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794898408140,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22531,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794898715965,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22532,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794898715965,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22536,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794899382980,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22537,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794899382980,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22538,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794899458798,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22539,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794899458798,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22542,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794899786173,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22543,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794899786173,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22616,
+   "card_id": "group-review-hybrid",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794904372612,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22631,
+   "card_id": "group-review-hybrid",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794905566807,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22632,
+   "card_id": "group-review-hybrid",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794905566807,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22633,
+   "card_id": "dispatch-skips-open-decision",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794905596237,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22634,
+   "card_id": "dispatch-skips-open-decision",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794906057801,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 22635,
+   "card_id": "dispatch-skips-open-decision",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794906057801,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22646,
+   "card_id": "dispatch-skips-open-decision",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794910192673,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22647,
+   "card_id": "dispatch-skips-open-decision",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794910192673,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22648,
+   "card_id": "group-review-hybrid",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794910683015,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22649,
+   "card_id": "group-review-hybrid",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794910683015,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22739,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794932773720,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22740,
+   "card_id": "land-job-pins-release-tool",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794932773720,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22742,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794932774166,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22743,
+   "card_id": "push-branch-before-first-edit",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794932774166,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22748,
+   "card_id": "group-review-hybrid",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794932853026,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22749,
+   "card_id": "group-review-hybrid",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794932853026,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22756,
+   "card_id": "dispatch-skips-open-decision",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1794932853030,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22757,
+   "card_id": "dispatch-skips-open-decision",
+   "phase": "live",
+   "kind": "start",
+   "at": 1794932853030,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22846,
+   "card_id": "pickup-door-session",
+   "phase": "build",
+   "kind": "start",
+   "at": 1794934678599,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 22847,
+   "card_id": "pickup-door-session",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794934729163,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 22848,
+   "card_id": "pickup-door-session",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794934729163,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22850,
+   "card_id": "pickup-door-session",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794934898671,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22851,
+   "card_id": "pickup-door-session",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794934898671,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 22859,
+   "card_id": "renewal-reminder-30-days",
+   "phase": "build",
+   "kind": "end",
+   "at": 1794935380278,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 22860,
+   "card_id": "renewal-reminder-30-days",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794935380278,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22872,
+   "card_id": "renewal-reminder-30-days",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794936623724,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22873,
+   "card_id": "renewal-reminder-30-days",
+   "phase": "language",
+   "kind": "start",
+   "at": 1794936623724,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 22876,
+   "card_id": "renewal-reminder-30-days",
+   "phase": "language",
+   "kind": "end",
+   "at": 1794936822297,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 22877,
+   "card_id": "renewal-reminder-30-days",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1794936822297,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22883,
+   "card_id": "renewal-reminder-30-days",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1794937292149,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 22884,
+   "card_id": "renewal-reminder-30-days",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1794937292149,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24247,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795149490896,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24248,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795149979842,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24249,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795149979842,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24257,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795151503706,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24258,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795151503706,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24284,
+   "card_id": "referral-program-idea",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795154344683,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 24293,
+   "card_id": "referral-program-idea",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795156479838,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 24294,
+   "card_id": "referral-program-idea",
+   "phase": "language",
+   "kind": "start",
+   "at": 1795156479838,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24299,
+   "card_id": "referral-program-idea",
+   "phase": "language",
+   "kind": "end",
+   "at": 1795156598700,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24300,
+   "card_id": "referral-program-idea",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795156598700,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24303,
+   "card_id": "referral-page-and-intake",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795156686388,
+   "who": "Mainsite",
+   "wait": null
+  },
+  {
+   "id": 24310,
+   "card_id": "referral-program-idea",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795156686576,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24311,
+   "card_id": "referral-program-idea",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795156686576,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24312,
+   "card_id": "referral-billing-link",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795156788983,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 24314,
+   "card_id": "referral-page-and-intake",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795157220461,
+   "who": "Mainsite",
+   "wait": null
+  },
+  {
+   "id": 24315,
+   "card_id": "referral-page-and-intake",
+   "phase": "language",
+   "kind": "start",
+   "at": 1795157220461,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24317,
+   "card_id": "referral-program-idea",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795157332062,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24318,
+   "card_id": "referral-program-idea",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795157332062,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24320,
+   "card_id": "referral-program-idea",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795157488073,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24321,
+   "card_id": "referral-program-idea",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795157488073,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24330,
+   "card_id": "referral-billing-link",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795158176991,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 24331,
+   "card_id": "referral-billing-link",
+   "phase": "language",
+   "kind": "start",
+   "at": 1795158176991,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24340,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795158177164,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24341,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795158177164,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24349,
+   "card_id": "referral-billing-link",
+   "phase": "language",
+   "kind": "end",
+   "at": 1795158276319,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24350,
+   "card_id": "referral-billing-link",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795158276319,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24354,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795158445610,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24355,
+   "card_id": "referral-page-and-intake",
+   "phase": "language",
+   "kind": "end",
+   "at": 1795158537703,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24356,
+   "card_id": "referral-page-and-intake",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795158537703,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24361,
+   "card_id": "referral-billing-link",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795158933583,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24362,
+   "card_id": "referral-billing-link",
+   "phase": "language",
+   "kind": "start",
+   "at": 1795158933583,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24364,
+   "card_id": "referral-page-and-intake",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795159079094,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24365,
+   "card_id": "referral-page-and-intake",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795159079094,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24366,
+   "card_id": "referral-billing-link",
+   "phase": "language",
+   "kind": "end",
+   "at": 1795159079109,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24367,
+   "card_id": "referral-billing-link",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795159079109,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24368,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795159292769,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24369,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795159292769,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24370,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795159317685,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24380,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795159518591,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24381,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795159518591,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24407,
+   "card_id": "close-two-test-gaps",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795159824449,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24405,
+   "card_id": "referral-billing-link",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795159824487,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24406,
+   "card_id": "referral-billing-link",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795159824487,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24408,
+   "card_id": "referral-send-all",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795159930968,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 24410,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795160033228,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24411,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795160059484,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 24414,
+   "card_id": "withdraw-posted-decision",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795160365459,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24416,
+   "card_id": "crew-columns-numbered",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795160493767,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24420,
+   "card_id": "close-two-test-gaps",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795161389509,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24421,
+   "card_id": "close-two-test-gaps",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795161389509,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24422,
+   "card_id": "crew-columns-numbered",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795161389545,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24423,
+   "card_id": "crew-columns-numbered",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795161389545,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24424,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795161389584,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24425,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795161389584,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24426,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795161389696,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24427,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795161389696,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24428,
+   "card_id": "withdraw-posted-decision",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795161389772,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24429,
+   "card_id": "withdraw-posted-decision",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795161389772,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24436,
+   "card_id": "referral-send-all",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795161698562,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 24437,
+   "card_id": "referral-send-all",
+   "phase": "design",
+   "kind": "start",
+   "at": 1795161698562,
+   "who": "Designer",
+   "wait": null
+  },
+  {
+   "id": 24438,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795161730603,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24442,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795162163974,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 24443,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "language",
+   "kind": "start",
+   "at": 1795162163974,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24444,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795162347248,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24446,
+   "card_id": "close-two-test-gaps",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795162395695,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24447,
+   "card_id": "close-two-test-gaps",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795162395695,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24448,
+   "card_id": "crew-columns-numbered",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795162395965,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24449,
+   "card_id": "crew-columns-numbered",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795162395965,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24455,
+   "card_id": "referral-send-all",
+   "phase": "design",
+   "kind": "end",
+   "at": 1795162618584,
+   "who": "Designer",
+   "wait": null
+  },
+  {
+   "id": 24456,
+   "card_id": "referral-send-all",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795162618584,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 24459,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795162709721,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24463,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795162709928,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24464,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795162709928,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24466,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795162710232,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24467,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795162710232,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24469,
+   "card_id": "withdraw-posted-decision",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795162710286,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24470,
+   "card_id": "withdraw-posted-decision",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795162710286,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24476,
+   "card_id": "referral-send-all",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795162849503,
+   "who": "Builder",
+   "wait": null
+  },
+  {
+   "id": 24477,
+   "card_id": "referral-send-all",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795162849503,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24478,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "language",
+   "kind": "end",
+   "at": 1795162849530,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24479,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795162849530,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24482,
+   "card_id": "referral-send-all",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795162951189,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24483,
+   "card_id": "referral-send-all",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795162951189,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24486,
+   "card_id": "onmain-test-not-always-true",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795163088811,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24487,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795163088949,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24488,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795163088949,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24489,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795163180412,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24490,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795163180412,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24491,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795163180475,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24492,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795163180475,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24493,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795163180481,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24494,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795163180481,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24497,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795163180489,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24498,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795163180489,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24495,
+   "card_id": "onmain-test-not-always-true",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795163180491,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24496,
+   "card_id": "onmain-test-not-always-true",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795163180491,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24505,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795163722683,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24506,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795163722683,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24499,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795163722695,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24500,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795163722695,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24503,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795163722734,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24504,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795163722734,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24501,
+   "card_id": "onmain-test-not-always-true",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795163722740,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24502,
+   "card_id": "onmain-test-not-always-true",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795163722740,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24510,
+   "card_id": "onmain-test-not-always-true",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795163808064,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24511,
+   "card_id": "onmain-test-not-always-true",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795163808064,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24512,
+   "card_id": "crew-columns-numbered",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795185379407,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24513,
+   "card_id": "crew-columns-numbered",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795185379407,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24515,
+   "card_id": "close-two-test-gaps",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795185379413,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24516,
+   "card_id": "close-two-test-gaps",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795185379413,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24518,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795185379476,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24519,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795185379476,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24527,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795185379478,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24528,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795185379478,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24521,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795185379566,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24522,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795185379566,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24524,
+   "card_id": "withdraw-posted-decision",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795185379593,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24525,
+   "card_id": "withdraw-posted-decision",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795185379593,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24531,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795185790472,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24533,
+   "card_id": "card-body-uses-full-width",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795186187743,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24536,
+   "card_id": "card-born-paused",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795186784248,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24539,
+   "card_id": "referral-send-all",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795186784644,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24540,
+   "card_id": "referral-send-all",
+   "phase": "language",
+   "kind": "start",
+   "at": 1795186784644,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24541,
+   "card_id": "card-body-uses-full-width",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795186784849,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24542,
+   "card_id": "card-body-uses-full-width",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795186784849,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24552,
+   "card_id": "referral-send-all",
+   "phase": "language",
+   "kind": "end",
+   "at": 1795187082481,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24553,
+   "card_id": "referral-send-all",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795187082481,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24556,
+   "card_id": "card-born-paused",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795187185461,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24557,
+   "card_id": "card-born-paused",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795187185461,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24560,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795187283997,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24561,
+   "card_id": "ship-diff-sees-main-merges",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795187283997,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24569,
+   "card_id": "board-render-butter-smooth",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795187595641,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24593,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795188244136,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24594,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795188244136,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24590,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795188244145,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24591,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795188244145,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24596,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795188244160,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24597,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795188244160,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24602,
+   "card_id": "demo-shots-never-missing",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795188632197,
+   "who": "Security",
+   "wait": null
+  },
+  {
+   "id": 24603,
+   "card_id": "demo-shots-never-missing",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795188632197,
+   "who": "Security",
+   "wait": null
+  },
+  {
+   "id": 24604,
+   "card_id": "demo-shots-never-missing",
+   "phase": "language",
+   "kind": "start",
+   "at": 1795188632197,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24614,
+   "card_id": "dispatch-sees-merged-member",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795189430248,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24619,
+   "card_id": "demo-shots-never-missing",
+   "phase": "language",
+   "kind": "end",
+   "at": 1795189636852,
+   "who": "Linguist",
+   "wait": null
+  },
+  {
+   "id": 24620,
+   "card_id": "demo-shots-never-missing",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795189636852,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24631,
+   "card_id": "board-render-butter-smooth",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795189637118,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24632,
+   "card_id": "board-render-butter-smooth",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795189637118,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24633,
+   "card_id": "dispatch-sees-merged-member",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795189637238,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24634,
+   "card_id": "dispatch-sees-merged-member",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795189637238,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24635,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795189637254,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24636,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795189637254,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24637,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795189722573,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24638,
+   "card_id": "demo-shots-never-missing",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795189819506,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24639,
+   "card_id": "demo-shots-never-missing",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795189819506,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24641,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795190141396,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24642,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795190141396,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24644,
+   "card_id": "pack-lit-test-clock-fixed",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795190988762,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24646,
+   "card_id": "pack-lit-test-clock-fixed",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795191491419,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24647,
+   "card_id": "pack-lit-test-clock-fixed",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795191491419,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24650,
+   "card_id": "board-render-butter-smooth",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795191731164,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24651,
+   "card_id": "board-render-butter-smooth",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795191731164,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24656,
+   "card_id": "card-born-paused",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795191731263,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24657,
+   "card_id": "card-born-paused",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795191731263,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24654,
+   "card_id": "card-body-uses-full-width",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795191731268,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24655,
+   "card_id": "card-body-uses-full-width",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795191731268,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24652,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795191731281,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24653,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795191731281,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24658,
+   "card_id": "dispatch-sees-merged-member",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795191731295,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24659,
+   "card_id": "dispatch-sees-merged-member",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795191731295,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24660,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795191731523,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24661,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795191731523,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24662,
+   "card_id": "pack-lit-test-clock-fixed",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795191731595,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24663,
+   "card_id": "pack-lit-test-clock-fixed",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795191731595,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24669,
+   "card_id": "tests-clock-at-load-sweep",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795192552578,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24675,
+   "card_id": "dispatch-sees-merged-member",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795192561265,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24676,
+   "card_id": "dispatch-sees-merged-member",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795192561265,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24678,
+   "card_id": "pack-lit-test-clock-fixed",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795192561561,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24679,
+   "card_id": "pack-lit-test-clock-fixed",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795192561561,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24703,
+   "card_id": "fold-data-fragments-1120b",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795193670887,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24716,
+   "card_id": "board-render-butter-smooth",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795194259098,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24717,
+   "card_id": "board-render-butter-smooth",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795194259098,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24719,
+   "card_id": "card-born-paused",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795194259115,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24720,
+   "card_id": "card-born-paused",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795194259115,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24722,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795194259158,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24723,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795194259158,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24725,
+   "card_id": "card-body-uses-full-width",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795194259255,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24726,
+   "card_id": "card-body-uses-full-width",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795194259255,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24728,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795194259410,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24729,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795194259410,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24731,
+   "card_id": "tests-clock-at-load-sweep",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795194777677,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24732,
+   "card_id": "tests-clock-at-load-sweep",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795194777677,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24733,
+   "card_id": "fold-data-fragments-1120b",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795194868997,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24734,
+   "card_id": "fold-data-fragments-1120b",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795194868997,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24735,
+   "card_id": "tests-clock-at-load-sweep",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795194869055,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24736,
+   "card_id": "tests-clock-at-load-sweep",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795194869055,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24738,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795195040549,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24739,
+   "card_id": "fold-data-fragments-1120b",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795195161859,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24740,
+   "card_id": "fold-data-fragments-1120b",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795195161859,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24742,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795195485145,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24743,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795195485145,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24744,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795195685911,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24745,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795195685911,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24752,
+   "card_id": "test-run-retry-on-signal",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795196662865,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24753,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795196937021,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24754,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795196937021,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24755,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795197123606,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24756,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795197123606,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24767,
+   "card_id": "test-run-retry-on-signal",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795198683433,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24768,
+   "card_id": "test-run-retry-on-signal",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795198683433,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24769,
+   "card_id": "live-behind-merge",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795198770623,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24770,
+   "card_id": "live-behind-merge",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795199102305,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24771,
+   "card_id": "live-behind-merge",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795199102305,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24774,
+   "card_id": "reading-not-refreshed-marked",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795199230676,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24779,
+   "card_id": "test-run-retry-on-signal",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795199412648,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24780,
+   "card_id": "test-run-retry-on-signal",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795199412648,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24783,
+   "card_id": "reading-not-refreshed-marked",
+   "phase": "build",
+   "kind": "end",
+   "at": 1795199500196,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24784,
+   "card_id": "reading-not-refreshed-marked",
+   "phase": "checker",
+   "kind": "start",
+   "at": 1795199500196,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24785,
+   "card_id": "card-body-uses-full-width",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201316900,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24786,
+   "card_id": "card-body-uses-full-width",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201316900,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24788,
+   "card_id": "board-render-butter-smooth",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201316900,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24789,
+   "card_id": "board-render-butter-smooth",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201316900,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24791,
+   "card_id": "card-born-paused",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201316916,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24792,
+   "card_id": "card-born-paused",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201316916,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24794,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201316987,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24795,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201316987,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24797,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201317236,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24798,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201317236,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24800,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201317369,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24801,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201317369,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24803,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201317486,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24804,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201317486,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24806,
+   "card_id": "close-two-test-gaps",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201317718,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24807,
+   "card_id": "close-two-test-gaps",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201317718,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24809,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201317738,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24810,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201317738,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24812,
+   "card_id": "crew-columns-numbered",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201317739,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24813,
+   "card_id": "crew-columns-numbered",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201317739,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24815,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201317847,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24816,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201317847,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24818,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201317847,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24819,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201317847,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24821,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201317951,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24822,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201317951,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24827,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201318160,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24828,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201318160,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24824,
+   "card_id": "withdraw-posted-decision",
+   "phase": "live",
+   "kind": "end",
+   "at": 1795201318169,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24825,
+   "card_id": "withdraw-posted-decision",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201318169,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24830,
+   "card_id": "card-body-uses-full-width",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201414335,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24831,
+   "card_id": "card-body-uses-full-width",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201414335,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24833,
+   "card_id": "board-render-butter-smooth",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201414349,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24834,
+   "card_id": "board-render-butter-smooth",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201414349,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24836,
+   "card_id": "card-born-paused",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201414497,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24837,
+   "card_id": "card-born-paused",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201414497,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24839,
+   "card_id": "close-two-test-gaps",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201414764,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24840,
+   "card_id": "close-two-test-gaps",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201414764,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24845,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201414825,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24846,
+   "card_id": "dispatch-lets-folds-alone",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201414825,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24842,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201414835,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24843,
+   "card_id": "dispatch-sees-v2-branches",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201414835,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24848,
+   "card_id": "crew-columns-numbered",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201414856,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24849,
+   "card_id": "crew-columns-numbered",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201414856,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24851,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201414910,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24852,
+   "card_id": "agent-notes-off-card-threads",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201414910,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24854,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201415043,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24855,
+   "card_id": "group-install-tile-matches-card",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201415043,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24857,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201415249,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24858,
+   "card_id": "group-member-waits-not-stuck",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201415249,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24860,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201415366,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24861,
+   "card_id": "heads-copy-and-vn-ids",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201415366,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24863,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201415569,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24864,
+   "card_id": "install-wait-on-install-tile",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201415569,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24866,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201415592,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24867,
+   "card_id": "look-ask-option-no-picture",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201415592,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24869,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201415709,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24870,
+   "card_id": "stale-product-stack-pointer",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201415709,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24872,
+   "card_id": "withdraw-posted-decision",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795201415743,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24873,
+   "card_id": "withdraw-posted-decision",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795201415743,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24875,
+   "card_id": "live-behind-merge",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795201965711,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24876,
+   "card_id": "live-behind-merge",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795201965711,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24878,
+   "card_id": "reading-not-refreshed-marked",
+   "phase": "checker",
+   "kind": "end",
+   "at": 1795202174201,
+   "who": "Checker",
+   "wait": null
+  },
+  {
+   "id": 24879,
+   "card_id": "reading-not-refreshed-marked",
+   "phase": "ship",
+   "kind": "start",
+   "at": 1795202174201,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24881,
+   "card_id": "live-behind-merge",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795207119747,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24882,
+   "card_id": "live-behind-merge",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795207119747,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24884,
+   "card_id": "reading-not-refreshed-marked",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795207119807,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24885,
+   "card_id": "reading-not-refreshed-marked",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795207119807,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24905,
+   "card_id": "referral-billing-link",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795207119944,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24906,
+   "card_id": "referral-billing-link",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795207119944,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24890,
+   "card_id": "referral-page-and-intake",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795207120003,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24891,
+   "card_id": "referral-page-and-intake",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795207120003,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24893,
+   "card_id": "referral-program-idea",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795207120064,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24894,
+   "card_id": "referral-program-idea",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795207120064,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24896,
+   "card_id": "referral-send-all",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795207120113,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24897,
+   "card_id": "referral-send-all",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795207120113,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24911,
+   "card_id": "fold-data-fragments-1120b",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795207120478,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24912,
+   "card_id": "fold-data-fragments-1120b",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795207120478,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24917,
+   "card_id": "test-run-retry-on-signal",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795207120721,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24918,
+   "card_id": "test-run-retry-on-signal",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795207120721,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24926,
+   "card_id": "tests-clock-at-load-sweep",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795207120912,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24927,
+   "card_id": "tests-clock-at-load-sweep",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795207120912,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24920,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "ship",
+   "kind": "end",
+   "at": 1795207120933,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24921,
+   "card_id": "wake-send-test-temp-cleanup",
+   "phase": "live",
+   "kind": "start",
+   "at": 1795207120933,
+   "who": "Release",
+   "wait": null
+  },
+  {
+   "id": 24929,
+   "card_id": "one-reading-module",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795207382171,
+   "who": "Boardsmith",
+   "wait": null
+  },
+  {
+   "id": 24930,
+   "card_id": "product-card-closes-on-live",
+   "phase": "build",
+   "kind": "start",
+   "at": 1795207666319,
+   "who": "Boardsmith",
+   "wait": null
+  }
+ ],
+ "live": {
+  "state": "live",
+  "version": "v1.226.22",
+  "age": 79344
+ },
+ "stackSwitch": [],
+ "groupNames": [],
+ "groupOrder": [],
+ "lists": [],
+ "threads": [],
+ "pings": [],
+ "files": [],
+ "ships": [],
+ "usage": [],
+ "refusals": [],
+ "historyCards": []
+}

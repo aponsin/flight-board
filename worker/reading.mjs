@@ -5,6 +5,52 @@
 // It imports only worker/ files (the Worker bundle holds nothing of the collector).
 import { isRework, holdOpen, groupWaits, repoKey, repoKind, reviewerOf, PHASE_LANES } from "./board-rules.mjs";
 
+// The phases a group row's strip draws, in order (the card row's tiles), and the tile a card has at each (#C1381). A tile is chosen from `state` and `wait` only
+// (the contract's "Tile looks"); "future" is a phase the card has not reached and "done" one it has passed.
+export const STRIP = ["build", "test", "language", "design", "checker", "security", "ship", "pack", "install", "live"];
+// The rule of #C1343, written once and over readings, never over drawn tiles: when a group's cards differ at a phase the group takes the first tile in this order
+// that any card has: stuck, working, unknown, a decision asked of the owner, a wait on someone, queued, not reached, a card that has done all it can (pack, install, deploy), done.
+export const TILE_ORDER = ["stuck", "working", "unknown", "ask", "wait", "queued", "future", "afterwork", "done"];
+export function tileOf(r) {
+  if (!r) return "future";
+  if (r.state === "done") return "done";
+  if (r.state === "stuck" || r.state === "working" || r.state === "unknown" || r.state === "queued") return r.state;
+  if (r.working && r.state === "rework") return "working";
+  if (r.wait === "ask") return "ask";
+  if (r.wait === "pack" || r.wait === "install" || r.wait === "deploy") return "afterwork";
+  return "wait"; // turn, group, land, hold, and a card sent back (it waits for its owner)
+}
+export function tileAt(r, phase) {
+  if (r?.state === "done") return "done";
+  const here = STRIP.indexOf(r?.phase), at = STRIP.indexOf(phase);
+  if (here < 0 || at < 0) return phase === r?.phase ? tileOf(r) : "future";
+  return at < here ? "done" : at === here ? tileOf(r) : "future";
+}
+const rank = (tile) => TILE_ORDER.indexOf(tile);
+// A group's row: per phase the cards' tile when they agree, else the first tile in TILE_ORDER that any card has; its count is members done of members; its phase is the
+// least-finished card's. Only the members' readings go in. `readings` is the members' [{ id, phase, state, wait, working, ... }].
+export function groupReading(readings) {
+  const rs = (readings ?? []).filter(Boolean);
+  const tiles = Object.fromEntries(STRIP.map((p) => [p, rs.length ? rs.map((r) => tileAt(r, p)).sort((a, b) => rank(a) - rank(b))[0] : "future"]));
+  const open = rs.filter((r) => r.state !== "done");
+  const furthest = (r) => STRIP.indexOf(r.phase);
+  const phase = open.length ? open.slice().sort((a, b) => furthest(a) - furthest(b))[0].phase : rs.length ? "live" : null;
+  const lead = rs.slice().sort((a, b) => rank(tileOf(a)) - rank(tileOf(b)))[0];
+  return { count: rs.length, done: rs.length - open.length, phase, state: lead ? lead.state : null, tile: lead ? tileOf(lead) : null, tiles };
+}
+// "Who is on what": every open card is in exactly one column, the one of the role it is `with` now (a built card waiting for its review sits under the reviewer);
+// number 1 goes to the card a session is on, then the rest in order; a badge blinks only when `working` is true (a stale reading never is). Done cards are in no column.
+export function crewColumns(readings) {
+  const columns = {};
+  for (const r of (readings ?? []).filter((x) => x && x.state !== "done" && x.closed !== true && typeof x.with === "string")) (columns[r.with] ??= []).push(r);
+  const out = {};
+  for (const [role, list] of Object.entries(columns)) {
+    list.sort((a, b) => (b.working === true) - (a.working === true) || (a.num ?? 0) - (b.num ?? 0) || (a.id < b.id ? -1 : 1));
+    out[role] = list.map((r, i) => ({ n: i + 1, id: r.id, ...(Number.isInteger(r.num) ? { num: r.num } : {}), state: r.state, wait: r.wait, working: r.working === true, ...(r.stale ? { stale: true } : {}), ...(Number.isFinite(r.staleSince) ? { staleSince: r.staleSince } : {}) }));
+  }
+  return out;
+}
+
 export const STATES = ["done", "unknown", "rework", "working", "waiting", "stuck", "queued"];
 export const WAITS = ["turn", "group", "land", "pack", "install", "deploy", "ask", "hold"];
 // The phases a reviewer holds, and the work phases the card's owner holds.
