@@ -1,0 +1,1 @@
+LOOK-OK #C1331 build/crew-columns-numbered e6e7ecf05f53dc6867afe9b721e9fba9dcacf1b9 (Designer 2026-11-20): matches the owner mockup minus icons, "work" badge; every badge 70x23; busiest left, idle right; edge fade reads as more to the right, nothing clipped at scroll end; light/dark at 1280 and 390; reduced motion stops the blink.
