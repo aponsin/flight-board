@@ -42,7 +42,7 @@ test("the pill counts exactly the rows the list draws: asks on him and threads M
 test("2.6 s after he answers, Needs you, Waiting on Manager and the pills move together", () => {
   const ask = { id: "d1", kind: "decision", text: "Go for #C364?", options: [{ key: "A", label: "Go" }], since: T - 6e5 };
   const b = board([later("l1"), ask]);
-  ask.response = { status: "A", at: T };
+  ask.response = { status: "A", at: Date.now() }; // #C1362: the answer is made now, not at file load: the page's 2.5 s window (SENT_MS) is read against the real clock
   b.renderAll();
   assert.equal(pill(b, "you"), 1, "under SENT_MS: still his");
   const real = Date.now;

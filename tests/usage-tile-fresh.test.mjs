@@ -68,7 +68,9 @@ test("past 15 minutes the tile is grey, whatever its level, and still says its a
   assert.doesNotMatch(html, /plan red|plan amber/);
   assert.match(html, /as of 16 min ago/);
   assert.match(html, /31%/, "the number stays, so the owner can see what it was");
-  assert.match(page(live(use({ asOf: NOW - 15 * MIN + 5e3 }))).planTile(), /class="tot plan amber"/, "just under 15 minutes: not yet");
+  // #C1362: the 5 s margin is taken now, not from NOW (set when the file loaded): the tile reads the real clock when it draws, so a file that waited over 5 s went stale here.
+  const t = Date.now();
+  assert.match(page(live(use({ asOf: t - 15 * MIN + 5e3 }))).planTile(), /class="tot plan amber"/, "just under 15 minutes: not yet");
 });
 
 test("a state with no asOf (a probe from before) is aged by the probe's own clock, and a future asOf is ignored", () => {

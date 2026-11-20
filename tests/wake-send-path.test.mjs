@@ -11,6 +11,11 @@ import { classifySend } from "../worker/wake-rules.mjs";
 // that cannot exist, and the lines sent are marked TEST so a stray one is recognisable. realSend itself refuses any claude
 // outside the temp folder when it runs under `node --test` (blockedInTests), whatever a test or a mutation does.
 const LINE = "TEST ONLY, not a nudge: 1 for Manager, batch b-test";
+// #C1362: the guard reads NODE_TEST_CONTEXT, which only `node --test` sets. This file run another way (node file.mjs, a wrapper, an editor) left it unset,
+// so a bare `claude` was looked up on the real PATH and its TEST line reached Manager's live session. The file now sets the marker itself, and every test
+// that passes a bare claude also gets a PATH that holds no claude, so a missing guard fails the test instead of sending.
+process.env.NODE_TEST_CONTEXT ??= "wake-send-path";
+const emptyPath = () => mkdtempSync(join(tmpdir(), "wsp-nopath-"));
 // launchd starts a job with this PATH and nothing else; #C721: the first live wake failed because `claude` is not on it.
 const LAUNCHD_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 const fakeClaude = (body = 'echo "fake claude: $@"\necho "PATH=$PATH"\n') => {
@@ -49,8 +54,13 @@ test("under a test run realSend never starts a claude outside the temp folder, e
   assert.equal(blockedInTests(join(tmpdir(), "x", "claude"), inTest), false, "a fake in the temp folder is fine");
   assert.equal(blockedInTests("claude", {}), false, "outside a test run (the launchd job) nothing is blocked");
   // and the function itself, in this very test run: a bare claude is refused with a clear exit, without being spawned
-  const r = await realSend(LINE, { claudePath: "claude", env: process.env });
+  const r = await realSend(LINE, { claudePath: "claude", env: { ...process.env, PATH: emptyPath() } });
   assert.deepEqual([r.exit, /blocked/.test(r.text)], [125, true]);
+});
+
+test("a test run has the marker set and a bare claude is blocked in it: if this fails, no test in this file may call realSend (#C1362)", () => {
+  assert.ok(process.env.NODE_TEST_CONTEXT, "the marker is set");
+  assert.equal(blockedInTests("claude"), true);
 });
 
 test("sendEnv puts claude's folder first, keeps the PATH it was given and the standard folders, with no repeats", () => {

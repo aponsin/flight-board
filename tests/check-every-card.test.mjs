@@ -26,11 +26,14 @@ function board() {
   return b;
 }
 const row = (b, id) => b.initRow(b.gates(b.enrich(b.state.initRaw.find((i) => i.id === id))));
+// #C1362: NOW is taken when the file loads and the page reads the real clock when it draws, so "12 s ago" held only while the file started drawing within a second of loading.
+// The draw runs with the clock held at NOW instead.
+const atNow = (fn) => { const real = Date.now; Date.now = () => NOW; try { return fn(); } finally { Date.now = real; } };
 const button = (num) => new RegExp(`<button type="button" class="c-num i-check" data-check="[^"]+"[^>]*>#C${num}<span class="i-ic" aria-hidden="true">↻</span></button>`);
 
 test("#C495: a card the live state reads keeps its Check, as one with no branch does; its live line is unchanged", () => {
-  const b = board();
-  const read = row(b, "work-category-row");
+  const b = atNow(board);
+  const read = atNow(() => row(b, "work-category-row"));
   assert.match(read, button(489), "#C489, read live with its branch: the button");
   assert.match(read, />Live: Ship<\/(?:span|button)> <small class="asof"[^>]*>12 s ago</, "the live line as it was");
   assert.match(row(b, "faster-ships-ci"), button(485), "#C485, no branch: the button, as before");
