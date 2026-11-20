@@ -3,3 +3,7 @@ SECURE
 Group tip, re-cut of 5883807e (SECURE), range-diff identical (#C1314, rebased only). Tree diff 5883807e..910f08aa: the --ignore-missing flag and its test only. board-polish-five v4.
 
 signed-by: Security
+
+SECURE pack pc112 (pin 910f08aa = origin/main). sha256: deploy 871210a6…f88f, tree 028256ac…c49d, hooks 194919b8…c2e6, board-deploy 7a021248…b72f (unchanged), steps 07b6fa50…2507; the steps file's hashes match. deploy/tree/hooks/steps differ from pc111 only by pin, pc number, hashes and change lists. Previous pack pc111 installed (board-store-deploy-pc111.done = ce70c2e3). Security notes on all 11 commits ce70c2e3..910f08aa. Guarded-code diff since pc111: collector/pairs.mjs, state-schema.mjs, state.mjs only (#C1309, #C1311; reviewed in board-polish-five); no worker, migration, hook script or gate change, matching 'No Worker code changes'. Hooks step correct (state-schema.mjs is imported by the gate). New probe file stack-heads-cache.json in the state folder: local, shape-checked, never uploaded.
+
+signed-by: Security
