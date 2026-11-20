@@ -105,14 +105,27 @@ const namedCheckout = (dir, checkouts) => { const h = gitHome(dir); return h && 
 // substitution cannot be seen and is let through; the hook never blocks on its own doubt.
 export const BOARD_ID_SHAPE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export const badBoardIdReason = (value) => `Board-Id must be the card's id: lowercase letters, digits and hyphens, as the board shows it (for example "picture-option-looks-clickable"), not "${String(value).slice(0, 40)}". A commit with any other value cannot be found once its branch is deleted. Fix the trailer in the commit message and commit again. (#C1285)`;
+// Checker 2's F1 on 4a694486: only a TRAILER line counts (the line starts with Board-Id, after a real newline or a literal \n inside -m), so prose that mentions a bad id is let through; and only the
+// git commit command's own segment is read (cut at &&, ||, ; and | outside quotes and heredocs), so a later git log --grep or echo is not.
+const commitSegments = (text) => {
+  const noDocs = text.replace(/(<<-?[ \t]*(["']?)(\w+)\2[^\n]*)\n[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, (m, head) => head + "Q".repeat(m.length - head.length));
+  const mask = noDocs.replace(/"[^"]*"|'[^']*'/g, (m) => "Q".repeat(m.length));
+  const out = []; let from = 0;
+  const cut = (to) => { const ms = mask.slice(from, to); if (/^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*git\b/.test(ms) && /\bcommit\b/.test(ms)) out.push(text.slice(from, to)); };
+  for (const m of mask.matchAll(/&&|\|\||;|\||\n/g)) { cut(m.index); from = m.index + m[0].length; }
+  cut(mask.length);
+  return out;
+};
 export function boardIdRefusal(command) {
   try {
-    const text = String(command ?? "");
-    if (!/\bgit\b[^\n]*?\bcommit\b/.test(text)) return null;
-    for (const m of text.matchAll(/Board-Id[ \t]*:[ \t]*([^\s"'`\\]*)/gi)) {
-      const value = m[1];
-      if (!value || /[<>$(){}]/.test(value)) continue; // an empty value (a message built elsewhere), a placeholder or a shell expansion: not read
-      if (!BOARD_ID_SHAPE.test(value)) return badBoardIdReason(value);
+    for (const seg of commitSegments(String(command ?? ""))) {
+      for (const line of seg.split(/\r?\n|\\n/)) {
+        const m = /^[ \t]*Board-Id[ \t]*:[ \t]*([^\s"'`\\]*)["'`]*[ \t]*$/i.exec(line);
+        if (!m) continue;
+        const value = m[1];
+        if (!value || /[<>$(){}]/.test(value)) continue; // an empty value (a message built elsewhere), a placeholder or a shell expansion: not read
+        if (!BOARD_ID_SHAPE.test(value)) return badBoardIdReason(value);
+      }
     }
   } catch { /* every doubt allows */ }
   return null;

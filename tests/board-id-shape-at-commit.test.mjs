@@ -31,6 +31,22 @@ test("only a commit is checked: a command that merely mentions a Board-Id (a gre
   assert.equal(refusal({ tool_name: "Edit", tool_input: { file_path: "/x/y.md", new_string: "Board-Id: C1274" }, cwd: "/nowhere" }, noGit, []), null, "an edit is not a commit");
 });
 
+// Checker 2's F1 on 4a694486: prose that mentions a bad id, and a later command in the same line, are not a trailer of this commit.
+test("must allow: prose mentioning a bad Board-Id, a backticked mention, and a later git log --grep after a good commit", () => {
+  assert.equal(boardIdRefusal(`git commit -F - <<'EOF'\nCause: #C1274's commit said "Board-Id: C1274", not the card's id.\n\nBoard-Id: ship-banner-stale-row\nCo-Authored-By: X <x@example.com>\nEOF`), null, "(a) a heredoc body with prose");
+  assert.equal(boardIdRefusal('git commit -m "A commit with `Board-Id: C1274` is refused\n\nBoard-Id: ship-banner-stale-row"'), null, "(b) a backticked mention in the message");
+  assert.equal(boardIdRefusal('git commit -m "x\n\nBoard-Id: good-id" && git log --grep="Board-Id: C1274"'), null, "(c) a later command");
+  assert.equal(boardIdRefusal('git commit -m "x\n\nBoard-Id: good-id"; echo "Board-Id: C1274" | cat'), null, "(c) after ; and |");
+});
+
+test("still refused: the bad trailer in the commit's own segment, in -m with real newlines, with a literal backslash-n, in a heredoc, and before an && command", () => {
+  assert.ok(boardIdRefusal('git commit -m "x\n\nBoard-Id: C1274" && git push'));
+  assert.ok(boardIdRefusal('git commit -m "x\\n\\nBoard-Id: C1274\\nCo-Authored-By: X <x@example.com>"'), "a literal \\n inside -m");
+  assert.ok(boardIdRefusal(`git commit -F - <<'EOF'\nx\n\nBoard-Id: C1274\nEOF`));
+  assert.ok(boardIdRefusal('cd /some/wt && git commit -m "x\n\nBoard-Id: C1274"'));
+  assert.ok(boardIdRefusal('GIT_AUTHOR_NAME=T git -C /wt commit -m "x\n\nBoard-Id: C1274"'));
+});
+
 test("what cannot be read is let through, never blocked: a message from a file, a placeholder, a shell expansion, an empty value, odd input", () => {
   assert.equal(boardIdRefusal(`git commit -F msg.txt`), null);
   assert.equal(boardIdRefusal(`git commit -m "x\n\nBoard-Id: <card id>"`), null);
