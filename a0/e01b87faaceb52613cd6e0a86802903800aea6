@@ -1,0 +1,5 @@
+SECURE
+
+Group board-polish-three tip, by diff 122fc1c8..a0e01b87 (122fc1c8 SECURE). Checker 2's F1 on #C1303: new boardRepoNames reads the board's listed name(s) from the owner's own config (else ""); stacksOn filters both lists the same way (string, <= 40) and dedupes; stacks.json is still written 0600 via a temp file + rename, and readStacks filters again and uses names only as keys into the configured clones. No new input source, route, secret or permission. Ran 40/40 at a0e01b87 (product-stack-wiring, product-groups-stack, stack-read, group-page-designer-f123, ship-cell-waits-for-install, hostile-text). Pack unchanged in kind: Worker deploy + migration 0039 + probe file collector/store-cards.mjs.
+
+signed-by: Security
