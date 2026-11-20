@@ -71,6 +71,16 @@ test("the memo lives only inside one redraw: outside it a changed thread is read
   assert.notEqual(after, before, `a new word from the owner changes the answer (${before} then ${after})`);
 });
 
+// Checker 2's LOW on #C1350: threadSets is memoized by its query, and a constant key (a=>0) survived the suite: inside one pass two different queries must give two different answers.
+test("inside one pass threadSets answers each query on its own: a query that matches nothing is not given the answer of the query before it", async () => {
+  const p = await loadPage();
+  load(p, fixture({ threads: 40, asks: 5, cards: 5, steps: 20 }));
+  const size = "(s)=>s.open.length+s.answered.length+s.team.length";
+  const [all, none] = JSON.parse(p.run(`pass=new Map();try{const f=${size},a=threadSets(Date.now(),"");const b=threadSets(Date.now(),"zzzz-nothing-matches");JSON.stringify([f(a),f(b)])}finally{pass=null}`));
+  assert.ok(all > 5, `the empty query shows the threads (${all})`);
+  assert.equal(none, 0, "a query that matches nothing shows none, even after the empty query in the same pass");
+});
+
 test("the date words are the ones toLocale* gave: hhmm, dayLabel, mtStamp and mtShort, today and another day, either side of midnight", async () => {
   const p = await loadPage();
   const times = [T0, T0 - 3 * 36e5, T0 - 30 * 36e5, T0 - 400 * 864e5, T0 + 36e5, 1_700_000_123_456, 1_800_050_000_000];

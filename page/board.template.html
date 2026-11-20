@@ -2486,7 +2486,7 @@ const parkedStatus=i=>!!i&&(i.status==="paused"||i.status==="parked"||((CONFIG.n
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
 // repository explains, or done. Returns minutes.
-function stalled(i){if(!i||i.status!=="active"||i.noWork||i.stepLogBehind||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE)||knownWait(i)||ownerWait(i)||i.heldBy||liveWorkers(i.id).length)return 0;
+function stalled(i){if(!i||i.status!=="active"||i.noWork||i.stepLogBehind||i.who===OWNER||(i.byEvidence&&i.phase===LIVE_PHASE)||knownWait(i)||ownerWait(i)||i.heldBy||liveWorkers(i.id).length||groupWaitFor(i).length)return 0;
   const log=Array.isArray(i.phaseLog)?i.phaseLog:[];if(log.some(e=>e&&e.wait&&e.end==null))return 0;
   const last=num(i.lastStepAt)??log.reduce((m,e)=>Math.max(m,num(e&&e.end)??num(e&&e.start)??0),0);
   if(!last)return 0;const m=Math.floor((Date.now()-last)/60000);return m>=30?m:0}
@@ -2510,6 +2510,7 @@ function shipQueue(){const all=state.derived.find(d=>d.id==="all"),cards=all&&al
 // sign-off its level needs that is not on main is "Signed, waiting for Release"; one with a reviewer missing names that role
 // ("Waiting for Checker"). Only a card on a branch the probe reads (a head) and not yet on main; the rest as before.
 function versionNote(i){const base=versionNoteBase(i),L=liveCard(i.id);if(!L||L.onMain)return base;
+  {const gw=groupWaitFor(i);if(gw.length)return `Waiting for ${esc(gwLabel(gw))}`+(base&&base!=="In review"?` · ${base}`:"")} // #C1358 (Designer): it waits for the group's last card, not for a reviewer
   if(L.shipping)return /Shipping now/.test(base)?base:"<b>Shipping now</b>";
   if(L.phase===SHIP_PHASE){if(liveRun()===i.id)return base;return `Signed, waiting for ${esc(SHIP_ROLE)}`+(base?` · ${base}`:"")}
   const p=PHASES.find(x=>x[0]===L.phase);if(!p||[BUILD_PHASE,"test",LIVE_PHASE,"plan"].includes(L.phase))return base;
@@ -2627,6 +2628,7 @@ const shipRunning=i=>{const L=liveCard(i.id)||{};return L.onMain===true&&(L.ci==
 function tileCtx(i){
   const ns=notStarted(i), idx=ns?phaseIndex(BUILD_PHASE):phaseIndex(i.phase), stuck=i.status==="stuck", queued=ns||i.status==="queued", times=phaseTimes(i.phaseLog,i.status==="done"?i.doneAt:null);
   const skip=Array.isArray(i.skip)?i.skip:[], waits=waitBoxes(i.phaseLog,i.status==="done"?i.doneAt:null);
+  {const gr=groupReadyAt(i);if(gr&&num(times[i.phase])!=null)times[i.phase]=Math.min(times[i.phase],Math.max(0,Date.now()-gr))} // #C1358: the clock starts at the group's READY
   const ev=new Set((liveCard(i.id)||{}).seen||[]);
   const paused=i.status==="paused",kwT=i.status!=="done"?knownWait(i):null,onN=agentsOn(i.id),agentOn=onN!==null&&onN.length>0&&!builtWaiting(i);
   const landed=waitsForInstall(i), gw=groupWaitFor(i);
@@ -2674,8 +2676,8 @@ function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   // #C732 (page): a paused or parked card ships in no version anyone can name: no version line, as no ETA.
   const vn=i.status!=="done"&&!parkedStatus(i)?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
-  const st=stalled(i),ow=i.status!=="done"?ownerWait(i):null;
-  const statusTxt=stuck?"Blocked":paused?"Paused":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":verifying(i)?"Verifying":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?knownWaitText(i):ow?"Waiting on you":st?"Stalled":(liveBuilding(i.id)||STORE&&i.noWork)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
+  const st=stalled(i),ow=i.status!=="done"?ownerWait(i):null,gwl=i.status!=="done"?groupWaitFor(i):[]; // #C1358 (Designer): a card waiting for its group reads the wait on its pill, never STALLED
+  const statusTxt=stuck?"Blocked":paused?"Paused":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":verifying(i)?"Verifying":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?knownWaitText(i):gwl.length?"Waits for "+gwLabel(gwl):ow?"Waiting on you":st?"Stalled":(liveBuilding(i.id)||STORE&&i.noWork)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
   const owHtml=ow?`<span class="ow-line">waiting on you: <a href="#" class="t-ref" data-tref="${esc(ow.id)}">${esc(threadName(ow.id))}</a></span>`:"";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
   // An agent the live state shows working on it since then has moved too (#C449).
@@ -2698,7 +2700,7 @@ function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
   const detBody=`${next}${removes}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
   const gp=liveOpen?[]:gaps(i);
   const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip,track):"";
-  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now(),w!=="group")}${w==="group"?"":`<strong>${esc(i.name)}</strong>`}${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}${w==="group"?"":`<span class="size">${esc(i.size||"?")}</span>`}<span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
+  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now(),w!=="group")}${w==="group"?"":`<strong>${esc(i.name)}</strong>`}${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}${w==="group"?"":`<span class="size">${esc(i.size||"?")}</span>`}<span class="state ${st?"stalled":verifying(i)?"verifying":gwl.length?"queued":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track" style="--per:${per}">${steps}</div>`}
@@ -2836,6 +2838,11 @@ const cardWord=k=>Number.isInteger(k.num)?"#C"+k.num:k.id;
 const gwLabel=gw=>gw.length===1?cardWord(gw[0]):gw.length+" cards";
 function groupWaitFor(i){if(!STORE||!i||!i.batch||!i.stack||i.stack.outside||i.dropped||["done","paused","stuck"].includes(i.status)||!REVIEW_LANES.includes(i.phase))return [];const L=liveCard(i.id);if(L&&L.onMain)return [];
   return state.initiatives.filter(k=>k&&k!==i&&k.batch===i.batch&&k.status!=="done"&&k.status!=="paused"&&!k.dropped&&cardRepo(k)===cardRepo(i)&&(notStarted(k)||phaseIndex(k.phase)<=phaseIndex(BUILD_PHASE)))}
+// #C1358 (Checker 2's F1): the slow clock of a card in a stack group starts when the group's READY goes out, which is when its LAST member reached review: the latest review-lane start among the group's open members
+// (null for any other card). A member built at 9:00 and the last one at 11:00: the first reads 0 h at 11:00, not 2 h. The server's slowWakes reads the same time (worker/board-rules.mjs groupReadyAt).
+function groupReadyAt(i){if(!STORE||!i||!i.batch||!i.stack||i.stack.outside||i.status==="done"||!REVIEW_LANES.includes(i.phase))return null;let at=0;
+  for(const k of state.initiatives){if(!k||k.batch!==i.batch||k.status==="done"||k.dropped||k.status==="paused"||!REVIEW_LANES.includes(k.phase))continue;const e=phaseStart(k,k.phase);if(e&&num(e.start)!=null)at=Math.max(at,e.start)}
+  return at||null}
 function railState(i){return i.status==="stuck"?["stuck","Blocked"]:i.status==="paused"?["paused","Paused"]:notStarted(i)?["queued","Queued"]:phaseIndex(i.phase)>phaseIndex(BUILD_PHASE)?(i.status==="done"?["done","Done"]:["active",(PHASES.find(p=>p[0]===i.phase)||[])[1]||"In flight"]):builtWaiting(i)?["done","Built, waiting"]:["active","Building"]}
 function railChips(i){const iss=i.issues||{};return ISSUE_KINDS.map(([k,l])=>{const v=num(iss[k])||0;return v?`<span class="chip">${v} ${issueLabel(l,v)}</span>`:""}).join("")}
 // The owner's up and down on a group (#C1053): shown on the store page only; `at` is {n: its place, of: how many groups} so the top one cannot go up.

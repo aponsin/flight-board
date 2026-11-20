@@ -1395,6 +1395,20 @@ export function groupWaits(c, v, cards, evidence) {
   if (!c?.batch || !REVIEW_PHASES.includes(v?.lit?.[0]) || v.onMain === true || !v.stack || v.stack.outside === true) return false;
   return (cards ?? []).some((k) => k && k.id !== c.id && k.batch === c.batch && !k.done_at && !k.dropped && !k.paused && (!evidence?.[k.id]?.lit?.[0] || evidence[k.id].lit[0] === "build"));
 }
+// #C1358 (Checker 2's F1): the slow clock of a card in a stack group starts at the group's READY, when its last member reached review: the latest review-lane start among the group's open members
+// (null for any other card). The page reads the same time (groupReadyAt in page/board.template.html).
+export function groupReadyAt(c, v, cards, evidence, phaseStart) {
+  if (!c?.batch || !REVIEW_PHASES.includes(v?.lit?.[0]) || !v.stack || v.stack.outside === true) return null;
+  let at = 0;
+  for (const k of cards ?? []) {
+    if (!k || k.batch !== c.batch || k.done_at || k.dropped || k.paused) continue;
+    const ph = evidence?.[k.id]?.lit?.[0];
+    if (!REVIEW_PHASES.includes(ph)) continue;
+    const s = phaseStart?.get(`${k.id}|${ph}`);
+    if (Number.isFinite(s)) at = Math.max(at, s);
+  }
+  return at || null;
+}
 export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages = [], shipSlowMs = SHIP_SLOW_MS, agents, reasonAt, stackOn = false }) {
   const out = [];
   const roster = agents && typeof agents === "object" ? agents : {};
@@ -1425,7 +1439,9 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
     if (missing && on && on.state === "working" && on.card === c.id) continue;
     const ra = reasonAt instanceof Map ? reasonAt.get(c.id) : reasonAt?.[c.id];
     if (!missing && typeof c.rework_reason === "string" && c.rework_reason !== "" && Number.isFinite(ra) && ra <= now && now - ra < NOTE_FRESH_MS) continue;
-    if (limit !== null && waited(start, now, outages) > limit) out.push({ card_id: c.id, num: c.num, reason: missing ? reworkReasonLine(c.num, owner) : slowLine(c.num) });
+    // #C1358: in a stack group the clock starts at the group's READY (its last member's arrival at review), not at this card's own review start.
+    const clockStart = Math.min(now, Math.max(start, groupReadyAt(c, v, cards, evidence, phaseStart) ?? 0));
+    if (limit !== null && waited(clockStart, now, outages) > limit) out.push({ card_id: c.id, num: c.num, reason: missing ? reworkReasonLine(c.num, owner) : slowLine(c.num) });
   }
   return out;
 }
