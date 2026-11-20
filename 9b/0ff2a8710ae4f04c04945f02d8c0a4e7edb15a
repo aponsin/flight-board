@@ -1,0 +1,1 @@
+SECURE: my INFO on 653321f5 closed: the repair test has a product card's install row with source 'tool' that must survive. My mutation (drop source = 'evidence' from both copies of the rule) now fails that test. Migration 0040 and the repair rule are unchanged. Security 2026-11-20.
