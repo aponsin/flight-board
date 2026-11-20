@@ -91,9 +91,11 @@ function notesOn(g, sha, refs) {
     if (!has) continue;
     let first;
     try { first = String(g(["notes", `--ref=${localRef(ref)}`, "show", sha])).split("\n")[0].trim(); } catch { return UNREAD; }
-    if (/^FINDINGS\b/.test(first)) out.findings.push(role);
-    else if (/^STOP\b/.test(first)) out.stops.push(role);
-    else if (role === "checker" ? /^PASS\b/.test(first) : role === "security" ? /^SECURE\b/.test(first) : first !== "") out.signed.push(role);
+    // The first word is read as a word (the same cut as a leading \b), not by a first-word regex of the sign-off words: that regex lives in collector/signoff.mjs only (a test holds it), and this file imports nothing of the collector.
+    const word = /^\w+/.exec(first)?.[0] ?? "";
+    if (word === "FINDINGS") out.findings.push(role);
+    else if (word === "STOP") out.stops.push(role);
+    else if (role === "checker" ? word === "PASS" : role === "security" ? word === "SECURE" : first !== "") out.signed.push(role);
   }
   for (const k of Object.keys(out)) out[k].sort();
   return out;
