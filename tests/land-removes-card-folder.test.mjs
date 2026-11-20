@@ -111,6 +111,23 @@ test("the job's own wiring (cleanLandedFolders) keeps a folder holding a token f
   assert.doesNotMatch(lines.join("\n"), /folders not cleaned/);
 });
 
+// #C1338 (Checker 2's LOW on 52291235): the wiring's onMain read (the ancestor check against mainRef) could be wired to always-true and the whole suite stayed green, because every folder the wiring test
+// removes is merged. Here the same real wiring (cleanLandedFolders) meets a landed card's folder whose HEAD is NOT on mainRef: it is kept, untouched, with the reason, next to a merged one that goes.
+test("the job's own wiring keeps a folder whose HEAD is not on mainRef and removes a merged one beside it (onMain is a real ancestor check)", () => {
+  const fx = fixture();
+  const unmerged = folder(fx, "build/card-twenty", { merge: false });
+  const merged = folder(fx, "build/card-twenty-one");
+  const lines = [];
+  const out = cleanLandedFolders({
+    landed: [{ branch: "build/card-twenty", cards: ["card-twenty"] }, { branch: "build/card-twenty-one", cards: ["card-twenty-one"] }], repo: fx.repo, cwd: null, log: (s) => lines.push(s), mainRef: "main",
+    git: (a) => run(fx.repo, ...a), quiet: (a) => { try { return run(fx.repo, ...a); } catch { return null; } },
+  });
+  assert.equal(existsSync(unmerged), true, "the folder whose work is not on main stays");
+  assert.equal(existsSync(merged), false, "the merged folder goes");
+  assert.deepEqual(out.removed, [merged]);
+  assert.match(lines.join("\n"), /not on origin\/main/);
+});
+
 test("a folder whose work is not on main is kept untouched", () => {
   const fx = fixture();
   const dir = folder(fx, "build/card-three", { merge: false });
