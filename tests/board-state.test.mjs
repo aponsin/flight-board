@@ -325,6 +325,11 @@ test("the probe's phase rule is collector/derive.mjs's: the same phase on every 
   assert.deepEqual(headsForProbe("menu-fix", tagged, 701).map((h) => h.sha), ["5"], "only the tagged subject, only that number");
   assert.deepEqual(headsForProbe("menu-fix", tagged), [], "no number, no tag match");
   assert.deepEqual(headsForProbe("menu-fix", tagged, null), headsFor("menu-fix", tagged, null));
+  // #C1329 (Checker 2's LOW on #C1325): a re-cut branch <id>-v<N> names its card in both copies, with a tip that has no Board-Id; a longer id that only starts like it does not.
+  const recut = [{ branch: "build/menu-fix-v3", sha: "8", at: 5, message: "no trailer" }, { branch: "build/menu-fix-v3x", sha: "9", at: 6, message: "" }, { branch: "build/menu-fix-extra-v2", sha: "a", at: 7, message: "" }, { branch: "build/menu-fix", sha: "b", at: 4, message: "" }];
+  assert.deepEqual(headsForProbe("menu-fix", recut), headsFor("menu-fix", recut));
+  assert.deepEqual(headsFor("menu-fix", recut).map((h) => h.sha), ["8", "b"], "the -vN re-cut and the plain branch, nothing else");
+  assert.deepEqual(headsForProbe("menu-fix", recut, 701), headsFor("menu-fix", recut, 701));
 });
 
 test("#C649: a card worked on only by tagged commits, in plan with no branch of its name, shows as build with its head", () => {

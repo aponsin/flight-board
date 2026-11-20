@@ -67,6 +67,9 @@ export async function createCard(db, now, who, fields, opts = {}) {
   if (noEnd) return refuse(db, now, noEnd, fields?.id, who);
   // #C949: a new id is one the probe can read (collector/state-schema.mjs CARD_ID): a card it skips gets no evidence row, so a landed card is never seen.
   if (typeof fields.id !== "string" || !PROBE_CARD_ID.test(fields.id) || fields.id.length > PROBE_CARD_ID_MAX) return refuse(db, now, { rule: "card-id", detail: `lowercase letters and digits in up to 5 words joined by hyphens, each word up to 16 characters, up to ${PROBE_CARD_ID_MAX} characters in all, so the probe can read the card` }, fields.id, who);
+  // #C1329 (Checker 2's LOW on #C1325): a re-cut branch is named <card id>-v<N> and the probe reads that suffix off the name to find the card (slugOfBranch), so a card whose own id ends
+  // in -v<number> would be matched by the re-cut of a different card and read as it. Refused whatever the width of the number.
+  if (/-v\d+$/.test(fields.id)) return refuse(db, now, { rule: "card-id-vn", detail: "an id may not end in -v and a number (-v2, -v10): a re-cut branch is named <card id>-v<N>, so the board would read it as a re-cut of another card; name it another way (v2-cleanup, or spell the number out)" }, fields.id, who);
   if (typeof fields.title !== "string" || !fields.title.trim()) return refuse(db, now, { rule: "card-shape", detail: "title is required" }, fields.id, who);
   if (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(fields.id).first()) return refuse(db, now, { rule: "card-exists", detail: fields.id }, fields.id, who);
   if (opts.needSummary && !(typeof fields.summary === "string" && fields.summary.trim())) {
