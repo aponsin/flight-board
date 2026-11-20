@@ -2384,7 +2384,7 @@ const checkable=(i,now)=>!STORE&&i.status!=="done"&&i.status!=="dropped";
 // The card's #C label is the button (#C376, the owner in t-1793166475210: a separate pill wrapped onto its own line);
 // a card with no number yet keeps the pill. Once done, the label is plain text.
 const checkLabel=i=>`Check ${esc(Number.isInteger(i.num)?"#C"+i.num:i.name||i.id)} now: read the live state again, and have the Collector check it at its next run`;
-function checkTag(i,now){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}" title="${checkLabel(i)}">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> ${repoBadge(i)}`:cardTag(i)+repoBadge(i)}
+function checkTag(i,now,badge=true){return checkable(i,now)&&cardTag(i)?`<button type="button" class="c-num i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}" title="${checkLabel(i)}">#C${i.num}<span class="i-ic" aria-hidden="true">↻</span></button> ${badge?repoBadge(i):""}`:cardTag(i)+(badge?repoBadge(i):"")}
 function checkHtml(i,now){if(!checkable(i,now))return "";const line=liveCard(i.id,now)?"":checkLine(i,checkRequest(i.id),now);
   return `${line?`<span class="i-checked">${esc(line)}</span>`:""}${checkable(i,now)&&!cardTag(i)?`<button type="button" class="i-check" data-check="${esc(i.id)}" aria-label="${checkLabel(i)}">↻ Check</button>`:""}`}
 // #C589 (the owner): the button also writes "Status check please." into the card's thread as the owner's message, so the
@@ -2649,7 +2649,7 @@ function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
   const detBody=`${next}${removes}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
   const gp=liveOpen?[]:gaps(i);
   const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip,track):"";
-  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
+  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now(),w!=="group")}${w==="group"?"":`<strong>${esc(i.name)}</strong>`}${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}${w==="group"?"":`<span class="size">${esc(i.size||"?")}</span>`}<span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track" style="--per:${per}">${steps}</div>`}
@@ -2804,7 +2804,7 @@ function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(c
     return `<div class="step${n<0?"":sk?" skip":done?" done":q?"":n===f.idx?(worked?" now":" here"):""}${tg?" together":""}" title="${esc(l)}">${esc(l)}<small${tg&&!sk&&!q?' class="tog"':""}>${sk?"not needed":q?"queued":tg?"together":"&nbsp;"}</small></div>`}).join("");
   const eta=f.eta!=null?`<div class="lbl">Live in</div><div class="big" data-eta="${f.eta}">${f.eta>Date.now()?dur(f.eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(f.eta)}</div>`:`<div class="lbl">ETA</div><div class="big">—</div>`;
   const ord=railOrder(cards),rail=ord.map(i=>{const [c,w]=railState(i);
-    return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span><strong>${esc(i.name)}</strong>${newPill(newReplies(i.id).length)}<span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${cardMoveButtons(i,ord)}${moveToSelect(i)}${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
+    return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span>${repoBadge(i)}<strong>${esc(i.name)}</strong>${newPill(newReplies(i.id).length)}<span class="size">${esc(i.size||"?")}</span><span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${cardMoveButtons(i,ord)}${moveToSelect(i)}${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
   return `<div class="i-row g-row" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span>${repoBadge(cards[0],"group")}<strong>${esc(groupLabel(b))}</strong>${STORE?`<button type="button" class="g-ren" data-gren="${esc(b)}" aria-label="Rename group ${esc(groupLabel(b))}">Rename</button>`:""}<span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
    <div class="eta">${eta}</div>
    <div class="track" style="--per:${evenPer(shownT.length)}">${tiles}</div>
