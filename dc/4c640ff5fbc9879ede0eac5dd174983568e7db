@@ -1,0 +1,2 @@
+PASS Quick fold-data-fragments-1120, line from 7fef3cb76b5a7dc26979aa64baa97877ea15de97: the 6 deleted DATA.d lines appear verbatim in DATA.md, oldest date first then by #C (1299, 1303, 1317, 1318, 1319, 1324); nothing else changed. Suite 3412/0.
+signed-by: Checker 2
