@@ -1,0 +1,5 @@
+SECURE
+
+#C1311: stack-heads-cache.json in the local state folder (never uploaded), read via readTail 4 MB cap, shape-checked per entry (bad file = empty cache), writeAtomic only on change, entries over 64 KB not cached, gone branches drop out. New git calls: for-each-ref --merged (config refs only), for-each-ref --contains <head> (head ^[0-9a-f]{12,40}$), rev-list <noted> (notes-list shas ^[0-9a-f]{40}$ only), so no argument can be an option; branch names still pass the old check. cardIn skips tool_result blocks. INFO: readStackCache/stackHeads index plain objects by repo and branch names, so a branch named __proto__ only misses the cache (no impact). board-polish-five group, tip af60261a.
+
+signed-by: Security
