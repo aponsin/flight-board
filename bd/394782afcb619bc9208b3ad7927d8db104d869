@@ -1,0 +1,2 @@
+PASS Quick #C1366 fold-data-fragments-1120b re-cut line from 767b07e7fed9a4a80ad1918e5217582981a04e0a (2 commits incl. WIP 346a5650, linear). range-diff against e3b02f18 (my PASS): the patches are equal, only the subjects differ. Still an exact fold on the new main: 9 lines out of docs/DATA.d equal 9 lines appended to docs/DATA.md, nothing else changed.
+signed-by: Checker 2
