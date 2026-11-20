@@ -1,1 +1,3 @@
 SECURE: #C1369 tests only (a docs commit beside an unreadable one still waits for the install, Checker 2's mixed case). Linear on my SECURE b8b795fa; collector/state.mjs unchanged. Security 2026-11-20.
+
+SECURE: pack pc117 (delta on pc116 7ad16710, pin 856d7a41 == origin/main). deploy 06d26dbc, tree b9811c6a, board-deploy 7a021248 (unchanged), steps 1c157dd2: hashes match. Deploy and tree differ from pc116 only in pin, pack number and card lists. pc116 .done names 7ad16710. All 11 commits 7ad16710..856d7a41 are noted SECURE. No Worker code, no migration, no hook file changed, so two lines is right; pc116's hand-added Manager section is gone. Security 2026-11-20.
