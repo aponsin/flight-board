@@ -56,12 +56,20 @@ export async function storeRead({ base, headers, fetchImpl = fetch }) {
 // #C1303 (the bug in #C1295: on the live config the product switch could never read a product stack): the probe's "" is the clone at collector.repoPath. When the config LISTS the
 // board's own repository in collector.repos, the board is the listed one and "" is the team's other repository, the product's clone: so the product's row switches "" as well as every
 // other listed repository. A config that does not list the board's repository (the board's own clone is `repoPath`, the single-repository shape) reads exactly as #C1295 had it.
-// The board's row is unchanged in both shapes (still ""): this card moves nothing the board reads today.
+// Checker 2's F1 on #C1303: the same fact moves the BOARD's row too. When the board's repository is listed, `repos` keys it by its listed name (state.mjs repos[name]) and "" is the product,
+// so the board's row switches that listed name (`boardRepos`, boardRepoNames), never "". In the single-repository shape the board's row is still "".
 export const STACKS_FILE = "stacks.json";
-export function stacksOn(stackSwitch, productRepos = []) {
+export function stacksOn(stackSwitch, productRepos = [], boardRepos = [""]) {
   const on = (row) => (Array.isArray(stackSwitch) ? stackSwitch : []).some((s) => s && s.repo === row && (s.stack === true || s.stack === 1));
-  const names = [...(on("board") ? [""] : []), ...(on("product") ? productRepos.filter((n) => typeof n === "string" && n.length <= 40) : [])];
+  const ok = (list) => list.filter((n) => typeof n === "string" && n.length <= 40);
+  const names = [...(on("board") ? ok(boardRepos) : []), ...(on("product") ? ok(productRepos) : [])];
   return [...new Set(names)];
+}
+// The probe's names for the board's own checkout: its listed name(s) as written in collector.repos when the board's repository is listed, else "" (the team's own clone, repoPath).
+export function boardRepoNames(rawConfig) {
+  const listed = (Array.isArray(rawConfig?.collector?.repos) ? rawConfig.collector.repos : []).map((r) => r?.name).filter((n) => typeof n === "string" && n !== "");
+  const mine = listed.filter((n) => isBoardRepo(n));
+  return mine.length ? mine : [""];
 }
 // The probe's names for the product's checkouts, from a parsed board config: every listed repository that is not the board's own, and "" (the team's own clone) too when the board's
 // own repository is itself listed, because then "" is the product.
@@ -116,9 +124,9 @@ export async function prepareStoreState({ privateDir, stateFile, configPath, bas
   const m = writeStoreCards({ cards, dir: privateDir, boardId, now });
   // state.mjs reads it (readStacks); written whole under a temporary name, as the mirror's files are.
   const sf = join(privateDir, boardId, STACKS_FILE);
-  let productRepos = [];
-  try { productRepos = productRepoNames(JSON.parse(readText(configPath))); } catch { /* an unreadable config: the board's own switch alone, as before */ }
-  writeFileSync(`${sf}.tmp`, JSON.stringify({ at: now, stacks: stacksOn(stackSwitch, productRepos) }), { mode: 0o600 });
+  let productRepos = [], boardRepos = [""];
+  try { const raw = JSON.parse(readText(configPath)); productRepos = productRepoNames(raw); boardRepos = boardRepoNames(raw); } catch { /* an unreadable config: the board's own switch alone, as before */ }
+  writeFileSync(`${sf}.tmp`, JSON.stringify({ at: now, stacks: stacksOn(stackSwitch, productRepos, boardRepos) }), { mode: 0o600 });
   renameSync(`${sf}.tmp`, sf);
   // #C900: the product's switch, to the fixed file the product's release tool reads. A failed write never stops the evidence run.
   if (switchFile) { try { writeProductSwitch({ file: switchFile, at: now, product: productSwitchOn(stackSwitch) }); } catch (e) { log(`stack-switch.json not written: ${e?.code ?? e?.message ?? e}`); } }
