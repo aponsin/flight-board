@@ -1,0 +1,2 @@
+PASS Quick #C1366 fold-data-fragments-1120b line from 7ad16710abe03b8705a5077ae584b938c1524104 (2 commits incl. WIP 01cc1cfa, linear). An exact fold: the 9 lines removed from docs/DATA.d equal the 9 appended to the end of docs/DATA.md byte for byte, nothing else changed, only DATA.d/README.md remains, in the fold tool's order. The data-fragments, landing-refuses-data-md-edit, changelog-per-card and fold-due tests pass 32/0 at the tip.
+signed-by: Checker 2
