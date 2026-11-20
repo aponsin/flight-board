@@ -1,0 +1,2 @@
+PASS Quick #C1297, line from 6f63957840db422c82d27ae01cd5a8e5f8f04aae: askText keeps one list across blank lines between items of the same kind, and each numbered item carries value=Number(n) (digits only, so safe); a blank line still ends a list before text or a list of the other kind; the 2.2em indent and the CSS are tested; both mutants (blank line ends the list; value= dropped) killed; npm test at this head 3320 pass 0 fail. The group cannot land until #C1296's FINDINGS are fixed.
+signed-by: Checker 2
