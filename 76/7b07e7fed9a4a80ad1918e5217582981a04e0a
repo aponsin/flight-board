@@ -1,0 +1,2 @@
+PASS Quick #C1362 tests-clock-at-load-sweep line from 7ad16710abe03b8705a5077ae584b938c1524104 (2 commits incl. WIP 32510a34, linear, tests and CHANGELOG.d only, no pinned file), suite 3509/0 +1 skipped. The three clock fixes take their time at draw. wake-send-path: the marker is set by the file, the bare call gets an empty PATH, the guard reads process.env; run bare it passes 7/7. Mutants: guard forced off KILLED; the marker line removed and run bare KILLED (no real claude reached, PATH empty). LOW: emptyPath() mkdtemp folders are not removed.
+signed-by: Checker 2
