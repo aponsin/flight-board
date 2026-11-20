@@ -1,0 +1,2 @@
+PASS Quick #C1367 wake-send-test-temp-cleanup line from bd394782afcb619bc9208b3ad7927d8db104d869 (2 commits incl. WIP 09848d0d, linear, tests and CHANGELOG.d only, no pinned file), suite 3514/0 +1 skipped (a first run had a file-level threads.test.mjs failure under load, untouched here; it passes alone 32/0 and in the rerun). Closes my #C1362 LOW: a bare run of wake-send-path leaves the wsp- temp count unchanged. rmTemp retries only busy codes, throws others at once, tested with a fake remover.
+signed-by: Checker 2
