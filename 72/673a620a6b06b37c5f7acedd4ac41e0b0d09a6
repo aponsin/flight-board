@@ -1,0 +1,7 @@
+SECURE
+
+#C1285 re-cut, Full review (Checker 2 F1 on 4a694486): gate/first-push.mjs boardIdRefusal reads only lines that start with Board-Id, in a segment that starts with git and contains commit, cut at && || ; | and newline outside quotes and heredocs. Read the whole diff and the hook's refusal() order: the new check still only adds a refusal, returns before the existing ones only when it refuses, and every throw allows. No git, shell, file or network call; nothing new written. Ran at 72673a62: board-id-shape-at-commit (8/8), first-push-guard, c726-hooks, hooks-check, board-id-one-reading (23/23), including the stdin/exit-code run of the hook. Probed: escaped quotes in -m (still refused), prose and mid-message mentions, later echo/grep, sh -c (let through: fails open by design).
+
+LOW (no block): the heredoc-masking regex runs on every Bash command and is quadratic on many unterminated << (200 KB of '<<a x' lines = 6.9 s; realistic node -e / python -c with thousands of shifts = 30-130 ms; a terminated heredoc = 1 ms). The hook's timeout fails open, so it is slowness, not a bypass or a block. Cheap fix if wanted: skip commitSegments unless the command matches /\bgit\b/ and /\bcommit\b/. Earlier INFO stands: BOARD_ID_SHAPE copies the collector's.
+
+signed-by: Security
