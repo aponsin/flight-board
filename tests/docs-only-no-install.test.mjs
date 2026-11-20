@@ -116,6 +116,18 @@ test("an empty WIP commit of the card does not keep a docs-and-tests landing wai
   const unread = landedSeq([[], ["docs/a.md"]]), r = unread.repo(), real = r.git;
   r.git = (args) => { if (args[0] === "diff") throw new Error("cannot read"); return real(args); };
   assert.equal(Object.hasOwn(cardState(card, r, cfg, T), "noInstall"), false, "every diff unreadable: keeps waiting");
+  // Checker 2's F1 on b8b795fa: ONE commit's diff unreadable beside a real docs commit is not "empty" either. The card must keep waiting whichever of the two it is
+  // (the tip, or the one under it), so a guard that only refuses "code" (k !== "code") fails here.
+  for (const unreadIndex of [0, 1]) {
+    const mixed = landedSeq([["docs/a.md"], ["docs/b.md"]]), mr = mixed.repo(), mreal = mr.git;
+    const shas = mreal(["log", "--format=%H", "-n", "2"]).trim().split("\n"); // newest first
+    const unreadSha = shas[unreadIndex === 1 ? 0 : 1];
+    mr.git = (args) => { if (args[0] === "diff" && args.includes(unreadSha)) throw new Error("cannot read this one"); return mreal(args); };
+    assert.equal(Object.hasOwn(cardState(card, mr, cfg, T), "noInstall"), false, `one docs commit and one unreadable (${unreadIndex === 1 ? "the tip" : "the one under it"}): keeps waiting`);
+    assert.equal(cardState(card, mr, cfg, T).phase, "ship", "not live until deployed");
+    // The same two commits, both readable, are a docs landing: the unreadable one is what made the difference.
+    assert.equal(cardState(card, mixed.repo(), cfg, T).noInstall, true);
+  }
 });
 
 test("a deployed landing is live as before, and one that changed nothing or cannot be read keeps waiting", () => {
