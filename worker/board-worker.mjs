@@ -14,7 +14,7 @@ import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.
 import { writeUsageDay } from "./compat-usage.mjs";
 import { subscribePush, unsubscribePush, pushKnown, pushFacts, pushRun } from "./push-store.mjs";
 import { SW_SOURCE, MANIFEST } from "./push-page.mjs";
-import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, doorWriteRefusal, DOOR_UNGUARDED_TOOLS, setDoorSession, setStackSwitch, claimReview, releaseReview, moveInQueue, pullOutOfGroup, moveGroup, renameGroup, moveToGroup } from "./board-store.mjs";
+import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, agentNoteRefusal, doorWriteRefusal, DOOR_UNGUARDED_TOOLS, setDoorSession, setStackSwitch, claimReview, releaseReview, moveInQueue, pullOutOfGroup, moveGroup, renameGroup, moveToGroup } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 import { viewForTool } from "./view-filter.mjs";
@@ -116,6 +116,8 @@ export function decisionRefusal(door, name, who, args) {
 async function callTool(db, now, who, role, name, args, env = {}, door = "access") {
   const hold = decisionRefusal(door, name, who, args);
   if (hold) return text(await refuse(db, now, hold, args?.thread_id ?? args?.card_id, who));
+  // #C1324: Manager's own door never posts an agent's note on a card thread the owner has not written in (send_message is the way to an agent).
+  if (door === "manager" && name === "post") { const note = await agentNoteRefusal(db, now, who, args); if (note) return text(note); }
   switch (name) {
     case "file_put": return text(await putFile({ db, bucket: env.FILES, now, who, refuse }, { name: args.name, type: args.type, data: args.data_base64 }));
     case "read_view": return text(viewForTool(await readView(db, now), args ?? {}));
