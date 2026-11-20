@@ -117,6 +117,16 @@ test("inside one group the order is queue_pos, as before; a new group (no place)
   assert.deepEqual(run(viewOf([["c3-three", "g7-new", 1], ["c1-one", "g9-old", 5]], [{ batch: "g9-old", pos: 1 }])).map((i) => i.card), ["c1-one"], "the placed group goes first although its card has the worse queue_pos");
 });
 
+// #C1372 (Checker 2's F2 on 218a8aba): the dispatch decides which group's card an agent is woken for. Two groups nobody placed rank by their #G numbers, so the card of the older group
+// (board-polish-thirteen, #G112) is dispatched, not the card of board-polish-fourteen (#G113) that sorts first by letters. Without the numbers the view falls back to the id, as before.
+test("the dispatch wakes an idle role for the older of two unplaced groups by #G number, not the one that sorts first by letters", () => {
+  const specs = [["c1-one", "board-polish-fourteen", 1], ["c2-two", "board-polish-thirteen", 1]];
+  const names = [{ batch: "board-polish-thirteen", num: 112, name: null }, { batch: "board-polish-fourteen", num: 113, name: null }];
+  assert.deepEqual(run({ ...viewOf(specs), groupNames: names }).map((i) => i.card), ["c2-two"], "thirteen was made first");
+  assert.deepEqual(run(viewOf(specs)).map((i) => i.card), ["c1-one"], "no numbers in the view: by id, as before");
+  assert.deepEqual(run({ ...viewOf(specs, [{ batch: "board-polish-fourteen", pos: 1 }]), groupNames: names }).map((i) => i.card), ["c1-one"], "the owner's placement still wins");
+});
+
 test("an agent with nothing in the top group gets the next group's card, and the agent with a card in it gets that one", () => {
   const specs = [["c1-one", "g1-top", 1, "Builder"], ["c2-two", "g2-next", 1, "Boardsmith"], ["c3-three", "g3-last", 1, "Boardsmith"]];
   const items = run(viewOf(specs, [{ batch: "g1-top", pos: 1 }, { batch: "g2-next", pos: 2 }, { batch: "g3-last", pos: 3 }]));

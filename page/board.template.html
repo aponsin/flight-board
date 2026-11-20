@@ -2799,7 +2799,7 @@ function groupLabel(b){const m=GROUP_ID.exec(String(b||"")),g=groupNameOf(b);
   return g&&Number.isInteger(g.num)?`#G${g.num} · ${old().replace(/^G\d+ · /,"")}`:old()}
 // The open list in groups: each group sits where its first card (in the list's order) would, with its cards in that order; a card in no group stays a row.
 // #C1053: the groups go top to bottom in the order they go live (the owner's order, meta/groupOrder: a placed group by its place, a new one after the
-// placed ones by its id), and every card in no group comes after all the groups. The same rule as worker/board-rules.mjs groupCompare.
+// placed ones, by its #G number, then its id: #C1372), and every card in no group comes after all the groups. The same rule as worker/board-rules.mjs groupCompare.
 function groupOrderRows(){const m=(state.meta||[]).find(d=>d&&d.id==="groupOrder");return m&&Array.isArray(m.rows)?m.rows:[]}
 // #C1372: a group nobody placed ranks by its #G number (the newest last), as worker/board-rules.mjs groupRank: "fourteen" is before "thirteen" by letters and sat above it.
 function groupRankOf(b,rows){const r=rows.find(x=>x&&x.batch===b);if(Number.isInteger(r&&r.pos)&&r.pos>=1)return r.pos;
