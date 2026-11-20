@@ -23,11 +23,18 @@ test("a group with a stale member is greyed and names the oldest last good read;
   const h = stale.b.hhmm(NOW - 1800e3).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   assert.match(head(stale.html), new RegExp(`<span class="stale-read"[^>]*>No fresh reading since ${h}</span>`), "the oldest of the members' last good reads");
   const one = board({ a: { stale: true }, b: {} });
-  assert.match(one.html, /class="i-row g-row read-stale"/, "one stale member is enough");
+  assert.match(one.html, /^<div class="i-row g-row" data-group="g1-thing">/, "one stale member of two does not grey the track: a fresh ask beside it must stay in colour (Designer's F1)");
   assert.match(head(one.html), /<span class="stale-read"[^>]*>No fresh reading<\/span>/, "never read fresh: no time");
   const fresh = board({ a: {}, b: {} });
   assert.match(fresh.html, /^<div class="i-row g-row" data-group="g1-thing">/);
   assert.doesNotMatch(head(fresh.html), /stale-read/);
+});
+
+test("a fresh ask beside a stale card keeps the track in colour: only the grey line says a member is stale (Designer's F1)", () => {
+  const { html } = board({ a: { stale: true, staleSince: NOW - 600e3, phase: "checker", state: "waiting", wait: "turn", with: "Checker" }, b: { phase: "checker", state: "waiting", wait: "ask", with: "Owner" } });
+  assert.doesNotMatch(html, /^<div class="i-row g-row read-stale"/, "not all members are stale: no grey track");
+  assert.match(head(html), /<span class="stale-read"[^>]*>No fresh reading since /, "the grey line still names the stale member");
+  assert.match(head(html), /class="step [^"]*\bask\b[^"]*"/, "the folded Checker tile is the ask's, drawn as the ask");
 });
 
 test("the derived copy's old mark is not read: fresh readings, a derived row that says stale, no mark on the group", () => {

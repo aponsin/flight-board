@@ -3,7 +3,14 @@
 // the agents' reading, the config and the time go in; { phase, state, wait, with, working, since, asOf, why } come out. Step 1 adds the module, its
 // fixtures and its laws; no view calls it yet (the Worker, the dispatch, the page and the crew panel move to it in steps 2 and 3).
 // It imports only worker/ files (the Worker bundle holds nothing of the collector).
-import { isRework, holdOpen, groupWaits, repoKey, repoKind, reviewerOf, PHASE_LANES } from "./board-rules.mjs";
+import { isRework, reworkKind, holdOpen, groupWaits, repoKey, repoKind, reviewerOf, PHASE_LANES } from "./board-rules.mjs";
+
+// #C1385 (the gates read this module): the shared readings the dispatch and the stall lines used to keep copies of. ONE lane table (board-rules' PHASE_LANES, phase -> role), the review lanes
+// of it (the phases a lane's agent reviews, and ship, which Release lands) as a table of their own, and `isReviewLane`; `isRework` and `reworkKind` (the dispatch's two kinds of rework) and
+// `groupWaits` (rule A of a group, worker/group-rule.mjs) re-exported so every reader names this module for them.
+export { isRework, reworkKind, groupWaits, PHASE_LANES };
+export const REVIEW_LANES = Object.freeze(Object.fromEntries(["language", "design", "checker", "security", "ship"].map((p) => [p, PHASE_LANES[p]])));
+export const isReviewLane = (phase) => typeof phase === "string" && Object.hasOwn(REVIEW_LANES, phase);
 
 // The phases a group row's strip draws, in order (the card row's tiles), and the tile a card has at each (#C1381). A tile is chosen from `state` and `wait` only
 // (the contract's "Tile looks"); "future" is a phase the card has not reached and "done" one it has passed.

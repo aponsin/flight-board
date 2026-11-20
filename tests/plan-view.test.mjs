@@ -155,6 +155,20 @@ test("Crew: a tile per agent with its model and effort, its memory and what it i
   assert.deepEqual([b.els.v3now.hidden, b.els.v3crew.hidden], [false, true], "and away again");
 });
 
+test("Crew tiles mark a card whose reading is stale as the badges do: grey, with 'no fresh reading since' in the hover; a fresh card has no mark (#C1384, Manager on Designer's look)", () => {
+  const now = Date.now();
+  const b = loadNames(["crewRoster", "crewDoc", "crewHtml", "staleOf", "staleWords"]);
+  Object.assign(b.state, {
+    crew: [{ id: "crew", columns: { Builder: [{ n: 1, id: "c1", num: 1, state: "waiting", wait: "turn", working: false, stale: true, staleSince: now - 600e3 }, { n: 2, id: "c2", num: 2, state: "waiting", wait: "turn", working: false }] } }],
+    readings: [{ id: "c1", stale: true, staleSince: now - 600e3 }, { id: "c2" }],
+    plan: [], ideas: [], threads: [], waiting: [], derived: [], meta: [], ctx: [],
+    initiatives: [{ id: "c1", name: "Old card", who: "Builder", status: "active", phase: "build" }, { id: "c2", name: "New card", who: "Builder", status: "active", phase: "build" }],
+  });
+  const html = b.crewHtml(now);
+  assert.match(html, /<span class="read-stale" title="no fresh reading since [^"]*">Old card · Build<\/span>/);
+  assert.match(html, /<span>New card · Build<\/span>/, "a fresh card has no mark");
+});
+
 test("Crew never injects markup: agent names, models, notes and card names are escaped", () => {
   const evil = "<img src=x onerror=alert(1)>";
   const b = loadNames(["crewHtml"]);

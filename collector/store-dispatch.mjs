@@ -11,7 +11,8 @@ import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset
 import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
 import { heldFor } from "../worker/held-by.mjs"; // #C1164: the one reading of waiting_on
-import { agentRank, orderListOf, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, stackKeyOf, stackOnFor, stackSatisfies, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
+import { agentRank, orderListOf, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, stackKeyOf, stackOnFor, stackSatisfies, STALL_WAKE_AFTER_MS, reviewerOf } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
+import { REVIEW_LANES, isReviewLane, reworkKind } from "../worker/reading.mjs"; // #C1385: the lane table, the review-lane test and the rework rule are the reading module's, not copies here
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -62,7 +63,7 @@ export const holdOpen = (c, now, endPassed) => !!c && ((typeof c.hold_end === "s
 //   ship, not on main        Release lands it (the notes on that exact commit, a clean dry run, the owner's standing go)
 //   ship, on main, repo word the owner builds the deploy pair (the board's own repository: landed, not deployed)
 //   live, or on main with no repo word: nobody (the lead closes it)
-export const PHASE_LANES = { language: "Linguist", design: "Designer", checker: "Checker", security: "Security", ship: "Release" };
+export const PHASE_LANES = REVIEW_LANES; // #C1385: the reading module's table of the review lanes and ship (plan, build and the post-landing phases are the owner's), not a copy
 // The repo words of a card of the board's own repository that gets a deploy pair when it lands: kept in collector/pairs.mjs (#C1020), which the
 // pinned probe imports; re-exported here for the dispatch's callers.
 import { BOARD_REPO_WORDS, repoKey, isBoardRepo, isBoardCard } from "./pairs.mjs";
@@ -100,17 +101,16 @@ export function turnsOf(card, e, ctx = {}) {
   if (stack?.outside === true && e?.onMain !== true) return [{ role: card.owner_role, phase: "build", step: "outside", ...(branch ? { stack: branch } : {}), ...mode }];
   // #C981: a rework the store read with no reason attached (evidence `rework`; the store clears it once a reason is set) is the owner's turn
   // first: until then every other write to the card is refused, so nothing else on it can move.
-  if (e?.rework === true && !(typeof card.rework_reason === "string" && card.rework_reason !== "")) return [{ role: card.owner_role, phase: typeof phase === "string" && /^[a-z]{2,16}$/.test(phase) ? phase : "build", step: "reason" }];
+  if (reworkKind(card, e) === "reason") return [{ role: card.owner_role, phase: typeof phase === "string" && /^[a-z]{2,16}$/.test(phase) ? phase : "build", step: "reason" }];
   // #C1114: the Worker holds a step back from a review phase that has no FINDINGS note and no reason as rework "unexplained" (the card stays where it was shown):
   // the reviewer of that phase is asked to file the finding on this commit, which is what fills the counters. The owner is not woken: there is nothing to fix yet.
-  if (e?.rework === "unexplained" && typeof phase === "string" && phase !== "ship" && Object.hasOwn(PHASE_LANES, phase)) { // PHASE_LANES has no plan or build: the review lanes, and ship (the lander's, not a review)
+  if (e?.rework === "unexplained" && phase !== "ship" && isReviewLane(phase)) { // PHASE_LANES has no plan or build: the review lanes, and ship (the lander's, not a review)
     return [{ role: phase === "checker" && typeof ctx.reviewer === "string" ? ctx.reviewer : PHASE_LANES[phase], phase, step: "unexplained", sha, ...where, signed: signedBy }];
   }
   if (typeof phase !== "string" || phase === "plan" || phase === "build") return [owner];
   // #C852: a review whose note on this commit starts FINDINGS has sent it back: the fix is the owner's turn, and no reviewer is woken to
   // look at a commit already rejected. It is a fact of this sha (evidence.findings), so a new commit clears it without anyone's step.
-  const findings = (Array.isArray(e?.findings) ? e.findings : []).filter((s) => typeof s === "string" && Object.hasOwn(ROLE_OF_NOTE, s));
-  if (findings.length && Object.hasOwn(ROLE_OF_NOTE, phase)) return [{ role: card.owner_role, phase: "build", step: "rework", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}), ...mode }];
+  if (reworkKind(card, e) === "findings") return [{ role: card.owner_role, phase: "build", step: "rework", sha, ...where, signed: signedBy, ...(branch ? { stack: branch } : {}), ...mode }];
   if (phase === "ship") {
     // #C1013: a pair is for the board's own repository only. A product card (any other repo word) is deployed by Release's ship, so it gets no pair turn.
     // A built pair that waits only for the owner's install and whose pinned commit descends from this card's landing already covers it: no build turn.
@@ -125,7 +125,7 @@ export function turnsOf(card, e, ctx = {}) {
     if (board && ctx.landing?.fresh === true && fullSha && !ctx.landing.refused?.has(fullSha)) return [];
     return [{ role: PHASE_LANES.ship, phase: "ship", step: "land", sha, ...where, signed: signedBy }];
   }
-  if (!Object.hasOwn(PHASE_LANES, phase)) return [owner];
+  if (!isReviewLane(phase)) return [owner];
   const out = [];
   // #C1098: the checker phase's reviewer is the one the board's config names for the card's repository (ctx.reviewer, a roster role); none names the phase's lane.
   if (!signed.includes(phase)) out.push({ role: phase === "checker" && typeof ctx.reviewer === "string" ? ctx.reviewer : PHASE_LANES[phase], phase, step: "review", sha, ...where, signed: signedBy });
@@ -218,10 +218,8 @@ export function landingFrom(report, now) {
 // reviewer for a card is the role the config's collector.reviewers names for the card's repository ("flight-board" is the board's own: a card with no repo word or
 // one of BOARD_REPO_WORDS), when that role is on the roster; otherwise the phase's own lane (Checker). `reviewers` is { repository word: role }.
 export function reviewerFor(card, reviewers, roster = []) {
-  if (!reviewers || typeof reviewers !== "object" || Array.isArray(reviewers)) return undefined;
-  const key = isBoardCard(card) ? "flight-board" : card.repo;
-  const role = Object.hasOwn(reviewers, key) ? reviewers[key] : undefined;
-  return typeof role === "string" && Array.isArray(roster) && roster.includes(role) ? role : undefined;
+  const role = reviewerOf(card, reviewers); // #C1385: the Worker's one reading of which role the config names; the dispatch only asks that the role is on the roster
+  return role !== undefined && Array.isArray(roster) && roster.includes(role) ? role : undefined;
 }
 export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEILING_DEFAULT, pairCovers = null, landing = null, reviewers = null, roster = [] } = {}) {
   const ev = view?.evidence ?? {};

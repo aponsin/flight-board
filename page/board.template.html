@@ -448,7 +448,7 @@ button.sbtn.sbtn:disabled{opacity:1}
 .cb.here{color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent)}
 .cb.queued{color:var(--warn-ink);background:var(--warn-soft);background-image:repeating-linear-gradient(-45deg,var(--warn-soft) 0 6px,var(--panel) 6px 12px);box-shadow:inset 0 0 0 2px var(--warn)}
 .cb.stuck{background:var(--ink);color:var(--panel)}
-.cb.read-stale{opacity:.5;filter:grayscale(1)} /* #C1377: a badge on a reading nobody could refresh is greyed, never red */
+.cb.read-stale,.crew3-on .read-stale{opacity:.5;filter:grayscale(1)} /* #C1377: a badge on a reading nobody could refresh is greyed, never red */
 .cb.work{color:var(--accent);background:var(--panel);border:1.5px dashed var(--accent);font-family:system-ui,sans-serif;animation:pulse 2.4s ease-in-out infinite}
 .cb:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.cb.now,.cb.work{animation:none}.cb.now{box-shadow:inset 0 0 0 2px var(--panel),0 0 0 2px var(--accent)}}
@@ -2940,7 +2940,7 @@ function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(c
   const eta=f.eta!=null?`<div class="lbl">Live in</div><div class="big" data-eta="${f.eta}">${f.eta>Date.now()?dur(f.eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(f.eta)}</div>`:`<div class="lbl">ETA</div><div class="big">—</div>`;
   const ord=railOrder(cards),rail=ord.map(i=>{const R=readingOf(i.id),c=pillClass(i,R),w=pillOf(i,R);
     return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span>${repoBadge(i)}<strong>${esc(i.name)}</strong>${newPill(newReplies(i.id).length)}<span class="size">${esc(i.size||"?")}</span><span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details><div class="g-ctl">${cardMoveButtons(i,ord)}${moveToSelect(i)}${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div></div>`}).join("");
-  return `<div class="i-row g-row${stale.length?" read-stale":""}" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span>${repoBadge(cards[0],"group")}<strong>${esc(groupLabel(b))}</strong>${STORE?`<button type="button" class="g-ren" data-gren="${esc(b)}" aria-label="Rename group ${esc(groupLabel(b))}">Rename</button>`:""}<span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
+  return `<div class="i-row g-row${stale.length&&stale.length===cards.filter(i=>i.status!=="done").length?" read-stale":""}" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span>${repoBadge(cards[0],"group")}<strong>${esc(groupLabel(b))}</strong>${STORE?`<button type="button" class="g-ren" data-gren="${esc(b)}" aria-label="Rename group ${esc(groupLabel(b))}">Rename</button>`:""}<span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
    <div class="eta">${eta}</div>
    <div class="track" style="--per:${evenPer(shownT.length)}">${tiles}</div>
    <div class="i-meta">${f.who.length?`<span>Track <b>${esc(f.who.join(", "))}</b></span>`:""}${f.started!=null?`<span>Started ${dayLabel(f.started)}</span>`:""}${staleG}</div>
@@ -3567,7 +3567,7 @@ function crewHtml(now=Date.now()){
     const L=m?ctxLevel(m):null,c=L?L.c:"";
     const old=m&&num(m.at)!=null&&now-m.at>72e5;
     const {items,note}=agentOn(n,(by[n]||[]).slice().sort(openOrder),notes[n],now);
-    const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1];return `<span>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(note)}</span>`;
+    const on=items.length?items.map(i=>{const ph=(PHASES.find(x=>x[0]===i.phase)||[,i.phase||""])[1],S=staleOf(i.id);return `<span${S?` class="read-stale" title="${esc(staleWords(S))}"`:""}>${i.status==="queued"?"⧗ ":i.status==="stuck"?"⏸ ":""}${esc(i.name||i.id)}${ph?` · ${esc(ph)}`:""}</span>`}).join(""):`<span class="idle">${esc(note)}</span>`;
     return `<div class="panel crew3-t" data-agent="${esc(n)}"><h3><span>${esc(n)}</span>${md.model||md.effort?`<span class="mdl">${esc([md.model,md.effort].filter(Boolean).join(" · "))}</span>`:""}${liveAgent(n,now)&&probe.agents[n].by==="title"?'<span class="mdl" title="No session id for this role in the config: its agent is the newest session with this title">found by title</span>':""}${liveAgent(n,now)&&probe.agents[n].rcOff===true?'<span class="mdl rc-off" title="This role\'s session has its Remote Control switch turned off in the app (read from the app\'s session file)">Remote Control off</span>':""}</h3>`+
       (L?`<div class="crew3-mem ${c}"${old?' style="opacity:.55"':""}><span class="pc">Memory ${esc(L.txt)}</span><span class="ctx-bar"><i style="width:${L.w}%"></i></span>${clearMe(m)&&!STORE?'<span class="sv">/clear me</span>':""}${num(m.at)!=null?`<span>${esc(dur(now-m.at))} ago</span>`:""}</div>`:"")+
       `<div class="crew3-on">${on}</div>${queueTile(n)}</div>`}).join("");
