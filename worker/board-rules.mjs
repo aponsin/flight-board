@@ -539,10 +539,9 @@ export function openGroupWithheld({ now, cards, evidenceOf, askedCards, endPasse
   const hasHead = (id) => { const e = evidenceOf(id); return !!e && typeof e === "object" && (typeof e.headSha12 === "string" || typeof e.headSha === "string"); };
   const holdIsOpen = (c) => (typeof c.hold_end === "string" && c.hold_end.trim() !== "" && !endPassed(c.hold_end)) || (Number.isInteger(c.check_at) && c.check_at > now);
   const open = new Map(rows.filter((k) => !k.dropped && !k.done_at).map((k) => [k.id, k]));
-  const boardCard = isBoardCard;
   const dependsOf = (c) => { let l = c.depends_on; if (typeof l === "string") { try { l = JSON.parse(l); } catch { return []; } } return Array.isArray(l) ? l.filter((d) => typeof d === "string") : []; };
   const pushed = (id) => hasHead(id) && evidenceOf(id).stack?.outside !== true;
-  const waitsOn = (c) => dependsOf(c).filter((d) => d !== c.id && open.has(d) && phaseOf(d) !== "live" && !(stackOn && boardCard(c) && boardCard(open.get(d)) && open.get(d).owner_role === c.owner_role && pushed(d)));
+  const waitsOn = (c) => dependsOf(c).filter((d) => d !== c.id && open.has(d) && phaseOf(d) !== "live" && !(stackSatisfies(stackOn, c, open.get(d)) && pushed(d)));
   const active = (k) => !k.paused && !k.dropped && !k.done_at && !k.blocked_reason && phaseOf(k.id) !== "live";
   const started = startedGroupSet(rows.map((k) => ({ ...k, batch: groupOf(k) })), evidenceOf);
   const openG = new Map(), blockedG = new Map(), needed = new Set();
@@ -1060,13 +1059,12 @@ export function dependsNotLive(c, cards, evidence, stackOn = false) {
   let list = c.depends_on;
   if (typeof list === "string") { try { list = JSON.parse(list); } catch { return false; } }
   if (!Array.isArray(list)) return false;
-  const boardCard = isBoardCard;
   const pushed = (d) => { const e = evidence?.[d]; return !!e && typeof e === "object" && (typeof e.headSha12 === "string" || typeof e.headSha === "string") && e.stack?.outside !== true; };
   return list.some((d) => {
     if (typeof d !== "string" || d === c.id) return false;
     const dep = (cards ?? []).find((k) => k && k.id === d && !k.dropped && !k.done_at);
     if (!dep || evidence?.[d]?.lit?.[0] === "live") return false;
-    return !(stackOn && boardCard(c) && boardCard(dep) && dep.owner_role === c.owner_role && pushed(d));
+    return !(stackSatisfies(stackOn, c, dep) && pushed(d));
   });
 }
 // #C885 (11-10 9:45 pm MT: #C884, Designer's own card, stalled as "nothing pushed, Designer idle"): a read-only role never pushes for its own
@@ -1089,6 +1087,12 @@ export const LANDED_REPO_WORDS = new Set(["flight-board", "board"]);
 export const repoKey = (r) => (typeof r === "string" ? r.trim().toLowerCase().replace(/^.*\//, "").replace(/\.git$/, "") : "");
 export const isBoardRepo = (word) => LANDED_REPO_WORDS.has(repoKey(word));
 export const isBoardCard = (card) => !card?.repo || isBoardRepo(card.repo);
+// #C1295 (product groups stack): the stack switch is per repository. A card's switch row is "board" for a card of the board's own repository and "product" for any other.
+// `stackOn` (the rules below take it as a parameter) is a Set of the switch rows that are on, or, as before, a plain boolean that means the board's row alone.
+export const stackKeyOf = (card) => (isBoardCard(card) ? "board" : "product");
+export const stackOnFor = (stackOn, card) => (stackOn instanceof Set ? stackOn.has(stackKeyOf(card)) : stackOn === true && isBoardCard(card));
+// Whether a dependency the same role has pushed is satisfied for `card` (#C914 R4): its repository's switch is on, and the dependency is a card of that same repository.
+export const stackSatisfies = (stackOn, card, dep) => stackOnFor(stackOn, card) && stackKeyOf(card) === stackKeyOf(dep) && dep.owner_role === card.owner_role;
 export const LANDED_UNBUILT_MS = KNOBS.landedUnbuiltSec.default * 1000; // #C1106: the setting landedUnbuiltSec; this is its default
 export const landedUnbuiltMsOf = (stored) => knobFrom(stored, "landedUnbuiltSec") * 1000;
 export function landedUnbuilt({ now, cards, evidence, installStart, unbuiltMs = LANDED_UNBUILT_MS }) {

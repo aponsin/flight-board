@@ -7,6 +7,7 @@ import { join, dirname, basename } from "node:path";
 import { FETCH_TIMEOUT_MS } from "./probe-board.mjs";
 import { STORE_CARDS_FILE } from "./state-schema.mjs";
 import { BOARD_ID } from "../scripts/config.mjs";
+import { isBoardRepo } from "./pairs.mjs";
 
 const CARD_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const num = (v) => (Number.isFinite(v) ? v : undefined);
@@ -48,11 +49,18 @@ export async function storeRead({ base, headers, fetchImpl = fetch }) {
   return { cards: v.cards.filter((c) => c && CARD_ID.test(String(c.id))), stackSwitch: Array.isArray(v.stackSwitch) ? v.stackSwitch : [] };
 }
 
-// #C859 slice 3: the repositories (by the probe's names: "" is the team's own) whose stack switch is on. Only the board repository's switch
-// reaches the probe here; the product's is its own card.
+// #C859 slice 3: the repositories (by the probe's names: "" is the team's own) whose stack switch is on.
+// #C1295: per repository. The board's row switches the team's own repository (""); the product's row switches every OTHER repository the board config lists
+// (collector.repos, `productRepos`: their names), so a product group is read from git as a stack, with its review notes covering every member. A product row that
+// is on while the config lists no other repository changes nothing here (the probe has no checkout of it to read).
 export const STACKS_FILE = "stacks.json";
-export function stacksOn(stackSwitch) {
-  return (Array.isArray(stackSwitch) ? stackSwitch : []).some((s) => s && s.repo === "board" && (s.stack === true || s.stack === 1)) ? [""] : [];
+export function stacksOn(stackSwitch, productRepos = []) {
+  const on = (row) => (Array.isArray(stackSwitch) ? stackSwitch : []).some((s) => s && s.repo === row && (s.stack === true || s.stack === 1));
+  return [...(on("board") ? [""] : []), ...(on("product") ? productRepos.filter((n) => typeof n === "string" && n !== "" && n.length <= 40) : [])];
+}
+// The names of the collector's listed repositories that are not the board's own (the product's checkouts), from a parsed board config.
+export function productRepoNames(rawConfig) {
+  return (Array.isArray(rawConfig?.collector?.repos) ? rawConfig.collector.repos : []).map((r) => r?.name).filter((n) => typeof n === "string" && n !== "" && !isBoardRepo(n));
 }
 
 // #C900 (the board half of #C860): the product's stack switch, for the product's own release tool. The probe writes a fixed file, whole, on every
@@ -100,7 +108,9 @@ export async function prepareStoreState({ privateDir, stateFile, configPath, bas
   const m = writeStoreCards({ cards, dir: privateDir, boardId, now });
   // state.mjs reads it (readStacks); written whole under a temporary name, as the mirror's files are.
   const sf = join(privateDir, boardId, STACKS_FILE);
-  writeFileSync(`${sf}.tmp`, JSON.stringify({ at: now, stacks: stacksOn(stackSwitch) }), { mode: 0o600 });
+  let productRepos = [];
+  try { productRepos = productRepoNames(JSON.parse(readText(configPath))); } catch { /* an unreadable config: the board's own switch alone, as before */ }
+  writeFileSync(`${sf}.tmp`, JSON.stringify({ at: now, stacks: stacksOn(stackSwitch, productRepos) }), { mode: 0o600 });
   renameSync(`${sf}.tmp`, sf);
   // #C900: the product's switch, to the fixed file the product's release tool reads. A failed write never stops the evidence run.
   if (switchFile) { try { writeProductSwitch({ file: switchFile, at: now, product: productSwitchOn(stackSwitch) }); } catch (e) { log(`stack-switch.json not written: ${e?.code ?? e?.message ?? e}`); } }

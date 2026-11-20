@@ -601,8 +601,9 @@ async function syncStalls(db, now) {
   await endClaims(db, now); // #C1094: a claim on a signed or landed tip is over before the dispatch reads who holds what
   // #C1084: the checker holding an open claim on a card's review, per card (a claim without a card id names no card).
   const claims = new Map((await db.prepare("SELECT card_id, checker FROM review_claims WHERE released_at IS NULL AND card_id IS NOT NULL ORDER BY claimed_at").all()).results.map((r) => [r.card_id, r.checker]));
-  // #C1082: the board repository's stack switch, as the dispatch reads it, for the open-group rule behind the "next #C.." of the idle-agent line.
-  const stackOn = (await db.prepare("SELECT stack FROM stack_switch WHERE repo = 'board'").first())?.stack === 1;
+  // #C1082: the stack switch, as the dispatch reads it, for the open-group rule behind the "next #C.." of the idle-agent line.
+  // #C1295: per repository: the Set of the switch rows that are on ("board", "product"), as the dispatch builds it from the view.
+  const stackOn = new Set((await db.prepare("SELECT repo FROM stack_switch WHERE stack = 1 AND repo IN ('board', 'product')").all()).results.map((r) => r.repo));
   // The dispatch holds a card only for an UNANSWERED open ask (an answered one left open does not), so the open-group rule is given that set (#C1082, Checker 2's F1).
   const unansweredAskCards = new Set((await db.prepare("SELECT DISTINCT card_id FROM asks WHERE closed_at IS NULL AND answered_at IS NULL AND card_id IS NOT NULL").all()).results.map((r) => r.card_id));
   // #C1073: a decision open on a thread holds its card as the dispatch does (collector/store-dispatch.mjs openDecisionCards), so the idle-agent line never counts or names it as queued.

@@ -11,7 +11,7 @@ import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset
 import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
 import { heldFor } from "../worker/held-by.mjs"; // #C1164: the one reading of waiting_on
-import { agentRank, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
+import { agentRank, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, stackKeyOf, stackOnFor, stackSatisfies, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -237,14 +237,14 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // #C859 slice 3 (stack mode): the board repository's switch is on (a card with no repo word, or "flight-board", is the board's). The stack's
   // branch is the one the evidence names on any of its cards; a builder's turn carries it, and a reviewer is not woken for a card in the stack
   // while a card of the same repository still has a build turn (design 3: Checker and Security are woken once, when no builder has a card queued).
-  const switchOn = (Array.isArray(view?.stackSwitch) ? view.stackSwitch : []).some((s) => s && s.repo === "board" && (s.stack === true || s.stack === 1));
-  const boardCard = isBoardCard;
+  // #C1295: the switch is per repository: the rows that are on ("board" for the board's own repository, "product" for any other), and a card reads its own repository's.
+  const switchOn = new Set((Array.isArray(view?.stackSwitch) ? view.stackSwitch : []).filter((s) => s && (s.repo === "board" || s.repo === "product") && (s.stack === true || s.stack === 1)).map((s) => s.repo));
   // #C914 (R4): in stack mode a dependency the same builder has PUSHED (not yet live) is satisfied for a card of the board's repository: card 2 of a
   // stack starts while card 1 waits for its review. Another role's card, or any other repository, still has to be live.
   const hasHead = (id) => hasHeadEvidence(ev[`cards.${id}`]?.value);
   const pushed = (id) => hasHead(id) && ev[`cards.${id}`].value.stack?.outside !== true;
   const waitsOn = (c) => dependsOf(c).filter((d) => d !== c.id && open.has(d) && phaseOf(d) !== "live"
-    && !(switchOn && boardCard(c) && boardCard(open.get(d)) && open.get(d).owner_role === c.owner_role && pushed(d)));
+    && !(stackSatisfies(switchOn, c, open.get(d)) && pushed(d)));
   // #C1053 (the owner, 11-12 8:18 pm: "we work on groups and don't segment them"): a group is STARTED when one of its cards (not dropped) has been pushed, landed
   // (live) or closed as done. An agent finishes every card it owns in a started group before it takes a card from another group (queueOrder below).
   const startedGroups = startedGroupSet(all.map((k) => (k && typeof k === "object" ? { ...k, batch: batchOf(k) } : k)), (id) => ev[`cards.${id}`]?.value);
@@ -252,7 +252,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // branch. A product card with no repo word (Builder's #C930 to #C951 stack) no longer hands its branch to a flight-board card (#C928 was told to
   // stack on #C948's product branch); with no same-repo card on a stack the card builds from main, as with the switch off.
   const sameRepoWord = (a, b) => (a.repo || null) === (b.repo || null);
-  const stackBranchFor = (card) => switchOn ? all.filter((k) => k && typeof k.id === "string" && boardCard(k) && sameRepoWord(k, card)).map((k) => ev[`cards.${k.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
+  const stackBranchFor = (card) => stackOnFor(switchOn, card) ? all.filter((k) => k && typeof k.id === "string" && stackKeyOf(k) === stackKeyOf(card) && sameRepoWord(k, card)).map((k) => ev[`cards.${k.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
   // #C1018 / #C1035: the first 12 characters of every tip a checker holds a claim on (view.reviewClaims, from the store).
   const claimed12 = new Set((Array.isArray(view?.reviewClaims) ? view.reviewClaims : []).filter((k) => k && typeof k.sha === "string").map((k) => k.sha.slice(0, 12)));
   const BUILD_STEPS = new Set(["build", "rework", "outside"]);
@@ -276,7 +276,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     // #C915 (b): skipped while the hold is OPEN (holdOpen: hold_end on an open ask or card, or a check_at to come); once its end has passed the
     // card is dispatched again, and the store's held-card line has already told Manager to lift or renew it.
     if (holdOpen(c, now, endPassed)) continue;
-    const inBoard = switchOn && boardCard(c);
+    const inBoard = stackOnFor(switchOn, c); // #C1295: the card's own repository's switch is on (the name stays: "in a stack-mode repository")
     // #C914: a card the probe marks stackHold (pushed, no stack-ready signal covers its head) has no review turn, and is no builder turn either.
     // #C1066 (11-12 and 11-16: a WIP start push, even an empty one, woke Checker and Security on every re-arm): in a stack-mode repository a pushed tip
     // is Building until the builder's stack-ready signal covers it, with or without a declared partner; a second push after the signal is a new tip and
@@ -287,12 +287,12 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     // #C1139: a tip whose newest commit says WIP (the probe's wipHead) is a start push, not a READY: no review turn for it, in any repository and with the stack switch on or off.
     const mine = held || e?.wipHead === true ? turns.filter((t) => t.step !== "review") : turns;
     const shown = mine.filter((t) => !(/^Checker(?: [0-9]{1,3})?$/.test(String(t.role)) && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
-    cards.push({ group: batchOf(c), groupStarted: startedGroups.has(batchOf(c)), rework: shown.some((t) => t.role === c.owner_role && (t.step === "rework" || t.step === "reason")), queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
+    cards.push({ group: batchOf(c), groupStarted: startedGroups.has(batchOf(c)), rework: shown.some((t) => t.role === c.owner_role && (t.step === "rework" || t.step === "reason")), queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, stackKey: stackKeyOf(c), inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }
-  if (switchOn && cards.some((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step)))) {
-    for (const k of cards) if (k.inStack) k.turns = k.turns.filter((t) => t.step !== "review");
-  }
-  for (const k of cards) { delete k.inBoard; delete k.inStack; }
+  // #C1295: a reviewer is held while a card of the SAME repository still has a build turn; another repository's builder does not hold it.
+  const building = new Set(cards.filter((k) => k.inBoard && k.turns.some((t) => BUILD_STEPS.has(t.step))).map((k) => k.stackKey));
+  for (const k of cards) if (k.inStack && building.has(k.stackKey)) k.turns = k.turns.filter((t) => t.step !== "review");
+  for (const k of cards) { delete k.inBoard; delete k.inStack; delete k.stackKey; }
   // #C973: at the quota ceiling, no new build work: a build turn is dropped; a fix (rework, reason, outside, recut) and every other turn stay.
   if (stopBuild) for (const k of cards) k.turns = k.turns.filter((t) => t.step !== "build");
   // #C872 (2026-11-10: the owner answered A on #T1782 for #C862 and Builder sat idle 20 minutes; the answer only reached it through Manager's
