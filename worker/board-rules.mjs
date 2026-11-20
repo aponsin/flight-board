@@ -1390,6 +1390,11 @@ export const NOTE_FRESH_MS = 60 * 60_000;
 // #C1120 (11-16, #C1104, #C1105, #C1108: Manager got "rework reason missing" and then, about 30 s after the reason was attached, "is slow with no reason"): attaching a reason
 // clears the card's rework flag, so the #C1063 clause below (which needs the flag) never saw it. `reasonAt` is { card_id: time } of the newest rework_history row; a reason
 // attached in the last NOTE_FRESH_MS counts as the line's reason like a fresh next_note, flag or no flag.
+const REVIEW_PHASES = ["language", "design", "checker", "security"];
+export function groupWaits(c, v, cards, evidence) {
+  if (!c?.batch || !REVIEW_PHASES.includes(v?.lit?.[0]) || v.onMain === true || !v.stack || v.stack.outside === true) return false;
+  return (cards ?? []).some((k) => k && k.id !== c.id && k.batch === c.batch && !k.done_at && !k.dropped && !k.paused && (!evidence?.[k.id]?.lit?.[0] || evidence[k.id].lit[0] === "build"));
+}
 export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medians, endsPassed, outages = [], shipSlowMs = SHIP_SLOW_MS, agents, reasonAt, stackOn = false }) {
   const out = [];
   const roster = agents && typeof agents === "object" ? agents : {};
@@ -1398,6 +1403,9 @@ export function slowWakes({ now, cards, evidence, openAskCards, phaseStart, medi
     const v = evidence?.[c.id], phase = v?.lit?.[0];
     if (typeof phase !== "string" || !PHASES.includes(phase) || ["live", "pack", "install"].includes(phase)) continue;
     if (phase === "ship" && v.onMain === true) continue;
+    // #C1358: in stack mode the group sends ONE READY when its last card is built, so a card at a review lane while another card of its group is unstarted or at build is waiting
+    // for that card, not slow: its clock starts at the READY (when every member reads at review).
+    if (groupWaits(c, v, cards, evidence)) continue;
     const start = phaseStart?.get(`${c.id}|${phase}`);
     if (!Number.isFinite(start) || start > now) continue;
     const limit = phase === "ship" ? shipSlowMs : Number.isFinite(medians?.[phase]) && medians[phase] > 0 ? 2 * medians[phase] : null;
