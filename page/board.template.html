@@ -2355,10 +2355,10 @@ function waitBoxes(log,doneAt){const out={};const l=(Array.isArray(log)?log:[]).
 const KNOWN_WAITS={release:"Queued for board release",install:"Waiting for install"};
 // #C1288 (the owner, during Release's product ship: a product card's Ship tile said "Queued for board release" and he thought it waited on him): the release wait names the ship it is and who acts. A product card
 // waits for Release's product ship (Release acts); only the board's own card waits for a board release, and only the install is the owner's.
-const waitWord=(i,k)=>k==="release"&&cardRepo(i)!==BOARD_REPO?"Queued for Release's product ship":KNOWN_WAITS[k];
+const waitWord=(i,k)=>k==="release"&&cardRepo(i)!==BOARD_REPO?`Queued for ${RELEASE_ROLE}'s product ship`:KNOWN_WAITS[k];
 // The tile's small line holds about 14 characters (91 px at 390 px wide), so the tile says "Release ships"; the full sentence stays in the status line and the hover.
-const waitTile=(i,k)=>k==="release"&&cardRepo(i)!==BOARD_REPO?"Release ships":waitWord(i,k);
-const waitEvidence=(i,k)=>k==="release"&&cardRepo(i)!==BOARD_REPO?"evidence: signed, queued for Release's product ship; Release acts, nothing is waiting on you":"evidence: signed, queued for a board release";
+const waitTile=(i,k)=>k==="release"&&cardRepo(i)!==BOARD_REPO?`${RELEASE_ROLE} ships`:waitWord(i,k);
+const waitEvidence=(i,k)=>k==="release"&&cardRepo(i)!==BOARD_REPO?`evidence: signed, queued for ${RELEASE_ROLE}'s product ship; ${RELEASE_ROLE} acts, nothing is waiting on you`:"evidence: signed, queued for a board release";
 function knownWait(i){const d=derivedOf(i&&i.id);return d&&Object.hasOwn(KNOWN_WAITS,d.wait)?d.wait:null}
 // A card waiting for the install names the deploy ask it waits on, or says there is none yet (#C838).
 // #C937: a card of the board's own repository that is on main and waits only for the owner's install has a quiet Ship cell, "Queued for your install",
@@ -2583,7 +2583,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const detBody=`${next}${removes}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
   const gp=liveOpen?[]:gaps(i),red=gapRed(gp,i);
   const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip,track):"";
-  return `<div class="i-row${red?" gap-red":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${statusTxt}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
+  return `<div class="i-row${red?" gap-red":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track" style="--per:${per}">${steps}</div>`}
@@ -3477,6 +3477,8 @@ function liveBuilding(id,now=Date.now()){const L=liveCard(id,now);if(L&&!L.onMai
   return liveOn(now)&&Object.keys(probe.agents).some(n=>{const a=liveAgent(n,now);return !!a&&a.state==="working"&&a.card===id})}
 // The roles working on a card now, the lead aside (state-schema.mjs's workersOn, copied).
 const LEAD_ROLE=(CONFIG.gate&&CONFIG.gate.managerRole)||"Manager";
+// The role that ships a product card (config gate.releaseRole, default "Release"); the words about its ship are built from it, and drawn through esc().
+const RELEASE_ROLE=(CONFIG.gate&&CONFIG.gate.releaseRole)||"Release";
 function liveWorkers(id,now=Date.now()){if(!liveOn(now))return [];
   return Object.keys(probe.agents).filter(n=>{if(n===LEAD_ROLE)return false;const a=liveAgent(n,now);return !!a&&a.state==="working"&&a.card===id}).sort()}
 // No typed field outranks the live state (#C449, state-schema.mjs's typedClashes, copied; the Collector's nudge 8 tells
