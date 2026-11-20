@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { landedFolders, parseWorktrees } from "../scripts/board-land.mjs";
@@ -29,11 +29,13 @@ function folder({ root, repo }, branch, { merge = true, dirty = false } = {}) {
   if (dirty) writeFileSync(join(dir, "scratch.txt"), "unsaved");
   return dir;
 }
+// the same read the job makes: the folder's ignored entries from `git status --ignored`
+const ignoredIn = (p) => run(p, "status", "--ignored", "--porcelain").split("\n").filter((l) => l.startsWith("!! ")).map((l) => l.slice(3));
 const go = (fx, landed, extra = {}) => {
   const lines = [];
   const out = landedFolders({ landed, worktrees: parseWorktrees(run(fx.repo, "worktree", "list", "--porcelain")), repo: fx.repo, log: (s) => lines.push(s),
     onMain: (sha) => { try { run(fx.repo, "merge-base", "--is-ancestor", sha, "main"); return true; } catch { return false; } },
-    remove: (p) => run(fx.repo, "worktree", "remove", p), ...extra });
+    remove: (p) => run(fx.repo, "worktree", "remove", p), ignored: ignoredIn, ...extra });
   return { out, lines };
 };
 
@@ -55,6 +57,24 @@ test("a dirty folder is kept (git refuses, never --force), with the reason and o
   assert.equal(existsSync(dir), true);
   assert.match(lines.join("\n"), /folder kept .*(modified|untracked)/);
   assert.match(lines.join("\n"), /To remove it yourself: git -C .* worktree remove /);
+});
+
+// Checker 2: git worktree remove deletes gitignored files silently, so a folder with one (a token file) is kept; a dependency folder alone is let go.
+test("a folder holding an ignored file is kept and says which, while one with only node_modules is removed", () => {
+  const fx = fixture();
+  writeFileSync(join(fx.repo, ".gitignore"), "*token*\nnode_modules/\n");
+  run(fx.repo, "add", ".gitignore"); run(fx.repo, "commit", "-q", "-m", "ignore");
+  const keeper = folder(fx, "build/card-six");
+  writeFileSync(join(keeper, "my-token.txt"), "secret");
+  const deps = folder(fx, "build/card-seven");
+  mkdirSync(join(deps, "node_modules"));
+  writeFileSync(join(deps, "node_modules", "x.js"), "x");
+  const { out, lines } = go(fx, [{ branch: "build/card-six", cards: ["card-six"] }, { branch: "build/card-seven", cards: ["card-seven"] }]);
+  assert.equal(existsSync(keeper), true, "the folder with the token file stays");
+  assert.deepEqual(out.removed, [deps]);
+  assert.match(lines.join("\n"), /folder kept .*ignored file git would delete without asking \(my-token\.txt\)/);
+  assert.equal(out.kept.length, 1);
+  assert.equal(go(fx, [], {}).out.removed.length, 0);
 });
 
 test("a folder whose work is not on main is kept untouched", () => {

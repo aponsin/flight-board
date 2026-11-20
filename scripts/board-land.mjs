@@ -165,7 +165,10 @@ export const parseWorktrees = (text) => String(text ?? "").split(/\n\n+/).map((b
   return f.worktree ? { path: f.worktree, head: f.HEAD ?? null, branch: typeof f.branch === "string" ? f.branch.replace(/^refs\/heads\//, "") : null, locked: f.locked !== undefined, bare: f.bare === true } : null;
 }).filter(Boolean);
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-export function landedFolders({ landed, worktrees, onMain, remove, repo, cwd = null, log = () => {} }) {
+// Checker 2's F on #C1318: `git worktree remove` deletes a folder's gitignored files without a word (a *token* file, a local config), so a folder that holds an ignored file
+// is kept, naming the first one: `ignored(path)` returns the folder's ignored entries (`git status --ignored`), and only dependency folders (node_modules) are let go.
+export const keepsIgnored = (paths) => (Array.isArray(paths) ? paths : []).filter((p) => typeof p === "string" && p && !/^node_modules\/?$/.test(p) && !p.startsWith("node_modules/"));
+export function landedFolders({ landed, worktrees, onMain, remove, repo, cwd = null, log = () => {}, ignored = () => [] }) {
   const out = { removed: [], kept: [] };
   const cards = new Set((landed ?? []).flatMap((l) => (Array.isArray(l.cards) ? l.cards : [])).filter((c) => CARD_ID.test(String(c))));
   const branches = new Set((landed ?? []).map((l) => l.branch).filter(Boolean));
@@ -175,6 +178,9 @@ export function landedFolders({ landed, worktrees, onMain, remove, repo, cwd = n
     const keep = (why) => { out.kept.push({ path: w.path, why }); log(`folder kept ${w.path}: ${why}. To remove it yourself: git -C ${repo} worktree remove ${w.path}`); };
     if (w.locked) { keep("it is locked"); continue; }
     if (!w.head || !onMain(w.head)) { keep("its work is not on origin/main"); continue; }
+    let keepers = [];
+    try { keepers = keepsIgnored(ignored(w.path)); } catch { keep("its ignored files could not be read"); continue; }
+    if (keepers.length) { keep(`it holds an ignored file git would delete without asking (${keepers[0].slice(0, 80)}${keepers.length > 1 ? ` and ${keepers.length - 1} more` : ""})`); continue; }
     try { remove(w.path); out.removed.push(w.path); log(`folder removed ${w.path}`); } catch (e) { keep(String(e?.stderr ?? e?.message ?? e).split("\n").map((l) => l.trim()).filter(Boolean)[0]?.split(w.path).join("the folder").slice(0, 160) ?? "git refused"); } // git's line names the folder first: the path is dropped so the reason is what is read
   }
   return out;
@@ -268,6 +274,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
         landed: report.landed, worktrees: parseWorktrees(quiet(["worktree", "list", "--porcelain"])), repo, cwd: process.cwd(), log: (s) => console.log(`land: ${s}`),
         onMain: (sha) => quiet(["merge-base", "--is-ancestor", sha, "origin/main"]) !== null,
         remove: (p) => git(["worktree", "remove", p]),
+        ignored: (p) => execFileSync("git", ["status", "--ignored", "--porcelain"], { cwd: p, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024 }).split("\n").filter((l) => l.startsWith("!! ")).map((l) => l.slice(3)),
       });
     } catch (e) { console.log(`land: folders not cleaned: ${String(e?.message ?? e).split("\n")[0].slice(0, 120)}`); }
   }
