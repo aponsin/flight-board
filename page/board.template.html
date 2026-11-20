@@ -620,6 +620,7 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .qm:disabled{opacity:.35;cursor:default}
 .qo{flex-basis:100%;font-size:.78rem}
 .stkbar .sw{display:inline-flex;align-items:center;gap:6px}
+@media (max-width:760px){.stkbar button{min-width:44px;min-height:44px;padding:0 12px}} /* #C1310: the owner's switch is a phone control now */
 .stk{font:600 .8rem var(--mono);color:var(--ink)}
 .stk.out{color:var(--warn)}
 /* #C1008 (look A): a group row with its cards on a blue rail under it; a pulled-out card is tagged with where it came from. */
@@ -762,6 +763,7 @@ table.crew3-ph{margin-top:14px}
 
   <section aria-labelledby="h-init">
     <div class="init-head"><h2 id="h-init">Initiatives in flight<span class="h-count" id="initcount" hidden></span></h2><div class="sbox clr"><svg class="sicon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.75" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10.2 10.2 14 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg><input type="search" id="isearch" placeholder="Search cards: #C number, name, who, any word" aria-label="Search initiatives" autocomplete="off"><button type="button" class="sclear" data-sclear="isearch" aria-label="Clear the search" title="Clear the search" hidden>×</button></div></div>
+    <div id="stackbar"></div>
     <details class="panel todo" id="crewbox"><summary><h2 id="h-crew">Who is on what</h2><span class="caret" aria-hidden="true">▸</span></summary>
       <div class="crew" id="crew" aria-label="Who is on what"></div>
     </details>
@@ -2863,8 +2865,10 @@ document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e
   try{const r=await fetch("/api/pull-out",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify({id:b.dataset.pull})});
     if(!r.ok)throw new Error("refused");b.textContent="Pulled out"}
   catch(_){b.textContent="Not saved";setTimeout(()=>{b.textContent=was;b.disabled=false},4000)}});
+// #C1310: the stack switch's bar ("Stack mode", Board and Product, Turn on or off) on the page the store shows, above the open cards. It lived only in the retired v3 layout's Crew view, which the store page never opens (#C723 A4).
+function renderStackBar(){const el=$("stackbar");if(el)el.innerHTML=stackBar()}
 function renderBoard(){
-  renderCrew();
+  renderCrew();renderStackBar();
   const on=!!iQuery.trim(),all=state.initiatives.filter(i=>i.status!=="done").sort(openOrder),open=all.filter(i=>initHit(i));
   // Done and the shipped feed show the last 24 hours only; older items stay saved, just out of view, and Done's search
   // finds them.
