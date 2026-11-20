@@ -1,0 +1,1 @@
+SECURE: #C1343 a group's phase tile is read from its cards' own tile HTML (cardTile, already escaped): only the class and the first <small> are copied back, and escaped text cannot hold a raw quote or </small>; every new value goes through esc(). Security 2026-11-20.
