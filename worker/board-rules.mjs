@@ -58,6 +58,7 @@ const NO_PICTURE = /^(?:something else|not now)[.!]?$/i;
 // "No, leave it") answers a yes/no and shows no look, so it needs no picture. Not on a visual lane's card (a lane's Decision is a look one
 // whatever its words say, #C956); and a real look choice ("A: blue band", "B: green band") names its options by their looks, so it still needs them.
 const YES_NO = /^(?:yes|no)(?!\w)/i;
+const CHANGES = /^(?:needs? )?changes?(?: needed)?[.!]?$/i;
 // options: [{ key, label }]; shots: the screenshot strings. null when fine, else the refusal naming the options without a picture.
 // #C956: lane is true when the Decision's card is built in one of the team's visual lanes (config decisions.visualLanes, which the probe posts
 // as evidence `look`): such a Decision is a look one whatever its words say, as the old board's gate held.
@@ -68,7 +69,8 @@ export const inVisualLane = (owner, lanes) => typeof owner === "string" && Array
 export function lookRefusal({ texts, options, shots, lane = false, noYesNo = false }) {
   if (!lane && !isLookText(...texts)) return null;
   const shown = new Set((Array.isArray(shots) ? shots : []).map((s) => /^\s*[A-Za-z0-9_-]{16,64}\s+([A-D]):/.exec(String(s ?? ""))?.[1]).filter(Boolean));
-  const bare = (o) => { const l = String(o.label ?? "").trim(); return NO_PICTURE.test(l) || (!lane && !noYesNo && YES_NO.test(l)); };
+  // #C1334: a plain "changes" option (an answer to the picture, not a look of its own) carries none, as long as some option shows one.
+  const bare = (o) => { const l = String(o.label ?? "").trim(); return NO_PICTURE.test(l) || (shown.size > 0 && CHANGES.test(l)) || (!lane && !noYesNo && YES_NO.test(l)); };
   const missing = (options ?? []).filter((o) => o && !bare(o) && !shown.has(o.key)).map((o) => o.key);
   return missing.length ? refuse("look-needs-screenshots", `a look decision needs a screenshot for each option (missing: ${missing.join(", ")}); add each as "<file id> A: label" in screenshots, the letter being the option's`) : null;
 }
