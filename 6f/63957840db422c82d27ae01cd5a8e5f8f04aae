@@ -1,0 +1,5 @@
+SECURE
+
+#C1296 v3, by diff: tree vs signed ad809711 differs only in the same docs move (#C1294's DATA.md line into docs/DATA.d); page and tests identical. Reviewed with #C1294 as one range b78db831..6f639578.
+
+signed-by: Security
