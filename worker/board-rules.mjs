@@ -1032,7 +1032,7 @@ export const STEP_WAITS = ["busy", "gate", "decision"], STEP_PAST_MS = 7 * 86_40
 // #C976 (Director check 1c: every board ship row had an empty wait, so landing time and the owner's install time could not be told apart): a
 // card with a repo of its own (a board card), at ship and read on main, waits on the owner's install. The store writes that wait itself, never
 // the step tool: "start" when the wait begins (no install wait open), "end" when it stops (the card goes live, or leaves ship or main) with one
-// open; null otherwise. A product card (no repo) never has one. open: whether the card's newest install-wait row is a start.
+// open; null otherwise. A card of a product repository (repoKind, #C1378) never has one. open: whether the card's newest install-wait row is a start.
 export const INSTALL_WAIT = "install";
 export function installWaitStep({ repo, next, onMain, open }) {
   // #C1378: only a card of the board's own repository waits on an install (repoKind "board"); a product card has no install, so a repository word alone no longer starts one.

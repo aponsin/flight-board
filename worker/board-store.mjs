@@ -1279,9 +1279,8 @@ export async function writeEvidence(db, now, who, key, value, track) {
   // #C832: a card whose reading is live is finished: the program closes it (done_at = when it first read live, done_evidence = its commit's link),
   // nothing is typed. Not a dropped or already-done card, and not one the lead gave a check date (a date is a wish to look again). A reading with
   // no full head sha or repository name has no link to show, so it closes nothing (the next reading with one does).
-  // #C1104 part 2: a card in a named repository with no install step (not a board card, not a product card) closes the same way as soon as its commit is on main,
-  // unless a part marked in its next_note is not on main yet (the reading's `partsMissing`, #C890). The same guards: a done, dropped or check-dated card is left.
-  // #C1378: the #C1104 part 2 close at landing is gone for every card: a product card closes when it reads live, like a board card (no install wait, no pack).
+  // #C1378 (replaces #C1104 part 2, which closed a card of a named non-board repository the moment its commit was on main): no card closes at landing. A product card
+  // closes when it reads live, like a board card (no install wait, no pack); a part marked in its next_note that is not on main keeps it reading ship (`partsMissing`, #C890).
   const link = next === "live" ? liveDoneEvidence(reading) : null;
   const closes = link
     ? [db.prepare("UPDATE cards SET done_at = ?, done_evidence = ?, updated_at = ? WHERE id = ? AND done_at IS NULL AND dropped = 0 AND check_at IS NULL").bind(now, link, now, cardId)] : [];

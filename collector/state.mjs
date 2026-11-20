@@ -769,8 +769,8 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   const customerText = Array.isArray(changed) && repo.reviewPaths && typeof repo.reviewPaths === "object" && pathPhases(repo.reviewPaths, changed).has("language");
   const readPhase = phaseOf(card, { head, signed: new Set(signed), onMain, deployed, ...(needs ? { needs } : {}) }, cfg);
   // #C890: a card that would read live while a commit cited in its next_note is not an ancestor of main (or is no commit the repository knows) is held at ship, naming the missing shas.
-  // Checker 2's M1 on #C1104 (e944b23e): the marked parts are read whenever the head is on main, not only at a would-be-live reading, because the board closes a card of a
-  // repository with no install step at landing (closesAtLanding) and its code commit reads ship, never live; the phase change (held at ship) stays for a would-be-live reading.
+  // Checker 2's M1 on #C1104 (e944b23e): the marked parts are read whenever the head is on main, not only at a would-be-live reading (then the board closed a card of a
+  // named repository at landing; since #C1378 no card closes at landing, and the marks still say what is missing); the phase change (held at ship) stays for a would-be-live reading.
   // #C1133: a cited part counts as present only when git ANSWERED yes; a failed call (unknown) is missing, so a load flake holds the card at ship and never lets it read as landed.
   const partsMissing = (onMain || (mainUnknown && !bare)) && typeof repo.git === "function" ? citedShas(card.nextNote).filter((s) => ancestry(() => repo.git(["merge-base", "--is-ancestor", s, mainRef])) !== true) : [];
   // #C1160 (11-17: the board lit "checker" on #C1128's empty start commit and the owner took it for a stuck review): a tip whose newest commit says WIP (#C1139's wipHead, read here so
@@ -1127,6 +1127,18 @@ export function stackWaitingCommits(repo) {
 export const REREAD_DONE_MS = 14 * 86_400_000;
 export const rereadClosed = (k, closedLive, now) => k?.status === "done" && typeof k.repo === "string" && k.repo.trim() !== "" && !isBoardRepo(k.repo)
   && !(closedLive instanceof Set ? closedLive : new Set(closedLive ?? [])).has(k.id) && Number.isFinite(k.doneAt) && now - k.doneAt <= REREAD_DONE_MS;
+// The closed-live memory, as pure functions the run loop calls (Checker 2's F2 on 653321f5: the file's read and write had no test of their own).
+// closedLiveFrom: the ids a closed-live.json text names (anything unreadable or of another shape: none). closedLiveNext: the ids to write after a run, or null when nothing
+// changed: the old ones plus the closed product cards (rereadClosed) whose reading this run is the live phase. openStates: the states of the open cards only.
+export const closedLiveFrom = (text) => { try { const o = JSON.parse(text); return new Set(Array.isArray(o?.ids) ? o.ids.filter((x) => typeof x === "string") : []); } catch { return new Set(); } };
+export function closedLiveNext({ cards, closedLive, states, livePhase, now }) {
+  const before = closedLive instanceof Set ? closedLive : new Set(closedLive ?? []);
+  const nowLive = (cards ?? []).filter((k) => closed(k) && rereadClosed(k, before, now) && states?.[k.id]?.phase === livePhase).map((k) => k.id);
+  return nowLive.length ? [...new Set([...before, ...nowLive])].slice(-5000) : null;
+}
+// A re-read closed card's reading is posted with the open cards' (the store keeps it), but the watch's truth lines, the evidence clock and the phase clashes are about open cards: a done card
+// that reads live is not "CLOSE <card>" news (Checker 2's F1: 25 of them filled the line limit and pushed the real SHIP and GAP lines out).
+export const openStates = (cards, states) => { const open = new Set((cards ?? []).filter((k) => !closed(k)).map((k) => k.id)); return Object.fromEntries(Object.entries(states ?? {}).filter(([id]) => open.has(id))); };
 export function cardStates({ cards, config, repos, now, stacks = [], pairs = [], stackCache = null, closedLive = new Set() }) {
   const out = {}, repoOfCard = {}, cardOf = {}, todo = [];
   const readable = (k) => CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX;
@@ -1653,7 +1665,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   // #C1379: the closed product cards that have read live (closed-live.json); cardStates reads the other closed ones again, and a run that reads one live adds it here.
   const closedLivePath = join(stateDir, id, "closed-live.json");
   let closedLive = new Set();
-  try { const r = readTail(closedLivePath, 256 * 1024); if (r?.whole) { const o = JSON.parse(r.text); if (Array.isArray(o?.ids)) closedLive = new Set(o.ids.filter((x) => typeof x === "string")); } } catch { /* none: every closed product card in its window is read once */ }
+  try { const r = readTail(closedLivePath, 256 * 1024); if (r?.whole) closedLive = closedLiveFrom(r.text); } catch { /* none: every closed product card in its window is read once */ }
   let cardsNow, packs = null;
   try {
     const pairs = c.pairFolder ? pairsIn(home(c.pairFolder)) : [];
@@ -1662,8 +1674,8 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now), pairs, stackCache, closedLive });
     lap("cardStates");
     try {
-      const nowLive = cards.filter((k) => closed(k) && rereadClosed(k, closedLive, now) && cardsNow[k.id]?.phase === c.livePhase).map((k) => k.id);
-      if (nowLive.length) writeAtomic(closedLivePath, JSON.stringify({ ids: [...new Set([...closedLive, ...nowLive])].slice(-5000) }));
+      const next = closedLiveNext({ cards, closedLive, states: cardsNow, livePhase: c.livePhase, now });
+      if (next) writeAtomic(closedLivePath, JSON.stringify({ ids: next }));
     } catch { /* the next run reads them again: cost only */ }
     try {
       const before = JSON.stringify({ v: 1, repos: stackCache.old }), after = JSON.stringify({ v: 1, repos: stackCache.next });
@@ -1677,7 +1689,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     const evidencePath = join(stateDir, id, "evidence.json");
     let evidenceBefore = null;
     try { const r = readTail(evidencePath, 4096); if (r?.whole) evidenceBefore = JSON.parse(r.text)?.at; } catch { /* none */ }
-    const evidence = evidenceAt(cardsNow, now, evidenceBefore, [c.shipPhase, c.livePhase]);
+    const evidence = evidenceAt(openStates(cards, cardsNow), now, evidenceBefore, [c.shipPhase, c.livePhase]);
     writeAtomic(evidencePath, JSON.stringify({ at: evidence }));
     writeAtomic(join(stateDir, id, NOEVIDENCE_FILE), JSON.stringify({ since: noEvidenceSince(evidence, now), at: now }));
     // #C631: dispatch is mechanical. Only with the waiting items known and fresh (an ask nobody can see is no reason to wake an owner).
@@ -1707,7 +1719,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     writeAtomic(join(dir, "phase-clashes.json"), JSON.stringify({ at: now, ids: cardsChecked === now ? phaseClashIds(cards.filter((k) => !closed(k)), cardsNow) : [] }));
     // The cards' own evidence for the lead's watch (#C617: SHIP and CLOSE lines); only from a minute with every repository read
     // fresh, and the file keeps its last list through a half-read one.
-    if (cardsChecked === now) writeAtomic(join(dir, "board-truth.json"), JSON.stringify({ at: now, items: boardTruth({ states: cardsNow, shipPhase: c.shipPhase, livePhase: c.livePhase, hold: new Set(cards.filter((k) => Number.isFinite(k.checkAt)).map((k) => k.id)), cards: cards.filter((k) => !closed(k)), parked: config.nudges.parked, owner: config.owner }) }));
+    if (cardsChecked === now) writeAtomic(join(dir, "board-truth.json"), JSON.stringify({ at: now, items: boardTruth({ states: openStates(cards, cardsNow), shipPhase: c.shipPhase, livePhase: c.livePhase, hold: new Set(cards.filter((k) => Number.isFinite(k.checkAt)).map((k) => k.id)), cards: cards.filter((k) => !closed(k)), parked: config.nudges.parked, owner: config.owner }) }));
     if (spend.save) writeAtomic(join(dir, "usage.json"), JSON.stringify(spend.save));
     writeAtomic(backoffPath, JSON.stringify(backoff));
     writeAtomic(join(stateDir, id, "state.json"), JSON.stringify(state));
