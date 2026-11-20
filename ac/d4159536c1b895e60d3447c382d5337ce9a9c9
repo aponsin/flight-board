@@ -1,0 +1,1 @@
+SECURE: #C1372 Checker 2's findings: a dispatch test, a changelog edit, a dated DATA.d line and a page comment. No Worker, probe or page logic changes. Linear on my SECURE 218a8aba. Security 2026-11-20.
