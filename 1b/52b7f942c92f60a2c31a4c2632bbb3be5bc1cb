@@ -1,0 +1,5 @@
+SECURE
+
+#C1308 tip, by diff 408086c2..1b52b7f9 (408086c2 SECURE): one test-only commit, tests/ship-cell-waits-for-install.test.mjs +10 lines. No page, Worker, collector or hook change. Ships as a page publish.
+
+signed-by: Security
