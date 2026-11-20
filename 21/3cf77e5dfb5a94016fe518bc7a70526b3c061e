@@ -1,0 +1,5 @@
+SECURE
+
+#C1318: land job removes landed cards' worktrees with execFileSync git (no shell), plain worktree remove, never --force; skips the repo's own folder, cwd, bare, locked, and HEAD not on origin/main; branch must equal a landed branch or [build/]<CARD_ID>[-vN] with the id regexp-escaped. Never fails the land. INFO: the printed 'remove it yourself' line does not shell-quote the path (quote it as #C1316 does); no lane-folder/.claude exclusion like #C1316, mitigated by exact branch matching (the one lane folder today is detached). board-polish-six, tip 7b72da97; suite 3408 pass, 0 fail in a scratch worktree.
+
+signed-by: Security
