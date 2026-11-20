@@ -1,0 +1,5 @@
+SECURE
+
+#C1294: cardDecision(i) reads the card's own thread ids (i.thread, i.threads, strings only) through the existing openDecision; gates() adds one owner gate at the card's phase with waitingOn = owner + the decision's first line, the same path an open ask's text already takes; it is shown only through esc (heldLine -> esc(heldShort), esc(i.waitingOn)). waitsOn and threadRow change which badge and list a thread falls in (fixed words). Display and grouping only: no store write, route, permission, hook or Worker change.
+
+signed-by: Security
