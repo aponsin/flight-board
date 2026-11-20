@@ -1,0 +1,1 @@
+SECURE: #C1370 tests/harness.mjs only. The page script is compiled once and run in each new vm context; the exposed names are test-supplied. A test checks each load stays its own world. Security 2026-11-20.
