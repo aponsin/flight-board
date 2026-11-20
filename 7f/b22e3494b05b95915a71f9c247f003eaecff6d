@@ -1,0 +1,5 @@
+SECURE
+
+#C1310: Stack mode bar moved onto the store page. New innerHTML sink renderStackBar: stackBar() esc()'s every value or uses fixed words; STORE-only; click handler and Worker unchanged. board-polish-five group, tip af60261a.
+
+signed-by: Security
