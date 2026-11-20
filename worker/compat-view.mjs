@@ -61,8 +61,9 @@ export function waitingDoc(a) {
   switch (a.type) {
     // #C823: a Decision's eta_at is a "not before": the page lists it under Later until then and under Needs you from then on.
     case "Decision": doc.text = b.question; doc.options = optionObjects(b.options); if (Array.isArray(b.options)) { const r = b.options.indexOf(b.recommended); if (r >= 0) doc.recommended = KEY(r); } if (num(a.eta_at)) doc.notBefore = num(a.eta_at); break;
-    case "Action": doc.text = a.title; doc.steps = b.steps; doc.expect = b.expect; doc.where = b.where; break;
-    case "Terminal": doc.text = a.title; doc.steps = (b.commands ?? []).map((cmd) => ({ text: "Run this in Terminal:", cmd })); break;
+    // #C1317: a click ask that names an owner thread (related_thread) carries it as `thread`, so the page draws it inside that thread.
+    case "Action": doc.text = a.title; doc.steps = b.steps; doc.expect = b.expect; doc.where = b.where; if (typeof b.related_thread === "string") doc.thread = b.related_thread; break;
+    case "Terminal": doc.text = a.title; doc.steps = (b.commands ?? []).map((cmd) => ({ text: "Run this in Terminal:", cmd })); if (typeof b.related_thread === "string") doc.thread = b.related_thread; break;
     case "SessionStart": doc.text = a.title; doc.steps = [{ text: "Start the session and type:", cmd: b.words }]; break;
     // #C925: a promise (owed_by) carries who owes it; the page keeps it under Later, badged "<role> owes you this", past its date.
     case "Later": doc.text = b.text ?? a.title; doc.eta = num(a.eta_at); doc.etaWhen = a.eta_precondition ?? undefined; doc.steps = b.steps; doc.expect = b.expect; doc.where = b.where; if (typeof a.owed_by === "string" && /^[A-Za-z][A-Za-z0-9 _-]{0,40}$/.test(a.owed_by)) doc.owedBy = a.owed_by; break;
