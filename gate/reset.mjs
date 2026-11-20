@@ -284,7 +284,8 @@ export const dispatchLine = (i) => {
     // #C1076: a pair line of a group card says the group: `build pack <group>`.
     const group = i.step === "pair" && typeof i.pack === "string" && PACK_WORD.test(i.pack) ? `; build pack ${i.pack}` : "";
     // #C1228: a pushed tip with no READY over it is not "nothing pushed": the signal is what is missing (stack-ready refuses a commit whose last paragraph has no Board-Id trailer).
-    const text = i.step === "build" && i.trailer === true && SHA12.test(String(i.sha)) ? DISPATCH_TRAILER_TEXT : i.step === "build" && i.ready === true && SHA12.test(String(i.sha)) ? DISPATCH_READY_TEXT : DISPATCH_STEPS[i.step];
+    // #C1327: an outside card with no open stack to join (nothing names a stack branch) is told to cut from main, never to re-cut on a stack tip that is not there.
+    const text = i.step === "outside" && !stackBranch(i.stack) ? "is outside the stack (its branch was not cut from the stack tip), and there is no open stack; cut it from main and push" : i.step === "build" && i.trailer === true && SHA12.test(String(i.sha)) ? DISPATCH_TRAILER_TEXT : i.step === "build" && i.ready === true && SHA12.test(String(i.sha)) ? DISPATCH_READY_TEXT : DISPATCH_STEPS[i.step];
     return `DISPATCH ${card} at ${i.phase}: ${at ? `${at}${who}; ` : ""}it ${text}${on}${together}${queue}${group} (${i.role}'s turn; pushing your own build branch, sending READY and taking your next queued card need no go from anyone, act on this)`;
   }
   return `DISPATCH ${i.card}: it waits on you (${i.role}) and your session has been idle; pick it up now (pushing your own build branch, sending READY and taking your next queued card need no go from anyone)`;

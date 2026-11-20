@@ -76,7 +76,8 @@ export function turnsOf(card, e, ctx = {}) {
   // Only with the switch on for the card's repository (ctx.stackOn): evidence left from when it was on says nothing once it is off.
   const stack = ctx.stackOn === true && e?.stack && typeof e.stack === "object" ? e.stack : null;
   const tip = stack && typeof stack.tip === "string" && /^[0-9a-f]{12}$/.test(stack.tip) ? stack.tip : undefined;
-  const branch = ctx.stackBranch ?? (typeof stack?.branch === "string" ? stack.branch : undefined);
+  // #C1327: an outside card's own evidence names the branch it was cut away from, which may be gone: only a branch an open member carries (ctx.stackBranch) is named to it.
+  const branch = ctx.stackBranch ?? (stack?.outside !== true && typeof stack?.branch === "string" ? stack.branch : undefined);
   const sha = tip ?? (typeof e?.headSha12 === "string" && /^[0-9a-f]{12}$/.test(e.headSha12) ? e.headSha12 : undefined);
   // #C895: where to find the commit without asking: its full sha, the repository (owner/name) and the branch (the stack tip's full sha and
   // the stack's branch when the line names the stack tip; otherwise the card's head, on its own branch, or on main). Each only when the
@@ -252,7 +253,9 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // branch. A product card with no repo word (Builder's #C930 to #C951 stack) no longer hands its branch to a flight-board card (#C928 was told to
   // stack on #C948's product branch); with no same-repo card on a stack the card builds from main, as with the switch off.
   const sameRepoWord = (a, b) => (a.repo || null) === (b.repo || null);
-  const stackBranchFor = (card) => stackOnFor(switchOn, card) ? all.filter((k) => k && typeof k.id === "string" && stackKeyOf(k) === stackKeyOf(card) && sameRepoWord(k, card)).map((k) => ev[`cards.${k.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
+  // #C1327 (11-20: with no open stack head Demos' watch told #C1326 to re-cut on build/ship-v1.215.7, a branch long gone from origin): only an OPEN card still in the stack names
+  // its branch; a live, closed, dropped or outside card's leftover evidence names nothing, and with no such card the card is cut from main.
+  const stackBranchFor = (card) => stackOnFor(switchOn, card) ? all.filter((k) => k && typeof k.id === "string" && open.has(k.id) && phaseOf(k.id) !== "live" && ev[`cards.${k.id}`]?.value?.stack?.outside !== true && stackKeyOf(k) === stackKeyOf(card) && sameRepoWord(k, card)).map((k) => ev[`cards.${k.id}`]?.value?.stack?.branch).find((b) => typeof b === "string") : undefined;
   // #C1018 / #C1035: the first 12 characters of every tip a checker holds a claim on (view.reviewClaims, from the store).
   const claimed12 = new Set((Array.isArray(view?.reviewClaims) ? view.reviewClaims : []).filter((k) => k && typeof k.sha === "string").map((k) => k.sha.slice(0, 12)));
   const BUILD_STEPS = new Set(["build", "rework", "outside"]);
