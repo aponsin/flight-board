@@ -52,7 +52,8 @@ test("an open ask at the phase holding an install wait is green, not red; an ope
   const boardCard = { ...base, phase: "ship", repo: "Flight-Board" };
   const install = board(boardCard, { probe: p, derived: { wait: "install", waitAsk: 77 }, steps: [step(ID, "build", "Builder", "start", NOW - 2.5 * H), gate("ship")] });
   assert.doesNotMatch(install, /class="wait gate/, "the install's ask is not a red box");
-  assert.match(tile(install, "Land").cls, /\brel\b/); // a board card's Ship tile is called Land
+  assert.match(tile(install, "Install").cls, /\brel\b/); // #C1308: the install's wait is the Install tile's; a board card's Ship tile is called Land
+  assert.doesNotMatch(tile(install, "Land").cls, /\brel\b/, "Land does not carry the green");
   const other = board({ ...base, phase: "checker", repo: "Flight-Board" }, { probe: { ...reading("idle"), cards: {} }, derived: { phase: "checker" }, steps: [step(ID, "build", "Builder", "start", NOW - 2.5 * H), gate("checker")] });
   assert.match(other, /class="wait gate/, "an ask that is not the install's is still red");
 });
@@ -61,10 +62,12 @@ test("an open ask at the phase holding an install wait is green, not red; an ope
 test("a landed card waiting for the install is the green stripes (waits rel); a release or product wait is yellow (waits proc); a paused card is neither", () => {
   const p = reading("idle", { phase: "ship", onMain: true });
   const boardCard = { ...base, phase: "ship", repo: "Flight-Board" };
-  const landed = tile(board(boardCard, { probe: p, derived: { wait: "install", waitAsk: 77 } }), "Land");
+  const landedRow = board(boardCard, { probe: p, derived: { wait: "install", waitAsk: 77 } });
+  const landed = tile(landedRow, "Install"); // #C1308: the green stripes sit on the Install tile, and Land stands done
   assert.match(landed.cls, /\bwaits\b/);
   assert.match(landed.cls, /\brel\b/, "only the install is green");
   assert.doesNotMatch(landed.cls, /\bproc\b/);
+  assert.match(tile(landedRow, "Land").cls, /\bdone\b/, "Land is done");
   const rel = tile(board(boardCard, { probe: p, derived: { wait: "release" } }), "Land");
   assert.match(rel.cls, /\bproc\b/, "queued for a board release by Release: yellow");
   assert.doesNotMatch(rel.cls, /\brel\b/, "a release wait is no longer green");
