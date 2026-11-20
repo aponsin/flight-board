@@ -23,6 +23,12 @@ test("a landed card waiting for the install: the Ship cell says 'Queued for your
   // Designer F2 on #C1299: "Your install" was cut to "YOUR INST…" on the phone's 4-a-row track, so the tile is the owner's name with "'s install" as a part hidden under 760 px.
   assert.match(html, /<small class="rs">[^<]+<span class="sl">'s install<\/span><\/small>/);
   assert.match(html, /class="step waits rel"/);
+  // #C1308 (the owner's screenshot): the green wait is the Install tile's. Land and Pack stand done, and no other tile carries the stripes.
+  assert.match(html, /<div class="step waits rel" title="Install: [^"]*">Install<small class="rs">/, "the Install tile holds the owner's install wait");
+  assert.match(html, /<div class="step done[^"]*" title="Land[^"]*">/, "Land is done, not waiting");
+  assert.match(html, /<div class="step done seen" title="Pack: [^"]*">Pack</, "Pack is solid");
+  assert.equal(/class="step waits (rel|proc)" title="(Land|Pack)/.test(html), false, "neither Land nor Pack carries the stripes");
+  assert.equal(/title="Land[^"]*">Land<small[^>]*>[^<]*install/i.test(html), false, "Land says no install word");
   assert.equal(/data-shipat/.test(html), false, "no running counter");
   assert.equal(/slow \(est\.\)|deploying \(est\.\)|tests \(est\.\)/.test(html), false, "no estimate words");
 });

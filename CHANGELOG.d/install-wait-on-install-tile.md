@@ -1,0 +1,1 @@
+- On a landed card whose pack is cut and waits for the owner's install, the green "waits for the install" stripes now sit on the Install tile, with the owner's name on a phone and "'s install" after it on a laptop; Land and Pack stand solid (install-wait-on-install-tile, #C1308). Ships: a page publish. Tests: `tests/ship-cell-waits-for-install.test.mjs` (mutation-checked).
