@@ -1,0 +1,2 @@
+PASS (Full) board-truth-1b #C1378 #C1379 line from 8e3c775d11d20e49e9d3f7d439603497145bfee9: F1, F2 and LOWs on 653321f5 fixed; suite 3561/0/1; 29 of 29 mutants killed; dry run 120 rows/93 cards, 71 early closes; matches Alex's #T2194 A
+signed-by: Checker 2
