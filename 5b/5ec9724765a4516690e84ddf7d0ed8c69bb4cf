@@ -1,0 +1,5 @@
+SECURE
+
+#C1311 re-cut of fb2408c4 (SECURE), by range-diff: one fixed flag --ignore-missing on the rev-list over stack-ready noted shas (40-hex from git notes list, unchanged check). A missing noted commit reaches nothing, so the hold is not loosened; a refused rev-list still falls back. New test with a really pruned commit. stack-read + board-state 58/58; mutation (flag removed) fails the new test. board-polish-five v4, tip 910f08aa.
+
+signed-by: Security
