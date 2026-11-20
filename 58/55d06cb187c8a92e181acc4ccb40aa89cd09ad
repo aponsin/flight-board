@@ -1,0 +1,7 @@
+SECURE
+
+#C1299 slice 1 (Worker, store, migration 0039): two new routes /api/group-rename and /api/move-to-group are owner-only twice (route 403 for any non-owner, and the rule refuses who !== owner, logged). Bodies are strict shapes (only listed keys; ids by regex; confirm only true); group names are 1-60 chars with control characters refused. Every SQL statement is bound (no string-built SQL; the slug loop binds too). Move-to refuses another repository's group, and the in-review warning writes nothing without confirm. Migration 0039 is additive (new groups table + backfill); rollback = Worker rollback, old Worker ignores the table. groupMoveRefusal now also takes c:<card id> slots (SLOT_SHAPE), still owner or Manager only. No new secret, permission or hook change. Ran 74/74 at 5855d06c (group-ids-order-list, owner-orders-groups, dispatch-enforces-group-order, pull-out-of-group, card-groups-page, connector).
+
+INFO 1 (for slice 2): readView now ships groups.name (owner text) to the page; when the page draws it, it must go through esc(), in text and attributes. INFO 2 (robustness, not security): ensureGroup's INSERT OR IGNORE can lose a num race silently and return null; renameGroup/moveToGroup then read g.num of null (a 500, nothing wrong written).
+
+signed-by: Security
