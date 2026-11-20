@@ -57,6 +57,8 @@ export function renderWaitingHtml(asks, opts = {}) {
 // The page's own document listeners are kept in `listeners` (type → [fn]), so a test can fire one (a fold's toggle).
 // globals: more of the page's world (a sessionStorage, a location), laid over the default one.
 // pageHtml: a built page (buildPage with a config) to load in place of the template.
+const COMPILED = new Map();
+const compiledPage = (script) => { let c = COMPILED.get(script); if (!c) COMPILED.set(script, c = new vm.Script(script)); return c; };
 export function loadNames(names, globals = {}, pageHtml = null) {
   const script = pageHtml ? pageHtml.match(/<script>([\s\S]*?)<\/script>/)[1] : templateScript;
   const els = {};
@@ -66,6 +68,10 @@ export function loadNames(names, globals = {}, pageHtml = null) {
   const document = { getElementById: el, querySelectorAll: () => [], querySelector: () => null, addEventListener(type, fn) { (listeners[type] ||= []).push(fn); }, activeElement: null, createRange: () => ({}), documentElement: globals.documentElement };
   const ctx = { document, window: {}, console, setInterval() {}, setTimeout() {}, clearTimeout() {}, queueMicrotask() {}, navigator: {}, getSelection: () => ({}), Date, Math, JSON, Number, String, Array, Object, Set, Map, isFinite, URLSearchParams, WeakMap, File, ...globals };
   vm.createContext(ctx);
-  vm.runInContext(script + `\n;globalThis.__b={state,${names.join(",")}};`, ctx);
+  // #C1370: the page script is compiled once per run and run in each new context; only the short tail naming what to expose is compiled per call. Compiling the whole page every
+  // call made a test file that loads the board often (tests/threads.test.mjs, about 30 times) allocate ~150 KB of source and code per call, and a V8 GC that ran in the middle
+  // of vm.Script::Run crashed node (SIGSEGV in MarkCompact root iteration, node 24.21.0) once in ten or so runs under load.
+  compiledPage(script).runInContext(ctx);
+  new vm.Script(`;globalThis.__b={state,${names.join(",")}};`).runInContext(ctx);
   return { ...ctx.__b, els, document, listeners };
 }
