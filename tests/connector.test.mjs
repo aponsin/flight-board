@@ -136,9 +136,9 @@ test("Manager's door: its own secret and hash, a tool list with read_inbox and n
   assert.ok(tools.some((t) => t.name === "read_inbox"));
   for (const t of tools) assert.ok(!("as" in t.inputSchema.properties) && !t.inputSchema.required.includes("as"), t.name);
   assert.ok(!tools.some((t) => ["answer", "ack"].includes(t.name)), "no owner tools");
-  const id = (await mtool("ask", { type: "Action", title: "Mine", steps: ["x"], expect: "y" })).result.structuredContent.id;
+  const id = (await mtool("ask", { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de", type: "Action", title: "Mine", steps: ["x"], expect: "y" })).result.structuredContent.id;
   assert.equal((await readView(env.DB, NOW)).asks.find((a) => a.id === id).asked_by, "Manager");
-  assert.equal((await mtool("ask", { type: "Action", title: "Claim", steps: ["x"], expect: "y", asked_by: "Builder" })).result.structuredContent.refused.rule, "asked-by-mismatch");
+  assert.equal((await mtool("ask", { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de", type: "Action", title: "Claim", steps: ["x"], expect: "y", asked_by: "Builder" })).result.structuredContent.refused.rule, "asked-by-mismatch");
   assert.equal((await mtool("read_view", { as: "Builder" })).error.message, "this door takes no `as`");
   assert.equal((await readView(env.DB, NOW)).refusals.some((r) => r.rule === "as-on-manager-door"), true);
 });

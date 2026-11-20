@@ -47,9 +47,9 @@ test("the shared door stores no decision under another spelling of the kind, and
 
 test("Manager's own door posts a decision, by the post tool and by a Decision ask that names a thread", async () => {
   const { manager, decisions } = await make();
-  const p = await manager("post", { thread_id: "t-100", body: "which?", kind: "decision", options: OPTIONS });
+  const p = await manager("post", { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de", thread_id: "t-100", body: "which?", kind: "decision", options: OPTIONS });
   assert.equal(p.isError, false, JSON.stringify(p));
-  const a = await manager("ask", { ...ASK, related_thread: "t-100" });
+  const a = await manager("ask", { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de", ...ASK, related_thread: "t-100" });
   assert.equal(a.isError, false, JSON.stringify(a));
   assert.deepEqual(await decisions(), ["Manager", "Manager"]);
 });

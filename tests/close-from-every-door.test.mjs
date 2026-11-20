@@ -35,7 +35,7 @@ test("a close with valid evidence works from the shared door, Manager's door and
   for (const id of ["via-shared", "via-manager", "via-access"]) await open(env, id);
   const ev = "https://example.com/landed";
   const a = await shared("tools/call", { name: "card_update", arguments: { as: "Boardsmith", id: "via-shared", done: true, done_evidence: ev } });
-  const b = await manager("tools/call", { name: "card_update", arguments: { id: "via-manager", done: true, done_evidence: ev } });
+  const b = await manager("tools/call", { name: "card_update", arguments: { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de", id: "via-manager", done: true, done_evidence: ev } });
   const c = await access("Boardsmith", "agent", { id: "via-access", done: true, done_evidence: ev });
   for (const [r, id] of [[a, "via-shared"], [b, "via-manager"], [c, "via-access"]]) {
     assert.ok(!r.error, JSON.stringify(r));
@@ -45,7 +45,7 @@ test("a close with valid evidence works from the shared door, Manager's door and
   const again = await shared("tools/call", { name: "card_update", arguments: { as: "Boardsmith", id: "via-shared", done: true, done_evidence: "/tmp/other" } });
   assert.match(JSON.stringify(again), /already done/);
   assert.equal((await done(env, "via-shared")).done_evidence, ev, "the first evidence stays");
-  const reopen = await manager("tools/call", { name: "card_update", arguments: { id: "via-manager", done: false } });
+  const reopen = await manager("tools/call", { name: "card_update", arguments: { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de", id: "via-manager", done: false } });
   assert.match(JSON.stringify(reopen), /card-done/);
   assert.notEqual((await done(env, "via-manager")).done_at, null, "still done");
 });

@@ -147,7 +147,7 @@ test("end to end: week_usage through the shared door and Manager's door stores t
   assert.deepEqual((await readView(env.DB, NOW)).evidence[WEEK_USAGE_KEY].value, { pct: 85, resetsAt: RESET, by: "Manager" });
   assert.equal((await call(S, { as: "Builder", percent: 86, resets_at: RESET_ISO })).isError, false);
   assert.equal((await readView(env.DB, NOW)).evidence[WEEK_USAGE_KEY].value.by, "Builder", "the writer is the role that called");
-  assert.equal((await call(M, { percent: 87, resets_at: RESET_ISO })).isError, false);
+  assert.equal((await call(M, { session: "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de", percent: 87, resets_at: RESET_ISO })).isError, false);
   assert.equal((await readView(env.DB, NOW)).evidence[WEEK_USAGE_KEY].value.by, "Manager");
   assert.equal((await call(S, { as: "Builder", percent: 101, resets_at: RESET_ISO })).isError, true, "a refused write says so");
   assert.equal((await readView(env.DB, NOW)).evidence[WEEK_USAGE_KEY].value.pct, 87, "and stores nothing");

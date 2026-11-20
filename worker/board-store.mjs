@@ -963,6 +963,20 @@ export async function moveGroup(db, now, who, b) {
   await db.batch([db.prepare("DELETE FROM group_order"), ...groups.map((g, n) => db.prepare("INSERT INTO group_order (batch, pos, set_by, set_at) VALUES (?, ?, ?, ?)").bind(g, n + 1, who, now))]);
   return { ok: true, batch: b.batch, moved: true, order: groups };
 }
+// #C1298 (11-19: a session that was not Manager's wrote through Manager's connector, and the board signed it "Manager"; the owner got a new-reply badge for it): the door guard that read_inbox has
+// now covers every write on Manager's door. A write names the caller's session (`session`, taken off the arguments before the tool sees them) and the Worker compares it with the door
+// session, as read_inbox does: no session named is refused, and so is one that is not the set one, whether or not one is set (with none set, a named session goes through, unguarded, so a deploy
+// never shuts Manager out). A refusal is logged like any (the refusal log, rule door-session-mismatch) and says to stop and tell Manager; the expected id is never echoed back. Returns the refusal
+// result, or null when the write may go on. Reads (read_view) and the two door tools (read_inbox and set_door_session, which carry their own guards) are not covered.
+export const DOOR_UNGUARDED_TOOLS = new Set(["read_view", "read_inbox", "set_door_session"]);
+export async function doorWriteRefusal(db, now, tool, session) {
+  if (DOOR_UNGUARDED_TOOLS.has(tool)) return null;
+  const expected = await db.prepare("SELECT session, set_by, set_at FROM door_session WHERE id = 1").first();
+  const claimed = typeof session === "string" && session.trim() ? session.slice(0, 80) : null;
+  if (claimed !== null && (!expected || claimed === expected.session)) return null;
+  const lastSet = expected ? `the door's session was last set by ${expected.set_by} at ${mtDayTime(expected.set_at)}` : "no session has been set for the door yet";
+  return refuse(db, now, { rule: "door-session-mismatch", detail: `${claimed === null ? `${tool} on Manager's door needs the \`session\` argument: Manager's own session id.` : "the session given is not the one set for Manager's door."} Nothing was written. If you are not Manager's session, stop and tell Manager, and write through the shared connector with your own \`as\`; never call set_door_session to get past this refusal. (${lastSet})` }, null, "Manager");
+}
 export async function guardedInbox(db, now, session) {
   const expected = await db.prepare("SELECT session, set_by, set_at FROM door_session WHERE id = 1").first();
   const claimed = typeof session === "string" && session.trim() ? session.slice(0, 80) : null;

@@ -14,7 +14,7 @@ import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.
 import { writeUsageDay } from "./compat-usage.mjs";
 import { subscribePush, unsubscribePush, pushKnown, pushFacts, pushRun } from "./push-store.mjs";
 import { SW_SOURCE, MANIFEST } from "./push-page.mjs";
-import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, setDoorSession, setStackSwitch, claimReview, releaseReview, moveInQueue, pullOutOfGroup, moveGroup } from "./board-store.mjs";
+import { createCard, updateCard, createAsk, askFromTool, postMessage, answerAsk, closeAsk, createListItem, updateListItem, writeStep, fillCardRepo, recordBuildStart, ackShip, writeEvidence, readView, refuse, writeWeekUsage, wakeAsk, wakeResult, takeInbox, guardedInbox, doorWriteRefusal, DOOR_UNGUARDED_TOOLS, setDoorSession, setStackSwitch, claimReview, releaseReview, moveInQueue, pullOutOfGroup, moveGroup } from "./board-store.mjs";
 
 export const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 import { viewForTool } from "./view-filter.mjs";
@@ -155,6 +155,9 @@ const MANAGER_TOOLS = [...CONNECTOR_TOOLS, byName.read_inbox, byName.set_door_se
 const plain = ({ roles, ...t }) => t;
 const asProp = { type: "string", enum: ROSTER_ROLES, description: "Which role is calling. The board records this name on what you write." };
 const connectorTool = ({ roles, ...t }) => ({ ...t, inputSchema: { ...t.inputSchema, properties: { as: asProp, ...t.inputSchema.properties }, required: ["as", ...t.inputSchema.required.filter((r) => !(t.name === "ask" && r === "asked_by"))] } });
+// #C1298: on Manager's door every write tool takes the caller's own `session` (checked against the door session, doorWriteRefusal); the reads and the two door tools carry their own.
+const sessionProp = { type: "string", description: "Your own session id (Manager's session). A write from any other session is refused and nothing is written; if you are not Manager's session, stop and tell Manager, and write through the shared connector with your own `as`." };
+const managerTool = (t) => DOOR_UNGUARDED_TOOLS.has(t.name) ? plain(t) : (({ roles, ...x }) => ({ ...x, inputSchema: { ...x.inputSchema, properties: { session: sessionProp, ...x.inputSchema.properties }, required: ["session", ...x.inputSchema.required] } }))(t);
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 export async function secretMatches(secret, expectedHex) {
   if (typeof secret !== "string" || !/^[0-9a-f]{64}$/.test(expectedHex ?? "")) return false;
@@ -174,7 +177,7 @@ async function connector(request, env, now, door = "shared") {
   const ok = (result) => json(200, { jsonrpc: "2.0", id, result });
   const err = (code, message) => json(200, { jsonrpc: "2.0", id, error: { code, message } });
   const manager = door === "manager";
-  if (msg.method === "tools/list") return ok({ tools: manager ? MANAGER_TOOLS.map(plain) : CONNECTOR_TOOLS.map(connectorTool) });
+  if (msg.method === "tools/list") return ok({ tools: manager ? MANAGER_TOOLS.map(managerTool) : CONNECTOR_TOOLS.map(connectorTool) });
   if (msg.params?.arguments === null || typeof (msg.params?.arguments ?? {}) !== "object" || Array.isArray(msg.params?.arguments)) return err(-32602, "arguments are an object");
   const tool = (manager ? MANAGER_TOOLS : CONNECTOR_TOOLS).find((t) => t.name === msg.params?.name);
   if (!tool) {
@@ -189,7 +192,11 @@ async function connector(request, env, now, door = "shared") {
       await refuse(env.DB, now, { rule: "as-on-manager-door", detail: "this door is Manager's and takes no `as`" }, null, "Manager");
       return err(-32602, "this door takes no `as`");
     }
-    return ok(await callTool(env.DB, now, "Manager", "agent", tool.name, args, env, "manager"));
+    // #C1298: every write on this door names its session, checked against the door session as read_inbox's is. `session` is not a field of the tool: it is taken off here.
+    const { session, ...rest } = args;
+    const bad = await doorWriteRefusal(env.DB, now, tool.name, session);
+    if (bad) return ok(text(bad));
+    return ok(await callTool(env.DB, now, "Manager", "agent", tool.name, DOOR_UNGUARDED_TOOLS.has(tool.name) ? args : rest, env, "manager"));
   }
   if (!ROSTER_ROLES.includes(as)) {
     await refuse(env.DB, now, { rule: "as-not-in-roster", detail: `as: ${typeof as === "string" ? as.slice(0, 40) : typeof as}` }, null, "connector");
