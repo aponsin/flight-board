@@ -1109,6 +1109,33 @@ export async function agentNoteRefusal(db, now, who, args) {
   if (await db.prepare("SELECT 1 AS x FROM messages WHERE thread_id = ? AND author = 'owner' LIMIT 1").bind(t).first()) return null;
   return refuse(db, now, { rule: "agent-note-on-card", detail: `the owner has written nothing on ${t}'s thread, so a post there would show to him as a reply that is not one: a note for an agent goes by send_message to that agent` }, t, who);
 }
+// #C1332 (the owner, t-1795159050363: a mockup made Manager's A/B moot and the buttons stayed, with no tool to take them away): Manager's door withdraws a decision message it posted that the
+// owner has not answered. The buttons go (options null), the message reads "No longer needed", and its kind becomes "withdrawn", so the card it held is released (openDecisionHolds
+// reads kind = 'decision' only). Refused: another author's message (the owner's included), a message that is no open decision, and one the owner has already answered (any message
+// of his that picks one of its options, "Chose <key>: <label>", at or after it; his other messages after it do not count).
+export const WITHDRAWN_TEXT = "No longer needed";
+export async function withdrawDecision(db, now, who, args) {
+  const id = args?.message_id;
+  if (!args || typeof args !== "object" || Object.keys(args).some((k) => k !== "message_id") || typeof id !== "string" || !/^[A-Za-z0-9-]{1,80}$/.test(id)) return refuse(db, now, { rule: "message-shape", detail: "message_id, the id of the decision message; nothing else" }, null, who);
+  if (who !== "Manager") return refuse(db, now, { rule: "withdraw-manager-only", detail: `${who ?? "unknown"} cannot withdraw a decision: Manager's own door does` }, null, who);
+  const m = await db.prepare("SELECT id, thread_id, author, created_at, kind, options FROM messages WHERE id = ?").bind(id).first();
+  if (!m) return refuse(db, now, { rule: "withdraw-no-message", detail: `no message ${id}` }, null, who);
+  if (m.author !== who) return refuse(db, now, { rule: "withdraw-not-yours", detail: `${id} was written by ${m.author}, not by ${who}: only your own decision is withdrawn` }, m.thread_id, who);
+  if (m.kind !== "decision") return refuse(db, now, { rule: "withdraw-not-open-decision", detail: `${id} is not an open decision message` }, m.thread_id, who);
+  // The owner's pick is his message "Chose <key>: <label>" (the page's optionText) after the decision; his other words after it are not an answer to it (#C1284: he wrote under a
+  // decision and it stayed open). Manager, t-1795159050363: the owner wrote five messages after the A/B and never picked, and that is the case this tool is for.
+  // Manager's edge: the pick must be this decision's own. Its text is one of this message's options as the page sends it ("Chose <key>: <label>"), and it comes before any LATER decision of
+  // the thread (a pick after a second decision answers that one, as the page's openDecision reads it), so picking a newer decision never blocks withdrawing an older one.
+  let own = [];
+  try { own = JSON.parse(m.options ?? "[]"); } catch { /* an unreadable options column offers no pick */ }
+  const picks = new Set((Array.isArray(own) ? own : []).filter((o) => o && typeof o.key === "string" && typeof o.label === "string").map((o) => `Chose ${o.key}: ${o.label}`));
+  const later = await db.prepare("SELECT MIN(created_at) AS t FROM messages WHERE thread_id = ? AND created_at > ? AND kind = 'decision'").bind(m.thread_id, m.created_at).first();
+  const heard = (await db.prepare("SELECT body FROM messages WHERE thread_id = ? AND created_at >= ? AND id <> ? AND author = 'owner' AND substr(body, 1, 6) = 'Chose ' AND (? IS NULL OR created_at < ?)").bind(m.thread_id, m.created_at, m.id, later?.t ?? null, later?.t ?? null).all()).results;
+  const picked = heard.some((r) => picks.has(String(r.body ?? "").trim()));
+  if (picked) return refuse(db, now, { rule: "withdraw-answered", detail: `the owner has already picked on ${id} in ${m.thread_id}: an answered decision stays as it is` }, m.thread_id, who);
+  await db.prepare("UPDATE messages SET kind = 'withdrawn', options = NULL, screenshots = NULL, body = ? WHERE id = ?").bind(WITHDRAWN_TEXT, id).run();
+  return { ok: true, id, thread_id: m.thread_id, withdrawn: true };
+}
 export async function guardedInbox(db, now, session) {
   const expected = await db.prepare("SELECT session, set_by, set_at FROM door_session WHERE id = 1").first();
   const claimed = typeof session === "string" && session.trim() ? session.slice(0, 80) : null;
