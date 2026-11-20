@@ -840,6 +840,8 @@ function leadLast(id,after=0){const t=threadOf(id),last=t[t.length-1];
 function waitsOn(id,now){const it=itemOf(id);
   if(it&&it.coll==="waiting"&&!settled(it.doc))return needsYou(it.doc,now)||leadLast(id,num(it.doc.response&&it.doc.response.at)??0)?"you":"lead";
   if(!threadOf(id).length)return null;
+  // #C1294: a card's unpicked decision is the owner's to pick whoever wrote since: under Needs you, and its badge says "waiting on you".
+  if(threadCard(id)&&openDecision(id))return "answered";
   if(teamOnly(id)&&!threadResolved(id))return "team";
   return threadOpen(id)?"lead":threadResolved(id)?"resolved":threadState(id)==="building"&&!leadLast(id)?"lead":"answered"}
 // #C919 (Team notes): a thread where nothing is addressed to the owner, so it is not his to read. Every message is an agent's
@@ -1806,7 +1808,7 @@ document.addEventListener("click",async e=>{const b=e.target.closest&&e.target.c
 function threadRow(id,now,where="panel",ask=null){const on=waitsOn(id,now),st=ask||on==="resolved"?null:threadState(id),card=st?threadCardAny(id):null;
   const nk=ask?askNeed(ask):null;
   const kind=ask?`<span class="kind ${esc(nk)}">${esc(Object.hasOwn(ASKLABEL,String(nk))?ASKLABEL[nk]:nk||"Ask")}</span>`:st?`<span class="kind ${st}">${TSTATE[st]}${card&&Number.isInteger(card.num)?`<span class="kn"> #C${card.num}</span>`:""}</span>`:`<span class="kind">${id.startsWith("t-")?esc((threadOf(id)[0].kind)||"thread"):"Thread"}</span>`;
-  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on)}${lateTag(id,now)}${pingHtml(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it.",decide:true}:{acts:true})}</details>`}
+  return `<details class="w-item" data-id="th-${esc(id)}"><summary class="w-row">${kind}<div class="w-text">${ask||id.startsWith("t-")?"":"Reply to: "}${threadNum(id)?`<span class="t-numtxt">#T${threadNum(id)}</span> · `:""}<b class="t-name">${esc(threadName(id))}</b>${badge(on==="answered"&&!ask&&threadCard(id)&&openDecision(id)?"you":on)}${lateTag(id,now)}${pingHtml(id,now)}${ask?"":withLine(id,on==="lead")}</div><span class="age">${dur(now-threadLast(id))}<span class="ago"> ago</span> <span class="caret" aria-hidden="true">▸</span></span></summary>${threadHtml(id,where,ask?{hint:"Writing here reopens it.",decide:true}:{acts:true})}</details>`}
 function threadSets(now,q=rQuery){const ids=threadIds().filter(id=>(id.startsWith("t-")||!itemShown(id,now))&&threadHit(id,q));
   return {open:ids.filter(id=>waitsOn(id,now)==="lead").sort((a,b)=>threadLast(a)-threadLast(b)),
     answered:ids.filter(id=>waitsOn(id,now)==="answered").sort((a,b)=>threadLast(b)-threadLast(a)),
@@ -2394,7 +2396,7 @@ function heldLine(i){if(!i)return "";const r=typeof i.blocked==="string"&&i.bloc
   const end=num(i.checkAt)!=null?dayLabel(i.checkAt):typeof i.holdEnd==="string"&&i.holdEnd?i.holdEnd:num(i.holdUntil)!=null?dayLabel(i.holdUntil):"no end set";return "Held: "+r+", until "+end}
 // Waiting on the owner (#C376): an ask tied to the card that the owner hasn't answered. Nobody owes a step meanwhile, so
 // its timers pause (no stall, no "never started", no stale next step, no passed ETA) and the card names the ask.
-function ownerWait(i,now=Date.now()){return i&&i.id?(state.waiting||[]).find(w=>w&&w.initiative===i.id&&!owedOf(w)&&waitsOn(w.id,now)==="you")||null:null}
+function ownerWait(i,now=Date.now()){return i&&i.id?(state.waiting||[]).find(w=>w&&w.initiative===i.id&&!owedOf(w)&&waitsOn(w.id,now)==="you")||cardDecision(i)||null:null}
 // What Manager forgot, flagged by the board itself instead of relying on memory.
 function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
   if(i.status==="done"){const shipped=(Array.isArray(i.phaseLog)?i.phaseLog:[]).some(e=>e&&e.phase==="ship"&&!e.wait);if(shipped&&!i.shipDetail)g.push("no ship times");return g}
@@ -3218,15 +3220,22 @@ function fromSteps(i){
 }
 // A question to the owner tied to an initiative holds it: open, it shows as "Gated · the owner" at the phase it holds;
 // answered, it stays in the history from the ask to his click when the item names its "phase". The board item is the record, no separate step.
+// #C1294 (the owner's pick A on #T2139): a decision with options in a card's thread that he has not picked is an open ask on that card, as a waiting ask is: the card gates at its phase
+// (red and white stripes), reads "Waiting on you", counts in Needs you and its badge, and is not stalled, until he picks or the decision is resolved (openDecision says when).
+function cardDecision(i){if(!i||i.status==="done"||i.status==="dropped")return null;
+  for(const t of new Set([i.thread,...(Array.isArray(i.threads)?i.threads:[])])){if(typeof t!=="string"||!t)continue;const d=openDecision(t);if(d)return {id:t,at:num(d.m.at),text:String(d.m.text||"").split("\n")[0].trim()}}
+  return null}
 function gates(i){
   if(i.status==="done")return i;
-  const ws=state.waiting.filter(w=>w&&w.initiative===i.id&&num(w.since)!=null);
-  if(!ws.length)return i;
-  const out={...i,phaseLog:(Array.isArray(i.phaseLog)?i.phaseLog:[]).slice()};
+  const ws=state.waiting.filter(w=>w&&w.initiative===i.id&&num(w.since)!=null),dec=cardDecision(i);
+  if(!ws.length&&!dec)return i;
+  const out={...i,phaseLog:(Array.isArray(i.phaseLog)?i.phaseLog:[]).slice()};let held=false;
   ws.forEach(w=>{const end=w.response&&num(w.response.at)!=null?w.response.at:(w.done?w.since:null);
     const phase=w.phase||(end==null?out.phase:null);if(!phase)return;
     const en={phase,who:OWNER,start:w.since,wait:"gate"};if(end!=null)en.end=end;out.phaseLog.push(en);
-    if(end==null){out.who=OWNER;out.status="active";out.waitingOn=out.waitingOn||OWNER+": "+(w.text||"a question")}});
+    if(end==null){held=true;out.who=OWNER;out.status="active";out.waitingOn=out.waitingOn||OWNER+": "+(w.text||"a question")}});
+  // An open ask already holds the card: the decision adds no second gate.
+  if(dec&&!held&&dec.at!=null&&out.phase){out.phaseLog.push({phase:out.phase,who:OWNER,start:dec.at,wait:"gate"});out.who=OWNER;out.status="active";out.waitingOn=OWNER+": "+(dec.text||"a decision")}
   return out;
 }
 // A card given up ("dropped", with dropReason) is closed like a done one, and says so.
