@@ -278,7 +278,7 @@ test("the page's feed carries the order (meta/groupOrder, in place order) once t
 });
 
 // The page: the groups in the owner's order, with real up and down buttons on the store page only; a tap posts {batch, dir}.
-const NAMES = ["groupLabel", "groupShort", "groupOrderRows", "groupRankOf", "groupCmp", "groupMoveButtons", "groupList", "groupFacts", "groupRow", "pulledTag", "railState", "renderBoard", "initRow", "gates", "enrich", "PHASES"];
+const NAMES = ["groupLabel", "groupShort", "groupOrderRows", "groupRankOf", "groupCmp", "groupMoveButtons", "groupList", "groupFacts", "groupRow", "pulledTag", "pillClass", "renderBoard", "initRow", "gates", "enrich", "PHASES"];
 function board(initRaw, order, host = "store", answer = null) {
   const els = {}, listeners = {}, calls = [];
   const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });

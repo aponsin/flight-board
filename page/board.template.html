@@ -846,7 +846,7 @@ const ASKLABEL=Object.assign({},KIND,{question:"Question",conversation:"Conversa
 // thread or item and kept for the pass, then dropped: before, waitsOn, threadOpen, threadResolved, teamOnly and itemOf each ran tens of thousands of times over the same few hundred threads. Outside a pass (a click, a
 // tab switch) every function is as it was. A time passed in (now) is the pass's: within one redraw it moves by milliseconds, and nothing here turns on that.
 let pass=null;
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],readings:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[],agentPrs:[],approvals:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],readings:[],groups:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[],agentPrs:[],approvals:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -2744,7 +2744,7 @@ function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
   const detBody=`${next}${removes}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
   const gp=liveOpen?[]:gaps(i);
   const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip,track):"";
-  return `<div class="i-row${isStaleCard(i)?" read-stale":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now(),w!=="group")}${w==="group"?"":`<strong>${esc(i.name)}</strong>`}${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}${w==="group"?"":`<span class="size">${esc(i.size||"?")}</span>`}<span class="state ${R.state==="stuck"&&i.status!=="done"?"stalled":verifying(i)?"verifying":i.status==="active"&&R.state==="waiting"&&R.wait&&R.wait!=="turn"?"queued":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
+  return `<div class="i-row${isStaleCard(i)?" read-stale":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now(),w!=="group")}${w==="group"?"":`<strong>${esc(i.name)}</strong>`}${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}${w==="group"?"":`<span class="size">${esc(i.size||"?")}</span>`}<span class="state ${pillClass(i,R)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track" style="--per:${per}">${steps}</div>`}
@@ -2889,7 +2889,8 @@ function groupWaitFor(i){if(!STORE||!i||!i.batch||!i.stack||i.stack.outside||i.d
 function groupReadyAt(i){if(!STORE||!i||!i.batch||!i.stack||i.stack.outside||i.status==="done"||!REVIEW_LANES.includes(i.phase))return null;let at=0;
   for(const k of state.initiatives){if(!k||k.batch!==i.batch||k.status==="done"||k.dropped||k.status==="paused"||!REVIEW_LANES.includes(k.phase))continue;const e=phaseStart(k,k.phase);if(e&&num(e.start)!=null)at=Math.max(at,e.start)}
   return at||null}
-function railState(i){return i.status==="stuck"?["stuck","Blocked"]:i.status==="paused"?["paused","Paused"]:notStarted(i)?["queued","Queued"]:phaseIndex(i.phase)>phaseIndex(BUILD_PHASE)?(i.status==="done"?["done","Done"]:["active",(PHASES.find(p=>p[0]===i.phase)||[])[1]||"In flight"]):builtWaiting(i)?["done","Built, waiting"]:["active","Building"]}
+// #C1383: the pill's look, one function for a card's row and its place on its group's rail (the words are pillOf's).
+function pillClass(i,R){return R.state==="stuck"&&i.status!=="done"?"stalled":verifying(i)?"verifying":i.status==="active"&&R.state==="waiting"&&R.wait&&R.wait!=="turn"?"queued":R.state==="queued"&&i.status==="active"?"queued":esc(i.status)}
 function railChips(i){const iss=i.issues||{};return ISSUE_KINDS.map(([k,l])=>{const v=num(iss[k])||0;return v?`<span class="chip">${v} ${issueLabel(l,v)}</span>`:""}).join("")}
 // The owner's up and down on a group (#C1053): shown on the store page only; `at` is {n: its place, of: how many groups} so the top one cannot go up.
 // #C1299: the same arrows on a single card ("c:<card id>", `what` "card #C12" for the label): a card with no place of its own has n null, joins the end on its first up, and has no down.
@@ -2913,51 +2914,38 @@ function railOrder(cards){const lt=(a,b)=>a===b?0:a<b?-1:1,ow=i=>i.queueSetBy===
 function cardMoveButtons(i,ord){if(!STORE||!isQueued(i))return "";const q=ord.filter(isQueued),k=q.indexOf(i);if(q.length<2||k<0)return "";const l=Number.isInteger(i.num)?"#C"+i.num:i.id,
     off=j=>j<0||j>=q.length||heldQueued(q[j])!==heldQueued(i);
   return `<span class="g-move c-move"><button type="button" class="qm" data-qmove="${esc(i.id)}" data-dir="up" aria-label="Move ${esc(l)} up in its group"${off(k-1)?" disabled":""}>↑</button><button type="button" class="qm" data-qmove="${esc(i.id)}" data-dir="down" aria-label="Move ${esc(l)} down in its group"${off(k+1)?" disabled":""}>↓</button></span>`}
-// #C1343: how a group row's phase tile is chosen from its cards' tiles for that phase (cardTile, the card row's own function). When every card draws the same state the group draws it;
-// when they differ the group draws the first state in TILE_ORDER that any card is in. That order is the whole rule; docs/DATA.d/group-install-tile-matches-card.md and tests/group-tiles-from-cards.test.mjs say it too.
-// A group is only as far along as its least-finished card, and a state that needs someone's look beats one that does not:
-//   stuck            the dark tile: slow and nobody on it
-//   active           the blue pulsing tile: an agent is on it
-//   checking         Live's "check hh:mm" (verifying)
-//   waits            yellow stripes: waiting on Release, a decision, a hold, a dependency, Paused
-//   up next          next in its agent's queue
-//   here             the still ring: started, nobody on it
-//   queued           queued, not started (yellow, still)
-//   not reached      a plain tile: a phase the card has not got to, or the unlit Pack and Install
-//   waiting on pack or install   yellow "Queued for pack" on Land, or the green owner's-install wait on Install: the card has done all it can, so a card that has not got there comes first
-//   done seen        done, and the repository shows it (Pack, Install, a step the repo has evidence of)
-//   done             done by its step
-//   skip             not needed
-const LANDED_WAIT=/Queued(?:<span class="sl">)? for pack/;
-const isPackWait=(t,s)=>t.has("waits")&&(t.has("rel")||LANDED_WAIT.test(s));
-const TILE_ORDER=[["stuck",t=>t.has("stuck")],["active",t=>t.has("now")&&!t.has("queued")],["checking",t=>t.has("verifying")],["waits",(t,s)=>t.has("waits")&&!isPackWait(t,s)],["up next",t=>t.has("upnext")],["here",t=>t.has("here")],["queued",t=>t.has("queued")],["not reached",t=>!t.has("done")&&!t.has("skip")&&!t.has("waits")],["waiting on pack or install",isPackWait],["done seen",t=>t.has("done")&&t.has("seen")],["done",t=>t.has("done")],["skip",t=>t.has("skip")]];
-// What a card's tile is: its classes (without the cosmetic norec and together), the first <small> it carries, and where it ranks in TILE_ORDER. A skipped Test (no tile) is "skip".
-function tileRead(T){const html=T&&T.html||"",m=/^<div class="([^"]*)"/.exec(html);if(!m)return {tokens:new Set(["skip"]),cls:"step skip",small:"",rank:TILE_ORDER.length-1,name:"skip"};
-  const tokens=new Set(m[1].split(" ").filter(x=>x&&x!=="step"&&x!=="norec"&&x!=="together")),sm=/<small(?: [^>]*)?>[\s\S]*?<\/small>/.exec(html.slice(m[0].length)),small=sm?sm[0]:"",rank=TILE_ORDER.findIndex(([,test])=>test(tokens,small));
-  return {tokens,cls:m[1].split(" ").filter(x=>x!=="norec").join(" "),small,rank,name:TILE_ORDER[rank][0],together:/\btogether\b/.test(m[1])}}
-function groupTile(b,k,l,cards,tiles,f){const reads=tiles.map(tileRead),best=Math.min(...reads.map(r=>r.rank)),top=reads.filter(r=>r.rank===best),w=top[0],n=top.length;
-  // Words: only where every card in the winning state says the same thing do they show (a pack number, "Queued for pack", Paused); else the owner's install word, or none.
-  const same=top.every(r=>r.small===w.small);let small="<small>&nbsp;</small>",cls=w.cls;
-  if(["waits","waiting on pack or install","done seen","checking"].includes(w.name))small=same?w.small:(w.tokens.has("rel")?`<small class="rs">${esc(OWNER)}<span class="sl">'s install</span></small>`:"<small>&nbsp;</small>");
-  else if(w.name==="queued")small="<small>queued</small>";else if(w.name==="skip")small="<small>not needed</small>";else if(w.name==="up next")small="<small>up next</small>";
-  const tg=w.name==="active"&&top.some(r=>r.together)&&isTogether(b,f.phase,cards);
+// #C1383 (one-reading-module step 3, group rows): a group's row is the Worker's `groups` row, `groupReading(members' readings)` of worker/reading.mjs (#C1381): per phase the cards' tile when
+// they agree, else the first tile in that module's TILE_ORDER (stuck, working, unknown, ask, wait, queued, future, afterwork, done). The page no longer reads the classes of drawn card tiles
+// (the rule of #C1343 is kept; where it reads is what changed). The words on a tile are the members' own wait words, shown only where every card in the winning tile says the same thing.
+const GROUP_CLASS={done:"step done",working:"step now",stuck:"step now stuck",unknown:"step here",ask:"step waits ask",wait:"step waits proc",queued:"step now queued",future:"step"};
+const groupDocOf=b=>(state.groups||[]).find(g=>g&&g.batch===b)||null;
+function groupTile(b,k,l,cards,G,f){
+  const t=G&&G.tiles&&Object.hasOwn(G.tiles,k)?G.tiles[k]:"future",rs=cards.map(i=>readingOf(i.id)),at=cards.map((i,j)=>tileAt(rs[j],k)),top=cards.filter((i,j)=>at[j]===t),topR=top.map(i=>readingOf(i.id));
+  let cls=t==="afterwork"?(k==="install"&&cardRepo(cards[0])===BOARD_REPO?"step waits rel":"step waits proc"):GROUP_CLASS[t]||"step",small="<small>&nbsp;</small>";
+  const words=[...new Set(topR.map((r,j)=>waitTileWord(top[j],r)))];
+  if(t==="wait"||t==="afterwork"||t==="ask"){if(words.length===1&&words[0])small=`<small class="rs">${words[0]}</small>`;else if(cls.includes(" rel"))small=`<small class="rs">${esc(OWNER)}<span class="sl">'s install</span></small>`}
+  else if(t==="queued")small="<small>queued</small>";
+  else if(t==="unknown")small="<small>no reading</small>";
+  else if(t==="working"){const who=[...new Set(topR.map(r=>r.with).filter(Boolean))];if(who.length===1)small=`<small>${esc(who[0])}</small>`}
+  const tg=t==="working"&&isTogether(b,G&&G.phase||f.phase,cards);
   if(tg){cls+=" together";small='<small class="tog">together</small>'}
-  const agree=reads.every(r=>r.name===w.name);
-  return `<div class="${cls}" title="${esc(l)}${agree?"":": "+n+" of "+reads.length+" cards "+w.name}">${esc(l)}${small}</div>`}
+  const agree=at.every(x=>x===t);
+  return `<div class="${cls}" title="${esc(l)}${agree?"":": "+top.length+" of "+cards.length+" cards "+t}">${esc(l)}${small}</div>`}
 function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(cards[0]);if(etaOver!==undefined)f.eta=etaOver;
   // A phase every card skips (and none is at) reads as each card's own strip: Test is left out, any other says "not needed".
   const skipAll=k=>cards.every(i=>Array.isArray(i.skip)&&i.skip.includes(k)&&i.phase!==k),shownT=track.filter(([k])=>!(k==="test"&&skipAll(k)));
   // #C1343 (the owner, 11-20: "still not matching ?"): each of the group's phase tiles is made FROM its member cards' own tiles for that phase, asked of the card row's own function (cardTile),
   // not worked out again here. Cards that draw the same state give the group that state; cards that differ give the one state that comes first in TILE_ORDER (the rule is written there, once).
-  const ctxs=cards.map(i=>tileCtx(i));
-  const tiles=shownT.map(([k,l])=>groupTile(b,k,l,cards,cards.map((i,j)=>cardTile(i,ctxs[j],k,l)),f)).join("");
+  const G=groupDocOf(b);
+  const tiles=shownT.map(([k,l])=>skipAll(k)?`<div class="step skip" title="${esc(l)}: not needed">${esc(l)}<small>not needed</small></div>`:groupTile(b,k,l,cards,G,f)).join("");
+  const stale=cards.filter(i=>i.status!=="done"&&staleOf(i.id)).map(i=>staleOf(i.id)),sinceS=stale.map(s=>s.staleSince).filter(Number.isFinite),staleG=stale.length?`<span class="stale-read" title="A card of this group could not be read fresh: its last good reading is shown.">${sinceS.length?"No fresh reading since "+esc(hhmm(Math.min(...sinceS))):"No fresh reading"}</span>`:"";
   const eta=f.eta!=null?`<div class="lbl">Live in</div><div class="big" data-eta="${f.eta}">${f.eta>Date.now()?dur(f.eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(f.eta)}</div>`:`<div class="lbl">ETA</div><div class="big">—</div>`;
-  const ord=railOrder(cards),rail=ord.map(i=>{const [c,w]=railState(i);
+  const ord=railOrder(cards),rail=ord.map(i=>{const R=readingOf(i.id),c=pillClass(i,R),w=pillOf(i,R);
     return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span>${repoBadge(i)}<strong>${esc(i.name)}</strong>${newPill(newReplies(i.id).length)}<span class="size">${esc(i.size||"?")}</span><span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details><div class="g-ctl">${cardMoveButtons(i,ord)}${moveToSelect(i)}${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div></div>`}).join("");
-  return `<div class="i-row g-row" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span>${repoBadge(cards[0],"group")}<strong>${esc(groupLabel(b))}</strong>${STORE?`<button type="button" class="g-ren" data-gren="${esc(b)}" aria-label="Rename group ${esc(groupLabel(b))}">Rename</button>`:""}<span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
+  return `<div class="i-row g-row${stale.length?" read-stale":""}" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span>${repoBadge(cards[0],"group")}<strong>${esc(groupLabel(b))}</strong>${STORE?`<button type="button" class="g-ren" data-gren="${esc(b)}" aria-label="Rename group ${esc(groupLabel(b))}">Rename</button>`:""}<span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
    <div class="eta">${eta}</div>
    <div class="track" style="--per:${evenPer(shownT.length)}">${tiles}</div>
-   <div class="i-meta">${f.who.length?`<span>Track <b>${esc(f.who.join(", "))}</b></span>`:""}${f.started!=null?`<span>Started ${dayLabel(f.started)}</span>`:""}</div>
+   <div class="i-meta">${f.who.length?`<span>Track <b>${esc(f.who.join(", "))}</b></span>`:""}${f.started!=null?`<span>Started ${dayLabel(f.started)}</span>`:""}${staleG}</div>
    <div class="g-rail">${rail}</div></div>`}
 // The owner's up or down on a group (#C1053): the store's route, the same rule as its typed tool; the page re-reads on its next poll.
 document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e.target.closest("[data-gmove]"):null;if(!b||!STORE||b.disabled)return;
@@ -4033,7 +4021,7 @@ setInterval(()=>{tick();if(!typingText()&&!selectionHeld()&&document.querySelect
     ()=>{$("dot").classList.remove("on");dbState="connection lost, reload";renderStamp()}))};
   // Every collection, and again (each stream closed first) when the data is behind (#C452: catchUp).
   resubscribe=()=>{subs.forEach(u=>{try{if(typeof u==="function")u()}catch(e){}});subs=[];
-    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","readings","threads","plan","timings","ctxRequests","checkRequests","threadPings","pingThreads","agentPrs","approvals"].forEach(sub)};
+    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","readings","groups","threads","plan","timings","ctxRequests","checkRequests","threadPings","pingThreads","agentPrs","approvals"].forEach(sub)};
   resubscribe();
 })();
 // The Studio's state (#C420), apart from the board's data: kept current by the connector's watch, once a minute.

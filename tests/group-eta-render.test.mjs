@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadNames } from "./harness.mjs";
 
-const NAMES = ["groupEtas", "groupLabel", "groupShort", "groupOrderRows", "groupRankOf", "groupCmp", "groupMoveButtons", "groupList", "groupFacts", "groupRow", "pulledTag", "railState", "renderBoard", "setInitSearch", "initHit", "initRow", "gates", "enrich", "PHASES", "MIN_LEFT"];
+const NAMES = ["groupEtas", "groupLabel", "groupShort", "groupOrderRows", "groupRankOf", "groupCmp", "groupMoveButtons", "groupList", "groupFacts", "groupRow", "pulledTag", "pillClass", "renderBoard", "setInitSearch", "initHit", "initRow", "gates", "enrich", "PHASES", "MIN_LEFT"];
 const MIN = 60e3, NOW = 1_800_000_000_000;
 function board(initRaw, order) {
   const els = {}, el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });

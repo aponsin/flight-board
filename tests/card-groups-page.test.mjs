@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadNames, readingDoc, setReadings } from "./harness.mjs";
 
-const NAMES = ["groupLabel", "groupShort", "groupOrderRows", "groupRankOf", "groupCmp", "groupMoveButtons", "groupList", "groupFacts", "groupRow", "pulledTag", "railState", "renderBoard", "initRow", "gates", "enrich", "PHASES"];
+const NAMES = ["groupLabel", "groupShort", "groupOrderRows", "groupRankOf", "groupCmp", "groupMoveButtons", "groupList", "groupFacts", "groupRow", "pulledTag", "pillClass", "renderBoard", "initRow", "gates", "enrich", "PHASES"];
 function board(initRaw, host = "store") {
   const els = {}, listeners = {}, calls = [];
   const el = (id) => (els[id] ||= { id, innerHTML: "", textContent: "", value: "", hidden: false, classList: { add() {}, remove() {}, toggle() {} }, addEventListener() {}, querySelectorAll: () => [], querySelector: () => null, dataset: {}, setAttribute() {}, getBoundingClientRect: () => ({ left: 0, width: 0 }) });

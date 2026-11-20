@@ -2,6 +2,7 @@
 // No browser: window.claude is absent, so the page's live-data block stops at "offline".
 import { readFileSync, rmSync } from "node:fs";
 import vm from "node:vm";
+import { groupDocs } from "../worker/compat-reading.mjs";
 // #C1367: removes a temp folder a test made. Under a loaded machine rmSync can meet ENOTEMPTY (git or the OS still writing into the folder as it is removed:
 // tests/landing-refuses-data-md-edit.test.mjs failed this way once and passed alone), so a busy folder is tried again, up to `tries` times, 50 ms apart; any other
 // error, and the last busy one, is thrown. `rm` and `wait` are the seams for the test.
@@ -39,7 +40,16 @@ export function probeWorking(b, id, agent = "Builder", card = {}) {
 // waiting for its turn with its owner); `setReadings(b, ...docs)` puts them where the page reads them. The shapes are worker/reading.mjs's: state is one of done, unknown,
 // rework, working, waiting, stuck, queued; wait one of turn, group, land, pack, install, deploy, ask, hold or null; `pack` is "pc111" or null.
 export const readingDoc = (id, over = {}) => ({ id, phase: "build", state: "waiting", wait: "turn", with: "Builder", working: false, since: null, asOf: Date.now(), why: "test reading", pack: null, ...over });
-export function setReadings(b, ...docs) { b.state.readings = docs; return b; }
+// #C1383: the groups collection the Worker serves is the fold of the readings (groupDocs of worker/compat-reading.mjs, the same code), so a test that sets readings gets the group
+// rows too: `state.groups` is read from the readings and the cards' `batch` when the page asks (a reading names its group with `batch`, else its card's).
+export function setReadings(b, ...docs) {
+  b.state.readings = docs;
+  Object.defineProperty(b.state, "groups", { configurable: true, enumerable: true, get() {
+    const batchOf = (id) => (b.state.initiatives ?? []).find((i) => i && i.id === id)?.batch;
+    return groupDocs(b.state.readings.map((r) => ({ ...r, ...(r.batch || batchOf(r.id) ? { batch: r.batch || batchOf(r.id) } : {}) })));
+  }, set() {} });
+  return b;
+}
 // A step event, as agents log them.
 export const step = (init, phase, who, kind, at, extra = {}) => ({ init, phase, who, kind, at, ...extra });
 // Renders the Waiting on Owner list for the given asks and returns its HTML.
