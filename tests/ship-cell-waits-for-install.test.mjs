@@ -20,7 +20,8 @@ test("a landed card with no pack yet says 'Queued for pack' on the yellow stripe
 
 test("a landed card waiting for the install: the Ship cell says 'Queued for your install', with no counter and no slow word", () => {
   const html = draw({}, { packed: true });
-  assert.match(html, /<small>Your install<\/small>/);
+  // Designer F2 on #C1299: "Your install" was cut to "YOUR INST…" on the phone's 4-a-row track, so the tile is the owner's name with "'s install" as a part hidden under 760 px.
+  assert.match(html, /<small class="rs">[^<]+<span class="sl">'s install<\/span><\/small>/);
   assert.match(html, /class="step waits rel"/);
   assert.equal(/data-shipat/.test(html), false, "no running counter");
   assert.equal(/slow \(est\.\)|deploying \(est\.\)|tests \(est\.\)/.test(html), false, "no estimate words");
