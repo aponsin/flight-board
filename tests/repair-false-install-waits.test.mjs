@@ -32,6 +32,8 @@ const fill = async (db) => {
   await ph("prod", "ship", "start", T + 1, "install", "evidence"); await ph("prod", "ship", "end", T + 2, "install", "evidence");
   await ph("prod", "ship", "start", T + 3, null, "evidence", "Release"); await ph("prod", "ship", "start", T + 4, "busy", "tool", "Release");
   await ph("prodopen", "ship", "start", T + 5, "install", "evidence");
+  // Security's INFO on 653321f5: a row with wait 'install' that the store's evidence write did NOT write (source 'tool') on a product card must survive the repair.
+  await ph("prod", "ship", "start", T + 7, "install", "tool");
   await ph("boardc", "ship", "start", T + 6, "install", "evidence");
 };
 const rows = (db) => db.prepare("SELECT card_id, phase, kind, wait, source FROM phase_history ORDER BY id").all().then((r) => r.results);
@@ -45,7 +47,7 @@ test("the migration removes only a product card's install waits written by the e
   const raw = db.prepare(DELETE_FALSE_WAITS);
   const r = await raw.run();
   assert.equal(r.meta.changes, 3);
-  assert.deepEqual((await rows(db)).map((x) => `${x.card_id}:${x.phase}:${x.kind}:${x.wait}:${x.source}`), ["prod:ship:start:null:evidence", "prod:ship:start:busy:tool", "boardc:ship:start:install:evidence"], "the probe's own row, the step tool's wait and the board card's install wait stay");
+  assert.deepEqual((await rows(db)).map((x) => `${x.card_id}:${x.phase}:${x.kind}:${x.wait}:${x.source}`), ["prod:ship:start:null:evidence", "prod:ship:start:busy:tool", "prod:ship:start:install:tool", "boardc:ship:start:install:evidence"], "the probe's own row, the step tool's wait, an install row not written by the evidence write, and the board card's install wait stay");
   assert.deepEqual(await cardsNow(db), before, "no card row changes: nothing is reopened, done_at stays");
 });
 
