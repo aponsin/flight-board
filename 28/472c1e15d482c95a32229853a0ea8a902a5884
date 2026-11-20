@@ -1,0 +1,5 @@
+SECURE
+
+#C1292 (Checker 2 F1), by diff 98888dd9..28472c1e: histSizes sets style.minHeight to the constant "0" and histDown clears it; fixed strings only, no new input, storage or markup path.
+
+signed-by: Security
