@@ -1,0 +1,5 @@
+SECURE
+
+Group board-polish-three tip (#C1299 + #C1303), from main ad7bd04b. This commit adds only Checker 2's F1 test (compat view carries groupNames and groupOrder). #C1299 is range-diff '=' with 4526baee (SECURE); #C1303 is SECURE at 3eff9b14. Ran 58/58 at 122fc1c8 (product-stack-wiring, product-groups-stack, group-ids-order-list, group-controls-page, hostile-text, stack-read, stack-switch). Pack: Worker deploy + migration 0039 (undo DROP TABLE groups) + probe file collector/store-cards.mjs.
+
+signed-by: Security
