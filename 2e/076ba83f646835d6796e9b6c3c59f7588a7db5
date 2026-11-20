@@ -1,0 +1,1 @@
+SECURE: #C1317 re-cut of 4609cf16; adds Designer F1/F2 (open click hides thread Ack/Close/reply; CSS indent). No new sink: askHtml as before, ids through esc. Security 2026-11-20.
