@@ -1,0 +1,1 @@
+SECURE: #C1324 re-cut of 7b72da97; loosening lets kind decision and non-empty screenshots through agentNoteRefusal (a UX rule, not a trust boundary: Manager's door only; postMessage still validates decision options and stored screenshots). Mutation (empty list bypasses): caught. Security 2026-11-20.
