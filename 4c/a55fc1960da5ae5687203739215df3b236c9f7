@@ -1,0 +1,5 @@
+SECURE
+
+#C1296: up/down arrows per queued card in an open group POST the existing /api/queue-move (same-origin, credentials same-origin); the unchanged Worker rule refuses anyone but the owner and any body but {id: card id, dir: up|down}. The reply's order is used only to set numeric queuePos on cards matched by id, then redraw; nothing from it is drawn raw. Buttons escape id and label. repoBadge now esc()s the repo name (closes my #C1293 INFO). railOrder is a pure sort. No Worker, store schema, route, permission or hook change.
+
+signed-by: Security
