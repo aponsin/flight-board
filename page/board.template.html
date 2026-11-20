@@ -648,6 +648,14 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .g-card>details>summary::-webkit-details-marker{display:none}
 /* #C1052 (the owner's screenshot, 11-12): an opened card had no left padding, so its first letters sat under its red 4px edge, right on the rail. It keeps a card row's own padding, a touch less on the right, and a small gap from its summary. */
 .g-card>details>.i-row{border-top:0;margin-top:8px;padding:12px 12px 12px 16px;border-radius:6px}
+/* #C1344 (the owner, 11-20, a screenshot of an open card in a group): the card's buttons (move up and down, Move to..., Pull out) sat beside the open card and left the space under them empty. On a laptop an open card keeps its title row and its buttons at the top right and its body (summary, Live in, tiles, counts, Details) runs the card's full width under them; the summary keeps clear of the buttons. Closed cards and anything under 1000 px keep the row as it was (the phone stacks as before). */
+.g-ctl{display:contents}
+@media (min-width:1000px){
+  .g-card:has(>details[open]){position:relative}
+  .g-card>details[open]{flex:1 1 100%}
+  .g-card>details[open]>summary{padding-right:min(45%,22rem);min-height:2.4rem}
+  .g-card:has(>details[open])>.g-ctl{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:6px 10px;position:absolute;top:8px;right:0;max-width:45%}
+}
 .g-num{font:600 .88rem var(--mono);color:var(--muted)}
 .g-pull{font:600 .82rem var(--mono);color:var(--accent);background:none;border:1px solid var(--line);border-radius:999px;padding:6px 14px;min-height:2.2rem;cursor:pointer}
 .g-pull.armed{background:var(--warn-soft);color:var(--warn-ink);border-color:var(--warn)}
@@ -2850,7 +2858,7 @@ function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(c
     return `<div class="step${n<0?"":sk?" skip":done?" done":q?"":n===f.idx?(worked?" now":" here"):""}${tg?" together":""}" title="${esc(l)}">${esc(l)}<small${tg&&!sk&&!q?' class="tog"':""}>${sk?"not needed":q?"queued":tg?"together":"&nbsp;"}</small></div>`}).join("");
   const eta=f.eta!=null?`<div class="lbl">Live in</div><div class="big" data-eta="${f.eta}">${f.eta>Date.now()?dur(f.eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(f.eta)}</div>`:`<div class="lbl">ETA</div><div class="big">—</div>`;
   const ord=railOrder(cards),rail=ord.map(i=>{const [c,w]=railState(i);
-    return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span>${repoBadge(i)}<strong>${esc(i.name)}</strong>${newPill(newReplies(i.id).length)}<span class="size">${esc(i.size||"?")}</span><span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${cardMoveButtons(i,ord)}${moveToSelect(i)}${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
+    return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span>${repoBadge(i)}<strong>${esc(i.name)}</strong>${newPill(newReplies(i.id).length)}<span class="size">${esc(i.size||"?")}</span><span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details><div class="g-ctl">${cardMoveButtons(i,ord)}${moveToSelect(i)}${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div></div>`}).join("");
   return `<div class="i-row g-row" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span>${repoBadge(cards[0],"group")}<strong>${esc(groupLabel(b))}</strong>${STORE?`<button type="button" class="g-ren" data-gren="${esc(b)}" aria-label="Rename group ${esc(groupLabel(b))}">Rename</button>`:""}<span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
    <div class="eta">${eta}</div>
    <div class="track" style="--per:${evenPer(shownT.length)}">${tiles}</div>
