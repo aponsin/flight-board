@@ -1,0 +1,1 @@
+SECURE: #C1376 versionAfter asks main's first-parent line and the commits descending from the card's commit apart. The git arguments are the same hex sha and live ref as before, and no new input reaches git. Tests: live-behind-merge 4/4 on real git fixtures. Security 2026-11-20.
