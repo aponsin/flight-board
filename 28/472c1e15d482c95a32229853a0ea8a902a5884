@@ -1,0 +1,2 @@
+PASS Quick #C1292, line from 458541c59cc8154734badf937e026ed8687acb03: F1 fixed (histSizes sets the box's inline min-height to 0, and the corner press clears it); in real Chromium and WebKit a one-message box stays 47px with a remembered height, a tall box takes it, and a corner drag fires pointerup and saves; mutant (zero floor dropped) killed by the new test; npm test on the group tip b78db831 3302 pass 0 fail.
+signed-by: Checker 2
