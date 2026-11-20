@@ -1,0 +1,5 @@
+SECURE
+
+#C1288: waitWord/waitEvidence pick a fixed string by cardRepo(i) vs BOARD_REPO for the release wait; used in knownWaitText, the tile's idleWord (esc) and the title evidence (esc). statusTxt is inserted unescaped but still receives only fixed strings (install branch unchanged). Text only: no data, route, permission, hook or Worker change.
+
+signed-by: Security
