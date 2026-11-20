@@ -1035,17 +1035,12 @@ export const STEP_WAITS = ["busy", "gate", "decision"], STEP_PAST_MS = 7 * 86_40
 // open; null otherwise. A product card (no repo) never has one. open: whether the card's newest install-wait row is a start.
 export const INSTALL_WAIT = "install";
 export function installWaitStep({ repo, next, onMain, open }) {
-  const waiting = typeof repo === "string" && repo !== "" && next === "ship" && onMain === true;
+  // #C1378: only a card of the board's own repository waits on an install (repoKind "board"); a product card has no install, so a repository word alone no longer starts one.
+  const waiting = typeof repo === "string" && repo.trim() !== "" && repoKind(repo) === "board" && next === "ship" && onMain === true;
   return waiting && !open ? "start" : !waiting && open ? "end" : null;
 }
-// #C1104 part 2 (the owner, 2026-11-16: #C1003 and #C1059 sat open three days after landing; Manager's ruling: option 1): a card in a named repository with no
-// install step closes when its commit is on main, with that commit as evidence. A board card (the repo word is one of LANDED_REPO_WORDS) waits for the
-// owner's install and closes when it reads live (#C832); a product card (no repo) goes live by its deploy. A card with a part marked in its next_note
-// ("part <sha>", #C890) that is not on main stays open: the probe says so in `partsMissing`. Pure: the card's repo word and the reading's two fields in.
-export function closesAtLanding({ repo, onMain, partsMissing }) {
-  const word = typeof repo === "string" ? repo.trim() : "";
-  return onMain === true && word !== "" && !isBoardRepo(word) && !(Array.isArray(partsMissing) && partsMissing.length > 0);
-}
+// #C1378 (the owner's pick A on #T2194): `closesAtLanding` (#C1104 part 2) is gone. No card closes at landing any more: a card of either kind closes when it
+// reads live (#C832), so "done" means live for the product again (71 product cards had closed at "ship", before their deploy, and their reading froze there).
 export function stepRefusal(a, now) {
   const refuse = (rule, detail) => ({ rule, detail });
   if (a === null || typeof a !== "object" || Array.isArray(a)) return refuse("step-shape", "a step is an object");
@@ -1139,6 +1134,10 @@ export const LANDED_REPO_WORDS = new Set(["flight-board", "board"]);
 export const repoKey = (r) => (typeof r === "string" ? r.trim().toLowerCase().replace(/^.*\//, "").replace(/\.git$/, "") : "");
 export const isBoardRepo = (word) => LANDED_REPO_WORDS.has(repoKey(word));
 export const isBoardCard = (card) => !card?.repo || isBoardRepo(card.repo);
+// #C1378 (the owner's pick A on #T2194; the audit's rule 4): one table for what a repository word means. "board" = the board's own repository (install, pack, a
+// release by the landing job); "product" = any other named repository (no install, no pack: it closes when it reads live). An empty word answers "board" as
+// isBoardCard does today; the "no word" default goes with the Worker-reads-config card (#C1380).
+export const repoKind = (word) => (typeof word === "string" && word.trim() !== "" && !isBoardRepo(word) ? "product" : "board");
 // #C1295 (product groups stack): the stack switch is per repository. A card's switch row is "board" for a card of the board's own repository and "product" for any other.
 // `stackOn` (the rules below take it as a parameter) is a Set of the switch rows that are on, or, as before, a plain boolean that means the board's row alone.
 export const stackKeyOf = (card) => (isBoardCard(card) ? "board" : "product");
