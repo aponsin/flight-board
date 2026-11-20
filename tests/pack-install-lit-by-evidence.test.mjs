@@ -66,11 +66,11 @@ test("packOf: a pair whose pin holds the landing packs it; its .done installs it
   const below = [{ n: 1, sha: s.one, ran: true }];
   assert.deepEqual({ ...packOf(below, s.two, s.gitStatus) }, { packed: false, installed: false }, "a pair pinned before the landing");
   const at = [{ n: 2, sha: s.two, ran: false }];
-  assert.deepEqual({ ...packOf(at, s.two, s.gitStatus) }, { packed: true, installed: false }, "pinned at the landing, not run");
-  assert.deepEqual({ ...packOf(at, s.one, s.gitStatus) }, { packed: true, installed: false }, "pinned after the landing: it holds it");
+  assert.deepEqual({ ...packOf(at, s.two, s.gitStatus) }, { packed: true, installed: false, pack: 2 }, "pinned at the landing, not run");
+  assert.deepEqual({ ...packOf(at, s.one, s.gitStatus) }, { packed: true, installed: false, pack: 2 }, "pinned after the landing: it holds it");
   const ran = [{ n: 3, sha: s.three, ran: false }, { n: 2, sha: s.two, ran: true }];
-  assert.deepEqual({ ...packOf(ran, s.two, s.gitStatus) }, { packed: true, installed: true }, "an older pair that ran installs it");
-  assert.deepEqual({ ...packOf(ran, s.three, s.gitStatus) }, { packed: true, installed: false }, "the newest holds three but has not run");
+  assert.deepEqual({ ...packOf(ran, s.two, s.gitStatus) }, { packed: true, installed: true, pack: 2 }, "an older pair that ran installs it; the pack named is the oldest that holds the landing");
+  assert.deepEqual({ ...packOf(ran, s.three, s.gitStatus) }, { packed: true, installed: false, pack: 3 }, "the newest holds three but has not run");
   assert.deepEqual({ ...packOf(ran, "x", s.gitStatus) }, { packed: false, installed: false }, "no landing sha");
   assert.deepEqual({ ...packOf(null, s.two, s.gitStatus) }, { packed: false, installed: false });
 });
@@ -80,19 +80,21 @@ test("packOf stops at the first pin that does not hold the landing: same answers
   const s = scratch();
   const counted = () => { const c = { n: 0 }; c.git = (args) => { c.n += 1; return s.gitStatus(args); }; return c; };
   // 46 pairs, every one pinned below c-three (the live board's case: a landed card no pair holds yet).
-  const old = Array.from({ length: 46 }, (_, i) => ({ n: 100 - i, sha: i % 2 ? s.one : s.two, ran: true }));
+  // #C1309: pins are main commits newest first, so the pairs that hold a landing are a prefix; the older ones are all pinned at c-one, as the real list is.
+  const old = Array.from({ length: 46 }, (_, i) => ({ n: 100 - i, sha: s.one, ran: true }));
   const a = counted();
   assert.deepEqual({ ...packOf(old, s.three, a.git) }, { packed: false, installed: false });
   assert.equal(a.n, 1, "one question: the newest pin does not hold it, so no older one does");
   // The newest holds it unrun, then ran pairs going down: it stops at the first one below the landing.
   const mixed = [{ n: 9, sha: s.three, ran: false }, { n: 8, sha: s.two, ran: true }, ...old];
   const b = counted();
-  assert.deepEqual({ ...packOf(mixed, s.three, b.git) }, { packed: true, installed: false });
+  assert.deepEqual({ ...packOf(mixed, s.three, b.git) }, { packed: true, installed: false, pack: 9 });
   assert.ok(b.n <= 2, `at most two questions, got ${b.n}`);
   // Today's answers on the fixtures above are unchanged.
   const c = counted();
-  assert.deepEqual({ ...packOf(mixed, s.two, c.git) }, { packed: true, installed: true }, "pc8 ran and holds c-two");
-  assert.deepEqual({ ...packOf([{ n: 3, sha: s.three, ran: false }, { n: 2, sha: s.two, ran: true }], s.two, s.gitStatus) }, { packed: true, installed: true });
+  assert.deepEqual({ ...packOf(mixed, s.two, c.git) }, { packed: true, installed: true, pack: 8 }, "pc8 ran and holds c-two");
+  assert.ok(c.n <= 3, `a landing two packs old: at most three questions, got ${c.n}`);
+  assert.deepEqual({ ...packOf([{ n: 3, sha: s.three, ran: false }, { n: 2, sha: s.two, ran: true }], s.two, s.gitStatus) }, { packed: true, installed: true, pack: 2 });
 });
 
 test("cardStates: a landed board card reads packed and installed from the pair folder; product cards and unlanded cards never do", () => {
@@ -225,8 +227,8 @@ test("closedPacks: a board card done in the last 14 days reads packed and instal
     doneCard("c-three", 3, now - DAY), // on main, no pair holds it
     doneCard("c-four", 4, now - DAY), // its commit is only on a branch: no landing on main
   ];
-  assert.deepEqual(closedPacks({ cards, repos, now, pairs }), { "c-one": { packed: true, installed: true }, "c-two": { packed: true } });
-  // Words never light it, and neither does a card outside the window, of another repository, dropped, or still open.
+  assert.deepEqual(closedPacks({ cards, repos, now, pairs }), { "c-one": { packed: true, installed: true, pack: 40 }, "c-two": { packed: true, pack: 41 } });
+// Words never light it, and neither does a card outside the window, of another repository, dropped, or still open.
   const not = [doneCard("c-one", 1, now - 15 * DAY), { ...doneCard("c-one", 1, now - DAY), repo: "shopsite" }, { ...doneCard("c-one", 1, now - DAY), status: "dropped" },
     { ...card("c-one", 1), phase: "live", nextNote: "pc40 installed" }, doneCard("c-one", 1, now + 2 * 36e5), doneCard("c-one", 1, null)];
   for (const c of not) assert.deepEqual(closedPacks({ cards: [c], repos, now, pairs }), {}, JSON.stringify(c));
@@ -247,7 +249,7 @@ test("closedPacks end to end: a store row closed yesterday becomes a mirror card
   const m = { ...mirrorCard(row), id: row.id };
   assert.equal(m.doneAt, now - DAY, "the store's done_at, as doneAt");
   assert.equal(m.status, "done");
-  assert.deepEqual(closedPacks({ cards: [m], repos: { "flight-board": s.repo }, now, pairs: pairsIn(dir) }), { "c-one": { packed: true, installed: true } });
+  assert.deepEqual(closedPacks({ cards: [m], repos: { "flight-board": s.repo }, now, pairs: pairsIn(dir) }), { "c-one": { packed: true, installed: true, pack: 40 } });
   const open = { ...mirrorCard({ ...row, done_at: null }), id: row.id };
   assert.equal(Object.hasOwn(open, "doneAt"), false, "an open card has no doneAt");
   assert.deepEqual(closedPacks({ cards: [open], repos: { "flight-board": s.repo }, now, pairs: pairsIn(dir) }), {});
