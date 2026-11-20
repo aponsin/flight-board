@@ -3,3 +3,7 @@ SECURE
 #C1288 v2, by diff vs my SECURE on 0bb3e322 (range-diff: 6e4a46da = 0bb3e322, rebased onto #C1285 1810dad1). cb38df33 and e72fa012: waitTile (short tile word); RELEASE_ROLE from CONFIG.gate.releaseRole (default Release, the owner's config) built into waitWord/waitTile/waitEvidence; every path is drawn through esc (idleWord, the title evidence) and the card's status line is now esc(statusTxt), which tightens a previously unescaped spot. Page text only: no data, route, permission, hook or Worker change.
 
 signed-by: Security
+
+pc107 pack SECURE: origin/main == e72fa012 (pin). sha256 of the 5 files match the message (steps 4d376816, deploy faaf98ec, tree 7990c255, hooks b2a386ae, board-deploy 7a021248, the same board-deploy as pc106). deploy, tree and hooks scripts differ from pc106 only in the pin and the pc number. Every commit 937daa11..e72fa012 noted SECURE. Sensitive paths changed: collector/state.mjs (#C1280) and gate/first-push.mjs (#C1285, Full review); no worker, migration, hooks/ or installer change, so the hooks step reinstalls the reviewed first-push.mjs and the unchanged send-refused-cue.py.
+
+signed-by: Security
