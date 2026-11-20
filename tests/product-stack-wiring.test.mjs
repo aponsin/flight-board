@@ -4,7 +4,10 @@
 // Checker 2's F1: in that live shape the board's row names the listed board repository (repos keys it by its listed name), never ""; in the single shape it is "".
 import test from "node:test";
 import assert from "node:assert/strict";
-import { stacksOn, productRepoNames, boardRepoNames } from "../collector/store-cards.mjs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { stacksOn, productRepoNames, boardRepoNames, prepareStoreState } from "../collector/store-cards.mjs";
 
 const sw = (board, product) => [{ repo: "board", stack: board }, { repo: "product", stack: product }];
 const stacks = (cfg, board, product) => stacksOn(sw(board, product), productRepoNames(cfg), boardRepoNames(cfg));
@@ -41,6 +44,24 @@ test("the single-repository shape reads as #C1295 had it: nothing listed is noth
   assert.deepEqual(productRepoNames(SINGLE_WITH_OTHER), ["platform"]);
   assert.deepEqual(stacks(SINGLE_WITH_OTHER, false, true), ["platform"]);
   assert.deepEqual(stacks(SINGLE_WITH_OTHER, true, true), ["", "platform"]);
+});
+
+// Checker 2's F1 on a0e01b87: the real writer (prepareStoreState) must hand the board's names to stacksOn; dropping them left the suite green. Scratch folders only.
+async function stacksFile(cfg, rows) {
+  const real = mkdtempSync(join(tmpdir(), "stack-wiring-")), priv = mkdtempSync(join(tmpdir(), "stack-wiring-priv-"));
+  mkdirSync(join(real, "AbCdEf123456"), { recursive: true });
+  const configPath = join(real, "board.config.json");
+  writeFileSync(configPath, JSON.stringify({ gate: { stateDir: "~/.flight-board" }, ...cfg }));
+  const view = async () => ({ ok: true, status: 200, json: async () => ({ cards: [], stackSwitch: rows }) });
+  await prepareStoreState({ privateDir: priv, stateFile: join(real, "AbCdEf123456", "state.json"), configPath, base: "https://x.test", headers: {}, fetchImpl: view, now: 1234567 });
+  return JSON.parse(readFileSync(join(priv, "AbCdEf123456", "stacks.json"), "utf8"));
+}
+test("prepareStoreState writes stacks.json from the config: the live shape's board row is the listed board repository, its product row is \"\"", async () => {
+  assert.deepEqual((await stacksFile(LIVE_SHAPE, sw(true, false))).stacks, ["flight-board"]);
+  assert.deepEqual((await stacksFile(LIVE_SHAPE, sw(false, true))).stacks, [""]);
+  assert.deepEqual((await stacksFile(LIVE_SHAPE, sw(true, true))).stacks, ["flight-board", ""]);
+  assert.deepEqual((await stacksFile(SINGLE_SHAPE, sw(true, true))).stacks, [""], "the single shape: the board's own clone");
+  assert.deepEqual((await stacksFile(LIVE_SHAPE, sw(false, false))).stacks, []);
 });
 
 test("the board's words count as the board's own repository however they are written; odd entries are ignored; the list reads from a config with no collector", () => {
