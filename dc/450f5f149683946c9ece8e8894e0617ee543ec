@@ -1,0 +1,5 @@
+SECURE
+
+Designer F1-F3 on #C1299 (by diff from 122fc1c8): CSS only (min-width, button colour) plus the install tile word, which inserts esc(OWNER) and a fixed literal. No new input, sink or route.
+
+signed-by: Security
