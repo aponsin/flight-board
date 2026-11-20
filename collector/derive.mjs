@@ -58,10 +58,13 @@ export function bareBranch(card, head) {
 export function byNumberOnly(card, head) {
   return !!head && Number.isInteger(card.num) && String(head.branch).split("/").pop() !== card.id && branchNum(head.branch) === card.num && boardIdOf(head.message) !== card.id && subjectNum(head.message) !== card.num;
 }
+// #C1325, #C1329 (Checker 2's LOW: this copy lacked it, so the page's reading and the probe's differed for a re-cut branch): a re-cut branch is named <id>-v<N>, so the last part of a
+// branch name names the card with or without that suffix. state.mjs holds the pinned copy; tests/board-state.test.mjs runs both on a -vN case.
+export const slugOfBranch = (branch) => String(branch).split("/").pop().replace(/-v\d{1,3}$/, "");
 export function headsFor(id, heads, num = null) {
   const tips = new Map();
   for (const h of heads) {
-    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && !(Number.isInteger(num) && (subjectNum(h.message) === num || branchNum(h.branch) === num))) continue;
+    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && slugOfBranch(h.branch) !== id && !(Number.isInteger(num) && (subjectNum(h.message) === num || branchNum(h.branch) === num))) continue;
     const had = tips.get(h.branch);
     if (!had || (h.at ?? 0) > (had.at ?? 0)) tips.set(h.branch, h);
   }
