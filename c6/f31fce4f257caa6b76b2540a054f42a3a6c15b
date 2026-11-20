@@ -1,0 +1,2 @@
+PASS Full #C1294, line from b78db831e506e00e5e1a35b9d651347c55a236b6: a re-cut of e4694e22 (signed PASS Full), whose tree differs only by the dated DATA line moving word for word from docs/DATA.md to docs/DATA.d/open-decision-gates-card.md; the Tile states clause stays in DATA.md. F1's test is in it. The review on e4694e22 holds.
+signed-by: Checker 2
