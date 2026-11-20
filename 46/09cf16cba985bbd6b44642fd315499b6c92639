@@ -1,0 +1,5 @@
+SECURE
+
+#C1317: Manager-only related_thread on Terminal/Action asks; must name an existing ask, card or thread (bound queries); stored by json_set with a bound value; other roles unchanged. compat-view passes it as thread; the page only compares it and draws the ask with the existing escaped askHtml. board-polish-six, tip 7b72da97; suite 3408 pass, 0 fail in a scratch worktree.
+
+signed-by: Security
