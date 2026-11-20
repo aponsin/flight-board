@@ -13,7 +13,7 @@ function board(initRaw, host = "store") {
   const b = loadNames(NAMES, { document });
   Object.assign(b.state, { initRaw, initiatives: initRaw.map((i) => b.gates(b.enrich(i))), steps: [], waiting: [], derived: [], messages: [], threads: [] });
   b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - 20e3 }, cards: {}, agents: {} } } }, {});
-  return { row: () => b.groupRow("g5-thing", b.state.initiatives), b };
+  return { row: () => b.groupRow("g5-thing", b.state.initiatives.filter((i) => i.batch === "g5-thing")), b };
 }
 const card = (id, num, extra = {}) => ({ id, num, name: `Card ${num}`, size: "S", level: "Quick", status: "active", phase: "build", who: "Boardsmith", repo: "flight-board", batch: "g5-thing", createdAt: 1_800_000_000_000 + num * 60e3, queuePos: num, ...extra });
 const rail = (html) => html.split('<div class="g-rail">')[1] || "";
@@ -41,6 +41,29 @@ test("a started card sits first and has no arrows; the arrows are among the queu
 test("a group with one queued card has no arrows, and the page that is not the store's has none either", () => {
   assert.deepEqual(arrows(board([card("a", 1), card("s", 2, { branch: "build/s" })]).row()), []);
   assert.deepEqual(arrows(board([card("a", 1), card("b", 2)], "page").row()), []);
+});
+
+// Checker 2's F1 on ad809711: the arrow between a card that can start and one held by a dependency is off, as the store does not move a card across that line (moveInQueue: queue[to].held !== queue[at].held).
+test("an arrow does not cross from a free card to one held by a dependency, nor back", () => {
+  const dep = card("dep", 9, { batch: "g9-other", branch: "build/dep", queuePos: 9 }); // open and building: holds whoever depends on it
+  const { row } = board([card("q1", 1), card("q2", 2, { dependsOn: ["dep"] }), card("q3", 3, { dependsOn: ["dep"] }), dep]);
+  assert.deepEqual(arrows(row()), ["q1:up:off", "q1:down:off", "q2:up:off", "q2:down", "q3:up", "q3:down:off"]);
+});
+
+// Checker 2's F2: the click handler takes the order the store answers with. A moved answer puts the cards in that order at once (queuePos); one that did not move leaves it.
+test("a moved:true answer from /api/queue-move reorders the cards at once, and a moved:false one changes nothing", async () => {
+  const run = async (answer) => {
+    const fetch = async () => ({ ok: true, json: async () => answer });
+    const b = loadNames(["state"], { documentElement: { getAttribute: () => "store" }, fetch });
+    const mk = () => [card("a", 1, { queuePos: 1 }), card("b", 2, { queuePos: 2 })];
+    Object.assign(b.state, { initRaw: mk(), initiatives: mk() });
+    const btn = { dataset: { qmove: "a", dir: "down" }, textContent: "↓", disabled: false };
+    await Promise.all((b.listeners.click || []).map((fn) => Promise.resolve().then(() => fn({ target: { closest: () => btn } })).catch(() => {})));
+    const at = (l, id) => l.find((i) => i.id === id).queuePos;
+    return [at(b.state.initiatives, "a"), at(b.state.initiatives, "b"), at(b.state.initRaw, "a"), at(b.state.initRaw, "b")];
+  };
+  assert.deepEqual(await run({ ok: true, id: "a", moved: true, order: ["b", "a"] }), [2, 1, 2, 1]);
+  assert.deepEqual(await run({ ok: true, id: "a", moved: false, order: ["b", "a"] }), [1, 2, 1, 2]);
 });
 
 test("the repo badge escapes the name, and a group's tooltip says group while a card's says card", () => {
