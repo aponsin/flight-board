@@ -1,0 +1,1 @@
+SECURE: #C1378 one repoKind table: the install wait opens only for a board card, and closesAtLanding is removed, so a product card closes only on a live reading (liveDoneEvidence; the done_at IS NULL / dropped / check_at guards are unchanged). The rules only narrow; no auth, header, binding or secret change. Security 2026-11-20.
