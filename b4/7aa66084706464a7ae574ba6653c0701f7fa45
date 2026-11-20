@@ -1,0 +1,5 @@
+SECURE
+
+#C1297: askText keeps a list open across blank lines between items of the same kind and writes <li value="N"> for numbered items. N is Number() of the regex's (\d{1,2}) group, so only an integer reaches the attribute; item text still goes through askLine (unchanged escaping). CSS padding only otherwise. No data, route, permission, hook or Worker change.
+
+signed-by: Security
