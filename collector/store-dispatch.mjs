@@ -11,7 +11,7 @@ import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset
 import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
 import { heldFor } from "../worker/held-by.mjs"; // #C1164: the one reading of waiting_on
-import { agentRank, orderListOf, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, stackKeyOf, stackOnFor, stackSatisfies, STALL_WAKE_AFTER_MS, reviewerOf } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
+import { agentRank, orderListOf, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, stackKeyOf, stackOnFor, stackSatisfies, STALL_WAKE_AFTER_MS, reviewerOf, CHECKER_NAME } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
 import { REVIEW_LANES, isReviewLane, reworkKind } from "../worker/reading.mjs"; // #C1385: the lane table, the review-lane test and the rework rule are the reading module's, not copies here
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
@@ -288,7 +288,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
     // #C1018 / #C1035: a tip a Checker session has claimed (the store's review claim) wakes no Checker for its review again: one checker per tip.
     // #C1139: a tip whose newest commit says WIP (the probe's wipHead) is a start push, not a READY: no review turn for it, in any repository and with the stack switch on or off.
     const mine = held || e?.wipHead === true ? turns.filter((t) => t.step !== "review") : turns;
-    const shown = mine.filter((t) => !(/^Checker(?: [0-9]{1,3})?$/.test(String(t.role)) && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
+    const shown = mine.filter((t) => !(CHECKER_NAME.test(String(t.role)) && t.step === "review" && claimed12.has(String(t.fullSha ?? t.sha ?? "").slice(0, 12))));
     cards.push({ group: batchOf(c), groupStarted: startedGroups.has(batchOf(c)), rework: shown.some((t) => t.role === c.owner_role && (t.step === "rework" || t.step === "reason")), queuePos: Number.isInteger(c.queue_pos) && c.queue_pos >= 1 ? c.queue_pos : null, ownerPlaced: c.queue_set_by === "owner", id: c.id, who: c.owner_role, status: "active", num: Number.isInteger(c.num) ? c.num : null, waitingOn: typeof c.waiting_on === "string" ? c.waiting_on : null, turns: shown, inBoard, stackKey: stackKeyOf(c), inStack: inBoard && e?.stack && e.stack.outside !== true && !held });
   }
   // #C1295: a reviewer is held while a card of the SAME repository still has a build turn; another repository's builder does not hold it.

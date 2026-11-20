@@ -2,7 +2,7 @@
 // launchd runs it every minute from the owner's pinned copy (scripts/state-install.mjs writes the plist; condition A:
 // a board release never changes it). It reads, on this machine only:
 //   - each open card on the last board export (<stateDir>/<board>/mirror/initiatives): its branch tip from git, the
-//     sign-off notes on it, whether it is on main and deployed (collector/derive.mjs's phase), and the CI run on it (gh);
+//     sign-off notes on it, whether it is on main and deployed (the phase rule below, phaseOf), and the CI run on it (gh);
 //   - each roster role's newest session in the app (its session file: title, transcript id, last activity) and the last
 //     TAIL_ENTRIES entries of its transcript: working or idle, the class of the last tool it called, and the card it is
 //     on: only an exact board id (or #C<num> of a card on the board) found there leaves, never the text it was found in.
@@ -244,9 +244,9 @@ export function agentStates({ roles, sessions, homeDir, now, ids, nums, uid = pr
   return out;
 }
 
-// The phase rule, a copy of collector/derive.mjs's (headsFor, reviewsFor, derivePhase, repoOf, closed): this file is
-// pinned (condition A) and derive.mjs moves with the link (#C278), so the probe can't import it. tests/board-state.test.mjs
-// runs both on the same cases, so the two never drift apart unseen.
+// The phase rule (headsFor, reviewsFor, phaseOf below, with repoOf and closed): this file is pinned (condition A) and moves with
+// the probe, so it is the one place the rule lives (#C1388: collector/derive.mjs's second copy is gone). repoOf and closed
+// are still copied in derive.mjs for collector/expected.mjs.
 export const closed = (card) => card.status === "done" || card.status === "dropped";
 // #C697, #C701: the cards as the board has them now. #C999: the store's cards, which the evidence job writes each run to
 // <stateDir>/<id>/store-cards.json (collector/store-cards.mjs); nothing of the old board's own files is read.
@@ -258,7 +258,7 @@ export function liveCards(stateDir, id) {
   return Object.entries(readStoreCards(stateDir, id).cards).filter(([, d]) => plain(d)).map(([cid, d]) => ({ ...d, id: cid }));
 }
 export { boardIdOf }; // #C1166: git's last-paragraph reading, one file for every reader (collector/board-id.mjs)
-// #C985: a repo word that names no listed repository is read as no word (a copy of derive.mjs's namedRepo and repoOf).
+// #C985: a repo word that names no listed repository is read as no word (derive.mjs keeps a copy of namedRepo and repoOf for collector/expected.mjs).
 export const namedRepo = (card, config) => (card.repo ? (config.collector.repos ?? []).find((r) => r.name === card.repo) ?? null : null);
 export function repoOf(card, config) {
   const repos = config.collector.repos ?? [];
@@ -266,13 +266,13 @@ export function repoOf(card, config) {
 }
 // #C649: a commit whose message starts "#C<num>:" belongs to the card with that number too (num, when the card has one), so a card
 // worked on without its Board-Id trailer or a branch named for it still has a head: the board then shows it as build.
-// #C1204: "#C<num> (<Role>):" is read the same way, and a branch whose last segment starts "c<num>-" names the card by number (a copy of derive.mjs's).
+// #C1204: "#C<num> (<Role>):" is read the same way, and a branch whose last segment starts "c<num>-" names the card by number.
 export const subjectNum = (message) => { const m = /^#C(\d{1,6})(?::| \()/.exec(String(message ?? "")); return m ? Number(m[1]) : null; };
 export const branchNum = (branch) => { const m = /^c(\d{1,6})-/.exec(String(branch ?? "").split("/").pop()); return m ? Number(m[1]) : null; };
 const namesCard = (card, branch) => String(branch).split("/").pop() === card.id || (Number.isInteger(card.num) && branchNum(branch) === card.num);
 // #C671 (done-when 2): a branch named for the card (its last path segment is the card's id) whose tip carries neither the card's
 // Board-Id trailer nor its "#C<num>:" subject: the name alone found it. When that tip is also on main it is a branch pushed
-// before any commit, and it shows the card as being worked (build), never as shipped or live. A copy of derive.mjs's bareBranch.
+// before any commit, and it shows the card as being worked (build), never as shipped or live.
 const isTimeMs = (v) => Number.isInteger(v) && v >= 1577836800000 && v <= 4102444800000; // #C1377
 // #C1377 (Checker 2's F2 on 69f0c5d3: this sat in the entry block, so no test ran it): each repository's last fresh read, kept from run to run. `repos` is { name: { fresh } } and
 // each gets freshAt set: now when it was read fresh this run; otherwise the stamp it had (`before`, read from repo-fresh.json), never the new time, and none when it never had one
@@ -290,7 +290,7 @@ export function bareBranch(card, head) {
   if (!head || head.afterShip || head.shipped || !namesCard(card, head.branch)) return false;
   return boardIdOf(head.message) !== card.id && !(Number.isInteger(card.num) && subjectNum(head.message) === card.num);
 }
-// #C1204 (Checker 2's M1): a head found only by its branch's number, whose tip is not this card's own commit, is work started (build) with no sign-offs: a copy of derive.mjs's byNumberOnly.
+// #C1204 (Checker 2's M1): a head found only by its branch's number, whose tip is not this card's own commit, is work started (build) with no sign-offs.
 export function byNumberOnly(card, head) {
   return !!head && Number.isInteger(card.num) && String(head.branch).split("/").pop() !== card.id && branchNum(head.branch) === card.num && boardIdOf(head.message) !== card.id && subjectNum(head.message) !== card.num;
 }
@@ -315,7 +315,7 @@ function reviewsFor(card, config) {
   }
   return Object.keys(config.collector.notes).filter((p) => !skip.has(p));
 }
-// The phase only (derive.mjs's derivePhase(...).phase): null when the card has no head.
+// The phase a card reads (the one phase rule): null when the card has no head.
 export function phaseOf(card, facts, config) {
   const c = config.collector;
   if (!facts.head) return null;
@@ -789,12 +789,12 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   const ci = repo.ci ? repo.ci(head.sha) : repo.gh ? ciOf(repo.gh, head.sha, now) : null;
   const shipping = Array.isArray(repo.ships) ? !onMain && shipsCard(repo.ships, tip, head) : null;
   const seen = seenPhases(config, { head: true, ci: ci?.ci, signed, onMain, shipping: shipping === true, deployed: deployed && !partsMissing.length });
-  // #C731 B4b: derive.mjs's readyAt, firm and waitingFor. A phase read as build is not firm (a head with no trailer or sign-off,
+  // #C731 B4b: the readyAt, firm and waitingFor the old page had. A phase read as build is not firm (a head with no trailer or sign-off,
   // or a bare branch); otherwise readyAt is the head's time, and a tip still in review lists the reviews unsigned on it.
   const build = phase === config.collector.buildPhase;
   const order = config.phases.map((p) => p[0]);
   const unsigned = onMain ? [] : (needs ?? reviewsFor(card, cfg)).filter((p) => !signed.includes(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  // reviews: when each review the repository shows signed on the tip was signed (derive.mjs derivePhase, #C671); none for a bare
+  // reviews: when each review the repository shows signed on the tip was signed (#C671); none for a bare
   // branch, a tip read as a main commit, or one with no sign-offs.
   const reviews = !bare && !onMain && signed.length && typeof repo.git === "function" && repo.notes
     ? { ...(coverSha ? signedTimesOf(repo.git, coverSha, repo.notes, signed, head.at) : {}), ...signedTimesOf(repo.git, after ? after.sha : tip.sha, repo.notes, signed, head.at) } : {};
@@ -1266,40 +1266,6 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [],
   return out;
 }
 
-// #C1034 (Checker 2's LOW on #C1020, Manager's pick A): the probe reads no closed card, so a finished board card drew Pack and Install unlit
-// beside its done Live tile. closedPacks reads them from evidence too, as cardStates does for open cards: a board card done in the last
-// CLOSED_PACK_DAYS days, whose landing (the newest of the board main's last CLOSED_PACK_COMMITS commits carrying its Board-Id trailer) a deploy
-// pair holds, is packed; installed when that pair ran. { id: { packed: true, installed?: true } }, only the cards that read packed. Its status,
-// phase or note never light it (#C1020's rule): no landing on main, or no pair holding it, and the card is not listed. One git log per run, then
-// packOf (which stops at the first pin that does not hold the landing). A separate map, not `cards`: nothing else on the page reads a done card.
-export const CLOSED_PACK_DAYS = 14, CLOSED_PACK_COMMITS = 500;
-export function closedPacks({ cards, repos, now, pairs = [] }) {
-  const out = {};
-  const board = Object.entries(repos ?? {}).find(([name]) => isBoardRepo(name))?.[1];
-  if (!board || typeof board.git !== "function" || !Array.isArray(pairs) || !pairs.length) return out;
-  const since = now - CLOSED_PACK_DAYS * 864e5;
-  const recent = (cards ?? []).filter((k) => k?.status === "done" && isBoardRepo(k.repo) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX
-    && Number.isFinite(k.doneAt) && k.doneAt > since && k.doneAt <= now + 60e3).slice(0, MAX_CARDS);
-  if (!recent.length) return out;
-  const want = new Set(recent.map((k) => k.id)), landing = {};
-  const main = `${board.remote}/${board.main}`;
-  if (!/^[A-Za-z0-9._\/-]+$/.test(main) || main.startsWith("-")) return out;
-  let log = "";
-  try { log = String(board.git(["log", `--max-count=${CLOSED_PACK_COMMITS}`, "--format=%H%x1f%B%x1e", main])); } catch { return out; }
-  for (const rec of log.split("\x1e")) {
-    const [sha, message] = rec.replace(/^\n/, "").split("\x1f");
-    if (!/^[0-9a-f]{40}$/.test(String(sha))) continue;
-    const id = boardIdOf(message);
-    if (id && want.has(id) && !landing[id]) landing[id] = sha; // newest first: the first one is the landing
-  }
-  const git = (args) => ({ status: ok(() => board.git(args)) ? 0 : 1 });
-  for (const id of Object.keys(landing)) {
-    const p = packOf(pairs, landing[id], git);
-    if (p.packed) out[id] = { packed: true, ...(p.pack ? { pack: p.pack } : {}), ...(p.installed ? { installed: true } : {}) };
-  }
-  return out;
-}
-
 // The lead's wake watch as two times (#C590): its heartbeat (wake-watch.alive.json) and the last wake it handled
 // (wake-seen.json, the wake's own time). Times only; a missing, odd or future time is none.
 export function wakeTimes(dir, now) {
@@ -1405,8 +1371,8 @@ export function releaseTimesOf(git, ref, path) {
   const out = Object.fromEntries(rows.slice(-MAX_RELEASES));
   return Object.keys(out).length ? out : null;
 }
-export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, watch = null, usage = null, ship = null, releases = null, published = null, packs = null }) {
-  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }), ...(published ? { derivedAt: published.at, quietMin: published.quietMin } : {}) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}), ...(ship ? { ship } : {}), ...(releases ? { releases } : {}), ...(packs && Object.keys(packs).length ? { closedPacks: packs } : {}) };
+export function buildState({ id, now, probe, pageVersion, cards, agents, lastWrite = null, wakeAlive = null, wakeSeen = null, cardsChecked = null, evidence = null, ctx = null, stuck = null, watch = null, usage = null, ship = null, releases = null, published = null }) {
+  const s = { v: STATE_VERSION, board: { boardId: id, at: now, probe: sha12(probe), pageVersion: sha12(pageVersion), lastWriteAt: lastWrite, wakeAliveAt: wakeAlive, wakeSeenAt: wakeSeen, cardsCheckedAt: cardsChecked, ...(evidence === null ? {} : { evidenceAt: evidence }), ...(published ? { derivedAt: published.at, quietMin: published.quietMin } : {}) }, cards, agents, ...(ctx ? { ctx } : {}), ...(stuck ? { stuck } : {}), ...(usage ? { usage } : {}), ...(ship ? { ship } : {}), ...(releases ? { releases } : {}) };
   const errs = stateErrors(s);
   if (errs.length) throw new Error(`the state doesn't fit the plan (${errs.length} problem(s), first: ${errs[0]})`);
   // #C1005 part c: the watch reading rides along only when it fits; one that doesn't is dropped, never the whole state (a bad ledger line must not stop the board).
@@ -1666,7 +1632,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const closedLivePath = join(stateDir, id, "closed-live.json");
   let closedLive = new Set();
   try { const r = readTail(closedLivePath, 256 * 1024); if (r?.whole) closedLive = closedLiveFrom(r.text); } catch { /* none: every closed product card in its window is read once */ }
-  let cardsNow, packs = null;
+  let cardsNow;
   try {
     const pairs = c.pairFolder ? pairsIn(home(c.pairFolder)) : [];
     // #C1311: each branch's Board-Id commits, kept from run to run by the branch's tip and main's tip (stackHeads); written only when it changed.
@@ -1682,8 +1648,6 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
       if (after !== before && (Object.keys(stackCache.next).length || Object.keys(stackCache.old).length)) writeAtomic(join(dir, STACK_CACHE_FILE), after);
     } catch { /* the cache is an aid: a write that fails costs only the next run's time */ }
     lap("stackCache");
-    try { packs = closedPacks({ cards, repos, now, pairs }); } catch { packs = null; } // #C1034: a failure here leaves done cards unlit, never the state
-    lap("closedPacks");
     // #C632: the last time any open card past plan showed a branch commit; kept from run to run, and the lead's watch told once
     // per outage (gate/reset.mjs evidenceAt).
     const evidencePath = join(stateDir, id, "evidence.json");
@@ -1708,7 +1672,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     let releases = null;
     if (team && c.releaseTimes) { try { releases = releaseTimesOf(team.git, `${team.remote}/${team.main}`, c.releaseTimes); } catch { /* no reading */ } }
     lap("ship");
-    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: null, cardsChecked, evidence, ctx, stuck, watch, usage: spend.tile, ship, releases, packs, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
+    state = buildState({ id, now, probe: basename(CODE), pageVersion, cards: cardsNow, agents, lastWrite: null, cardsChecked, evidence, ctx, stuck, watch, usage: spend.tile, ship, releases, published: publishedReading(join(stateDir, id, PUBLISHED_FILE), now), ...wakeTimes(join(stateDir, id), now) });
     writeAtomic(checkedPath, JSON.stringify({ at: cardsChecked }));
     writeAtomic(resetPath, JSON.stringify({ at: now, roles: resets.roles }));
     writeAtomic(watchPath, JSON.stringify({ at: now, ids: restartNow.ids, ...(ledgerNow ? { ledger: { seen: ledgerNow.seen, quiet: ledgerNow.quiet } } : {}) }));

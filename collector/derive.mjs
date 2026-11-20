@@ -1,15 +1,7 @@
-// The collector's reasoning (board-brief section 3): each card's phase worked out from the repository, never from what
-// someone remembered to write. Pure: the card, the facts about its commits and the config come in; the derived phase goes
-// out. collector/facts.mjs gathers the facts from git and the CI runs.
-//
-// The phases, in the config's order, are read as:
-//   build  - a branch exists for the card, and its head is not READY;
-//   review - READY (a commit trailer "Board-Id: <id>" on the head, or, until every team carries that trailer, any sign-off
-//            note on the head: a reviewer signs only a READY head), and a review phase that the card doesn't skip has no
-//            sign-off note on the head yet: the first such phase is the card's phase;
-//   ship   - every review it needs has signed the head, and the head isn't on the main branch yet;
-//   live   - the head is on the main branch and a successful deploy run contains it (with the version it shipped in).
-// Anything the facts can't show (plan, a card with no branch) is left as declared: derived is null.
+// What is left of the collector's old reasoning (board-brief section 3). #C1388: the phase rule (derivePhase and the head readers
+// it used: headsFor, reviewsFor, bareBranch, byNumberOnly) is gone from here. The one phase rule is collector/state.mjs's phaseOf,
+// the file the probe pins; this file kept a second copy that only tests ran. What stays is read by collector/expected.mjs (repoOf,
+// closed) and by the notes below.
 import { idText, lineText } from "./text.mjs";
 import { boardIdOf } from "./board-id.mjs";
 
@@ -25,51 +17,6 @@ export function repoOf(card, config) {
 
 // The id a commit's message names in its "Board-Id:" trailer, or null (#C1166: git's reading, collector/board-id.mjs).
 export { boardIdOf };
-
-// The card's commit: a "Board-Id" trailer on a branch head wins, else a branch whose last path segment is the card's id.
-// heads: [{ branch, sha, at, message }]. Returns the newest match, or null.
-export function headFor(id, heads) {
-  const byTrailer = heads.filter((h) => boardIdOf(h.message) === id);
-  const byName = heads.filter((h) => String(h.branch).split("/").pop() === id);
-  const pick = (list) => list.slice().sort((a, b) => (b.at ?? 0) - (a.at ?? 0))[0] ?? null;
-  return pick(byTrailer) ?? pick(byName);
-}
-
-// Every branch the card has, each at its current tip (#C237): the newest matching head per branch, by trailer or by
-// name, newest first. A card is one branch; a second one is a rework that belongs in a sub-card.
-// #C649: a commit whose message starts "#C<num>:" belongs to the card with that number too (num, when the card has one), so a card
-// worked on without its Board-Id trailer or a branch named for it still has a head: the board then shows it as build.
-// #C1204: "#C<num> (<Role>):" is read the same way (a signed commit written with the role in brackets), and a branch whose last segment starts
-// "c<num>-" names the card by number (branchNum): either finds the card's head when there is no Board-Id trailer. state.mjs holds a copy.
-export const subjectNum = (message) => { const m = /^#C(\d{1,6})(?::| \()/.exec(String(message ?? "")); return m ? Number(m[1]) : null; };
-export const branchNum = (branch) => { const m = /^c(\d{1,6})-/.exec(String(branch ?? "").split("/").pop()); return m ? Number(m[1]) : null; };
-const namesCard = (card, branch) => String(branch).split("/").pop() === card.id || (Number.isInteger(card.num) && branchNum(branch) === card.num);
-// #C671 (done-when 2): a branch named for the card (its last path segment is the card's id) whose tip carries neither the card's
-// Board-Id trailer nor its "#C<num>:" subject: the name alone found it. When that tip is also on main it is a branch pushed
-// before any commit, and it shows the card as being worked (build), never as shipped or live. state.mjs holds a copy.
-export function bareBranch(card, head) {
-  // A tip read as the card's shipped commit (afterShip: commits after a ship) is that commit's own, not a branch without one.
-  // A head from a release commit's "branch@sha" (shipped: a branch deleted since) is a shipped one, not a pushed branch.
-  if (!head || head.afterShip || head.shipped || !namesCard(card, head.branch)) return false;
-  return boardIdOf(head.message) !== card.id && !(Number.isInteger(card.num) && subjectNum(head.message) === card.num);
-}
-// #C1204 (Checker 2's M1): a head found ONLY by its branch's number ("c<num>-..."), whose tip is not this card's own commit (no Board-Id of the card, not its "#C<num>" subject), is a branch
-// cut on another card's tip, or one with no commit of its own yet: it is work started (build), and the notes on that tip are the other commit's, never this card's. state.mjs holds a copy.
-export function byNumberOnly(card, head) {
-  return !!head && Number.isInteger(card.num) && String(head.branch).split("/").pop() !== card.id && branchNum(head.branch) === card.num && boardIdOf(head.message) !== card.id && subjectNum(head.message) !== card.num;
-}
-// #C1325, #C1329 (Checker 2's LOW: this copy lacked it, so the page's reading and the probe's differed for a re-cut branch): a re-cut branch is named <id>-v<N>, so the last part of a
-// branch name names the card with or without that suffix. state.mjs holds the pinned copy; tests/board-state.test.mjs runs both on a -vN case.
-export const slugOfBranch = (branch) => String(branch).split("/").pop().replace(/-v\d{1,3}$/, "");
-export function headsFor(id, heads, num = null) {
-  const tips = new Map();
-  for (const h of heads) {
-    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && slugOfBranch(h.branch) !== id && !(Number.isInteger(num) && (subjectNum(h.message) === num || branchNum(h.branch) === num))) continue;
-    const had = tips.get(h.branch);
-    if (!had || (h.at ?? 0) > (had.at ?? 0)) tips.set(h.branch, h);
-  }
-  return [...tips.values()].sort((a, b) => (b.at ?? 0) - (a.at ?? 0));
-}
 
 // #C654: a plain build start with no work behind it. A PLAIN start (no wait) is open until the same role ends that card; after
 // ABANDON_MS with no evidence (the card has no commit or branch head, and the role is not working on it in the fresh live
@@ -92,55 +39,6 @@ export function abandonedAt({ steps, cardId, derived, liveState = null, buildPha
     out = Math.max(out ?? -Infinity, at + ABANDON_MS);
   }
   return out;
-}
-
-// The review phases a card needs: the config's review phases, minus the ones its skips or its fields rule out.
-export function reviewsFor(card, config) {
-  const c = config.collector;
-  const skip = new Set(Array.isArray(card.skip) ? card.skip : []);
-  for (const k of config.skips ?? []) {
-    if (k.unlessLevel && card.level && card.level !== k.unlessLevel) skip.add(k.phase);
-    if (k.whenFalse && card[k.whenFalse] === false) skip.add(k.phase);
-    // A review only some cards need (a look change for a designer): skipped unless the card says it applies.
-    if (k.unlessTrue && card[k.unlessTrue] !== true) skip.add(k.phase);
-  }
-  return Object.keys(c.notes).filter((p) => !skip.has(p));
-}
-
-// { phase, head, version, evidence } (in review, also waitingFor and branch) for one card, or { phase: null } when the facts say nothing.
-// facts: { head: {branch, sha, message} | null, signed: Set of phases with a note on head.sha, onMain, deployed, version }
-// #C671: and `reviews` { phase: ms } when the head carries sign-off notes: each review the repository shows signed on the
-// head, at the note's time, so the board needs no hand-logged end step for it (the page counts it as one, the gate too).
-export function derivePhase(card, facts, config) {
-  const d = phaseFromFacts(card, facts, config);
-  const at = facts?.signedAt;
-  if ((facts?.onMain && bareBranch(card, facts?.head)) || byNumberOnly(card, facts?.head) || !facts?.head || !at || typeof at !== "object") return d;
-  const reviews = {};
-  for (const p of Object.keys(config.collector.notes)) if (facts.signed?.has(p) && Number.isFinite(at[p])) reviews[p] = at[p];
-  return Object.keys(reviews).length ? { ...d, reviews } : d;
-}
-function phaseFromFacts(card, facts, config) {
-  const c = config.collector;
-  if (!facts.head) return { phase: null, evidence: "no branch or Board-Id commit for this card" };
-  const head = facts.head.sha;
-  const short = String(head).slice(0, 8);
-  // readyAt: the READY commit's time, where build ends by the evidence (the page closes a build step left open there).
-  const readyAt = Number.isFinite(facts.head.at) ? facts.head.at : null;
-  // #C671: a branch pushed for the card before its first commit sits at a main commit: work started, not shipped.
-  if (facts.onMain && bareBranch(card, facts.head)) return { phase: c.buildPhase, head, firm: false, evidence: `${facts.head.branch} at ${short} has no commits beyond ${c.mainBranch} yet` };
-  if (byNumberOnly(card, facts.head)) return { phase: c.buildPhase, head, firm: false, evidence: `${facts.head.branch} at ${short} is named for the card by number and its tip is not the card's own commit yet` };
-  // onMain (#C662): the card's commit is on the main branch, the evidence the ship rule asks for (gate/card-rules.mjs).
-  if (facts.onMain && facts.deployed) return { phase: c.livePhase, onMain: true, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch} and deployed${facts.version ? ` in ${facts.version}` : ""}` };
-  if (facts.onMain) return { phase: c.shipPhase, onMain: true, head, readyAt, version: facts.version ?? null, evidence: `${short} is on ${c.mainBranch}, not deployed yet` };
-  const ready = boardIdOf(facts.head.message) === card.id || facts.signed.size > 0;
-  // Without a trailer or a note the head may still be READY, unsigned yet: build is only what the evidence can show.
-  if (!ready) return { phase: c.buildPhase, head, firm: false, evidence: `${facts.head.branch} at ${short}, no READY trailer or sign-off yet` };
-  const order = config.phases.map((p) => p[0]);
-  // #C897: facts.needs, when given, is the reviews read from the branch's paths (collector/review-paths.mjs); else the typed rule.
-  const waiting = (Array.isArray(facts.needs) ? facts.needs : reviewsFor(card, config)).filter((p) => !facts.signed.has(p)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  // waitingFor and branch: the reviews still unsigned on this READY commit, for the dispatch nudge (#C290).
-  if (waiting.length) return { phase: waiting[0], head, readyAt, waitingFor: waiting, branch: facts.head.branch, evidence: `READY at ${short}; waiting for ${waiting.join(", ")}` };
-  return { phase: c.shipPhase, head, readyAt, evidence: `READY at ${short}; every review signed` };
 }
 
 // A conflict line when the card's declared phase disagrees with the derived one (one line per card, for the lead).

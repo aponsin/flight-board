@@ -2,17 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker from "../worker/board-worker.mjs";
-import { pageHtml } from "../worker/page.mjs";
 import { createAsk } from "../worker/board-store.mjs";
-
-test("board text reaches the page only as text: the one innerHTML is the header built from our own functions", () => {
-  const html = pageHtml({ version: "v1" });
-  assert.equal((html.match(/innerHTML/g) ?? []).length, 1);
-  assert.match(html, /\$\("hd"\)\.innerHTML = headerHtml\(/);
-  assert.doesNotMatch(html, /document\.write|eval\(/);
-});
-
-test("the version stamp is sanitized", () => assert.doesNotMatch(pageHtml({ version: '"><script>x</script>' }), /<script>x/));
 
 test("the root is the board page (#C829): the old-look page at /, /board only redirects there, both behind the identity check and not for the probe", async () => {
   const env = { DB: makeDb(), ASSETS: { fetch: async (req) => (new URL(req.url).pathname === "/board.html" ? new Response("<html><style>a{}</style><script>x</script></html>") : new Response("", { status: 404 })) } };

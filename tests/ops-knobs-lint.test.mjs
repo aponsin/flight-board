@@ -25,7 +25,6 @@ export const FIXED = {
   "worker/probe-jobs.mjs:LAND_TIP_SEC": "the land job's per-tip budget: tied to the job's limit, which launchd's plist holds, and to LAND_REPORT_FRESH_MS (tests/ship-lane-per-repo.test.mjs); changing it needs an owner install",
   // #C1113 slice 2: four that are not operating numbers.
   "worker/web-push.mjs:VAPID_HOURS": "the lifetime of the Web Push signature (12 h): RFC 8292 lets a push service refuse one over 24 h, so it is a protocol bound, not an operating number",
-  "worker/page.mjs:UNDO_MS": "how long the page's Undo button stays (5 s): the feel of one control on a page that has no board config to read",
   "worker/state-worker.mjs:HEARTBEAT_MS": "the state Worker's keep-alive write (15 min): it is tied to the daily KV write budget (WRITES_DEFAULT, the account's shared quota), so moving it moves that arithmetic and is a deploy decision",
   "worker/board-rules.mjs:INLINE_LIST_MIN": "how many inline (1) (2) (3) markers in one paragraph count as a packed list (3): the threshold of a wording rule, not a time or an operating number",
   // #C1113 slice 4 (Manager: do not plumb the posted settings into the dispatch; one that needs tuning later gets its own card).
@@ -58,7 +57,6 @@ export const FIXED = {
   "collector/state.mjs:CI_BATCH_LIMIT": "how many CI runs one batched list reads (100): a cost bound on gh, not a time (collector/state.mjs)",
   "collector/state.mjs:REREAD_DONE_MS": "how long after done_at a closed product card that has not read live is read again (14 days, #C1379): a cost bound, about ten git or gh calls a card a run, so one that never reads live is not read forever",
   "worker/compat-reading.mjs:CLOSED_WINDOW_MS": "how long after it closed a card is still served with its reading (7 days, #C1381, the contract's own window): a size bound on the compat answer, not a tuning",
-  "collector/state.mjs:CLOSED_PACK_DAYS": "how far back the done-card pack lookup reads (14 days, with 500 commits): a cost bound on one git log (collector/state.mjs)",
   "collector/state.mjs:MIRROR_STALE_MS": "how old the board export may be for the asks (2 h): the answer gate's own window (collector/state.mjs)",
   "collector/state.mjs:QUIET_LOOKBACK_MS": "how far back the quiet-hours scan walks, minute by minute (48 h): a cost bound on one loop (collector/state.mjs)",
   "collector/state.mjs:RETRY_MS": "one more try 5 s later after a network blip (#C428), well inside launchd's minute (collector/state.mjs)",
@@ -79,8 +77,7 @@ export const FIXED = {
   "gate/reset.mjs:LINE_AGAIN_MS": "how long before a printed line prints again (2 h), like CLOSE_AGAIN_MS (gate/reset.mjs)",
   "gate/stop.mjs:DISPATCH_ASK_GAP_MS": "the stop hook asks about the watch at most every 10 min, so a session that cannot run it is not stopped for ever (gate/stop.mjs)",
   "gate/wake.mjs:ALIVE_MAX_MS": "how old the wake watch's alive file may be (60 s): tied to the watch's own beat and POLL_MS (gate/wake.mjs)",
-  "worker/page.mjs:POLL_MS": "one name, two polls: the wake watch's 5 s file poll and the page's 2.5 s poll of the store; each is the feel of one control or one watch, not an operating number (gate/wake.mjs and worker/page.mjs)",
-  "gate/wake.mjs:POLL_MS": "one name, two polls: the wake watch's 5 s file poll and the page's 2.5 s poll of the store; each is the feel of one control or one watch, not an operating number (gate/wake.mjs and worker/page.mjs)",
+  "gate/wake.mjs:POLL_MS": "the wake watch's 5 s file poll: the feel of one watch, not an operating number",
   "hooks/red-ask-board.py:OPEN_ASKS_MAX_AGE_MS": "the export of open asks counts for 10 min: the hook's own freshness for a red line (hooks/red-ask-board.py)",
   "hooks/red-ask-board.py:OWNER_FRESH_MS": "an owner message under 10 min old defers the reset cue one turn: the reset rule's own window (hooks/red-ask-board.py)",
   "scripts/pickup-watch.mjs:FRESH": "5,000 TOKENS, not a time: a session whose Messages read under it has just been cleared (scripts/pickup-watch.mjs)",

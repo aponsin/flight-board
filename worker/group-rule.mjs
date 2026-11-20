@@ -3,7 +3,12 @@
 // (worker/reading.mjs waitOf), the stall line and the slow wake (worker/board-rules.mjs) all call this one function. The four other readings of a group ("no head", "same repository and not
 // held", "not signed", "still to land") answer other questions and stay where they are (collector/store-dispatch.mjs, scripts/stack-ready.mjs, scripts/board-land.mjs).
 export const REVIEW_PHASES = ["language", "design", "checker", "security"];
+// #C1388: the cards it waits for, as [{ id, num }] (the page names them: "Waiting for #C1357"); [] when it waits for none. groupWaits is "that list is not empty".
+export function groupWaitsFor(c, v, cards, evidence) {
+  if (!c?.batch || !REVIEW_PHASES.includes(v?.lit?.[0]) || v.onMain === true || !v.stack || v.stack.outside === true) return [];
+  return (cards ?? []).filter((k) => k && k.id !== c.id && k.batch === c.batch && !k.done_at && !k.dropped && !k.paused && (!evidence?.[k.id]?.lit?.[0] || evidence[k.id].lit[0] === "build"))
+    .map((k) => ({ id: k.id, ...(Number.isInteger(k.num) ? { num: k.num } : {}) }));
+}
 export function groupWaits(c, v, cards, evidence) {
-  if (!c?.batch || !REVIEW_PHASES.includes(v?.lit?.[0]) || v.onMain === true || !v.stack || v.stack.outside === true) return false;
-  return (cards ?? []).some((k) => k && k.id !== c.id && k.batch === c.batch && !k.done_at && !k.dropped && !k.paused && (!evidence?.[k.id]?.lit?.[0] || evidence[k.id].lit[0] === "build"));
+  return groupWaitsFor(c, v, cards, evidence).length > 0;
 }

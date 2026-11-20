@@ -48,7 +48,8 @@ test("the waiting Install tile names the pack when the reading has its number, a
 test("a card whose reading is past the install, or live, draws no waiting Install tile", () => {
   assert.match(draw({}, { phase: "install", state: "waiting", wait: "install", with: "Owner", pack: "pc111" }), /class="step waits rel"/, "control: waiting on the install is green");
   for (const [name, over] of [["done", { phase: "live", state: "done", wait: null }], ["live phase, working", { phase: "live", state: "working", wait: null, working: true }]]) {
-    const html = draw({}, over);
+    // #C1388: a card whose reading is done is closed at once by the page (closeableNow, the reading's `done`) and leaves the open list; a check still to run (checkAt) keeps its row open, so the tiles can be read.
+    const html = draw({ checkAt: Date.now() + 36e5 }, over);
     assert.equal(/class="step waits rel"/.test(html), false, `${name}: no green Install tile`);
     assert.equal(/'s install<\/span>/.test(html), false, `${name}: no "'s install" word`);
     assert.match(html, /<div class="step done[^"]*" title="Install/, `${name}: Install stands done`);

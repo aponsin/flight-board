@@ -7,7 +7,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { cardState, byNumberOnly as probeByNumberOnly } from "../collector/state.mjs";
-import { derivePhase, byNumberOnly } from "../collector/derive.mjs";
 import { shippedBranchesWrite } from "../collector/shipped-branches.mjs";
 
 const T = 1_800_000_000_000;
@@ -44,9 +43,9 @@ test("a branch cut on another card's signed tip and named for this card by numbe
   assert.equal(t.headSha, own); assert.equal(t.phase, "checker"); assert.deepEqual(t.signed, []);
 });
 
-test("byNumberOnly: only a head found by its number alone and not the card's own commit; the Collector's phase reads it as build, signed or not", () => {
+test("byNumberOnly: only a head found by its number alone and not the card's own commit", () => {
   const card = { id: "next-thing", num: 1196 };
-  for (const f of [byNumberOnly, probeByNumberOnly]) {
+  for (const f of [probeByNumberOnly]) {
     assert.equal(f(card, head("1", "build/c1196-next-thing", "#C1195: another card")), true);
     assert.equal(f(card, head("2", "build/c1196-next-thing", "no subject")), true);
     assert.equal(f(card, head("3", "build/c1196-next-thing", "#C1196 (Role): own")), false);
@@ -56,9 +55,7 @@ test("byNumberOnly: only a head found by its number alone and not the card's own
     assert.equal(f({ id: "x" }, head("7", "build/c1196-next-thing", "#C1195")), false, "a card with no number");
     assert.equal(f(card, null), false);
   }
-  const facts = { head: head("1".repeat(40), "build/c1196-next-thing", "#C1195: another card"), signed: new Set(["checker", "security"]), onMain: false, deployed: false, signedAt: { checker: 5 } };
-  const d = derivePhase({ id: "next-thing", num: 1196, level: "Full" }, facts, config);
-  assert.equal(d.phase, "build"); assert.equal(d.firm, false); assert.equal(d.reviews, undefined);
+  // The phase of such a head is read in cardState (the test above: build, no sign-offs, though the tip carries both); phaseOf alone does not look at the head's name.
 });
 
 test("the shipped-branch sweep does not list the numbered branch of an open card, and lists it once the card is not open", () => {

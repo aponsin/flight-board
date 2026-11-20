@@ -10,7 +10,6 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { stateErrors, pickState, toolClass, MAX_BYTES } from "../collector/state-schema.mjs";
 import { cardIn, activity, agentStates, appSessions, lastEntries, readTail, readSecrets, buildState, phaseOf, headsFor as headsForProbe, cardState, postState, ciReader, WORKING_QUIET_MS, RETRY_MS } from "../collector/state.mjs";
-import { derivePhase, headsFor } from "../collector/derive.mjs";
 import worker, { sha256hex, secretName, RATE_MS, TOOL, WAKE_TOOL, WRITES_DEFAULT } from "../worker/state-worker.mjs";
 import { pinnedSha, makeSecrets, workerSecret, secretName as installSecretName, plist, wranglerToml, WRANGLER, WRANGLER_VERSION, secretsStep, Stop, stopLine, stepCommand } from "../scripts/state-install.mjs";
 import { pageMcpErrors, PAGE_MCP, verdict } from "../scripts/board-release.mjs";
@@ -306,30 +305,38 @@ test("the probe: only a transcript's last 20 entries count, and a line cut by th
   assert.equal(lastEntries({ text: "{\"type\":\"user\"," + "\n" + many[1], whole: false }).length, 1);
 });
 
-test("the probe's phase rule is collector/derive.mjs's: the same phase on every case", () => {
+// #C1388: the one phase rule is state.mjs's phaseOf (collector/derive.mjs's second copy and the test that compared the two are gone); each case below says its phase.
+test("the phase rule: the phase a card reads for a head, its sign-offs, main and deploy", () => {
   const config = { phases: [["plan"], ["build"], ["test"], ["language"], ["checker"], ["security"], ["ship"], ["live"]], skips: [{ phase: "security", unlessLevel: "Full" }, { phase: "language", whenFalse: "customerText" }], collector: { notes: { checker: "r1", language: "r2", security: "r3" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", mainBranch: "main" } };
-  const heads = [null, { branch: "c", sha: "a".repeat(40), message: "x" }, { branch: "c", sha: "a".repeat(40), message: "x\n\nBoard-Id: c" }];
-  let n = 0;
-  for (const card of [{ id: "c", level: "Full" }, { id: "c", level: "Quick", customerText: false }, { id: "c", skip: ["checker"] }])
-    for (const head of heads) for (const signed of [[], ["checker"], ["checker", "language"], ["checker", "language", "security"]]) for (const onMain of [false, true]) for (const deployed of [false, true]) {
-      const facts = { head, signed: new Set(signed), onMain, deployed: onMain && deployed };
-      assert.equal(phaseOf(card, facts, config), derivePhase(card, facts, config).phase, JSON.stringify({ card, head, signed, onMain, deployed }));
-      n++;
-    }
-  assert.equal(n, 144);
-  const hs = [{ branch: "a/c", sha: "1", at: 2, message: "" }, { branch: "x", sha: "2", at: 3, message: "Board-Id: c" }, { branch: "a/c", sha: "3", at: 1, message: "" }, { branch: "y", sha: "4", at: 9, message: "" }];
-  assert.deepEqual(headsForProbe("c", hs), headsFor("c", hs));
-  // #C649: a commit whose message starts "#C<num>:" is the card's too (the two copies agree, with and without the number).
+  const sha = "a".repeat(40);
+  const plain = { branch: "c", sha, message: "x" };
+  const ready = { branch: "c", sha, message: "x\n\nBoard-Id: c" };
+  const read = (card, head, signed = [], onMain = false, deployed = false) => phaseOf(card, { head, signed: new Set(signed), onMain, deployed: onMain && deployed }, config);
+  const full = { id: "c", level: "Full" }, quick = { id: "c", level: "Quick", customerText: false }, skipC = { id: "c", skip: ["checker"] };
+  assert.equal(read(full, null), null, "no head: no phase");
+  assert.equal(read(full, plain), "build", "no trailer and no sign-off: build");
+  assert.equal(read(full, ready), "language", "READY, nothing signed: the first review it needs, in the config's order");
+  assert.equal(read(quick, ready), "checker", "Quick with no customer text needs the checker only");
+  assert.equal(read(skipC, ready), "language", "a skipped review is not waited for");
+  assert.equal(read(full, ready, ["language"]), "checker");
+  assert.equal(read(full, ready, ["language", "checker"]), "security");
+  assert.equal(read(full, ready, ["language", "checker", "security"]), "ship");
+  assert.equal(read(quick, ready, ["checker"]), "ship");
+  assert.equal(read(full, plain, ["checker"]), "language", "a sign-off on the head makes it READY without the trailer");
+  assert.equal(read(full, ready, [], true), "ship", "on main, not deployed");
+  assert.equal(read(full, ready, [], true, true), "live", "on main and deployed");
+  assert.equal(read(full, plain, [], true, true), "build", "a branch of the card's name sitting on main with no commit of its own is work started, never live");
+  const hs = [{ branch: "a/c", sha: "1", at: 2, message: "" }, { branch: "x", sha: "2", at: 3, message: "x\n\nBoard-Id: c" }, { branch: "a/c", sha: "3", at: 1, message: "" }, { branch: "y", sha: "4", at: 9, message: "" }];
+  assert.deepEqual(headsForProbe("c", hs).map((h) => h.sha), ["2", "1"], "by trailer or by the branch's name, one tip a branch, newest first");
+  // #C649: a commit whose message starts "#C<num>:" is the card's too, with the number.
   const tagged = [...hs, { branch: "w/other", sha: "5", at: 7, message: "#C701: The menu opens\n\nbody" }, { branch: "w/late", sha: "6", at: 8, message: "Fix (#C701: not at the start)" }, { branch: "w/num", sha: "7", at: 6, message: "#C7010: another card" }];
-  assert.deepEqual(headsForProbe("menu-fix", tagged, 701), headsFor("menu-fix", tagged, 701));
   assert.deepEqual(headsForProbe("menu-fix", tagged, 701).map((h) => h.sha), ["5"], "only the tagged subject, only that number");
   assert.deepEqual(headsForProbe("menu-fix", tagged), [], "no number, no tag match");
-  assert.deepEqual(headsForProbe("menu-fix", tagged, null), headsFor("menu-fix", tagged, null));
-  // #C1329 (Checker 2's LOW on #C1325): a re-cut branch <id>-v<N> names its card in both copies, with a tip that has no Board-Id; a longer id that only starts like it does not.
+  assert.deepEqual(headsForProbe("menu-fix", tagged, null), [], "a null number is no number");
+  // #C1329 (Checker 2's LOW on #C1325): a re-cut branch <id>-v<N> names its card, with a tip that has no Board-Id; a longer id that only starts like it does not.
   const recut = [{ branch: "build/menu-fix-v3", sha: "8", at: 5, message: "no trailer" }, { branch: "build/menu-fix-v3x", sha: "9", at: 6, message: "" }, { branch: "build/menu-fix-extra-v2", sha: "a", at: 7, message: "" }, { branch: "build/menu-fix", sha: "b", at: 4, message: "" }];
-  assert.deepEqual(headsForProbe("menu-fix", recut), headsFor("menu-fix", recut));
-  assert.deepEqual(headsFor("menu-fix", recut).map((h) => h.sha), ["8", "b"], "the -vN re-cut and the plain branch, nothing else");
-  assert.deepEqual(headsForProbe("menu-fix", recut, 701), headsFor("menu-fix", recut, 701));
+  assert.deepEqual(headsForProbe("menu-fix", recut).map((h) => h.sha), ["8", "b"], "the -vN re-cut and the plain branch, nothing else");
+  assert.deepEqual(headsForProbe("menu-fix", recut, 701).map((h) => h.sha), ["8", "b"], "a number nothing carries changes nothing");
 });
 
 test("#C649: a card worked on only by tagged commits, in plan with no branch of its name, shows as build with its head", () => {

@@ -4,6 +4,7 @@
 // fixtures and its laws; no view calls it yet (the Worker, the dispatch, the page and the crew panel move to it in steps 2 and 3).
 // It imports only worker/ files (the Worker bundle holds nothing of the collector).
 import { isRework, reworkKind, holdOpen, groupWaits, repoKey, repoKind, reviewerOf, PHASE_LANES } from "./board-rules.mjs";
+import { groupWaitsFor } from "./group-rule.mjs";
 
 // #C1385 (the gates read this module): the shared readings the dispatch and the stall lines used to keep copies of. ONE lane table (board-rules' PHASE_LANES, phase -> role), the review lanes
 // of it (the phases a lane's agent reviews, and ship, which Release lands) as a table of their own, and `isReviewLane`; `isRework` and `reworkKind` (the dispatch's two kinds of rework) and
@@ -76,6 +77,20 @@ export function kindOf(card, config) {
   return row && (row.kind === "board" || row.kind === "product") ? row.kind : null;
 }
 
+// A card's branch records (the page's liveBranches, #C621, moved here): each tip read on its own, an odd one skipped (name an id word, phase a word, at most 6, no repeated name); fewer than two good ones is none.
+const BRANCH_WORD = /^[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){0,4}$/, PHASE_WORD = /^[a-z][a-z0-9-]{0,23}$/;
+export function branchReadings(list) {
+  if (!Array.isArray(list)) return [];
+  const names = new Set(), out = [];
+  for (const b of list.slice(0, 6)) {
+    if (!b || typeof b !== "object" || typeof b.name !== "string" || !BRANCH_WORD.test(b.name) || names.has(b.name) || typeof b.phase !== "string" || !PHASE_WORD.test(b.phase) || typeof b.headSha12 !== "string" || !/^[0-9a-f]{12}$/.test(b.headSha12)) continue;
+    names.add(b.name);
+    const reached = Array.isArray(b.seen) ? b.seen.filter((k) => typeof k === "string" && PHASE_WORD.test(k)) : [];
+    out.push({ name: b.name, phase: b.phase, landed: b.onMain === true, reached, live: reached.includes("live") });
+  }
+  return out.length > 1 ? out : [];
+}
+
 const pushed = (e) => !!e && typeof e === "object" && (typeof e.headSha === "string" || typeof e.headSha12 === "string");
 const isWorking = (agents, role, cardId) => !!role && agents?.[role]?.state === "working" && agents[role].card === cardId;
 const busyElsewhere = (agents, role, cardId) => !!role && agents?.[role]?.state === "working" && !!agents[role].card && agents[role].card !== cardId;
@@ -99,7 +114,8 @@ export function waitOf({ card, e, phase, kind, now, claims, agents, config, ctx 
   const asks = (ctx?.asks ?? []).filter((a) => a && (a.card_id === card.id || a.card === card.id));
   if (asks.length) return { kind: "ask", ask: asks[0].num ?? null };
   if (holdOpen(card, now, ctx?.endsPassed ?? new Set())) return { kind: "hold" };
-  if (groupWaits(card, e, ctx?.cards, ctx?.evidence)) return { kind: "group" };
+  const gw = groupWaitsFor(card, e, ctx?.cards, ctx?.evidence);
+  if (gw.length) return { kind: "group", for: gw };
   if (phase === "ship" || phase === "pack" || phase === "install") {
     if (e?.onMain !== true) return e?.signed?.length ? { kind: "land" } : null;
     if (kind === "board" && e?.noInstall !== true) return e?.packed !== true ? { kind: "pack" } : e?.installed !== true ? { kind: "install" } : null;
@@ -122,6 +138,15 @@ export function reading(card, evidence, claims, agents, config, now, ctx = {}) {
     const w = wait ? wait.kind : null, who = withOf(card, e, phase, w, state, claims, config);
     const r = { phase, state, wait: w, with: who, working: false, since: ctx.phaseStart?.get?.(`${card?.id}|${phase}`) ?? (Number.isFinite(e?.readyAt) && REVIEW.includes(phase) ? e.readyAt : null), asOf, why, ...extra };
     if (wait?.ask != null) r.ask = wait.ask;
+    // #C1388: the version a live card went out in ("1.226.10") as a plain fact, null otherwise; the Live tile of a product card names it.
+    r.version = typeof e?.liveVersion === "string" && /^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(e.liveVersion) && e.phase === "live" ? e.liveVersion : null;
+    // #C1388: the cards a `group` wait is for, [{ id, num }] (the page words it "Waiting for #C1357"), so it never reads the group's evidence.
+    if (wait?.for) r.waitsFor = wait.for;
+    // #C1388: `building`, true while the card's work is in progress: a session is on it, or it has a push of its own that is not on main yet (a card on main waits for pack, install or deploy, not "building").
+    r.building = state === "working" || (pushed(e) && e.onMain !== true && ["waiting", "rework", "stuck"].includes(state));
+    // #C1388: a card with two or more branches carries one reading per branch, the card row draws a track for each; `live` is the Pack and Install tiles' only light, `reached` the phases that branch shows evidence of, `landed` its tip on main.
+    const bs = branchReadings(e?.branches);
+    if (bs.length) r.branches = bs;
     // #C1382: the pack's number as a plain fact ("pc111"), only for a board card at the pack or install wait; null when there is none, so the page never reads the evidence for it.
     r.pack = kind === "board" && (w === "pack" || w === "install") && Number.isInteger(e?.pack) && e.pack > 0 && e.pack < 1e6 ? `pc${e.pack}` : null;
     if (kind === null || kind) r.kind = kind;

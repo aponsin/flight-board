@@ -13,6 +13,8 @@ function board({ card = {}, cards = { [ID]: live }, messages }) {
   const b = loadNames(["probeEvent", "itemOf", "itemShown", "threadResolved", "waitsOn"]);
   Object.assign(b.state, { initRaw: [{ id: ID, name: "A finished card", status: "active", phase: "live", ...card }], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages, threads: [], plan: [], timings: [], steps: [] });
   b.probeEvent({ type: "data", result: { payload: reading(cards) } }, {});
+  // #C1388: the page closes a card by the card's reading (closeableNow reads state "done"), not by the probe's evidence: a card that reads live and on main has a done reading.
+  b.state.readings = Object.entries(cards).map(([id, c]) => ({ id, state: c.phase === "live" && c.onMain ? "done" : "working", wait: null, with: null, working: false, phase: c.phase }));
   return b;
 }
 

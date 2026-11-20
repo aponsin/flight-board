@@ -321,6 +321,7 @@ export function stackSwitchRefusal(b, who) {
 // #C1018 / #C1035: one checker per tip. A Checker session claims a tip (its full 40-hex commit) before it reviews it; the first claim wins. Only Checker
 // (for itself, as "Checker" or "Checker <n>") and Manager (for a named checker, and to release a gone checker's claim) write one. card_id (optional) is the
 // card the tip belongs to: a re-cut of it keeps the claim of the checker who held the old tip.
+// #C1388: the one pattern for a checker's name ("Checker" or "Checker <n>"): the claim's shape, the late-review line, the reviewer a card is sent to and the dispatch's claimed-tip filter all read it.
 export const CHECKER_NAME = /^Checker(?: [0-9]{1,2})?$/;
 export const REVIEW_SHA = /^[0-9a-f]{40}$/;
 // #C1115 (11-16: G6 was due about 1:20 pm and missed it by more than an hour; Checker 2 ran 30 mutants, each against the whole suite, about 75 minutes the ETA never counted):
@@ -340,7 +341,7 @@ export function reviewLateWakes({ now, claims, cards, evidence, medians, outages
     if (!card || card.dropped || card.done_at || (e?.phase ?? e?.lit?.[0]) !== "checker") continue;
     const eta = reviewEtaAt(c, medians?.checker), over = waited(eta, now, outages);
     if (!(now > eta && over >= REVIEW_LATE_MS)) continue;
-    const who = typeof c.checker === "string" && /^Checker( \d{1,3})?$/.test(c.checker) ? c.checker : "the checker";
+    const who = typeof c.checker === "string" && CHECKER_NAME.test(c.checker) ? c.checker : "the checker";
     // The words stay the same until the reviewer's progress line changes, so the row (card, reason) is one wake per spell, and a new progress line is a new one.
     const prog = typeof c.progress === "string" && c.progress.trim() ? c.progress.trim().slice(0, 160) : "no progress line";
     const n = Number.isInteger(c.mutants) && c.mutants > 0 ? `, ${c.mutants} mutants` : "";
@@ -1311,7 +1312,7 @@ export function stalledWaits({ now, cards, evidence, agents, openAskCards, phase
     const claimed = phase === "checker" && !behind && claims instanceof Map ? claims.get(c.id) : undefined;
     // #C1100: the checker phase's reviewer is the config's collector.reviewers entry for the card's repository, as the dispatch wakes it (#C1098); a claim still names its own checker first.
     const reviewer = phase === "checker" && !behind ? reviewerOf(c, reviewers) : undefined;
-    const role = behind ? c.owner_role : typeof claimed === "string" && /^Checker( [0-9]{1,3})?$/.test(claimed) ? claimed : reviewer ?? PHASE_LANES[phase] ?? c.owner_role;
+    const role = behind ? c.owner_role : typeof claimed === "string" && CHECKER_NAME.test(claimed) ? claimed : reviewer ?? PHASE_LANES[phase] ?? c.owner_role;
     if (typeof role !== "string" || !/^[A-Za-z0-9 _-]{1,24}$/.test(role)) continue;
     const a = roster[role], start = phaseStart?.get(`${c.id}|${phase}`);
     const at = behind ? `#C${c.num} signed but behind main${/^[0-9a-f]{12}$/.test(String(v.headSha12)) ? " " + v.headSha12 : ""}, waits at ${role} ${minWords(stallMs)}` : `#C${c.num} waits at ${phase.charAt(0).toUpperCase()}${phase.slice(1)} ${minWords(stallMs)}`;

@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fullConfig, checkConfig } from "../scripts/config.mjs";
-import { reviewsFor } from "../collector/derive.mjs";
+import { phaseOf } from "../collector/state.mjs";
 import { step } from "./harness.mjs";
 import { buildPage } from "../scripts/build-page.mjs";
 import { readFileSync } from "node:fs";
@@ -14,9 +14,13 @@ const skips = [{ phase: "security", unlessLevel: "Full" }, { phase: "language", 
 
 test("the collector waits for the design review only on a card that says lookChange: true", () => {
   const config = fullConfig({ ...base, phases, skips, collector: { notes: { language: "refs/notes/linguist", design: "refs/notes/designer", checker: "refs/notes/checker", security: "refs/notes/security" } } });
-  assert.deepEqual(reviewsFor({ level: "Quick", customerText: false, lookChange: true }, config), ["design", "checker"]);
-  assert.deepEqual(reviewsFor({ level: "Quick", customerText: false }, config), ["checker"], "no field: no design review");
-  assert.deepEqual(reviewsFor({ level: "Quick", customerText: false, lookChange: "yes" }, config), ["checker"], "only true counts");
+  // #C1388: read through the one phase rule (state.mjs's phaseOf): a READY head with nothing signed reads as the first review the card needs.
+  const waitsFor = (fields, signed = []) => phaseOf({ id: "x", ...fields }, { head: { branch: "b", sha: "a".repeat(40), message: "x\n\nBoard-Id: x" }, signed: new Set(signed), onMain: false, deployed: false }, config);
+  assert.equal(waitsFor({ level: "Quick", customerText: false, lookChange: true }), "design");
+  assert.equal(waitsFor({ level: "Quick", customerText: false, lookChange: true }, ["design"]), "checker", "the design review signed, the checker is next");
+  assert.equal(waitsFor({ level: "Quick", customerText: false }), "checker", "no field: no design review");
+  assert.equal(waitsFor({ level: "Quick", customerText: false, lookChange: "yes" }), "checker", "only true counts");
+  assert.equal(waitsFor({ level: "Quick", customerText: false }, ["checker"]), "ship", "no field: the checker is the last review");
 });
 
 test("the page skips the design box unless the card says lookChange: true", () => {

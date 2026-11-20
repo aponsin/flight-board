@@ -213,8 +213,14 @@ test("the card says Shipping now, Signed waiting for Release, or Waiting for <ro
   assert.equal(page("board-x", { phase: "ship", onMain: true }).versionNote({ id: "board-x" }), "", "on main: the export's word (deploying, live)");
 });
 
-test("a card whose commits are live by the probe's reading shows as done at once; one with a check to run, or off main, does not", () => {
-  const b = page("board-x", { phase: "live", onMain: true });
+// #C1388: closing at once is the card's READING (state done), not the page's look at the probe's evidence: the fixtures feed readings.
+function readingPage(card, reading) {
+  const b = loadNames(["asShown", "closeableNow", "readingOf"]);
+  b.state.readings = [{ id: card, phase: "live", wait: null, with: null, working: false, ...reading }];
+  return b;
+}
+test("a card whose reading is done shows as done at once; one with a check to run, or not done by its reading, does not", () => {
+  const b = readingPage("board-x", { state: "done" });
   b.state.initRaw = [{ id: "board-x", status: "active" }];
   const shown = (i) => JSON.parse(JSON.stringify(loadAsShown(b, i)));
   function loadAsShown(bb, i) { return bb.asShown(i); }
@@ -224,9 +230,10 @@ test("a card whose commits are live by the probe's reading shows as done at once
   assert.equal(shown({ id: "board-x", status: "active", checkAt: Date.now() + 3e5 }).status, "active", "Verifying: waits for its check");
   assert.equal(shown({ id: "board-x", status: "done" }).doneByEvidence, undefined, "already done: as it is");
   assert.equal(shown({ id: "board-x", status: "dropped" }).dropped, true, "dropped: as before");
-  assert.equal(shown({ id: "board-y", status: "active" }).status, "active", "a card the probe doesn't list");
-  assert.equal(page("board-x", { phase: "live", onMain: false }).asShown({ id: "board-x", status: "active" }).status, "active", "not on main");
-  assert.equal(page("board-x", { phase: "ship", onMain: true }).asShown({ id: "board-x", status: "active" }).status, "active", "on main but not deployed: still shipping");
+  assert.equal(shown({ id: "board-y", status: "active" }).status, "active", "a card the board has no reading for");
+  assert.equal(readingPage("board-x", { state: "waiting", wait: "land", phase: "ship" }).asShown({ id: "board-x", status: "active" }).status, "active", "not on main");
+  assert.equal(readingPage("board-x", { state: "waiting", wait: "deploy", phase: "ship" }).asShown({ id: "board-x", status: "active" }).status, "active", "on main but not deployed: still shipping");
+  assert.equal(readingPage("board-x", { state: "unknown", stale: true }).asShown({ id: "board-x", status: "active" }).status, "active", "a stale reading never closes a card");
 });
 
 test("a ship run the probe read counts as a ship now for the restart pill and the Don't-restart line", () => {

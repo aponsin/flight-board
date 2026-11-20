@@ -2269,9 +2269,8 @@ function trackFor(i){if(cardRepo(i)!==BOARD_REPO)return PHASES;const out=[],own=
   PHASES.forEach(([k,l])=>{if(k===LIVE_PHASE&&!own)out.push(["pack","Pack"],["install","Install"]);out.push([k,k==="ship"?"Land":l])});
   if(!own&&!PHASES.some(([k])=>k===LIVE_PHASE))out.push(["pack","Pack"],["install","Install"]);return out}
 function unlitTile(l){return `<div class="step unlit" title="${esc(l)}: no evidence yet">${esc(l)}<small>&nbsp;</small></div>`}
-// L: the probe's reading of the card or branch (packed, installed, seen). Anything else, a word or a step, is not read.
-function packTile(L,k,l){L=L||{};const live=Array.isArray(L.seen)&&L.seen.includes(LIVE_PHASE),lit=live||(k==="pack"?L.packed===true:L.installed===true);
-  if(!lit)return unlitTile(l);return `<div class="step done seen" title="${esc(l)}: ${live?"deployed":k==="pack"?"a deploy pair holds this landing (built, not signed: Security's SAFE is not shown here)":"that pair's deploy ran"}">${esc(l)}${packWord(L,k==="pack"?"pair built":"installed")}</div>`}
+// B: the branch's reading (#C1388: the card's reading carries one per branch, `live` says its deploy ran). Anything else, a word or a step, is not read.
+function packTile(B,k,l){if(!B||B.live!==true)return unlitTile(l);return `<div class="step done seen" title="${esc(l)}: deployed">${esc(l)}${packWord(B,k==="pack"?"pair built":"installed")}</div>`}
 // #C1309: the pack's number on the Pack and Install tiles ("pc111"), so the owner can check it against what he installed; the old word follows it on a laptop and a phone shows the number alone. No number read: the old word.
 function packWord(L,word){const p=L&&Number.isInteger(L.pack)&&L.pack>0&&L.pack<1e6?L.pack:null;return p?`<small class="seen rs">pc${p}<span class="sl"> ${esc(word)}</span></small>`:`<small class="seen">${esc(word)}</small>`}
 // Tiles per row on the phone (Designer): rows as even as they can be, at most 4 a row, so no row holds one lone tile (9 tiles: 3, 3, 3).
@@ -2499,9 +2498,6 @@ function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
 const parkedStatus=i=>!!i&&(i.status==="paused"||i.status==="parked"||((CONFIG.nudges||{}).parked||[]).includes(i.status));
 // #C1164: whether waiting_on holds the card is the Worker's reading (the view's heldBy, worker/held-by.mjs), not a rule of the page's own.
 // (#C1299: the held-on-purpose helper had no caller since #C1301 took the red gap row away, and is gone.)
-// Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
-// tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
-// repository explains, or done. Returns minutes.
 // Verifying (#C581): live by the evidence while its done test is still open, with the check's due time in the card's own
 // checkAt (Manager sets it when the pack is installed). Calm while it is due; "check overdue" in amber once it passes.
 function verifying(i){return !!i&&i.status!=="done"&&!!i.byEvidence&&i.phase===LIVE_PHASE&&num(i.checkAt)!=null}
@@ -2694,7 +2690,7 @@ function cardTile(i,X,k,l){const {R,times,skip,paused}=X;
   const sm=k==="ship"&&here&&T==="working"&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
   const sd=sm!=null?(heldLine(i)?`<small data-shipat="1">held ${sm} min</small>`:`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`):"";
   // #C1309: a product card's Live tile names the version it shipped in ("v1.226.10"): a done card's own version, or the open card's live version, only once it is live.
-  const vv=k===LIVE_PHASE&&cardRepo(i)!==BOARD_REPO&&(i.status==="done"||T==="done")?(i.version||(liveCard(i.id)||{}).liveVersion||""):"",verTag=/^v?\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(String(vv||""))?`<small class="seen">v${esc(String(vv).replace(/^v/,""))}</small>`:"";
+  const vv=k===LIVE_PHASE&&cardRepo(i)!==BOARD_REPO&&(i.status==="done"||T==="done")?(i.version||R.version||""):"",verTag=/^v?\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(String(vv||""))?`<small class="seen">v${esc(String(vv).replace(/^v/,""))}</small>`:"";
   const vf=k===LIVE_PHASE&&(here||T==="done")&&i.status!=="done"&&verifying(i),tg=!vf&&T==="working"&&isTogether(i.batch,i.phase);
   const why=here&&R.why?" | "+esc(R.why)+(stale?" (no fresh reading"+(Number.isFinite(R.staleSince)?" since "+hhmm(R.staleSince):"")+")":""):"";
   return {pre:"",html:`<div class="${vf?"step verifying":c+(tg?" together":"")}" title="${esc(l)}${why}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:(verTag||t)}${tg?'<small class="tog">together</small>':""}${slow}${/^(done|working|stuck)$/.test(T)?sinceTag(i,k):""}${sd}</div>`}
@@ -2751,7 +2747,7 @@ function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
   const removes=i.removes?`<span>Removes: <b>${esc(i.removes)}</b></span>`:"";
   const detBody=`${next}${removes}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
   const gp=liveOpen?[]:gaps(i);
-  const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip,track):"";
+  const BR=i.status!=="done"?cardBranches(i.id):[],br=BR.length>1?branchTracks(BR,skip,track):"";
   return `<div class="i-row${isStaleCard(i)?" read-stale":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now(),w!=="group")}${w==="group"?"":`<strong>${esc(i.name)}</strong>`}${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}${w==="group"?"":`<span class="size">${esc(i.size||"?")}</span>`}<span class="state ${pillClass(i,R)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
@@ -2877,15 +2873,14 @@ function groupFacts(cards){const ix=i=>notStarted(i)?phaseIndex(BUILD_PHASE):pha
   const idx=Math.min(...cards.map(ix)),etas=cards.map(shownEta).filter(t=>num(t)!=null),starts=cards.map(i=>num(startedAt(i))).filter(t=>t!=null);
   return {idx,phase:(PHASES[idx]||[])[0]??null,eta:etas.length?Math.max(...etas):null,started:starts.length?Math.min(...starts):null,who:[...new Set(cards.map(i=>i.who).filter(Boolean))]}}
 // A card's own state on the rail: one word, then its issue chips.
-// #C1102 (d): a card the builder declared READY and was told to wait (its head carries the stack-ready waiting note, the probe's builtWaiting) reads "Built, waiting", not Building.
-const builtWaiting=i=>{const L=liveCard(i.id);return !!L&&L.builtWaiting===true&&!L.onMain&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)};
 // #C1358 (the owner, 11-20: "why black?" on a built card at Checker that read "slow 4.6x" with nobody on it): in stack mode the group sends ONE READY when its last card is built, so
 // a card at review while another card of its group is still unstarted or at build is waiting for that card, not stuck. The cards it waits for ([] for any other card: outside a group,
 // outside the stack, not at a review lane, on main, done, paused or stuck); the tile is the yellow wait tile "Waits for #C1357" and its slow clock does not run until the READY.
 const cardWord=k=>Number.isInteger(k.num)?"#C"+k.num:k.id;
 const gwLabel=gw=>gw.length===1?cardWord(gw[0]):gw.length+" cards";
-function groupWaitFor(i){if(!STORE||!i||!i.batch||!i.stack||i.stack.outside||i.dropped||["done","paused","stuck"].includes(i.status)||!REVIEW_LANES.includes(i.phase))return [];const L=liveCard(i.id);if(L&&L.onMain)return [];
-  return state.initiatives.filter(k=>k&&k!==i&&k.batch===i.batch&&k.status!=="done"&&k.status!=="paused"&&!k.dropped&&cardRepo(k)===cardRepo(i)&&(notStarted(k)||phaseIndex(k.phase)<=phaseIndex(BUILD_PHASE)))}
+// #C1388: the card's own reading says it (`wait` is "group", `waitsFor` the cards, [{ id, num }]); the page no longer looks at the group's evidence.
+function groupWaitFor(i){if(!STORE||!i||i.dropped||["done","paused","stuck"].includes(i.status))return [];const R=readingOf(i.id);
+  return R.wait==="group"&&Array.isArray(R.waitsFor)?R.waitsFor:[]}
 // #C1358 (Checker 2's F1): the slow clock of a card in a stack group starts when the group's READY goes out, which is when its LAST member reached review: the latest review-lane start among the group's open members
 // (null for any other card). A member built at 9:00 and the last one at 11:00: the first reads 0 h at 11:00, not 2 h. The server's slowWakes reads the same time (worker/board-rules.mjs groupReadyAt).
 function groupReadyAt(i){if(!STORE||!i||!i.batch||!i.stack||i.stack.outside||i.status==="done"||!REVIEW_LANES.includes(i.phase))return null;let at=0;
@@ -3484,7 +3479,7 @@ function gates(i){
 // #C617: a card whose commits are live by the probe's reading (the tip on main and deployed, or in the installed pack) shows as done
 // at once, before anyone writes it (the page writes nothing: the lead's CLOSE line does); a card with a check still to run
 // (checkAt, Verifying) keeps waiting for it.
-const closeableNow=i=>!!i&&typeof i.id==="string"&&i.status!=="done"&&i.status!=="dropped"&&!Number.isFinite(i.checkAt)&&(l=>!!l&&l.onMain&&l.phase===LIVE_PHASE)(liveCard(i.id));
+const closeableNow=i=>!!i&&typeof i.id==="string"&&i.status!=="done"&&i.status!=="dropped"&&!Number.isFinite(i.checkAt)&&readingOf(i.id).state==="done"; // #C1388: it reads live (the card's reading says done), not the page's own look at the evidence
 const asShown=i=>i&&i.status==="dropped"?{...i,status:"done",dropped:true}:closeableNow(i)?{...i,status:"done",doneByEvidence:true}:i;
 // Board v3, the Plan view (step 2; board-brief section 9): the plan's outline, each node with the state the collector
 // worked out (derived/all's plan: done, in progress, gated, next), each objective with its bar and chip against its due
@@ -3707,21 +3702,20 @@ const liveOn=(now=Date.now())=>!!probe&&now-probe.board.at>=-60e3&&now-probe.boa
 // A card as the live state reads it: { phase, at, head12, liveVersion }, or null (no fresh reading, an odd value).
 function liveCard(id,now=Date.now()){if(!liveOn(now)||typeof id!=="string"||!LIVE_ID.test(id)||!Object.hasOwn(probe.cards,id))return null;
   const c=probe.cards[id];if(!c||typeof c!=="object"||!PHASES.some(p=>p[0]===c.phase)||typeof c.headSha12!=="string"||!/^[0-9a-f]{12}$/.test(c.headSha12))return null;
-  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,builtWaiting:c.builtWaiting===true,stale:c.stale===true,staleSince:c.stale===true&&isT(c.staleSince)?c.staleSince:null,onMain:c.onMain===true,shipping:c.shipping===true,ci:c.ci==="running"||c.ci==="queued"?c.ci:null,packed:c.onMain===true&&c.packed===true,installed:c.onMain===true&&c.packed===true&&c.installed===true,pack:c.onMain===true&&c.packed===true&&Number.isInteger(c.pack)&&c.pack>0&&c.pack<1e6?c.pack:null,seen:Array.isArray(c.seen)?c.seen.filter(k=>PHASES.some(p=>p[0]===k)):[],liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null,branches:liveBranches(c.branches)}}
-// A card's branch records (#C621): each tip read on its own, an odd one skipped; fewer than two good ones is none.
-function liveBranches(list){if(!Array.isArray(list))return [];const names=new Set();
-  const out=list.slice(0,6).filter(b=>b&&typeof b==="object"&&typeof b.name==="string"&&LIVE_ID.test(b.name)&&!names.has(b.name)&&PHASES.some(p=>p[0]===b.phase)&&typeof b.headSha12==="string"&&/^[0-9a-f]{12}$/.test(b.headSha12)&&(names.add(b.name),true))
-    .map(b=>({name:b.name,phase:b.phase,onMain:b.onMain===true,seen:Array.isArray(b.seen)?b.seen.filter(k=>PHASES.some(p=>p[0]===k)):[]}));
+  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,stale:c.stale===true,staleSince:c.stale===true&&isT(c.staleSince)?c.staleSince:null,onMain:c.onMain===true,shipping:c.shipping===true,ci:c.ci==="running"||c.ci==="queued"?c.ci:null,packed:c.onMain===true&&c.packed===true,installed:c.onMain===true&&c.packed===true&&c.installed===true,pack:c.onMain===true&&c.packed===true&&Number.isInteger(c.pack)&&c.pack>0&&c.pack<1e6?c.pack:null,seen:Array.isArray(c.seen)?c.seen.filter(k=>PHASES.some(p=>p[0]===k)):[],liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null}}
+// A card's branch readings (#C621, #C1388: the card's reading carries them, worker/reading.mjs branchReadings): the ones in this page's phases; fewer than two good ones is none.
+function cardBranches(id){const list=readingOf(id).branches;if(!Array.isArray(list))return [];
+  const out=list.filter(b=>b&&PHASES.some(p=>p[0]===b.phase)).map(b=>({...b,reached:(Array.isArray(b.reached)?b.reached:[]).filter(k=>PHASES.some(p=>p[0]===k))}));
   return out.length>1?out:[]}
-// #C621: one track per branch of a card, each lit from that branch's own phase and evidence, so one row never lights two
-// phases (the steps carry no branch, so a card with two branches takes its tiles from the probe alone). The branch's phase is
-// the one tile "now"; before it done; after it a phase the repository shows (seen) is "done seen"; a skipped phase is skipped.
+// #C621: one track per branch of a card, each lit from that branch's own phase and reading, so one row never lights two
+// phases (the steps carry no branch, so a card with two branches takes its tiles from the reading alone). The branch's phase is
+// the one tile "now"; before it done; after it a phase the repository shows (reached) is "done seen"; a skipped phase is skipped.
 // #C969: the tiles follow the card's own track (trackFor), so a board card's branches say Land and carry the unlit Pack and Install too.
-function branchTracks(branches,skip,track=PHASES){const per=evenPer(track.length);return branches.map(b=>{const idx=phaseIndex(b.phase),ev=new Set(b.seen);
+function branchTracks(branches,skip,track=PHASES){const per=evenPer(track.length);return branches.map(b=>{const idx=phaseIndex(b.phase),ev=new Set(b.reached);
   const tiles=track.map(([k,l])=>{if(UNLIT_PHASES.includes(k)&&phaseIndex(k)<0)return packTile(b,k,l);const n=phaseIndex(k);let c="step",t="<small>&nbsp;</small>";
     if(skip.includes(k)&&n!==idx){c+=" skip";t="<small>not needed</small>"}
     else if(n<idx){c+=" done"}
-    else if(n===idx){c+=b.onMain&&k===LIVE_PHASE?" done":" now"}
+    else if(n===idx){c+=b.landed&&k===LIVE_PHASE?" done":" now"}
     else if(ev.has(k)){c+=" done seen";t='<small class="seen">in the repo</small>'}
     return `<div class="${c}" title="${esc(l)}">${esc(l)}${t}</div>`}).join("");
   return `<div class="br-name" title="Branch ${esc(b.name)}">${esc(b.name)}</div><div class="track br-track" style="--per:${per}" data-branch="${esc(b.name)}">${tiles}</div>`}).join("")}
@@ -3747,8 +3741,8 @@ function liveAgent(n,now=Date.now()){if(!liveOn(now)||typeof n!=="string"||!LIVE
 // Building by the live state (#C449, collector/state-schema.mjs's buildingNow, copied: the page can't import it): a
 // fresh reading shows the card's branch with a commit beyond main, or an agent working on it. The card's status, badge,
 // tile and queued line follow; the typed status counts only without a fresh reading.
-function liveBuilding(id,now=Date.now()){const L=liveCard(id,now);if(L&&!L.onMain)return true;
-  return liveOn(now)&&Object.keys(probe.agents).some(n=>{const a=liveAgent(n,now);return !!a&&a.state==="working"&&a.card===id})}
+// #C1388: the card's reading says it (`building`: a session is on it, or it has a push of its own that is not on main yet).
+function liveBuilding(id){return readingOf(id).building===true}
 // The roles working on a card now, the lead aside (state-schema.mjs's workersOn, copied).
 const LEAD_ROLE=(CONFIG.gate&&CONFIG.gate.managerRole)||"Manager";
 // The role that ships a product card (config gate.releaseRole, default "Release"); the words about its ship are built from it, and drawn through esc().

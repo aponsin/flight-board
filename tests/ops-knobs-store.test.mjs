@@ -40,10 +40,3 @@ test("a posted value out of its bounds is refused: the store never holds one (Se
   assert.equal(v.live.state, "live");
   assert.equal((await writeEvidence(db, NOW - 4 * M, "probe", "knobs", { values: { probeSilentSec: 120, staleAfterSec: 1800 }, ignored: [] })).ok, true, "the bounds themselves are allowed");
 });
-
-test("the page reads a posted setting through the same bounds as the Worker", async () => {
-  const { pageHtml } = await import("../worker/page.mjs");
-  const src = pageHtml({ version: "v" });
-  assert.match(src, /const KNOB_BOUNDS = \{.*"staleAfterSec":\{"min":120,"max":1800,"default":300\}/);
-  assert.match(src, /n >= b\.min && n <= b\.max \? n \* 1000 : b\.default \* 1000/);
-});

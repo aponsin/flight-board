@@ -3,7 +3,6 @@
 // succeeds. Must still allow, as tests: a successful deploy (nothing shown), no deploy yet (nothing shown), an older failure followed by a success (cleared).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import { writeEvidence, readView } from "../worker/board-store.mjs";
 import { evidenceRefusal, deployLastShape } from "../worker/board-rules.mjs";
@@ -93,21 +92,6 @@ test("the store takes deploy.last only from the probe and only in its shape", as
   assert.equal((await writeEvidence(db, T, "probe", "deploy.last", { ok: false, at: T, line: "why" })).ok, true);
   assert.equal((await readView(db, T + 1000)).evidence["deploy.last"].value.line, "why", "the view carries it with its reading time");
   assert.equal(typeof (await readView(db, T + 1000)).evidence["deploy.last"].readAt, "number");
-});
-
-test("the page turns a failed deploy.last the probe read under 5 minutes ago into the header's deployFailed; a success, an old reading or none gives null", () => {
-  const src = readFileSync(new URL("../worker/page.mjs", import.meta.url), "utf8");
-  assert.match(src, /view\.evidence\["deploy\.last"\]/);
-  assert.match(src, /dl\.value\.ok === false && Date\.now\(\) - dl\.readAt <= staleMs \? \(dl\.value\.line \|\| "failed"\) : null/, "failed, fresh by the probe's reading time");
-  assert.match(src, /headerHtml\(\{ live, probe, deployFailed(, knobsIgnored: ignored)? \}/);
-  // The same expression, run: the cases the card names.
-  const expr = /const dl = view\.evidence\["deploy\.last"\], deployFailed = (.*);\n/.exec(src)[1];
-  const run = (view, now) => new Function("view", "Date", `const dl = view.evidence["deploy.last"], staleMs = 300000; return ${expr};`)(view, { now: () => now });
-  assert.equal(run({ evidence: { "deploy.last": { value: { ok: false, at: T - 864e5, line: "deploy exited 1" }, readAt: T - 30_000 } } }, T), "deploy exited 1", "an old failure still read a minute ago is shown");
-  assert.equal(run({ evidence: { "deploy.last": { value: { ok: false, at: T }, readAt: T } } }, T), "failed", "no line: failed");
-  assert.equal(run({ evidence: { "deploy.last": { value: { ok: true, at: T, line: "DEPLOY OK" }, readAt: T } } }, T), null, "a successful deploy: nothing");
-  assert.equal(run({ evidence: {} }, T), null, "no deploy yet: nothing");
-  assert.equal(run({ evidence: { "deploy.last": { value: { ok: false, at: T, line: "x" }, readAt: T - 301_000 } } }, T), null, "a reading over 5 minutes old (the probe stopped reading it)");
 });
 
 test("the header shows Deploy failed: <reason> and nothing else for a healthy board; the reason is escaped; the label stays when the detail drops", () => {

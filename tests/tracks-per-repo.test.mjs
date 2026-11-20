@@ -76,10 +76,10 @@ test("Pack and Install are lit only by the reading: unlit before it, passed (don
 
 test("a branch track of a board card follows the same list", () => {
   const b = board([card("board", 2, { repo: "flight-board" })]);
-  const html = b.branchTracks([{ name: "board", phase: "ship", onMain: false, seen: [] }, { name: "board-v2", phase: "build", onMain: false, seen: [] }], [], b.trackFor(of(b, "board")));
+  const html = b.branchTracks([{ name: "board", phase: "ship", landed: false, reached: [] }, { name: "board-v2", phase: "build", landed: false, reached: [] }], [], b.trackFor(of(b, "board")));
   assert.match(html, /title="Land">Land/);
   assert.equal((html.match(/class="step unlit"/g) || []).length, 4, "Pack and Install unlit on each of the two branches");
-  assert.doesNotMatch(b.branchTracks([{ name: "x", phase: "build", onMain: false, seen: [] }], []), /Land|unlit/, "without a card's list: today's");
+  assert.doesNotMatch(b.branchTracks([{ name: "x", phase: "build", landed: false, reached: [] }], []), /Land|unlit/, "without a card's list: today's");
 });
 
 test("a config that already lists pack or install keeps its own list: no second tile", () => {
@@ -92,7 +92,7 @@ test("a config that already lists pack or install keeps its own list: no second 
     assert.ok(pack, `${id}: Pack is drawn`);
     assert.notEqual(pack.cls, "step unlit", `${id}: the config's own Pack is not the unlit tile`);
   }
-  assert.doesNotMatch(b.branchTracks([{ name: "x", phase: "build", onMain: false, seen: [] }], [], b.PHASES), /unlit/, "nor on a branch track");
+  assert.doesNotMatch(b.branchTracks([{ name: "x", phase: "build", landed: false, reached: [] }], [], b.PHASES), /unlit/, "nor on a branch track");
 });
 
 test("on the phone the tiles split into even rows, at most 4 a row, no lone tile", () => {

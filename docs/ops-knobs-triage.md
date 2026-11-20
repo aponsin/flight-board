@@ -30,7 +30,6 @@ constant that needs tuning later gets its own card, and moving one to a setting 
 | BACKOFF_MIN_MS | collector/state.mjs | FIXED | the first wait after a failed gh call (60 s): the shape of the back-off, which doubles to BACKOFF_MAX_MS |
 | BACKOFF_MAX_MS | collector/state.mjs | FIXED | the longest back-off wait (30 min): the top of the same doubling |
 | CI_BATCH_LIMIT | collector/state.mjs | FIXED | how many CI runs one batched list reads (100): a cost bound on gh, not a time |
-| CLOSED_PACK_DAYS | collector/state.mjs | FIXED | how far back the done-card pack lookup reads (14 days, with 500 commits): a cost bound on one git log |
 | MIRROR_STALE_MS | collector/state.mjs | FIXED | how old the board export may be for the asks (2 h): the answer gate's own window |
 | QUIET_LOOKBACK_MS | collector/state.mjs | FIXED | how far back the quiet-hours scan walks, minute by minute (48 h): a cost bound on one loop |
 | RETRY_MS | collector/state.mjs | FIXED | one more try 5 s later after a network blip (#C428), well inside launchd's minute |
@@ -51,7 +50,7 @@ constant that needs tuning later gets its own card, and moving one to a setting 
 | DISPATCH_ALIVE_MS | gate/reset.mjs | FIXED | a role's dispatch watch counts as running if its pid file was beaten within 90 s |
 | DISPATCH_ASK_GAP_MS | gate/stop.mjs | FIXED | the stop hook asks about the watch at most every 10 min, so a session that cannot run it is not stopped for ever |
 | ALIVE_MAX_MS | gate/wake.mjs | FIXED | how old the wake watch's alive file may be (60 s): tied to the watch's own beat and POLL_MS |
-| POLL_MS | gate/wake.mjs and worker/page.mjs | FIXED | one name, two polls: the wake watch's 5 s file poll and the page's 2.5 s poll of the store; each is the feel of one control or one watch, not an operating number |
+| POLL_MS | gate/wake.mjs | FIXED | the wake watch's 5 s file poll: the feel of one watch, not an operating number |
 | OPEN_ASKS_MAX_AGE_MS | hooks/red-ask-board.py | FIXED | the export of open asks counts for 10 min: the hook's own freshness for a red line |
 | OWNER_FRESH_MS | hooks/red-ask-board.py | FIXED | an owner message under 10 min old defers the reset cue one turn: the reset rule's own window |
 | FRESH | scripts/pickup-watch.mjs | FIXED | 5,000 TOKENS, not a time: a session whose Messages read under it has just been cleared |

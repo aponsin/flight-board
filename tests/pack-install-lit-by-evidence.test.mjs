@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fullConfig } from "../scripts/config.mjs";
-import { cardStates, remoteTips, closedPacks, CLOSED_PACK_DAYS, buildState } from "../collector/state.mjs";
+import { cardStates, remoteTips, buildState } from "../collector/state.mjs";
 import { pairsIn, packOf, MAX_PAIRS, BOARD_REPO_WORDS } from "../collector/pairs.mjs";
 import { BOARD_REPO_WORDS as DISPATCH_WORDS } from "../collector/store-dispatch.mjs";
 import { descends } from "../collector/pair-wait.mjs";
@@ -214,82 +214,34 @@ test("Designer on #C969 v2 (3), after #C1382: the card row draws no Gated or Que
   assert.match(TEMPLATE, /@media \(max-width:760px\)\{[^\n]*\.track>\.wait\{flex:1 1 calc\(100% \/ var\(--per,4\) - 4px\)\}/, "on the phone a wait box is a tile's width");
 });
 
-// ---- #C1034 (Checker 2's LOW on #C1020, Manager's pick A): done board cards read Pack and Install from evidence too ----
+// ---- done board cards: Pack and Install come from the done reading (#C1382), no longer from the probe's closedPacks (#C1388) ----
 const DAY = 864e5;
-const doneCard = (id, num, doneAt, extra = {}) => ({ ...card(id, num), status: "done", phase: "live", doneAt, ...extra });
 
-test("closedPacks: a board card done in the last 14 days reads packed and installed from the pairs and git; nothing else lights it", () => {
-  const s = scratch(), dir = tmp("pairs-"), now = Date.now();
-  pairFile(dir, 40, s.one); done(dir, 40, s.one);
-  pairFile(dir, 41, s.two);
-  const pairs = pairsIn(dir), repos = { "flight-board": s.repo, shopsite: s.repo };
-  const cards = [
-    doneCard("c-one", 1, now - DAY), // pc40 holds it and ran
-    doneCard("c-two", 2, now - 2 * DAY), // pc41 holds it, not run
-    doneCard("c-three", 3, now - DAY), // on main, no pair holds it
-    doneCard("c-four", 4, now - DAY), // its commit is only on a branch: no landing on main
-  ];
-  assert.deepEqual(closedPacks({ cards, repos, now, pairs }), { "c-one": { packed: true, installed: true, pack: 40 }, "c-two": { packed: true, pack: 41 } });
-// Words never light it, and neither does a card outside the window, of another repository, dropped, or still open.
-  const not = [doneCard("c-one", 1, now - 15 * DAY), { ...doneCard("c-one", 1, now - DAY), repo: "shopsite" }, { ...doneCard("c-one", 1, now - DAY), status: "dropped" },
-    { ...card("c-one", 1), phase: "live", nextNote: "pc40 installed" }, doneCard("c-one", 1, now + 2 * 36e5), doneCard("c-one", 1, null)];
-  for (const c of not) assert.deepEqual(closedPacks({ cards: [c], repos, now, pairs }), {}, JSON.stringify(c));
-  // A done card that never landed keeps today's look, however its words read.
-  assert.deepEqual(closedPacks({ cards: [doneCard("c-nine", 9, now - DAY, { nextNote: "Pack and Install done" })], repos, now, pairs }), {});
-  // No pairs, no board repository, or a git that fails: nothing (never a throw).
-  assert.deepEqual(closedPacks({ cards, repos, now, pairs: [] }), {});
-  assert.deepEqual(closedPacks({ cards, repos: { shopsite: s.repo }, now, pairs }), {});
-  assert.deepEqual(closedPacks({ cards, repos: { "flight-board": { ...s.repo, git: () => { throw new Error("no git"); } } }, now, pairs }), {});
-  assert.equal(CLOSED_PACK_DAYS, 14);
-});
-
-// Checker 2 F1 on 4d8c7adc: the live probe's cards come from the store through mirrorCard, which had no doneAt, so nothing was in the window.
-test("closedPacks end to end: a store row closed yesterday becomes a mirror card with doneAt, and lights; one with no done_at does not", () => {
-  const s = scratch(), dir = tmp("pairs-"), now = Date.now();
-  pairFile(dir, 40, s.one); done(dir, 40, s.one);
+// The store's done_at reaches the probe's card as doneAt (mirrorCard); state.mjs rereadClosed reads it for the closed product cards.
+test("a store row closed yesterday becomes a mirror card with doneAt and status done; one with no done_at has neither", () => {
+  const now = Date.now();
   const row = { id: "c-one", num: 1, title: "One", repo: "flight-board", created_at: now - 9 * DAY, updated_at: now - DAY, done_at: now - DAY };
   const m = { ...mirrorCard(row), id: row.id };
   assert.equal(m.doneAt, now - DAY, "the store's done_at, as doneAt");
   assert.equal(m.status, "done");
-  assert.deepEqual(closedPacks({ cards: [m], repos: { "flight-board": s.repo }, now, pairs: pairsIn(dir) }), { "c-one": { packed: true, installed: true, pack: 40 } });
   const open = { ...mirrorCard({ ...row, done_at: null }), id: row.id };
   assert.equal(Object.hasOwn(open, "doneAt"), false, "an open card has no doneAt");
-  assert.deepEqual(closedPacks({ cards: [open], repos: { "flight-board": s.repo }, now, pairs: pairsIn(dir) }), {});
 });
 
-test("closedPacks: one git log, then packOf's capped questions (not one walk per pair per card)", () => {
-  const s = scratch(), dir = tmp("pairs-"), now = Date.now();
-  for (let n = 1; n <= 46; n++) pairFile(dir, n, s.one); // 46 pairs pinned below c-two and c-three
-  const calls = []; const repo = { ...s.repo, git: (args) => { calls.push(args[0]); return s.repo.git(args); } };
-  const out = closedPacks({ cards: [doneCard("c-two", 2, now - DAY), doneCard("c-three", 3, now - DAY)], repos: { "flight-board": repo }, now, pairs: pairsIn(dir) });
-  assert.deepEqual(out, {});
-  assert.equal(calls.filter((c) => c === "log").length, 1, "one log of main");
-  assert.ok(calls.filter((c) => c === "merge-base").length <= 2, `one pin question per card, got ${calls.filter((c) => c === "merge-base").length}`);
-});
-
-test("the schema takes closedPacks of true values only, and buildState sends it only when a card reads packed", () => {
+test("the state no longer carries closedPacks: the schema refuses the key and buildState takes no packs", () => {
   const base = { v: 1, board: { boardId: "TestBoard42xyz", at: Date.now(), probe: null, pageVersion: null }, cards: {}, agents: {} };
-  assert.deepEqual(stateErrors({ ...base, closedPacks: { "c-one": { packed: true, installed: true }, "c-two": { packed: true } } }), []);
-  for (const bad of [{ "c-one": { packed: false } }, { "c-one": { installed: true } }, { "c-one": { packed: true, phase: "live" } }, { "C ONE": { packed: true } }, []])
-    assert.notDeepEqual(stateErrors({ ...base, closedPacks: bad }), [], JSON.stringify(bad));
-  assert.deepEqual(pickState({ ...base, closedPacks: { "c-one": { packed: true } } }).closedPacks, { "c-one": { packed: true } });
-  const built = (packs) => buildState({ id: "TestBoard42xyz", now: Date.now(), probe: "p", pageVersion: "v", cards: {}, agents: {}, packs });
-  assert.equal(Object.hasOwn(built({}), "closedPacks"), false); assert.equal(Object.hasOwn(built(null), "closedPacks"), false);
-  assert.deepEqual(built({ "c-one": { packed: true } }).closedPacks, { "c-one": { packed: true } });
+  assert.deepEqual(stateErrors(base), []);
+  assert.notDeepEqual(stateErrors({ ...base, closedPacks: { "c-one": { packed: true } } }), [], "an unknown key");
+  const built = buildState({ id: "TestBoard42xyz", now: Date.now(), probe: "p", pageVersion: "v", cards: {}, agents: {}, packs: { "c-one": { packed: true } } });
+  assert.equal(Object.hasOwn(built, "closedPacks"), false);
 });
 
-test("the page (#C1382): a done board card's Pack and Install stand done from its done reading; closedPacks no longer lights them, and no reading keeps the unlit look", () => {
-  const closedReading = (packs) => ({ ...reading({}), cards: {}, ...(packs ? { closedPacks: packs } : {}) });
+test("the page (#C1382): a done board card's Pack and Install stand done from its done reading; with no reading, or an open card with none, they are unlit", () => {
   const fin = { status: "done", phase: "live", doneAt: NOW - H };
   const dr = { state: "done", phase: "live", wait: null, with: null };
   const both = row(fin, dr);
   assert.equal(tile(both, "Pack").cls, "step done"); assert.equal(tile(both, "Install").cls, "step done");
-  // The probe's closedPacks is read by nothing in the card row: with no reading the tiles are unlit whatever it says.
-  for (const h of [row(fin, null, closedReading({ [ID]: { packed: true, installed: true } })), row(fin, null, closedReading(null)), row(fin, null)]) {
+  for (const h of [row(fin, null), row({}, null), row({ phase: "live" }, null)]) {
     assert.equal(tile(h, "Pack").cls, "step unlit"); assert.equal(tile(h, "Install").cls, "step unlit");
-  }
-  // An open card with no reading stays unlit too, closedPacks or not.
-  for (const open of [row({}, null, { ...reading({}), closedPacks: { [ID]: { packed: true, installed: true } } }), row({ phase: "live" }, null, closedReading({ [ID]: { packed: true, installed: true } }))]) {
-    assert.equal(tile(open, "Pack").cls, "step unlit"); assert.equal(tile(open, "Install").cls, "step unlit");
   }
 });

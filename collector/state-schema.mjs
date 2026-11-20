@@ -154,21 +154,17 @@ const AGENT = {
 //          The page's "Safe to restart" badge is never green while it is there. A probe before it leaves the key out.
 //   releases (#C731 B4b, optional): { "x.y.z": { testsMin, deployMin } } the newest versions' CI times from the release log on main
 //          (collector.releaseTimes), minutes as numbers, at most MAX_RELEASES versions; the page's ETA box reads them.
-//   closedPacks (#C1034, optional): { <card id>: { packed: true, installed?: true } } board cards done in the last 14 days whose landing a
-//          deploy pair holds (installed: that pair ran), from the pair folder and git only, at most MAX_CARDS. Only the page's Pack and
-//          Install tiles read it; no card's status, phase or note is in it.
 //   watch (#C1005 part c, optional): what the old stuck-agent watchdog task told Manager, as numbers and words from the schema only, written only on the run
 //          that has something: { at, restart?: true, ledger?: { prompts: [{ role, tool, n }], others }, quiet?: { since, days, running } }.
 //          restart: the app restarted (every session the probe knew is gone); ledger: the permission prompts and other notifications the prompt ledger
 //          gained since the last run, counted by role and tool (never a command or a message); quiet: the ledger had no line for a day while `running`
 //          agents worked (since: the newest line's time, null for none; days: whole days). The store turns them into stall wakes for Manager.
-export const EXTRA_KEYS = ["ctx", "stuck", "usage", "ship", "releases", "closedPacks", "watch"];
+export const EXTRA_KEYS = ["ctx", "stuck", "usage", "ship", "releases", "watch"];
 export const MAX_WATCH_PROMPTS = 12;
 const WATCH = { at: isTime, restart: (v) => v === true, ledger: (v) => plain(v), quiet: (v) => plain(v) };
 const WATCH_LEDGER = { prompts: (v) => Array.isArray(v) && v.length <= MAX_WATCH_PROMPTS, others: (v) => Number.isInteger(v) && v >= 0 && v <= 1e6 };
 const WATCH_PROMPT = { role: re(ROLE), tool: re(/^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/), n: (v) => Number.isInteger(v) && v >= 1 && v <= 1e6 };
 const WATCH_QUIET = { since: nullOr(isTime), days: nullOr((v) => Number.isInteger(v) && v >= 0 && v <= 36500), running: (v) => Number.isInteger(v) && v >= 1 && v <= 1000 };
-const CLOSED_PACK = { packed: (v) => v === true, installed: (v) => v === true, pack: (v) => Number.isInteger(v) && v >= 1 && v < 1e6 }; // #C1309: pack, the first pair that held the landing
 export const MAX_RELEASES = 100;
 const RELEASE = { testsMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000, deployMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000 };
 export const SHIP_CI = ["none", "queued", "running", "passed"];
@@ -224,18 +220,6 @@ export function stateErrors(s) {
       const keys = Object.keys(s.releases);
       if (keys.length > MAX_RELEASES) errs.push(`releases: more than ${MAX_RELEASES}`);
       for (const k of keys.slice(0, MAX_RELEASES)) { if (!/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(k)) { errs.push("releases: a key that isn't a version"); continue; } fields(`releases.${k}`, s.releases[k], RELEASE, errs); }
-    }
-  }
-  if (Object.hasOwn(s, "closedPacks")) {
-    if (!plain(s.closedPacks)) errs.push("closedPacks: not an object");
-    else {
-      const keys = Object.keys(s.closedPacks);
-      if (keys.length > MAX_CARDS) errs.push(`closedPacks: more than ${MAX_CARDS}`);
-      for (const k of keys.slice(0, MAX_CARDS)) {
-        if (!isId(k)) { errs.push("closedPacks: a key that isn't an id"); continue; }
-        fields(`closedPacks.${k}`, s.closedPacks[k], CLOSED_PACK, errs);
-        if (plain(s.closedPacks[k]) && s.closedPacks[k].packed !== true) errs.push(`closedPacks.${k}.packed: missing`);
-      }
     }
   }
   if (Object.hasOwn(s, "usage")) {
@@ -324,6 +308,5 @@ export function pickState(s) {
   }
   if (Object.hasOwn(s, "releases")) out.releases = Object.fromEntries(Object.keys(s.releases).sort().map((k) => [k, take(s.releases[k], RELEASE)]));
   if (Object.hasOwn(s, "usage")) out.usage = { ...take(s.usage, USAGE), top: s.usage.top.map((t) => take(t, USAGE_TOP)) };
-  if (Object.hasOwn(s, "closedPacks")) out.closedPacks = map(s.closedPacks, CLOSED_PACK);
   return out;
 }

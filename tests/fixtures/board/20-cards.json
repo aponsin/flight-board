@@ -26,7 +26,7 @@
   "expect": {
     "queued": { "section": "board", "rows": 1, "phase": null, "status": "Queued for Release&#39;s ship", "version": "Queued (1)" },
     "shipping": { "section": "board", "rows": 1, "phase": "Ship", "version": "Shipping now" },
-    "live": { "section": "board", "rows": 1, "status": "Live, still open", "version": "Live in v1.2.3" },
+    "live": { "section": "none", "rows": 0 },
     "gated": { "section": "board", "rows": 1, "status": "Waiting on you", "gated": false },
     "gate-pick": { "section": "needs-you", "rows": 1, "badge": "waiting on you" }
   }

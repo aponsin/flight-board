@@ -10,6 +10,7 @@ import { cardState, branchName } from "../collector/state.mjs";
 import { stateErrors, pickState } from "../collector/state-schema.mjs";
 import { changeKey } from "../worker/state-worker.mjs";
 import { loadNames } from "./harness.mjs";
+import { branchReadings } from "../worker/reading.mjs";
 
 const T = Date.now() - 1234;
 const cfg = { phases: [["plan"], ["build"], ["test"], ["checker"], ["security"], ["ship"], ["live"]], skips: [], collector: { notes: { checker: "x", security: "y" }, buildPhase: "build", shipPhase: "ship", livePhase: "live", mainBranch: "main", repos: [] } };
@@ -93,12 +94,14 @@ test("the Worker stores a change in one branch's phase", () => {
 });
 
 // The page: a card with two branches draws one track per branch, each with one tile "now" and its own evidence.
+// #C1388: the page draws the card's READING (its `branches`, worker/reading.mjs branchReadings of the evidence's branch records), never the probe's evidence: the fixtures feed the reading.
 function row(branches, extra = {}) {
-  const b = loadNames(["initRow", "liveCard", "probeEvent"]);
+  const b = loadNames(["initRow", "readingOf"]);
   Object.assign(b.state, { steps: [], derived: [], todo: [], ideas: [], waiting: [], messages: [], threads: [] });
   const card = { id: "two-parts", num: 610, name: "Two parts", size: "M", status: "active", phase: "build", createdAt: Date.now() - 6e4, etaLive: Date.now() + 36e5 };
   Object.assign(b.state, { initRaw: [card], initiatives: [card] });
-  b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - 20e3 }, cards: { "two-parts": { headSha12: "a1b2c3d4e5f6", onMain: false, phase: "checker", ...(branches ? { branches } : {}), ...extra } }, agents: {} } } });
+  const bs = branchReadings(branches);
+  b.state.readings = [{ id: "two-parts", phase: "checker", state: "waiting", wait: "turn", with: "Checker", working: false, ...(bs.length ? { branches: bs } : {}), ...extra }];
   return b.initRow(card);
 }
 const rec = (name, phase, seen, sha = "a1b2c3d4e5f6") => ({ name, phase, headSha12: sha, onMain: false, seen });
@@ -123,8 +126,19 @@ test("a card with one branch, or a probe without branches, draws the single trac
   }
 });
 
-test("the page skips an odd branch record and keeps the good ones", () => {
-  const b = loadNames(["liveCard", "probeEvent"]);
-  b.probeEvent({ type: "data", result: { payload: { v: 1, board: { at: Date.now() - 20e3 }, cards: { "two-parts": { headSha12: "a1b2c3d4e5f6", onMain: false, phase: "checker", branches: [rec("route", "security", ["build"]), rec("route", "build", []), rec("picker", "nonsense", []), rec("third", "build", ["build"], "c1b2c3d4e5f6")] } }, agents: {} } } });
-  assert.deepEqual(b.liveCard("two-parts").branches.map((x) => x.name), ["route", "third"], "a repeat name and an unknown phase are dropped");
+test("the reading skips an odd branch record and keeps the good ones (it was the page's liveBranches)", () => {
+  const got = branchReadings([rec("route", "security", ["build"]), rec("route", "build", []), rec("picker", "Not A Phase", []), rec("third", "build", ["build", "live"], "c1b2c3d4e5f6")]);
+  assert.deepEqual(got.map((x) => x.name), ["route", "third"], "a repeat name and an odd phase are dropped");
+  assert.deepEqual(got[1], { name: "third", phase: "build", landed: false, reached: ["build", "live"], live: true }, "landed and live are plain facts, the evidence's names do not reach the page");
+  assert.deepEqual(branchReadings([rec("route", "build", [])]), [], "fewer than two good ones is none");
+  assert.deepEqual(branchReadings(undefined), []);
+});
+
+test("a branch's Pack and Install tiles light only from its own reading's `live`", () => {
+  const [route, picker] = branchReadings([rec("route", "security", ["build", "live"]), rec("picker", "build", ["build"], "b1b2c3d4e5f6")]);
+  const b = loadNames(["packTile"]);
+  assert.match(b.packTile(route, "pack", "Pack"), /class="step done seen"[^>]*>Pack<small class="seen">pair built</, "route's deploy ran: Pack is lit");
+  assert.match(b.packTile(route, "install", "Install"), /class="step done seen"[^>]*>Install<small class="seen">installed</);
+  assert.match(b.packTile(picker, "pack", "Pack"), /class="step unlit"/, "picker's is not");
+  assert.match(b.packTile(undefined, "install", "Install"), /class="step unlit"/, "no reading: unlit");
 });

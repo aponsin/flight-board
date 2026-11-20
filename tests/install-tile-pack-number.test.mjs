@@ -1,6 +1,6 @@
 // #C1309 (the owner, t-1795149842663): "on the install tile, it'd be nice to give the install pc pack number or the version number for the product so I can corroborate".
 // A board card's Pack and Install tiles name the pack that first held its landing ("pc111"; a phone shows the number alone), read from the pair folder and git by the probe
-// (packOf's `pack`, carried in the card and in closedPacks). A product card's Live tile names the version it shipped in ("v1.226.10").
+// (packOf's `pack`, carried in the card). A product card's Live tile names the version it shipped in ("v1.226.10").
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadNames, step, readingDoc, setReadings } from "./harness.mjs";
@@ -46,14 +46,10 @@ test("a number the page does not trust is not drawn: a number, zero, markup, a b
   assert.doesNotMatch(row({}, null, { phase: "build", wait: "turn", pack: "pc111" }), /pc111/, "a card not at the install wait names no pack");
 });
 
-test("the schema takes pack as a whole number from 1 to 999999, on a card and in closedPacks", () => {
+test("the schema takes pack as a whole number from 1 to 999999, on a card", () => {
   const base = (c) => ({ v: 1, board: { boardId: "TestBoard42xyz", at: Date.now(), probe: null, pageVersion: null }, cards: { x: { num: 1, phase: "ship", headSha12: "a1b2c3d4e5f6", signed: [], onMain: true, ci: "none", ciMin: null, liveVersion: null, at: Date.now(), packed: true, ...c } }, agents: {} });
   assert.deepEqual(stateErrors(base({ pack: 111 })), []);
   for (const bad of [0, -1, 1.5, "111", 1e6, null]) assert.notDeepEqual(stateErrors(base({ pack: bad })), [], `card pack ${JSON.stringify(bad)}`);
-  const withClosed = (p) => ({ ...base({}), closedPacks: { "c-one": p } });
-  assert.deepEqual(stateErrors(withClosed({ packed: true, installed: true, pack: 40 })), []);
-  for (const bad of [0, "40", 1e6, 2.5]) assert.notDeepEqual(stateErrors(withClosed({ packed: true, pack: bad })), [], `closed pack ${JSON.stringify(bad)}`);
-  assert.deepEqual(pickState(withClosed({ packed: true, installed: true, pack: 40 })).closedPacks, { "c-one": { packed: true, installed: true, pack: 40 } }, "the number survives the state writer's filter");
   assert.equal(pickState(base({ pack: 111 })).cards.x.pack, 111);
 });
 

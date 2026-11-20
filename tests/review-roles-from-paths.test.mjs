@@ -7,9 +7,8 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fullConfig, checkConfig } from "../scripts/config.mjs";
-import { cardState, branchPaths } from "../collector/state.mjs";
+import { cardState, branchPaths, phaseOf } from "../collector/state.mjs";
 import { patternRe, pathPhases, reviewsFromPaths, reviewPathsErrors } from "../collector/review-paths.mjs";
-import { reviewsFor, derivePhase } from "../collector/derive.mjs";
 import { turnsOf } from "../collector/store-dispatch.mjs";
 
 const T0 = 1_790_000_000;
@@ -92,7 +91,7 @@ test("no table, or a diff git cannot read: the typed rule decides as before", ()
   assert.equal(branchPaths(broken, "origin/main", "a".repeat(40)), null);
   assert.equal(branchPaths({ ...broken, reviewPaths: null }, "origin/main", "a".repeat(40)), null, "no table: git is not asked");
   assert.equal(branchPaths(broken, "origin/main", "--output=x"), null, "only a full sha goes to git");
-  const typed = reviewsFromPaths({ level: "Quick" }, cfg, reviewsFor({ level: "Quick" }, cfg), TABLE, null);
+  const typed = reviewsFromPaths({ level: "Quick" }, cfg, ["language", "checker"] /* what the typed rule gives a Quick card here, no security */, TABLE, null);
   assert.deepEqual(typed, ["language", "checker"]);
 });
 
@@ -106,9 +105,8 @@ test("the pure rule: patterns, phases the table names and does not, raises only"
   // checker is not in the table: the typed rule keeps it, and a typed skip of it still counts
   assert.deepEqual(reviewsFromPaths({ level: "Quick" }, cfg, ["checker"], TABLE, ["docs/x.md"]), ["checker"]);
   assert.deepEqual(reviewsFromPaths({ level: "Quick", skip: ["checker"] }, cfg, [], TABLE, ["docs/x.md"]), []);
-  // derive.mjs reads facts.needs the same way the probe does
-  const d = derivePhase({ id: "d" }, { head: { branch: "b", sha: "a".repeat(40), message: "x\n\nBoard-Id: d" }, signed: new Set(["checker"]), onMain: false, needs: ["checker"] }, cfg);
-  assert.equal(d.phase, "ship");
+  // the phase rule (state.mjs's phaseOf, #C1388) reads facts.needs: a card whose needs are all signed is at ship
+  assert.equal(phaseOf({ id: "d" }, { head: { branch: "b", sha: "a".repeat(40), message: "x\n\nBoard-Id: d" }, signed: new Set(["checker"]), onMain: false, needs: ["checker"] }, cfg), "ship");
 });
 
 test("Security LOW on 532b9f8: Security and Checker are raise-only; only the flag-gated reviews (language, design) can be lowered by the paths", () => {
