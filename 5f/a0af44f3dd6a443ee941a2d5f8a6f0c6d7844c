@@ -1,0 +1,5 @@
+SECURE
+
+#C1290: docs only. The 11 docs/DATA.d fragments are deleted and their 11 lines appended to docs/DATA.md; the deleted and added line sets are byte-identical (checked). No code, test, hook, page, Worker or installer change.
+
+signed-by: Security
