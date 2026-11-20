@@ -53,14 +53,22 @@ export async function storeRead({ base, headers, fetchImpl = fetch }) {
 // #C1295: per repository. The board's row switches the team's own repository (""); the product's row switches every OTHER repository the board config lists
 // (collector.repos, `productRepos`: their names), so a product group is read from git as a stack, with its review notes covering every member. A product row that
 // is on while the config lists no other repository changes nothing here (the probe has no checkout of it to read).
+// #C1303 (the bug in #C1295: on the live config the product switch could never read a product stack): the probe's "" is the clone at collector.repoPath. When the config LISTS the
+// board's own repository in collector.repos, the board is the listed one and "" is the team's other repository, the product's clone: so the product's row switches "" as well as every
+// other listed repository. A config that does not list the board's repository (the board's own clone is `repoPath`, the single-repository shape) reads exactly as #C1295 had it.
+// The board's row is unchanged in both shapes (still ""): this card moves nothing the board reads today.
 export const STACKS_FILE = "stacks.json";
 export function stacksOn(stackSwitch, productRepos = []) {
   const on = (row) => (Array.isArray(stackSwitch) ? stackSwitch : []).some((s) => s && s.repo === row && (s.stack === true || s.stack === 1));
-  return [...(on("board") ? [""] : []), ...(on("product") ? productRepos.filter((n) => typeof n === "string" && n !== "" && n.length <= 40) : [])];
+  const names = [...(on("board") ? [""] : []), ...(on("product") ? productRepos.filter((n) => typeof n === "string" && n.length <= 40) : [])];
+  return [...new Set(names)];
 }
-// The names of the collector's listed repositories that are not the board's own (the product's checkouts), from a parsed board config.
+// The probe's names for the product's checkouts, from a parsed board config: every listed repository that is not the board's own, and "" (the team's own clone) too when the board's
+// own repository is itself listed, because then "" is the product.
 export function productRepoNames(rawConfig) {
-  return (Array.isArray(rawConfig?.collector?.repos) ? rawConfig.collector.repos : []).map((r) => r?.name).filter((n) => typeof n === "string" && n !== "" && !isBoardRepo(n));
+  const listed = (Array.isArray(rawConfig?.collector?.repos) ? rawConfig.collector.repos : []).map((r) => r?.name).filter((n) => typeof n === "string" && n !== "");
+  const others = listed.filter((n) => !isBoardRepo(n));
+  return listed.some((n) => isBoardRepo(n)) ? ["", ...others] : others;
 }
 
 // #C900 (the board half of #C860): the product's stack switch, for the product's own release tool. The probe writes a fixed file, whole, on every

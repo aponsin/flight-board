@@ -99,7 +99,8 @@ test("the probe's stack list: the board's row names the team's own repository, t
   assert.deepEqual(stacksOn(sw(false, true), []), [], "no other repository listed: nothing to read");
   assert.deepEqual(stacksOn(sw(true, false)), [""], "called as before");
   const cfg = { collector: { repos: [{ name: "flight-board" }, { name: "platform" }, { name: "" }, {}] } };
-  assert.deepEqual(productRepoNames(cfg), ["platform"]);
+  // #C1303: the board's own repository is listed, so "" (the clone at repoPath) is the product's: the product row switches it too. tests/product-stack-wiring.test.mjs holds both shapes.
+  assert.deepEqual(productRepoNames(cfg), ["", "platform"]);
   assert.deepEqual(productRepoNames({}), []);
 });
 
