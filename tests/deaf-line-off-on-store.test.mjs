@@ -50,7 +50,7 @@ test("no store page prints the artifact's link, whatever the owner's words and a
 // without saying what it does on the store.
 test("every line the stuck strip draws has a docs/PARITY.md row", () => {
   const parity = readFileSync(new URL("../docs/PARITY.md", import.meta.url), "utf8");
-  const rowFor = { stuckLines: "Manager stuck on", liveStuckLines: "waiting on you since", deafLine: "Manager silent", keeperLine: "Keeper line", liveE2eLine: "daily full test run" };
+  const rowFor = { stuckLines: "Manager stuck on", liveStuckLines: "waiting on you since", deafLine: "Manager silent", keeperLine: "Keeper line", liveE2eLine: "daily full test run", liveTruthLine: "readings-disagree-with-git" };
   const strip = TEMPLATE.match(/function renderStuck\(\)\{([^\n]*)/)[1];
   const drawn = [...new Set([...strip.matchAll(/\b([a-z]\w*Lines?)\(/g)].map((m) => m[1]))];
   assert.deepEqual(drawn.sort(), Object.keys(rowFor).sort(), "renderStuck draws these lines; a new one needs a row and an entry here");

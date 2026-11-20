@@ -926,6 +926,31 @@ export function e2eWake({ now, value, readAt, staleMs = STALE_AFTER_MS }) {
   return { state: value.state, reason: `${e2eWakeLine(value.state)}: ${why}${run ? ` (${run})` : ""}. Look at the product's daily run and tell the owner.` };
 }
 
+// #C1386: the truth check (the Studio job that compares each card's stored reading with git), evidence `truth`:
+// { at, count: 0..500, items: [up to 10 of { card, num, field, reading, git }] }. count is the total of disagreements, items a capped sample;
+// count 0 with items [] is all agree. Every string is plain (no control characters) and short.
+export const TRUTH_CARD = "truth-check"; // the stall_wakes row's card_id: not a card, the one line the reading adds to Manager's batch
+export const TRUTH_FIELDS = ["onMain", "deployed", "notes", "pair", "state"];
+const truthText = (v) => typeof v === "string" && v.length >= 1 && v.length <= 80 && !/[\u0000-\u001f\u007f<>]/.test(v);
+const truthItem = (it) => it !== null && typeof it === "object" && !Array.isArray(it)
+  && Object.keys(it).length === 5 && ["card", "num", "field", "reading", "git"].every((k) => Object.hasOwn(it, k))
+  && truthText(it.card) && (it.num === null || (Number.isInteger(it.num) && it.num >= 0)) && TRUTH_FIELDS.includes(it.field) && truthText(it.reading) && truthText(it.git);
+export const truthShape = (v) => v !== null && typeof v === "object" && !Array.isArray(v)
+  && Object.keys(v).length === 3 && ["at", "count", "items"].every((k) => Object.hasOwn(v, k))
+  && Number.isFinite(v.at) && v.at >= 0 && Number.isInteger(v.count) && v.count >= 0 && v.count <= 500
+  && Array.isArray(v.items) && v.items.length <= 10 && v.count >= v.items.length && v.items.every(truthItem);
+const truthPlain = (s) => String(s).replace(/[\u0000-\u001f\u007f\s]+/g, " ").trim();
+// The one line for Manager's batch while the check finds a difference; null when it finds none or the value is not shaped.
+export const truthWakeLine = (value) => {
+  if (!truthShape(value) || value.count === 0) return null;
+  const f = value.items[0];
+  return `readings disagree with git: ${value.count}${f ? ` (first: ${f.num === null ? f.card : `#C${f.num}`} ${f.field}: reading ${truthPlain(f.reading)}, git ${truthPlain(f.git)})` : ""}`;
+};
+export function truthWake(value) {
+  const line = truthWakeLine(value);
+  return line ? { count: value.count, reason: line } : null;
+}
+
 // Evidence: one lit phase per card, and only the probe writes it.
 // #C1100: the shape of the `reviewers` evidence; reviewerOf reads it as collector/store-dispatch.mjs's reviewerFor does (this file imports nothing of the collector: a test holds the two equal).
 export const reviewersShape = (v) => !!v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length === 1 && !!v.reviewers && typeof v.reviewers === "object" && !Array.isArray(v.reviewers)
@@ -947,6 +972,7 @@ export function evidenceRefusal(key, value, who, track) {
   if (key === "session.checks" && !sessionChecksShape(value)) return refuse("session-checks-shape", "session.checks is { at, roles: [up to 20 of { role, chosen, ran, chosenEffort, ranEffort, at }] }, names plain words");
   if (key === "branches.shipped" && !shippedBranchesShape(value)) return refuse("branches-shipped-shape", "branches.shipped is { at, repos: [up to 6 of { name, dir (~/ folder), remote, main, remoteBranches: [{ name, sha }], localBranches }] }, up to 60 plain branch names of each kind, never main, master, dev or HEAD");
   if (key === "e2e" && !e2eShape(value)) return refuse("e2e-shape", "e2e is { state: ok|red|missed|unknown, reason, run, lastGreenAt }");
+  if (key === "truth" && !truthShape(value)) return refuse("truth-shape", "truth is { at, count: 0..500, items: [up to 10 of { card, num, field: onMain|deployed|notes|pair|state, reading, git }] }, strings plain, 1 to 80 characters");
   // #C997: the operational settings the probe resolved from the board config's ops section, and the ones it ignored (worker/knobs.mjs).
   if (key === "knobs" && !knobsShape(value)) return refuse("knobs-shape", "knobs is { values: { setting: number }, ignored: [up to 40 of { key, why }] }");
   // #C956: the team's visual lanes, from the board config: { visualLanes: [role names], up to 20 }.

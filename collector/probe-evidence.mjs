@@ -20,6 +20,7 @@ import { runChild, startRun, JOBS } from "./probe-run.mjs";
 import { loadEnv, accessHeaders, FETCH_TIMEOUT_MS } from "./probe-board.mjs";
 import { prepareStoreState } from "./store-cards.mjs";
 import { resolveKnobs, KNOBS } from "../worker/knobs.mjs";
+import { truthJob, gatherFacts, pairsFromConfig } from "./truth-check.mjs";
 
 const plain = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const CARD_KEY = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -309,6 +310,27 @@ export async function actionsUsageStep({ base, headers, fetchImpl, origConfig, s
   } catch (e) { log(`actions usage failed: ${String(e.message).slice(0, 120)}`); }
 }
 
+// #C1386: the truth check's step of the usage job. Reads the stored readings (GET /api/probe/readings, probe only), asks git about each open card and each closed in the last 7
+// days (at most CARD_CAP, by number; a card with no full head sha in the state is skipped), runs the two-run rule (truthJob) and writes the evidence key `truth` through the same
+// post as every evidence key. Any failure (the readings, the config, git, the post) is logged in one line and writes nothing: it never fails the usage job.
+export async function truthStep({ base, headers, fetchImpl = fetch, origConfig, stateFile, state, read, log = () => {}, now = Date.now(), deploy = readDeploy, git, pairs, deadline = Infinity, clock = Date.now, home = homedir(), save, post = postWrites }) {
+  try {
+    let c;
+    try { c = JSON.parse(read(origConfig))?.collector; } catch { log("truth: the board config could not be read"); return null; }
+    if (!plain(c) || (!c.repoPath && !(Array.isArray(c.repos) && c.repos.length))) { log("truth: the board config names no repository"); return null; }
+    if (!plain(state?.cards)) { log("truth: the state has no cards"); return null; }
+    const r = await fetchImpl(`${base}/api/probe/readings`, { headers, redirect: "error", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!r.ok) { log(`truth: the readings answered ${r.status}`); return null; }
+    const readings = (await r.json())?.readings;
+    if (!Array.isArray(readings)) { log("truth: the readings answer has no list"); return null; }
+    const d = await deploy({ base, headers, fetchImpl, log });
+    const cardsFacts = gatherFacts({ readings, cards: state.cards, config: c, deploy: d, now, ...(git ? { git } : {}), pairs: pairs ?? ((dir) => pairsFromConfig(c, home)), home, deadline, clock, log });
+    const value = await truthJob({ readings, cardsFacts, stateFile: join(dirname(stateFile), "truth-check.json"), now, ...(save ? { save } : {}), read, write: (w) => post([w], { base, headers, fetchImpl, log }) });
+    log(`truth: ${Object.keys(cardsFacts).length} card(s) asked, ${value.count} difference(s) from git reported`);
+    return value;
+  } catch (e) { log(`truth failed: ${String(e.message).slice(0, 80)}`); return null; }
+}
+
 // One run: build the state, read it, post the job's keys.
 // With privateDir, the cards come from the store (collector/store-cards.mjs), not from the old board's mirror, and the state is
 // built and left in that private directory; without it, the job reads the old location as before.
@@ -402,7 +424,7 @@ export async function evidenceJob(o) {
   }
 }
 
-async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, sessionsRead = defaultSessions, openSessionsRead = defaultOpenSessions, sweepGit = defaultSweepGit, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
+async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, truth = {}, sessionsRead = defaultSessions, openSessionsRead = defaultOpenSessions, sweepGit = defaultSweepGit, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const t0 = Date.now();
   const limitSec = job === "evidence" ? knobs.values.evidenceLimitSec : JOBS[job].limitSec; // #C997: a setting for the evidence job
@@ -469,6 +491,8 @@ async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPa
   timing.postMs = Date.now() - tPost;
   // #C873: before the Actions step, which stops at the job's deadline; the script's own wait is capped at 30 s here.
   if (job === "usage") { let cfg2 = null; try { cfg2 = read(origConfig); } catch { log("e2e: the board config could not be read"); } if (cfg2) e2eStep(cfg2, { stateFile, env, log, ...e2e }); }
+  // #C1386: the truth check (collector/truth-check.mjs): git's own answers against the stored readings; a failure is logged and writes nothing, never fails the job.
+  if (job === "usage") await truthStep({ base, headers, fetchImpl, origConfig, stateFile, state, read, log, deploy: deployRead, deadline: t0 + (JOBS.usage.limitSec - 45) * 1000, ...truth });
   if (job === "usage") await actionsUsageStep({ base, headers, fetchImpl, origConfig, stateFile, env, read, log, deadline: t0 + (JOBS.usage.limitSec - 15) * 1000, ...actions });
   if (job !== "evidence") return done;
   // Live last, so a product site that answers slowly (or not at all) can never hold up the evidence above.
