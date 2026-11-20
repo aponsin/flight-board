@@ -273,6 +273,7 @@ const namesCard = (card, branch) => String(branch).split("/").pop() === card.id 
 // #C671 (done-when 2): a branch named for the card (its last path segment is the card's id) whose tip carries neither the card's
 // Board-Id trailer nor its "#C<num>:" subject: the name alone found it. When that tip is also on main it is a branch pushed
 // before any commit, and it shows the card as being worked (build), never as shipped or live. A copy of derive.mjs's bareBranch.
+const isTimeMs = (v) => Number.isInteger(v) && v >= 1577836800000 && v <= 4102444800000; // #C1377
 export function bareBranch(card, head) {
   if (!head || head.afterShip || head.shipped || !namesCard(card, head.branch)) return false;
   return boardIdOf(head.message) !== card.id && !(Number.isInteger(card.num) && subjectNum(head.message) === card.num);
@@ -823,7 +824,10 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
     ...(() => { const b = onMain ? repo.main : head.branch; return typeof b === "string" && BRANCH_NAME.test(b) && !b.startsWith("-") ? { headBranch: b } : {}; })(),
     ...(repoFullOf(repo) ? { repoFull: repoFullOf(repo) } : {}),
   };
-  return { phase: phase ?? declared, ...extra, ...where, headSha12: sha12(head.sha), signed, onMain, ...(ci ? { ci: ci.ci, ciMin: ci.ciMin } : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(shipping === null ? {} : { shipping }), seen };
+  return { phase: phase ?? declared, ...extra, ...where, headSha12: sha12(head.sha), signed, onMain, ...(ci ? { ci: ci.ci, ciMin: ci.ciMin } : {}), liveVersion: deployed && repo.versionPattern ? versionAfter(repo.git, head.sha, repo.live, repo.versionPattern) : null, ...(shipping === null ? {} : { shipping }),
+    // #C1377 (Director's audit #C1375, finding 3): a run that could not read the repository as GitHub has it now (the fetch or the tips failed: repo.fresh === false) read an old clone, so
+    // every card of it is marked stale, with the time that repository was last read fresh (repo.freshAt, kept from run to run); a good read has no mark, so it clears the next run.
+    ...(repo.fresh === false ? { stale: true, ...(isTimeMs(repo.freshAt) ? { staleSince: repo.freshAt } : {}) } : {}), seen };
 }
 // The newest commit on the repository's main line (its last 400) whose Board-Id trailer is exactly the card's id, as a head
 // { branch: main, sha, at, message }, or null. The id goes to git as a fixed string, never a pattern or an option.
@@ -1616,6 +1620,18 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   let checkedBefore = null;
   try { const r = readTail(checkedPath, 4096); if (r?.whole) checkedBefore = JSON.parse(r.text)?.at; } catch { /* none */ }
   const cardsChecked = cardsCheckedAt(Object.values(repos), now, checkedBefore);
+  // #C1377: each repository's last fresh read, kept from run to run: a repository read fresh now is stamped now; one that was not keeps its old stamp (none when there never was one),
+  // and its cards carry stale with that time (cardState).
+  const repoFreshPath = join(stateDir, id, "repo-fresh.json");
+  let repoFreshBefore = {};
+  try { const r = readTail(repoFreshPath, 4096); if (r?.whole) { const o = JSON.parse(r.text); if (plain(o)) repoFreshBefore = o; } } catch { /* none */ }
+  const repoFresh = {};
+  for (const [name, r] of Object.entries(repos)) {
+    const prev = isTimeMs(repoFreshBefore[name]) && repoFreshBefore[name] <= now ? repoFreshBefore[name] : null;
+    r.freshAt = r.fresh === false ? prev : now;
+    if (r.freshAt !== null) repoFresh[name] = r.freshAt;
+  }
+  try { writeAtomic(repoFreshPath, JSON.stringify(repoFresh)); } catch { /* the mark just has no time next run */ }
   let cardsNow, packs = null;
   try {
     const pairs = c.pairFolder ? pairsIn(home(c.pairFolder)) : [];

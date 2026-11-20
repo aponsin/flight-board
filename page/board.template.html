@@ -180,6 +180,7 @@ section{min-width:0}
 .state.queued{background:var(--warn-soft);color:var(--warn)}
 .state.stalled{background:var(--bad-soft);color:var(--bad)}
 .stall{color:var(--bad);font-weight:600}
+.stale-read{color:var(--muted,#8a8a8a);font-style:italic} /* #C1377: a reading that could not be refreshed: grey, never red */
 .step.verifying{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent);border-style:dashed}
 .step.verifying::before{content:"◷ ";}
 .verify-line b{color:var(--ink);font-weight:600}.verify-line.late,.verify-line.late b{color:var(--warn-ink);font-weight:600}
@@ -1487,7 +1488,12 @@ function derivedOf(id){const all=state.derived.find(d=>d.id==="all"),d=all&&all.
   if(!L)return d;const out={...(d||{}),phase:L.phase,at:L.at,firm:true,live:true};
   if(d&&typeof d.head==="string"&&!d.head.startsWith(L.head12)){delete out.head;delete out.readyAt;delete out.waitingFor;delete out.reviews}
   if(L.phase===LIVE_PHASE&&L.liveVersion)out.version=L.liveVersion;
+  if(L.stale){out.stale=true;if(L.staleSince)out.staleSince=L.staleSince}
   return out}
+// #C1377 (Director's audit #C1375): a card whose repository could not be read fresh is marked, never shown as current: a grey line with the time of its last good read.
+function staleLine(i){const d=i&&derivedOf(i.id);if(!d||d.stale!==true)return "";
+  const t=Number.isFinite(d.staleSince)?d.staleSince:null;
+  return `<span class="stale-read" title="The collector could not read this card's repository this minute: what is shown is the last good reading${t?`, from ${esc(hhmm(t))}`:""}.">${t?`No fresh reading since ${esc(hhmm(t))}`:"No fresh reading"}</span>`}
 // The card's one source of stage, with its age (#C450, the owner on #C448: "IN FLIGHT · typed: phase build · Repository:
 // Linguist · steps say Build · as of 2 min ago · checking…", three sources arguing): the live state while it reads the
 // card ("Live: Linguist · 12 s ago"), else the repository's reading ("Repository: Linguist" and its "as of"). What
@@ -2704,7 +2710,7 @@ function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track" style="--per:${per}">${steps}</div>`}
-   <div class="i-meta">${queueLine(i)}${stackTag(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${unexplainedChip(i)}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div><div class="i-acts">${det}${thread}</div></div>`;
+   <div class="i-meta">${queueLine(i)}${stackTag(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${unexplainedChip(i)}${staleLine(i)}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div><div class="i-acts">${det}${thread}</div></div>`;
 }
 // #C1114: a step back from a review phase with no FINDINGS note and no reason is held by the store as rework "unexplained": a red chip says so until the
 // reviewer's finding or a reason is on the board (the card stays where it was shown; the store's `unexplainedRework` is true, `unexplainedAt` when it began).
@@ -3671,7 +3677,7 @@ const liveOn=(now=Date.now())=>!!probe&&now-probe.board.at>=-60e3&&now-probe.boa
 // A card as the live state reads it: { phase, at, head12, liveVersion }, or null (no fresh reading, an odd value).
 function liveCard(id,now=Date.now()){if(!liveOn(now)||typeof id!=="string"||!LIVE_ID.test(id)||!Object.hasOwn(probe.cards,id))return null;
   const c=probe.cards[id];if(!c||typeof c!=="object"||!PHASES.some(p=>p[0]===c.phase)||typeof c.headSha12!=="string"||!/^[0-9a-f]{12}$/.test(c.headSha12))return null;
-  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,builtWaiting:c.builtWaiting===true,onMain:c.onMain===true,shipping:c.shipping===true,ci:c.ci==="running"||c.ci==="queued"?c.ci:null,packed:c.onMain===true&&c.packed===true,installed:c.onMain===true&&c.packed===true&&c.installed===true,pack:c.onMain===true&&c.packed===true&&Number.isInteger(c.pack)&&c.pack>0&&c.pack<1e6?c.pack:null,seen:Array.isArray(c.seen)?c.seen.filter(k=>PHASES.some(p=>p[0]===k)):[],liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null,branches:liveBranches(c.branches)}}
+  return {phase:c.phase,at:isT(c.at)?c.at:probe.board.at,head12:c.headSha12,builtWaiting:c.builtWaiting===true,stale:c.stale===true,staleSince:c.stale===true&&isT(c.staleSince)?c.staleSince:null,onMain:c.onMain===true,shipping:c.shipping===true,ci:c.ci==="running"||c.ci==="queued"?c.ci:null,packed:c.onMain===true&&c.packed===true,installed:c.onMain===true&&c.packed===true&&c.installed===true,pack:c.onMain===true&&c.packed===true&&Number.isInteger(c.pack)&&c.pack>0&&c.pack<1e6?c.pack:null,seen:Array.isArray(c.seen)?c.seen.filter(k=>PHASES.some(p=>p[0]===k)):[],liveVersion:typeof c.liveVersion==="string"&&/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(c.liveVersion)?c.liveVersion:null,branches:liveBranches(c.branches)}}
 // A card's branch records (#C621): each tip read on its own, an odd one skipped; fewer than two good ones is none.
 function liveBranches(list){if(!Array.isArray(list))return [];const names=new Set();
   const out=list.slice(0,6).filter(b=>b&&typeof b==="object"&&typeof b.name==="string"&&LIVE_ID.test(b.name)&&!names.has(b.name)&&PHASES.some(p=>p[0]===b.phase)&&typeof b.headSha12==="string"&&/^[0-9a-f]{12}$/.test(b.headSha12)&&(names.add(b.name),true))

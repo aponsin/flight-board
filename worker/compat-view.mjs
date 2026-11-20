@@ -184,6 +184,8 @@ export function derivedDoc(view) {
     if (!key.startsWith("cards.")) continue;
     const v = e.value ?? {};
     cards[key.slice(6)] = prune({ phase: lanePhase(rowOf.get(key.slice(6)), v.phase ?? v.lit?.[0]), head: v.headSha12, version: v.liveVersion ?? undefined, shipping: v.shipping === true ? true : undefined, evidence: undefined, at: e.readAt,
+      // #C1377: the collector could not read this card's repository fresh (only ever true) and when it last could.
+      stale: v.stale === true ? true : undefined, staleSince: v.stale === true ? num(v.staleSince) : undefined,
       // #C731 B4b: the probe's readyAt, firm (only ever false) and waitingFor, as derive.mjs gave the page.
       readyAt: num(v.readyAt), firm: v.firm === false ? false : undefined, waitingFor: Array.isArray(v.waitingFor) && v.waitingFor.length ? v.waitingFor : undefined,
       // #C731 B4b slice 3: workSeen (only ever true), shippedAt and reviews ({ phase: ms }), as collect.mjs and derive.mjs gave the page.
