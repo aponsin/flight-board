@@ -1,0 +1,1 @@
+SECURE: #C1369 tests only (a docs commit beside an unreadable one still waits for the install, Checker 2's mixed case). Linear on my SECURE b8b795fa; collector/state.mjs unchanged. Security 2026-11-20.
