@@ -1,0 +1,1 @@
+SECURE: #C1359 tests only (the pack-lit test takes the probe reading's time when it is made) and a changelog line. Security 2026-11-20.
