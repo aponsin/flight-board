@@ -40,9 +40,9 @@ test("a thread with no message draws no box", () => {
   assert.ok(!b.threadHtml("t1", "x").includes("t-hist"));
 });
 
-test("the box is height-capped with its own scroll bar, and on a phone at most about half the screen", () => {
+test("the box is height-capped with its own scroll bar; on a phone it grows to fit instead (#C1292 replaced the half-screen cap)", () => {
   assert.match(css, /\.t-hist\{max-height:19rem;overflow-y:auto;/);
-  assert.match(css, /@media \(max-width:600px\)\{\.t-hist\{max-height:min\(19rem,48vh\)\}\}/);
+  assert.match(css, /@media \(max-width:600px\)\{\.t-hist,\.t-hist\.sized\{max-height:none;/);
 });
 
 // ---- the place across a redraw ----

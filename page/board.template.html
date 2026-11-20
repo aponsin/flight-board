@@ -279,7 +279,13 @@ svg text{fill:var(--muted);font:10px var(--mono)}
 .t-hist{max-height:19rem;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-right:4px;
   /* Designer's F1: Mac and iPhone hide scroll bars until a scroll, so a soft shadow at the bottom says there is more below; the panel-coloured cover scrolls with the content and hides it at the end (CSS only, nothing redrawn). */
   background:linear-gradient(transparent,var(--panel) 70%) 0 100%/100% 28px no-repeat local,radial-gradient(farthest-side at 50% 100%,var(--hist-shade),transparent) 0 100%/100% 10px no-repeat scroll}
-@media (max-width:600px){.t-hist{max-height:min(19rem,48vh)}}
+/* #C1292 (the owner: drag the thread box's bottom corner to make it taller): resize: vertical with a handle you can see. The box is content-high up to 19rem as before until the first press on its corner; the script then fixes its height and
+   adds .sized, which lifts the cap to 80% of the screen and gives it a floor, and remembers the height in this browser. */
+.t-hist{resize:vertical}
+.t-hist.sized{min-height:6rem;max-height:80vh}
+.t-hist::-webkit-resizer{background:linear-gradient(135deg,transparent 0 46%,var(--muted) 46% 56%,transparent 56% 70%,var(--muted) 70% 80%,transparent 80%);border-radius:0 0 4px 0}
+/* On a phone a finger cannot drag the corner, and the box need not scroll on its own: it grows to fit its messages and the page scrolls past it (this replaces #C1232's half-screen cap). */
+@media (max-width:600px){.t-hist,.t-hist.sized{max-height:none;min-height:0;height:auto!important;overflow-y:visible;resize:none;background:none;padding-right:0}}
 /* #C1233: a thread whose answer is on its way to Manager: folded, in the board's grays (the grays of its own text and lines, in both themes) with three small pulsing dots under its id; it still opens on a click. */
 details.sending>summary{background:color-mix(in srgb,var(--line) 35%,var(--panel))}
 details.sending>summary>*{filter:grayscale(1)}
@@ -1992,8 +1998,22 @@ function settleBoxes(moved){moved.forEach(({b,focused,s,e,d,top})=>{try{if(focus
 // same messages in view: what was added above him moves his scroll by its height. Taken before a draw, put back after it (a nested draw takes its own; the outer one puts back last).
 function histSave(){if(typeof document.querySelectorAll!=="function")return()=>{};
   const was=new Map();document.querySelectorAll(".t-hist[data-hist]").forEach(h=>was.set(h.dataset.hist,{top:h.scrollTop,height:h.scrollHeight}));
-  return()=>{if(!was.size)return;document.querySelectorAll(".t-hist[data-hist]").forEach(h=>{const w=was.get(h.dataset.hist);if(!w)return;
+  return()=>{histSizes();if(!was.size)return;document.querySelectorAll(".t-hist[data-hist]").forEach(h=>{const w=was.get(h.dataset.hist);if(!w)return;
     const top=w.top<=2?0:Math.max(0,w.top+h.scrollHeight-w.height);if(h.scrollTop!==top)h.scrollTop=top})}}
+// #C1292: the thread box's height, dragged by its bottom corner (CSS resize: vertical) and remembered in this browser only (localStorage, as the read marks are). One height for every thread box, kept only
+// when the owner really moved the corner, and shown as the smaller of it and what the thread needs, so a short thread is not padded. A phone ignores it (the box grows to fit, in the CSS).
+const HIST_H_KEY="flight-board-thread-box-height",HIST_MIN=96,HIST_GRIP=18;
+function histClamp(px){const n=Number(px);return isFinite(n)&&n>0?Math.min(4000,Math.max(HIST_MIN,Math.round(n))):0}
+function histHeightLoad(){let v=0;try{v=histClamp(localStorage.getItem(HIST_H_KEY))}catch(e){}return v}
+function histHeightSave(px){const v=histClamp(px);if(!v)return;try{localStorage.setItem(HIST_H_KEY,String(v))}catch(e){}}
+function histSizes(){if(typeof document.querySelectorAll!=="function")return;const px=histHeightLoad();if(!px)return;
+  document.querySelectorAll(".t-hist[data-hist]").forEach(h=>{h.classList.add("sized");h.style.height="auto";const c=h.scrollHeight;h.style.height=(c>0?Math.min(px,c):px)+"px"})}
+let histDrag=null;
+function histDown(e){const h=e&&e.target&&typeof e.target.closest==="function"?e.target.closest(".t-hist"):null;if(!h||(e.button||0)!==0)return;
+  const r=h.getBoundingClientRect();if(!(e.clientX>=r.right-HIST_GRIP&&e.clientY>=r.bottom-HIST_GRIP))return;
+  h.style.height=r.height+"px";h.classList.add("sized");histDrag={h,from:r.height}}
+function histUp(){const d=histDrag;histDrag=null;if(!d)return;const now=d.h.getBoundingClientRect().height;if(Math.abs(now-d.from)>=2)histHeightSave(now)}
+if(typeof document!=="undefined"&&typeof document.addEventListener==="function"){for(const t of ["pointerdown"])document.addEventListener(t,histDown,true);for(const t of ["pointerup","mouseup","pointercancel"])document.addEventListener(t,histUp,true)}
 function keep(el,draw){const back=histSave(),open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id)),drafts={};
   el.querySelectorAll("textarea[id]").forEach(t=>{if(t.value)drafts[t.id]=t.value});
   // A box's status line too ("Sent to Manager.", "Closed."): the owner's own write redraws at once (#C517).
