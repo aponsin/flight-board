@@ -167,7 +167,7 @@ test("numbered points written inline (\"1) … 2) …\") show one per line in an
 test("line breaks in an ask show, and numbered or dashed lines become a real list", () => {
   const b = loadBoard();
   const out = b.askText("How it works:\n1. One thing.\n2. Two <things>.\nSize: large.");
-  assert.match(out, /^How it works:<ol class="w-list"><li>One thing\.<\/li><li>Two &lt;things&gt;\.<\/li><\/ol>Size: large\.$/);
+  assert.match(out, /^How it works:<ol class="w-list"><li value="1">One thing\.<\/li><li value="2">Two &lt;things&gt;\.<\/li><\/ol>Size: large\.$/); // #C1297: a numbered item keeps its own number (value=)
   assert.match(b.askText("Defaults:\n- Spanish later\n- no map"), /<ul class="w-list"><li>Spanish later<\/li><li>no map<\/li><\/ul>/);
   assert.equal(b.askText("Line one\nLine two"), "Line one<br>Line two");
 });
