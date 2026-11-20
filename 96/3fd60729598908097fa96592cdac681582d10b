@@ -1,0 +1,1 @@
+SECURE: #C1327 dispatch names a stack branch only from an open, non-live, non-outside member; outside card with none is told to cut from main. Text and selection only, no new input. Security 2026-11-20.
