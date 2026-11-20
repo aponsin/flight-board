@@ -1,0 +1,2 @@
+PASS Quick #C1293, line from 28472c1e15d482c95a32229853a0ea8a902a5884: the group row draws repoBadge(cards[0]) after its Group tag; cardRepo returns only the two repo constants, so it is safe unescaped; range-diff from 06a8b54d shows no change; mutant (badge removed) killed by both tests; npm test 3302 pass 0 fail. Nit: the badge's tooltip says 'This card is about...' on a group row.
+signed-by: Checker 2
