@@ -1,0 +1,2 @@
+PASS Full #C1334 #C1336 #C1337 #C1338, line from de05e28af60946fb6cb46d79dd9fcca9c85cf368: the FINDINGS on dfda43f5 are fixed. #C1336 has its DATA.d line superseding #C1324's 'every post on the shared door', and the owner's LOW is closed by who === 'owner' (not by door, so an agent token on /mcp is still refused); that exemption's mutant is killed by 2 tests. Linear, no merges. Suite 3462/0. 11 of 11 mutants on dfda43f5 killed.
+signed-by: Checker 2
