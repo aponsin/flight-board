@@ -1,0 +1,2 @@
+PASS Quick #C1308, line from ce70c2e318fbdbc5353b7fbebefdd67fa3f8a994: the owner's install wait sits on the Install tile, and Land and Pack stand done. My F1 is fixed (test only, 408086c2..1b52b7f9): the installed/live escape, replaced by false or without the installed flag, now fails the full suite. All 6 of my mutants are killed. Suite 3368 pass 0 fail.
+signed-by: Checker 2
