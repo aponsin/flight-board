@@ -1,0 +1,5 @@
+SECURE
+
+#C1293 v2, by diff: range-diff shows b78db831 = 06a8b54d (signed), rebased onto #C1292 28472c1e. Repo badge on group rows; my INFO on repoBadge's missing esc stands (safe: config names only).
+
+signed-by: Security
