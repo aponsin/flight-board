@@ -12,7 +12,7 @@ const draw = (cardExtra = {}, probeExtra = {}, host = "store") => drawPage({ ini
 // #C1300: with no pack cut yet the landed card waits on the normal process (yellow, "Queued for pack"); the install is the owner's only once the pack is cut.
 test("a landed card with no pack yet says 'Queued for pack' on the yellow stripes, not the install's green", () => {
   const html = draw();
-  assert.match(html, /Queued for pack/);
+  assert.match(html, /Queued<span class="sl"> for pack<\/span>/);
   assert.equal(/Queued for your install/.test(html), false);
   assert.match(html, /class="step waits proc"/);
   assert.equal(/class="step waits rel"/.test(html), false);
