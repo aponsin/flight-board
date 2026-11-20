@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { loadNames } from "./harness.mjs";
 
-const NAMES = ["waitWord", "waitEvidence", "knownWaitText", "cardRepo", "BOARD_REPO", "PLATFORM_REPO", "state", "derivedOf"];
+const NAMES = ["waitWord", "waitTile", "waitEvidence", "knownWaitText", "cardRepo", "BOARD_REPO", "PLATFORM_REPO", "state", "derivedOf"];
 const load = () => loadNames(NAMES, {});
 const card = (id, repo) => ({ id, repo });
 
@@ -14,6 +14,16 @@ test("a product card's release wait says Release's product ship, never a board r
   assert.equal(b.waitWord(product, "release"), "Queued for Release's product ship");
   assert.match(b.waitEvidence(product, "release"), /Release acts, nothing is waiting on you/);
   assert.doesNotMatch(b.waitWord(product, "release"), /board release|your/i);
+});
+
+test("the tile's small line is short enough for a phone (14 characters or less) and names Release; the status line keeps the full sentence (Designer F1)", () => {
+  const b = load();
+  const product = card("p1", b.PLATFORM_REPO);
+  assert.equal(b.waitTile(product, "release"), "Release ships");
+  assert.ok(b.waitTile(product, "release").length <= 14);
+  assert.equal(b.waitWord(product, "release"), "Queued for Release's product ship");
+  assert.equal(b.waitTile(card("b1", b.BOARD_REPO), "release"), "Queued for board release", "the board's own card is unchanged");
+  assert.equal(b.waitTile(product, "install"), "Waiting for install");
 });
 
 test("the board's own card still says board release, and the install is untouched (it is the owner's)", () => {
