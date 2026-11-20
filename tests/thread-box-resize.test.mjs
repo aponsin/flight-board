@@ -84,6 +84,19 @@ test("after a redraw every thread box takes the remembered height, but never mor
   assert.ok(tall.classes.has("sized") && short.classes.has("sized"));
 });
 
+// Checker 2's F1 on 98888dd9: .sized carries min-height:6rem, and a remembered height put .sized on every box, so a one-message box (47 px) grew to 98 px in real browsers while the
+// tests, which fake scrollHeight, saw nothing. A remembered height must not give a box the floor: its own min-height is 0 (inline beats the class), and only the box being dragged gets the floor back.
+test("a remembered height never makes a box taller than its content: the box is sized with its own floor at 0, and the corner press gives the dragged box the floor back", () => {
+  const { b, listeners } = load({ [KEY]: "400" });
+  const short = box({ scrollHeight: 47 });
+  b.document.querySelectorAll = () => [short];
+  b.histSizes();
+  assert.equal(short.style.minHeight, "0", "the class's 6rem floor is overridden for a redrawn box");
+  assert.equal(short.style.height, "47px");
+  listeners.pointerdown[0](press(short));
+  assert.equal(short.style.minHeight, "", "the box being dragged gets the class floor back");
+});
+
 test("with nothing remembered the boxes are left as they were", () => {
   const { b } = load();
   const h = box();

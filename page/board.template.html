@@ -2007,11 +2007,11 @@ function histClamp(px){const n=Number(px);return isFinite(n)&&n>0?Math.min(4000,
 function histHeightLoad(){let v=0;try{v=histClamp(localStorage.getItem(HIST_H_KEY))}catch(e){}return v}
 function histHeightSave(px){const v=histClamp(px);if(!v)return;try{localStorage.setItem(HIST_H_KEY,String(v))}catch(e){}}
 function histSizes(){if(typeof document.querySelectorAll!=="function")return;const px=histHeightLoad();if(!px)return;
-  document.querySelectorAll(".t-hist[data-hist]").forEach(h=>{h.classList.add("sized");h.style.height="auto";const c=h.scrollHeight;h.style.height=(c>0?Math.min(px,c):px)+"px"})}
+  document.querySelectorAll(".t-hist[data-hist]").forEach(h=>{h.classList.add("sized");h.style.minHeight="0";h.style.height="auto";const c=h.scrollHeight;h.style.height=(c>0?Math.min(px,c):px)+"px"})}
 let histDrag=null;
 function histDown(e){const h=e&&e.target&&typeof e.target.closest==="function"?e.target.closest(".t-hist"):null;if(!h||(e.button||0)!==0)return;
   const r=h.getBoundingClientRect();if(!(e.clientX>=r.right-HIST_GRIP&&e.clientY>=r.bottom-HIST_GRIP))return;
-  h.style.height=r.height+"px";h.classList.add("sized");histDrag={h,from:r.height}}
+  h.style.minHeight="";h.style.height=r.height+"px";h.classList.add("sized");histDrag={h,from:r.height}}
 function histUp(){const d=histDrag;histDrag=null;if(!d)return;const now=d.h.getBoundingClientRect().height;if(Math.abs(now-d.from)>=2)histHeightSave(now)}
 if(typeof document!=="undefined"&&typeof document.addEventListener==="function"){for(const t of ["pointerdown"])document.addEventListener(t,histDown,true);for(const t of ["pointerup","mouseup","pointercancel"])document.addEventListener(t,histUp,true)}
 function keep(el,draw){const back=histSave(),open=new Set([...el.querySelectorAll("details[open]")].map(d=>d.dataset.id)),drafts={};
