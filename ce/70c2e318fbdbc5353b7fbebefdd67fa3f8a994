@@ -3,3 +3,7 @@ SECURE
 Group board-polish-three tip, by diff a0e01b87..ce70c2e3 (a0e01b87 SECURE): two test-only commits (product-stack-wiring, ship-cell-waits-for-install). No code, page, Worker, migration or hook change; the pack stays as it was (Worker deploy + migration 0039 + probe file collector/store-cards.mjs).
 
 signed-by: Security
+
+Pack pc111 SECURE (steps board-store-pc111-steps.md sha256 896a1feb608aa14a5b2b9969490d44f6136aff61458b8cca993550066b4be73c): all 5 file hashes match (deploy f3cf5c33, tree 7b8accf2, hooks 56a44f63, board-deploy 7a021248 unchanged); deploy/tree/hooks differ from pc110 only by pin and pc number; steps differ only by pin, pc, hashes, card/file lists and the migration line; origin/main == ce70c2e3; security notes on all 12 commits cd193052..ce70c2e3; worker/collector/migrations diff (board-rules, board-store, board-worker, compat-view, 0039_group_ids.sql, store-cards) is exactly #C1299 + #C1303; no wrangler config, hooks or scripts change; pc110.done exists. Migration 0039 is additive (CREATE TABLE groups + backfill); undo is the Worker rollback, or DROP TABLE groups.
+
+signed-by: Security
