@@ -1,0 +1,7 @@
+SECURE
+
+#C1303 (probe code collector/store-cards.mjs + docs): productRepoNames adds "" (the clone at repoPath) when the owner's config lists the board's own repository; stacksOn keeps names <= 40 chars and dedupes. Names still come only from the owner's own board.config; state.mjs readStacks reads them back with the same string/<=40 filter and uses each only as a key into the configured clones, as "" already was for the board row. The switch stays owner-only (route 403, tool refused by role) and off by default. docs/product-group-ship.md is guidance only.
+
+INFO: when Builder changes the product's scripts/ship.mjs or scripts/lib/ship.mjs to take group heads, that branch needs SECURE on its exact sha (ship gate), and rule 2 there (tip notes cover members at the highest member level) is the part to review hardest.
+
+signed-by: Security
