@@ -1,0 +1,2 @@
+PASS Full #C1291, line from ae0dd5e427e1875c380f030ea2a536dcf341076b: replaceHeredocs reads exactly as the old heredoc regex (unquoted tag back-off, quoted no back-off, closing line never the line after the head, CRLF not a close); own probe 200000 char-level commands (5461 with a closed heredoc) equal on drop and mask; npm test 3291 pass 0 fail; 5 mutants killed (old regex back in bashTargets, empty-body boundary, quoted back-off, commit-check mask dropped, skip-to-eol on unclosed head); guard reading unchanged, no role literals.
+signed-by: Checker 2
