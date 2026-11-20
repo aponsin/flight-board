@@ -19,17 +19,18 @@ const draw = async (db, host = "store") => { const { collections, probe } = comp
 // One card's row of the board, by its name.
 const rowOf = (html, name) => { const i = html.indexOf(`<strong>${name}</strong>`); assert.ok(i >= 0, `${name} is drawn`); return html.slice(i, html.indexOf('<div class="i-row', i + 1) < 0 ? undefined : html.indexOf('<div class="i-row', i + 1)); };
 
-test("a dispatched card with nothing pushed reads building, nothing pushed yet, and Started is the wake; an untaken card reads queued", async () => {
+// #C1302 (the owner's screenshot, 11-19: #C1299 read BUILDING and "Started 06:47 PM" with nothing pushed; its build start came from the dispatch's wake, and 06:47 was when the card was
+// created): a card with nothing pushed is Queued, and has no Started time, whatever build start was logged. It starts at its first push.
+test("a dispatched card with nothing pushed still reads queued, with no Started time; the wake's build start does not start it", async () => {
   const db = await seed();
   assert.deepEqual(await recordBuildStart(db, NOW - 20 * MIN, "c-taken"), { ok: true, recorded: true });
   const d = await draw(db);
   const taken = rowOf(d.html, "Taken card"), wait = rowOf(d.html, "Waiting card");
-  assert.match(taken, /<span class="state active">Building<\/span>/);
-  assert.match(taken, /building, nothing pushed yet/);
-  assert.doesNotMatch(taken, /Queued/);
-  assert.match(taken, /Started /, "Started is drawn (the build start), not 'Queued N min'");
+  assert.match(taken, /<span class="state \w+">Queued<\/span>/);
+  assert.doesNotMatch(taken, /<span class="state active">Building<\/span>/);
+  assert.doesNotMatch(taken, /Started /, "no Started time without a push");
   assert.match(wait, /<span class="state \w+">Queued<\/span>/);
-  assert.doesNotMatch(wait, /nothing pushed yet/);
+  assert.doesNotMatch(wait, /Started /);
 });
 
 test("the first push keeps it building with the usual line: no 'nothing pushed yet' once the probe has read its work", async () => {
@@ -38,7 +39,8 @@ test("the first push keeps it building with the usual line: no 'nothing pushed y
   await writeEvidence(db, NOW - 5 * MIN, "probe", "cards.c-taken", { lit: ["build"], phase: "build", headSha12: "abc123def456", workSeen: true });
   const taken = rowOf((await draw(db)).html, "Taken card");
   assert.doesNotMatch(taken, /nothing pushed yet/);
-  assert.doesNotMatch(taken, /Queued/);
+  assert.doesNotMatch(taken, /<span class="state \w+">Queued<\/span>/);
+  assert.match(taken, /<span class="state active">Building<\/span>/, "a pushed head is building");
 });
 
 test("the builder on the card (the probe's agents reading) is building too; a builder tile with no card stays idle", async () => {

@@ -1,0 +1,1 @@
+- A card with nothing pushed now reads Queued and shows no Started time; it starts at its first push, not when it was created or when its builder was woken (no-push-not-building, #C1302). Ships: a page publish. Tests: `tests/build-lit-before-first-push.test.mjs`, `tests/card-groups-page.test.mjs` (mutation-checked).

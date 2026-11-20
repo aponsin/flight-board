@@ -39,11 +39,14 @@ test("the open list in groups: groups by their order, then the cards in no group
 test("the group row's phase is its earliest card's, its ETA the latest, its start the earliest (Manager on #C1008)", () => {
   const b = board([]);
   const P = b.PHASES.map(([k]) => k);
-  const cards = [card("a", 1, { phase: P[4], etaLive: 2_000_000_000_000 }), card("b", 2, { phase: P[2], etaLive: 2_000_000_900_000 }), card("c", 3, { phase: P[5] })];
+  // #C1302: a card starts at its first push (its first work entry in the phase log), not at its creation: with no push there is no start.
+  const log = (at) => ({ phaseLog: [{ phase: "build", start: at, end: at + 1 }] });
+  const cards = [card("a", 1, { phase: P[4], etaLive: 2_000_000_000_000, ...log(1_800_000_060_000) }), card("b", 2, { phase: P[2], etaLive: 2_000_000_900_000, ...log(1_800_000_120_000) }), card("c", 3, { phase: P[5] })];
   const f = b.groupFacts(cards);
   assert.equal(f.phase, P[2]);
   assert.equal(f.eta, 2_000_000_900_000);
-  assert.equal(f.started, 1_800_000_000_000 + 60e3);
+  assert.equal(f.started, 1_800_000_000_000 + 60e3, "the earliest push");
+  assert.equal(b.groupFacts([card("c", 3, { phase: P[5] })]).started, null, "nothing pushed: no start, not the creation time");
   assert.deepEqual([...f.who], ["Boardsmith"]);
 });
 

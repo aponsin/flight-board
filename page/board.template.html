@@ -2259,7 +2259,9 @@ function notStarted(i){if(!i||i.status==="done"||i.dropped||phaseIndex(i.phase)>
   // #C926: on the store the build start IS the taking: the dispatch's wake to the builder writes it (recordBuildStart, #C903), or the builder's
   // own step does. With nothing pushed yet (noWork) the card reads "building, nothing pushed yet", not queued; the artifact page keeps its rule.
   // A card with no build start (not taken) stays queued.
-  return (!!i.noWork&&!STORE)||!buildStarted(i.id)}
+  // #C1302 (the owner's screenshot, 11-19: #C1299 read BUILDING and "Started" with nothing pushed, because the dispatch's wake had written its build start): on the store a card
+  // with no branch, no head and no probe-seen building is not started, whatever step was logged: Started is the first push. The artifact page keeps its rule.
+  return STORE||!!i.noWork||!buildStarted(i.id)}
 // The cards with a build start logged, indexed once per data update (Checker's FINDINGS on 88e525a: notStarted scanned
 // every step, and queueOf's sort asked it at every comparison).
 let bsOf=null,bsSet=new Set();
@@ -2549,6 +2551,9 @@ function agentsOn(id){return liveOn()?Object.keys(probe.agents).filter(n=>{const
 function slowTag(i,k,ms,cls){if(!/ (stuck|now|here)\b/.test(cls)||heldLine(i)||!overUsual(i,k,ms))return "";const x=Math.round(ms/medFor(i,state.phaseMed||{})[k]*10)/10;return `<small class="slow">${/ stuck\b/.test(cls)?`slow<span class="sl"> ·</span> ${x}×<span class="sl"> usual</span>`:`slow ${x}×`}</small>`}
 function overUsual(i,k,ms){const m=(medFor(i,state.phaseMed||{})||{})[k];return num(ms)!=null&&num(m)!=null&&m>0&&ms>2*m}
 // Started is the first push: the earliest phase-log entry that is work, not a wait.
+// #C1302 (11-19: a card created at 6:47 PM with nothing pushed read BUILDING and "Started 06:47 PM", the time it was created): on the store a card starts at its first push and not before,
+// so with no push there is no Started time (the artifact page keeps its creation-time fallback).
+function startedAt(i){const f=firstPush(i);return f!=null?f:STORE?null:i.createdAt}
 function firstPush(i){const s=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filter(e=>e&&e.phase&&!e.wait&&num(e.start)!=null).map(e=>e.start);return s.length?Math.min(...s):null}
 // #C881: each phase tile says when its phase first began and by whom, in Mountain time, from the phase log (the evidence). A phase the log
 // has no work entry for says nothing. The first entry wins, so a phase that flipped away and back keeps its first time.
@@ -2612,7 +2617,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   // One ETA per card, the ETA box's (#C450, the owner on #C448: "Live in 18 min · around 04:32 PM" against "expected L
   // 6 h, due ~09:05 PM"): the size's median is only a hint here, "(usually 6 h for L)", with no due time of its own.
   const usual=sMs?` <span class="usual">(usually ${sMs/3600e3} h for ${esc(i.size)})</span>`:"";
-  const started=num(i.createdAt)&&ns?`<span>Queued ${dur(Date.now()-i.createdAt)}${usual}</span>`:num(firstPush(i)??i.createdAt)?`<span>Started ${dayLabel(firstPush(i)??i.createdAt)} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-(firstPush(i)??i.createdAt))} so far${usual}</span>`:"";
+  const started=num(i.createdAt)&&ns?`<span>Queued ${dur(Date.now()-i.createdAt)}${usual}</span>`:num(startedAt(i))?`<span>Started ${dayLabel(startedAt(i))} · ${dur((i.status==="done"&&num(i.doneAt)?i.doneAt:Date.now())-(startedAt(i)))} so far${usual}</span>`:"";
   const tn=threadOf(i.id).length,on=waitsOn(i.id,Date.now()),asks=cardAsks(i.id,Date.now()),unr=newReplies(i.id).length;
   const closed=asks.length?`<div class="i-asks"><div class="i-asks-h">Closed asks on this card</div>${asks.map(a=>threadRow(a.id,Date.now(),"card-"+w,a)).join("")}</div>`:"";
   const thread=`<details class="i-thread${unr?" has-new":""}" data-id="ith-${esc(i.id)}"><summary>${tn?`Thread (${tn})`:asks.length?"Thread":"Start a thread"}${asks.length?` · ${asks.length} closed ask${asks.length>1?"s":""}`:""}${on==="lead"?badge(on)+lateTag(i.id,Date.now()):""}</summary>${threadHtml(i.id,w,{decide:true,newAt:unr?seenAt(i.id):null})}${closed}</details>`;
@@ -2717,7 +2722,7 @@ function pulseSync(){document.querySelectorAll(".step.now").forEach(el=>{const r
 // The group row's facts (Manager on #C1008): its phase is the earliest among its cards (the group lands together, so it moves at its
 // slowest card), its ETA the latest card's, its start the earliest card's.
 function groupFacts(cards){const ix=i=>notStarted(i)?phaseIndex(BUILD_PHASE):phaseIndex(i.phase);
-  const idx=Math.min(...cards.map(ix)),etas=cards.map(shownEta).filter(t=>num(t)!=null),starts=cards.map(i=>num(firstPush(i)??i.createdAt)).filter(t=>t!=null);
+  const idx=Math.min(...cards.map(ix)),etas=cards.map(shownEta).filter(t=>num(t)!=null),starts=cards.map(i=>num(startedAt(i))).filter(t=>t!=null);
   return {idx,phase:(PHASES[idx]||[])[0]??null,eta:etas.length?Math.max(...etas):null,started:starts.length?Math.min(...starts):null,who:[...new Set(cards.map(i=>i.who).filter(Boolean))]}}
 // A card's own state on the rail: one word, then its issue chips.
 // #C1102 (d): a card the builder declared READY and was told to wait (its head carries the stack-ready waiting note, the probe's builtWaiting) reads "Built, waiting", not Building.
