@@ -1,0 +1,2 @@
+PASS Full #C1325 #C1327 #C1328 #C1329 #C1332 #C1331, line from dc4c640ff5fbc9879ede0eac5dd174983568e7db: FINDINGS on ef6ec09d fixed (withdraw_decision's description now matches the pick-only refusal, with a test; DATA.d lines for #C1332 and #C1331; row 17 rewritten). Designer's #C1331 CSS read. The main merge a4f87aac brings only the fold. Suite 3449/0. 31 mutants on ef6ec09d, 30 killed. LOW, carried to board-polish-eight: cleanLandedFolders' onMain wiring is untested.
+signed-by: Checker 2
