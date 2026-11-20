@@ -1,0 +1,1 @@
+SECURE: #C1334 lookRefusal lets an option labelled only 'changes' (anchored regex) skip its picture, and only when some option shows one; a decision with no picture is still refused. Mutation (drop shown.size > 0): caught. Security 2026-11-20.
