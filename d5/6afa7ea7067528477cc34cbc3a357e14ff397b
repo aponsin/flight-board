@@ -1,0 +1,1 @@
+SECURE: #C1337 readStack never lists a card whose id starts fold-data-fragments as outside; only the dispatch hint changes, landing keeps its own rules (notes, continues main). INFO: any card_create id with that prefix gets the same pass; the prefix is the landing job's existing fold rule. Security 2026-11-20.
