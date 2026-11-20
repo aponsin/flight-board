@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { makeDb } from "./helpers/d1-sqlite.mjs";
 import worker from "../worker/board-worker.mjs";
-import { createCard, createAsk } from "../worker/board-store.mjs";
+import { createCard, createAsk, agentNoteRefusal } from "../worker/board-store.mjs";
 
 const NOW = 1_800_000_000_000;
 const SECRET = "s".repeat(43), MSECRET = "m".repeat(43), SESSION = "local_b0c20591-32ff-41db-b0e5-ff9fc3fb26de";
@@ -95,6 +95,36 @@ test("must still allow: on the shared door, an answer in a card thread the owner
   assert.equal((await createCard(env.DB, NOW, "Manager", { id: "card-b", title: "Another" })).ok, true);
   const shots = await shared("Designer", { thread_id: "card-b", body: "Look at this", screenshots: ["no-such-file"] });
   assert.notEqual(shots.structuredContent?.refused?.rule, "agent-note-on-card", "a post with a picture is not refused as an agent's note");
+});
+
+// Security's LOW on dfda43f5: callTool's `name === "post"` carried no door test, so the owner's own Access connector was held to the rule too: his first post on a card thread he had not
+// written in would have been refused as an agent's note. The rule is the two agent doors' only.
+test("must still allow: the owner's own door (access) posts on a card thread he has not written in; the two agent doors still refuse the same post", async () => {
+  const { env } = await make();
+  const args = { thread_id: "card-a", body: "my first word on this card" };
+  assert.equal(await agentNoteRefusal(env.DB, NOW, "owner", args, "access"), null, "the owner's door is never an agent's note");
+  for (const door of [undefined, "manager", "shared", "access"]) assert.equal(await agentNoteRefusal(env.DB, NOW, "owner", args, door), null, `who owner, door ${door}: his own post is never an agent's note`);
+  assert.equal((await agentNoteRefusal(env.DB, NOW, "Manager", args))?.refused?.rule, "agent-note-on-card", "no door named is Manager's, as before");
+  for (const door of ["manager", "shared"]) {
+    const r = await agentNoteRefusal(env.DB, NOW, "Builder", args, door);
+    assert.equal(r?.refused?.rule, "agent-note-on-card", `${door} door`);
+  }
+});
+
+// The same through the owner's own Access connector (POST /mcp, the owner's identity): his post lands, a card thread he never wrote in or not, and an agent identity on that route is not his.
+test("must still allow: an owner post through the Access connector (/mcp) on a card thread he has not written in lands, and is written as the owner's", async () => {
+  const { env, count } = await make();
+  const viaAccess = async (auth, args) => (await (await worker.fetch(new Request("https://board.test/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "post", arguments: args } }) }), env, null, NOW, async () => auth)).json()).result;
+  const r = await viaAccess({ who: "owner", role: "owner" }, { thread_id: "card-a", body: "my first word on this card" });
+  assert.equal(r.isError, false, JSON.stringify(r));
+  assert.equal(await count("card-a"), 1, "his post is written");
+  assert.equal((await env.DB.prepare("SELECT author FROM messages WHERE thread_id = 'card-a'").first()).author, "owner");
+  assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM refusals WHERE rule = 'agent-note-on-card'").first()).n, 0, "nothing refused");
+  // an agent's service token on the same route is an agent: its note on that thread is still refused (the rule is by who writes, not by the route)
+  assert.equal((await createCard(env.DB, NOW, "Manager", { id: "card-b", title: "Another" })).ok, true);
+  const agent = await viaAccess({ who: "Manager", role: "agent" }, { thread_id: "card-b", body: "a note for Admin" });
+  assert.equal(agent.structuredContent?.refused?.rule, "agent-note-on-card", JSON.stringify(agent));
+  assert.equal(await count("card-b"), 0, "an agent's note through the Access route is not written");
 });
 
 test("must still refuse on the shared door too: any kind but decision on a card thread the owner never wrote in; a decision is the decision rule's (Manager's door only)", async () => {

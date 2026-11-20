@@ -1102,7 +1102,10 @@ export async function doorWriteRefusal(db, now, tool, session) {
 // Returns the refusal (already logged) or null.
 // #C1336 (11-20: an agent posted "resetting after this" on #C1331's thread through the shared connector and the owner got "1 new reply"): the same rule on the shared connector's post.
 // `door` is the door the call came in on; on Manager's it names send_message to the agent, on the shared one it tells the agent to send its note to Manager by message.
+// Security's and Checker 2's LOW on dfda43f5: callTool's `name === "post"` carries no door test, so the owner's own Access connector (door "access", callTool's default) reached this rule too. The owner is no
+// agent: his post is never an agent's note, whatever the thread holds or the door. An agent's service token on the Access route is still an agent (the rule is by who writes, not by the route).
 export async function agentNoteRefusal(db, now, who, args, door = "manager") {
+  if (who === "owner") return null; // Checker 2's LOW: the owner's own first post on a card thread is never an agent's note, on whatever door it comes
   const t = args?.thread_id;
   if (typeof t !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(t)) return null; // a malformed post is the message-shape rule's
   // Checker 2's F1 on 7b72da97: a decision (kind "decision": #C1294 puts them on card threads before he has written) and a post that carries screenshots are meant for the owner.
