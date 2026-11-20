@@ -1,0 +1,5 @@
+SECURE
+
+#C1291, Full review (hook): replaceHeredocs replaces the heredoc regex in bashTargets (which files a command writes) and commitSegments. The risk is a hidden write: if more text were read as heredoc body than before, a redirection could escape the guard. Read it line by line against the old regex: same head (quote exact, unquoted tag backs off longest first), same closing line (one word, spaces/tabs, not the line right after the head, CR not stripped), first candidate after the head line, resume after the closing line, no newline after a head ends the scan, fill lengths equal. My own differential: 25 edge cases (backoff, quoted, <<-, CRLF, empty body, two heads on a line, nested tags) plus 200000 biased random commands: 0 mismatches in both fill modes. Timing at 458541c5: worst contrived shapes 35-71 ms for bashTargets + refusal (was 2.7-7 s). Ran 33/33 hook tests including the stdin/exit-code run. Fails open as before; no git, file or network call added.
+
+signed-by: Security
