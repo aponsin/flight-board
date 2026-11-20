@@ -1,0 +1,456 @@
+{
+ "refactor-step1-store": {
+  "card": {
+   "id": "refactor-step1-store",
+   "num": 719,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": null,
+   "done_at": 1794465912079
+  },
+  "evidence": {
+   "lit": [
+    "live"
+   ],
+   "num": 719,
+   "phase": "live",
+   "headSha12": "4809dca44931",
+   "headSha": "4809dca449317c28b1d32e66a3604384dc6504af",
+   "headBranch": "main",
+   "repoFull": "acme/flight-board",
+   "signed": [
+    "checker",
+    "security"
+   ],
+   "onMain": true,
+   "ci": "none",
+   "ciMin": null,
+   "liveVersion": null,
+   "seen": [
+    "build",
+    "checker",
+    "security",
+    "ship",
+    "live"
+   ],
+   "readyAt": 1794242782000,
+   "at": 1794465882619
+  }
+ },
+ "board-deploy-rollback": {
+  "card": {
+   "id": "board-deploy-rollback",
+   "num": 928,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": null,
+   "done_at": 1794452554247
+  },
+  "evidence": {
+   "lit": [
+    "ship"
+   ],
+   "num": 928,
+   "phase": "ship",
+   "headSha12": "e05063b0d0c2",
+   "headSha": "e05063b0d0c2934ed11b678ce258bce294e56480",
+   "headBranch": "main",
+   "repoFull": "acme/flight-board",
+   "signed": [
+    "checker",
+    "security"
+   ],
+   "onMain": true,
+   "ci": "none",
+   "ciMin": null,
+   "liveVersion": null,
+   "seen": [
+    "build",
+    "checker",
+    "security",
+    "ship"
+   ],
+   "readyAt": 1794433450000,
+   "at": 1794437360188
+  }
+ },
+ "pickup-door-session": {
+  "card": {
+   "id": "pickup-door-session",
+   "num": 843,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": "product-roll-2",
+   "done_at": 1794935498569
+  },
+  "evidence": {
+   "lit": [
+    "ship"
+   ],
+   "num": 843,
+   "phase": "ship",
+   "headSha12": "8ff7378113c3",
+   "headSha": "8ff7378113c35b4bf255076815b703ea7502b6c8",
+   "headBranch": "main",
+   "repoFull": "widgets/widgets",
+   "signed": [
+    "checker",
+    "security"
+   ],
+   "onMain": true,
+   "ci": "passed",
+   "ciMin": 1,
+   "liveVersion": null,
+   "shipping": false,
+   "seen": [
+    "build",
+    "test",
+    "checker",
+    "security",
+    "ship"
+   ],
+   "readyAt": 1794934760000,
+   "at": 1794935487723
+  }
+ },
+ "handoff-self-clear": {
+  "card": {
+   "id": "handoff-self-clear",
+   "num": 839,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": null,
+   "done_at": 1794466000924
+  },
+  "evidence": {
+   "lit": [
+    "live"
+   ],
+   "num": 839,
+   "phase": "live",
+   "headSha12": "56dd7fb28f2b",
+   "headSha": "56dd7fb28f2baead2fcd0f371224143baec4c56b",
+   "headBranch": "main",
+   "repoFull": "widgets/widgets",
+   "signed": [
+    "checker",
+    "security"
+   ],
+   "onMain": true,
+   "ci": "passed",
+   "ciMin": 1,
+   "liveVersion": "1.209.4",
+   "shipping": false,
+   "seen": [
+    "build",
+    "test",
+    "checker",
+    "security",
+    "ship",
+    "live"
+   ],
+   "readyAt": 1794356696000,
+   "at": 1794466004237
+  }
+ },
+ "renewal-reminder-30-days": {
+  "card": {
+   "id": "renewal-reminder-30-days",
+   "num": 1071,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": "g16-product-follow-ups",
+   "done_at": 1794938058748
+  },
+  "evidence": {
+   "lit": [
+    "ship"
+   ],
+   "num": 1071,
+   "phase": "ship",
+   "headSha12": "840f13d08267",
+   "headSha": "840f13d08267d3491d71b0a4e2ff5c23bbbe8fcd",
+   "headBranch": "main",
+   "repoFull": "widgets/widgets",
+   "signed": [
+    "checker",
+    "language",
+    "security"
+   ],
+   "onMain": true,
+   "ci": "passed",
+   "ciMin": 2,
+   "liveVersion": null,
+   "shipping": false,
+   "seen": [
+    "build",
+    "test",
+    "language",
+    "checker",
+    "security",
+    "ship"
+   ],
+   "readyAt": 1794936734000,
+   "at": 1794938048840
+  }
+ },
+ "idle-stall-counts-done-cards": {
+  "card": {
+   "id": "idle-stall-counts-done-cards",
+   "num": 949,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": null,
+   "done_at": 1794452558506
+  },
+  "evidence": {
+   "lit": [
+    "ship"
+   ],
+   "num": 949,
+   "phase": "ship",
+   "headSha12": "cba7bf93b7df",
+   "headSha": "cba7bf93b7dffff2c4eda98cdaba3ba31c166765",
+   "headBranch": "build/close-from-every-door",
+   "repoFull": "acme/flight-board",
+   "signed": [
+    "checker"
+   ],
+   "onMain": false,
+   "ci": "none",
+   "ciMin": null,
+   "liveVersion": null,
+   "seen": [
+    "build",
+    "checker"
+   ],
+   "readyAt": 1794433158000,
+   "behindMain": true,
+   "reviews": {
+    "checker": 1794433198000
+   },
+   "at": 1794437360188
+  }
+ },
+ "rc-field-after-clear": {
+  "card": {
+   "id": "rc-field-after-clear",
+   "num": 1128,
+   "repo": "flight-board",
+   "owner_role": "Boardsmith",
+   "batch": "board-roll-1",
+   "done_at": 1794934611334
+  },
+  "evidence": {
+   "lit": [
+    "checker"
+   ],
+   "num": 1128,
+   "phase": "checker",
+   "headSha12": "092d97cc89b8",
+   "headSha": "092d97cc89b85bd1c7b4a2cdf571df0b03668489",
+   "headBranch": "build/rc-field-after-clear",
+   "repoFull": "acme/flight-board",
+   "signed": [
+    "security"
+   ],
+   "onMain": false,
+   "ci": "none",
+   "ciMin": null,
+   "liveVersion": null,
+   "seen": [
+    "build",
+    "security"
+   ],
+   "readyAt": 1794934476000,
+   "waitingFor": [
+    "checker"
+   ],
+   "findings": [
+    "checker"
+   ],
+   "issueCounts": {
+    "bugs": 1
+   },
+   "reviews": {
+    "security": 1794934531000
+   },
+   "at": 1794934600986,
+   "rework": true
+  }
+ },
+ "outreach-split-plans-store": {
+  "card": {
+   "id": "outreach-split-plans-store",
+   "num": 1190,
+   "repo": "widgets",
+   "owner_role": "Steward",
+   "batch": "steward-outreach-split",
+   "done_at": 1794988105353
+  },
+  "evidence": {
+   "lit": [
+    "language"
+   ],
+   "num": 1190,
+   "phase": "language",
+   "headSha12": "bbd1cdc154af",
+   "headSha": "bbd1cdc154af273daffa4766da8160ba6acecec7",
+   "headBranch": "build/outreach-split-plans-store",
+   "repoFull": "widgets/widgets",
+   "signed": [
+    "checker",
+    "security"
+   ],
+   "onMain": false,
+   "ci": "passed",
+   "ciMin": 1,
+   "liveVersion": null,
+   "shipping": false,
+   "seen": [
+    "build",
+    "test",
+    "checker",
+    "security"
+   ],
+   "readyAt": 1794971153000,
+   "waitingFor": [
+    "language"
+   ],
+   "customerText": true,
+   "reviews": {
+    "checker": 1794980320000,
+    "security": 1794980233000
+   },
+   "stack": {
+    "tip": "81ed4521e739",
+    "tipSha": "81ed4521e739b0f44a47dae8e57ba806450a2fa2",
+    "size": 2,
+    "branch": "build/ship-v1.215.7"
+   },
+   "at": 1794984103893,
+   "reworkCounts": 0,
+   "actual": {
+    "headSha12": "bbd1cdc154af",
+    "phase": "build"
+   },
+   "rework": "unexplained",
+   "reworkAt": 1794984200108
+  }
+ },
+ "scout-offer-launch-price": {
+  "card": {
+   "id": "scout-offer-launch-price",
+   "num": 1173,
+   "repo": "widgets",
+   "owner_role": "Reviewer",
+   "batch": "outreach-rewrite",
+   "done_at": 1794968423775
+  },
+  "evidence": {
+   "lit": [
+    "build"
+   ],
+   "num": 1173,
+   "phase": "build",
+   "headSha12": "f9c8cd53c7b7",
+   "headSha": "f9c8cd53c7b76e32f685d398bf833ea2121fdff0",
+   "headBranch": "reviewer/scout-offer-launch-price",
+   "repoFull": "widgets/widgets",
+   "signed": [],
+   "onMain": false,
+   "ci": "none",
+   "ciMin": null,
+   "liveVersion": null,
+   "shipping": false,
+   "seen": [
+    "build"
+   ],
+   "firm": false,
+   "wipHead": true,
+   "stackHold": true,
+   "at": 1794968295238
+  }
+ },
+ "c733-seen-time-test": {
+  "card": {
+   "id": "c733-seen-time-test",
+   "num": 733,
+   "repo": "flight-board",
+   "owner_role": "Manager",
+   "batch": null,
+   "done_at": 1794465949290
+  },
+  "evidence": {
+   "lit": [
+    "live"
+   ],
+   "num": 733,
+   "phase": "live",
+   "headSha12": "a061d24f30ce",
+   "headSha": "a061d24f30ceb1a4fba03b7d74123f4bc132fb56",
+   "headBranch": "main",
+   "repoFull": "acme/flight-board",
+   "signed": [
+    "checker",
+    "security"
+   ],
+   "onMain": true,
+   "ci": "none",
+   "ciMin": null,
+   "liveVersion": null,
+   "seen": [
+    "build",
+    "checker",
+    "security",
+    "ship",
+    "live"
+   ],
+   "readyAt": 1794291331000,
+   "noInstall": true,
+   "at": 1794465882619
+  }
+ },
+ "referral-program-idea": {
+  "card": {
+   "id": "referral-program-idea",
+   "num": 1315,
+   "repo": "widgets",
+   "owner_role": "Builder",
+   "batch": "referral-program",
+   "done_at": null
+  },
+  "evidence": {
+   "lit": [
+    "live"
+   ],
+   "num": 1315,
+   "phase": "live",
+   "headSha12": "d5af0dd8a48a",
+   "headSha": "d5af0dd8a48a580367b2dc07e3e3fdd8b5d2530a",
+   "headBranch": "main",
+   "repoFull": "widgets/widgets",
+   "signed": [
+    "checker",
+    "language",
+    "security"
+   ],
+   "onMain": true,
+   "ci": "passed",
+   "ciMin": 2,
+   "liveVersion": "1.226.16",
+   "shipping": false,
+   "seen": [
+    "build",
+    "test",
+    "language",
+    "checker",
+    "security",
+    "ship",
+    "live"
+   ],
+   "readyAt": 1795157186000,
+   "at": 1795207738490
+  }
+ }
+}
