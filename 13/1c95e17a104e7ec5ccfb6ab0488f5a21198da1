@@ -1,0 +1,7 @@
+SECURE
+
+#C1289, Full review (hook): commitSegments returns [] unless the raw command matches both \bgit\b and \bcommit\b. Equivalent to before: a segment was only kept if its masked text matched both, and masking can only remove words, so a command without them never had a segment. Ran at 131c95e1: board-id-shape-at-commit, first-push-guard, c726-hooks, hooks-check, 30/30, including the stdin/exit-code run. My edge probes give the same verdicts as on 72673a62. Closes my LOW for every command without git and commit; a contrived git commit with thousands of unterminated << still takes 3-5 s (fails open, accepted). Page: tile <small class=rs> with esc(RELEASE_ROLE) and a fixed ' ships' span hidden under 760 px. No data, route, permission, Worker or installer change.
+
+INFO (outside this card): refusal()'s older bashTargets takes about 2.7 s on the same 200 KB contrived input (Boardsmith's measure). Slowness only, fails open; worth one small card if Manager wants it.
+
+signed-by: Security
