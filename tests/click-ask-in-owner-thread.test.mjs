@@ -89,6 +89,22 @@ test("page: an open click that names the owner's thread sits in that thread, whi
   assert.match(html, /data-copy=/);
 });
 
+// Designer F1 on 7b72da97: two green answers and two Send boxes stacked. While the click is open the ask's Done and note are the one answer.
+test("page: while the click is open the thread has no Ack, Close or reply box of its own; the ask's Done stays, and they return once he presses Done", () => {
+  const open = owned().threadHtml("t-100", "panel", { acts: true });
+  assert.match(open, /data-copy=/, "the click is drawn");
+  assert.equal(/data-tack=|data-tclose=|data-tsend="t-100"/.test(open), false, "no thread Ack, Close or Send beside the click");
+  const done = owned({ response: { status: "done", at: NOWP, taken: false } }).threadHtml("t-100", "panel", { acts: true });
+  assert.match(done, /data-tclose="t-100"|data-tack="t-100"/, "the thread's own button is back after Done");
+  assert.match(done, /data-tsend="t-100"/, "and its reply box");
+});
+
+// Designer F2: the ask's steps carry the row's wide left indent, which stacks on the thread's own and leaves the command box 80 px on a phone.
+test("page: a click inside a thread drops its row indent (the .thread .w-item .steps rule)", async () => {
+  const css = (await import("node:fs")).readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(css, /\.thread \.w-item \.steps\{padding-left:1\.6em;padding-right:0\}/);
+});
+
 test("page: once he presses Done the thread stops waiting on him; a click with no thread is a row as before", () => {
   const done = owned({ response: { status: "done", at: NOWP, taken: false } });
   assert.notEqual(done.waitsOn("t-100", NOWP), "you");
