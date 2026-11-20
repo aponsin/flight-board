@@ -1,0 +1,1 @@
+SECURE: #C1350 tests only (the redraw budget test counts memoized work instead of wall time; the page-vm helper and a changelog line). Linear on my SECURE 886f6327; no page or Worker code. Security 2026-11-20.
