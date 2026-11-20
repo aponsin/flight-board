@@ -63,7 +63,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "restart", "ledger", "quiet"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "pack", "restart", "ledger", "quiet"]);
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
   num: nullOr((v) => Number.isInteger(v) && v >= 1 && v <= 1e6),
@@ -105,6 +105,8 @@ const CARD = {
   // pair folder's files and git, never from words.
   packed: (v) => v === true,
   installed: (v) => v === true,
+  // #C1309: the number of the oldest pair that holds the landing (the pack it first rode in), 1 to 999999; the page names it on the Install tile.
+  pack: (v) => Number.isInteger(v) && v >= 1 && v < 1e6,
   // #C731 B4b slice 3: workSeen (only ever true: a commit on main cites the card, so a build start is not "no work seen"),
   // shippedAt (when a ship commit on main naming the card landed), reviews ({ phase: ms }: when each signed review was signed,
   // from the notes ref's history). Optional.
@@ -163,7 +165,7 @@ const WATCH = { at: isTime, restart: (v) => v === true, ledger: (v) => plain(v),
 const WATCH_LEDGER = { prompts: (v) => Array.isArray(v) && v.length <= MAX_WATCH_PROMPTS, others: (v) => Number.isInteger(v) && v >= 0 && v <= 1e6 };
 const WATCH_PROMPT = { role: re(ROLE), tool: re(/^[A-Za-z][A-Za-z0-9_.:-]{0,47}$/), n: (v) => Number.isInteger(v) && v >= 1 && v <= 1e6 };
 const WATCH_QUIET = { since: nullOr(isTime), days: nullOr((v) => Number.isInteger(v) && v >= 0 && v <= 36500), running: (v) => Number.isInteger(v) && v >= 1 && v <= 1000 };
-const CLOSED_PACK = { packed: (v) => v === true, installed: (v) => v === true };
+const CLOSED_PACK = { packed: (v) => v === true, installed: (v) => v === true, pack: (v) => Number.isInteger(v) && v >= 1 && v < 1e6 }; // #C1309: pack, the first pair that held the landing
 export const MAX_RELEASES = 100;
 const RELEASE = { testsMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000, deployMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000 };
 export const SHIP_CI = ["none", "queued", "running", "passed"];
