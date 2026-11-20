@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
-import { cardState, noInstallLanding } from "../collector/state.mjs";
+import { cardState, noInstallLanding, landingKind } from "../collector/state.mjs";
 import { stateErrors } from "../collector/state-schema.mjs";
 
 const T = Date.now() - 1234;
@@ -89,6 +89,33 @@ test("a landing that changes any deployed or pinned file still waits for the ins
     assert.equal(Object.hasOwn(s, "noInstall"), false, f);
     assert.equal(s.phase, "ship", `${f} landed is not live until it is deployed`);
   }
+});
+
+// #C1369: the empty WIP commit a card pushes before its first edit lands on main with the card's Board-Id (#C1362 and #C1366 read "landed, not deployed" because of it).
+// An empty commit changes nothing, so it does not count against the card; the card still needs one commit that really is docs and tests only.
+test("an empty WIP commit of the card does not keep a docs-and-tests landing waiting for an install; code, or nothing but empty commits, still does", () => {
+  for (const steps of [[[], ["docs/DATA.md"]], [["tests/a.test.mjs"], []], [[], ["docs/a.md"], [], ["CHANGELOG.d/x.md"]]]) {
+    const { repo } = landedSeq(steps);
+    const s = cardState(card, repo(), cfg, T);
+    assert.equal(s.noInstall, true, JSON.stringify(steps));
+    assert.equal(s.phase, "live", "docs and tests only, empty WIP commit or not");
+  }
+  // Must still wait: a deployed path in any commit, an empty WIP commit beside it or not; and a card of empty commits alone.
+  for (const steps of [[[], ["worker/board-worker.mjs"]], [["collector/state.mjs"], [], ["docs/a.md"]], [[], []], [[]]]) {
+    const { repo } = landedSeq(steps);
+    const s = cardState(card, repo(), cfg, T);
+    assert.equal(Object.hasOwn(s, "noInstall"), false, JSON.stringify(steps));
+    assert.equal(s.phase, "ship", "not live until it is deployed");
+  }
+  // The kinds themselves, and a commit whose changes cannot be read is no empty commit.
+  assert.equal(landingKind(() => "", "a".repeat(40)), "empty");
+  assert.equal(landingKind(() => "docs/a.md\n", "a".repeat(40)), "docs");
+  assert.equal(landingKind(() => "docs/a.md\nworker/x.mjs\n", "a".repeat(40)), "code");
+  assert.equal(landingKind(() => { throw new Error("no such commit"); }, "a".repeat(40)), "unread");
+  assert.equal(landingKind(() => "", "not-a-sha"), "unread");
+  const unread = landedSeq([[], ["docs/a.md"]]), r = unread.repo(), real = r.git;
+  r.git = (args) => { if (args[0] === "diff") throw new Error("cannot read"); return real(args); };
+  assert.equal(Object.hasOwn(cardState(card, r, cfg, T), "noInstall"), false, "every diff unreadable: keeps waiting");
 });
 
 test("a deployed landing is live as before, and one that changed nothing or cannot be read keeps waiting", () => {

@@ -636,7 +636,7 @@ const MAX_CARD_COMMITS = 30;
 const NO_INSTALL = new WeakMap(); // a commit's paths never change, so one diff per commit and repository run
 function noInstallCard(repo, card, mainRef, headSha) {
   if (!NO_INSTALL.has(repo)) NO_INSTALL.set(repo, new Map());
-  const memo = NO_INSTALL.get(repo), byCommit = (sha) => { if (!memo.has(sha)) memo.set(sha, noInstallLanding(repo.git, sha)); return memo.get(sha); };
+  const memo = NO_INSTALL.get(repo), byCommit = (sha) => { if (!memo.has(sha)) memo.set(sha, landingKind(repo.git, sha)); return memo.get(sha); };
   const shas = new Set([headSha]);
   try {
     const out = String(repo.git(["log", "-400", "--fixed-strings", `--grep=Board-Id: ${card.id}`, "--format=%H%x1f%B%x1e", mainRef]));
@@ -646,14 +646,22 @@ function noInstallCard(repo, card, mainRef, headSha) {
       if (/^[0-9a-f]{40}$/.test(h ?? "") && ids.includes(card.id)) shas.add(h);
     }
   } catch { return false; }
-  return shas.size <= MAX_CARD_COMMITS && [...shas].every(byCommit);
+  // #C1369: an EMPTY commit of the card on main (the empty WIP commit that is pushed before the first edit) changes nothing, so it cannot need an install and
+  // does not count against the card; but a card needs at least one commit that really is docs and tests only, so a card whose commits are all empty, or
+  // one whose diff could not be read, keeps waiting as before.
+  if (shas.size > MAX_CARD_COMMITS) return false;
+  const kinds = [...shas].map(byCommit);
+  return kinds.every((k) => k === "docs" || k === "empty") && kinds.includes("docs");
 }
-export function noInstallLanding(git, sha) {
-  if (!/^[0-9a-f]{40}$/.test(String(sha))) return false;
+// What one commit changed: "docs" (every path is docs or tests), "empty" (no path), "code" (a deployed or pinned path), "unread" (not a sha, or git could not say).
+export function landingKind(git, sha) {
+  if (!/^[0-9a-f]{40}$/.test(String(sha))) return "unread";
   let paths;
-  try { paths = String(git(["diff", "--name-only", `${sha}^`, sha])).split("\n").map((p) => p.trim()).filter(Boolean); } catch { return false; }
-  return paths.length > 0 && paths.every((p) => DOCS_ONLY.test(p));
+  try { paths = String(git(["diff", "--name-only", `${sha}^`, sha])).split("\n").map((p) => p.trim()).filter(Boolean); } catch { return "unread"; }
+  if (paths.length === 0) return "empty";
+  return paths.every((p) => DOCS_ONLY.test(p)) ? "docs" : "code";
 }
+export function noInstallLanding(git, sha) { return landingKind(git, sha) === "docs"; }
 // #C897: the paths a branch changed since it left main (git diff main...tip), once per repository run and tip; null when there is no
 // table to read them for, or git cannot say (the typed rule then decides).
 const BRANCH_PATHS = new WeakMap();
