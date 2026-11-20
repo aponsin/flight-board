@@ -307,6 +307,18 @@ async function openOwnerThreads(db, now) {
 
 export async function askFromTool(db, now, who, args) {
   const a = args ?? {};
+  // #C1317: Manager's Terminal or Action ask may carry related_thread too (optional): the owner's thread id, or "none". The ask is still
+  // one ask (its commands, Copy box and Done are answered as before); the thread it names is where the page draws it, so no second thread opens.
+  if (who === "Manager" && (a.type === "Terminal" || a.type === "Action") && a.related_thread !== undefined) {
+    const { related_thread: rel, ...ask } = a;
+    if (typeof rel !== "string" || !rel.trim()) return refuse(db, now, { rule: "click-thread-shape", detail: "related_thread is the owner thread's id, or the literal \"none\"" }, ask.card_id, who);
+    if (rel === "none") return createAsk(db, now, ask);
+    const known = (await db.prepare("SELECT 1 AS x FROM asks WHERE id = ?").bind(rel).first()) || (await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(rel).first()) || (await db.prepare("SELECT 1 AS x FROM threads WHERE id = ?").bind(rel).first());
+    if (!known) return refuse(db, now, { rule: "click-thread-unknown", detail: rel }, ask.card_id, who);
+    const r = await createAsk(db, now, ask);
+    if (r.ok) await db.prepare("UPDATE asks SET body = json_set(body, '$.related_thread', ?) WHERE id = ?").bind(rel, r.id).run();
+    return r.ok ? { ...r, thread_id: rel } : r;
+  }
   if (!(who === "Manager" && a.type === "Decision")) return createAsk(db, now, a);
   const { related_thread: rel, ...ask } = a;
   const no = (rule, detail) => refuse(db, now, { rule, detail }, ask.card_id, who);
