@@ -1,0 +1,1 @@
+SECURE: fold-data-fragments-1120, docs only on main 7fef3cb7; the 6 lines added to docs/DATA.md are exactly the 6 fragment lines removed from docs/DATA.d (a pure move). Security 2026-11-20.
