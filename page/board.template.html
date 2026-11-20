@@ -177,6 +177,9 @@ section{min-width:0}
 /* #C1300 (the owner's pick A): yellow stripes are the normal process (a board release by Release, a product ship, a landed card queued for its pack); the green ones above are only the owner's install. */
 .step.waits.proc{color:var(--warn-ink);background:var(--warn-soft);background-image:repeating-linear-gradient(-45deg,var(--warn-soft) 0 6px,var(--panel) 6px 12px);box-shadow:inset 0 0 0 2px var(--warn)}
 .step.waits.proc::before{content:"⧗ ";}
+/* #C1382 (the contract's tile looks): the owner's open ask is red and white stripes; it was the red box before the tile, and is now the tile itself, drawn from the card's reading. */
+.step.waits.ask{color:var(--bad);background:var(--bad-soft);background-image:repeating-linear-gradient(-45deg,var(--bad-soft) 0 6px,var(--panel) 6px 12px);box-shadow:inset 0 0 0 2px var(--bad)}
+.step.waits.ask::before{content:"⏸ ";}
 .state.queued{background:var(--warn-soft);color:var(--warn)}
 .state.stalled{background:var(--bad-soft);color:var(--bad)}
 .stall{color:var(--bad);font-weight:600}
@@ -843,7 +846,7 @@ const ASKLABEL=Object.assign({},KIND,{question:"Question",conversation:"Conversa
 // thread or item and kept for the pass, then dropped: before, waitsOn, threadOpen, threadResolved, teamOnly and itemOf each ran tens of thousands of times over the same few hundred threads. Outside a pass (a click, a
 // tab switch) every function is as it was. A time passed in (now) is the pass's: within one redraw it moves by milliseconds, and nothing here turns on that.
 let pass=null;
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[],agentPrs:[],approvals:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],readings:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[],agentPrs:[],approvals:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -2637,41 +2640,80 @@ function sinceTag(i,k){const e=phaseStart(i,k);if(!e)return "";const who=LANE_RO
 const shipRunning=i=>{const L=liveCard(i.id)||{};return L.onMain===true&&(L.ci==="running"||L.ci==="queued")};
 // #C1343: one phase tile of a card, as the card's row draws it, and the facts it reads (tileCtx), so the group row can ask the same function for each member's tile and
 // not re-derive them. cardTile returns {pre, html}: pre is the Gated/Queued wait boxes before the tile, html the tile itself ("" for a skipped Test, skipTest true).
+// #C1382 (one-reading-module step 3, card rows): a card row draws the card's reading and nothing else of the probe's evidence. The Worker serves it as the `readings` collection
+// (worker/reading.mjs decides it; #C1381); the page reads `state`, `wait`, `with`, `working`, `phase`, `why`, `ask`, `stale` and `staleSince` from it and picks a look. The look of a
+// tile is chosen from `state` and `wait` only (the contract's "Tile looks"). STRIP, tileOf and tileAt are worker/reading.mjs's, copied (the page is one inlined file); a test holds them equal.
+const STRIP=["build","test","language","design","checker","security","ship","pack","install","live"];
+function tileOf(r){if(!r)return "future";if(r.state==="done")return "done";
+  if(r.state==="stuck"||r.state==="working"||r.state==="unknown"||r.state==="queued")return r.state;
+  if(r.working&&r.state==="rework")return "working";if(r.wait==="ask")return "ask";
+  if(r.wait==="pack"||r.wait==="install"||r.wait==="deploy")return "afterwork";return "wait"}
+function tileAt(r,phase){if(r&&r.state==="done")return "done";const here=STRIP.indexOf(r&&r.phase),at=STRIP.indexOf(phase);
+  if(here<0||at<0)return phase===(r&&r.phase)?tileOf(r):"future";return at<here?"done":at===here?tileOf(r):"future"}
+// The reading served for a card; a card the Worker has not served one for reads "unknown" (the plain ring), never a guess from the evidence.
+function readingOf(id){const r=(state.readings||[]).find(x=>x&&x.id===id);return r||{id,state:"unknown",wait:null,with:null,working:false,phase:null,why:"the board has no reading for this card yet"}}
+// The words a wait shows on its tile (the small line holds about 14 characters), and the longer ones for the status pill and the hover.
+function waitTileWord(i,R){const w=R.wait;
+  if(w==="turn")return `Waits<span class="sl"> for</span> ${esc(R.with||"a turn")}`;
+  if(w==="group")return `Waits<span class="sl"> for</span> group`;
+  if(w==="land")return `Queued<span class="sl"> to land</span>`;
+  if(w==="pack")return `Queued<span class="sl"> for pack</span>`;
+  if(w==="install")return typeof R.pack==="string"&&/^pc\d{1,6}$/.test(R.pack)?`${esc(R.pack)}<span class="sl"> · ${esc(OWNER)}</span>`:`${esc(OWNER)}<span class="sl">'s install</span>`;
+  if(w==="deploy")return `${esc(RELEASE_ROLE)}<span class="sl"> ships</span>`;
+  if(w==="ask")return R.ask!=null?`Asked #T${esc(String(R.ask))}`:"Asked";
+  if(w==="hold")return "Held";
+  return ""}
+function waitPillWord(i,R){const w=R.wait;
+  if(w==="turn")return "Waits for "+(R.with||"a turn");if(w==="group")return "Waits for group";if(w==="land")return "Queued to land";if(w==="pack")return "Queued for pack";
+  if(w==="install")return "Waiting for install";if(w==="deploy")return `Queued for ${RELEASE_ROLE}'s ship`;if(w==="ask")return "Waiting on you";if(w==="hold")return "Held";return ""}
 function tileCtx(i){
-  const ns=notStarted(i), idx=ns?phaseIndex(BUILD_PHASE):phaseIndex(i.phase), stuck=i.status==="stuck", queued=ns||i.status==="queued", times=phaseTimes(i.phaseLog,i.status==="done"?i.doneAt:null);
-  const skip=Array.isArray(i.skip)?i.skip:[], waits=waitBoxes(i.phaseLog,i.status==="done"?i.doneAt:null);
+  const R=readingOf(i.id),times=phaseTimes(i.phaseLog,i.status==="done"?i.doneAt:null),skip=Array.isArray(i.skip)?i.skip:[];
   {const gr=groupReadyAt(i);if(gr&&num(times[i.phase])!=null)times[i.phase]=Math.min(times[i.phase],Math.max(0,Date.now()-gr))} // #C1358: the clock starts at the group's READY
-  const ev=new Set((liveCard(i.id)||{}).seen||[]);
-  const paused=i.status==="paused",kwT=i.status!=="done"?knownWait(i):null,onN=agentsOn(i.id),agentOn=onN!==null&&onN.length>0&&!builtWaiting(i);
-  const landed=waitsForInstall(i), gw=groupWaitFor(i);
-  const greenWait=!paused&&cardRepo(i)===BOARD_REPO&&((landed&&(liveCard(i.id)||{}).packed===true)||kwT==="install");
-  const idleWord=i.status==="done"?"":paused?"Paused":landed?(greenWait?"Your install":"Queued for pack"):kwT==="install"?"waits on the owner's install":kwT?waitTile(i,kwT):gw.length?"Waits for "+gwLabel(gw):"";
-  const packShort=!paused&&landed&&!greenWait&&idleWord==="Queued for pack";
-  const relShort=!!idleWord&&kwT==="release"&&idleWord===waitTile(i,kwT)&&cardRepo(i)!==BOARD_REPO;
-  return {ns,idx,stuck,queued,times,skip,waits,ev,paused,kwT,onN,agentOn,landed,greenWait,idleWord,packShort,relShort,gw};
+  return {R,times,skip,paused:i.status==="paused"};
 }
-function cardTile(i,X,k,l){const {ns,idx,stuck,queued,times,skip,waits,ev,paused,kwT,onN,agentOn,landed,greenWait,idleWord,packShort,relShort,gw}=X;
-  if(UNLIT_PHASES.includes(k)&&phaseIndex(k)<0){const L0=liveCard(i.id)||closedPack(i);if(k==="install"&&greenWait&&!(L0&&((Array.isArray(L0.seen)&&L0.seen.includes(LIVE_PHASE))||L0.installed===true)))return {pre:"",html:`<div class="step waits rel" title="${esc(l)}: landed on main, waiting on the owner's install">${esc(l)}${L0&&Number.isInteger(L0.pack)&&L0.pack>0&&L0.pack<1e6?`<small class="rs">pc${L0.pack}<span class="sl"> · ${esc(OWNER)}</span></small>`:`<small class="rs">${esc(OWNER)}<span class="sl">'s install</span></small>`}</div>`};return {pre:"",html:packTile(L0,k,l)}}const n=phaseIndex(k);if(k==="test"&&skip.includes(k)&&n!==idx)return {pre:"",html:"",skipTest:true};const pre=(waits[k]||[]).filter(w=>!(greenWait&&w.open&&w.kind==="gate"&&n===idx)).map(w=>`<div class="wait ${w.kind}${w.open?" live":""}" title="${w.kind==="gate"?"Waiting on a decision":"Waiting: the agent was busy"} before ${esc(l)}">${w.kind==="gate"?"⏸ Gated":"⧗ Queued"}<small>${esc(w.who)}${w.who?" · ":""}${dur(w.ms)}</small></div>`).join("");const np=i.status!=="done"&&!paused&&i.nowPhases&&i.nowPhases[k];const sgn=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filter(e=>e&&e.signed&&e.phase===k).pop();let c="step";if(np&&n!==idx)c+=" now";else if(skip.includes(k)&&n!==idx)c+=" skip";else if(i.status==="done"||n<idx)c+=" done";else if(ev.has(k)&&n>idx)c+=" done seen";else if(n===idx&&greenWait)c+=" done";else if(n===idx&&idleWord)c+=" waits"+((landed||kwT||gw.length)&&!paused?(greenWait?" rel":" proc"):"");else if(n===idx&&i.upNext&&!stuck&&!ns)c+=" upnext";else if(n===idx&&!(waits[k]||[]).some(w=>w.open)){const slow=!stuck&&!heldLine(i)&&overUsual(i,k,times[k]),sk=stuck||(slow&&onN!==null&&onN.length===0);c+=(agentOn||sk||queued?" now":" here")+(sk?" stuck":queued?" queued":"")}
-    // An open wait box in front of this phase already says what holds it; the phase itself stays plain until work starts.
-    // A phase nobody has started says "up next" instead of pulsing as if someone were on it.
-    const t=(n===idx&&idleWord&&!greenWait)?(relShort?`<small class="rs">${esc(RELEASE_ROLE)}<span class="sl"> ships</span></small>`:packShort?`<small class="rs">Queued<span class="sl"> for pack</span></small>`:gw.length?`<small class="rs">Waits<span class="sl"> for</span> ${esc(gwLabel(gw))}</small>`:`<small>${esc(idleWord)}</small>`):(n===idx&&i.stepLogBehind&&i.status!=="done")?`<small class="behind">step log behind</small>`:(ns&&n===idx)?(i.noWork?`<small class="nowork">start logged ${hhmm(i.noWork)}, no work seen</small>`:`<small>${esc(queueLabel(i))}</small>`):(STORE&&i.noWork&&n===idx&&i.status!=="done")?`<small class="nowork">building, nothing pushed yet</small>`:(n===idx&&i.upNext&&!stuck&&i.status!=="done")?`<small>up next</small>`:(np&&n!==idx)?`<small>${esc(np.join(", "))}${times[k]?" · "+dur(times[k]):""}</small>`:(n===idx&&i.status!=="done"&&i.who)?`<small>${esc(i.who)}${times[k]?" · "+dur(times[k]):""}</small>`:times[k]?`<small>${dur(times[k])}</small>`:sgn&&num(sgn.end)!=null?`<small class="seen" title="The sign-off note on the commit; no step was logged">signed ${hhmm(sgn.end)}</small>`:skip.includes(k)?"<small>not needed</small>":ev.has(k)&&n!==idx?'<small class="seen">in the repo</small>':(i.status==="done"||n<idx)&&k!==LIVE_PHASE?'<small class="norec">no record</small>':"<small>&nbsp;</small>";// While Release ships: an estimate from past ships (tests ~7 min, then deploy, ~10 min in all), labelled "est.".
-    // #C1319: a ship in progress blinks blue until live: the card's commit is on main and main's CI run is still going (the probe's reading), so Release is deploying it even when no
-    // agent shows on the card; the tile is never yellow "slow" while it runs. A paused, stuck or held card keeps its own look.
-    const shipRun=k===SHIP_PHASE&&n===idx&&i.status!=="done"&&!paused&&!stuck&&!heldLine(i)&&shipRunning(i);if(shipRun)c="step now";
-    const sm=k==="ship"&&n===idx&&!landed&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
-    // #C915 (c): a held card (waiting_on, blocked or a hold end) has nobody shipping it: the cell says "held", never "slow".
-    // #C1309: a product card's Live tile names the version it shipped in ("v1.226.10"): a done card's own version, or the open card's live version from the probe, only once it is live.
-    const vv=k===LIVE_PHASE&&cardRepo(i)!==BOARD_REPO&&(i.status==="done"||n===idx)?(i.version||(derivedOf(i.id)||{}).version):"",verTag=/^v?\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(String(vv||""))?`<small class="seen">v${esc(String(vv).replace(/^v/,""))}</small>`:"";
-    const sd=sm!=null?(heldLine(i)?`<small data-shipat="1">held ${sm} min</small>`:`<small data-shipat="1">${sm<7?"tests":sm<11||shipRun?"deploying":"slow"} (est.) ${sm}/~10 min</small>`):k==="ship"&&i.shipDetail?`<small>${esc(i.shipDetail)}</small>`:"";const vf=k===LIVE_PHASE&&n===idx&&verifying(i);const tg=!vf&&n===idx&&/ now\b/.test(c)&&isTogether(i.batch,i.phase);return {pre,html:`<div class="${vf?"step verifying":c+(t.includes('class="norec"')?" norec":"")+(tg?" together":"")}" title="${esc(l)}${sd?": "+esc(i.shipDetail):""}${n===idx&&i.status!=="done"&&(onN!==null||paused||kwT||gw.length||!queued)?" | "+esc(onN===null&&!paused&&!kwT&&!gw.length?"evidence: no live reading, so the tile is not shown as active":paused?"evidence: the card's status is paused":gw.length?"evidence: built; the group sends one READY when every card is built, waiting for "+gw.map(cardWord).join(", "):kwT==="install"?"evidence: landed on main, not deployed yet":kwT?waitEvidence(i,kwT):onN.length?"evidence: the probe sees "+onN.join(", ")+" working on it":overUsual(i,k,times[k])?"evidence: no agent on it, and over twice the usual "+dur((medFor(i,state.phaseMed||{})||{})[k]):"evidence: the probe sees no agent on it"):""}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:(verTag||t)}${tg?'<small class="tog">together</small>':""}${n===idx&&i.status!=="done"?slowTag(i,k,times[k],c):""}${sinceTag(i,k)}${sd}</div>`}
+function cardTile(i,X,k,l){const {R,times,skip,paused}=X;
+  const T=paused&&k===R.phase?"unknown":tileAt(R,k),here=k===R.phase&&!/^(done|future)$/.test(T);
+  if(T==="future"){if(skip.includes(k))return {pre:"",html:"",skipTest:k==="test"};return {pre:"",html:UNLIT_PHASES.includes(k)&&phaseIndex(k)<0?unlitTile(l):`<div class="step" title="${esc(l)}">${esc(l)}<small>&nbsp;</small></div>`}}
+  let c="step",t="";
+  if(T==="done")c+=" done";
+  else if(T==="working")c+=" now";
+  else if(T==="stuck")c+=" now stuck";
+  else if(T==="queued")c+=" now queued";
+  else if(T==="unknown")c+=" here";
+  else if(T==="ask")c+=" waits ask";
+  else if(T==="afterwork")c+=R.wait==="install"?" waits rel":" waits proc";
+  else c+=" waits proc";
+  const stale=R.stale===true&&here;
+  if(T==="done")t=times[k]?`<small>${dur(times[k])}</small>`:`<small>&nbsp;</small>`;
+  else if(T==="working")t=`<small>${esc(R.with||i.who||"")}${times[k]?" · "+dur(times[k]):""}</small>`;
+  else if(T==="queued")t=`<small>${esc(queueLabel(i))}</small>`;
+  else if(T==="stuck")t="";
+  else if(T==="unknown")t=`<small>${esc(R.state==="unknown"?"no reading":"")}</small>`;
+  else if(T==="wait"&&R.state==="rework"&&!R.wait)t=`<small class="rs">Sent<span class="sl"> back</span></small>`;
+  else t=`<small class="rs">${waitTileWord(i,R)}</small>`;
+  const slow=here&&(T==="working"||T==="stuck")?slowTag(i,k,times[k],c):"";
+  // #C1319: the ship in progress carries its estimate from past ships, labelled "est.".
+  const sm=k==="ship"&&here&&T==="working"&&num(i.shipAt)!=null?Math.max(0,Math.floor((Date.now()-i.shipAt)/60000)):null;
+  const sd=sm!=null?(heldLine(i)?`<small data-shipat="1">held ${sm} min</small>`:`<small data-shipat="1">${sm<7?"tests":sm<11?"deploying":"slow"} (est.) ${sm}/~10 min</small>`):"";
+  // #C1309: a product card's Live tile names the version it shipped in ("v1.226.10"): a done card's own version, or the open card's live version, only once it is live.
+  const vv=k===LIVE_PHASE&&cardRepo(i)!==BOARD_REPO&&(i.status==="done"||T==="done")?(i.version||(liveCard(i.id)||{}).liveVersion||""):"",verTag=/^v?\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(String(vv||""))?`<small class="seen">v${esc(String(vv).replace(/^v/,""))}</small>`:"";
+  const vf=k===LIVE_PHASE&&here&&verifying(i),tg=!vf&&T==="working"&&isTogether(i.batch,i.phase);
+  const why=here&&R.why?" | "+esc(R.why)+(stale?" (no fresh reading"+(Number.isFinite(R.staleSince)?" since "+hhmm(R.staleSince):"")+")":""):"";
+  return {pre:"",html:`<div class="${vf?"step verifying":c+(tg?" together":"")}" title="${esc(l)}${why}">${esc(l)}${vf?`<small>check ${hhmm(i.checkAt)}</small>`:(verTag||t)}${tg?'<small class="tog">together</small>':""}${slow}${sd}</div>`}
 }
+// The pill beside a card's name: what its reading says in words. Paused, Dropped, a typed Blocked and Done are the card's own status, as before.
+function pillOf(i,R){if(i.status==="stuck")return "Blocked";if(i.status==="paused")return "Paused";if(i.dropped)return "Dropped";if(i.status==="done")return "Done";if(verifying(i))return "Verifying";
+  if(R.state==="done")return "Live, still open";if(R.state==="unknown")return "No reading";if(R.state==="queued")return "Queued";if(R.state==="rework")return "Sent back";if(R.state==="stuck")return "Stuck";
+  if(R.state==="working")return R.phase==="build"||R.phase==="plan"?"Building":"In flight";
+  return waitPillWord(i,R)||"In flight"}
 function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
-  const X=tileCtx(i),{ns,idx,stuck,queued,times,skip,waits,ev,paused,kwT,onN,agentOn,landed,greenWait,idleWord,packShort,relShort}=X;
+  const X=tileCtx(i),{R,skip}=X,ns=R.state==="queued",idx=STRIP.indexOf(R.phase),stuck=i.status==="stuck",queued=ns||i.status==="queued";
   const sMs=i.status!=="done"?stepMs(i):null;
   // #C1300: green is only the owner's install: a board card whose pack is cut (evidence packed) and waits for it, or the install wait the repository explains. A landed board card with no pack yet is the normal process (yellow, "Queued for pack"); a product card is never green.
   // #C1289 (Designer, on #C1288): the product ship's tile word is the role plus " ships"; on a phone the " ships" is hidden (the .sl parts, under 760 px), so "Release" shows whole on the narrow 8-tile track.
   // #C1300 F1 (Designer): the Pack tile already says PACK, and "Queued for pack" is cut to "QUEUED FO…" on the 4-a-row phone track, so " for pack" is a .sl part, hidden under 760 px.
   // #C1020 (Designer on #C969 v2): the Gated and Queued wait boxes count in the phone's --per, so a row with a wait box stays even.
-  const track=trackFor(i),shown=track.filter(([k])=>!(k==="test"&&skip.includes(k)&&phaseIndex(k)!==idx)),per=evenPer(shown.length+shown.reduce((a,[k])=>a+(UNLIT_PHASES.includes(k)&&phaseIndex(k)<0?0:(waits[k]||[]).length),0));
+  const track=trackFor(i),shown=track.filter(([k])=>!(k==="test"&&skip.includes(k)&&STRIP.indexOf(k)!==idx)),per=evenPer(shown.length);
   // #C1308: the owner's install wait is the Install tile's (green stripes, the owner's name on a phone and "'s install" after it on a laptop); Land and Pack stand done.
   const steps=track.map(([k,l])=>{const T=cardTile(i,X,k,l);return T.pre+T.html}).join("");
   const chips=issueChips(i);
@@ -2688,8 +2730,8 @@ function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
   else etaHtml=`<div class="lbl">ETA</div><div class="big">—</div>`;
   // #C732 (page): a paused or parked card ships in no version anyone can name: no version line, as no ETA.
   const vn=i.status!=="done"&&!parkedStatus(i)?versionNote(i):"";if(vn) etaHtml+=`<div class="pv">${vn}</div>`;
-  const st=stalled(i),ow=i.status!=="done"?ownerWait(i):null,gwl=i.status!=="done"?groupWaitFor(i):[]; // #C1358 (Designer): a card waiting for its group reads the wait on its pill, never STALLED
-  const statusTxt=stuck?"Blocked":paused?"Paused":queued?"Queued":i.dropped?"Dropped":i.status==="done"?"Done":verifying(i)?"Verifying":i.byEvidence&&i.phase===LIVE_PHASE?"Live, still open":i.status==="paused"?"Paused":knownWait(i)?knownWaitText(i):gwl.length?"Waits for "+gwLabel(gwl):ow?"Waiting on you":st?"Stalled":(liveBuilding(i.id)||STORE&&i.noWork)&&phaseIndex(i.phase)<=phaseIndex(BUILD_PHASE)?"Building":"In flight";
+  const ow=i.status!=="done"?ownerWait(i):null,paused=X.paused;
+  const statusTxt=pillOf(i,R); // #C1382: the pill says what the reading says; the page's own "no step logged for 30 min" Stalled rule is gone (the stall rule is asked of the reading)
   const owHtml=ow?`<span class="ow-line">waiting on you: <a href="#" class="t-ref" data-tref="${esc(ow.id)}">${esc(threadName(ow.id))}</a></span>`:"";
   // Manager's hand-written line says how old it is, and says so when an agent has logged a step since.
   // An agent the live state shows working on it since then has moved too (#C449).
@@ -2712,11 +2754,11 @@ function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
   const detBody=`${next}${removes}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
   const gp=liveOpen?[]:gaps(i);
   const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip,track):"";
-  return `<div class="i-row${isStaleCard(i)?" read-stale":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now(),w!=="group")}${w==="group"?"":`<strong>${esc(i.name)}</strong>`}${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}${w==="group"?"":`<span class="size">${esc(i.size||"?")}</span>`}<span class="state ${st?"stalled":verifying(i)?"verifying":gwl.length?"queued":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
+  return `<div class="i-row${isStaleCard(i)?" read-stale":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now(),w!=="group")}${w==="group"?"":`<strong>${esc(i.name)}</strong>`}${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}${w==="group"?"":`<span class="size">${esc(i.size||"?")}</span>`}<span class="state ${R.state==="stuck"&&i.status!=="done"?"stalled":verifying(i)?"verifying":i.status==="active"&&R.state==="waiting"&&R.wait&&R.wait!=="turn"?"queued":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track" style="--per:${per}">${steps}</div>`}
-   <div class="i-meta">${queueLine(i)}${stackTag(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${st?`<span class="stall">No step logged for ${dur(st*60000)} (last at ${hhmm(Date.now()-st*60000)})</span>`:""}${unexplainedChip(i)}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div><div class="i-acts">${det}${thread}</div></div>`;
+   <div class="i-meta">${queueLine(i)}${stackTag(i)}${dependsLine(i)}${owHtml}${verifyLine(i)}${unexplainedChip(i)}${wait}${started}<span>${chips}</span>${!STORE&&gp.length?`<span class="gaps" title="Fields Manager should have filled">Manager missed: ${esc(gp.join(" · "))}</span>`:""}${redLines(i)}</div><div class="i-acts">${det}${thread}</div></div>`;
 }
 // #C1114: a step back from a review phase with no FINDINGS note and no reason is held by the store as rework "unexplained": a red chip says so until the
 // reviewer's finding or a reason is on the board (the card stays where it was shown; the store's `unexplainedRework` is true, `unexplainedAt` when it began).
@@ -4001,7 +4043,7 @@ setInterval(()=>{tick();if(!typingText()&&!selectionHeld()&&document.querySelect
     ()=>{$("dot").classList.remove("on");dbState="connection lost, reload";renderStamp()}))};
   // Every collection, and again (each stream closed first) when the data is behind (#C452: catchUp).
   resubscribe=()=>{subs.forEach(u=>{try{if(typeof u==="function")u()}catch(e){}});subs=[];
-    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","threads","plan","timings","ctxRequests","checkRequests","threadPings","pingThreads","agentPrs","approvals"].forEach(sub)};
+    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","readings","threads","plan","timings","ctxRequests","checkRequests","threadPings","pingThreads","agentPrs","approvals"].forEach(sub)};
   resubscribe();
 })();
 // The Studio's state (#C420), apart from the board's data: kept current by the connector's watch, once a minute.

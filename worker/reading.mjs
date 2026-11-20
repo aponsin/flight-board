@@ -114,6 +114,8 @@ export function reading(card, evidence, claims, agents, config, now, ctx = {}) {
     const w = wait ? wait.kind : null, who = withOf(card, e, phase, w, state, claims, config);
     const r = { phase, state, wait: w, with: who, working: false, since: ctx.phaseStart?.get?.(`${card?.id}|${phase}`) ?? (Number.isFinite(e?.readyAt) && REVIEW.includes(phase) ? e.readyAt : null), asOf, why, ...extra };
     if (wait?.ask != null) r.ask = wait.ask;
+    // #C1382: the pack's number as a plain fact ("pc111"), only for a board card at the pack or install wait; null when there is none, so the page never reads the evidence for it.
+    r.pack = kind === "board" && (w === "pack" || w === "install") && Number.isInteger(e?.pack) && e.pack > 0 && e.pack < 1e6 ? `pc${e.pack}` : null;
     if (kind === null || kind) r.kind = kind;
     if (stale) { r.stale = true; if (staleSince !== null) r.staleSince = staleSince; }
     // A stale reading is never working: no badge blinks on an old reading.
