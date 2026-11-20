@@ -1,0 +1,2 @@
+PASS Full board-polish-fourteen line from 856d7a41a4e2869a40d7ab816fe6e2b31beccb15 (#C1371 #C1372), suite 3533/0 +1 skipped, linear. acd41595 fixes my 218a8aba findings: F1 a dated DATA.d line for the #G-number tie-break (thread t-1795197004572); F2 a dispatchRun test, older unplaced group wins, by id without numbers, the owner's placement still wins, so the dispatch nums-dropped mutant is now KILLED; the LOW page comment is updated. 7 of 9 mutants killed; the 2 survivors are equivalent (hasPlace on num rows; a second death already exits non-zero).
+signed-by: Checker 2
