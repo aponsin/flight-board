@@ -1,1 +1,3 @@
 SECURE: #C1372 Checker 2's findings: a dispatch test, a changelog edit, a dated DATA.d line and a page comment. No Worker, probe or page logic changes. Linear on my SECURE 218a8aba. Security 2026-11-20.
+
+SECURE: pack pc118 (replaces pc117, never run; delta on pc116 7ad16710, pin acd41595 == origin/main). deploy 350dd361, tree dea02c79, hooks adf1cb02, board-deploy 7a021248 (unchanged), steps 05488b8e: hashes match. Deploy, tree and hooks differ from pc116 only in pin, pack number and card lists. The steps add one 'replaces pc117' line and drop pc116's Manager-only section. pc116 .done names 7ad16710, and pc117 has no .done. All 16 commits 7ad16710..acd41595 are noted SECURE. No migration, and no new secret, env or binding in worker/. Security 2026-11-20.
