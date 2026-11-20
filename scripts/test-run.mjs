@@ -7,7 +7,7 @@
 // usage: node scripts/test-run.mjs [test files or globs...]   (default: tests/*.test.mjs, which node expands itself)
 import { mkdtempSync, readdirSync, lstatSync, rmSync, existsSync, realpathSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -60,26 +60,71 @@ export function failuresLine(list, file, max = FAILURES_SHOWN) {
   return [`FAILED TESTS (${list.length}):`, ...list.slice(0, max), ...(list.length > max ? [`... and ${list.length - max} more`] : []), `(the whole list: ${file})`].join("\n");
 }
 
-// Runs the suite; returns { status, left, failed, failuresFile }. `run` and the temp parent are parameters so a test can drive it without the whole suite.
-export function runSuite({ args = ["tests/*.test.mjs"], parent = process.env.TMPDIR || tmpdir(), run = spawnSync, cwd = process.cwd(), failuresFile = process.env.SUITE_FAILURES_FILE || join(parent, FAILURES_COPY) } = {}) {
+// #C1371: the test files whose process was killed by a signal: the markers scripts/test-tmp-clean.mjs left in the alive folder (a file that ends by
+// itself, even by process.exit or a failing test, removes its own). A file name appears once however many markers it left.
+export function diedBySignal(aliveDir) {
+  let names = [];
+  try { names = readdirSync(aliveDir); } catch { return []; }
+  const files = new Set();
+  for (const n of names) { try { const f = readFileSync(join(aliveDir, n), "utf8").trim(); if (f) files.add(f); } catch { /* gone */ } }
+  return [...files].sort();
+}
+
+// Runs the suite; returns { status, left, failed, failuresFile, retried }. `run` and the temp parent are parameters so a test can drive it without the whole suite.
+// #C1371: a test file killed by a signal (not one that failed a test, not one that called process.exit) is run once more, alone, with a loud line either way:
+// the second run passing means the run is green with the WARNING printed; it dying or failing again is a failure. Any other failing test fails the run as before.
+export function runSuite({ args = ["tests/*.test.mjs"], parent = process.env.TMPDIR || tmpdir(), run = spawnSync, cwd = process.cwd(), failuresFile = process.env.SUITE_FAILURES_FILE || join(parent, FAILURES_COPY), warn = (line) => console.error(line) } = {}) {
   const root = mkdtempSync(join(parent, "suite-"));
+  const alive = mkdtempSync(join(parent, "suite-alive-"));
   let status = 1;
   try {
     // NODE_OPTIONS, not a flag, so the preload also reaches the node processes a test starts (scripts/board-release.mjs leaves its snapshot folder
     // when it ends with process.exit inside its try, and it is owner-pinned, so it is cleaned from outside).
     const NODE_OPTIONS = [process.env.NODE_OPTIONS, `--import=${PRELOAD}`].filter(Boolean).join(" ");
-    const list = join(root, FAILURES_NAME);
-    const r = run(process.execPath, ["--test", "--test-reporter=spec", "--test-reporter-destination=stdout", `--test-reporter=${REPORTER}`, `--test-reporter-destination=${list}`, ...args], { cwd, env: { ...process.env, TMPDIR: root, NODE_OPTIONS }, stdio: "inherit" });
-    status = typeof r.status === "number" ? r.status : 1;
-    let text = "";
-    try { text = readFileSync(list, "utf8"); } catch { /* no failure was reported */ }
-    const failed = failuresOf(text);
-    try { rmSync(list, { force: true }); } catch { /* the leftovers check will name it */ }
+    // One run of node --test over `files`: its status, its failing-test lines, and the files a signal killed.
+    const attempt = (files, name) => {
+      const list = join(root, name), dir = mkdtempSync(join(alive, "run-"));
+      const r = run(process.execPath, ["--test", "--test-reporter=spec", "--test-reporter-destination=stdout", `--test-reporter=${REPORTER}`, `--test-reporter-destination=${list}`, ...files], { cwd, env: { ...process.env, TMPDIR: root, NODE_OPTIONS, SUITE_ALIVE_DIR: dir }, stdio: "inherit" });
+      let text = "";
+      try { text = readFileSync(list, "utf8"); } catch { /* no failure was reported */ }
+      try { rmSync(list, { force: true }); } catch { /* the leftovers check will name it */ }
+      return { status: typeof r.status === "number" ? r.status : 1, failed: failuresOf(text), killed: diedBySignal(dir) };
+    };
+    const first = attempt(args, FAILURES_NAME);
+    status = first.status;
+    let failed = first.failed;
+    const retried = [];
+    if (status !== 0 && first.killed.length) {
+      // Paths are compared as real paths: the failing-test lines hold the file relative to the reporter's cwd (already a real path), the markers what
+      // node was given (/var and /private/var on a Mac are the same folder).
+      const real = (p) => { try { return realpathSync(p); } catch { return p; } };
+      const base = real(cwd);
+      const rels = new Map(first.killed.map((f) => [f, relative(base, real(f)) || f]));
+      const fileOf = (l) => { const m = /^FAILED (.*?): /.exec(l); return m ? real(resolve(base, m[1])) : ""; };
+      const killedReal = new Set(first.killed.map(real));
+      const others = failed.filter((l) => !killedReal.has(fileOf(l)));
+      const again = [];
+      for (const f of first.killed) {
+        const rel = rels.get(f);
+        warn(`TEST FILE KILLED BY A SIGNAL: ${rel} died without reporting a result (not a failing test); running it once more, alone.`);
+        const second = attempt([f], "failures-again.txt");
+        const bad = second.status !== 0 || second.killed.length > 0;
+        retried.push({ file: rel, ok: !bad });
+        if (!bad) { warn(`WARNING: ${rel} passed on its second run after a signal killed it; this run counts as green. Look for a crash report: ls -t ~/Library/Logs/DiagnosticReports/node-*.ips | head -3`); continue; }
+        if (second.killed.length) again.push(`FAILED ${rel}: killed by a signal on both runs`);
+        else if (second.failed.length) again.push(...second.failed);
+        else again.push(`FAILED ${rel}: failed on its second run`);
+      }
+      failed = [...others, ...again];
+      // Green only when every failing line was a killed file's and each of those files then passed; a failure with no line listed stays a failure.
+      if (!others.length && !again.length && first.failed.length) status = 0;
+    }
     try { if (failed.length) writeFileSync(failuresFile, `${failed.join("\n")}\n`); else rmSync(failuresFile, { force: true }); } catch { /* the lines are printed anyway */ }
     const left = leftovers(root);
-    return { status, left, root, failed, failuresFile };
+    return { status, left, root, failed, failuresFile, retried };
   } finally {
     rmSync(root, { recursive: true, force: true });
+    rmSync(alive, { recursive: true, force: true });
   }
 }
 

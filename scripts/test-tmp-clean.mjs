@@ -7,6 +7,18 @@ import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { dirname, resolve } from "node:path";
 
+// #C1371: a test file's process leaves a marker (its path) in SUITE_ALIVE_DIR when it starts and removes it when it ends by itself, by process.exit or
+// by an uncaught error; a process killed by a signal (the node 24.21.0 V8 SIGSEGV under load, #C1370) runs no exit handler, so its marker stays and
+// scripts/test-run.mjs knows that file died by a signal and not by a failing test. Only a process node:test started for a *.test.mjs file writes one.
+const entry = (() => { try { return fs.realpathSync(process.argv[1]); } catch { return ""; } })();
+if (process.env.SUITE_ALIVE_DIR && process.env.NODE_TEST_CONTEXT && /\.test\.mjs$/.test(entry)) {
+  const mark = `${process.env.SUITE_ALIVE_DIR}/${process.pid}`;
+  try {
+    fs.writeFileSync(mark, entry);
+    process.on("exit", () => { try { fs.rmSync(mark, { force: true }); } catch { /* the marker stays: the file is retried once, which costs only time */ } });
+  } catch { /* no marker: a signal death of this file is then a plain failure, as before */ }
+}
+
 export const made = new Set();
 const root = process.env.TMPDIR ? resolve(process.env.TMPDIR) : null;
 const keep = (path) => {
