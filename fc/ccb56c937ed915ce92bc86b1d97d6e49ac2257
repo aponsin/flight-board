@@ -1,0 +1,2 @@
+PASS Full #C1296, line from c6f31fce4f257caa6b76b2540a054f42a3a6c15b: F1 and F2 fixed in a test-only commit on 6f639578. The F1 mutant (heldQueued line dropped from off()) now fails 'an arrow does not cross from a free card to one held by a dependency'; the F2 mutant (order update skipped) now fails the stubbed-fetch moved:true and moved:false test. npm test at the group head 197d39d4: 3322 pass, 0 fail. The rest of the review on ad809711 holds: railOrder uses sortQueue's keys, /api/queue-move answers {moved, order}, repoBadge esc()s and says group.
+signed-by: Checker 2
