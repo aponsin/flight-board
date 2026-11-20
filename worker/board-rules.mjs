@@ -441,11 +441,23 @@ export function groupMoveRefusal(b, who) {
 }
 // One rule for the store, the dispatch and the page: a placed group by its place, a group nobody has placed (a new one) after every placed group, a
 // card in no group after all groups. `order` is a list of { batch, pos } (or a Map batch -> pos). Two groups of one rank compare by their id.
-export const GROUP_NEW = 1e6, GROUP_NONE = 1e9;
+// #C1372: a group nobody has placed ranks by its #G number (minted when the group is made, so the newest is last), not by its id: "board-polish-fourteen" is before
+// "board-polish-thirteen" by letters and sat above it. The number rides in the same list, a row { batch, num } with no pos (orderListOf builds it); a group with no
+// number known ranks after the numbered ones, by id as before. Nothing is written to the order: no row exists until the owner places a group.
+export const GROUP_NEW = 1e6, GROUP_NONE = 1e9, GROUP_NUM_NONE = 999_999;
 export function groupRank(batch, order) {
   if (typeof batch !== "string" || !batch) return GROUP_NONE;
-  const pos = order instanceof Map ? order.get(batch) : (Array.isArray(order) ? order.find((o) => o && o.batch === batch)?.pos : undefined);
-  return Number.isInteger(pos) && pos >= 1 ? pos : GROUP_NEW;
+  const row = order instanceof Map ? null : (Array.isArray(order) ? order.find((o) => o && o.batch === batch && (Number.isInteger(o.pos) || Number.isInteger(o.num))) : null);
+  const pos = order instanceof Map ? order.get(batch) : row?.pos;
+  if (Number.isInteger(pos) && pos >= 1) return pos;
+  return GROUP_NEW + (Number.isInteger(row?.num) && row.num >= 1 && row.num < GROUP_NUM_NONE ? row.num : GROUP_NUM_NONE);
+}
+// The order list the rules read: the owner's placed rows { batch, pos } and, for every named group nobody placed, { batch, num } (names: { batch, num } rows, the store's groups).
+export function orderListOf(placed, names) {
+  const rows = (Array.isArray(placed) ? placed : []).filter((r) => r && typeof r.batch === "string" && Number.isInteger(r.pos)).map((r) => ({ batch: r.batch, pos: r.pos }));
+  const have = new Set(rows.map((r) => r.batch));
+  for (const g of Array.isArray(names) ? names : []) if (g && typeof g.batch === "string" && Number.isInteger(g.num) && !have.has(g.batch)) { have.add(g.batch); rows.push({ batch: g.batch, num: g.num }); }
+  return rows;
 }
 // The id tie-break reads digits as numbers, so g2-... comes before g10-... (a plain string compare would put g10 first).
 export const groupIdCompare = (a, b) => String(a || "").localeCompare(String(b || ""), "en", { numeric: true }) || (String(a || "") < String(b || "") ? -1 : String(a || "") > String(b || "") ? 1 : 0);
@@ -458,7 +470,7 @@ export function groupCompare(a, b, order) {
 export const SLOT_PREFIX = "c:";
 export const slotKeyOf = (id) => `${SLOT_PREFIX}${id}`;
 export const SLOT_SHAPE = /^c:[a-z0-9][a-z0-9-]{0,63}$/;
-export const hasPlace = (key, order) => (order instanceof Map ? order.has(key) : Array.isArray(order) && order.some((o) => o && o.batch === key));
+export const hasPlace = (key, order) => (order instanceof Map ? order.has(key) : Array.isArray(order) && order.some((o) => o && o.batch === key && Number.isInteger(o.pos)));
 // c is { group, id } (the plain card of the rule). Returns the key groupRank reads: the group, else the card's own slot when it has one, else "".
 export const slotOf = (c, order) => (typeof c?.group === "string" && c.group ? c.group : typeof c?.id === "string" && hasPlace(slotKeyOf(c.id), order) ? slotKeyOf(c.id) : "");
 

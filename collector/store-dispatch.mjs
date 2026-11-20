@@ -11,7 +11,7 @@ import { DISPATCH_FILE, DISPATCH_STATE_FILE, dispatchItems } from "../gate/reset
 import { sessionWeek } from "./week-usage.mjs";
 import { mtDate, mtHour } from "../worker/team-time.mjs";
 import { heldFor } from "../worker/held-by.mjs"; // #C1164: the one reading of waiting_on
-import { agentRank, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, stackKeyOf, stackOnFor, stackSatisfies, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
+import { agentRank, orderListOf, startedGroupSet, openGroupWithheld, startedGroupMembers, groupStartedByOther, ownerTurn, isHeld, dependsNotLive, isRework, stackKeyOf, stackOnFor, stackSatisfies, STALL_WAKE_AFTER_MS } from "../worker/board-rules.mjs"; // #C1053: the one order of an agent's work (rework, started group, the owner's group order, queue_pos), shared with the stall line and the queue move
 
 // The agents' reading (evidence.agents) is written by the evidence job every minute; older than this it says nothing about who is idle.
 export const AGENTS_FRESH_MS = 5 * 60e3;
@@ -178,7 +178,8 @@ export function stackQueueFile(view, now) {
     if (cards.length >= STACK_QUEUE_MAX) break;
   }
   // #C1103: the owner's order of the groups, { batch, pos }, as the store holds it (a group nobody placed is not in the list).
-  const groups = (Array.isArray(view?.groupOrder) ? view.groupOrder : []).filter((g) => g && typeof g.batch === "string" && /^[A-Za-z0-9._\/-]{1,100}$/.test(g.batch) && Number.isInteger(g.pos)).map((g) => ({ batch: g.batch, pos: g.pos })).slice(0, 100);
+  // #C1372: a group nobody placed rides as { batch, num } (its #G number), so the pre-push check ranks a new group after an older one as the dispatch does.
+  const groups = orderListOf(view?.groupOrder, view?.groupNames).filter((g) => /^[A-Za-z0-9._\/-]{1,100}$/.test(g.batch)).slice(0, 100);
   return { at: now, cards, groups };
 }
 
@@ -346,7 +347,7 @@ export function dispatchInput(view, now, { lead = "Manager", ceiling = QUOTA_CEI
   // The same order as the store's (worker/board-rules.mjs queueRank; a held card was skipped above): at one place a card the owner placed comes
   // before one an agent placed (Checker F1 on ac3d31b), then the card's number.
   // #C1053: first the owner's order of the groups (a card in no group after all of them, a group nobody has placed after the placed ones), then as before.
-  const groupOrder = (Array.isArray(view?.groupOrder) ? view.groupOrder : []).filter((g) => g && typeof g.batch === "string" && Number.isInteger(g.pos));
+  const groupOrder = orderListOf(view?.groupOrder, view?.groupNames);
   // The ONE order of an agent's work (worker/board-rules.mjs agentRank, shared with the stall line and the owner's queue move): its rework first, then its
   // cards in a started group (groups are worked whole), then the owner's next group, then queue_pos as before.
   const queueOrder = (x, y) => agentRank({ rework: x.rework, groupStarted: x.groupStarted, group: x.group, queue_pos: x.queuePos, owner: x.ownerPlaced, num: x.num, id: x.id }, { rework: y.rework, groupStarted: y.groupStarted, group: y.group, queue_pos: y.queuePos, owner: y.ownerPlaced, num: y.num, id: y.id }, groupOrder);

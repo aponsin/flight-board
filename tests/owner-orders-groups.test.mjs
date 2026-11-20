@@ -294,6 +294,17 @@ test("groups nobody has placed go by id with digits as numbers on the page too: 
   assert.deepEqual([...b.groupList(b.state.initiatives).map((x) => x.group)], ["g2-early", "g10-late"]);
 });
 
+// #C1372: a group nobody placed goes by its #G number on the page too (the newest last), whatever its id says by letters; a placed group still goes by its place.
+test("groups nobody has placed go by their #G number on the page: board-polish-fourteen is after board-polish-thirteen though the letters say otherwise", () => {
+  const raw = [card("a", 1, { batch: "board-polish-fourteen" }), card("b", 2, { batch: "board-polish-thirteen" })];
+  const b = board(raw, null);
+  b.state.meta.push({ id: "groupNames", rows: [{ batch: "board-polish-thirteen", num: 112, name: null }, { batch: "board-polish-fourteen", num: 113, name: null }] });
+  assert.deepEqual([...b.groupList(b.state.initiatives).map((x) => x.group)], ["board-polish-thirteen", "board-polish-fourteen"]);
+  const placed = board(raw, ["board-polish-fourteen"]);
+  placed.state.meta.push({ id: "groupNames", rows: [{ batch: "board-polish-thirteen", num: 112, name: null }, { batch: "board-polish-fourteen", num: 113, name: null }] });
+  assert.deepEqual([...placed.groupList(placed.state.initiatives).map((x) => x.group)], ["board-polish-fourteen", "board-polish-thirteen"], "the owner's placement still wins");
+});
+
 test("each group row has real up and down buttons with names, the top one cannot go up and the last cannot go down; none off the store page", () => {
   const raw = [card("a", 1, { batch: "g1-a" }), card("b", 2, { batch: "g2-b" })];
   const b = board(raw, ["g1-a", "g2-b"]);

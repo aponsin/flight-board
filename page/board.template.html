@@ -2801,7 +2801,9 @@ function groupLabel(b){const m=GROUP_ID.exec(String(b||"")),g=groupNameOf(b);
 // #C1053: the groups go top to bottom in the order they go live (the owner's order, meta/groupOrder: a placed group by its place, a new one after the
 // placed ones by its id), and every card in no group comes after all the groups. The same rule as worker/board-rules.mjs groupCompare.
 function groupOrderRows(){const m=(state.meta||[]).find(d=>d&&d.id==="groupOrder");return m&&Array.isArray(m.rows)?m.rows:[]}
-function groupRankOf(b,rows){const r=rows.find(x=>x&&x.batch===b);return Number.isInteger(r&&r.pos)&&r.pos>=1?r.pos:1e6}
+// #C1372: a group nobody placed ranks by its #G number (the newest last), as worker/board-rules.mjs groupRank: "fourteen" is before "thirteen" by letters and sat above it.
+function groupRankOf(b,rows){const r=rows.find(x=>x&&x.batch===b);if(Number.isInteger(r&&r.pos)&&r.pos>=1)return r.pos;
+  const g=groupNameRows().find(x=>x&&x.batch===b);return 1e6+(g&&Number.isInteger(g.num)&&g.num>=1&&g.num<999999?g.num:999999)}
 function groupCmp(a,b,rows){return groupRankOf(a,rows)-groupRankOf(b,rows)||String(a).localeCompare(String(b),"en",{numeric:true})||(a<b?-1:a>b?1:0)}
 // #C1299: ONE order list: the groups and the single cards the owner has placed (a row "c:<card id>" in the order) go in it by place, so a single card sits between groups;
 // a single card with no place of its own stays after everything, as before (the same rule as worker/board-rules.mjs slotOf).

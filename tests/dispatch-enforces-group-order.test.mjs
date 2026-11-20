@@ -73,6 +73,22 @@ test("the queue file carries the number, whose turn it is and the owner's order,
   assert.deepEqual(outOfOrderPushes(`refs/heads/build/high abc refs/heads/build/high ${"0".repeat(40)}`, git("high"), q, T + MIN), [], "the higher card starts freely");
 });
 
+// #C1372: two groups nobody placed rank by their #G numbers in the queue file too, so the first-push check agrees with the dispatch and the page: the card of
+// board-polish-thirteen (made first) may start, the card of board-polish-fourteen (made after, "fourteen" before "thirteen" by letters) waits for it.
+test("the queue file carries an unplaced group's #G number, and the first push reads it: the newer group waits for the older whatever the letters say", () => {
+  const view = {
+    cards: [{ id: "old", num: 1, owner_role: "Boardsmith", batch: "board-polish-thirteen", repo: "flight-board" }, { id: "new", num: 2, owner_role: "Boardsmith", batch: "board-polish-fourteen", repo: "flight-board" }],
+    evidence: {}, groupOrder: [], groupNames: [{ batch: "board-polish-thirteen", num: 112, name: null }, { batch: "board-polish-fourteen", num: 113, name: null }],
+  };
+  const q = stackQueueFile(view, T);
+  assert.deepEqual(q.groups, [{ batch: "board-polish-thirteen", num: 112 }, { batch: "board-polish-fourteen", num: 113 }]);
+  const git = (id) => () => `${id}\n`;
+  const bad = outOfOrderPushes(`refs/heads/build/new abc refs/heads/build/new ${"0".repeat(40)}`, git("new"), q, T + MIN);
+  assert.equal(bad.length, 1);
+  assert.equal(bad[0].block.id, "old");
+  assert.deepEqual(outOfOrderPushes(`refs/heads/build/old abc refs/heads/build/old ${"0".repeat(40)}`, git("old"), q, T + MIN), []);
+});
+
 // Checker 2's M2: the pre-push check and the store's stall line read "held" the same way (orderCards: paused, waiting_on or a blocked_reason, a dependency not live).
 test("a higher card held by waiting_on, a dependency not live, a pause or a block does not block the push, as in the store; an unheld one does", () => {
   const first = `refs/heads/build/low abc refs/heads/build/low ${"0".repeat(40)}`;
