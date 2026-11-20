@@ -47,6 +47,16 @@ test("must still allow: a Manager decision, and a post with screenshots, on a ca
   assert.equal(empty.structuredContent.refused.rule, "agent-note-on-card", "an empty screenshots list carries nothing");
 });
 
+// #C1328 (Checker 2's LOW on 7fef3cb7): only kind "decision" is meant for the owner. Any other kind a post carries is still an agent's note: `args?.kind` in place of `=== "decision"` let it through.
+test("must still refuse: a post with any kind but decision (note, Decision, an empty kind) on a card thread the owner never wrote in", async () => {
+  const { manager, count } = await make();
+  for (const kind of ["note", "Decision", "decision ", "status", ""]) {
+    const r = await manager({ thread_id: "card-a", body: "a note for Admin", kind });
+    assert.equal(r.structuredContent?.refused?.rule, "agent-note-on-card", `kind ${JSON.stringify(kind)}: ${JSON.stringify(r.structuredContent)}`);
+  }
+  assert.equal(await count("card-a"), 0, "nothing written");
+});
+
 test("a post on a card thread the owner never wrote in is refused on Manager's door, logged, nothing written, and the hint names send_message", async () => {
   const { env, manager, count } = await make();
   const r = await manager({ thread_id: "card-a", body: "a note for Admin" });
