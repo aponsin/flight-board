@@ -1,0 +1,2 @@
+PASS Full #C1325 #C1327 #C1328 #C1329 #C1332 #C1331, line from dc4c640ff5fbc9879ede0eac5dd174983568e7db: linear re-cut of 52291235 (no merges, tree identical, the same 10 patches), replacing the FINDINGS on ef6ec09d. Suite 3449/0 on that tree. 31 mutants on ef6ec09d, 30 killed. LOW, carried to board-polish-eight: cleanLandedFolders' onMain wiring is untested.
+signed-by: Checker 2
