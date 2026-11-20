@@ -168,7 +168,9 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Checker 2's F on #C1318: `git worktree remove` deletes a folder's gitignored files without a word (a *token* file, a local config), so a folder that holds an ignored file
 // is kept, naming the first one: `ignored(path)` returns the folder's ignored entries (`git status --ignored`), and only dependency folders (node_modules) are let go.
 export const keepsIgnored = (paths) => (Array.isArray(paths) ? paths : []).filter((p) => typeof p === "string" && p && !/^node_modules\/?$/.test(p) && !p.startsWith("node_modules/"));
-export function landedFolders({ landed, worktrees, onMain, remove, repo, cwd = null, log = () => {}, ignored = () => [] }) {
+export function landedFolders({ landed, worktrees, onMain, remove, repo, cwd = null, log = () => {}, ignored }) {
+  // #C1328 (Checker 2's LOW on 7fef3cb7): no default. A default of "no ignored files" failed open: a caller that forgot the hook-up would have let `git worktree remove` delete token files.
+  if (typeof ignored !== "function") throw new TypeError("landedFolders needs ignored(path): the folder's ignored entries");
   const out = { removed: [], kept: [] };
   const cards = new Set((landed ?? []).flatMap((l) => (Array.isArray(l.cards) ? l.cards : [])).filter((c) => CARD_ID.test(String(c))));
   const branches = new Set((landed ?? []).map((l) => l.branch).filter(Boolean));
@@ -185,6 +187,21 @@ export function landedFolders({ landed, worktrees, onMain, remove, repo, cwd = n
   }
   return out;
 }
+// #C1328: the job's own wiring of landedFolders, exported so a test runs the real hook-up (the fetch, the ancestor check, `git worktree remove` and the ignored-entries read) on a real repository.
+// `git(args)` and `quiet(args)` run git in the repository; `mainRef` is the ref a folder's work must be on. Never throws: the land is already done.
+export function cleanLandedFolders({ landed, repo, cwd, log, git, quiet, mainRef = "origin/main", readIgnored = gitIgnoredEntries }) {
+  try {
+    quiet(["fetch", "-q", "origin"]);
+    return landedFolders({
+      landed, worktrees: parseWorktrees(quiet(["worktree", "list", "--porcelain"])), repo, cwd, log,
+      onMain: (sha) => quiet(["merge-base", "--is-ancestor", sha, mainRef]) !== null,
+      remove: (p) => git(["worktree", "remove", p]),
+      ignored: readIgnored,
+    });
+  } catch (e) { log(`folders not cleaned: ${String(e?.message ?? e).split("\n")[0].slice(0, 120)}`); return null; }
+}
+// The folder's ignored entries: `git status --ignored --porcelain` marks them "!! ".
+export const gitIgnoredEntries = (p) => execFileSync("git", ["status", "--ignored", "--porcelain"], { cwd: p, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024 }).split("\n").filter((l) => l.startsWith("!! ")).map((l) => l.slice(3));
 
 // #C1140 (Security's F1 on 768c18d0): where this job may run from. Once the LaunchAgent starts the owner's pinned install (the pack's land step), the job's own folder is
 // ~/.flight-board/install/<40 hex>/scripts, not the folder the `current` link names, so the old "must be the linked copy" check would have stopped every run: NOT RUN, nothing landed.
@@ -267,15 +284,5 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   console.log(`land: ${report.landed.length} landed${dry ? " (dry run)" : ""}, ${report.refused.length} refused, ${report.waiting.length} waiting`);
   for (const r of report.refused) console.log(`REFUSED ${r.branch} ${r.sha.slice(0, 12)}: ${r.reasons.join("; ")}`);
   // #C1318: the landed cards' folders, after the report is written; nothing here can fail the land.
-  if (!dry && report.landed.length) {
-    try {
-      quiet(["fetch", "-q", "origin"]);
-      landedFolders({
-        landed: report.landed, worktrees: parseWorktrees(quiet(["worktree", "list", "--porcelain"])), repo, cwd: process.cwd(), log: (s) => console.log(`land: ${s}`),
-        onMain: (sha) => quiet(["merge-base", "--is-ancestor", sha, "origin/main"]) !== null,
-        remove: (p) => git(["worktree", "remove", p]),
-        ignored: (p) => execFileSync("git", ["status", "--ignored", "--porcelain"], { cwd: p, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024 }).split("\n").filter((l) => l.startsWith("!! ")).map((l) => l.slice(3)),
-      });
-    } catch (e) { console.log(`land: folders not cleaned: ${String(e?.message ?? e).split("\n")[0].slice(0, 120)}`); }
-  }
+  if (!dry && report.landed.length) cleanLandedFolders({ landed: report.landed, repo, cwd: process.cwd(), log: (s) => console.log(`land: ${s}`), git, quiet });
 }

@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { landedFolders, parseWorktrees } from "../scripts/board-land.mjs";
+import { cleanLandedFolders, landedFolders, parseWorktrees } from "../scripts/board-land.mjs";
 
 const run = (cwd, ...a) => execFileSync("git", a, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 function fixture() {
@@ -75,6 +75,40 @@ test("a folder holding an ignored file is kept and says which, while one with on
   assert.match(lines.join("\n"), /folder kept .*ignored file git would delete without asking \(my-token\.txt\)/);
   assert.equal(out.kept.length, 1);
   assert.equal(go(fx, [], {}).out.removed.length, 0);
+});
+
+// #C1328 (Checker 2's LOW on 7fef3cb7): landedFolders had a default `ignored = () => []`, which fails open (a caller without the hook-up deletes token files), and the job's own
+// wiring of it was never run by a test (the tests above pass their own copy of the read). No default now; the wiring is cleanLandedFolders, run here on a real repository.
+test("landedFolders without ignored(path) throws and removes nothing (it does not fail open)", () => {
+  const fx = fixture();
+  writeFileSync(join(fx.repo, ".gitignore"), "*token*\n");
+  run(fx.repo, "add", ".gitignore"); run(fx.repo, "commit", "-q", "-m", "ignore");
+  const dir = folder(fx, "build/card-nine");
+  writeFileSync(join(dir, "my-token.txt"), "secret");
+  let removed = 0;
+  assert.throws(() => landedFolders({ landed: [{ branch: "build/card-nine", cards: ["card-nine"] }], worktrees: parseWorktrees(run(fx.repo, "worktree", "list", "--porcelain")), repo: fx.repo, onMain: () => true, remove: () => { removed++; } }), /needs ignored/);
+  assert.equal(removed, 0);
+  assert.equal(existsSync(join(dir, "my-token.txt")), true);
+});
+
+test("the job's own wiring (cleanLandedFolders) keeps a folder holding a token file and removes a clean one, with the real ignored read", () => {
+  const fx = fixture();
+  writeFileSync(join(fx.repo, ".gitignore"), "*token*\nnode_modules/\n");
+  run(fx.repo, "add", ".gitignore"); run(fx.repo, "commit", "-q", "-m", "ignore");
+  const keeper = folder(fx, "build/card-ten");
+  writeFileSync(join(keeper, "my-token.txt"), "secret");
+  const clean = folder(fx, "build/card-eleven");
+  const lines = [];
+  const out = cleanLandedFolders({
+    landed: [{ branch: "build/card-ten", cards: ["card-ten"] }, { branch: "build/card-eleven", cards: ["card-eleven"] }], repo: fx.repo, cwd: null, log: (s) => lines.push(s), mainRef: "main",
+    git: (a) => run(fx.repo, ...a), quiet: (a) => { try { return run(fx.repo, ...a); } catch { return null; } },
+  });
+  assert.equal(existsSync(keeper), true, "the token file's folder stays");
+  assert.equal(existsSync(join(keeper, "my-token.txt")), true);
+  assert.equal(existsSync(clean), false, "the clean folder goes");
+  assert.deepEqual(out.removed, [clean]);
+  assert.match(lines.join("\n"), /ignored file git would delete without asking \(my-token\.txt\)/);
+  assert.doesNotMatch(lines.join("\n"), /folders not cleaned/);
 });
 
 test("a folder whose work is not on main is kept untouched", () => {
