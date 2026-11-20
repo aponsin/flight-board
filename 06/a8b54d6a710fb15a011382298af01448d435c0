@@ -1,0 +1,7 @@
+SECURE
+
+#C1293: groupRow adds repoBadge(cards[0]) after the Group tag, the badge card rows already draw. repoBadge inserts cardRepo's value unescaped, but cardRepo only ever returns BOARD_REPO or PLATFORM_REPO (CONFIG.repos, the owner's own config, default Platform / Flight-Board), never card data. No data, route, permission, hook or Worker change.
+
+INFO (no action needed): repoBadge could wrap r in esc() so a future cardRepo that returns card text stays safe.
+
+signed-by: Security
