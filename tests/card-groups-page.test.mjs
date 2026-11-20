@@ -60,7 +60,13 @@ test("the board draws one group row with its cards on the rail, each with its st
   assert.match(h, /2 cards/);
   assert.match(h, /class="g-rail"/);
   // #C1311: a card past Build and still open reads as its phase ("Checker", active), not "Built" (green) beside a status that says it is in flight.
-  assert.match(h, /#C977<\/span><strong>Card 977<\/strong><span class="state active">Checker<\/span>/);
+  // #C1314 (the owner: an opened card repeats its title): the top line holds the number, the repo badge, the title, the size and the state; the opened card has no second title line.
+  assert.match(h, /#C977<\/span><span class="c-repo"[^>]*>Platform<\/span> <strong>Card 977<\/strong><span class="size">S<\/span><span class="state active">Checker<\/span>/);
+  assert.equal((h.match(/<strong>Card 977<\/strong>/g) || []).length, 1, "the card's title is drawn once, with its row opened");
+  const opened = h.slice(h.indexOf('data-card="one"'), h.indexOf('data-card="one"') + 600);
+  assert.doesNotMatch(opened, /<strong>|class="size"|class="c-repo"/, "the opened card's own line has no title, size or repo badge");
+  assert.match(opened, /<span class="state active">In flight<\/span>/, "its state stays");
+  assert.match(h, /<div data-card="solo"><div class="i-name">[^]*?<strong>Card 981<\/strong>[^]*?<span class="size">S<\/span>/, "an ungrouped card keeps its one line with the title and size");
   assert.doesNotMatch(h, /<span class="state done">Built<\/span>/, "no open card past Build says Built");
   assert.equal((h.match(/data-pull="(one|two)"/g) || []).length, 2, "a Pull out per grouped card");
   assert.doesNotMatch(h, /data-pull="solo"/);
