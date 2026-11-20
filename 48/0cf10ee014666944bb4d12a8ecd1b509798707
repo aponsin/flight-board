@@ -1,0 +1,1 @@
+SECURE: #C1318 re-cut of 213cf77e; adds keep-on-ignored-file: execFileSync git status --ignored --porcelain, fixed args, no shell, cwd = worktree path from git; read failure keeps the folder (fail-safe); only node_modules let go. Mutation (keepsIgnored -> []): caught. INFO kept: printed path not shell-quoted. Security 2026-11-20.
