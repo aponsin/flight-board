@@ -57,6 +57,7 @@ export const FIXED = {
   "collector/state.mjs:BACKOFF_MIN_MS": "the first wait after a failed gh call (60 s): the shape of the back-off, which doubles to BACKOFF_MAX_MS (collector/state.mjs)",
   "collector/state.mjs:CI_BATCH_LIMIT": "how many CI runs one batched list reads (100): a cost bound on gh, not a time (collector/state.mjs)",
   "collector/state.mjs:REREAD_DONE_MS": "how long after done_at a closed product card that has not read live is read again (14 days, #C1379): a cost bound, about ten git or gh calls a card a run, so one that never reads live is not read forever",
+  "worker/compat-reading.mjs:CLOSED_WINDOW_MS": "how long after it closed a card is still served with its reading (7 days, #C1381, the contract's own window): a size bound on the compat answer, not a tuning",
   "collector/state.mjs:CLOSED_PACK_DAYS": "how far back the done-card pack lookup reads (14 days, with 500 commits): a cost bound on one git log (collector/state.mjs)",
   "collector/state.mjs:MIRROR_STALE_MS": "how old the board export may be for the asks (2 h): the answer gate's own window (collector/state.mjs)",
   "collector/state.mjs:QUIET_LOOKBACK_MS": "how far back the quiet-hours scan walks, minute by minute (48 h): a cost bound on one loop (collector/state.mjs)",
