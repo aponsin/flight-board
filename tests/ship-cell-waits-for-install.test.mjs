@@ -33,6 +33,16 @@ test("a landed card waiting for the install: the Ship cell says 'Queued for your
   assert.equal(/slow \(est\.\)|deploying \(est\.\)|tests \(est\.\)/.test(html), false, "no estimate words");
 });
 
+// Checker 2's F1 on #C1308: once the install is seen (the live reading says installed, or has seen the Live phase) the green Install wait goes away.
+test("a packed, landed card whose live reading is installed, or has seen Live, draws no waiting Install tile", () => {
+  assert.match(draw({}, { packed: true }), /class="step waits rel"/, "control: packed and not installed waits green");
+  for (const [name, extra] of [["installed:true", { installed: true }], ["seen:[live]", { seen: ["live"] }]]) {
+    const html = draw({}, { packed: true, ...extra });
+    assert.equal(/class="step waits rel"/.test(html), false, `${name}: no green Install tile`);
+    assert.equal(/'s install<\/span>/.test(html), false, `${name}: no "'s install" word`);
+  }
+});
+
 test("still shown: a Release step in progress keeps its counter, and no 'Queued for your install'", () => {
   const html = draw({}, { shipping: true });
   assert.match(html, /data-shipat="1"/);
