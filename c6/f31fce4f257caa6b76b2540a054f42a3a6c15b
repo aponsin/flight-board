@@ -1,0 +1,5 @@
+SECURE
+
+#C1294 v2, by diff: c6f31fce on ab4fb97b squashes 290dca8c + e4694e22 (both signed); tree vs e4694e22 differs only in docs (the DATA.md line moved to docs/DATA.d/open-decision-gates-card.md, same text). Page and tests identical to the signed ones.
+
+signed-by: Security
