@@ -2192,7 +2192,8 @@ function packTile(L,k,l){L=L||{};const live=Array.isArray(L.seen)&&L.seen.includ
   if(!lit)return unlitTile(l);return `<div class="step done seen" title="${esc(l)}: ${live?"deployed":k==="pack"?"a deploy pair holds this landing (built, not signed: Security's SAFE is not shown here)":"that pair's deploy ran"}">${esc(l)}<small class="seen">${k==="pack"?"pair built":"installed"}</small></div>`}
 // Tiles per row on the phone (Designer): rows as even as they can be, at most 4 a row, so no row holds one lone tile (9 tiles: 3, 3, 3).
 function evenPer(n){n=Math.max(1,n|0);return Math.ceil(n/Math.ceil(n/4))}
-function repoBadge(i){const r=cardRepo(i);return `<span class="c-repo${r===BOARD_REPO?" fb":""}" title="This card is about the ${r} repository">${r}</span> `}
+// #C1296: the name goes through esc() (Security's INFO on #C1293: safe today, kept safe if cardRepo ever returns card text), and a group row's tooltip says "group" (Checker 2's nit on #C1293).
+function repoBadge(i,what="card"){const r=cardRepo(i);return `<span class="c-repo${r===BOARD_REPO?" fb":""}" title="This ${what} is about the ${esc(r)} repository">${esc(r)}</span> `}
 // A ship's estimate: tests then deploy, about 10 minutes from the release start (the ship tile's own ~10 min).
 const SHIP_MS=10*60e3, MIN_LEFT=5*60e3;
 // The medians of the time each phase took, from the cards that went live (their phase logs, waits left out; a dropped
@@ -2311,6 +2312,10 @@ document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e
   const q=b.dataset.qmove!==undefined,was=b.textContent;b.disabled=true;
   try{const r=await fetch(q?"/api/queue-move":"/api/stack-switch",{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(q?{id:b.dataset.qmove,dir:b.dataset.dir}:{repo:b.dataset.sw,stack:b.dataset.on==="1"})});
     if(!r.ok)throw new Error("refused");
+    // #C1296: the store answers with the queue's new order; the cards take their places at once, so the group's rail and the Crew queue both redraw in it.
+    if(q){let j=null;try{j=await r.json()}catch(_){}
+      if(j&&j.moved&&Array.isArray(j.order))j.order.forEach((id,n)=>{[state.initiatives,state.initRaw].forEach(l=>{const c=(l||[]).find(x=>x&&x.id===id);if(c)c.queuePos=n+1})});
+      try{renderBoard()}catch(_){}}
     try{renderCrew3()}catch(_){}}
   catch(_){b.textContent="Not saved";setTimeout(()=>{b.textContent=was;b.disabled=false},4000)}});
 // What an open card waits on (#C444, initiatives.dependsOn, the lead's): one "waits on #C440, #C441" with a link per
@@ -2723,6 +2728,15 @@ function groupEtas(groups){const out=new Map(),done=[];
     if(eta!=null){const floors=done.filter(d=>d.eta!=null&&d.who.some(w=>f.who.includes(w))).map(d=>d.eta);if(floors.length)eta=Math.max(eta,Math.max(...floors)+MIN_LEFT)}
     out.set(x.group,eta);done.push({eta,who:f.who})}
   return out}
+// #C1296 (the owner: put a card first inside its group): up and down arrows on each queued card of an open group, the same /api/queue-move the Crew queue uses (owner-only, and the store keeps a card inside its group
+// and out of the started ones). The rail lists started cards first, then the queued ones in the owner's order (queuePos), so what the arrows move is what the rail shows. Store page only.
+function railOrder(cards){const lt=(a,b)=>a===b?0:a<b?-1:1,ow=i=>i.queueSetBy==="owner"?0:1;
+  // The same order sortQueue gives a queue (started first, a card held by a dependency after those that can start, then the place, the owner's mark, the age).
+  return cards.map((i,k)=>[i,k]).sort(([a,x],[b,y])=>lt(isQueued(a)?1:0,isQueued(b)?1:0)||lt(heldQueued(a)?1:0,heldQueued(b)?1:0)||lt(qPos(a),qPos(b))||lt(ow(a),ow(b))||lt(num(a.createdAt)??0,num(b.createdAt)??0)||x-y).map(p=>p[0])}
+// An arrow is off at the end of the queued cards and where the next card is held by a dependency and this one is not (or the other way round): the store does not cross that line.
+function cardMoveButtons(i,ord){if(!STORE||!isQueued(i))return "";const q=ord.filter(isQueued),k=q.indexOf(i);if(q.length<2||k<0)return "";const l=Number.isInteger(i.num)?"#C"+i.num:i.id,
+    off=j=>j<0||j>=q.length||heldQueued(q[j])!==heldQueued(i);
+  return `<span class="g-move c-move"><button type="button" class="qm" data-qmove="${esc(i.id)}" data-dir="up" aria-label="Move ${esc(l)} up in its group"${off(k-1)?" disabled":""}>↑</button><button type="button" class="qm" data-qmove="${esc(i.id)}" data-dir="down" aria-label="Move ${esc(l)} down in its group"${off(k+1)?" disabled":""}>↓</button></span>`}
 function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(cards[0]);if(etaOver!==undefined)f.eta=etaOver;
   // A phase every card skips (and none is at) reads as each card's own strip: Test is left out, any other says "not needed".
   const skipAll=k=>cards.every(i=>Array.isArray(i.skip)&&i.skip.includes(k)&&i.phase!==k),shownT=track.filter(([k])=>!(k==="test"&&skipAll(k)));
@@ -2742,9 +2756,9 @@ function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(c
     const pulsing=!sk&&!done&&!q&&n===f.idx&&worked,tg=pulsing&&isTogether(b,f.phase,cards);
     return `<div class="step${n<0?"":sk?" skip":done?" done":q?"":n===f.idx?(worked?" now":" here"):""}${tg?" together":""}" title="${esc(l)}">${esc(l)}<small${tg&&!sk&&!q?' class="tog"':""}>${sk?"not needed":q?"queued":tg?"together":"&nbsp;"}</small></div>`}).join("");
   const eta=f.eta!=null?`<div class="lbl">Live in</div><div class="big" data-eta="${f.eta}">${f.eta>Date.now()?dur(f.eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(f.eta)}</div>`:`<div class="lbl">ETA</div><div class="big">—</div>`;
-  const rail=cards.map(i=>{const [c,w]=railState(i);
-    return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span><strong>${esc(i.name)}</strong>${newPill(newReplies(i.id).length)}<span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
-  return `<div class="i-row g-row" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span>${repoBadge(cards[0])}<strong>${esc(groupLabel(b))}</strong><span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
+  const ord=railOrder(cards),rail=ord.map(i=>{const [c,w]=railState(i);
+    return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span><strong>${esc(i.name)}</strong>${newPill(newReplies(i.id).length)}<span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${cardMoveButtons(i,ord)}${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
+  return `<div class="i-row g-row" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span>${repoBadge(cards[0],"group")}<strong>${esc(groupLabel(b))}</strong><span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
    <div class="eta">${eta}</div>
    <div class="track" style="--per:${evenPer(shownT.length)}">${tiles}</div>
    <div class="i-meta">${f.who.length?`<span>Track <b>${esc(f.who.join(", "))}</b></span>`:""}${f.started!=null?`<span>Started ${dayLabel(f.started)}</span>`:""}</div>
