@@ -1,0 +1,5 @@
+SECURE
+
+#C1302 (page only): notStarted on the store now reads a card queued unless the guard above it sees a head, a branch or probe-seen building; new startedAt() returns the first push, or null on the store (creation time only on the artifact page). Only numbers flow into dayLabel()/dur(); no new value is inserted into the HTML and no esc() call changes. The build start is still recorded. Ran 12/12 at e2cbd0b0 (build-lit-before-first-push, card-groups-page). No Worker, store, route, secret, hook or permission change. Ships as a page publish.
+
+signed-by: Security
