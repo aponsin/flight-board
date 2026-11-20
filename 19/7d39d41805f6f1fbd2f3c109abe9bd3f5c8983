@@ -1,0 +1,2 @@
+PASS Quick #C1297, line from fcccb56c937ed915ce92bc86b1d97d6e49ac2257: a restack of 8cb73a4b (signed PASS Quick); range-diff shows both commits equal and only the base changed. npm test at this head: 3322 pass, 0 fail. Group board-polish is fully signed: #C1292 28472c1e, #C1293 b78db831, #C1294 c6f31fce, #C1296 fcccb56c, #C1297 197d39d4.
+signed-by: Checker 2
