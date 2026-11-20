@@ -1,7 +1,7 @@
 {
- "refactor-step1-store": {
+ "sample-card-a": {
   "card": {
-   "id": "refactor-step1-store",
+   "id": "sample-card-a",
    "num": 719,
    "repo": "flight-board",
    "owner_role": "Boardsmith",
@@ -37,9 +37,9 @@
    "at": 1794465882619
   }
  },
- "board-deploy-rollback": {
+ "sample-card-b": {
   "card": {
-   "id": "board-deploy-rollback",
+   "id": "sample-card-b",
    "num": 928,
    "repo": "flight-board",
    "owner_role": "Boardsmith",
@@ -74,13 +74,13 @@
    "at": 1794437360188
   }
  },
- "pickup-door-session": {
+ "sample-card-c": {
   "card": {
-   "id": "pickup-door-session",
+   "id": "sample-card-c",
    "num": 843,
    "repo": "widgets",
    "owner_role": "Builder",
-   "batch": "product-roll-2",
+   "batch": "sample-group-f",
    "done_at": 1794935498569
   },
   "evidence": {
@@ -113,9 +113,9 @@
    "at": 1794935487723
   }
  },
- "handoff-self-clear": {
+ "sample-card-d": {
   "card": {
-   "id": "handoff-self-clear",
+   "id": "sample-card-d",
    "num": 839,
    "repo": "widgets",
    "owner_role": "Builder",
@@ -153,13 +153,13 @@
    "at": 1794466004237
   }
  },
- "renewal-reminder-30-days": {
+ "sample-card-e": {
   "card": {
-   "id": "renewal-reminder-30-days",
+   "id": "sample-card-e",
    "num": 1071,
    "repo": "widgets",
    "owner_role": "Builder",
-   "batch": "g16-product-follow-ups",
+   "batch": "sample-group-c",
    "done_at": 1794938058748
   },
   "evidence": {
@@ -194,9 +194,9 @@
    "at": 1794938048840
   }
  },
- "idle-stall-counts-done-cards": {
+ "sample-card-f": {
   "card": {
-   "id": "idle-stall-counts-done-cards",
+   "id": "sample-card-f",
    "num": 949,
    "repo": "flight-board",
    "owner_role": "Boardsmith",
@@ -232,9 +232,9 @@
    "at": 1794437360188
   }
  },
- "rc-field-after-clear": {
+ "sample-card-g": {
   "card": {
-   "id": "rc-field-after-clear",
+   "id": "sample-card-g",
    "num": 1128,
    "repo": "flight-board",
    "owner_role": "Boardsmith",
@@ -249,7 +249,7 @@
    "phase": "checker",
    "headSha12": "092d97cc89b8",
    "headSha": "092d97cc89b85bd1c7b4a2cdf571df0b03668489",
-   "headBranch": "build/rc-field-after-clear",
+   "headBranch": "build/sample-card-g",
    "repoFull": "acme/flight-board",
    "signed": [
     "security"
@@ -279,13 +279,13 @@
    "rework": true
   }
  },
- "outreach-split-plans-store": {
+ "sample-card-h": {
   "card": {
-   "id": "outreach-split-plans-store",
+   "id": "sample-card-h",
    "num": 1190,
    "repo": "widgets",
    "owner_role": "Steward",
-   "batch": "steward-outreach-split",
+   "batch": "sample-group-d",
    "done_at": 1794988105353
   },
   "evidence": {
@@ -296,7 +296,7 @@
    "phase": "language",
    "headSha12": "bbd1cdc154af",
    "headSha": "bbd1cdc154af273daffa4766da8160ba6acecec7",
-   "headBranch": "build/outreach-split-plans-store",
+   "headBranch": "build/sample-card-h",
    "repoFull": "widgets/widgets",
    "signed": [
     "checker",
@@ -338,13 +338,13 @@
    "reworkAt": 1794984200108
   }
  },
- "scout-offer-launch-price": {
+ "sample-card-i": {
   "card": {
-   "id": "scout-offer-launch-price",
+   "id": "sample-card-i",
    "num": 1173,
    "repo": "widgets",
    "owner_role": "Reviewer",
-   "batch": "outreach-rewrite",
+   "batch": "sample-group-e",
    "done_at": 1794968423775
   },
   "evidence": {
@@ -355,7 +355,7 @@
    "phase": "build",
    "headSha12": "f9c8cd53c7b7",
    "headSha": "f9c8cd53c7b76e32f685d398bf833ea2121fdff0",
-   "headBranch": "reviewer/scout-offer-launch-price",
+   "headBranch": "reviewer/sample-card-i",
    "repoFull": "widgets/widgets",
    "signed": [],
    "onMain": false,
@@ -372,9 +372,9 @@
    "at": 1794968295238
   }
  },
- "c733-seen-time-test": {
+ "sample-card-j": {
   "card": {
-   "id": "c733-seen-time-test",
+   "id": "sample-card-j",
    "num": 733,
    "repo": "flight-board",
    "owner_role": "Manager",
@@ -411,13 +411,13 @@
    "at": 1794465882619
   }
  },
- "referral-program-idea": {
+ "sample-card-k": {
   "card": {
-   "id": "referral-program-idea",
+   "id": "sample-card-k",
    "num": 1315,
    "repo": "widgets",
    "owner_role": "Builder",
-   "batch": "referral-program",
+   "batch": "sample-group-a",
    "done_at": null
   },
   "evidence": {

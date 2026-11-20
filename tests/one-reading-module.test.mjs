@@ -13,17 +13,17 @@ const shape = (r) => `${r.phase}/${r.state}/${r.wait}/${r.with}`;
 
 test("real readings: each of the known cases reads as the contract says", () => {
   const want = {
-    "refactor-step1-store": "live/done/null/Release",
-    "board-deploy-rollback": "ship/waiting/pack/Release",             // a board card on main, no pack: it waits for the pack (a closed card with a ship reading is not done: done means live)
-    "pickup-door-session": "ship/waiting/deploy/Release",            // a product card closed at ship under #C1104: waits for its deploy, never a pack or an install
-    "handoff-self-clear": "live/done/null/Release",
-    "renewal-reminder-30-days": "ship/waiting/deploy/Release",
-    "idle-stall-counts-done-cards": "ship/waiting/land/Release",      // signed, its commit not on main (behind it): waits for the landing
-    "rc-field-after-clear": "checker/rework/null/Boardsmith",         // findings on its tip: with its owner again, whatever phase is lit
-    "outreach-split-plans-store": "language/waiting/turn/Linguist",
-    "scout-offer-launch-price": "build/waiting/turn/Reviewer",
-    "c733-seen-time-test": "live/done/null/Release",
-    "referral-program-idea": "live/done/null/Release",                // a commit inside a group head (behind a merge) that reads live
+    "sample-card-a": "live/done/null/Release",
+    "sample-card-b": "ship/waiting/pack/Release",             // a board card on main, no pack: it waits for the pack (a closed card with a ship reading is not done: done means live)
+    "sample-card-c": "ship/waiting/deploy/Release",            // a product card closed at ship under #C1104: waits for its deploy, never a pack or an install
+    "sample-card-d": "live/done/null/Release",
+    "sample-card-e": "ship/waiting/deploy/Release",
+    "sample-card-f": "ship/waiting/land/Release",      // signed, its commit not on main (behind it): waits for the landing
+    "sample-card-g": "checker/rework/null/Boardsmith",         // findings on its tip: with its owner again, whatever phase is lit
+    "sample-card-h": "language/waiting/turn/Linguist",
+    "sample-card-i": "build/waiting/turn/Reviewer",
+    "sample-card-j": "live/done/null/Release",
+    "sample-card-k": "live/done/null/Release",                // a commit inside a group head (behind a merge) that reads live
   };
   for (const [id, shapeWant] of Object.entries(want)) assert.equal(shape(run(id)), shapeWant, id);
 });
@@ -57,18 +57,18 @@ test("laws, on every fixture and on perturbed copies: done implies live; a produ
 });
 
 test("a product repository word never starts a board's pack or install, a board card does, and a board card past the pack waits for the install", () => {
-  const e = FIX["board-deploy-rollback"].evidence;
-  assert.equal(run("board-deploy-rollback", { evidence: { ...e, packed: true } }).wait, "install");
-  const past = run("board-deploy-rollback", { evidence: { ...e, packed: true, installed: true } });
+  const e = FIX["sample-card-b"].evidence;
+  assert.equal(run("sample-card-b", { evidence: { ...e, packed: true } }).wait, "install");
+  const past = run("sample-card-b", { evidence: { ...e, packed: true, installed: true } });
   assert.ok(past.wait !== "pack" && past.wait !== "install", "installed: nothing of the board's own is left to wait for; it reads live at the next reading");
-  assert.equal(run("board-deploy-rollback", { evidence: { ...e, noInstall: true } }).wait, "deploy", "docs and tests only: no pack, no install");
-  assert.equal(run("board-deploy-rollback", { card: { repo: "widgets" } }).wait, "deploy");
+  assert.equal(run("sample-card-b", { evidence: { ...e, noInstall: true } }).wait, "deploy", "docs and tests only: no pack, no install");
+  assert.equal(run("sample-card-b", { card: { repo: "widgets" } }).wait, "deploy");
 });
 
 test("closed means live: a card closed at ship reads as waiting for its deploy, not done (the 71 of the audit)", () => {
-  const r = run("pickup-door-session");
+  const r = run("sample-card-c");
   assert.equal(r.state, "waiting"); assert.equal(r.wait, "deploy");
-  assert.equal(run("pickup-door-session", { evidence: { ...FIX["handoff-self-clear"].evidence } }).state, "done", "the same card reads done once its reading is live");
+  assert.equal(run("sample-card-c", { evidence: { ...FIX["sample-card-d"].evidence } }).state, "done", "the same card reads done once its reading is live");
 });
 
 test("a typed-done card with no commit of its own is done", () => {
@@ -89,24 +89,24 @@ test("unknown: a repository word the config's list does not know, never read as 
   assert.equal(kindOf({ repo: "widgets" }, config), "product");
   assert.equal(kindOf({ repo: "acme/flight-board.git" }, config), "board");
   assert.equal(kindOf({ repo: "mystery" }, config), null);
-  const r = run("pickup-door-session", { card: { repo: "mystery" }, config });
+  const r = run("sample-card-c", { card: { repo: "mystery" }, config });
   assert.equal(r.state, "unknown"); assert.match(r.why, /mystery/); assert.equal(r.kind, null);
   assert.equal(kindOf({ repo: "mystery" }, {}), "product", "with no list in the config the word lists answer, as today");
 });
 
 test("stale: with an earlier good reading it keeps its last good state and carries the mark; with none it is unknown; never working", () => {
-  const e = FIX["board-deploy-rollback"].evidence;
-  const good = run("board-deploy-rollback", { evidence: { ...e, stale: true, staleSince: NOW - 600e3 }, agents: { Release: { state: "working", card: "board-deploy-rollback" } } });
+  const e = FIX["sample-card-b"].evidence;
+  const good = run("sample-card-b", { evidence: { ...e, stale: true, staleSince: NOW - 600e3 }, agents: { Release: { state: "working", card: "sample-card-b" } } });
   assert.equal(good.state, "waiting"); assert.equal(good.wait, "pack"); assert.equal(good.stale, true); assert.equal(good.staleSince, NOW - 600e3);
   assert.equal(good.asOf, NOW - 600e3, "asOf is the oldest source: the stale mark's time"); assert.equal(good.working, false);
-  const never = run("board-deploy-rollback", { evidence: { ...e, stale: true } });
+  const never = run("sample-card-b", { evidence: { ...e, stale: true } });
   assert.equal(never.state, "unknown"); assert.equal(never.stale, true); assert.ok(!("staleSince" in never));
-  const liveStale = run("refactor-step1-store", { evidence: { ...FIX["refactor-step1-store"].evidence, stale: true, staleSince: NOW - 1 } });
+  const liveStale = run("sample-card-a", { evidence: { ...FIX["sample-card-a"].evidence, stale: true, staleSince: NOW - 1 } });
   assert.notEqual(liveStale.state, "done", "a stale reading never closes a card: done needs a fresh read");
 });
 
 test("working: the role it is with has a session on it, or CI or a ship run is going", () => {
-  const id = "outreach-split-plans-store";
+  const id = "sample-card-h";
   assert.equal(run(id).working, false);
   const on = run(id, { agents: { Linguist: { state: "working", card: id } } });
   assert.equal(on.state, "working"); assert.equal(on.working, true); assert.equal(on.with, "Linguist");
@@ -114,12 +114,12 @@ test("working: the role it is with has a session on it, or CI or a ship run is g
   assert.equal(run(id, { agents: { Linguist: { state: "idle", card: id } } }).working, false);
   assert.equal(run(id, { evidence: { ...FIX[id].evidence, ci: "queued" } }).state, "working");
   assert.equal(run(id, { evidence: { ...FIX[id].evidence, shipping: true } }).working, true);
-  const rw = run("rc-field-after-clear", { agents: { Boardsmith: { state: "working", card: "rc-field-after-clear" } } });
+  const rw = run("sample-card-g", { agents: { Boardsmith: { state: "working", card: "sample-card-g" } } });
   assert.equal(rw.state, "rework"); assert.equal(rw.working, true, "working is true in rework too");
 });
 
 test("with: the claim holder on the tip, else the repository's reviewer, else the lane; the owner of the board at install and ask", () => {
-  const f = FIX["rc-field-after-clear"], card = f.card;
+  const f = FIX["sample-card-g"], card = f.card;
   const e = { ...f.evidence, rework: false, findings: [] };
   const claim = { sha: e.headSha, card_id: card.id, checker: "Checker 2", released_at: null };
   assert.equal(reading(card, e, [claim], {}, {}, NOW).with, "Checker 2", "the open claim names it as itself");
@@ -132,19 +132,19 @@ test("with: the claim holder on the tip, else the repository's reviewer, else th
 });
 
 test("waits: ask, hold and group each explain a card standing still, in that order", () => {
-  const id = "outreach-split-plans-store";
+  const id = "sample-card-h";
   const ask = run(id, { ctx: { asks: [{ card_id: id, num: 2194 }] } });
   assert.equal(ask.wait, "ask"); assert.equal(ask.ask, 2194); assert.equal(ask.with, "owner");
   assert.equal(run(id, { card: { check_at: NOW + 3600e3 } }).wait, "hold");
-  const e = FIX["idle-stall-counts-done-cards"].evidence;
-  const peers = [{ id: "idle-stall-counts-done-cards", batch: "g" }, { id: "mate", batch: "g" }];
-  const grp = reading({ ...FIX["idle-stall-counts-done-cards"].card, batch: "g" }, { ...e, phase: "checker", lit: ["checker"], stack: { tip: "t", size: 2 }, onMain: false }, [], {}, {}, NOW, { cards: peers, evidence: { mate: { lit: ["build"] } } });
+  const e = FIX["sample-card-f"].evidence;
+  const peers = [{ id: "sample-card-f", batch: "g" }, { id: "mate", batch: "g" }];
+  const grp = reading({ ...FIX["sample-card-f"].card, batch: "g" }, { ...e, phase: "checker", lit: ["checker"], stack: { tip: "t", size: 2 }, onMain: false }, [], {}, {}, NOW, { cards: peers, evidence: { mate: { lit: ["build"] } } });
   assert.equal(grp.wait, "group");
   assert.equal(run(id, { card: { check_at: NOW + 3600e3 }, ctx: { asks: [{ card_id: id, num: 1 }] } }).wait, "ask", "an ask outranks a hold");
 });
 
 test("stuck: nobody on it, over twice the phase's median, and no wait explains it", () => {
-  const id = "outreach-split-plans-store";
+  const id = "sample-card-h";
   const ctx = (since) => ({ phaseStart: new Map([[`${id}|language`, since]]), medians: { language: 600e3 } });
   assert.equal(run(id, { ctx: ctx(NOW - 1300e3) }).state, "stuck");
   assert.equal(run(id, { ctx: ctx(NOW - 1100e3) }).state, "waiting", "under twice the median it is waiting its turn");

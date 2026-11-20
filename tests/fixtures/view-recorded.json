@@ -18,11 +18,11 @@
    "rework_reason": "review findings"
   },
   {
-   "id": "referral-program-idea",
+   "id": "sample-card-k",
    "num": 1315,
    "repo": "widgets",
    "owner_role": "Builder",
-   "batch": "referral-program",
+   "batch": "sample-group-a",
    "done_at": null,
    "dropped": 0,
    "paused": 0,
@@ -33,11 +33,11 @@
    "rework_reason": null
   },
   {
-   "id": "referral-billing-link",
+   "id": "sample-card-l",
    "num": 1320,
    "repo": "widgets",
    "owner_role": "Builder",
-   "batch": "referral-program",
+   "batch": "sample-group-a",
    "done_at": null,
    "dropped": 0,
    "paused": 0,
@@ -48,11 +48,11 @@
    "rework_reason": "review findings"
   },
   {
-   "id": "referral-page-and-intake",
+   "id": "sample-card-m",
    "num": 1322,
    "repo": "widgets",
    "owner_role": "Mainsite",
-   "batch": "referral-program",
+   "batch": "sample-group-a",
    "done_at": null,
    "dropped": 0,
    "paused": 0,
@@ -63,11 +63,11 @@
    "rework_reason": null
   },
   {
-   "id": "referral-send-all",
+   "id": "sample-card-n",
    "num": 1323,
    "repo": "widgets",
    "owner_role": "Builder",
-   "batch": "referral-program",
+   "batch": "sample-group-a",
    "done_at": null,
    "dropped": 0,
    "paused": 0,
@@ -138,11 +138,11 @@
    "rework_reason": null
   },
   {
-   "id": "ship-diff-sees-main-merges",
+   "id": "sample-card-o",
    "num": 1330,
    "repo": "widgets",
    "owner_role": "Builder",
-   "batch": "referral-program",
+   "batch": "sample-group-a",
    "done_at": null,
    "dropped": 0,
    "paused": 0,
@@ -303,11 +303,11 @@
    "rework_reason": null
   },
   {
-   "id": "demo-shots-never-missing",
+   "id": "sample-card-p",
    "num": 1351,
    "repo": "widgets",
    "owner_role": "Builder",
-   "batch": "referral-follow-ups",
+   "batch": "sample-group-b",
    "done_at": null,
    "dropped": 0,
    "paused": 0,
@@ -618,11 +618,11 @@
    "rework_reason": null
   },
   {
-   "id": "pickup-door-session",
+   "id": "sample-card-c",
    "num": 843,
    "repo": "widgets",
    "owner_role": "Builder",
-   "batch": "product-roll-2",
+   "batch": "sample-group-f",
    "done_at": 1794935498569,
    "dropped": 0,
    "paused": 0,
@@ -918,11 +918,11 @@
    "rework_reason": null
   },
   {
-   "id": "renewal-reminder-30-days",
+   "id": "sample-card-e",
    "num": 1071,
    "repo": "widgets",
    "owner_role": "Builder",
-   "batch": "g16-product-follow-ups",
+   "batch": "sample-group-c",
    "done_at": 1794938058748,
    "dropped": 0,
    "paused": 0,
@@ -1028,7 +1028,7 @@
    },
    "readAt": 1795207757673
   },
-  "cards.referral-program-idea": {
+  "cards.sample-card-k": {
    "value": {
     "lit": [
      "live"
@@ -1063,7 +1063,7 @@
    },
    "readAt": 1795207758032
   },
-  "cards.referral-billing-link": {
+  "cards.sample-card-l": {
    "value": {
     "lit": [
      "live"
@@ -1098,7 +1098,7 @@
    },
    "readAt": 1795207758000
   },
-  "cards.referral-page-and-intake": {
+  "cards.sample-card-m": {
    "value": {
     "lit": [
      "live"
@@ -1134,7 +1134,7 @@
    },
    "readAt": 1795207758036
   },
-  "cards.referral-send-all": {
+  "cards.sample-card-n": {
    "value": {
     "lit": [
      "live"
@@ -1299,7 +1299,7 @@
    },
    "readAt": 1795207757565
   },
-  "cards.ship-diff-sees-main-merges": {
+  "cards.sample-card-o": {
    "value": {
     "lit": [
      "live"
@@ -1669,7 +1669,7 @@
    },
    "readAt": 1795207757029
   },
-  "cards.demo-shots-never-missing": {
+  "cards.sample-card-p": {
    "value": {
     "lit": [
      "live"
@@ -2063,7 +2063,7 @@
    },
    "readAt": 1795207486533
   },
-  "cards.pickup-door-session": {
+  "cards.sample-card-c": {
    "value": {
     "lit": [
      "ship"
@@ -2717,7 +2717,7 @@
    },
    "readAt": 1794932853026
   },
-  "cards.renewal-reminder-30-days": {
+  "cards.sample-card-e": {
    "value": {
     "lit": [
      "ship"
@@ -2895,11 +2895,11 @@
     },
     "Builder": {
      "state": "idle",
-     "card": "demo-shots-never-missing"
+     "card": "sample-card-p"
     },
     "Checker": {
      "state": "idle",
-     "card": "demo-shots-never-missing"
+     "card": "sample-card-p"
     },
     "Checker 2": {
      "state": "idle",
@@ -2919,7 +2919,7 @@
     },
     "Mainsite": {
      "state": "idle",
-     "card": "referral-billing-link"
+     "card": "sample-card-l"
     },
     "Manager": {
      "state": "idle",
@@ -2943,7 +2943,7 @@
     },
     "Security": {
      "state": "idle",
-     "card": "referral-billing-link"
+     "card": "sample-card-l"
     },
     "Steward": {
      "state": "idle",
@@ -3581,7 +3581,7 @@
   },
   {
    "id": 21750,
-   "card_id": "renewal-reminder-30-days",
+   "card_id": "sample-card-e",
    "phase": "build",
    "kind": "start",
    "at": 1794548158281,
@@ -5165,7 +5165,7 @@
   },
   {
    "id": 22846,
-   "card_id": "pickup-door-session",
+   "card_id": "sample-card-c",
    "phase": "build",
    "kind": "start",
    "at": 1794934678599,
@@ -5174,7 +5174,7 @@
   },
   {
    "id": 22847,
-   "card_id": "pickup-door-session",
+   "card_id": "sample-card-c",
    "phase": "build",
    "kind": "end",
    "at": 1794934729163,
@@ -5183,7 +5183,7 @@
   },
   {
    "id": 22848,
-   "card_id": "pickup-door-session",
+   "card_id": "sample-card-c",
    "phase": "checker",
    "kind": "start",
    "at": 1794934729163,
@@ -5192,7 +5192,7 @@
   },
   {
    "id": 22850,
-   "card_id": "pickup-door-session",
+   "card_id": "sample-card-c",
    "phase": "checker",
    "kind": "end",
    "at": 1794934898671,
@@ -5201,7 +5201,7 @@
   },
   {
    "id": 22851,
-   "card_id": "pickup-door-session",
+   "card_id": "sample-card-c",
    "phase": "ship",
    "kind": "start",
    "at": 1794934898671,
@@ -5210,7 +5210,7 @@
   },
   {
    "id": 22859,
-   "card_id": "renewal-reminder-30-days",
+   "card_id": "sample-card-e",
    "phase": "build",
    "kind": "end",
    "at": 1794935380278,
@@ -5219,7 +5219,7 @@
   },
   {
    "id": 22860,
-   "card_id": "renewal-reminder-30-days",
+   "card_id": "sample-card-e",
    "phase": "checker",
    "kind": "start",
    "at": 1794935380278,
@@ -5228,7 +5228,7 @@
   },
   {
    "id": 22872,
-   "card_id": "renewal-reminder-30-days",
+   "card_id": "sample-card-e",
    "phase": "checker",
    "kind": "end",
    "at": 1794936623724,
@@ -5237,7 +5237,7 @@
   },
   {
    "id": 22873,
-   "card_id": "renewal-reminder-30-days",
+   "card_id": "sample-card-e",
    "phase": "language",
    "kind": "start",
    "at": 1794936623724,
@@ -5246,7 +5246,7 @@
   },
   {
    "id": 22876,
-   "card_id": "renewal-reminder-30-days",
+   "card_id": "sample-card-e",
    "phase": "language",
    "kind": "end",
    "at": 1794936822297,
@@ -5255,7 +5255,7 @@
   },
   {
    "id": 22877,
-   "card_id": "renewal-reminder-30-days",
+   "card_id": "sample-card-e",
    "phase": "checker",
    "kind": "start",
    "at": 1794936822297,
@@ -5264,7 +5264,7 @@
   },
   {
    "id": 22883,
-   "card_id": "renewal-reminder-30-days",
+   "card_id": "sample-card-e",
    "phase": "checker",
    "kind": "end",
    "at": 1794937292149,
@@ -5273,7 +5273,7 @@
   },
   {
    "id": 22884,
-   "card_id": "renewal-reminder-30-days",
+   "card_id": "sample-card-e",
    "phase": "ship",
    "kind": "start",
    "at": 1794937292149,
@@ -5327,7 +5327,7 @@
   },
   {
    "id": 24284,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "build",
    "kind": "start",
    "at": 1795154344683,
@@ -5336,7 +5336,7 @@
   },
   {
    "id": 24293,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "build",
    "kind": "end",
    "at": 1795156479838,
@@ -5345,7 +5345,7 @@
   },
   {
    "id": 24294,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "language",
    "kind": "start",
    "at": 1795156479838,
@@ -5354,7 +5354,7 @@
   },
   {
    "id": 24299,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "language",
    "kind": "end",
    "at": 1795156598700,
@@ -5363,7 +5363,7 @@
   },
   {
    "id": 24300,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "checker",
    "kind": "start",
    "at": 1795156598700,
@@ -5372,7 +5372,7 @@
   },
   {
    "id": 24303,
-   "card_id": "referral-page-and-intake",
+   "card_id": "sample-card-m",
    "phase": "build",
    "kind": "start",
    "at": 1795156686388,
@@ -5381,7 +5381,7 @@
   },
   {
    "id": 24310,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "checker",
    "kind": "end",
    "at": 1795156686576,
@@ -5390,7 +5390,7 @@
   },
   {
    "id": 24311,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "ship",
    "kind": "start",
    "at": 1795156686576,
@@ -5399,7 +5399,7 @@
   },
   {
    "id": 24312,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "build",
    "kind": "start",
    "at": 1795156788983,
@@ -5408,7 +5408,7 @@
   },
   {
    "id": 24314,
-   "card_id": "referral-page-and-intake",
+   "card_id": "sample-card-m",
    "phase": "build",
    "kind": "end",
    "at": 1795157220461,
@@ -5417,7 +5417,7 @@
   },
   {
    "id": 24315,
-   "card_id": "referral-page-and-intake",
+   "card_id": "sample-card-m",
    "phase": "language",
    "kind": "start",
    "at": 1795157220461,
@@ -5426,7 +5426,7 @@
   },
   {
    "id": 24317,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "ship",
    "kind": "end",
    "at": 1795157332062,
@@ -5435,7 +5435,7 @@
   },
   {
    "id": 24318,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "checker",
    "kind": "start",
    "at": 1795157332062,
@@ -5444,7 +5444,7 @@
   },
   {
    "id": 24320,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "checker",
    "kind": "end",
    "at": 1795157488073,
@@ -5453,7 +5453,7 @@
   },
   {
    "id": 24321,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "ship",
    "kind": "start",
    "at": 1795157488073,
@@ -5462,7 +5462,7 @@
   },
   {
    "id": 24330,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "build",
    "kind": "end",
    "at": 1795158176991,
@@ -5471,7 +5471,7 @@
   },
   {
    "id": 24331,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "language",
    "kind": "start",
    "at": 1795158176991,
@@ -5498,7 +5498,7 @@
   },
   {
    "id": 24349,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "language",
    "kind": "end",
    "at": 1795158276319,
@@ -5507,7 +5507,7 @@
   },
   {
    "id": 24350,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "checker",
    "kind": "start",
    "at": 1795158276319,
@@ -5525,7 +5525,7 @@
   },
   {
    "id": 24355,
-   "card_id": "referral-page-and-intake",
+   "card_id": "sample-card-m",
    "phase": "language",
    "kind": "end",
    "at": 1795158537703,
@@ -5534,7 +5534,7 @@
   },
   {
    "id": 24356,
-   "card_id": "referral-page-and-intake",
+   "card_id": "sample-card-m",
    "phase": "checker",
    "kind": "start",
    "at": 1795158537703,
@@ -5543,7 +5543,7 @@
   },
   {
    "id": 24361,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "checker",
    "kind": "end",
    "at": 1795158933583,
@@ -5552,7 +5552,7 @@
   },
   {
    "id": 24362,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "language",
    "kind": "start",
    "at": 1795158933583,
@@ -5561,7 +5561,7 @@
   },
   {
    "id": 24364,
-   "card_id": "referral-page-and-intake",
+   "card_id": "sample-card-m",
    "phase": "checker",
    "kind": "end",
    "at": 1795159079094,
@@ -5570,7 +5570,7 @@
   },
   {
    "id": 24365,
-   "card_id": "referral-page-and-intake",
+   "card_id": "sample-card-m",
    "phase": "ship",
    "kind": "start",
    "at": 1795159079094,
@@ -5579,7 +5579,7 @@
   },
   {
    "id": 24366,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "language",
    "kind": "end",
    "at": 1795159079109,
@@ -5588,7 +5588,7 @@
   },
   {
    "id": 24367,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "checker",
    "kind": "start",
    "at": 1795159079109,
@@ -5651,7 +5651,7 @@
   },
   {
    "id": 24405,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "checker",
    "kind": "end",
    "at": 1795159824487,
@@ -5660,7 +5660,7 @@
   },
   {
    "id": 24406,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "ship",
    "kind": "start",
    "at": 1795159824487,
@@ -5669,7 +5669,7 @@
   },
   {
    "id": 24408,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "build",
    "kind": "start",
    "at": 1795159930968,
@@ -5687,7 +5687,7 @@
   },
   {
    "id": 24411,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "build",
    "kind": "start",
    "at": 1795160059484,
@@ -5804,7 +5804,7 @@
   },
   {
    "id": 24436,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "build",
    "kind": "end",
    "at": 1795161698562,
@@ -5813,7 +5813,7 @@
   },
   {
    "id": 24437,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "design",
    "kind": "start",
    "at": 1795161698562,
@@ -5831,7 +5831,7 @@
   },
   {
    "id": 24442,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "build",
    "kind": "end",
    "at": 1795162163974,
@@ -5840,7 +5840,7 @@
   },
   {
    "id": 24443,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "language",
    "kind": "start",
    "at": 1795162163974,
@@ -5894,7 +5894,7 @@
   },
   {
    "id": 24455,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "design",
    "kind": "end",
    "at": 1795162618584,
@@ -5903,7 +5903,7 @@
   },
   {
    "id": 24456,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "build",
    "kind": "start",
    "at": 1795162618584,
@@ -5975,7 +5975,7 @@
   },
   {
    "id": 24476,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "build",
    "kind": "end",
    "at": 1795162849503,
@@ -5984,7 +5984,7 @@
   },
   {
    "id": 24477,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "checker",
    "kind": "start",
    "at": 1795162849503,
@@ -5993,7 +5993,7 @@
   },
   {
    "id": 24478,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "language",
    "kind": "end",
    "at": 1795162849530,
@@ -6002,7 +6002,7 @@
   },
   {
    "id": 24479,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "ship",
    "kind": "start",
    "at": 1795162849530,
@@ -6011,7 +6011,7 @@
   },
   {
    "id": 24482,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "checker",
    "kind": "end",
    "at": 1795162951189,
@@ -6020,7 +6020,7 @@
   },
   {
    "id": 24483,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "ship",
    "kind": "start",
    "at": 1795162951189,
@@ -6038,7 +6038,7 @@
   },
   {
    "id": 24487,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "ship",
    "kind": "end",
    "at": 1795163088949,
@@ -6047,7 +6047,7 @@
   },
   {
    "id": 24488,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "checker",
    "kind": "start",
    "at": 1795163088949,
@@ -6110,7 +6110,7 @@
   },
   {
    "id": 24497,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "checker",
    "kind": "end",
    "at": 1795163180489,
@@ -6119,7 +6119,7 @@
   },
   {
    "id": 24498,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "ship",
    "kind": "start",
    "at": 1795163180489,
@@ -6371,7 +6371,7 @@
   },
   {
    "id": 24539,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "ship",
    "kind": "end",
    "at": 1795186784644,
@@ -6380,7 +6380,7 @@
   },
   {
    "id": 24540,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "language",
    "kind": "start",
    "at": 1795186784644,
@@ -6407,7 +6407,7 @@
   },
   {
    "id": 24552,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "language",
    "kind": "end",
    "at": 1795187082481,
@@ -6416,7 +6416,7 @@
   },
   {
    "id": 24553,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "ship",
    "kind": "start",
    "at": 1795187082481,
@@ -6443,7 +6443,7 @@
   },
   {
    "id": 24560,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "ship",
    "kind": "end",
    "at": 1795187283997,
@@ -6452,7 +6452,7 @@
   },
   {
    "id": 24561,
-   "card_id": "ship-diff-sees-main-merges",
+   "card_id": "sample-card-o",
    "phase": "live",
    "kind": "start",
    "at": 1795187283997,
@@ -6524,7 +6524,7 @@
   },
   {
    "id": 24602,
-   "card_id": "demo-shots-never-missing",
+   "card_id": "sample-card-p",
    "phase": "build",
    "kind": "start",
    "at": 1795188632197,
@@ -6533,7 +6533,7 @@
   },
   {
    "id": 24603,
-   "card_id": "demo-shots-never-missing",
+   "card_id": "sample-card-p",
    "phase": "build",
    "kind": "end",
    "at": 1795188632197,
@@ -6542,7 +6542,7 @@
   },
   {
    "id": 24604,
-   "card_id": "demo-shots-never-missing",
+   "card_id": "sample-card-p",
    "phase": "language",
    "kind": "start",
    "at": 1795188632197,
@@ -6560,7 +6560,7 @@
   },
   {
    "id": 24619,
-   "card_id": "demo-shots-never-missing",
+   "card_id": "sample-card-p",
    "phase": "language",
    "kind": "end",
    "at": 1795189636852,
@@ -6569,7 +6569,7 @@
   },
   {
    "id": 24620,
-   "card_id": "demo-shots-never-missing",
+   "card_id": "sample-card-p",
    "phase": "ship",
    "kind": "start",
    "at": 1795189636852,
@@ -6641,7 +6641,7 @@
   },
   {
    "id": 24638,
-   "card_id": "demo-shots-never-missing",
+   "card_id": "sample-card-p",
    "phase": "ship",
    "kind": "end",
    "at": 1795189819506,
@@ -6650,7 +6650,7 @@
   },
   {
    "id": 24639,
-   "card_id": "demo-shots-never-missing",
+   "card_id": "sample-card-p",
    "phase": "live",
    "kind": "start",
    "at": 1795189819506,
@@ -7838,7 +7838,7 @@
   },
   {
    "id": 24905,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "ship",
    "kind": "end",
    "at": 1795207119944,
@@ -7847,7 +7847,7 @@
   },
   {
    "id": 24906,
-   "card_id": "referral-billing-link",
+   "card_id": "sample-card-l",
    "phase": "live",
    "kind": "start",
    "at": 1795207119944,
@@ -7856,7 +7856,7 @@
   },
   {
    "id": 24890,
-   "card_id": "referral-page-and-intake",
+   "card_id": "sample-card-m",
    "phase": "ship",
    "kind": "end",
    "at": 1795207120003,
@@ -7865,7 +7865,7 @@
   },
   {
    "id": 24891,
-   "card_id": "referral-page-and-intake",
+   "card_id": "sample-card-m",
    "phase": "live",
    "kind": "start",
    "at": 1795207120003,
@@ -7874,7 +7874,7 @@
   },
   {
    "id": 24893,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "ship",
    "kind": "end",
    "at": 1795207120064,
@@ -7883,7 +7883,7 @@
   },
   {
    "id": 24894,
-   "card_id": "referral-program-idea",
+   "card_id": "sample-card-k",
    "phase": "live",
    "kind": "start",
    "at": 1795207120064,
@@ -7892,7 +7892,7 @@
   },
   {
    "id": 24896,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "ship",
    "kind": "end",
    "at": 1795207120113,
@@ -7901,7 +7901,7 @@
   },
   {
    "id": 24897,
-   "card_id": "referral-send-all",
+   "card_id": "sample-card-n",
    "phase": "live",
    "kind": "start",
    "at": 1795207120113,
