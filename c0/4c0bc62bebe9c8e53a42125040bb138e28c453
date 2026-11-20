@@ -1,0 +1,1 @@
+SECURE: re-cut of 963fd6072959 onto main dc4c640f (patch identical, range-diff =; tip tree equals 52291235's). Was: SECURE: #C1327 dispatch names a stack branch only from an open, non-live, non-outside member; outside card with none is told to cut from main. Text and selection only, no new input. Security 2026-11-20. Security 2026-11-20.
