@@ -1,0 +1,5 @@
+SECURE
+
+#C1308 tip (tests only on ee48ab89, SECURE). Ran 19/19 at 408086c2 (ship-cell-waits-for-install, tile-states-visible, hostile-text). Page only; no Worker, migration, hook or collector change. Ships as a page publish.
+
+signed-by: Security
