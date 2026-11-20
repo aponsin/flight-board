@@ -1,0 +1,2 @@
+PASS Quick #C1298 #C1295 #C1300 #C1301 #C1302, line from 197d39d41805f6f1fbd2f3c109abe9bd3f5c8983: group board-polish-two tip; new delta e2cbd0b0..cd193052 is Designer F1 on #C1300 (packShort shows Queued with a .sl ' for pack' hidden under 760 px, reusing the existing .rs rule); suite 3339 pass 0 fail; mutation check: pass (packShort=false fails ship-cell-waits-for-install). Nit left for later: heldOnPurpose has no caller.
+signed-by: Checker 2
