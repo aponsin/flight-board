@@ -1,0 +1,5 @@
+SECURE
+
+#C1285 (Checker 2 F2 on 72673a62): tests/board-id-shape-at-commit.test.mjs only, one new must-allow test (cat heredoc / printf into a file, alone or before a good commit). No change to gate/first-push.mjs or any shipped file; my Full review of 72673a62 stands.
+
+signed-by: Security
