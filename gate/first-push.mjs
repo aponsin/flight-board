@@ -23,12 +23,52 @@ const realGit = (cwd, args) => execFileSync("git", ["-C", cwd, ...args], { encod
 // The words of one command segment, quotes taken off (best effort: no escapes, no substitutions).
 const words = (s) => (s.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((w) => w.replace(/^(["'])(.*)\1$/, "$2"));
 
+// #C1291 (Security INFO on #C1289: bashTargets took about 2.7 s on a contrived 200 KB command): a heredoc is a "<<TAG" line, then a body, then a line holding only TAG. The
+// regex this replaces, /(<<-?[ \t]*(["']?)(\w+)\2[^\n]*)\n[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, looked for the closing line from every "<<" to the end of the command, so a command of
+// many unterminated "<<" was quadratic. Same reading, in linear time: the closing-line candidates (a line of one word, with spaces or tabs around it) are listed once, by word, and each
+// "<<" takes the first one after its own line's end (the body may be empty, but the closing line is never the line right after the "<<" line: the old regex needed a "\n" between).
+// A heredoc found is replaced by fill(head, length of the rest), where head is the "<<" through the end of its line; one not closed stays as it is.
+export function replaceHeredocs(text, fill) {
+  const headRe = /<<-?[ \t]*(["']?)(\w+)\1/g;
+  let cands = null, lens = [], out = "", copied = 0, eol = -1;
+  for (let m; (m = headRe.exec(text)); ) {
+    const h = m.index;
+    if (eol < h) { const i = text.indexOf("\n", h); eol = i < 0 ? text.length : i; }
+    if (eol >= text.length) break; // no newline after this "<<": no heredoc here or after it
+    if (!cands) {
+      cands = new Map();
+      for (let pos = 0; ;) {
+        const nl = text.indexOf("\n", pos), end = nl < 0 ? text.length : nl;
+        if (pos > 0) { const w = /^[ \t]*(\w+)[ \t]*$/.exec(text.slice(pos, end)); if (w) { const c = cands.get(w[1]) ?? cands.set(w[1], { nl: [], end: [], at: 0 }).get(w[1]); c.nl.push(pos - 1); c.end.push(end); } }
+        if (nl < 0) break;
+        pos = nl + 1;
+      }
+      lens = [...new Set([...cands.keys()].map((k) => k.length))].sort((a, b) => b - a);
+    }
+    // The old regex's tag could back off to a shorter start of the word when the quote is empty ("<<AA" is closed by a line "A"; longest tag first), but never when it is quoted.
+    let c = null;
+    for (const len of m[1] ? [m[2].length] : lens) {
+      if (len > m[2].length) continue;
+      const cc = cands.get(len === m[2].length ? m[2] : m[2].slice(0, len));
+      if (!cc) continue;
+      while (cc.at < cc.nl.length && cc.nl[cc.at] < eol + 1) cc.at++;
+      if (cc.at < cc.nl.length) { c = cc; break; }
+    }
+    if (!c) { headRe.lastIndex = h + 1; continue; }
+    const lineEnd = c.end[c.at];
+    out += text.slice(copied, h) + fill(text.slice(h, eol), lineEnd - eol);
+    copied = lineEnd;
+    headRe.lastIndex = lineEnd;
+  }
+  return copied === 0 ? text : out + text.slice(copied);
+}
+
 // The files a Bash command writes, as written (relative ones are the caller's to resolve against the cwd).
 export function bashTargets(command) {
   const out = [];
   // A heredoc's body is text, not commands; quoted text (a commit message with a ">" or a ";" in it) is never a redirection or a separator. The command is read on a copy
   // whose quoted text is masked by "Q"s, and the pieces are cut from the original at the same places.
-  const text = String(command ?? "").replace(/(<<-?[ \t]*(["']?)(\w+)\2[^\n]*)\n[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, "$1");
+  const text = replaceHeredocs(String(command ?? ""), (head) => head);
   const mask = text.replace(/"[^"]*"|'[^']*'/g, (m) => "Q".repeat(m.length));
   const segs = []; let from = 0;
   for (const m of mask.matchAll(/&&|\|\||;|\||\n/g)) { segs.push([from, m.index]); from = m.index + m[0].length; }
@@ -111,7 +151,7 @@ export const badBoardIdReason = (value) => `Board-Id must be the card's id: lowe
 // that does not hold both "git" and "commit" has no commit segment, so it is not scanned at all.
 const commitSegments = (text) => {
   if (!/\bgit\b/.test(text) || !/\bcommit\b/.test(text)) return [];
-  const noDocs = text.replace(/(<<-?[ \t]*(["']?)(\w+)\2[^\n]*)\n[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, (m, head) => head + "Q".repeat(m.length - head.length));
+  const noDocs = replaceHeredocs(text, (head, rest) => head + "Q".repeat(rest));
   const mask = noDocs.replace(/"[^"]*"|'[^']*'/g, (m) => "Q".repeat(m.length));
   const out = []; let from = 0;
   const cut = (to) => { const ms = mask.slice(from, to); if (/^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*git\b/.test(ms) && /\bcommit\b/.test(ms)) out.push(text.slice(from, to)); };
