@@ -1,0 +1,5 @@
+SECURE
+
+#C1300 F1 / #C1302 tip, by diff from e2cbd0b0 (SECURE): packShort (fixed booleans) chooses a fixed literal <small class="rs">Queued<span class="sl"> for pack</span></small> in place of esc(idleWord) when idleWord is exactly that fixed string; nothing from data is inserted. Test assertion updated. Ran 11/11 at cd193052 (ship-cell-waits-for-install, tile-states-visible). Page only; no Worker, store, route, secret, hook or permission change. Group board-polish-two SECURE at this tip.
+
+signed-by: Security
