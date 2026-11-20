@@ -1,0 +1,5 @@
+SECURE
+
+#C1319: page only; ci read as one of two fixed words; skip set logic; no new sink or unescaped value. board-polish-six, tip 7b72da97; suite 3408 pass, 0 fail in a scratch worktree.
+
+signed-by: Security
