@@ -8,6 +8,7 @@
 //   POST /mcp               JSON-RPC: initialize, ping, tools/list, tools/call
 import { ASK_TYPES, ASK_PARTS, ASK_OPTIONAL_PARTS, ROSTER_ROLES } from "./board-rules.mjs";
 import { compatView } from "./compat-view.mjs";
+import { readingDocs } from "./compat-reading.mjs";
 import { routeWrite } from "./compat-write.mjs";
 import { COMPAT_SHIM } from "./compat-shim.mjs";
 import { FILE_TYPES, MAX_BODY_BYTES, putFile, fileResponse } from "./file-store.mjs";
@@ -410,6 +411,12 @@ export default {
       if (auth.role !== "probe") return bare(403);
       const sha = typeof env.BUILD_SHA === "string" && /^[0-9a-f]{40}$/.test(env.BUILD_SHA) ? env.BUILD_SHA : null;
       return json(200, { sha }, { "cache-control": "no-store" });
+    }
+    // #C1386: the readings the compat answer serves (the same readingDocs of the same view), probe only, for the truth check to compare with git. Nothing else rides with them.
+    if (url.pathname === "/api/probe/readings" && request.method === "GET") {
+      if (auth.role !== "probe") return bare(403);
+      const view = await readView(env.DB, now);
+      return json(200, { readings: readingDocs(view), now: view.now }, { "cache-control": "no-store" });
     }
     // #C742: the probe fills in a card's repo word from git; only a card with none takes it, a word already set is never changed.
     if (url.pathname === "/api/probe/card-repo" && request.method === "POST") {

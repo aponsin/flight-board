@@ -108,6 +108,11 @@ export const FIXED = {
   "worker/board-store.mjs:SWEEP_EVERY_MS": "how often the shipped-branches Terminal ask is raised (weekly, #C1112): the card's own cadence, one ask a week",
   "worker/board-store.mjs:SWEEP_FRESH_MS": "how old the shipped-branches list may be before the store raises nothing from it (2 days, #C1112): a reading window on the evidence, not a cadence",
   "collector/probe-evidence.mjs:SWEEP_LIST_MS": "how often the probe re-reads the shipped branches (6 h, #C1112): a cost bound on git reads, well inside the 2-day window",
+  // #C1386: the truth check's own bounds (collector/truth-check.mjs). It must not read the evidence's rules, so none of these is a setting the reading shares.
+  "collector/truth-check.mjs:CLOSED_GRACE_MS": "how long a closed card whose reading is not done is left alone before the truth check compares it (1 h, #C1386): the contract's own wait, so a card that just closed is not called wrong",
+  "collector/truth-check.mjs:CLOSED_WINDOW_MS": "how far back a closed card is still checked (7 days, #C1386): the same window the compat answer serves closed readings for, a size bound",
+  "collector/truth-check.mjs:DEPLOY_SETTLE_MS": "how old a product's version commit must be before its deploy wait is called wrong (30 min, #C1386): the deploy run takes minutes, so a younger commit is not judged",
+  "collector/truth-check.mjs:GIT_TIMEOUT_MS": "one git question's timeout in the truth check (15 s, #C1386): a cost bound inside the usage job's own limit",
   "worker/compat-usage.mjs:MAX_MIN": "a sanity bound",
   "worker/board-rules.mjs:STEP_PAST_MS": "write validity of a step's time",
   "worker/board-rules.mjs:STEP_FUTURE_MS": "write validity of a step's time",

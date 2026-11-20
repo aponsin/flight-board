@@ -1614,8 +1614,18 @@ function liveE2eLine(now=Date.now()){const e=liveOn(now)&&probe.e2e;if(!e||typeo
   const run=typeof e.run==="string"&&e.run.length<=300&&/^https:\/\/[^\s"'<>\\]+$/.test(e.run)?e.run:null,bad=e.state!=="unknown",
     head=e.state==="red"?"The daily full test run failed":e.state==="missed"?"The daily full test run has not passed in a day":"The daily full test run cannot be read";
   return {you:bad,html:`${esc(head)}: ${esc(e.reason.slice(0,200))}${run?` · <a href="${esc(run)}" target="_blank" rel="noopener">the run</a>`:""}`}}
-function renderStuck(){const el=$("stuck"),l=[...stuckLines(),...liveStuckLines()],d=deafLine()+keeperLine(),e=liveE2eLine();el.hidden=!l.length&&!d&&!e;
-  el.innerHTML=l.map(t=>`<div class="${t.you?"sl-you":"sl-owner"}">${esc(t.text)}</div>`).join("")+(e?`<div class="${e.you?"sl-you":"sl-owner"}">${e.html}</div>`:"")+d;el.classList.toggle("amber",!d&&!l.some(t=>t.you)&&!(e&&e.you))}
+// #C1386: probe.truth, the Studio job's list of cards whose stored reading disagrees with git. Nothing while absent, stale (same rule as the e2e
+// line: the probe's own clock) or count 0; else one red line with the first 5 items, every value escaped, the card as plain text (no link).
+// The field is only printed: a camelCase word is spelled out as words, anything not a short plain word shows as "?".
+function liveTruthLine(now=Date.now()){const t=liveOn(now)&&probe.truth;if(!t||typeof t!=="object"||!Number.isInteger(t.count)||t.count<1||!Array.isArray(t.items))return "";
+  const it=t.items.filter(x=>x&&typeof x==="object"),shown=it.slice(0,5),
+    one=x=>{const num=Number.isInteger(x.num)&&x.num>0?`#C${x.num}`:typeof x.card==="string"?x.card.slice(0,60):"a card",
+      f=typeof x.field==="string"&&/^[a-zA-Z]{1,12}$/.test(x.field)?x.field.replace(/([A-Z])/g," $1").toLowerCase():"?";
+      return `${esc(num)} ${esc(f)}: reading ${esc(String(x.reading).slice(0,80))}, git ${esc(String(x.git).slice(0,80))}`},
+    more=t.count-shown.length;
+  return `<div class="sl-you">${esc(`${t.count} ${t.count===1?"reading disagrees":"readings disagree"} with git`)}${shown.length?": "+shown.map(one).join("; "):""}${more>0?esc(`; and ${more} more`):""}</div>`}
+function renderStuck(){const el=$("stuck"),l=[...stuckLines(),...liveStuckLines()],d=deafLine()+keeperLine(),e=liveE2eLine(),tr=liveTruthLine();el.hidden=!l.length&&!d&&!e&&!tr;
+  el.innerHTML=l.map(t=>`<div class="${t.you?"sl-you":"sl-owner"}">${esc(t.text)}</div>`).join("")+(e?`<div class="${e.you?"sl-you":"sl-owner"}">${e.html}</div>`:"")+tr+d;el.classList.toggle("amber",!d&&!tr&&!l.some(t=>t.you)&&!(e&&e.you))}
 
 // ---- Threads (board v2) ----
 // Every item is a thread: messages {thread, from: "<owner>" | "<Role>", text, at, assets?, kind?, resolved?}, oldest first.
