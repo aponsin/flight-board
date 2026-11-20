@@ -35,6 +35,18 @@ test("must still allow: Manager's post in the owner's own free thread, in an ask
   assert.equal(await count("card-a"), 2);
 });
 
+// Checker 2's F1: a Manager decision with options goes on a card thread before the owner has written there (#C1294), and a post with screenshots is for him to look at.
+test("must still allow: a Manager decision, and a post with screenshots, on a card thread the owner never wrote in", async () => {
+  const { manager, count } = await make();
+  const d = await manager({ thread_id: "card-a", body: "Which one?", kind: "decision", options: [{ key: "A", label: "Yes" }, { key: "B", label: "No" }] });
+  assert.equal(d.isError, false, JSON.stringify(d));
+  assert.equal(await count("card-a"), 1);
+  const shots = await manager({ thread_id: "card-a", body: "Look at this", screenshots: ["no-such-file"] });
+  assert.notEqual(shots.structuredContent?.refused?.rule, "agent-note-on-card", "a post with a picture is not refused as an agent's note");
+  const empty = await manager({ thread_id: "card-a", body: "a note for Admin", screenshots: [] });
+  assert.equal(empty.structuredContent.refused.rule, "agent-note-on-card", "an empty screenshots list carries nothing");
+});
+
 test("a post on a card thread the owner never wrote in is refused on Manager's door, logged, nothing written, and the hint names send_message", async () => {
   const { env, manager, count } = await make();
   const r = await manager({ thread_id: "card-a", body: "a note for Admin" });

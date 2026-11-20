@@ -1100,6 +1100,8 @@ export async function doorWriteRefusal(db, now, tool, session) {
 export async function agentNoteRefusal(db, now, who, args) {
   const t = args?.thread_id;
   if (typeof t !== "string" || !/^[A-Za-z0-9-]{1,64}$/.test(t)) return null; // a malformed post is the message-shape rule's
+  // Checker 2's F1 on 7b72da97: a decision (kind "decision": #C1294 puts them on card threads before he has written) and a post that carries screenshots are meant for the owner.
+  if (args?.kind === "decision" || (Array.isArray(args?.screenshots) && args.screenshots.length)) return null;
   if (!(await db.prepare("SELECT 1 AS x FROM cards WHERE id = ?").bind(t).first())) return null; // not a card's thread
   if (await db.prepare("SELECT 1 AS x FROM messages WHERE thread_id = ? AND author = 'owner' LIMIT 1").bind(t).first()) return null;
   return refuse(db, now, { rule: "agent-note-on-card", detail: `the owner has written nothing on ${t}'s thread, so a post there would show to him as a reply that is not one: a note for an agent goes by send_message to that agent` }, t, who);
