@@ -448,6 +448,7 @@ button.sbtn.sbtn:disabled{opacity:1}
 .cb.here{color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent)}
 .cb.queued{color:var(--warn-ink);background:var(--warn-soft);background-image:repeating-linear-gradient(-45deg,var(--warn-soft) 0 6px,var(--panel) 6px 12px);box-shadow:inset 0 0 0 2px var(--warn)}
 .cb.stuck{background:var(--ink);color:var(--panel)}
+.cb.read-stale{opacity:.5;filter:grayscale(1)} /* #C1377: a badge on a reading nobody could refresh is greyed, never red */
 .cb.work{color:var(--accent);background:var(--panel);border:1.5px dashed var(--accent);font-family:system-ui,sans-serif;animation:pulse 2.4s ease-in-out infinite}
 .cb:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.cb.now,.cb.work{animation:none}.cb.now{box-shadow:inset 0 0 0 2px var(--panel),0 0 0 2px var(--accent)}}
@@ -846,7 +847,7 @@ const ASKLABEL=Object.assign({},KIND,{question:"Question",conversation:"Conversa
 // thread or item and kept for the pass, then dropped: before, waitsOn, threadOpen, threadResolved, teamOnly and itemOf each ran tens of thousands of times over the same few hundred threads. Outside a pass (a click, a
 // tab switch) every function is as it was. A time passed in (now) is the pass's: within one redraw it moves by milliseconds, and nothing here turns on that.
 let pass=null;
-const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],readings:[],groups:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[],agentPrs:[],approvals:[]};
+const state={initiatives:[],waiting:[],events:[],usage:[],meta:[],todo:[],ideas:[],initRaw:[],steps:[],ctx:[],messages:[],derived:[],readings:[],groups:[],crew:[],threads:[],plan:[],timings:[],ctxRequests:[],checkRequests:[],threadPings:[],pingThreads:[],agentPrs:[],approvals:[]};
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const num=v=>typeof v==="number"&&isFinite(v)?v:null;
@@ -2760,14 +2761,17 @@ function unexplainedChip(i){if(!i||i.unexplainedRework!==true||i.status==="done"
 // and the card shows them as they are instead of quietly picking one source. Nothing for a card that keeps the rules.
 function redLines(i){if(i.status==="done"||i.status==="dropped")return "";const d=derivedOf(i.id),r=d&&Array.isArray(d.red)?d.red.filter(x=>typeof x==="string"&&x):[];
   return r.length?`<span class="redline" role="alert">${r.map(x=>`<span>${esc(x)}</span>`).join("")}</span>`:""}
-// Who is on what: { by: { agent: [open cards] }, names: the roster, then anyone else on a card, notes: meta/crew's idle notes }.
-function crewBy(){
-  const open=state.initiatives.filter(i=>i.status!=="done"&&(i.who||Object.keys(i.nowPhases||{}).length));
-  const by=Object.create(null);open.forEach(i=>{const ws=new Set([i.who,...Object.values(i.nowPhases||{}).flat()].filter(Boolean));ws.forEach(w=>{(by[w]=by[w]||[]).push(i)})});
+// Who is on what, from the reading (#C1384): the Worker folds every open card's reading into state.crew ({ columns: { role: [{ n, id, num, state, wait, working, stale?, staleSince? }] } }), each open
+// card in exactly one column (the role it is with now), number 1 the card a session is on. The page draws that and decides nothing: it adds the roster, the idle notes and the live "work" badge.
+const crewDoc=()=>(state.crew||[]).find(d=>d&&d.id==="crew")||{columns:{}};
+// The roster, then anyone else with a column or a running session, the idle notes (meta/crew), and each role's open cards (the initiatives, in the column's order).
+function crewRoster(){
+  const col=crewDoc().columns||{},byId=new Map(state.initiatives.map(i=>[i.id,i])),by=Object.create(null);
+  for(const [n,list] of Object.entries(col))by[n]=list.map(e=>byId.get(e.id)).filter(Boolean);
   const ROSTER=CONFIG.roster;
   // #C970: anyone the probe reads as a running agent has a tile too (a session the lead started that is not on the roster, "Checker2"), so a new role shows up by itself.
   const live=probe&&probe.agents?Object.keys(probe.agents).filter(n=>liveAgent(n)):[];
-  return {by,names:[...ROSTER,...[...new Set([...Object.keys(by),...live])].filter(n=>!ROSTER.includes(n)).sort()],notes:(state.meta.find(d=>d.id==="crew")||{}).notes||{}}}
+  return {by,names:[...ROSTER,...[...new Set([...Object.keys(col),...live])].filter(n=>!ROSTER.includes(n)).sort()],notes:(state.meta.find(d=>d.id==="crew")||{}).notes||{}}}
 // What an agent's tile shows: the live state first (board-state-probe's follow-up): working, its card; idle, its last
 // card only while it was active in the last PROBE_FRESH (#C428's rule), else "Idle since hh:mm". Without a fresh
 // reading of it, the db's cards (dbItems) and its idle note.
@@ -2776,23 +2780,14 @@ function agentOn(n,dbItems,dbNote,now=Date.now()){const la=liveAgent(n,now);if(!
   const lc=la.card&&state.initiatives.find(i=>i.id===la.card&&i.status!=="done"&&i.status!=="dropped");
   const items=lc&&(la.state==="working"||la.since!=null&&now-la.since<PROBE_FRESH)?[lc]:[];
   return {items,note:la.state==="idle"&&la.since!=null?"Idle since "+hhmm(la.since):dbNote||"Idle"}}
-// #C1331 (the owner's design, t-1795159050363): Who is on what is one column per agent. A column lists EVERY open card the agent is on or has queued (not only the live one), each a badge
-// with its order number in front: 1 is what it is on now, then its queue in the queue's own order (queueOf). A badge takes exactly the card's tile state: blinking blue while the agent
-// works on it, yellow stripes queued, dark stuck, a plain blue ring when the card is the agent's but nobody is on it (waiting). Work with no card is a dashed blue "work" badge. The
-// busiest agent is on the left, an agent with nothing open on the right with "idle since …". crewColumns is the data, crewColumnsHtml the markup, so a test reads either.
-function crewBadgeState(i,n){const on=agentsOn(i.id),working=on!==null?on.includes(n):Object.values(i.nowPhases||{}).flat().includes(n);
-  return working?"now":i.status==="stuck"?"stuck":isQueued(i)?"queued":"here"}
+// #C1331 (the owner's design, t-1795159050363): Who is on what is one column per agent, a badge per open card with its order number in front. A badge takes the reading's state: blinking blue only when the
+// reading says working, yellow stripes queued, dark stuck, a plain blue ring when the card is the role's but nobody is on it. A stale reading (#C1377) is greyed and says since when. Work with no card is a dashed
+// blue "work" badge. The busiest agent is on the left, an agent with nothing open on the right with "idle since …". crewColumns is the data, crewColumnsHtml the markup, so a test reads either.
 function crewColumns(now=Date.now()){
-  const {by,names,notes}=crewBy();
+  const {by,names,notes}=crewRoster(),col=crewDoc().columns||{},byId=new Map(state.initiatives.map(i=>[i.id,i]));
   const cols=names.map((n,ix)=>{
     const la=liveAgent(n,now),a=la&&probe&&probe.agents?probe.agents[n]:null;
-    const mine=(by[n]||[]).filter(i=>i&&i.status!=="done"&&i.status!=="dropped"&&!i.dropped);
-    const st=new Map(mine.map(i=>[i,crewBadgeState(i,n)]));
-    // A card sits in the column of the agent that is on it, or whose card it is (queued, stuck, waiting): a card another agent only passes through is not in this one.
-    const own=mine.filter(i=>st.get(i)==="now"||i.who===n);
-    const rank=new Map(queueOf(n).map((i,k)=>[i,k]));
-    const ordered=own.slice().sort((x,y)=>(st.get(y)==="now")-(st.get(x)==="now")||(rank.has(x)?rank.get(x):1e9)-(rank.has(y)?rank.get(y):1e9)||openOrder(x,y));
-    const items=ordered.map(i=>({card:i,state:st.get(i)}));
+    const items=(col[n]||[]).map(e=>({card:byId.get(e.id)||{id:e.id,num:e.num,name:e.id},state:e.working===true?"now":e.state==="stuck"?"stuck":e.state==="queued"?"queued":"here",stale:e.stale===true,staleSince:Number.isFinite(e.staleSince)?e.staleSince:null}));
     if(la&&la.state==="working"&&!la.card)items.unshift({work:true,since:la.since,tool:a&&typeof a.tool==="string"?a.tool:null});
     const idle=la&&la.state==="idle"&&la.since!=null?"idle since "+hhmm(la.since):String(notes[n]||"idle").toLowerCase();
     return {name:n,ix,items,idle,idleAt:la&&la.state==="idle"&&la.since!=null?la.since:0}});
@@ -2801,9 +2796,9 @@ function crewColumns(now=Date.now()){
 function crewBadgeTitle(it,now){
   if(it.work)return `Working on something that has no card${it.since!=null?" since "+hhmm(it.since):""}${it.tool?" (using "+it.tool+")":""}`;
   const i=it.card,e=phaseStart(i,i.phase),ph=notStarted(i)?"Queued":(PHASES.find(p=>p[0]===i.phase)||[,i.phase||""])[1];
-  return [`${Number.isInteger(i.num)?"#C"+i.num+" ":""}${i.name||i.id}`,`Phase: ${ph}${it.state==="now"?" (working now)":it.state==="stuck"?" (stuck)":it.state==="queued"?" (queued)":""}`,e?"Since "+mtShort(e.start,now):"",i.batch?"Group: "+groupLabel(i.batch):""].filter(Boolean).join(" · ")}
+  return [`${Number.isInteger(i.num)?"#C"+i.num+" ":""}${i.name||i.id}`,`Phase: ${ph}${it.state==="now"?" (working now)":it.state==="stuck"?" (stuck)":it.state==="queued"?" (queued)":""}`,it.stale?(Number.isFinite(it.staleSince)?"no fresh reading since "+hhmm(it.staleSince):"no fresh reading"):"",e?"Since "+mtShort(e.start,now):"",i.batch?"Group: "+groupLabel(i.batch):""].filter(Boolean).join(" · ")}
 function crewColumnsHtml(now=Date.now()){
-  return `<div class="ccols">${crewColumns(now).map(c=>`<div class="ccol${c.items.length?"":" idle"}" data-agent="${esc(c.name)}"><h3>${esc(c.name)}</h3>${c.items.length?c.items.map((it,k)=>`<div class="cit"><span class="cn">${k+1}</span><span class="cb ${it.work?"work":it.state}" tabindex="0" title="${esc(crewBadgeTitle(it,now))}">${it.work?"work":esc(Number.isInteger(it.card.num)?"#C"+it.card.num:it.card.id)}</span></div>`).join(""):`<small>${esc(c.idle)}</small>`}</div>`).join("")}</div>`}
+  return `<div class="ccols">${crewColumns(now).map(c=>`<div class="ccol${c.items.length?"":" idle"}" data-agent="${esc(c.name)}"><h3>${esc(c.name)}</h3>${c.items.length?c.items.map((it,k)=>`<div class="cit"><span class="cn">${k+1}</span><span class="cb ${it.work?"work":it.state}${it.stale?" read-stale":""}" tabindex="0" title="${esc(crewBadgeTitle(it,now))}">${it.work?"work":esc(Number.isInteger(it.card.num)?"#C"+it.card.num:it.card.id)}</span></div>`).join(""):`<small>${esc(c.idle)}</small>`}</div>`).join("")}</div>`}
 function renderCrew(){$("crew").innerHTML=crewColumnsHtml(Date.now())}
 // The open cards' order (the owner, 2026-10-26: the most advanced on top): by status (stuck, active, queued, paused),
 // then the furthest phase first in the config's order (ship before security, checker, language, test, build, plan),
@@ -3563,10 +3558,10 @@ function nowHtml(now=Date.now()){
 function renderNow(){const el=$("now");if(!$("v3").hidden&&!$("v3now").hidden)keep(el,()=>{el.innerHTML=nowHtml()})}
 // Board v3, the Crew view (step 4): a tile per agent (the roster, then anyone else on a card or with a memory reading):
 // its model and effort (meta/models), its memory (ctxAgents, with "/clear me" once saved, dimmed when the reading is over
-// 2 h old), and what it is on (crewBy: each card with its phase; queued and stuck marked) or its idle note; then the
+// 2 h old), and what it is on (crewRoster: each card with its phase; queued and stuck marked) or its idle note; then the
 // last 7 days' time by phase (logTotals), working, queued while busy, and gated.
 function crewHtml(now=Date.now()){
-  const {by,names:onCards,notes}=crewBy(),mem=ctxAgents(),models=(state.meta.find(d=>d.id==="models")||{}).agents||{};
+  const {by,names:onCards,notes}=crewRoster(),mem=ctxAgents(),models=(state.meta.find(d=>d.id==="models")||{}).agents||{};
   const names=[...onCards,...Object.keys(mem).filter(n=>!onCards.includes(n)).sort()];
   const tiles=names.map(n=>{const md=models[n]||{},m=mem[n];
     const L=m?ctxLevel(m):null,c=L?L.c:"";
@@ -4024,7 +4019,7 @@ setInterval(()=>{tick();if(!typingText()&&!selectionHeld()&&document.querySelect
     ()=>{$("dot").classList.remove("on");dbState="connection lost, reload";renderStamp()}))};
   // Every collection, and again (each stream closed first) when the data is behind (#C452: catchUp).
   resubscribe=()=>{subs.forEach(u=>{try{if(typeof u==="function")u()}catch(e){}});subs=[];
-    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","readings","groups","threads","plan","timings","ctxRequests","checkRequests","threadPings","pingThreads","agentPrs","approvals"].forEach(sub)};
+    ["initiatives","waiting","events","usage","meta","todo","ideas","steps","ctx","messages","derived","readings","groups","crew","threads","plan","timings","ctxRequests","checkRequests","threadPings","pingThreads","agentPrs","approvals"].forEach(sub)};
   resubscribe();
 })();
 // The Studio's state (#C420), apart from the board's data: kept current by the connector's watch, once a minute.

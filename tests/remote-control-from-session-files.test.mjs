@@ -85,8 +85,8 @@ test("the store: an off role reaches Manager once; when the switch is on again i
 
 const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 test("the Crew tile shows Remote Control off for a role that reads off, and nothing for the others; a stale reading draws no chip", () => {
-  const b = loadNames(["liveAgent", "probeEvent", "crewBy", "crewHtml"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(T); } static now() { return T; } } });
-  Object.assign(b.state, { initRaw: [], steps: [], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [], derived: [], initiatives: [] });
+  const b = loadNames(["liveAgent", "probeEvent", "crewRoster", "crewDoc", "crewHtml"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(T); } static now() { return T; } } });
+  Object.assign(b.state, { initRaw: [], steps: [], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [], derived: [], initiatives: [], crew: [] });
   const a = (at, extra = {}) => ({ state: "idle", lastActivityAt: at, tool: null, card: null, since: null, ...extra });
   const live = (at) => ({ v: 1, board: { boardId: "TestBoard42xyz", at, probe: null, pageVersion: null }, cards: {}, agents: { Checker: a(at, { rcOff: true }), Security: a(at) } });
   b.probeEvent({ type: "data", result: { payload: live(T - 40e3) } }, {});

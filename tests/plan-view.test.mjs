@@ -127,8 +127,9 @@ test("Now never injects markup: node text, paths and card names are escaped", ()
 
 test("Crew: a tile per agent with its model and effort, its memory and what it is on; then time by phase", () => {
   const now = Date.now();
-  const b = loadNames(["crewHtml", "setV3View"]);
+  const b = loadNames(["crewRoster", "crewDoc", "crewHtml", "setV3View"]);
   Object.assign(b.state, {
+    crew: [{ id: "crew", columns: { Builder: [{ n: 1, id: "c1", num: 1, state: "here", wait: null, working: false }, { n: 2, id: "c2", num: 2, state: "queued", wait: null, working: false }], Checker: [{ n: 3, id: "c3", num: 3, state: "here", wait: null, working: false }] } }],
     plan: [], ideas: [], threads: [], waiting: [], derived: [],
     meta: [{ id: "models", agents: { Builder: { model: "opus", effort: "high" } } }, { id: "crew", notes: { Checker: "Reviewing nothing" } },
       { id: "context", at: now - 6e4, agents: { Builder: { pct: 52, saved: true, savedPct: 52 }, Scout: { pct: 10 } } }],
@@ -158,6 +159,7 @@ test("Crew never injects markup: agent names, models, notes and card names are e
   const evil = "<img src=x onerror=alert(1)>";
   const b = loadNames(["crewHtml"]);
   Object.assign(b.state, { meta: [{ id: "models", agents: { [evil]: { model: evil } } }, { id: "crew", notes: { [evil]: evil } }], ctx: [{ id: evil, pct: 5, at: Date.now() }],
+    crew: [{ id: "crew", columns: { [evil]: [{ n: 1, id: "c", num: 1, state: "here", wait: null, working: false }] } }],
     initiatives: [{ id: "c", name: evil, who: evil, status: "active", phase: evil }] });
   const html = b.crewHtml();
   assert.doesNotMatch(html, /<img/);

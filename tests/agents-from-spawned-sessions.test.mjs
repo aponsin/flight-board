@@ -83,14 +83,14 @@ test("the state accepts by: spawn and still refuses any other word", () => {
 
 const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 test("the Crew tiles draw an agent the probe reads that is not on the roster, with no config edit; a stale reading draws none", () => {
-  const b = loadNames(["liveAgent", "probeEvent", "crewBy", "crewHtml"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(T); } static now() { return T; } } });
-  Object.assign(b.state, { initRaw: [], steps: [], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [], derived: [], initiatives: [] });
+  const b = loadNames(["liveAgent", "probeEvent", "crewRoster", "crewDoc", "crewHtml"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(T); } static now() { return T; } } });
+  Object.assign(b.state, { initRaw: [], steps: [], waiting: [], todo: [], ideas: [], events: [], meta: [], ctx: [], messages: [], threads: [], plan: [], timings: [], derived: [], initiatives: [], crew: [] });
   const live = (at) => ({ v: 1, board: { boardId: "TestBoard42xyz", at, probe: null, pageVersion: null }, cards: {}, agents: { Checker: { state: "idle", lastActivityAt: at, tool: null, card: null, since: null }, "Checker 2": { state: "idle", lastActivityAt: at, tool: null, card: null, since: null, by: "spawn" } } });
   b.probeEvent({ type: "data", result: { payload: live(T - 40e3) } }, {});
-  assert.deepEqual([...b.crewBy().names], ["Manager", "Builder", "Checker", "Security", "Release", "Checker 2"]);
+  assert.deepEqual([...b.crewRoster().names], ["Manager", "Builder", "Checker", "Security", "Release", "Checker 2"]);
   assert.match(b.crewHtml(), /data-agent="Checker 2"/);
   assert.doesNotMatch(b.crewHtml().split('data-agent="Checker 2"')[1], /found by title/, "a spawned agent is not 'found by title': that note is for a roster role with no session id");
   b.probeEvent({ type: "data", result: { payload: live(T - 10 * MIN) } }, {});
-  assert.deepEqual([...b.crewBy().names], ["Manager", "Builder", "Checker", "Security", "Release"], "no live reading, no extra tile");
-  assert.match(html, /const live=probe&&probe\.agents/, "crewBy reads the probe's agents");
+  assert.deepEqual([...b.crewRoster().names], ["Manager", "Builder", "Checker", "Security", "Release"], "no live reading, no extra tile");
+  assert.match(html, /const live=probe&&probe\.agents/, "crewRoster reads the probe's agents");
 });
