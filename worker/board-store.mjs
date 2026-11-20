@@ -962,9 +962,15 @@ export async function ensureGroup(db, now, who, batch) {
   if (typeof batch !== "string" || !batch.trim()) return null;
   const have = await db.prepare("SELECT num, name FROM groups WHERE batch = ?").bind(batch).first();
   if (have) return have;
-  // One statement picks the number and writes the row; the UNIQUE on num makes a racing second writer fail rather than repeat a number.
-  await db.prepare("INSERT OR IGNORE INTO groups (batch, num, name, created_by, created_at) SELECT ?, COALESCE(MAX(num), 0) + 1, NULL, ?, ? FROM groups").bind(batch, who ?? "store", now).run();
-  return await db.prepare("SELECT num, name FROM groups WHERE batch = ?").bind(batch).first();
+  // One statement picks the number (the highest plus one) and writes the row. The UNIQUE on num keeps a number from repeating: a writer that loses the race on it has its
+  // INSERT OR IGNORE skipped (no error, no row), and the read below then finds nothing. Checker 2 and Security on 5855d06c: it tries again, with the new highest number,
+  // a few times; a row some other writer made for this batch is the answer too. Only if all four miss does it answer { num: null }, which no caller treats as an error.
+  for (let n = 0; n < 4; n++) {
+    await db.prepare("INSERT OR IGNORE INTO groups (batch, num, name, created_by, created_at) SELECT ?, COALESCE(MAX(num), 0) + 1, NULL, ?, ? FROM groups").bind(batch, who ?? "store", now).run();
+    const g = await db.prepare("SELECT num, name FROM groups WHERE batch = ?").bind(batch).first();
+    if (g) return g;
+  }
+  return { num: null, name: null };
 }
 // A card put in a group by any write: the group has its number, and a place of its own as a single card is gone (it is in the group's place now).
 const joinedGroup = async (db, now, who, id, batch) => {

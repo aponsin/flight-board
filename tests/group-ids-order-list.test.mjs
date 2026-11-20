@@ -46,9 +46,21 @@ test("Pull out makes the card a single card just above the group it left; a grou
   assert.deepEqual(await openSlots(db), ["g1-a", "g2-b", "g3-c"]);
   assert.ok((await pullOutOfGroup(db, ++t, "owner", { id: "b1-one" })).ok);
   assert.deepEqual(await openSlots(db), ["g1-a", slotKeyOf("b1-one"), "g3-c"], "g2-b had one open card: it is gone, the card sits where the group was");
+  // Checker 2 on 5855d06c: the STORED rows, not only the list read back: the empty group's row is dropped at the pull-out itself, and the card's place is written.
+  assert.deepEqual(await orderRows(db), ["g1-a", slotKeyOf("b1-one"), "g3-c"], "the emptied group has no row left");
   assert.ok((await pullOutOfGroup(db, ++t, "owner", { id: "a2-two" })).ok);
   assert.deepEqual(await openSlots(db), [slotKeyOf("a2-two"), "g1-a", slotKeyOf("b1-one"), "g3-c"], "just above g1-a, which keeps a1-one");
   assert.deepEqual(await orderRows(db), await openSlots(db), "the stored list is the same list");
+});
+
+test("a placed single card written into a group by any write loses its own place: its stored row goes and the group's number is minted", async () => {
+  const db = await world();
+  assert.ok((await pullOutOfGroup(db, ++t, "owner", { id: "b1-one" })).ok);
+  assert.ok((await orderRows(db)).includes(slotKeyOf("b1-one")), "placed");
+  assert.ok((await updateCard(db, ++t, "Manager", { id: "b1-one", batch: "g9-fresh" })).ok);
+  assert.ok(!(await orderRows(db)).includes(slotKeyOf("b1-one")), "the row of its own place is gone as soon as it is in a group");
+  assert.equal((await view(db)).groupNames.find((g) => g.batch === "g9-fresh").num, 4, "and the new group has its number");
+  assert.ok(!(await openSlots(db)).includes(slotKeyOf("b1-one")));
 });
 
 test("a single card has its own arrows: a card with no place joins the end of the list, then moves; groups and single cards swap places", async () => {

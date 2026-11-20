@@ -643,6 +643,18 @@ ul.plan ul.plan{margin:6px 0 0 18px;padding-left:12px;border-left:2px solid var(
 .g-move button:disabled{opacity:.35;cursor:default}
 .g-place{font:600 .72rem var(--mono);color:var(--muted);margin-left:6px}
 @media (max-width:760px){.g-move{margin-left:0}.g-move button{min-width:44px;min-height:44px}}
+/* #C1299: Move to... on a card, Rename on a group, and the dialog that asks a name or answers the in-review warning (outside #board, so a redraw never closes it). */
+select.mv{font:600 .82rem var(--mono);color:var(--accent);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 10px;min-height:2.2rem;max-width:12rem;cursor:pointer}
+.g-ren{font:600 .78rem var(--mono);color:var(--accent);background:none;border:1px solid var(--line);border-radius:999px;padding:4px 10px;min-height:2rem;margin-left:8px;cursor:pointer}
+.askd{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.45)}
+.askd .box{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:16px;max-width:26rem;width:100%;display:flex;flex-direction:column;gap:12px}
+.askd input{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;min-height:44px}
+.askd .row{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.askd button{font:600 .9rem var(--mono);min-height:44px;padding:0 16px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+.askd button.go{background:var(--accent);border-color:var(--accent);color:#fff}
+@media (max-width:760px){select.mv{max-width:100%}
+  /* Designer: the "Waiting on <the owner>: <decision>" line is one line of about 60 characters with an ellipsis on a phone (the full words are the title). */
+  .i-meta .wo b{display:inline-block;max-width:min(60ch,100%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom}}
 .pulled{font:600 .78rem var(--mono);color:var(--warn);border:1px dashed var(--warn);border-radius:4px;padding:1px 6px}
 table.crew3-ph{margin-top:14px}
 .now-group{margin-bottom:16px}
@@ -2429,8 +2441,7 @@ function gaps(i){const g=[],now=Date.now(),kw=knownWait(i)||ownerWait(i,now);
 // lead's routine "next is" field ("Boardsmith", "Checker, Security; then …"): only the owner's name there is a hold.
 const parkedStatus=i=>!!i&&(i.status==="paused"||i.status==="parked"||((CONFIG.nudges||{}).parked||[]).includes(i.status));
 // #C1164: whether waiting_on holds the card is the Worker's reading (the view's heldBy, worker/held-by.mjs), not a rule of the page's own.
-function heldOnPurpose(i){if(!i)return false;
-  return i.status==="parked"||((CONFIG.nudges||{}).parked||[]).includes(i.status)||!!i.heldBy||!!ownerWait(i)}
+// (#C1299: the held-on-purpose helper had no caller since #C1301 took the red gap row away, and is gone.)
 // Stalled: an item in flight with no step logged for 30+ min, open step or not (the board can't
 // tell long work from a hang, so the agent logs). Not when queued behind a busy agent, held by the owner, in a wait the
 // repository explains, or done. Returns minutes.
@@ -2567,7 +2578,7 @@ function phaseStart(i,k){const l=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filte
 // before whoForPhase was fixed). The same map as PHASE_LANES in worker/board-rules.mjs; a test fails if they differ.
 const LANE_ROLE={language:"Linguist",design:"Designer",checker:"Checker",security:"Security",ship:"Release",live:"Release",pack:"Release",install:"Release"};
 function sinceTag(i,k){const e=phaseStart(i,k);if(!e)return "";const who=LANE_ROLE[k]||e.who;return `<small class="since" title="When ${esc(k)} first began: ${who?esc(who)+" · ":""}${esc(mtStamp(e.start))}">${esc(mtShort(e.start))}</small>`}
-function initRow(i,where){const w=typeof where==="string"?where:"init";
+function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
   const ns=notStarted(i), idx=ns?phaseIndex(BUILD_PHASE):phaseIndex(i.phase), stuck=i.status==="stuck", queued=ns||i.status==="queued", times=phaseTimes(i.phaseLog,i.status==="done"?i.doneAt:null);
   const sMs=i.status!=="done"?stepMs(i):null;
   const skip=Array.isArray(i.skip)?i.skip:[], waits=waitBoxes(i.phaseLog,i.status==="done"?i.doneAt:null);
@@ -2576,7 +2587,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const landed=waitsForInstall(i);
   // #C1300: green is only the owner's install: a board card whose pack is cut (evidence packed) and waits for it, or the install wait the repository explains. A landed board card with no pack yet is the normal process (yellow, "Queued for pack"); a product card is never green.
   const greenWait=!paused&&cardRepo(i)===BOARD_REPO&&((landed&&(liveCard(i.id)||{}).packed===true)||kwT==="install");
-  const idleWord=i.status==="done"?"":paused?"Paused":landed?(greenWait?"Queued for your install":"Queued for pack"):kwT==="install"?"waits on the owner's install":kwT?waitTile(i,kwT):"";
+  const idleWord=i.status==="done"?"":paused?"Paused":landed?(greenWait?"Your install":"Queued for pack"):kwT==="install"?"waits on the owner's install":kwT?waitTile(i,kwT):"";
   // #C1289 (Designer, on #C1288): the product ship's tile word is the role plus " ships"; on a phone the " ships" is hidden (the .sl parts, under 760 px), so "Release" shows whole on the narrow 8-tile track.
   // #C1300 F1 (Designer): the Pack tile already says PACK, and "Queued for pack" is cut to "QUEUED FO…" on the 4-a-row phone track, so " for pack" is a .sl part, hidden under 760 px.
   const packShort=!paused&&landed&&!greenWait&&idleWord==="Queued for pack";
@@ -2613,7 +2624,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const next=i.nextNote?`<span${stale?' style="opacity:.6"':""}>Next: <b>${esc(i.nextNote)}</b>${num(i.nextAt)?` <span data-next="${i.nextAt}">${i.nextAt>Date.now()?"in "+dur(i.nextAt-Date.now()):"due now"}</span>`:""}${nAt!=null?` <span data-ago="${nAt}">(written ${dur(Date.now()-nAt)} ago${stale?"; an agent has moved since":""})</span>`:" (not dated)"}</span>`:"";
   // #C935 (the owner's pick B): the "Held: <reason>" words stay in view; the end time and the Next line fold into one "Details" button
   // beside "Start a thread", so a card is a few lines until the owner asks for more.
-  const held=heldLine(i),heldShort=held.replace(/, until .*$/,""),wait=held&&!liveOpen?`<span class="held-line">${esc(heldShort)}</span>`:i.waitingOn&&!liveOpen?`<span>Waiting on <b>${esc(i.waitingOn)}</b></span>`:"";
+  const held=heldLine(i),heldShort=held.replace(/, until .*$/,""),wait=held&&!liveOpen?`<span class="held-line">${esc(heldShort)}</span>`:i.waitingOn&&!liveOpen?`<span class="wo">Waiting on <b title="${esc(i.waitingOn)}">${esc(i.waitingOn)}</b></span>`:"";
   // Designer's look: the reason is already in view, so the fold says only when the hold ends ("Until: <end>"), not "Held: <reason>" twice.
   const heldFull=held&&!liveOpen&&heldShort!==held?`<span class="held-line">Until: ${esc(held.slice(heldShort.length).replace(/^, until /,""))}</span>`:"";
   // One ETA per card, the ETA box's (#C450, the owner on #C448: "Live in 18 min · around 04:32 PM" against "expected L
@@ -2628,7 +2639,7 @@ function initRow(i,where){const w=typeof where==="string"?where:"init";
   const detBody=`${next}${removes}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
   const gp=liveOpen?[]:gaps(i);
   const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip,track):"";
-  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
+  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now())}<strong>${esc(i.name)}</strong>${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}<span class="size">${esc(i.size||"?")}</span><span class="state ${st?"stalled":verifying(i)?"verifying":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track" style="--per:${per}">${steps}</div>`}
@@ -2697,18 +2708,28 @@ document.addEventListener("input",e=>{if(e.target&&e.target.id==="dsearch"){cons
 // The number is part of the id, so it never drifts when an earlier group lands. Any other batch id shows as it is.
 const GROUP_ID=/^g(\d{1,3})-([a-z0-9]+(?:-[a-z0-9]+)*)$/;
 function groupShort(b){const m=GROUP_ID.exec(String(b||""));return m?"G"+Number(m[1]):String(b||"")}
-function groupLabel(b){const m=GROUP_ID.exec(String(b||""));if(!m)return String(b||"");const w=m[2].replace(/-/g," ");return `G${Number(m[1])} · ${w[0].toUpperCase()}${w.slice(1)}`}
+// #C1299: the store numbers every group ("#G12") and holds the name the owner gave it (meta/groupNames); a group with a name reads "#G12 · Its name", one with only a number
+// reads "#G12 · " and the old words of its batch id.
+function groupNameRows(){const m=(state.meta||[]).find(d=>d&&d.id==="groupNames");return m&&Array.isArray(m.rows)?m.rows:[]}
+function groupNameOf(b){return groupNameRows().find(r=>r&&r.batch===b)||null}
+function groupLabel(b){const m=GROUP_ID.exec(String(b||"")),g=groupNameOf(b);
+  const old=()=>{if(!m)return String(b||"");const w=m[2].replace(/-/g," ");return `G${Number(m[1])} · ${w[0].toUpperCase()}${w.slice(1)}`};
+  if(g&&typeof g.name==="string"&&g.name)return `#G${g.num} · ${g.name}`;
+  return g&&Number.isInteger(g.num)?`#G${g.num} · ${old().replace(/^G\d+ · /,"")}`:old()}
 // The open list in groups: each group sits where its first card (in the list's order) would, with its cards in that order; a card in no group stays a row.
 // #C1053: the groups go top to bottom in the order they go live (the owner's order, meta/groupOrder: a placed group by its place, a new one after the
 // placed ones by its id), and every card in no group comes after all the groups. The same rule as worker/board-rules.mjs groupCompare.
 function groupOrderRows(){const m=(state.meta||[]).find(d=>d&&d.id==="groupOrder");return m&&Array.isArray(m.rows)?m.rows:[]}
 function groupRankOf(b,rows){const r=rows.find(x=>x&&x.batch===b);return Number.isInteger(r&&r.pos)&&r.pos>=1?r.pos:1e6}
 function groupCmp(a,b,rows){return groupRankOf(a,rows)-groupRankOf(b,rows)||String(a).localeCompare(String(b),"en",{numeric:true})||(a<b?-1:a>b?1:0)}
-function groupList(cards){const out=[],at=new Map();
-  for(const i of cards){const b=typeof i.batch==="string"&&i.batch?i.batch:null;if(!b){out.push({card:i});continue}
+// #C1299: ONE order list: the groups and the single cards the owner has placed (a row "c:<card id>" in the order) go in it by place, so a single card sits between groups;
+// a single card with no place of its own stays after everything, as before (the same rule as worker/board-rules.mjs slotOf).
+const slotKey=i=>"c:"+i.id;
+function groupList(cards){const out=[],at=new Map(),rows=groupOrderRows(),placed=k=>rows.some(x=>x&&x.batch===k);
+  for(const i of cards){const b=typeof i.batch==="string"&&i.batch?i.batch:null;if(!b){out.push(placed(slotKey(i))?{card:i,slot:slotKey(i)}:{card:i});continue}
     if(!at.has(b)){at.set(b,out.length);out.push({group:b,cards:[]})}out[at.get(b)].cards.push(i)}
-  const rows=groupOrderRows();
-  return [...out.filter(x=>x.group).sort((x,y)=>groupCmp(x.group,y.group,rows)),...out.filter(x=>!x.group)]}
+  const key=x=>x.group||x.slot;
+  return [...out.filter(key).sort((x,y)=>groupCmp(key(x),key(y),rows)),...out.filter(x=>!key(x))]}
 // #C1068 (the owner, 11-12: cards a reviewer reads as one batch pulse in unison, at card and group level; a card reviewed alone pulses by itself; a small "together" label
 // says it in words, so colour and motion are not the only cue). Together = two or more open, started cards of ONE group at the same review phase: a free review lane is sent
 // them as one range (collector/store-dispatch.mjs, the "together" part of its review line). A pulse is one CSS animation of PULSE_MS: the members' tiles take the same delay
@@ -2732,8 +2753,9 @@ const builtWaiting=i=>{const L=liveCard(i.id);return !!L&&L.builtWaiting===true&
 function railState(i){return i.status==="stuck"?["stuck","Blocked"]:i.status==="paused"?["paused","Paused"]:notStarted(i)?["queued","Queued"]:phaseIndex(i.phase)>phaseIndex(BUILD_PHASE)?["done","Built"]:builtWaiting(i)?["done","Built, waiting"]:["active","Building"]}
 function railChips(i){const iss=i.issues||{};return ISSUE_KINDS.map(([k,l])=>{const v=num(iss[k])||0;return v?`<span class="chip">${v} ${issueLabel(l,v)}</span>`:""}).join("")}
 // The owner's up and down on a group (#C1053): shown on the store page only; `at` is {n: its place, of: how many groups} so the top one cannot go up.
-function groupMoveButtons(b,at){if(!STORE||!at)return "";const l=groupLabel(b);
-  return `<span class="g-move"><button type="button" data-gmove="${esc(b)}" data-dir="up" aria-label="Move group ${esc(l)} up, it goes live earlier"${at.n===1?" disabled":""}>↑</button><button type="button" data-gmove="${esc(b)}" data-dir="down" aria-label="Move group ${esc(l)} down, it goes live later"${at.n===at.of?" disabled":""}>↓</button></span><span class="g-place">${at.n} of ${at.of}</span>`}
+// #C1299: the same arrows on a single card ("c:<card id>", `what` "card #C12" for the label): a card with no place of its own has n null, joins the end on its first up, and has no down.
+function groupMoveButtons(b,at,what){if(!STORE||!at)return "";const l=what||"group "+groupLabel(b),none=at.n===null;
+  return `<span class="g-move"><button type="button" data-gmove="${esc(b)}" data-dir="up" aria-label="Move ${esc(l)} up, it goes live earlier"${at.n===1?" disabled":""}>↑</button><button type="button" data-gmove="${esc(b)}" data-dir="down" aria-label="Move ${esc(l)} down, it goes live later"${none||at.n===at.of?" disabled":""}>↓</button></span>${none?"":`<span class="g-place">${at.n} of ${at.of}</span>`}`}
 // #C1099 (11-16: the board showed G6 "Live in 54 min" and G10, first in the owner's order and the same agent's, "1 h 52 min"; the owner read it as the order not being
 // respected): an agent works its groups in the owner's order, so a group is not live before every higher group that shares an agent with it. The floor of each group
 // is the latest adjusted live time among the groups above it that share a role; the group's own time is then at least MIN_LEFT after it. A group with no time of its
@@ -2772,8 +2794,8 @@ function groupRow(b,cards,at,etaOver){const f=groupFacts(cards),track=trackFor(c
     return `<div class="step${n<0?"":sk?" skip":done?" done":q?"":n===f.idx?(worked?" now":" here"):""}${tg?" together":""}" title="${esc(l)}">${esc(l)}<small${tg&&!sk&&!q?' class="tog"':""}>${sk?"not needed":q?"queued":tg?"together":"&nbsp;"}</small></div>`}).join("");
   const eta=f.eta!=null?`<div class="lbl">Live in</div><div class="big" data-eta="${f.eta}">${f.eta>Date.now()?dur(f.eta-Date.now()):"due"}</div><div class="lbl">around ${hhmm(f.eta)}</div>`:`<div class="lbl">ETA</div><div class="big">—</div>`;
   const ord=railOrder(cards),rail=ord.map(i=>{const [c,w]=railState(i);
-    return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span><strong>${esc(i.name)}</strong>${newPill(newReplies(i.id).length)}<span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${cardMoveButtons(i,ord)}${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
-  return `<div class="i-row g-row" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span>${repoBadge(cards[0],"group")}<strong>${esc(groupLabel(b))}</strong><span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
+    return `<div class="g-card"><details data-id="gc-${esc(i.id)}"><summary><span class="g-num">#C${esc(i.num??"?")}</span><strong>${esc(i.name)}</strong>${newPill(newReplies(i.id).length)}<span class="state ${c}">${w}</span>${railChips(i)}</summary>${initRow(i,"group")}</details>${cardMoveButtons(i,ord)}${moveToSelect(i)}${STORE?`<button type="button" class="g-pull" data-pull="${esc(i.id)}" data-num="${esc(i.num??"")}">Pull out</button>`:""}</div>`}).join("");
+  return `<div class="i-row g-row" data-group="${esc(b)}"><div><div class="i-name"><span class="g-tag">Group</span>${repoBadge(cards[0],"group")}<strong>${esc(groupLabel(b))}</strong>${STORE?`<button type="button" class="g-ren" data-gren="${esc(b)}" aria-label="Rename group ${esc(groupLabel(b))}">Rename</button>`:""}<span class="g-count">${cards.length} card${cards.length===1?"":"s"}</span>${groupMoveButtons(b,at)}</div></div>
    <div class="eta">${eta}</div>
    <div class="track" style="--per:${evenPer(shownT.length)}">${tiles}</div>
    <div class="i-meta">${f.who.length?`<span>Track <b>${esc(f.who.join(", "))}</b></span>`:""}${f.started!=null?`<span>Started ${dayLabel(f.started)}</span>`:""}</div>
@@ -2788,6 +2810,38 @@ document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e
     if(j&&Array.isArray(j.order)){state.meta=(state.meta||[]).filter(d=>!d||d.id!=="groupOrder").concat([{id:"groupOrder",rows:j.order.map((batch,i)=>({batch,pos:i+1,setBy:"owner"}))}]);try{renderBoard()}catch(_){}}
     setTimeout(()=>{b.disabled=false},600)}
   catch(_){b.textContent="Not saved";setTimeout(()=>{b.textContent=was;b.disabled=false},4000)}});
+// #C1299: Move to... on a card (store page only): the open groups of the card's repository, then "New group...". The page asks a name, or answers the in-review warning, in a dialog
+// outside #board, so the poll's redraw never closes it.
+const GROUP_NAME_MAX=60;
+function askDialog({text,input,value,ok,cancel}){return new Promise(res=>{const d=document.createElement("div");d.className="askd";d.setAttribute("role","dialog");d.setAttribute("aria-modal","true");
+  d.innerHTML=`<div class="box"><div>${esc(text)}</div>${input?`<input type="text" maxlength="${GROUP_NAME_MAX}" value="${esc(value||"")}" aria-label="${esc(text)}">`:""}<div class="row"><button type="button" data-no>${esc(cancel||"Cancel")}</button><button type="button" class="go" data-yes>${esc(ok||"OK")}</button></div></div>`;
+  const done=v=>{d.remove();res(v)},inp=d.querySelector("input");
+  d.addEventListener("click",e=>{if(e.target.closest("[data-yes]"))done({ok:true,value:inp?inp.value.trim():""});else if(e.target.closest("[data-no]")||e.target===d)done({ok:false})});
+  d.addEventListener("keydown",e=>{if(e.key==="Escape")done({ok:false});else if(e.key==="Enter"&&inp)done({ok:true,value:inp.value.trim()})});
+  document.body.appendChild(d);(inp||d.querySelector("[data-yes]")).focus()})}
+function groupsForMove(i){const seen=new Map();for(const k of state.initiatives){if(k.status==="done"||!k.batch||k.batch===i.batch||seen.has(k.batch))continue;seen.set(k.batch,cardRepo(k))}
+  return [...seen].filter(([,r])=>String(r||"").toLowerCase()===String(cardRepo(i)||"").toLowerCase()).map(([b])=>b).sort((a,b)=>groupCmp(a,b,groupOrderRows()))}
+function moveToSelect(i){if(!STORE||i.status==="done")return "";const l=Number.isInteger(i.num)?"#C"+i.num:i.id;
+  return `<select class="mv" data-moveto="${esc(i.id)}" aria-label="Move ${esc(l)} to a group"><option value="">Move to…</option>${groupsForMove(i).map(b=>`<option value="${esc(b)}">${esc(groupLabel(b))}</option>`).join("")}<option value="__new">New group…</option></select>`}
+// A single card's controls: its own arrows (a place in the one order list) and Move to.
+function singleControls(i,at){if(!STORE)return "";const l=Number.isInteger(i.num)?"card #C"+i.num:"card "+i.id;return groupMoveButtons(slotKey(i),at,l)+moveToSelect(i)}
+async function postJson(path,body){const r=await fetch(path,{method:"POST",headers:{"content-type":"application/json"},credentials:"same-origin",body:JSON.stringify(body)});let j=null;try{j=await r.json()}catch(_){}return {status:r.status,ok:r.ok,j}}
+document.addEventListener("change",async e=>{const s=e.target&&e.target.closest?e.target.closest("[data-moveto]"):null;if(!s||!STORE)return;const id=s.dataset.moveto,v=s.value;if(!v)return;
+  const was=s.value;s.disabled=true;
+  try{let body={id};
+    if(v==="__new"){const a=await askDialog({text:"Name the new group",input:true,ok:"Create group"});if(!a.ok||!a.value||a.value.length>GROUP_NAME_MAX){s.value="";s.disabled=false;return}body.new_name=a.value}else body.batch=v;
+    let r=await postJson("/api/move-to-group",body);
+    if(r.status===409&&r.j&&r.j.warn==="in-review"){const a=await askDialog({text:r.j.message||"This group is in review: adding a card restarts its review",ok:"Move anyway",cancel:"Cancel"});if(!a.ok){s.value="";s.disabled=false;return}r=await postJson("/api/move-to-group",{...body,confirm:true})}
+    if(!r.ok)throw new Error("refused");
+    s.disabled=false}
+  catch(_){s.disabled=false;s.value="";const o=s.options[0];if(o){const t=o.textContent;o.textContent="Not saved";setTimeout(()=>{o.textContent=t},4000)}}});
+// The owner renames a group: the batch id stays, the name is for the page.
+document.addEventListener("click",async e=>{const b=e.target&&e.target.closest?e.target.closest("[data-gren]"):null;if(!b||!STORE||b.disabled)return;
+  const g=groupNameOf(b.dataset.gren),a=await askDialog({text:"Rename this group",input:true,value:(g&&g.name)||"",ok:"Rename"});if(!a.ok||!a.value||a.value.length>GROUP_NAME_MAX)return;
+  b.disabled=true;try{const r=await postJson("/api/group-rename",{batch:b.dataset.gren,name:a.value});if(!r.ok)throw new Error("refused");
+    state.meta=(state.meta||[]).map(d=>d&&d.id==="groupNames"?{...d,rows:d.rows.map(x=>x.batch===b.dataset.gren?{...x,name:a.value}:x)}:d);try{renderBoard()}catch(_){}}
+  catch(_){b.textContent="Not saved";setTimeout(()=>{b.textContent="Rename";b.disabled=false},4000);return}
+  b.disabled=false});
 // A card the owner pulled out of its group says so (who and when), until it is put in a group again.
 function pulledTag(i){if(!i||typeof i.pulledFrom!=="string"||!i.pulledFrom||i.batch)return "";const by=i.pulledBy==="owner"?OWNER:i.pulledBy;
   return `<span class="pulled">↰ pulled out of ${esc(groupShort(i.pulledFrom))}${num(i.pulledAt)!=null?" · "+esc(hhmm(i.pulledAt)):""}${by?" by "+esc(by):""}</span>`}
@@ -2809,8 +2863,9 @@ function renderBoard(){
   // finds them.
   const dOn=isOn(dQuery),doneAny=state.initiatives.filter(i=>i.status==="done").sort((a,b)=>(num(b.doneAt)??0)-(num(a.doneAt)??0));
   const doneDay=doneAny.filter(i=>(num(i.doneAt)??0)>Date.now()-DAY),done=dOn?doneAny.filter(i=>initHit(i,dQuery)):doneDay;
-  const gl=groupList(open),gn=gl.filter(x=>x.group).length,groupEtaMap=groupEtas(groupList(all));let gi=0; // #C1099: from every open card, so a search does not move a group's time
-  keep($("board"),()=>{patchHtml($("board"),open.length?gl.map(x=>x.group?groupRow(x.group,x.cards,{n:++gi,of:gn},groupEtaMap.get(x.group)):initRow(x.card)).join(""):on?NO_MATCH:'<div class="empty">No initiatives in flight.</div>')});
+  const gl=groupList(open),gn=gl.filter(x=>x.group||x.slot).length,groupEtaMap=groupEtas(groupList(all));let gi=0; // #C1099: from every open card, so a search does not move a group's time
+  // #C1299: a placed single card is a place in the list like a group; one with no place of its own has none (n null) and goes last.
+  keep($("board"),()=>{patchHtml($("board"),open.length?gl.map(x=>x.group?groupRow(x.group,x.cards,{n:++gi,of:gn},groupEtaMap.get(x.group)):initRow(x.card,"init",singleControls(x.card,{n:x.slot?++gi:null,of:gn}))).join(""):on?NO_MATCH:'<div class="empty">No initiatives in flight.</div>')});
   // The heading's count (#C295): the cards the list above draws, none when there are none; "N of M" while searching.
   $("initcount").textContent=on?`${open.length} of ${all.length}`:all.length?String(all.length):""; $("initcount").hidden=!on&&!all.length;
   $("donebox").hidden=!doneAny.length; $("donesum").textContent=dOn?`Done: ${done.length} found, any age`:`Done in the last 24 h (${doneDay.length})`;

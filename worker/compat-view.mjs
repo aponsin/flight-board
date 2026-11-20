@@ -271,6 +271,8 @@ export function compatView(view) {
   // #C859: each repository's stack switch, for the page's switch and its stack groups.
   if ((view.stackSwitch ?? []).length) collections.meta = [...(collections.meta ?? []), { id: "stackSwitch", rows: view.stackSwitch.map((r) => ({ repo: r.repo, stack: r.stack === true, setBy: r.set_by, setAt: r.set_at })) }];
   // #C1053: the owner's order of the card groups (meta/groupOrder, rows in place order), for the page's group list and its up and down buttons.
+  // #C1299: each group's #G number and the owner's name for it (meta/groupNames), for the page's group header and its Rename and Move to.
+  if ((view.groupNames ?? []).length) collections.meta = [...(collections.meta ?? []), { id: "groupNames", rows: view.groupNames.map((r) => ({ batch: r.batch, num: r.num, name: r.name ?? null })) }];
   if ((view.groupOrder ?? []).length) collections.meta = [...(collections.meta ?? []), { id: "groupOrder", rows: view.groupOrder.map((r) => ({ batch: r.batch, pos: r.pos, setBy: r.set_by, setAt: r.set_at })) }];
   if ((view.pings ?? []).length) collections.threadPings = view.pings.map((p) => ({ id: p.id, at: p.at })); // #C1009: the owner's Ping presses
   // #C880: refused writes on the page's "stuck" line (meta/stuck, which the old gate wrote and the page already draws as "<who> stuck on <card>: <why>").
