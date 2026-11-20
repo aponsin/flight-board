@@ -1,0 +1,2 @@
+PASS Full #C1294, line from b78db831e506e00e5e1a35b9d651347c55a236b6: F1 fixed (a waitsOn and threadSets test for a thread no card holds); the mutant that survived on 290dca8c (threadCard guard removed) now fails that test; the no-second-gate mutant is killed; its 7 tests pass on e4694e22; npm test on 290dca8c 3308 pass 0 fail (the fix adds a test only). The definition change matches DATA.md's Tile states and Changes line. The card row uses ownerWait's decision result as {id}, which threadName and esc handle.
+signed-by: Checker 2
