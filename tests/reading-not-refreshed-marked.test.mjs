@@ -71,8 +71,9 @@ test("the compat view carries the mark to the page's derived card, and only for 
 });
 
 test("the page greys a stale card: 'No fresh reading since HH:MM' in its own grey line, nothing on a good one", () => {
-  const b = loadNames(["staleLine", "derivedOf", "liveCard", "hhmm", "esc"]);
-  b.state.derived.push({ id: "all", at: FRESH_AT, cards: { old: { phase: "build", stale: true, staleSince: FRESH_AT }, noTime: { phase: "build", stale: true }, good: { phase: "build" } } });
+  // #C1382: the mark is the card's reading's own (the Worker's `readings`), not the derived copy's.
+  const b = loadNames(["staleLine", "staleOf", "hhmm", "esc"]);
+  b.state.readings = [{ id: "old", stale: true, staleSince: FRESH_AT }, { id: "noTime", stale: true }, { id: "good" }];
   const old = b.staleLine({ id: "old" });
   assert.match(old, /^<span class="stale-read"[^>]*>No fresh reading since \d{1,2}:\d{2}/);
   assert.match(old, new RegExp(`from ${b.hhmm(FRESH_AT).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "the hover repeats the time of the last good reading");
@@ -114,8 +115,9 @@ test("the restart badge's ship words say 'no fresh reading since HH:MM' for a st
 
 // Checker 2's F3 on 69f0c5d3: the card's own tiles and its age chip must not read current beside "No fresh reading".
 test("a stale card's flag is grey and its age chip says no fresh reading instead of an age; its row greys the tiles; a good card is unchanged", () => {
-  const b = loadNames(["evidence", "evidenceOff", "staleWords", "isStaleCard", "derivedOf", "liveCard", "phaseLabel", "asOf", "asOfText", "hhmm", "esc", "dur"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(FRESH_AT + 30_000); } static now() { return FRESH_AT + 30_000; } } });
-  b.state.derived.push({ id: "all", at: FRESH_AT + 20_000, cards: { old: { phase: "checker", at: FRESH_AT + 20_000, stale: true, staleSince: FRESH_AT }, good: { phase: "checker", at: FRESH_AT + 20_000 } } });
+  const b = loadNames(["evidence", "evidenceOff", "staleWords", "staleOf", "isStaleCard", "derivedOf", "liveCard", "phaseLabel", "asOf", "asOfText", "hhmm", "esc", "dur"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(FRESH_AT + 30_000); } static now() { return FRESH_AT + 30_000; } } });
+  b.state.derived.push({ id: "all", at: FRESH_AT + 20_000, cards: { old: { phase: "checker", at: FRESH_AT + 20_000 }, good: { phase: "checker", at: FRESH_AT + 20_000 } } });
+  b.state.readings = [{ id: "old", stale: true, staleSince: FRESH_AT }, { id: "good" }]; // #C1382: the mark is the reading's
   const stale = b.evidence({ id: "old", status: "active", phase: "checker" });
   assert.match(stale, /class="evidence old"/, "the flag is grey");
   assert.match(stale, /<small class="asof stale"[^>]*>no fresh reading since \d{1,2}:\d{2}/, "the age chip says why, not 'as of 10 s ago'");
@@ -145,14 +147,14 @@ test("repoFreshAt: a repository read fresh is stamped now; one that was not keep
   assert.deepEqual(repoFreshAt({ a: { fresh: false } }, null, NOW), {}, "no file read: nothing kept");
 });
 
-test("a fresh live reading speaks for the card: the derived copy's stale mark does not outlive it, and the live reading's own mark replaces it", () => {
+// #C1382: the card's mark is its reading's own; the derived copy's old mark is never read, so it cannot outlive a fresh reading.
+test("the mark is the card's reading's: a fresh reading has none whatever the derived copy says, and a stale one carries its own time", () => {
   const NOW = FRESH_AT + 60_000;
-  const b = loadNames(["staleLine", "derivedOf", "liveCard", "liveAgent", "probeEvent", "hhmm", "esc"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(NOW); } static now() { return NOW; } } });
+  const b = loadNames(["staleLine", "staleOf", "hhmm", "esc"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(NOW); } static now() { return NOW; } } });
   Object.assign(b.state, { derived: [{ id: "all", at: NOW, cards: { one: { phase: "build", stale: true, staleSince: FRESH_AT, head: "a".repeat(12) } } }] });
-  const live = (card) => b.probeEvent({ type: "data", result: { payload: { v: 1, board: { boardId: "TestBoard42xyz", at: NOW - 10e3, probe: null, pageVersion: null }, cards: { one: card }, agents: {} } } }, {});
-  live({ phase: "build", headSha12: "a".repeat(12), signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: NOW - 10e3 });
-  assert.equal(b.staleLine({ id: "one" }), "", "the live reading is fresh: no mark");
-  live({ phase: "build", headSha12: "a".repeat(12), signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: NOW - 10e3, stale: true, staleSince: FRESH_AT + 1000 });
+  b.state.readings = [{ id: "one", state: "waiting", wait: "turn" }];
+  assert.equal(b.staleLine({ id: "one" }), "", "the reading is fresh: no mark, the derived copy's old one is not read");
+  b.state.readings = [{ id: "one", state: "waiting", wait: "turn", stale: true, staleSince: FRESH_AT + 1000 }];
   assert.match(b.staleLine({ id: "one" }), new RegExp(`from ${b.hhmm(FRESH_AT + 1000).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "its own mark, its own time");
 });
 

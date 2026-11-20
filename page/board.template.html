@@ -1498,8 +1498,10 @@ function derivedOf(id){const all=state.derived.find(d=>d.id==="all"),d=all&&all.
   return out}
 // #C1377 (Director's audit #C1375): a card whose repository could not be read fresh is marked, never shown as current: a grey line with the time of its last good read.
 const staleWords=d=>{const t=Number.isFinite(d.staleSince)?d.staleSince:null;return t?`no fresh reading since ${esc(hhmm(t))}`:"no fresh reading"};
-const isStaleCard=i=>{if(!i||i.status==="done")return false;const d=derivedOf(i.id);return !!d&&d.stale===true};
-function staleLine(i){const d=i&&derivedOf(i.id);if(!d||d.stale!==true)return "";
+// #C1382: the mark is the card's reading's own (`stale`, `staleSince`), so the card row, its group row and its badge say the same.
+const staleOf=id=>{const r=(state.readings||[]).find(x=>x&&x.id===id);return r&&r.stale===true?r:null};
+const isStaleCard=i=>{if(!i||i.status==="done")return false;return !!staleOf(i.id)};
+function staleLine(i){const d=i&&staleOf(i.id);if(!d)return "";
   const t=Number.isFinite(d.staleSince)?d.staleSince:null;
   return `<span class="stale-read" title="The collector could not read this card's repository this minute: what is shown is the last good reading${t?`, from ${esc(hhmm(t))}`:""}.">${t?`No fresh reading since ${esc(hhmm(t))}`:"No fresh reading"}</span>`}
 // The card's one source of stage, with its age (#C450, the owner on #C448: "IN FLIGHT · typed: phase build · Repository:
@@ -1525,9 +1527,9 @@ function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const lab
   // The flag and its age wrap as one (Designer on live-source: a short title let the flag ride up alone).
   const text=`${live?"Live: ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}`,t=title?` title="${esc(title)}"`:"";
   // #C1377 (Checker 2's F3): a card whose repository could not be read fresh is grey, and its age chip says so instead of reading current ("Live: Ship · 12 s ago" beside "No fresh reading").
-  const sk=d.stale===true,old=sk||(!live&&num(d.at)!=null&&Date.now()-d.at>ASOF_STALE)?" old":"";
+  const S=staleOf(i.id),sk=!!S,old=sk||(!live&&num(d.at)!=null&&Date.now()-d.at>ASOF_STALE)?" old":"";
   const flag=off.length?`<button type="button" class="evidence differs${old}" data-evdiff="${esc(i.id)}" aria-expanded="${evOpen.has(i.id)}"${t}>${text}</button>`:`<span class="evidence${old}"${t}>${text}</span>`;
-  const ao=sk?` <small class="asof stale" title="The collector could not read this card's repository this minute">${staleWords(d)}</small>`:live?` <small class="asof" title="When the live state last read the Studio">${esc(liveAgeText())}</small>`:asOf(d.at);
+  const ao=sk?` <small class="asof stale" title="The collector could not read this card's repository this minute">${staleWords(S)}</small>`:live?` <small class="asof" title="When the live state last read the Studio">${esc(liveAgeText())}</small>`:asOf(d.at);
   return ao?`<span class="evg">${flag}${ao}</span>`:flag}
 // The disagreement's line, while its flag is pressed open: the hover's words.
 function evidenceLine(i){if(!evOpen.has(i.id))return "";const d=derivedOf(i.id),off=evidenceOff(i,d);
@@ -2677,7 +2679,7 @@ function cardTile(i,X,k,l){const {R,times,skip,paused}=X;
   else if(T==="queued")t=`<small>${esc(queueLabel(i))}</small>`;
   else if(T==="stuck")t="";
   else if(T==="unknown")t=`<small>${esc(R.state==="unknown"?"no reading":"")}</small>`;
-  else if(T==="wait"&&R.state==="rework"&&!R.wait)t=`<small class="rs">Sent<span class="sl"> back</span></small>`;
+  else if(T==="wait"&&R.state==="rework"&&!R.wait)t=`<small>Sent back</small>`;
   else t=`<small class="rs">${waitTileWord(i,R)}</small>`;
   const slow=here&&(T==="working"||T==="stuck")?slowTag(i,k,times[k],c):"";
   // #C1319: the ship in progress carries its estimate from past ships, labelled "est.".
