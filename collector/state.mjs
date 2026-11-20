@@ -274,6 +274,18 @@ const namesCard = (card, branch) => String(branch).split("/").pop() === card.id 
 // Board-Id trailer nor its "#C<num>:" subject: the name alone found it. When that tip is also on main it is a branch pushed
 // before any commit, and it shows the card as being worked (build), never as shipped or live. A copy of derive.mjs's bareBranch.
 const isTimeMs = (v) => Number.isInteger(v) && v >= 1577836800000 && v <= 4102444800000; // #C1377
+// #C1377 (Checker 2's F2 on 69f0c5d3: this sat in the entry block, so no test ran it): each repository's last fresh read, kept from run to run. `repos` is { name: { fresh } } and
+// each gets freshAt set: now when it was read fresh this run; otherwise the stamp it had (`before`, read from repo-fresh.json), never the new time, and none when it never had one
+// or the stamp is not a real past time (a future stamp is dropped). Returns the map to write: { name: ms } for the repositories with a stamp.
+export function repoFreshAt(repos, before, now) {
+  const out = {};
+  for (const [name, r] of Object.entries(repos ?? {})) {
+    const prev = isTimeMs(before?.[name]) && before[name] <= now ? before[name] : null;
+    r.freshAt = r.fresh === false ? prev : now;
+    if (r.freshAt !== null) out[name] = r.freshAt;
+  }
+  return out;
+}
 export function bareBranch(card, head) {
   if (!head || head.afterShip || head.shipped || !namesCard(card, head.branch)) return false;
   return boardIdOf(head.message) !== card.id && !(Number.isInteger(card.num) && subjectNum(head.message) === card.num);
@@ -471,8 +483,11 @@ export function versionsOn(git, ref, pattern) {
 // the wiring itself.
 export function teamShip(team, c, now) {
   let shippedSet = null;
-  return shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ok(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci,
-    shipped: (v) => { if (!c.versionPattern || !team.live) return false; shippedSet ??= versionsOn(team.git, team.live, c.versionPattern); return shippedSet.has(v); } });
+  // #C1377 (Manager: the card's own example, the ship tile's "CI running" an hour after v1.226.22 was live): a candidate read from a repository that was not read fresh this run is marked
+  // stale, with the time of its last good read, as the cards are; the badge says so instead of reading current.
+  const marked = (r) => (r && team.fresh === false ? { ...r, stale: true, ...(isTimeMs(team.freshAt) ? { staleSince: team.freshAt } : {}) } : r);
+  return marked(shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ok(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci,
+    shipped: (v) => { if (!c.versionPattern || !team.live) return false; shippedSet ??= versionsOn(team.git, team.live, c.versionPattern); return shippedSet.has(v); } }));
 }
 export function shipCandidate({ tips, pattern, now, onMain, ci, shipped = () => false }) {
   if (!pattern) return null;
@@ -1625,12 +1640,7 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   const repoFreshPath = join(stateDir, id, "repo-fresh.json");
   let repoFreshBefore = {};
   try { const r = readTail(repoFreshPath, 4096); if (r?.whole) { const o = JSON.parse(r.text); if (plain(o)) repoFreshBefore = o; } } catch { /* none */ }
-  const repoFresh = {};
-  for (const [name, r] of Object.entries(repos)) {
-    const prev = isTimeMs(repoFreshBefore[name]) && repoFreshBefore[name] <= now ? repoFreshBefore[name] : null;
-    r.freshAt = r.fresh === false ? prev : now;
-    if (r.freshAt !== null) repoFresh[name] = r.freshAt;
-  }
+  const repoFresh = repoFreshAt(repos, repoFreshBefore, now);
   try { writeAtomic(repoFreshPath, JSON.stringify(repoFresh)); } catch { /* the mark just has no time next run */ }
   let cardsNow, packs = null;
   try {

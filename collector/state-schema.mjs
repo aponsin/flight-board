@@ -179,7 +179,8 @@ const STUCK = { kind: (v) => STUCK_KINDS.includes(v), card: nullOr(isId), since:
 const USAGE = { at: isTime, asOf: isTime, weekTotal: whole(0, 1e12), weekPct: nullOr(whole(0, 1000)), pace: nullOr(whole(0, 10000)), level: (v) => USAGE_LEVELS.includes(v), top: (v) => Array.isArray(v) && v.length <= MAX_TOP };
 // A usage source stays ONE word (a role without a space, "scheduled" or "other"): free text must not become a key or a label (#C1117 widened ROLE, not this).
 const USAGE_TOP = { src: re(/^[A-Za-z][A-Za-z0-9]{1,23}$/), pct: whole(0, 100) };
-const SHIP = { version: nullOr(re(VERSION)), ci: (v) => SHIP_CI.includes(v), at: isTime };
+// #C1377: stale (only ever true) and staleSince mark a candidate read from a repository that was not read fresh this run, as a card's reading is marked.
+const SHIP = { version: nullOr(re(VERSION)), ci: (v) => SHIP_CI.includes(v), at: isTime, stale: (v) => v === true, staleSince: isTime };
 
 // One record against its fields: exactly those keys, each value passing. The errors name only the schema's own words.
 function fields(at, rec, spec, errs) {

@@ -181,6 +181,7 @@ section{min-width:0}
 .state.stalled{background:var(--bad-soft);color:var(--bad)}
 .stall{color:var(--bad);font-weight:600}
 .stale-read{color:var(--muted,#8a8a8a);font-style:italic} /* #C1377: a reading that could not be refreshed: grey, never red */
+.i-row.read-stale .track,.i-row.read-stale .br-tracks{opacity:.5;filter:grayscale(1)} /* #C1377 (Checker 2's F3): the tiles of a card nobody could read fresh are greyed, not shown as current */
 .step.verifying{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent);border-style:dashed}
 .step.verifying::before{content:"◷ ";}
 .verify-line b{color:var(--ink);font-weight:600}.verify-line.late,.verify-line.late b{color:var(--warn-ink);font-weight:600}
@@ -1488,9 +1489,13 @@ function derivedOf(id){const all=state.derived.find(d=>d.id==="all"),d=all&&all.
   if(!L)return d;const out={...(d||{}),phase:L.phase,at:L.at,firm:true,live:true};
   if(d&&typeof d.head==="string"&&!d.head.startsWith(L.head12)){delete out.head;delete out.readyAt;delete out.waitingFor;delete out.reviews}
   if(L.phase===LIVE_PHASE&&L.liveVersion)out.version=L.liveVersion;
+  // Checker 2's LOW on 69f0c5d3: a fresh live reading speaks for the card, so the derived copy's mark does not outlive it; the live reading's own mark replaces it.
+  delete out.stale;delete out.staleSince;
   if(L.stale){out.stale=true;if(L.staleSince)out.staleSince=L.staleSince}
   return out}
 // #C1377 (Director's audit #C1375): a card whose repository could not be read fresh is marked, never shown as current: a grey line with the time of its last good read.
+const staleWords=d=>{const t=Number.isFinite(d.staleSince)?d.staleSince:null;return t?`no fresh reading since ${esc(hhmm(t))}`:"no fresh reading"};
+const isStaleCard=i=>{if(!i||i.status==="done")return false;const d=derivedOf(i.id);return !!d&&d.stale===true};
 function staleLine(i){const d=i&&derivedOf(i.id);if(!d||d.stale!==true)return "";
   const t=Number.isFinite(d.staleSince)?d.staleSince:null;
   return `<span class="stale-read" title="The collector could not read this card's repository this minute: what is shown is the last good reading${t?`, from ${esc(hhmm(t))}`:""}.">${t?`No fresh reading since ${esc(hhmm(t))}`:"No fresh reading"}</span>`}
@@ -1516,9 +1521,10 @@ function evidence(i){const d=derivedOf(i.id);if(!d||!d.phase)return "";const lab
   const live=d.live&&liveOn(),title=[...off,d.evidence||""].filter(Boolean).join(" · ");
   // The flag and its age wrap as one (Designer on live-source: a short title let the flag ride up alone).
   const text=`${live?"Live: ":"Repository: "}${esc(label)}${d.version?" "+esc(d.version):""}`,t=title?` title="${esc(title)}"`:"";
-  const old=!live&&num(d.at)!=null&&Date.now()-d.at>ASOF_STALE?" old":"";
+  // #C1377 (Checker 2's F3): a card whose repository could not be read fresh is grey, and its age chip says so instead of reading current ("Live: Ship · 12 s ago" beside "No fresh reading").
+  const sk=d.stale===true,old=sk||(!live&&num(d.at)!=null&&Date.now()-d.at>ASOF_STALE)?" old":"";
   const flag=off.length?`<button type="button" class="evidence differs${old}" data-evdiff="${esc(i.id)}" aria-expanded="${evOpen.has(i.id)}"${t}>${text}</button>`:`<span class="evidence${old}"${t}>${text}</span>`;
-  const ao=live?` <small class="asof" title="When the live state last read the Studio">${esc(liveAgeText())}</small>`:asOf(d.at);
+  const ao=sk?` <small class="asof stale" title="The collector could not read this card's repository this minute">${staleWords(d)}</small>`:live?` <small class="asof" title="When the live state last read the Studio">${esc(liveAgeText())}</small>`:asOf(d.at);
   return ao?`<span class="evg">${flag}${ao}</span>`:flag}
 // The disagreement's line, while its flag is pressed open: the hover's words.
 function evidenceLine(i){if(!evOpen.has(i.id))return "";const d=derivedOf(i.id),off=evidenceOff(i,d);
@@ -2706,7 +2712,7 @@ function initRow(i,where,ctl){const w=typeof where==="string"?where:"init";
   const detBody=`${next}${removes}${heldFull}`,det=detBody?`<details class="i-det" data-id="idet-${esc(i.id)}"><summary>Details</summary><div class="i-det-body">${detBody}</div></details>`:"";
   const gp=liveOpen?[]:gaps(i);
   const LC=i.status!=="done"?liveCard(i.id):null,br=LC&&LC.branches.length>1?branchTracks(LC.branches,skip,track):"";
-  return `<div class="i-row"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now(),w!=="group")}${w==="group"?"":`<strong>${esc(i.name)}</strong>`}${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}${w==="group"?"":`<span class="size">${esc(i.size||"?")}</span>`}<span class="state ${st?"stalled":verifying(i)?"verifying":gwl.length?"queued":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
+  return `<div class="i-row${isStaleCard(i)?" read-stale":""}"><div data-card="${esc(i.id)}"><div class="i-name">${checkTag(i,Date.now(),w!=="group")}${w==="group"?"":`<strong>${esc(i.name)}</strong>`}${newPill(unr)}${threadTag(i.id)}${cardFrom(i)}${pulledTag(i)}${typeof ctl==="string"?ctl:""}${w==="group"?"":`<span class="size">${esc(i.size||"?")}</span>`}<span class="state ${st?"stalled":verifying(i)?"verifying":gwl.length?"queued":esc(i.status)}">${esc(statusTxt)}</span>${evidence(i)}${checkHtml(i,Date.now())}</div>${evidenceLine(i)}
    ${i.summary?`<div class="w-sub">${askText(i.summary)}</div>`:""}</div>
    <div class="eta">${etaHtml}</div>
    ${br?`<div class="br-tracks">${br}</div>`:`<div class="track" style="--per:${per}">${steps}</div>`}
@@ -3905,7 +3911,9 @@ const SHIP_CI_WORDS={none:"candidate pushed, not on main",queued:"waiting on CI"
 function shipCandidate(now=Date.now()){const sh=probe&&probe.ship;
   if(!sh||typeof sh!=="object"||!isT(sh.at)||!Object.hasOwn(SHIP_CI_WORDS,sh.ci))return null;
   const v=/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(String(sh.version))?` v${sh.version}`:"";
-  return `Ship${v} ${SHIP_CI_WORDS[sh.ci]}`}
+  // #C1377: a candidate the collector could not read fresh says so, with the time of its last good read: "CI running" is never shown as current when it is an hour old.
+  const st=sh.stale===true?(isT(sh.staleSince)?`, no fresh reading since ${hhmm(sh.staleSince)}`:", no fresh reading"):"";
+  return `Ship${v} ${SHIP_CI_WORDS[sh.ci]}${st}`}
 function restartState(now=Date.now()){if(!liveOn(now))return null;
   const s=shipNow(now);if(s)return {ok:false,why:`Release is shipping${s.version?` v${s.version}`:""}`};
   const cand=shipCandidate(now);if(cand)return {ok:false,why:cand};

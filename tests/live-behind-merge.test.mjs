@@ -29,11 +29,15 @@ function read({ shape, liveAt = "version" }) {
     git("checkout", "-q", "-b", "admin/g-mate", card);
     const head = commit("d.txt", "A groupmate's work, above it");
     git("checkout", "-q", "main");
+    // "between": main shipped another version (1.0.2) after the card branched and before the merge: it does not contain the card, so the card is not in it.
+    if (shape === "between") commit("e.txt", "v1.0.2: admin/another-card@" + base);
     const merging = shape === "direct" ? card : head;
     git("merge", "-q", "--no-ff", "-m", "Merge commit '" + merging + "' into dev", merging);
     const merged = git("rev-parse", "HEAD");
     let version = null;
-    if (shape !== "unversioned") { writeFileSync(join(dir, "ver.txt"), "1.0.2\n"); git("add", "-A"); git("commit", "-q", "-m", "v1.0.2: admin/g-mate@" + head); version = git("rev-parse", "HEAD"); }
+    // "between": the first version after the merge is 1.0.3 and a later one, 1.0.4, follows: the card went live in the FIRST (1.0.3).
+    if (shape === "between") { for (const v of ["1.0.3", "1.0.4"]) { writeFileSync(join(dir, `ver-${v}.txt`), v + "\n"); git("add", "-A"); git("commit", "-q", "-m", `v${v}: admin/g-mate@${head}`); version = git("rev-parse", "HEAD"); } }
+    else if (shape !== "unversioned") { writeFileSync(join(dir, "ver.txt"), "1.0.2\n"); git("add", "-A"); git("commit", "-q", "-m", "v1.0.2: admin/g-mate@" + head); version = git("rev-parse", "HEAD"); }
     git("update-ref", "refs/remotes/origin/main", git("rev-parse", "HEAD"));
     git("update-ref", "refs/remotes/origin/admin/c-card", card);
     const T = Date.now(), live = liveAt === "merge" || !version ? merged : version;
@@ -61,6 +65,14 @@ test("a commit in no version yet stays at ship with no version: no version commi
   const merged = read({ shape: "behind", liveAt: "merge" });
   assert.equal(merged.phase, "ship");
   assert.equal(merged.liveVersion, null);
+});
+
+// Checker 2's F1 on 69f0c5d3: dropping the descends-from filter, or the --reverse, passed the suite. Main shipped 1.0.2 between the card's branching and its merge (the card is not in
+// it), then 1.0.3 and 1.0.4 after the merge: the card read 1.0.2 (an earlier version, the filter gone) or 1.0.4 (the newest, the order gone) instead of the first one that holds it.
+test("a version main shipped before the merge does not hold the card, and of two after it the first one does", () => {
+  const r = read({ shape: "between" });
+  assert.equal(r.phase, "live");
+  assert.equal(r.liveVersion, "1.0.3");
 });
 
 test("the version found is the first one after the commit, not an earlier one under it", () => {

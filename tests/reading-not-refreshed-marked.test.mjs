@@ -3,11 +3,11 @@
 // good read has no mark, so it clears the next run; the page draws it grey: "No fresh reading since 10:40", never red, never as current.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { cardState } from "../collector/state.mjs";
+import { cardState, repoFreshAt, teamShip } from "../collector/state.mjs";
 import { stateErrors } from "../collector/state-schema.mjs";
 import { compatView } from "../worker/compat-view.mjs";
 import { loadNames } from "./harness.mjs";
@@ -79,4 +79,79 @@ test("the page greys a stale card: 'No fresh reading since HH:MM' in its own gre
   assert.match(b.staleLine({ id: "noTime" }), />No fresh reading</);
   assert.equal(b.staleLine({ id: "good" }), "");
   assert.equal(b.staleLine({ id: "unknown" }), "");
+});
+
+// Manager on #C1377: the card's own example, the ship tile's "CI running", is marked too.
+test("a ship candidate read from a repository that was not read fresh carries the mark and the time of its last good read; a fresh read carries none", () => {
+  const SHA = "e3016d3" + "0".repeat(33), T = FRESH_AT + 60_000;
+  const git = (a) => { if (a[0] === "merge-base") throw new Error("not an ancestor"); return ""; };
+  const team = (extra = {}) => ({ git, remote: "origin", main: "main", tips: [{ branch: "build/ship-v1.226.23", sha: SHA, at: T - 90 * 60e3, message: "" }], ci: () => ({ ci: "running", ciMin: null }), live: null, ...extra });
+  const c = { candidatePattern: "^build/ship-v\\d+\\.\\d+\\.\\d+$", versionPattern: "" };
+  const stale = teamShip(team({ fresh: false, freshAt: FRESH_AT }), c, T);
+  assert.equal(stale.ci, "running");
+  assert.equal(stale.stale, true);
+  assert.equal(stale.staleSince, FRESH_AT);
+  assert.equal("staleSince" in teamShip(team({ fresh: false }), c, T), false, "never read fresh: a mark with no time");
+  for (const extra of [{ fresh: true, freshAt: T }, {}]) assert.equal("stale" in teamShip(team(extra), c, T), false, JSON.stringify(extra));
+  assert.equal(teamShip(team({ fresh: false, tips: [] }), c, T), null, "no candidate, nothing to mark");
+  const ship = { version: "1.226.23", ci: "running", at: T, stale: true, staleSince: FRESH_AT };
+  const state = { v: 1, board: { at: T }, cards: {}, agents: {}, ship };
+  assert.deepEqual(stateErrors(state).filter((p) => /ship|stale/.test(p)), [], "the mark fits the state's ship record");
+  assert.ok(stateErrors({ ...state, ship: { ...ship, stale: false } }).some((p) => /stale/.test(p)), "only ever true");
+});
+
+test("the restart badge's ship words say 'no fresh reading since HH:MM' for a stale candidate, never a bare 'CI running'", () => {
+  const NOW = FRESH_AT + 60_000;
+  const b = loadNames(["shipCandidate", "probeEvent", "liveOn", "hhmm"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(NOW); } static now() { return NOW; } } });
+  const send = (ship) => b.probeEvent({ type: "data", result: { payload: { v: 1, board: { boardId: "TestBoard42xyz", at: NOW - 5e3, probe: null, pageVersion: null }, cards: {}, agents: {}, ship } } }, {});
+  send({ version: "1.226.23", ci: "running", at: NOW - 3600e3 });
+  assert.equal(b.shipCandidate(NOW), "Ship v1.226.23 CI running");
+  send({ version: "1.226.23", ci: "running", at: NOW - 3600e3, stale: true, staleSince: FRESH_AT });
+  assert.match(b.shipCandidate(NOW), /^Ship v1\.226\.23 CI running, no fresh reading since \d{1,2}:\d{2}/);
+  send({ version: "1.226.23", ci: "running", at: NOW - 3600e3, stale: true });
+  assert.equal(b.shipCandidate(NOW), "Ship v1.226.23 CI running, no fresh reading");
+});
+
+// Checker 2's F3 on 69f0c5d3: the card's own tiles and its age chip must not read current beside "No fresh reading".
+test("a stale card's flag is grey and its age chip says no fresh reading instead of an age; its row greys the tiles; a good card is unchanged", () => {
+  const b = loadNames(["evidence", "evidenceOff", "staleWords", "isStaleCard", "derivedOf", "liveCard", "phaseLabel", "asOf", "asOfText", "hhmm", "esc", "dur"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(FRESH_AT + 30_000); } static now() { return FRESH_AT + 30_000; } } });
+  b.state.derived.push({ id: "all", at: FRESH_AT + 20_000, cards: { old: { phase: "checker", at: FRESH_AT + 20_000, stale: true, staleSince: FRESH_AT }, good: { phase: "checker", at: FRESH_AT + 20_000 } } });
+  const stale = b.evidence({ id: "old", status: "active", phase: "checker" });
+  assert.match(stale, /class="evidence old"/, "the flag is grey");
+  assert.match(stale, /<small class="asof stale"[^>]*>no fresh reading since \d{1,2}:\d{2}/, "the age chip says why, not 'as of 10 s ago'");
+  assert.doesNotMatch(stale, /as of \d+ (s|min) ago/);
+  const good = b.evidence({ id: "good", status: "active", phase: "checker" });
+  assert.doesNotMatch(good, /evidence old|no fresh reading/);
+  assert.match(good, /as of \d+ (s|min) ago/);
+  assert.equal(b.isStaleCard({ id: "old", status: "active" }), true);
+  assert.equal(b.isStaleCard({ id: "old", status: "done" }), false, "a done card is not greyed");
+  assert.equal(b.isStaleCard({ id: "good", status: "active" }), false);
+  const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
+  assert.match(html, /\.i-row\.read-stale \.track[^{]*\{[^}]*opacity/, "the row's tiles are greyed by CSS");
+  assert.match(html, /<div class="i-row\$\{isStaleCard\(i\)\?" read-stale":""\}">/, "and the row carries the class");
+});
+
+// Checker 2's F2 on 69f0c5d3: the bookkeeping sat in the CLI block; it is an exported function now, run here.
+test("repoFreshAt: a repository read fresh is stamped now; one that was not keeps its OLD stamp, never the new time; none when it never had one or the stamp is in the future", () => {
+  const NOW = FRESH_AT + 10 * 60_000, OLD = FRESH_AT;
+  const repos = { "": { fresh: true }, product: { fresh: false }, never: { fresh: false }, future: { fresh: false }, undef: {} };
+  const map = repoFreshAt(repos, { "": OLD, product: OLD, future: NOW + 3600e3, junk: 5 }, NOW);
+  assert.equal(repos[""].freshAt, NOW, "read fresh: now");
+  assert.equal(repos.undef.freshAt, NOW, "fresh is not false: read fresh");
+  assert.equal(repos.product.freshAt, OLD, "not fresh: the old stamp, not the new time");
+  assert.equal(repos.never.freshAt, null);
+  assert.equal(repos.future.freshAt, null, "a stamp from the future is no stamp");
+  assert.deepEqual(map, { "": NOW, product: OLD, undef: NOW });
+  assert.deepEqual(repoFreshAt({ a: { fresh: false } }, null, NOW), {}, "no file read: nothing kept");
+});
+
+test("a fresh live reading speaks for the card: the derived copy's stale mark does not outlive it, and the live reading's own mark replaces it", () => {
+  const NOW = FRESH_AT + 60_000;
+  const b = loadNames(["staleLine", "derivedOf", "liveCard", "liveAgent", "probeEvent", "hhmm", "esc"], { Date: class extends Date { constructor(...a) { a.length ? super(...a) : super(NOW); } static now() { return NOW; } } });
+  Object.assign(b.state, { derived: [{ id: "all", at: NOW, cards: { one: { phase: "build", stale: true, staleSince: FRESH_AT, head: "a".repeat(12) } } }] });
+  const live = (card) => b.probeEvent({ type: "data", result: { payload: { v: 1, board: { boardId: "TestBoard42xyz", at: NOW - 10e3, probe: null, pageVersion: null }, cards: { one: card }, agents: {} } } }, {});
+  live({ phase: "build", headSha12: "a".repeat(12), signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: NOW - 10e3 });
+  assert.equal(b.staleLine({ id: "one" }), "", "the live reading is fresh: no mark");
+  live({ phase: "build", headSha12: "a".repeat(12), signed: [], onMain: false, ci: "none", ciMin: null, liveVersion: null, at: NOW - 10e3, stale: true, staleSince: FRESH_AT + 1000 });
+  assert.match(b.staleLine({ id: "one" }), new RegExp(`from ${b.hhmm(FRESH_AT + 1000).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "its own mark, its own time");
 });
