@@ -281,10 +281,13 @@ export function bareBranch(card, head) {
 export function byNumberOnly(card, head) {
   return !!head && Number.isInteger(card.num) && String(head.branch).split("/").pop() !== card.id && branchNum(head.branch) === card.num && boardIdOf(head.message) !== card.id && subjectNum(head.message) !== card.num;
 }
+// #C1325 (11-19 night, twice: the dispatch said "nothing pushed" for a card whose only branch was <id>-v3 or -v4): a re-cut branch is named <id>-v<N> (the collector follows only
+// -vN, branchFamily), so the last part of a branch name names the card with or without that suffix. A tip whose commit has no usable Board-Id trailer is still found this way.
+export const slugOfBranch = (branch) => String(branch).split("/").pop().replace(/-v\d{1,3}$/, "");
 export function headsFor(id, heads, num = null) {
   const tips = new Map();
   for (const h of heads) {
-    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && !(Number.isInteger(num) && (subjectNum(h.message) === num || branchNum(h.branch) === num))) continue;
+    if (boardIdOf(h.message) !== id && String(h.branch).split("/").pop() !== id && slugOfBranch(h.branch) !== id && !(Number.isInteger(num) && (subjectNum(h.message) === num || branchNum(h.branch) === num))) continue;
     const had = tips.get(h.branch);
     if (!had || (h.at ?? 0) > (had.at ?? 0)) tips.set(h.branch, h);
   }
