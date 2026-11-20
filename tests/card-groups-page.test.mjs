@@ -59,7 +59,9 @@ test("the board draws one group row with its cards on the rail, each with its st
   assert.match(h, /G3 · Board look fixes/);
   assert.match(h, /2 cards/);
   assert.match(h, /class="g-rail"/);
-  assert.match(h, /#C977<\/span><strong>Card 977<\/strong><span class="state done">Built/);
+  // #C1311: a card past Build and still open reads as its phase ("Checker", active), not "Built" (green) beside a status that says it is in flight.
+  assert.match(h, /#C977<\/span><strong>Card 977<\/strong><span class="state active">Checker<\/span>/);
+  assert.doesNotMatch(h, /<span class="state done">Built<\/span>/, "no open card past Build says Built");
   assert.equal((h.match(/data-pull="(one|two)"/g) || []).length, 2, "a Pull out per grouped card");
   assert.doesNotMatch(h, /data-pull="solo"/);
   assert.match(h, /Card 981/);
