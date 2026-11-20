@@ -3,7 +3,8 @@
 // the job makes: the Worker's self-deploy gate wants a Checker PASS and a Security SECURE on every commit it would deploy.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { rmTemp } from "./harness.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -83,7 +84,7 @@ test("the git reads: three dots against the merge base (main's own edits do not 
     git("switch", "-q", "-c", "line", base); writeFileSync(join(dir, DATA_FILE), "# Data\n\nrow one\n- 2026-11-18: the branch's line\n"); git("commit", "-q", "-am", "add a dated line");
     assert.equal(addedDatedLines(git(...dataDiffArgs(main, git("rev-parse", "HEAD")))), 1, "the branch's own dated line counts");
     assert.equal(fragmentCount(git(...fragmentListArgs(main))), 1, "the listing counts main's card file, not its README");
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  } finally { rmTemp(dir); }
 });
 
 test("the run reports FOLD DUE at five waiting fragments, not at four", () => {

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync, mkdtempSync, chmodSync, existsSync, readFileSync } from "node:fs";
+import { rmTemp } from "./harness.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { realSend, sendEnv, main, blockedInTests } from "../collector/probe-board.mjs";
@@ -15,11 +16,15 @@ const LINE = "TEST ONLY, not a nudge: 1 for Manager, batch b-test";
 // so a bare `claude` was looked up on the real PATH and its TEST line reached Manager's live session. The file now sets the marker itself, and every test
 // that passes a bare claude also gets a PATH that holds no claude, so a missing guard fails the test instead of sending.
 process.env.NODE_TEST_CONTEXT ??= "wake-send-path";
-const emptyPath = () => mkdtempSync(join(tmpdir(), "wsp-nopath-"));
+// #C1367: every folder this file makes (the empty PATH, the fake claudes, the env files) is listed and removed when the file ends, so a run of this file by itself leaves nothing in the temp folder.
+const made = [];
+const tmp = (prefix = "wsp-") => { const d = mkdtempSync(join(tmpdir(), prefix)); made.push(d); return d; };
+test.after(() => { for (const d of made) rmTemp(d); });
+const emptyPath = () => tmp("wsp-nopath-");
 // launchd starts a job with this PATH and nothing else; #C721: the first live wake failed because `claude` is not on it.
 const LAUNCHD_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 const fakeClaude = (body = 'echo "fake claude: $@"\necho "PATH=$PATH"\n') => {
-  const dir = mkdtempSync(join(tmpdir(), "wsp-"));
+  const dir = tmp();
   const f = join(dir, "claude");
   writeFileSync(f, `#!/bin/sh\n${body}`);
   chmodSync(f, 0o755);
@@ -35,7 +40,7 @@ test("the wake send runs claude by its FULL path under launchd's bare PATH, and 
 });
 
 test("a claude that is not there exits 1 as live did, and the store is told why in words (#C721)", async () => {
-  const gone = join(mkdtempSync(join(tmpdir(), "wsp-")), "nope", "claude"); // inside the temp folder, so the guard lets it run; it cannot exist
+  const gone = join(tmp(), "nope", "claude"); // inside the temp folder, so the guard lets it run; it cannot exist
   const r = await realSend(LINE, { claudePath: gone, env: { PATH: LAUNCHD_PATH } });
   assert.equal(r.exit, 1);
   const c = classifySend(r.exit, r.text);
@@ -58,6 +63,14 @@ test("under a test run realSend never starts a claude outside the temp folder, e
   assert.deepEqual([r.exit, /blocked/.test(r.text)], [125, true]);
 });
 
+test("every folder this file makes, the empty PATH included, is on the list that is removed when the file ends (#C1367)", () => {
+  const before = made.length, d = emptyPath();
+  assert.equal(made.length, before + 1);
+  assert.ok(made.includes(d) && existsSync(d), "listed, and really there until the after hook");
+  rmTemp(d);
+  assert.equal(existsSync(d), false, "and rmTemp takes it away");
+});
+
 test("a test run has the marker set and a bare claude is blocked in it: if this fails, no test in this file may call realSend (#C1362)", () => {
   assert.ok(process.env.NODE_TEST_CONTEXT, "the marker is set");
   assert.equal(blockedInTests("claude"), true);
@@ -71,7 +84,7 @@ test("sendEnv puts claude's folder first, keeps the PATH it was given and the st
 });
 
 test("the ask job refuses a --claude that is not a full path, so the launchd mistake cannot come back quietly (#C721)", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "wsp-"));
+  const dir = tmp();
   const envFile = join(dir, "board.env");
   writeFileSync(envFile, "BOARD_SERVICE_TOKEN_ID=a\nBOARD_SERVICE_TOKEN_SECRET=b\n");
   const codes = [];

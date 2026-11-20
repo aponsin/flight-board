@@ -1,7 +1,20 @@
 // Loads the flight board's own script from page/board.template.html and exposes its pure functions for tests.
 // No browser: window.claude is absent, so the page's live-data block stops at "offline".
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import vm from "node:vm";
+// #C1367: removes a temp folder a test made. Under a loaded machine rmSync can meet ENOTEMPTY (git or the OS still writing into the folder as it is removed:
+// tests/landing-refuses-data-md-edit.test.mjs failed this way once and passed alone), so a busy folder is tried again, up to `tries` times, 50 ms apart; any other
+// error, and the last busy one, is thrown. `rm` and `wait` are the seams for the test.
+const BUSY = new Set(["ENOTEMPTY", "EBUSY", "EPERM"]);
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+export function rmTemp(dir, { rm = rmSync, tries = 5, wait = sleep } = {}) {
+  for (let i = 1; ; i++) {
+    try { return rm(dir, { recursive: true, force: true }); } catch (e) {
+      if (i >= tries || !BUSY.has(e?.code)) throw e;
+      wait(50);
+    }
+  }
+}
 const html = readFileSync(new URL("../page/board.template.html", import.meta.url), "utf8");
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1], templateScript = script;
 // els: a Map to keep each element by id, so a test can read what a render wrote; by default every lookup is a new one.
