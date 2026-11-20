@@ -1120,9 +1120,17 @@ export function stackWaitingCommits(repo) {
   } catch { return []; }
 }
 
-export function cardStates({ cards, config, repos, now, stacks = [], pairs = [], stackCache = null }) {
+// #C1379: a card of a product repository closed before it read live (71 closed at "ship" under #C1104 part 2, which #C1378 removed) is read again, with the open cards, until a
+// run reads it live; `closedLive` (closed-live.json, kept from run to run) names the ones that have. Only a done, undropped card with a named non-board repository, closed
+// within REREAD_DONE_MS (14 days from done_at, Manager's bound): a card that never reads live (reverted, its version lost) is read until that day and then no more, and one that
+// reads live stops at once (closed-live.json). done_at is the store's and never changes here: the reading is all that is added.
+export const REREAD_DONE_MS = 14 * 86_400_000;
+export const rereadClosed = (k, closedLive, now) => k?.status === "done" && typeof k.repo === "string" && k.repo.trim() !== "" && !isBoardRepo(k.repo)
+  && !(closedLive instanceof Set ? closedLive : new Set(closedLive ?? [])).has(k.id) && Number.isFinite(k.doneAt) && now - k.doneAt <= REREAD_DONE_MS;
+export function cardStates({ cards, config, repos, now, stacks = [], pairs = [], stackCache = null, closedLive = new Set() }) {
   const out = {}, repoOfCard = {}, cardOf = {}, todo = [];
-  for (const card of cards.filter((k) => !closed(k) && CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX).slice(0, MAX_CARDS)) {
+  const readable = (k) => CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX;
+  for (const card of [...cards.filter((k) => !closed(k) && readable(k)).slice(0, MAX_CARDS), ...cards.filter((k) => closed(k) && readable(k) && rereadClosed(k, closedLive, now))]) {
     const r = repoOf(card, config);
     let repo = repos[r ? r.name : ""] ?? null;
     // #C632: a card with no repo field and no id prefix of a listed repository belongs to the one whose branches name it
@@ -1642,13 +1650,21 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try { const r = readTail(repoFreshPath, 4096); if (r?.whole) { const o = JSON.parse(r.text); if (plain(o)) repoFreshBefore = o; } } catch { /* none */ }
   const repoFresh = repoFreshAt(repos, repoFreshBefore, now);
   try { writeAtomic(repoFreshPath, JSON.stringify(repoFresh)); } catch { /* the mark just has no time next run */ }
+  // #C1379: the closed product cards that have read live (closed-live.json); cardStates reads the other closed ones again, and a run that reads one live adds it here.
+  const closedLivePath = join(stateDir, id, "closed-live.json");
+  let closedLive = new Set();
+  try { const r = readTail(closedLivePath, 256 * 1024); if (r?.whole) { const o = JSON.parse(r.text); if (Array.isArray(o?.ids)) closedLive = new Set(o.ids.filter((x) => typeof x === "string")); } } catch { /* none: every closed product card in its window is read once */ }
   let cardsNow, packs = null;
   try {
     const pairs = c.pairFolder ? pairsIn(home(c.pairFolder)) : [];
     // #C1311: each branch's Board-Id commits, kept from run to run by the branch's tip and main's tip (stackHeads); written only when it changed.
     const stackCache = { old: readStackCache(dir), next: {} };
-    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now), pairs, stackCache });
+    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now), pairs, stackCache, closedLive });
     lap("cardStates");
+    try {
+      const nowLive = cards.filter((k) => closed(k) && rereadClosed(k, closedLive, now) && cardsNow[k.id]?.phase === c.livePhase).map((k) => k.id);
+      if (nowLive.length) writeAtomic(closedLivePath, JSON.stringify({ ids: [...new Set([...closedLive, ...nowLive])].slice(-5000) }));
+    } catch { /* the next run reads them again: cost only */ }
     try {
       const before = JSON.stringify({ v: 1, repos: stackCache.old }), after = JSON.stringify({ v: 1, repos: stackCache.next });
       if (after !== before && (Object.keys(stackCache.next).length || Object.keys(stackCache.old).length)) writeAtomic(join(dir, STACK_CACHE_FILE), after);

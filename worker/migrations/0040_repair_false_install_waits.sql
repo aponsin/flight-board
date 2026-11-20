@@ -1,0 +1,7 @@
+-- repair-false-install-waits (#C1379): the one-time end of the false install waits on product cards (the audit #C1375: 93 product cards were given an "owner's install"
+-- wait that does not exist for the product, and the rows bent the install-time medians). The rule is worker/repair-false-install-waits.mjs's DELETE_FALSE_WAITS, held
+-- here verbatim by tests/repair-false-install-waits.test.mjs; scripts/repair-false-install-waits.mjs runs the same rule as a dry run and prints the list.
+-- Only phase_history rows with wait 'install' written by the store's evidence write, for a card of a product repository, are removed. No card row changes: done_at,
+-- done_evidence, evidence and phase stay, nothing is reopened. Idempotent: the second run finds no row. No undo is possible for a deleted row, so the dry-run list in the
+-- pack note is the record (card numbers, kind and time of each row).
+DELETE FROM phase_history WHERE wait = 'install' AND source = 'evidence' AND card_id IN (SELECT id FROM cards WHERE repo IS NOT NULL AND TRIM(repo) <> '' AND NOT ((CASE WHEN LOWER(TRIM(repo)) LIKE '%.git' THEN SUBSTR(LOWER(TRIM(repo)), 1, LENGTH(LOWER(TRIM(repo))) - 4) ELSE LOWER(TRIM(repo)) END) IN ('flight-board', 'board') OR (CASE WHEN LOWER(TRIM(repo)) LIKE '%.git' THEN SUBSTR(LOWER(TRIM(repo)), 1, LENGTH(LOWER(TRIM(repo))) - 4) ELSE LOWER(TRIM(repo)) END) LIKE '%/flight-board' OR (CASE WHEN LOWER(TRIM(repo)) LIKE '%.git' THEN SUBSTR(LOWER(TRIM(repo)), 1, LENGTH(LOWER(TRIM(repo))) - 4) ELSE LOWER(TRIM(repo)) END) LIKE '%/board'));
