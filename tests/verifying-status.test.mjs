@@ -30,7 +30,7 @@ test("live with a check due: Verifying, when the check is due, the Live step say
 
 // #C1382 finding (reported, not fixed here): the Worker reads a live card as state done, and cardTile only marks a tile `here` when it is not done, so the "check HH:MM" Live tile never shows for
 // the reading the Worker serves for a live card (the pill and the verify line still say Verifying). Marked todo until the page draws it.
-test("a live card the Worker reads (state done) with a check due: the Live step says 'check HH:MM'", { todo: "cardTile: here is false for a done reading, so vf never holds" }, () => {
+test("a live card the Worker reads (state done) with a check due: the Live step says 'check HH:MM'", () => {
   const b = loadBoard();
   const i = card(b, { checkAt: Date.now() + 9 * MIN });
   assert.match(b.initRow({ ...i, lastStepAt: old }), /class="step verifying" title="Live[^"]*">Live<small>check \d\d:\d\d [AP]M<\/small>/);

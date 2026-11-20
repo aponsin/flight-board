@@ -32,9 +32,9 @@ test("a product card and a board card each draw their own list", () => {
   assert.deepEqual(keys(b.trackFor(of(b, "site"))), PHASES.map(([k]) => k), "the product keeps every phase of today's list");
   assert.deepEqual(labels(b.trackFor(of(b, "site"))), PHASES.map(([, l]) => l));
   assert.deepEqual(keys(b.trackFor(of(b, "board"))), ["plan", "build", "test", "language", "design", "checker", "security", "ship", "pack", "install", "live"]);
-  // A card with no test evidence has Test skipped by enrich, and a step the card skips (Plan, Test, Security here) that its reading has not reached is not drawn (#C1382): the rest is drawn in order.
-  assert.deepEqual(tiles(row(b, "site")).map((t) => t.label), ["Build", "Linguist", "Design", "Checker", "Ship", "Live"], "the row draws the product's list");
-  assert.deepEqual(tiles(row(b, "board")).map((t) => t.label), ["Build", "Linguist", "Design", "Checker", "Land", "Pack", "Install", "Live"]);
+  // A card with no test evidence has Test skipped by enrich, and Test alone is not drawn then; the other skipped steps (Plan, Security here) are drawn as "not needed" tiles, as they always were.
+  assert.deepEqual(tiles(row(b, "site")).map((t) => t.label), ["Plan", "Build", "Linguist", "Design", "Checker", "Security", "Ship", "Live"], "the row draws the product's list");
+  assert.deepEqual(tiles(row(b, "board")).map((t) => t.label), ["Plan", "Build", "Linguist", "Design", "Checker", "Security", "Land", "Pack", "Install", "Live"]);
 });
 
 test("ship shows as Land on a board card only", () => {
@@ -116,7 +116,7 @@ test("on the phone the tiles split into even rows, at most 4 a row, no lone tile
 
 // #C1382 finding (reported, not fixed here): initRow counts every non-skipped-Test tile of the track for --per, but the card row no longer draws a skipped step its reading has not reached (Plan, Security),
 // so a card at Test draws 7 tiles with --per:3 (3, 3, 1: the lone tile Designer ruled out). Marked todo until the page counts the tiles it draws.
-test("the phone's --per matches the tiles the row draws: no lone tile", { todo: "initRow counts tiles cardTile does not draw (a skipped, unreached step)" }, () => {
+test("the phone's --per matches the tiles the row draws: no lone tile", () => {
   const t = board([card("testing", 4, { phase: "test" }), card("site", 1)]);
   for (const id of ["testing", "site"]) {
     const html = row(t, id), n = tiles(html).length, per = +/--per:(\d)/.exec(html)[1];

@@ -40,7 +40,7 @@ test("an idle agent's card is not blue; a working agent's is", () => {
   assert.equal(work.cls, "step now");
   assert.match(work.title, /Builder is on it/);
   const none = tile(html(setReadings(board(base))), "Build");
-  assert.equal(none.cls, "step", "no reading and no phase: nothing is lit");
+  assert.equal(none.cls, "step here", "no reading served: the plain ring at the card's own phase, never a guess from the evidence");
   const unk = tile(html(withReading(base, { state: "unknown", wait: null, with: null, why: "git could not be read" })), "Build");
   assert.equal(unk.cls, "step here", "unknown is the plain ring");
 });
@@ -52,10 +52,16 @@ test("a landed card that is not deployed reads its wait, not blue", () => {
   assert.match(h, /Ship<small class="rs">Release<span class="sl"> ships<\/span><\/small>/);
   assert.match(t.title, /landed on main, not deployed yet/);
   assert.match(h, /Queued for Release&#39;s ship|Queued for Release's ship/, "the status word too");
-  const inst = html(withReading({ ...base, phase: "ship" }, { phase: "ship", state: "waiting", wait: "install", with: "Owner", pack: "pc111" }));
-  assert.equal(tile(inst, "Ship").cls, "step waits rel", "the owner's install is the green tile");
+  const inst = html(withReading({ ...base, phase: "ship", repo: "Flight-Board" }, { phase: "ship", state: "waiting", wait: "install", with: "Owner", pack: "pc111" }));
+  assert.equal(tile(inst, "Land").cls, "step waits rel", "the owner's install is the green tile (a board card's Ship tile is called Land)");
   assert.match(inst, /pc111/, "it names the pack");
   assert.match(inst, /Waiting for install/);
+});
+
+// #C1300: green is only the owner's install, and only a board card has one; a reading that said install for a product card would still draw the yellow tile.
+test("a product card is never the green tile, even if its reading said install", () => {
+  const h = html(withReading({ ...base, phase: "ship", repo: "Platform" }, { phase: "ship", state: "waiting", wait: "install", with: "Owner" })), t = tile(h, "Ship");
+  assert.equal(t.cls, "step waits proc");
 });
 
 test("a paused card is never blue, whatever the reading or the steps say", () => {

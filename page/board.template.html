@@ -2256,10 +2256,6 @@ function trackFor(i){if(cardRepo(i)!==BOARD_REPO)return PHASES;const out=[],own=
   PHASES.forEach(([k,l])=>{if(k===LIVE_PHASE&&!own)out.push(["pack","Pack"],["install","Install"]);out.push([k,k==="ship"?"Land":l])});
   if(!own&&!PHASES.some(([k])=>k===LIVE_PHASE))out.push(["pack","Pack"],["install","Install"]);return out}
 function unlitTile(l){return `<div class="step unlit" title="${esc(l)}: no evidence yet">${esc(l)}<small>&nbsp;</small></div>`}
-// #C1034 (Manager's pick A): a done card is not in the probe's cards; its Pack and Install come from the probe's closedPacks reading (the pair
-// folder and git: board cards done in the last 14 days), never from its status, phase or note. Nothing there, or no fresh reading: today's unlit tiles.
-function closedPack(i,now=Date.now()){if(!i||i.status!=="done"||!liveOn(now)||!probe.closedPacks||typeof probe.closedPacks!=="object"||typeof i.id!=="string"||!LIVE_ID.test(i.id)||!Object.hasOwn(probe.closedPacks,i.id))return null;
-  const c=probe.closedPacks[i.id];return c&&typeof c==="object"&&c.packed===true?{packed:true,installed:c.installed===true,pack:Number.isInteger(c.pack)&&c.pack>0&&c.pack<1e6?c.pack:null}:null}
 // L: the probe's reading of the card or branch (packed, installed, seen). Anything else, a word or a step, is not read.
 function packTile(L,k,l){L=L||{};const live=Array.isArray(L.seen)&&L.seen.includes(LIVE_PHASE),lit=live||(k==="pack"?L.packed===true:L.installed===true);
   if(!lit)return unlitTile(l);return `<div class="step done seen" title="${esc(l)}: ${live?"deployed":k==="pack"?"a deploy pair holds this landing (built, not signed: Security's SAFE is not shown here)":"that pair's deploy ran"}">${esc(l)}${packWord(L,k==="pack"?"pair built":"installed")}</div>`}
@@ -2461,15 +2457,7 @@ const KNOWN_WAITS={release:"Queued for board release",install:"Waiting for insta
 // #C1288 (the owner, during Release's product ship: a product card's Ship tile said "Queued for board release" and he thought it waited on him): the release wait names the ship it is and who acts. A product card
 // waits for Release's product ship (Release acts); only the board's own card waits for a board release, and only the install is the owner's.
 const waitWord=(i,k)=>k==="release"&&cardRepo(i)!==BOARD_REPO?`Queued for ${RELEASE_ROLE}'s product ship`:KNOWN_WAITS[k];
-// The tile's small line holds about 14 characters (91 px at 390 px wide), so the tile says "Release ships"; the full sentence stays in the status line and the hover.
-const waitTile=(i,k)=>k==="release"&&cardRepo(i)!==BOARD_REPO?`${RELEASE_ROLE} ships`:waitWord(i,k);
-const waitEvidence=(i,k)=>k==="release"&&cardRepo(i)!==BOARD_REPO?`evidence: signed, queued for ${RELEASE_ROLE}'s product ship; ${RELEASE_ROLE} acts, nothing is waiting on you`:"evidence: signed, queued for a board release";
 function knownWait(i){const d=derivedOf(i&&i.id);return d&&Object.hasOwn(KNOWN_WAITS,d.wait)?d.wait:null}
-// A card waiting for the install names the deploy ask it waits on, or says there is none yet (#C838).
-// #C937: a card of the board's own repository that is on main and waits only for the owner's install has a quiet Ship cell, "Queued for your install",
-// with no elapsed counter and no slow word. Not for a Release step in progress (the probe's shipping), a stuck, paused or red-lined card (a landing that failed), or a product card (its deploy timing).
-function waitsForInstall(i){if(!STORE||!i||i.status==="done"||i.status==="stuck"||i.status==="paused"||cardRepo(i)!==BOARD_REPO||redLines(i)!=="")return false;const L=liveCard(i.id);return !!L&&L.onMain&&L.phase===SHIP_PHASE&&!L.shipping}
-function knownWaitText(i){const k=knownWait(i);if(!k)return "";if(k!=="install")return waitWord(i,k);const d=derivedOf(i.id);return KNOWN_WAITS[k]+": "+(d&&num(d.waitAsk)!=null?"#T"+d.waitAsk:"no deploy ask yet")}
 // A hold (waiting_on or blocked) shows its end (#C838): "held: <reason>, until <end>" (the check date, the ask or card whose closing ends it, or no end set).
 // #C915 (c): "Held: <reason>" (capital H), and a hold_end alone (no words) reads "Held: waiting on <the ask or card>". A held card never reads slow (initRow's
 // ship cell and cardLine's sub-step test heldLine first).
@@ -2636,8 +2624,6 @@ function phaseStart(i,k){const l=(Array.isArray(i.phaseLog)?i.phaseLog:[]).filte
 // before whoForPhase was fixed). The same map as PHASE_LANES in worker/board-rules.mjs; a test fails if they differ.
 const LANE_ROLE={language:"Linguist",design:"Designer",checker:"Checker",security:"Security",ship:"Release",live:"Release",pack:"Release",install:"Release"};
 function sinceTag(i,k){const e=phaseStart(i,k);if(!e)return "";const who=LANE_ROLE[k]||e.who;return `<small class="since" title="When ${esc(k)} first began: ${who?esc(who)+" · ":""}${esc(mtStamp(e.start))}">${esc(mtShort(e.start))}</small>`}
-// #C1319: the probe reads the card's commit on main with its CI run going (queued or running): the ship is in progress.
-const shipRunning=i=>{const L=liveCard(i.id)||{};return L.onMain===true&&(L.ci==="running"||L.ci==="queued")};
 // #C1343: one phase tile of a card, as the card's row draws it, and the facts it reads (tileCtx), so the group row can ask the same function for each member's tile and
 // not re-derive them. cardTile returns {pre, html}: pre is the Gated/Queued wait boxes before the tile, html the tile itself ("" for a skipped Test, skipTest true).
 // #C1382 (one-reading-module step 3, card rows): a card row draws the card's reading and nothing else of the probe's evidence. The Worker serves it as the `readings` collection
@@ -2667,14 +2653,14 @@ function waitPillWord(i,R){const w=R.wait;
   if(w==="turn")return "Waits for "+(R.with||"a turn");if(w==="group")return "Waits for group";if(w==="land")return "Queued to land";if(w==="pack")return "Queued for pack";
   if(w==="install")return "Waiting for install";if(w==="deploy")return `Queued for ${RELEASE_ROLE}'s ship`;if(w==="ask")return "Waiting on you";if(w==="hold")return "Held";return ""}
 function tileCtx(i){
-  let R=readingOf(i.id);if(!R.phase)R={...R,phase:STRIP.includes(i.phase)?i.phase:"build"}; // no reading served: the plain ring at the card's own phase
+  let R=readingOf(i.id);if(!R.phase)R={...R,phase:STRIP.includes(i.phase)?i.phase:"build",noReading:true}; // no reading served: the plain ring at the card's own phase
   const times=phaseTimes(i.phaseLog,i.status==="done"?i.doneAt:null),skip=Array.isArray(i.skip)?i.skip:[];
   {const gr=groupReadyAt(i);if(gr&&num(times[i.phase])!=null)times[i.phase]=Math.min(times[i.phase],Math.max(0,Date.now()-gr))} // #C1358: the clock starts at the group's READY
   return {R,times,skip,paused:i.status==="paused"};
 }
 function cardTile(i,X,k,l){const {R,times,skip,paused}=X;
-  const T=paused&&k===R.phase?"unknown":tileAt(R,k),here=k===R.phase&&!/^(done|future)$/.test(T);
-  if((T==="future"||T==="done")&&skip.includes(k)){if(T==="future"&&k==="test")return {pre:"",html:"",skipTest:true};return {pre:"",html:`<div class="step skip" title="${esc(l)}: not needed">${esc(l)}<small>not needed</small></div>`}}
+  const T=paused&&k===R.phase?"unknown":R.noReading?(k===R.phase?"unknown":"future"):tileAt(R,k),here=k===R.phase&&!/^(done|future)$/.test(T);
+  if((T==="future"||T==="done")&&skip.includes(k)){if(k==="test")return {pre:"",html:"",skipTest:true};return {pre:"",html:`<div class="step skip" title="${esc(l)}: not needed">${esc(l)}<small>not needed</small></div>`}}
   if(T==="future"){return {pre:"",html:UNLIT_PHASES.includes(k)&&phaseIndex(k)<0?unlitTile(l):`<div class="step" title="${esc(l)}">${esc(l)}<small>&nbsp;</small></div>`}}
   let c="step",t="";
   if(T==="done")c+=" done";

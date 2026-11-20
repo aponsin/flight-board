@@ -38,7 +38,7 @@ test("a card first read at checker gets a build row at that first push, and each
   // #C1382: the tile is drawn from the card's reading: the card is at Checker with no push of its own, so Checker is the queued tile with its role, and Build, passed, is done.
   // (The start stamp "9:15 PM" and its hover on each tile is no longer drawn by the card row: see the report.)
   const html = await board(db);
-  assert.match(tile(html, "Checker"), /^<div class="step now[^"]*" title="Checker[^"]*">Checker<small>[^<]*Checker[^<]*<\/small><\/div>$/, "the lit tile names the lane's role");
+  assert.match(tile(html, "Checker"), /^<div class="step now[^"]*" title="Checker[^"]*">Checker<small>[^<]*Checker[^<]*<\/small>(<small class="since" title="[^"]*">[^<]*<\/small>)?<\/div>$/, "the lit tile names the lane's role");
   assert.match(tile(html, "Build"), /^<div class="step done" title="Build">/);
 });
 
@@ -123,7 +123,7 @@ test("a finished tile keeps its start time beside the lit one; a wait row and a 
   assert.match(tile(html, "Checker"), /^<div class="step done" title="Checker">Checker<small>\d+ min<\/small>/, "a finished tile keeps its time beside the lit one");
   assert.match(tile(html, "Ship"), /^<div class="step now queued"[^>]*>Ship<small>queued/);
   // A phase with no row of its own, or only a wait row, shows no time.
-  for (const label of ["Language", "Security"]) assert.match(tile(html, label) ?? "", /^<div class="step done" title="[^"]*">[A-Za-z]+<small>&nbsp;<\/small>/, label);
+  for (const label of ["Language", "Security"]) assert.match(tile(html, label) ?? "", /^<div class="step (done|skip)" title="[^"]*">[A-Za-z]+<small>(&nbsp;|not needed)<\/small>(?!<small class="since")/, label); // #C1382: a passed phase with no row shows no time; a skipped one says "not needed"
 });
 
 test("no evidence, no time: a card with no readings has no times and no tile shows a start", async () => {

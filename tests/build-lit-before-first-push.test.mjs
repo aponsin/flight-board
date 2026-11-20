@@ -53,9 +53,10 @@ test("the first push keeps it building with the usual line: no 'nothing pushed y
 test("the builder on the card (the probe's agents reading) is building too; a builder tile with no card stays idle", async () => {
   const db = await seed();
   await writeEvidence(db, NOW - 1 * MIN, "probe", "agents", { Builder: { state: "working", card: "c-wait", since: NOW - 2 * MIN } });
-  // #C1382: with no push of its own the reading is still `queued` (state before working in the page's tile), but it carries working: the Build tile is the queued tile.
+  // #C1382: a session on a card with no push of its own is working on it (the state order puts working before queued): the blue Build tile and Building, as the owner asked.
   const working = await draw(db);
-  assert.match(rowOf(working.html, "Waiting card"), /<div class="step now queued" title="Build/, "the builder on it: the queued tile, no push yet");
+  assert.match(rowOf(working.html, "Waiting card"), /<div class="step now" title="Build/, "the builder on it: the blue tile, no push yet");
+  assert.match(rowOf(working.html, "Waiting card"), /<span class="state active">Building<\/span>/);
   // Once it pushes, the builder's session on it is Building.
   await writeEvidence(db, NOW - 1 * MIN, "probe", "cards.c-wait", { lit: ["build"], phase: "build", headSha12: "abc123def456", workSeen: true });
   assert.match(rowOf((await draw(db)).html, "Waiting card"), /<span class="state active">Building<\/span>/, "the builder's first Edit/Bash takes it");
