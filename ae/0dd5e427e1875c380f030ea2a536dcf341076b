@@ -1,0 +1,2 @@
+PASS Quick #C1290, line from 131c95e17a104e7ec5ccfb6ab0488f5a21198da1: docs only (11 DATA.d fragments folded into docs/DATA.md and deleted; only DATA.d/README.md is left). I re-ran scripts/data-fragments.mjs --write on base e72fa012 myself: the result is byte-identical to the first cut 5fa0af44, and v2's DATA.md is identical to that cut. #C1289 on main added no fragment, so the fold is complete. npm test 3288 pass 0 fail. No guard, so no mutation check. Supersedes 5fa0af44.
+signed-by: Checker 2
