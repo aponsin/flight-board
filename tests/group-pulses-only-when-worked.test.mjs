@@ -23,8 +23,9 @@ const cls = (html, label) => steps(html).find(([l]) => l === label)?.[1];
 
 test("a group of queued and paused cards, and a built one nobody is on, does not pulse: its step stands still", () => {
   const { row } = board([card("built", 1, { branch: "build/built" }), card("q1", 2), card("q2", 3), card("p", 4, { status: "paused", branch: "build/p" })], { agents: { Boardsmith: idle } });
-  assert.equal(cls(row(), "Build"), "step here");
-  assert.ok(!steps(row()).some(([, c]) => c.includes("now")), "no tile of the group pulses");
+  // #C1343: the group's tile is made from its cards' tiles; the paused card's yellow wait outranks the ring and the queued tiles (TILE_ORDER), and a yellow wait never pulses.
+  assert.equal(cls(row(), "Build"), "step waits");
+  assert.ok(!steps(row()).some(([, c]) => /\bnow\b/.test(c) && !c.includes("queued")), "no tile of the group pulses");
 });
 
 // #C1102 (11-16: G6 read "building" while neither open card had a branch or a step): a group whose cards are all untouched has no tile lit and its Build tile says queued;
@@ -32,8 +33,8 @@ test("a group of queued and paused cards, and a built one nobody is on, does not
 test("#C1102: a group whose cards are all untouched reads queued, nothing lit; one card with a branch lights Build", () => {
   const { row } = board([card("q1", 1), card("q2", 2)], { agents: { Boardsmith: idle } });
   const html = row();
-  assert.equal(cls(html, "Build"), "step", "no ring, no pulse");
-  assert.ok(!steps(html).some(([, c]) => c.includes("here") || c.includes("now")), "no tile of the group is lit");
+  assert.equal(cls(html, "Build"), "step now queued", "#C1343: the card's own queued tile (yellow stripes, still), not a plain one");
+  assert.ok(!steps(html).some(([, c]) => c.includes("here") || (/\bnow\b/.test(c) && !c.includes("queued"))), "no ring, no pulse");
   assert.match(html.split('<div class="g-rail">')[0], /Build<small>queued<\/small>/);
   const started = board([card("q1", 1), card("b", 2, { branch: "build/b" })], { agents: { Boardsmith: idle } }).row();
   assert.equal(cls(started, "Build"), "step here", "a card with a branch: the group is building");
@@ -44,27 +45,27 @@ test("one member with an agent on it now makes the group's step pulse", () => {
   const { row } = board([card("built", 1, { branch: "build/built" }), card("q1", 2)], { agents: { Boardsmith: working("built") } });
   assert.equal(cls(row(), "Build"), "step now");
   const pausedOn = board([card("p", 4, { status: "paused", branch: "build/p" }), card("q1", 2)], { agents: { Boardsmith: working("p") } });
-  assert.equal(cls(pausedOn.row(), "Build"), "step here", "a paused card is not worked, whoever is on it");
+  assert.equal(cls(pausedOn.row(), "Build"), "step waits", "a paused card is not worked, whoever is on it: its yellow Paused wait, as the card draws it");
 });
 
 test("every card landed: Land is done and the group stands still at Pack; once the pair holds them, at Install", () => {
   const ids = ["a", "b"], raw = ids.map((id, k) => card(id, k + 1, { phase: "ship", branch: `build/${id}` }));
   const landed = (more = {}) => Object.fromEntries(ids.map((id) => [id, { phase: "ship", headSha12: "4079cdbd8c9e", onMain: true, seen: ["build", "checker", "ship"], ...more }]));
   const one = board(raw, { cards: landed(), agents: { Release: idle } }).row();
-  assert.equal(cls(one, "Land"), "step done");
-  assert.equal(cls(one, "Pack"), "step here");
+  assert.equal(cls(one, "Land"), "step waits proc", "#C1343: every card is landed and Queued for pack: the card's own yellow tile on Land");
+  assert.equal(cls(one, "Pack"), "step unlit");
   assert.equal(cls(one, "Install"), "step unlit");
   const packed = board(raw, { cards: landed({ packed: true }), agents: { Release: idle } }).row();
   assert.equal(cls(packed, "Pack"), "step done seen");
-  assert.equal(cls(packed, "Install"), "step here");
+  assert.equal(cls(packed, "Install"), "step waits rel", "#C1343: a board group waiting on the owner's install wears the card's green-stripe tile, still, not pulsing");
 });
 
 test("#C1051: a member already read live counts as past Land; with a landed member beside it the group stands at Pack, all live at Live", () => {
   const raw = [card("a", 1, { phase: "ship", branch: "build/a" }), card("b", 2, { phase: "live", branch: "build/b" })];
   const read = (aPhase) => ({ a: { phase: aPhase, headSha12: "4079cdbd8c9e", onMain: true, seen: aPhase === "live" ? ["ship", "live"] : ["ship"] }, b: { phase: "live", headSha12: "9fb55ad574ac", onMain: true, seen: ["ship", "live"] } });
   const mixed = board(raw, { cards: read("ship"), agents: { Release: idle } }).row();
-  assert.equal(cls(mixed, "Land"), "step done");
-  assert.equal(cls(mixed, "Pack"), "step here");
+  assert.equal(cls(mixed, "Land"), "step waits proc", "#C1343: one card is Queued for pack, one is past it: the yellow wait comes first");
+  assert.equal(cls(mixed, "Pack"), "step unlit", "one card has no pack yet");
   const allLive = board(raw.map((c) => ({ ...c, phase: "live" })), { cards: read("live"), agents: { Release: idle } }).row();
   assert.equal(cls(allLive, "Land"), "step done");
   assert.equal(cls(allLive, "Pack"), "step done seen");
