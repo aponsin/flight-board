@@ -62,7 +62,7 @@ test("the board draws one group row with its cards on the rail, each with its st
   assert.match(h, /class="g-rail"/);
   // #C1311: a card past Build and still open reads as its phase ("Checker", active), not "Built" (green) beside a status that says it is in flight.
   // #C1314 (the owner: an opened card repeats its title): the top line holds the number, the repo badge, the title, the size and the state; the opened card has no second title line.
-  assert.match(h, /#C977<\/span><span class="c-repo"[^>]*>Platform<\/span> <strong>Card 977<\/strong><span class="size">S<\/span><span class="state active">Checker<\/span>/);
+  assert.match(h, /#C977<\/span><span class="c-repo"[^>]*>Platform<\/span> <strong>Card 977<\/strong><span class="size">S<\/span><span class="state active">Waits for Checker<\/span>/);
   assert.equal((h.match(/<strong>Card 977<\/strong>/g) || []).length, 1, "the card's title is drawn once, with its row opened");
   const opened = h.slice(h.indexOf('data-card="one"'), h.indexOf('data-card="one"') + 600);
   assert.doesNotMatch(opened, /<strong>|class="size"|class="c-repo"/, "the opened card's own line has no title, size or repo badge");
@@ -76,8 +76,10 @@ test("the board draws one group row with its cards on the rail, each with its st
   assert.doesNotMatch(h, /data-pull="solo"/);
   assert.match(h, /Card 981/);
   const gr = h.slice(h.indexOf('g-row'), h.indexOf('g-rail'));
-  assert.doesNotMatch(gr, /title="Test"/i, "Test, when every card skips it, is not on the group strip");
-  assert.match(gr, /title="Security">Security<small>not needed/, "another skipped phase says not needed");
+  assert.doesNotMatch(gr, /title="Test[":]/i, "Test, when every card skips it, is not on the group strip");
+  assert.match(gr, /title="Security: not needed">Security<small>not needed/, "another skipped phase says not needed");
+  // #C1383: the strip's Checker tile is the fold of the cards' readings (one waits on Checker, the other has none): a group tile, not a card's class
+  assert.match(gr, /class="step waits proc" title="Checker: 1 of 2 cards wait"/, "the group's tile is the Worker's fold");
 });
 
 const button = (id, num) => {

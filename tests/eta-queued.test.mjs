@@ -47,7 +47,7 @@ test("a card nobody has started shows Build queued, not lit; a branch or a build
   const html = b.initRow(q);
   assert.match(html, /class="step now queued"[^>]*>Build<small>queued · Boardsmith<\/small>/, "Designer 3: no time; the header has the ETA (#C370: whose queue, and its place when it has one)");
   assert.doesNotMatch(html, /class="step now"[^>]*>(Plan|Build)<small>Boardsmith/, "nothing lit as if someone were on it");
-  assert.match(html, /<span class="state active">Queued<\/span>/, "the pill says what the reading says");
+  assert.match(html, /<span class="state queued">Queued<\/span>/, "the pill says what the reading says (class from pillClass: queued)");
   assert.match(html, /<span>Queued 12 min <span class="usual">\(usually 1\.5 h for S\)<\/span><\/span>/, "Designer 2: no 'Started', no due");
   assert.doesNotMatch(html, /Started|due ~/);
   // Started (the Worker's reading says so: its branch seen, or a build start with work): the row is not queued.

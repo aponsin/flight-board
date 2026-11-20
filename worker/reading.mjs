@@ -14,6 +14,7 @@ export const TILE_ORDER = ["stuck", "working", "unknown", "ask", "wait", "queued
 export function tileOf(r) {
   if (!r) return "future";
   if (r.state === "done") return "done";
+  if (r.overlay) return "wait"; // Paused and Blocked stay overlays (#C1383): yellow, still, whatever the reading under them says
   if (r.state === "stuck" || r.state === "working" || r.state === "unknown" || r.state === "queued") return r.state;
   if (r.working && r.state === "rework") return "working";
   if (r.wait === "ask") return "ask";

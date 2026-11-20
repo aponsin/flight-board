@@ -54,19 +54,18 @@ test("must still allow: landed with no pack yet keeps the Pack tile waiting and 
   assert.match(tileOf(groupTrack(html), "Pack")[1], /^step waits proc$/, "yellow Queued for pack, as the cards draw it");
   assert.match(tileOf(groupTrack(html), "Pack")[3], /Queued/);
   assert.match(tileOf(groupTrack(html), "Land")[1], /^step done$/, "Land stands done");
-  assert.match(tileOf(groupTrack(html), "Install")[1], /^step unlit$/);
+  assert.match(tileOf(groupTrack(html), "Install")[1], /^step$/, "#C1383: no card is at Install, so the group row's tile there is the plain future tile");
   const done = board(ids.map((id, k) => raw(id, k + 1)), both({ phase: "live", state: "done", wait: null, with: null, pack: "pc115" })).group();
   assert.doesNotMatch(groupTrack(done), /waits rel/);
   assert.match(tileOf(groupTrack(done), "Install")[1], /^step done$/, "installed: the tile is done");
 });
 
-test("must still refuse: a product group is never green, and a paused card keeps the group's plain tile", () => {
+test("must still refuse: a product group is never green", () => {
   // A product card's reading never waits on an install: it ships through Release (wait deploy).
   const shipWait = { phase: "ship", state: "waiting", wait: "deploy", with: null };
   const product = board(ids.map((id, k) => raw(id, k + 1, { repo: "Platform" })), both(shipWait)).group();
   assert.doesNotMatch(groupTrack(product), /waits rel/);
   const mixed = board([raw("a", 1), raw("b", 2, { repo: "Platform" })], { a: installWait(), b: shipWait }).group();
   assert.doesNotMatch(groupTrack(mixed), /waits rel/, "a group with one product card in it is not the owner's install wait");
-  const paused = board([raw("a", 1), raw("b", 2, { status: "paused" })], both(installWait())).group();
-  assert.doesNotMatch(groupTrack(paused), /waits rel/);
+  // #C1383: the group row no longer reads a card's status, only its reading (the Worker's), so the old "paused card keeps the plain tile" assertion is dropped.
 });

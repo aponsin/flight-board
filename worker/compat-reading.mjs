@@ -32,7 +32,9 @@ export function readingDocs(view) {
   return cards.map((c) => {
     const r = reading(c, valueOf(c.id), claimsOf(c.id), agents, config, now, ctx);
     // `closed`: the store closed the card (done_at). A closed card whose reading is not live yet (the audit's 71) keeps its reading, but it is nobody's open card: no crew column.
-    return { id: c.id, num: c.num, ...(groupOf(c) ? { batch: groupOf(c) } : {}), ...(c.repo ? { repo: c.repo } : {}), ...(c.done_at ? { closed: true } : {}), ...r };
+    // Paused and Blocked are typed overlays (the contract keeps them): the card's tile is the yellow wait whatever the reading under it says, and nobody on it makes it no more working.
+    const overlay = !c.done_at ? (c.paused ? "paused" : c.blocked_reason ? "blocked" : null) : null;
+    return { id: c.id, num: c.num, ...(groupOf(c) ? { batch: groupOf(c) } : {}), ...(c.repo ? { repo: c.repo } : {}), ...(c.done_at ? { closed: true } : {}), ...r, ...(overlay ? { overlay, working: false } : {}) };
   });
 }
 

@@ -2633,6 +2633,7 @@ function sinceTag(i,k){const e=phaseStart(i,k);if(!e)return "";const who=LANE_RO
 // tile is chosen from `state` and `wait` only (the contract's "Tile looks"). STRIP, tileOf and tileAt are worker/reading.mjs's, copied (the page is one inlined file); a test holds them equal.
 const STRIP=["build","test","language","design","checker","security","ship","pack","install","live"];
 function tileOf(r){if(!r)return "future";if(r.state==="done")return "done";
+  if(r.overlay)return "wait"; // Paused and Blocked stay overlays (#C1383)
   if(r.state==="stuck"||r.state==="working"||r.state==="unknown"||r.state==="queued")return r.state;
   if(r.working&&r.state==="rework")return "working";if(r.wait==="ask")return "ask";
   if(r.wait==="pack"||r.wait==="install"||r.wait==="deploy")return "afterwork";return "wait"}
@@ -2923,7 +2924,9 @@ function groupTile(b,k,l,cards,G,f){
   const t=G&&G.tiles&&Object.hasOwn(G.tiles,k)?G.tiles[k]:"future",rs=cards.map(i=>readingOf(i.id)),at=cards.map((i,j)=>tileAt(rs[j],k)),top=cards.filter((i,j)=>at[j]===t),topR=top.map(i=>readingOf(i.id));
   let cls=t==="afterwork"?(k==="install"&&cardRepo(cards[0])===BOARD_REPO?"step waits rel":"step waits proc"):GROUP_CLASS[t]||"step",small="<small>&nbsp;</small>";
   const words=[...new Set(topR.map((r,j)=>waitTileWord(top[j],r)))];
-  if(t==="wait"||t==="afterwork"||t==="ask"){if(words.length===1&&words[0])small=`<small class="rs">${words[0]}</small>`;else if(cls.includes(" rel"))small=`<small class="rs">${esc(OWNER)}<span class="sl">'s install</span></small>`}
+  const ov=[...new Set(topR.map(r=>r.overlay))];
+  if(t==="wait"&&ov.length===1&&ov[0]){cls="step waits";small=`<small>${ov[0]==="blocked"?"Blocked":"Paused"}</small>`} // the overlay, as a paused card read in a group before: the blue ring and its word
+  else if(t==="wait"||t==="afterwork"||t==="ask"){if(words.length===1&&words[0])small=`<small class="rs">${words[0]}</small>`;else if(cls.includes(" rel"))small=`<small class="rs">${esc(OWNER)}<span class="sl">'s install</span></small>`}
   else if(t==="queued")small="<small>queued</small>";
   else if(t==="unknown")small="<small>no reading</small>";
   else if(t==="working"){const who=[...new Set(topR.map(r=>r.with).filter(Boolean))];if(who.length===1)small=`<small>${esc(who[0])}</small>`}
