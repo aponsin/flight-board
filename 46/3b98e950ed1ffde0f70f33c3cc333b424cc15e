@@ -1,0 +1,5 @@
+SECURE
+
+#C1301 (page only): removes the .gap-red rule and gapRed(); the row's class is now the fixed string i-row; .gaps becomes muted small text. Nothing new is inserted into the page, no esc() call removed, no leftover gapRed use in page/worker/scripts. Gap detection, boardTruth and the GAP line unchanged. Ran 21/21 at 463b98e9 (no-owner-no-eta-red, group-open-card-clipped, waiting-on-one-reading). No Worker, store, route, secret, hook or permission change. Ships as a page publish.
+
+signed-by: Security
