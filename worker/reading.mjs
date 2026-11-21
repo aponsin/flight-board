@@ -106,7 +106,9 @@ export function withOf(card, e, phase, wait, state, claims, config) {
   if (wait === "install" || wait === "ask") return config?.owner ?? "owner";
   if (state === "rework" || OWNER_PHASES.includes(phase) || !phase) return card?.owner_role ?? null;
   if (REVIEW.includes(phase)) {
-    const claim = (claims ?? []).find((c) => c && !c.released_at && c.card_id === card?.id && typeof e?.headSha === "string" && c.sha === e.headSha);
+    // #C1406: a reviewer's open claim on the card holds it, on the current tip first, else on an older one (the claim is the reviewer's, not the tip's): the crew row never reads that reviewer idle.
+    const open = (claims ?? []).filter((c) => c && !c.released_at && c.card_id === card?.id);
+    const claim = open.find((c) => typeof e?.headSha === "string" && c.sha === e.headSha) ?? open[0];
     if (claim?.checker) return claim.checker;
     return (phase === "checker" ? reviewerOf(card, config?.reviewers) : undefined) ?? PHASE_LANES[phase] ?? null;
   }

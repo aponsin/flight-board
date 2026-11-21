@@ -1258,7 +1258,12 @@ export async function writeEvidence(db, now, who, key, value, track) {
   const reading = holding ? { ...kept, actual: { headSha12: sent.headSha12, phase: sent.lit[0] } } : sent;
   const next = reading.lit[0];
   const reasonedHere = typeof before?.reasoned === "string" && before.reasoned !== "" && before.reasoned === sent.headSha12;
-  const rework = holding ? false : before?.rework === true && reading.onMain !== true && next !== "live" ? true : !reasonedHere && reworkTriggered(before, reading);
+  // #C1406: a card sent back (the flag) is back in review once it is read at a review phase again with no findings of its own (its READY is declared: the same tip read past build, or a newer tip): the
+  // flag clears with no hand step. A flag set while the card sat at review (an older reading) clears only on a newer tip.
+  const inReview = (p) => ["language", "design", "checker", "security", "ship"].includes(p);
+  const backInReview = before?.rework === true && inReview(next) && !(Array.isArray(sent.findings) && sent.findings.length)
+    && (!inReview(before.lit?.[0]) || (typeof sent.headSha12 === "string" && typeof before.headSha12 === "string" && sent.headSha12 !== before.headSha12));
+  const rework = holding ? false : before?.rework === true && reading.onMain !== true && next !== "live" && !backInReview ? true : !reasonedHere && !backInReview && reworkTriggered(before, reading);
   const upsert = upsertOf(holding ? { ...reading, rework: "unexplained", reworkAt: before.rework === "unexplained" && Number.isFinite(before.reworkAt) ? before.reworkAt : now, reworkCounts: before.rework === "unexplained" && Number.isInteger(before.reworkCounts) ? before.reworkCounts : issueTotal(sent.issueCounts) } : rework ? { ...reading, rework: true } : reading);
   let prev = before?.lit?.[0] ?? null;
   // A wait step (the step tool, #C739) is not the lit phase: the three reads of the history below take the probe's own rows only (wait IS NULL).
@@ -1270,10 +1275,13 @@ export async function writeEvidence(db, now, who, key, value, track) {
   // #C1397: when the probe's issueBase (the merge-base the counts were read from) differs from the one in the card's previous reading, the range changed: the review kinds are
   // set to this range's counts (an absent issueCounts is the range with none). No previous issueBase (a card not yet carrying it): raise only, as before.
   const rangeChanged = typeof sent.issueBase === "string" && typeof before?.issueBase === "string" && sent.issueBase !== before.issueBase;
-  if (cardRow && (sent.issueCounts || rangeChanged)) {
+  // #C1406: a reading that carries tipIssues (the open findings on the current tip alone) SETS the four review kinds to them every time: the count is a per-tip record, never an older tip's. A reading
+  // without it (a probe from before) keeps the rules above.
+  const perTip = sent.tipIssues && typeof sent.tipIssues === "object" && !Array.isArray(sent.tipIssues);
+  if (cardRow && (perTip || sent.issueCounts || rangeChanged)) {
     const stored = await db.prepare("SELECT issues FROM cards WHERE id = ?").bind(cardId).first();
     let have = null; try { have = stored?.issues ? JSON.parse(stored.issues) : null; } catch { /* none */ }
-    const up = raisedIssues(have, sent.issueCounts ?? {}, rangeChanged);
+    const up = perTip ? raisedIssues(have, sent.tipIssues, true) : raisedIssues(have, sent.issueCounts ?? {}, rangeChanged);
     if (up) await db.prepare("UPDATE cards SET issues = ?, issues_at = ?, updated_at = ? WHERE id = ?").bind(JSON.stringify(up), now, now, cardId).run();
   }
   // #C1110: a branch that touches the customer-text paths sets the card's flag; only ever raised (null or 0 becomes 1), never cleared.

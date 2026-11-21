@@ -870,7 +870,10 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   // #C1395: a sign-off that could not be read leaves the card's reviews unknown (only while the card is open: a card on main rests on the deploy, not on its sign-offs); the CI word is the card's own `ci`.
   if (notesFailed && !onMain) unread.add("notes");
   if (ci?.ci === "unread") unread.add("ci");
+  // #C1406: the open findings on the CURRENT tip alone (the head's notes and the covering tip's), by kind, {} when none: the card's counters follow the tip, never an older tip's findings.
+  const tipIssues = bare || onMain || notesFailed ? null : countFindings([...new Set([after ? after.sha : tip.sha, coverSha].filter(Boolean))].flatMap((s) => notesOn(s)));
   const extra = {
+    ...(tipIssues ? { tipIssues } : {}),
     ...(wipHead ? { wipHead: true } : {}),
     // #C1239: the tip's message names the card in a Board-Id line that is not git's trailer (the line sits in a paragraph of its own): the board cannot match it, and the builder is told so.
     ...(!onMain && !wipHead && !wipWord && misplacedBoardId(head.message ?? tip.message, card.id) ? { trailerMisplaced: true } : {}),
