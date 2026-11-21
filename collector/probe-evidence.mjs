@@ -331,6 +331,40 @@ export async function truthStep({ base, headers, fetchImpl = fetch, origConfig, 
   } catch (e) { log(`truth failed: ${String(e.message).slice(0, 80)}`); return null; }
 }
 
+// #C1389: the open pull requests, evidence `prs` ({ at, repos, open }). For each repository folder of the board config (collector.repoPath and each collector.repos path) gh names the repository and
+// lists its open pull requests; a repository whose either read failed (or whose list filled the cap, so it may be cut) is left out of `repos`, and the panel drops nothing for it. Nothing read, nothing written.
+// Never fails the usage job: any failure is one log line.
+export const PRS_LIMIT = 200;
+const PRS_REPO = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/; // the Worker's own (board-rules.mjs PRS_REPO); a test holds the two equal
+const defaultGhRun = (args, cwd, env, left, exec = execFileSync) => exec("gh", args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: Math.max(1000, Math.min(30_000, left)), maxBuffer: 8 * 1024 * 1024 });
+export async function prsStep({ base, headers, fetchImpl = fetch, origConfig, read, log = () => {}, now = Date.now(), env, run = null, deadline = Infinity, clock = Date.now, home = homedir(), post = postWrites }) {
+  try {
+    let c;
+    try { c = JSON.parse(read(origConfig))?.collector; } catch { log("prs: the board config could not be read"); return null; }
+    const dirs = [...new Set([c?.repoPath, ...(Array.isArray(c?.repos) ? c.repos.map((r) => r?.path) : [])].filter((p) => typeof p === "string" && p).map((p) => expandHome(p, home)))].slice(0, 10);
+    if (!dirs.length) { log("prs: the board config names no repository"); return null; }
+    const repos = [], open = [];
+    for (const dir of dirs) {
+      try {
+        const left = deadline - clock();
+        if (left <= 0) throw new Error("the job's time is spent");
+        const go = (args) => (run ?? ((a, d, l) => defaultGhRun(a, d, env, l)))(args, dir, left);
+        const name = String(go(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])).trim();
+        const list = JSON.parse(go(["pr", "list", "--state", "open", "--limit", String(PRS_LIMIT), "--json", "number"]));
+        if (!PRS_REPO.test(name) || !Array.isArray(list) || list.length >= PRS_LIMIT || !list.every((p) => Number.isInteger(p?.number) && p.number > 0)) throw new Error("not a whole list");
+        if (repos.includes(name)) continue;
+        repos.push(name);
+        for (const p of list) open.push(`${name}#${p.number}`);
+      } catch (e) { log(`prs: a repository's open pull requests were not read (${String(e.message).slice(0, 60)})`); }
+    }
+    if (!repos.length || open.length > 400) { if (repos.length) log("prs: too many open pull requests to carry"); return null; }
+    const value = { at: now, repos, open };
+    await post([{ key: "prs", value }], { base, headers, fetchImpl, log });
+    log(`prs: ${open.length} open pull request(s) in ${repos.length} repository(ies)`);
+    return value;
+  } catch (e) { log(`prs failed: ${String(e.message).slice(0, 80)}`); return null; }
+}
+
 // One run: build the state, read it, post the job's keys.
 // With privateDir, the cards come from the store (collector/store-cards.mjs), not from the old board's mirror, and the state is
 // built and left in that private directory; without it, the job reads the old location as before.
@@ -424,7 +458,7 @@ export async function evidenceJob(o) {
   }
 }
 
-async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, truth = {}, sessionsRead = defaultSessions, openSessionsRead = defaultOpenSessions, sweepGit = defaultSweepGit, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
+async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPath, stateFile, privateDir, prepare = prepareStoreState, fetchImpl = fetch, liveFetch = fetch, runner = runChild, env = childEnv(), build = (args, ms, extra) => defaultBuild(args, ms, runner, env, extra), deployRead = readDeploy, read = (p) => readFileSync(p, "utf8"), write = (p, t) => writeFileSync(p, t, { mode: 0o600 }), log = () => {}, ghCheck = defaultGhCheck, actions = {}, repoWords = {}, e2e = {}, truth = {}, prs = {}, sessionsRead = defaultSessions, openSessionsRead = defaultOpenSessions, sweepGit = defaultSweepGit, switchFile = join(homedir(), ".flight-board", "stack-switch.json") }) {
   // One environment for both: the check asks whether gh runs in the very environment the state child gets.
   const t0 = Date.now();
   const limitSec = job === "evidence" ? knobs.values.evidenceLimitSec : JOBS[job].limitSec; // #C997: a setting for the evidence job
@@ -493,6 +527,8 @@ async function evidenceJobRun({ knobs, timing = {}, job, base, headers, configPa
   if (job === "usage") { let cfg2 = null; try { cfg2 = read(origConfig); } catch { log("e2e: the board config could not be read"); } if (cfg2) e2eStep(cfg2, { stateFile, env, log, ...e2e }); }
   // #C1386: the truth check (collector/truth-check.mjs): git's own answers against the stored readings; a failure is logged and writes nothing, never fails the job.
   if (job === "usage") await truthStep({ base, headers, fetchImpl, origConfig, stateFile, state, read, log, deploy: deployRead, deadline: t0 + (JOBS.usage.limitSec - 45) * 1000, ...truth });
+  // #C1389: the open pull requests, for the panel of the agent's pull requests; a failure is logged and writes nothing, never fails the job.
+  if (job === "usage") await prsStep({ base, headers, fetchImpl, origConfig, read, env, log, deadline: t0 + (JOBS.usage.limitSec - 30) * 1000, ...prs });
   if (job === "usage") await actionsUsageStep({ base, headers, fetchImpl, origConfig, stateFile, env, read, log, deadline: t0 + (JOBS.usage.limitSec - 15) * 1000, ...actions });
   if (job !== "evidence") return done;
   // Live last, so a product site that answers slowly (or not at all) can never hold up the evidence above.

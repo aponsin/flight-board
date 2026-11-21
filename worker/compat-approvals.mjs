@@ -20,9 +20,19 @@ function approvalAsks(asks) {
 // Pure: the panel's two collections.
 //   agentPrs/pr<n>:  the newest OPEN ask for the pull request: signed by its asker at its head (the panel lists only signed heads).
 //   approvals/pr<n>: the newest ask the owner's Approve stands on, open or closed, so a push after an approval shows "Approve again".
-export function approvalDocs(asks) {
+// #C1389 (the list said "38 approved" with 7 open on GitHub): `prs` is the probe's evidence of the pull requests it read as open ({ at, repos, open }, worker/board-rules.mjs prsShape). An Approval
+// ask for a pull request of a repository that read is dropped from the panel when the pull request is not among the open ones and the ask is no newer than that read (a pull request opened after it
+// is not yet in the list). No `prs`, a repository it did not read, an ask with no repository in its url: nothing is dropped, so a failed read leaves the panel as it was. Release's approvalFor
+// reads the raw asks, never this.
+const PR_REPO_URL = /^https:\/\/github\.com\/([A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100})\/pull\/[1-9][0-9]{0,6}$/;
+export function goneFromGitHub(x, prs) {
+  if (!prs || !Array.isArray(prs.repos) || !Array.isArray(prs.open) || !Number.isFinite(prs.at)) return false;
+  const m = PR_REPO_URL.exec(String(x.url ?? ""));
+  return !!m && prs.repos.includes(m[1]) && !prs.open.includes(`${m[1]}#${x.pr}`) && x.a.created_at <= prs.at;
+}
+export function approvalDocs(asks, prs = null) {
   const agentPrs = new Map(), approvals = new Map();
-  const list = approvalAsks(asks);
+  const list = approvalAsks(asks).filter((x) => !goneFromGitHub(x, prs));
   for (const { a, pr, head, url } of list) {
     const id = `pr${pr}`;
     if (!a.closed_at && !agentPrs.has(id)) agentPrs.set(id, { id, number: pr, title: a.title, url, head, signedHead: head, signedAt: a.created_at, review: "ok", at: a.created_at });
@@ -41,7 +51,7 @@ export function approvalDocs(asks) {
 export function applyApprovals(collections, view) {
   const ids = new Set((view.asks ?? []).filter((a) => a.type === "Approval").map((a) => a.id));
   if (collections.waiting) collections.waiting = collections.waiting.filter((w) => !ids.has(w.id));
-  Object.assign(collections, approvalDocs(view.asks));
+  Object.assign(collections, approvalDocs(view.asks, view.evidence?.prs?.value));
   return collections;
 }
 
