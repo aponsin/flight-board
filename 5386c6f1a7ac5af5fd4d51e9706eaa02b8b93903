@@ -1,0 +1,1 @@
+LOOK-OK #C1389 board-polish-fifteen build/derive-dead-fields-v4: re-sign by range-diff from 94e18d62; page/board.template.html identical, changes only gate/stop.mjs and tests. Designer 2026-11-20
