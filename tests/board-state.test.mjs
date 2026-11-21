@@ -581,7 +581,7 @@ test("the probe asks gh at most 10 times a run, and never again for a finished r
   const shas = Array.from({ length: 15 }, (_, k) => (k % 2 ? "a" : "b") + String(k).padStart(39, "0"));
   const out = shas.map(read);
   assert.equal(calls, 10);
-  assert.deepEqual(out.slice(10), Array(5).fill({ ci: "none", ciMin: null }));
+  assert.deepEqual(out.slice(10), Array(5).fill({ ci: "capped", ciMin: null })); // #C1395: a call not made for the call limit is "capped", not "none"
   assert.deepEqual(Object.keys(cache).sort(), shas.slice(0, 10).filter((s) => s.startsWith("a")).sort(), "only finished runs are kept");
   const again = ciReader(gh, T, cache);
   shas.filter((s) => s.startsWith("a")).slice(0, 5).forEach(again);

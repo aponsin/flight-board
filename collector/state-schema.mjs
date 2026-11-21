@@ -32,7 +32,8 @@ export const toolClass = (name) => {
   return n.startsWith("mcp__") ? "mcp" : "other";
 };
 export const AGENT_STATES = ["working", "idle", "unknown"];
-export const CI_STATES = ["none", "queued", "running", "passed", "failed", "cancelled"];
+// #C1395: "none" is only "no run exists on the commit"; "backoff" and "capped" are a call not made (GitHub's back-off, the call limit) and "unread" a call that failed (never "failed": that is the run's own result).
+export const CI_STATES = ["none", "backoff", "capped", "unread", "queued", "running", "passed", "failed", "cancelled"];
 
 // The board's real shapes, no wider (Security): a card id is 1 to 5 lowercase words joined by "-", 40 characters at most
 // (today's longest is 29); a role one word; a phase one lowercase word. None fits a sentence.
@@ -65,7 +66,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
 const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "pack", "restart", "ledger", "quiet", "stale", "staleSince", "unread"]);
 // #C1387: the sources a card's reading can fail to read (a git or GitHub call that failed, which is not the answer "no"). A new source is one word added here (and to UNKNOWN_BY in worker/reading.mjs
-// when the phase rests on it); #C1395 adds notes, install, pair and ci.
+// when the phase rests on it); #C1395 adds notes, install, pair (each a source a phase rests on: the Worker reads them as unknown) and ci (a flag: the card's own ci word and the ship tile say it).
 export const UNREAD_SOURCES = ["main", "deploy", "version", "stack", "start", "behind", "notes", "install", "pair", "ci"];
 // #C591: cardsCheckedAt is the last time every repository was read fresh; the chip goes red 5 minutes after it.
 const CARD = {
@@ -172,7 +173,7 @@ const WATCH_PROMPT = { role: re(ROLE), tool: re(/^[A-Za-z][A-Za-z0-9_.:-]{0,47}$
 const WATCH_QUIET = { since: nullOr(isTime), days: nullOr((v) => Number.isInteger(v) && v >= 0 && v <= 36500), running: (v) => Number.isInteger(v) && v >= 1 && v <= 1000 };
 export const MAX_RELEASES = 100;
 const RELEASE = { testsMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000, deployMin: (v) => Number.isFinite(v) && v >= 0 && v <= 100000 };
-export const SHIP_CI = ["none", "queued", "running", "passed"];
+export const SHIP_CI = ["none", "backoff", "capped", "unread", "queued", "running", "passed"]; // #C1395: the three reasons no run shows, beside "no run exists"
 export const STUCK_KINDS = ["step", "user"], USAGE_LEVELS = ["ok", "amber", "red"], MAX_TOP = 5;
 const whole = (lo, hi) => (v) => Number.isInteger(v) && v >= lo && v <= hi;
 const CTX = { pct: whole(0, 100), tokens: nullOr(whole(0, 5e6)), at: isTime, over: (v) => typeof v === "boolean" };

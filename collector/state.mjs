@@ -329,7 +329,6 @@ export function phaseOf(card, facts, config) {
 
 // A repository as the cards read it: git(args) and gh(args) in its clone, its remote, main branch, sign-off notes and
 // the commit live there (the deploy run's for the team's, the installed link's for another).
-const ok = (fn) => { try { fn(); return true; } catch { return false; } };
 // #C1160: the word WIP at the start of a commit's first line, or right after one card token ("#C1128 WIP", "1128 WIP", "rc-field-after-clear WIP"), as gate/first-push.mjs tells builders to write it.
 const WIP_START = /^(?:(?:#?C?\d+|[a-z0-9]+(?:-[a-z0-9]+)+)\s+)?WIP\b/;
 // #C1133: git's answer to "is A an ancestor of B" in three values: true (exit 0), false (exit 1: it is not) and null (ANY other failure: a timeout, a spawn error, git's own
@@ -344,9 +343,11 @@ export function remoteTips(git, remote) {
 }
 
 // The CI run on a commit: { ci, ciMin }, from gh's newest run on it.
+// #C1395: "none" is only "no run exists on the commit" (gh answered, with no run); a call that FAILED is "unread" (failed: true), never "none". The reader below adds "backoff" (a call not made: the back-off)
+// and "capped" (a call not made: the call limit), so the four reasons for no run to show are four words.
 export function ciOf(gh, sha, now) {
   let runs = [];
-  try { runs = JSON.parse(gh(["run", "list", "--commit", sha, "--limit", "1", "--json", "status,conclusion,createdAt,updatedAt"])); } catch { return { ci: "none", ciMin: null, failed: true }; }
+  try { runs = JSON.parse(gh(["run", "list", "--commit", sha, "--limit", "1", "--json", "status,conclusion,createdAt,updatedAt"])); } catch { return { ci: "unread", ciMin: null, failed: true }; }
   return ciFromRun(Array.isArray(runs) ? runs[0] : null, now);
 }
 // The { ci, ciMin } of one run object (gh's status, conclusion, createdAt, updatedAt); none for anything that is not a run.
@@ -394,11 +395,11 @@ export function ciReader(gh, now, cache, backoff = { until: 0, wait: BACKOFF_MIN
   return (sha) => {
     const kept = ciEntry(cache[sha]);
     if (kept) return kept;
-    if (now < backoff.until) return { ci: "none", ciMin: null };
+    if (now < backoff.until) return { ci: "backoff", ciMin: null };
     if (batch) {
-      if (!listed && calls >= MAX_CI_CALLS) return { ci: "none", ciMin: null };
+      if (!listed && calls >= MAX_CI_CALLS) return { ci: "capped", ciMin: null };
       const l = list();
-      if (l.failed) return { ci: "none", ciMin: null };
+      if (l.failed) return { ci: "unread", ciMin: null };
       const run = l.by.get(sha);
       if (run) {
         const r = ciFromRun(run, now);
@@ -406,7 +407,7 @@ export function ciReader(gh, now, cache, backoff = { until: 0, wait: BACKOFF_MIN
         return { ci: r.ci, ciMin: r.ciMin };
       }
     }
-    if (calls >= MAX_CI_CALLS) return { ci: "none", ciMin: null };
+    if (calls >= MAX_CI_CALLS) return { ci: "capped", ciMin: null };
     calls++;
     const r = ciOf(gh, sha, now);
     if (r.failed) { backoff.until = now + backoff.wait; backoff.wait = Math.min(BACKOFF_MAX_MS, backoff.wait * 2); }
@@ -462,6 +463,8 @@ export const shipsCard = (ships, tip, head) => ships.some((s) => s.branch === ti
 // stays on GitHub after a red run), whose CI run is not finished badly (failed or cancelled: the ship is over). { version, ci,
 // at } or null. A CI read that can't be made (back-off, the call limit) is "none": the candidate still counts, never a green badge.
 export const SHIP_CANDIDATE_MAX_MS = 6 * 3600e3;
+// #C1395: the CI words a candidate can carry (a copy of SHIP_CI in collector/state-schema.mjs, which this pinned file does not import; a test holds the two equal).
+const SHIP_CI_STATES = ["none", "backoff", "capped", "unread", "queued", "running", "passed"];
 // #C1038 (2026-11-12: the badge read "Ship v1.210.5 CI running" after v1.210.5 was live and its CI on main green): the merge does not make
 // the candidate's tip an ancestor of main, and the board holds no ship record to close it by. So main's own deploy closes it: the commit
 // of main's newest successful deploy run (repos[""].live) is read back along its first parents, and a candidate whose version that
@@ -486,7 +489,7 @@ export function teamShip(team, c, now) {
   // #C1377 (Manager: the card's own example, the ship tile's "CI running" an hour after v1.226.22 was live): a candidate read from a repository that was not read fresh this run is marked
   // stale, with the time of its last good read, as the cards are; the badge says so instead of reading current.
   const marked = (r) => (r && team.fresh === false ? { ...r, stale: true, ...(isTimeMs(team.freshAt) ? { staleSince: team.freshAt } : {}) } : r);
-  return marked(shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ok(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci,
+  return marked(shipCandidate({ tips: team.tips, pattern: c.candidatePattern, now, onMain: (sha) => ancestry(() => team.git(["merge-base", "--is-ancestor", sha, `${team.remote}/${team.main}`])), ci: team.ci,
     shipped: (v) => { if (!c.versionPattern || !team.live) return false; shippedSet ??= versionsOn(team.git, team.live, c.versionPattern); return shippedSet.has(v); } }));
 }
 export function shipCandidate({ tips, pattern, now, onMain, ci, shipped = () => false }) {
@@ -496,12 +499,15 @@ export function shipCandidate({ tips, pattern, now, onMain, ci, shipped = () => 
   const found = (tips ?? []).filter((t) => t && typeof t.branch === "string" && re.test(t.branch) && /^[0-9a-f]{40}$/.test(String(t.sha)) && Number.isFinite(t.at) && now - t.at <= SHIP_CANDIDATE_MAX_MS && t.at - now <= 60e3)
     .sort((a, b) => b.at - a.at).slice(0, 3);
   for (const t of found) {
-    if (onMain(t.sha)) continue;
+    // #C1395: onMain answers true, false (git's exit 1) or null (the call FAILED): a failed read is not "not on main", but the candidate still stands (never a green badge) and says it has no fresh reading.
+    const placed = onMain(t.sha);
+    if (placed) continue;
     const m = /v(\d{1,4}\.\d{1,4}\.\d{1,4})/.exec(t.branch);
     if (m && shipped(m[1])) continue;
-    const r = ci(t.sha), state = r && typeof r.ci === "string" ? r.ci : "none";
+    // #C1395: the CI word is one of SHIP_CI_STATES (none: no run exists; backoff, capped: no call was made; unread: the call failed); an answer that is none of them is "unread", never "none".
+    const r = ci(t.sha), state = r && SHIP_CI_STATES.includes(r.ci) ? r.ci : r && (r.ci === "failed" || r.ci === "cancelled") ? r.ci : "unread";
     if (state === "failed" || state === "cancelled") continue;
-    return { version: m ? m[1] : null, ci: state, at: t.at };
+    return { version: m ? m[1] : null, ci: state, at: t.at, ...(placed === null ? { stale: true } : {}) };
   }
   return null;
 }
@@ -659,9 +665,11 @@ export const DOCS_ONLY = /^(docs\/|tests\/|README\.md$|CHANGELOG\.md$|CHANGELOG\
 // log that cannot be read, keeps it waiting.
 const MAX_CARD_COMMITS = 30;
 const NO_INSTALL = new WeakMap(); // a commit's paths never change, so one diff per commit and repository run
+// #C1395: true (no install needed), false (it needs one) or null (a git read of the card's landing FAILED, so whether it needs one is unread: not "waits for install"). A commit that needs one by its paths
+// ("code") settles false whatever else failed; a failed log or a failed diff otherwise gives null.
 function noInstallCard(repo, card, mainRef, headSha) {
   if (!NO_INSTALL.has(repo)) NO_INSTALL.set(repo, new Map());
-  const memo = NO_INSTALL.get(repo), byCommit = (sha) => { if (!memo.has(sha)) memo.set(sha, landingKind(repo.git, sha)); return memo.get(sha); };
+  const memo = NO_INSTALL.get(repo), byCommit = (sha) => { if (!memo.has(sha)) { const n = {}, k = landingKind(repo.git, sha, n); memo.set(sha, n.failed ? "failed" : k); } return memo.get(sha); };
   const shas = new Set([headSha]);
   try {
     const out = String(repo.git(["log", "-400", "--fixed-strings", `--grep=Board-Id: ${card.id}`, "--format=%H%x1f%B%x1e", mainRef]));
@@ -670,19 +678,22 @@ function noInstallCard(repo, card, mainRef, headSha) {
       const ids = boardIdsOf(body);
       if (/^[0-9a-f]{40}$/.test(h ?? "") && ids.includes(card.id)) shas.add(h);
     }
-  } catch { return false; }
+  } catch { return null; }
   // #C1369: an EMPTY commit of the card on main (the empty WIP commit that is pushed before the first edit) changes nothing, so it cannot need an install and
   // does not count against the card; but a card needs at least one commit that really is docs and tests only, so a card whose commits are all empty, or
   // one whose diff could not be read, keeps waiting as before.
   if (shas.size > MAX_CARD_COMMITS) return false;
   const kinds = [...shas].map(byCommit);
+  if (kinds.includes("code")) return false;
+  if (kinds.includes("failed")) return null;
   return kinds.every((k) => k === "docs" || k === "empty") && kinds.includes("docs");
 }
 // What one commit changed: "docs" (every path is docs or tests), "empty" (no path), "code" (a deployed or pinned path), "unread" (not a sha, or git could not say).
-export function landingKind(git, sha) {
+// #C1395: `note` (optional) gets failed = true when git could not say (a failed diff); "unread" for a value that is not a sha leaves it unset.
+export function landingKind(git, sha, note = null) {
   if (!/^[0-9a-f]{40}$/.test(String(sha))) return "unread";
   let paths;
-  try { paths = String(git(["diff", "--name-only", `${sha}^`, sha])).split("\n").map((p) => p.trim()).filter(Boolean); } catch { return "unread"; }
+  try { paths = String(git(["diff", "--name-only", `${sha}^`, sha])).split("\n").map((p) => p.trim()).filter(Boolean); } catch { if (note) note.failed = true; return "unread"; }
   if (paths.length === 0) return "empty";
   return paths.every((p) => DOCS_ONLY.test(p)) ? "docs" : "code";
 }
@@ -730,7 +741,9 @@ export function citedShas(note) {
 function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop = false) {
   // #C852: a review's note on a commit is a sign-off unless it starts "FINDINGS" (rework.mjs reads the same word): that is the review sending
   // the commit back, so it is no sign-off, and findingsOn names the reviews that did. A new commit has a new sha, so a finding clears itself.
-  const notesOn = (sha) => Object.entries(repo.notes).map(([p, ref]) => { const have = annotatedOn(repo, ref); if (have && /^[0-9a-f]{40}$/.test(String(sha)) && !have.has(sha)) return null; let t = null; try { t = repo.git(["notes", `--ref=${ref}`, "show", sha]); } catch { /* none */ } return t === null || t === undefined || t === false ? null : [p, String(t)]; }).filter(Boolean);
+  // #C1395: `git notes show` exits 1 when the commit has no note (the plain "no sign-off"); any other failure is a note that could not be read: unread "notes", never "no sign-off" (see `notesFailed` below).
+  let notesFailed = false;
+  const notesOn = (sha) => Object.entries(repo.notes).map(([p, ref]) => { const have = annotatedOn(repo, ref); if (have && /^[0-9a-f]{40}$/.test(String(sha)) && !have.has(sha)) return null; let t = null; try { t = repo.git(["notes", `--ref=${ref}`, "show", sha]); } catch (e) { if (e?.status !== 1) notesFailed = true; } return t === null || t === undefined || t === false ? null : [p, String(t)]; }).filter(Boolean);
   // #C1163: a sign-off is a note whose first line starts with the role's word (PASS, SECURE; collector/signoff.mjs), the one reading the landing job, the release tool and the re-cut tool use.
   // A note that is neither (HOLD, STOP, a stray line) is no sign-off and no finding.
   const signedOn = (sha) => notesOn(sha).filter(([p, t]) => isSignoff(t, p)).map(([p]) => p).sort();
@@ -760,7 +773,9 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   const signed = bare ? [] : [...new Set([...signedOn(after ? after.sha : tip.sha), ...(coverSha ? signedOn(coverSha) : [])])].filter((p) => !sentBack.includes(p)).sort();
   const onMain = atMain && !bare;
   // #C882: a landing that changed only docs and tests has nothing to deploy or install: it is live the moment it is on main, not "waiting for install".
-  const noInstall = onMain && typeof repo.git === "function" && noInstallCard(repo, card, mainRef, head.sha);
+  // #C1395: noInstallCard answers true, false or null (a git read of the card's landing FAILED: the install state is unread, never "waits for install"); it is unread "install" only while the card is not deployed.
+  const noInstallAns = onMain && typeof repo.git === "function" ? noInstallCard(repo, card, mainRef, head.sha) : false;
+  const noInstall = noInstallAns === true;
   // #C1278 (11-19: no ships row after 1.218.0, so no Acknowledge button for ten versions): Release merges a card's commit into dev and CI goes green on that merge BEFORE the version commit ("v1.226.3: ...")
   // is made, so the newest green run already contains the card's head while no commit naming a version is in it yet. The card read live, closed, and its reading carried no version: no ship was ever noted.
   // In a repository that names its versions (versionPattern), a card is deployed only when a commit naming one lies between its head and the live commit; until then it reads ship, and the reading that
@@ -779,6 +794,7 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
     }
   }
   const deployed = onMain && (noInstall || deployedAns);
+  if (noInstallAns === null && !deployed) unread.add("install");
   const cfg = { ...config, collector: { ...config.collector, notes: repo.notes, mainBranch: repo.main } };
   // #C897: the reviews from the paths the branch changed since it left main, when the repository has a reviewPaths table.
   const changed = !onMain && !bare ? branchPaths(repo, mainRef, tip.sha) : null;
@@ -848,6 +864,9 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
   // a tip whose newest commit says WIP (the word at the start of its first line) is a start push or work in progress, never a READY, whatever the stack switch or a signal says. The
   // dispatch gives it no review turn. The next real commit is a new tip with no such word. A branch on main, or a bare one, is not read.
   // (#C1160 reads it above, before the phase.)
+  // #C1395: a sign-off that could not be read leaves the card's reviews unknown (only while the card is open: a card on main rests on the deploy, not on its sign-offs); the CI word is the card's own `ci`.
+  if (notesFailed && !onMain) unread.add("notes");
+  if (ci?.ci === "unread") unread.add("ci");
   const extra = {
     ...(wipHead ? { wipHead: true } : {}),
     // #C1239: the tip's message names the card in a Board-Id line that is not git's trailer (the line sits in a paragraph of its own): the board cannot match it, and the builder is told so.
@@ -1186,7 +1205,7 @@ export function closedLiveNext({ cards, closedLive, states, livePhase, now }) {
 // A re-read closed card's reading is posted with the open cards' (the store keeps it), but the watch's truth lines, the evidence clock and the phase clashes are about open cards: a done card
 // that reads live is not "CLOSE <card>" news (Checker 2's F1: 25 of them filled the line limit and pushed the real SHIP and GAP lines out).
 export const openStates = (cards, states) => { const open = new Set((cards ?? []).filter((k) => !closed(k)).map((k) => k.id)); return Object.fromEntries(Object.entries(states ?? {}).filter(([id]) => open.has(id))); };
-export function cardStates({ cards, config, repos, now, stacks = [], pairs = [], stackCache = null, closedLive = new Set() }) {
+export function cardStates({ cards, config, repos, now, stacks = [], pairs = [], pairsUnread = false, stackCache = null, closedLive = new Set() }) {
   const out = {}, repoOfCard = {}, cardOf = {}, todo = [];
   const readable = (k) => CARD_ID.test(String(k.id)) && k.id.length <= CARD_ID_MAX;
   for (const card of [...cards.filter((k) => !closed(k) && readable(k)).slice(0, MAX_CARDS), ...cards.filter((k) => closed(k) && readable(k) && rereadClosed(k, closedLive, now))]) {
@@ -1311,12 +1330,17 @@ export function cardStates({ cards, config, repos, now, stacks = [], pairs = [],
   // #C1020: a board-repository card on main shows packed and installed from the deploy pairs (pairsIn, the owner's pair folder) and git alone:
   // packed when a pair's pin holds its landing, installed when such a pair's deploy ran. Never for a card of another repository, nor one not on main.
   const board = Object.entries(repos).find(([name]) => isBoardRepo(name))?.[1];
-  if (board && typeof board.git === "function" && pairs.length) {
-    const git = (args) => ({ status: ok(() => board.git(args)) ? 0 : 1 });
+  // #C1395: the pair folder or a git question about it that could not be answered is unread "pair" (never "not packed"): git's exit 1 is the plain no (status 1), any other failure status null; the folder
+  // itself unread (pairsUnread) marks every such card. A live card, and one that needs no install, rests on neither: only the card waiting at pack or install is marked.
+  if (board && typeof board.git === "function" && (pairs.length || pairsUnread)) {
+    const git = (args) => { const r = ancestry(() => board.git(args)); return { status: r === true ? 0 : r === false ? 1 : null }; };
     for (const id of Object.keys(out)) {
       // The card's own repo word names the board (as the dispatch's pair turn reads it), and it was read from the board's checkout.
       if (!isBoardRepo(cardOf[id].repo) || repoOfCard[id] !== board || out[id].onMain !== true || !out[id].headSha) continue;
-      const p = packOf(pairs, out[id].headSha, git);
+      const waits = out[id].phase !== config.collector.livePhase && out[id].noInstall !== true;
+      if (pairsUnread) { if (waits) out[id] = markUnread(out[id], "pair"); continue; }
+      const pn = {}, p = packOf(pairs, out[id].headSha, git, pn);
+      if (pn.failed) { if (waits) out[id] = markUnread(out[id], "pair"); continue; }
       if (p.packed) out[id] = { ...out[id], packed: true, ...(p.pack ? { pack: p.pack } : {}), ...(p.installed ? { installed: true } : {}) };
     }
   }
@@ -1693,10 +1717,11 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
   try { const r = readTail(closedLivePath, 256 * 1024); if (r?.whole) closedLive = closedLiveFrom(r.text); } catch { /* none: every closed product card in its window is read once */ }
   let cardsNow;
   try {
-    const pairs = c.pairFolder ? pairsIn(home(c.pairFolder)) : [];
+    const pairNote = {}; // #C1395: pairNote.failed is set when the pair folder exists and could not be read: the board cards at pack or install then say unread "pair"
+    const pairs = c.pairFolder ? pairsIn(home(c.pairFolder), pairNote) : [];
     // #C1311: each branch's Board-Id commits, kept from run to run by the branch's tip and main's tip (stackHeads); written only when it changed.
     const stackCache = { old: readStackCache(dir), next: {} };
-    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now), pairs, stackCache, closedLive });
+    cardsNow = cardStates({ cards, config, repos, now, stacks: readStacks(dir, now), pairs, pairsUnread: pairNote.failed === true, stackCache, closedLive });
     lap("cardStates");
     try {
       const next = closedLiveNext({ cards, closedLive, states: cardsNow, livePhase: c.livePhase, now });

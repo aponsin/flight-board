@@ -39,7 +39,7 @@ test("the newest candidate that is still in flight counts; a failed newer one do
   const tips = [tip("build/ship-v1.200.4", SHA3, 50), tip("build/ship-v1.200.6", SHA, 4), tip("build/ship-v1.200.5", SHA2, 20)];
   assert.equal(shipCandidate({ tips, pattern: PATTERN, now: T, onMain: never, ci: ciOf({ [SHA]: "running" }) }).version, "1.200.6", "the newest");
   assert.equal(shipCandidate({ tips, pattern: PATTERN, now: T, onMain: never, ci: ciOf({ [SHA]: "failed", [SHA2]: "queued" }) }).version, "1.200.5", "the next one down");
-  assert.deepEqual(shipCandidate({ tips: [tips[1]], pattern: PATTERN, now: T, onMain: never, ci: () => null }), { version: "1.200.6", ci: "none", at: T - 4 * 60e3 }, "no CI reading: pushed and not on main");
+  assert.deepEqual(shipCandidate({ tips: [tips[1]], pattern: PATTERN, now: T, onMain: never, ci: () => null }), { version: "1.200.6", ci: "unread", at: T - 4 * 60e3 }, "no CI reading (#C1395: the reader gave no answer): pushed and not on main, CI not read");
   assert.equal(shipCandidate({ tips: [tip("build/ship-vX", SHA, 1)], pattern: "^build/ship-", now: T, onMain: never, ci: ciOf({}) }).version, null, "no version in the name: none, never the name");
 });
 

@@ -3925,7 +3925,8 @@ const CMD_FRESH=45e3,CMD_NOW=15e3;
 // #C679: a ship candidate branch pushed and not on main (the probe's ship {version, ci, at}, from the repository itself, not from an
 // open card): never green, and it says why ("Ship v1.200.6 waiting on CI"). The probe drops it once the run fails or is cancelled, the
 // branch lands on main or is deleted, or it is 6 hours old. Returns the words, or null.
-const SHIP_CI_WORDS={none:"candidate pushed, not on main",queued:"waiting on CI",running:"CI running",passed:"CI passed, merging"};
+// #C1395: "none" is only "no run exists"; the check not made (back-off, call limit) and the check that failed have their own plain words, never red and never "no CI".
+const SHIP_CI_WORDS={none:"candidate pushed, not on main",backoff:"CI check waiting",capped:"CI check limit reached",unread:"CI not read",queued:"waiting on CI",running:"CI running",passed:"CI passed, merging"};
 function shipCandidate(now=Date.now()){const sh=probe&&probe.ship;
   if(!sh||typeof sh!=="object"||!isT(sh.at)||!Object.hasOwn(SHIP_CI_WORDS,sh.ci))return null;
   const v=/^\d{1,4}\.\d{1,4}\.\d{1,4}$/.test(String(sh.version))?` v${sh.version}`:"";

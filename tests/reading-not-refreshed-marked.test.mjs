@@ -85,7 +85,7 @@ test("the page greys a stale card: 'No fresh reading since HH:MM' in its own gre
 // Manager on #C1377: the card's own example, the ship tile's "CI running", is marked too.
 test("a ship candidate read from a repository that was not read fresh carries the mark and the time of its last good read; a fresh read carries none", () => {
   const SHA = "e3016d3" + "0".repeat(33), T = FRESH_AT + 60_000;
-  const git = (a) => { if (a[0] === "merge-base") throw new Error("not an ancestor"); return ""; };
+  const git = (a) => { if (a[0] === "merge-base") throw Object.assign(new Error("not an ancestor"), { status: 1 }); return ""; }; // #C1395: git's exit 1 is the plain "not on main"; any other failure is an unread place
   const team = (extra = {}) => ({ git, remote: "origin", main: "main", tips: [{ branch: "build/ship-v1.226.23", sha: SHA, at: T - 90 * 60e3, message: "" }], ci: () => ({ ci: "running", ciMin: null }), live: null, ...extra });
   const c = { candidatePattern: "^build/ship-v\\d+\\.\\d+\\.\\d+$", versionPattern: "" };
   const stale = teamShip(team({ fresh: false, freshAt: FRESH_AT }), c, T);

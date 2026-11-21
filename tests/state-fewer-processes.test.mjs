@@ -133,13 +133,13 @@ test("a failed batch list starts the back-off and gives no card a reading; a goo
   const backoff = { until: 0, wait: BACKOFF_MIN_MS };
   const calls = [];
   const bad = ciReader((a) => { calls.push(a); throw new Error("rate limit"); }, T, {}, backoff, { batch: true });
-  assert.deepEqual(bad(sha(1)), { ci: "none", ciMin: null });
-  assert.deepEqual(bad(sha(2)), { ci: "none", ciMin: null });
+  assert.deepEqual(bad(sha(1)), { ci: "unread", ciMin: null }); // #C1395: a failed call is "unread", not "none" (no run exists)
+  assert.deepEqual(bad(sha(2)), { ci: "backoff", ciMin: null }); // #C1395: the second card finds the back-off the failed call started: no call made
   assert.equal(calls.length, 1, "one failed call, not one per card");
   assert.equal(backoff.until, T + BACKOFF_MIN_MS); assert.equal(backoff.wait, 2 * BACKOFF_MIN_MS);
   // While the back-off lasts nothing is asked.
   const waiting = []; const held = ciReader((a) => { waiting.push(a); return "[]"; }, T + 1000, {}, backoff, { batch: true });
-  assert.equal(held(sha(3)).ci, "none"); assert.equal(waiting.length, 0);
+  assert.equal(held(sha(3)).ci, "backoff"); assert.equal(waiting.length, 0); // #C1395: a call not made for the back-off is "backoff", not "none"
   // A good list clears the back-off.
   const ok = { until: 0, wait: 4 * BACKOFF_MIN_MS };
   ciReader(() => JSON.stringify([{ headSha: sha(1), status: "completed", conclusion: "success", createdAt: new Date(T).toISOString(), updatedAt: new Date(T).toISOString() }]), T, {}, ok, { batch: true })(sha(1));

@@ -65,8 +65,9 @@ export const WAITS = ["turn", "group", "land", "pack", "install", "deploy", "ask
 // The phases a reviewer holds, and the work phases the card's owner holds.
 const REVIEW = ["language", "design", "checker", "security"];
 // #C1387: the unread sources (collector/state-schema.mjs UNREAD_SOURCES) a card's phase rests on: a failed read of one makes the card `unknown` with a why naming it. Others (start, behind) set a flag only.
-const UNKNOWN_BY = ["main", "deploy", "version", "stack"];
-const UNREAD_WORDS = { main: "main", deploy: "the live deploy", version: "the live version", stack: "the stack" };
+// #C1395: notes (the sign-offs: a review phase rests on them), install (the install wait) and pair (the pack and install waits) join them; ci is not here: it is the ship tile's own word, never a card's state.
+const UNKNOWN_BY = ["main", "deploy", "version", "stack", "notes", "install", "pair"];
+const UNREAD_WORDS = { main: "main", deploy: "the live deploy", version: "the live version", stack: "the stack", notes: "the sign-offs", install: "the install state", pair: "the deploy pairs" };
 const OWNER_PHASES = ["plan", "build", "test"];
 export const STUCK_TIMES = 2; // over twice the phase's median (the Tile states line: "slow N× usual")
 

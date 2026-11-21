@@ -17,27 +17,35 @@ export const isBoardRepo = (word) => BOARD_REPO_WORDS.has(repoKey(word));
 export const isBoardCard = (card) => !card?.repo || isBoardRepo(card.repo);
 
 // Whether the commit `landing` is the pair's pin or an ancestor of it (the pin descends from the landing). git(args) -> { status }; an answer it cannot give is false.
-export function descends(git, landing, pin) {
+// #C1395: `note` (optional) gets failed = true when git could not answer (it threw, or its status is neither 0 nor 1: exit 1 is the plain "no"); the answer is still false then.
+export function descends(git, landing, pin, note = null) {
   if (!/^[0-9a-f]{40}$/.test(landing ?? "") || !/^[0-9a-f]{40}$/.test(pin ?? "")) return false;
   if (landing === pin) return true;
-  try { return git(["merge-base", "--is-ancestor", landing, pin]).status === 0; } catch { return false; }
+  try {
+    const status = git(["merge-base", "--is-ancestor", landing, pin]).status;
+    if (status !== 0 && status !== 1 && note) note.failed = true;
+    return status === 0;
+  } catch { if (note) note.failed = true; return false; }
 }
 
 // Every pair in the folder, newest first: [{ n, sha, ran }]. A deploy file with no pin is no pair; ran is true when its .done marker holds the pair's
 // own pin (the deploy step writes it), so a stray or empty marker is no install. No folder, or an unreadable one: none.
 export const MAX_PAIRS = 200;
-export function pairsIn(folder) {
+// #C1395: `note` (optional) gets failed = true when the folder EXISTS and could not be read (the listing, a pair's deploy file or its .done marker failed for a reason other than "no such file"); no folder at all stays
+// none with failed unset (nothing was ever made), and the answer is the same list as before.
+export function pairsIn(folder, note = null) {
   if (typeof folder !== "string" || !folder || !existsSync(folder)) return [];
+  const gone = (e) => e?.code === "ENOENT";
   let names;
-  try { names = readdirSync(folder); } catch { return []; }
+  try { names = readdirSync(folder); } catch { if (note) note.failed = true; return []; }
   const nums = names.map((f) => /^board-store-deploy-pc(\d{1,6})\.mjs$/.exec(f)).filter(Boolean).map((m) => Number(m[1])).sort((a, b) => b - a).slice(0, MAX_PAIRS);
   const out = [];
   for (const n of nums) {
     let sha;
-    try { sha = /const SIGNED = "([0-9a-f]{40})"/.exec(readFileSync(join(folder, `board-store-deploy-pc${n}.mjs`), "utf8"))?.[1]; } catch { continue; }
+    try { sha = /const SIGNED = "([0-9a-f]{40})"/.exec(readFileSync(join(folder, `board-store-deploy-pc${n}.mjs`), "utf8"))?.[1]; } catch (e) { if (note && !gone(e)) note.failed = true; continue; }
     if (!sha) continue;
     let ran = false;
-    try { ran = names.includes(`board-store-deploy-pc${n}.done`) && readFileSync(join(folder, `board-store-deploy-pc${n}.done`), "utf8").trim() === sha; } catch { /* not run */ }
+    try { ran = names.includes(`board-store-deploy-pc${n}.done`) && readFileSync(join(folder, `board-store-deploy-pc${n}.done`), "utf8").trim() === sha; } catch (e) { if (note && !gone(e)) note.failed = true; }
     out.push({ n, sha, ran });
   }
   return out;
@@ -52,11 +60,12 @@ export function pairsIn(folder) {
 // tile can name it. Pins are main commits and pairs come newest first, so the pairs that hold the landing are a prefix of the list: the oldest one is found by a
 // galloping search from the newest pair (1, 2, 4, ... pairs back, then a binary search inside the last gap: a landing a pack or two old costs two git questions, an old
 // one stays logarithmic in the pairs, never one per pair), and the card is installed when any pair in that prefix ran.
-export function packOf(pairs, landing, git) {
+// #C1395: `note` (optional) gets failed = true when a git question could not be answered (descends's note): the answer is then not to be trusted as "not packed".
+export function packOf(pairs, landing, git, note = null) {
   const out = { packed: false, installed: false };
   if (!/^[0-9a-f]{40}$/.test(String(landing ?? "")) || !Array.isArray(pairs) || !pairs.length) return out;
   const asked = new Map();
-  const holds = (p) => { if (!asked.has(p.sha)) asked.set(p.sha, descends(git, landing, p.sha)); return asked.get(p.sha); };
+  const holds = (p) => { if (!asked.has(p.sha)) asked.set(p.sha, descends(git, landing, p.sha, note)); return asked.get(p.sha); };
   if (!holds(pairs[0])) return out;
   let lo = 0, hi, step = 1; // pairs[lo] holds the landing; find the last index that does
   for (;;) {
