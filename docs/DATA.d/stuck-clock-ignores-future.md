@@ -1,0 +1,1 @@
+- 2026-11-20: The tip's age in the `stuck` rule (#C1396) ignores a tip time more than 5 minutes after now (#C1399): a commit's date is set by its author, so `headAt` (else `readyAt`) in the future is read as no tip time and the phase's age alone decides; a tip up to 5 minutes ahead of now counts as a push just made. No other definition changes; stuck only wakes, it gates nothing.

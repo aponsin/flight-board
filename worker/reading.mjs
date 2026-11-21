@@ -69,6 +69,7 @@ const REVIEW = ["language", "design", "checker", "security"];
 const UNKNOWN_BY = ["main", "deploy", "version", "stack", "notes", "install", "pair"];
 const UNREAD_WORDS = { main: "main", deploy: "the live deploy", version: "the live version", stack: "the stack", notes: "the sign-offs", install: "the install state", pair: "the deploy pairs" };
 const OWNER_PHASES = ["plan", "build", "test"];
+export const TIP_FUTURE_MS = 5 * 60e3; // #C1399: how far past now a tip's own date may be before it is ignored (clock skew between machines, not a setting)
 export const STUCK_TIMES = 2; // over twice the phase's median (the Tile states line: "slow N× usual")
 
 // What kind of repository the card lives in, from the config's list ({ name, kind } rows: board or product). A word the list does not know is null (reads unknown).
@@ -185,7 +186,8 @@ export function reading(card, evidence, claims, agents, config, now, ctx = {}) {
   if (wait) return out("waiting", wait, `waits: ${wait.kind}`);
   const since = ctx.phaseStart?.get?.(`${card.id}|${phase}`), median = ctx.medians?.[phase];
   // #C1396: a push resets the clock: stuck also needs the tip itself (evidence.headAt, else readyAt: the head's time) older than the same limit; with no tip time, the phase's age alone decides, as before.
-  const tipAt = e.headAt ?? e.readyAt, tipOld = !Number.isFinite(tipAt) || now - tipAt > STUCK_TIMES * median;
+  // #C1399: a commit's date is its author's to set: a tip time more than TIP_FUTURE_MS after now is no reading of when the card last pushed, so it counts as no tip time (the phase's age alone decides) and cannot keep a card from reading stuck.
+  const tipAt = e.headAt ?? e.readyAt, tipOld = !Number.isFinite(tipAt) || tipAt > now + TIP_FUTURE_MS || now - tipAt > STUCK_TIMES * median;
   if (Number.isFinite(since) && Number.isFinite(median) && now - since > STUCK_TIMES * median && tipOld) return out("stuck", null, `at ${phase} over ${STUCK_TIMES}× its usual time, nobody on it`);
   return out("waiting", { kind: "turn" }, `at ${phase}, with ${role ?? "no one"}`);
 }
