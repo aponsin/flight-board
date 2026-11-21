@@ -1,5 +1,3 @@
-FINDINGS: #C1407 at 9318ce74 (Full). Linear on main ecef8baa. Suite 3798/3798 pass. My mutations on collector/signoff.mjs all fail a test: an unread page diff passing, an earlier LOOK-OK covering later page edits, FINDINGS ignored on a page-free tip.
+SECURE: #C1407 9318ce74, reviewed with its fix at the head 34ff8904 (L1 fixed there; this commit's own change is otherwise as reviewed). Security 2026-11-20.
 
-L1 (low, gate fails open on a double git failure): scripts/board-release.mjs main block: when 'git fetch +refs/notes/designer:refs/notes/board-release/designer' fails, it throws only if quiet(['ls-remote', 'origin', DESIGNER_REF]) is truthy. quiet returns null on failure, so when ls-remote also fails (a network blip) the release goes on with the local copy from an earlier run, which can miss a newer FINDINGS. Fix: throw unless ls-remote returned "" (the ref is really absent), e.g. 'const there = quiet([...]); if (there !== "") throw ...'.
-
-INFO: board-land.mjs fetches the designer ref with quiet and ignores a failure; fine as long as the release tool's dry run decides. Otherwise sound: every git fact that fails reads as a refusal; the release tool and the landing plan share designerRefusals; no Worker, secret or binding change. Security 2026-11-20.
+Was: FINDINGS L1 (low): board-release.mjs's designer fetch fallback threw only if ls-remote was truthy; quiet returns null on failure, so a double git failure went on with a stale local copy. Fixed in 34ff8904.
