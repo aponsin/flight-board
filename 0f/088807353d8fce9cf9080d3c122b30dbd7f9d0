@@ -1,0 +1,2 @@
+FINDINGS (Full) as part of board-polish-fifteen: see the FINDINGS on 94e18d620d115453d6640fef048d76e8cfd57330 (F1 MEDIUM #C1390 nextCardCheck passes on any non-watch call after stack-ready).
+signed-by: Checker 2
