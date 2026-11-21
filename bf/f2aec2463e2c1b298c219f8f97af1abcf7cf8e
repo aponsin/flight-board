@@ -1,0 +1,1 @@
+SECURE: #C1404 head, one test-only commit on 7f9cdd68 (signed), linear on main cb82970b. Adds a test in tests/group-tile-hover-plain-words.test.mjs for tilePhrase's single-wait check; fixtures are fictional phase/wait objects, no real names or paths. No page, Worker, secret or binding change. Security 2026-11-20.
