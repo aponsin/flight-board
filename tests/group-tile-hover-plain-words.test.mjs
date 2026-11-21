@@ -33,6 +33,13 @@ test("Designer's two cases: one card waiting for install among three reads 'wait
   assert.equal(f.phrase, "not started yet", "cards before Land: 'not started yet', not 'future'");
 });
 
+test("two afterwork cards on different waits (pack, install) among three read 'waiting for pack or install', not one wait's words (Checker 2's F1)", () => {
+  const working = { phase: "live", state: "done", wait: null, with: null };
+  const pack ={ phase: "install", state: "waiting", wait: "pack", with: null }, install = { phase: "install", state: "waiting", wait: "install", with: null, pack: "pc125" };
+  const a = counted(group(cards, { a: pack, b: install, c: working })).find((x) => x.label === "Install");
+  assert.deepEqual(a && [a.n, a.phrase], [2, "waiting for pack or install"], "2 of 3 cards waiting for pack or install");
+});
+
 const PHASES = ["build", "test", "language", "design", "checker", "security", "ship", "pack", "install", "live"];
 const KINDS = {
   working: { state: "working", wait: null, with: "Builder", working: true },
