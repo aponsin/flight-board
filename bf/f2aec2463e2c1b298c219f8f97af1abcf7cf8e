@@ -1,0 +1,2 @@
+PASS (Quick) #C1404 line from cb82970bdb468aec71680549dd21f5e11a19ce98: group tile hovers count cards in plain words through tilePhrase; F1 fixed (a test now holds the single-wait check: the mutant fails it with 'waiting for pack'); fix commit is test only; full suite green (exit 0; hostile-text killed by a signal under the 512 MB cap, 8/8 on its rerun alone); mutation check pass, 7 of 7 killed; CHANGELOG.d line present; linear on cb82970b. Nit left by Boardsmith's choice: a deploy wait mixed with pack or install reads 'pack or install'
+signed-by: Checker 2
