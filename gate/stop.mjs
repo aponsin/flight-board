@@ -16,14 +16,17 @@ import { checkConfig, fullConfig, boardId, home } from "../scripts/config.mjs";
 import { readLines, sessionRole, currentTurn, turnCalls } from "./session.mjs";
 import { idText } from "../collector/text.mjs";
 import { shQuote, writeAtomic } from "./wake.mjs";
-import { DISPATCH_FILE, dispatchPidFile, dispatchWatchAlive, dispatchWokenFile, dispatchWaitCheckedFile } from "./reset.mjs";
+import { DISPATCH_FILE, dispatchPidFile, dispatchWatchAlive, dispatchWokenFile, dispatchWaitCheckedFile, dispatchSeenFile, dispatchPending } from "./reset.mjs";
 
 // dispatch (#C631): { on, alive, askedAt, command } for a roster role other than the lead — whether the probe dispatches (dispatch.json
 // exists), whether the role's own watch (a background Bash) is running, when this hook last asked, and the command that arms it.
 // The ask is made at most every DISPATCH_ASK_GAP_MS, so a session that can't run a background command is not stopped for ever.
 export const DISPATCH_ASK_GAP_MS = 10 * 60e3;
-export const dispatchAsk = ({ on, alive, askedAt, command }, now) =>
-  on && !alive && !(Number.isFinite(askedAt) && askedAt <= now + 5_000 && now - askedAt < DISPATCH_ASK_GAP_MS)
+// #C1400 (11-20 about 3:06 to 3:31 pm MT: #C1382's turn ended inside the 10 minutes after an ask, so the hook let it end with no watch running; the board had #C1383's item from
+// 3:06 and nobody was there to print it until the agent armed the watch at 3:31): the gap is for a session that cannot run a background command, and such a session has nothing
+// waiting. While the role has a level-1 item its watch has not printed (`pending`), the gap does not apply: the ask is made at every stop (a second stop in a row still passes, stop_hook_active).
+export const dispatchAsk = ({ on, alive, askedAt, command, pending }, now) =>
+  on && !alive && (pending === true || !(Number.isFinite(askedAt) && askedAt <= now + 5_000 && now - askedAt < DISPATCH_ASK_GAP_MS))
     ? `Dispatch watch: the board wakes you through it when a card of yours waits and you are idle, and it isn't running. Arm it now (Bash with run_in_background true and no timeout): ${command}. When it ends it has printed a DISPATCH line: act on it, then arm it again.`
     : null;
 // #C848 (no-unread-questions, reshaped): nobody reads an agent's chat, so a turn that ends while the board woke the role for a card, with
@@ -166,7 +169,9 @@ export function dispatchState(config, configPath, role, now) {
   const script = join(dirname(dirname(fileURLToPath(import.meta.url))), "scripts", "wake-watch.mjs");
   const readJ = (name) => { try { return JSON.parse(readFileSync(join(dir, name), "utf8")); } catch { return null; } };
   const checked = readJ(dispatchWaitCheckedFile(role));
-  return { on, woken: readJ(dispatchWokenFile(role)), checkedAt: Number.isFinite(checked?.at) ? checked.at : null, alive: dispatchWatchAlive(join(dir, dispatchPidFile(role)), now), askedAt, command: `node ${shQuote(script)} --config ${shQuote(configPath)} --role ${shQuote(role)} --once --pinned` };
+  // #C1400: a level-1 item of this role that its watch has not printed (the watch's own test, gate/reset.mjs dispatchPending): work is waiting for a watch.
+  const pending = (() => { try { return dispatchPending(readJ(DISPATCH_FILE), readJ(dispatchSeenFile(role)), { role, level: 1 }).length > 0; } catch { return false; } })();
+  return { on, pending, woken: readJ(dispatchWokenFile(role)), checkedAt: Number.isFinite(checked?.at) ? checked.at : null, alive: dispatchWatchAlive(join(dir, dispatchPidFile(role)), now), askedAt, command: `node ${shQuote(script)} --config ${shQuote(configPath)} --role ${shQuote(role)} --once --pinned` };
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
