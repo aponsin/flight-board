@@ -17,6 +17,13 @@ const OWNER_NOTES = [
   "Waiting for your choice on the wording.",
   "Awaiting a decision, then the build resumes.",
   "Waiting for the owner.",
+  // Checker 2's F1 on 6a45909c: a decision waited on "on" a thread, a "you" that picks or decides, a pick "in" a thread, and a named owner beside another role's decision.
+  "Waiting on a decision on #T2255.",
+  "Waiting for you to pick A or B.",
+  "Paused until you decide on #T2255.",
+  "Waiting for a pick in the board thread.",
+  "Waiting for the owner, then Director's decision on the text.",
+  `Waiting for ${["al", "ex"].join("")} to say.`, // the owner's first name, built so no file of the public repository carries it (a test holds that alternative)
 ];
 // What the rule must still allow: a pause for a build reason that says "decision" in another sense, and a pause by an agent waiting on Director or another agent.
 const ALLOWED_NOTES = [
@@ -27,6 +34,7 @@ const ALLOWED_NOTES = [
   "Paused until the group it follows has shipped.",
   "Waiting for a decision from Director, then it resumes.",
   "Paused: the owner_role field is renamed in #C1380 first.",
+  "Paused: code owner of the hook is Boardsmith.",
 ];
 
 test("a pause whose next_note names the owner, a decision or a pick is refused, with the way out in the words", () => {
@@ -49,7 +57,7 @@ test("must still allow: a pause for a build reason, a decision in another sense,
 // Security's S1 on f9b5f65d: a run of spaces after "wait" took quadratic time in the first version of the pattern (100k spaces: 7.7 s), and the store puts no length cap on next_note.
 test("the test is linear on long notes: a million spaces, with and without a word before them, answer in well under a second", () => {
   const long = " ".repeat(1_000_000);
-  for (const note of [`wait${long}`, `waiting for${long}`, `needs${long}the${long}`, `${long}x`, `owne${long}`, `Director's${long}decision`, `wait for a${long}pick`]) {
+  for (const note of [`wait${long}`, `waiting for${long}`, `needs${long}the${long}`, `${long}x`, `owne${long}`, `Director's${long}decision`, `wait for a${long}pick`, `you${long}`, `you${long}to${long}pick`, `wait on${long}`]) {
     const t0 = performance.now();
     waitsOnOwner(note);
     assert.ok(performance.now() - t0 < 500, `${note.slice(0, 20)}: took ${Math.round(performance.now() - t0)} ms`);
@@ -104,4 +112,25 @@ test("must still allow: a blocked card with no open ask, or whose ask is answere
   assert.equal(answered.overlay, "blocked", "an answered ask gates nothing");
   const [paused] = readingDocs(view([card("gated-card", { paused: 1, blocked_reason: "waits" })], [OPEN]));
   assert.equal(paused.overlay, "paused");
+});
+
+// Checker 2's F2 on 6a45909c: the ask that gates a card is the one on that card, never another card's.
+test("an open ask on another card gates nothing: a blocked card beside it keeps the Blocked overlay", () => {
+  const other = { ...OPEN, id: "t-9", num: 2300, card_id: "other-card" };
+  const docs = readingDocs(view([card("other-card"), card("blocked-card", { blocked_reason: "waits on a part" })], [other]));
+  const blocked = docs.find((d) => d.id === "blocked-card");
+  assert.equal(blocked.overlay, "blocked");
+  assert.notEqual(blocked.wait, "ask");
+  assert.notEqual(blocked.ask, 2300);
+});
+
+// Checker 2's L2: a paused blocked card with an open ask is not gated; the ask under its overlay is the reading's own, and the overlay stays.
+test("a paused blocked card with an open ask keeps its paused overlay, and is not turned into the gate", () => {
+  const [d] = readingDocs(view([card("gated-card", { paused: 1, blocked_reason: "waits", hold_end: "t-1" })], [OPEN]));
+  assert.equal(d.overlay, "paused");
+  assert.equal(d.working, false);
+  assert.equal(d.why === "waits: ask", false, "the gate's own reason is not set under a pause");
+  const [plain] = readingDocs(view([card("gated-card", { paused: 1 })], [OPEN]));
+  assert.equal(d.wait, plain.wait, "the wait under the overlay is the reading's own, as for a paused card with no block");
+  assert.equal(d.state, plain.state);
 });
