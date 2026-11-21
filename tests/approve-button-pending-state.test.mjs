@@ -49,6 +49,9 @@ test("after the click the button wears the sending state (grey, the dots, the wo
   assert.equal(t.w.writes.length, 1);
   assert.match(css, /\.gp-row\.pending\{pointer-events:none\}/, "the row takes no click");
   assert.match(css, /\.gp-row\.pending>:not\(\.gp-act\)\{opacity:\.6\}/);
+  // Designer's F1 on 0f088807: "Open on GitHub" keeps full colour while pending, so it stays live (opening GitHub sends nothing); only the link, never the button.
+  assert.match(css, /\.gp-row\.pending \.gp-act a\{pointer-events:auto\}/, "the link stays live");
+  assert.ok(!/\.gp-row\.pending[^{]*\.gp-act button\{pointer-events:auto/.test(css) && !/\.gp-row\.pending \.gp-act\{pointer-events:auto/.test(css), "the button is never re-enabled");
   assert.match(css, /\.gp-act button\.sbtn\{background:color-mix\(in srgb,var\(--line\) 35%,var\(--panel\)\)/, "the grey of a sending thread, in board tokens");
   t.w.hold.res(); await p;
 });
