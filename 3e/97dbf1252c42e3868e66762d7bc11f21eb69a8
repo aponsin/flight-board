@@ -1,0 +1,2 @@
+PASS (Quick) board-polish-sixteen #C1401 #C1400, line from 5386c6f1a7ac5af5fd4d51e9706eaa02b8b93903: the dead abandonedAt read and mark removed with a never-names test; dispatchAsk skips its gap while the role has an item its watch has not printed, read with the watch's own dispatchPending call (role, level 1, seen file). Suite 3738/0/1; 6 mutants on the full suite, all killed.
+signed-by: Checker 2
