@@ -1,1 +1,3 @@
 SECURE: #C1404 head, one test-only commit on 7f9cdd68 (signed), linear on main cb82970b. Adds a test in tests/group-tile-hover-plain-words.test.mjs for tilePhrase's single-wait check; fixtures are fictional phase/wait objects, no real names or paths. No page, Worker, secret or binding change. Security 2026-11-20.
+
+SAFE pc126: steps 91a5f0c5, deploy a6f46a1f, tree 654de72d, hooks 50b1d717, board-deploy 7a021248 (unchanged) all match. Templates equal pc125 apart from pin, pair number and card line. Pin == origin/main bff2aec2; pc125 .done present; every commit cb82970b..bff2aec2 noted SECURE. No worker/ file changed (no env/secret/binding). Hooks line needed: gate/publish.mjs builds from page/board.template.html. Security 2026-11-20.
