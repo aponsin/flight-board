@@ -184,6 +184,8 @@ export function reading(card, evidence, claims, agents, config, now, ctx = {}) {
   if (working(role)) return out("working", wait, `${role} is on it`, { working: true });
   if (wait) return out("waiting", wait, `waits: ${wait.kind}`);
   const since = ctx.phaseStart?.get?.(`${card.id}|${phase}`), median = ctx.medians?.[phase];
-  if (Number.isFinite(since) && Number.isFinite(median) && now - since > STUCK_TIMES * median) return out("stuck", null, `at ${phase} over ${STUCK_TIMES}× its usual time, nobody on it`);
+  // #C1396: a push resets the clock: stuck also needs the tip itself (evidence.headAt, else readyAt: the head's time) older than the same limit; with no tip time, the phase's age alone decides, as before.
+  const tipAt = e.headAt ?? e.readyAt, tipOld = !Number.isFinite(tipAt) || now - tipAt > STUCK_TIMES * median;
+  if (Number.isFinite(since) && Number.isFinite(median) && now - since > STUCK_TIMES * median && tipOld) return out("stuck", null, `at ${phase} over ${STUCK_TIMES}× its usual time, nobody on it`);
   return out("waiting", { kind: "turn" }, `at ${phase}, with ${role ?? "no one"}`);
 }

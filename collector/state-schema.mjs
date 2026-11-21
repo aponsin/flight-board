@@ -64,7 +64,7 @@ const BOARD = { boardId: re(BOARD_ID), at: isTime, probe: nullOr(re(SHA12)), pag
 // #C621: branches is one record per branch tip of a card that has two or more (name: the branch's last path segment, as a card
 // id would be; the rest as the card's own fields, read from that tip alone), so a page draws one row per branch and never
 // lights two phases in one row. The card's own fields stay those of its newest tip; a probe before it leaves branches out.
-const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "pack", "restart", "ledger", "quiet", "stale", "staleSince", "unread"]);
+const OPTIONAL = new Set(["lastWriteAt", "wakeAliveAt", "wakeSeenAt", "cardsCheckedAt", "evidenceAt", "derivedAt", "quietMin", "shipping", "asOf", "seen", "by", "branches", "readyAt", "headAt", "firm", "waitingFor", "partsMissing", "workSeen", "shippedAt", "reviews", "findings", "issueCounts", "customerText", "weekTotal", "stack", "stackHold", "builtWaiting", "rcOff", "behindMain", "wipHead", "trailerMisplaced", "headSha", "headBranch", "repoFull", "noInstall", "packed", "installed", "pack", "restart", "ledger", "quiet", "stale", "staleSince", "unread"]);
 // #C1387: the sources a card's reading can fail to read (a git or GitHub call that failed, which is not the answer "no"). A new source is one word added here (and to UNKNOWN_BY in worker/reading.mjs
 // when the phase rests on it); #C1395 adds notes, install, pair (each a source a phase rests on: the Worker reads them as unknown) and ci (a flag: the card's own ci word and the ship tile say it).
 export const UNREAD_SOURCES = ["main", "deploy", "version", "stack", "start", "behind", "notes", "install", "pair", "ci"];
@@ -89,6 +89,8 @@ const CARD = {
   // evidence is only a head with no trailer or sign-off yet (never written as true); waitingFor: the reviews still unsigned on
   // the READY commit, in phase order. Optional: a probe from before them still fits.
   readyAt: isTime,
+  // #C1396: the head commit's time, whatever the phase (readyAt is absent at build); the Worker's stuck rule reads it.
+  headAt: isTime,
   firm: (v) => v === false,
   waitingFor: (v) => Array.isArray(v) && v.length >= 1 && v.length <= MAX_SIGNED && v.every(re(PHASE)) && new Set(v).size === v.length,
   // #C890: the commits cited in the card's next_note (7 to 40 hex characters, as the note wrote them) that are not on the repository's main; the card is not read as live while any is.

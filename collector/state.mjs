@@ -881,6 +881,8 @@ function tipState(card, tip, repo, config, now, declared, cover = null, nudgeTop
     ...(noInstall ? { noInstall: true } : {}),
     ...(phase && build ? { firm: false } : {}),
     ...(phase && !build && Number.isInteger(head.at) && head.at >= 1577836800000 && head.at <= 4102444800000 ? { readyAt: head.at } : {}),
+    // #C1396: the head's time at any phase (build included), for the Worker's stuck rule: a push resets the clock.
+    ...(Number.isInteger(head.at) && head.at >= 1577836800000 && head.at <= 4102444800000 ? { headAt: head.at } : {}),
     ...(phase && !build && unsigned.length ? { waitingFor: unsigned.slice(0, 10) } : {}),
   };
   // #C895: the full sha, the branch (main for a card on main) and the repository, for the DISPATCH line.
