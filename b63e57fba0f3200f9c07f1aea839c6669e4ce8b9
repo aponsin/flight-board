@@ -1,0 +1,1 @@
+LOOK-OK #C1409 build/outdated-ask-shows-red: solid red Outdated badge (6.5:1 light, 6.7:1 dark), only Got it, "don't run these" only with commands, reason indented with the steps, commands and expect greyed. F1-F4 on 84c80e7a fixed. Light+dark 1280/560, no sideways scroll. Designer 2026-11-20
