@@ -1,0 +1,2 @@
+PASS (Quick) #C1406 line from 1c49d40aaa7a7c303fffaaf663a04c9a6b04a5b3: everything in my PASS on 261814e7, plus Designer's F1 to F3 on the page only (the card tile names only the owner, the group tile takes the same words with 'sent back' in its hover, and the crew hover reads 'Phase: Build (sent back by <lane>)'). No reading or Worker change; every new string is escaped, with no new HTML sink. Suite 3793 pass 0 fail. Mutation check pass: the three page changes each fail a test when undone
+signed-by: Checker 2
