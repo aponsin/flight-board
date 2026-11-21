@@ -1,0 +1,1 @@
+SECURE: #C1401, the page stops reading the dead abandonedAt (three lines removed, nothing drawn from new data), plus a test. Security 2026-11-20.
